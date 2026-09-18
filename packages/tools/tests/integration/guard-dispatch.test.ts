@@ -146,6 +146,25 @@ describe("dispatch guard hook", () => {
     expect(denied.guard).toEqual({ mode: "auto", outcome: "denied", answerer: "judge" });
   });
 
+  it.each(["deny", "unsure", "failed"] as const)(
+    "separates reviewer %s from its static trigger",
+    async (reviewer_decision) => {
+      const result = await callTool(
+        "write_file",
+        writeArgs,
+        makeConfig(root, {
+          guard: () => ({ verdict: "ask", mode: "auto", reason: "dynamic expansion" }),
+          elicit: () => ({ allowed: false, answerer: "judge", review: { reviewer_decision } }),
+        }),
+      );
+      expect(result.guard).toMatchObject({ outcome: "denied", reviewer_decision });
+      expect(result.json.message).toBe(
+        `command review did not approve: reviewer ${reviewer_decision}; static review trigger: dynamic expansion`,
+      );
+      expect(exists(root, "f.txt")).toBe(false);
+    },
+  );
+
   it("fails closed when the guard throws", async () => {
     const guard: Guard = () => {
       throw new Error("boom");

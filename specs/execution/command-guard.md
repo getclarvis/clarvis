@@ -5,6 +5,17 @@
 
 ## 1. Purpose
 
+Auto review receives host-captured persistent instructions from both global and workspace context,
+with `CLARVIS.md` preferred over `AGENTS.md` independently per scope. Direct operator restrictions
+take precedence. A missing allowlist match or dynamic-expansion analysis limitation triggers
+semantic review rather than proving the command unauthorized. The final Guard outcome retains an
+optional `reviewer_decision` separately from its static trigger and any human fallback.
+Production: `JUDGE_POLICY` in [prompt.ts](../../packages/judge/src/prompt.ts), `createCommandReview`
+in [command-review.ts](../../packages/kernel/src/guard/command-review.ts), and `createAgentTools`
+in [core.ts](../../packages/tools/src/core.ts).
+Test: [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts) and
+[command-review.test.ts](../../packages/kernel/tests/unit/command-review.test.ts).
+
 The command guard decides, per tool call, whether the call runs silently, is refused, or is put to
 somebody (a person or an LLM) first. It is split across three packages that never see each other's
 policy:

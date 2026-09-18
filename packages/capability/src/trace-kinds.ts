@@ -149,6 +149,7 @@ export interface ToolCallDetail {
 
 /** Persisted final command-review fact attached to its terminal tool call. */
 export interface CommandGuardReview {
+  reviewer_decision?: "allow" | "deny" | "unsure" | "failed";
   effect_id?: string;
   relation?: "direct" | "bounded_prerequisite" | "none";
   failure_kind?:

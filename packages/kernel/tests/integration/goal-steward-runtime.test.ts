@@ -9,6 +9,12 @@ describe("Goal Steward through the native host and SDK", () => {
   it("observes completed dispatch and delivers an internal correction without human steering", async () => {
     const f = await createGoalFileHostFixture({ plansMode: "off" });
     try {
+      await writeFile(join(f.root, "global", "AGENTS.md"), "Global fallback: verify results.");
+      await writeFile(join(f.root, "global", "CLARVIS.md"), "Global policy: verify results.");
+      await writeFile(
+        join(f.workspaceRoot, "AGENTS.md"),
+        "Workspace policy: return the concrete answer.",
+      );
       await writeFile(join(f.workspaceRoot, "answer.txt"), "The answer is 42.\n");
       f.setResponder(async () => {
         if (f.requests.length === 1)
@@ -18,6 +24,10 @@ describe("Goal Steward through the native host and SDK", () => {
             commentary: "Inspecting the answer",
           };
         if (f.requests.length === 2) {
+          await writeFile(
+            join(f.workspaceRoot, "AGENTS.md"),
+            "Later policy must wait for a new work run.",
+          );
           await f.until(
             async () =>
               (await f.client.goals.get("conversation")).state.current?.steward?.status ===
@@ -100,6 +110,22 @@ describe("Goal Steward through the native host and SDK", () => {
           ?.some((event) => event.type === "user_steering"),
       ).toBe(false);
       expect(f.stewardRequests).toHaveLength(2);
+      for (const request of f.stewardRequests) {
+        const configuration = request.messages.filter((message) =>
+          String(message.content).startsWith('{"goal_steward_configuration_v1":'),
+        );
+        expect(configuration).toHaveLength(1);
+        expect(configuration[0]!.content).toContain("Global policy: verify results.");
+        expect(configuration[0]!.content).toContain(
+          "Workspace policy: return the concrete answer.",
+        );
+        expect(configuration[0]!.content).not.toContain("Global fallback");
+        expect(configuration[0]!.content).not.toContain("Later policy");
+        expect(configuration[0]!.content).not.toContain(f.root);
+      }
+      expect(JSON.stringify(f.requests[0]!.messages)).toContain(
+        "Workspace policy: return the concrete answer.",
+      );
       expect(
         f.stewardRequests[1]!.messages.slice(0, f.stewardRequests[0]!.messages.length),
       ).toEqual(f.stewardRequests[0]!.messages);
@@ -349,110 +375,133 @@ describe("Goal Steward through the native host and SDK", () => {
   });
 });
 
-it("a Steward new-run recommendation uses one accepted checkpoint and continues its private prefix", async () => {
-  const f = await createGoalFileHostFixture({ plansMode: "off" });
-  try {
-    await writeFile(join(f.workspaceRoot, "stage.txt"), "stage prepared\n");
-    f.setResponder(async () => {
-      switch (f.requests.length) {
-        case 1:
-          return {
-            name: "read_file",
-            arguments: { path: "stage.txt" },
-            commentary: "The first stage is prepared",
-          };
-        case 2:
-          await f.until(
-            async () =>
-              (await f.client.goals.get("conversation")).state.current?.steward?.status ===
-              "new_run_recommended",
-          );
-          return { name: "get_goal", arguments: {} };
-        case 3:
-          return {
-            name: "update_goal",
-            arguments: {
-              update: {
-                action: "checkpoint",
-                summary: "Stage inspected",
-                next_step: "Return the final answer",
+it.each([false, true])(
+  "a Steward checkpoint preserves its prefix unless captured instructions change (changed=%s)",
+  async (changed) => {
+    const f = await createGoalFileHostFixture({ plansMode: "off" });
+    try {
+      await writeFile(join(f.workspaceRoot, "CLARVIS.md"), "Original persistent policy");
+      await writeFile(join(f.workspaceRoot, "stage.txt"), "stage prepared\n");
+      f.setResponder(async () => {
+        switch (f.requests.length) {
+          case 1:
+            return {
+              name: "read_file",
+              arguments: { path: "stage.txt" },
+              commentary: "The first stage is prepared",
+            };
+          case 2:
+            await f.until(
+              async () =>
+                (await f.client.goals.get("conversation")).state.current?.steward?.status ===
+                "new_run_recommended",
+            );
+            return { name: "get_goal", arguments: {} };
+          case 3:
+            if (changed)
+              await writeFile(join(f.workspaceRoot, "CLARVIS.md"), "Updated persistent policy");
+            return {
+              name: "update_goal",
+              arguments: {
+                update: {
+                  action: "checkpoint",
+                  summary: "Stage inspected",
+                  next_step: "Return the final answer",
+                },
               },
-            },
-          };
-        case 4:
-          return {
-            name: "update_goal",
-            arguments: {
-              update: {
-                action: "candidate",
-                summary: "Answer prepared",
-                assessments: [
-                  {
-                    criterion_id: "objective",
-                    kind: "qualitative",
-                    justification: "The final answer is available",
-                  },
-                ],
+            };
+          case 4:
+            return {
+              name: "update_goal",
+              arguments: {
+                update: {
+                  action: "candidate",
+                  summary: "Answer prepared",
+                  assessments: [
+                    {
+                      criterion_id: "objective",
+                      kind: "qualitative",
+                      justification: "The final answer is available",
+                    },
+                  ],
+                },
               },
-            },
-          };
-        default:
-          return { text: "The final answer" };
-      }
-    });
-    f.setStewardResponder(async (request) => {
-      const frame = JSON.parse(
-        String(request.messages.findLast((message) => message.role === "user")!.content),
+            };
+          default:
+            return { text: "The final answer" };
+        }
+      });
+      f.setStewardResponder(async (request) => {
+        const frame = JSON.parse(
+          String(request.messages.findLast((message) => message.role === "user")!.content),
+        );
+        return {
+          name: "submit_result",
+          arguments:
+            frame.goal_header.mode === "observation"
+              ? {
+                  decision: "new_run",
+                  summary: "Stage ready",
+                  next_step: "Return the final answer",
+                }
+              : {
+                  decision: "completion",
+                  verdict: "achieved",
+                  summary: "Delivered",
+                  assessments: ["definition", "objective"].map((scope) => ({
+                    scope,
+                    verdict: "satisfied",
+                    rationale: "Answer observed",
+                    evidence_ids: [],
+                    inspected_paths: [],
+                  })),
+                },
+        };
+      });
+      await f.client.goals.control({
+        session_id: "conversation",
+        expected_revision: 0,
+        operation_id: "create",
+        action: {
+          kind: "create",
+          objective: "Inspect the stage and return the final answer",
+          limits: { max_net_tokens: 20000 },
+        },
+      });
+      await f.until(
+        async () => (await f.client.goals.get("conversation")).state.current?.status === "complete",
       );
-      return {
-        name: "submit_result",
-        arguments:
-          frame.goal_header.mode === "observation"
-            ? { decision: "new_run", summary: "Stage ready", next_step: "Return the final answer" }
-            : {
-                decision: "completion",
-                verdict: "achieved",
-                summary: "Delivered",
-                assessments: ["definition", "objective"].map((scope) => ({
-                  scope,
-                  verdict: "satisfied",
-                  rationale: "Answer observed",
-                  evidence_ids: [],
-                  inspected_paths: [],
-                })),
-              },
-      };
-    });
-    await f.client.goals.control({
-      session_id: "conversation",
-      expected_revision: 0,
-      operation_id: "create",
-      action: {
-        kind: "create",
-        objective: "Inspect the stage and return the final answer",
-        limits: { max_net_tokens: 20000 },
-      },
-    });
-    await f.until(
-      async () => (await f.client.goals.get("conversation")).state.current?.status === "complete",
-    );
-    await f.until(() => f.host.stats().runs === 0);
-    const goal = (await f.client.goals.get("conversation")).state.current!;
-    expect(goal.runs).toHaveLength(2);
-    expect(goal.auto_continuations).toBe(1);
-    expect(goal.runs[0]!.checkpoint?.next_step).toBe("Return the final answer");
-    expect(JSON.stringify(f.requests[2]!.messages)).toContain(
-      "[goal steward] Request update_goal checkpoint",
-    );
-    expect(f.stewardRequests).toHaveLength(2);
-    expect(f.stewardRequests[1]!.messages.slice(0, f.stewardRequests[0]!.messages.length)).toEqual(
-      f.stewardRequests[0]!.messages,
-    );
-    expect(f.stewardRequests[1]!.prompt_cache_key).toBe(f.stewardRequests[0]!.prompt_cache_key);
-  } finally {
-    await f.close();
-  }
-});
+      await f.until(() => f.host.stats().runs === 0);
+      const goal = (await f.client.goals.get("conversation")).state.current!;
+      expect(goal.runs).toHaveLength(2);
+      expect(goal.auto_continuations).toBe(1);
+      expect(goal.runs[0]!.checkpoint?.next_step).toBe("Return the final answer");
+      expect(JSON.stringify(f.requests[2]!.messages)).toContain(
+        "[goal steward] Request update_goal checkpoint",
+      );
+      expect(f.stewardRequests).toHaveLength(2);
+      const [first, second] = f.stewardRequests;
+      expect(first!.messages[1]!.content).toContain("Original persistent policy");
+      expect(second!.messages[0]).toEqual(first!.messages[0]);
+      expect(second!.tools).toEqual(first!.tools);
+      if (changed) {
+        expect(second!.messages[1]!.content).toContain("Updated persistent policy");
+        expect(JSON.stringify(second!.messages)).not.toContain("Original persistent policy");
+        expect(second!.messages.at(-1)!.content).toContain('"definition":');
+      } else {
+        expect(second!.messages.slice(0, first!.messages.length)).toEqual(first!.messages);
+        expect(
+          second!.messages.filter((message) =>
+            String(message.content).startsWith('{"goal_steward_configuration_v1":'),
+          ),
+        ).toHaveLength(1);
+      }
+      expect(f.stewardRequests[1]!.prompt_cache_key).toBe(f.stewardRequests[0]!.prompt_cache_key);
+    } finally {
+      await f.close();
+    }
+  },
+);
 
 it("gives the read-only Steward actual command receipts instead of only catalog labels", async () => {
   const f = await createGoalFileHostFixture({ plansMode: "off" });

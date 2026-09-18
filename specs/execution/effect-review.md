@@ -2,8 +2,12 @@
 
 ## Trust boundaries
 
-Workspace instructions and reviewer guidance are data. Authenticated start/continue text, applied
-operator steers and accepted entry-agent `ask_user` answers are evidence. For `ask_user`, the
+Host-captured global and workspace context documents are persistent operator instructions.
+Within each scope, `CLARVIS.md` wins over the fallback `AGENTS.md`; workspace instructions refine
+global instructions within their scope, and direct operator restrictions take precedence.
+Reviewer guidance, other files and model-authored text cannot create authority.
+Authenticated start/continue text, applied operator steers and accepted entry-agent `ask_user`
+answers are evidence. For `ask_user`, the
 model-authored question is retained only as untrusted context for interpreting the authenticated
 answer. The reviewer interprets that evidence; the host resolves
 effects and targets and validates every grant. A descriptor, not model prose, defines the maximum
@@ -18,6 +22,25 @@ and `validateAuthorityEnvelope` in
 Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
 
 ## Evidence and lifetime
+
+The settings assembler captures the same context records used by the work agent through a private
+request-identity association. Preparation transfers that association when cloning the request;
+ordinary runs and workflow managers admit it only alongside a host-issued authority seed. Public
+JSON cannot supply these instructions. Each record includes scope, source basename, content and
+a SHA-256 content identity. Instruction IDs may support validated objectives and grants without
+bypassing descriptor ceilings, inherited ceilings, exclusions or human-only effects. Instructions
+are sanitized in the ledger and retained in its checkpoint state. Changes between continuations
+invalidate compiled grants and cached refusals; edits during a run do not replace its snapshot.
+Root context documents follow the existing context reader, not executable-workspace trust approval.
+
+Production: `captureRunInstructions`, `transferRunInstructions` and `seedRunInstructions` in
+[instruction-snapshot.ts](../../packages/kernel/src/runs/instruction-snapshot.ts),
+`createOperatorAuthorityRuntime` in
+[operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts), and
+`validateAuthorityEnvelope` in
+[authority-validation.ts](../../packages/kernel/src/guard/authority-validation.ts).
+Test: [instruction-snapshot.test.ts](../../packages/kernel/tests/unit/instruction-snapshot.test.ts)
+and [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts).
 
 `RunService.startReserved` captures only original admitted user text before request assembly adds
 mention and skill seeds. Evidence, controller binding and epoch are separate `ExecuteRunArgs`

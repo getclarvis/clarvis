@@ -15,6 +15,7 @@ const attributed = {
 const argumentsRecord = z.record(z.string(), z.unknown());
 const commandGuardReview = z
   .object({
+    reviewer_decision: z.enum(["allow", "deny", "unsure", "failed"]).optional(),
     mode: z.enum(["on", "auto"]),
     outcome: z.enum(["allowed", "denied"]),
     answerer: z.enum(["policy", "human", "judge", "session_allowlist", "unavailable"]),

@@ -154,17 +154,30 @@ capability. Elicitation, steering, tool interruption, host metadata and authorit
 copied. The factory supplies empty connection machinery and the projected internal trace store.
 
 The sole system block is fixed versioned policy. Canonical object-key ordering applies within every
-user block and arrays retain their semantic order. The user sequence is fixed configuration,
+user block and arrays retain their semantic order. Fixed configuration includes host-captured
+global and workspace persistent instructions, with source and content identity. The user sequence is fixed configuration,
 dedicated Goal slot, dedicated Plan slot, one chronological block per authenticated operator
 evidence entry, current authority fence, then the volatile case. Goal and Plan slots contain only
 their bounded host-attested semantic projections; the work run's operational Goal reminder and Plan
 CAS/task-status header are excluded. Empty slots serialize as `null`, so their positions never move.
 New operator input extends the stable evidence prefix instead of rewriting preceding entries. The
-authority fence excludes evidence and review context because those already occupy dedicated blocks.
+authority fence excludes evidence, persistent instructions and review context because those already
+occupy dedicated blocks. Instruction changes invalidate from the configuration slot.
 Non-JSON/cyclic input is rejected. The private provider adapter validates the exact sequence and
 preserves engine breakpoints while adding the end of the stable evidence prefix. Compile's tool
 result supersedes authority in the private transcript without rewriting that prefix. Independent
 cases share no transcript.
+
+Policy treats captured instructions as operator intent, with direct operator messages taking
+precedence. Routine necessary inspection, local validation and bounded prerequisites do not need
+the operator to repeat each command. An allowlist miss or static dynamic-expansion limitation is
+a review trigger, not evidence of prohibition. The reviewer evaluates every segment and side effect;
+`unsure` is reserved for material missing facts. This does not widen publication authorization,
+descriptor ceilings, human-only boundaries or the configured fallback.
+
+Production: `JUDGE_POLICY` and `judgePrompt` in [prompt.ts](../../packages/judge/src/prompt.ts).
+Test: [execution-boundaries.test.ts](../../packages/judge/tests/unit/execution-boundaries.test.ts)
+and [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts).
 
 Per-attempt output caps are 1024 for command and 2048 for effects. The aggregate output budget is
 cap times configured attempts times the closed stage count. Its reservations cap each retry group

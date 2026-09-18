@@ -664,7 +664,7 @@ it("routes parameterized, environment-prefixed and dynamic asks to Auto without 
     expect(decision.verdict).toBe("ask");
     expect(
       await resolved!.elicit!({ tool: "shell", args: call.args, shell: call.shell, ...decision }),
-    ).toEqual({ allowed: true, answerer: "judge" });
+    ).toEqual({ allowed: true, answerer: "judge", review: { reviewer_decision: "allow" } });
   }
   expect(reviewed).toEqual(commands);
   expect(contexts[0]).toEqual([
@@ -738,7 +738,7 @@ it("keeps the call-local Auto outcome while effect review runs in shadow", async
   expect(decision.verdict).toBe("ask");
   expect(
     await resolved!.elicit!({ tool: "shell", args: call.args, shell: call.shell, ...decision }),
-  ).toEqual({ allowed: true, answerer: "judge" });
+  ).toEqual({ allowed: true, answerer: "judge", review: { reviewer_decision: "allow" } });
   expect(reviewed).toBe(1);
   expect(prompts).toBe(0);
 });

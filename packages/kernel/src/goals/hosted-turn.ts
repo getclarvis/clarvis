@@ -4,6 +4,7 @@ import {
   type LLMProvider,
   type Logger,
   type OperatorReviewContext,
+  type OperatorInstructions,
   type TraceEvent,
 } from "@clarvis/capability";
 import {
@@ -22,6 +23,7 @@ import { generateExecutionId } from "@clarvis/trace";
 import type { HostedExecutionBinding, HostedPreparationContext } from "../hosting/sessions.ts";
 import { kernelError } from "../core/errors.ts";
 import { protoMessagesToEngine } from "../runs/map-message.ts";
+import { readRunInstructions } from "../runs/instruction-snapshot.ts";
 import type { GoalEvidenceSource } from "./evidence.ts";
 import { createGoalRuntimePort } from "./runtime-port.ts";
 import { goalStateFromSession, goalStateToDto } from "./session-state.ts";
@@ -114,7 +116,11 @@ export async function prepareHostedGoalTurn(options: {
   priceFor?(model: string): ModelCost | undefined;
   onChange?(sessionId: string): void;
   steward?: {
-    runtime(workTokenLimit: number, ttl: "5m" | "1h"): StewardExecutionRuntime;
+    runtime(
+      workTokenLimit: number,
+      ttl: "5m" | "1h",
+      instructions: readonly OperatorInstructions[],
+    ): StewardExecutionRuntime;
     readTrace: StewardCoordinatorOptions["readTrace"];
     readFile: StewardCoordinatorOptions["readFile"];
     settle: StewardCoordinatorOptions["settle"];
@@ -286,6 +292,7 @@ export async function prepareHostedGoalTurn(options: {
       stewardRuntime ??= options.steward?.runtime(
         bounded.budget.total_token_limit!,
         bounded.prompt_cache_ttl ?? "5m",
+        readRunInstructions(request),
       );
       return bounded;
     },

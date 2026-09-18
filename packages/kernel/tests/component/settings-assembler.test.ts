@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSettingsRunAssembler } from "../../src/runs/settings-assembler.ts";
+import { seedRunInstructions } from "../../src/runs/instruction-snapshot.ts";
 import { createConfigService } from "../../src/config/config-service.ts";
 import { createFileConfigStore } from "../../src/config/file-config-store.ts";
 import { createMemoryConfigStore } from "../../src/config/memory-config-store.ts";
@@ -46,6 +47,34 @@ async function assemblerWith(
 }
 
 describe("settings run assembler", () => {
+  it("shares exact global and workspace contexts with Judge using per-scope filename precedence", () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "judge-contexts-"));
+    const globalDir = join(workspaceRoot, "global");
+    const store = createFileConfigStore({ workspaceRoot, globalDir });
+    store.writeSettings("global", { default_model: "openrouter/m" });
+    store.writeAgent("global", "lead", { frontmatter: {}, body: "Lead" });
+    for (const root of [globalDir, workspaceRoot])
+      writeFileSync(join(root, "AGENTS.md"), `fallback ${root}`);
+    const assemble = createSettingsRunAssembler(store);
+    const seed = {
+      binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+      evidence: [],
+    };
+    for (const preferred of [false, true]) {
+      if (preferred)
+        for (const root of [globalDir, workspaceRoot])
+          writeFileSync(join(root, "CLARVIS.md"), `preferred ${root}`);
+      const body = assemble({ agent: "lead", execution_id: "run", messages: [] }) as RawBody;
+      const instructions = seedRunInstructions(seed, body)!.instructions!;
+      expect(instructions.map((entry) => entry.scope)).toEqual(["global", "workspace"]);
+      expect(instructions.map((entry) => entry.source)).toEqual(
+        Array(2).fill(preferred ? "CLARVIS.md" : "AGENTS.md"),
+      );
+      for (const instruction of instructions)
+        expect(body.profiles[0]!.base_prompt).toContain(instruction.content);
+      if (preferred) expect(body.profiles[0]!.base_prompt).not.toContain("fallback");
+    }
+  });
   it("projects catalog targets without provider transports and refuses missing exact pairs", async () => {
     const modelExecutionResolver: NonNullable<SettingsAssemblerOptions["modelExecutionResolver"]> =
       {

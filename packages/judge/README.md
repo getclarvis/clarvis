@@ -4,6 +4,10 @@ Owns semantic reviewer configuration and isolated command/effect execution. The 
 registers its settings before parsing host configuration and requests; the generic Loop validates
 its declared model references without knowing the reviewer domain.
 
+Judge receives the host-captured global and workspace `CLARVIS.md` (fallback `AGENTS.md` per scope)
+as persistent operator instructions. Direct operator restrictions take precedence. Routine necessary
+commands do not require repeated consent merely because static analysis deferred their review.
+
 The owning contract is [Judge](../../specs/capabilities/judge.md). Host authority, effect validation
 and final consent remain governed by [effect review](../../specs/execution/effect-review.md) and
 [command guard](../../specs/execution/command-guard.md).

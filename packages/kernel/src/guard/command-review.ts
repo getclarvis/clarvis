@@ -12,7 +12,10 @@ import { callFacts } from "./command-facts.ts";
 export interface JudgeElicitAnswer {
   allowed: boolean;
   answerer: "judge" | "human";
-  review?: { failure_kind: JudgeFailureKind };
+  review?: {
+    failure_kind?: JudgeFailureKind;
+    reviewer_decision?: "allow" | "deny" | "unsure" | "failed";
+  };
 }
 
 export type JudgeElicit = (req: ElicitRequest) => Promise<JudgeElicitAnswer>;
@@ -56,6 +59,7 @@ export function createCommandReview(
       JSON.stringify({
         authority: reviewerAuthoritySnapshot(state),
         operator_evidence: state?.evidence ?? [],
+        operator_instructions: state?.instructions ?? [],
         review_context: context.payload,
         review_context_revision: context.live_revision,
         guidance: config.guidance,
@@ -93,17 +97,29 @@ export function createCommandReview(
           return {
             allowed: false,
             answerer: "judge",
-            review: { failure_kind: result.failureKind },
+            review: { failure_kind: result.failureKind, reviewer_decision: "failed" },
           };
-        return fallback(req, "The automatic command reviewer did not return a valid decision.");
+        const answer = await fallback(
+          req,
+          "The automatic command reviewer did not return a valid decision.",
+        );
+        return {
+          ...answer,
+          review: { failure_kind: result.failureKind, reviewer_decision: "failed" },
+        };
       }
       if (result.receipt.decision !== "unsure")
-        return { allowed: result.receipt.decision === "allow", answerer: "judge" };
-      return fallback(
+        return {
+          allowed: result.receipt.decision === "allow",
+          answerer: "judge",
+          review: { reviewer_decision: result.receipt.decision },
+        };
+      const answer = await fallback(
         req,
         "The automatic command reviewer was unsure" +
           (result.receipt.reason === undefined ? "." : ` (${result.receipt.reason}).`),
       );
+      return { ...answer, review: { reviewer_decision: "unsure" } };
     })();
     pending.set(key, operation);
     void operation.then(

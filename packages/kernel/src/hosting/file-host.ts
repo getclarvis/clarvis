@@ -238,7 +238,8 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           context,
           repository,
           steward: {
-            runtime: (limit, ttl) => kernel.goalStewardRuntime(limit, ttl, owner),
+            runtime: (limit, ttl, instructions) =>
+              kernel.goalStewardRuntime(limit, ttl, owner, instructions),
             readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
             readFile: (path) => kernel.files.readFile(path),
             async settle(mutate, usage, accounting) {

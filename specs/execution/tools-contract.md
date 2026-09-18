@@ -29,6 +29,13 @@ either name today gets the same `not_found` refusal as a typo
 
 ## 2. Surface
 
+`GuardReview.reviewer_decision` optionally preserves the semantic `allow`, `deny`, `unsure` or
+`failed` result separately from the final dispatch outcome. A denied reviewed command labels its
+static trigger separately; the static reason is not presented as the reviewer's rationale.
+Production: `createAgentTools` in [core.ts](../../packages/tools/src/core.ts) and `GuardReview`
+in [types.ts](../../packages/tools/src/guard/types.ts).
+Test: [guard-dispatch.test.ts](../../packages/tools/tests/integration/guard-dispatch.test.ts).
+
 The guard surface exports `ShellAnalysisIssue`, `ShellAnalysisIssueKind`, `ShellAnalysisImpact`
 and `GuardReviewability` through both root and guard entries. Causes describe syntax, not authority;
 the host owns effect attestation and approval. Production:

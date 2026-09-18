@@ -87,6 +87,7 @@ test("breakpoint selection validates exact framing and preserves engine breakpoi
 test("new operator evidence extends the stable prefix without moving Goal or Plan", () => {
   const snapshot = {
     authority: { revision: 1 },
+    operator_instructions: [{ id: "global", scope: "global", content: "Validate changes" }],
     operator_evidence: [{ id: "first", text: "implement the plan" }],
     review_context: [
       { kind: "goal", definition: { objective: "deliver" } },
@@ -107,4 +108,9 @@ test("new operator evidence extends the stable prefix without moving Goal or Pla
   );
   expect(second.messages[first.stableCount]).toContain('"id":"second"');
   expect(second.stableCount).toBe(first.stableCount + 1);
+  const changed = judgePrompt({ ...snapshot, operator_instructions: [] }, { command: "npm test" });
+  expect(changed.messages[0]).not.toBe(first.messages[0]);
+  expect(changed.messages.slice(1, first.stableCount)).toEqual(
+    first.messages.slice(1, first.stableCount),
+  );
 });

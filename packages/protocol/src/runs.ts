@@ -324,6 +324,7 @@ interface Attributed {
 
 /** Durable final decision made by the command guard for one tool call. */
 export interface CommandGuardReview {
+  reviewer_decision?: "allow" | "deny" | "unsure" | "failed";
   effect_id?: string;
   relation?: "direct" | "bounded_prerequisite" | "none";
   failure_kind?:

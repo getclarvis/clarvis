@@ -25,6 +25,7 @@ export function reviewerAuthoritySnapshot(state: OperatorAuthorityState | undefi
   const {
     binding: _binding,
     evidence: _evidence,
+    instructions: _instructions,
     review_context: _reviewContext,
     ...authority
   } = state;

@@ -231,7 +231,14 @@ async function applyGuard(
             ) === true,
         }
       : {
-          denied: errorResult(new ToolError("denied", `command review did not approve: ${reason}`)),
+          denied: errorResult(
+            new ToolError(
+              "denied",
+              finalReview?.reviewer_decision === undefined
+                ? `command review did not approve: ${reason}`
+                : `command review did not approve: reviewer ${finalReview.reviewer_decision}; static review trigger: ${reason}`,
+            ),
+          ),
           review: finalReview,
         };
   } catch (err) {

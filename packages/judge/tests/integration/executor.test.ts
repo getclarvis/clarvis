@@ -225,7 +225,7 @@ test.each(["command", "effects"] as const)(
     const env = loadEnv({ CLARVIS_LOG_LEVEL: "silent" });
     const infrastructure = createTestRunInfrastructure({ env, workspaceRoot: root });
     const base = new MockLLM({
-      script: Array.from({ length: 3 }, (_, index) =>
+      script: Array.from({ length: 4 }, (_, index) =>
         answer(
           kind === "command" ? command : { ...decide, transition_token: `case-token-${index}` },
         ),
@@ -233,7 +233,7 @@ test.each(["command", "effects"] as const)(
     });
     const calls: LLMCallParams[] = [];
     try {
-      for (let index = 0; index < 3; index++)
+      for (let index = 0; index < 4; index++)
         await executeJudge({
           owner: "owner",
           executionId: `child-${index}`,
@@ -251,10 +251,20 @@ test.each(["command", "effects"] as const)(
                   kind: "effects",
                   transition: { ...transition, transition_token: `case-token-${index}` },
                 },
-          snapshot:
-            index === 0
-              ? { authority: { revision: 1 }, guidance: "stable" }
-              : { guidance: "stable", authority: { revision: index === 1 ? 1 : 2 } },
+          snapshot: {
+            authority: { revision: index < 2 ? 1 : 2 },
+            guidance: "stable",
+            operator_instructions:
+              index === 0
+                ? [{ scope: "global", source: "AGENTS.md", content: "Validate changes" }]
+                : [
+                    {
+                      content: index === 3 ? "Changed instructions" : "Validate changes",
+                      source: "AGENTS.md",
+                      scope: "global",
+                    },
+                  ],
+          },
           currentCase: { command: `case-${index}` },
           createServices: () => ({
             ...infrastructure,
@@ -269,7 +279,16 @@ test.each(["command", "effects"] as const)(
         });
       expect(calls[0]!.messages.slice(0, 4)).toEqual(calls[1]!.messages.slice(0, 4));
       expect(calls[1]!.messages[4]).not.toEqual(calls[2]!.messages[4]);
+      expect(calls[2]!.messages.slice(0, 4)).toEqual(calls[0]!.messages.slice(0, 4));
+      expect(calls[3]!.messages[0]).toEqual(calls[0]!.messages[0]);
+      expect(calls[3]!.messages[1]).not.toEqual(calls[0]!.messages[1]);
+      expect(calls[3]!.messages[1]!.content).toContain("Changed instructions");
+      expect(calls[0]!.promptCacheKey).toBe("parent_judge");
       for (const [index, call] of calls.entries()) {
+        expect(call.tools).toEqual(calls[0]!.tools);
+        expect(call.cacheBreakpoints).toEqual(calls[0]!.cacheBreakpoints);
+        expect(call.promptCacheKey).toBe(calls[0]!.promptCacheKey);
+        expect(JSON.stringify(call.messages)).not.toContain(`child-${index}`);
         expect(call.messages).toHaveLength(6);
         expect(call.promptCacheTtl).toBe("5m");
         expect(JSON.stringify(call.messages[5])).toContain(`case-${index}`);

@@ -149,9 +149,9 @@ test("Goal uses the same compact sidebar pattern and opens its complete screen f
     const out = t.captureCharFrame();
     const spans = t.captureSpans();
     expect(out).toContain("Goal");
-    expect(out).toContain("Running · 0 stages · [^o] full goal");
+    expect(out).toContain("[Ctrl+X O] full goal");
     expect(out.replace(/\s+/gu, " ")).toContain("Ship the observable result");
-    expect(out).toContain("[^o] full goal");
+    expect(out).toContain("[Ctrl+X O] full goal");
     expect(fgOf(spans, "Ship the observable result")).toBe(tokens.accent2.toLowerCase());
     expect(fgOf(spans, "Running")).toBe(tokens.add.toLowerCase());
     const goalRow = out.split("\n").findIndex((row) => row.includes("Goal"));
@@ -613,7 +613,7 @@ test("plan tasks render compactly in status priority order", async () => {
   expect(frame).not.toContain("Exit");
   expect(frame).not.toContain("Checks pass");
   expect(frame).not.toContain("Last result");
-  expect(frame).toContain("[^p]");
+  expect(frame).toContain("[Ctrl+X P]");
   expect(fgOf(spans, "Hierarchy plan")).toBe(tokens.accent2.toLowerCase());
   expect(rgbToHex(activeTitle!.bg).toLowerCase()).toBe(selectionBg().toLowerCase());
   t.renderer.destroy();
@@ -638,11 +638,8 @@ test("plan section keeps the full task list visible without review detail", asyn
   });
   const rows = await frame(a, 44);
   const joined = rows.join(" ");
-  expect(
-    rows.some(
-      (r) => r.includes("Running") && r.includes("2/3 completed") && r.includes("[^p] full plan"),
-    ),
-  ).toBe(true);
+  expect(joined).toContain("[Ctrl+X P] full plan");
+  expect(rows.some((r) => r.includes("Running") && r.includes("2/3 completed"))).toBe(true);
   expect(joined).toContain("Init the repo");
   expect(joined).toContain("Implement the");
   expect(joined).not.toContain("review: approved");
@@ -691,7 +688,7 @@ test("a long plan scrolls the current task into view and keeps full-plan navigat
   expect(joined).toContain("Plan task 19");
   expect(joined).not.toContain("The focused task is visible");
   expect(joined).not.toContain("Exit");
-  expect(joined).toContain("[^p]");
+  expect(joined).toContain("[Ctrl+X P]");
 });
 
 test("a completed plan does not leave its final task looking active", async () => {
@@ -728,7 +725,9 @@ test("an active projection with every task done renders as completed without an 
   });
   const rows = await frame(a, 44);
   const joined = rows.join("\n");
-  expect(joined.replace(/[│\s]+/gu, " ")).toContain("Completed · 2/2 completed · [^p] full plan");
+  expect(joined.replace(/[│\s]+/gu, " ")).toContain(
+    "Completed · 2/2 completed [Ctrl+X P] full plan",
+  );
   expect(joined).not.toContain("Running");
   expect(joined).not.toContain("› Final task");
 });
@@ -781,7 +780,7 @@ test("a live plan transition updates the already-mounted sidebar task list", asy
   const updated = t.captureCharFrame();
   expect(updated).toContain("1/2 completed");
   expect(updated).toContain("Second task");
-  expect(updated).toContain("[^p]");
+  expect(updated).toContain("[Ctrl+X P]");
   expect(updated).not.toContain("Last result");
   expect(updated).not.toContain("finished");
   t.renderer.destroy();
@@ -806,7 +805,7 @@ test("a removed active plan becomes an explicit unavailable state, not stale pro
   expect(joined).toContain("Restore the plan file or create a");
   expect(joined).toContain("replacement");
   expect(joined).not.toContain("Running");
-  expect(joined).not.toContain("[^p] full plan");
+  expect(joined).not.toContain("[Ctrl+X P] full plan");
 });
 
 test("retention discard ends as completed history instead of a red unavailable warning", async () => {
@@ -964,7 +963,7 @@ test("plan section omits terminal outcome detail without hiding the next task", 
   const rows = await frame(a, 40);
   expect(rows.join("\n")).toContain("Wire it");
   expect(rows.join("\n")).toContain("Verify it");
-  expect(rows.join("\n")).toContain("[^p]");
+  expect(rows.join("\n")).toContain("[Ctrl+X P]");
   expect(rows.join("\n")).not.toContain("Last result");
   expect(rows.join("\n")).not.toContain("adapter wired");
 });

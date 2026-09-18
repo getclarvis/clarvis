@@ -129,6 +129,21 @@ export function ElicitBlock(props: {
     if (option) setValues((current) => ({ ...current, [f.name]: option.value }));
   }
 
+  function submit(merged: Record<string, string>): void {
+    if (form.mode === "url") {
+      props.onResolve(DECLINE_RESULT);
+      return;
+    }
+    const miss = missingRequired(fields, merged);
+    if (miss.length > 0) {
+      const idx = fields.findIndex((f) => f.name === miss[0]);
+      if (idx >= 0) setActive(idx);
+      props.onNotify?.(`answer required: ${miss.join(", ")}`);
+      return;
+    }
+    props.onResolve(acceptResult(fields, merged));
+  }
+
   function moveHighlight(dir: number): void {
     const f = activeField();
     if (!isChoice(f)) return;
@@ -147,23 +162,15 @@ export function ElicitBlock(props: {
   function pickDigit(n: number): void {
     const f = activeField();
     if (!isChoice(f) || n > f.options.length) return;
-    setChoice(f, n - 1);
+    const option = f.options[n - 1];
+    if (!option) return;
+    const next = { ...values(), [f.name]: option.value };
+    setValues(next);
+    submit(next);
   }
 
   function accept(): void {
-    if (form.mode === "url") {
-      props.onResolve(DECLINE_RESULT);
-      return;
-    }
-    const merged = values();
-    const miss = missingRequired(fields, merged);
-    if (miss.length > 0) {
-      const idx = fields.findIndex((f) => f.name === miss[0]);
-      if (idx >= 0) setActive(idx);
-      props.onNotify?.(`answer required: ${miss.join(", ")}`);
-      return;
-    }
-    props.onResolve(acceptResult(fields, merged));
+    submit(values());
   }
 
   createEffect(() => {
@@ -176,13 +183,14 @@ export function ElicitBlock(props: {
   });
 
   onMount(() => {
-    const choiceCommands = Array.from({ length: 9 }, (_, index) =>
+    const choiceCommands = Array.from({ length: 10 }, (_, index) =>
       uiCommand({
         id: `elicit.choice.${index + 1}`,
         title: `Choose option ${index + 1}`,
-        description: `Select answer option ${index + 1}; confirm it with Enter`,
+        description: `Choose and immediately submit answer option ${index + 1}`,
         category: "primary",
         surfaces: ["full-help"],
+        enabled: () => isChoice(activeField()) && index < activeField()!.options.length,
         run: () => pickDigit(index + 1),
       }),
     );
@@ -296,15 +304,16 @@ export function ElicitBlock(props: {
       bindings: [
         { key: "up", cmd: "elicit.choice.previous" },
         { key: "down", cmd: "elicit.choice.next" },
-        ...Array.from({ length: 9 }, (_, i) => ({
-          key: String(i + 1),
+        ...Array.from({ length: 10 }, (_, i) => ({
+          key: i === 9 ? "0" : String(i + 1),
           cmd: `elicit.choice.${i + 1}`,
         })),
         { key: "tab", cmd: "elicit.field.next" },
         { key: "shift+tab", cmd: "elicit.field.previous" },
         { key: "return", cmd: "elicit.accept" },
-        ...(isPlanReview && props.onOpenPlan ? [{ key: "ctrl+p", cmd: "elicit.plan.open" }] : []),
-        { key: "ctrl+x", cmd: "elicit.decline" },
+        ...(isPlanReview && props.onOpenPlan
+          ? [{ key: "<leader>p", cmd: "elicit.plan.open" }]
+          : []),
         { key: "escape", cmd: "elicit.cancel" },
       ],
     });
@@ -407,12 +416,12 @@ export function ElicitBlock(props: {
                     <ChoiceRows
                       choices={f.options.map((o, oi) => ({
                         value: o.value,
-                        label: oi < 9 ? `[${oi + 1}] ${o.label}` : o.label,
-                        description: oi < 9 ? "number shortcut" : "",
+                        label: oi < 10 ? `[${oi === 9 ? 0 : oi + 1}] ${o.label}` : o.label,
+                        description: oi < 10 ? "answer now" : "",
                       }))}
                       selected={() => choiceIndex(f)}
                       labelWidth={Math.max(
-                        ...f.options.map((o, index) => o.label.length + (index < 9 ? 4 : 0)),
+                        ...f.options.map((o, index) => o.label.length + (index < 10 ? 4 : 0)),
                       )}
                       base={tokens.bg}
                       onSelect={(index) => {

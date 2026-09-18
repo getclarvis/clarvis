@@ -58,37 +58,39 @@ function keyName(raw: string): string {
  * Idempotent: feeding an already-compact label back in returns it unchanged.
  */
 export function compactKey(token: string, opts: { clientPlatform?: ClientPlatform } = {}): string {
-  const t = token.trim();
+  const t = token.trim().replace(/^<leader>\s*/i, "ctrl+x ");
   if (t === "" || t.startsWith("/")) return t;
+  if (/\s/.test(t))
+    return t
+      .split(/\s+/)
+      .map((part, index) =>
+        index > 0 && /^[a-z]+$/i.test(part)
+          ? part[0]!.toUpperCase() + part.slice(1).toLowerCase()
+          : compactKey(part, opts),
+      )
+      .join(" ");
   const parts = t.split("+");
-  const rawKey = parts[parts.length - 1]!.toLowerCase();
-  const modifiedArrow = parts.length > 1 && ["up", "down", "left", "right"].includes(rawKey);
-  let key = modifiedArrow ? rawKey : keyName(parts[parts.length - 1]!);
-  let prefix = "";
-  let shift = false;
-  for (const m of parts.slice(0, -1)) {
-    const mod = m.toLowerCase();
-    if (mod === "ctrl" || mod === "control") prefix += "^";
-    else if (mod === "cmd") prefix += "cmd+";
-    else if (mod === "super") prefix += opts.clientPlatform === "macos" ? "cmd+" : "super+";
-    else if (mod === "option") prefix += opts.clientPlatform === "macos" ? "opt+" : "alt+";
-    else if (mod === "meta" || mod === "alt")
-      prefix += opts.clientPlatform === "macos" ? "opt+" : "alt+";
-    else if (mod === "shift") shift = true;
-    else prefix += mod + "+";
-  }
-  if (shift) {
-    const casedCharacter =
-      rawKey.length === 1 && key.length === 1 && rawKey.toLowerCase() !== rawKey.toUpperCase();
-    if (casedCharacter) key = key.toUpperCase();
-    else prefix = "shift+" + prefix;
-  }
-  return prefix + key;
+  const rawKey = parts.pop()!;
+  const modifiers = new Set(parts.map((part) => part.toLowerCase()));
+  const labels: string[] = [];
+  if (modifiers.has("ctrl") || modifiers.has("control")) labels.push("Ctrl");
+  if (modifiers.has("shift")) labels.push("Shift");
+  if (modifiers.has("alt") || modifiers.has("meta") || modifiers.has("option"))
+    labels.push(opts.clientPlatform === "macos" ? "Option" : "Alt");
+  if (modifiers.has("cmd") || modifiers.has("super"))
+    labels.push(modifiers.has("cmd") || opts.clientPlatform === "macos" ? "Cmd" : "Super");
+  if (modifiers.has("hyper")) labels.push("Hyper");
+  const key =
+    labels.length > 0 && ["up", "down", "left", "right"].includes(rawKey.toLowerCase())
+      ? rawKey[0]!.toUpperCase() + rawKey.slice(1).toLowerCase()
+      : keyName(rawKey);
+  labels.push(labels.length > 0 && rawKey.length === 1 ? rawKey.toUpperCase() : key);
+  return labels.join("+");
 }
 
 /** One parsed binding sequence ("ctrl+x ctrl+s") through the one formatter. */
 export function compactSequence(parts: readonly { display: string }[]): string {
-  return parts.map((p) => compactKey(p.display)).join(" ");
+  return compactKey(parts.map((p) => p.display).join(" "));
 }
 
 interface BindingLookup {
@@ -154,7 +156,7 @@ export const PROMPT_EDITING_KEYS: PromptKeyRow[] = [
   },
   { keys: ["@"], desc: "mention a workspace file (images attach)" },
   { keys: ["ctrl+a"], desc: "start of line" },
-  { keys: ["ctrl+w"], desc: "delete the previous word (without a current workflow)" },
+  { keys: ["ctrl+w"], desc: "delete the previous word" },
   { keys: ["ctrl+k", "ctrl+u"], desc: "delete to end / start of line" },
   { keys: ["ctrl+-", "ctrl+."], desc: "undo / redo" },
 ];

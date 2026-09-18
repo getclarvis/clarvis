@@ -13,11 +13,12 @@ import {
   DetailLines,
   LevelHost,
   SectionHeader,
-  SettingRow,
   StatusRow,
 } from "./view-host.tsx";
 import type { CatalogPickerSpec } from "./CatalogPicker.tsx";
 import { modelPickerSpec } from "./pick-model.ts";
+import type { SettingPresentation } from "../../ui/presentation.ts";
+import { DetailSettingRow, SettingDetail } from "../../ui/patterns/detail-view.tsx";
 
 /** Data and actions {@link MemoryConfigPanel} needs from its host. */
 export interface MemoryConfigDeps {
@@ -173,15 +174,30 @@ export function MemoryConfigPanel(host: ViewHost, deps: MemoryConfigDeps): JSX.E
     else toggleSessionMode();
   }
 
-  const spec = (): LevelSpec => ({
-    nav: {
-      count: rowCount,
-      index: sel,
-      setIndex: setSel,
-      activate: { label: draft() === null && sel() === 0 ? "create" : "edit", run: editSelected },
-    },
-    verbs: [...(draft() !== null ? [{ key: "x", label: "remove block", run: removeBlock }] : [])],
-  });
+  function openDetails(): void {
+    host.level.push(
+      settingsRows()[Math.max(0, Math.min(rowCount() - 1, sel()))]?.label ?? "Details",
+    );
+  }
+
+  const spec = (): LevelSpec =>
+    host.level.depth() === 1
+      ? { verbs: [{ key: "e", label: "edit", run: editSelected }] }
+      : {
+          nav: {
+            count: rowCount,
+            index: sel,
+            setIndex: setSel,
+            activate: {
+              label: draft() === null && sel() === 0 ? "create" : "edit",
+              run: editSelected,
+            },
+          },
+          verbs: [
+            { key: "i", label: "details", run: openDetails },
+            ...(draft() !== null ? [{ key: "x", label: "remove block", run: removeBlock }] : []),
+          ],
+        };
 
   bindLevelKeys({
     host,
@@ -211,73 +227,83 @@ export function MemoryConfigPanel(host: ViewHost, deps: MemoryConfigDeps): JSX.E
     return { text: "On — runs can read and update workspace memory", fg: tokens.add };
   }
 
+  function settingsRows(): SettingPresentation[] {
+    const rows: SettingPresentation[] = [
+      {
+        label: "Memory",
+        summary: draftChanged()
+          ? `current ${effectiveMemoryLabel()} ${glyph("arrowRight")} after save ${memoryLabel(draft())} ${glyph("separator")} next run`
+          : `${effectiveMemoryLabel()} ${glyph("separator")} from ${memorySource()} ${glyph("separator")} next run`,
+        configured: memoryLabel(saved()),
+        effective: effectiveMemoryLabel(),
+        source: memorySource(),
+        applies: "next run",
+        mutation: "staged",
+        ...(draftChanged() ? { pending: memoryLabel(draft()) } : {}),
+      },
+    ];
+    if (draft() !== null)
+      rows.push({
+        label: "Extraction model",
+        configured: saved()?.model ?? "inherit",
+        effective: effectiveModel() ?? "not configured",
+        source: effectiveMemoryBlock()?.model
+          ? memorySource()
+          : (settings.origin?.("default_model") ?? "product default"),
+        applies: "next run",
+        mutation: "staged",
+        ...(draft()!.model !== saved()?.model ? { pending: draft()!.model ?? "inherit" } : {}),
+      });
+    rows.push({
+      label: "Session memory",
+      configured: deps.memoryMode.mode(),
+      effective: deps.memoryMode.mode(),
+      source: "session",
+      applies: "now",
+      mutation: "immediate",
+    });
+    return rows;
+  }
+
   function body(): JSX.Element {
     return (
       <box flexDirection="column">
         <StatusRow label="effective" text={statusLine().text} fg={statusLine().fg} />
-        <DetailLines
-          indent
-          rows={[
-            {
-              text: "active for every run when configured (no per-agent grant)",
-              fg: tokens.muted,
-            },
-          ]}
-        />
         <SectionHeader label={`settings (${host.scope()})`} />
-        <SettingRow
-          setting={{
-            label: "Memory",
-            summary: draftChanged()
-              ? `current ${effectiveMemoryLabel()} ${glyph("arrowRight")} after save ${memoryLabel(draft())} ${glyph("separator")} next run`
-              : `${effectiveMemoryLabel()} ${glyph("separator")} from ${memorySource()} ${glyph("separator")} next run`,
-            configured: memoryLabel(saved()),
-            effective: effectiveMemoryLabel(),
-            source: memorySource(),
-            applies: "next run",
-            mutation: "staged",
-            ...(draftChanged() ? { pending: memoryLabel(draft()) } : {}),
-          }}
-          selected={sel() === 0}
-          expanded={sel() === 0}
-        />
+        <DetailSettingRow setting={settingsRows()[0]!} selected={sel() === 0} />
         <Show when={draft() !== null}>
-          <SettingRow
-            setting={{
-              label: "Extraction model",
-              configured: saved()?.model ?? "inherit",
-              effective: effectiveModel() ?? "not configured",
-              source: effectiveMemoryBlock()?.model
-                ? memorySource()
-                : (settings.origin?.("default_model") ?? "product default"),
-              applies: "next run",
-              mutation: "staged",
-              ...(draft()!.model !== saved()?.model
-                ? { pending: draft()!.model ?? "inherit" }
-                : {}),
-            }}
-            selected={sel() === 1}
-            expanded={sel() === 1}
+          <DetailSettingRow setting={settingsRows()[1]!} selected={sel() === 1} />
+        </Show>
+        <SectionHeader label="session (this client)" />
+        <DetailSettingRow
+          setting={settingsRows()[sessionBase()]!}
+          selected={sel() === sessionBase()}
+        />
+      </box>
+    );
+  }
+
+  function detailBody(): JSX.Element {
+    const index = Math.max(0, Math.min(rowCount() - 1, sel()));
+    return (
+      <SettingDetail setting={settingsRows()[index]}>
+        <Show when={index === 0}>
+          <DetailLines
+            rows={[
+              {
+                text: "Active for every run when configured; no per-agent grant.",
+                fg: tokens.muted,
+              },
+            ]}
           />
+        </Show>
+        <Show when={draft() !== null && index === 1}>
           <StatusRow
             label="model"
             text={effectiveResolves() ? "resolves" : "unresolved — choose a configured model"}
           />
         </Show>
-        <SectionHeader label="session (this client)" />
-        <SettingRow
-          setting={{
-            label: "Session memory",
-            configured: deps.memoryMode.mode(),
-            effective: deps.memoryMode.mode(),
-            source: "session",
-            applies: "now",
-            mutation: "immediate",
-          }}
-          selected={sel() === sessionBase()}
-          expanded={sel() === sessionBase()}
-        />
-      </box>
+      </SettingDetail>
     );
   }
 
@@ -286,7 +312,10 @@ export function MemoryConfigPanel(host: ViewHost, deps: MemoryConfigDeps): JSX.E
       host={host}
       editor={fe}
       picker={picker}
-      levels={[{ title: "Memory settings", body }]}
+      levels={[
+        { title: "Memory settings", body },
+        { title: "Memory settings", body: detailBody },
+      ]}
     />
   );
 }

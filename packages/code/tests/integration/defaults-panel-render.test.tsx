@@ -10,6 +10,7 @@ import type { EnvView } from "../../src/adapters/agent-files.ts";
 import { configuredModelRows } from "../../src/views/config/catalog-pick.ts";
 import type { HintTone } from "../../src/views/hint.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
+import { SettingDetail } from "../../src/ui/patterns/detail-view.tsx";
 
 const fakeKeymap = createFakeKeymap;
 
@@ -22,6 +23,32 @@ const ENV: EnvView = {
   maxGrant: "edit",
   contextWindowDefault: 128000,
 };
+
+test("setting details show pending and read-only facts without repeating an equal configured value", async () => {
+  const t = await openRender(
+    (() => (
+      <SettingDetail
+        setting={{
+          label: "Managed value",
+          configured: "locked",
+          effective: "locked",
+          pending: "new value",
+          source: "workspace policy",
+          applies: "next run",
+          mutation: "staged",
+          readOnlyReason: "managed by the workspace owner",
+        }}
+      />
+    )) as never,
+    { width: 80, height: 16 },
+  );
+  await t.renderOnce();
+  const frame = t.captureCharFrame();
+  expect(frame).not.toContain("Configured:");
+  expect(frame).toContain("Pending: new value");
+  expect(frame).toContain("managed by the workspace owner");
+  t.renderer.destroy();
+});
 
 /**
  * Shape of the provider fixtures below.
@@ -135,6 +162,86 @@ test("the selected field row carries the full-width selection band, like the pic
     spans.lines.flatMap((l) => l.spans).find((s) => s.text.includes(needle))!;
   expect(rgbToHex(cellOf("Vision model").bg).toLowerCase()).toBe(band);
   expect(rgbToHex(cellOf("When budget is exceeded").bg).toLowerCase()).not.toBe(band);
+  t.renderer.destroy();
+});
+
+test("details open separately without expanding the defaults overview", async () => {
+  const { host, deps, press } = mount();
+  const t = await openRender((() => DefaultsPanel(host, deps)) as never, {
+    width: 100,
+    height: 20,
+  });
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("Configured:");
+  press("i");
+  await t.renderOnce();
+  const detail = t.captureCharFrame();
+  expect(detail).toContain("Defaults ▸ Vision model");
+  expect(detail).toContain("Configured: inherit");
+  expect(detail).toContain("Effective: not configured");
+  expect(detail).toContain("[e] edit");
+  t.renderer.destroy();
+});
+
+test("the token-limit detail explains the host ceiling", async () => {
+  const { host, deps, press } = mount();
+  const t = await openRender((() => DefaultsPanel(host, deps)) as never, {
+    width: 100,
+    height: 20,
+  });
+  await t.renderOnce();
+  press("down");
+  press("down");
+  press("i");
+  await t.renderOnce();
+  const detail = t.captureCharFrame();
+  expect(detail).toContain("Defaults ▸ Total token limit");
+  expect(detail).toContain("Effective: 4000000");
+  expect(detail).toMatch(/host ceiling\s+5000000/);
+  t.renderer.destroy();
+});
+
+test("editing the budget outcome stages only the selected budget field", async () => {
+  const { host, controls, deps, press, writes } = mount();
+  const t = await openRender((() => DefaultsPanel(host, deps)) as never, {
+    width: 100,
+    height: 20,
+  });
+  await t.renderOnce();
+  press("down");
+  press("return");
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("budget.on_exceed");
+  press("up");
+  press("return");
+  await controls.runSave();
+  expect(writes).toEqual([
+    {
+      scope: "global",
+      patch: {
+        default_vision_model: undefined,
+        budget: { on_exceed: "stop" },
+      },
+    },
+  ]);
+  t.renderer.destroy();
+});
+
+test("editing the token limit opens the bounded numeric editor", async () => {
+  const { host, deps, press } = mount();
+  const t = await openRender((() => DefaultsPanel(host, deps)) as never, {
+    width: 100,
+    height: 20,
+  });
+  await t.renderOnce();
+  press("down");
+  press("down");
+  press("return");
+  await t.renderOnce();
+  const editor = t.captureCharFrame();
+  expect(editor).toContain("total_token_limit");
+  expect(editor).toContain("[↵] commit");
+  press("escape");
   t.renderer.destroy();
 });
 

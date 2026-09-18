@@ -104,12 +104,12 @@ Any current Goal blocks formulation until the user reviews, cancels or clears it
 visible immediately in the Lead activity line and automatically reveals a compact Goal section in
 the same activity sidebar used by Plans, parallel work and agents. The section remains after
 creation with objective, status and stage count, using the same title/status/key anatomy and lifecycle
-tones as Plan, with the `full goal` navigation label; `Ctrl+O` toggles the complete Goal view while
+tones as Plan, with the `full goal` navigation label; `Ctrl+X O` toggles the complete Goal view while
 that section is revealed. Creation never switches screens automatically. Insufficient, stale or
 failed outcomes show their one question or actionable message and never retry analysis
-automatically. From the complete Goal view, `Ctrl+O` returns to the transcript without requiring
+automatically. From the complete Goal view, `Ctrl+X O` returns to the transcript without requiring
 `Escape`. The full view uses a bounded reading column with spaced status, review and usage blocks;
-completed goals omit the internal completion reason. Transcript-wide expansion is a separate `Ctrl+K` action. `/goal edit` opens a
+completed goals omit the internal completion reason. Transcript-wide expansion is a separate `Ctrl+X K` action. `/goal edit` opens a
 deterministic form for objective, criteria, constraints, exclusions, assumptions and limits. A
 semantic edit warns that saving converts the complete definition to literal and clears normative
 source bindings; a limit-only edit preserves them. Editing a terminal goal requires confirmed
@@ -400,6 +400,10 @@ declares another model or effort. A spawned Sub-agent keeps the model and effort
 declared by its own Agent Profile, falling back to the user defaults only when it declares none.
 Settings > Defaults shows the effective host token default when no settings layer declares one; it
 does not label the run unlimited while the kernel still applies its environment fallback.
+Defaults, Memory, Sandbox and Run controls use the same stable overview/detail interaction as
+Agents: the overview keeps one compact row per setting, Enter edits, and `i` opens configured,
+effective, source and application details without expanding the list in place. Sandbox host and
+toolchain diagnostics live with the Sandbox detail, where errors remain visible and refreshable.
 Editing a shipped agent in `/settings` → agents writes a **customization**, not a copy: only the
 fields you changed reach `agents/<name>.md`, and everything else keeps following the shipped
 default. Deleting that file is offered as a reset — the shipped agent comes back. A shipped agent
@@ -568,19 +572,30 @@ lazy full-page reference containing actions available here and elsewhere, destin
 syntax, editing commands and the effective terminal path. F1 has no built-in action or reserved
 footer segment. Slash commands and configuration hubs remain the searchable routes to destinations
 and actions.
+`/diff` opens every file mutation recorded in the active Lead or selected sub-agent transcript. A
+folder tree lists all changed files and can collapse or expand directories; selecting a file shows
+all of its recorded diffs in chronological order. Narrow terminals show the tree and file detail as
+separate steps. Retained bodies are rehydrated before display instead of silently falling back to
+only the newest edit. Moving through the tree does not replace the open file until Enter confirms
+the selected row. Escape returns from file detail to the tree, then closes `/diff`; its footer omits
+the global Ctrl+C cancel/quit action like the Plan and Goal detail screens.
 
-Isolation and Guard have separate persisted controls. `Ctrl+I` opens Host/Sandbox/Docker/Podman
-isolation on every Keyboard Profile when the terminal delivers a distinct Ctrl+I event. Legacy
-terminals that encode Ctrl+I as Tab retain Tab navigation; Settings > Isolation remains available. `Ctrl+G` opens Off/Approval/Auto Guard on every
-Keyboard Profile; under Container the Guard surface reads `Not applicable` and does not overwrite
-the stored native value. `Alt+G` is the enhanced Guard accelerator.
-Transcript block shortcuts share one footer segment: `[^up / ^down] previous / next block`. On macOS, `Alt+G` renders as Option
-when the terminal delivers Option as Meta/Esc+. `Ctrl+E` expands or collapses
-the Task editor, so `Ctrl+G` has no editing behavior. Isolation, Guard and Agent pickers
-(`Ctrl+I`, `Ctrl+G`, Shift+Tab and their equivalent routes) are disabled while a run is active. Clarvis keeps the terminal's native text path
+Isolation and Guard have separate persisted controls; Memory's quick control is session-only.
+Application actions use Ctrl+X: I for Isolation, G for Guard, M for Memory, R for Run controls,
+P for Plan, O for Goal, W for Workflow, D for Diff, S for the activity Sidebar, K for block expansion, and E
+for the expanded editor. Ctrl+X Up/Down enter transcript-block focus; while a block is focused,
+plain Up/Down move between blocks and Tab returns to the composer. The activity line above the
+composer shows `Ctrl+X active · choose a key` while the prefix is pending. During a run it appears
+after the working/thinking details and interrupt hint. These defaults are identical
+on macOS, Windows and Linux: press Ctrl+X, release it, then press the second key.
+The prefix expires after two seconds; Escape clears it and retains normal back behavior. Manual overrides remain
+available in Keyboard settings. All shortcut labels spell out Ctrl and Shift instead of a caret.
+Isolation, Guard, Memory and Agent pickers are disabled while a run is active.
+Under Container, Guard reads `Not applicable` and preserves the stored native value.
+Clarvis keeps the terminal's native text path
 instead of requesting all-key escape reports, preserving dead-key and IME composition; a literal
-`ß` remains ordinary text. Both pickers are loaded on first use and retained after their first
-mount. `Ctrl+S` is the sole keyboard route for toggling the responsive activity Sidebar; it opens
+`ß` remains ordinary text. The three run-control pickers are loaded on first use and retained after their first
+mount. `Ctrl+X S` is the sole keyboard route for toggling the responsive activity Sidebar; it opens
 the first available Agents, Parallel work or Plan section when closed and closes the surface when open.
 The first live Plan, first workflow state/leader and first typed delegation each own an independent,
 once-per-execution automatic reveal intent for the responsive Plan, Parallel work and Agents
@@ -609,7 +624,7 @@ the draft. From the instant the bootstrap renderer enters raw/alternate-screen m
 lifecycle owner restores it on exit and every platform-supported catchable OpenTUI signal, then
 the platform retains the same ownership; `SIGKILL` is inherently outside this contract. Raw Ctrl+C
 stays owned through complete-keymap mount. The fatal-boot screen takes priority during that interval,
-so idle Ctrl+C exits 1 and Ctrl+C during retry remains inert. Window-local layers never claim Ctrl+C. A live builtin `shell` block shows a compact `[X]` immediately after its elapsed time. Clicking it, or focusing that block and pressing contextual `Ctrl+X`, interrupts only that invocation; the run continues. `Ctrl+X` is not a global cancel: elicitation decline and a manual protected `run.cancel = Ctrl+X` binding still win, and with no interruptible target the key is not consumed. While a workspace runtime is being replaced, the
+so idle Ctrl+C exits 1 and Ctrl+C during retry remains inert. Window-local layers never claim Ctrl+C. A live builtin `shell` block shows a compact `[X]` immediately after its elapsed time. Clicking it, or focusing that block and pressing `Ctrl+X T`, interrupts only that invocation; the run continues. `Ctrl+X` alone only starts a sequence. `Ctrl+X D` opens the same multi-file viewer as `/diff`; protected manual cancellation overrides retain precedence. While a workspace runtime is being replaced, the
 mounted screen stays visible and only unmodified Escape remains interactive; modified Escape,
 every other key and all pointer actions are consumed until replacement settles. Input callbacks already queued during renderer
 teardown are discarded at the keymap host boundary, so a final macOS terminal packet cannot dispatch
@@ -627,8 +642,12 @@ words, elapsed time, iteration counts and failure totals stay out of this summar
 
 A `workflow_review` prompt retains the `cancel`, `run` wire enum and displays `[1] run workflow`
 then `[2] do not run`, with no preselected UI answer.
-The user must deliberately select and confirm `run`; Enter on an untouched prompt cannot launch a
-workflow by enum order.
+Numbered elicitation choices submit immediately with `1–9`, and `0` selects the tenth option. Arrow
+keys only move the highlighted choice and still require Enter. Number shortcuts deactivate while a
+text or numeric field owns input. Enter on an untouched workflow prompt cannot launch a workflow by
+enum order. Command and configuration approvals always present the affirmative decision first:
+`[1] allow once`, `[2] deny`; when a session grant exists the order is `[1] allow once`, `[2] allow
+for this session`, `[3] deny`. Deny remains preselected, so untouched Enter stays fail-closed.
 
 Goal, Plan and Workflow detail screens share a 100-cell reading column, title/section styling,
 spacing and lifecycle colors. Their footers use the same lowercase action labels and group Escape
@@ -636,11 +655,10 @@ with the screen toggle as `close`; nested Workflow pages distinguish `back` from
 global cancel/quit hint is omitted consistently, while Ctrl+C retains its behavior. Workflow detail omits technical identities, refresh timestamps and
 internal execution counters while retaining tasks, progress, actionable failures and results.
 Merging live activity preserves cancellation separately from failure.
-`Ctrl+W` opens the current workflow directly and closes the entire workflow view from its tree,
-task or result page. Without a current workflow, it keeps the composer's previous-word deletion.
+`Ctrl+X W` opens the current workflow directly and closes the entire workflow view from its tree,
+task or result page. Ctrl+W remains the composer's previous-word deletion.
 
-When a current plan is available, `Ctrl+P` is the portable route to its full detail and `Alt+P`
-remains an enhanced alternative. Retained completed, failed and canceled plans stay reachable as
+When a current plan is available, `Ctrl+X P` opens its full detail. Retained completed, failed and canceled plans stay reachable as
 the latest plan; a removed plan advertises neither shortcut. A directly opened detail returns to
 the run when the same plan shortcut is pressed again or on Escape. Ctrl+C leaves the plan screen
 open and cancels the active run (or enters quit when no run is active). The sidebar separates the
@@ -1091,10 +1109,10 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   Opening the Sidebar never replaces the shortcuts or run strip below the composer. A fixed
   line inside the Sidebar names `Ctrl+S` for opening and closing it.
 - Plan activity has no lower pane between history and the composer and contributes no footer text.
-  Its complete operational view remains in the Sidebar or the `Ctrl+P` plan surface; its first live
+  Its complete operational view remains in the Sidebar or the `Ctrl+X P` plan surface; its first live
   projection may reveal the Sidebar once for that execution. The Sidebar's compact task list shows
   only each status glyph and title, prioritizes running and next work above completed and failed work,
-  omits the result-preview panel, and appends `[^p] full plan` to the progress line; assignee,
+  omits the result-preview panel, and appends `[Ctrl+X P] full plan` to the progress line; assignee,
   exit-condition and result detail remain in the full plan surface. The fixed Lead activity line reuses the
   same physical row for `thinking` and `working`, leaving it blank when idle without meaningful detail; during a run that row also owns
   elapsed time, iteration and the active `run.cancel` binding (`Ctrl+C` by default) to interrupt. Slash autocomplete replaces the whole activity
@@ -1152,7 +1170,7 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   member's error. Nonzero shell results follow the same folded presentation and keep their parsed
   `exit N` diagnosis visible.
 - A live controllable builtin shell exposes `[X]` immediately after its elapsed time without folding its row or cancelling
-  the run. The focused eligible shell also accepts contextual Ctrl+X; elicitation and a rebound
+  the run. The focused eligible shell also accepts Ctrl+X then T; elicitation and a rebound
   protected cancellation shortcut take precedence. After a click, the muted `[X]` remains stable and
   ignores repeated clicks while waiting for the authoritative tool terminal, not merely an accepted receipt. Only an explicit operator interruption in that terminal
   renders `Interrupted by operator`; scope closure or abandoned argument composition retains its
@@ -1450,8 +1468,8 @@ Docker or Podman choice connects that destination before constructing the worksp
 no fallback chip or rewrite to Sandbox. `WorkspaceClientManager` supplies the selected engine through
 a dynamic `@clarvis/kernel/local` import; native startup neither loads those adapters nor probes an engine.
 
-Settings > Isolation is the dedicated global placement screen shared with Run Controls and the quick
-picker. Docker/Podman runs native Plans, Memory, Workflows and Goals inside the Container. Skills,
+Settings > Run controls owns persisted global placement alongside the `Ctrl+X I` quick picker.
+Docker/Podman runs native Plans, Memory, Workflows and Goals inside the Container. Skills,
 MCPs, Hooks, Plugins, external Tasks and host process capabilities are unavailable; commands run
 without Command Review; workspace writes and outbound network remain enabled; Git metadata is
 read-only. Review reads `Not applicable in Container`. When idle, selecting a placement immediately
@@ -1538,3 +1556,7 @@ See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for r
 validation and separate deterministic, live-provider and installed-artifact qualification.
 
 Agent Profile frontmatter uses the closed kernel schema. Unknown keys mark a document invalid in the editor and are rejected on write and execution admission; they cannot become executor overrides.
+
+The application header and action footer wrap with terminal width. Narrow layouts retain
+configuration fields and available footer actions on additional rows; shared Ctrl+X
+hints repeat their modifier prefix on each continuation row. Help shows full key combinations.

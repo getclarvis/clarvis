@@ -77,7 +77,7 @@ test("L0 shows sections, a status legend and the read-only badge", async () => {
   expect(frame).toContain("Read-only");
   expect(frame).toContain("✓ connected   ⚠ lost   ✗ unavailable   ○ declared");
   expect(frame).toContain("[e] where to edit");
-  expect(frame).toContain("[^r] refresh");
+  expect(frame).toContain("[Ctrl+R] refresh");
   t.renderer.destroy();
 });
 

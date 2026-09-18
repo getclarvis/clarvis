@@ -67,11 +67,11 @@ test("a hub keeps its primary action across the 72-103 span, and its verbs at fu
 const PANEL: ActiveAction[] = [
   a("ui.list.activate", 90, "primary", ["↵"], "open", true),
   a("ui.list.previous", 60, "navigation", ["↑/k"], "move"),
-  a("view.scope.toggle", 58, "navigation", ["^t"], "scope"),
+  a("view.scope.toggle", 58, "navigation", ["Ctrl+T"], "scope"),
   a("ui.level.add", 55, "mutation", ["a"], "add"),
   a("ui.level.delete", 50, "mutation", ["d"], "delete"),
   a("view.escape", 40, "escape", ["esc"], "back / close", true),
-  a("run.cancel", 35, "escape", ["^c"], "cancel / quit", true),
+  a("run.cancel", 35, "escape", ["Ctrl+C"], "cancel / quit", true),
 ];
 
 test("a panel keeps its own verbs at full width", () => {

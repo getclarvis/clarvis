@@ -75,6 +75,9 @@ function fakeEffects(overrides: Partial<InteractionEffects> = {}): InteractionEf
     openReviewPicker: () => {
       calls.push("openReviewPicker");
     },
+    openMemoryPicker: () => {
+      calls.push("openMemoryPicker");
+    },
     focusNext: () => {
       calls.push("focusNext");
     },
@@ -188,33 +191,73 @@ test("the four rebindable transcript.scroll* commands resolve, page keys on ever
 });
 
 test("modified arrows stay portable — they are plain xterm, not an enhanced capability", () => {
-  expect(portable()["transcript.focusPrev"]).toBe("ctrl+up");
-  expect(portable()["transcript.focusNext"]).toBe("ctrl+down");
+  expect(portable()["transcript.focusPrev"]).toBe("<leader>up");
+  expect(portable()["transcript.focusNext"]).toBe("<leader>down");
 });
 
-test("Ctrl+O owns Goal detail while Ctrl+K owns transcript expansion", () => {
-  expect(portable()["goal.toggle"]).toBe("ctrl+o");
-  expect(portable()["transcript.toggleCollapse"]).toBe("ctrl+k");
+test("Ctrl+X O owns Goal detail while Ctrl+X K owns transcript expansion", () => {
+  expect(portable()["goal.toggle"]).toBe("<leader>o");
+  expect(portable()["transcript.toggleCollapse"]).toBe("<leader>k");
   expect(DEFAULT_BINDING_CANDIDATES["transcript.copyMode"]).toBeUndefined();
   const vital = buildVitalBindings(portable(), DEFAULT_WHEN);
   expect(find(vital, "goal.toggle")[0]?.when).toBe("overlay==none");
   expect(find(vital, "transcript.toggleCollapse")[0]?.when).toBe("overlay==none");
 });
 
-test("Ctrl+P toggles the plan; enhanced terminals also retain Alt+P", () => {
-  expect(portable()["plan.open"]).toBe("ctrl+p");
-  expect(new Set(enhanced()["plan.open"])).toEqual(new Set(["ctrl+p", "alt+p"]));
+test("Ctrl+X D opens the same transcript diff destination as /diff", async () => {
+  expect(portable()["transcript.diff"]).toBe("<leader>d");
+  expect(find(buildVitalBindings(portable(), DEFAULT_WHEN), "transcript.diff")[0]?.when).toBe(
+    "overlay==none",
+  );
+  const t = await openCoreRenderer({ width: 80, height: 24 });
+  const effects = fakeEffects();
+  const interaction = createInteraction(t.renderer, fakePlatform(), effects);
+  const off = interaction.keymap.registerLayer({
+    commands: [
+      uiCommand({
+        id: "transcript.diff",
+        title: "Diff viewer",
+        description: "Open all diffs in the active transcript",
+        category: "navigation",
+        surfaces: [],
+        run: () => effects.openDiff(),
+      }),
+    ],
+  });
+
+  press(t.renderer, "x", { ctrl: true });
+  press(t.renderer, "d");
+  await settle();
+
+  expect(effects.calls).toEqual(["openDiff"]);
+  off();
+  interaction.dispose();
+  t.renderer.destroy();
+});
+
+test("Ctrl+X P toggles the plan on every profile", () => {
+  expect(portable()["plan.open"]).toBe("<leader>p");
+  expect(new Set([enhanced()["plan.open"]])).toEqual(new Set(["<leader>p"]));
   for (const binding of find(buildVitalBindings(enhanced(), DEFAULT_WHEN), "plan.open"))
     expect(binding.when).toBe("overlay in (none, plan)");
   expect(DEFAULT_BINDING_CANDIDATES["memory.cycle"]).toBeUndefined();
   expect(DEFAULT_WHEN["memory.cycle"]).toBeUndefined();
 });
 
-test("Isolation and Guard retain Ctrl+I and Ctrl+G across profiles", () => {
-  expect(portable()["isolation.picker"]).toBe("ctrl+i");
-  expect(enhanced()["isolation.picker"]).toBe("ctrl+i");
-  expect(portable()["review.picker"]).toBe("ctrl+g");
-  expect(enhanced()["review.picker"]).toEqual(["alt+g", "ctrl+g"]);
+test("Isolation, Guard and Memory share leader sequences across profiles", () => {
+  expect(portable()["isolation.picker"]).toBe("<leader>i");
+  expect(enhanced()["isolation.picker"]).toBe("<leader>i");
+  expect(portable()["review.picker"]).toBe("<leader>g");
+  expect(enhanced()["review.picker"]).toEqual("<leader>g");
+  expect(portable()["memory.picker"]).toBe("<leader>m");
+  expect(enhanced()["memory.picker"]).toBe("<leader>m");
+  const legacy = { ...environmentFor("portable"), protocol: "legacy" as const };
+  const legacyBindings = resolvedVitalBindings("linux", legacy);
+  expect(legacyBindings["isolation.picker"]).toBe("<leader>i");
+  expect(legacyBindings["review.picker"]).toBe("<leader>g");
+  expect(legacyBindings["memory.picker"]).toBe("<leader>m");
+  const enhancedLegacy = { ...environmentFor("enhanced"), protocol: "legacy" as const };
+  expect(resolvedVitalBindings("linux", enhancedLegacy)["review.picker"]).toEqual("<leader>g");
   for (const binding of find(buildVitalBindings(enhanced(), DEFAULT_WHEN), "isolation.picker"))
     expect(binding.when).toBe("overlay==none");
 });
@@ -238,7 +281,7 @@ test("background commands are gated to overlay==none so the active window owns i
     expect(b?.when).toBe("overlay==none");
   }
   expect(find(vital, "run.cancel")[0]?.when).toBeUndefined();
-  for (const cmd of ["agent.picker", "isolation.picker", "review.picker"])
+  for (const cmd of ["agent.picker", "isolation.picker", "review.picker", "memory.picker"])
     expect(find(vital, cmd)[0]?.when).toBe("overlay==none");
   expect(find(vital, "plan.open")[0]?.when).toBe("overlay in (none, plan)");
 });
@@ -264,7 +307,9 @@ test("a pending modal keeps scrolling, suspend and cancel, and withholds the res
     "agent.picker",
     "isolation.picker",
     "review.picker",
+    "memory.picker",
     "goal.toggle",
+    "transcript.diff",
     "transcript.toggleCollapse",
     "transcript.focusPrev",
   ]) {
@@ -340,7 +385,7 @@ test("createInteraction: run.cancel — a non-empty draft does not intercept the
 test("createInteraction: run.cancel — at true idle it arms the quit gate", async () => {
   // It used to be `enabled` only with a run or a draft, so at idle it was both
   // advertised in the footer and a complete no-op — invariant 8. The quit gate
-  // is exactly the double-tap ^C path `createQuitConfirm` was written for, and
+  // is exactly the double-tap Ctrl+C path `createQuitConfirm` was written for, and
   // it notifies "press again to quit", so pressing it is never silent.
   const t = await openCoreRenderer({ width: 80, height: 24 });
   const effects = fakeEffects();
@@ -468,7 +513,7 @@ test("createInteraction: one Escape both clears an invisible pending sequence an
   t.renderer.destroy();
 });
 
-test("createInteraction: portable Ctrl+I opens isolation while Tab retains focus navigation", async () => {
+test("createInteraction: leader picker sequences dispatch while Tab retains focus navigation", async () => {
   const t = await openCoreRenderer({ width: 80, height: 24 });
   const effects = fakeEffects();
   const interaction = createInteraction(t.renderer, fakePlatform(), effects);
@@ -482,6 +527,22 @@ test("createInteraction: portable Ctrl+I opens isolation while Tab retains focus
         surfaces: [],
         run: () => effects.openIsolationPicker(),
       }),
+      uiCommand({
+        id: "review.picker",
+        title: "Guard",
+        description: "Open the Guard picker",
+        category: "navigation",
+        surfaces: [],
+        run: () => effects.openReviewPicker(),
+      }),
+      uiCommand({
+        id: "memory.picker",
+        title: "Memory",
+        description: "Open the Memory picker",
+        category: "navigation",
+        surfaces: [],
+        run: () => effects.openMemoryPicker(),
+      }),
     ],
   });
 
@@ -491,11 +552,21 @@ test("createInteraction: portable Ctrl+I opens isolation while Tab retains focus
       [interaction.keyboardEnvironmentId()]: { profile: "portable" },
     },
   });
-  press(t.renderer, "i", { ctrl: true });
+  press(t.renderer, "x", { ctrl: true });
+  press(t.renderer, "i");
+  press(t.renderer, "x", { ctrl: true });
+  press(t.renderer, "g");
+  press(t.renderer, "x", { ctrl: true });
+  press(t.renderer, "m");
   press(t.renderer, "tab");
   await settle();
 
-  expect(effects.calls).toEqual(["openIsolationPicker", "focusNext"]);
+  expect(effects.calls).toEqual([
+    "openIsolationPicker",
+    "openReviewPicker",
+    "openMemoryPicker",
+    "focusNext",
+  ]);
   off();
   interaction.dispose();
   t.renderer.destroy();
@@ -695,15 +766,18 @@ test("createInteraction: Tab, collapse and block-navigation commands each call t
   await settle();
   expect(effects.calls).toEqual(["focusNext"]);
 
-  press(t.renderer, "k", { ctrl: true });
+  press(t.renderer, "x", { ctrl: true });
+  press(t.renderer, "k");
   await settle();
   expect(effects.calls).toEqual(["focusNext", "toggleExpandAll"]);
 
-  press(t.renderer, "up", { ctrl: true });
+  press(t.renderer, "x", { ctrl: true });
+  press(t.renderer, "up");
   await settle();
   expect(effects.calls.at(-1)).toBe("focusBlock:-1");
 
-  press(t.renderer, "down", { ctrl: true });
+  press(t.renderer, "x", { ctrl: true });
+  press(t.renderer, "down");
   await settle();
   expect(effects.calls.at(-1)).toBe("focusBlock:1");
 
@@ -777,7 +851,8 @@ test("createInteraction: an active window isolates ordinary shortcuts but not Ct
   interaction.pushOverlayContext("agentPicker");
   press(t.renderer, "c", { ctrl: true });
   press(t.renderer, "s", { meta: true });
-  press(t.renderer, "p", { ctrl: true });
+  press(t.renderer, "x", { ctrl: true });
+  press(t.renderer, "p");
   press(t.renderer, "tab");
   press(t.renderer, "tab", { shift: true });
   await settle();
@@ -886,7 +961,7 @@ test("createInteraction: queued input is inert after the renderer destroys its k
   expect(effects.calls).toEqual([]);
 });
 
-test("createInteraction: Ctrl+X interrupts the focused shell when that command is enabled", async () => {
+test("createInteraction: Ctrl+X T interrupts the focused shell when that command is enabled", async () => {
   const t = await openCoreRenderer({ width: 80, height: 24 });
   const effects = fakeEffects({
     canInterruptFocusedShell: () => true,
@@ -897,6 +972,8 @@ test("createInteraction: Ctrl+X interrupts the focused shell when that command i
   });
   createInteraction(t.renderer, fakePlatform(), effects);
   press(t.renderer, "x", { ctrl: true });
+  expect(effects.calls).not.toContain("interruptFocusedShell");
+  press(t.renderer, "t");
   await settle();
   expect(effects.calls).toContain("interruptFocusedShell");
   t.renderer.destroy();

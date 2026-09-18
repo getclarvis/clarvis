@@ -486,15 +486,15 @@ Production: `WorkflowsHub` in `packages/code/src/views/config/WorkflowsHub.tsx`.
 Test: `packages/code/tests/integration/workflows-hub-render.test.tsx` (live tree, pending stage,
 direct open and narrow layouts).
 
-`workflow.current` binds Ctrl+W while a current workflow projection exists. It opens that root
-execution directly through `initialExecutionId`, without loading history. Ctrl+W closes the entire
+`workflow.current` binds Ctrl+X W while a current workflow projection exists. It opens that root
+execution directly through `initialExecutionId`, without loading history. Ctrl+X W closes the entire
 workflow view from the tree, task or result page; it does not step back through its internal pages.
 Escape from a direct tree also closes it, while Escape from a node still returns to the tree.
-Without a current workflow, Ctrl+W retains the composer's previous-word deletion.
+Ctrl+W retains the composer's previous-word deletion regardless of workflow availability.
 Production: `registerAppCommands`, `WorkflowsHub`, and `DEFAULT_BINDING_CANDIDATES` in
 `packages/code/src/app/commands.tsx`, `packages/code/src/views/config/WorkflowsHub.tsx`, and
 `packages/code/src/keys/interaction.ts`. Test:
-`packages/code/tests/integration/app-shell-render.test.tsx` (Ctrl+W with a retained draft),
+`packages/code/tests/integration/app-shell-render.test.tsx` (Ctrl+X W with a retained draft),
 `packages/code/tests/integration/workflows-hub-render.test.tsx` (direct workflow detail).
 
 **Node page (`NodePage`).** `mode: "result"` carries a `RunDetail | null` fetched by
@@ -596,15 +596,17 @@ host-global placement choice and always writes global settings; memory remains s
 | Memory | `on`, `off` | `applyMemory` — **session store only** |
 | Completed plans | `keep` / `discard` labelled "Keep plans" / "Delete after success" | `applyPlanRetention` |
 
-Run Controls, Settings > Isolation and the `Ctrl+S`/`Alt+S` quick picker share `applyIsolation`. Host requires an explicit
+Run Controls and the `Ctrl+X I` quick picker share `applyIsolation`. Host requires an explicit
 danger confirmation; Sandbox enables a required native boundary; Docker and Podman write the minimal
 global runtime choice and connect a complete Kernel before the workspace client is returned. Both
 fail closed if the engine cannot start; neither invokes native Sandbox/Host. Container renders
 Guard as not applicable while native Memory/Plans controls target the guest. Run Controls and the
-`Ctrl+G`/`Alt+G` quick picker separately share `applyReviewMode`. It preserves local
+`Ctrl+X G` quick picker separately share `applyReviewMode`. It preserves local
 allow/deny lists and, for a workspace without local lists, carries the global policy forward so the
 last-wins guard block does not shadow it. Auto without a resolvable judge degrades to persisted
 Approval. Neither path changes the other axis.
+Run Controls and the `Ctrl+X M` Memory picker both write only `MemoryModeStore`; they never persist
+settings. All application shortcuts use the shared Ctrl+X family.
 
 `applyGuard` degrades `auto` to `on` when `guardAutoResolves(settings)` is false, writes the
 degraded value and says why. It uses the same `guardPolicyForWrite` preservation path.
@@ -899,18 +901,19 @@ specific to these files.
     `packages/code/tests/integration/run-controls-render.test.tsx` (global/provider and workspace
     preservation cases).
 
-50. **Isolation and Review have separate vocabularies and shared application paths
-    across Settings > Isolation, Run Controls and their quick pickers. Host confirmation cannot change Review; Review
+50. **Isolation, Review and Memory have separate vocabularies and shared application paths
+    across Run Controls and the quick pickers. Host confirmation cannot change Review; Review
     cannot change runtime or Sandbox. Docker and Podman persist only the minimal global runtime selector and
-    request no engine work before the next run.** Production:
+    request no engine work before the next run. Memory changes only the session store and never
+    persists settings.** Production:
     `packages/code/src/features/run/isolation.ts` (`ISOLATION_CHOICES`, `isolationConfirmation`,
     `applyIsolation`), `packages/code/src/features/run/review.ts` (`REVIEW_CHOICES`,
-    `applyReviewMode`), `packages/code/src/views/config/IsolationConfigPanel.tsx`,
-    `packages/code/src/views/config/RunControlsPanel.tsx`,
+    `applyReviewMode`), `packages/code/src/views/config/RunControlsPanel.tsx`,
     `packages/code/src/views/overlays/IsolationPicker.tsx`, and
-    `packages/code/src/views/overlays/ReviewPicker.tsx`. Pinned:
+    `packages/code/src/views/overlays/ReviewPicker.tsx`,
+    `packages/code/src/views/overlays/MemoryPicker.tsx`, and
+    `packages/code/src/adapters/memory-mode.ts`. Pinned:
     `packages/code/tests/unit/isolation.test.ts`,
-    `packages/code/tests/integration/isolation-config-render.test.tsx`,
     `packages/code/tests/integration/run-controls-render.test.tsx` and
     `packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
 

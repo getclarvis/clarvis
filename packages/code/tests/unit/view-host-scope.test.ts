@@ -29,7 +29,7 @@ async function flush(): Promise<void> {
   await Promise.resolve();
 }
 
-test("^t default (retarget): a dirty draft survives the toggle, no confirm fires", () => {
+test("Ctrl+T default (retarget): a dirty draft survives the toggle, no confirm fires", () => {
   const { host } = makeHost();
   host.markDirty(true);
   host.toggleScope();
@@ -38,7 +38,7 @@ test("^t default (retarget): a dirty draft survives the toggle, no confirm fires
   expect(host.dirty()).toBe(true);
 });
 
-test("^t reload + clean: flips and re-reads via the bound load", () => {
+test("Ctrl+T reload + clean: flips and re-reads via the bound load", () => {
   const { host } = makeHost();
   const loads: string[] = [];
   host.bindScope({ mode: "reload", load: () => loads.push(host.scope()) });
@@ -47,7 +47,7 @@ test("^t reload + clean: flips and re-reads via the bound load", () => {
   expect(loads).toEqual(["workspace"]);
 });
 
-test("^t reload + dirty: confirms with the discard consequence; n keeps, y discards+reloads", async () => {
+test("Ctrl+T reload + dirty: confirms with the discard consequence; n keeps, y discards+reloads", async () => {
   const { host, press } = makeHost();
   const loads: number[] = [];
   host.bindScope({

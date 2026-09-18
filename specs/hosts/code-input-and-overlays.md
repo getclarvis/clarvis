@@ -54,9 +54,9 @@ acceptance picker offers only pending criteria; historical approvals cannot sati
 Formulation publishes immediate activity instead of freezing the composer or switching screens. A
 compact Goal section shares the activity sidebar with Plan, parallel work and agents; it shows
 formulation/progress state and uses Plan's title, lifecycle-tone, metadata and key placement. It uses
-`Ctrl+O` to toggle the existing full Goal view while revealed;
+`Ctrl+X O` to toggle the existing full Goal view while revealed;
 the full view binds the same key to return directly to the transcript.
-The sidebar footer remains structural and shows only its `Ctrl+S` close action while open; Goal
+The sidebar footer remains structural and shows only its `Ctrl+X S` close action while open; Goal
 navigation stays on the Goal row and is not duplicated in that footer.
 The full view omits its former explanatory subtitle and presents the semantic definition before
 compact budget and actionable review state. Source digests are abbreviated visually; internal
@@ -221,7 +221,7 @@ Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL
 | `IsolationPicker(props)` | Lazy retained `ListPicker` over Host, native Sandbox, lazy Docker and lazy Podman, with armed confirmation before direct-host execution | `packages/code/src/views/overlays/IsolationPicker.tsx` (`IsolationPicker`) |
 | `ReviewPicker(props)` | Lazy retained `ListPicker` over Off, Approval and Auto Guard modes without changing isolation | `packages/code/src/views/overlays/ReviewPicker.tsx` (`ReviewPicker`) |
 | `Help(props)` | Full-page live-projected key/action/destination reference with stable indexed rows | `packages/code/src/views/overlays/Help.tsx` (`Help`) |
-| `DiffViewer(props)` | Full-screen page rendering one transcript tool node's diff via the tool registry; an optional active accessor gates retained key layers | `packages/code/src/views/overlays/DiffViewer.tsx` (`DiffViewer`) |
+| `DiffViewer(props)` | Full-screen changed-file tree and per-file reader for every mutation in the active transcript; an optional active accessor gates retained key layers | `packages/code/src/views/overlays/DiffViewer.tsx` (`DiffViewer`) |
 | `PlanOverlay(props)` | Full-screen current/latest-plan task/document viewer; an optional active accessor gates retained key layers and refreshes on reopen | `packages/code/src/views/overlays/PlanOverlay.tsx` (`PlanOverlay`) |
 | `ActivityDetail(props)` | Floating scrollable Markdown reader for a full delegation brief or terminal task/sub-agent result | `packages/code/src/views/overlays/ActivityDetail.tsx` |
 | `AutocompletePopup(props)` | Floating windowed/grouped suggestion list above the input, backed by ten stable row/header slots | `packages/code/src/views/input/AutocompletePopup.tsx` (`AutocompletePopup`, `MAX_ROWS_CAP`); `packages/code/src/ui/patterns/windowed-list.tsx` (`StableWindowedList`) |
@@ -244,7 +244,7 @@ dispositions actually registered by this file (name → slash/surface/group/pare
 | name | slash | surface | group | parent |
 | ------------------- | ----------- | -------- | -------- | ---------- |
 | `agent.picker` | `/agent` | slash | navigate | — |
-| `transcript.diff` | `/diff` | slash | navigate | `inspect` |
+| `transcript.diff` | `/diff`, `Ctrl+X D` | slash and key | navigate | `inspect` |
 | `plan.toggleReview` | `/plan` | slash | actions | — |
 | `plan.open` | — | internal | navigate | — |
 | `app.quit` | `/quit` | slash | actions | — |
@@ -507,11 +507,11 @@ Up/Down only recall prompt history when the cursor is already on the buffer's fi
 (`atTop()`/`atBottom()`); otherwise they move the cursor within a multi-line draft, so
 history recall and in-draft navigation share the same two keys without either shadowing the other.
 
-Ctrl+E toggles a separate **expanded Task editor** state (`registerEditorToggle`): the collapsed
-binding sits one priority above the managed textarea's Emacs-style Ctrl+E mapping, then swaps to
+Ctrl+X E toggles a separate **expanded Task editor** state (`registerEditorToggle`): the collapsed
+binding sits one priority above the managed textarea layer while preserving its Emacs-style Ctrl+E mapping, then swaps to
 `LAYER.OVERLAY` for the duration so the editor's own Escape binding takes priority while it is open.
 The draft text is untouched by the toggle — `onDock` exposes `expanded`/`closeEditor` explicitly so
-a caller can query or close it. Ctrl+G is not an editor command; the shell reserves it for Review.
+a caller can query or close it. Ctrl+X G is not an editor command; the shell reserves it for Review.
 While expanded, Escape closes an open autocomplete popup first; only a second Escape (with no popup
 open) collapses the editor (`dismissAutocomplete`/the `escape` binding). Pinned:
 `packages/code/tests/integration/input-dock-submit.test.tsx` ("inline composition is height-bounded and
@@ -718,15 +718,24 @@ deactivates").
 
 ### `DiffViewer` (`views/overlays/DiffViewer.tsx`)
 
-With no node loaded, the page shows an empty-state hint ("no diff in the transcript yet") rather
-than a blank pane. The subtitle names the file, not only the tool: when the node's
-`args.path` is a string it is appended after the tool's label (`toolLabel(n.mcpName, n.toolName)`),
-because the full-screen view otherwise said only e.g. `edit_file` while the inline block a reader
-opens it _from_ already shows the path (`subtitle()`). The diff itself always goes
-through the shared tool-result renderer (`resolveToolRenderer`) in `full`/`wrap` mode, passing the
-node's own `diff` through unchanged — a node without one falls back to the renderer's own
-args-reconstructed diff. Pinned: `packages/code/tests/integration/diff-viewer-render.test.tsx`
-(empty state, real-diff render, args-reconstructed fallback, subtitle-from-tool) (subtitle names the file).
+With no nodes loaded, the page shows an empty-state hint ("no diff in the transcript yet") rather
+than a blank pane. `projectDiffFiles` splits a multi-file unified diff, groups chronological
+mutations by normalized path and retains every mutation for the selected file.
+`projectDiffTreeRows` projects those paths into expandable folder and file rows. At 80 columns or
+wider, the tree remains beside the selected file's reader; narrower terminals show the tree and
+detail as separate steps. Up/Down moves through visible tree rows without changing the open file;
+Enter expands/collapses a folder or explicitly opens the selected file. Tab/Escape returns from
+detail to the tree, where Escape closes the page. The local footer advertises that Escape route and
+filters the global Ctrl+C cancel/quit hint, matching the Plan and Goal detail-screen pattern.
+Mouse selection follows the same path. Each selected file shows its path, tool identity and all of
+its diffs in chronological order through the shared tool-result renderer (`resolveToolRenderer`) in
+`full`/`wrap` mode. A node without a native diff falls back to the renderer's args-reconstructed
+diff. The collection comes from `pickDiffNodes`, so `/diff` includes all mutations in the active
+Lead or selected sub-agent transcript rather than only the newest one. Pinned:
+`packages/code/tests/integration/diff-viewer-render.test.tsx` (empty state, folder expansion,
+per-file selection, grouping, multi-file splitting, narrow navigation, rendering fallbacks and
+long-line access) and `packages/code/tests/integration/app-shell-render.test.tsx` (all
+active-transcript edits open).
 
 ### `PlanOverlay` (`views/overlays/PlanOverlay.tsx`)
 
@@ -738,7 +747,7 @@ and the live task projection remains visible.
 
 When `document() !== null`, `spec()` supplies `scroll: () => scrollEl`, so arrows and page keys
 scroll the structured reading view. Without a document, the same spec supplies task-row navigation and
-auto-selects `in_progress`, then `returned`, then `pending`. Escape and `Ctrl+P` both call
+auto-selects `in_progress`, then `returned`, then `pending`. Escape and `Ctrl+X P` both call
 `onClose`; `Ctrl+C` is not claimed locally, so the global cancel/quit behavior remains live. There
 are no list/filter/page verbs and no per-plan retention/delete mutations. Production:
 `packages/code/src/views/overlays/PlanOverlay.tsx` (`PlanOverlay`, `loadActivePlan`, `spec`). Test:
@@ -755,6 +764,29 @@ Production: `PlanDetail`, `detailSection` and `approvalLine` in
 `packages/code/src/views/overlays/PlanOverlay.tsx`. Test:
 `packages/code/tests/integration/plan-overlay-render.test.tsx` (structured sections, empty fields,
 approval states and bounded layouts).
+
+### `ElicitBlock` numbered choices (`views/ElicitBlock.tsx`)
+
+An active choice field exposes at most ten direct answer keys: `1` through `9` map to the first nine
+options and `0` maps to the tenth. A direct number updates the field and immediately attempts to
+submit the complete form. If another required field is missing, normal validation focuses it and the
+elicitation remains open. Up/Down only move the highlighted choice; Enter is still required for that
+navigation path. Choice-number commands are disabled while a text or numeric field is active, so
+digits remain ordinary field input. Options after the tenth remain reachable through arrows and
+Enter. Production: `packages/code/src/views/ElicitBlock.tsx` (`pickDigit`, `submit`,
+`choiceCommands`). Tests: `packages/code/tests/integration/elicit-block-render.test.tsx`
+(immediate numbered submission, arrow-plus-Enter submission, tenth-option zero binding and text-field
+deactivation).
+
+Guard and configuration decision fields project the wire values in affirmative-first order without
+changing those values: `allow, deny` normally and `allow, allow_session, deny` when the session grant
+exists. Their labels remain `allow once`, `allow for this session` and `deny`. The parser assigns
+`deny` as the display default when the schema does not provide one, so Enter on an untouched guard
+still fails closed even though deny is the second or third numbered option. Production:
+`packages/code/src/adapters/elicitation.ts` (`parseElicitForm`, `GUARD_DECISION_LABELS`). Tests:
+`packages/code/tests/unit/elicitation.test.ts` (projection order and safe default) and
+`packages/code/tests/integration/elicit-block-render.test.tsx` (number labels and submitted wire
+values).
 
 ### The local `!` shell path (`adapters/local-shell.ts:runLocalBash`)
 
@@ -898,7 +930,7 @@ settled turn's persisted continuation; an empty session reports that there is no
     Production: `packages/code/src/views/overlays/PlanOverlay.tsx` (`documentRequestSeq`,
     `loadedPlanKey`, `loadActivePlan`). Test:
     `packages/code/tests/integration/plan-overlay-render.test.tsx` (stale document response case).
-27. **Escape or Ctrl+P closes the current-plan overlay and returns to the transcript.
+27. **Escape or Ctrl+X P closes the current-plan overlay and returns to the transcript.
     Ctrl+C is not claimed by the plan: the global command cancels the active run or enters quit while
     the plan stays open.** Production: `packages/code/src/views/overlays/PlanOverlay.tsx`
     (`detailCloseActions`), `packages/code/src/views/App.tsx` (`openPlan`), and
@@ -1024,17 +1056,17 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/tests/integration/float-frame-render.test.tsx` (single navigation subtree and
     listener cleanup) and `packages/code/tooling/benchmarks/overlays.tsx` (retained Profile,
     Isolation, Review and Catalog picker cases).
-44. **Isolation and Review are independent lazy retained overlays over the same write contracts as
-    Settings > Isolation and Run Controls.** They mount only after `isolation.picker` or `review.picker` opens them, reuse
+44. **Isolation, Review and Memory are independent lazy retained overlays over the same state
+    contracts as Run Controls.** They mount only after their picker command opens them, reuse
     `ListPicker`, cannot own keys while inactive, and cannot implement settings merges that differ
     from those surfaces. Production: `packages/code/src/views/App.tsx`,
     `packages/code/src/views/overlays/IsolationPicker.tsx`,
     `packages/code/src/views/overlays/ReviewPicker.tsx`,
+    `packages/code/src/views/overlays/MemoryPicker.tsx`,
     `packages/code/src/features/run/isolation.ts` (`applyIsolation`), and
     `packages/code/src/features/run/review.ts` (`applyReviewMode`). Tests:
     `packages/code/tests/integration/app-shell-render.test.tsx`,
     `packages/code/tests/integration/isolation-review-picker-render.test.tsx`,
-    `packages/code/tests/integration/isolation-config-render.test.tsx`,
     `packages/code/tests/integration/run-controls-render.test.tsx`, and
     `packages/code/tests/integration/interaction.test.ts`.
 45. **A fixed picker intro pays for its rows before list windowing.** A responsive intro reports zero

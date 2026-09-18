@@ -210,7 +210,7 @@ export function PlanOverlay(props: {
 
   const scrollMode = createMemo(() => document() !== null);
   const spec = (): LevelSpec => ({
-    ...(props.onClose ? detailCloseActions("ctrl+p", props.onClose) : {}),
+    ...(props.onClose ? detailCloseActions("<leader>p", props.onClose) : {}),
     ...(props.active ? { when: "overlay==plan", enabled: props.active } : {}),
     ...(scrollMode()
       ? { scroll: () => scrollEl }

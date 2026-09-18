@@ -47,7 +47,7 @@ export function HintToast(props: { hint: () => { text: string; tone: HintTone } 
         backgroundColor={tokens.bg}
         zIndex={FLOAT_Z + 1}
       >
-        <text fg={tone(hintTone(h().tone)).fg} wrapMode="none" truncate>
+        <text fg={tone(hintTone(h().tone)).fg} wrapMode="word">
           {h().text}
         </text>
       </box>
@@ -60,6 +60,8 @@ export function LeadActivityLine(props: {
   phase: () => LeadActivityPhase;
   /** Conversation or run detail, retained while idle, beside the physical activity state. */
   detail?: () => string;
+  /** Timed command prefix state, seated after live activity details in this same status band. */
+  commandPrefixActive?: () => boolean;
 }): JSX.Element {
   const running = createMemo(() => tone("running", spinnerChar()));
   return (
@@ -73,10 +75,10 @@ export function LeadActivityLine(props: {
       backgroundColor={tokens.bg}
     >
       <Show when={props.phase() !== "ready"}>
-        <text fg={running().fg} flexShrink={0} wrapMode="none" selectable={false}>
+        <text fg={running().fg} flexShrink={0} wrapMode="word" selectable={false}>
           {running().glyph + " "}
         </text>
-        <text fg={tokens.muted} flexShrink={0} wrapMode="none" selectable={false}>
+        <text fg={tokens.muted} flexShrink={0} wrapMode="word" selectable={false}>
           {props.phase()}
         </text>
       </Show>
@@ -85,11 +87,25 @@ export function LeadActivityLine(props: {
           fg={tokens.muted}
           flexShrink={1}
           minWidth={0}
-          wrapMode="none"
+          wrapMode="word"
           truncate
           selectable={false}
         >
           {`${props.phase() === "ready" ? "" : ` ${glyph("separator")} `}${props.detail?.() ?? ""}`}
+        </text>
+      </Show>
+      <Show when={props.commandPrefixActive?.() === true}>
+        <text
+          fg={tokens.accent}
+          flexShrink={0}
+          marginLeft={props.phase() === "ready" && (props.detail?.() ?? "").length === 0 ? 0 : 2}
+          wrapMode="none"
+          selectable={false}
+        >
+          Ctrl+X active
+        </text>
+        <text fg={tokens.muted} flexShrink={0} wrapMode="none" selectable={false}>
+          {` ${glyph("separator")} choose a key`}
         </text>
       </Show>
     </box>
@@ -97,12 +113,8 @@ export function LeadActivityLine(props: {
 }
 
 /**
- * Contextual action bar and the canonical run strip. Detailed usage never owns a third row.
+ * Responsive action bar with independently wrapped status and run information.
  *
- * @remarks
- * Hints carry arbitrary `notify()` text: the hint and status text truncate
- * instead of wrapping, because a wrapped second line would paint over the
- * usage row below.
  */
 export function Footer(props: {
   hint: () => { text: string; tone: HintTone };
@@ -125,8 +137,8 @@ export function Footer(props: {
       backgroundColor={tokens.bg}
       zIndex={1}
     >
-      <box height={1} flexDirection="row">
-        <box flexGrow={1} flexShrink={1} minWidth={0} flexDirection="row">
+      <box flexDirection="column" flexShrink={0}>
+        <box flexShrink={0} minWidth={0} flexDirection="column">
           <Show
             when={h().text.length > 0}
             fallback={
@@ -135,7 +147,7 @@ export function Footer(props: {
               </Show>
             }
           >
-            <text fg={tone(hintTone(h().tone)).fg} wrapMode="none" truncate>
+            <text fg={tone(hintTone(h().tone)).fg} wrapMode="word">
               {h().text}
             </text>
           </Show>
@@ -144,23 +156,21 @@ export function Footer(props: {
           <Show
             when={s()!.tone === "running"}
             fallback={
-              <text fg={tone(hintTone(s()!.tone as HintTone)).fg} flexShrink={0} wrapMode="none">
+              <text fg={tone(hintTone(s()!.tone as HintTone)).fg} flexShrink={0} wrapMode="word">
                 {s()!.text}
               </text>
             }
           >
-            <text fg={running().fg} flexShrink={0} wrapMode="none">
+            <text fg={running().fg} flexShrink={0} wrapMode="word">
               {running().glyph + " "}
-            </text>
-            <text fg={tokens.muted} flexShrink={1} minWidth={0} wrapMode="none" truncate>
-              {s()!.text}
+              <span style={{ fg: tokens.muted }}>{s()!.text}</span>
             </text>
           </Show>
         </Show>
         <Show when={strip().length > 0}>
           <box flexShrink={1} minWidth={0}>
-            <text fg={tokens.muted} flexShrink={1} minWidth={0} wrapMode="none" truncate>
-              {"  " + strip()}
+            <text fg={tokens.muted} flexShrink={1} minWidth={0} wrapMode="word">
+              {strip()}
             </text>
           </box>
         </Show>

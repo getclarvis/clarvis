@@ -1,5 +1,5 @@
 import type { Accessor, JSX } from "solid-js";
-import { createMemo, Show } from "solid-js";
+import { createMemo, Show, For } from "solid-js";
 import { KeymapProvider, useKeymapSelector } from "@opentui/keymap/solid";
 import { useTerminalDimensions } from "@opentui/solid";
 import type { Interaction } from "../../keys/interaction.ts";
@@ -7,18 +7,17 @@ import type { KeyboardEnvironment } from "../../keys/keyboard-profile.ts";
 import { effectiveClientPlatform } from "../../keys/keyboard-profile.ts";
 import { tokens } from "../../theme/tokens.ts";
 import {
-  actionSegment,
+  footerText,
+  footerLines,
   budgetFooterActions,
-  projectActiveActions,
+  projectCommandActions,
   type ActiveAction,
 } from "./active-actions.ts";
 
 /** Reactive action projection shared by footer and modal chrome. */
 function useActiveActions(environment: Accessor<KeyboardEnvironment>): Accessor<ActiveAction[]> {
-  const keys = useKeymapSelector((keymap) =>
-    keymap.getActiveKeys({ includeBindings: true, includeMetadata: true }),
-  );
-  return createMemo(() => projectActiveActions(keys(), effectiveClientPlatform(environment())));
+  const keys = useKeymapSelector((keymap) => keymap.getCommandEntries({ visibility: "reachable" }));
+  return createMemo(() => projectCommandActions(keys(), effectiveClientPlatform(environment())));
 }
 
 /** Responsive footer projection; key and label always enter or leave as one complete segment. */
@@ -29,23 +28,32 @@ export function NavigationBar(props: {
   /** Project surface-local wording without rebuilding the owning key layer. */
   actionTransform?: (action: ActiveAction) => ActiveAction;
   active?: Accessor<boolean>;
+  responsive?: boolean;
 }): JSX.Element {
   const actions = useActiveActions(props.environment);
   const visible = createMemo(() => {
     const transformed = props.actionTransform
       ? actions().map((action) => props.actionTransform!(action))
       : actions();
-    return budgetFooterActions(
-      props.actionFilter ? transformed.filter(props.actionFilter) : transformed,
-      props.width(),
-    );
+    const filtered = props.actionFilter ? transformed.filter(props.actionFilter) : transformed;
+    return props.responsive ? filtered : budgetFooterActions(filtered, props.width());
   });
-  const text = createMemo(() => visible().map(actionSegment).join("  "));
+  const lines = createMemo(() =>
+    props.responsive
+      ? footerLines(visible(), props.width())
+      : [footerText(visible())].filter(Boolean),
+  );
   return (
-    <Show when={(props.active?.() ?? true) && text().length > 0}>
-      <text fg={tokens.muted} wrapMode="none">
-        {text()}
-      </text>
+    <Show when={(props.active?.() ?? true) && lines().length > 0}>
+      <box flexDirection="column" flexShrink={0} width={props.responsive ? "100%" : undefined}>
+        <For each={lines()}>
+          {(line) => (
+            <text fg={tokens.muted} wrapMode="char">
+              {line}
+            </text>
+          )}
+        </For>
+      </box>
     </Show>
   );
 }
@@ -89,7 +97,11 @@ export function InteractionNavigationBar(props: {
   actionTransform?: (action: ActiveAction) => ActiveAction;
 }): JSX.Element {
   if (
-    typeof (props.interaction.keymap as Partial<Interaction["keymap"]>).getActiveKeys !== "function"
+    typeof (props.interaction.keymap as Partial<Interaction["keymap"]>).getCommandEntries !==
+      "function" ||
+    typeof (props.interaction.keymap as Partial<Interaction["keymap"]>).getPendingSequence !==
+      "function" ||
+    typeof (props.interaction.keymap as Partial<Interaction["keymap"]>).on !== "function"
   )
     return null as never;
   return (

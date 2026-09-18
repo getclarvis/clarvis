@@ -255,14 +255,15 @@ function PlanSummary(props: { plan: Accessor<PlanActivity> }): JSX.Element {
               ? `Unavailable ${glyph("separator")} ${planProgress(props.plan())}`
               : `${lifecycleLabel(planDisplayLifecycle(props.plan()))} ${glyph("separator")} ${planProgress(props.plan())}`}
         </span>
-        <Show when={!props.plan().removed}>
-          <span style={{ fg: tokens.muted }}>{` ${glyph("separator")} `}</span>
+      </text>
+      <Show when={!props.plan().removed}>
+        <text selectable={false}>
           <span style={{ fg: tokens.accent }}>
-            <b>{`[${compactKey("ctrl+p")}]`}</b>
+            <b>{`[${compactKey("<leader>p")}]`}</b>
           </span>
           <span style={{ fg: tokens.muted }}> full plan</span>
-        </Show>
-      </text>
+        </text>
+      </Show>
       <Show when={taskWindow().hiddenBefore > 0}>
         <text fg={tokens.muted} selectable={false}>
           {`${glyph("caretUp")} ${taskWindow().hiddenBefore} earlier tasks`}
@@ -456,9 +457,10 @@ export function Sidebar(props: {
                   <box flexDirection="column">
                     <text fg={status().color} wrapMode="none" truncate>
                       <span>{`${status().label} ${glyph("separator")} ${goal().runs.length} stage${goal().runs.length === 1 ? "" : "s"}`}</span>
-                      <span style={{ fg: tokens.muted }}>{` ${glyph("separator")} `}</span>
+                    </text>
+                    <text selectable={false}>
                       <span style={{ fg: tokens.accent }}>
-                        <b>{`[${compactKey("ctrl+o")}]`}</b>
+                        <b>{`[${compactKey("<leader>o")}]`}</b>
                       </span>
                       <span style={{ fg: tokens.muted }}> full goal</span>
                     </text>

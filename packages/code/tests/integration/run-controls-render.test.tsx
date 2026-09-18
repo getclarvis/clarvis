@@ -26,9 +26,13 @@ function mount(
     guardMode?: "off" | "on" | "auto";
     /** The current per-client memory override; defaults to "on". */
     memoryMode?: "on" | "off";
+    memoryEnabled?: boolean;
     /** Optional container runtime used to exercise its effective descriptions. */
     runtime?: { backend: "docker" };
     sandboxInspection?: { available: boolean; degraded: boolean; reason?: string } | Error;
+    runActive?: boolean;
+    reloadResult?: { ok: boolean; message: string };
+    writeError?: Error;
   } = {},
 ) {
   const { keymap, press } = fakeKeymap();
@@ -39,7 +43,7 @@ function mount(
   });
   const scoped = opts.plans ?? {};
   const effective = {
-    memory: { enabled: true },
+    memory: { enabled: opts.memoryEnabled ?? true },
     default_model: "openrouter/glm-5.2",
     providers: opts.resolvable === false ? [] : [{ name: "openrouter", kind: "openai-compatible" }],
     ...(opts.runtime === undefined ? {} : { runtime: opts.runtime }),
@@ -67,6 +71,7 @@ function mount(
       return undefined;
     },
     write: async (scope: string, patch: unknown) => {
+      if (opts.writeError) throw opts.writeError;
       writes.push({ scope, patch });
       Object.assign(effective, patch);
     },
@@ -108,8 +113,8 @@ function mount(
     notify: (m: string) => {
       notes.push(m);
     },
-    runActive: () => false,
-    reload: async () => ({ ok: true, message: "reloaded" }),
+    runActive: () => opts.runActive ?? false,
+    reload: async () => opts.reloadResult ?? { ok: true, message: "reloaded" },
     openSandbox: () => sandboxOpened.push(true),
   };
   return {
@@ -190,12 +195,75 @@ test("the isolation row opens sandbox details and persists minimal lazy Docker",
   t.renderer.destroy();
 });
 
+test("an isolation change during a run is saved for the next run without reconnecting", async () => {
+  const { host, deps, press, notes, writes } = mount({ runActive: true });
+  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
+    width: 110,
+    height: 40,
+  });
+  await t.renderOnce();
+  await selectOption(press, () => t.renderOnce(), 0, ["down", "down"]);
+  expect(writes).toHaveLength(1);
+  expect(notes).toEqual(["isolation: docker (global) — applies to the next run"]);
+  t.renderer.destroy();
+});
+
+test("an isolation reconnect refusal reports that the saved setting is pending", async () => {
+  const { host, deps, press, notes, writes } = mount({
+    reloadResult: { ok: false, message: "run still owns the host" },
+  });
+  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
+    width: 110,
+    height: 40,
+  });
+  await t.renderOnce();
+  await selectOption(press, () => t.renderOnce(), 0, ["down", "down"]);
+  expect(writes).toHaveLength(1);
+  expect(notes).toEqual(["isolation saved, pending reconnect: run still owns the host"]);
+  t.renderer.destroy();
+});
+
+test("an isolation write failure is surfaced without claiming a change", async () => {
+  const { host, deps, press, notes, writes } = mount({
+    writeError: new Error("disk is read-only"),
+  });
+  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
+    width: 110,
+    height: 40,
+  });
+  await t.renderOnce();
+  await selectOption(press, () => t.renderOnce(), 0, ["down", "down"]);
+  expect(writes).toEqual([]);
+  expect(notes).toEqual(["disk is read-only"]);
+  t.renderer.destroy();
+});
+
+test("the native sandbox detail reports a healthy available backend", async () => {
+  const { host, deps, press } = mount({
+    sandboxInspection: { available: true, degraded: false },
+  });
+  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
+    width: 110,
+    height: 40,
+  });
+  await tick();
+  await t.renderOnce();
+  press("i");
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain(
+    "Bubblewrap is available; an incompatible host fails closed.",
+  );
+  t.renderer.destroy();
+});
+
 test("the Docker consequences remain complete in a narrow Run controls viewport", async () => {
-  const { host, deps } = mount({ runtime: { backend: "docker" } });
+  const { host, deps, press } = mount({ runtime: { backend: "docker" } });
   const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
     width: 72,
     height: 40,
   });
+  await t.renderOnce();
+  press("i");
   await t.renderOnce();
 
   const frame = t.captureCharFrame();
@@ -338,6 +406,8 @@ test("the isolation status distinguishes checking, unavailable, and degraded hos
     );
     await tick();
     await rendered.renderOnce();
+    mounted.press("i");
+    await rendered.renderOnce();
     expect(rendered.captureCharFrame()).toContain(item.expected);
     rendered.renderer.destroy();
   }
@@ -357,6 +427,41 @@ test("turning memory off changes only the session store", async () => {
   t.renderer.destroy();
 });
 
+test("the memory detail explains the effective session behavior", async () => {
+  const { host, deps, press } = mount();
+  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
+    width: 110,
+    height: 40,
+  });
+  await t.renderOnce();
+  press("down");
+  press("down");
+  press("i");
+  await t.renderOnce();
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("Run controls ▸ Memory for this session");
+  expect(frame).toContain("Reads memory before the run and learns from it afterward.");
+  t.renderer.destroy();
+});
+
+test("enabling session memory reports when global memory is disabled", async () => {
+  const { host, deps, press, notes, memorySetModeCalls } = mount({
+    memoryEnabled: false,
+    memoryMode: "off",
+  });
+  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
+    width: 110,
+    height: 40,
+  });
+  await t.renderOnce();
+  await activateMemoryOn(press, () => t.renderOnce());
+  expect(memorySetModeCalls).toEqual(["on"]);
+  expect(notes).toEqual([
+    "memory remains off — enable it in Settings > Memory before the next run",
+  ]);
+  t.renderer.destroy();
+});
+
 test("the guard-mode row writes settings.guard.mode at scope and syncs the session store", async () => {
   const { host, deps, press, notes, writes, guardSetModeCalls } = mount();
   const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
@@ -368,6 +473,21 @@ test("the guard-mode row writes settings.guard.mode at scope and syncs the sessi
   expect(writes).toEqual([{ scope: "global", patch: { guard: { type: "shell", mode: "on" } } }]);
   expect(notes).toEqual(["Guard: approval (global settings)"]);
   expect(guardSetModeCalls).toEqual(["on"]);
+  t.renderer.destroy();
+});
+
+test("a guard write failure is surfaced without changing the session mode", async () => {
+  const { host, deps, press, notes, guardSetModeCalls } = mount({
+    writeError: new Error("guard settings unavailable"),
+  });
+  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
+    width: 110,
+    height: 40,
+  });
+  await t.renderOnce();
+  await activateGuard(press, () => t.renderOnce(), 1);
+  expect(guardSetModeCalls).toEqual([]);
+  expect(notes).toEqual(["guard settings unavailable"]);
   t.renderer.destroy();
 });
 
@@ -439,10 +559,12 @@ test("command review separates an inherited scoped value from a session override
   await first.renderOnce();
   inherited.press("down");
   await first.renderOnce();
+  inherited.press("i");
+  await first.renderOnce();
   const inheritedFrame = first.captureCharFrame();
-  expect(inheritedFrame).toContain("Configured here: inherit");
-  expect(inheritedFrame).toContain("Effective:       auto");
-  expect(inheritedFrame).toContain("Source:          global");
+  expect(inheritedFrame).toContain("Configured: inherit");
+  expect(inheritedFrame).toContain("Effective: auto");
+  expect(inheritedFrame).toContain("Source: global");
   first.renderer.destroy();
 
   const overridden = mount({
@@ -457,10 +579,12 @@ test("command review separates an inherited scoped value from a session override
   await second.renderOnce();
   overridden.press("down");
   await second.renderOnce();
+  overridden.press("i");
+  await second.renderOnce();
   const overriddenFrame = second.captureCharFrame();
-  expect(overriddenFrame).toContain("Configured here: inherit");
-  expect(overriddenFrame).toContain("Effective:       off");
-  expect(overriddenFrame).toContain("Source:          session");
+  expect(overriddenFrame).toContain("Configured: inherit");
+  expect(overriddenFrame).toContain("Effective: off");
+  expect(overriddenFrame).toContain("Source: session");
   second.renderer.destroy();
 });
 
@@ -478,6 +602,27 @@ test("Run controls exposes retention without a planning-mode control", async () 
   expect(frame).not.toContain("Planning mode");
   expect(frame).not.toContain("Require approval");
   expect(frame).not.toContain("No planning");
+  t.renderer.destroy();
+});
+
+test("an explicit discard policy is named consistently in overview and detail", async () => {
+  const { host, deps, press } = mount({
+    plans: { global: { retention: "discard" } },
+  });
+  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
+    width: 110,
+    height: 40,
+  });
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("Completed plans  delete after success");
+  press("down");
+  press("down");
+  press("down");
+  press("i");
+  await t.renderOnce();
+  const detail = t.captureCharFrame();
+  expect(detail).toContain("Effective: delete after success");
+  expect(detail).toContain("Successful runs delete their plan after the result is recorded.");
   t.renderer.destroy();
 });
 

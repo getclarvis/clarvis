@@ -371,10 +371,10 @@ test("Shared prompt separates overview, content, details and mutations", async (
 
   mounted.press("return");
   await rendered.renderOnce();
-  expect(rendered.captureCharFrame()).not.toContain("[^s] apply");
+  expect(rendered.captureCharFrame()).not.toContain("[Ctrl+S] apply");
   mounted.press("e");
   await rendered.renderOnce();
-  expect(rendered.captureCharFrame()).toContain("[^s] apply");
+  expect(rendered.captureCharFrame()).toContain("[Ctrl+S] apply");
   await rendered.mockInput.typeText("\nKeep the scope explicit.");
   mounted.press("ctrl+s");
   await renderUntil(rendered, () =>
@@ -454,15 +454,15 @@ test("base_prompt opens a reader before the multiline editor", async () => {
   for (let index = 0; index < 7; index++) mounted.press("down");
   mounted.press("return");
   await rendered.renderOnce();
-  expect(rendered.captureCharFrame()).not.toContain("[^s] apply");
+  expect(rendered.captureCharFrame()).not.toContain("[Ctrl+S] apply");
   mounted.press("e");
   await rendered.renderOnce();
-  expect(rendered.captureCharFrame()).toContain("[^s] apply");
+  expect(rendered.captureCharFrame()).toContain("[Ctrl+S] apply");
   expect(rendered.captureCharFrame()).toContain("line one");
   await rendered.mockInput.typeText("\nline three");
   mounted.press("ctrl+s");
   await rendered.renderOnce();
-  expect(rendered.captureCharFrame()).not.toContain("[^s] apply");
+  expect(rendered.captureCharFrame()).not.toContain("[Ctrl+S] apply");
   expect(mounted.host.dirty()).toBe(true);
 });
 
@@ -807,7 +807,7 @@ test("empty prose opens editing directly and cancel leaves the draft unchanged",
   expect(rendered.captureCharFrame()).toMatch(/Description\s+not set/);
   mounted.press("return");
   await rendered.renderOnce();
-  expect(rendered.captureCharFrame()).toContain("[^s] apply");
+  expect(rendered.captureCharFrame()).toContain("[Ctrl+S] apply");
   await rendered.mockInput.typeText("Unsaved prose");
   mounted.press("escape");
   await rendered.renderOnce();

@@ -65,7 +65,8 @@ export interface TranscriptState {
   toggleExpandOrBlock(): void;
   focusBlock(delta: number): string | null;
   clearFocus(): boolean;
-  pickDiffNode(): TranscriptToolNode | null;
+  /** All diff-producing calls in the active Lead or selected sub-agent transcript. */
+  pickDiffNodes(): readonly TranscriptToolNode[];
   canInterruptTool(node: TranscriptToolNode): boolean;
   interruptTool(node: TranscriptToolNode): void;
 }
@@ -211,7 +212,7 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
       setFocusedKey(null);
       return true;
     },
-    pickDiffNode: () => {
+    pickDiffNodes: () => {
       const isDiffTool = (n: TranscriptNode): n is TranscriptToolNode =>
         n.kind === "tool_call" && DIFF_TOOLS.has(toolIdentity(n.mcpName, n.toolName));
       /**
@@ -232,13 +233,7 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
               (node) => node.subagentId === undefined && node.subagentOrder === undefined,
             )
           : source.filter((node) => node.subagentId === selected);
-      const focusedNode = nodes.find((n) => n.key === focusedKey());
-      if (focusedNode && isDiffTool(focusedNode)) return chosen(focusedNode);
-      for (let i = nodes.length - 1; i >= 0; i -= 1) {
-        const n = nodes[i];
-        if (n && isDiffTool(n)) return chosen(n);
-      }
-      return null;
+      return nodes.filter(isDiffTool).map(chosen);
     },
     canInterruptTool: (node) => deps.canInterruptTool?.(node) === true,
     interruptTool: (node) => {

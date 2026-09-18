@@ -35,7 +35,7 @@ test("header identifies Docker independently from command review", () => {
 
 test("header owns workspace identity rather than the full path", () => {
   const plan = projectHeader(baseInput());
-  expect(plan.regime).toBe("one-line");
+  expect(plan.regime).toBe("wrapped");
   expect(plan.workspace.text).toContain("demo");
   expect(plan.workspace.text).not.toContain("/work/acme");
   expect(plan.identity?.text).toContain("coder");
@@ -90,23 +90,12 @@ test("memory reports off only when it is off; inert stays configured", () => {
   expect(label("off")).toContain("Memory: off");
 });
 
-test("the status zone sheds wording before it sheds facts", () => {
-  const at = (width: number): string[] =>
-    projectHeader(baseInput({ width })).status.map((chip) => chip.text.replace(/^\s*·\s*/, ""));
-  expect(at(200).join(" ")).toContain("x-ai/grok-4.5");
-  expect(at(84).join(" ")).not.toContain("x-ai/");
-  expect(at(84).join(" ")).toContain("grok-4.5");
-  expect(at(84).join(" ")).toContain("Sandbox");
-  expect(at(84).join(" ")).toContain("Off");
-  expect(at(84).join(" ")).not.toContain("mem on");
-  const tight = at(72).join(" ");
-  expect(tight).toContain("grok-4.5");
-  expect(tight).not.toContain("Sandbox");
-  const narrow = at(60).join(" ");
-  expect(narrow).toContain("grok-4.5");
-  expect(narrow).not.toContain("Sandbox");
-  expect(at(48)).toEqual([]);
-  expect(at(30)).toEqual([]);
+test("all widths retain the complete run configuration", () => {
+  for (const width of [24, 48, 60, 72, 84, 200]) {
+    const status = projectHeader(baseInput({ width })).status;
+    expect(status.map((field) => field.key)).toEqual(["model", "isolation", "review", "memory"]);
+    expect(status.map((field) => field.text).join(" ")).toContain("Memory: on");
+  }
 });
 
 test("connection failure remains actionable in the stable header", () => {

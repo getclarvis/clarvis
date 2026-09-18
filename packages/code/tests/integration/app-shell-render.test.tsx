@@ -3,7 +3,13 @@ import type { Accessor, JSX } from "solid-js";
 import { createSignal } from "solid-js";
 import { useRenderer } from "@opentui/solid";
 import { openRender, settleSyntaxSurfaces } from "../helpers/tracked-render.ts";
-import { KeyEvent, TextareaRenderable, type Renderable } from "@opentui/core";
+import {
+  KeyEvent,
+  rgbToHex,
+  TextareaRenderable,
+  type BoxRenderable,
+  type Renderable,
+} from "@opentui/core";
 import { TestRecorder } from "@opentui/core/testing";
 import type {
   MemoryService,
@@ -37,6 +43,7 @@ import { captureUntil } from "../helpers/render-support.ts";
 import { keyboardEnvironmentId } from "../../src/keys/keyboard-profile.ts";
 import { SETTINGS_ITEMS } from "../../src/views/config/hub-items.ts";
 import { productVersion } from "../../src/cli-args.ts";
+import { focusBg } from "../../src/theme/surfaces.ts";
 import { createModelsCatalog } from "../../src/adapters/models-catalog.ts";
 import type { WorkflowActivity } from "../../src/adapters/workflow-projection.ts";
 import { createLoopController, type LoopController } from "../../src/features/loop/controller.ts";
@@ -316,7 +323,7 @@ function Host(props: {
 
 async function mountApp(
   build: (renderer: ReturnType<typeof useRenderer>) => AppProps,
-  size: { width: number; height: number } = { width: 140, height: 40 },
+  size: { width: number; height: number; kittyKeyboard?: boolean } = { width: 140, height: 40 },
 ): Promise<Awaited<ReturnType<typeof openRender>>> {
   const t = await openRender((() => <Host build={build} />) as never, size);
   for (let i = 0; i < 3; i++) await t.renderOnce();
@@ -501,7 +508,7 @@ test("goal state stays visible when idle and does not replace the physical run o
   }
 });
 
-test("Ctrl+O toggles Goal detail from the partial sidebar and back to the transcript", async () => {
+test("Ctrl+X O toggles Goal detail from the partial sidebar and back to the transcript", async () => {
   const goals = createGoalController({
     binding: () => ({ sessionId: "session-hosted", generation: 1 }),
     prepare: async () => {
@@ -523,19 +530,22 @@ test("Ctrl+O toggles Goal detail from the partial sidebar and back to the transc
   try {
     await goals.refresh();
     const t = await mountApp(defaultProps({ goals }));
-    press(t, "s", { ctrl: true });
-    let frame = await captureUntil(t, "[^o] full goal");
+    press(t, "x", { ctrl: true });
+    press(t, "s");
+    let frame = await captureUntil(t, "[Ctrl+X O] full goal");
     expect(frame).toContain("Keep the Goal visible");
-    expect(frame).toContain("[^s] close");
+    expect(frame).toContain("[Ctrl+X S] close");
     expect(frame).not.toContain("open Goal");
-    press(t, "o", { ctrl: true });
+    press(t, "x", { ctrl: true });
+    press(t, "o");
     frame = await captureUntil(t, "Budget 0 / 10k tokens");
     expect(frame).toContain("Running · 0 stages · literal");
     expect(frame).not.toContain("One objective for this conversation");
-    press(t, "o", { ctrl: true });
-    frame = await captureUntil(t, "[^o] full goal");
+    press(t, "x", { ctrl: true });
+    press(t, "o");
+    frame = await captureUntil(t, "[Ctrl+X O] full goal");
     expect(frame).toContain("Keep the Goal visible");
-    expect(frame).toContain("[^s] close");
+    expect(frame).toContain("[Ctrl+X S] close");
     expect(frame).not.toContain("open Goal");
     t.renderer.destroy();
   } finally {
@@ -687,7 +697,7 @@ test("default wide layout: header, derived navigation and input dock are live", 
   expect(out.split("\n")[0]?.trimEnd()).toEndWith(`v${productVersion()}`);
   expect(out).toContain("New task");
   // Advertised at idle because Ctrl+C owns both run cancellation and quitting.
-  expect(out).toContain("[^c] cancel / quit");
+  expect(out).toContain("[Ctrl+C] cancel / quit");
   expect(out).toContain("[↵] send / steer");
   expect(out).not.toContain("open plan");
   t.renderer.destroy();
@@ -761,15 +771,16 @@ test("a completed Plan never contributes a task counter to the compact footer", 
   t.renderer.destroy();
 });
 
-test("Ctrl+E expands the full task editor and keeps the action footer on a stable row", async () => {
-  const t = await mountApp(defaultProps({}), { width: 140, height: 45 });
+test("Ctrl+X E expands the full task editor and keeps the action footer on a stable row", async () => {
+  const t = await mountApp(defaultProps({}), { width: 200, height: 45, kittyKeyboard: true });
   const collapsed = t.captureCharFrame();
   expect(collapsed).toContain("expand editor");
   const collapsedFooter = collapsed
     .split("\n")
     .findIndex((line) => line.includes("[↵] send / steer"));
 
-  t.mockInput.pressKey("e", { ctrl: true });
+  t.mockInput.pressKey("x", { ctrl: true });
+  t.mockInput.pressKey("e");
   const expanded = await captureUntil(t, "collapse editor");
   const expandedFooter = expanded
     .split("\n")
@@ -1319,7 +1330,7 @@ test("an active run adds only its live delta to the full session baseline", asyn
   const out = await captureUntil(t, "cancel");
   expect(out).toContain("steer");
   const activityRow = out.split("\n").find((row) => row.includes("working"));
-  expect(activityRow).toMatch(/working · \d+s · iteration 9 · \^c to interrupt/);
+  expect(activityRow).toMatch(/working · \d+s · iteration 9 · Ctrl\+C to interrupt/);
   const footer = out.split("\n").find((row) => row.includes("Session  In"));
   expect(footer).toContain("Context ");
   expect(footer).toContain("Session  In 25k · Out 12k · Cache hit 80%");
@@ -1471,6 +1482,13 @@ test("Lead thinking and working reuse one fixed line immediately above the compo
   expect(t.renderer.root.findDescendantById("lead-activity-line")).toBe(line);
   expect(line!.y).toBe(fixedY);
 
+  t.mockInput.pressKey("x", { ctrl: true });
+  await t.renderOnce();
+  const pendingActivity = t.captureCharFrame().split("\n")[line!.y] ?? "";
+  expect(pendingActivity).toMatch(/working.*Ctrl\+C to interrupt.*Ctrl\+X active.*choose a key/);
+  press(t, "escape");
+  await t.renderOnce();
+
   applyRunEvents(
     sink,
     [
@@ -1491,11 +1509,10 @@ test("Lead thinking and working reuse one fixed line immediately above the compo
   setActive(false);
   await t.renderOnce();
   await t.renderOnce();
-  const settledLine = t.captureCharFrame().split("\n")[fixedY] ?? "";
+  const settledLine = t.captureCharFrame().split("\n")[line!.y] ?? "";
   expect(settledLine.trim()).toBe("");
   expect(settledLine).not.toContain("thinking");
   expect(t.renderer.root.findDescendantById("lead-activity-line")).toBe(line);
-  expect(line!.y).toBe(fixedY);
   t.renderer.destroy();
 });
 
@@ -1611,7 +1628,7 @@ test("an in-flight elicitation replaces shell navigation with its real actions",
   out = t.captureCharFrame();
   expect(out).toContain("[↵] confirm");
   expect(out).toContain("[esc] cancel");
-  expect(out).toContain("[^c] cancel / quit");
+  expect(out).toContain("[Ctrl+C] cancel / quit");
   expect(out).not.toContain("expand");
 
   t.renderer.destroy();
@@ -1725,11 +1742,12 @@ test("agent picker overlay opens on /agent and closes on escape", async () => {
   t.renderer.destroy();
 });
 
-test("Ctrl+I opens the isolation picker and Escape returns to the composer", async () => {
+test("Ctrl+X I opens the isolation picker and Escape returns to the composer", async () => {
   const t = await mountApp(defaultProps({}));
   await captureUntil(t, "New task");
 
-  press(t, "i", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "i");
   const picker = await captureUntil(t, "Select isolation");
 
   expect(picker).toContain("Sandbox");
@@ -1740,11 +1758,12 @@ test("Ctrl+I opens the isolation picker and Escape returns to the composer", asy
   t.renderer.destroy();
 });
 
-test("Ctrl+G opens command review without expanding the editor", async () => {
+test("Ctrl+X G opens command review without expanding the editor", async () => {
   const t = await mountApp(defaultProps({}));
   await captureUntil(t, "New task");
 
-  press(t, "g", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "g");
   const picker = await captureUntil(t, "Select Guard");
 
   expect(picker).toContain("Approval");
@@ -1753,6 +1772,23 @@ test("Ctrl+G opens command review without expanding the editor", async () => {
   press(t, "escape");
   const back = await captureUntil(t, "New task");
   expect(back).not.toContain("Select Guard");
+  t.renderer.destroy();
+});
+
+test("Ctrl+X M opens the session memory picker and Escape returns to the composer", async () => {
+  const t = await mountApp(defaultProps({ settingsKnobs: () => ({ memoryEnabled: true }) }));
+  await captureUntil(t, "New task");
+
+  press(t, "x", { ctrl: true });
+  press(t, "m");
+  const picker = await captureUntil(t, "Select memory");
+
+  expect(picker).toContain("On");
+  expect(picker).toContain("Off");
+  expect(picker).toContain("Persisted Memory settings are unchanged");
+  press(t, "escape");
+  const back = await captureUntil(t, "New task");
+  expect(back).not.toContain("Select memory");
   t.renderer.destroy();
 });
 
@@ -1780,7 +1816,7 @@ test("/diff with no diff in the transcript warns and does not open the viewer", 
   t.renderer.destroy();
 });
 
-test("/diff with an edit in the transcript opens the diff viewer", async () => {
+test("/diff opens every edit in the active transcript", async () => {
   const editStream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
@@ -1795,6 +1831,18 @@ test("/diff with an edit in the transcript opens the diff viewer", async () => {
       ok: true,
       diff: "--- a.ts\n+++ a.ts\n@@ -1 +1 @@\n-x\n+y",
     }),
+    ev({
+      type: "tool_call",
+      call_id: "c2",
+      agent: "lead",
+      at: 3,
+      server: "edit_file",
+      tool: "",
+      arguments: { path: "b.ts", old_string: "before", new_string: "after" },
+      result: "Replaced 1 occurrence in b.ts.",
+      ok: true,
+      diff: "--- b.ts\n+++ b.ts\n@@ -1 +1 @@\n-before\n+after",
+    }),
   ];
   const t = await mountApp(defaultProps({ seedStream: editStream }));
   await captureUntil(t, "New task");
@@ -1803,10 +1851,61 @@ test("/diff with an edit in the transcript opens the diff viewer", async () => {
   press(t, "escape");
   await t.renderOnce();
   t.mockInput.pressEnter();
-  await t.renderOnce();
-  await t.renderOnce();
-  const out = t.captureCharFrame();
+  const out = await captureUntil(t, "2 files");
   expect(out).not.toContain("no diff in the transcript");
+  expect(out).toContain("2 changes");
+  expect(out).toContain("a.ts");
+  expect(out).toContain("y");
+  expect(out).toContain("b.ts");
+  expect(out).not.toContain("after");
+  expect(out).toContain("[esc] close");
+  expect(out).not.toContain("[Ctrl+C] cancel / quit");
+  press(t, "down");
+  await settleSyntaxSurfaces(t);
+  let second = t.captureCharFrame();
+  expect(second).toContain("y");
+  expect(second).not.toContain("after");
+  press(t, "return");
+  await settleSyntaxSurfaces(t);
+  second = t.captureCharFrame();
+  expect(second).toContain("b.ts");
+  expect(second).toContain("after");
+  expect(second).not.toContain("1 + y");
+  expect(second).toContain("[tab/esc] files");
+  press(t, "escape");
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("[esc] close");
+  press(t, "escape");
+  await captureUntil(t, "New task");
+  t.renderer.destroy();
+});
+
+test("Ctrl+X D opens the same multi-file diff viewer as /diff", async () => {
+  const editStream: RunEvent[] = [
+    ev({ type: "run_started", at: 1 }),
+    ev({
+      type: "tool_call",
+      call_id: "c1",
+      agent: "lead",
+      at: 2,
+      server: "edit_file",
+      tool: "",
+      arguments: { path: "src/a.ts", old_string: "before", new_string: "after" },
+      result: "Replaced 1 occurrence in src/a.ts.",
+      ok: true,
+      diff: "--- src/a.ts\n+++ src/a.ts\n@@ -1 +1 @@\n-before\n+after",
+    }),
+  ];
+  const t = await mountApp(defaultProps({ seedStream: editStream }));
+  await captureUntil(t, "New task");
+
+  press(t, "x", { ctrl: true });
+  press(t, "d");
+
+  const out = await captureUntil(t, "1 file");
+  expect(out).toContain("src");
+  expect(out).toContain("a.ts");
+  expect(out).toContain("[esc] close");
   t.renderer.destroy();
 });
 
@@ -1899,7 +1998,7 @@ test("the removed /activity command is rejected", async () => {
   t.renderer.destroy();
 });
 
-test("Ctrl+P toggles a run's plan detail, while Ctrl+C cancels without closing it", async () => {
+test("Ctrl+X P toggles a run's plan detail, while Ctrl+C cancels without closing it", async () => {
   const doc = {
     id: "plan-active",
     path: ".clarvis/plans/active.md",
@@ -1946,14 +2045,17 @@ test("Ctrl+P toggles a run's plan detail, while Ctrl+C cancels without closing i
     }),
   );
   expect(await captureUntil(t, "Active checkout plan")).toContain("│ Plan");
-  press(t, "p", { meta: true });
+  press(t, "x", { ctrl: true });
+  press(t, "p");
   expect(await captureUntil(t, "Ship checkout safely.")).toContain("Ship checkout safely.");
-  press(t, "p", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "p");
   const main = await captureUntil(t, "Steer this run");
   expect(main).not.toContain("Plan · History");
   expect(cancels).toEqual([]);
 
-  press(t, "p", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "p");
   await captureUntil(t, "Ship checkout safely.");
   press(t, "c", { ctrl: true });
   const plan = await captureUntil(t, "Ship checkout safely.");
@@ -2223,7 +2325,7 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   expect(out.replace(/\s+/g, " ")).toContain("> Lead transcript");
   expect(out).not.toContain("look around");
   expect(out).not.toContain("Activity detail");
-  expect(out).toContain("[^s] open / close sidebar");
+  expect(out).toContain("[Ctrl+X S] open / close sidebar");
   expect(out).toContain("send / steer");
   expect(out).toContain("isolation");
   expect(out).toContain("Guard");
@@ -2234,7 +2336,8 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   press(t, "escape");
   await t.renderOnce();
   expect(t.captureCharFrame()).toContain("│ Agents");
-  press(t, "s", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "s");
   await t.renderOnce();
   await t.renderOnce();
   const historyExplicitlyClosed = t.renderer.root.findDescendantById("transcript-viewport");
@@ -2325,7 +2428,8 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   const planOpen = await captureUntil(t, "Intent plan");
   expect(planOpen).toContain("│ Plan");
 
-  press(t, "s", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "s");
   await t.renderOnce();
   const planUpdate: RunEvent[] = [
     ev({
@@ -2354,10 +2458,12 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   await t.renderOnce();
   expect(t.captureCharFrame()).not.toContain("│ Plan");
 
-  press(t, "s", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "s");
   const manuallyReopenedPlan = await captureUntil(t, "Intent plan");
   expect(manuallyReopenedPlan).toContain("│ Plan");
-  press(t, "s", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "s");
   await t.renderOnce();
 
   setWorkflow({
@@ -2387,7 +2493,8 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   const workflowOpen = await captureUntil(t, "Workflow intent leader");
   expect(workflowOpen).toContain("Parallel work");
 
-  press(t, "s", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "s");
   await t.renderOnce();
   setWorkflow((current) => {
     const nodes = new Map(current!.nodes);
@@ -2404,10 +2511,12 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   await t.renderOnce();
   expect(t.captureCharFrame()).not.toContain("Parallel work");
 
-  press(t, "s", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "s");
   const manuallyReopenedWorkflow = await captureUntil(t, "Later workflow leader");
   expect(manuallyReopenedWorkflow).toContain("Parallel work");
-  press(t, "s", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "s");
   await t.renderOnce();
 
   const firstDelegation: RunEvent[] = [
@@ -2426,7 +2535,8 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   expect(agentsOpen).toContain("│ Agents");
   expect(agentsOpen).toContain("Lead transcript");
 
-  press(t, "s", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "s");
   await t.renderOnce();
   const laterDelegation: RunEvent[] = [
     ev({
@@ -2446,11 +2556,13 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   expect(agentsStillClosed).not.toContain("│ Agents");
   expect(agentsStillClosed).not.toContain("Lead transcript");
 
-  press(t, "s", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "s");
   const manuallyReopenedAgents = await captureUntil(t, "│ Agents");
   expect(manuallyReopenedAgents).toContain("│ Agents");
   expect(manuallyReopenedAgents).toContain("Lead transcript");
-  press(t, "s", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "s");
   await t.renderOnce();
 
   setWorkflow({
@@ -2480,7 +2592,8 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   const nextWorkflow = await captureUntil(t, "Next workflow leader");
   expect(nextWorkflow).toContain("Parallel work");
 
-  press(t, "s", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "s");
   await t.renderOnce();
   setWorkflow(null);
   const nextSink = store.openRun("exec_intents_next");
@@ -2556,7 +2669,7 @@ test("clicking the drawer scrim keeps dismissal sticky for later sub-agents", as
   t.renderer.destroy();
 });
 
-test("Ctrl+S toggles a narrow inspector while Escape leaves it open", async () => {
+test("Ctrl+X S toggles a narrow inspector while Escape leaves it open", async () => {
   const subStream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
@@ -2584,7 +2697,8 @@ test("Ctrl+S toggles a narrow inspector while Escape leaves it open", async () =
   press(t, "escape");
   await t.renderOnce();
   expect(t.captureCharFrame()).toContain("│ Agents");
-  press(t, "s", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "s");
   await t.renderOnce();
 
   // Closing the drawer preserves transcript orientation but removes the
@@ -2866,7 +2980,8 @@ test("model-backed prompt and skill submit also return an old reader to the Lead
   t.renderer.destroy();
 });
 
-test("transcript navigation: ctrl+down focuses a block, ctrl+k toggles it, escape clears the focus", async () => {
+test("transcript navigation: the leader enters block focus, then plain arrows move it", async () => {
+  const store = createTranscriptStore();
   const stream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
@@ -2880,13 +2995,35 @@ test("transcript navigation: ctrl+down focuses a block, ctrl+k toggles it, escap
       result: "1\tconst a = 1",
       ok: true,
     }),
-    ev({ type: "run_ended", status: "completed", at: 3, reason: "completed" }),
+    ev({
+      type: "tool_call",
+      call_id: "c2",
+      agent: "lead",
+      at: 3,
+      server: "clarvis",
+      tool: "read_file",
+      arguments: { path: "b.ts" },
+      result: "1\tconst b = 2",
+      ok: true,
+    }),
+    ev({ type: "run_ended", status: "completed", at: 4, reason: "completed" }),
   ];
-  const t = await mountApp(defaultProps({ seedStream: stream }));
+  const t = await mountApp(defaultProps({ store, seedStream: stream }));
   await captureUntil(t, "New task");
-  press(t, "down", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "down");
   await t.renderOnce();
-  press(t, "k", { ctrl: true });
+  const toolKeys = store.nodes.filter((node) => node.kind === "tool_call").map((node) => node.key);
+  expect(toolKeys).toHaveLength(2);
+  const first = t.renderer.root.findDescendantById(toolKeys[0]!) as BoxRenderable;
+  const second = t.renderer.root.findDescendantById(toolKeys[1]!) as BoxRenderable;
+  expect(rgbToHex(second.backgroundColor).toLowerCase()).toBe(focusBg().toLowerCase());
+  press(t, "up");
+  await t.renderOnce();
+  expect(rgbToHex(first.backgroundColor).toLowerCase()).toBe(focusBg().toLowerCase());
+  expect(t.captureCharFrame()).toContain("[↑ / ↓] previous / next block");
+  press(t, "x", { ctrl: true });
+  press(t, "k");
   await t.renderOnce();
   press(t, "escape");
   await t.renderOnce();
@@ -2934,8 +3071,10 @@ test("Tab returns block focus to the composer with a sidebar open and never sele
   );
   const open = await captureUntil(t, "Tab navigation plan");
   expect(open).toContain("│ Plan");
-  press(t, "down", { ctrl: true });
-  press(t, "k", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "down");
+  press(t, "x", { ctrl: true });
+  press(t, "k");
   await t.renderOnce();
   press(t, "tab");
   await t.renderOnce();
@@ -2946,9 +3085,10 @@ test("Tab returns block focus to the composer with a sidebar open and never sele
   await t.renderOnce();
   expect(submissions).toEqual(["submit from composer after Tab"]);
 
-  press(t, "k", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "k");
   await t.renderOnce();
-  // Ctrl+K now targets the transcript as a whole; it must not re-toggle the
+  // Ctrl+X K now targets the transcript as a whole; it must not re-toggle the
   // block that Tab just left behind.
   expect(t.captureCharFrame()).toContain("blocks expanded");
   t.renderer.destroy();
@@ -3033,7 +3173,8 @@ test("the split sidebar owns one compact textual agent roster, including after e
   expect(afterTab).toContain("> Lead transcript");
   expect(afterTab).not.toContain("> A1 Scout");
 
-  press(t, "o", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "o");
   await t.renderOnce();
   const expanded = t.captureCharFrame();
   expect(expanded).toContain("Lead transcript");
@@ -3247,7 +3388,8 @@ test("the sidebar is the only compact sub-agent roster", async () => {
   expect(frame).toContain("│ Agents");
   expect(frame.replace(/[│\s]+/gu, " ")).toContain("0/1 finished · 1 running");
   expect(frame).not.toContain("Agents 1 · 1 running");
-  press(t, "s", { ctrl: true });
+  press(t, "x", { ctrl: true });
+  press(t, "s");
   await t.renderOnce();
   await t.renderOnce();
   const closed = t.captureCharFrame();
@@ -3441,24 +3583,33 @@ test("run configuration pickers stay closed during execution and return when idl
   try {
     await captureUntil(t, "Steer this run");
     for (const [key, mods] of [
-      ["i", { ctrl: true }],
-      ["g", { ctrl: true }],
+      ["i", {}],
+      ["g", {}],
+      ["m", {}],
       ["tab", { shift: true }],
     ] as const) {
+      if (key !== "tab") press(t, "x", { ctrl: true });
       press(t, key, mods);
       await t.renderOnce();
       const out = t.captureCharFrame();
       expect(out).not.toContain("Select isolation");
       expect(out).not.toContain("Select Guard");
+      expect(out).not.toContain("Select memory");
       expect(out).not.toContain("Select Agent Profile");
     }
     setActive(false);
     await captureUntil(t, "New task");
-    press(t, "i", { ctrl: true });
+    press(t, "x", { ctrl: true });
+    press(t, "i");
     await captureUntil(t, "Select isolation");
     press(t, "escape");
-    press(t, "g", { ctrl: true });
+    press(t, "x", { ctrl: true });
+    press(t, "g");
     await captureUntil(t, "Select Guard");
+    press(t, "escape");
+    press(t, "x", { ctrl: true });
+    press(t, "m");
+    await captureUntil(t, "Select memory");
     press(t, "escape");
     press(t, "tab", { shift: true });
     await captureUntil(t, "Select Agent Profile");
@@ -3467,7 +3618,7 @@ test("run configuration pickers stay closed during execution and return when idl
   }
 });
 
-test("Ctrl+W opens the current workflow directly and preserves the composer draft", async () => {
+test("Ctrl+X W opens the current workflow directly and preserves the composer draft", async () => {
   const calls: string[] = [];
   const workflow = () => ({ root: "current-workflow", nodes: new Map() });
   const t = await mountApp(
@@ -3499,13 +3650,60 @@ test("Ctrl+W opens the current workflow directly and preserves the composer draf
   try {
     await captureUntil(t, "New task");
     await t.mockInput.typeText("preserve this draft");
-    press(t, "w", { ctrl: true });
+    press(t, "x", { ctrl: true });
+    press(t, "w");
     await captureUntil(t, "Current workflow detail");
     expect(calls[0]).toBe("current-workflow");
     expect(calls).not.toContain("list");
-    press(t, "w", { ctrl: true });
+    press(t, "x", { ctrl: true });
+    press(t, "w");
     const out = await captureUntil(t, "preserve this draft");
     expect(out).not.toContain("Current workflow detail");
+  } finally {
+    t.renderer.destroy();
+  }
+});
+
+test("legacy wire input opens leader pickers without consuming the draft and keeps narrow chrome complete", async () => {
+  const t = await mountApp(defaultProps({}), { width: 80, height: 32, kittyKeyboard: false });
+  try {
+    await t.mockInput.typeText("draft preserved");
+    await t.renderOnce();
+    const initial = t.captureCharFrame();
+    for (const text of [
+      "Isolation:",
+      "Guard:",
+      "Memory:",
+      "[I] isolation",
+      "[G] guard",
+      "[M] memory",
+      "[E] expand editor",
+    ])
+      expect(initial).toContain(text);
+    for (const [key, title] of [
+      ["i", "Select isolation"],
+      ["g", "Select Guard"],
+      ["m", "Select memory"],
+    ] as const) {
+      t.mockInput.pressKey("x", { ctrl: true });
+      await t.renderOnce();
+      const pending = t.captureCharFrame();
+      expect(pending).toContain("Ctrl+X active · choose a key");
+      const activityLine = t.renderer.root.findDescendantById("lead-activity-line");
+      expect(activityLine).toBeDefined();
+      expect(pending.split("\n")[activityLine!.y]).toContain("Ctrl+X active · choose a key");
+      t.mockInput.pressKey(key);
+      await captureUntil(t, title);
+      expect(t.captureCharFrame()).not.toContain("Ctrl+X active · choose a key");
+      t.mockInput.pressEscape();
+      await captureUntil(t, "draft preserved");
+    }
+    t.mockInput.pressKey("x", { ctrl: true });
+    press(t, "escape");
+    await t.renderOnce();
+    const escaped = t.captureCharFrame();
+    expect(escaped).not.toContain("Select memory");
+    expect(escaped).not.toContain("Ctrl+X active · choose a key");
   } finally {
     t.renderer.destroy();
   }

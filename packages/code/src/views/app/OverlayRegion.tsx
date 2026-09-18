@@ -33,7 +33,7 @@ export interface OverlayRegionProps {
   host: OverlayHost;
   fallback: JSX.Element;
   interaction: Interaction;
-  diffNode: Accessor<TranscriptToolNode | null>;
+  diffNodes: Accessor<readonly TranscriptToolNode[]>;
   activity: ActivityStore;
   /** Absent until a backend supplies the current-plan document reader. */
   plans?: Pick<PlansService, "read">;
@@ -97,8 +97,9 @@ export function OverlayRegion(props: OverlayRegionProps): JSX.Element {
             <Suspense fallback={<text>Loading diff…</text>}>
               <DiffViewer
                 interaction={props.interaction}
-                node={props.diffNode}
+                nodes={props.diffNodes}
                 active={lifecycle.active}
+                onClose={() => props.host.dismissTop()}
               />
             </Suspense>
           </SurfaceOverlay>

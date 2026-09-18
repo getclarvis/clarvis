@@ -8,6 +8,7 @@ import {
   registerEnabledFields,
   registerEscapeClearsPendingSequence,
   registerMetadataFields,
+  registerTimedLeader,
   registerUnresolvedCommandWarnings,
 } from "@opentui/keymap/addons";
 import { registerBaseLayoutFallback } from "@opentui/keymap/addons/opentui";
@@ -63,6 +64,8 @@ export interface InteractionEffects {
   openIsolationPicker(): void;
   /** Open the Guard picker without changing isolation. */
   openReviewPicker(): void;
+  /** Open the session Memory picker without changing persisted settings. */
+  openMemoryPicker(): void;
   /** Move to the next focus target without activating it or changing transcript selection. */
   focusNext(): void;
   /** Open the current Goal detail from the shell. */
@@ -108,23 +111,19 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
   "app.suspend": [{ key: "ctrl+z" }],
   "focus.next": [{ key: "tab" }],
   "agent.picker": [{ key: "shift+tab" }],
-  "activity.toggle": [{ key: "ctrl+s" }],
-  "isolation.picker": [{ key: "ctrl+i" }],
-  "review.picker": [
-    { key: "alt+g", minimumProfile: "enhanced", requires: ["meta"] },
-    { key: "ctrl+g" },
-  ],
-  "controls.open": [{ key: "alt+r", minimumProfile: "enhanced", requires: ["meta"] }],
-  "plan.open": [
-    { key: "ctrl+p" },
-    { key: "alt+p", minimumProfile: "enhanced", requires: ["meta"] },
-  ],
-  "goal.toggle": [{ key: "ctrl+o" }],
-  "workflow.current": [{ key: "ctrl+w" }],
-  "transcript.toggleCollapse": [{ key: "ctrl+k" }],
-  "tool.interruptFocused": [],
-  "transcript.focusPrev": [{ key: "ctrl+up" }],
-  "transcript.focusNext": [{ key: "ctrl+down" }],
+  "activity.toggle": [{ key: "<leader>s" }],
+  "isolation.picker": [{ key: "<leader>i" }],
+  "review.picker": [{ key: "<leader>g" }],
+  "memory.picker": [{ key: "<leader>m" }],
+  "controls.open": [{ key: "<leader>r" }],
+  "plan.open": [{ key: "<leader>p" }],
+  "goal.toggle": [{ key: "<leader>o" }],
+  "workflow.current": [{ key: "<leader>w" }],
+  "transcript.diff": [{ key: "<leader>d" }],
+  "transcript.toggleCollapse": [{ key: "<leader>k" }],
+  "tool.interruptFocused": [{ key: "<leader>t" }],
+  "transcript.focusPrev": [{ key: "<leader>up" }],
+  "transcript.focusNext": [{ key: "<leader>down" }],
   "transcript.scrollPageUp": [{ key: "pageup" }],
   "transcript.scrollPageDown": [{ key: "pagedown" }],
   "transcript.followTail": [{ key: "end" }],
@@ -141,10 +140,12 @@ export const DEFAULT_WHEN: Record<string, string> = {
   "activity.toggle": "overlay==none",
   "isolation.picker": "overlay==none",
   "review.picker": "overlay==none",
+  "memory.picker": "overlay==none",
   "controls.open": "overlay==none",
   "plan.open": "overlay in (none, plan)",
   "goal.toggle": "overlay==none",
   "workflow.current": "overlay==none",
+  "transcript.diff": "overlay==none",
   "transcript.scrollPageUp": "overlay==none",
   "transcript.scrollPageDown": "overlay==none",
   "transcript.followTail": "overlay==none",
@@ -398,6 +399,8 @@ export function createInteraction(
   initialKeyboardConfig: KeyboardConfig = { version: 1, environments: {} },
 ): Interaction {
   const keymap = createLifecycleSafeKeymap(renderer);
+  const offLeader = registerTimedLeader(keymap, { trigger: "ctrl+x", timeoutMs: 2000 });
+
   /**
    * A terminal may deliver repeat packets while Ctrl+C is held. When a window
    * is open, keep repeats from turning one cancellation gesture into a later
@@ -507,11 +510,11 @@ export function createInteraction(
     );
   });
   const addonDisposers = [
+    offLeader,
     registerImmediateExactDisambiguation(keymap),
-    // Clarvis does not expose pending key sequences as a visible mode. Let one
-    // Escape clear a half-entered sequence and continue to the active Back /
-    // Close command; consuming it here made the UI appear to ignore the first
-    // keypress (and a quick second press could clear another deferred event).
+    // The footer exposes a pending sequence without turning it into a modal.
+    // Let one Escape clear the sequence and continue to the active Back / Close
+    // command; consuming it here made the UI appear to ignore the first press.
     registerEscapeClearsPendingSequence(keymap, { preventDefault: false }),
     registerBackspacePopsPendingSequence(keymap),
     registerBaseLayoutFallback(keymap),
@@ -680,7 +683,6 @@ export function createInteraction(
 
   let offRunConfiguration: (() => void) | undefined;
   let offVital: (() => void) | undefined;
-  let offContextualInterrupt: (() => void) | undefined;
   function configureKeyboard(config: KeyboardConfig): void {
     const input = keyboardInput(platform, keymap);
     const id = keyboardEnvironmentId(input);
@@ -717,38 +719,12 @@ export function createInteraction(
       enabled: () => effects.isRunActive(),
       bindings: vital
         .filter((binding) =>
-          ["agent.picker", "isolation.picker", "review.picker"].includes(String(binding.cmd)),
+          ["agent.picker", "isolation.picker", "review.picker", "memory.picker"].includes(
+            String(binding.cmd),
+          ),
         )
         .map((binding) => ({ ...binding, cmd: () => {} })),
     });
-    offContextualInterrupt?.();
-    const interruptKeys = resolveCommandBindings(
-      "tool.interruptFocused",
-      DEFAULT_BINDING_CANDIDATES["tool.interruptFocused"] ?? [],
-      environment,
-      validOverrides,
-    );
-    const cancelKeys = resolveCommandBindings(
-      "run.cancel",
-      DEFAULT_BINDING_CANDIDATES["run.cancel"] ?? [],
-      environment,
-      validOverrides,
-    );
-    const cancelUsesCtrlX = cancelKeys.some((key) => key.replaceAll(" ", "") === "ctrl+x");
-    offContextualInterrupt =
-      interruptKeys.length === 0 && !cancelUsesCtrlX
-        ? keymap.registerLayer({
-            priority: 850,
-            bindings: [
-              {
-                key: "ctrl+x",
-                cmd: "tool.interruptFocused",
-                when: "overlay==none",
-                modal: "none",
-              },
-            ],
-          })
-        : undefined;
     setEnvironmentId(id);
     setKeyboardEnvironment(environment);
     keymap.setData("keyboard.profile", environment.profile);
@@ -777,7 +753,6 @@ export function createInteraction(
     const disposers = [
       offVital,
       offRunConfiguration,
-      offContextualInterrupt,
       offCommands,
       offWindowRelease,
       offWindowPress,

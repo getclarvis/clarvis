@@ -135,7 +135,8 @@ function iterationLimitCopy(value: string): string {
  * fields. When `kind` names a known decision vocabulary
  * (`guard_confirm`/`plan_review`), option labels are relabeled into the
  * user-facing wording from {@link DECISION_LABELS} instead of the raw wire
- * values.
+ * values. Guard decisions are also projected in affirmative-first order while
+ * retaining `deny` as their safe Enter default.
  */
 export function parseElicitForm(params: ElicitRequestParams): ElicitForm {
   const p = params as {
@@ -165,6 +166,20 @@ export function parseElicitForm(params: ElicitRequestParams): ElicitForm {
   if (labels) {
     for (const field of fields)
       for (const option of field.options) option.label = labels[option.value] ?? option.label;
+  }
+  if (params.kind === "guard_confirm" || params.kind === "configuration_review") {
+    const decision = fields.find((field) => field.name === "decision");
+    const order = ["allow", "allow_session", "deny"];
+    decision?.options.sort(
+      (left, right) =>
+        (order.includes(left.value) ? order.indexOf(left.value) : order.length) -
+        (order.includes(right.value) ? order.indexOf(right.value) : order.length),
+    );
+    if (
+      decision?.options.some((option) => option.value === "deny") &&
+      decision.default === undefined
+    )
+      decision.default = "deny";
   }
   if (params.kind === "workflow_review") {
     const decision = fields.find((field) => field.name === "decision");

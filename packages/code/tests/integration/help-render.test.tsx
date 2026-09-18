@@ -182,13 +182,13 @@ test("help projects active actions, destinations and environment without duplica
   const out = await frame();
   expect(out).toContain("Available here");
   expect(out).toContain("Cancel the current run");
-  expect(out).toContain("[^c]");
+  expect(out).toContain("[Ctrl+C]");
   expect(out).toContain("Go to");
   expect(out).toContain("Settings");
   expect(out).toContain("settings > Providers");
   expect(out).toContain("Editing");
   expect(out).toContain("Send the current prompt");
-  expect(out).toContain("[^j] / [shift+↵]");
+  expect(out).toContain("[Ctrl+J] / [Shift+↵]");
   expect(out).toContain("Insert a newline");
   expect(out).toContain("Input syntax");
   expect(out).toContain("Keyboard environment");
@@ -209,7 +209,7 @@ test("help documents the global keys its own overlay deactivates", async () => {
   const out = await frame();
   expect(out).toContain("Available elsewhere");
   expect(out).toContain("Toggle the focused block, else all collapsible blocks");
-  expect(out).toContain("[^k]");
+  expect(out).toContain("[Ctrl+K]");
   // ...and it does not repeat what is active right here.
   const elsewhereBlock = out.slice(out.indexOf("Available elsewhere"));
   expect(elsewhereBlock).not.toContain("Cancel the current run");

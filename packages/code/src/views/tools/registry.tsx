@@ -471,6 +471,7 @@ export function diffHeaderPath(diff: string): string | undefined {
     const p = m[2]!
       .split("\t")[0]!
       .trim()
+      .replaceAll("\\", "/")
       .replace(/^[ab]\//, "");
     if (p.length === 0 || p === "/dev/null") continue;
     if (m[1] === "+++") return p;
@@ -479,12 +480,12 @@ export function diffHeaderPath(diff: string): string | undefined {
   return fallback;
 }
 
-interface DiffFileSection {
+export interface DiffFileSection {
   path: string | undefined;
   diff: string;
 }
 
-function splitDiffFiles(raw: string): { preamble: string; files: DiffFileSection[] } {
+export function splitDiffFiles(raw: string): { preamble: string; files: DiffFileSection[] } {
   const lines = raw.split("\n");
   const starts: number[] = [];
   for (let i = 0; i < lines.length; i++) {

@@ -55,7 +55,7 @@ status, and a checkpoint is displayed separately from final completion.
 Semantic formulation is also a first-class presentation state: it drives the Lead activity line and
 the Goal section of the shared activity sidebar until the host returns a receipt. Creation keeps the
 transcript mounted; the complete Goal view opens only by explicit `/goal`, click, or contextual
-`Ctrl+O` from that sidebar section. Once open, the same `Ctrl+O` returns to the transcript.
+`Ctrl+X O` from that sidebar section. Once open, the same `Ctrl+X O` returns to the transcript.
 Production: goal controller composition and `closeWorkspace` in
 [runtime.tsx](../../packages/code/src/runtime.tsx), `registerCodeCommands` in
 [command-composition.ts](../../packages/code/src/app/command-composition.ts), and `runOutcomeStatus`
@@ -989,7 +989,7 @@ gate's own contract type is `QuitConfirm = { quit(opts: { confirm: boolean }): v
 `createQuitConfirm`'s own TSDoc states the two calling conventions: `confirm: true` "always arms the
 gate — the first call only notifies and starts a [1500ms] window, and quitting happens on a second
 call inside that window"; `confirm: false` "is for a caller that has already spent a keystroke on the
-decision (the double-tap `^C` path, and `/quit`, where typing the command is itself explicit): it
+decision (the double-tap `Ctrl+C` path, and `/quit`, where typing the command is itself explicit): it
 quits immediately from a state where nothing is at stake.". But the gate does not simply
 trust that flag: a dirty view or a run that will be cancelled on exit still requires confirmation.
 Mechanically, `atStake = dirtyView || deps.isRunAtRisk()` and the gate arms whenever `confirm || atStake`.
@@ -1007,7 +1007,7 @@ already-armed prompt (`" (unsaved changes)"` > `" (run active)"` > `" (draft uns
 `packages/code/tests/unit/quit-confirm.test.ts` pins the double-tap arm/confirm cycle through its
 named draft-only, run-active wording, and `/quit`-mid-run cases;
 `packages/code/tests/integration/interaction.test.ts` cross-references
-the double-tap `^C` path this gate was written for.
+the double-tap `Ctrl+C` path this gate was written for.
 Production: `createQuitConfirm` in [quit-confirm.ts](../../packages/code/src/views/quit-confirm.ts)
 and its composition in [App.tsx](../../packages/code/src/views/App.tsx). Test:
 [app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx)
@@ -1113,97 +1113,37 @@ saving the staged controller choice. Production:
 `packages/code/src/views/config/ProvidersPanel.tsx` (first-model `onClose`). Test:
 `packages/code/tests/integration/providers-key-render.test.tsx` (first-run Escape for both pickers).
 
-`HeaderRows` (`packages/code/src/views/HeaderRows.tsx`, `HeaderRows`) renders exactly one
-`height={1}` row: brand wordmark, workspace chip, optional identity chip, an `Index` over status
-chips, a `flexGrow` spacer, optional exception and urgent chips, then the non-shrinking product
-version after one gutter column. It is a pure projection of `HeaderPlan`, computed by
-`projectHeader` (`packages/code/src/views/header-projection.ts`, `projectHeader`).
+Header and footer use their content height instead of reserving a single terminal row.
+The header packs complete fields into rows using terminal cell widths: brand, workspace,
+agent, model, Isolation, Guard, Memory, actionable host state and version. Narrow widths
+retain every field; a field longer than a row wraps within the available width. The brand
+appears only once, the version anchors the final row, and continuation rows have no leading
+separator. The transcript receives the remaining height.
 
-#### 4.13.1 `projectHeader`: priority-zoned chips and their elision ladder
+`projectHeader` retains full configuration labels at every width. Workspace uses its display
+label or basename and optional branch. Floor mode omits secondary agent identity. Memory
+`inert` remains labelled on; Host isolation and Guard Off retain warning colors.
+Sandbox unavailable outranks Doctor attention; Host isolation is not repeated as a separate
+exception when the isolation chip already states it. Connection failure and reconnect-pending
+notices remain available at narrow widths. Active native runs use host-reported isolation;
+idle runs use next-run preferences.
 
-App's `effectiveRunIsolation` projection uses host-reported native placement during an active run,
-and keeps configured next-run preferences when the native host is idle. Container status retains the
-selected Docker/Podman projection; no native fallback state exists. Production: `effectiveRunIsolation` in
-[execution-safety.ts](../../packages/code/src/adapters/execution-safety.ts), used by `App`.
-Test: `shows active host placement without replacing the idle next-run preference` in
-[execution-safety.test.ts](../../packages/code/tests/unit/execution-safety.test.ts).
+Production: `packages/code/src/views/header-projection.ts` (`projectHeader`, `statusChips`),
+`packages/code/src/views/HeaderRows.tsx` (`HeaderRows`), and
+`packages/code/src/views/Footer.tsx` (`Footer`).
+Test: `packages/code/tests/unit/header-projection.test.ts` ("all widths retain the complete
+run configuration") and `packages/code/tests/integration/header-render.test.tsx`
+("the audited width matrix wraps all header fields without losing identity").
 
-`HeaderInput` (`packages/code/src/views/header-projection.ts`, `HeaderInput`) is the one shell snapshot the row is derived
-from — `width`, `version`, `floor`, `agentName`, `model`, `isolation`, `review`, `sandboxUnavailable?`,
-`memoryConfigured`, `memory`, `plans`, `connection`, `doctorDirty`, `workspace`, `workspaceLabel?`,
-`branch?` — and its own TSDoc assigns App the sole derivation point for every header status.
-`HeaderFieldKey` is the closed union of workspace, identity, model, isolation, review, memory,
-urgent, exception and `version`; a
-`HeaderField` is `{ key, text, color, elastic }`; `HeaderPlan` makes its `version` field mandatory
-beside the existing left/status/host-state zones (same module, named types).
-
-The projection's TSDoc states its three-zone layout directly: identity and next-run configuration
-form one separator-joined group on the left, actionable host state follows the flexible gap, and the
-root-owned product version anchors the final zone. The first field after the gap carries no
-separator of its own because a `·` stranded after whitespace separates nothing
-(`packages/code/src/views/header-projection.ts`, `projectHeader`).
-
-**Reserved columns.** `BRAND_COLS = 10` is the painted left padding plus `◆ Clarvis`;
-`WORKSPACE_FLOOR = 14` keeps the workspace from disappearing; `IDENTITY_FLOOR = 10` is skipped in
-`floor` mode; and `VERSION_GUTTER = 1` plus `Bun.stringWidth(version.text)` is always held back for
-the final `v<version>` field. `cols()` measures with `Bun.stringWidth`, while `separator()` is two
-spaces, `glyph("separator")`, two spaces (`packages/code/src/views/header-projection.ts`, named
-constants, `cols` and `separator`).
-
-**Left-of-gap zones — computed unconditionally.** `workspace` in `projectHeader` resolves to
-`input.workspaceLabel ?? basename(input.workspace) || input.workspace || "workspace"`, appending
-`" (branch)"` when `input.branch` is set, and is always `elastic: true` and coloured `tokens.fg`.
-`identity` is `input.agentName` in `tokens.muted`, `elastic: true`, and is entirely omitted when
-`input.floor` is set (`packages/code/src/views/header-projection.ts`, `projectHeader`).
-
-**Right-of-gap zones — computed first, because they bound the room left for status chips.** The
-version field is always `v${input.version}` in `tokens.muted`, never elastic. `urgentField` fires
-whenever `input.connection.phase !== "ready"`: a warning glyph plus
-`connectionLabel(input.connection, input.width < 72)` in `tokens.warn`, never elastic. Once the
-connection is ready, a committed host-side change that has not entered the immutable Container
-generation renders `⚠ reconnect pending` in the same urgent slot until successful reconnection clears
-the placement notice. `exceptionField`
-is a strict priority chain evaluated only when `exceptionAllowed` (`input.width >= 100`):
-`sandboxUnavailable` ("Sandbox unavailable") outranks Host isolation ("Isolation: Host"), which is
-itself only checked when the caller passes `includeIsolation: true`, which outranks `doctorDirty`
-("Doctor needs attention") — all three render in `tokens.warn`. Both are computed before `room` so
-their reserved width is subtracted first; the wider-of-two-renderings probe exists because whether
-`exception` will end up absorbing the Host-isolation warning is not known until after `statusChips`
-has run (`packages/code/src/views/header-projection.ts`, `urgentField`, `exceptionField`,
-`projectHeader`).
-
-**`statusChips` — the elision ladder.** `modelNames` reduces `input.model`
-through `parseModelRef` to its `modelId`, then to the substring after the last `/` as the `short` form.
-`memoryLabel` maps `memory === "off"` to `"off"` and anything else — including `"inert"` —
-to `"on"`, because ("Memory as the rest of the product states it — `inert` is still configured, so it
-reads `on`"). Five candidate chip sets are tried widest-first, and the first whose summed width
-(chip text plus one separator each) fits `room` wins (`packages/code/src/views/header-projection.ts`,
-`statusChips`, `modelNames`, `memoryLabel`):
-
-| Rung | Chips                                                                           |
-| ---- | ------------------------------------------------------------------------------- |
-| 1    | `model.full`, `Isolation: {isolation}`, `Guard: {review}`, `Memory: {memory}`  |
-| 2    | `model.short`, `Isolation: {isolation}`, `Guard: {review}`, `Memory: {memory}` |
-| 3    | `model.short`, `Iso {isolation}`, `{review}`, `mem {memory}`                    |
-| 4    | `model.short`, `{isolation}`, `{review}`                                        |
-| 5    | `model.short`                                                                   |
-
-If none fits, `statusChips` returns `[]`. The model chip is always `tokens.fg`; Isolation is
-`tokens.warn` for Host, Review is `tokens.warn` for Off, and other status chips are `tokens.muted`
-(same named functions).
-
-**Assembly.** `room` in `projectHeader` is `width − BRAND_COLS − WORKSPACE_FLOOR −
-(floor ? 0 : IDENTITY_FLOOR) − VERSION_GUTTER − version width − (urgent reserved) −
-(exception reserved)`. `exception` is only actually computed, past the
-`exceptionAllowed` gate, with `includeIsolation` set to whether the chosen chip rung already carries
-an `"isolation"` key — so a visible Host chip suppresses the redundant `"Isolation: Host"`
-exception. Every status chip and every
-host-state field except the first in its group is prefixed with a fresh `separator()`; the first
-field after the flexible gap carries none, and the separate final version zone uses its fixed gutter
-instead. `packages/code/tests/unit/header-projection.test.ts` pins every rung of the ladder,
-the grouped separator rule, the Sandbox-outranks-doctor and Host-stated-once priorities, the
-floor-mode identity drop and the version field; the render side is pinned by
-`packages/code/tests/integration/header-render.test.tsx`.
+The application action footer preserves all active footer actions across as many rows as needed.
+Complete shortcut/label segments move together; an individually overlong segment wraps as text.
+A shared Ctrl+X group repeats its prefix on each continuation row. Status and run information
+use separate content-sized rows, preventing them from taking space from action hints.
+Production: `packages/code/src/ui/patterns/active-actions.ts` (`footerLines`),
+`packages/code/src/ui/patterns/navigation-bar.tsx` (`NavigationBar`), and
+`packages/code/src/views/App.tsx` (`App`).
+Test: `packages/code/tests/unit/active-actions.test.ts` ("responsive footer retains every action
+across rows with explicit modifier prefixes").
 
 ### 4.14 Three `runtime.tsx` behaviors §2.5 names but does not narrate
 
@@ -1496,10 +1436,10 @@ Production: `packages/code/src/views/Splash.tsx` (`BANNER`, `BrandBanner`).
 Pinned: `packages/code/tests/integration/splash-render.test.tsx` (idle width fallback, banner shape,
 and startup width/height edges).
 
-**INV-CB-37.** `HeaderRows` is one terminal row.
-Production: `packages/code/src/views/HeaderRows.tsx` (`height={1}` on the only row box, inside the single column wrapper).
-Pinned: `packages/code/tests/integration/header-render.test.tsx` — the fixture places a rule and
-a `BODY` line after the header and asserts they land on rows 1 and 2.
+**INV-CB-37.** Header height follows the wrapped fields; narrowing the terminal does not hide
+configuration or actionable host state.
+Production: `packages/code/src/views/HeaderRows.tsx` (`HeaderRows`).
+Test: `packages/code/tests/integration/header-render.test.tsx` (width matrix and body continuity).
 
 **INV-CB-38.** `registerCodeCommands`'s `dispose` is idempotent and releases the app registration
 before the feature scope.

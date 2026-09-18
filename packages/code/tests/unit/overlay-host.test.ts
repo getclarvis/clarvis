@@ -130,7 +130,7 @@ test("a picker blocks view navigation and leaves the current overlay intact", ()
   expect(h.toasts).toEqual(["", "warn:close the current overlay first"]);
 });
 
-test("openView: mounts the view with its ^s/^t (810) and esc (950) layers", () => {
+test("openView: mounts the view with its Ctrl+S/Ctrl+T (810) and esc (950) layers", () => {
   const h = harness();
   h.host.ui.openView("providers.open", view);
   expect(h.host.overlay()).toBe("view");

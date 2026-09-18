@@ -133,6 +133,27 @@ export function createFakeKeymap(): {
         continues: false,
       }));
     },
+    getPendingSequence() {
+      return [];
+    },
+    getCommandEntries() {
+      return activeBindings().flatMap(({ binding, command }) =>
+        command
+          ? [
+              {
+                command,
+                bindings: [
+                  {
+                    sequence: [{ display: String(binding.key) }],
+                    command: binding.cmd,
+                    commandAttrs: commandAttrs(command),
+                  },
+                ],
+              },
+            ]
+          : [],
+      );
+    },
     getCommands() {
       const seen = new Set<string>();
       const commands: TestCommand[] = [];

@@ -124,7 +124,7 @@ test("a plan_review without a plan projection still renders the gate", async () 
   ));
   expect(out).toContain("Plan approval required");
   expect(out).toContain("request changes");
-  expect(out).not.toContain("[^p] open plan");
+  expect(out).not.toContain("[Ctrl+P] open plan");
 });
 
 const WORKFLOW_REVIEW: ElicitRequestParams = {
@@ -150,24 +150,22 @@ test("a workflow_review is an explicit preflight with a safe before-start promis
   expect(out).toContain("[2] do not run");
 });
 
-test("workflow preflight has no default and submits only an explicitly highlighted decision", async () => {
+test("workflow preflight has no default and a numbered decision submits immediately", async () => {
   const run = await mountKeyed(WORKFLOW_REVIEW);
   run.press("return");
   expect(run.resolved).toEqual([]);
   expect(run.notices).toEqual(["answer required: decision"]);
   run.press("1");
-  run.press("return");
   expect(run.resolved).toEqual([{ action: "accept", content: { decision: "run" } }]);
   run.t.renderer.destroy();
 
   const cancel = await mountKeyed(WORKFLOW_REVIEW);
   cancel.press("2");
-  cancel.press("return");
   expect(cancel.resolved).toEqual([{ action: "accept", content: { decision: "cancel" } }]);
   cancel.t.renderer.destroy();
 });
 
-test("^p opens the plan overlay from the approval gate", async () => {
+test("Ctrl+P opens the plan overlay from the approval gate", async () => {
   const { interaction, press } = fakeInteraction();
   let opened = 0;
   const t = await openRender(
@@ -183,7 +181,7 @@ test("^p opens the plan overlay from the approval gate", async () => {
     { width: 100, height: 40 },
   );
   await t.renderOnce();
-  press("ctrl+p");
+  press("<leader>p");
   expect(opened).toBe(1);
   t.renderer.destroy();
 });
@@ -234,8 +232,8 @@ test("a guard confirmation is framed as a command approval, not a neutral questi
   expect(out).not.toContain("Agent asks");
   expect(out).toContain("no allowed commands list configured");
   expect(out).toContain("rm -rf build");
-  expect(out).toMatch(/\(◉\)\s+\[1\]\s+deny/);
-  expect(out).toMatch(/\[2\]\s+allow once/);
+  expect(out).toMatch(/\[1\]\s+allow once/);
+  expect(out).toMatch(/\(◉\)\s+\[2\]\s+deny/);
 });
 
 const GUARD_SESSION: ElicitRequestParams = {
@@ -284,13 +282,13 @@ test("a structured guard surfaces the analyzer's undecidable-expansions warning"
   expect(out).toContain("Warning: this command contains undecidable expansions.");
 });
 
-test("allow_session carries an explicit scope label and never takes the default focus", async () => {
+test("allow_session is the second positive choice and deny remains the safe default", async () => {
   const out = await frame(() => (
     <ElicitBlock interaction={stubInteraction} request={GUARD_SESSION} onResolve={() => {}} />
   ));
-  expect(out).toMatch(/\(◉\)\s+\[1\]\s+deny/);
-  expect(out).toMatch(/\[2\]\s+allow once/);
-  expect(out).toMatch(/\[3\]\s+allow for this session/);
+  expect(out).toMatch(/\[1\]\s+allow once/);
+  expect(out).toMatch(/\[2\]\s+allow for this session/);
+  expect(out).toMatch(/\(◉\)\s+\[3\]\s+deny/);
 
   const untouched = await mountKeyed(GUARD_SESSION);
   untouched.press("return");
@@ -298,8 +296,7 @@ test("allow_session carries an explicit scope label and never takes the default 
   untouched.t.renderer.destroy();
 
   const session = await mountKeyed(GUARD_SESSION);
-  session.press("3");
-  session.press("return");
+  session.press("2");
   expect(session.resolved).toEqual([{ action: "accept", content: { decision: "allow_session" } }]);
   session.t.renderer.destroy();
 });
@@ -328,7 +325,7 @@ async function mountKeyed(request: ElicitRequestParams): Promise<{
   return { t, press, resolved, notices };
 }
 
-test("plan review has no preselected verdict: select first, then confirm", async () => {
+test("plan review has no preselected verdict and a digit submits its decision immediately", async () => {
   const { t, press, resolved, notices } = await mountKeyed(asPlanReview());
   const initial = t.captureCharFrame();
   expect(initial).not.toContain("(◉)");
@@ -338,12 +335,6 @@ test("plan review has no preselected verdict: select first, then confirm", async
   expect(notices).toEqual(["answer required: decision"]);
 
   press("2");
-  await t.renderOnce();
-  const selected = t.captureCharFrame();
-  // Cursor and radio move together in the same render, before confirmation.
-  expect(selected).toMatch(/▸\s+\(◉\)\s+\[2\]\s+request changes/);
-
-  press("return");
   expect(resolved).toEqual([{ action: "accept", content: { decision: "request_changes" } }]);
   t.renderer.destroy();
 });
@@ -362,7 +353,7 @@ test("modal choice bindings consume digit shortcuts instead of passing them to a
   );
   await t.renderOnce();
   const bindings = layers.flatMap((layer) => layer.bindings ?? []);
-  for (const key of ["1", "2", "3", "up", "down"]) {
+  for (const key of ["1", "2", "3", "0", "up", "down"]) {
     const binding = bindings.find((candidate) => candidate.key === key);
     expect(binding, `${key} is owned by the modal layer`).toBeDefined();
     expect(binding?.preventDefault, `${key} must not reach a focused composer`).not.toBe(false);
@@ -379,16 +370,31 @@ test("select follows the picker grammar: down moves the highlight, enter commits
   t.renderer.destroy();
 });
 
-test("a digit shortcut jumps the highlight but only enter submits", async () => {
+test("a digit shortcut submits immediately", async () => {
   const { t, press, resolved } = await mountKeyed(PLAN_REVIEW);
   press("3");
-  expect(resolved).toEqual([]);
-  press("return");
   expect(resolved).toEqual([{ action: "accept", content: { decision: "cancel" } }]);
   t.renderer.destroy();
 });
 
-test("digits are ignored while a text field is active (never stolen from inputs)", async () => {
+test("zero submits the tenth numbered option", async () => {
+  const options = Array.from({ length: 10 }, (_, index) => `option-${index + 1}`);
+  const request: ElicitRequestParams = {
+    message: "Choose one",
+    requestedSchema: {
+      type: "object",
+      properties: { response: { type: "string", enum: options } },
+      required: ["response"],
+    },
+  };
+  const { t, press, resolved } = await mountKeyed(request);
+  expect(t.captureCharFrame()).toContain("[0] option-10");
+  press("0");
+  expect(resolved).toEqual([{ action: "accept", content: { response: "option-10" } }]);
+  t.renderer.destroy();
+});
+
+test("numbered-choice commands deactivate while a text field is active", async () => {
   const { t, press, resolved } = await mountKeyed(PLAN_REVIEW);
   press("tab");
   press("2");
@@ -412,7 +418,7 @@ test("guard: enter commits exactly the highlighted option", async () => {
   first.t.renderer.destroy();
 
   const second = await mountKeyed(GUARD_CONFIRM);
-  second.press("down");
+  second.press("up");
   second.press("return");
   expect(second.resolved).toEqual([{ action: "accept", content: { decision: "allow" } }]);
   second.t.renderer.destroy();

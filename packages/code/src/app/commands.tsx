@@ -91,6 +91,7 @@ export interface AppCommandDeps {
     | "openAgentPicker"
     | "openIsolationPicker"
     | "openReviewPicker"
+    | "openMemoryPicker"
     | "openDiff"
     | "openPlan"
     | "quit"
@@ -366,7 +367,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     actionSurfaces: ["footer", "full-help"],
     footerLabel: "isolation",
-    hintPriority: 42,
+    hintPriority: 49,
     hintGroup: "navigation",
     run: () => effects.openIsolationPicker(),
   });
@@ -380,9 +381,23 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     actionSurfaces: ["footer", "full-help"],
     footerLabel: "guard",
-    hintPriority: 41,
+    hintPriority: 48,
     hintGroup: "navigation",
     run: () => effects.openReviewPicker(),
+  });
+
+  commands.registerAction({
+    name: "memory.picker",
+    enabled: () => !deps.runActive(),
+    title: "Memory",
+    desc: "Turn memory on or off for the next run in this session",
+    surface: "internal",
+    group: "navigate",
+    actionSurfaces: ["footer", "full-help"],
+    footerLabel: "memory",
+    hintPriority: 47,
+    hintGroup: "navigation",
+    run: () => effects.openMemoryPicker(),
   });
 
   commands.registerAction({
@@ -596,11 +611,15 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerAction({
     name: "transcript.diff",
     title: "Diff viewer",
-    desc: "Open the focused/last diff full-screen",
+    desc: "Open all diffs in the active transcript",
     slash: "/diff",
     surface: "slash",
     group: "navigate",
     parent: "inspect",
+    actionSurfaces: ["footer", "full-help"],
+    footerLabel: "diff",
+    hintPriority: 46,
+    hintGroup: "navigation",
     run: () => effects.openDiff(),
   });
   commands.registerAction({
@@ -1151,26 +1170,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     view: lazyView(async () => {
       const { SandboxConfigPanel } = await import("../views/cold-surfaces.ts");
       return (host) => SandboxConfigPanel(host, { settings: deps.settings, notify });
-    }),
-  });
-
-  commands.registerView({
-    name: "isolation.config",
-    title: "Isolation",
-    desc: "Choose Host, Sandbox, Docker or Podman for the next run",
-    surface: "internal",
-    group: "navigate",
-    parent: "settings",
-    view: lazyView(async () => {
-      const { IsolationConfigPanel } = await import("../views/cold-surfaces.ts");
-      return (host) =>
-        IsolationConfigPanel(host, {
-          settings: deps.settings,
-          notify,
-          runActive: deps.runActive,
-          reload: () => deps.reconnectBackend("reload"),
-          openSandbox: () => openWithReturn("sandbox.config", "isolation.config", "global"),
-        });
     }),
   });
 

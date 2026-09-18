@@ -100,7 +100,7 @@ test("with overlay none, the fallback shell renders and no overlay body appears"
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNode={() => null}
+        diffNodes={() => []}
         activity={activity()}
         plans={undefined}
       />
@@ -132,7 +132,7 @@ test("full-page overlays hide the shell without unmounting and rebuilding it", a
         host={host}
         fallback={<Shell />}
         interaction={fakeInteraction()}
-        diffNode={() => toolNode()}
+        diffNodes={() => [toolNode()]}
         activity={activity()}
         plans={undefined}
       />
@@ -168,7 +168,7 @@ test("the floating 'agentPicker' kind keeps the main shell rendered behind it", 
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNode={() => null}
+        diffNodes={() => []}
         activity={activity()}
         plans={undefined}
       />
@@ -188,7 +188,7 @@ test("an unrecognized overlay kind falls back to the main shell rather than blan
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNode={() => null}
+        diffNodes={() => []}
         activity={activity()}
         plans={undefined}
       />
@@ -215,7 +215,7 @@ test("overlay 'view' renders the mounted view's factory with its own host, not t
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNode={() => null}
+        diffNodes={() => []}
         activity={activity()}
         plans={undefined}
       />
@@ -263,7 +263,7 @@ test("full-region views preserve the fallback owner and its Yoga geometry across
         host={host}
         fallback={<Shell />}
         interaction={fakeInteraction()}
-        diffNode={() => null}
+        diffNodes={() => []}
         activity={activity()}
         plans={undefined}
       />
@@ -318,7 +318,7 @@ test("state read while constructing a mounted view does not remount its factory"
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNode={() => null}
+        diffNodes={() => []}
         activity={activity()}
         plans={undefined}
       />
@@ -375,7 +375,7 @@ test("an empty WorkflowsHub inside OverlayRegion performs one mount and one init
         host={overlay.host}
         fallback={<text>main shell content</text>}
         interaction={interaction}
-        diffNode={() => null}
+        diffNodes={() => []}
         activity={activity()}
         plans={undefined}
       />
@@ -402,7 +402,7 @@ test("overlay 'view' with no mounted view falls through to the fallback (no cras
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNode={() => null}
+        diffNodes={() => []}
         activity={activity()}
         plans={undefined}
       />
@@ -444,7 +444,7 @@ test("a stacked child keeps its parent's editor mounted, unfocused, and intact o
         host={host}
         fallback={<text>main shell content</text>}
         interaction={interaction}
-        diffNode={() => null}
+        diffNodes={() => []}
         activity={activity()}
       />
     ),
@@ -482,7 +482,7 @@ test("overlay 'diff' with no picked node shows the DiffViewer empty state", asyn
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNode={() => null}
+        diffNodes={() => []}
         activity={activity()}
         plans={undefined}
       />
@@ -511,7 +511,7 @@ test("overlay 'diff' with a picked node renders that tool's diff", async () => {
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNode={() => node}
+        diffNodes={() => [node]}
         activity={activity()}
         plans={undefined}
       />
@@ -545,7 +545,7 @@ test("overlay 'plan' renders the plan overlay from the activity store's live pla
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNode={() => null}
+        diffNodes={() => []}
         activity={a}
         plans={undefined}
       />
@@ -569,7 +569,7 @@ test("overlay 'plan' with no live plan falls back to the plan overlay's own empt
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNode={() => null}
+        diffNodes={() => []}
         activity={activity()}
         plans={undefined}
       />
@@ -598,7 +598,7 @@ test("the plan overlay never reads retained history without a live plan", async 
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNode={() => null}
+        diffNodes={() => []}
         activity={activity()}
         plans={plans}
       />

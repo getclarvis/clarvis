@@ -395,7 +395,7 @@ test("ctrl+p on a plan_review elicitation calls openPlan, wiring the block's pla
       openPlan: () => (opened += 1),
     }),
   );
-  press("ctrl+p");
+  press("<leader>p");
   expect(opened).toBe(1);
   t.renderer.destroy();
 });
@@ -684,7 +684,7 @@ test("the sidebar omits plan results and keeps full-plan navigation", async () =
     }),
   );
   const frame = t.captureCharFrame();
-  expect(frame).toContain("[^p]");
+  expect(frame).toContain("[Ctrl+X P]");
   expect(frame).not.toContain("Last result");
   expect(frame).not.toContain("click to rea");
   expect(frame).not.toContain("A long finding with evidence.");

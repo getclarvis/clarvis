@@ -62,18 +62,18 @@ function mount(
   return { host, controls, deps, notes, press, writes, modeCalls };
 }
 
-test("the effective status line and its note share the FieldRow value column", async () => {
+test("the overview keeps the effective status and settings rows compact", async () => {
   const { host, deps } = mount();
   const t = await openRender((() => MemoryConfigPanel(host, deps)) as never, {
     width: 110,
     height: 24,
   });
   await t.renderOnce();
-  const rows = t.captureCharFrame().split("\n");
-  const colOf = (needle: string): number => rows.find((r) => r.includes(needle))!.indexOf(needle);
-  expect(colOf("On — runs can read and update workspace memory")).toBe(
-    colOf("active for every run when configured"),
-  );
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("On — runs can read and update workspace memory");
+  expect(frame).toContain("Memory  on");
+  expect(frame).not.toContain("Configured:");
+  expect(frame).not.toContain("active for every run when configured");
   t.renderer.destroy();
 });
 
@@ -129,7 +129,7 @@ test("no memory block: the fallback row renders and creating one warns when defa
   expect(notes[0]).toContain("no usable default_model");
   frame = t.captureCharFrame();
   expect(frame).toContain("Memory  current off → after save on · next run");
-  expect(frame).toContain("Pending:         on");
+  expect(frame).toContain("current off → after save on");
   expect(frame).not.toContain("browse memory");
   t.renderer.destroy();
 });
@@ -185,8 +185,7 @@ test("removing the block via 'x' clears the draft, dirties the host, and notifie
   press("x");
   await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("Configured here: on");
-  expect(frame).toContain("Pending:         inherit");
+  expect(frame).toContain("current on → after save inherit");
   expect(host.dirty()).toBe(true);
   expect(notes).toHaveLength(1);
   expect(notes[0]).toContain("memory block removed from the global draft");
@@ -358,7 +357,7 @@ test("save(): no draft saves generically without touching session mode", async (
   t.renderer.destroy();
 });
 
-test("editable rows use product labels and an explicit mutation affordance", async () => {
+test("editable rows use product labels and the shared compact detail affordance", async () => {
   const { host, deps } = mount();
   const t = await openRender((() => MemoryConfigPanel(host, deps)) as never, {
     width: 110,
@@ -367,7 +366,8 @@ test("editable rows use product labels and an explicit mutation affordance", asy
   await t.renderOnce();
   const frame = t.captureCharFrame();
   expect(frame).toContain("Memory  on");
-  expect(frame).toContain("change Memory");
+  expect(frame).toContain("[i] details");
+  expect(frame).not.toContain("change Memory");
   expect(frame).toContain("Extraction model");
   expect(frame).not.toContain("true");
   t.renderer.destroy();

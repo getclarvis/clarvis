@@ -426,7 +426,7 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
   }
 
   const closeActions = (back?: () => void) =>
-    detailCloseActions("ctrl+w", () => host.close(), back);
+    detailCloseActions("<leader>w", () => host.close(), back);
   const spec = (): LevelSpec => {
     const close = closeActions(
       inNode() ? backToTree : inTree() && !deps.initialExecutionId ? backToList : undefined,

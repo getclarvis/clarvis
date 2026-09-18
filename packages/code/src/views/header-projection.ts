@@ -46,9 +46,10 @@ export interface HeaderField {
   elastic: boolean;
 }
 
-/** Priority-zoned, single-row app header. Page/configuration detail belongs below it. */
+/** Responsive app header. Page/configuration detail belongs below it. */
 export interface HeaderPlan {
-  regime: "one-line";
+  regime: "one-line" | "wrapped";
+  width: number;
   workspace: HeaderField;
   identity?: HeaderField;
   status: HeaderField[];
@@ -60,19 +61,6 @@ export interface HeaderPlan {
 function separator(): string {
   return "  " + glyph("separator") + "  ";
 }
-
-function cols(text: string): number {
-  return Bun.stringWidth(text);
-}
-
-/** Width of the painted brand zone: the row's left padding plus `◆ Clarvis`. */
-const BRAND_COLS = 10;
-/** Columns held back so the workspace name never truncates away entirely. */
-const WORKSPACE_FLOOR = 14;
-/** Columns held back for the active agent name when it is on the row at all. */
-const IDENTITY_FLOOR = 10;
-/** One blank column plus the root-owned product version anchored at the right edge. */
-const VERSION_GUTTER = 1;
 
 function urgentField(input: HeaderInput): HeaderField | undefined {
   if (input.connection.phase !== "ready") {
@@ -141,44 +129,19 @@ function reviewLabel(review: GuardMode): string {
 
 /**
  * The configuration a run depends on — model, isolation, review and memory —
- * at the richest wording that still fits `room` columns.
+ * with complete labels at every supported width.
  */
-function statusChips(input: HeaderInput, room: number): HeaderField[] {
+function statusChips(input: HeaderInput): HeaderField[] {
   const model = modelNames(input.model);
   const isolation = isolationLabel(input.isolation);
   const review = reviewLabel(input.review);
   const memory = memoryLabel(input.memory);
-  const ladder: Array<Array<[HeaderFieldKey, string]>> = [
-    [
-      ["model", model.full],
-      ["isolation", `Isolation: ${isolation}`],
-      ["review", `Guard: ${review}`],
-      ["memory", `Memory: ${memory}`],
-    ],
-    [
-      ["model", model.short],
-      ["isolation", `Isolation: ${isolation}`],
-      ["review", `Guard: ${review}`],
-      ["memory", `Memory: ${memory}`],
-    ],
-    [
-      ["model", model.short],
-      ["isolation", `Iso ${isolation}`],
-      ["review", review],
-      ["memory", `mem ${memory}`],
-    ],
-    [
-      ["model", model.short],
-      ["isolation", isolation],
-      ["review", review],
-    ],
-    [["model", model.short]],
+  const fit: Array<[HeaderFieldKey, string]> = [
+    ["model", model.full],
+    ["isolation", `Isolation: ${isolation}`],
+    ["review", `Guard: ${review}`],
+    ["memory", `Memory: ${memory}`],
   ];
-  const sep = cols(separator());
-  const fit = ladder.find(
-    (parts) => parts.reduce((sum, [, text]) => sum + cols(text) + sep, 0) <= room,
-  );
-  if (fit === undefined) return [];
   return fit.map(([key, text]) => ({
     key,
     text,
@@ -216,23 +179,8 @@ export function projectHeader(input: HeaderInput): HeaderPlan {
     input.workspaceLabel ?? (basename(input.workspace) || input.workspace || "workspace");
   const workspaceText = input.branch ? `${workspaceName} (${input.branch})` : workspaceName;
   const urgent = urgentField(input);
-  const exceptionAllowed = input.width >= 100;
-  const widest = exceptionAllowed
-    ? Math.max(
-        cols(exceptionField(input, true)?.text ?? ""),
-        cols(exceptionField(input, false)?.text ?? ""),
-      )
-    : 0;
-  const room =
-    input.width -
-    BRAND_COLS -
-    VERSION_GUTTER -
-    cols(version.text) -
-    WORKSPACE_FLOOR -
-    (input.floor ? 0 : IDENTITY_FLOOR) -
-    (urgent ? cols(urgent.text) + cols(sep) : 0) -
-    (widest > 0 ? widest + cols(sep) : 0);
-  const chips = statusChips(input, room);
+  const exceptionAllowed = true;
+  const chips = statusChips(input);
   const exception = exceptionAllowed
     ? exceptionField(input, !chips.some((chip) => chip.key === "isolation"))
     : undefined;
@@ -241,7 +189,8 @@ export function projectHeader(input: HeaderInput): HeaderPlan {
     (field, index) => (index === 0 ? field : { ...field, text: sep + field.text }),
   );
   return {
-    regime: "one-line",
+    regime: "wrapped",
+    width: input.width,
     workspace: {
       key: "workspace",
       text: sep + workspaceText,

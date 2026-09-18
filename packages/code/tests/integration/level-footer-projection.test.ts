@@ -2,11 +2,23 @@ import { expect, test } from "bun:test";
 import { openCoreRenderer } from "../helpers/tracked-core-render.ts";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import { registerUiActionFields, uiCommand } from "../../src/keys/actions.ts";
-import { detailCloseActions } from "../../src/ui/patterns/detail-view.tsx";
+import { detailCloseActions, detailStatusColor } from "../../src/ui/patterns/detail-view.tsx";
+import { tokens } from "../../src/theme/tokens.ts";
 import { LAYER, registerLevel, verb } from "../../src/ui/patterns/level-keys.ts";
 import { budgetFooterActions, projectActiveActions } from "../../src/ui/patterns/active-actions.ts";
 
 process.setMaxListeners(50);
+
+test("detail lifecycle colors consistently group success, failure, attention and idle states", () => {
+  expect(detailStatusColor("running")).toBe(tokens.add);
+  expect(detailStatusColor("completed")).toBe(tokens.add);
+  expect(detailStatusColor("failed")).toBe(tokens.del);
+  expect(detailStatusColor("canceled")).toBe(tokens.del);
+  expect(detailStatusColor("needs-approval")).toBe(tokens.warn);
+  expect(detailStatusColor("attention")).toBe(tokens.warn);
+  expect(detailStatusColor("paused")).toBe(tokens.muted);
+  expect(detailStatusColor("waiting")).toBe(tokens.muted);
+});
 
 /**
  * A panel level exactly as Providers declares one: a nav with an activate, plus
@@ -106,7 +118,7 @@ for (const key of ["ctrl+p", "ctrl+o", "ctrl+w"]) {
         keymap.getActiveKeys({ includeBindings: true, includeMetadata: true }),
       );
       const close = actions.find((action) => action.footerLabel === "close")!;
-      expect(close.keys).toEqual(["esc", key.replace("ctrl+", "^")]);
+      expect(close.keys).toEqual(["esc", "Ctrl+" + key.slice(5).toUpperCase()]);
       expect(close.hintGroup).toBe("escape");
       expect(close.essential).toBe(true);
       expect(budgetFooterActions(actions, 40)).toContain(close);
@@ -135,7 +147,7 @@ test("nested workflow footer separates back from close without changing the clos
     const actions = projectActiveActions(
       keymap.getActiveKeys({ includeBindings: true, includeMetadata: true }),
     );
-    expect(actions.find((action) => action.footerLabel === "close")?.keys).toEqual(["^w"]);
+    expect(actions.find((action) => action.footerLabel === "close")?.keys).toEqual(["Ctrl+W"]);
     expect(actions.find((action) => action.footerLabel === "back")?.keys).toEqual(["esc"]);
     expect(budgetFooterActions(actions, 40).map((action) => action.footerLabel)).toEqual([
       "back",

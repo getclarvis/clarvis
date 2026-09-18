@@ -14,10 +14,11 @@ import {
   DetailLines,
   ErrorBanner,
   LoadingHint,
-  SettingRow,
   StatusRow,
   ViewFrame,
 } from "./view-host.tsx";
+import type { SettingPresentation } from "../../ui/presentation.ts";
+import { DetailColumn, DetailSettingRow, SettingDetail } from "../../ui/patterns/detail-view.tsx";
 
 /** Data and actions {@link SandboxConfigPanel} needs from its host. */
 export interface SandboxConfigDeps {
@@ -278,31 +279,47 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
     }
   }
 
-  const spec = (): LevelSpec => ({
-    nav: {
-      count: rowCount,
-      index: sel,
-      setIndex: setSel,
-      activate: {
-        label: draft()
-          ? "toggle / edit"
-          : effectiveSandbox()?.enabled === false || !effectiveSandbox()
-            ? "enable"
-            : `configure ${host.scope()} override`,
-        run: editSelected,
-      },
-    },
-    verbs: [
-      verb("refresh", () => void refreshInspection(true)),
-      {
-        key: "u",
-        label: showUnavailable() ? "hide unavailable" : "show unavailable",
-        when: () => unavailableCount() > 0,
-        run: () => setShowUnavailable((shown) => !shown),
-      },
-      ...(draft() ? [{ key: "x", label: "remove block", run: removeBlock }] : []),
-    ],
-  });
+  function openDetails(): void {
+    host.level.push(
+      settingsRows()[Math.max(0, Math.min(rowCount() - 1, sel()))]?.label ?? "Details",
+    );
+  }
+
+  const spec = (): LevelSpec =>
+    host.level.depth() === 1
+      ? {
+          escape: { label: "back", run: () => host.level.pop() },
+          verbs: [
+            { key: "e", label: "edit", run: editSelected },
+            verb("refresh", () => void refreshInspection(true)),
+            {
+              key: "u",
+              label: showUnavailable() ? "hide unavailable" : "show unavailable",
+              when: () => unavailableCount() > 0,
+              run: () => setShowUnavailable((shown) => !shown),
+            },
+          ],
+        }
+      : {
+          nav: {
+            count: rowCount,
+            index: sel,
+            setIndex: setSel,
+            activate: {
+              label: draft()
+                ? "toggle / edit"
+                : effectiveSandbox()?.enabled === false || !effectiveSandbox()
+                  ? "enable"
+                  : `configure ${host.scope()} override`,
+              run: editSelected,
+            },
+          },
+          verbs: [
+            { key: "i", label: "details", run: openDetails },
+            verb("refresh", () => void refreshInspection(true)),
+            ...(draft() ? [{ key: "x", label: "remove block", run: removeBlock }] : []),
+          ],
+        };
 
   bindLevelKeys({
     host,
@@ -402,150 +419,112 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
     return "product default";
   };
 
-  return (
-    <ViewFrame host={host} title="Sandbox">
-      <box flexDirection="column" flexShrink={1} minHeight={0}>
+  function settingsRows(): SettingPresentation[] {
+    const rows: SettingPresentation[] = [
+      {
+        label: "Sandbox",
+        configured: draft() ? (draft()!.enabled === false ? "off" : "on") : "inherit",
+        effective: effectiveSandbox()?.enabled === false || !effectiveSandbox() ? "off" : "on",
+        source: blockSource(),
+        applies: "next run",
+        mutation: "staged",
+      },
+    ];
+    if (!draft()) return rows;
+    rows.push(
+      {
+        label: "Host availability",
+        configured: draft()!.availability ?? "inherit",
+        effective: effectiveSandbox()?.availability ?? "required",
+        source: fieldSource((sandbox) => sandbox.availability),
+        applies: "next run",
+        mutation: "staged",
+      },
+      {
+        label: "Workspace access",
+        configured: draft()!.filesystem ?? "inherit",
+        effective: effectiveSandbox()?.filesystem ?? "workspace-write",
+        source: fieldSource((sandbox) => sandbox.filesystem),
+        applies: "next run",
+        mutation: "staged",
+      },
+      {
+        label: "Network access",
+        configured: draft()!.network ?? "inherit",
+        effective: effectiveSandbox()?.network ?? "host",
+        source: fieldSource((sandbox) => sandbox.network),
+        applies: "next run",
+        mutation: "staged",
+      },
+      {
+        label: "Allowed environment variables",
+        configured: showConfiguredList(draft()!.pass_env),
+        effective: showList(effectiveSandbox()?.pass_env),
+        source: fieldSource((sandbox) => sandbox.pass_env, "union"),
+        applies: "next run",
+        mutation: "staged",
+      },
+      {
+        label: "Toolchain discovery",
+        configured: draft()!.toolchains?.mode ?? "inherit",
+        effective: effectiveSandbox()?.toolchains?.mode ?? "auto",
+        source: fieldSource((sandbox) => sandbox.toolchains?.mode),
+        applies: "next run",
+        mutation: "staged",
+      },
+      {
+        label: "Included toolchains",
+        configured: showConfiguredList(draft()!.toolchains?.include),
+        effective: showList(effectiveSandbox()?.toolchains?.include),
+        source: fieldSource((sandbox) => sandbox.toolchains?.include),
+        applies: "next run",
+        mutation: "staged",
+      },
+      {
+        label: "Excluded toolchains",
+        configured: showConfiguredList(draft()!.toolchains?.exclude),
+        effective: showList(effectiveSandbox()?.toolchains?.exclude),
+        source: fieldSource((sandbox) => sandbox.toolchains?.exclude, "union"),
+        applies: "next run",
+        mutation: "staged",
+      },
+      {
+        label: "Additional toolchain paths",
+        configured: showConfiguredList(draft()!.toolchains?.extra_paths),
+        effective: showList(effectiveSandbox()?.toolchains?.extra_paths),
+        source: fieldSource((sandbox) => sandbox.toolchains?.extra_paths, "union"),
+        applies: "next run",
+        mutation: "staged",
+      },
+    );
+    return rows;
+  }
+
+  function overviewBody(): JSX.Element {
+    return (
+      <DetailColumn fill>
         <StatusRow label="effective" text={effectiveStatus().text} fg={effectiveStatus().fg} />
-        <Show
-          when={!inspecting()}
-          fallback={<LoadingHint text="checking native sandbox on kernel host" />}
-        >
-          <StatusRow label="host" text={hostText()} fg={hostColor()} />
-        </Show>
         <Show when={hostWarning()}>
-          <DetailLines indent rows={[{ text: hostWarning()!.text, fg: hostWarning()!.fg }]} />
+          <DetailLines rows={[{ text: hostWarning()!.text, fg: hostWarning()!.fg }]} />
         </Show>
-        <box flexDirection="column" flexShrink={0} paddingBottom={1}>
-          <DetailLines
-            indent
-            rows={[
-              {
-                text: "Bubblewrap on Linux; Seatbelt on macOS; applies to shell and monitor_start",
-                fg: tokens.muted,
-              },
-            ]}
-          />
-        </box>
-        <SettingRow
-          setting={{
-            label: "Sandbox",
-            configured: draft() ? (draft()!.enabled === false ? "off" : "on") : "inherit",
-            effective: effectiveSandbox()?.enabled === false || !effectiveSandbox() ? "off" : "on",
-            source: blockSource(),
-            applies: "next run",
-            mutation: "staged",
-          }}
-          selected={sel() === 0}
-          expanded={sel() === 0}
-        />
-        <Show when={draft()}>
-          <SettingRow
-            setting={{
-              label: "Host availability",
-              configured: draft()!.availability ?? "inherit",
-              effective: effectiveSandbox()?.availability ?? "required",
-              source: fieldSource((sandbox) => sandbox.availability),
-              applies: "next run",
-              mutation: "staged",
-            }}
-            selected={sel() === 1}
-            expanded={sel() === 1}
-          />
-          <SettingRow
-            setting={{
-              label: "Workspace access",
-              configured: draft()!.filesystem ?? "inherit",
-              effective: effectiveSandbox()?.filesystem ?? "workspace-write",
-              source: fieldSource((sandbox) => sandbox.filesystem),
-              applies: "next run",
-              mutation: "staged",
-            }}
-            selected={sel() === 2}
-            expanded={sel() === 2}
-          />
-          <SettingRow
-            setting={{
-              label: "Network access",
-              configured: draft()!.network ?? "inherit",
-              effective: effectiveSandbox()?.network ?? "host",
-              source: fieldSource((sandbox) => sandbox.network),
-              applies: "next run",
-              mutation: "staged",
-            }}
-            selected={sel() === 3}
-            expanded={sel() === 3}
-          />
-          <SettingRow
-            setting={{
-              label: "Allowed environment variables",
-              configured: showConfiguredList(draft()!.pass_env),
-              effective: showList(effectiveSandbox()?.pass_env),
-              source: fieldSource((sandbox) => sandbox.pass_env, "union"),
-              applies: "next run",
-              mutation: "staged",
-            }}
-            selected={sel() === 4}
-            expanded={sel() === 4}
-          />
-          <SettingRow
-            setting={{
-              label: "Toolchain discovery",
-              configured: draft()!.toolchains?.mode ?? "inherit",
-              effective: effectiveSandbox()?.toolchains?.mode ?? "auto",
-              source: fieldSource((sandbox) => sandbox.toolchains?.mode),
-              applies: "next run",
-              mutation: "staged",
-            }}
-            selected={sel() === 5}
-            expanded={sel() === 5}
-          />
-          <SettingRow
-            setting={{
-              label: "Included toolchains",
-              configured: showConfiguredList(draft()!.toolchains?.include),
-              effective: showList(effectiveSandbox()?.toolchains?.include),
-              source: fieldSource((sandbox) => sandbox.toolchains?.include),
-              applies: "next run",
-              mutation: "staged",
-            }}
-            selected={sel() === 6}
-            expanded={sel() === 6}
-          />
-          <SettingRow
-            setting={{
-              label: "Excluded toolchains",
-              configured: showConfiguredList(draft()!.toolchains?.exclude),
-              effective: showList(effectiveSandbox()?.toolchains?.exclude),
-              source: fieldSource((sandbox) => sandbox.toolchains?.exclude, "union"),
-              applies: "next run",
-              mutation: "staged",
-            }}
-            selected={sel() === 7}
-            expanded={sel() === 7}
-          />
-          <SettingRow
-            setting={{
-              label: "Additional toolchain paths",
-              configured: showConfiguredList(draft()!.toolchains?.extra_paths),
-              effective: showList(effectiveSandbox()?.toolchains?.extra_paths),
-              source: fieldSource((sandbox) => sandbox.toolchains?.extra_paths, "union"),
-              applies: "next run",
-              mutation: "staged",
-            }}
-            selected={sel() === 8}
-            expanded={sel() === 8}
-          />
-        </Show>
-        <box flexDirection="column" flexShrink={0} paddingTop={1}>
-          <Show when={!inspecting()} fallback={<LoadingHint text="discovering toolchains" />}>
-            <Show
-              when={inspectionError()}
-              fallback={<text fg={tokens.muted}>Toolchains on kernel host</text>}
-            >
-              <ErrorBanner text={inspectionError()!} />
-            </Show>
+        <For each={settingsRows()}>
+          {(setting, index) => <DetailSettingRow setting={setting} selected={sel() === index()} />}
+        </For>
+      </DetailColumn>
+    );
+  }
+
+  function toolchainDetails(): JSX.Element {
+    return (
+      <box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} paddingTop={1}>
+        <Show when={!inspecting()} fallback={<LoadingHint text="discovering toolchains" />}>
+          <Show
+            when={inspectionError()}
+            fallback={<text fg={tokens.muted}>Toolchains on kernel host</text>}
+          >
+            <ErrorBanner text={inspectionError()!} />
           </Show>
-        </box>
+        </Show>
         <scrollbox
           height={toolchainRows()}
           flexShrink={1}
@@ -576,6 +555,42 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
           </Show>
         </scrollbox>
       </box>
+    );
+  }
+
+  function detailBody(): JSX.Element {
+    const index = Math.max(0, Math.min(rowCount() - 1, sel()));
+    return (
+      <SettingDetail setting={settingsRows()[index]}>
+        <Show when={index === 0}>
+          <Show
+            when={!inspecting()}
+            fallback={<LoadingHint text="checking native sandbox on kernel host" />}
+          >
+            <StatusRow label="host" text={hostText()} fg={hostColor()} />
+          </Show>
+          <Show when={hostWarning()}>
+            <DetailLines rows={[{ text: hostWarning()!.text, fg: hostWarning()!.fg }]} />
+          </Show>
+          <DetailLines
+            rows={[
+              {
+                text: "Bubblewrap on Linux; Seatbelt on macOS; applies to shell and monitor_start",
+                fg: tokens.muted,
+              },
+            ]}
+          />
+          {toolchainDetails()}
+        </Show>
+      </SettingDetail>
+    );
+  }
+
+  return (
+    <ViewFrame host={host} title="Sandbox">
+      <Show when={host.level.depth() === 0} fallback={detailBody()}>
+        {overviewBody()}
+      </Show>
       <Show when={fe.editing()}>{fe.EditInput()}</Show>
       {fe.PickerInput()}
     </ViewFrame>

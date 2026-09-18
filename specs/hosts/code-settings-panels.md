@@ -141,7 +141,6 @@ function HubMenu(host, deps: { title; items; openChild(cmd: string): void })    
 | `defaults` | Defaults | `defaults.open` |
 | `memory` | Memory | `memory.config` |
 | `sandbox` | Sandbox | `sandbox.config` |
-| `isolation` | Isolation | `isolation.config` |
 | `theme` | Theme | `theme.open` |
 | `keyboard` | Keyboard | `keyboard.open` |
 | `updates` | Updates | `updates.open` |
@@ -157,16 +156,27 @@ write. See [`agent-system-prompt.md`](../engine/agent-system-prompt.md). Product
 `packages/code/src/views/config/AgentsPanel.tsx`. Test:
 `packages/code/tests/integration/agents-panel-render.test.tsx`.
 
-`IsolationConfigPanel` is the dedicated global placement screen for Host, Sandbox, Docker or Podman.
-It writes through shared `applyIsolation` and drills to `sandbox.config` for native Sandbox fields
-rather than cloning them. Workspace settings cannot contribute a runtime. Docker/Podman copy states
+`DefaultsPanel`, `MemoryConfigPanel`, `SandboxConfigPanel` and `RunControlsPanel` reuse that stable
+overview/detail model. Their overview rows never insert configured/effective/source blocks beneath
+the cursor: Enter retains the field's edit action, while `i` pushes a detail level that owns those
+facts and any field-specific explanation. Escape returns to the same selected row. Sandbox keeps
+host availability, fail-closed warnings and the toolchain inventory on the Sandbox detail level;
+refresh and unavailable-toolchain controls remain available there. Production:
+`DetailSettingRow` and `SettingDetail` in `packages/code/src/ui/patterns/detail-view.tsx`, plus the
+four panels named above. Test: `packages/code/tests/integration/defaults-panel-render.test.tsx`,
+`packages/code/tests/integration/memory-config-render.test.tsx`,
+`packages/code/tests/integration/sandbox-config-render.test.tsx`, and
+`packages/code/tests/integration/run-controls-render.test.tsx`.
+
+`RunControlsPanel` is the sole Settings screen for Host, Sandbox, Docker or Podman placement. It
+writes through shared `applyIsolation`; native Sandbox fields remain under `sandbox.config`.
+Workspace settings cannot contribute a runtime. Docker/Podman copy states
 that the full native Kernel, including Plans, Memory, Workflows and Goals, runs in the Container;
-skills, MCP, hooks, plugins, Tasks, external capability providers and Command Review remain
+skills, MCP, hooks, plugins, Tasks, external capability providers and Guard remain
 unavailable. It also names the writable workspace, outbound consequences, read-only Git metadata and
 fail-closed startup with no native fallback. Review renders `Not applicable in Container`, native
 capability settings remain visible, and unavailable extensions are marked as such; persisted settings
 are not overwritten. An active operation blocks the isolation transition until it stops. Production:
-`packages/code/src/views/config/IsolationConfigPanel.tsx`,
 `packages/code/src/features/run/isolation.ts` (`isolationPlacementLines`), and
 `packages/code/src/views/config/RunControlsPanel.tsx`. An idle save immediately requests a workspace
 connection reload, so the header reflects the newly admitted Kernel placement; a failed reload leaves
@@ -177,14 +187,17 @@ Production: `WorkspaceClientManager.invalidate` in
 `packages/code/src/adapters/workspace-client-manager.ts`, `urgentField` in
 `packages/code/src/views/header-projection.ts`, and
 the `reload` callbacks in `packages/code/src/views/overlays/IsolationPicker.tsx`,
-`packages/code/src/views/config/IsolationConfigPanel.tsx`, and
 `packages/code/src/views/config/RunControlsPanel.tsx`. Test:
-`packages/code/tests/integration/isolation-config-render.test.tsx`,
 `packages/code/tests/unit/isolation.test.ts`,
 `packages/code/tests/integration/isolation-review-picker-render.test.tsx`, and
 `packages/code/tests/integration/run-controls-render.test.tsx`; connection reselection is pinned by
 `packages/code/tests/component/workspace-client-manager.test.ts`, and the persistent warning by
 `packages/code/tests/unit/header-projection.test.ts`.
+
+The `Ctrl+X M` Memory picker mirrors Run controls' `on`/`off` choice but changes only the
+session `MemoryModeStore`; persisted Memory settings remain under `MemoryConfigPanel`. Production:
+`packages/code/src/views/overlays/MemoryPicker.tsx`. Test:
+`packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
 
 `UpdatesPanel` is a lazy Settings child over Code's own `code.json`, not kernel settings. Its single
 toggle reads `CodeConfigStore.updateCheckEnabled`, which defaults on and consults only the global
@@ -1542,7 +1555,7 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 - `views/overlay-host.ts` depends on `ViewHostControls`' exact shape — `runSave`, `scopeBound`,
   `escape`, `dispose` (`packages/code/src/views/overlay-host.ts`).
 - `CapabilityProvidersPanel`, `AgentsPanel`, `RunControlsPanel`, `MemoryConfigPanel`,
-  `SandboxConfigPanel`, `IsolationConfigPanel`, `TasksHub`, `WorkflowsHub`, `SessionsHub`, `ThemeView`,
+  `SandboxConfigPanel`, `TasksHub`, `WorkflowsHub`, `SessionsHub`, `ThemeView`,
   `KeyboardView`, `DoctorView`, `ModelView`, `EffortView` all consume `view-host.tsx`'s toolkit; they
   belong to sibling documents ([hosts/code-domain-hubs.md](code-domain-hubs.md), [hosts/model-catalog.md](model-catalog.md),
   [execution/sandbox.md](../execution/sandbox.md), [capabilities/provider-executables.md](../capabilities/provider-executables.md)).

@@ -47,6 +47,7 @@ function Host(props: {
 }): JSX.Element {
   const renderer = useRenderer();
   const keymap = createDefaultOpenTuiKeymap(renderer);
+  keymap.registerToken({ name: "leader", key: "ctrl+x" });
   registerWhenField(keymap);
   const interaction = {
     keymap,
@@ -188,7 +189,8 @@ test("inline composition is height-bounded and the expanded Task editor preserve
   expect(inlineRows.length).toBeLessThanOrEqual(5);
   expect(h.t.captureCharFrame()).not.toContain("New task");
 
-  h.pressKey("e", { ctrl: true });
+  h.pressKey("x", { ctrl: true });
+  h.pressKey("e");
   await h.t.renderOnce();
   expect(h.dock().expanded()).toBe(true);
   expect(h.t.captureCharFrame()).toContain("Task editor");
@@ -221,7 +223,7 @@ test("the portable keyboard profile advertises only Ctrl+J for a newline", async
   h.el().setText("first");
   h.el().gotoBufferEnd();
 
-  expect(commandKeyLabel(h.interaction().keymap, "prompt.newline")).toBe("^j");
+  expect(commandKeyLabel(h.interaction().keymap, "prompt.newline")).toBe("Ctrl+J");
   h.pressKey("j", { ctrl: true });
   await h.t.renderOnce();
   expect(h.el().plainText).toBe("first\n");
@@ -307,7 +309,8 @@ test("Escape closes autocomplete before collapsing the expanded Task editor", as
     query: () => [{ value: "coder", label: "coder", insert: "coder" }],
   };
   const h = await mount("handled", [provider]);
-  h.pressKey("e", { ctrl: true });
+  h.pressKey("x", { ctrl: true });
+  h.pressKey("e");
   h.el().setText("@");
   await h.t.renderOnce();
   expect(h.dock().expanded()).toBe(true);

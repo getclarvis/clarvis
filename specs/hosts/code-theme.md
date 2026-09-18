@@ -693,7 +693,7 @@ Test: `packages/code/tests/integration/plan-overlay-render.test.tsx` (wide and n
 Execution detail footers use `detailCloseActions` in
 [detail-view.tsx](../../packages/code/src/ui/patterns/detail-view.tsx): Plan, Goal and direct Workflow
 roots group Escape with their own toggle key under the lowercase `close` label. Nested workflow
-pages retain a distinct Escape `back` action and Ctrl+W `close`. Close actions share the escape
+pages retain a distinct Escape `back` action and Ctrl+X W `close`. Close actions share the escape
 group, priority and essential width-budget treatment. Plan uses the same footer filtering as the
 Goal and Workflow frames, omitting the global cancel/quit hint without disabling Ctrl+C.
 Production: `detailCloseActions`, `registerLevel` in

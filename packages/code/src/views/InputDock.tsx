@@ -465,7 +465,10 @@ export function InputDock(props: {
             run: () => setEditorExpanded(!isExpanded),
           }),
         ],
-        bindings: [{ key: "ctrl+e", cmd: id }, ...(isExpanded ? [{ key: "escape", cmd: id }] : [])],
+        bindings: [
+          { key: "<leader>e", cmd: id },
+          ...(isExpanded ? [{ key: "escape", cmd: id }] : []),
+        ],
       });
     };
     const offCollapsedEditor = registerEditorToggle(false);

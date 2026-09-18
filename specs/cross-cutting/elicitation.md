@@ -259,7 +259,10 @@ Three decision-relabeling tables — `GUARD_DECISION_LABELS`, `PLAN_DECISION_LAB
 (`packages/code/src/adapters/elicitation.ts`) rewrite a field's option `label`s from the raw wire values
 (`"allow_session"`) into user-facing wording (`"allow for this session"`) whenever `kind` is
 `"guard_confirm"`, `"plan_review"` or `"workflow_review"`; `option.value` (what
-is actually sent back) is untouched.
+is actually sent back) is untouched. Guard and configuration decisions are presented in
+affirmative-first order (`allow, deny`, or `allow, allow_session, deny`) while the projected field
+keeps `deny` as its default, preserving fail-closed untouched Enter behavior independently of the
+wire enum order.
 
 An iteration soft-budget question has no dedicated wire `kind`, so `parseElicitForm` recognizes it
 only when both the message contains `soft iterations limit` and the `continue` field offers the
@@ -279,10 +282,11 @@ confirmation therefore reports the required field as missing instead of acceptin
 member happens to be first. As a second fail-safe, `buildRunWorkflowHandler` authors the workflow
 decision enum as `["cancel", "run"]` and treats every non-`run`/no-response outcome as cancellation.
 The TUI presents the workflow decision as `[1] run workflow`, `[2] do not run`, independently
-of the wire enum order. This display ordering does not preselect or submit either option.
+of the wire enum order. This display ordering does not preselect either option; pressing its number
+submits that explicit decision immediately, while arrow navigation still requires Enter.
 Production: `parseElicitForm` in `packages/code/src/adapters/elicitation.ts`.
 Test: `packages/code/tests/integration/elicit-block-render.test.tsx` (workflow preflight numbered
-choices, untouched confirmation and explicit run/cancel selection).
+choices, untouched confirmation and immediate explicit run/cancel selection).
 `missingRequired(fields, values)` names every required field that is blank, or, for a
 `number`-kind field, non-numeric. `buildContent(fields, values)` coerces raw string values
 into the typed `content` object a response carries: a blank value is omitted from `content` entirely

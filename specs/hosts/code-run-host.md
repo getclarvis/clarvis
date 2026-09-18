@@ -38,7 +38,7 @@ a terminal record pending. Session restore closes each replayed sink through the
 
 The recurring problem the code solves is **ownership across asynchrony**. A run's events, its
 `done` envelope, its stream close, its persisted trace, its post-run memory-ingest notice, a user's
-`^C`, a session switch and a backend reconnect all arrive on independent schedules. Nearly every guard
+`Ctrl+C`, a session switch and a backend reconnect all arrive on independent schedules. Nearly every guard
 in `run-host.ts` is an identity check — an execution id, a session object, an epoch counter — deciding
 whether a late callback still owns the surface it wants to write to
 (`packages/code/src/run-host.ts`).
@@ -598,12 +598,12 @@ while a run is already active").
 | Situation | Result |
 | --- | --- |
 | a `!bash` job is in flight and not yet aborted | abort it, status `"! cancelling…"`, return `true` |
-| a `!bash` job whose `AbortController` already fired | return `false` (so a second `^C` belongs to the quit gate) |
+| a `!bash` job whose `AbortController` already fired | return `false` (so a second `Ctrl+C` belongs to the quit gate) |
 | no handle, or `!runActive()`, or `cancelRequested` already | return `false`, status untouched |
 | otherwise | `cancelRequested = true`, status `"cancelling…"`, `handle.cancel()`, return `true` |
 | `handle.cancel()` rejects while still the current handle and active | reset `cancelRequested = false`, status `"cancel request failed — <text>"` |
 
-The `!runActive()` guard is what stops a `^C` landing in the settle instant from permanently
+The `!runActive()` guard is what stops a `Ctrl+C` landing in the settle instant from permanently
 relabelling a completed run — `packages/code/tests/component/run-host.test.ts`.
 
 `teardownRuns` is the hard form: it bumps `runOwnershipEpoch`, aborts bash, cancels the
@@ -1056,19 +1056,17 @@ TUI changes review policy through `/plan`, not Run Controls. Pinned by
 Docker persists only `{backend:"docker"}` and Podman only `{backend:"podman"}`. Both leave the native
 Sandbox setting intact but never invoke it as fallback; engine failure remains a Container failure
 until a new explicit placement/run. Guard policy is untouched and becomes effective again only in
-native placement. Settings > Isolation, Run Controls and the
-`Ctrl+S` picker share that writer. With no active work, each surface immediately requests a reload;
+native placement. Run Controls and the `Ctrl+X I` picker share that writer. With no active work, each
+surface immediately requests a reload;
 success publishes the admitted replacement runtime, while failure reports that the saved selection
 is pending reconnect. During active work the settings panels may save for later and the quick picker
 refuses the transition. `applyReviewMode` separately maps Off/Approval/Auto to
 the selected scope's guard mode, carrying that scope's allow/deny lists or the global lists into a
 workspace with no local policy; it writes no runtime or Sandbox field. Production:
 `packages/code/src/features/run/isolation.ts`, `packages/code/src/features/run/review.ts`,
-`packages/code/src/views/config/IsolationConfigPanel.tsx`, and
 `packages/code/src/views/config/RunControlsPanel.tsx`; placement transition is owned by
 `WorkspaceClientManager.invalidate`. Tests:
 `packages/code/tests/unit/isolation.test.ts`,
-`packages/code/tests/integration/isolation-config-render.test.tsx`,
 `packages/code/tests/integration/isolation-review-picker-render.test.tsx` and
 `packages/code/tests/integration/run-controls-render.test.tsx`, plus
 `packages/code/tests/component/workspace-client-manager.test.ts`.

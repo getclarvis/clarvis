@@ -98,6 +98,9 @@ function PlanDetail(props: { document: PlanDocumentDto }): JSX.Element {
         </For>
       </Show>
       {detailSection("Notes", doc().notes)}
+      <For each={Object.entries(doc().extra_sections)}>
+        {([heading, content]) => detailSection(heading, content)}
+      </For>
     </DetailColumn>
   );
 }
@@ -210,7 +213,7 @@ export function PlanOverlay(props: {
 
   const scrollMode = createMemo(() => document() !== null);
   const spec = (): LevelSpec => ({
-    ...(props.onClose ? detailCloseActions("ctrl+p", props.onClose) : {}),
+    ...(props.onClose ? detailCloseActions("<leader>p", props.onClose) : {}),
     ...(props.active ? { when: "overlay==plan", enabled: props.active } : {}),
     ...(scrollMode()
       ? { scroll: () => scrollEl }

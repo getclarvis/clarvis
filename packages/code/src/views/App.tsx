@@ -13,7 +13,11 @@ import {
   Suspense,
 } from "solid-js";
 import { useSelectionHandler, useTerminalDimensions } from "@opentui/solid";
-import { KeymapProvider } from "@opentui/keymap/solid";
+import {
+  KeymapProvider,
+  reactiveMatcherFromSignal,
+  useKeymapSelector,
+} from "@opentui/keymap/solid";
 import type {
   CliRenderer,
   MouseEvent,
@@ -75,7 +79,7 @@ import type { McpStartupNotice, RunHost } from "../run-host.ts";
 import type { TasksController } from "../features/tasks/controller.ts";
 import type { SessionCatalogItem } from "./config/SessionsHub.tsx";
 import { createInteraction, type InteractionEffects } from "../keys/interaction.ts";
-import { commandKeyLabel } from "../keys/keyspec.ts";
+import { commandKeyLabel, LAYER } from "../keys/keyspec.ts";
 import { createCommands, type CommandEffects } from "../keys/commands.ts";
 import {
   classifySlashSubmit,
@@ -123,6 +127,22 @@ import { activeDiagnosticLogger } from "../core/diagnostic-events.ts";
 import { SurfaceBoundary, SurfacePortal } from "../ui/patterns/surface-lifecycle.tsx";
 import { productVersion } from "../cli-args.ts";
 
+function LeadActivityStatus(props: {
+  phase: () => LeadActivityPhase;
+  detail: () => string;
+}): JSX.Element {
+  const commandPrefixActive = useKeymapSelector((keymap) =>
+    keymap.getPendingSequence().some((part) => part.tokenName === "leader"),
+  );
+  return (
+    <LeadActivityLine
+      phase={props.phase}
+      detail={props.detail}
+      commandPrefixActive={commandPrefixActive}
+    />
+  );
+}
+
 const IsolationPicker = lazy(async () => {
   const module = await import("./overlays/IsolationPicker.tsx");
   return { default: module.IsolationPicker };
@@ -131,6 +151,11 @@ const IsolationPicker = lazy(async () => {
 const ReviewPicker = lazy(async () => {
   const module = await import("./overlays/ReviewPicker.tsx");
   return { default: module.ReviewPicker };
+});
+
+const MemoryPicker = lazy(async () => {
+  const module = await import("./overlays/MemoryPicker.tsx");
+  return { default: module.MemoryPicker };
 });
 
 /** Minimal painted alpha that lets OpenTUI hit-test the pointer blocker without hiding the UI. */
@@ -519,7 +544,7 @@ export function App(props: AppProps): JSX.Element {
       void props.run.interruptTool(id).catch(() => undefined);
     },
   });
-  const [diffNode, setDiffNode] = createSignal<TranscriptToolNode | null>(null);
+  const [diffNodes, setDiffNodes] = createSignal<readonly TranscriptToolNode[]>([]);
   useSpinnerClock(
     () =>
       props.run.active() ||
@@ -745,6 +770,10 @@ export function App(props: AppProps): JSX.Element {
       if (props.run.active()) return;
       if (overlays.openPicker("reviewPicker")) notify("");
     },
+    openMemoryPicker: () => {
+      if (props.run.active()) return;
+      if (overlays.openPicker("memoryPicker")) notify("");
+    },
     focusNext: () => {
       ts.clearFocus();
       inputEl?.focus();
@@ -772,12 +801,12 @@ export function App(props: AppProps): JSX.Element {
     },
     clearBlockFocus: () => ts.clearFocus(),
     openDiff: () => {
-      const pick = ts.pickDiffNode();
-      if (!pick) {
+      const picks = ts.pickDiffNodes();
+      if (picks.length === 0) {
         notify("no diff in the transcript");
         return;
       }
-      setDiffNode(pick);
+      setDiffNodes(picks);
       overlays.openPicker("diff");
     },
     openPlan: () => {
@@ -818,6 +847,20 @@ export function App(props: AppProps): JSX.Element {
     effects,
     keyboardConfig(),
   );
+  const transcriptNavigationActive = (): boolean =>
+    ts.focusedKey() !== null &&
+    overlays.overlay() === "none" &&
+    transientOverlay() === "none" &&
+    !props.run.switching?.();
+  const offTranscriptNavigation = interaction.keymap.registerLayer({
+    enabled: reactiveMatcherFromSignal(transcriptNavigationActive),
+    priority: LAYER.LIST,
+    bindings: [
+      { key: "up", cmd: "transcript.focusPrev" },
+      { key: "down", cmd: "transcript.focusNext" },
+    ],
+  });
+  onCleanup(offTranscriptNavigation);
 
   let checkingWorktreeForExit = false;
   let removingWorktreeForExit = false;
@@ -889,7 +932,9 @@ export function App(props: AppProps): JSX.Element {
   createEffect(() => {
     if (
       props.run.active() &&
-      ["agentPicker", "isolationPicker", "reviewPicker"].includes(overlays.overlay())
+      ["agentPicker", "isolationPicker", "reviewPicker", "memoryPicker"].includes(
+        overlays.overlay(),
+      )
     )
       overlays.dismissTop();
   });
@@ -1369,26 +1414,14 @@ export function App(props: AppProps): JSX.Element {
     });
     return runStrip;
   };
-  /**
-   * The band width the footer's action row is budgeted against.
-   *
-   * @remarks The terminal width, less only what the run strip takes from the
-   *   same row. The footer's own padding is `budgetFooterActions`'s to account
-   *   for; subtracting it here as well charged for it twice and cost the row a
-   *   whole tier at every band boundary.
-   */
-  const footerNavigationWidth = (): number => {
-    const strip = footerRunStrip();
-    return Math.max(0, dims().w - (strip ? Bun.stringWidth(strip) + 2 : 0));
-  };
   const activitySidebarHint = (): string => {
     const toggleKey = commandKeyLabel(interaction.keymap, "activity.toggle", {
       visibility: "registered",
     });
     if (sidebarReveal()?.section === "goal" && sidebarSectionAvailable("goal")) {
-      return `${toggleKey === undefined ? "^L" : `[${toggleKey}]`} close`;
+      return `${toggleKey === undefined ? "Ctrl+X S" : `[${toggleKey}]`} close`;
     }
-    return `${toggleKey === undefined ? "Ctrl+S" : `[${toggleKey}]`} open / close sidebar`;
+    return `${toggleKey === undefined ? "Ctrl+X S" : `[${toggleKey}]`} open / close sidebar`;
   };
 
   createEffect(() => {
@@ -1520,7 +1553,7 @@ export function App(props: AppProps): JSX.Element {
           <OverlayRegion
             host={overlays}
             interaction={interaction}
-            diffNode={diffNode}
+            diffNodes={diffNodes}
             activity={props.activity}
             plans={props.backend.plans}
             fallback={
@@ -1672,6 +1705,25 @@ export function App(props: AppProps): JSX.Element {
           )}
         </SurfaceBoundary>
         <SurfaceBoundary
+          active={() => overlays.overlay() === "memoryPicker"}
+          retention="retain-one"
+          placement="portal"
+        >
+          {(lifecycle) => (
+            <Suspense fallback={<text>Loading memory{glyph("ellipsis")}</text>}>
+              <MemoryPicker
+                interaction={interaction}
+                settings={props.fleet.settings}
+                memory={props.fleet.memoryMode}
+                active={lifecycle.active}
+                notify={notify}
+                onClose={() => overlays.dismissTop()}
+                onApplied={() => overlays.dismissTop()}
+              />
+            </Suspense>
+          )}
+        </SurfaceBoundary>
+        <SurfaceBoundary
           active={() => transientOverlay() === "activityDetail" && activityDetail() !== null}
           retention="retain-one"
           placement="portal"
@@ -1732,7 +1784,7 @@ export function App(props: AppProps): JSX.Element {
           zIndex={editorExpanded() ? 3 : 1}
         >
           <Show when={!inputPopupOpen()}>
-            <LeadActivityLine phase={leadActivityPhase} detail={leadActivityDetail} />
+            <LeadActivityStatus phase={leadActivityPhase} detail={leadActivityDetail} />
           </Show>
           <InputDock
             interaction={interaction}
@@ -1795,7 +1847,16 @@ export function App(props: AppProps): JSX.Element {
             navigation={
               <NavigationBar
                 environment={interaction.keyboardEnvironment}
-                width={footerNavigationWidth}
+                width={() => dims().w}
+                responsive
+                actionTransform={(action) => {
+                  if (!transcriptNavigationActive()) return action;
+                  if (action.id === "transcript.focusPrev")
+                    return { ...action, keys: [glyph("arrowUp")] };
+                  if (action.id === "transcript.focusNext")
+                    return { ...action, keys: [glyph("arrowDown")] };
+                  return action;
+                }}
                 active={() =>
                   overlays.overlay() === "none" &&
                   transientOverlay() === "none" &&

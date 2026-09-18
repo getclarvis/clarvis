@@ -35,15 +35,11 @@ import {
 } from "../../features/run/isolation.ts";
 import { applyReviewMode, REVIEW_CHOICES } from "../../features/run/review.ts";
 import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
-import {
-  bindLevelKeys,
-  createFieldEditor,
-  LevelHost,
-  SettingRow,
-  StatusRow,
-} from "./view-host.tsx";
+import { bindLevelKeys, createFieldEditor, LevelHost } from "./view-host.tsx";
 import type { PickItem } from "./field-editor.tsx";
 import { errorText } from "../../adapters/errors.ts";
+import type { SettingPresentation } from "../../ui/presentation.ts";
+import { DetailColumn, DetailSettingRow, SettingDetail } from "../../ui/patterns/detail-view.tsx";
 
 const ISOLATION_PICKER_CHOICES = ISOLATION_CHOICES satisfies readonly PickItem[];
 const REVIEW_PICKER_CHOICES = REVIEW_CHOICES satisfies readonly PickItem[];
@@ -274,16 +270,34 @@ export function RunControlsPanel(
           " applies to future runs in every workspace unless overridden";
   }
 
-  const spec = (): LevelSpec => ({
-    nav: {
-      count: () => 4,
-      index: sel,
-      setIndex: setSel,
-      activate: { label: "change", run: activate },
-    },
-    verbs:
-      sel() === 0 ? [{ key: "b", label: "sandbox details", run: () => deps.openSandbox() }] : [],
-  });
+  function openDetails(): void {
+    host.level.push(settingsRows()[Math.max(0, Math.min(3, sel()))]?.label ?? "Details");
+  }
+
+  const spec = (): LevelSpec =>
+    host.level.depth() === 1
+      ? {
+          verbs: [
+            { key: "e", label: "change", run: activate },
+            ...(sel() === 0
+              ? [{ key: "b", label: "sandbox details", run: () => deps.openSandbox() }]
+              : []),
+          ],
+        }
+      : {
+          nav: {
+            count: () => 4,
+            index: sel,
+            setIndex: setSel,
+            activate: { label: "change", run: activate },
+          },
+          verbs: [
+            { key: "i", label: "details", run: openDetails },
+            ...(sel() === 0
+              ? [{ key: "b", label: "sandbox details", run: () => deps.openSandbox() }]
+              : []),
+          ],
+        };
   host.bindScope({ mode: "retarget" });
   bindLevelKeys({
     host,
@@ -302,30 +316,81 @@ export function RunControlsPanel(
     return deriveIsolation(global ?? {});
   };
 
+  function settingsRows(): SettingPresentation[] {
+    return [
+      {
+        label: "Isolation",
+        configured: configuredIsolation(),
+        effective: state().isolation,
+        source: "global",
+        applies: "next run",
+        mutation: "immediate",
+      },
+      {
+        label: "Guard",
+        configured: scopedGuard()?.mode ?? "inherit",
+        effective: isContainerIsolation(state().isolation)
+          ? "Not applicable in Container"
+          : state().guardMode,
+        source: guardSource(),
+        applies: "next run",
+        mutation: "immediate",
+      },
+      {
+        label: "Memory for this session",
+        configured: deps.memory.mode(),
+        effective: isContainerIsolation(state().isolation)
+          ? "Unavailable in Container"
+          : state().memory === "off"
+            ? "off"
+            : "on",
+        source: "session",
+        applies: "next run",
+        mutation: "immediate",
+      },
+      {
+        label: "Completed plans",
+        configured:
+          scopedPlans()?.retention === undefined
+            ? "inherit"
+            : scopedPlans()!.retention === "keep"
+              ? "keep plans"
+              : "delete after success",
+        effective: isContainerIsolation(state().isolation)
+          ? "Unavailable in Container"
+          : state().plans.retention === "keep"
+            ? "keep plans"
+            : "delete after success",
+        source: settingSource("plans"),
+        applies: "next run",
+        mutation: "immediate",
+      },
+    ];
+  }
+
   function body(): JSX.Element {
     return (
       <box flexDirection="column" width="100%" minWidth={0}>
-        <StatusRow
-          label="mutation"
-          text={`Isolation saves globally ${glyph("separator")} Guard/plans save to ${host.scope()} ${glyph("separator")} memory stays in this session`}
-        />
-        <SettingRow
-          setting={{
-            label: "Isolation",
-            configured: configuredIsolation(),
-            effective: state().isolation,
-            source: "global",
-            applies: "next run",
-            mutation: "immediate",
-          }}
-          selected={sel() === 0}
-          expanded={sel() === 0}
-        />
-        <Show when={sel() === 0}>
+        <DetailColumn>
+          <For each={settingsRows()}>
+            {(setting, index) => (
+              <DetailSettingRow setting={setting} selected={sel() === index()} />
+            )}
+          </For>
+        </DetailColumn>
+      </box>
+    );
+  }
+
+  function detailBody(): JSX.Element {
+    const index = Math.max(0, Math.min(3, sel()));
+    return (
+      <SettingDetail setting={settingsRows()[index]}>
+        <Show when={index === 0}>
           <For each={safetyDescription(state())}>
             {(line) => (
               <text fg={tokens.muted} wrapMode="word">
-                {glyph("bullet") + " " + line}
+                {line}
               </text>
             )}
           </For>
@@ -333,69 +398,32 @@ export function RunControlsPanel(
             {sandboxLine().text}
           </text>
         </Show>
-        <SettingRow
-          setting={{
-            label: "Guard",
-            configured: scopedGuard()?.mode ?? "inherit",
-            effective: isContainerIsolation(state().isolation)
-              ? "Not applicable in Container"
-              : state().guardMode,
-            source: guardSource(),
-            applies: "next run",
-            mutation: "immediate",
-          }}
-          selected={sel() === 1}
-          expanded={sel() === 1}
-        />
-        <SettingRow
-          setting={{
-            label: "Memory for this session",
-            configured: deps.memory.mode(),
-            effective: isContainerIsolation(state().isolation)
-              ? "Unavailable in Container"
-              : state().memory === "off"
-                ? "off"
-                : "on",
-            source: "session",
-            applies: "next run",
-            mutation: "immediate",
-          }}
-          selected={sel() === 2}
-          expanded={sel() === 2}
-        />
-        <Show when={sel() === 2}>
-          <text fg={tokens.muted}>{glyph("bullet") + " " + memoryDescription(state())}</text>
+        <Show when={index === 1}>
+          <text fg={tokens.muted}>Guard saves to {host.scope()} settings.</text>
         </Show>
-        <SettingRow
-          setting={{
-            label: "Completed plans",
-            configured:
-              scopedPlans()?.retention === undefined
-                ? "inherit"
-                : scopedPlans()!.retention === "keep"
-                  ? "keep plans"
-                  : "delete after success",
-            effective: isContainerIsolation(state().isolation)
-              ? "Unavailable in Container"
-              : state().plans.retention === "keep"
-                ? "keep plans"
-                : "delete after success",
-            source: settingSource("plans"),
-            applies: "next run",
-            mutation: "immediate",
-          }}
-          selected={sel() === 3}
-          expanded={sel() === 3}
-        />
-        <Show when={sel() === 3}>
+        <Show when={index === 2}>
+          <text fg={tokens.muted} wrapMode="word">
+            {memoryDescription(state())}
+          </text>
+        </Show>
+        <Show when={index === 3}>
           <For each={planRetentionDescription(state().plans.retention)}>
-            {(line) => <text fg={tokens.muted}>{glyph("bullet") + " " + line}</text>}
+            {(line) => <text fg={tokens.muted}>{line}</text>}
           </For>
-          <text fg={tokens.muted}>{glyph("bullet") + " " + planRetentionScopeLine()}</text>
+          <text fg={tokens.muted}>{planRetentionScopeLine()}</text>
         </Show>
-      </box>
+      </SettingDetail>
     );
   }
 
-  return <LevelHost host={host} editor={fe} levels={[{ title: "Run controls", body }]} />;
+  return (
+    <LevelHost
+      host={host}
+      editor={fe}
+      levels={[
+        { title: "Run controls", body },
+        { title: "Run controls", body: detailBody },
+      ]}
+    />
+  );
 }

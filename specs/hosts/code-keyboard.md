@@ -34,10 +34,9 @@ subsystem is generated from what the keymap says is *currently enabled*, never p
 static text (`packages/code/src/ui/patterns/list-navigation.ts`,
 `packages/code/src/keys/commands.ts`). Third, Escape is never a close/cancel gesture: every Escape press immediately clears input
 or moves back one semantic screen, while Ctrl+C exclusively owns run cancellation and app
-quit. Contextual `Ctrl+X` may stop the focused live builtin `shell` (`tool.interruptFocused`)
-without cancelling the run. It is not a global binding: elicitation decline and a manual
-protected `run.cancel = Ctrl+X` still take precedence, and without an interruptible target the
-key is not consumed. The clickable `[Stop shell]` affordance remains available regardless of the
+quit. Contextual `Ctrl+X T` may stop the focused live builtin `shell` (`tool.interruptFocused`)
+without cancelling the run. The prefix alone never stops a shell or declines a request. `Ctrl+X D`
+opens the same multi-file viewer as `/diff`; a manual protected cancellation binding retains precedence. The clickable `[Stop shell]` affordance remains available regardless of the
 shortcut. Production: `packages/code/src/keys/interaction.ts`. Terminals can deliver repeated packets while the cancel binding is held, so
 `createInteraction` retains a 1-second repeat-metadata window for the current `run.cancel` binding;
 Escape never enters that timing path (`packages/code/src/keys/interaction.ts`).
@@ -82,8 +81,9 @@ prints a key routes through it, so one binding can never read `meta+r` in one pl
 `alt+r` in another (`packages/code/src/keys/keyspec.ts`, `compactKey`). It is idempotent (feeding an
 already-compact label back in returns it unchanged — pinned at
 `packages/code/tests/unit/keyspec.test.ts` (`compactKey: already-compact labels pass through unchanged`)).
-`compactKey` renders modified arrow names with the same caret prefix as other Ctrl keys:
-`ctrl+up` becomes `^up` and `ctrl+down` becomes `^down`, without changing their bindings.
+`compactKey` writes explicit modifier names: `<leader>p` becomes `Ctrl+X P`,
+`ctrl+up` becomes `Ctrl+Up`, and Shift remains explicit for letters and special keys.
+The formatter never abbreviates Control with a caret.
 Production: `compactKey`; Test: `packages/code/tests/unit/keyspec.test.ts`.
 
 For the composer, unmodified Return/numpad Enter owns `prompt.send`, while Ctrl+J owns the portable
@@ -169,7 +169,7 @@ command's current availability only while it is the active consumer; registratio
 subscribe to those predicates (`packages/code/src/keys/commands.ts`, `CommandEntryView.canAct`).
 
 The application composition adds one contextual navigation action after registry construction:
-`activity.toggle` has the portable `Ctrl+S` binding whenever any run-activity section exists. It
+`activity.toggle` has the portable `Ctrl+X S` binding whenever any run-activity section exists. It
 closes the responsive Sidebar when open and otherwise reveals the first available Agents, Parallel
 work or Plan section. It has no slash-command surface, and Escape does not close the Sidebar
 (`packages/code/src/views/App.tsx`, `toggleActivitySidebar` and the `activity.toggle`
@@ -323,7 +323,7 @@ verdicts. Pinned: `packages/code/tests/unit/keyboard-profile.test.ts` (a patch-v
 
 ### 3.3 `DEFAULT_BINDING_CANDIDATES` — the full vital-command table
 
-17 commands, each with 1-2 candidates (`packages/code/src/keys/interaction.ts`,
+The following commands and candidates (`packages/code/src/keys/interaction.ts`,
 `DEFAULT_BINDING_CANDIDATES`):
 
 | Command | Candidates | `when` |
@@ -333,23 +333,29 @@ verdicts. Pinned: `packages/code/tests/unit/keyboard-profile.test.ts` (a patch-v
 | `app.suspend` | `ctrl+z` | (none) |
 | `focus.next` | `tab` | `overlay==none` |
 | `agent.picker` | `shift+tab` | `overlay==none` |
-| `isolation.picker` | `ctrl+i` (enhanced) | `overlay==none` |
-| `review.picker` | `alt+g` (enhanced, requires `meta`), `ctrl+g` | `overlay==none` |
-| `controls.open` | `alt+r` (enhanced, requires `meta`) | `overlay==none` |
-| `plan.open` | `ctrl+p`, `alt+p` (enhanced, requires `meta`) | `overlay in (none, plan)` |
-| `workflow.current` | `ctrl+w` | `overlay==none`; current workflow required |
-| `goal.toggle` | `ctrl+o` | `overlay==none` |
-| `transcript.toggleCollapse` | `ctrl+k` | `overlay==none` |
-| `transcript.focusPrev` | `ctrl+up` | `overlay==none` |
-| `transcript.focusNext` | `ctrl+down` | `overlay==none` |
+| `isolation.picker` | `<leader>i` | `overlay==none` |
+| `review.picker` | `<leader>g` | `overlay==none` |
+| `memory.picker` | `<leader>m` | `overlay==none` |
+| `activity.toggle` | `<leader>s` | `overlay==none` |
+| `tool.interruptFocused` | `<leader>t` | eligible focused shell |
+| `controls.open` | `<leader>r` | `overlay==none` |
+| `plan.open` | `<leader>p` | `overlay in (none, plan)` |
+| `workflow.current` | `<leader>w` | `overlay==none`; current workflow required |
+| `goal.toggle` | `<leader>o` | `overlay==none` |
+| `transcript.diff` | `<leader>d` | `overlay==none` |
+| `transcript.toggleCollapse` | `<leader>k` | `overlay==none` |
+| `transcript.focusPrev` | `<leader>up` | `overlay==none` |
+| `transcript.focusNext` | `<leader>down` | `overlay==none` |
 | `transcript.scrollPageUp` | `pageup` | `overlay==none` |
 | `transcript.scrollPageDown` | `pagedown` | `overlay==none` |
 | `transcript.scrollLineUp` | `alt+up` (enhanced, requires `meta`) | `overlay==none` |
 | `transcript.scrollLineDown` | `alt+down` (enhanced, requires `meta`) | `overlay==none` |
 
-Modified arrows (`ctrl+up`/`ctrl+down`) are portable — "plain xterm", not gated — while
-`alt+…` candidates carry `minimumProfile:"enhanced"` because Alt is the modifier terminals
-actually intercept (`packages/code/src/keys/interaction.ts`; pinned `packages/code/tests/integration/interaction.test.ts`).
+Plain arrows are portable on macOS, Windows and Linux and become transcript navigation only while
+the logical block cursor is active. `alt+…` candidates carry `minimumProfile:"enhanced"` because
+Alt is the modifier terminals actually intercept (`packages/code/src/keys/interaction.ts`;
+`packages/code/src/views/App.tsx`; pinned `packages/code/tests/integration/interaction.test.ts` and
+`packages/code/tests/integration/app-shell-render.test.tsx`).
 
 `focus.next` is navigation only. A focused screen may reserve Tab for its own ordered controls; at
 shell level `App.focusNext` clears the transcript's logical block cursor and focuses the composer,
@@ -361,6 +367,15 @@ Production: `packages/code/src/keys/interaction.ts` (`focus.next`) and
 `packages/code/tests/integration/app-shell-render.test.tsx` ("Tab returns block focus to the
 composer with a sidebar open and never selects an agent" and "the split sidebar owns one compact
 textual agent roster, including after expand all").
+
+`Ctrl+X Up/Down` enters the transcript's logical block focus without taking the textarea's native
+editing bindings away from the composer. While a block is focused, a contextual layer maps plain
+Up/Down to the same previous/next commands; Tab or Escape clears that logical focus and restores the
+composer contract. The application footer therefore shows `[↑ / ↓] previous / next block` in
+block-focus context and the complete `Ctrl+X Up/Down` sequences elsewhere. Production:
+`packages/code/src/views/App.tsx` (`transcriptNavigationActive`, contextual key layer and footer
+projection). Test: `packages/code/tests/integration/app-shell-render.test.tsx` ("the leader enters
+block focus, then plain arrows move it").
 
 The transcript scroll commands dispatch row intent through `App.scrollTranscript`, which delegates
 to `TranscriptViewport.scrollBy` for the selected projection. That handle scrolls the native
@@ -378,16 +393,16 @@ For an `enhanced` environment with all modifiers `"supported"` (no manual overri
 {
   "run.cancel": "ctrl+c",
   "app.escape": "escape",
-  "isolation.picker": ["ctrl+i"],
-  "review.picker": ["alt+g", "ctrl+g"],
-  "controls.open": "alt+r",
-  "plan.open": ["alt+p", "ctrl+p"]
+  "isolation.picker": "<leader>i",
+  "review.picker": "<leader>g",
+  "controls.open": "<leader>r",
+  "plan.open": "<leader>p"
 }
 ```
 
 `resolveCommandBindings` builds `[...enhanced, ...portable]`
 (`packages/code/src/keys/keyboard-profile.ts`), so a resolved enhanced candidate is always listed before
-a portable one — `plan.open`'s enhanced `alt+p` precedes its portable `ctrl+p`. A single
+a portable one when a command supplies both. A single
 resolved key collapses to a bare string; two or more become an array
 (`packages/code/src/keys/interaction.ts`). A command whose every candidate resolves away (e.g. all
 `enhanced`-only candidates on a `portable` profile) is **absent from the map entirely**
@@ -428,6 +443,19 @@ default"`).
 (`packages/code/tests/unit/active-actions.test.ts`, "active action projection deduplicates alternatives by command identity"). This is the *only* place a segment is assembled;
 key and label are never truncated independently, by the function's own doc comment
 (`packages/code/src/ui/patterns/active-actions.ts`).
+
+Footer presentation groups two or more actions whose resolved alternatives all use
+Ctrl+X under one `Ctrl+X:` prefix. Other shortcuts appear first with their complete
+keys; mixed-modifier alternatives remain explicit. Help retains full combinations.
+Width admission measures this grouped text, including the prefix and separator, and keeps
+each action whole when it fits a row. The application uses `footerLines` to preserve all
+footer actions across responsive rows, repeating the shared prefix per line; other panel
+footers retain their existing admission budget.
+Production: `packages/code/src/ui/patterns/active-actions.ts` (`footerText`,
+`budgetFooterActions`) and `packages/code/src/ui/patterns/navigation-bar.tsx` (`NavigationBar`).
+Test: `packages/code/tests/unit/active-actions.test.ts` ("shared footer modifiers preserve
+full help keys and budget the rendered text", "mixed custom alternatives stay explicit
+outside the modifier group").
 
 ### 3.7 `PANEL_VERBS` — the panel-wide verb key/label table
 
@@ -683,7 +711,7 @@ writing or deleting the `bindings` map entry (`packages/code/src/views/config/Ke
 `packages/code/tests/integration/keyboard-view-render.test.tsx` ("selects profiles, cycles the
 client convention, and resets") ("manual bindings shows stable commands...").
 
-`KeyboardDiagnostic` runs 4 probes in sequence (`ctrl+k`, `alt/option+k`, `super/cmd+k`,
+`KeyboardDiagnostic` runs 4 probes in sequence (`ctrl+shift+k`, `alt/option+k`, `super/cmd+k`,
 "layout-stable K") (`packages/code/src/views/config/KeyboardView.tsx`); each keypress is intercepted at
 `LAYER.CONFIRM+20`, `ctx.consume()`d unconditionally so no destination opens underneath,
 and recorded as `"supported"` only if it matches the probe (`packages/code/src/views/config/KeyboardView.tsx`).
@@ -738,14 +766,13 @@ Cmd only for an explicit Mac client").
 
 `NavigationBar` (`packages/code/src/ui/patterns/navigation-bar.tsx`) is the live wiring the rest of
 this document's mechanisms feed: `useActiveActions` (`packages/code/src/ui/patterns/navigation-bar.tsx`) reads
-`keymap.getActiveKeys({ includeBindings: true, includeMetadata: true })` through
+`keymap.getCommandEntries({ visibility: "reachable" })` through
 `useKeymapSelector` (a reactive subscription), pipes the result through
-`projectActiveActions`, then through
-`budgetFooterActions` for the current width, and joins the surviving actions with
-`actionSegment` into one text node. `InteractionNavigationBar`
+`projectCommandActions`, then through `footerLines` for responsive application chrome or
+`budgetFooterActions` for bounded panel chrome. `footerText` groups shared leader prefixes. `InteractionNavigationBar`
 (`packages/code/src/ui/patterns/navigation-bar.tsx`) is the self-contained wrapper `ViewFrame` and others mount:
 it renders **nothing** (`null as never`) when the supplied `interaction.keymap` lacks a
-`getActiveKeys` function — the guard that keeps a test double without a real keymap from
+`getCommandEntries` function and reactive `on` subscription — the guard that keeps a test double without a real keymap from
 throwing here.
 
 ### 4.12 `ViewFrame`'s own action filter and badge states
@@ -801,7 +828,9 @@ The composer owns one additional exclusivity rule for the row above it. `InputDo
 the active `run.cancel` binding (`Ctrl+C` by default) to interrupt. A hosted run with confirmed
 continuation displays `continues after exit` before the elapsed detail only when its local
 Host/Sandbox lifecycle can outlive the TUI; this is presentation of host policy, not a grant or
-another key binding. The canonical footer is deliberately stable across that lifecycle: it keeps
+another key binding. While the Ctrl+X prefix is pending, this same band shows
+`Ctrl+X active · choose a key`; during a run the prefix state follows the interrupt hint instead of
+adding a row to the footer. The canonical footer is deliberately stable across that lifecycle: it keeps
 Context plus cumulative Session token totals/cost before and after settlement and never repeats
 `Running`, elapsed time or iteration. Production: `packages/code/src/views/InputDock.tsx`
 (`onPopupOpenChange`), `packages/code/src/views/App.tsx` (`inputPopupOpen`, `leadActivityDetail`,
@@ -836,7 +865,7 @@ of a hand-embedded bracketed shortcut instruction (a `[esc]`/`[enter]`/`[ctrl+x]
 hint followed by an action verb, or a literal `glyph("return")` reference). Navigation
 hints are generated from the live keymap (§4.6, `active-actions.ts`), never hand-written
 per screen. The three exemptions are principled: `FatalBoot` runs before the shared
-keymap exists; `KeyboardView`'s diagnostic probe labels (`"Press Ctrl+K"`, etc.,
+keymap exists; `KeyboardView`'s diagnostic probe labels (`"Press Ctrl+X K"`, etc.,
 `packages/code/src/views/config/KeyboardView.tsx`) are *inputs under test*, not navigation instructions; `keyspec.ts`
 is the one file that legitimately declares the prompt-editing chord table
 (`PROMPT_EDITING_KEYS`, `packages/code/src/keys/keyspec.ts`), consumed by `InputDock`.
@@ -966,28 +995,27 @@ clear effect are wired at `packages/code/src/views/App.tsx`.
 Tests: `packages/code/tests/integration/interaction.test.ts`; full-shell paths are
 pinned at `packages/code/tests/integration/app-shell-render.test.tsx`.
 
-**INV-D13.** `Ctrl+I` is registered for the internal `isolation.picker` on every keyboard profile and
-is projected as `^i isolation`. It requires a distinct Ctrl+I event; legacy Tab bytes retain Tab
-navigation rather than opening Isolation. Settings > Isolation remains available on those terminals. `Ctrl+G` opens
-`review.picker`, presented as Guard, on every profile; `Alt+G` is its enhanced accelerator. These are
-inactive while another overlay is open or a run is active. `agent.picker` (Shift+Tab and
-`/agent`) is also disabled during an active run. The App effect guards and the temporary
-`offRunConfiguration` key layer prevent opening those pickers or leaking their configured
-shortcuts into the editor; completion restores availability.
-Test: `packages/code/tests/integration/app-shell-render.test.tsx` (run configuration pickers).
-On a macOS client `Alt+G` is presented as Option
-and requires the terminal to deliver Option as Meta/Esc+; the Guard Ctrl route requires no
-terminal configuration. `Ctrl+E` belongs only to expanding or collapsing the Task editor, so `Ctrl+G` never
-changes editor state. The renderer keeps Kitty keyboard reporting in its conservative mode and
+**INV-D13.** Application actions use Ctrl+X consistently across client platforms and profiles:
+I Isolation, G Guard, M Memory, R Run controls, P Plan, O Goal, W Workflow, S Sidebar, K block
+expansion, E expanded editor, and Up/Down block navigation. These are sequential keypresses,
+not simultaneous chords. The shared OpenTUI timed-leader addon expires a pending prefix after
+two seconds. Keyboard manual overrides remain supported.
+Isolation, Guard, Memory and Agent pickers are disabled during a run and while another overlay owns
+input. Their shortcuts are consumed during a run rather than leaking into the editor.
+Plain Ctrl+P remains available to autocomplete; Ctrl+W, Ctrl+K and Ctrl+E retain editor semantics.
+Production: `packages/code/src/keys/interaction.ts`, `packages/code/src/views/InputDock.tsx`.
+Test: `packages/code/tests/integration/interaction.test.ts`,
+`packages/code/tests/integration/app-shell-render.test.tsx`.
+The renderer keeps Kitty keyboard reporting in its conservative mode and
 never requests all-key escape reports, so terminal-native dead-key and IME text composition remains
 intact. A literal `ß` remains composer text.
-`Ctrl+S` is the sole keyboard binding for the responsive activity Sidebar. It closes an open
+`Ctrl+X S` is the sole keyboard binding for the responsive activity Sidebar. It closes an open
 surface or opens the first available Agents, Parallel work or Plan section. No `/activity` slash
 action exists. The first live Plan, first
 workflow leader and first visible sub-agent each own an independent automatic
 reveal once per execution for Plan, Parallel work and Agents. Closing the surface is sticky for
 later updates of the intent that opened it, while the first event for another section may still
-reveal it. Escape does not close the Sidebar or suppress its automatic reveal; `Ctrl+S` performs
+reveal it. Escape does not close the Sidebar or suppress its automatic reveal; `Ctrl+X S` performs
 the explicit toggle. The bounded agent/workflow footer strip remains a pointer reopen route,
 whose split or drawer presentation is determined by the viewport; Plan never contributes footer
 text.
@@ -995,7 +1023,7 @@ text.
 Production: `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES`, `DEFAULT_WHEN`),
 `packages/code/src/adapters/renderer-bootstrap.ts` (`buildRendererConfig`),
 `packages/code/src/views/config/KeyboardView.tsx` (`PROBES`, `KeyboardDiagnostic`),
-`packages/code/src/app/commands.tsx` (`isolation.picker`, `review.picker`),
+`packages/code/src/app/commands.tsx` (`isolation.picker`, `review.picker`, `memory.picker`),
 `packages/code/src/views/InputDock.tsx` (`prompt.editor.open`, `prompt.editor.close`),
 `packages/code/src/app/layout.ts` (`createLayoutController`), and
 `packages/code/src/views/App.tsx` (`requestAutomaticSidebar`, `visiblePlanContext`,
@@ -1169,10 +1197,30 @@ contract **by shape** without either module importing the other.
 
 
 The footer groups the available `transcript.focusPrev` and `transcript.focusNext` actions as
-`[^up / ^down] previous / next block`, using their resolved keys, before width budgeting. Both
+`[Ctrl+X Up / Ctrl+X Down] previous / next block` before block focus and
+`[↑ / ↓] previous / next block` while block focus is active, using their resolved keys before
+width budgeting. Both
 bindings remain independent in dispatch and full Help. If only one action is active, it retains its
 individual label. A grouped segment is admitted or omitted as a whole.
 Production: `budgetFooterActions` and `actionSegment` in
 [active-actions.ts](../../packages/code/src/ui/patterns/active-actions.ts).
 Test: [active-actions.test.ts](../../packages/code/tests/unit/active-actions.test.ts), atomic block
 navigation footer segment.
+
+
+The Ctrl+X prefix is registered with OpenTUI's timed-leader addon and bindings use its
+leader token rather than interpreting a simultaneous Ctrl+X+letter chord. A prefix alone
+executes no action. The application footer projects reachable complete command bindings,
+so actions remain discoverable before the prefix is pressed. The activity band immediately above
+the composer adds `Ctrl+X active · choose a key` while the keymap reports the prefix pending;
+when working or thinking it seats that state after the run details and interrupt hint. Escape and timeout clear
+the pending prefix. Shell interruption uses Ctrl+X then T; Diff uses Ctrl+X then D.
+Production: `packages/code/src/keys/interaction.ts` (`createInteraction`,
+`DEFAULT_BINDING_CANDIDATES`), `packages/code/src/views/ElicitBlock.tsx` (`ElicitBlock`),
+`packages/code/src/ui/patterns/active-actions.ts` (`projectCommandActions`),
+`packages/code/src/views/Footer.tsx` (`LeadActivityLine`) and
+`packages/code/src/views/App.tsx` (`LeadActivityStatus`).
+Test: `packages/code/tests/integration/interaction.test.ts` ("leader picker sequences
+dispatch while Tab retains focus navigation", "Ctrl+X T interrupts the focused shell
+when that command is enabled") and `packages/code/tests/integration/app-shell-render.test.tsx`
+(picker open/close and editor sequences).

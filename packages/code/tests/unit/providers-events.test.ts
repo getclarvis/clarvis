@@ -17,7 +17,7 @@ test("source_staged reports the chosen source and its meaning", () => {
   });
   expect(note.message).toContain("ACME_API_KEY: env");
   expect(note.message).toContain("shell env only (keys.json ignored)");
-  expect(note.message).toContain("saves on ^s");
+  expect(note.message).toContain("saves on Ctrl+S");
 });
 
 test("model_added reports id and resolved context window", () => {

@@ -964,7 +964,7 @@ test("a failed node refresh preserves the result and exposes the refresh error",
   t.renderer.destroy();
 });
 
-test("direct workflow detail skips history and closes with Ctrl+W", async () => {
+test("direct workflow detail skips history and closes with Ctrl+X W", async () => {
   let closed = 0;
   const reads: string[] = [];
   const { host, press, deps, listCalls } = mount({
@@ -982,7 +982,7 @@ test("direct workflow detail skips history and closes with Ctrl+W", async () => 
     expect(listCalls).toEqual([]);
     expect(out).not.toContain("Monitor");
     expect(out).not.toContain("Updated");
-    press("ctrl+w");
+    press("<leader>w");
     expect(closed).toBe(1);
   } finally {
     t.renderer.destroy();

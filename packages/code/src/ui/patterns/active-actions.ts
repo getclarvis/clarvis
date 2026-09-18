@@ -1,4 +1,4 @@
-import type { ActiveKey } from "@opentui/keymap";
+import type { ActiveKey, CommandEntry } from "@opentui/keymap";
 import type { KeyEvent, Renderable } from "@opentui/core";
 import { compactKey } from "../../keys/keyspec.ts";
 import type { ActionHintGroup, ActionSurface } from "../../keys/actions.ts";
@@ -20,7 +20,10 @@ export interface ActiveAction {
   essential: boolean;
 }
 
-type ProjectableActiveKey = ActiveKey<Renderable, KeyEvent>;
+type ProjectableActiveKey = Pick<
+  ActiveKey<Renderable, KeyEvent>,
+  "display" | "command" | "commandAttrs" | "bindings"
+>;
 
 function strings(value: unknown): string[] {
   return Array.isArray(value)
@@ -38,13 +41,40 @@ function sentenceCase(value: string): string {
   return value.length === 0 ? value : value[0]!.toUpperCase() + value.slice(1);
 }
 
+/** Projects complete reachable sequences, including actions behind a pending leader key. */
+export function projectCommandActions(
+  entries: readonly CommandEntry<Renderable, KeyEvent>[],
+  client?: ClientPlatform,
+): ActiveAction[] {
+  return projectActiveActions(
+    entries.flatMap((entry) =>
+      entry.bindings.map((binding) => ({
+        display: binding.sequence.map((part) => part.display).join(" "),
+        command: entry.command.name,
+        commandAttrs: binding.commandAttrs ?? entry.command,
+      })),
+    ),
+    client,
+  );
+}
+
 /** Projects and deduplicates the active keymap's named actions. */
 export function projectActiveActions(
   keys: readonly ProjectableActiveKey[],
   client?: ClientPlatform,
 ): ActiveAction[] {
   const actions = new Map<string, ActiveAction>();
-  for (const key of keys) {
+  const projectedKeys = keys.flatMap((key) =>
+    key.bindings?.length
+      ? key.bindings.map((binding) => ({
+          ...key,
+          display: binding.sequence.map((part) => part.display).join(" "),
+          command: binding.command,
+          commandAttrs: binding.commandAttrs,
+        }))
+      : [key],
+  );
+  for (const key of projectedKeys) {
     if (typeof key.command !== "string") continue;
     const attrs = key.commandAttrs ?? {};
     const surfaces = strings(attrs.uiSurfaces) as ActionSurface[];
@@ -79,6 +109,69 @@ export function actionSegment(action: ActiveAction): string {
   const keys =
     action.keyGroups?.map((group) => group.join("/")).join(" / ") ?? action.keys.join("/");
   return `[${keys}] ${action.footerLabel.toLowerCase()}`;
+}
+
+/** Formats a footer with one shared modifier prefix, without changing help or bindings. */
+export function footerText(actions: readonly ActiveAction[], shared = false): string {
+  const grouped = actions.filter(
+    (action) =>
+      action.keys.length > 0 && action.keys.every((key) => /^Ctrl\+X [a-zA-Z↑↓]+$/.test(key)),
+  );
+  if (grouped.length < (shared ? 1 : 2)) return actions.map(actionSegment).join("  ");
+  const plain = actions.filter((action) => !grouped.includes(action)).map(actionSegment);
+  const compact = grouped.map((action) =>
+    actionSegment({
+      ...action,
+      keys: action.keys.map((key) => key.slice("Ctrl+X ".length).toUpperCase()),
+      keyGroups: action.keyGroups?.map((group) =>
+        group.map((key) => key.slice("Ctrl+X ".length).toUpperCase()),
+      ),
+    }),
+  );
+  return [plain.join("  "), `Ctrl+X: ${compact.join("  ")}`].filter(Boolean).join("  │  ");
+}
+
+function footerCandidates(actions: readonly ActiveAction[]): ActiveAction[] {
+  let eligible = actions.filter((action) => action.surfaces.includes("footer"));
+  const previous = eligible.find((action) => action.id === "transcript.focusPrev");
+  const next = eligible.find((action) => action.id === "transcript.focusNext");
+  if (previous && next) {
+    eligible = eligible
+      .filter((action) => action !== next)
+      .map((action) =>
+        action === previous
+          ? {
+              ...previous,
+              keys: [...previous.keys, ...next.keys],
+              keyGroups: [previous.keys, next.keys],
+              footerLabel: "previous / next block",
+            }
+          : action,
+      );
+  }
+  return eligible;
+}
+
+/** Wraps all available footer actions, repeating shared modifiers on each new row. */
+export function footerLines(actions: readonly ActiveAction[], width: number): string[] {
+  const eligible = footerCandidates(actions).sort(byReadingOrder);
+  const shared = (action: ActiveAction): boolean =>
+    action.keys.length > 0 && action.keys.every((key) => /^Ctrl\+X [a-zA-Z↑↓]+$/.test(key));
+  const ordered = [...eligible.filter((action) => !shared(action)), ...eligible.filter(shared)];
+  const lines: string[] = [];
+  let row: ActiveAction[] = [];
+  for (const action of ordered) {
+    if (
+      row.length > 0 &&
+      Bun.stringWidth(footerText([...row, action], true)) > Math.max(1, width - 2)
+    ) {
+      lines.push(footerText(row, true));
+      row = [];
+    }
+    row.push(action);
+  }
+  if (row.length > 0) lines.push(footerText(row, true));
+  return lines;
 }
 
 /**
@@ -170,26 +263,10 @@ export function budgetFooterActions(
   measure: (value: string) => number = (value) => Bun.stringWidth(value),
 ): ActiveAction[] {
   if (width <= 0) return [];
-  let eligible = actions.filter((action) => action.surfaces.includes("footer"));
-  const previous = eligible.find((action) => action.id === "transcript.focusPrev");
-  const next = eligible.find((action) => action.id === "transcript.focusNext");
-  if (previous && next) {
-    eligible = eligible
-      .filter((action) => action !== next)
-      .map((action) =>
-        action === previous
-          ? {
-              ...previous,
-              keys: [...previous.keys, ...next.keys],
-              keyGroups: [previous.keys, next.keys],
-              footerLabel: "previous / next block",
-            }
-          : action,
-      );
-  }
+  const eligible = footerCandidates(actions);
   const limit = tierLimit(width);
   const fits = (next: readonly ActiveAction[]): boolean =>
-    measure(next.map(actionSegment).join("  ")) <= Math.max(0, width - 2);
+    measure(footerText(next)) <= Math.max(0, width - 2);
 
   const selected: ActiveAction[] = [];
   for (const action of [...eligible].sort(byImportance)) {

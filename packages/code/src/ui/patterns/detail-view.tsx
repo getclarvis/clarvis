@@ -1,5 +1,8 @@
 import type { JSX } from "solid-js";
+import { Show } from "solid-js";
 import { tokens } from "../../theme/tokens.ts";
+import { settingSummary, type SettingPresentation } from "../presentation.ts";
+import { SelectableRow } from "../primitives/selectable-row.tsx";
 import type { LevelSpec } from "./level-keys.ts";
 import type { UiLifecycle } from "../presentation.ts";
 
@@ -33,6 +36,57 @@ export function DetailHeading(props: { children: JSX.Element }): JSX.Element {
     <text marginTop={1} fg={tokens.accent}>
       {props.children}
     </text>
+  );
+}
+
+/** Compact settings row used by overview screens that open details separately. */
+export function DetailSettingRow(props: {
+  setting: SettingPresentation;
+  selected: boolean;
+  value?: string;
+  id?: string;
+}): JSX.Element {
+  const value = (): string => props.value ?? settingSummary(props.setting);
+  return (
+    <SelectableRow id={props.id} selected={props.selected}>
+      <span style={{ fg: tokens.fg }}>{props.setting.label}</span>
+      <span style={{ fg: tokens.muted }}>{"  " + value()}</span>
+    </SelectableRow>
+  );
+}
+
+/** Origin and lifecycle facts for one setting, outside the selectable overview. */
+export function SettingDetail(props: {
+  setting: SettingPresentation | undefined;
+  children?: JSX.Element;
+}): JSX.Element {
+  return (
+    <DetailColumn>
+      <DetailTitle>{props.setting?.label ?? "Details"}</DetailTitle>
+      <Show when={props.setting?.configured !== props.setting?.effective}>
+        <text fg={tokens.muted} wrapMode="word">
+          {"Configured: " + props.setting?.configured}
+        </text>
+      </Show>
+      <text fg={tokens.fg} wrapMode="word">
+        {"Effective: " + props.setting?.effective}
+      </text>
+      <Show when={props.setting?.pending !== undefined}>
+        <text fg={tokens.warn} wrapMode="word">
+          {"Pending: " + props.setting?.pending}
+        </text>
+      </Show>
+      <text fg={tokens.muted} wrapMode="word">
+        {"Source: " + props.setting?.source}
+      </text>
+      <text fg={tokens.muted}>{"Applies: " + props.setting?.applies}</text>
+      <Show when={props.setting?.readOnlyReason}>
+        <text fg={tokens.muted} wrapMode="word">
+          {props.setting?.readOnlyReason}
+        </text>
+      </Show>
+      {props.children}
+    </DetailColumn>
   );
 }
 

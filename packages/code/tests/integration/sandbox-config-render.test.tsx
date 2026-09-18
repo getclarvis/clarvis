@@ -140,7 +140,7 @@ test("ctrl+r refreshes the toolchain inspection; bare r no longer does", async (
   press("ctrl+r");
   await tick();
   expect(inspections).toEqual([false, true]);
-  expect(t.captureCharFrame()).toContain("[^r] refresh");
+  expect(t.captureCharFrame()).toContain("[Ctrl+R] refresh");
   t.renderer.destroy();
 });
 
@@ -172,7 +172,7 @@ test("a slower inspection cannot replace a newer refresh response", async () => 
   t.renderer.destroy();
 });
 
-test("the editable policy uses product labels and names the mutation affordance", async () => {
+test("the editable policy uses product labels and the shared compact detail affordance", async () => {
   const { host, deps } = mount();
   const t = await openRender((() => SandboxConfigPanel(host, deps)) as never, {
     width: 110,
@@ -186,7 +186,8 @@ test("the editable policy uses product labels and names the mutation affordance"
   expect(frame).toContain("Workspace access  workspace-write · from product default · next run");
   expect(frame).toContain("Network access  host · from product default · next run");
   expect(frame).toContain("Toolchain discovery  auto · from product default · next run");
-  expect(frame).toContain("change Sandbox");
+  expect(frame).toContain("[i] details");
+  expect(frame).not.toContain("change Sandbox");
   t.renderer.destroy();
 });
 
@@ -201,6 +202,8 @@ test("enter on an enum field opens the pick surface pre-selected, no blind cycli
   press("down");
   press("return");
   await t.renderOnce();
+  press("i");
+  await t.renderOnce();
   await t.renderOnce();
   const frame = t.captureCharFrame();
   expect(frame).toContain("availability");
@@ -210,26 +213,32 @@ test("enter on an enum field opens the pick surface pre-selected, no blind cycli
 });
 
 test("effective policy, host diagnosis, and toolchain inventory have distinct owners", async () => {
-  const { host, deps } = mount();
+  const { host, deps, press } = mount();
   const t = await openRender((() => SandboxConfigPanel(host, deps)) as never, {
     width: 110,
     height: 30,
   });
   await tick();
   await t.renderOnce();
-  const frame = t.captureCharFrame();
-  expect(frame.indexOf("effective")).toBeLessThan(frame.indexOf("Sandbox  on"));
-  expect(frame.indexOf("host")).toBeLessThan(frame.indexOf("Toolchains on kernel host"));
-  expect(frame).toContain("Tool       Manager   Source     State");
+  const overview = t.captureCharFrame();
+  expect(overview).toContain("effective");
+  expect(overview).not.toContain("Toolchains on kernel host");
+  press("i");
+  await t.renderOnce();
+  const detail = t.captureCharFrame();
+  expect(detail.indexOf("host")).toBeLessThan(detail.indexOf("Toolchains on kernel host"));
+  expect(detail).toContain("Tool       Manager   Source     State");
   t.renderer.destroy();
 });
 
 test("the native sandbox probe routes through the shared loading hint while pending", async () => {
-  const { host, deps } = mount({ inspect: () => new Promise<SandboxInspection>(() => {}) });
+  const { host, deps, press } = mount({ inspect: () => new Promise<SandboxInspection>(() => {}) });
   const t = await openRender((() => SandboxConfigPanel(host, deps)) as never, {
     width: 110,
     height: 30,
   });
+  await t.renderOnce();
+  press("i");
   await t.renderOnce();
   const frame = t.captureCharFrame();
   expect(frame).toContain("checking native sandbox on kernel host…");
@@ -267,12 +276,14 @@ test("short terminal: the toolchain list scrolls; nothing bleeds past the footer
 });
 
 test("a failed inspection surfaces the error in the banner and in the host status line", async () => {
-  const { host, deps } = mount({ inspect: () => Promise.reject(new Error("probe failed")) });
+  const { host, deps, press } = mount({ inspect: () => Promise.reject(new Error("probe failed")) });
   const t = await openRender((() => SandboxConfigPanel(host, deps)) as never, {
     width: 110,
     height: 30,
   });
   await tick();
+  await t.renderOnce();
+  press("i");
   await t.renderOnce();
   const frame = t.captureCharFrame();
   expect(frame).toContain("Native sandbox Error: probe failed");
@@ -371,10 +382,12 @@ test("changing availability stages the configured value without relabeling it ef
   press("down");
   press("return");
   await t.renderOnce();
+  press("i");
+  await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("Configured here: optional");
-  expect(frame).toContain("Effective:       required");
-  expect(frame).toContain("Source:          product default");
+  expect(frame).toContain("Configured: optional");
+  expect(frame).toContain("Effective: required");
+  expect(frame).toContain("Source: product default");
   t.renderer.destroy();
 });
 
@@ -394,10 +407,12 @@ test("changing network stages the configured value without relabeling it effecti
   press("down");
   press("return");
   await t.renderOnce();
+  press("i");
+  await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("Configured here: none");
-  expect(frame).toContain("Effective:       host");
-  expect(frame).toContain("Source:          product default");
+  expect(frame).toContain("Configured: none");
+  expect(frame).toContain("Effective: host");
+  expect(frame).toContain("Source: product default");
   t.renderer.destroy();
 });
 
@@ -416,10 +431,12 @@ test("changing filesystem stages the configured value without relabeling it effe
   press("down");
   press("return");
   await t.renderOnce();
+  press("i");
+  await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("Configured here: workspace-read-only");
-  expect(frame).toContain("Effective:       workspace-write");
-  expect(frame).toContain("Source:          product default");
+  expect(frame).toContain("Configured: workspace-read-only");
+  expect(frame).toContain("Effective: workspace-write");
+  expect(frame).toContain("Source: product default");
   t.renderer.destroy();
 });
 
@@ -441,10 +458,12 @@ test("changing toolchain mode stages the configured value without relabeling it 
   press("down");
   press("return");
   await t.renderOnce();
+  press("i");
+  await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("Configured here: manual");
-  expect(frame).toContain("Effective:       auto");
-  expect(frame).toContain("Source:          product default");
+  expect(frame).toContain("Configured: manual");
+  expect(frame).toContain("Effective: auto");
+  expect(frame).toContain("Source: product default");
   t.renderer.destroy();
 });
 
@@ -465,7 +484,7 @@ test("ctrl+s save() writes the draft under the current scope and clears dirty", 
 });
 
 test("host warning: required + unavailable says runs will fail", async () => {
-  const { host, deps } = mount({
+  const { host, deps, press } = mount({
     readSandbox: { ...SANDBOX, availability: "required" },
     effectiveSandbox: { ...SANDBOX, availability: "required" },
     inspect: () => Promise.resolve(UNAVAILABLE_INSPECTION),
@@ -476,14 +495,17 @@ test("host warning: required + unavailable says runs will fail", async () => {
   });
   await tick();
   await t.renderOnce();
+  press("i");
+  await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("unavailable here (not installed)");
-  expect(frame).toContain("runs will fail; switch Isolation to Host or install the native sandbox");
+  const prose = frame.replaceAll(/\s+/gu, " ");
+  expect(prose).toContain("unavailable here (not installed)");
+  expect(prose).toContain("runs will fail; switch Isolation to Host or install the native sandbox");
   t.renderer.destroy();
 });
 
 test("host warning: optional + unavailable still fails closed", async () => {
-  const { host, deps } = mount({
+  const { host, deps, press } = mount({
     readSandbox: { ...SANDBOX, availability: "optional" },
     effectiveSandbox: { ...SANDBOX, availability: "optional" },
     inspect: () => Promise.resolve(UNAVAILABLE_INSPECTION),
@@ -494,18 +516,24 @@ test("host warning: optional + unavailable still fails closed", async () => {
   });
   await tick();
   await t.renderOnce();
+  press("i");
+  await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("runs will fail; switch Isolation to Host or install the native sandbox");
+  expect(frame.replaceAll(/\s+/gu, " ")).toContain(
+    "runs will fail; switch Isolation to Host or install the native sandbox",
+  );
   t.renderer.destroy();
 });
 
 test("host warning: degraded mode is reported even though it is still available", async () => {
-  const { host, deps } = mount({ inspect: () => Promise.resolve(DEGRADED_INSPECTION) });
+  const { host, deps, press } = mount({ inspect: () => Promise.resolve(DEGRADED_INSPECTION) });
   const t = await openRender((() => SandboxConfigPanel(host, deps)) as never, {
     width: 110,
     height: 30,
   });
   await tick();
+  await t.renderOnce();
+  press("i");
   await t.renderOnce();
   const frame = t.captureCharFrame();
   expect(frame).toContain("degraded mode: shares the host /proc");
@@ -603,17 +631,23 @@ test("sandbox rows project scalar inheritance and union-list provenance field by
 
   press("down");
   await t.renderOnce();
+  press("i");
+  await t.renderOnce();
   let frame = t.captureCharFrame();
-  expect(frame).toContain("Configured here: inherit");
-  expect(frame).toContain("Effective:       optional");
-  expect(frame).toContain("Source:          global");
+  expect(frame).toContain("Configured: inherit");
+  expect(frame).toContain("Effective: optional");
+  expect(frame).toContain("Source: global");
 
+  press("escape");
+  await t.renderOnce();
   for (let index = 0; index < 3; index++) press("down");
   await t.renderOnce();
+  press("i");
+  await t.renderOnce();
   frame = t.captureCharFrame();
-  expect(frame).toContain("Configured here: WORKSPACE_TOKEN");
-  expect(frame).toContain("Effective:       GLOBAL_TOKEN WORKSPACE_TOKEN");
-  expect(frame).toContain("Source:          global + workspace");
+  expect(frame).toContain("Configured: WORKSPACE_TOKEN");
+  expect(frame).toContain("Effective: GLOBAL_TOKEN WORKSPACE_TOKEN");
+  expect(frame).toContain("Source: global + workspace");
   t.renderer.destroy();
 });
 
@@ -710,20 +744,22 @@ test("include/exclude/extra-paths text fields each open the shared editor pre-fi
   t.renderer.destroy();
 });
 
-test("with no toolchain/extra-path rows the scrollbox is simply empty", async () => {
-  const { host, deps } = mount();
+test("with no toolchain/extra-path rows the detail inventory is simply empty", async () => {
+  const { host, deps, press } = mount();
   const t = await openRender((() => SandboxConfigPanel(host, deps)) as never, {
     width: 110,
     height: 30,
   });
   await tick();
   await t.renderOnce();
+  press("i");
+  await t.renderOnce();
   expect(t.captureCharFrame()).toContain("Toolchains on kernel host");
   t.renderer.destroy();
 });
 
-test("unavailable toolchains stay collapsed even when the terminal is tall", async () => {
-  const { host, deps } = mount({ inspect: () => Promise.resolve(bigInspection(15)) });
+test("unavailable toolchains stay collapsed in details even when the terminal is tall", async () => {
+  const { host, deps, press } = mount({ inspect: () => Promise.resolve(bigInspection(15)) });
   const t = await openRender((() => SandboxConfigPanel(host, deps)) as never, {
     width: 120,
     height: 44,
@@ -731,11 +767,13 @@ test("unavailable toolchains stay collapsed even when the terminal is tall", asy
   await tick();
   await t.renderOnce();
   await t.renderOnce();
+  press("i");
+  await t.renderOnce();
   const frame = t.captureCharFrame();
   expect(frame).toContain("bun");
   expect(frame).not.toContain("swift");
   expect(frame).not.toContain("kotlin");
   // Lower-case: `u` is the key that dispatches, and the hint advertised `U`.
-  expect(frame).toContain("12 unavailable hidden · u show unavailable");
+  expect(frame).toContain("[u] show unavailable");
   t.renderer.destroy();
 });

@@ -2,13 +2,60 @@ import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { IsolationPicker } from "../../src/views/overlays/IsolationPicker.tsx";
 import { ReviewPicker } from "../../src/views/overlays/ReviewPicker.tsx";
+import { MemoryPicker } from "../../src/views/overlays/MemoryPicker.tsx";
 import type { Interaction } from "../../src/keys/interaction.ts";
 import type { SettingsAdapter } from "../../src/adapters/settings.ts";
 import type { GuardModeStore } from "../../src/adapters/guard-mode.ts";
+import type { MemoryModeStore } from "../../src/adapters/memory-mode.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { applyIsolation } from "../../src/features/run/isolation.ts";
 
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+test("the memory picker changes only the session mode", async () => {
+  const { keymap, press } = createFakeKeymap();
+  let mode: "on" | "off" = "on";
+  const notices: string[] = [];
+  const applied: true[] = [];
+  const memory = {
+    configured: () => true,
+    mode: () => mode,
+    setMode: (next: "on" | "off") => {
+      mode = next;
+    },
+  } as MemoryModeStore;
+  const settings = {
+    effective: () => ({ memory: { enabled: true }, default_model: "openai/model" }),
+  } as unknown as SettingsAdapter;
+  const rendered = await openRender(
+    (() => (
+      <MemoryPicker
+        interaction={interactionWith(keymap)}
+        settings={settings}
+        memory={memory}
+        active={() => true}
+        notify={(message) => notices.push(message)}
+        onClose={() => {}}
+        onApplied={() => applied.push(true)}
+      />
+    )) as never,
+    { width: 80, height: 24 },
+  );
+  await rendered.renderOnce();
+
+  const frame = rendered.captureCharFrame();
+  expect(frame).toContain("Select memory");
+  expect(frame).toContain("On");
+  expect(frame).toContain("Off");
+  expect(frame).toContain("Persisted Memory settings are unchanged");
+
+  press("down");
+  press("return");
+  expect(memory.mode()).toBe("off");
+  expect(notices).toEqual(["memory: off (this session) — applies to the next run"]);
+  expect(applied).toEqual([true]);
+  rendered.renderer.destroy();
+});
 
 function interactionWith(keymap: ReturnType<typeof createFakeKeymap>["keymap"]): Interaction {
   return {

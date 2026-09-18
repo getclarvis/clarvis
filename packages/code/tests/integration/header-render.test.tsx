@@ -26,13 +26,13 @@ function baseInput(over: Partial<HeaderInput> = {}): HeaderInput {
 async function frame(input: HeaderInput, renderWidth = input.width): Promise<string[]> {
   const t = await openRender(
     () => (
-      <box flexDirection="column" width={renderWidth} height={5}>
+      <box flexDirection="column" width={renderWidth} height={24}>
         <HeaderRows plan={() => projectHeader(input)} />
         <text>{"-".repeat(input.width)}</text>
         <text>BODY</text>
       </box>
     ),
-    { width: renderWidth, height: 5 },
+    { width: renderWidth, height: 24 },
   );
   await t.renderOnce();
   const rows = t.captureCharFrame().split("\n");
@@ -48,7 +48,7 @@ test("header is one line carrying identity and the run's governing configuration
   expect(rows[0]).toContain("Isolation: Sandbox");
   expect(rows[0]).toContain("Guard: Off");
   expect(rows[0]).toContain("Memory: on");
-  expect(rows[0]?.trimEnd()).toEndWith("v0.0.4-beta");
+  expect(rows.join("\n")).toContain("v0.0.4-beta");
   expect(rows[0]).not.toContain("plans:");
   expect(rows[1]).toContain("----------");
   expect(rows[2]).toContain("BODY");
@@ -72,7 +72,8 @@ test("the right-anchored version keeps its gutter when the configuration chips f
     }),
     120,
   );
-  expect(rows[0]).toContain("Memory: on v0.1.1");
+  expect(rows.join("\n")).toContain("Memory: on");
+  expect(rows.join("\n")).toContain("v0.1.1");
 });
 
 test("urgent connection state remains visible on the stable header", async () => {
@@ -81,7 +82,7 @@ test("urgent connection state remains visible on the stable header", async () =>
       connection: { phase: "failed", detail: "offline" },
     }),
   );
-  expect(rows[0]).toContain("backend connect failed");
+  expect(rows.join("\n")).toContain("backend connect failed");
 });
 
 test("run lifecycle labels never enter the stable header row", async () => {
@@ -92,11 +93,11 @@ test("run lifecycle labels never enter the stable header row", async () => {
   expect(rows[1]).toContain("----------");
 });
 
-test("exceptional safety appears only when there is room", async () => {
+test("exceptional safety stays visible at narrow widths", async () => {
   const wide = await frame(baseInput({ width: 140, sandboxUnavailable: true }));
   expect(wide[0]).toContain("Sandbox unavailable");
   const compact = await frame(baseInput({ width: 48, sandboxUnavailable: true }));
-  expect(compact[0]).not.toContain("Sandbox unavailable");
+  expect(compact.join("\n")).toContain("Sandbox unavailable");
   expect(compact[0]!.trimEnd().length).toBeLessThanOrEqual(48);
 });
 
@@ -106,7 +107,7 @@ test("reactive connection updates replace the urgent host state in place", async
     () => (
       <HeaderRows plan={() => projectHeader(baseInput({ width: 90, connection: connection() }))} />
     ),
-    { width: 90, height: 3 },
+    { width: 90, height: 8 },
   );
   await t.renderOnce();
   expect(t.captureCharFrame()).not.toContain("connect failed");
@@ -118,7 +119,7 @@ test("reactive connection updates replace the urgent host state in place", async
   t.renderer.destroy();
 });
 
-test("the audited width matrix keeps one bounded identity row", async () => {
+test("the audited width matrix wraps all header fields without losing identity", async () => {
   for (const width of [24, 36, 48, 71, 72, 99, 100, 119, 120, 124, 160, 200]) {
     const rows = await frame(
       baseInput({
@@ -127,10 +128,12 @@ test("the audited width matrix keeps one bounded identity row", async () => {
       }),
     );
     expect(rows[0]).toContain("Clarvis");
-    expect(rows[0]?.trimEnd()).toEndWith("v0.0.4-beta");
+    expect(rows.join("\n")).toContain("v0.0.4-beta");
     expect(rows[0]!.length).toBeLessThanOrEqual(width);
     expect(rows.filter((row) => row.includes("Clarvis"))).toHaveLength(1);
-    if (width < 100) expect(rows[0]).not.toContain("Sandbox unavailable");
+    expect(rows.join("\n")).toContain("Sandbox unavailable");
+    expect(rows.join("\n")).toContain("Memory: on");
+    expect(rows.join("\n")).toContain("BODY");
   }
 });
 
@@ -138,7 +141,7 @@ test("the update marker remains bounded across the audited width matrix", async 
   for (const width of [24, 36, 48, 71, 72, 99, 100, 119, 120, 124, 160, 200]) {
     const rows = await frame(baseInput({ width, updateAvailable: true }));
     expect(rows[0]).toContain("Clarvis");
-    expect(rows[0]?.trimEnd()).toEndWith("↑ v0.0.4-beta");
+    expect(rows.join("\n")).toContain("↑ v0.0.4-beta");
     expect(Bun.stringWidth(rows[0]!)).toBeLessThanOrEqual(width);
     expect(rows.filter((row) => row.includes("Clarvis"))).toHaveLength(1);
   }

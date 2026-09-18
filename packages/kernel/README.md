@@ -429,6 +429,8 @@ As part of that bootstrap, the kernel constructs one provider-aware planning run
 capability and owner-scoped `PlansService` resolve through the exact same `PlanFactory`. Markdown is
 the default and uses `planStoreFor`; operator settings may instead select a direct language-neutral
 executable or an enabled plugin offering `capabilityExecutables.plans`.
+The service projects controlled plan fields and preserved extra sections into `PlanDocumentDto`,
+alongside canonical Markdown, so clients do not reparse provider storage.
 
 The Tasks composition follows the same single-runtime rule. One `TaskProviderFactory` resolves both
 the run capability and owner-scoped `TasksService`, qualifies plugin MCP servers once, enforces

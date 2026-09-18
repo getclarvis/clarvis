@@ -627,7 +627,8 @@ baseline", `packages/protocol/src/runs.ts`), `spec_revision: number` ("bumped on
 approval binds to it", `packages/protocol/src/runs.ts`), and `tasks: PlanTaskDto[]`. `PlanDocumentDto` (`packages/protocol/src/plans.ts`)
 is the full document carried by `PlansService.read`, superset of `PlanProjection`'s fields plus
 `created_at`, `updated_at`, `created_by_run`, `approved_spec_revision?`, `objective`, `context`,
-`validation: string[]`, `notes`, and the canonical `markdown: string`.
+`validation: string[]`, `notes`, the ordered `extra_sections: Record<string, string>` projection,
+and the canonical `markdown: string`.
 
 ### 3.6 Example wire values from the package's own test fixture
 

@@ -106,6 +106,8 @@ export interface PlanDocumentDto {
   /** Validation checklist items, one single-line entry each. */
   validation: string[];
   notes: string;
+  /** Human or tool-authored sections after Notes, in document order. */
+  extra_sections: Record<string, string>;
   /** Canonical Markdown: authoritative bytes for Markdown, a read-only projection for other providers. */
   markdown: string;
 }

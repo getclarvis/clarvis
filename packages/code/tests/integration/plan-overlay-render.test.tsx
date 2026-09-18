@@ -78,6 +78,7 @@ function document(path: string, title: string, status: PlanDocumentDto["status"]
     tasks: [],
     validation: [],
     notes: "",
+    extra_sections: {},
     markdown: `# ${title}\n\nDetail for ${title}.`,
   };
 }
@@ -493,6 +494,9 @@ test("a seeded plan renders readable sections without duplicating live tasks", a
       { id: "t2", title: "Render the overlay body", status: "pending" },
     ],
     validation: ["suite green before release"],
+    extra_sections: {
+      Risks: "Checkout totals may drift during migration.",
+    },
   };
   const live: PlanActivity = {
     ...livePlan(doc),
@@ -505,6 +509,8 @@ test("a seeded plan renders readable sections without duplicating live tasks", a
   const out = t.captureCharFrame();
   expect(out).toContain("Ship the checkout redesign.");
   expect(out).toContain("Cart flow regressed after the overhaul.");
+  expect(out).toContain("Risks");
+  expect(out).toContain("Checkout totals may drift during migration.");
   expect(out).not.toContain("id: demo");
   expect(out).not.toContain("(t1)");
   expect(out).not.toContain("Error:");

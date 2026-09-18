@@ -78,7 +78,7 @@ test("mixed pass/fail: issues lead and the selected actionable row shows its hin
   expect(frame).toContain("Recommendations · 1 optional");
   expect(frame).toContain("→ add one from the catalog");
   expect(frame).toContain("[g] back");
-  expect(frame).toContain("[^r] refresh");
+  expect(frame).toContain("[Ctrl+R] refresh");
   expect(frame).toContain("[-] skip");
   expect(frame).toContain("recommended items pending");
   t.renderer.destroy();

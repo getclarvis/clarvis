@@ -102,12 +102,12 @@ const guardSession: ElicitRequestParams = {
   },
 };
 
-test("parseElicitForm: guard decisions keep deny-first order and gain scope labels", () => {
+test("parseElicitForm: guard decisions are affirmative-first with deny as the safe default", () => {
   const form = parseElicitForm(guardSession);
   expect(form.fields[0]!.options).toEqual([
-    { value: "deny", label: "deny" },
     { value: "allow", label: "allow once" },
     { value: "allow_session", label: "allow for this session" },
+    { value: "deny", label: "deny" },
   ]);
   expect(initialValues(form.fields)).toEqual({ decision: "deny" });
 });
@@ -123,8 +123,8 @@ test("configuration effects offer only the concrete allow or deny decision", () 
     },
   });
   expect(form.fields[0]!.options).toEqual([
-    { value: "deny", label: "deny" },
     { value: "allow", label: "allow once" },
+    { value: "deny", label: "deny" },
   ]);
   expect(initialValues(form.fields)).toEqual({ decision: "deny" });
 });

@@ -15,7 +15,7 @@ import type { Interaction } from "../../keys/interaction.ts";
 import type { CommandEntryView } from "../../keys/commands.ts";
 import { commandKeyLabel, compactKey, compactSequence } from "../../keys/keyspec.ts";
 import { registerScrollKeys } from "../../ui/patterns/list-navigation.ts";
-import { projectActiveActions } from "../../ui/patterns/active-actions.ts";
+import { projectCommandActions } from "../../ui/patterns/active-actions.ts";
 import { effectiveClientPlatform } from "../../keys/keyboard-profile.ts";
 import { PageFrame } from "../PageFrame.tsx";
 import { padColumn } from "../truncate.ts";
@@ -85,14 +85,11 @@ export function Help(props: {
 
   const available = createMemo(() => {
     revision();
-    const getActiveKeys = (props.interaction.keymap as Partial<Interaction["keymap"]>)
-      .getActiveKeys;
-    if (!getActiveKeys || !props.interaction.keyboardEnvironment) return [];
-    return projectActiveActions(
-      getActiveKeys.call(props.interaction.keymap, {
-        includeBindings: true,
-        includeMetadata: true,
-      }),
+    const getEntries = (props.interaction.keymap as Partial<Interaction["keymap"]>)
+      .getCommandEntries;
+    if (!getEntries || !props.interaction.keyboardEnvironment) return [];
+    return projectCommandActions(
+      getEntries.call(props.interaction.keymap, { visibility: "reachable" }),
       effectiveClientPlatform(props.interaction.keyboardEnvironment()),
     );
   });
@@ -216,7 +213,11 @@ export function Help(props: {
       >
         <Index each={sections()}>
           {(section) => (
-            <box flexDirection="column" flexShrink={0} paddingTop={1}>
+            <box
+              flexDirection="column"
+              flexShrink={0}
+              paddingTop={section().title === "Available elsewhere" ? 0 : 1}
+            >
               <text fg={tokens.accent2}>{section().title}</text>
               <Index each={section().rows}>
                 {(row) => {

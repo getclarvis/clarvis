@@ -86,6 +86,8 @@ subscription authority. See [the catalog contract](../../specs/hosts/protocol.md
 
 All DTOs are protocol-owned projections. Engine-internal trace, memory and
 configuration types do not cross this boundary.
+`PlanDocumentDto` carries the provider's parsed controlled fields and ordered extra sections beside
+its canonical Markdown, so clients can present complete plan content without parsing the storage format.
 
 `goals` is always present on the client facade. `KernelCapabilities.goals` is optional; absence or
 false means unsupported, and the facade exposes that through `goals.availability()` without sending

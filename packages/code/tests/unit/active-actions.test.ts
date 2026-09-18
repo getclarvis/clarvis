@@ -3,6 +3,8 @@ import type { ActiveKey } from "@opentui/keymap";
 import type { KeyEvent, Renderable } from "@opentui/core";
 import {
   actionSegment,
+  footerText,
+  footerLines,
   budgetFooterActions,
   projectActiveActions,
   type ActiveAction,
@@ -38,8 +40,8 @@ test("active action projection deduplicates alternatives by command identity", (
     key("list.close", "escape", { hintGroup: "escape" }),
   ]);
   expect(actions.map((action) => action.id)).toEqual(["list.open", "list.close"]);
-  expect(actions[0]!.keys).toEqual(["↵", "super+o"]);
-  expect(actionSegment(actions[0]!)).toBe("[↵/super+o] list.open");
+  expect(actions[0]!.keys).toEqual(["↵", "Super+O"]);
+  expect(actionSegment(actions[0]!)).toBe("[↵/Super+O] list.open");
 });
 
 test("projection presents Option and Cmd only for an explicit Mac client", () => {
@@ -47,14 +49,14 @@ test("projection presents Option and Cmd only for an explicit Mac client", () =>
   expect(
     Object.fromEntries(projectActiveActions(source).map((action) => [action.id, action.keys[0]])),
   ).toEqual({
-    "thing.open": "alt+p",
-    "thing.close": "super+w",
+    "thing.open": "Alt+P",
+    "thing.close": "Super+W",
   });
   expect(
     Object.fromEntries(
       projectActiveActions(source, "macos").map((action) => [action.id, action.keys[0]]),
     ),
-  ).toEqual({ "thing.open": "opt+p", "thing.close": "cmd+w" });
+  ).toEqual({ "thing.open": "Option+P", "thing.close": "Cmd+W" });
 });
 
 function action(
@@ -120,7 +122,7 @@ test("a confirmation keeps both of its verbs at every width the footer paints", 
     }),
     action("confirm.cancel", 95, "escape", { keys: ["n"], footerLabel: "keep", essential: true }),
     action("run.cancel", 90, "escape", {
-      keys: ["^c"],
+      keys: ["Ctrl+C"],
       footerLabel: "cancel / quit",
       essential: true,
     }),
@@ -150,7 +152,7 @@ test("footer labels are lowercase without changing help titles", () => {
   const [action] = projectActiveActions([
     key("review.picker", "ctrl+g", { footerLabel: "Guard", uiTitle: "Guard" }),
   ]);
-  expect(actionSegment(action!)).toBe("[^g] guard");
+  expect(actionSegment(action!)).toBe("[Ctrl+G] guard");
   expect(action!.title).toBe("Guard");
 });
 
@@ -160,13 +162,61 @@ test("block navigation occupies one atomic footer segment and retains actual bin
     key("transcript.focusNext", "ctrl+down", { footerLabel: "next block" }),
   ]);
   const grouped = budgetFooterActions(actions, 100);
-  expect(grouped.map(actionSegment)).toEqual(["[^up / ^down] previous / next block"]);
+  expect(grouped.map(actionSegment)).toEqual(["[Ctrl+Up / Ctrl+Down] previous / next block"]);
   expect(budgetFooterActions(actions, 20)).toEqual([]);
   expect(
     budgetFooterActions(
       actions.filter((action) => action.id === "transcript.focusNext"),
       100,
     ).map(actionSegment),
-  ).toEqual(["[^down] next block"]);
+  ).toEqual(["[Ctrl+Down] next block"]);
   expect(actions).toHaveLength(2);
+});
+
+test("shared footer modifiers preserve full help keys and budget the rendered text", () => {
+  const actions = [
+    action("send", 100, "primary", { keys: ["↵"], essential: true }),
+    action("isolation", 50, "navigation", { keys: ["Ctrl+X I"] }),
+    action("memory", 49, "navigation", { keys: ["Ctrl+X M"] }),
+    action("cancel", 90, "escape", { keys: ["Ctrl+C"], essential: true }),
+  ];
+  expect(footerText(actions)).toBe(
+    "[↵] send  [Ctrl+C] cancel  │  Ctrl+X: [I] isolation  [M] memory",
+  );
+  expect(actions[1]!.keys).toEqual(["Ctrl+X I"]);
+  expect(actionSegment(actions[1]!)).toBe("[Ctrl+X I] isolation");
+  for (let width = 24; width <= 180; width++) {
+    expect(Bun.stringWidth(footerText(budgetFooterActions(actions, width)))).toBeLessThanOrEqual(
+      width - 2,
+    );
+  }
+});
+
+test("mixed custom alternatives stay explicit outside the modifier group", () => {
+  const actions = [
+    action("isolation", 50, "navigation", { keys: ["Ctrl+X I", "Alt+I"] }),
+    action("guard", 49, "navigation", { keys: ["Ctrl+X G"] }),
+    action("memory", 48, "navigation", { keys: ["Ctrl+X M"] }),
+  ];
+  expect(footerText(actions)).toBe("[Ctrl+X I/Alt+I] isolation  │  Ctrl+X: [G] guard  [M] memory");
+  expect(footerText(actions.slice(0, 2))).toBe("[Ctrl+X I/Alt+I] isolation  [Ctrl+X G] guard");
+});
+
+test("responsive footer retains every action across rows with explicit modifier prefixes", () => {
+  const actions = [
+    action("send", 100, "primary", { keys: ["↵"] }),
+    action("isolation", 50, "navigation", { keys: ["Ctrl+X I"] }),
+    action("guard", 49, "navigation", { keys: ["Ctrl+X G"] }),
+    action("memory", 48, "navigation", { keys: ["Ctrl+X M"] }),
+    action("cancel", 90, "escape", { keys: ["Ctrl+C"] }),
+  ];
+  for (const width of [36, 48, 72, 120, 180]) {
+    const lines = footerLines(actions, width);
+    for (const item of actions) expect(lines.join(" ")).toContain(item.footerLabel);
+    for (const line of lines) {
+      expect(Bun.stringWidth(line)).toBeLessThanOrEqual(width - 2);
+      if (/\[[IGM]\]/.test(line)) expect(line).toContain("Ctrl+X:");
+    }
+  }
+  expect(footerLines(actions, 48).length).toBeGreaterThan(1);
 });

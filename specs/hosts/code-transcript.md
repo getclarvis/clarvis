@@ -40,7 +40,7 @@ Within that scope it owns four concerns that are visible in the code as four sep
 
 Beside those four sits the transcript's persistent companion chrome — the responsive Sidebar, the
 bounded agent/workflow footer strip and the composer-adjacent Lead activity band. Plan activity
-lives only in the Sidebar or `Ctrl+P`; it contributes no footer text. Workflow activity remains in
+lives only in the Sidebar or `Ctrl+X P`; it contributes no footer text. Workflow activity remains in
 the Sidebar/footer, never in the transcript. There is no lower Plan pane between history and the
 composer. The sub-agent roster also lives in that chrome; selecting one row changes the transcript
 to that child's isolated semantic projection. These surfaces are treated in section 4.19.
@@ -182,7 +182,7 @@ anchor transactions, selection limits and host completion.
 
 `createTranscriptState` owns external row-keyed expansion, focus, Lead/child selection and
 explicit detail hydration. `bindRows` connects the selected projection's row/member IDs to
-keyboard navigation. `semanticNodes` and `pickDiffNode` retain semantic/detail access independently
+keyboard navigation. `semanticNodes` and `pickDiffNodes` retain semantic/detail access independently
 of native residence. No section grouping, status-based ordering or rendering-batch API exists.
 
 ### 2.8 Remaining modules
@@ -950,10 +950,10 @@ becomes transcript content.
 split column when `layout.secondaryMode()` is `"split"`
 (`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`) and inside a scrim-backed
 absolute drawer when it is `"drawer"`. No `PlanStrip` or other live pane is mounted below history:
-the Sidebar owns compact plan detail and `Ctrl+P` owns the full plan. App owns three
+the Sidebar owns compact plan detail and `Ctrl+X P` owns the full plan. App owns three
 independent execution-scoped automatic intents: the first live Plan, first workflow state/leader and first
 typed delegation open the same combined Sidebar and reveal `Plan`, `Parallel work` or `Agents`.
-`Ctrl+S` closes an open Sidebar or reopens the first available Agents, Parallel work or Plan
+`Ctrl+X S` closes an open Sidebar or reopens the first available Agents, Parallel work or Plan
 section. `createLayoutController.secondaryMode` projects that explicit intent as split or drawer.
 
 The effective secondary mode also owns roster placement. A split or drawer is the sole detailed
@@ -964,7 +964,7 @@ intent does not change the Lead selection or open `ActivityDetail`. The outer Si
 reveals the whole section owner with native `scrollChildIntoView`, so a long Plan cannot hide later
 workflow or Agents content below the viewport. When closed, the Lead transcript mounts no
 replacement roster. The canonical footer retains only Context/Session state and never duplicates
-agent, workflow or Plan counts. `Ctrl+S` is the sole keyboard toggle and Escape leaves the
+agent, workflow or Plan counts. `Ctrl+X S` is the sole keyboard toggle and Escape leaves the
 Sidebar unchanged. Plain Tab never changes Lead/child selection: at shell level it clears
 transcript block focus and returns to the composer, while a focused screen may own Tab for its local
 focus order. Shift+Tab opens the agent picker. Clicking any sidebar agent, including a settled
@@ -975,7 +975,7 @@ presented in two adjacent regions.
 
 **Frame.** The `Sidebar` root is `props.width?.()` wide or 44 columns, never shrinks, carries a left
 border whose colour is `tokens.accent` while `props.focused()` and `tokens.muted` otherwise, and
-sits at `zIndex={1}`. A fixed footer inside the root names the registered `Ctrl+S` toggle for opening
+sits at `zIndex={1}`. A fixed footer inside the root names the registered `Ctrl+X S` toggle for opening
 and closing the surface; opening the Sidebar does not filter or otherwise reproject the application
 footer below the composer. The body is a single ScrollBox holding up to three section-owner boxes — Plan,
 Parallel work, Agents — each introduced by `SectionHeader`. `SidebarRevealIntent` identifies the
@@ -985,8 +985,8 @@ entire body is the one line `No run activity to inspect`.
 
 **Plan section.** `PlanSummary` (`packages/code/src/views/Sidebar.tsx`, `PlanSummary`) renders a bold
 accent title, a lifecycle/progress line in its semantic status colour, and the windowed task list.
-For an available plan, the progress line appends the compact `[^p] full plan` affordance produced
-from the real `Ctrl+P` binding through `compactKey`; the Sidebar renders no separate result panel or
+For an available plan, the progress line appends the compact `[Ctrl+X P] full plan` affordance produced
+from the real `Ctrl+X P` binding through `compactKey`; the Sidebar renders no separate result panel or
 result preview. For an expected discard,
 the muted meta is `Completed · C/N completed · history discarded` and the muted footer is
 `Plan deleted after success`; only another removed plan gets `Unavailable · plan file
@@ -1001,7 +1001,7 @@ from `taskTone` (`packages/code/src/views/blocks.tsx`), called from
 chevron and selection background instead — but only while the plan is neither removed nor terminal.
 The glyph is the row's only lifecycle marker: the Sidebar omits lifecycle words, task numbers,
 assignees, and exit conditions so the title remains the sole task copy. Those details remain in the
-complete `Ctrl+P` plan surface. The
+complete `Ctrl+X P` plan surface. The
 source states the defect that rule fixes in `PlanSummary`'s one surviving line comment: "A
 completed plan has no active task. Retaining the chevron on its final task made a finished plan look
 like it was still executing."
@@ -1023,8 +1023,8 @@ and `↓ N later tasks`, and `currentIndex`. `PlanSummary` keeps the current row
 
 **Plan access outside the Sidebar.** The first live Plan may reveal the Sidebar once for its
 execution. After that surface is explicitly closed, later Plan updates cannot reopen it
-automatically, but `Ctrl+S` can reveal it again when it is the first available section. Plan contributes no footer summary.
-`Ctrl+P` opens the complete plan surface. No plan task, title, loading row or live Plan pane mounts
+automatically, but `Ctrl+X S` can reveal it again when it is the first available section. Plan contributes no footer summary.
+`Ctrl+X P` opens the complete plan surface. No plan task, title, loading row or live Plan pane mounts
 between the transcript and composer; plan churn therefore cannot resize the history region or move
 its newest row. Pinned by
 `packages/code/tests/integration/transcript-region-render.test.tsx` ("a current plan stays out of
@@ -1213,11 +1213,12 @@ Test: [transcript-records.test.ts](../../packages/code/tests/unit/transcript-rec
 [transcript-content-render.test.tsx](../../packages/code/tests/integration/transcript-content-render.test.tsx)
 and [transcript-window-render.test.tsx](../../packages/code/tests/integration/transcript-window-render.test.tsx).
 
-**INV-T15.** `pickDiffNode` deliberately ignores physical residency: it scans the full detail source
-or semantic node source, so a currently unmounted diff remains reachable. Production:
-`createTranscriptState` (`pickDiffNode`). Tests:
-`packages/code/tests/unit/transcript-state.test.ts` and
-`packages/code/tests/unit/transcript-state.test.ts` (diff selection and hydration).
+**INV-T15.** `pickDiffNodes` deliberately ignores physical residency: it scans the full detail source
+or semantic node source and returns every diff-producing call in chronological order within the
+active Lead or selected sub-agent transcript. Every dehydrated match requests rehydration, so
+currently unmounted diffs remain reachable without collapsing the viewer to the newest mutation.
+Production: `createTranscriptState` (`pickDiffNodes`). Test:
+`packages/code/tests/unit/transcript-state.test.ts` (ordered scoped selection and hydration).
 
 **INV-T16.** First admission fixes known relative order. Authoritative insertion of unknown rows preserves existing row objects.
 Production: `TranscriptRows`, `TranscriptViewport`, `TranscriptContent` and the individual presenters,
@@ -1456,7 +1457,7 @@ JSON key/value presentation is absent.
 `split` and `drawer` modes it is the combined `Sidebar`; a closed secondary surface mounts no roster
 or Plan/workflow pane in the Lead transcript. The application footer retains canonical
 Context/Session state without a second agent/workflow/Plan roster or a hidden pointer route. The
-Sidebar's own fixed footer names `Ctrl+S` as the sole keyboard toggle. Escape does not close
+Sidebar's own fixed footer names `Ctrl+X S` as the sole keyboard toggle. Escape does not close
 the Sidebar, and no `/activity` command exists. The first live Plan, first workflow state/leader and first delegation own independent
 once-per-execution automatic intents that
 open/reveal their whole section. Closing one is sticky only for repeated events of that intent; the
@@ -1478,7 +1479,7 @@ owners and native reveal), and `packages/code/src/views/App.tsx` (`visiblePlanCo
 `packages/code/tests/integration/sidebar-render.test.tsx` (including the settled-row negative
 `ActivityDetail` case), and
 `packages/code/tests/integration/app-shell-render.test.tsx` (the independent Plan/workflow/Agents
-auto-reveal contract, per-intent sticky close, `Ctrl+S` toggling, long-Plan reveal and
+auto-reveal contract, per-intent sticky close, `Ctrl+X S` toggling, long-Plan reveal and
 completed-agent selection).
 
 **INV-T49.** Lead has exactly two navigable immutable delegation markers; the selected child uses the same row store and viewport. No child section is automatically folded or reordered by status.

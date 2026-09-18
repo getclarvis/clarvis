@@ -5,16 +5,12 @@ import type { ViewHost } from "../../keys/commands.ts";
 import type { SettingsAdapter, SettingsFile } from "../../adapters/settings.ts";
 import type { EnvView } from "../../adapters/agent-files.ts";
 import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
-import {
-  bindLevelKeys,
-  createFieldEditor,
-  LevelHost,
-  SettingRow,
-  StatusRow,
-} from "./view-host.tsx";
+import { bindLevelKeys, createFieldEditor, LevelHost, StatusRow } from "./view-host.tsx";
 import type { CatalogPickerSpec } from "./CatalogPicker.tsx";
 import { modelPickerSpec } from "./pick-model.ts";
 import type { HintTone } from "../hint.ts";
+import type { SettingPresentation } from "../../ui/presentation.ts";
+import { DetailColumn, DetailSettingRow, SettingDetail } from "../../ui/patterns/detail-view.tsx";
 
 /** Data and actions {@link DefaultsPanel} needs from its host. */
 export interface DefaultsDeps {
@@ -103,14 +99,22 @@ export function DefaultsPanel(host: ViewHost, deps: DefaultsDeps): JSX.Element {
     }
   }
 
-  const spec = (): LevelSpec => ({
-    nav: {
-      count: () => 3,
-      index: sel,
-      setIndex: setSel,
-      activate: { label: "edit", run: editSelected },
-    },
-  });
+  function openDetails(): void {
+    host.level.push(settingsRows()[clamp(sel())]?.label ?? "Details");
+  }
+
+  const spec = (): LevelSpec =>
+    host.level.depth() === 1
+      ? { verbs: [{ key: "e", label: "edit", run: editSelected }] }
+      : {
+          nav: {
+            count: () => 3,
+            index: sel,
+            setIndex: setSel,
+            activate: { label: "edit", run: editSelected },
+          },
+          verbs: [{ key: "i", label: "details", run: openDetails }],
+        };
 
   bindLevelKeys({
     host,
@@ -119,66 +123,80 @@ export function DefaultsPanel(host: ViewHost, deps: DefaultsDeps): JSX.Element {
     register: (enabled) => registerLevel(host.interaction.keymap, { ...spec(), enabled }),
   });
 
+  function settingsRows(): SettingPresentation[] {
+    return [
+      {
+        label: "Vision model",
+        configured: visionModel() ?? "inherit",
+        effective: visionModel() ?? settings.effective().default_vision_model ?? "not configured",
+        source: visionModel()
+          ? host.scope()
+          : (settings.origin?.("default_vision_model") ?? "product default"),
+        applies: "next run",
+        mutation: "staged",
+      },
+      {
+        label: "When budget is exceeded",
+        configured: budget()?.on_exceed ?? "inherit",
+        effective:
+          budget()?.on_exceed ?? settings.effective().budget?.on_exceed ?? env.budgetOnExceed,
+        source: budget() ? host.scope() : (settings.origin?.("budget") ?? "product default"),
+        applies: "next run",
+        mutation: "staged",
+      },
+      {
+        label: "Total token limit",
+        configured: budget()?.total_token_limit?.toString() ?? "inherit",
+        effective:
+          budget()?.total_token_limit?.toString() ??
+          settings.effective().budget?.total_token_limit?.toString() ??
+          env.tokenDefault.toString(),
+        source: budget() ? host.scope() : (settings.origin?.("budget") ?? "product default"),
+        applies: "next run",
+        mutation: "staged",
+      },
+    ];
+  }
+
   function body(): JSX.Element {
     return (
-      <box flexDirection="column">
-        <SettingRow
-          setting={{
-            label: "Vision model",
-            configured: visionModel() ?? "inherit",
-            effective:
-              visionModel() ?? settings.effective().default_vision_model ?? "not configured",
-            source: visionModel()
-              ? host.scope()
-              : (settings.origin?.("default_vision_model") ?? "product default"),
-            applies: "next run",
-            mutation: "staged",
-          }}
-          selected={sel() === 0}
-          expanded={sel() === 0}
-        />
-        <StatusRow
-          label="vision"
-          text={
-            visionModel()
-              ? "reads images for an agent whose own model cannot see them"
-              : "images become numbered placeholders for a model without vision"
-          }
-        />
-        <SettingRow
-          setting={{
-            label: "When budget is exceeded",
-            configured: budget()?.on_exceed ?? "inherit",
-            effective:
-              budget()?.on_exceed ?? settings.effective().budget?.on_exceed ?? env.budgetOnExceed,
-            source: budget() ? host.scope() : (settings.origin?.("budget") ?? "product default"),
-            applies: "next run",
-            mutation: "staged",
-          }}
-          selected={sel() === 1}
-          expanded={sel() === 1}
-        />
-        <SettingRow
-          setting={{
-            label: "Total token limit",
-            configured: budget()?.total_token_limit?.toString() ?? "inherit",
-            effective:
-              budget()?.total_token_limit?.toString() ??
-              settings.effective().budget?.total_token_limit?.toString() ??
-              env.tokenDefault.toString(),
-            source: budget() ? host.scope() : (settings.origin?.("budget") ?? "product default"),
-            applies: "next run",
-            mutation: "staged",
-          }}
-          selected={sel() === 2}
-          expanded={sel() === 2}
-        />
-        <StatusRow label="host ceiling" text={String(env.tokenCeiling)} />
-      </box>
+      <DetailColumn>
+        {settingsRows().map((setting, index) => (
+          <DetailSettingRow setting={setting} selected={sel() === index} />
+        ))}
+      </DetailColumn>
+    );
+  }
+
+  function detailBody(): JSX.Element {
+    const index = clamp(sel());
+    return (
+      <SettingDetail setting={settingsRows()[index]}>
+        {index === 0 ? (
+          <StatusRow
+            label="vision"
+            text={
+              visionModel()
+                ? "reads images for an agent whose own model cannot see them"
+                : "images become numbered placeholders for a model without vision"
+            }
+          />
+        ) : index === 2 ? (
+          <StatusRow label="host ceiling" text={String(env.tokenCeiling)} />
+        ) : undefined}
+      </SettingDetail>
     );
   }
 
   return (
-    <LevelHost host={host} editor={fe} picker={picker} levels={[{ title: "Defaults", body }]} />
+    <LevelHost
+      host={host}
+      editor={fe}
+      picker={picker}
+      levels={[
+        { title: "Defaults", body },
+        { title: "Defaults", body: detailBody },
+      ]}
+    />
   );
 }

@@ -128,37 +128,37 @@ test("verb: derives the canonical key + label for a panel intention", () => {
 });
 
 test("compactKey: normalizes every modifier spelling to the compact form", () => {
-  expect(compactKey("meta+r")).toBe("alt+r");
-  expect(compactKey("alt+r")).toBe("alt+r");
-  expect(compactKey("option+r")).toBe("alt+r");
-  expect(compactKey("ctrl+o")).toBe("^o");
-  expect(compactKey("cmd+s")).toBe("cmd+s");
-  expect(compactKey("super+s")).toBe("super+s");
-  expect(compactKey("super+s", { clientPlatform: "macos" })).toBe("cmd+s");
-  expect(compactKey("meta+s", { clientPlatform: "macos" })).toBe("opt+s");
-  expect(compactKey("ctrl+up")).toBe("^up");
-  expect(compactKey("ctrl+down")).toBe("^down");
+  expect(compactKey("meta+r")).toBe("Alt+R");
+  expect(compactKey("alt+r")).toBe("Alt+R");
+  expect(compactKey("option+r")).toBe("Alt+R");
+  expect(compactKey("ctrl+o")).toBe("Ctrl+O");
+  expect(compactKey("cmd+s")).toBe("Cmd+S");
+  expect(compactKey("super+s")).toBe("Super+S");
+  expect(compactKey("super+s", { clientPlatform: "macos" })).toBe("Cmd+S");
+  expect(compactKey("meta+s", { clientPlatform: "macos" })).toBe("Option+S");
+  expect(compactKey("ctrl+up")).toBe("Ctrl+Up");
+  expect(compactKey("ctrl+down")).toBe("Ctrl+Down");
   expect(compactKey("ctrl+down")).not.toBe(compactKey("ctrl+v"));
   expect(compactKey("return")).toBe(glyph("return"));
   expect(compactKey("kpenter")).toBe(glyph("return"));
   expect(compactKey("escape")).toBe("esc");
   expect(compactKey("pageup")).toBe("pgup");
-  expect(compactKey("shift+s")).toBe("S");
-  expect(compactKey("shift+1")).toBe("shift+1");
-  expect(compactKey("shift+tab")).toBe("shift+tab");
+  expect(compactKey("shift+s")).toBe("Shift+S");
+  expect(compactKey("Shift+1")).toBe("Shift+1");
+  expect(compactKey("Shift+tab")).toBe("Shift+tab");
 });
 
 test("compactKey: already-compact labels pass through unchanged (surfaces can re-format safely)", () => {
   for (const label of [
-    "alt+r",
-    "^o",
-    "^up",
-    "^down",
+    "Alt+R",
+    "Ctrl+O",
+    "Ctrl+X Up",
+    "Ctrl+X Down",
     "esc",
     "pgup",
     glyph("return"),
-    `shift+${glyph("return")}`,
-    "shift+tab",
+    `Shift+${glyph("return")}`,
+    "Shift+tab",
     "@",
     "/diff",
   ]) {
@@ -167,7 +167,7 @@ test("compactKey: already-compact labels pass through unchanged (surfaces can re
 });
 
 test("compactSequence joins each stroke of a chord through the formatter", () => {
-  expect(compactSequence([{ display: "ctrl+x" }, { display: "meta+s" }])).toBe("^x alt+s");
+  expect(compactSequence([{ display: "ctrl+x" }, { display: "meta+s" }])).toBe("Ctrl+X Alt+S");
 });
 
 test("PROMPT_EDITING_KEYS: dock rows carry prompt.* commands; promptKeyLabel dedupes aliases", () => {
@@ -177,6 +177,6 @@ test("PROMPT_EDITING_KEYS: dock rows carry prompt.* commands; promptKeyLabel ded
     expect(row.desc.length).toBeGreaterThan(0);
   }
   expect(promptKeyLabel("prompt.send")).toBe(glyph("return"));
-  expect(promptKeyLabel("prompt.newline")).toBe(`^j / shift+${glyph("return")}`);
+  expect(promptKeyLabel("prompt.newline")).toBe(`Ctrl+J / Shift+${glyph("return")}`);
   expect(promptKeyLabel("no.such.command")).toBe("");
 });

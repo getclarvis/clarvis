@@ -73,7 +73,7 @@ report without waiting for it to happen twice.
 | `DoctorView(host, deps): JSX.Element` | renders the gate ladder and wires resolve/skip/refresh/reconnect/back keys | `packages/code/src/views/config/DoctorView.tsx` |
 
 Key bindings registered by `DoctorView`: `[g]` start/back, `[-]` skip (soft gates only), `[d]` show/hide
-healthy detail, `[^r]` refresh (`recheck`), `[c]` reconnect backend, `[u]` refresh model catalog, `[k]`
+healthy detail, `[Ctrl+R]` refresh (`recheck`), `[c]` reconnect backend, `[u]` refresh model catalog, `[k]`
 keyboard diagnostic (when `openKeyboard` supplied), and `escape` returns to the previous screen regardless
 of boot/gate state (`packages/code/src/views/config/DoctorView.tsx`). Ctrl+C is not claimed by
 Doctor and remains the global cancel-or-quit command.

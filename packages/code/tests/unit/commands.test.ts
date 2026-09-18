@@ -473,9 +473,9 @@ test("one binding renders identically in the popup hint, Help groups and the foo
     .find((r) => r.desc === "Isolation controls");
   const footer = commandKeyLabel(keymap, "controls.open");
 
-  expect(popup).toBe("alt+r");
-  expect(helpRow?.key).toBe("alt+r");
-  expect(footer).toBe("alt+r");
+  expect(popup).toBe("Alt+R");
+  expect(helpRow?.key).toBe("Alt+R");
+  expect(footer).toBe("Alt+R");
 
   offKeys();
   off();

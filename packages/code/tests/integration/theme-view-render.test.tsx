@@ -135,7 +135,7 @@ test("fix to AA validates the override against every surface the token is audite
   t.renderer.destroy();
 });
 
-test("the ascii toggle stages: live preview flips, write happens only on ^s", async () => {
+test("the ascii toggle stages: live preview flips, write happens only on Ctrl+S", async () => {
   const { host, controls, deps, press, asciiWrites } = mount();
   const t = await openRender((() => ThemeView(host, deps)) as never, { width: 110, height: 34 });
   await t.renderOnce();

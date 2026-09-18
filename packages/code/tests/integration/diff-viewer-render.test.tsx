@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { openRender, settleSyntaxSurfaces } from "../helpers/tracked-render.ts";
 import type { Interaction } from "../../src/keys/interaction.ts";
 import type { TranscriptToolNode } from "../../src/adapters/store.ts";
-import { DiffViewer } from "../../src/views/overlays/DiffViewer.tsx";
+import { DiffViewer, projectDiffFiles } from "../../src/views/overlays/DiffViewer.tsx";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 
 const REAL_DIFF = [
@@ -43,7 +43,13 @@ function toolNode(over: Partial<TranscriptToolNode> = {}): TranscriptToolNode {
 async function frame(node: TranscriptToolNode | null): Promise<string> {
   const { interaction } = fakeInteraction();
   const t = await openRender(
-    (() => <DiffViewer interaction={interaction} node={() => node} />) as never,
+    (() => (
+      <DiffViewer
+        interaction={interaction}
+        nodes={() => (node === null ? [] : [node])}
+        onClose={() => undefined}
+      />
+    )) as never,
     { width: 100, height: 40 },
   );
   await settleSyntaxSurfaces(t);
@@ -64,6 +70,155 @@ test("a node with a real diff renders it via the shared tool renderer", async ()
   expect(out).toContain("TWO");
   expect(out).toContain("two");
   expect(out).not.toContain("no diff in the transcript yet");
+});
+
+test("the changed-file tree expands folders and selects one complete file diff", async () => {
+  const { keymap, press } = createFakeKeymap();
+  const interaction = { keymap } as unknown as Interaction;
+  const nodes = [
+    toolNode({
+      args: { path: "src/first.ts" },
+      diff: "--- src/first.ts\n+++ src/first.ts\n@@ -1 +1 @@\n-old first\n+new first",
+    }),
+    toolNode({
+      args: { path: "src/second.ts" },
+      diff: "--- src/second.ts\n+++ src/second.ts\n@@ -1 +1 @@\n-old second\n+new second",
+    }),
+  ];
+  const t = await openRender(
+    (() => (
+      <DiffViewer interaction={interaction} nodes={() => nodes} onClose={() => undefined} />
+    )) as never,
+    { width: 100, height: 40 },
+  );
+  await settleSyntaxSurfaces(t);
+  let out = t.captureCharFrame();
+  expect(out).toContain("2 files · 2 changes");
+  expect(out).toContain("src/first.ts");
+  expect(out).toContain("new first");
+  expect(out).toContain("second.ts");
+  expect(out).not.toContain("new second");
+  press("return");
+  await t.renderOnce();
+  out = t.captureCharFrame();
+  expect(out.match(/first\.ts/g)).toHaveLength(1);
+  expect(out).not.toContain("second.ts");
+  press("return");
+  await t.renderOnce();
+  press("down");
+  press("down");
+  await settleSyntaxSurfaces(t);
+  out = t.captureCharFrame();
+  expect(out).toContain("src/first.ts");
+  expect(out).toContain("new first");
+  expect(out).not.toContain("new second");
+  press("return");
+  await settleSyntaxSurfaces(t);
+  out = t.captureCharFrame();
+  expect(out).toContain("src/second.ts");
+  expect(out).toContain("new second");
+  expect(out).not.toContain("new first");
+  t.renderer.destroy();
+});
+
+test("absolute paths retain their identity when a file is selected", async () => {
+  const { keymap, press } = createFakeKeymap();
+  const interaction = { keymap } as unknown as Interaction;
+  const nodes = [
+    toolNode({
+      args: { path: "/workspace/src/first.ts", old_string: "old first", new_string: "ABS FIRST" },
+      diff: undefined,
+    }),
+    toolNode({
+      args: {
+        path: "/workspace/src/second.ts",
+        old_string: "old second",
+        new_string: "ABS SECOND",
+      },
+      diff: undefined,
+    }),
+  ];
+  const t = await openRender(
+    (() => (
+      <DiffViewer interaction={interaction} nodes={() => nodes} onClose={() => undefined} />
+    )) as never,
+    { width: 100, height: 40 },
+  );
+  await settleSyntaxSurfaces(t);
+  expect(t.captureCharFrame()).toContain("ABS FIRST");
+  press("down");
+  press("down");
+  press("down");
+  press("return");
+  await settleSyntaxSurfaces(t);
+  const out = t.captureCharFrame();
+  expect(out).toContain("/workspace/src/second.ts");
+  expect(out).toContain("ABS SECOND");
+  expect(out).not.toContain("ABS FIRST");
+  t.renderer.destroy();
+});
+
+test("all edits to the same file stay grouped and multi-file unified diffs split by path", () => {
+  const samePath = [
+    toolNode({ args: { path: "src/a.ts" }, diff: "--- src/a.ts\n+++ src/a.ts\n+one" }),
+    toolNode({ args: { path: "src/a.ts" }, diff: "--- src/a.ts\n+++ src/a.ts\n+two" }),
+  ];
+  expect(projectDiffFiles(samePath)).toMatchObject([
+    {
+      path: "src/a.ts",
+      changes: [{ diff: expect.stringContaining("one") }, { diff: expect.stringContaining("two") }],
+    },
+  ]);
+  const split = projectDiffFiles([
+    toolNode({
+      toolName: "apply_patch",
+      args: {},
+      diff: [
+        "--- a/one.ts",
+        "+++ b/one.ts",
+        "@@ -1 +1 @@",
+        "-one",
+        "+ONE",
+        "--- a/two.ts",
+        "+++ b/two.ts",
+        "@@ -1 +1 @@",
+        "-two",
+        "+TWO",
+      ].join("\n"),
+    }),
+  ]);
+  expect(split.map((file) => file.path)).toEqual(["one.ts", "two.ts"]);
+});
+
+test("a narrow terminal opens file detail as a separate step and Escape returns to the tree", async () => {
+  const { keymap, press } = createFakeKeymap();
+  const interaction = { keymap } as unknown as Interaction;
+  const node = toolNode({
+    args: { path: "src/narrow.ts" },
+    diff: "--- src/narrow.ts\n+++ src/narrow.ts\n@@ -1 +1 @@\n-old\n+NARROW DETAIL",
+  });
+  const t = await openRender(
+    (() => (
+      <DiffViewer interaction={interaction} nodes={() => [node]} onClose={() => undefined} />
+    )) as never,
+    { width: 60, height: 24 },
+  );
+  await t.renderOnce();
+  let out = t.captureCharFrame();
+  expect(out).toContain("Changed files");
+  expect(out).not.toContain("NARROW DETAIL");
+  press("down");
+  press("return");
+  await settleSyntaxSurfaces(t);
+  out = t.captureCharFrame();
+  expect(out).not.toContain("Changed files");
+  expect(out).toContain("NARROW DETAIL");
+  press("escape");
+  await t.renderOnce();
+  out = t.captureCharFrame();
+  expect(out).toContain("Changed files");
+  expect(out).not.toContain("NARROW DETAIL");
+  t.renderer.destroy();
 });
 
 test("a node without a diff falls back to the args-reconstructed diff", async () => {
@@ -108,16 +263,20 @@ test("write_file on a new file with no diff shows the full new content", async (
   expect(out).toContain("brand new content");
 });
 
-test("the page projects its active scroll action", async () => {
+test("the page projects file navigation before detail scrolling", async () => {
   const out = await frame(toolNode({ diff: REAL_DIFF }));
-  expect(out).toContain("scroll");
+  expect(out).toContain("open");
 });
 
 test("mounting registers scroll keys on the interaction keymap", async () => {
   const { interaction, registered } = fakeInteraction();
   const t = await openRender(
     (() => (
-      <DiffViewer interaction={interaction} node={() => toolNode({ diff: REAL_DIFF })} />
+      <DiffViewer
+        interaction={interaction}
+        nodes={() => [toolNode({ diff: REAL_DIFF })]}
+        onClose={() => undefined}
+      />
     )) as never,
     { width: 100, height: 40 },
   );
@@ -140,7 +299,7 @@ test("a very long line wraps in the full-screen viewer rather than being hard-cl
       diff: ["--- a.ts", "+++ a.ts", "@@ -1,1 +1,1 @@", `+${long}`].join("\n"),
     }),
   );
-  expect(out).toContain(tail);
+  expect(out.replace(/[\s│]/g, "")).toContain(tail);
 });
 
 test("a bare carriage return does not desynchronise the gutter or drop a marker", async () => {

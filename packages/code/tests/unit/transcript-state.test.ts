@@ -283,18 +283,18 @@ test("fold overrides are pruned as semantic retention evicts their keys", () => 
   h.dispose();
 });
 
-test("pickDiffNode: newest diff-producing call by default, including builtin mutations", () => {
+test("pickDiffNodes returns every diff-producing call in chronological order", () => {
   const nodes = [
     node({ key: "a::1", mcpName: "write_file" }),
     node({ key: "a::2", mcpName: "edit_file" }),
     node({ key: "a::3", mcpName: "fs", toolName: "grep" }),
   ];
   const h = harness(nodes);
-  expect(h.ts.pickDiffNode()?.key).toBe("a::2");
+  expect(h.ts.pickDiffNodes().map((node) => node.key)).toEqual(["a::1", "a::2"]);
   h.dispose();
 });
 
-test("pickDiffNode never crosses between Lead and a selected sub-agent transcript", () => {
+test("pickDiffNodes never crosses between Lead and a selected sub-agent transcript", () => {
   const nodes = [
     node({ key: "a::lead-edit", toolName: "edit_file" }),
     node({
@@ -305,29 +305,15 @@ test("pickDiffNode never crosses between Lead and a selected sub-agent transcrip
     }),
   ];
   const h = harness(nodes, [{ id: "worker", order: 0, title: "Worker" }]);
-  expect(h.ts.pickDiffNode()?.key).toBe("a::lead-edit");
+  expect(h.ts.pickDiffNodes().map((node) => node.key)).toEqual(["a::lead-edit"]);
   h.ts.toggleSubagent("worker");
-  expect(h.ts.pickDiffNode()?.key).toBe("a::child-edit");
+  expect(h.ts.pickDiffNodes().map((node) => node.key)).toEqual(["a::child-edit"]);
   h.dispose();
 });
 
-test("pickDiffNode: a focused diff call wins; a focused non-diff falls back to the newest", () => {
-  const nodes = [
-    node({ key: "a::1", mcpName: "write_file" }),
-    node({ key: "a::2", mcpName: "edit_file" }),
-    node({ key: "a::3", mcpName: "fs", toolName: "grep" }),
-  ];
-  const h = harness(nodes);
-  h.ts.toggleAt("a::1");
-  expect(h.ts.pickDiffNode()?.key).toBe("a::1");
-  h.ts.toggleAt("a::3");
-  expect(h.ts.pickDiffNode()?.key).toBe("a::2");
-  h.dispose();
-});
-
-test("pickDiffNode: null when the transcript has no diff-producing call", () => {
+test("pickDiffNodes is empty when the transcript has no diff-producing call", () => {
   const h = harness([node({ key: "a::1", mcpName: "fs", toolName: "grep" })]);
-  expect(h.ts.pickDiffNode()).toBeNull();
+  expect(h.ts.pickDiffNodes()).toEqual([]);
   h.dispose();
 });
 
@@ -350,24 +336,24 @@ function diffHarness(nodes: TranscriptNode[]): {
   return { ts, asked, dispose };
 }
 
-test("pickDiffNode asks for a refill when the selected diff block was dehydrated", () => {
+test("pickDiffNodes asks for a refill for every dehydrated diff block", () => {
   const h = diffHarness([
     node({ key: "e1::c1", toolName: "write_file", diff: "old diff" }),
     node({ key: "e1::c2", toolName: "apply_patch", dehydrated: true }),
   ]);
   try {
-    const picked = h.ts.pickDiffNode();
-    expect(picked?.key).toBe("e1::c2");
+    const picked = h.ts.pickDiffNodes();
+    expect(picked.map((node) => node.key)).toEqual(["e1::c1", "e1::c2"]);
     expect(h.asked).toEqual(["e1::c2"]);
   } finally {
     h.dispose();
   }
 });
 
-test("pickDiffNode asks for nothing when the selected diff block still has its body", () => {
+test("pickDiffNodes asks for nothing when diff blocks still have their bodies", () => {
   const h = diffHarness([node({ key: "e1::c1", toolName: "write_file", diff: "a diff" })]);
   try {
-    expect(h.ts.pickDiffNode()?.key).toBe("e1::c1");
+    expect(h.ts.pickDiffNodes().map((node) => node.key)).toEqual(["e1::c1"]);
     expect(h.asked).toEqual([]);
   } finally {
     h.dispose();

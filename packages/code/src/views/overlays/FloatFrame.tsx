@@ -50,12 +50,14 @@ export function FloatFrame(props: {
   maxWidth?: number;
   maxHeight?: number | `${number}%`;
 }): JSX.Element {
-  const dims = useTerminalDimensions();
+  const dims =
+    props.maxHeight === undefined && props.size !== "sm" ? useTerminalDimensions() : undefined;
   /** Resolve the JSX-valued getter once so footer probes cannot mount duplicate navigation trees. */
   const navigation = children(() => props.navigation);
   const lifecycle = useOptionalSurfaceLifecycle();
   const maxHeight = (): number | `${number}%` =>
-    props.maxHeight ?? (props.size === "sm" ? SM_MAX_HEIGHT : floatMaxRows(dims().height));
+    props.maxHeight ??
+    (props.size === "sm" ? SM_MAX_HEIGHT : floatMaxRows(dims?.().height ?? SM_MAX_HEIGHT));
   const [p, setP] = createSignal(0);
   const timeline = useTimeline({ duration: OPEN_MS, loop: false, autoplay: false });
   onMount(() => {

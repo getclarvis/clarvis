@@ -113,6 +113,7 @@ test("diffHeaderPath strips git a/ b/ prefixes and skips /dev/null to the surviv
   expect(diffHeaderPath("--- a/src/x.ts\n+++ b/src/x.ts\n@@ @@\n+x")).toBe("src/x.ts");
   expect(diffHeaderPath("--- src/gone.ts\n+++ /dev/null\n@@ @@\n-x")).toBe("src/gone.ts");
   expect(diffHeaderPath("no headers at all")).toBeUndefined();
+  expect(diffHeaderPath("--- a\\src\\x.ts\n+++ b\\src\\x.ts\n@@ @@\n+x")).toBe("src/x.ts");
 });
 
 test("write_memory renders the write card with its markdown body, not a generic dump", async () => {

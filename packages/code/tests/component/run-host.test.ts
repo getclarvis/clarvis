@@ -1729,7 +1729,7 @@ test("esc-cancel: a cancel that lands after the run settles does not relabel it"
   expect(host.runActive()).toBe(false);
   const settled = host.runStatus();
 
-  // The race: ^c pressed in the instant the run finished. It used to set
+  // The race: Ctrl+C pressed in the instant the run finished. It used to set
   // `cancelling…` and mark the run cancelled for the rest of the session, with
   // the correct answer already on screen under a completed node.
   expect(host.cancelCurrentRun()).toBe(false);

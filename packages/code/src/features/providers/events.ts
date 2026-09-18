@@ -30,7 +30,7 @@ export function presentProvidersEvent(event: ProvidersEvent): Notice {
       return {
         message:
           `key source for ${event.envVar}: ${event.source} ${glyph("emDash")} ` +
-          `${event.meaning} (saves on ^s)`,
+          `${event.meaning} (saves on Ctrl+S)`,
       };
     case "model_added":
       return {

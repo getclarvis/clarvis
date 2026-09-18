@@ -175,7 +175,7 @@ export function ThemeView(host: ViewHost, deps: ThemeDeps): JSX.Element {
     setPendingAscii({ scope: host.scope(), value: next });
     applyAsciiMode(next);
     host.markDirty(true);
-    deps.notify(`ascii glyphs ${next ? "on" : "off"} (previewing ${glyph("emDash")} ^s saves)`);
+    deps.notify(`ascii glyphs ${next ? "on" : "off"} (previewing ${glyph("emDash")} Ctrl+S saves)`);
   }
 
   function fixContrast(): void {

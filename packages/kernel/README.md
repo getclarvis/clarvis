@@ -331,7 +331,9 @@ owner explicitly enables both public-client references for the local product; th
 product decision, not provider endorsement. Synthetic registrations exercise transport behavior in
 tests. Provider `user-agent` identity uses the root-owned Clarvis product version. ChatGPT and Grok
 separately send adapter-owned compatibility revisions (`0.153.2` and `1.0.6`, respectively) in the
-catalog version fields their services gate; those values are not the Clarvis product version. The
+catalog version fields their services gate; those values are not the Clarvis product version.
+Responses-backed Grok entitled-catalog rows tag `tool_calling` and keep `vision` unless the payload
+explicitly omits image input, so persisted model capabilities cannot strip composer images. The
 ordinary remote composition uses the unavailable implementation. The authenticated local
 `createFileRunHost` composition exposes subscription control only to its operator role.
 

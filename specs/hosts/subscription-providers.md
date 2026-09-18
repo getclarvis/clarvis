@@ -226,11 +226,17 @@ levels; unrelated provider metadata does not suppress them or cross the protocol
 The Grok subscription proxy has its own version gate. The XAI adapter keeps the current reviewed
 Grok Build compatibility revision (`1.0.6`) in `XAI_GROK_CLIENT_VERSION` and sends it on both the
 authenticated `/v1/models` catalog and `/v1/responses` inference paths. It does not substitute the
-Clarvis product version for that header. Test: “maps only visible API-supported Codex models and
-their reasoning facts”, “retains only Responses-backed Grok subscription models”, and “pins Grok
+Clarvis product version for that header. Responses-backed Grok catalog rows always carry
+`tool_calling`. `vision` follows published image-input modalities (`input_modalities`, `modalities`,
+or `modalities.input`) or an explicit `supports_vision` flag. When those facts are absent, the
+adapter still tags `vision`: a closed `tool_calling`-only capability set would make the engine strip
+composer images as if the model were blind. Test: “maps only visible API-supported Codex models and
+their reasoning facts”, “retains only Responses-backed Grok subscription models”, “projects Grok
+vision from catalog modalities and keeps it when the catalog is silent”, and “pins Grok
 subscription transport and derives its required headers after assembly” in
 `packages/kernel/tests/unit/subscription-adapters.test.ts` pin both independent version identities,
-the `gpt-5.6-sol`-shaped catalog entry, and the Grok catalog/inference header parity.
+the `gpt-5.6-sol`-shaped catalog entry, Grok catalog/inference header parity, and Grok vision
+projection.
 
 Production: `AiSdkProviderOptions.resolveSubscription`, `AiSdkAdapter.resolveRegistryModel`,
 `buildCallTuning`, `buildCallResult`, `toModelMessages`, `LiveContext.appendAssistant`, and

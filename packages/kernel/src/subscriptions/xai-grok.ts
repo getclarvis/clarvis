@@ -25,6 +25,41 @@ const PRODUCT_USER_AGENT = `clarvis/${VERSION}`;
 /** Grok Build compatibility revision used by the xAI subscription proxy's version gate. */
 const XAI_GROK_CLIENT_VERSION = "1.0.6";
 
+function stringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items = value.filter((item): item is string => typeof item === "string");
+  return items.length === value.length ? items : undefined;
+}
+
+/** Read image-input facts from the entitled Grok catalog without inventing a closed modality set. */
+function catalogInputModalities(model: Record<string, unknown>): string[] | undefined {
+  const direct = stringList(model.input_modalities) ?? stringList(model.modalities);
+  if (direct !== undefined) return direct;
+  if (
+    typeof model.modalities !== "object" ||
+    model.modalities === null ||
+    Array.isArray(model.modalities)
+  )
+    return undefined;
+  return stringList((model.modalities as Record<string, unknown>).input);
+}
+
+/**
+ * Responses-backed Grok models are tool-using. Vision follows published image modalities, or remains
+ * enabled when the catalog omits that fact — a closed `tool_calling`-only tag would strip images.
+ */
+function grokCatalogCapabilities(model: Record<string, unknown>): string[] {
+  const capabilities = ["tool_calling"];
+  const modalities = catalogInputModalities(model);
+  if (modalities !== undefined) {
+    if (modalities.includes("image")) capabilities.push("vision");
+    return capabilities;
+  }
+  if (model.supports_vision === false) return capabilities;
+  capabilities.push("vision");
+  return capabilities;
+}
+
 export interface XaiGrokAdapterOptions {
   fetch?: typeof globalThis.fetch;
   now?: () => number;
@@ -228,7 +263,7 @@ export function createXaiGrokAdapter(
             Number(model.max_completion_tokens) > 0
               ? { max_output: Number(model.max_completion_tokens) }
               : {}),
-            capabilities: ["tool_calling"],
+            capabilities: grokCatalogCapabilities(model),
             ...(efforts !== undefined ? { reasoning_efforts: efforts } : {}),
           },
         ];

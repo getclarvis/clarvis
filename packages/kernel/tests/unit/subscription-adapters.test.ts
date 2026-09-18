@@ -410,6 +410,7 @@ describe("subscription transport authority", () => {
           id: "grok-code",
           context_window: 256_000,
           max_output: 32_000,
+          capabilities: ["tool_calling", "vision"],
           reasoning_efforts: ["low", "high"],
         },
       ],
@@ -417,6 +418,52 @@ describe("subscription transport authority", () => {
     expect(request?.url).toBe("https://cli-chat-proxy.grok.com/v1/models");
     expect(request?.headers.get("x-grok-client-version")).toBe("1.0.6");
     expect(request?.headers.get("user-agent")).toBe(`clarvis/${VERSION}`);
+  });
+
+  it("projects Grok vision from catalog modalities and keeps it when the catalog is silent", async () => {
+    const adapter = createXaiGrokAdapter({
+      fetch: fetchStub(async () =>
+        Response.json({
+          data: [
+            {
+              model: "grok-image",
+              api_backend: "responses",
+              input_modalities: ["text", "image"],
+            },
+            {
+              model: "grok-nested",
+              api_backend: "responses",
+              modalities: { input: ["text", "image"] },
+            },
+            {
+              model: "grok-text",
+              api_backend: "responses",
+              input_modalities: ["text"],
+            },
+            {
+              model: "grok-no-vision-flag",
+              api_backend: "responses",
+              supports_vision: false,
+            },
+            {
+              model: "grok-4.6",
+              api_backend: "responses",
+            },
+          ],
+        }),
+      ),
+    });
+    await expect(
+      adapter.catalog(grokRegistration, account.access_token, account.account_id),
+    ).resolves.toMatchObject({
+      models: [
+        { id: "grok-image", capabilities: ["tool_calling", "vision"] },
+        { id: "grok-nested", capabilities: ["tool_calling", "vision"] },
+        { id: "grok-text", capabilities: ["tool_calling"] },
+        { id: "grok-no-vision-flag", capabilities: ["tool_calling"] },
+        { id: "grok-4.6", capabilities: ["tool_calling", "vision"] },
+      ],
+    });
   });
 });
 

@@ -69,6 +69,8 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Fixed
 
+- Grok subscription catalogs keep `vision` unless the entitled payload omits image input, so persisted
+  `tool_calling`-only rows can no longer strip composer images as if the model were blind.
 - Auto review now denies uncertainty, model failures and malformed answers by default; only an
   explicit operator-global `on_unsure: "ask"` selects human fallback. The picker says so directly.
 - `$clarvis-configure` remains literal despite the embedded guide intentionally having no agent

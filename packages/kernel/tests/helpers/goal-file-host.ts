@@ -89,7 +89,7 @@ export async function createGoalFileHostFixture(
                 String(body.messages.findLast((message) => message.role === "user")!.content),
               ) as {
                 mode?: string;
-                goal_header?: { mode: string; criteria: Array<{ id: string; kind: string }> };
+                definition?: { criteria?: Array<{ id: string; kind: string }> };
               })
             : undefined;
           const result: GoalFixtureResponse =
@@ -123,10 +123,8 @@ export async function createGoalFileHostFixture(
                                 rationale: "Result observed",
                                 evidence_ids: [],
                               },
-                              ...frame
-                                .goal_header!.criteria.filter(
-                                  (criterion) => criterion.kind === "qualitative",
-                                )
+                              ...(frame.definition?.criteria ?? [])
+                                .filter((criterion) => criterion.kind === "qualitative")
                                 .map((criterion) => ({
                                   scope: "criterion",
                                   criterion_id: criterion.id,

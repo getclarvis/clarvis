@@ -67,7 +67,12 @@ export type GoalStewardCompletionDecision =
   | { kind: "achieved"; review_id: string }
   | { kind: "needs_work"; review_id: string; next_step: string }
   | { kind: "needs_evidence"; review_id: string; next_step: string }
-  | { kind: "review_pending"; review_id: string; reason: string };
+  | {
+      kind: "interrupted";
+      review_id: string;
+      reason: string;
+      cause: "timeout" | "transport" | "invalid_output" | "cancelled";
+    };
 export interface GoalStewardRunInput {
   execution_id: string;
   session_id: string;
@@ -86,12 +91,11 @@ export interface GoalStewardRunResult {
   accounting?: PerAgentUsage[];
 }
 
-/** Host-owned catalogs constrain all semantic target and evidence references. */
+/** Host-owned qualitative targets constrain completion assessments; evidence IDs are optional. */
 export function validateGoalStewardResult(
   input: unknown,
   mode: "definition" | "completion",
   qualitativeIds: readonly string[],
-  evidenceIds: readonly string[],
 ): GoalStewardResult {
   const result = goalStewardResultSchema.parse(input);
   if (
@@ -103,12 +107,8 @@ export function validateGoalStewardResult(
     const ids = result.assessments
       .filter((item) => item.scope === "criterion")
       .map((item) => item.criterion_id!);
-    if (
-      ids.length !== qualitativeIds.length ||
-      ids.some((id) => !qualitativeIds.includes(id)) ||
-      result.assessments.some((item) => item.evidence_ids.some((id) => !evidenceIds.includes(id)))
-    )
-      throw new Error("Goal Steward returned unknown targets or evidence");
+    if (ids.length !== qualitativeIds.length || ids.some((id) => !qualitativeIds.includes(id)))
+      throw new Error("Goal Steward returned unknown targets");
   }
   return result;
 }

@@ -304,7 +304,7 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                             )
                               return {
                                 kind: "nudge",
-                                note: `[goal steward ${decision.kind === "needs_evidence" ? "evidence request" : "correction"}] ${decision.next_step}`,
+                                note: `[goal steward ${decision.kind === "needs_evidence" ? "clarification" : "correction"}] ${decision.next_step}`,
                               };
                             return {
                               kind: "terminal",

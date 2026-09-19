@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   createCapabilityServices,
   loadEnv,
+  TOOL_EFFECT_PORT,
   type AgentBuildContext,
   type RunCapabilityContext,
   type RunRequest,
@@ -153,7 +154,18 @@ function fixture(overrides: Partial<GoalRuntimePort> = {}) {
     },
     emit: () => undefined,
     requestParam: () => undefined,
-    services: createCapabilityServices(),
+    services: (() => {
+      const services = createCapabilityServices();
+      services.provide(TOOL_EFFECT_PORT, {
+        effect(name) {
+          if (name === "read_file" || name === "grep" || name === "list_dir") return "read";
+          if (name === "write_file" || name === "shell" || name === "edit_file") return "mutate";
+          if (name === "run_workflow" || name === "run_leader") return "spawn_run";
+          return "unknown";
+        },
+      });
+      return services;
+    })(),
   };
   const bc: AgentBuildContext = {
     agent: "lead",
@@ -255,6 +267,23 @@ describe("host-bound goal capability", () => {
 
     await contribution.hooks!.beforeIteration!();
     contribution.hooks!.afterDispatch!();
+    expect(f.blocks.some((block) => block.kind === "goal_formulation")).toBe(true);
+    expect(
+      contribution.dispatchPolicy?.admit({ id: "write", name: "write_file", arguments: {} }),
+    ).toMatchObject({ ok: false, reason: expect.stringContaining("create_goal") });
+    expect(
+      contribution.dispatchPolicy?.admit({ id: "read", name: "read_file", arguments: {} }),
+    ).toEqual({ ok: true });
+    expect(
+      contribution.dispatchPolicy?.admit({ id: "shell", name: "shell", arguments: {} }),
+    ).toMatchObject({ ok: false });
+    expect(
+      contribution.dispatchPolicy?.admit({
+        id: "delegate",
+        name: "delegate_task",
+        arguments: {},
+      }),
+    ).toMatchObject({ ok: false });
     expect(
       await handler.handle({ id: "get-before", name: "get_goal", arguments: {} }, 1),
     ).toMatchObject({ kind: "result", text: expect.stringContaining("Create the Goal first") });
@@ -281,6 +310,9 @@ describe("host-bound goal capability", () => {
     expect(
       await handler.handle({ id: "create", name: "create_goal", arguments: inputForCreation() }, 2),
     ).toMatchObject({ kind: "result", text: expect.stringContaining("Goal created") });
+    expect(
+      contribution.dispatchPolicy?.admit({ id: "write-after", name: "write_file", arguments: {} }),
+    ).toEqual({ ok: true });
     expect(
       await handler.handle(
         { id: "duplicate", name: "create_goal", arguments: inputForCreation() },
@@ -375,7 +407,7 @@ describe("host-bound goal capability", () => {
     f.allowCompletion();
     expect(await contribution.gates![0]!.check({ mode: "text", text: "Done" })).toMatchObject({
       kind: "nudge",
-      note: expect.stringContaining("evidence request"),
+      note: expect.stringContaining("clarification"),
     });
     decision = { kind: "needs_work", review_id: "review", next_step: "Fix the failing path" };
     expect(
@@ -384,7 +416,12 @@ describe("host-bound goal capability", () => {
       kind: "nudge",
       note: expect.stringContaining("correction"),
     });
-    decision = { kind: "review_pending", review_id: "review", reason: "goal_steward_failed" };
+    decision = {
+      kind: "interrupted",
+      review_id: "review",
+      reason: "goal_steward_failed",
+      cause: "transport",
+    };
     expect(await contribution.gates![0]!.check({ mode: "text", text: "Done" })).toMatchObject({
       kind: "terminal",
       result: { error: { code: "goal_steward_failed" } },
@@ -924,7 +961,7 @@ it("routes Steward completion decisions and respects pending operator steering",
     note: "[goal steward correction] Run tests",
   });
   for (const reason of ["goal_steward_failed", "goal_steward_inconclusive"]) {
-    decision = { kind: "review_pending", review_id: "review", reason };
+    decision = { kind: "interrupted", review_id: "review", reason, cause: "transport" };
     expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({
       kind: "terminal",
       result: { error: { code: reason } },

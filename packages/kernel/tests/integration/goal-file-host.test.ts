@@ -97,6 +97,45 @@ describe("goal through the real file host and SDK HTTP", () => {
     expect(f.errors).toEqual([]);
   });
 
+  it("refuses workspace writes until create_goal is durably committed", async () => {
+    const f = await createGoalFileHostFixture();
+    cleanups.push(f.close);
+    const results: string[] = [];
+    f.setResponder(async (request) => {
+      if (f.requests.length === 1) {
+        expect(request.tools?.map((tool) => tool.function.name)).toEqual(
+          expect.arrayContaining(["create_goal", "write_file"]),
+        );
+        return { name: "write_file", arguments: { path: "premature.txt", content: "too soon" } };
+      }
+      const last = request.messages.findLast((message) => message.role === "tool");
+      if (typeof last?.content === "string") results.push(last.content);
+      if (f.requests.length === 2)
+        return {
+          name: "create_goal",
+          arguments: { objective: "Keep premature writes out of the workspace" },
+        };
+      return { text: "Goal created without a premature write." };
+    });
+    const session = (await f.client.sessions.get("conversation"))!;
+    const started = await f.client.hosting!.start({
+      session_id: "conversation",
+      session_revision: session.revision!,
+      kind: "conversation",
+      user_preview: "Keep premature writes out",
+      params: {
+        execution_id: "formulation-barrier",
+        agent: "solo",
+        messages: [{ role: "user", content: "Keep premature writes out" }],
+        goal_intent: { kind: "create", seed: "Keep premature writes out" },
+      },
+    });
+    await started.handle.done;
+    await started.handle.closed;
+    expect(results.some((text) => text.includes("create_goal"))).toBe(true);
+    expect(await Bun.file(join(f.workspaceRoot, "premature.txt")).exists()).toBe(false);
+  });
+
   it("reads and lists the active plan with explicit absent options through the actual SDK", async () => {
     const f = await createGoalFileHostFixture();
     cleanups.push(f.close);

@@ -79,6 +79,34 @@ describe("foldContributions", () => {
     expect(folded.hooks).toEqual({});
   });
 
+  it("composes dispatch policies with first refusal winning", () => {
+    const folded = foldContributions([
+      {
+        dispatchPolicy: {
+          admit: (call) =>
+            call.name === "blocked" ? { ok: false, reason: "first" } : { ok: true },
+        },
+      },
+      {
+        dispatchPolicy: {
+          admit: (call) => (call.name === "later" ? { ok: false, reason: "second" } : { ok: true }),
+        },
+      },
+    ]);
+    expect(folded.dispatchPolicy?.admit({ id: "1", name: "ok", arguments: {} })).toEqual({
+      ok: true,
+    });
+    expect(folded.dispatchPolicy?.admit({ id: "2", name: "blocked", arguments: {} })).toEqual({
+      ok: false,
+      reason: "first",
+    });
+    expect(folded.dispatchPolicy?.admit({ id: "3", name: "later", arguments: {} })).toEqual({
+      ok: false,
+      reason: "second",
+    });
+    expect(foldContributions([{ tools: [tool("x")] }]).dispatchPolicy).toBeUndefined();
+  });
+
   it("awaits iteration preparation and stops the sweep on a terminal result or retired signal", async () => {
     for (const abort of [false, true]) {
       const entered = Promise.withResolvers<void>();

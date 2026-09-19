@@ -186,7 +186,7 @@ function toStartParams(
     ...(input.plans ? { plans: input.plans } : {}),
     ...(!container && input.task ? { task: input.task } : {}),
     ...(!container && input.skill ? { skill: input.skill } : {}),
-    ...(!container && input.goalIntent ? { goal_intent: input.goalIntent } : {}),
+    ...(input.goalIntent ? { goal_intent: input.goalIntent } : {}),
   };
 }
 

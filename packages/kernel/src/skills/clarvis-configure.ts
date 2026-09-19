@@ -273,11 +273,12 @@ Pause does not stop physical work. /goal inspects. These are operator commands, 
 The selected main agent and its repository instructions formulate. formulation and steward accept
 max_net_tokens, timeout_ms, max_iterations, call_timeout_ms, max_retries; steward.model may select a
 review model. Defaults:
-work-sized independent allowance, 120000 ms, 8 iterations, 60000 ms/call, one retry; host ceilings win.
+call timeout and retries follow the common provider policy; there is no extra 120s Steward wall.
 Steward bounds reviews/interventions/completion attempts. It has no repository tools or
-AGENTS.md/CLARVIS.md context. Work runs execute checks and retain receipts. needs_work returns
-corrections; needs_evidence requests proof. Failed review needs attention. Auxiliary usage/costs
-settle once outside the work allowance; missing telemetry remains unknown.
+AGENTS.md/CLARVIS.md context and does not audit artifacts independently. needs_work returns
+corrections; needs_evidence asks one specific question the main agent answers. Interrupted review
+needs attention and is not a semantic failure. Auxiliary usage/costs settle once outside the work
+allowance; missing telemetry remains unknown.
 
 ## Author and configure workflows
 

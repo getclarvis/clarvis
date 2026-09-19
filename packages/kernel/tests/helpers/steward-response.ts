@@ -7,7 +7,7 @@ export function stewardResponse(
   const frame = JSON.parse(
     String(messages.findLast((message) => message.role === "user")?.content),
   ) as {
-    goal_header: { mode: string; criteria: Array<{ id: string; kind: string }> };
+    definition: { criteria?: Array<{ id: string; kind: string }> };
   };
   const result = {
     decision: "completion",
@@ -20,7 +20,7 @@ export function stewardResponse(
         rationale: "Fixture result observed",
         evidence_ids: [],
       })),
-      ...frame.goal_header.criteria
+      ...(frame.definition.criteria ?? [])
         .filter((criterion) => criterion.kind === "qualitative")
         .map((criterion) => ({
           scope: "criterion",

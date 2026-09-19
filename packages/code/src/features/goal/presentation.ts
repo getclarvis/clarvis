@@ -7,8 +7,12 @@ export function stewardStatusLabel(goal: GoalRecord): string | undefined {
   return status === undefined || status === "idle"
     ? undefined
     : status === "evidence_requested"
-      ? "evidence requested"
-      : status;
+      ? "asked for clarification · main agent answering"
+      : status === "attention"
+        ? "requested changes"
+        : status === "verifying"
+          ? "reviewing"
+          : status;
 }
 
 /** Product vocabulary and tone for the durable Goal lifecycle. */

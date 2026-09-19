@@ -195,7 +195,7 @@ describe("Goal Steward coordinator", () => {
         evidence_ids: [],
       })),
     });
-    expect((await pending).kind).toBe("review_pending");
+    expect((await pending).kind).toBe("interrupted");
     await f.coordinator.closeCoordinator();
     expect(f.charged()).toBe(1);
     expect(f.state().current!.runs[0]!.steward_reviews).toEqual([]);
@@ -223,7 +223,7 @@ describe("Goal Steward coordinator", () => {
     expect(await f.coordinator.completionCurrent("Changed answer")).toBe(false);
     await f.coordinator.closeCoordinator();
   });
-  it("invalidates a completion decision when Plan changes during review", async () => {
+  it("does not discard a completion decision when only Plan context changes", async () => {
     const f = fixture();
     const pending = f.coordinator.reviewCompletion({ mode: "text", text: "The answer" });
     await f.admitted.promise;
@@ -240,7 +240,7 @@ describe("Goal Steward coordinator", () => {
         evidence_ids: [],
       })),
     });
-    expect((await pending).kind).toBe("review_pending");
+    expect((await pending).kind).toBe("needs_work");
     await f.coordinator.closeCoordinator();
     expect(f.charged()).toBe(1);
   });
@@ -259,14 +259,14 @@ describe("Goal Steward coordinator", () => {
       })),
     });
     expect((await f.coordinator.reviewCompletion({ mode: "text", text: "Answer" })).kind).toBe(
-      "review_pending",
+      "interrupted",
     );
     expect(f.state().current!.steward.consumption.usage_unknown).toBe(true);
     expect(f.state().current!.consumption.net_tokens).toBe(0);
     expect(f.state().current!.steward.status).toBe("attention");
     expect(f.state().current!.runs[0]!.steward_reviews.at(-1)).toMatchObject({
-      decision: "review_pending",
-      summary: "Provider or runtime review failed after bounded retries",
+      decision: "interrupted",
+      interruption_cause: "transport",
     });
     expect(f.state().current!.steward.last_steward_execution_id).toBeUndefined();
     await f.coordinator.closeCoordinator();
@@ -277,7 +277,7 @@ describe("Goal Steward coordinator", () => {
     const pending = f.coordinator.reviewCompletion({ mode: "text", text: "Answer" });
     await f.admitted.promise;
     await f.coordinator.closeCoordinator();
-    expect((await pending).kind).toBe("review_pending");
+    expect((await pending).kind).toBe("interrupted");
     expect(f.state().current!.steward.pending_execution_id).toBeUndefined();
     expect(f.charged()).toBe(1);
     expect(f.calls).toHaveLength(1);

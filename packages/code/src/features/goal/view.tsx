@@ -266,9 +266,22 @@ export function GoalView(
                           <text marginTop={1} fg={tokens.fg} wrapMode="word">
                             {review().summary}
                           </text>
-                          <Show when={review().next_step}>
+                          <Show when={review().decision === "needs_evidence" && review().question}>
+                            <text marginTop={1} fg={tokens.warn} wrapMode="word">
+                              {`Steward asked: ${review().question}`}
+                            </text>
+                            <text fg={tokens.muted} wrapMode="word">
+                              The main agent is answering. This is not an action for you.
+                            </text>
+                          </Show>
+                          <Show when={review().decision === "needs_work" && review().next_step}>
                             <text marginTop={1} fg={tokens.warn} wrapMode="word">
                               {`Next step: ${review().next_step}`}
+                            </text>
+                          </Show>
+                          <Show when={review().decision === "interrupted"}>
+                            <text marginTop={1} fg={tokens.warn} wrapMode="word">
+                              {`Steward review interrupted${review().interruption_cause === undefined ? "" : ` (${review().interruption_cause})`}`}
                             </text>
                           </Show>
                         </>

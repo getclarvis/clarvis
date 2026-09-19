@@ -205,7 +205,9 @@ export function createGoalController(deps: {
     view,
     available,
     busy,
-    formulating,
+    formulating: () =>
+      formulating() ||
+      (view()?.state.creation_intent !== undefined && view()?.state.current === undefined),
     formulationActivity,
     loading,
     failure,

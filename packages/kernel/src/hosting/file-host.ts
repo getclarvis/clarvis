@@ -555,7 +555,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
                 budget: runtime.budget,
                 prompt_cache_ttl: runtime.promptCacheTtl,
                 async validateResult(value) {
-                  validateGoalStewardResult(value, "definition", [], []);
+                  validateGoalStewardResult(value, "definition", []);
                 },
               });
             },

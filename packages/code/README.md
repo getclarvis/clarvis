@@ -89,15 +89,17 @@ See [hosted runs](../../specs/hosts/hosted-runs.md) for authority and recovery b
 
 `/goal` shows the conversation's objective, semantic definition, origin, compact budget and Goal
 Steward status. The sidebar adds one short Steward line; the complete view shows bounded review and
-completion-review count plus the latest summary and actionable next step. Technical execution IDs remain
+completion-review count plus the latest summary, Steward question or actionable next step.
+`needs_evidence` is presented as a Steward clarification that the main agent is answering, not as an
+operator action. Technical execution IDs remain
 hidden. `goal_steward_failed` and `goal_steward_inconclusive` appear as Goal-domain attention.
 Only post-closure Kernel settlement may show the Goal as complete.
 Goal command suggestions follow the current Goal and physical execution state. Without a current
-Goal, only `/goal` appears. `/goal <seed>` asks the selected main agent to treat the seed as primary
-and use trajectory and confined reads only to resolve and enrich that request. The automatic
-formulation mode remains available to the host service but is temporarily not exposed as a slash
-command. Slash formulation does not open the form or send the command to the ordinary conversation
-model. `/goal -- <objective>` bypasses inference and creates that exact literal text, including
+Goal, only `/goal` appears. `/goal <seed>` submits an ordinary turn of the selected main agent; the
+host persists a formulating intent, appends a host instruction after the operator's literal request,
+and the agent must call `create_goal` before implementation. The automatic
+formulation mode remains available to the host service but is not exposed as a slash
+command. `/goal -- <objective>` bypasses inference and creates that exact literal text, including
 `/goal -- auto`; an empty literal is refused.
 
 Any current Goal blocks a new guided creation until the user reviews, cancels or clears it. The

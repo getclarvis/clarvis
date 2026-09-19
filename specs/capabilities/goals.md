@@ -19,15 +19,29 @@ session isolation, physical exclusion, CAS and operation replay.
 
 ## Main-agent Goal creation
 
-Guided `/goal <seed>` is an ordinary turn of the selected main agent. The authenticated host adds
-`create_goal` through `createGoalCreationCapability`; the model keeps its normal prompt, tools,
-workspace context and transcript. The host assigns identity, limits, origin, evidence scope and the
-first-stage execution binding. The first request advertises the stable catalog `create_goal`,
-`get_goal` and `update_goal`; before creation the latter two return deterministic guidance and there
-is no Goal state or Steward call. After creation their handlers activate and the normal completion gate
-applies.
+Guided `/goal <seed>` is an ordinary turn of the selected main agent. Authenticated admission
+persists a `creation_intent` on the existing session `goal_state` with the original seed, execution
+identity and `formulating` phase. That intent is not a Goal and does not authorize implementation.
+The host appends a formulation instruction as a new stable context block after the operator's
+literal message, then adds `create_goal` through `createGoalCreationCapability`. Catalog names,
+schemas, descriptions and order stay fixed for the run. Until `create_goal` is durably committed,
+the contribution's `dispatchPolicy` admits proven `read` tools, `create_goal`/`get_goal`/`update_goal`,
+`ask_user` and `submit_result`, and refuses mutate, unknown/MCP, `spawn_run`, skill load and
+work-executing delegation before workspace hooks run. Grouped create-then-write in one batch is
+serialized by sequential dispatch: only a durable create flips the policy for later siblings.
+After creation, handlers activate and the ordinary completion gate applies. The host assigns
+identity, limits, origin, evidence scope and the first-stage execution binding.
 `create_goal` is idempotent for its admitted execution and cannot be selected by an arbitrary model
-argument. Literal `/goal -- <text>` remains a direct host control.
+argument. Literal `/goal -- <text>` remains a direct host control. Isolated backends receive the
+same `goal_intent`; if the tool-effect port is absent the policy fail-closes unknown tools rather
+than treating them as reads.
+Production: `admitGoalCreationIntent` in [execution.ts](../../packages/goal/src/execution.ts),
+`createFormulationDispatchPolicy` in [formulation-policy.ts](../../packages/goal/src/formulation-policy.ts),
+`prepareHostedGoalCreationTurn` in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts).
+Test: `guided creation intent` in [domain.test.ts](../../packages/goal/tests/unit/domain.test.ts),
+creation-stage dispatch in [capability.test.ts](../../packages/goal/tests/unit/capability.test.ts),
+and `refuses workspace writes until create_goal is durably committed` in
+[goal-file-host.test.ts](../../packages/kernel/tests/integration/goal-file-host.test.ts).
 
 ## Compatibility semantic formulation agent
 
@@ -360,37 +374,33 @@ request and verified bounded normative-source snapshots. `revise_definition` ret
 correction to the selected main agent; `accept_definition` permits activation. At most three
 formulation/review attempts occur. Completion must cover the definition, objective and exactly the
 qualitative criterion IDs supplied by the host.
-Evidence IDs must belong to the host-delivered selection. The compact catalog remains a discovery
-projection, but candidate-cited references are resolved from the complete eligible reference set even
-when they are older than the catalog window. The private frame also carries `evidence_manifest`,
-`evidence_details`, `command_evidence`, `delegation_evidence` and `workflow_history`. Kernel-derived
-command receipts contain arguments, successful exit code and sanitized stdout/stderr excerpts;
-`evidence_details` additionally carries the typed terminal status, complete-result digest, bounded
-content excerpt and explicit coverage. Completed-delegation receipts contain the bounded returned
-result. A manifest marks references omitted by the frame budget or unavailable from the authorized
-scope instead of presenting them as delivered. Persisted Goal history names stage order, automatic
-continuation, disposition, outcome and accepted checkpoint data without exposing runtime identities.
-Receipts join the catalog by stable opaque IDs derived from the durable receipt identity and mapped by
-the host, while workflow history is host-owned lifecycle state; together they establish executed
-checks and required workflow boundaries without giving the Steward command, delegation or Goal tools.
-They do not prove that later source edits were tested, and receipt relevance remains a semantic judgment.
-Missing, unsuccessful or superseded command observations have no successful receipt. Catalog labels
-and work-agent narration alone are not execution proof. An achieved result requires all assessments satisfied;
-`needs_work` returns an actionable correction to the same work run and `needs_evidence` identifies
-the proof still required. Malformed, failed,
-unknown-usage or stale evaluations cannot complete the Goal. Final failures retain the domain codes
+Qualitative criterion IDs must match the host-supplied set. Evidence IDs on Steward assessments are
+optional and are not validated against a tool-result catalog. The private frame is a conversational
+projection: persisted Goal contract, original operator request, later operator corrections, the
+work agent's explanatory completion report, optional proposed final text when it is not a duplicate,
+and any pending Steward question with the work agent's answer. It does not carry `evidence_manifest`,
+`evidence_details`, `command_evidence`, `delegation_evidence`, `workflow_history`, plan dumps,
+raw tool results, files, `AGENTS.md` or `CLARVIS.md`. The Steward evaluates evidence declared by
+the work agent; it is not an independent artifact audit. An achieved result requires all assessments
+satisfied on that report; `needs_work` returns an actionable correction to the same work run;
+`needs_evidence` asks one specific question, which the host persists and returns to the main run
+through the existing finalize-gate nudge so the work agent can verify or correct with its normal
+tools. Human-acceptance criteria still require actual human acceptance. Malformed, failed,
+unknown-usage or stale evaluations cannot complete the Goal. Technical interruption is persisted as
+`interrupted` with a typed cause (`timeout`, `transport`, `invalid_output`, `cancelled`) and is
+not `needs_work` or a still-pending review. Final failures retain the domain codes
 `goal_steward_failed` or `goal_steward_inconclusive`. Cancellation during result validation remains
 cancellation.
 
-The coordinator binds the late Plans review-context port, snapshots its stable semantic revision,
-and checks Goal/control/objective identity, cumulative trajectory, operator epoch, candidate, final
-attempt and evidence before effects. The host's private result gate checks the same semantic targets
-before accepting `submit_result`. Its first invalid result
+The coordinator checks Goal/control/objective identity, cumulative operator trajectory, operator
+epoch, candidate and final attempt before effects. Plan context is bound for the host but is not
+sent in the Steward frame and does not fence a completion decision. The host's private result gate
+checks the qualitative targets before accepting `submit_result`. Its first invalid result
 appends one corrective nudge within that evaluation's existing token, time and iteration limits;
 a repeated invalid result fails closed. The persisted result is revalidated before settlement, so
-this recovery never bypasses the durable candidate/evidence fences. Missing provenance or truncated
-essential context produces `needs_evidence`. Normative-source drift remains a deterministic host
-failure before semantic completion review.
+this recovery never bypasses the durable candidate fences. Missing operator request or an
+irreducible oversize frame fails closed rather than silently truncating criteria. Normative-source
+drift remains a deterministic host failure before semantic completion review.
 
 Each evaluation is an ordinary isolated execution containing only `submit_result`: no workspace
 tools, Goal, Plan, Guard, Memory, MCP, skills, hooks or spawn capability. It has a fresh
@@ -398,15 +408,15 @@ execution ID and a stable conversation-scoped `goal-steward` agent instance. Com
 continue the persisted private context with `continue_from`; work messages are delimited observed
 data, never Steward assistant history. Fixed policy, schema, TTL and model identity precede
 append-only semantic frames. Runtime/configuration or definition incompatibility starts a new base;
-Plan, trajectory and workflow-history changes append frames. Checkpoint continuation preserves the
+operator corrections and later reports append frames. Checkpoint continuation preserves the
 chain. Completion, cancellation, clearing and substantive edits retire its predecessor.
 
-The Steward does not receive `AGENTS.md`, `CLARVIS.md`, the selected main-agent prompt or another
-filesystem view. Those instructions remain with the main agent that formulates and executes the
-Goal. Each Steward frame is instead a host-projected evaluation package containing only bounded
-definition, trajectory, Plan, candidate and evidence data. Definition review additionally receives
-verified normative-source content capped by the host; truncation is explicit. Repository text is
-untrusted evidence, never policy or authority.
+The Steward does not receive `AGENTS.md`, `CLARVIS.md`, the selected main-agent prompt, plan dumps
+or another filesystem view. Those instructions remain with the main agent that formulates and
+executes the Goal. Each Steward frame is a host-projected conversational package from
+`buildStewardConversationFrame`. Oversize reports are returned to the work agent for condensation
+rather than silently truncating operator criteria. Repository text is untrusted data, never policy
+or authority.
 
 Production: `prepareHostedGoalTurn` in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts),
 `createStewardExecutionRuntime` in [steward-runtime.ts](../../packages/kernel/src/goals/steward-runtime.ts),
@@ -428,21 +438,26 @@ is introduced.
 
 `goals.agent.steward.model` overrides the normal default model. Its optional
 `max_net_tokens` otherwise inherits the effective admitted work cap without reserving or reducing it.
-The separate stop-mode allowance defaults to 120000 ms, eight iterations, 60000 ms per call and one
-retry, subject to host ceilings. Review and completion-attempt defaults are eight and one; their
-setting maxima are 32 and two. Steward usage never enters Goal work consumption.
+Per-call timeout and retries follow the common provider policy (`call_timeout_ms` and `max_retries`);
+there is no extra 120-second coordinator wall around a still-valid attempt. An optional
+`goals.agent.steward.timeout_ms` may lower the run allowance subject to the host ceiling. Review
+and completion-attempt defaults are eight and one; their setting maxima are 32 and two. Steward
+usage never enters Goal work consumption. The TUI presents `needs_evidence` as a Steward
+clarification that the main agent is answering, not as an operator action.
 
 Production: `createGoalStewardCoordinator` in
 [steward-coordinator.ts](../../packages/kernel/src/goals/steward-coordinator.ts),
 `createStewardResultGate` in [steward-result-gate.ts](../../packages/kernel/src/goals/steward-result-gate.ts),
-`createGoalEvidenceSource` in [evidence.ts](../../packages/kernel/src/goals/evidence.ts),
+`buildStewardConversationFrame` in [steward-projection.ts](../../packages/kernel/src/goals/steward-projection.ts),
 `GOAL_STEWARD_PROMPT` in [steward-prompt.ts](../../packages/goal/src/agent/steward-prompt.ts),
 `createStewardExecutionRuntime` in [steward-runtime.ts](../../packages/kernel/src/goals/steward-runtime.ts),
 `settleStewardEvaluation` in [steward-state.ts](../../packages/goal/src/steward-state.ts), and
 `createGoalCapability` in [capability.ts](../../packages/goal/src/capability.ts).
 Test: `Goal Steward coordinator` in
 [goal-steward.test.ts](../../packages/kernel/tests/unit/goal-steward.test.ts), schema/request contracts in
-[steward.test.ts](../../packages/goal/tests/unit/steward.test.ts), and the native SDK journeys (including historical-read rejection, bounded in-run correction and repeated-invalid failure) in
+[steward.test.ts](../../packages/goal/tests/unit/steward.test.ts), conversational projection in
+[goal-steward-projection.test.ts](../../packages/kernel/tests/unit/goal-steward-projection.test.ts),
+and the native SDK journeys (including historical-read rejection, bounded in-run correction and repeated-invalid failure) in
 [goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
 
 ### Completion validation

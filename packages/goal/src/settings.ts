@@ -32,7 +32,7 @@ export const goalAgentSettingsSchema = schema
           .positive()
           .max(Number.MAX_SAFE_INTEGER - 1)
           .optional(),
-        timeout_ms: schema.number().int().positive().max(120_000).optional(),
+        timeout_ms: schema.number().int().positive().max(3_600_000).optional(),
         max_iterations: schema.number().int().positive().max(8).optional(),
         call_timeout_ms: schema.number().int().positive().max(60_000).optional(),
         max_retries: schema.number().int().nonnegative().max(1).optional(),

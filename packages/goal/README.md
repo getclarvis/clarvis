@@ -54,10 +54,13 @@ a later user pause or cancellation remains authoritative. Resume alone does not 
 ## Main-agent Goal creation
 
 Guided `/goal <seed>` is an ordinary turn of the selected main agent. The host carries a typed,
-authenticated creation intent into admission and adds `create_goal` to that turn; it never starts a
-second hidden formulation run. The agent keeps its normal prompt, tools, workspace context and transcript,
-so it can read only what the implementation needs, persist a definition, and continue the same
-work. The host assigns the Goal identity, limits, origin, execution binding and evidence scope.
+authenticated creation intent into admission, persists it on the session document as a formulating
+intent that is not yet a Goal, and adds `create_goal` to that turn; it never starts a
+second hidden formulation run. The operator's literal request stays a separate message from the
+host formulation instruction. Until durable creation, dispatch admits proven reads and
+clarification and refuses writes, shell, unknown/MCP tools, skills, workflows and work-executing
+delegation. After `create_goal` commits, the same run may investigate, plan and implement. The host
+assigns the Goal identity, limits, origin, execution binding and evidence scope.
 
 Before `create_goal` there is no Goal state and no Goal Steward activity. The first request already
 advertises the stable catalog `create_goal`, `get_goal` and `update_goal`; the latter two return
@@ -127,14 +130,13 @@ owns the bounded completion call, evidence projection, fencing and durable settl
 `goals.agent.steward` selects the optional model and finite allowance independently of the work budget.
 Private `continue_from` history preserves compatible prompt prefixes across evaluations and checkpoints.
 The Steward never receives repository instructions such as `AGENTS.md` or `CLARVIS.md` and has no
-workspace tools. The host supplies only the bounded Goal definition, Plan context, trajectory,
-candidate, selected evidence references, a delivery manifest, typed content details, command/delegation
-receipts and Goal workflow history needed for a decision. Candidate-cited references are selected before
-auxiliary catalog entries, including when they are older than the compact discovery catalog; an explicit
-manifest marks unavailable or frame-budget-limited material. Evidence references use short frame-local
-IDs that the host maps to durable receipts, so
-the model never has to reproduce storage digests. During completion, `needs_work` returns a
-concrete correction while `needs_evidence` names the missing proof. The host checks semantic targets
+workspace tools. The host supplies only the persisted Goal contract, the original operator request,
+later operator corrections, the work agent's explanatory report and any prior Steward question with
+the work agent's answer. That decision assesses declared evidence; it is not an independent audit of
+artifacts. During completion, `needs_work` returns a
+concrete correction while `needs_evidence` asks one specific question that the main run answers with
+its normal tools. Technical interruption is persisted with a typed cause rather than left pending.
+The host checks semantic targets
 before accepting output and allows one bounded schema-correction nudge inside the same evaluation.
 One nonempty invalid final receives a recovery nudge; a repeated invalid final or the first empty
 final stops with explicit blocking. Reporting a blocker uses safe interruption without requiring

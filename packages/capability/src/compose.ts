@@ -12,7 +12,12 @@ import { CapabilityUnavailableError } from "./errors.ts";
 import type { NamespacedTool } from "./run.ts";
 import type { CompactionAnchor } from "./compaction-anchor.ts";
 import type { OutputTokenBudget } from "./output-budget.ts";
-import type { FinalizeGate, OrchestrationHooks, ToolHandler } from "./loop-contract.ts";
+import type {
+  DispatchPolicy,
+  FinalizeGate,
+  OrchestrationHooks,
+  ToolHandler,
+} from "./loop-contract.ts";
 import type {
   AgentActivation,
   AgentCapability,
@@ -33,6 +38,11 @@ export interface FoldedContributions {
   advertisedTools: NamespacedTool[];
   handlers: ToolHandler[];
   gates: FinalizeGate[];
+  /**
+   * First-refusal composition of every contribution's {@link DispatchPolicy}.
+   * Absent when no contribution supplied one.
+   */
+  dispatchPolicy?: DispatchPolicy;
   anchor?: () => CompactionAnchor | undefined;
   forcedChoice?: () => ToolChoice | undefined;
   /** The agent's hard output-token ceiling, when a capability supplies one. */
@@ -109,6 +119,7 @@ export function foldContributions(
   const advertisedTools: NamespacedTool[] = [];
   const handlers: ToolHandler[] = [];
   const gates: FinalizeGate[] = [];
+  const policies: DispatchPolicy[] = [];
   const seenWireNames = new Set<string>();
   let anchor: FoldedContributions["anchor"];
   let forcedChoice: FoldedContributions["forcedChoice"];
@@ -129,6 +140,7 @@ export function foldContributions(
     }
     if (c.handlers !== undefined) handlers.push(...c.handlers);
     if (c.gates !== undefined) gates.push(...c.gates);
+    if (c.dispatchPolicy !== undefined) policies.push(c.dispatchPolicy);
     if (c.anchor !== undefined) {
       if (anchor !== undefined) {
         throw new Error("foldContributions: more than one contribution provides an anchor");
@@ -154,6 +166,19 @@ export function foldContributions(
     advertisedTools,
     handlers,
     gates,
+    ...(policies.length > 0
+      ? {
+          dispatchPolicy: {
+            admit(call) {
+              for (const policy of policies) {
+                const verdict = policy.admit(call);
+                if (!verdict.ok) return verdict;
+              }
+              return { ok: true };
+            },
+          },
+        }
+      : {}),
     ...(anchor !== undefined ? { anchor } : {}),
     ...(forcedChoice !== undefined ? { forcedChoice } : {}),
     ...(outputBudget !== undefined ? { outputBudget } : {}),

@@ -3,6 +3,8 @@ export * from "./errors.ts";
 export * from "./policy.ts";
 export * from "./control.ts";
 export * from "./execution.ts";
+export { createFormulationDispatchPolicy } from "./formulation-policy.ts";
+export { GOAL_FORMULATION_BLOCK_KIND, GOAL_FORMULATION_INSTRUCTION } from "./context.ts";
 export * from "./criteria.ts";
 export type * from "./ports.ts";
 export * from "./model-input.ts";

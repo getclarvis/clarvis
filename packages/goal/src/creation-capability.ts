@@ -1,5 +1,6 @@
 import {
   PLANS_REVIEW_CONTEXT_PORT,
+  TOOL_EFFECT_PORT,
   openCallEnvelope,
   type AgentBuildContext,
   type AgentLoopContribution,
@@ -10,7 +11,14 @@ import {
   type RunCapabilityContext,
   type ToolHandler,
 } from "@clarvis/capability";
-import { goalContextBlock, goalModelView, GOAL_BLOCK_KIND } from "./context.ts";
+import {
+  goalContextBlock,
+  goalModelView,
+  GOAL_BLOCK_KIND,
+  GOAL_FORMULATION_BLOCK_KIND,
+  GOAL_FORMULATION_INSTRUCTION,
+} from "./context.ts";
+import { createFormulationDispatchPolicy } from "./formulation-policy.ts";
 import { GoalError } from "./errors.ts";
 import type { GoalCreationPort, GoalRuntimePort, GoalRuntimeSnapshot } from "./ports.ts";
 import { goalCreationInputSchema, goalModelToolInputSchema } from "./model-input.ts";
@@ -63,6 +71,7 @@ function createCreationHooks(
     async beforeIteration(signal) {
       const cancelled = bc.maybeCancelled();
       if (cancelled !== null) return cancelled;
+      bc.ctx.setStableBlock(GOAL_FORMULATION_BLOCK_KIND, GOAL_FORMULATION_INSTRUCTION);
       try {
         await refresh(signal);
         publish();
@@ -273,7 +282,7 @@ function createCreationGate(
           if (decision.kind === "needs_work" || decision.kind === "needs_evidence")
             return {
               kind: "nudge",
-              note: `[goal steward ${decision.kind === "needs_evidence" ? "evidence request" : "correction"}] ${decision.next_step}`,
+              note: `[goal steward ${decision.kind === "needs_evidence" ? "clarification" : "correction"}] ${decision.next_step}`,
             };
           return {
             kind: "terminal",
@@ -338,11 +347,18 @@ export function createGoalCreationRunCapability(
             runContext.services.get(PLANS_REVIEW_CONTEXT_PORT) ?? absentReviewContext,
           );
           const tools = buildGoalCreationTools();
+          const toolEffect = runContext.services.get(TOOL_EFFECT_PORT) ?? {
+            effect: () => "unknown" as const,
+          };
           const contribution: AgentLoopContribution = {
             tools,
             hooks: createCreationHooks(state, bc),
             handlers: [createCreationHandler(state, port, bc, tools)],
             gates: [createCreationGate(state, port, bc)],
+            dispatchPolicy: createFormulationDispatchPolicy(
+              () => state.runtime !== undefined,
+              toolEffect,
+            ),
           };
           return contribution;
         },

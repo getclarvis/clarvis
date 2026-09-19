@@ -116,9 +116,16 @@ export interface GoalStewardReview {
   candidate_digest?: string;
   final_attempt_digest?: string;
   evidence_digest: string;
-  decision: "achieved" | "needs_work" | "needs_evidence" | "review_pending";
+  decision: "achieved" | "needs_work" | "needs_evidence" | "interrupted";
   summary: string;
   next_step?: string;
+  question?: string;
+  answer?: string;
+  speakers?: Array<{
+    speaker: "operator" | "work_agent" | "steward";
+    kind: "request" | "correction" | "report" | "question" | "answer";
+  }>;
+  interruption_cause?: "timeout" | "transport" | "invalid_output" | "cancelled";
   usage: GoalUsage;
   reviewed_at: number;
 }
@@ -132,6 +139,7 @@ export interface GoalStewardChainState {
   runtime_fingerprint: string;
   prompt_cache_ttl: "5m" | "1h";
   status: "idle" | "verifying" | "verified" | "evidence_requested" | "attention";
+  pending_question?: { review_id: string; question: string };
   consumption: {
     input: number;
     output: number;
@@ -211,6 +219,15 @@ export interface GoalFormulateResult extends GoalReceipt {
   formulation: NonNullable<GoalReceipt["formulation"]>;
 }
 
+/** Admitted guided creation; it is not a Goal and does not authorize implementation. */
+export interface GoalCreationIntent {
+  seed: string;
+  execution_id: string;
+  operation_id: string;
+  phase: "formulating";
+  admitted_at: number;
+}
+
 /** Optional private-session field, writable only by the host's short transaction. */
 export interface GoalState {
   version: 1;
@@ -218,6 +235,7 @@ export interface GoalState {
   current?: GoalRecord;
   archive: GoalRecord[];
   receipts: GoalReceipt[];
+  creation_intent?: GoalCreationIntent;
 }
 
 export type GoalControlAction =

@@ -50,7 +50,12 @@ describe("Goal Steward through the native host and SDK", () => {
         const frame = JSON.parse(
           String(request.messages.findLast((message) => message.role === "user")!.content),
         );
-        expect(frame.evidence[0].id).toMatch(/^evidence-[a-f0-9]{32}$/u);
+        expect(frame.definition.objective).toBe("Provide the answer");
+        expect(frame.operator_request.origin).toBe("operator");
+        expect(frame.evidence).toBeUndefined();
+        expect(frame.command_evidence).toBeUndefined();
+        expect(frame.evidence_details).toBeUndefined();
+        expect(frame.workflow_history).toBeUndefined();
         return {
           name: "submit_result",
           arguments: {
@@ -61,7 +66,7 @@ describe("Goal Steward through the native host and SDK", () => {
               scope,
               verdict: "satisfied",
               rationale: "Answer observed",
-              evidence_ids: [frame.evidence[0].id],
+              evidence_ids: [],
             })),
           },
         };
@@ -262,12 +267,13 @@ describe("Goal Steward through the native host and SDK", () => {
       expect(first!.tools!.map((tool) => tool.function.name)).toEqual(["submit_result"]);
       const firstFrame = JSON.parse(
         String(first!.messages.findLast((message) => message.role === "user")!.content),
-      ) as { evidence: Array<{ id: string }> };
+      ) as { definition?: unknown; report?: { summary: string }; dialogue?: unknown[] };
       const secondFrame = JSON.parse(
         String(second!.messages.findLast((message) => message.role === "user")!.content),
-      ) as { evidence: Array<{ id: string }> };
-      expect(firstFrame.evidence[0]!.id).toMatch(/^evidence-[a-f0-9]{32}$/u);
-      expect(secondFrame.evidence[0]!.id).toBe(firstFrame.evidence[0]!.id);
+      ) as { definition?: unknown; report?: { summary: string }; dialogue?: unknown[] };
+      expect(firstFrame.definition).toBeDefined();
+      expect(firstFrame.report?.summary).toBeDefined();
+      expect(secondFrame.report?.summary).toBeDefined();
       const goal = (await f.client.goals.get("conversation")).state.current!;
       expect(goal.runs).toHaveLength(1);
       expect(goal.runs[0]!.steward_reviews!.map((review) => review.decision)).toEqual([
@@ -375,20 +381,13 @@ it.each([false, true])(
       expect(goal.runs).toHaveLength(2);
       expect(goal.auto_continuations).toBe(1);
       expect(goal.runs[0]!.checkpoint?.next_step).toBe("Return the final answer");
-      expect(stewardFrames[0]!.workflow_history).toEqual([
-        {
-          stage: 1,
-          automatic: false,
-          disposition: "checkpoint",
-          outcome: "completed",
-          checkpoint: {
-            summary: "Stage inspected",
-            next_step: "Return the final answer",
-            progress_accepted: expect.any(Boolean),
-          },
-        },
-        { stage: 2, automatic: true },
-      ]);
+      expect(stewardFrames[0]!.workflow_history).toBeUndefined();
+      expect(stewardFrames[0]!.command_evidence).toBeUndefined();
+      expect(stewardFrames[0]).toEqual(
+        expect.objectContaining({
+          definition: expect.objectContaining({ objective: expect.any(String) }),
+        }),
+      );
       expect(JSON.stringify(f.requests[2]!.messages)).toContain(
         "Continue the current goal from its accepted checkpoint",
       );
@@ -406,7 +405,7 @@ it.each([false, true])(
   },
 );
 
-it("gives the tool-free Steward actual command receipts instead of only catalog labels", async () => {
+it("keeps raw command receipts out of the conversational Steward frame", async () => {
   const f = await createGoalFileHostFixture({ plansMode: "off" });
   try {
     const command = `"${process.execPath}" -e "process.stdout.write('CHECK_EXECUTED_OK')"`;
@@ -436,37 +435,24 @@ it("gives the tool-free Steward actual command receipts instead of only catalog 
       const frame = JSON.parse(
         String(request.messages.findLast((message) => message.role === "user")!.content),
       );
-      expect(frame.command_evidence).toHaveLength(1);
-      const receipt = frame.command_evidence[0];
-      expect(receipt).toMatchObject({
-        tool: "shell",
-        exit_code: 0,
-        stdout_excerpt: "CHECK_EXECUTED_OK",
-        truncated: false,
-      });
-      expect(JSON.parse(receipt.arguments_excerpt).command).toBe(command);
-      expect(frame.evidence.some((entry: { id: string }) => entry.id === receipt.id)).toBe(true);
-      expect(frame.evidence_details).toHaveLength(1);
-      expect(frame.evidence_details[0]).toMatchObject({
-        id: receipt.id,
-        kind: "command",
-        status: "succeeded",
-        command: { stdout_excerpt: "CHECK_EXECUTED_OK" },
-      });
-      expect(receipt.id).toMatch(/^evidence-[a-f0-9]{32}$/u);
-      expect(receipt.id).not.toMatch(/^tool-/u);
+      expect(frame.command_evidence).toBeUndefined();
+      expect(frame.evidence_details).toBeUndefined();
+      expect(frame.evidence).toBeUndefined();
+      expect(frame.workflow_history).toBeUndefined();
+      expect(JSON.stringify(frame)).not.toContain("CHECK_EXECUTED_OK");
+      expect(frame.report.summary).toBe("Check executed");
       expect(request.tools!.map((tool) => tool.function.name)).not.toContain("shell");
       return {
         name: "submit_result",
         arguments: {
           decision: "completion",
           verdict: "achieved",
-          summary: "Execution verified from the host receipt",
+          summary: "Execution verified from the declared report",
           assessments: ["definition", "objective"].map((scope) => ({
             scope,
             verdict: "satisfied",
-            rationale: "Host-recorded command and exit zero establish execution",
-            evidence_ids: [receipt.id],
+            rationale: "Work-agent report describes the executed check",
+            evidence_ids: [],
           })),
         },
       };

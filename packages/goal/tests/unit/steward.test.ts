@@ -89,10 +89,8 @@ describe("Goal Steward contract", () => {
         assessment("criterion", "satisfied", "c1"),
       ],
     };
-    expect(validateGoalStewardResult(complete, "completion", ["c1"], []).decision).toBe(
-      "completion",
-    );
-    expect(() => validateGoalStewardResult(complete, "completion", ["c2"], [])).toThrow();
+    expect(validateGoalStewardResult(complete, "completion", ["c1"]).decision).toBe("completion");
+    expect(() => validateGoalStewardResult(complete, "completion", ["c2"])).toThrow();
     expect(
       goalStewardResultSchema.safeParse({
         ...complete,
@@ -106,7 +104,7 @@ describe("Goal Steward contract", () => {
       }).success,
     ).toBe(false);
     expect(() =>
-      validateGoalStewardResult({ decision: "aligned", summary: "On track" }, "completion", [], []),
+      validateGoalStewardResult({ decision: "aligned", summary: "On track" }, "completion", []),
     ).toThrow();
   });
 });
@@ -180,7 +178,7 @@ it.each([
     ],
     ...(scenario.next === undefined ? {} : { next_step: scenario.next }),
   };
-  expect(validateGoalStewardResult(result, "completion", ["requested"], [])).toEqual(result);
+  expect(validateGoalStewardResult(result, "completion", ["requested"])).toEqual(result);
   if (scenario.verdict !== "achieved")
     expect(goalStewardResultSchema.safeParse({ ...result, verdict: "achieved" }).success).toBe(
       false,
@@ -242,7 +240,7 @@ describe("Steward settlement", () => {
       ["achieved", "verified"],
       ["needs_evidence", "evidence_requested"],
       ["needs_work", "attention"],
-      ["review_pending", "attention"],
+      ["interrupted", "attention"],
     ] as const) {
       state.current!.steward.pending_execution_id = "review";
       const review = {
@@ -259,6 +257,7 @@ describe("Steward settlement", () => {
         evidence_digest: "c".repeat(64),
         decision,
         summary: "Reviewed",
+        speakers: [],
         usage: input.usage,
         reviewed_at: 4,
       };

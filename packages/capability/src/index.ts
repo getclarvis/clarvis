@@ -66,6 +66,7 @@ export type {
   ToolInvocationControl,
   ToolInvocationContext,
   ToolHandler,
+  DispatchPolicy,
   FinalizeAttempt,
   CheckpointAttempt,
   GateOutcome,

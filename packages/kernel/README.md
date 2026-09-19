@@ -184,13 +184,15 @@ Production: `prepareHostedGoalTurn` and `goalAuthorityMessages` in
 [goal-hosted-continuation.test.ts](tests/integration/goal-hosted-continuation.test.ts) and
 [run-service-lifecycle.test.ts](tests/unit/run-service-lifecycle.test.ts).
 Guided `/goal <seed>` is admitted as the ordinary conversation turn of the selected main agent.
-`prepareHostedGoalCreationTurn` adds the required `createGoalCreationCapability` only for the
-host-authenticated typed intent; it does not start an isolated formulation run, create a hidden
-conversation, or invoke the Steward before a Goal is saved. The model retains its normal tools and
-transcript, and `create_goal` atomically persists the semantic definition and admits the same
-execution as its first Goal stage. The capability then exposes the normal Goal controls and
-completion gate in that same run. Host identity, limits, evidence references and operation
-idempotency remain outside model arguments.
+`prepareHostedGoalCreationTurn` commits a formulating `creation_intent` on the session document and
+adds the required `createGoalCreationCapability` only for the host-authenticated typed intent; it
+does not start an isolated formulation run, create a hidden conversation, or invoke the Steward
+before a Goal is saved. Isolated backends receive the same `goal_intent`. Until durable creation,
+dispatch admits proven reads and clarification and refuses writes, shell, unknown tools and
+work-executing delegation. The model retains its advertised catalog, and `create_goal` atomically
+persists the semantic definition and admits the same execution as its first Goal stage. The
+capability then exposes the normal Goal controls and completion gate in that same run. Host identity,
+limits, evidence references and operation idempotency remain outside model arguments.
 
 The compatibility `GoalService.formulate` endpoint remains available to older clients, but Code no
 longer routes the guided slash command through it. `createGoalCreationPort` owns the session
@@ -216,12 +218,13 @@ validates the Steward's cited reads and semantic targets before accepting its ou
 corrective nudge within the same evaluation budget; a second invalid result fails closed. Batched
 reads remain verifiable from the full-result digest when trace display text is abbreviated.
 Observations reserve evaluation slots for completion, and prior observation failures do not
-reclassify later inconclusive verdicts. Its private frame carries candidate-first bounded evidence
-references, an explicit delivery manifest, typed content details and sanitized command/delegation
-receipts. The host captures terminal facts before the ordinary trace result cap, resolves cited
-references outside the compact discovery catalog and marks frame-budget or unavailable items instead
-of silently dropping them. Execution checks can therefore be reviewed without granting the Steward
-command tools or a filesystem view.
+reclassify later inconclusive verdicts. Its private frame is the conversational projection in
+`buildStewardConversationFrame`: Goal contract, original operator request, later corrections, the
+work agent's explanatory report and any pending question/answer. It does not include raw tool
+results, files, evidence catalogs, plan dumps or repository instructions. The Steward assesses
+declared evidence; it is not an independent artifact audit. `needs_evidence` returns a specific
+question to the same work run through the existing gate. Technical interruption is persisted with a
+typed cause rather than left pending.
 Session accounting and
 Goal Steward state settle atomically, separately from the unchanged pursuit allowance. Compatible
 evaluations continue their private persisted prefix; observation failure degrades monitoring while

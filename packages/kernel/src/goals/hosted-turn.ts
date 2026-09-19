@@ -8,6 +8,7 @@ import {
   type TraceEvent,
 } from "@clarvis/capability";
 import {
+  admitGoalCreationIntent,
   admitGoalRun,
   advanceGoalRun,
   createGoalCapability,
@@ -241,10 +242,10 @@ export async function prepareHostedGoalTurn(options: {
             };
           },
           provenance: stewardProvenance,
+          operatorRequest: goal.origin.kind === "guided" ? goal.origin.seed : undefined,
           signal: options.context.signal,
           settle: options.steward.settle,
           changed: () => options.onChange?.(sessionId),
-          readEvidence: (current) => options.evidence.snapshot(current),
         });
   const stopped = async (reason: "revoked" | "superseded" | "failed"): Promise<void> => {
     if (reason === "superseded") return;
@@ -530,7 +531,7 @@ export async function prepareHostedGoalCreationTurn(options: {
         signal: options.context.signal,
         settle: options.steward.settle,
         changed: () => options.onChange?.(sessionId),
-        readEvidence: (currentGoal) => options.evidence.snapshot(currentGoal),
+        operatorRequest: options.seed,
         ...(options.readRun === undefined
           ? {}
           : {
@@ -560,9 +561,10 @@ export async function prepareHostedGoalCreationTurn(options: {
     reviewCompletion: (attempt: GoalStewardFinalizeAttempt, signal?: AbortSignal) =>
       steward?.reviewCompletion(attempt, signal) ??
       Promise.resolve({
-        kind: "review_pending" as const,
+        kind: "interrupted" as const,
         review_id: "unavailable",
         reason: "goal_steward_inconclusive",
+        cause: "transport" as const,
       }),
   };
   const policy: GoalCreationExecutionPolicy = {
@@ -571,8 +573,23 @@ export async function prepareHostedGoalCreationTurn(options: {
     trackModel: (provider) => usageTracker.wrap(provider),
   };
   const execution = await options.prepareExecution(policy);
+  if (execution.commitSessionIntent !== undefined)
+    throw kernelError("conflict", "Goal creation already has a host turn policy");
   return {
     ...execution,
+    commitSessionIntent(target) {
+      const current = goalStateFromSession(target);
+      target.goal_state = goalStateToDto(
+        admitGoalCreationIntent(current, {
+          session_id: sessionId,
+          execution_id: executionId,
+          operation_id: `goal-create:${executionId}`,
+          seed: options.seed,
+          expected_revision: current?.revision ?? 0,
+          now: now(),
+        }),
+      );
+    },
     prepareSettlement: async (result) => {
       const current = await options.repository.read(sessionId);
       const goal = current?.current;

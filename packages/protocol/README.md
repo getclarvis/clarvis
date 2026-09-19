@@ -134,9 +134,10 @@ observed revision for saves and turn admission. The ordinary file-store contract
 enforce turn/totals ownership. Its optional `Session.goal_state` is host-owned even on ordinary
 file-store saves: clients cannot insert, remove or revert it. `goals.ts` defines the independent
 goal DTOs, user controls and service contract; defining those types alone does not advertise the
-service on a host. A goal run's optional `progress` contains its latest bounded annotation, separate
+service on a host. Optional `GoalState.creation_intent` is an admitted formulating request: it is
+not a Goal and does not authorize implementation. A goal run's optional `progress` contains its latest bounded annotation, separate
 from checkpoint disposition and a completion candidate. Optional Steward DTO fields expose its
-compact status, bounded review history and separate consumption without importing domain runtime.
+compact status, pending clarification, bounded review history and separate consumption without importing domain runtime.
 They are host-owned audit data, never commands or operator authority. Lifecycle and mutation rules are specified in
 [sessions](../../specs/hosts/sessions.md#host-owned-conversation-transactions).
 

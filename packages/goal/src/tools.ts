@@ -49,7 +49,9 @@ export function buildGoalCreationTools(): NamespacedTool[] {
       mcpName: "",
       description:
         "Persist the Goal definition for this conversation, then continue the same work run. " +
-        "Include the objective, concrete criteria, constraints, exclusions and assumptions. " +
+        "Record the desired result and only essential observable criteria. Do not embed an " +
+        "implementation plan, architecture, files to change, or validation the operator did not ask for. " +
+        "Constraints, exclusions and assumptions are optional and only when relevant. " +
         "The host assigns identity, limits and evidence scope.",
       inputSchema: z.toJSONSchema(goalCreationInputSchema, { target: "draft-7", io: "input" }),
     },

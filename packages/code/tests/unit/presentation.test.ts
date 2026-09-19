@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { stewardStatusLabel } from "../../src/features/goal/presentation.ts";
+import type { GoalRecord } from "@clarvis/protocol";
 import {
   lifecycleLabel,
   markerText,
@@ -18,6 +20,27 @@ import {
   TRANSCRIPT_PROSE_RELEASED_DISPLAY,
 } from "../../src/core/transcript/presenters.ts";
 import type { TranscriptNode } from "../../src/core/transcript/types.ts";
+
+test("Steward status labels distinguish clarification from operator action", () => {
+  const goal = (status: NonNullable<GoalRecord["steward"]>["status"]): GoalRecord =>
+    ({
+      steward: {
+        last_consumed_work_sequence: 0,
+        runtime_fingerprint: "",
+        prompt_cache_ttl: "5m",
+        status,
+        consumption: { input: 0, output: 0, net_tokens: 0, usage_unknown: false },
+      },
+    }) as GoalRecord;
+  expect(stewardStatusLabel({} as GoalRecord)).toBeUndefined();
+  expect(stewardStatusLabel(goal("idle"))).toBeUndefined();
+  expect(stewardStatusLabel(goal("evidence_requested"))).toBe(
+    "asked for clarification · main agent answering",
+  );
+  expect(stewardStatusLabel(goal("attention"))).toBe("requested changes");
+  expect(stewardStatusLabel(goal("verifying"))).toBe("reviewing");
+  expect(stewardStatusLabel(goal("verified"))).toBe("verified");
+});
 
 test("internal lifecycle variants converge on canonical product vocabulary", () => {
   expect(lifecycleLabel(uiLifecycle("awaiting_approval"))).toBe("Needs approval");

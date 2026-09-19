@@ -121,12 +121,13 @@ Goal Steward uses a fixed policy, tool-free catalog and one output schema for de
 completion review. Repository instructions and the selected main-agent prompt are
 absent from its private history; `AGENTS.md` and `CLARVIS.md` remain in the main-agent formulation and
 work prefixes. Independent fresh Steward executions therefore retain an identical fixed head without
-duplicating a host-configuration message. Definition review places bounded verified source content
-only in its volatile evidence frame.
-Each evaluation appends a delimited user frame to its own persisted context using `continue_from`,
-a stable `goal-steward` instance and the real conversation ID. Host IDs, revisions and digests remain
-outside model frames. Command execution receipts belong only to the appended evidence frame; the
-fixed policy distinguishes those receipts from model claims. The runtime fingerprint covers model
+duplicating a host-configuration message. The main-agent formulation instruction, creation
+confirmation and Steward questions are appended as new messages; they do not rewrite the system
+prompt, earlier messages, identity or advertised tools.
+Each evaluation appends a delimited conversational user frame to its own persisted context using
+`continue_from`, a stable `goal-steward` instance and the real conversation ID. Host IDs, revisions
+and digests remain outside model frames. Compatible later rounds omit the Goal contract already
+present in the private prefix. The runtime fingerprint covers model
 execution metadata, catalog, schema, compaction policy and TTL; incompatibility starts a fresh base. No earlier
 message is rewritten. A rejected Steward submission appends its schema-correction nudge in the same
 evaluation without replacing historical messages, the catalog or the cache key.

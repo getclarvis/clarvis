@@ -10,7 +10,7 @@ import type {
   CheckpointAttempt,
   OrchestrationHooks,
 } from "@clarvis/capability";
-import type { HandlerResult, HandlerVerdict } from "./loop-contract.ts";
+import type { DispatchPolicy, HandlerResult, HandlerVerdict } from "./loop-contract.ts";
 import type { Logger } from "@clarvis/capability";
 import type { NamespacedTool } from "@clarvis/capability";
 import type { LLMCallParams, LLMToolCall, ToolChoice } from "@clarvis/capability";
@@ -172,6 +172,11 @@ export interface LoopDerived {
   ctx: LiveContext;
   tools: NamespacedTool[];
   handlers: ToolHandler[];
+  /**
+   * Capability-folded per-call admissibility. When present, a refusal becomes a
+   * tool result and skips workspace hooks and the matched handler.
+   */
+  dispatchPolicy?: DispatchPolicy;
   guards: ConvergenceGuards;
   progress: ProgressTracker;
   /** Returns the current compaction anchor (immovable context head), if any. */
@@ -788,6 +793,15 @@ async function runDispatch(
         break;
       }
       const original = toolCalls[i]!;
+      const admission = d.dispatchPolicy?.admit(original);
+      if (admission !== undefined && !admission.ok) {
+        results[i] = `Tool '${original.name}' result: ${admission.reason}`;
+        core.logger?.debug?.(
+          { event: "tool.admissibility_denied", tool: original.name },
+          "dispatch policy refused a tool call before hooks",
+        );
+        continue;
+      }
       const handler = selectHandler(d.handlers, original)!;
       const { denied, adviseMessages, rewritten } = await applyBeforeHooks(core, original, handler);
       if (denied !== null) {

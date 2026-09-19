@@ -33,7 +33,10 @@ export function createStewardExecutionRuntime(options: {
       settings?.max_net_tokens ?? options.workTokenLimit,
       env.CLARVIS_TOKEN_CEILING,
     ),
-    timeout_ms: Math.min(settings?.timeout_ms ?? 120_000, env.CLARVIS_TIMEOUT_CEILING_MS),
+    timeout_ms: Math.min(
+      settings?.timeout_ms ?? env.CLARVIS_TIMEOUT_CEILING_MS,
+      env.CLARVIS_TIMEOUT_CEILING_MS,
+    ),
     max_iterations: Math.min(settings?.max_iterations ?? 8, env.CLARVIS_ITERATION_CEILING),
     call_timeout_ms: Math.min(
       settings?.call_timeout_ms ?? 60_000,

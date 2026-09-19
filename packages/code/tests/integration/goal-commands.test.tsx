@@ -620,6 +620,54 @@ test("Goal view exposes bounded Steward state without technical identifiers", as
   expect(frame).not.toContain("private-steward-id");
 });
 
+test("Goal view presents a Steward question as main-agent work, not operator action", async () => {
+  const run = goalRun("private-work-id");
+  run.steward_review_count = 1;
+  run.steward_reviews = [
+    {
+      steward_execution_id: "private-steward-id",
+      mode: "completion",
+      goal_id: "goal-fixture",
+      work_execution_id: "private-work-id",
+      control_revision: 1,
+      objective_revision: 1,
+      definition_digest: "a".repeat(64),
+      trajectory_digest: "b".repeat(64),
+      plan_context_revision: "private-revision",
+      operator_steering_epoch: 0,
+      evidence_digest: "c".repeat(64),
+      decision: "needs_evidence",
+      summary: "Need a browser check",
+      question: "Did addition work in the browser?",
+      usage: { kind: "measured", input: 10, output: 5, cached: 0 },
+      reviewed_at: 1,
+    },
+  ];
+  const f = fixture(
+    goalView({
+      runs: [run],
+      steward: {
+        last_consumed_work_sequence: 1,
+        runtime_fingerprint: "a".repeat(64),
+        prompt_cache_ttl: "5m",
+        status: "evidence_requested",
+        pending_question: {
+          review_id: "private-steward-id",
+          question: "Did addition work in the browser?",
+        },
+        consumption: { input: 10, output: 5, cached: 0, net_tokens: 15, usage_unknown: false },
+      },
+    }),
+  );
+  await f.goals.refresh();
+  const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 40 });
+  await rendered.renderOnce();
+  const frame = rendered.captureCharFrame();
+  expect(frame).toContain("Steward asked: Did addition work in the browser?");
+  expect(frame).toContain("The main agent is answering. This is not an action for you.");
+  expect(frame).not.toContain("private-steward-id");
+});
+
 test("goal completion follows current state without rebuilding the command catalog", async () => {
   const empty: GoalViewDto = { state: { version: 1, revision: 0, archive: [], receipts: [] } };
   const f = fixture(empty);

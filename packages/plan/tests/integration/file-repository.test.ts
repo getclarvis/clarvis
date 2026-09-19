@@ -9,8 +9,6 @@ import * as fsp from "node:fs/promises";
 import { mkdir, mkdtemp, open, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { workspaceStatePaths } from "@clarvis/paths";
-
 import {
   createFilePlanRepository,
   digestText,
@@ -77,7 +75,18 @@ function draft(title: string): Omit<PlanRecord, "digest"> {
 
 async function fixture(): Promise<{ dir: string; repository: PlanRepository }> {
   const dir = await mkdtemp(join(tmpdir(), "clarvis-plan-file-"));
-  return { dir, repository: createFilePlanRepository({ workspaceRoot: dir }) };
+  return { dir, repository: repositoryFor(dir) };
+}
+
+function repositoryFor(
+  workspaceRoot: string,
+  options: Omit<Parameters<typeof createFilePlanRepository>[0], "workspaceRoot"> = {},
+): PlanRepository {
+  return createFilePlanRepository({
+    workspaceRoot,
+    lockDir: join(workspaceRoot, ".plan-test-locks"),
+    ...options,
+  });
 }
 
 describe("file plan repository", () => {
@@ -112,8 +121,8 @@ describe("file plan repository", () => {
   test("serializes duplicate-id detection with locator allocation", async () => {
     const { dir } = await fixture();
     try {
-      const first = createFilePlanRepository({ workspaceRoot: dir });
-      const second = createFilePlanRepository({ workspaceRoot: dir });
+      const first = repositoryFor(dir);
+      const second = repositoryFor(dir);
       const input = draft("Same identity");
       const outcomes = await Promise.allSettled([first.create(input), second.create(input)]);
 
@@ -156,7 +165,7 @@ describe("file plan repository", () => {
 
   test("checks a delete baseline after a concurrent writer releases the plan lock", async () => {
     const { dir, repository } = await fixture();
-    const other = createFilePlanRepository({ workspaceRoot: dir });
+    const other = repositoryFor(dir);
     const created = await repository.create(draft("Stale delete"));
     const target = join(dir, created.index.path);
     const realRename = fsp.rename.bind(fsp);
@@ -235,7 +244,7 @@ describe("file plan repository", () => {
           join(dir, ".clarvis", "plans"),
           process.platform === "win32" ? "junction" : "dir",
         );
-        const repository = createFilePlanRepository({ workspaceRoot: dir });
+        const repository = repositoryFor(dir);
         await expect(repository.create(draft("Escapee"))).rejects.toThrow(/symlink|directory/i);
       } finally {
         await rm(dir, { recursive: true, force: true });
@@ -314,7 +323,7 @@ describe("file plan repository", () => {
     try {
       const created = await repository.create(draft("Wedged"));
       const name = created.index.path.split("/").pop()!;
-      const lockPath = join(workspaceStatePaths(dir).plansLockDir, `${name}.lock`);
+      const lockPath = join(dir, ".plan-test-locks", `${name}.lock`);
       const handle = await open(lockPath, "w");
       await handle.close();
       const stale = new Date(Date.now() - 120_000);
@@ -338,7 +347,7 @@ describe("file plan repository", () => {
     const { dir, repository } = await fixture();
     try {
       const created = await repository.create(draft("Cold start"));
-      const fresh = createFilePlanRepository({ workspaceRoot: dir });
+      const fresh = repositoryFor(dir);
       const found = await fresh.read(created.id);
       expect(found?.id).toBe(created.id);
       expect(found?.index.path).toBe(created.index.path);
@@ -376,7 +385,7 @@ describe("file plan repository", () => {
       });
     }) as typeof fsp.open);
     try {
-      const repository = createFilePlanRepository({ workspaceRoot: dir });
+      const repository = repositoryFor(dir);
       await expect(repository.read(id)).rejects.toBeInstanceOf(InvalidPlanError);
       expect(largestRead).toBeLessThanOrEqual(MAX_PLAN_FRONTMATTER_BYTES);
       expect(await repository.delete(id)).toBeTrue();
@@ -429,8 +438,7 @@ describe("file plan repository — owner-scoped roots", () => {
   test("an explicit root lands plans there and still reports a workspace-relative locator", async () => {
     const dir = await mkdtemp(join(tmpdir(), "clarvis-plan-owner-"));
     try {
-      const repository = createFilePlanRepository({
-        workspaceRoot: dir,
+      const repository = repositoryFor(dir, {
         root: join(dir, ".clarvis", "owners", "alice", "plans"),
       });
       const created = await repository.create(draft("Scoped"));
@@ -446,10 +454,7 @@ describe("file plan repository — owner-scoped roots", () => {
     const dir = await mkdtemp(join(tmpdir(), "clarvis-plan-owner-"));
     try {
       const repoFor = (owner: string) =>
-        createFilePlanRepository({
-          workspaceRoot: dir,
-          root: join(dir, ".clarvis", "owners", owner, "plans"),
-        });
+        repositoryFor(dir, { root: join(dir, ".clarvis", "owners", owner, "plans") });
       const alice = repoFor("alice");
       const bob = repoFor("bob");
 
@@ -468,8 +473,7 @@ describe("file plan repository — owner-scoped roots", () => {
   test.if(modeBitsEnforced)("creates every intermediate owner directory at 0700", async () => {
     const dir = await mkdtemp(join(tmpdir(), "clarvis-plan-owner-"));
     try {
-      const repository = createFilePlanRepository({
-        workspaceRoot: dir,
+      const repository = repositoryFor(dir, {
         root: join(dir, ".clarvis", "owners", "alice", "plans"),
       });
       await repository.create(draft("Perms"));
@@ -490,7 +494,7 @@ describe("file plan repository — owner-scoped roots", () => {
     const dir = await mkdtemp(join(tmpdir(), "clarvis-plan-owner-"));
     const outside = await mkdtemp(join(tmpdir(), "clarvis-plan-outside-"));
     try {
-      const repository = createFilePlanRepository({ workspaceRoot: dir, root: outside });
+      const repository = repositoryFor(dir, { root: outside });
       await expect(repository.list({})).rejects.toThrow(/escapes the workspace/);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -503,7 +507,7 @@ describe("file plan repository — owner-scoped roots", () => {
     const outsideParent = await mkdtemp(join(tmpdir(), "clarvis-plan-outside-"));
     const outsideRoot = join(outsideParent, "not", "yet", "created");
     try {
-      const repository = createFilePlanRepository({ workspaceRoot: dir, root: outsideRoot });
+      const repository = repositoryFor(dir, { root: outsideRoot });
       await expect(repository.list({})).rejects.toThrow(/escapes the workspace/);
       await expect(readdir(outsideParent)).resolves.toEqual([]);
     } finally {
@@ -515,8 +519,7 @@ describe("file plan repository — owner-scoped roots", () => {
   test("flattens a traversal-shaped locator into the owner's own root", async () => {
     const dir = await mkdtemp(join(tmpdir(), "clarvis-plan-owner-"));
     try {
-      const repository = createFilePlanRepository({
-        workspaceRoot: dir,
+      const repository = repositoryFor(dir, {
         root: join(dir, ".clarvis", "owners", "alice", "plans"),
       });
       const record = draft("Escape");
@@ -571,7 +574,7 @@ describe("fsyncDir — the win32 directory-sync durability branch", () => {
       }),
     );
     try {
-      const repository = createFilePlanRepository({ workspaceRoot: dir, root });
+      const repository = repositoryFor(dir, { root });
       const created = await repository.create(draft("Windows durability"));
       expect(created.index.path).toContain("windows-durability");
     } finally {
@@ -599,7 +602,7 @@ describe("fsyncDir — the win32 directory-sync durability branch", () => {
       Object.assign(new Error("simulated EIO opening the plans directory"), { code: "EIO" }),
     );
     try {
-      const repository = createFilePlanRepository({ workspaceRoot: dir, root });
+      const repository = repositoryFor(dir, { root });
       await expect(repository.create(draft("Non-Windows durability"))).rejects.toThrow(
         /simulated EIO/,
       );

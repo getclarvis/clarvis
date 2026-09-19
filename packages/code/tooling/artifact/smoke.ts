@@ -7,7 +7,7 @@
  *   breaks *after* bundling is invisible to it: 1017 tests passed green while a
  *   bundled `code` died on startup for want of `models-dev.json`.
  *
- *   **The clean HOME is the point.** It proves first paint does not read or
+ *   **The fresh SmokeContext is the point.** It proves first paint does not read or
  *   project either a user cache or the shipped models.dev snapshot. The asset
  *   is still checked before boot because Providers must be able to load it
  *   later on a fresh install.
@@ -22,13 +22,12 @@
  *   bundled binary in the field — survived bundling too, and it carries the
  *   boot's elapsed time, which the screen does not.
  */
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { globalPaths } from "@clarvis/paths";
-import { bootAndObserve, makeCleanHome, readable } from "./pty.ts";
+import { createSmokeFixture } from "./isolation.ts";
+import { bootAndObserve, readable } from "./pty.ts";
 import {
   assertDetachedSourceMaps,
   assertLazyProviderArtifact,
@@ -39,6 +38,9 @@ import { RELEASE_REPOSITORY, releaseTarget } from "../../src/update-contract.ts"
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const artifact = join(packageRoot, "dist/index.js");
+const repositoryRoot = join(packageRoot, "..", "..");
+const confinement =
+  process.env.CLARVIS_SMOKE_REQUIRE_CONFINEMENT === "1" ? "required" : "environment";
 
 const TIMEOUT_MS = Number(process.env.SMOKE_TIMEOUT_MS ?? 90_000);
 
@@ -146,62 +148,70 @@ async function main(): Promise<void> {
       throw new Error(`artifact is missing ${asset.path}\n  read at runtime by ${asset.reader}`);
     }
   }
-  const home = await makeCleanHome();
-  const workspace = await mkdtemp(join(tmpdir(), "clarvis-smoke-ws-"));
+  const fixture = await createSmokeFixture("clarvis-artifact-smoke-");
+  let result: Awaited<ReturnType<typeof bootAndObserve>>;
+  let painted: BootPaintedDetails | null;
+  let shellPainted: BootShellPaintedDetails | null;
+  let markdown: MarkdownPreloadDetails | null;
+  let catalogLoad: Record<string, unknown> | null;
+  let updateCheck: UpdateCheckSkippedDetails | null;
+  try {
+    if (existsSync(fixture.paths.modelsCacheFile)) {
+      throw new Error("fixture is not a fresh install: it has a models cache");
+    }
 
-  if (existsSync(globalPaths(undefined, { home }).cache)) {
-    throw new Error("fixture is not a fresh install: it has a models cache");
-  }
+    result = await bootAndObserve({
+      entry: artifact,
+      args: ["--debug"],
+      context: fixture,
+      markers: [{ name: "ready", text: APP_READY_MARKER }],
+      afterMarkersReady: async () => {
+        const bootPainted = await readDiagnosticDetails<BootPaintedDetails>(
+          fixture.global,
+          "app.boot.painted",
+        );
+        const preload = await readDiagnosticDetails<MarkdownPreloadDetails>(
+          fixture.global,
+          "markdown.preload.completed",
+        );
+        return bootPainted !== null && preload !== null;
+      },
+      timeoutMs: TIMEOUT_MS,
+      pollMs: 100,
+      confinement,
+      readOnlyRoots: [repositoryRoot],
+    });
 
-  const result = await bootAndObserve({
-    entry: artifact,
-    args: ["--debug"],
-    home,
-    workspace,
-    markers: [{ name: "ready", text: APP_READY_MARKER }],
-    afterMarkersReady: async () => {
-      const painted = await readDiagnosticDetails<BootPaintedDetails>(home, "app.boot.painted");
-      const markdown = await readDiagnosticDetails<MarkdownPreloadDetails>(
-        home,
-        "markdown.preload.completed",
+    if (result.outcome !== "ready") {
+      process.stderr.write(
+        `smoke FAILED (${result.outcome}) after ${result.elapsed.toFixed(0)}ms\n` +
+          `the built artifact did not reach first paint in its isolated fixture\n` +
+          `--- screen ---\n${readable(result.screen).slice(-4000)}\n` +
+          `--- stderr ---\n${result.stderr.slice(-2000)}\n`,
       );
-      return painted !== null && markdown !== null;
-    },
-    timeoutMs: TIMEOUT_MS,
-    pollMs: 100,
-  });
+      throw new Error(`artifact_smoke_${result.outcome}`);
+    }
 
-  if (result.outcome !== "ready") {
-    process.stderr.write(
-      `smoke FAILED (${result.outcome}) after ${result.elapsed.toFixed(0)}ms\n` +
-        `the built artifact did not reach first paint on a clean HOME\n` +
-        `--- screen ---\n${readable(result.screen).slice(-4000)}\n` +
-        `--- stderr ---\n${result.stderr.slice(-2000)}\n`,
+    painted = await readDiagnosticDetails<BootPaintedDetails>(fixture.global, "app.boot.painted");
+    shellPainted = await readDiagnosticDetails<BootShellPaintedDetails>(
+      fixture.global,
+      "app.boot.shell-painted",
     );
-    await rm(home, { recursive: true, force: true });
-    await rm(workspace, { recursive: true, force: true });
-    process.exit(1);
+    markdown = await readDiagnosticDetails<MarkdownPreloadDetails>(
+      fixture.global,
+      "markdown.preload.completed",
+    );
+    catalogLoad = await readDiagnosticDetails<Record<string, unknown>>(
+      fixture.global,
+      "catalog.load.started",
+    );
+    updateCheck = await readDiagnosticDetails<UpdateCheckSkippedDetails>(
+      fixture.global,
+      "update.check.skipped",
+    );
+  } finally {
+    await fixture.cleanup();
   }
-
-  const painted = await readDiagnosticDetails<BootPaintedDetails>(home, "app.boot.painted");
-  const shellPainted = await readDiagnosticDetails<BootShellPaintedDetails>(
-    home,
-    "app.boot.shell-painted",
-  );
-  const markdown = await readDiagnosticDetails<MarkdownPreloadDetails>(
-    home,
-    "markdown.preload.completed",
-  );
-  const catalogLoad = await readDiagnosticDetails<Record<string, unknown>>(
-    home,
-    "catalog.load.started",
-  );
-  const updateCheck = await readDiagnosticDetails<UpdateCheckSkippedDetails>(
-    home,
-    "update.check.skipped",
-  );
-  await rm(home, { recursive: true, force: true });
-  await rm(workspace, { recursive: true, force: true });
   if (painted === null) {
     process.stderr.write(
       `smoke FAILED: the artifact painted but wrote no app.boot.painted record\n` +
@@ -247,11 +257,10 @@ async function main(): Promise<void> {
     match[4] === undefined
       ? `${match[1]}.${match[2]}.${String(Number(match[3]) + 1)}`
       : `${match[1]}.${match[2]}.${match[3]}`;
-  const managedHome = await makeCleanHome();
-  const managedWorkspace = await mkdtemp(join(tmpdir(), "clarvis-update-smoke-ws-"));
-  const installRoot = join(managedWorkspace, "..", `clarvis-update-smoke-install-${process.pid}`);
+  const managed = await createSmokeFixture("clarvis-update-smoke-");
+  const installRoot = managed.install;
   const versionRoot = join(installRoot, "versions", `v${product.version}`);
-  const managedPaths = globalPaths(undefined, { home: managedHome });
+  const managedPaths = managed.paths;
   let updateNoticeMs: number;
   try {
     await mkdir(versionRoot, { recursive: true });
@@ -281,22 +290,23 @@ async function main(): Promise<void> {
     const update = await bootAndObserve({
       entry: artifact,
       args: ["--debug"],
-      home: managedHome,
-      workspace: managedWorkspace,
+      context: managed,
       markers: [
         { name: "ready", text: APP_READY_MARKER },
         { name: "update-header", text: `↑ v${product.version}` },
       ],
       afterMarkersReady: async () => {
         const available = await readDiagnosticDetails<UpdateAvailableDetails>(
-          managedHome,
+          managed.global,
           "update.available",
         );
         return available?.available_version === availableVersion;
       },
       timeoutMs: TIMEOUT_MS,
       pollMs: 100,
-      extraEnv: { CLARVIS_INSTALL_ROOT: installRoot },
+      overrides: { CLARVIS_INSTALL_ROOT: installRoot },
+      confinement,
+      readOnlyRoots: [repositoryRoot],
     });
     const updateFrame = readable(update.screen);
     if (
@@ -313,9 +323,7 @@ async function main(): Promise<void> {
     }
     updateNoticeMs = update.elapsed;
   } finally {
-    await rm(managedHome, { recursive: true, force: true });
-    await rm(managedWorkspace, { recursive: true, force: true });
-    await rm(installRoot, { recursive: true, force: true });
+    await managed.cleanup();
   }
 
   process.stdout.write(

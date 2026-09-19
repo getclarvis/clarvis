@@ -962,14 +962,6 @@
       "reason": "physical listener or subprocess boundary is required by this test"
     },
     {
-      "mechanism": "subprocess",
-      "file": "tooling/tests/unit/prompt-cache-artifact.test.ts",
-      "identity": "subprocess|test:artifact observer hashes the JavaScript bytes actually loaded and captures physical HTTP without credentials|Bun.spawn( [ process.execPath, \"--preload\", join(root, \"transport.ts\"), \"--preload\", resolve(\"tooling/cache/artifact-preload.ts\"), join(root, \"entry.ts\"), ], { env: { ...process.env, CLARVIS_CACHE_ARTIFACT_OBSERVER: config }, stdout: \"pipe\", stderr: \"pipe\", }, )|0",
-      "package_owner": "tooling",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
       "mechanism": "positive-wait",
       "file": "tooling/tests/unit/prompt-cache-recorder.test.ts",
       "identity": "positive-wait|describe:physical cache evidence/it:retains completed usage and tools when the provider stream is aborted after completion|Bun.sleep(5)|0",
@@ -984,6 +976,54 @@
       "package_owner": "tooling",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/code/tests/unit/artifact-isolation.test.ts",
+      "identity": "subprocess|describe:smoke fixture isolation/test:uses an explicit global even when CLARVIS_HOME points elsewhere|Bun.spawn( [ process.execPath, \"-e\", `const {createSmokeFixture}=await import(${JSON.stringify(modulePath)});const c=await createSmokeFixture(\"clarvis-isolation-sentinel-\");process.stdout.write(JSON.stringify({root:c.root,settings:c.paths.settingsFile}));await c.cleanup();`, ], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? \"\", HOME: process.env.HOME ?? tmpdir(), CLARVIS_HOME: external, TMPDIR: process.env.TMPDIR ?? tmpdir(), }, stdout: \"pipe\", stderr: \"pipe\", }, )|0",
+      "package_owner": "@clarvis/code",
+      "classification": "boundary-canary",
+      "reason": "physical boundary canary required by the test"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/code/tests/unit/artifact-isolation.test.ts",
+      "identity": "subprocess|describe:smoke fixture isolation/test:passes only the owned roots to a real child process|Bun.spawn( [ process.execPath, \"-e\", \"process.stdout.write(JSON.stringify({home:process.env.HOME,global:process.env.CLARVIS_HOME,workspace:process.env.CLARVIS_WORKSPACE_ROOT,git:process.env.GIT_DIR ?? null}))\", ], { cwd: context.workspace, env: context.environmentFor(), stdout: \"pipe\", stderr: \"pipe\" }, )|0",
+      "package_owner": "@clarvis/code",
+      "classification": "boundary-canary",
+      "reason": "physical boundary canary required by the test"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/code/tests/unit/artifact-isolation.test.ts",
+      "identity": "subprocess|describe:smoke fixture isolation/test:context creation rejects a temporary parent inside operator global state|Bun.spawn( [ process.execPath, \"-e\", `const {createSmokeContext}=await import(${JSON.stringify(modulePath)});try{await createSmokeContext(\"clarvis-invalid-parent-\");process.exit(2)}catch(error){process.stdout.write(String(error))}`, ], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? \"\", HOME: process.env.HOME ?? tmpdir(), CLARVIS_HOME: external, TMPDIR: external, }, stdout: \"pipe\", stderr: \"pipe\", }, )|0",
+      "package_owner": "@clarvis/code",
+      "classification": "boundary-canary",
+      "reason": "physical boundary canary required by the test"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/code/tests/unit/artifact-isolation.test.ts",
+      "identity": "subprocess|describe:smoke fixture isolation/test:native confinement either proves the boundary or reports unavailable|Bun.spawn(command, { cwd: context.workspace, env: context.environmentFor(), stdout: \"pipe\", stderr: \"pipe\", })|0",
+      "package_owner": "@clarvis/code",
+      "classification": "boundary-canary",
+      "reason": "physical boundary canary required by the test"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "tooling/tests/unit/clarvis-home-preload.test.ts",
+      "identity": "subprocess|run|Bun.spawn([process.execPath, \"--preload\", preload, \"-e\", script], { cwd: process.cwd(), env: environment, stdout: \"pipe\", stderr: \"pipe\", })|0",
+      "package_owner": "tooling",
+      "classification": "boundary-canary",
+      "reason": "physical boundary canary required by the test"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "tooling/tests/unit/prompt-cache-artifact.test.ts",
+      "identity": "subprocess|test:artifact observer hashes the JavaScript bytes actually loaded and captures physical HTTP without credentials|Bun.spawn( [ process.execPath, \"--preload\", join(root, \"transport.ts\"), \"--preload\", resolve(\"tooling/cache/artifact-preload.ts\"), join(root, \"entry.ts\"), ], { env: { PATH: process.env.PATH ?? \"\", HOME: join(root, \"home\"), CLARVIS_HOME: join(root, \"global\"), CLARVIS_CACHE_ARTIFACT_OBSERVER: config, }, stdout: \"pipe\", stderr: \"pipe\", }, )|0",
+      "package_owner": "tooling",
+      "classification": "boundary-canary",
+      "reason": "physical boundary canary required by the test"
     }
   ]
 }

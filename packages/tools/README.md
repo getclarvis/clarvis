@@ -495,6 +495,12 @@ commands exist for targeted development and do not replace the full suite.
 
 The package requires Bun 1.4.0 or newer.
 
+The test fixture helpers derive workspace state and lock paths from the fixture's explicit global
+root. They do not use an operator `CLARVIS_HOME` for locks or state, and the isolation regression
+in `tests/unit/fixtures-isolation.test.ts` asserts that a fixture leaves no state in the ambient
+global tree. Native sandbox tests remain separate from these fixture guarantees: an unavailable
+backend is a failed/unsupported boundary, not evidence that an unconfined command was safe.
+
 ### Effect facts and authoring
 
 The standalone guard DTO can carry host-attested effect facts and review receipts without importing

@@ -41,7 +41,10 @@ test can observe**, because the unit suite imports `src/` by path
 mechanisms: pure assertion functions run inside the build itself
 (`packages/code/tooling/artifact/contract.ts`), a unit test over those same functions
 (`packages/code/tests/architecture/artifact-contract.test.ts`), and a PTY boot of the finished
-artifact against a fabricated clean `HOME` (`packages/code/tooling/artifact/smoke.ts`).
+artifact through an exclusive `SmokeContext` (`packages/code/tooling/artifact/isolation.ts`), used
+by `packages/code/tooling/artifact/smoke.ts`. The context fixes HOME, `CLARVIS_HOME`, workspace,
+temporary, cache, logs, sockets and installation roots and passes an allowlisted environment to
+children; an inherited operator root is never treated as a fixture.
 
 The bundle itself exists for a measured cost, stated in `packages/code/tooling/artifact/build.ts`: running
 the TUI from source pipes every `.tsx` file through Babel via the OpenTUI Solid plugin on every launch
@@ -757,8 +760,9 @@ Step 4 must follow step 3: `assertLazyProviderChunk` reads the entry from `entry
    in-memory output.
 3. Checks each `REQUIRED_ASSETS` path exists, "so a missing one is reported as itself rather than as
    an opaque startup failure".
-4. Builds a throwaway `HOME` via `makeCleanHome()` and a temp workspace, then refuses
-   with `"fixture is not a fresh install: it has a models cache"` if `globalPaths(undefined,{home}).cache`
+4. Creates an exclusive `SmokeContext` via `createSmokeFixture()` with HOME, `CLARVIS_HOME`,
+   workspace, cache, logs and sockets below one validated temporary root, then refuses with
+   `"fixture is not a fresh install: it has a models cache"` if the fixture's explicit cache path
    exists.
 5. Boots the artifact under a PTY with `--debug`, waiting for the marker `"New task…"` up to
    `SMOKE_TIMEOUT_MS`. `READY_MARKER`'s own doc comment states why that specific
@@ -780,17 +784,29 @@ Step 4 must follow step 3: `assertLazyProviderChunk` reads the entry from `entry
    The outer duration includes the 100 ms poll cadence plus Markdown diagnostic settlement and is not
    a performance benchmark (`packages/code/tooling/artifact/smoke.ts`, `main`).
 
-`makeCleanHome` (`packages/code/tooling/artifact/pty.ts`) writes only a
-`settings.json` with one `openai-compatible` provider pointing at `https://example.invalid/v1` and an
-api-key env of `SMOKE_API_KEY`, mode `0o600`, and **no agent files** — states that this is
-deliberate: "the fleet ships as data inside the bundle, so a home with an empty `agents/` directory is
-what a first run really looks like."
+`createSmokeFixture` (`packages/code/tooling/artifact/isolation.ts`) writes only a `settings.json`
+with one `openai-compatible` provider pointing at `https://example.invalid/v1` and an api-key env of
+`SMOKE_API_KEY`, mode `0o600`, and **no agent files** — states that this is deliberate: "the fleet
+ships as data inside the bundle, so a home with an empty `agents/` directory is what a first run
+really looks like." The retained `makeCleanHome` name is a private compatibility alias, not the
+fixture contract.
 
 The PTY is obtained by `script(1)` where available, with a platform-split argv — `script -q /dev/null …`
 on darwin, `script -qec '<quoted argv>' /dev/null` elsewhere
-(`packages/code/tooling/artifact/pty.ts`) — and falls back to an isolated tmux server
-(`-L clarvis-boot-<pid>`, 200×50) when `script` is absent, throwing
-`"observing a boot requires either script(1) or tmux to provide a PTY"` when neither is.
+(`packages/code/tooling/artifact/pty.ts`) — and falls back to a tmux server only in ordinary
+environment-isolated mode. The tmux socket is below the `SmokeContext` root and every PTY child
+receives `environmentFor(...)`. Required native-confinement mode probes Bubblewrap first and throws
+`smoke_native_confinement_unavailable` rather than using an unconfined PTY when the backend is
+absent or unusable; ordinary mode still throws
+`"observing a boot requires either script(1) or tmux to provide a PTY"` when neither is available.
+
+The cross-runner contract canary is `tooling/tests/unit/harness-isolation-contract.test.ts`; it
+keeps artifact, release and installer runners on fixture-owned roots and explicit child
+environments. `packages/code/tests/architecture/artifact-contract.test.ts` covers the release
+packager's allowlisted locale environment, while the direct Linux installer journey is exercised
+by `bun run release:install-smoke`. The PTY and archive journeys remain separate evidence layers:
+an archive/installer pass does not claim a complete-app PTY pass when the host rejects the fixture's
+private-state parent.
 
 The launcher's decision is a pure function (`packages/code/src/cli-entry.ts`):
 
@@ -1211,10 +1227,11 @@ no publish, registry, release-manifest or running-container commit path. Product
 | An install build emits a source map | throws `installed artifact must not contain source maps: <path>` | `packages/code/tooling/artifact/contract.ts` (`assertInstallArtifact`) |
 | A build asset moved | throws naming the asset, its reader, and the two files to update | `packages/code/tooling/artifact/build.ts` |
 | Smoke run with no artifact | `throw` with `"run: bun --filter @clarvis/code build"` | `packages/code/tooling/artifact/smoke.ts` |
-| Smoke fixture already has a models cache | `throw new Error("fixture is not a fresh install: it has a models cache")` — refuses to run rather than measure the wrong branch | `packages/code/tooling/artifact/smoke.ts` |
-| Smoke boot times out or hits `"failed to start"` | prints stripped screen tail + stderr tail, removes both temp dirs, `exit 1` | `packages/code/tooling/artifact/smoke.ts`; the failure marker is `packages/code/tooling/artifact/pty.ts` |
+| Smoke fixture already has a models cache | `throw new Error("fixture is not a fresh install: it has a models cache")` — refuses to run rather than measure the wrong branch | `packages/code/tooling/artifact/smoke.ts`; `createSmokeFixture` |
+| Smoke boot times out or hits `"failed to start"` | prints stripped screen tail + stderr tail, terminates owned children, removes only the `SmokeContext` root, and exits 1 | `packages/code/tooling/artifact/smoke.ts`; `SmokeContext.cleanup` and `packages/code/tooling/artifact/pty.ts` |
 | Smoke painted but wrote no `app.boot.painted` | `exit 1` with "`--debug` is the only diagnostic channel a bundled clarvis has" | `packages/code/tooling/artifact/smoke.ts` |
-| No `script(1)` and no `tmux` | `throw new Error("observing a boot requires either script(1) or tmux to provide a PTY")` | `packages/code/tooling/artifact/pty.ts` |
+| Required smoke confinement has no usable native backend | `throw new Error("smoke_native_confinement_unavailable:<reason>")`; no fallback PTY is started | `packages/code/tooling/artifact/isolation.ts` (`requireNativeSmokeConfinement`) |
+| Ordinary smoke has no `script(1)` and no `tmux` | `throw new Error("observing a boot requires either script(1) or tmux to provide a PTY")` | `packages/code/tooling/artifact/pty.ts` |
 | Code dies by signal 132/134/139 during CI tests | up to 3 additional Code attempts, then remaining packages and the global checker | `tooling/lib/ci-coverage.ts`, `runCiCoverage` |
 | Bun dies by 130 or 143 | passed straight through, never retried | `tooling/ci/retry-code-coverage.sh` |
 | A package other than `code` dies by signal | return that failure immediately, without retry or global checking | `tooling/lib/ci-coverage.ts`, `runCiCoverage` |

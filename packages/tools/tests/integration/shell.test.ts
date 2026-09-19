@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { readFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 import path from "node:path";
-import { isSpillFile, workspacePaths, workspaceStatePaths } from "@clarvis/paths";
+import { isSpillFile, workspacePaths } from "@clarvis/paths";
 import type { ServerConfig } from "../../src/config.ts";
 import { createShell } from "../../src/tools/shell.ts";
 
@@ -11,6 +11,7 @@ const {
   makeWorkspace,
   cleanup,
   makeConfig,
+  fixtureStatePaths,
   callTool,
   chmod,
   modeBitsEnforced,
@@ -291,7 +292,7 @@ describe("shell", () => {
         expect(m).not.toBeNull();
         const named = m![1]!;
         expect(path.isAbsolute(named)).toBe(true);
-        expect(named.startsWith(workspaceStatePaths(root).localDir)).toBe(true);
+        expect(named.startsWith(fixtureStatePaths(root).localDir)).toBe(true);
         const full = readFileSync(named, "utf8");
         expect(full).toContain("line1\n");
         expect(full).toContain("line200\n");
@@ -308,7 +309,7 @@ describe("shell", () => {
       expect(existsSync(workspacePaths(root).clarvisDir)).toBe(false);
       expect(readdirSync(root)).toEqual([]);
 
-      const spills = readdirSync(workspaceStatePaths(root).localDir);
+      const spills = readdirSync(fixtureStatePaths(root).localDir);
       expect(spills.some((name) => isSpillFile(name))).toBe(true);
     });
 

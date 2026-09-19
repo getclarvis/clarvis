@@ -123,7 +123,7 @@ own content, and `grep`/`glob` are expected to see it" (`packages/paths/src/cons
 | `HOME_ENV` | const | `packages/paths/src/roots.ts` | `"CLARVIS_HOME"` |
 | `WORKSPACE_ENV` | const | `packages/paths/src/roots.ts` | `"CLARVIS_WORKSPACE_ROOT"` |
 | `RootOptions` | interface | `packages/paths/src/roots.ts` | `{ env?, home?, cwd?, logger? }` — every ambient input is injectable |
-| `globalRoot(opts?)` | fn | `packages/paths/src/roots.ts` | `$CLARVIS_HOME`, else `resolve(<home>/.clarvis)` |
+| `globalRoot(opts?)` | fn | `packages/paths/src/roots.ts` | `$CLARVIS_HOME`, else `resolve(<home>/.clarvis)`; explicit harnesses must inject the selected root/environment |
 | `workspaceRoot(opts?)` | fn | `packages/paths/src/roots.ts` | `$CLARVIS_WORKSPACE_ROOT`, else `resolve(cwd)` |
 | `ownerFromWorkspace(dir, fallback?)` | fn | `packages/paths/src/roots.ts` | `ws_<sha256hex>` of the canonical absolute path |
 | `workspaceScopeKey(owner, projectId, workspaceId)` | fn | `packages/paths/src/roots.ts` | stable `scope_<sha256hex>` namespace over all three identity components |

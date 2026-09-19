@@ -35,7 +35,7 @@
  *     `dist/maps/`, where the runtime does not auto-load them. `--install`
  *     omits them entirely from the linked installation.
  *
- *   `tooling/artifact/smoke.ts` proves these contracts against a clean HOME.
+ *   `tooling/artifact/smoke.ts` proves these contracts in an exclusive SmokeContext.
  */
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin";
 import { cp, mkdir, readdir, rename, rm, stat } from "node:fs/promises";

@@ -146,7 +146,8 @@ test("a diagnostic record states the path of the file it is written to", () => {
   session.close();
 
   const start = records(session.path)[0];
-  expect((start?.details as { path?: string } | undefined)?.path).toBe(session.path);
+  const expectedPath = session.path.replace(/\/ws_[^/]+(?=\/)/, "/[redacted]");
+  expect((start?.details as { path?: string } | undefined)?.path).toBe(expectedPath);
 });
 
 test("sanitization is bounded before traversal and never invokes accessors", () => {

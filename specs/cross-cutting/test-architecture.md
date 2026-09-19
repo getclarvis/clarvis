@@ -786,17 +786,20 @@ it with Bun` in
 their complete temporary-repository journeys with deliberately conflicting inherited Git directory,
 worktree and index paths.
 
-At preload time — before any test module is evaluated — the file checks whether
-`process.env[HOME_ENV]` (i.e. `CLARVIS_HOME`, `packages/paths/src/roots.ts`) is unset or blank.
-If so it `mkdtempSync`es `clarvis-test-home-` under the OS temp dir, assigns it, and registers a
-`process.on("exit")` that `rmSync`es it, swallowing failure with the comment "a live child may still
-hold a handle; the OS reaps the temp dir" (`tooling/test-runtime/clarvis-home-preload.ts`). An
-already-set value is left alone.
+At preload time — before any test module is evaluated — the file distinguishes direct entry from an
+explicit child handoff. A direct process always `mkdtempSync`es `clarvis-test-home-` below a
+validated temporary parent, assigns the new root to `process.env[HOME_ENV]` (i.e.
+`CLARVIS_HOME`, `packages/paths/src/roots.ts`), and records the same value in
+`CLARVIS_TEST_HOME_HANDOFF`. Only a child that inherits that exact marker reuses the root. The
+owner registers a `process.on("exit")` that removes only its root; a handoff child never removes
+the owner's fixture (`tooling/test-runtime/clarvis-home-preload.ts`). Existing `CLARVIS_HOME`
+without the marker is therefore operator input, not an implicit test handoff, and is replaced.
 
 The docblock states the mechanism and why a fixture cannot do it: per-workspace machinery "resolves
 under the global root rather than inside the working tree", and "the writers resolve the root from
 the ambient environment at call time, so nothing a test passes to a helper can redirect them"
-(`tooling/test-runtime/clarvis-home-preload.ts`).
+(`tooling/test-runtime/clarvis-home-preload.ts`). The explicit marker is the narrow exception for a
+test process that intentionally hands the same fixture to a child.
 
 The root `bunfig.toml` carries the same preload with a production incident behind its comment: "102
 stray `~/.clarvis/state/workspaces/_tmp_clarvis-plan-*` directories got written into a real `$HOME`
@@ -1092,8 +1095,11 @@ only the owner-specific default").
     injected), with the three older cases passing `env: {}` so they state their environment instead
     of inheriting one.
 
-14. **INV-310 (idempotence half) — a pre-set `CLARVIS_HOME` is never overwritten by the preload.** Rule:
-    `tooling/test-runtime/clarvis-home-preload.ts` — the guard is `undefined || trim() === ""`. **Unpinned.**
+14. **INV-310 (ownership half) — a direct test entry never reuses an unmarked `CLARVIS_HOME`, and a
+    marked child never cleans up its owner's root.** Rule:
+    `tooling/test-runtime/clarvis-home-preload.ts`, where `CLARVIS_TEST_HOME_HANDOFF` must equal the
+    selected root. Test: `tooling/tests/unit/clarvis-home-preload.test.ts` covers direct replacement,
+    explicit handoff and owner-only cleanup.
 
 15. **INV-308 — `packages/llm/src/stream-metrics.ts` and
     `packages/code/src/adapters/stream-metrics.ts` are token-identical except for the `source`

@@ -1444,9 +1444,27 @@ the build pays that once. Consequences worth knowing:
 The unit suite imports source and tooling modules by path, so it can never load a bundle and every
 bundling-only defect is invisible to it: 1017 tests passed green while a bundled
 `code` died on startup for want of the models.dev snapshot. `bun run smoke` is the
-step that covers it. The smoke fixture fabricates a clean `HOME`, asserts the shipped snapshot
+step that covers it. Artifact, release and first-paint smoke use `createSmokeFixture` and its
+`SmokeContext` (`packages/code/tooling/artifact/isolation.ts`), not an ambient or merely renamed
+HOME. The context owns an exclusive temporary root containing HOME, `CLARVIS_HOME`, workspace,
+cache, logs, sockets and managed-install paths; `environmentFor` passes an allowlisted environment
+to every child and rejects root-sensitive overrides outside the fixture. The fixture lifecycle
+terminates registered children before removing only its own root. It asserts the shipped snapshot
 exists for a later Providers open, and proves first paint emits no `catalog.load.started` while
 `deferred_catalog` remains true.
+
+The normal smoke mode isolates environment and filesystem state. The opt-in native mode requires a
+working Bubblewrap probe, mounts only selected runtime/checkout roots read-only, masks `.clarvis`,
+`.agents` and `.git`, disables network, and fails as unavailable instead of falling back to an
+unconfined PTY. `script(1)` and tmux both use the fixture environment; tmux uses a fixture-owned
+socket. Installer smoke copies release inputs into the fixture and refuses Windows User `Path`
+coverage unless a disposable account is explicitly proven. The regression coverage is
+`packages/code/tests/unit/artifact-isolation.test.ts` plus
+`packages/code/tests/unit/benchmark-isolation.test.ts`, which executes the benchmark's version arm
+against a real Bun child and checks the observed fixture roots. The release/installer/PTY contract
+canary is `tooling/tests/unit/harness-isolation-contract.test.ts`; installer smoke has also passed
+the current Linux archive journey, while the artifact and release PTY journeys remain subject to
+the host private-state ownership check described in `specs/known-issues.md`.
 
 `bun run bench:code` measures the launch: the module graph (`--version`), minimal shell, focused
 startup composer, complete header and complete input-ready frame, n≥7 with min/median/max.

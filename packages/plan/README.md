@@ -283,6 +283,12 @@ executable, Markdown and in-memory stores. File layout, permissions, confinement
 lock contention, corruption and external-edit reconciliation remain real integration/contract tests;
 sessions, runtime tools and orchestration compose in-memory stores and contract-shaped fakes.
 
+Qualification and cross-package fixtures must pass an explicit `lockDir` (or an equivalent
+fixture-owned store root) when constructing the file repository. A workspace path alone is not a
+state namespace: plan locks belong below the selected global/state fixture, never below the
+operator's ambient `CLARVIS_HOME`. File-repository and observability integration tests pin this
+boundary.
+
 ```bash
 bun --filter @clarvis/plan build
 bun --filter @clarvis/plan typecheck

@@ -21,7 +21,7 @@ describe("monitor_stop SIGKILL escalation", () => {
   afterEach(() => cleanup(root));
 
   it("escalates SIGTERM then SIGKILL when the process outlives the grace", async () => {
-    mkdirSync(monitorDir(root), { recursive: true });
+    mkdirSync(monitorDir(config.statePaths), { recursive: true });
     const meta = {
       id: "mon_live",
       command: "x",
@@ -30,7 +30,7 @@ describe("monitor_stop SIGKILL escalation", () => {
       startedAt: 1,
       readyWhen: null,
     };
-    writeFileSync(sidecarPath(root, "mon_live"), JSON.stringify(meta));
+    writeFileSync(sidecarPath(config.statePaths, "mon_live"), JSON.stringify(meta));
 
     const tool = createMonitorStop({
       isAlive: () => true,
@@ -43,7 +43,7 @@ describe("monitor_stop SIGKILL escalation", () => {
       stopped: boolean;
     };
     expect(result.stopped).toBe(true);
-    expect(existsSync(sidecarPath(root, "mon_live"))).toBe(false);
+    expect(existsSync(sidecarPath(config.statePaths, "mon_live"))).toBe(false);
     expect(mockedKillTree).toHaveBeenNthCalledWith(1, process.pid, "SIGTERM", {
       logger: config.logger,
     });

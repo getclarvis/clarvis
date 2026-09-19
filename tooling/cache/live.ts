@@ -126,7 +126,12 @@ export async function runCacheTrial(args: CacheTrialArgs): Promise<CacheTrial> {
   const memoryAgents = new Set<string>();
   let seedExecution: ExecuteRunArgs | undefined;
   const abort = new AbortController();
-  const planStore = createPlanStore({ repository: createFilePlanRepository({ workspaceRoot }) });
+  const planStore = createPlanStore({
+    repository: createFilePlanRepository({
+      workspaceRoot,
+      lockDir: join(root, "plan-locks"),
+    }),
+  });
   let controlRequested = false;
   const fixture = createCacheFixture({
     scenario,
@@ -616,6 +621,13 @@ export async function runRestartCacheTrial(args: CacheTrialArgs): Promise<CacheT
       args.outputDirectory,
       args.model + "-C07-" + args.trial + "-worker-" + phase + ".json",
     );
+    const restartEnvironment = {
+      PATH: process.env.PATH ?? "",
+      HOME: join(args.outputDirectory, "restart-home"),
+      TMPDIR: join(args.outputDirectory, "restart-tmp"),
+      CLARVIS_HOME: join(args.outputDirectory, "restart-global"),
+    };
+    await mkdir(restartEnvironment.TMPDIR, { recursive: true });
     await writeFile(
       worker,
       JSON.stringify({
@@ -630,6 +642,7 @@ export async function runRestartCacheTrial(args: CacheTrialArgs): Promise<CacheT
       stdin: "ignore",
       stdout: "inherit",
       stderr: "inherit",
+      env: restartEnvironment,
     });
     const timeout = setTimeout(() => child.kill(), Math.max(1, trialLimits("C07").durationMs));
     const status = await child.exited;

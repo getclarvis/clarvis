@@ -34,8 +34,12 @@ import { contentText, type ContentPart, type ToolResult } from "../../src/tools/
 import { workspaceStatePaths } from "@clarvis/paths";
 import type { GuardReview } from "../../src/guard/types.ts";
 
+const fixtureGlobals = new Map<string, string>();
+
 export function makeWorkspace(): string {
-  return mkdtempSync(path.join(tmpdir(), "clarvis-test-"));
+  const workspace = mkdtempSync(path.join(tmpdir(), "clarvis-test-"));
+  fixtureGlobals.set(workspace, `${workspace}-global`);
+  return workspace;
 }
 
 // Windows refuses to unlink a file another process still holds open, and
@@ -48,7 +52,7 @@ export function cleanup(root: string): void {
   for (;;) {
     try {
       rmSync(root, { recursive: true, force: true });
-      return;
+      break;
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if ((code !== "EBUSY" && code !== "ENOTEMPTY" && code !== "EPERM") || Date.now() > deadline) {
@@ -57,9 +61,19 @@ export function cleanup(root: string): void {
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
     }
   }
+  const global = fixtureGlobals.get(root);
+  fixtureGlobals.delete(root);
+  if (global !== undefined) rmSync(global, { recursive: true, force: true });
+}
+
+export function fixtureStatePaths(root: string) {
+  return workspaceStatePaths(root, {
+    env: { CLARVIS_HOME: fixtureGlobals.get(root) ?? `${root}-global` },
+  });
 }
 
 export function makeConfig(root: string, overrides: Partial<ServerConfig> = {}): ServerConfig {
+  const statePaths = overrides.statePaths ?? fixtureStatePaths(root);
   return {
     workspaceRoot: root,
     logger: NOOP_TOOLS_LOGGER,
@@ -80,8 +94,8 @@ export function makeConfig(root: string, overrides: Partial<ServerConfig> = {}):
     skillExecutionRoots: [],
     readOnly: false,
     confineToWorkspace: true,
-    stateRoot: (overrides.statePaths ?? workspaceStatePaths(root)).root,
-    statePaths: workspaceStatePaths(root),
+    stateRoot: statePaths.root,
+    statePaths,
     temporaryRoots: [],
     gitMetadataPaths: [],
     registerTemporaryRoot() {},

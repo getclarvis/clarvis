@@ -214,8 +214,13 @@ async function assertNoInlineSourceMaps(directory: string): Promise<void> {
 async function createArchive(stage: string, archivePath: string): Promise<void> {
   const tar = Bun.which("tar");
   if (tar === null) throw new Error("release packaging requires tar");
+  const environment: Record<string, string> = {
+    PATH: process.env.PATH ?? "",
+    LC_ALL: "C",
+    LANG: "C",
+  };
   const child = Bun.spawn([tar, "-czf", archivePath, "-C", stage, "clarvis"], {
-    env: { ...process.env, LC_ALL: "C" },
+    env: environment,
     stdin: "ignore",
     stdout: "inherit",
     stderr: "inherit",

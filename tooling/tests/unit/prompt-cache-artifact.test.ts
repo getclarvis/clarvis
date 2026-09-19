@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { cacheHash } from "../../cache/wire.ts";
@@ -26,12 +26,14 @@ test.skipIf(!supportsHostAuthView)(
     await writeFile(globalPaths(authenticationRoot).settingsFile, "original configuration");
     await mkdir(globalPaths(isolatedRoot).state);
     await writeFile(globalPaths(isolatedRoot).settingsFile, "isolated configuration");
+    const authenticationEntriesBefore = await readdir(authenticationRoot);
     const view = await prepareHostAuthView({
       authenticationRoot,
       isolatedRoot,
       mountedRoot: join(root, "view"),
     });
     try {
+      expect(await readdir(authenticationRoot)).toEqual(authenticationEntriesBefore);
       const script = join(root, "probe.ts");
       await writeFile(
         script,
@@ -49,6 +51,7 @@ test.skipIf(!supportsHostAuthView)(
       expect(output).toBe("");
       expect(errors).toBe("");
       expect(code).toBe(0);
+      await view.cleanup();
       expect(
         JSON.parse(await readFile(globalPaths(authenticationRoot).subscriptionsFile, "utf8"))
           .accounts["openai-codex"].refresh_token,
@@ -62,6 +65,50 @@ test.skipIf(!supportsHostAuthView)(
       expect(await Bun.file(globalPaths(isolatedRoot).subscriptionsFile).exists()).toBe(false);
     } finally {
       await view.cleanup();
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test.skipIf(!supportsHostAuthView)(
+  "auth view rejects symlinked or overlapping roots before staging",
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "cache-auth-view-roots-"));
+    const authenticationRoot = join(root, "authentication");
+    const isolatedRoot = join(root, "isolated");
+    const outside = join(root, "outside");
+    const linkedAuthentication = join(root, "authentication-link");
+    const linkedMounted = join(root, "mounted-link");
+    await Promise.all([mkdir(authenticationRoot), mkdir(isolatedRoot), mkdir(outside)]);
+    try {
+      await symlink(outside, linkedAuthentication, "dir");
+      await expect(
+        prepareHostAuthView({
+          authenticationRoot: linkedAuthentication,
+          isolatedRoot,
+          mountedRoot: join(root, "view"),
+        }),
+      ).rejects.toThrow("host_auth_view_refuses_symlink_authentication");
+
+      await expect(
+        prepareHostAuthView({
+          authenticationRoot,
+          isolatedRoot: authenticationRoot,
+          mountedRoot: join(root, "view-overlap"),
+        }),
+      ).rejects.toThrow("authentication_and_fixture_roots_must_be_distinct");
+
+      await symlink(outside, linkedMounted, "dir");
+      await expect(
+        prepareHostAuthView({
+          authenticationRoot,
+          isolatedRoot,
+          mountedRoot: linkedMounted,
+        }),
+      ).rejects.toThrow("host_auth_view_refuses_symlink_mounted");
+      expect(await readdir(authenticationRoot)).toEqual([]);
+      expect(await readdir(isolatedRoot)).toEqual([]);
+    } finally {
       await rm(root, { recursive: true, force: true });
     }
   },
@@ -106,7 +153,12 @@ test("artifact observer hashes the JavaScript bytes actually loaded and captures
         join(root, "entry.ts"),
       ],
       {
-        env: { ...process.env, CLARVIS_CACHE_ARTIFACT_OBSERVER: config },
+        env: {
+          PATH: process.env.PATH ?? "",
+          HOME: join(root, "home"),
+          CLARVIS_HOME: join(root, "global"),
+          CLARVIS_CACHE_ARTIFACT_OBSERVER: config,
+        },
         stdout: "pipe",
         stderr: "pipe",
       },

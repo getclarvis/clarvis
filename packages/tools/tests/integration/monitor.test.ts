@@ -47,7 +47,7 @@ describe("monitor", () => {
     config = makeConfig(root);
   });
   afterEach(async () => {
-    for (const m of await listSidecars(root)) {
+    for (const m of await listSidecars(config.statePaths)) {
       if (isAlive(m.pid)) killTree(m.pid, "SIGKILL");
     }
     cleanup(root);
@@ -250,7 +250,7 @@ describe("monitor", () => {
     async () => {
       const start = await callTool("monitor_start", { command: "sleep 30" }, config);
       const id = start.json.id as string;
-      const { pid } = await readSidecar(root, id);
+      const { pid } = await readSidecar(config.statePaths, id);
       expect(isAlive(pid)).toBe(true);
 
       const stop = await callTool("monitor_stop", { id }, config);
@@ -373,7 +373,7 @@ describe("monitor", () => {
         config,
       );
       const id = start.json.id as string;
-      const { pid } = await readSidecar(root, id);
+      const { pid } = await readSidecar(config.statePaths, id);
       const stop = await callTool("monitor_stop", { id }, config);
       expect(stop.json.stopped).toBe(true);
       expect(await waitDead(pid)).toBe(true);
@@ -488,7 +488,7 @@ describe("monitor", () => {
     async () => {
       const start = await callTool("monitor_start", { command: "sleep 5" }, config);
       const id = start.json.id as string;
-      const { pid } = await readSidecar(root, id);
+      const { pid } = await readSidecar(config.statePaths, id);
       killTree(pid, "SIGKILL");
       expect(await waitDead(pid)).toBe(true);
       const poll = await callTool("monitor_poll", { id }, config);

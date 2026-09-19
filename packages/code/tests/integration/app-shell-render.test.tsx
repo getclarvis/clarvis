@@ -363,6 +363,7 @@ function defaultProps(overrides: {
   backend?: AppBackend;
   quitCalls?: number[];
   active?: Accessor<boolean>;
+  compacting?: Accessor<boolean>;
   continuesOnExit?: Accessor<boolean>;
   cancel?: () => boolean;
   status?: Accessor<string>;
@@ -439,6 +440,7 @@ function defaultProps(overrides: {
           : { extensionProfileDriftNotice: overrides.extensionProfileDriftNotice }),
         bang: () => true,
         localBusy: () => false,
+        ...(overrides.compacting === undefined ? {} : { compacting: overrides.compacting }),
         registerDraftRestore: () => {},
         elicit: overrides.elicit ?? (() => null),
         resolveElicit: () => {},
@@ -1540,6 +1542,45 @@ test("Lead thinking and working reuse one fixed line immediately above the compo
   expect(settledLine.trim()).toBe("");
   expect(settledLine).not.toContain("thinking");
   expect(t.renderer.root.findDescendantById("lead-activity-line")).toBe(line);
+  t.renderer.destroy();
+});
+
+test("live compaction replaces working on the Lead activity line", async () => {
+  const [active] = createSignal(true);
+  const [compacting, setCompacting] = createSignal(false);
+  const store = createTranscriptStore();
+  const sink = store.openRun("exec_compaction_line");
+  applyRunEvents(
+    sink,
+    [
+      ev({ type: "run_started", at: 1 }),
+      ev({ type: "iteration_started", agent: "lead", iteration: 1, at: 2, model: "m" }),
+      ev({
+        type: "text_delta",
+        agent: "lead",
+        iteration: 1,
+        channel: "text",
+        text: "LIVE ANSWER",
+        at: 3,
+        reset: true,
+      }),
+    ],
+    "live",
+  );
+  const t = await mountApp(defaultProps({ active, compacting, store }));
+  const working = await captureUntil(t, "working");
+  expect(working).toContain("LIVE ANSWER");
+  expect(working).not.toContain("compacting context");
+  setCompacting(true);
+  const compactingFrame = await captureUntil(t, "compacting context");
+  const line = t.renderer.root.findDescendantById("lead-activity-line");
+  const input = t.renderer.root.findDescendantById("input-dock");
+  expect(line).toBeDefined();
+  expect(input).toBeDefined();
+  expect(line!.y + line!.height).toBe(input!.y);
+  expect(compactingFrame).toContain("LIVE ANSWER");
+  expect(compactingFrame).not.toContain("working");
+  expect(compactingFrame.match(/Compacting context/g)).toBeNull();
   t.renderer.destroy();
 });
 

@@ -106,15 +106,18 @@ and [git-raw-parser.test.ts](../../packages/kernel/tests/unit/git-raw-parser.tes
 
 Opening `/diff` or `Ctrl+X D` always mounts the overlay, including on an empty conversation. The
 controller loads on show, refreshes explicitly, polls only while visible, and cancels in-flight
-work when hidden. Staging comparison controls appear only when the provider publishes `staging`.
+work when hidden. Unchanged polls must not replace inventory or patch signals, so `StableDiff`
+stays mounted and does not hide its highlight. Staging comparison controls appear only when the
+provider publishes `staging`.
 The tree uses structured paths and A/M/D/R status letters. `StableDiff` renders ready unified
 patches. Special states render as hints, never as `Change N` or tool labels.
 
 Production: `createWorkspaceChangesController` in
 [workspace-changes-controller.ts](../../packages/code/src/views/overlays/workspace-changes-controller.ts)
 and `DiffViewer` in [DiffViewer.tsx](../../packages/code/src/views/overlays/DiffViewer.tsx).
-Test: [diff-viewer-render.test.tsx](../../packages/code/tests/integration/diff-viewer-render.test.tsx)
-and [app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx).
+Test: [diff-viewer-render.test.tsx](../../packages/code/tests/integration/diff-viewer-render.test.tsx),
+[app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx),
+and [workspace-changes-controller.test.ts](../../packages/code/tests/unit/workspace-changes-controller.test.ts).
 
 ## 5. Invariants
 
@@ -127,6 +130,7 @@ and [app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-
 | Net All is not staged+unstaged concatenation | `listComparison` | staged change reverted in the worktree is empty in All |
 | TUI does not branch on provider id | `DiffViewer` | fake provider without Git concepts |
 | Overlay opens without transcript history | `openDiff` in App.tsx | `/diff` on an empty conversation |
+| Unchanged polls keep `StableDiff` mounted | `createWorkspaceChangesController` | an unchanged poll keeps the selected patch object |
 
 ## 6. Failure modes and degradation
 

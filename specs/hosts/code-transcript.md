@@ -1533,8 +1533,10 @@ belongs only to that child's isolated transcript. Production:
 terminal nodes"), plus production-shaped Lead/child rendering cases.
 
 **INV-T55.** Transient Lead activity has exactly one physical owner: `LeadActivityLine`, a one-row
-sibling immediately above `InputDock`. It reuses the same band for `thinking` and `working`, leaving it blank when settled without
-actionable detail. It never prints an idle `ready` label; while a run is active, elapsed time, iteration and the active `run.cancel` binding (`Ctrl+C` by default) to interrupt share that line.
+sibling immediately above `InputDock`. It reuses the same band for `thinking`, `working` and live
+`compacting context`, leaving it blank when settled without
+actionable detail. Compaction replaces `working` or `thinking` on that line and is not repeated in
+the footer. It never prints an idle `ready` label; while a run is active, elapsed time, iteration and the active `run.cancel` binding (`Ctrl+C` by default) to interrupt share that line.
 Slash autocomplete replaces the activity line instead of stacking above or below it. The line is
 never a live or committed transcript node and cannot scroll or change transcript height. The history
 ScrollBox ends with a fixed reading runway of three rows,
@@ -1545,9 +1547,8 @@ bottom composition),
 `packages/code/src/views/Footer.tsx` (`LeadActivityLine`),
 `packages/code/src/views/transcript/TranscriptRowView.tsx` (Lead-thinking exclusion and runway), and
 `packages/code/src/views/app/TranscriptRegion.tsx` (`transcriptReadingRunwayRows`). Tests:
-`packages/code/tests/integration/app-shell-render.test.tsx` ("an active run seats its live metadata
-beside working and keeps the session footer stable", "Lead thinking and working reuse one fixed line
-immediately above the composer", and "autocomplete replaces the Lead activity row instead of
+`packages/code/tests/integration/app-shell-render.test.tsx` ("Lead thinking and working reuse one fixed line
+immediately above the composer", "live compaction replaces working on the Lead activity line", and "autocomplete replaces the Lead activity row instead of
 stacking ready or working above it") and
 `packages/code/tests/integration/transcript-region-render.test.tsx` (plan exclusion and normal versus
 compact runway bands).

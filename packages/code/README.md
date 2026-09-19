@@ -1278,9 +1278,10 @@ retention from OpenTUI/native allocator arena growth during initial traversal.
 the pass before the next model call. After a run it rewrites that run's persisted `final_context`
 immediately, so the next continuation starts smaller. `/compact <request>` adds the text to the
 agent's own compaction prompt; it does not steer the agent or add a conversation message.
-The existing footer spinner reads the live compaction lifecycle: it shows `Compacting context…`
-only after a queued pass actually starts, or while a settled-context request is awaiting its direct
-result. Terminal events clear the state, and replayed start signals cannot reactivate it.
+The Lead activity line reads the live compaction lifecycle: it shows `compacting context` in place
+of `working` or `thinking` only after a queued pass actually starts, or while a settled-context
+request is awaiting its direct result. Terminal events clear the state, and replayed start signals
+cannot reactivate it.
 
 Changing `/model` while a run is active is refused until that run settles. If the selected model's
 safe context limit is smaller than the latest persisted continuation, the picker shows the estimated

@@ -1345,6 +1345,7 @@ export function App(props: AppProps): JSX.Element {
       props.run.compacting?.() === true ||
       props.run.goals?.formulating() === true;
     if (!busy) return "ready";
+    if (props.run.compacting?.() === true) return "compacting";
     if (
       props.run.active() &&
       props.store
@@ -1848,9 +1849,7 @@ export function App(props: AppProps): JSX.Element {
                   text: restoring,
                   tone: pressure().phase === "failed" ? "error" : "running",
                 };
-              return props.run.compacting?.() === true
-                ? { text: "Compacting context…", tone: "running" }
-                : { text: "", tone: "info" };
+              return { text: "", tone: "info" };
             }}
             runStrip={footerRunStrip}
             navigation={

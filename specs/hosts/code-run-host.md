@@ -1002,7 +1002,7 @@ The host does not treat queue acceptance as execution. For an active run, only a
 compaction event or `run_ended` clears it. A settled `/compact` has no live event stream, so
 `compactCurrentRun` owns the state directly from immediately before `client.compact` until its
 promise settles. Replay is ignored. `App` includes this accessor in the shared spinner clock and
-passes `Compacting context…` through `Footer.status`, reusing the canonical running status surface.
+shows `compacting context` on `LeadActivityLine` in place of `working` or `thinking`.
 
 `reconnect(mode)` (`packages/code/src/adapters/kernel-run-client.ts`) is strictly
 `prepareReconnect?.(mode) → dispose() → connect()`. The preparation hook must accept the transition

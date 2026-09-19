@@ -175,26 +175,57 @@ function headerSubtitle(controller: WorkspaceChangesController): string | undefi
   return undefined;
 }
 
-function detailBody(controller: WorkspaceChangesController): JSX.Element {
-  const detail = controller.detail();
-  const entry = selectedEntry(controller.page(), controller.selectedId());
-  if (controller.loading() && detail === null) return <LoadingHint text="loading change" />;
-  if (detail === null || entry === null) {
-    return <EmptyHint text="select a file" icon="info" />;
-  }
-  if (detail.status === "ready" && detail.patch !== undefined && detail.patch.length > 0) {
-    return <StableDiff diff={detail.patch} wrapMode="none" />;
-  }
-  const messages: Record<typeof detail.status, string> = {
-    ready: "no text hunks",
-    empty: detail.message ?? "no text hunks",
-    binary: detail.message ?? "binary file",
-    conflict: detail.message ?? "unmerged path",
-    truncated: detail.message ?? "patch exceeds the admitted size",
-    stale: detail.message ?? "change is stale; refresh",
-    unavailable: detail.message ?? "change is unavailable",
-  };
-  return <EmptyHint text={messages[detail.status]} icon="info" hint={entryPath(entry)} />;
+function DiffPatchBody(props: { controller: WorkspaceChangesController }): JSX.Element {
+  const patch = createMemo(() => {
+    const detail = props.controller.detail();
+    if (detail?.status === "ready" && detail.patch !== undefined && detail.patch.length > 0) {
+      return detail.patch;
+    }
+    return undefined;
+  });
+  return (
+    <Show when={patch()} fallback={<DiffPatchFallback controller={props.controller} />}>
+      {(text: Accessor<string>) => <StableDiff diff={text()} wrapMode="none" />}
+    </Show>
+  );
+}
+
+function DiffPatchFallback(props: { controller: WorkspaceChangesController }): JSX.Element {
+  const detail = (): ReturnType<WorkspaceChangesController["detail"]> => props.controller.detail();
+  const entry = (): WorkspaceChangeEntry | null =>
+    selectedEntry(props.controller.page(), props.controller.selectedId());
+  return (
+    <Show
+      when={props.controller.loading() && detail() === null}
+      fallback={
+        <Show
+          when={detail() !== null && entry() !== null}
+          fallback={<EmptyHint text="select a file" icon="info" />}
+        >
+          <EmptyHint
+            text={(() => {
+              const current = detail();
+              if (current === null) return "select a file";
+              const messages: Record<typeof current.status, string> = {
+                ready: "no text hunks",
+                empty: current.message ?? "no text hunks",
+                binary: current.message ?? "binary file",
+                conflict: current.message ?? "unmerged path",
+                truncated: current.message ?? "patch exceeds the admitted size",
+                stale: current.message ?? "change is stale; refresh",
+                unavailable: current.message ?? "change is unavailable",
+              };
+              return messages[current.status];
+            })()}
+            icon="info"
+            hint={entry() === null ? undefined : entryPath(entry()!)}
+          />
+        </Show>
+      }
+    >
+      <LoadingHint text="loading change" />
+    </Show>
+  );
 }
 
 /** Full-screen file tree and per-file patch reader for current workspace changes. */
@@ -424,25 +455,38 @@ export function DiffViewer(props: {
       border={wide() ? ["left"] : undefined}
       borderColor={tokens.muted}
     >
-      <Show when={selectedEntry(controller.page(), controller.selectedId())}>
-        {(entry: Accessor<WorkspaceChangeEntry>) => (
-          <>
-            <text fg={tokens.accent} flexShrink={0} paddingBottom={1} wrapMode="none" truncate>
-              <b>{entryPath(entry())}</b>
-              <span style={{ fg: tokens.muted }}>
-                {`  ${glyph("separator")} ${statusLetter(entry().operation)}${entry().old_path !== undefined && entry().new_path !== undefined && entry().old_path !== entry().new_path ? ` ${entry().old_path} -> ${entry().new_path}` : ""}`}
-              </span>
-            </text>
-            <scrollbox
-              ref={(element: ScrollBoxRenderable) => (detailScroll = element)}
-              flexGrow={1}
-              minHeight={0}
-              verticalScrollbarOptions={scrollbarOptions()}
-            >
-              {detailBody(controller)}
-            </scrollbox>
-          </>
-        )}
+      <Show when={controller.selectedId()}>
+        {(id: Accessor<string>) => {
+          const entry = (): WorkspaceChangeEntry | null => selectedEntry(controller.page(), id());
+          return (
+            <>
+              <Show when={entry()}>
+                {(current: Accessor<WorkspaceChangeEntry>) => (
+                  <text
+                    fg={tokens.accent}
+                    flexShrink={0}
+                    paddingBottom={1}
+                    wrapMode="none"
+                    truncate
+                  >
+                    <b>{entryPath(current())}</b>
+                    <span style={{ fg: tokens.muted }}>
+                      {`  ${glyph("separator")} ${statusLetter(current().operation)}${current().old_path !== undefined && current().new_path !== undefined && current().old_path !== current().new_path ? ` ${current().old_path} -> ${current().new_path}` : ""}`}
+                    </span>
+                  </text>
+                )}
+              </Show>
+              <scrollbox
+                ref={(element: ScrollBoxRenderable) => (detailScroll = element)}
+                flexGrow={1}
+                minHeight={0}
+                verticalScrollbarOptions={scrollbarOptions()}
+              >
+                <DiffPatchBody controller={controller} />
+              </scrollbox>
+            </>
+          );
+        }}
       </Show>
     </box>
   );

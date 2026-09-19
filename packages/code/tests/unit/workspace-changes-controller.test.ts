@@ -219,6 +219,39 @@ test("reports a missing service, ignores a duplicate comparison, and clears a nu
   controller.dispose();
 });
 
+test("an unchanged poll keeps the selected patch object and does not re-enter loading", async () => {
+  let reads = 0;
+  const ticks: Array<() => void> = [];
+  const service: WorkspaceChangesService = {
+    availability: async () => available(),
+    list: async () => page([{ id: "a", new_path: "a.ts", operation: "modified" }]),
+    read: async (request) => {
+      reads += 1;
+      return ready(request.entry_id, "stable patch");
+    },
+  };
+  const controller = createWorkspaceChangesController({
+    service: () => service,
+    pollMs: 10,
+    setIntervalFn: ((handler: Parameters<typeof setInterval>[0]) => {
+      ticks.push(handler as () => void);
+      return 1 as unknown as ReturnType<typeof setInterval>;
+    }) as typeof setInterval,
+    clearIntervalFn: () => undefined,
+  });
+  controller.setVisible(true);
+  await settle();
+  expect(controller.loading()).toBe(false);
+  const first = controller.detail();
+  expect(first?.patch).toBe("stable patch");
+  ticks[0]!();
+  await settle();
+  expect(controller.loading()).toBe(false);
+  expect(controller.detail()).toBe(first);
+  expect(reads).toBe(2);
+  controller.dispose();
+});
+
 test("coalesces a refresh that arrives while a load is in flight", async () => {
   let resolveList: ((page: WorkspaceChangesPage) => void) | undefined;
   const service: WorkspaceChangesService = {

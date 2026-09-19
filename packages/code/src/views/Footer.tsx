@@ -11,7 +11,11 @@ import { FLOAT_Z } from "./overlays/FloatFrame.tsx";
 export type FooterStatusTone = HintTone | "running";
 
 /** Lead activity shown in the fixed row immediately above the composer. */
-export type LeadActivityPhase = "ready" | "thinking" | "working";
+export type LeadActivityPhase = "ready" | "thinking" | "working" | "compacting";
+
+function activityLabel(phase: LeadActivityPhase): string {
+  return phase === "compacting" ? "compacting context" : phase;
+}
 
 function hintTone(t: HintTone): Exclude<Tone, "running"> {
   switch (t) {
@@ -79,7 +83,7 @@ export function LeadActivityLine(props: {
           {running().glyph + " "}
         </text>
         <text fg={tokens.muted} flexShrink={0} wrapMode="word" selectable={false}>
-          {props.phase()}
+          {activityLabel(props.phase())}
         </text>
       </Show>
       <Show when={(props.detail?.() ?? "").length > 0}>

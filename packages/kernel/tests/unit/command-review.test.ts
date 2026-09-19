@@ -18,7 +18,6 @@ function ledger() {
 const request = { tool: "shell", args: { command: "bun run test", cwd: "." } } as ElicitRequest;
 
 test("retiring the coordinator never creates a human question", async () => {
-  let prompts = 0;
   const port = judgePort(async () => ({
     kind: "failed",
     failureKind: "cancelled",
@@ -29,23 +28,17 @@ test("retiring the coordinator never creates a human question", async () => {
   const review = createCommandReview(
     { judge: () => port, authority: ledger().reader },
     { on_unsure: "ask" },
-    async () => {
-      prompts++;
-      return true;
-    },
   );
   expect(await review(request)).toEqual({
     allowed: false,
     answerer: "judge",
     review: { failure_kind: "cancelled", reviewer_decision: "failed" },
   });
-  expect(prompts).toBe(0);
 });
 
-test("an authority change prevents a clean allow and a late human answer cannot outlive cancellation", async () => {
+test("an authority change prevents a clean allow and does not elicit a person", async () => {
   const authority = ledger();
   const abort = new AbortController();
-  let prompts = 0;
   const port = judgePort(async () => {
     authority.onSteer({ agent: "lead", iteration: 1, message: "Do not run tests" });
     return {
@@ -59,36 +52,29 @@ test("an authority change prevents a clean allow and a late human answer cannot 
   const review = createCommandReview(
     { judge: () => port, authority: authority.reader, signal: abort.signal },
     { on_unsure: "ask" },
-    async () => {
-      prompts++;
-      abort.abort();
-      return true;
-    },
   );
   expect(await review(request)).toEqual({
     allowed: false,
-    answerer: "human",
+    answerer: "judge",
     review: { reviewer_decision: "unsure" },
   });
-  expect(prompts).toBe(1);
 });
 
 test.each([
-  ["allow", "ask", true, 0],
-  ["deny", "ask", false, 0],
-  ["unsure", "ask", true, 1],
-  ["invalid_response", "ask", false, 0],
-  ["transport", "ask", false, 0],
-  ["unsure", "deny", false, 0],
-  ["invalid_response", "deny", false, 0],
-  ["transport", "deny", false, 0],
+  ["allow", "ask", true],
+  ["deny", "ask", false],
+  ["unsure", "ask", false],
+  ["invalid_response", "ask", false],
+  ["transport", "ask", false],
+  ["unsure", "deny", false],
+  ["invalid_response", "deny", false],
+  ["transport", "deny", false],
 ] as const)(
-  "eight concurrent reviews preserve %s/%s outcome and human count",
-  async (outcome, fallback, allowed, humans) => {
+  "eight concurrent reviews preserve %s/%s outcome without a human",
+  async (outcome, fallback, allowed) => {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     let reviews = 0;
-    let prompts = 0;
     const port: JudgeCoordinator = {
       async reviewCommand() {
         reviews++;
@@ -111,10 +97,6 @@ test.each([
     const review = createCommandReview(
       { judge: () => port, authority: ledger().reader },
       { on_unsure: fallback },
-      async () => {
-        prompts++;
-        return true;
-      },
     );
     const first = review(request);
     await entered.promise;
@@ -125,30 +107,23 @@ test.each([
     for (const answer of await Promise.all([first, ...others]))
       expect(answer).toEqual({
         allowed,
-        answerer: humans === 0 ? "judge" : "human",
+        answerer: "judge",
         review:
           outcome === "invalid_response" || outcome === "transport"
             ? { failure_kind: outcome, reviewer_decision: "failed" }
             : { reviewer_decision: outcome },
       });
     expect(reviews).toBe(1);
-    expect(prompts).toBe(humans);
     await review(request);
     expect(reviews).toBe(2);
-    expect(prompts).toBe(humans * 2);
   },
 );
 
 test("missing port and architecture faults never elicit; lookup happens at review time", async () => {
   let port: JudgeCoordinator | undefined = undefined;
-  let prompts = 0;
   const review = createCommandReview(
     { judge: () => port, authority: ledger().reader },
     { on_unsure: "ask" },
-    async () => {
-      prompts++;
-      return true;
-    },
   );
   expect(() => review(request)).toThrow(JudgeArchitectureError);
   port = {
@@ -161,5 +136,4 @@ test("missing port and architecture faults never elicit; lookup happens at revie
     async close() {},
   };
   await expect(review(request)).rejects.toBeInstanceOf(JudgeArchitectureError);
-  expect(prompts).toBe(0);
 });

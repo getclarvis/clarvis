@@ -72,8 +72,9 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 - Auto command review never elicits a person. Dangerous matches, Judge denials and Judge
   uncertainty are refused to the principal with the exact policy match; unsandbox is a Judge
   decision. Approval (`on`) asks a human only for the grey zone that is neither allow-listed nor
-  dangerous. Judge policy now states that deny and unsure are closed refusals to the calling
-  agent, not a handoff to a person or TUI prompt.
+  dangerous, and denies forced removal of a credential file instead of prompting. Judge policy
+  now states that deny and unsure are closed refusals to the calling agent, not a handoff to a
+  person or TUI prompt.
 - Grok subscription catalogs keep `vision` unless the entitled payload omits image input, so persisted
   `tool_calling`-only rows can no longer strip composer images as if the model were blind.
 - Auto review denies uncertainty, model failures and malformed answers to the calling agent and

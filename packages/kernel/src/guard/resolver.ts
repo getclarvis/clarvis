@@ -246,10 +246,9 @@ function noHumanChannel(audit: Logger, runId: string): { allowed: false; answere
  *   {@link GuardResolverDeps}.
  * @returns a resolver that, per run, reads settings, computes the mode, and
  *   returns `undefined` in mode `off` (no guard). Otherwise it returns a guard
- *   plus an elicit: `on` uses the human prompt; `auto` uses the LLM judge when a
- *   model resolves, with optional request overrides, else falls back
- *   to the human prompt. The chosen elicit is wrapped so a command already
- *   covered by the session allowlist passes without prompting.
+ *   plus an elicit: `on` uses the human prompt for grey-zone asks; `auto` uses
+ *   the LLM judge and never elicits a person. The chosen elicit is wrapped so a
+ *   command already covered by the session allowlist passes without prompting.
  * @remarks The default {@link GuardSessionAllowlist} is shared across this resolver's runs.
  *   A persistent host supplies `sessionAllowlistFor` to bind consent to live interactive control.
  *   Each human question captures its current list, so late responses cannot authorize a new scope.
@@ -460,7 +459,6 @@ function createGuardRuntimeResolver(
               signal: ctx.signal,
             },
             { ...settings.effect_review, ...judgeConfig, on_unsure: "deny" },
-            undefined,
           )
         : undefined;
     const chosenHuman = guardMode === "on" ? humanElicit : undefined;

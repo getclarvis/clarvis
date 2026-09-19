@@ -201,7 +201,7 @@ describe("placement and dangerous cascade", () => {
     expect(decision).toMatchObject({ verdict: "ask", escalate: "human", placement: "host" });
     expect(decision).not.toHaveProperty("network");
   });
-  it("asks about force removal and sudo after allowlist and credential rules", async () => {
+  it("denies force removal and sudo in Approval after allowlist and credential rules", async () => {
     for (const command of ["rm -rf ./dist", "rm -f ./dist", "rm --force ./dist"]) {
       const approval = await createShellGuard({ placement: "contained" })(context(command));
       expect(approval).toMatchObject({
@@ -243,13 +243,20 @@ describe("placement and dangerous cascade", () => {
         context("cat .env"),
       ),
     ).toMatchObject({ verdict: "ask", matched: "credential_file" });
-    expect(await createShellGuard({ placement: "contained" })(context("rm -f .env"))).toMatchObject(
-      {
-        verdict: "ask",
-        matched: "credential_file",
-        dangerous: true,
-      },
+    const approvalSecret = await createShellGuard({ placement: "contained" })(
+      context("rm -f .env"),
     );
+    expect(approvalSecret).toMatchObject({
+      verdict: "deny",
+      matched: "dangerous",
+      dangerous: true,
+    });
+    expect(approvalSecret.reason).toMatch(/^command uses forced removal: /);
+    expect(
+      await createShellGuard({ placement: "contained", allowHostJudge: true })(
+        context("rm -f .env"),
+      ),
+    ).toMatchObject({ verdict: "ask", matched: "dangerous", dangerous: true });
     expect(
       await createShellGuard({ deniedCommands: ["git push"] })(context("git push origin main")),
     ).toMatchObject({

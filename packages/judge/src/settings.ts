@@ -51,8 +51,8 @@ export const judgeSettingsSpec: CapabilitySettingsSpec = {
       .optional()
       .describe(
         "Reviewer configuration with optional bounded guidance, model, timeout and retries. " +
-          "The host supplies authenticated evidence and immutable policy. Uncertainty denies by " +
-          "default; explicit on_unsure 'ask' uses the existing human fallback when available.",
+          "The host supplies authenticated evidence and immutable policy. Auto ignores on_unsure " +
+          "'ask' and refuses uncertainty to the calling agent.",
       ),
   },
   referencedModels(view) {

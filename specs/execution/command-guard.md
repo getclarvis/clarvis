@@ -9,7 +9,7 @@ Auto review receives host-captured persistent instructions from both global and 
 with `CLARVIS.md` preferred over `AGENTS.md` independently per scope. Direct operator restrictions
 take precedence. A missing allowlist match or dynamic-expansion analysis limitation triggers
 semantic review rather than proving the command unauthorized. The final Guard outcome retains an
-optional `reviewer_decision` separately from its static trigger and any human fallback.
+optional `reviewer_decision` separately from its static trigger and any later Approval answer.
 Production: `JUDGE_POLICY` in [prompt.ts](../../packages/judge/src/prompt.ts), `createCommandReview`
 in [command-review.ts](../../packages/kernel/src/guard/command-review.ts), and `createAgentTools`
 in [core.ts](../../packages/tools/src/core.ts).
@@ -269,11 +269,11 @@ lets the reviewer assess options, wrappers, `NAME=value`, `env NAME=value comman
 without treating parameter syntax alone as uncertainty. Both paths recheck the authority revision
 and the atomically captured Plans semantic revision after inference. A changed Plans revision also
 invalidates a compiled envelope before reuse. Missing evidence, invalid output and stale revisions
-become `unsure` and use the configured human/deny fallback.
+become `unsure` and refuse to the calling agent.
 Command review resolves `JUDGE_PORT` at invocation and uses its private child run. The Judge owns
 fixed policy, canonical snapshot breakpoint, separate volatile case, resolved TTL and semantic
-memoization. The host adapter keeps only in-flight answer deduplication, including one human fallback
-for concurrent identical cases; human answers are never cached as semantic verdicts. Missing port or
+memoization. The host adapter keeps only in-flight answer deduplication for concurrent identical
+cases; human answers are never cached as semantic verdicts. Missing port or
 architecture failure propagates without elicitation. Retirement denies without asking a human.
 Effect review uses the same port and private execution boundary.
 Both paths preserve `judge` affinity and recheck authority and live Plans context.
@@ -598,7 +598,8 @@ Evaluated top-down; the first match returns (`packages/kernel/src/guard/shell-gu
 | 3a | `shell.undecidable`, no/empty deny list, placement Host | `undecidable` | `ask`; `escalate: "human"` unless `allowHostJudge` is true (Auto only) |
 | 3b | `shell.undecidable`, no/empty deny list, placement contained | `undecidable` | `ask`, no escalation restriction |
 | 4 | `touchesOutside(ctx)` — some resolved path escapes | `outside_workspace` | `deny` |
-| 5 | some path's `raw` matches a credential pattern and no exception | `credential_file` | `ask` |
+| 5a | some path's `raw` matches a credential pattern **and** the command is forced `rm` or `sudo` | `dangerous` | Auto `ask` (Judge); Approval `deny` with the exact segment |
+| 5b | some path's `raw` matches a credential pattern and no exception | `credential_file` | `ask` |
 | 6 | `ctx.shell === undefined` (a non-command tool) | `non_bash` | `allow` |
 | 7a | an environment-prefixed command is forced `rm` (`-f`, `--force`, short cluster containing `f`) or `sudo` | `dangerous` | Auto `ask` (Judge); Approval `deny` with the exact segment |
 | 7b | any segment has a preserved environment assignment | `default` | `ask`; `escalate: "human"` on Host unless `allowHostJudge` is true |
@@ -650,17 +651,18 @@ Notes the code states about specific rules:
 - **Rule 2a's non-empty test** exists because `denied_commands: []` means "deny nothing", and
   reading it as "a deny list exists" would make `git commit -m "$MSG"` an unappealable refusal
   (`packages/kernel/src/guard/shell-guard.ts`); pinned at `packages/kernel/tests/unit/guard.test.ts`.
-- **Rule 5 outranks rule 7** so no allow-list entry can wave `cat.env` through — "`cat` is exactly
+- **Rule 5b outranks rule 8** so no allow-list entry can wave `cat .env` through — "`cat` is exactly
   the sort of entry a starter allow list contains" (`packages/kernel/src/guard/shell-guard.ts`); pinned at
-  `packages/kernel/tests/unit/guard.test.ts`. Its verdict is `ask`, not `deny`, because
+  `packages/kernel/tests/unit/guard.test.ts`. A credential-file read is `ask`, not `deny`, because
   such files "sit *inside* the workspace as often as not … Reading them is frequently legitimate"
-  (`packages/kernel/src/guard/shell-guard.ts`).
-- **Rule 8's reason string** is `"the paths this command touches could not be determined"`, chosen
+  (`packages/kernel/src/guard/shell-guard.ts`). Forced removal or sudo of a credential path is
+  rule 5a: Auto asks the Judge and Approval denies.
+- **Rule 9's reason string** is `"the paths this command touches could not be determined"`, chosen
   after the previous wording asserted an escape for `whoami` "and the model read that as fact and
   invented explanations from it" (`packages/kernel/src/guard/shell-guard.ts`).
 - **Deny matching checks normalized and comparison forms, not raw command text.** The substitution
   case is handled by rule 2a (`packages/kernel/src/guard/shell-guard.ts`).
-- **Rule 9's reason names the miss.** `"no allowed commands list configured"` when `allowed`
+- **Rule 10's reason names the miss.** `"no allowed commands list configured"` when `allowed`
   is `undefined`. When an allow list exists, the reason includes the unmatched comparison
   segments (`command not in the allowed commands list: unmatched rm -r ./dist`). A deny-list
   hit names both the segment and the matching entry. Forced-removal and privilege-elevation
@@ -928,22 +930,23 @@ broken.
     `packages/tools/tests/integration/guard-dispatch.test.ts`, "fails closed when the guard throws".
 
 19. **The rule cascade's order is fixed: deny list → undecidable with nonempty deny list →
-    guarded host-command review → generic undecidable → outside-workspace → credential file →
-    non-shell allow → environment-prefixed dangerous Auto-ask/Approval-deny → environment review →
-    allow list → dangerous Auto-ask/Approval-deny → unbounded-paths ask → default ask.**
+    guarded host-command review → generic undecidable → outside-workspace → credential-and-dangerous
+    Auto-ask/Approval-deny → credential file → non-shell allow → environment-prefixed dangerous
+    Auto-ask/Approval-deny → environment review → allow list → dangerous Auto-ask/Approval-deny →
+    unbounded-paths ask → default ask.**
     `packages/kernel/src/guard/shell-guard.ts`. Pinned pair-by-pair:
     `packages/kernel/tests/unit/guard.test.ts`, plus
-    `packages/kernel/tests/unit/guard.test.ts` for the credential-file position.
+    `packages/kernel/tests/integration/guard-auto-review.test.ts` for the credential-file position.
 
     An explicit unsandbox host-command ask carries `escalate: "human"` in `on`; Auto alone passes
     `allowHostJudge: true` and can send it to the judge, without session coverage or session approval.
     Production:
     `packages/kernel/src/guard/shell-guard.ts` (`createShellGuard`). Test:
     `packages/kernel/tests/integration/guard-auto-review.test.ts` (Auto explicit unsandbox review,
-    including real shell dispatch, judge denial, human fallback and session-coverage exclusion).
+    including real shell dispatch, judge denial and session-coverage exclusion).
 
 20. **The guard only ever narrows.** The sole `allow` verdicts are `non_bash` (rule 6) and
-    `allow_list` (rule 7). `packages/kernel/src/guard/shell-guard.ts`.
+    `allow_list` (rule 8). `packages/kernel/src/guard/shell-guard.ts`.
     Pinned by exhaustion of the `matched` vocabulary in
     `packages/kernel/tests/unit/guard-audit.test.ts`.
 

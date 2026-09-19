@@ -839,8 +839,8 @@ Call-local command review obtains `JUDGE_PORT` lazily and executes the private J
 work run's effective base provider. The child owns its `judge` identity, resolved TTL, fixed policy,
 canonical snapshot breakpoint and separate volatile case. Effect compilation and decision use the same private execution boundary. Both retain canonical session affinity and recheck
 live Plans context before accepting a result. Plan progress fields are excluded from its projection.
-The command adapter coalesces concurrent human fallbacks without caching human answers. Missing
-Judge composition and architecture faults propagate; retirement never asks a human.
+The command adapter coalesces concurrent identical Auto reviews without caching refusals as
+consent. Missing Judge composition and architecture faults propagate; retirement never asks a human.
 Each real call-local or effect-review provider invocation also records one kernel-owned
 `guard_reviewer_model_call` event through `RUN_TRACE_PORT`. It totals winning and retried usage,
 retains unknown usage/cache flags, and reports a cache-read ratio only when cache counters are
@@ -865,7 +865,8 @@ refspecs, force variants and unsupported observation flags remain closed. Other 
 Host/Sandbox asks and allow-list misses can use the call-local argv reviewer in Auto, including
 options, wrappers, dynamic arguments and environment prefixes.
 Review `on` (Approval) asks a human only for the grey zone that is neither allow-listed nor
-dangerous; a dangerous match denies to the principal with the exact segment. Auto never elicits a
+dangerous; a dangerous match, including forced removal of a credential file, denies to the
+principal with the exact segment. Auto never elicits a
 person: the Judge decides forced removal, privilege elevation, credential-file asks and unsandbox,
 and both deny and unsure refuse to the principal. Identified host-inadmissible effects deny in Auto
 without a Judge call. A nonempty deny list rejects undecidable commands before any reviewer. No

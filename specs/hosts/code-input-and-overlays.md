@@ -693,7 +693,7 @@ confirmation replaces the ordinary picker actions with `use host`/`keep isolatio
 repeat its warning in the footer. A later Container failure remains failed until the operator chooses
 a placement and starts a new run. `ReviewPicker` marks Off/Approval/Auto in native placement, writes through `applyReviewMode` at
 the current scope, preserves command policy and leaves Isolation untouched. Auto's visible detail
-states that an LLM reviews risk and that uncertainty is denied; it does not offer a human fallback.
+states that an LLM reviews risk and never asks a person.
 Under Container it
 renders `Not applicable in Container` and does not overwrite that policy. Both are lazy `retain-one`
 portal boundaries, so neither module enters first boot and each native tree is reused after first

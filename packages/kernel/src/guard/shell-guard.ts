@@ -295,7 +295,8 @@ function digestOf(ctx: GuardContext): { commandDigest?: string } {
  *   segment → `deny`; an undecidable command → `deny` when a deny list is
  *   configured, else `ask` (human-only on Host unless Auto is enabled); a host command → `ask` through
  *   the configured reviewer; any path outside the workspace → `deny`; a
- *   credential file → `ask`; a non-bash call → `allow`; an environment-prefixed
+ *   credential file that is also forced removal or sudo → Auto `ask` / Approval
+ *   `deny`; other credential files → `ask`; a non-bash call → `allow`; an environment-prefixed
  *   dangerous command → Auto `ask` / Approval `deny`; other environment
  *   changes → review; a fully allow-listed command → `allow`; forced removal or sudo → Auto `ask`
  *   or Approval `deny`; a command that may leave the workspace → `ask`;
@@ -381,6 +382,9 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
     const forced = riskFindings.some((finding) => finding.kind === "forced_removal");
     const sensitive = sensitivePath(ctx);
     if (sensitive !== undefined) {
+      if (ctx.shell !== undefined && (privileged || forced)) {
+        return riskDecision(privileged, forced, reviewable, ctx.shell, riskFindings);
+      }
       return {
         matched: "credential_file",
         verdict: "ask",

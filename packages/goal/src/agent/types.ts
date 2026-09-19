@@ -1,4 +1,4 @@
-import type { PerAgentUsage, ProviderConfig, TraceEvent } from "@clarvis/capability";
+import type { AgentProfile, PerAgentUsage, ProviderConfig, TraceEvent } from "@clarvis/capability";
 import type { ExecuteRunArgs, ExecuteRunDeps, ExecuteRunOutcome } from "@clarvis/loop";
 import type { GoalUsage } from "../schemas.ts";
 
@@ -18,6 +18,8 @@ export interface GoalAgentRuntime {
   providers: ProviderConfig[];
   execute_run: (args: ExecuteRunArgs) => Promise<ExecuteRunOutcome>;
   deps: GoalAgentRunDeps;
+  /** Effective selected main-agent profile captured by the host for formulation. */
+  profile?: AgentProfile;
 }
 
 export type GoalAgentRunDeps = ExecuteRunDeps;
@@ -28,6 +30,9 @@ export interface GoalAgentRunInput {
   trajectory: GoalTrajectoryInput;
   execution_id: string;
   agent_instance_id: string;
+  agent_name?: string;
+  revision_guidance?: string;
+  previous_definition?: GoalFormulationResult;
   session_id: string;
   signal?: AbortSignal;
   on_event?: (event: TraceEvent) => void;

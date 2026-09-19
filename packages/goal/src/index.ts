@@ -3,10 +3,17 @@ export * from "./errors.ts";
 export * from "./policy.ts";
 export * from "./control.ts";
 export * from "./execution.ts";
+export { createFormulationDispatchPolicy } from "./formulation-policy.ts";
+export { GOAL_FORMULATION_BLOCK_KIND, GOAL_FORMULATION_INSTRUCTION } from "./context.ts";
 export * from "./criteria.ts";
 export type * from "./ports.ts";
 export * from "./model-input.ts";
-export { createGoalCapability, goalRuntimePortOf, GOAL_CAPABILITY_NAME } from "./capability.ts";
+export {
+  createGoalCapability,
+  createGoalCreationCapability,
+  goalRuntimePortOf,
+  GOAL_CAPABILITY_NAME,
+} from "./capability.ts";
 export * from "./agent/types.ts";
 export * from "./agent/request.ts";
 export * from "./agent/prompt.ts";

@@ -218,6 +218,8 @@ export interface RunHost {
   /** Append missing goal stages and observe existing work without retiring the conversation. */
   synchronizeGoal(binding: GoalBinding, view: GoalView): Promise<void>;
   submitTurn(content: MessageContent, display?: string): Promise<void>;
+  /** Start a normal main-agent turn with the host-authenticated Goal creation intent. */
+  submitGoalTurn(seed: string): Promise<void>;
   /** Current live conversation binding; materialization creates no run or transcript message. */
   scheduledBinding(materialize?: boolean): LoopBinding | null;
   /** Reserve an automatic turn synchronously; an occupied host never converts it to steer. */
@@ -606,8 +608,13 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       let result: LoopTurnCompletion;
       try {
         result =
-          (await submitPreparedTurn(request.prompt, undefined, undefined, reservation)) ??
-          turnCompletion(undefined);
+          (await submitPreparedTurn(
+            request.prompt,
+            undefined,
+            undefined,
+            undefined,
+            reservation,
+          )) ?? turnCompletion(undefined);
       } catch (error) {
         result = {
           status: reservation.cancelled ? "cancelled" : "failed",
@@ -1176,13 +1183,14 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     content: MessageContent,
     display?: string,
     skill?: { name: string; task?: string; plansMode?: PlansMode },
+    goalIntent?: { kind: "create"; seed: string },
   ): Promise<void> {
     const epoch = runOwnershipEpoch;
     setHumanSubmissions((count) => count + 1);
     try {
       if (scheduledReservation && !currentHandle) await scheduledReservation.ready;
       if (epoch !== runOwnershipEpoch) return;
-      await submitPreparedTurn(content, display, skill);
+      await submitPreparedTurn(content, display, skill, goalIntent);
     } finally {
       setHumanSubmissions((count) => count - 1);
     }
@@ -1192,6 +1200,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     content: MessageContent,
     display?: string,
     skill?: { name: string; task?: string; plansMode?: PlansMode },
+    goalIntent?: { kind: "create"; seed: string },
     automatic?: ScheduledReservation,
   ): Promise<LoopTurnCompletion | void> {
     const preparationEpoch = runOwnershipEpoch;
@@ -1359,6 +1368,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
               },
             }
           : {}),
+        ...(goalIntent === undefined ? {} : { goalIntent }),
         ...(sessionId ? { sessionId } : {}),
         ...(sessionTask === undefined ? {} : { task: sessionTask }),
         ...guardArgs,
@@ -1400,6 +1410,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
                       },
                     }
                   : {}),
+                ...(goalIntent === undefined ? {} : { goalIntent }),
                 ...(sessionId ? { sessionId } : {}),
                 ...(sessionTask === undefined ? {} : { task: sessionTask }),
                 ...guardArgs,
@@ -1456,6 +1467,12 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       },
     });
     return completion;
+  }
+
+  async function submitGoalTurn(seed: string): Promise<void> {
+    const objective = seed.trim();
+    if (objective.length === 0) throw new Error("An objective is required after /goal.");
+    await submitTurn(objective, objective, undefined, { kind: "create", seed: objective });
   }
 
   function submitPromptTurn(
@@ -2360,6 +2377,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     prepareGoalConversation,
     synchronizeGoal,
     submitTurn,
+    submitGoalTurn,
     scheduledBinding,
     submitScheduledTurn,
     scheduledBusy,

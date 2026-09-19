@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  admitGoalCreationIntent,
   admitGoalRun,
   advanceGoalRun,
   applyGoalControl,
@@ -27,6 +28,71 @@ import {
 const context = { session_id: "session", new_goal_id: "goal-1", now: 100, physically_busy: false };
 const limits = { max_net_tokens: 1000, max_auto_continuations: 8, max_no_progress_checkpoints: 3 };
 const measured: GoalUsage = { kind: "measured", input: 100, cached: 80, output: 10 };
+
+describe("guided creation intent", () => {
+  it("persists a formulating intent without creating a Goal and is idempotent", () => {
+    const first = admitGoalCreationIntent(undefined, {
+      session_id: "session",
+      execution_id: "run",
+      operation_id: "goal-create:run",
+      seed: "Build a calculator",
+      expected_revision: 0,
+      now: 10,
+    });
+    expect(first.current).toBeUndefined();
+    expect(first.creation_intent).toMatchObject({
+      seed: "Build a calculator",
+      execution_id: "run",
+      phase: "formulating",
+    });
+    const replayed = admitGoalCreationIntent(first, {
+      session_id: "session",
+      execution_id: "run",
+      operation_id: "goal-create:run",
+      seed: "Build a calculator",
+      expected_revision: 0,
+      now: 11,
+    });
+    expect(replayed.revision).toBe(first.revision);
+    expect(replayed.creation_intent?.execution_id).toBe("run");
+  });
+
+  it("clears the intent when a Goal is created and refuses a second live Goal", () => {
+    const intent = admitGoalCreationIntent(undefined, {
+      session_id: "session",
+      execution_id: "run",
+      operation_id: "goal-create:run",
+      seed: "Build a calculator",
+      expected_revision: 0,
+      now: 10,
+    });
+    const created = applyGoalControl(
+      intent,
+      {
+        expected_revision: intent.revision,
+        operation_id: "goal-create:run",
+        action: {
+          kind: "create",
+          objective: "Build a calculator",
+          limits: { max_net_tokens: 1000 },
+        },
+      },
+      { ...context, new_goal_id: "goal-1" },
+    );
+    expect(created.state.creation_intent).toBeUndefined();
+    expect(created.state.current?.objective).toBe("Build a calculator");
+    expect(() =>
+      admitGoalCreationIntent(created.state, {
+        session_id: "session",
+        execution_id: "other",
+        operation_id: "goal-create:other",
+        seed: "Another",
+        expected_revision: created.state.revision,
+        now: 12,
+      }),
+    ).toThrow("already exists");
+  });
+});
 
 describe("host continuation retirement", () => {
   it.each(["completed", "cancelled", "failed"] as const)(

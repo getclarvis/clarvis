@@ -1,14 +1,12 @@
 import {
-  sanitizeText,
+  type AgentProfile,
   type ModelExecutionInfo,
-  type OperatorInstructions,
   type ProviderConfig,
   type TraceEvent,
 } from "@clarvis/capability";
 import { buildGoalStewardRequest, runGoalSteward, GoalStewardRunFailure } from "@clarvis/goal";
 import { goalAgentSettingsSchema } from "@clarvis/goal/settings";
 import type { ExecuteRunDeps } from "@clarvis/loop";
-import { readOnlyTools } from "@clarvis/tools";
 import type { RunExecutor } from "../runs/run-service.ts";
 import type { StewardExecutionRuntime } from "./steward-coordinator.ts";
 import { stewardDigest } from "./steward-input.ts";
@@ -19,6 +17,7 @@ import { createStewardResultGate } from "./steward-result-gate.ts";
 export function createStewardExecutionRuntime(options: {
   owner: string;
   model: string;
+  reasoningEffort?: AgentProfile["reasoning_effort"];
   providers: ProviderConfig[];
   deps: ExecuteRunDeps;
   executeRun: RunExecutor;
@@ -26,19 +25,18 @@ export function createStewardExecutionRuntime(options: {
   workTokenLimit: number;
   promptCacheTtl: "5m" | "1h";
   configurationGeneration: string;
-  instructions?: readonly OperatorInstructions[];
 }): StewardExecutionRuntime {
   const settings = goalAgentSettingsSchema.parse(options.settings).steward;
-  const tools = (options.deps.capabilities ?? []).filter(
-    (capability) => capability.name === "tools",
-  );
   const env = options.deps.env;
   const budget = {
     max_net_tokens: Math.min(
       settings?.max_net_tokens ?? options.workTokenLimit,
       env.CLARVIS_TOKEN_CEILING,
     ),
-    timeout_ms: Math.min(settings?.timeout_ms ?? 120_000, env.CLARVIS_TIMEOUT_CEILING_MS),
+    timeout_ms: Math.min(
+      settings?.timeout_ms ?? env.CLARVIS_TIMEOUT_CEILING_MS,
+      env.CLARVIS_TIMEOUT_CEILING_MS,
+    ),
     max_iterations: Math.min(settings?.max_iterations ?? 8, env.CLARVIS_ITERATION_CEILING),
     call_timeout_ms: Math.min(
       settings?.call_timeout_ms ?? 60_000,
@@ -69,16 +67,12 @@ export function createStewardExecutionRuntime(options: {
       : undefined);
   if (!info) throw new Error("Goal Steward model is unavailable");
   const runtime = {
-    operator_instructions: (options.instructions ?? []).map(({ scope, source, content }) => ({
-      scope,
-      source,
-      content: sanitizeText(content),
-    })),
     owner: options.owner,
     model_ref: options.model,
+    reasoning_effort: options.reasoningEffort,
     providers: options.providers,
     execute_run: options.executeRun,
-    deps: { ...options.deps, capabilities: tools },
+    deps: { ...options.deps, capabilities: [] },
   };
   const canonical = buildGoalStewardRequest(runtime, {
     execution_id: "identity",
@@ -93,18 +87,8 @@ export function createStewardExecutionRuntime(options: {
       generation: options.configurationGeneration,
       profiles: canonical.profiles,
       shared_prompt: canonical.shared_prompt,
-      operator_instructions: runtime.operator_instructions,
       output_schema: canonical.output_schema,
       ttl: options.promptCacheTtl,
-      tools: tools.map((capability) => ({
-        name: capability.name,
-        effects: capability.toolEffects,
-      })),
-      tool_catalog: readOnlyTools.map(({ name, description, inputSchema }) => ({
-        name,
-        description,
-        inputSchema,
-      })),
       compaction: {
         fraction: env.CLARVIS_DEFAULT_COMPACTION_CONTEXT_FRACTION,
         target: env.CLARVIS_DEFAULT_COMPACTION_TARGET_FRACTION,
@@ -114,14 +98,9 @@ export function createStewardExecutionRuntime(options: {
       enabled: env.CLARVIS_AGENT_TOOLS_ENABLED,
       ceiling: env.CLARVIS_AGENT_TOOLS_MAX_GRANT,
     }),
-    workspaceReadAvailable:
-      env.CLARVIS_AGENT_TOOLS_ENABLED === true &&
-      tools.length === 1 &&
-      env.CLARVIS_AGENT_TOOLS_MAX_GRANT !== "none",
     budget,
     promptCacheTtl: options.promptCacheTtl,
     maxReviews: settings?.max_reviews_per_work_run ?? 8,
-    maxInterventions: settings?.max_interventions_per_work_run ?? 3,
     maxCompletionReviews: settings?.max_completion_reviews_per_attempt ?? 1,
     async run(input) {
       const tracker = createGoalUsageTracker();
@@ -141,7 +120,7 @@ export function createStewardExecutionRuntime(options: {
               }),
             deps: {
               ...runtime.deps,
-              capabilities: [...tools, gate],
+              capabilities: [gate],
               llm: tracker.wrap(runtime.deps.llm),
             },
           },

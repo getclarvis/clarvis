@@ -206,6 +206,27 @@ describe("goal presentation controller", () => {
     expect(f.controller.formulationActivity()).toBeUndefined();
   });
 
+  it("treats a persisted creation intent as formulating until a Goal exists", async () => {
+    const f = fixture();
+    f.state({
+      state: {
+        version: 1,
+        revision: 1,
+        archive: [],
+        receipts: [],
+        creation_intent: {
+          seed: "Build a calculator",
+          execution_id: "run",
+          operation_id: "goal-create:run",
+          phase: "formulating",
+          admitted_at: 1,
+        },
+      },
+    });
+    await f.controller.refresh();
+    expect(f.controller.formulating()).toBe(true);
+  });
+
   it("recovers a lost formulation reply without starting another analysis", async () => {
     const f = fixture();
     const formulate = f.service.formulate.bind(f.service);

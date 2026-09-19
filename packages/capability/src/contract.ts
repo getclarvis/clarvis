@@ -21,6 +21,7 @@ import type { FinalizationDisposition } from "./finalization.ts";
 import type { CompactionAnchor } from "./compaction-anchor.ts";
 import type {
   AgentBuildContext,
+  DispatchPolicy,
   FinalizeGate,
   OrchestrationHooks,
   ToolHandler,
@@ -327,6 +328,11 @@ export interface AgentLoopContribution {
   tools?: NamespacedTool[];
   handlers?: ToolHandler[];
   gates?: FinalizeGate[];
+  /**
+   * Optional per-call admissibility. Folded in contribution order; the first
+   * refusal is returned as a tool result before hooks or handlers run.
+   */
+  dispatchPolicy?: DispatchPolicy;
   /** At most one contribution per agent may provide an anchor. */
   anchor?: () => CompactionAnchor | undefined;
   /** At most one contribution per agent may provide a forced choice. */

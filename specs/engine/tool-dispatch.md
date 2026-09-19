@@ -364,7 +364,10 @@ Mirrors §4.3's shape without a registry resolve step (the toolset's `dispatch` 
 other tools publish it before dispatch. Denied review and failed spawn expose no control.
 `toolset.dispatch` runs with an `onOutput`
 callback relayed as `tool_output_delta` trace **signals**, and the terminal `tool_call`
-record carries any returned `diff` and final command-review `guard` metadata. The convergence-guard signature always uses
+record carries any returned `diff`, final command-review `guard` metadata and a bounded
+`tool_evidence` receipt captured before the display result is capped. Shell-family receipts classify
+exit code, timeout and signal and retain bounded stdout/stderr; other tools retain a bounded content
+excerpt. The convergence-guard signature always uses
 `safeStringify(call.arguments)` here — there is no malformed-preview branch for the signal, because
 malformed arguments already returned above. `packages/loop/tests/unit/malformed-tool-arguments.test.ts`
 is the primary test for both dispatchers' malformed-argument path: refusal instead of dispatching on
@@ -497,6 +500,18 @@ returned port's `effect(wireName)` checks, **in this fixed order**:
 
 The engine's own three sets are consulted **before** anything a capability declared, so no capability
 can reclassify `shell` as `read` (pinned by `packages/loop/tests/unit/tool-effect.test.ts`).
+
+### 4.9 Dispatch policy (`DispatchPolicy`, `packages/capability/src/loop-contract.ts`)
+
+A contribution may supply a `dispatchPolicy` that admits or refuses a call by wire name and
+run-local state. `foldContributions` composes those policies in contribution order; the first
+`{ ok: false, reason }` wins. `runDispatch` consults the folded policy **before** `beforeToolUse`
+hooks and the matched handler, so an operator hook cannot execute a refused call. A refusal is
+returned as a tool result and does not count as progress. The engine does not name product
+features in this seam; Goal formulation uses it with `TOOL_EFFECT_PORT` from `@clarvis/goal`.
+Production: `foldContributions` in `packages/capability/src/compose.ts`, `runDispatch` in
+`packages/loop/src/runtime/loop/loop.ts`.
+Test: `packages/capability/tests/unit/compose.test.ts`, `packages/loop/tests/unit/tool-hooks.test.ts`.
 
 ## 5. Invariants
 

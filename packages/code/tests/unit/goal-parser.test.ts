@@ -18,7 +18,7 @@ describe("goal command grammar", () => {
       mode: "guided",
       seed: "Build $(literal)\nwith `text`",
     });
-    expect(parseGoalCommand("auto")).toEqual({ kind: "formulate", mode: "auto" });
+    expect(parseGoalCommand("auto")).toEqual({ kind: "formulate", mode: "guided", seed: "auto" });
     expect(parseGoalCommand("-- auto")).toEqual({ kind: "create", objective: "auto" });
   });
 
@@ -31,7 +31,6 @@ describe("goal command grammar", () => {
     "clear --running",
     "resume --",
     "cancel all",
-    "auto now",
     "x".repeat(16385),
   ])("refuses malformed or oversized command %s", (input) => {
     expect(() => parseGoalCommand(input)).toThrow();

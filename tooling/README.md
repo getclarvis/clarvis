@@ -104,8 +104,8 @@ configuration and state. Each worker uses the real FileRunHost, IPC and subscrip
 observation wrapper calls the existing provider, retaining the host's goal usage tracker.
 The shared HTTP recorder and finite attempt ledger accept a typed scenario namespace; goal reports
 use `goal-continuation`, separately from the C01-C11 cache qualification matrix.
-Per trial, the limits are 32 physical calls, 500,000 input tokens, 24,000 output tokens and six
-minutes; the invocation caps all trials at 128 calls, 2,000,000 input tokens, 96,000 output tokens
+Per trial, the limits are 48 physical calls, 750,000 input tokens, 24,000 output tokens and six
+minutes; the invocation caps all trials at 192 calls, 3,000,000 input tokens, 96,000 output tokens
 and thirty minutes. Reports retain failed/incomplete trials, serialized hashes, per-agent usage,
 model/affinity checks and independently verified output. The baseline must fail the fixture tests.
 Version 2 also retains bounded tool outcomes and argument shapes, excluding argument values and

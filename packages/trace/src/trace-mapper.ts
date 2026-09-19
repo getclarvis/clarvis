@@ -163,6 +163,7 @@ function mapEntryRaw(
       if (d.subagent_instance_id !== undefined) event.subagent_instance_id = d.subagent_instance_id;
       if (d.call_id !== undefined) event.call_id = d.call_id;
       if (d.diff !== undefined) event.diff = d.diff;
+      if (d.tool_evidence !== undefined) event.tool_evidence = d.tool_evidence;
       if (d.guard !== undefined) event.guard = d.guard;
       if (d.interruption !== undefined) event.interruption = d.interruption;
       return event;
@@ -268,6 +269,7 @@ function mapEntryRaw(
         completed_at: abs(entry.at),
         status: d.status,
         result: d.result,
+        ...(d.result_digest === undefined ? {} : { result_digest: d.result_digest }),
       };
       return entry.kind === "delegation_completed"
         ? { type: "delegation_completed", ...base }

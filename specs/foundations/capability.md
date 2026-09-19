@@ -116,10 +116,18 @@ actually stores (§4.3).
 `finalizeRun?({status, disposition?, preserveState?})`, `preserveStateOnInterruption?: boolean`,
 `guardTripCodes?: readonly string[]`.
 
-`AgentLoopContribution` members: `tools?`, `handlers?`, `gates?`, `anchor?`, `forcedChoice?`,
+`AgentLoopContribution` members: `tools?`, `handlers?`, `gates?`, `dispatchPolicy?`, `anchor?`, `forcedChoice?`,
 `hooks?`, `outputBudget?`, `advertised?` (`packages/capability/src/contract.ts`). `advertised` defaults to `true`
 and `false` marks a prompt-driven tool that should not count toward `availableWireNames`
-(`packages/capability/src/contract.ts`).
+(`packages/capability/src/contract.ts`). `dispatchPolicy` is the generic per-call admissibility
+seam: `foldContributions` composes policies in contribution order with first refusal winning, and
+the loop consults the folded policy before workspace hooks or the matched handler.
+Production: `DispatchPolicy` in `packages/capability/src/loop-contract.ts` and `runDispatch` in
+`packages/loop/src/runtime/loop/loop.ts`.
+Test: `composes dispatch policies with first refusal winning` in
+`packages/capability/tests/unit/compose.test.ts` and
+`dispatch policy refuses a call before workspace hooks and the handler` in
+`packages/loop/tests/unit/tool-hooks.test.ts`.
 
 ### 2.3 Composition machinery — exported values
 

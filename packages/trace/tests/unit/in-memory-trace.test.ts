@@ -57,6 +57,27 @@ describe("createTrace capping", () => {
     expect(streamed[0]!.detail).toBe(entry.detail);
   });
 
+  it("retains a bounded pre-cap tool receipt alongside the display result", () => {
+    const t = createTrace(0);
+    t.record("tool_call", {
+      ...bigToolCall("result", "args"),
+      tool_evidence: {
+        kind: "content",
+        status: "succeeded",
+        total_chars: 20_000,
+        excerpt: "e".repeat(20_000),
+        truncated: false,
+      },
+    });
+    const entry = t.entries()[0]!;
+    if (!isBuiltinTraceEntry(entry) || entry.kind !== "tool_call")
+      throw new Error("expected a tool_call entry");
+    expect(entry.detail.tool_evidence?.excerpt.length).toBeLessThanOrEqual(
+      8192 + TRUNCATED_SUFFIX.length,
+    );
+    expect(entry.detail.tool_evidence?.truncated).toBe(true);
+  });
+
   it("retains final model prose beyond the compact tool-result cap", () => {
     const response = "answer ".repeat(1_000);
     const t = createTrace(0);

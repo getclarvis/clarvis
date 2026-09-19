@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { join } from "node:path";
 import { runGoalFileHostJourney } from "../helpers/goal-file-host-journey.ts";
 import { createGoalFileHostFixture } from "../helpers/goal-file-host.ts";
 
@@ -8,6 +9,133 @@ afterEach(async () => {
 });
 
 describe("goal through the real file host and SDK HTTP", () => {
+  it("lets the selected main run create and complete a calculator artifact", async () => {
+    const f = await createGoalFileHostFixture();
+    cleanups.push(f.close);
+    let step = 0;
+    f.setResponder(async (request) => {
+      step++;
+      if (step === 1) {
+        expect(request.tools?.map((tool) => tool.function.name)).toEqual(
+          expect.arrayContaining(["create_goal", "get_goal", "update_goal"]),
+        );
+        return {
+          name: "create_goal",
+          arguments: {
+            objective: "Build a browser calculator",
+            criteria: [
+              {
+                id: "calculator",
+                description: "calculator.html contains a working calculator surface",
+                kind: "qualitative",
+              },
+            ],
+            constraints: ["Keep the artifact self-contained"],
+            exclusions: [],
+            assumptions: [],
+          },
+        };
+      }
+      if (step === 2)
+        return {
+          name: "write_file",
+          arguments: {
+            path: "calculator.html",
+            content:
+              '<!doctype html><title>Calculator</title><button aria-label="7">7</button><output>7</output>',
+          },
+        };
+      if (step === 3)
+        return {
+          name: "update_goal",
+          arguments: {
+            update: {
+              action: "candidate",
+              summary: "Calculator artifact is ready",
+              assessments: [
+                {
+                  criterion_id: "calculator",
+                  kind: "qualitative",
+                  justification: "The self-contained HTML calculator was written to the workspace",
+                  evidence_ids: [],
+                },
+              ],
+            },
+          },
+        };
+      return { text: "Calculator delivered." };
+    });
+    const session = (await f.client.sessions.get("conversation"))!;
+    const started = await f.client.hosting!.start({
+      session_id: "conversation",
+      session_revision: session.revision!,
+      kind: "conversation",
+      user_preview: "Build a browser calculator",
+      params: {
+        execution_id: "calculator-main-run",
+        agent: "solo",
+        messages: [{ role: "user", content: "Build a browser calculator" }],
+        goal_intent: { kind: "create", seed: "Build a browser calculator" },
+      },
+    });
+    expect(await started.handle.done).toMatchObject({
+      status: "completed",
+      result: "Calculator delivered.",
+    });
+    await started.handle.closed;
+    await f.until(() => f.host.stats().runs === 0);
+    const goal = (await f.client.goals.get("conversation")).state.current!;
+    expect(goal).toMatchObject({
+      status: "complete",
+      objective: "Build a browser calculator",
+      origin: { kind: "guided", seed: "Build a browser calculator" },
+      runs: [{ execution_id: "calculator-main-run", automatic: false, phase: "closed" }],
+    });
+    expect(await Bun.file(join(f.workspaceRoot, "calculator.html")).text()).toContain("Calculator");
+    expect(f.requests).toHaveLength(4);
+    expect(new Set(f.requests.map((request) => request.prompt_cache_key)).size).toBe(1);
+    expect(f.errors).toEqual([]);
+  });
+
+  it("refuses workspace writes until create_goal is durably committed", async () => {
+    const f = await createGoalFileHostFixture();
+    cleanups.push(f.close);
+    const results: string[] = [];
+    f.setResponder(async (request) => {
+      if (f.requests.length === 1) {
+        expect(request.tools?.map((tool) => tool.function.name)).toEqual(
+          expect.arrayContaining(["create_goal", "write_file"]),
+        );
+        return { name: "write_file", arguments: { path: "premature.txt", content: "too soon" } };
+      }
+      const last = request.messages.findLast((message) => message.role === "tool");
+      if (typeof last?.content === "string") results.push(last.content);
+      if (f.requests.length === 2)
+        return {
+          name: "create_goal",
+          arguments: { objective: "Keep premature writes out of the workspace" },
+        };
+      return { text: "Goal created without a premature write." };
+    });
+    const session = (await f.client.sessions.get("conversation"))!;
+    const started = await f.client.hosting!.start({
+      session_id: "conversation",
+      session_revision: session.revision!,
+      kind: "conversation",
+      user_preview: "Keep premature writes out",
+      params: {
+        execution_id: "formulation-barrier",
+        agent: "solo",
+        messages: [{ role: "user", content: "Keep premature writes out" }],
+        goal_intent: { kind: "create", seed: "Keep premature writes out" },
+      },
+    });
+    await started.handle.done;
+    await started.handle.closed;
+    expect(results.some((text) => text.includes("create_goal"))).toBe(true);
+    expect(await Bun.file(join(f.workspaceRoot, "premature.txt")).exists()).toBe(false);
+  });
+
   it("reads and lists the active plan with explicit absent options through the actual SDK", async () => {
     const f = await createGoalFileHostFixture();
     cleanups.push(f.close);

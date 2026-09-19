@@ -1565,6 +1565,7 @@ async function runApp(
     status: runStatus,
     submit: (c) => detachObserved("submit_turn", () => runHost.submitTurn(c)),
     submitPrompt: (messages, display, skill) => runHost.submitPromptTurn(messages, display, skill),
+    submitGoalTurn: (seed) => runHost.submitGoalTurn(seed),
     submitSkillRun: (name, task, agent) =>
       detachObserved("submit_skill_run", () => runHost.submitSkillRun(name, task, agent)),
     compact: (request) =>

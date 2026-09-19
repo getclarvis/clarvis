@@ -15,6 +15,7 @@ import type { LoopBudget } from "./loop-shared.ts";
 export type {
   AgentBuildContext,
   AgentRunState,
+  DispatchPolicy,
   FinalizeAttempt,
   FinalizeGate,
   GateOutcome,

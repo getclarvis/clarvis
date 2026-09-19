@@ -1,5 +1,5 @@
 import { GoalError } from "./errors.ts";
-import { boundedGoalState } from "./control.ts";
+import { boundedGoalState, emptyGoalState } from "./control.ts";
 import { goalAdmission, goalDeadlineLimit, goalHasPhysicalRun, goalNetTokens } from "./policy.ts";
 import {
   goalCandidateSchema,
@@ -32,6 +32,53 @@ function changed(state: GoalState, goal: GoalRecord, now: number): GoalState {
   state.revision += 1;
   goal.revision = state.revision;
   goal.updated_at = now;
+  return boundedGoalState(state, true);
+}
+
+/**
+ * Persist a guided creation intent in the existing session document. A pending
+ * intent is not a Goal and does not authorize implementation.
+ */
+export function admitGoalCreationIntent(
+  previous: GoalState | undefined,
+  input: {
+    session_id: string;
+    execution_id: string;
+    operation_id: string;
+    seed: string;
+    expected_revision: number;
+    now: number;
+  },
+): GoalState {
+  const state = boundedGoalState(previous ?? emptyGoalState(), true);
+  if (state.current !== undefined && state.current.session_id !== input.session_id)
+    throw new GoalError("conflict", "Goal belongs to another conversation");
+  if (
+    state.current !== undefined &&
+    state.current.status !== "complete" &&
+    state.current.status !== "cancelled"
+  )
+    throw new GoalError("conflict", "A Goal already exists for this conversation");
+  const known = state.creation_intent;
+  if (
+    known !== undefined &&
+    known.execution_id === input.execution_id &&
+    known.operation_id === input.operation_id &&
+    known.seed === input.seed
+  )
+    return state;
+  if (state.revision !== input.expected_revision)
+    throw new GoalError("conflict", "Goal revision changed; reload before applying control");
+  if (known !== undefined && known.execution_id === input.execution_id && known.seed !== input.seed)
+    throw new GoalError("conflict", "Creation intent already admitted for a different request");
+  state.revision += 1;
+  state.creation_intent = {
+    seed: input.seed,
+    execution_id: input.execution_id,
+    operation_id: input.operation_id,
+    phase: "formulating",
+    admitted_at: input.now,
+  };
   return boundedGoalState(state, true);
 }
 
@@ -83,7 +130,6 @@ export function admitGoalRun(
     phase: "preparing",
     steward_reviews: [],
     steward_review_count: 0,
-    steward_intervention_count: 0,
   });
   if (input.automatic) goal.auto_continuations += 1;
   return changed(state, goal, input.now);

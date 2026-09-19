@@ -4,12 +4,8 @@ import { createStewardResultGate } from "../../src/goals/steward-result-gate.ts"
 import { loadEnv } from "@clarvis/capability";
 import type { ExecuteRunDeps } from "@clarvis/loop";
 import { createStewardExecutionRuntime } from "../../src/goals/steward-runtime.ts";
-import {
-  captureRunInstructions,
-  readRunInstructions,
-} from "../../src/runs/instruction-snapshot.ts";
 
-it("excludes required Judge from the Steward execution while retaining tools and its result gate", async () => {
+it("excludes Judge and workspace tools while retaining only its result gate", async () => {
   let executions = 0;
   const runtime = createStewardExecutionRuntime({
     owner: "fixture",
@@ -40,14 +36,23 @@ it("excludes required Judge from the Steward execution while retaining tools and
     executeRun: async (args) => {
       executions++;
       expect(args.deps.capabilities?.map((capability) => capability.name)).toEqual([
-        "tools",
         "goal-steward-result",
       ]);
       return {
         executionId: "steward",
         response: {
           status: "completed",
-          result: { decision: "aligned", summary: "Work remains aligned" },
+          result: {
+            decision: "completion",
+            verdict: "achieved",
+            summary: "Work is complete",
+            assessments: ["definition", "objective"].map((scope) => ({
+              scope,
+              verdict: "satisfied",
+              rationale: "Host evidence is sufficient",
+              evidence_ids: [],
+            })),
+          },
           usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
         },
       };
@@ -64,19 +69,13 @@ it("excludes required Judge from the Steward execution while retaining tools and
         validateResult: async () => undefined,
       })
     ).result.decision,
-  ).toBe("aligned");
+  ).toBe("completion");
   expect(executions).toBe(1);
 });
 
 it("fingerprints resolved model metadata and opaque configuration generation without spending the work allowance", () => {
-  const make = (
-    generation: string,
-    contextWindowTokens = 32768,
-    ttl: "5m" | "1h" = "5m",
-    content = "Verify changes",
-  ) =>
+  const make = (generation: string, contextWindowTokens = 32768, ttl: "5m" | "1h" = "5m") =>
     createStewardExecutionRuntime({
-      instructions: readRunInstructions(captureRunInstructions({}, [{ scope: "global", content }])),
       owner: "fixture",
       model: "logical/model",
       providers: [],
@@ -109,11 +108,7 @@ it("fingerprints resolved model metadata and opaque configuration generation wit
   expect(first.fingerprint).not.toBe(make("generation-two").fingerprint);
   expect(first.fingerprint).not.toBe(make("generation-one", 65536).fingerprint);
   expect(first.fingerprint).not.toBe(make("generation-one", 32768, "1h").fingerprint);
-  expect(first.fingerprint).not.toBe(
-    make("generation-one", 32768, "5m", "Changed instructions").fingerprint,
-  );
   expect(first.budget.max_net_tokens).toBe(12345);
-  expect(first.workspaceReadAvailable).toBe(false);
 });
 
 for (const rejected of [false, true]) {
@@ -138,3 +133,27 @@ for (const rejected of [false, true]) {
     expect(await outcome).toEqual({ kind: "terminal", result: cancelled });
   });
 }
+
+it("nudges once then fails closed when Steward result validation keeps rejecting", async () => {
+  const capability = createStewardResultGate(async () => {
+    throw new Error("bad review");
+  });
+  const run = await capability.forRun({} as RunCapabilityContext);
+  const contribution = run!.forAgent({ entry: true, agent: "subagent", grants: [] })!.attach({
+    maybeCancelled: () => null,
+    state: { lastAssistantText: "partial" },
+  } as AgentBuildContext);
+  const gate = contribution.gates![0]!;
+  expect(await gate.check({ mode: "submit", value: {} })).toMatchObject({ kind: "nudge" });
+  expect(await gate.check({ mode: "submit", value: {} })).toEqual({
+    kind: "terminal",
+    result: {
+      status: "error",
+      partialText: "partial",
+      error: {
+        code: "goal_steward_failed",
+        message: "Goal Steward result validation failed",
+      },
+    },
+  });
+});

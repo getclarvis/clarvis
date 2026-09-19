@@ -245,6 +245,7 @@ export interface AppRunControls {
     display?: string,
     skill?: { name: string; task?: string; plansMode?: PlansMode },
   ) => void;
+  submitGoalTurn?: (seed: string) => Promise<void>;
   submitSkillRun: (name: string, task: string, agent: string) => void;
   compact: (request?: string) => void;
   inspectContext?: RunHost["inspectCurrentContext"];
@@ -1075,6 +1076,14 @@ export function App(props: AppProps): JSX.Element {
     onSubmitPrompt: (messages, display, skill) => {
       submitFromLeadTail(() => props.run.submitPrompt(messages, display, skill));
     },
+    ...(props.run.submitGoalTurn === undefined
+      ? {}
+      : {
+          onSubmitGoal: (seed: string) =>
+            submitFromLeadTail(() => {
+              void props.run.submitGoalTurn!(seed).catch(() => undefined);
+            }),
+        }),
     onSubmitSkillRun: (name, task, agent) => {
       submitFromLeadTail(() => props.run.submitSkillRun(name, task, agent));
     },

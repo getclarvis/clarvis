@@ -1,6 +1,15 @@
 import type { GoalRuntimeSnapshot } from "./ports.ts";
 
 export const GOAL_BLOCK_KIND = "goal";
+export const GOAL_FORMULATION_BLOCK_KIND = "goal_formulation";
+
+/** Host instruction appended after the operator request; it is not the operator's words. */
+export const GOAL_FORMULATION_INSTRUCTION = `<goal_formulation>
+The operator requested a persistent Goal. The preceding user message is their literal request; this block is host instruction, not their words.
+Understand the desired result from that request and already available context. Persist a simple definition with only essential, observable criteria via create_goal promptly. Do not invent a technical checklist, architecture, phases, files to change, or validation the operator did not ask for. Optional constraints and exclusions belong only when they are relevant.
+A one-off read is allowed only when the request names a document whose content is required to understand the objective; stop as soon as that result is clear. Do not audit the repository, map dependencies, investigate feasibility, or run tests in order to create the Goal. Uncertainty about how to implement does not delay persistence. Ask the operator only when a decision about the desired result cannot be resolved from context.
+Workspace writes, shell, external effects, skills, workflows, tasks, and work-executing delegation are not admitted until create_goal has been durably committed. After that, investigate, plan, and implement as the work requires. /plan organizes execution; it is not a prerequisite for creating the Goal.
+</goal_formulation>`;
 
 /** Model-facing projection excludes the session audit and private operation receipts. */
 export function goalModelView({ goal, evidence }: GoalRuntimeSnapshot): Record<string, unknown> {

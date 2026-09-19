@@ -3779,9 +3779,7 @@ test("legacy wire input opens leader pickers without consuming the draft and kee
       ["m", "Select memory"],
     ] as const) {
       press(t, "x", { ctrl: true });
-      await t.renderOnce();
-      const pending = t.captureCharFrame();
-      expect(pending).toContain("Ctrl+X active · choose a key");
+      const pending = await captureUntil(t, "Ctrl+X active · choose a key");
       const activityLine = t.renderer.root.findDescendantById("lead-activity-line");
       expect(activityLine).toBeDefined();
       expect(pending.split("\n")[activityLine!.y]).toContain("Ctrl+X active · choose a key");

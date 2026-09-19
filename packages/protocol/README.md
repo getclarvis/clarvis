@@ -71,6 +71,7 @@ services:
 | `models`            | Model metadata and pricing catalog.                                                    |
 | `providerAuth`      | Token-free local subscription status, device login and disconnect control.             |
 | `files`             | Read-only workspace file and image access.                                             |
+| `changes`           | Read-only workspace change inventory and unified patch detail.                         |
 | `memory`            | Owner-facing execution-memory review and curation.                                     |
 | `plans`             | History from the workspace's selected plan provider.                                   |
 | `workflows`         | Agentic workflows: a manager run fanning out leaders.                                  |

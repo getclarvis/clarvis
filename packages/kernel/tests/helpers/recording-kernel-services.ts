@@ -126,6 +126,11 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
       readFile: record("files.readFile"),
       readImage: record("files.readImage"),
     },
+    changes: {
+      availability: record("changes.availability"),
+      list: record("changes.list"),
+      read: record("changes.read"),
+    },
     memory: {
       health: record("memory.health"),
       reindex: record("memory.reindex"),

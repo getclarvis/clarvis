@@ -298,6 +298,33 @@ function baseBackend(over: Partial<AppBackend> = {}): AppBackend {
     plans: {
       read: async () => null,
     } as unknown as AppBackend["plans"],
+    changes: {
+      availability: async () => ({
+        status: "available",
+        provider: {
+          id: "fake",
+          name: "Fake",
+          workspace_identity: "workspace",
+          default_comparison_id: "all",
+          comparisons: [{ id: "all", label: "All", description: "all changes" }],
+          capabilities: { staging: false, renames: false, conflicts: false },
+        },
+      }),
+      list: async () => ({
+        query_id: "q",
+        comparison_id: "all",
+        resolved_base: "HEAD",
+        incomplete: false,
+        items: [],
+      }),
+      read: async (request) => ({
+        entry_id: request.entry_id,
+        query_id: request.query_id,
+        comparison_id: "all",
+        resolved_base: "HEAD",
+        status: "empty",
+      }),
+    },
     workflows: {
       list: async () => [],
       get: async () => null,
@@ -336,6 +363,7 @@ function defaultProps(overrides: {
   backend?: AppBackend;
   quitCalls?: number[];
   active?: Accessor<boolean>;
+  compacting?: Accessor<boolean>;
   continuesOnExit?: Accessor<boolean>;
   cancel?: () => boolean;
   status?: Accessor<string>;
@@ -412,6 +440,7 @@ function defaultProps(overrides: {
           : { extensionProfileDriftNotice: overrides.extensionProfileDriftNotice }),
         bang: () => true,
         localBusy: () => false,
+        ...(overrides.compacting === undefined ? {} : { compacting: overrides.compacting }),
         registerDraftRestore: () => {},
         elicit: overrides.elicit ?? (() => null),
         resolveElicit: () => {},
@@ -1516,6 +1545,45 @@ test("Lead thinking and working reuse one fixed line immediately above the compo
   t.renderer.destroy();
 });
 
+test("live compaction replaces working on the Lead activity line", async () => {
+  const [active] = createSignal(true);
+  const [compacting, setCompacting] = createSignal(false);
+  const store = createTranscriptStore();
+  const sink = store.openRun("exec_compaction_line");
+  applyRunEvents(
+    sink,
+    [
+      ev({ type: "run_started", at: 1 }),
+      ev({ type: "iteration_started", agent: "lead", iteration: 1, at: 2, model: "m" }),
+      ev({
+        type: "text_delta",
+        agent: "lead",
+        iteration: 1,
+        channel: "text",
+        text: "LIVE ANSWER",
+        at: 3,
+        reset: true,
+      }),
+    ],
+    "live",
+  );
+  const t = await mountApp(defaultProps({ active, compacting, store }));
+  const working = await captureUntil(t, "working");
+  expect(working).toContain("LIVE ANSWER");
+  expect(working).not.toContain("compacting context");
+  setCompacting(true);
+  const compactingFrame = await captureUntil(t, "compacting context");
+  const line = t.renderer.root.findDescendantById("lead-activity-line");
+  const input = t.renderer.root.findDescendantById("input-dock");
+  expect(line).toBeDefined();
+  expect(input).toBeDefined();
+  expect(line!.y + line!.height).toBe(input!.y);
+  expect(compactingFrame).toContain("LIVE ANSWER");
+  expect(compactingFrame).not.toContain("working");
+  expect(compactingFrame.match(/Compacting context/g)).toBeNull();
+  t.renderer.destroy();
+});
+
 test("live tool-input progress redraws before the provider closes the arguments", async () => {
   const store = createTranscriptStore();
   const sink = store.openRun("exec_tool_input_progress");
@@ -1803,7 +1871,7 @@ test("a literal sharp s remains composer text instead of opening the isolation p
   t.renderer.destroy();
 });
 
-test("/diff with no diff in the transcript warns and does not open the viewer", async () => {
+test("/diff on an empty conversation opens the workspace changes viewer", async () => {
   const t = await mountApp(defaultProps({}));
   await captureUntil(t, "New task");
   await t.mockInput.typeText("/diff");
@@ -1811,40 +1879,53 @@ test("/diff with no diff in the transcript warns and does not open the viewer", 
   press(t, "escape");
   await t.renderOnce();
   t.mockInput.pressEnter();
-  const out = await captureUntil(t, "no diff in the transcript");
-  expect(out).toContain("no diff in the transcript");
+  const out = await captureUntil(t, "no workspace changes yet");
+  expect(out).toContain("no workspace changes yet");
+  expect(out).toContain("[esc] close");
   t.renderer.destroy();
 });
 
-test("/diff opens every edit in the active transcript", async () => {
-  const editStream: RunEvent[] = [
-    ev({ type: "run_started", at: 1 }),
-    ev({
-      type: "tool_call",
-      call_id: "c1",
-      agent: "lead",
-      at: 2,
-      server: "edit_file",
-      tool: "",
-      arguments: { path: "a.ts", old_string: "x", new_string: "y" },
-      result: "Replaced 1 occurrence in a.ts.",
-      ok: true,
-      diff: "--- a.ts\n+++ a.ts\n@@ -1 +1 @@\n-x\n+y",
+test("/diff lists current workspace files from the changes service", async () => {
+  const t = await mountApp(
+    defaultProps({
+      backend: baseBackend({
+        changes: {
+          availability: async () => ({
+            status: "available",
+            provider: {
+              id: "fake",
+              name: "Fake",
+              workspace_identity: "workspace",
+              default_comparison_id: "all",
+              comparisons: [{ id: "all", label: "All", description: "all changes" }],
+              capabilities: { staging: false, renames: false, conflicts: false },
+            },
+          }),
+          list: async () => ({
+            query_id: "q",
+            comparison_id: "all",
+            resolved_base: "HEAD",
+            incomplete: false,
+            items: [
+              { id: "a", new_path: "a.ts", operation: "modified" },
+              { id: "b", new_path: "b.ts", operation: "modified" },
+            ],
+          }),
+          read: async (request) => ({
+            entry_id: request.entry_id,
+            query_id: request.query_id,
+            comparison_id: "all",
+            resolved_base: "HEAD",
+            status: "ready",
+            patch:
+              request.entry_id === "b"
+                ? "--- b.ts\n+++ b.ts\n@@ -1 +1 @@\n-before\n+after"
+                : "--- a.ts\n+++ a.ts\n@@ -1 +1 @@\n-x\n+y",
+          }),
+        },
+      }),
     }),
-    ev({
-      type: "tool_call",
-      call_id: "c2",
-      agent: "lead",
-      at: 3,
-      server: "edit_file",
-      tool: "",
-      arguments: { path: "b.ts", old_string: "before", new_string: "after" },
-      result: "Replaced 1 occurrence in b.ts.",
-      ok: true,
-      diff: "--- b.ts\n+++ b.ts\n@@ -1 +1 @@\n-before\n+after",
-    }),
-  ];
-  const t = await mountApp(defaultProps({ seedStream: editStream }));
+  );
   await captureUntil(t, "New task");
   await t.mockInput.typeText("/diff");
   await t.renderOnce();
@@ -1852,8 +1933,6 @@ test("/diff opens every edit in the active transcript", async () => {
   await t.renderOnce();
   t.mockInput.pressEnter();
   const out = await captureUntil(t, "2 files");
-  expect(out).not.toContain("no diff in the transcript");
-  expect(out).toContain("2 changes");
   expect(out).toContain("a.ts");
   expect(out).toContain("y");
   expect(out).toContain("b.ts");
@@ -1861,16 +1940,11 @@ test("/diff opens every edit in the active transcript", async () => {
   expect(out).toContain("[esc] close");
   expect(out).not.toContain("[Ctrl+C] cancel / quit");
   press(t, "down");
-  await settleSyntaxSurfaces(t);
-  let second = t.captureCharFrame();
-  expect(second).toContain("y");
-  expect(second).not.toContain("after");
   press(t, "return");
   await settleSyntaxSurfaces(t);
-  second = t.captureCharFrame();
+  const second = t.captureCharFrame();
   expect(second).toContain("b.ts");
   expect(second).toContain("after");
-  expect(second).not.toContain("1 + y");
   expect(second).toContain("[tab/esc] files");
   press(t, "escape");
   await t.renderOnce();
@@ -1880,23 +1954,41 @@ test("/diff opens every edit in the active transcript", async () => {
   t.renderer.destroy();
 });
 
-test("Ctrl+X D opens the same multi-file diff viewer as /diff", async () => {
-  const editStream: RunEvent[] = [
-    ev({ type: "run_started", at: 1 }),
-    ev({
-      type: "tool_call",
-      call_id: "c1",
-      agent: "lead",
-      at: 2,
-      server: "edit_file",
-      tool: "",
-      arguments: { path: "src/a.ts", old_string: "before", new_string: "after" },
-      result: "Replaced 1 occurrence in src/a.ts.",
-      ok: true,
-      diff: "--- src/a.ts\n+++ src/a.ts\n@@ -1 +1 @@\n-before\n+after",
+test("Ctrl+X D opens the same workspace changes viewer as /diff", async () => {
+  const t = await mountApp(
+    defaultProps({
+      backend: baseBackend({
+        changes: {
+          availability: async () => ({
+            status: "available",
+            provider: {
+              id: "fake",
+              name: "Fake",
+              workspace_identity: "workspace",
+              default_comparison_id: "all",
+              comparisons: [{ id: "all", label: "All", description: "all changes" }],
+              capabilities: { staging: false, renames: false, conflicts: false },
+            },
+          }),
+          list: async () => ({
+            query_id: "q",
+            comparison_id: "all",
+            resolved_base: "HEAD",
+            incomplete: false,
+            items: [{ id: "a", new_path: "src/a.ts", operation: "modified" }],
+          }),
+          read: async (request) => ({
+            entry_id: request.entry_id,
+            query_id: request.query_id,
+            comparison_id: "all",
+            resolved_base: "HEAD",
+            status: "ready",
+            patch: "--- src/a.ts\n+++ src/a.ts\n@@ -1 +1 @@\n-before\n+after",
+          }),
+        },
+      }),
     }),
-  ];
-  const t = await mountApp(defaultProps({ seedStream: editStream }));
+  );
   await captureUntil(t, "New task");
 
   press(t, "x", { ctrl: true });
@@ -3686,20 +3778,20 @@ test("legacy wire input opens leader pickers without consuming the draft and kee
       ["g", "Select Guard"],
       ["m", "Select memory"],
     ] as const) {
-      t.mockInput.pressKey("x", { ctrl: true });
+      press(t, "x", { ctrl: true });
       await t.renderOnce();
       const pending = t.captureCharFrame();
       expect(pending).toContain("Ctrl+X active · choose a key");
       const activityLine = t.renderer.root.findDescendantById("lead-activity-line");
       expect(activityLine).toBeDefined();
       expect(pending.split("\n")[activityLine!.y]).toContain("Ctrl+X active · choose a key");
-      t.mockInput.pressKey(key);
+      press(t, key);
       await captureUntil(t, title);
       expect(t.captureCharFrame()).not.toContain("Ctrl+X active · choose a key");
-      t.mockInput.pressEscape();
+      press(t, "escape");
       await captureUntil(t, "draft preserved");
     }
-    t.mockInput.pressKey("x", { ctrl: true });
+    press(t, "x", { ctrl: true });
     press(t, "escape");
     await t.renderOnce();
     const escaped = t.captureCharFrame();

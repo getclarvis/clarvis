@@ -480,12 +480,12 @@ export function diffHeaderPath(diff: string): string | undefined {
   return fallback;
 }
 
-export interface DiffFileSection {
+interface DiffFileSection {
   path: string | undefined;
   diff: string;
 }
 
-export function splitDiffFiles(raw: string): { preamble: string; files: DiffFileSection[] } {
+function splitDiffFiles(raw: string): { preamble: string; files: DiffFileSection[] } {
   const lines = raw.split("\n");
   const starts: number[] = [];
   for (let i = 0; i < lines.length; i++) {

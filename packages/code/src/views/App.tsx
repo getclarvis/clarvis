@@ -62,6 +62,7 @@ import type {
   ExtensionProfileService,
   PlansService,
   PluginService,
+  WorkspaceChangesService,
   ProviderAuthService,
   SkillsService,
   RunDetail,
@@ -71,7 +72,7 @@ import type {
 } from "@clarvis/protocol";
 import type { PromptMessage } from "../adapters/mcp-capabilities.ts";
 import type { PlansMode } from "@clarvis/protocol";
-import type { TranscriptStore, TranscriptToolNode } from "../adapters/store.ts";
+import type { TranscriptStore } from "../adapters/store.ts";
 import type { ActivityStore, UsageActivity } from "../adapters/activity-store.ts";
 import type { SessionId, SessionMeta } from "../adapters/session-store.ts";
 import type { PromptHistory } from "../core/prompt-history.ts";
@@ -336,6 +337,7 @@ export interface AppBackend {
   probe: Accessor<BackendProbe>;
   client: McpClientCaps;
   plans: Pick<PlansService, "read">;
+  changes?: WorkspaceChangesService;
   models: ModelCatalogService;
   providerAuth: ProviderAuthService;
   workflows: WorkflowsService;
@@ -544,7 +546,7 @@ export function App(props: AppProps): JSX.Element {
       void props.run.interruptTool(id).catch(() => undefined);
     },
   });
-  const [diffNodes, setDiffNodes] = createSignal<readonly TranscriptToolNode[]>([]);
+
   useSpinnerClock(
     () =>
       props.run.active() ||
@@ -801,12 +803,6 @@ export function App(props: AppProps): JSX.Element {
     },
     clearBlockFocus: () => ts.clearFocus(),
     openDiff: () => {
-      const picks = ts.pickDiffNodes();
-      if (picks.length === 0) {
-        notify("no diff in the transcript");
-        return;
-      }
-      setDiffNodes(picks);
       overlays.openPicker("diff");
     },
     openPlan: () => {
@@ -1349,6 +1345,7 @@ export function App(props: AppProps): JSX.Element {
       props.run.compacting?.() === true ||
       props.run.goals?.formulating() === true;
     if (!busy) return "ready";
+    if (props.run.compacting?.() === true) return "compacting";
     if (
       props.run.active() &&
       props.store
@@ -1566,7 +1563,7 @@ export function App(props: AppProps): JSX.Element {
           <OverlayRegion
             host={overlays}
             interaction={interaction}
-            diffNodes={diffNodes}
+            changes={() => props.backend.changes}
             activity={props.activity}
             plans={props.backend.plans}
             fallback={
@@ -1852,9 +1849,7 @@ export function App(props: AppProps): JSX.Element {
                   text: restoring,
                   tone: pressure().phase === "failed" ? "error" : "running",
                 };
-              return props.run.compacting?.() === true
-                ? { text: "Compacting context…", tone: "running" }
-                : { text: "", tone: "info" };
+              return { text: "", tone: "info" };
             }}
             runStrip={footerRunStrip}
             navigation={

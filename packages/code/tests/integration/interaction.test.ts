@@ -217,7 +217,7 @@ test("Ctrl+X D opens the same transcript diff destination as /diff", async () =>
       uiCommand({
         id: "transcript.diff",
         title: "Diff viewer",
-        description: "Open all diffs in the active transcript",
+        description: "Open the current workspace changes",
         category: "navigation",
         surfaces: [],
         run: () => effects.openDiff(),

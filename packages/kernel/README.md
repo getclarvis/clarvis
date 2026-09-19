@@ -20,6 +20,8 @@ are rejected by the strict request schema; guidance never replaces host policy o
 The in-process implementation of `@clarvis/protocol` over `@clarvis/loop`.
 It is the Clarvis server core: applications can use it directly or consume the same typed services
 through its RPC transports, including the independently owned local workspace host.
+`KernelClient.changes` is a VCS-agnostic read-only inventory of the bound workspace; the first
+adapter is Git and never writes to the repository.
 
 `@clarvis/code` uses this package as its backend, and it is the only backend.
 

@@ -9,7 +9,7 @@ import { createOverlayHost, type OverlayHost } from "../../src/views/overlay-hos
 import type { OverlayKind, Interaction } from "../../src/keys/interaction.ts";
 import type { ViewHost } from "../../src/keys/commands.ts";
 import type { ActivityStore } from "../../src/adapters/activity-store.ts";
-import type { TranscriptToolNode } from "../../src/adapters/store.ts";
+import type { WorkspaceChangeEntry, WorkspaceChangesService } from "@clarvis/protocol";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { createFieldEditor, type FieldEditor } from "../../src/views/config/view-host.tsx";
 import { createViewHost } from "../../src/views/config/view-host.tsx";
@@ -76,20 +76,35 @@ async function settleLazyOverlay(rendered: Awaited<ReturnType<typeof openRender>
   throw new Error("lazy overlay module did not settle");
 }
 
-function toolNode(over: Partial<TranscriptToolNode> = {}): TranscriptToolNode {
+function fakeChanges(items: WorkspaceChangeEntry[], patch = ""): WorkspaceChangesService {
   return {
-    key: "n1",
-    kind: "tool_call",
-    status: "ok",
-    text: "",
-    mcpName: "",
-    toolName: "edit_file",
-    args: { path: "a.ts", old_string: "one", new_string: "ONE" },
-    result: "Replaced 1 occurrence in a.ts.",
-    error: null,
-    collapsed: false,
-    ...over,
-  } as TranscriptToolNode;
+    availability: async () => ({
+      status: "available",
+      provider: {
+        id: "fake",
+        name: "Fake",
+        workspace_identity: "workspace",
+        default_comparison_id: "all",
+        comparisons: [{ id: "all", label: "All", description: "fake" }],
+        capabilities: { staging: false, renames: false, conflicts: false },
+      },
+    }),
+    list: async () => ({
+      query_id: "q",
+      comparison_id: "all",
+      resolved_base: "HEAD",
+      incomplete: false,
+      items,
+    }),
+    read: async (request) => ({
+      entry_id: request.entry_id,
+      query_id: request.query_id,
+      comparison_id: "all",
+      resolved_base: "HEAD",
+      status: "ready",
+      patch,
+    }),
+  };
 }
 
 test("with overlay none, the fallback shell renders and no overlay body appears", async () => {
@@ -100,7 +115,7 @@ test("with overlay none, the fallback shell renders and no overlay body appears"
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNodes={() => []}
+
         activity={activity()}
         plans={undefined}
       />
@@ -132,7 +147,12 @@ test("full-page overlays hide the shell without unmounting and rebuilding it", a
         host={host}
         fallback={<Shell />}
         interaction={fakeInteraction()}
-        diffNodes={() => [toolNode()]}
+        changes={() =>
+          fakeChanges(
+            [{ id: "a", new_path: "a.ts", operation: "modified" }],
+            "--- a.ts\n+++ a.ts\n@@ -1 +1 @@\n-one\n+ONE",
+          )
+        }
         activity={activity()}
         plans={undefined}
       />
@@ -168,7 +188,7 @@ test("the floating 'agentPicker' kind keeps the main shell rendered behind it", 
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNodes={() => []}
+
         activity={activity()}
         plans={undefined}
       />
@@ -188,7 +208,7 @@ test("an unrecognized overlay kind falls back to the main shell rather than blan
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNodes={() => []}
+
         activity={activity()}
         plans={undefined}
       />
@@ -215,7 +235,7 @@ test("overlay 'view' renders the mounted view's factory with its own host, not t
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNodes={() => []}
+
         activity={activity()}
         plans={undefined}
       />
@@ -263,7 +283,7 @@ test("full-region views preserve the fallback owner and its Yoga geometry across
         host={host}
         fallback={<Shell />}
         interaction={fakeInteraction()}
-        diffNodes={() => []}
+
         activity={activity()}
         plans={undefined}
       />
@@ -318,7 +338,7 @@ test("state read while constructing a mounted view does not remount its factory"
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNodes={() => []}
+
         activity={activity()}
         plans={undefined}
       />
@@ -375,7 +395,7 @@ test("an empty WorkflowsHub inside OverlayRegion performs one mount and one init
         host={overlay.host}
         fallback={<text>main shell content</text>}
         interaction={interaction}
-        diffNodes={() => []}
+
         activity={activity()}
         plans={undefined}
       />
@@ -402,7 +422,7 @@ test("overlay 'view' with no mounted view falls through to the fallback (no cras
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNodes={() => []}
+
         activity={activity()}
         plans={undefined}
       />
@@ -444,7 +464,7 @@ test("a stacked child keeps its parent's editor mounted, unfocused, and intact o
         host={host}
         fallback={<text>main shell content</text>}
         interaction={interaction}
-        diffNodes={() => []}
+
         activity={activity()}
       />
     ),
@@ -482,7 +502,7 @@ test("overlay 'diff' with no picked node shows the DiffViewer empty state", asyn
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNodes={() => []}
+        changes={() => fakeChanges([])}
         activity={activity()}
         plans={undefined}
       />
@@ -491,12 +511,10 @@ test("overlay 'diff' with no picked node shows the DiffViewer empty state", asyn
   );
   await t.renderOnce();
   const first = t.captureCharFrame();
-  expect(first.includes("Loading diff…") || first.includes("no diff in the transcript yet")).toBe(
-    true,
-  );
+  expect(first.includes("Loading diff…") || first.includes("no workspace changes yet")).toBe(true);
   await settleLazyOverlay(t);
   const out = t.captureCharFrame();
-  expect(out).toContain("no diff in the transcript yet");
+  expect(out).toContain("no workspace changes yet");
   expect(out).not.toContain("main shell content");
   t.renderer.destroy();
 });
@@ -504,14 +522,18 @@ test("overlay 'diff' with no picked node shows the DiffViewer empty state", asyn
 test("overlay 'diff' with a picked node renders that tool's diff", async () => {
   const { host, setOverlay } = fakeHost("none");
   setOverlay("diff");
-  const node = toolNode();
   const t = await openRender(
     () => (
       <OverlayRegion
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNodes={() => [node]}
+        changes={() =>
+          fakeChanges(
+            [{ id: "a", new_path: "a.ts", operation: "modified" }],
+            "--- a.ts\n+++ a.ts\n@@ -1 +1 @@\n-one\n+ONE",
+          )
+        }
         activity={activity()}
         plans={undefined}
       />
@@ -545,7 +567,7 @@ test("overlay 'plan' renders the plan overlay from the activity store's live pla
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNodes={() => []}
+
         activity={a}
         plans={undefined}
       />
@@ -569,7 +591,7 @@ test("overlay 'plan' with no live plan falls back to the plan overlay's own empt
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNodes={() => []}
+
         activity={activity()}
         plans={undefined}
       />
@@ -598,7 +620,7 @@ test("the plan overlay never reads retained history without a live plan", async 
         host={host}
         fallback={<text>main shell content</text>}
         interaction={fakeInteraction()}
-        diffNodes={() => []}
+
         activity={activity()}
         plans={plans}
       />

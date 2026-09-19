@@ -21,6 +21,7 @@ const routes = {
   models: "operator_wrapped",
   providerAuth: "operator",
   files: "guest",
+  changes: "guest",
   memory: "guest",
   plans: "guest",
   goals: "guest",

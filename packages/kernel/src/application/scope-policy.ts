@@ -12,6 +12,7 @@ import type {
   StorageService,
   TasksService,
   WorkspaceService,
+  WorkspaceChangesService,
   WorkflowsService,
   ExtensionProfileService,
 } from "@clarvis/protocol";
@@ -44,6 +45,8 @@ export interface OperatorServices {
   readonly providerAuth: ProviderAuthService;
   /** Workspace file access. */
   readonly files: WorkspaceService;
+  /** Workspace change inventory. */
+  readonly changes: WorkspaceChangesService;
   /** Operator/workspace plugin projection. */
   readonly plugins: PluginService;
   /** Operator/workspace Extension Profile definitions and local selection. */
@@ -87,6 +90,7 @@ export interface KernelScopePolicy {
   readonly extensionProfiles: readonly ["operator", "workspace"];
   readonly skills: readonly ["operator", "workspace"];
   readonly files: "workspace";
+  readonly changes: "workspace";
   readonly storage: "operator";
 }
 
@@ -108,6 +112,7 @@ export function createKernelScopePolicy(mode: KernelOwnershipMode): KernelScopeP
     extensionProfiles: ["operator", "workspace"] as const,
     skills: ["operator", "workspace"] as const,
     files: "workspace",
+    changes: "workspace",
     storage: "operator",
   });
 }

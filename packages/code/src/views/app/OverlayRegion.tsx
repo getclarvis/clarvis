@@ -1,7 +1,6 @@
 import { For, lazy, Suspense, untrack, type Accessor, type JSX } from "solid-js";
-import type { PlansService } from "@clarvis/protocol";
+import type { PlansService, WorkspaceChangesService } from "@clarvis/protocol";
 import type { ActivityStore } from "../../adapters/activity-store.ts";
-import type { TranscriptToolNode } from "../../adapters/store.ts";
 import type { Interaction } from "../../keys/interaction.ts";
 import type { MountedView, OverlayHost } from "../overlay-host.ts";
 import { diagnosticCount } from "../../core/diagnostic-events.ts";
@@ -33,7 +32,7 @@ export interface OverlayRegionProps {
   host: OverlayHost;
   fallback: JSX.Element;
   interaction: Interaction;
-  diffNodes: Accessor<readonly TranscriptToolNode[]>;
+  changes?: Accessor<WorkspaceChangesService | undefined>;
   activity: ActivityStore;
   /** Absent until a backend supplies the current-plan document reader. */
   plans?: Pick<PlansService, "read">;
@@ -97,7 +96,7 @@ export function OverlayRegion(props: OverlayRegionProps): JSX.Element {
             <Suspense fallback={<text>Loading diff…</text>}>
               <DiffViewer
                 interaction={props.interaction}
-                nodes={props.diffNodes}
+                service={props.changes}
                 active={lifecycle.active}
                 onClose={() => props.host.dismissTop()}
               />

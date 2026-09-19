@@ -7,8 +7,20 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ## [0.2.0] - Unreleased
 
+### Changed
+
+- Live context compaction replaces `working` on the Lead activity line above the composer instead of
+  repeating `Compacting context…` in the footer.
+
+### Fixed
+
+- `/diff` no longer blinks the open file patch on an unchanged poll. `StableDiff` stays mounted
+  until the selected unified diff actually changes.
+
 ### Added
 
+- `/diff` and `Ctrl+X D` show the current Git working tree, including staged, unstaged and untracked
+  files, instead of grouping transcript tool calls. The overlay opens on an empty conversation.
 - Isolation and command review are independent controls. `Ctrl+S` selects Host, native Sandbox,
   Docker or Podman, while `Ctrl+G` selects Off, Approval or Auto review for native placements.
   Settings > Isolation and Run Controls expose the same choices; runtime placement remains

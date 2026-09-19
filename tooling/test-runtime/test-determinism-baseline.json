@@ -275,6 +275,22 @@
     },
     {
       "mechanism": "subprocess",
+      "file": "packages/kernel/tests/integration/git-changes-provider.test.ts",
+      "identity": "subprocess|git|spawnSync(\"git\", args, { cwd, encoding: \"utf8\", env: { ...withoutGitRepositoryEnvironment(process.env), GIT_CONFIG_NOSYSTEM: \"1\", GIT_TERMINAL_PROMPT: \"0\", GIT_OPTIONAL_LOCKS: \"0\", }, })|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "physical Git subprocess is required to prove read-only working-tree inventory"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/kernel/tests/integration/git-changes-provider.test.ts",
+      "identity": "subprocess|describe:GitChangesProvider/it:reports conflicts without treating them as an ordinary patch|spawnSync(\"git\", [\"merge\", \"other\"], { cwd: root, encoding: \"utf8\", env: withoutGitRepositoryEnvironment(process.env), })|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "physical Git merge is required to prove conflict inventory without mutating HEAD"
+    },
+    {
+      "mechanism": "subprocess",
       "file": "packages/kernel/tests/integration/git-workspace.test.ts",
       "identity": "subprocess|git|spawnSync(\"git\", args, { cwd, encoding: \"utf8\", env: withoutGitRepositoryEnvironment(process.env), })|0",
       "package_owner": "@clarvis/kernel",

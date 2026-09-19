@@ -3,7 +3,8 @@
 > Implemented at `packages/...`. Every claim below is anchored to a file and a named symbol or test. Open questions
 > are collected in the final section.
 
-Goal Steward has read-only workspace grants and the canonical isolated Tools capability. Its model
+Goal Steward has no workspace grant or general Tools capability; it receives only the host-projected
+bounded evaluation frame and its result tool. Its model
 output cannot call operator steering, authorize effects or mutate Goal state. Free-text frame fields
 use shared sanitization; host-issued criterion/evidence references retain their exact identity for
 catalog validation. The whole JSON envelope must not be entropy-redacted, which would corrupt those
@@ -11,7 +12,7 @@ references. Private command receipts are projected only from eligible successful
 arguments use shared deep sanitization and stdout/stderr use text sanitization before bounded excerpts
 enter the frame. Their text remains untrusted evidence, never instructions or execution authority.
 Production: `createGoalEvidenceSource`, `createGoalStewardCoordinator`, `stewardDefinition` and
-`buildGoalStewardRequest`. Test: the catalog round-trip and read-only tool assertions in
+`buildGoalStewardRequest`. Test: the catalog round-trip and tool-free assertions in
 [goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts)
 and `projects bounded sanitized command receipts from current and prior Goal stages only` in
 [goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts).

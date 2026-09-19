@@ -448,7 +448,11 @@ export function Sidebar(props: {
               </b>
             </text>
             <Show when={props.goals?.formulating()}>
-              <text fg={tokens.muted}>Reading conversation and workspace…</text>
+              <text fg={tokens.muted}>
+                {props.goals?.formulationPhase() === "reviewing_definition"
+                  ? "Reviewing definition…"
+                  : "Preparing with the selected agent…"}
+              </text>
             </Show>
             <Show when={!props.goals?.formulating() && props.goals?.view()?.state.current}>
               {(goal: Accessor<GoalRecord>) => {

@@ -2,7 +2,6 @@ import type { Logger, OperatorReviewContextProvider } from "@clarvis/capability"
 import type {
   GoalStewardCompletionDecision,
   GoalStewardFinalizeAttempt,
-  GoalStewardIntervention,
 } from "./agent/steward-types.ts";
 import type { GoalCheckpoint, GoalEvidenceRef, GoalRecord, GoalState } from "./schemas.ts";
 import type { GoalCompletionValidation } from "./criteria.ts";
@@ -63,8 +62,6 @@ export interface GoalRuntimePort {
 /** Host attestation only; the Goal capability owns notes and finalization gate policy. */
 export interface GoalStewardPort {
   bindReviewContext(provider: OperatorReviewContextProvider): void;
-  scheduleObservation(): void;
-  takeReadyIntervention(signal?: AbortSignal): Promise<GoalStewardIntervention | undefined>;
   reviewCompletion(
     attempt: GoalStewardFinalizeAttempt,
     signal?: AbortSignal,

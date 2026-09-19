@@ -9,8 +9,8 @@ import {
   suppressSecondaryRejection,
   levelEnabled,
   NOOP_LOGGER,
+  type AgentProfile,
   type ProviderConfig,
-  type OperatorInstructions,
   type Logger,
   type TraceEvent,
 } from "@clarvis/capability";
@@ -68,6 +68,7 @@ import { createConfigService } from "./config/config-service.ts";
 import type { ConfigStore } from "./config/config-store.ts";
 import {
   createSettingsRunAssembler,
+  resolveEntryAgentProfile,
   type SettingsAssemblerOptions,
 } from "./runs/settings-assembler.ts";
 import {
@@ -206,7 +207,6 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
     workTokenLimit: number,
     ttl: "5m" | "1h",
     owner?: string,
-    instructions?: readonly OperatorInstructions[],
   ): StewardExecutionRuntime;
   /** Lists the configured agents, delegating to {@link ConfigService.listAgents}. */
   listAgents(): Promise<AgentSummary[]>;
@@ -1021,25 +1021,26 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       residentOwner(owner, false).prepareRun(params, goal),
     readRunTrace: (executionId, owner = defaultOwner) =>
       runDeps.traceStore.getById(residentOwner(owner, false).stateOwner, executionId)?.trace.events,
-    goalStewardRuntime(workTokenLimit, ttl, owner = defaultOwner, instructions = []) {
+    goalStewardRuntime(workTokenLimit, ttl, owner = defaultOwner) {
       const merged = structuredClone(opts.configStore.readSettings().merged) as Record<
         string,
         unknown
       >;
       const goals = (merged.goals ?? {}) as {
-        agent?: { model?: string; steward?: { model?: string } };
+        agent?: { steward?: { model?: string } };
       };
       const model =
-        goals.agent?.steward?.model ??
-        goals.agent?.model ??
-        merged.default_model ??
-        opts.assemblerOptions?.defaultModel;
+        goals.agent?.steward?.model ?? merged.default_model ?? opts.assemblerOptions?.defaultModel;
       if (typeof model !== "string")
         throw kernelError("invalid_request", "Goal Steward requires a configured model");
       return createStewardExecutionRuntime({
-        instructions,
         owner: residentOwner(owner, false).stateOwner,
         model,
+        ...(typeof merged.default_reasoning_effort === "string"
+          ? {
+              reasoningEffort: merged.default_reasoning_effort as AgentProfile["reasoning_effort"],
+            }
+          : {}),
         providers:
           runDeps.modelExecutionResolver === undefined && Array.isArray(merged.providers)
             ? (merged.providers as ProviderConfig[])
@@ -1085,12 +1086,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
         typeof goalSettings.agent === "object" && goalSettings.agent !== null
           ? (goalSettings.agent as Record<string, unknown>)
           : {};
-      const configuredModel =
-        typeof agentSettings.model === "string"
-          ? agentSettings.model
-          : typeof merged.default_model === "string"
-            ? merged.default_model
-            : opts.assemblerOptions?.defaultModel;
       const formulation =
         typeof agentSettings.formulation === "object" && agentSettings.formulation !== null
           ? (agentSettings.formulation as GoalAgentRunInput["budget"])
@@ -1111,14 +1106,15 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
             .length === 1 &&
           runDeps.env.CLARVIS_AGENT_TOOLS_MAX_GRANT !== "none",
         run: (input) => {
-          if (configuredModel === undefined)
-            throw kernelError(
-              "invalid_request",
-              "Goal agent has no model and no default_model is set",
-            );
+          const profile = resolveEntryAgentProfile(
+            opts.configStore,
+            input.agent_name,
+            opts.assemblerOptions,
+          );
           const runtime = createKernelGoalAgentRuntime({
             owner: residentOwner(owner, false).stateOwner,
-            model: configuredModel,
+            model: profile.model,
+            profile,
             providers:
               runDeps.modelExecutionResolver === undefined && Array.isArray(merged.providers)
                 ? (merged.providers as ProviderConfig[])

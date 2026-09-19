@@ -19,7 +19,7 @@ describe("goal settings", () => {
         max_auto_continuations: 0,
         max_no_progress_checkpoints: 1,
         agent: {
-          model: "anthropic/claude-example",
+          steward: { model: "anthropic/claude-example" },
           formulation: {
             max_net_tokens: 2048,
             timeout_ms: 30_000,
@@ -34,7 +34,7 @@ describe("goal settings", () => {
       max_auto_continuations: 0,
       max_no_progress_checkpoints: 1,
       agent: {
-        model: "anthropic/claude-example",
+        steward: { model: "anthropic/claude-example" },
         formulation: {
           max_net_tokens: 2048,
           timeout_ms: 30_000,
@@ -50,7 +50,9 @@ describe("goal settings", () => {
     expect(goalsSettingsSchema.safeParse({ max_net_tokens: 0 }).success).toBe(false);
     expect(goalsSettingsSchema.safeParse({ max_auto_continuations: 256 }).success).toBe(false);
     expect(goalsSettingsSchema.safeParse({ arbitrary: true }).success).toBe(false);
-    expect(goalsSettingsSchema.safeParse({ agent: { model: "unqualified" } }).success).toBe(false);
+    expect(goalsSettingsSchema.safeParse({ agent: { model: "anthropic/legacy" } }).success).toBe(
+      false,
+    );
     expect(
       goalsSettingsSchema.safeParse({ agent: { formulation: { max_iterations: 9 } } }).success,
     ).toBe(false);

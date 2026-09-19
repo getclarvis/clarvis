@@ -355,10 +355,9 @@ registered effect, target, evidence and grant coverage after the model responds;
 noninferable effects stay human-only. Review on remains human review, and containment alone grants
 no semantic authority.
 
-Goal Steward output is an internal note, never an operator message, approval or new authority
-anchor. It cannot invoke Auto Guard or grant effects. Production: `createGoalCapability` and
-`buildGoalStewardRequest`. Test: `observes completed dispatch and delivers an internal correction
-without human steering` in
+Goal Steward output is a completion verdict or correction, never an operator message, approval or
+new authority anchor. It cannot invoke Auto Guard or grant effects. Production:
+`createGoalCapability` and `buildGoalStewardRequest`. Test: the completion-review journey in
 [goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
 
 A host-started Goal stage does not admit its synthetic start or continuation message as operator

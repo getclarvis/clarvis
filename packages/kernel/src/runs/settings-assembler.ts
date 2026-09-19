@@ -341,6 +341,25 @@ function buildProfile(
   };
 }
 
+/** Resolve the selected main profile with its effective contexts, without assembling or starting a run. */
+export function resolveEntryAgentProfile(
+  store: Pick<ConfigStore, "readSettings" | "readContext" | "readEffectiveAgent">,
+  agentName: string | undefined,
+  options: SettingsAssemblerOptions = {},
+): AgentProfile {
+  const selected = agentName ?? options.defaultAgent;
+  if (selected === undefined)
+    throw kernelError("invalid_request", "no agent given and no default agent is configured");
+  const record = store.readEffectiveAgent(selected);
+  if (record === null) throw kernelError("not_found", `agent '${selected}' is not defined`);
+  const merged = store.readSettings().merged as unknown as EngineSettings;
+  const contexts = (["global", "workspace"] as const).flatMap((scope) => {
+    const context = store.readContext(scope);
+    return context === null ? [] : [context];
+  });
+  return buildProfile(record, merged, options, true, contexts);
+}
+
 /**
  * Builds a {@link RunRequestAssembler} from config store settings and agent markdown profiles.
  * Expands `can_spawn` into a profile graph and selects MCP servers referenced by tool namespaces.

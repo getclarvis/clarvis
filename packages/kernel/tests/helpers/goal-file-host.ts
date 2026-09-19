@@ -87,7 +87,8 @@ export async function createGoalFileHostFixture(
             ? (JSON.parse(
                 String(body.messages.findLast((message) => message.role === "user")!.content),
               ) as {
-                goal_header: { mode: string; criteria: Array<{ id: string; kind: string }> };
+                mode?: string;
+                goal_header?: { mode: string; criteria: Array<{ id: string; kind: string }> };
               })
             : undefined;
           const result: GoalFixtureResponse =
@@ -98,8 +99,12 @@ export async function createGoalFileHostFixture(
                 : {
                     name: "submit_result",
                     arguments:
-                      frame.goal_header.mode === "observation"
-                        ? { decision: "aligned", summary: "Work is aligned" }
+                      frame.mode === "definition"
+                        ? {
+                            decision: "definition",
+                            verdict: "accept_definition",
+                            summary: "Definition is faithful",
+                          }
                         : {
                             decision: "completion",
                             verdict: "achieved",
@@ -110,24 +115,23 @@ export async function createGoalFileHostFixture(
                                 verdict: "satisfied",
                                 rationale: "Definition matches",
                                 evidence_ids: [],
-                                inspected_paths: [],
                               },
                               {
                                 scope: "objective",
                                 verdict: "satisfied",
                                 rationale: "Result observed",
                                 evidence_ids: [],
-                                inspected_paths: [],
                               },
-                              ...frame.goal_header.criteria
-                                .filter((criterion) => criterion.kind === "qualitative")
+                              ...frame
+                                .goal_header!.criteria.filter(
+                                  (criterion) => criterion.kind === "qualitative",
+                                )
                                 .map((criterion) => ({
                                   scope: "criterion",
                                   criterion_id: criterion.id,
                                   verdict: "satisfied",
                                   rationale: "Criterion observed",
                                   evidence_ids: [],
-                                  inspected_paths: [],
                                 })),
                             ],
                           },

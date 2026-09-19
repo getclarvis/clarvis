@@ -97,9 +97,11 @@ conversation hosts expose these controls; headless hosts remain unavailable. The
 and host validate authority separately from the DTO. See [goals](../../specs/capabilities/goals.md).
 
 `goals.subscribe(sessionId, listener)` returns a promise for a disposer. Await it before reading
-the initial state. Notifications contain only the session ID and request another canonical read;
+the initial state. Notifications identify the session and normally request another canonical read;
 they do not grant execution authority or announce a completion commit independently of the state.
-The host bounds subscriptions and releases them when the connection closes.
+Optional `formulation_phase` values are transient presentation hints for main-agent preparation and
+definition review; `idle` clears the hint and none are persisted as a Goal. The host bounds
+subscriptions and releases them when the connection closes.
 
 `hosting.ts` additionally defines the hosted-run boundary: generation/sequence cursors, immutable
 snapshot pages, execution metadata, control epochs, handoff receipts and `HostingService`.
@@ -134,7 +136,9 @@ goal DTOs, user controls and service contract; defining those types alone does n
 service on a host. A goal run's optional `progress` contains its latest bounded annotation, separate
 from checkpoint disposition and a completion candidate. Optional Steward DTO fields expose its
 compact status, bounded review history and separate consumption without importing domain runtime.
-They are host-owned audit data, never commands or operator authority. Lifecycle and mutation rules are specified in
+Completion decisions distinguish `needs_work`, `needs_evidence` and technical `review_pending` from
+`achieved`; `evidence_requested` is a presentation state, not permission or completion. They are
+host-owned audit data, never commands or operator authority. Lifecycle and mutation rules are specified in
 [sessions](../../specs/hosts/sessions.md#host-owned-conversation-transactions).
 
 `ExtensionProfileService` is the control plane for deterministic activation of already-installed

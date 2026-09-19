@@ -629,8 +629,6 @@ it("routes Steward completion decisions and respects pending operator steering",
   const f = fixture({
     steward: {
       bindReviewContext: () => undefined,
-      scheduleObservation: () => undefined,
-      takeReadyIntervention: async () => undefined,
       closeCoordinator: async () => undefined,
       reviewCompletion: async () => {
         if (throws) throw new Error("Unavailable");
@@ -643,13 +641,13 @@ it("routes Steward completion decisions and respects pending operator steering",
   const c = await f.attach();
   const gate = c.gates![0]!;
   expect(await gate.check({ mode: "text", text: "Done" })).toEqual({ kind: "pass" });
-  decision = { kind: "not_achieved", review_id: "review", next_step: "Run tests" };
+  decision = { kind: "needs_work", review_id: "review", next_step: "Run tests" };
   expect(await gate.check({ mode: "submit", value: { done: true } })).toMatchObject({
     kind: "nudge",
-    note: "[goal steward] Run tests",
+    note: "[goal steward correction] Run tests",
   });
   for (const reason of ["goal_steward_failed", "goal_steward_inconclusive"]) {
-    decision = { kind: "inconclusive", review_id: "review", reason };
+    decision = { kind: "review_pending", review_id: "review", reason };
     expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({
       kind: "terminal",
       result: { error: { code: reason } },
@@ -666,30 +664,4 @@ it("routes Steward completion decisions and respects pending operator steering",
   });
   pending = true;
   expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({ kind: "nudge" });
-});
-
-it("delivers Steward interventions only at an iteration boundary", async () => {
-  let kind: "steer" | "new_run" = "steer";
-  const notes: string[] = [];
-  const f = fixture({
-    steward: {
-      bindReviewContext: () => undefined,
-      scheduleObservation: () => undefined,
-      closeCoordinator: async () => undefined,
-      reviewCompletion: async () => ({ kind: "achieved", review_id: "review" }),
-      takeReadyIntervention: async () =>
-        kind === "steer"
-          ? { kind, guidance: "Verify output" }
-          : { kind, next_step: "Finish tests" },
-    },
-  });
-  f.bc.ctx.appendNote = (note) => {
-    notes.push(note);
-  };
-  const c = await f.attach();
-  await c.hooks!.beforeIteration!();
-  kind = "new_run";
-  await c.hooks!.beforeIteration!();
-  expect(notes[0]).toBe("[goal steward] Verify output");
-  expect(notes[1]).toContain("checkpoint");
 });

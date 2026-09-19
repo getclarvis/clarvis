@@ -30,8 +30,8 @@ When the process dies before the batch path completes, `recoverOrphans` folds th
 `packages/trace/src/journal-recovery.ts`).
 
 Goal Steward evaluations use ordinary persisted executions with their own IDs and continuation
-contexts. The work capability records `goal_steward_review` and `goal_steward_intervention` through
-the open trace vocabulary; no builtin event or engine dependency is added. Production:
+contexts. The work capability records `goal_steward_review` completion metadata through the open
+trace vocabulary; no builtin event or engine dependency is added. Production:
 `createGoalCapability` in [capability.ts](../../packages/goal/src/capability.ts) and `runGoalSteward`
 in [steward-run.ts](../../packages/goal/src/agent/steward-run.ts). Test:
 [goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).

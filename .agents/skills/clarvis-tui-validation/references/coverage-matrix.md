@@ -97,7 +97,7 @@ states, Escape/back, persistence, status feedback, and scope where applicable.
 | `CMD-26` | `/loop` duration/cron, list, pause/resume/cancel and live-session lifetime                                         |
 | `CMD-27` | `/background`, list and targeted cancellation; Host/Sandbox exit only after receipt; Container/SSH handoff refusal |
 | `CMD-28` | `/attach <execution-id>` and explicit control takeover in discovery                                                |
-| `CMD-29` | `/goal` inspection, literal creation, reviewed edit/replacement, pause/resume/cancel/clear and host-started stages |
+| `CMD-29` | `/goal` semantic preparation and definition-review phases, literal creation, inspection, evidence request, reviewed edit/replacement, pause/resume/cancel/clear and host-started stages |
 
 ### Current Settings panels
 
@@ -113,7 +113,6 @@ states, Escape/back, persistence, status feedback, and scope where applicable.
 | `SET-08` | Keyboard         |
 | `SET-09` | Updates          |
 | `SET-10` | Run controls     |
-| `SET-11` | Isolation        |
 
 For every panel, verify global and workspace scopes, effective-value labeling, scope switching,
 revision conflicts, failed saves, stale responses, reset/inheritance behavior, and deep-link return

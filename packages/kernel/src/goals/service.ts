@@ -19,12 +19,16 @@ import {
   type GoalLimits,
   type GoalAgentRunInput,
   type GoalAgentRunResult,
+  type GoalStewardRunResult,
   GoalAgentRunFailure,
+  GoalStewardRunFailure,
+  GOAL_FORMULATION_DEFAULTS,
   type GoalDefinitionSource,
 } from "@clarvis/goal";
 import type { TraceEvent } from "@clarvis/capability";
 import type {
   GoalFormulateResult,
+  GoalChange,
   GoalService,
   RunDetail,
   Session,
@@ -47,6 +51,47 @@ const identifier = z
   .max(256)
   .regex(/^[a-zA-Z0-9._:-]+$/u);
 const requestSchema = goalControlSchema.extend({ session_id: identifier });
+const DEFINITION_SOURCE_CONTEXT_MAX_BYTES = 128 * 1024;
+
+interface GoalDefinitionSourceContext extends GoalDefinitionSource {
+  content: string;
+  truncated: boolean;
+}
+
+function appendUsage(
+  left: GoalAgentRunResult["usage"],
+  right: GoalAgentRunResult["usage"],
+): GoalAgentRunResult["usage"] {
+  if (left.kind !== "measured" || right.kind !== "measured") return { kind: "unknown" };
+  return {
+    kind: "measured",
+    input: left.input + right.input,
+    output: left.output + right.output,
+    ...(left.cached === undefined || right.cached === undefined
+      ? {}
+      : { cached: left.cached + right.cached }),
+  };
+}
+
+async function definitionSourceContext(
+  sources: readonly GoalDefinitionSource[],
+  readFile: (path: string) => Promise<{ path: string; content: string }>,
+): Promise<GoalDefinitionSourceContext[]> {
+  let remaining = DEFINITION_SOURCE_CONTEXT_MAX_BYTES;
+  const context: GoalDefinitionSourceContext[] = [];
+  for (const source of sources) {
+    const current = await readFile(source.path);
+    const bytes = Buffer.from(current.content, "utf8");
+    const included = bytes.subarray(0, Math.max(0, remaining));
+    context.push({
+      ...source,
+      content: included.toString("utf8"),
+      truncated: included.byteLength < bytes.byteLength,
+    });
+    remaining -= included.byteLength;
+  }
+  return context;
+}
 
 /** One authenticated connection's user controls over the host's private conversation store. */
 export function createGoalService(options: {
@@ -61,12 +106,22 @@ export function createGoalService(options: {
   entryTokenLimit(params: StartRunParams): number | undefined;
   logger?: Logger;
   subscribe: GoalService["subscribe"];
+  formulationChanged(sessionId: string, phase: NonNullable<GoalChange["formulation_phase"]>): void;
   transactions: HostedSessionTransactions;
   readRun(executionId: string): Promise<RunDetail | null>;
   readTrace(executionId: string): readonly TraceEvent[] | undefined;
   readWorkspaceFile(path: string): Promise<{ path: string; content: string }>;
   priceFor?: (model: string) => ModelCost | undefined;
   formulateRun(input: GoalAgentRunInput): Promise<GoalAgentRunResult>;
+  reviewDefinition(input: {
+    session_id: string;
+    request: { mode: "auto" | "guided"; seed?: string };
+    proposal: Extract<GoalAgentRunResult["result"], { status: "ready" }>;
+    sources: readonly GoalDefinitionSourceContext[];
+    trajectory: GoalAgentRunInput["trajectory"];
+    signal: AbortSignal;
+    token_limit: number;
+  }): Promise<GoalStewardRunResult>;
   workspaceReadAvailable: boolean;
 }): { service: GoalService; close(): Promise<void> } {
   const logger = options.logger ?? NOOP_LOGGER;
@@ -224,6 +279,7 @@ export function createGoalService(options: {
         throw kernelError("conflict", "A running conversation cannot acquire a goal");
       const authority = options.registry.claimController(options.peerId, request.session_id);
       assert(authority);
+      options.formulationChanged(request.session_id, "preparing");
       const trajectory = await projectGoalTrajectory(
         captured,
         (executionId) => options.readRun(executionId),
@@ -289,19 +345,88 @@ export function createGoalService(options: {
           question: "What outcome should Clarvis pursue?",
         });
 
-      formulationExecutionId = generateExecutionId();
-      let analyzed: GoalAgentRunResult;
+      let analyzed: GoalAgentRunResult | undefined;
+      let accumulatedUsage: GoalAgentRunResult["usage"] | undefined;
+      const accumulatedAccounting: NonNullable<GoalAgentRunResult["accounting"]> = [];
+      let revisionGuidance: string | undefined;
+      let previousDefinition: GoalAgentRunResult["result"] | undefined;
       try {
-        analyzed = await options.formulateRun({
-          mode: request.mode,
-          ...(request.mode === "guided" ? { seed: request.seed } : {}),
-          trajectory,
-          execution_id: formulationExecutionId,
-          agent_instance_id: randomUUID(),
-          session_id: request.session_id,
-          signal: authority.signal,
-        });
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt > 0) options.formulationChanged(request.session_id, "preparing");
+          formulationExecutionId = generateExecutionId();
+          analyzed = await options.formulateRun({
+            mode: request.mode,
+            ...(request.mode === "guided" ? { seed: request.seed } : {}),
+            trajectory,
+            execution_id: formulationExecutionId,
+            agent_instance_id: randomUUID(),
+            ...(captured.agent_profile === undefined ? {} : { agent_name: captured.agent_profile }),
+            ...(revisionGuidance === undefined
+              ? {}
+              : { revision_guidance: revisionGuidance, previous_definition: previousDefinition }),
+            session_id: request.session_id,
+            signal: authority.signal,
+          });
+          accumulatedUsage =
+            accumulatedUsage === undefined
+              ? analyzed.usage
+              : appendUsage(accumulatedUsage, analyzed.usage);
+          accumulatedAccounting.push(...(analyzed.accounting ?? []));
+          if (analyzed.result.status !== "ready") break;
+          let proposedSources: GoalDefinitionSource[];
+          try {
+            proposedSources = await verifyTraceNormativeSources({
+              trace: options.readTrace(formulationExecutionId) ?? [],
+              paths: analyzed.result.normative_source_paths,
+              readFile: (path) => options.readWorkspaceFile(path),
+            });
+          } catch {
+            return commitReceipt(
+              "insufficient_context",
+              { message: "A normative source could not be revalidated; invoke /goal again" },
+              accumulatedUsage,
+              accumulatedAccounting,
+            );
+          }
+          options.formulationChanged(request.session_id, "reviewing_definition");
+          const reviewed = await options.reviewDefinition({
+            session_id: request.session_id,
+            request:
+              request.mode === "guided" ? { mode: "guided", seed: request.seed } : { mode: "auto" },
+            proposal: analyzed.result,
+            sources: await definitionSourceContext(proposedSources, (path) =>
+              options.readWorkspaceFile(path),
+            ),
+            trajectory,
+            signal: authority.signal,
+            token_limit: GOAL_FORMULATION_DEFAULTS.max_net_tokens,
+          });
+          if (reviewed.result.decision !== "definition")
+            throw new Error("Goal Steward returned another review mode");
+          accumulatedUsage = appendUsage(accumulatedUsage, reviewed.usage);
+          accumulatedAccounting.push(...(reviewed.accounting ?? []));
+          analyzed = {
+            ...analyzed,
+            usage: accumulatedUsage,
+            accounting: accumulatedAccounting,
+          };
+          if (reviewed.result.verdict === "accept_definition") break;
+          revisionGuidance = reviewed.result.guidance;
+          previousDefinition = analyzed.result;
+          if (attempt === 2) throw new Error("Goal definition revision limit reached");
+        }
       } catch (error) {
+        const failedRun =
+          error instanceof GoalAgentRunFailure || error instanceof GoalStewardRunFailure
+            ? error
+            : undefined;
+        const failureUsage =
+          failedRun === undefined
+            ? accumulatedUsage
+            : accumulatedUsage === undefined
+              ? failedRun.usage
+              : appendUsage(accumulatedUsage, failedRun.usage);
+        const failureAccounting = [...accumulatedAccounting, ...(failedRun?.accounting ?? [])];
         logger.warn(
           {
             event: "goal.formulation.failed",
@@ -313,10 +438,19 @@ export function createGoalService(options: {
         return commitReceipt(
           "failed",
           { message: "Goal formulation failed; try again" },
-          error instanceof GoalAgentRunFailure ? error.usage : undefined,
-          error instanceof GoalAgentRunFailure ? error.accounting : undefined,
+          failureUsage,
+          failureAccounting,
         );
       }
+      if (analyzed === undefined) throw new Error("Goal formulation produced no result");
+      analyzed = {
+        ...analyzed,
+        usage: accumulatedUsage ?? analyzed.usage,
+        accounting: accumulatedAccounting,
+      };
+      if (formulationExecutionId === undefined)
+        throw new Error("Goal formulation execution identity is unavailable");
+      const acceptedFormulationExecutionId = formulationExecutionId;
       if (analyzed.result.status === "insufficient_context")
         return commitReceipt(
           "insufficient_context",
@@ -329,7 +463,7 @@ export function createGoalService(options: {
       let sources: GoalDefinitionSource[];
       try {
         sources = await verifyTraceNormativeSources({
-          trace: options.readTrace(formulationExecutionId) ?? [],
+          trace: options.readTrace(acceptedFormulationExecutionId) ?? [],
           paths: ready.normative_source_paths,
           readFile: (path) => options.readWorkspaceFile(path),
         });
@@ -353,7 +487,7 @@ export function createGoalService(options: {
             operation_id: request.operation_id,
             expected_revision: goalStateFromSession(session)?.revision ?? 0,
             fingerprint,
-            formulation_execution_id: formulationExecutionId,
+            formulation_execution_id: acceptedFormulationExecutionId,
             mode: request.mode,
             outcome: "stale_context",
             message: "Conversation changed during formulation; invoke /goal again",
@@ -374,7 +508,7 @@ export function createGoalService(options: {
             ? {
                 kind: "guided" as const,
                 seed: request.seed,
-                formulation_execution_id: formulationExecutionId,
+                formulation_execution_id: acceptedFormulationExecutionId,
                 source_session_revision: captured.revision ?? 0,
                 source_execution_ids: trajectory.source_execution_ids,
                 trajectory_digest: trajectory.digest,
@@ -383,7 +517,7 @@ export function createGoalService(options: {
               }
             : {
                 kind: "auto" as const,
-                formulation_execution_id: formulationExecutionId,
+                formulation_execution_id: acceptedFormulationExecutionId,
                 source_session_revision: captured.revision ?? 0,
                 source_execution_ids: trajectory.source_execution_ids,
                 trajectory_digest: trajectory.digest,
@@ -455,7 +589,10 @@ export function createGoalService(options: {
         "Goal formulation completed",
       );
       return { ...receipt, formulation: receipt.formulation! };
-    })().finally(release);
+    })().finally(() => {
+      options.formulationChanged(request.session_id, "idle");
+      release();
+    });
     formulations.set(formulationKey, { fingerprint, promise: task });
     try {
       return await task;

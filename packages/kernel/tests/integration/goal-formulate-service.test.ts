@@ -10,6 +10,88 @@ afterEach(async () => {
 });
 
 describe("Goal formulation through the real file host", () => {
+  it("returns a rejected definition to the selected main agent before activation", async () => {
+    const fixture = await createGoalFileHostFixture();
+    cleanups.push(fixture.close);
+    const phases: string[] = [];
+    const unsubscribe = await fixture.client.goals.subscribe("conversation", (change) => {
+      if (change.formulation_phase !== undefined) phases.push(change.formulation_phase);
+    });
+    cleanups.push(async () => unsubscribe());
+    let reviews = 0;
+    fixture.setResponder(async (request) => {
+      if (request.tools?.some((tool) => tool.function.name === "submit_result")) {
+        const frame = String(request.messages.at(-1)!.content);
+        return {
+          name: "submit_result",
+          arguments: {
+            status: "ready",
+            objective: frame.includes("Preserve the requested exclusion")
+              ? "Implement the request without publishing"
+              : "Implement the request",
+            criteria: [],
+            constraints: [],
+            exclusions: frame.includes("Preserve the requested exclusion")
+              ? ["Do not publish"]
+              : [],
+            assumptions: [],
+            normative_source_paths: [],
+          },
+        };
+      }
+      return {
+        name: "update_goal",
+        arguments: { update: { action: "blocked", reason: "Fixture work run is observable" } },
+      };
+    });
+    fixture.setStewardResponder(async (request) => {
+      const frame = JSON.parse(String(request.messages.at(-1)!.content)) as { mode?: string };
+      if (frame.mode === "definition") {
+        reviews++;
+        return {
+          name: "submit_result",
+          arguments:
+            reviews === 1
+              ? {
+                  decision: "definition",
+                  verdict: "revise_definition",
+                  summary: "A material exclusion was lost",
+                  guidance: "Preserve the requested exclusion",
+                }
+              : {
+                  decision: "definition",
+                  verdict: "accept_definition",
+                  summary: "The definition is faithful",
+                },
+        };
+      }
+      throw new Error("Unexpected work review in formulation fixture");
+    });
+    const receipt = await fixture.client.goals.formulate({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "definition-revision",
+      mode: "guided",
+      seed: "Implement the request without publishing",
+    });
+    expect(receipt.formulation.outcome).toBe("created");
+    expect(reviews).toBe(2);
+    expect(phases).toEqual([
+      "preparing",
+      "reviewing_definition",
+      "preparing",
+      "reviewing_definition",
+      "idle",
+    ]);
+    expect(fixture.requests[1]!.messages.at(-1)!.content).toContain(
+      "Preserve the requested exclusion",
+    );
+    expect((await fixture.client.goals.get("conversation")).state.current).toMatchObject({
+      objective: "Implement the request without publishing",
+      exclusions: ["Do not publish"],
+    });
+  });
+
   it("creates one inspectable guided Goal from a separate read-only run and starts normal work", async () => {
     const fixture = await createGoalFileHostFixture({ budgetTokenLimit: 123_456 });
     cleanups.push(fixture.close);
@@ -61,6 +143,24 @@ describe("Goal formulation through the real file host", () => {
       seed: "  implemente request.md sem publicar  ",
     });
     expect(receipt.formulation).toMatchObject({ mode: "guided", outcome: "created" });
+    const definitionFrame = JSON.parse(
+      String(fixture.stewardRequests[0]!.messages.at(-1)!.content),
+    ) as {
+      normative_sources: Array<{
+        path: string;
+        digest: string;
+        content: string;
+        truncated: boolean;
+      }>;
+    };
+    expect(definitionFrame.normative_sources).toEqual([
+      {
+        path: "request.md",
+        content: "Implement the semantic Goal agent.\n",
+        truncated: false,
+        digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
+    ]);
     const view = await fixture.client.goals.get("conversation");
     expect(view.state.current).toMatchObject({
       objective: "Implement the semantic Goal agent",
@@ -72,7 +172,7 @@ describe("Goal formulation through the real file host", () => {
         kind: "guided",
         seed: "implemente request.md sem publicar",
         formulation_execution_id: receipt.formulation.formulation_execution_id,
-        formulation_usage: { kind: "measured", input: 2030, output: 20, cached: 1000 },
+        formulation_usage: { kind: "measured", input: 3050, output: 30, cached: 1500 },
       },
     });
     expect(view.state.current!.runs).toHaveLength(1);
@@ -256,6 +356,47 @@ describe("Goal formulation through the real file host", () => {
     const calls = fixture.requests.length;
     expect(await fixture.client.goals.formulate(request)).toEqual(receipt);
     expect(fixture.requests).toHaveLength(calls);
+  });
+
+  it("retains formulation and definition-review usage when review cannot produce its mode", async () => {
+    const fixture = await createGoalFileHostFixture();
+    cleanups.push(fixture.close);
+    fixture.setResponder(async () => ({
+      name: "submit_result",
+      arguments: {
+        status: "ready",
+        objective: "Create a reviewed goal",
+        criteria: [],
+        constraints: [],
+        exclusions: [],
+        assumptions: [],
+        normative_source_paths: [],
+      },
+    }));
+    fixture.setStewardResponder(async () => ({
+      name: "submit_result",
+      arguments: { decision: "aligned", summary: "Wrong review mode" },
+    }));
+
+    const receipt = await fixture.client.goals.formulate({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "failed-definition-review",
+      mode: "guided",
+      seed: "Create a reviewed goal",
+    });
+
+    expect(receipt.formulation.outcome).toBe("failed");
+    expect((await fixture.client.goals.get("conversation")).state.current).toBeUndefined();
+    const measured = [...fixture.usages, ...fixture.stewardUsages].reduce(
+      (total, usage) => ({
+        input: total.input + usage.input,
+        output: total.output + usage.output,
+        cached: total.cached + usage.cached,
+      }),
+      { input: 0, output: 0, cached: 0 },
+    );
+    expect((await fixture.client.sessions.get("conversation"))!.totals).toEqual(measured);
   });
 
   it("formulates auto from a persisted conversation trajectory and starts normal work", async () => {

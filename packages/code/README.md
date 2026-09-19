@@ -89,19 +89,20 @@ See [hosted runs](../../specs/hosts/hosted-runs.md) for authority and recovery b
 
 `/goal` shows the conversation's objective, semantic definition, origin, compact budget and Goal
 Steward status. The sidebar adds one short Steward line; the complete view shows bounded review and
-intervention counts plus the latest summary and actionable guidance. Technical execution IDs remain
+completion-review count plus the latest summary and actionable next step. Technical execution IDs remain
 hidden. `goal_steward_failed` and `goal_steward_inconclusive` appear as Goal-domain attention.
 Only post-closure Kernel settlement may show the Goal as complete.
 Goal command suggestions follow the current Goal and physical execution state. Without a current
 Goal, only `/goal` and `/goal/auto` appear.
-`/goal auto` explicitly asks the Goal agent to formulate
+`/goal auto` explicitly asks the selected main agent to formulate
 from the existing trajectory. `/goal <seed>` asks it to treat the seed as primary and use trajectory
 and confined reads only to resolve and enrich that request. Neither mode opens the form or sends the
 slash command to the ordinary conversation model. `/goal -- <objective>` bypasses inference and
 creates that exact literal text, including `/goal -- auto`; an empty literal is refused.
 
-Any current Goal blocks formulation until the user reviews, cancels or clears it. Formulation is
-visible immediately in the Lead activity line and automatically reveals a compact Goal section in
+Any current Goal blocks formulation until the user reviews, cancels or clears it. Formulation and
+the subsequent tool-free definition review are visible immediately in the Lead activity line and
+automatically reveal a compact Goal section in
 the same activity sidebar used by Plans, parallel work and agents. The section remains after
 creation with objective, status and stage count, using the same title/status/key anatomy and lifecycle
 tones as Plan, with the `full goal` navigation label; `Ctrl+X O` toggles the complete Goal view while

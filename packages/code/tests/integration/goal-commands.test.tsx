@@ -579,11 +579,10 @@ test("unknown physical work remains visible and prevents review without a hosted
 test("Goal view exposes bounded Steward state without technical identifiers", async () => {
   const run = goalRun("private-work-id");
   run.steward_review_count = 2;
-  run.steward_intervention_count = 1;
   run.steward_reviews = [
     {
       steward_execution_id: "private-steward-id",
-      mode: "observation",
+      mode: "completion",
       goal_id: "goal-fixture",
       work_execution_id: "private-work-id",
       control_revision: 1,
@@ -593,10 +592,9 @@ test("Goal view exposes bounded Steward state without technical identifiers", as
       plan_context_revision: "private-revision",
       operator_steering_epoch: 0,
       evidence_digest: "c".repeat(64),
-      decision: "steer",
+      decision: "needs_work",
       summary: "Result still needs verification",
-      guidance: "Verify the final artifact",
-      inspected_artifacts: [],
+      next_step: "Verify the final artifact",
       usage: { kind: "measured", input: 10, output: 5, cached: 0 },
       reviewed_at: 1,
     },
@@ -608,7 +606,7 @@ test("Goal view exposes bounded Steward state without technical identifiers", as
         last_consumed_work_sequence: 1,
         runtime_fingerprint: "a".repeat(64),
         prompt_cache_ttl: "5m",
-        status: "intervened",
+        status: "attention",
         consumption: { input: 10, output: 5, cached: 0, net_tokens: 15, usage_unknown: false },
       },
     }),

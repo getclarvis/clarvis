@@ -103,8 +103,12 @@ function fixture() {
     state(next: GoalView) {
       current = next;
     },
-    notify() {
-      for (const listener of subscriptions) listener({ session_id: binding!.sessionId });
+    notify(formulationPhase?: GoalChange["formulation_phase"]) {
+      for (const listener of subscriptions)
+        listener({
+          session_id: binding!.sessionId,
+          ...(formulationPhase === undefined ? {} : { formulation_phase: formulationPhase }),
+        });
     },
   };
 }
@@ -198,6 +202,19 @@ describe("goal presentation controller", () => {
     gate.resolve();
     await pending;
     expect(f.controller.formulating()).toBe(false);
+  });
+
+  it("projects host definition review without treating it as durable Goal state", async () => {
+    const f = fixture();
+    await f.controller.refresh();
+    f.notify("preparing");
+    expect(f.controller.formulating()).toBe(true);
+    expect(f.controller.formulationPhase()).toBe("preparing");
+    f.notify("reviewing_definition");
+    expect(f.controller.formulationPhase()).toBe("reviewing_definition");
+    f.notify("idle");
+    expect(f.controller.formulating()).toBe(false);
+    expect(f.controller.view()?.state.revision).toBe(0);
   });
 
   it("recovers a lost formulation reply without starting another analysis", async () => {

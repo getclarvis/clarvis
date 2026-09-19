@@ -1,6 +1,6 @@
 import type { Capability, GateOutcome } from "@clarvis/capability";
 
-/** Validate private review evidence before acceptance, allowing one bounded in-run correction. */
+/** Validate the structured review protocol, allowing one bounded in-run correction. */
 export function createStewardResultGate(validate: (value: unknown) => Promise<void>): Capability {
   return {
     name: "goal-steward-result",
@@ -32,7 +32,7 @@ export function createStewardResultGate(validate: (value: unknown) => Promise<vo
                             nudged = true;
                             return {
                               kind: "nudge",
-                              note: "Review rejected: use the current frame's mode, criterion IDs and evidence IDs. Read every cited inspected_path completely in THIS evaluation, including normative sources for achieved. Historical reads do not qualify. Then call submit_result again; if verification is unavailable, report inconclusive without claiming unverified reads.",
+                              note: "Review rejected: use the current frame's mode, criterion IDs and evidence IDs, then call submit_result again. If the supplied context is insufficient, return needs_evidence with the specific missing information.",
                             };
                           }
                           return {

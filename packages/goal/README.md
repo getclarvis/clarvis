@@ -52,10 +52,11 @@ a later user pause or cancellation remains authoritative. Resume alone does not 
 
 ## Semantic formulation
 
-`runGoalAgent` executes a fixed `goal-agent` profile through the generic loop executor. Its base
-prompt is byte-identical across auto and guided runs: both precedence rules live in that fixed
-policy, while mode, seed, trajectory, digest, truncation and workspace availability occur only in
-the final volatile user message. Auto mode
+`runGoalAgent` executes the conversation's selected main-agent profile through the generic loop
+executor. The host retains that profile's resolved global/workspace instructions and model, appends
+the fixed formulation policy, and replaces its operational authority with a read-only formulation
+surface. Mode, seed, trajectory, digest, truncation and workspace availability occur only in the
+final volatile user message. Auto mode
 treats the bounded trajectory as primary; guided mode treats the validated seed as primary and uses
 trajectory and workspace reads only to resolve it. Both require structured `submit_result`; invalid
 output is a failed operation and never falls back to command text. `formulationCriteria` assigns
@@ -95,12 +96,12 @@ Its optional `max_net_tokens` overrides the finite entry budget for the whole ob
 `max_auto_continuations` defaults to 8 and `max_no_progress_checkpoints` to 3. `deadline_at` is an
 optional absolute Unix timestamp in milliseconds. These defaults are copied only when creating or
 replacing a goal; changes to configuration never rewrite existing limits, usage or receipts.
-The non-contributable `goals.agent` block may select a model or override the formulation token
-allowance. When omitted, that allowance equals the ordinary run token budget resolved from merged
-settings or the host fallback; it belongs only to the formulation run and is capped by the same host
-ceiling. Time, iteration, call-timeout and retry defaults remain 120,000 ms, eight iterations,
-60,000 ms per call and one transport retry. An omitted model inherits `default_model`; an explicit
-invalid model fails when formulation is invoked.
+The non-contributable `goals.agent.formulation` block may override the formulation token allowance.
+When omitted, that allowance equals the ordinary run token budget resolved from merged settings or
+the host fallback; it belongs only to formulation and definition review and is capped by the same
+host ceiling. Time, iteration, call-timeout and retry defaults remain 120,000 ms, eight iterations,
+60,000 ms per call and one transport retry. The selected main-agent profile owns the formulation
+model.
 
 `createGoalCapability` consumes a host-bound `GoalRuntimePort` and requires activation for that
 session, execution and persisted entry-agent instance. It contributes `get_goal` and `update_goal`
@@ -122,25 +123,24 @@ another action remain invalid. Optional evidence IDs retain their empty default.
 structured output from requiring unrelated action fields and producing calls the runtime rejects.
 
 The goal gate disables fast acceptance and revalidates completion before an ordinary final result.
-Its host-owned Goal Steward then reviews semantic sufficiency with a separate read-only execution.
-Current observation decisions become internal notes at a safe iteration boundary; operator steering
-takes precedence. A not-achieved final review returns a concrete correction; failure or inconclusive
-review prevents completion. The domain owns the fixed schema, request policy, settings, review state
-and idempotent usage reducer; the Kernel owns scheduling, reads, fencing and durable settlement.
+Its host-owned Goal Steward then reviews semantic sufficiency with a separate tool-free execution.
+The Steward runs only after a terminal candidate passes deterministic completion prerequisites; it
+does not continuously observe work or inject background corrections. A not-achieved review returns a
+concrete correction to the same run; failure or inconclusive review prevents completion. The domain
+owns the fixed schema, request policy, settings, review state and idempotent usage reducer; the Kernel
+owns the bounded completion call, evidence projection, fencing and durable settlement.
 `goals.agent.steward` selects the optional model and finite allowance independently of the work budget.
 Private `continue_from` history preserves compatible prompt prefixes across evaluations and checkpoints.
-The host supplies the work run's captured global and workspace operating instructions (`CLARVIS.md`,
-falling back to `AGENTS.md` independently per scope) as normative evaluation context, never extra
-permissions. A canonical configuration message precedes the first evaluation frame and is retained
-without duplication on continuation. Changed instructions start a fresh private history; direct
-operator restrictions and the persisted Goal still constrain interpretation.
-The host checks semantic targets and current-evaluation artifact reads before accepting the Steward's
-output, with one bounded corrective nudge inside that same evaluation. Repeated invalid output fails
-closed; historical reads cannot establish current inspection. The host reserves review slots for
-completion so observations cannot exhaust the final review allowance. Its fixed policy separates
-fresh artifact inspection from host-recorded command execution: eligible command receipts from
-prior Goal stages can establish tests already run, while later edits and contradictions still
-require renewed validation by the work agent.
+The Steward never receives repository instructions such as `AGENTS.md` or `CLARVIS.md` and has no
+workspace tools. The host supplies only the bounded Goal definition, Plan context, trajectory,
+candidate, evidence catalog, command/delegation receipts and Goal workflow history needed for a
+decision. Evidence references use short frame-local IDs that the host maps to durable receipts, so
+the model never has to reproduce storage digests. During creation it first
+reviews the proposed definition against the operator request and verified, bounded snapshots of
+normative sources; a rejected definition returns one correction to the selected main agent, up to
+three formulation attempts, before any Goal is activated. During completion, `needs_work` returns a
+concrete correction while `needs_evidence` names the missing proof. The host checks semantic targets
+before accepting output and allows one bounded schema-correction nudge inside the same evaluation.
 One nonempty invalid final receives a recovery nudge; a repeated invalid final or the first empty
 final stops with explicit blocking. Reporting a blocker uses safe interruption without requiring
 plan task completion. Checkpoint requests still pass all plan/review/delegation gates. Plan state

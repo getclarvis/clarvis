@@ -1,4 +1,4 @@
-import type { OperatorInstructions, PerAgentUsage } from "@clarvis/capability";
+import type { AgentProfile, PerAgentUsage } from "@clarvis/capability";
 import { z } from "zod";
 import type { GoalAgentBudget, GoalAgentRuntime } from "./types.ts";
 import type { GoalUsage } from "../schemas.ts";
@@ -12,20 +12,27 @@ const assessment = z
     verdict: z.enum(["satisfied", "unsatisfied", "inconclusive"]),
     rationale: text,
     evidence_ids: z.array(z.string().min(1).max(256)).max(32).refine(unique),
-    inspected_paths: z.array(text).max(16).refine(unique),
   })
   .strict()
   .refine((value) => (value.scope === "criterion") === (value.criterion_id !== undefined));
 
-/** One fixed wire schema preserves the tool catalog across every evaluation mode. */
+/** One fixed wire schema preserves the tool catalog across definition and completion review. */
 export const goalStewardResultSchema = z.discriminatedUnion("decision", [
-  z.object({ decision: z.literal("aligned"), summary: text }).strict(),
-  z.object({ decision: z.literal("steer"), summary: text, guidance: text }).strict(),
-  z.object({ decision: z.literal("new_run"), summary: text, next_step: text }).strict(),
+  z
+    .object({
+      decision: z.literal("definition"),
+      verdict: z.enum(["accept_definition", "revise_definition"]),
+      summary: text,
+      guidance: text.optional(),
+    })
+    .strict()
+    .refine((value) => (value.verdict === "revise_definition") === (value.guidance !== undefined), {
+      message: "A definition revision requires specific guidance",
+    }),
   z
     .object({
       decision: z.literal("completion"),
-      verdict: z.enum(["achieved", "not_achieved", "inconclusive"]),
+      verdict: z.enum(["achieved", "needs_work", "needs_evidence"]),
       summary: text,
       assessments: z.array(assessment).min(2).max(34),
       next_step: text.optional(),
@@ -34,9 +41,9 @@ export const goalStewardResultSchema = z.discriminatedUnion("decision", [
     .superRefine((value, ctx) => {
       const verdicts = value.assessments.map((item) => item.verdict);
       const expected = verdicts.includes("unsatisfied")
-        ? "not_achieved"
+        ? "needs_work"
         : verdicts.includes("inconclusive")
-          ? "inconclusive"
+          ? "needs_evidence"
           : "achieved";
       const keys = value.assessments.map((item) => `${item.scope}:${item.criterion_id ?? ""}`);
       if (
@@ -44,26 +51,23 @@ export const goalStewardResultSchema = z.discriminatedUnion("decision", [
         !unique(keys) ||
         value.assessments.filter((item) => item.scope === "definition").length !== 1 ||
         value.assessments.filter((item) => item.scope === "objective").length !== 1 ||
-        (value.verdict === "not_achieved" && value.next_step === undefined)
+        (value.verdict !== "achieved" && value.next_step === undefined)
       )
         ctx.addIssue({ code: "custom", message: "Inconsistent or incomplete Steward assessments" });
     }),
 ]);
 
 export type GoalStewardResult = z.infer<typeof goalStewardResultSchema>;
-export interface GoalStewardRuntime extends GoalAgentRuntime {
-  /** Host-captured operating context; never grants this reviewer additional permissions. */
-  operator_instructions?: readonly Pick<OperatorInstructions, "scope" | "source" | "content">[];
-}
+export type GoalStewardRuntime = GoalAgentRuntime & {
+  reasoning_effort?: AgentProfile["reasoning_effort"];
+};
 export type GoalStewardFinalizeAttempt =
   { mode: "text"; text: string } | { mode: "submit"; text?: string; submitted_value?: unknown };
 export type GoalStewardCompletionDecision =
   | { kind: "achieved"; review_id: string }
-  | { kind: "not_achieved"; review_id: string; next_step: string }
-  | { kind: "inconclusive"; review_id: string; reason: string };
-export type GoalStewardIntervention =
-  { kind: "steer"; guidance: string } | { kind: "new_run"; next_step: string };
-
+  | { kind: "needs_work"; review_id: string; next_step: string }
+  | { kind: "needs_evidence"; review_id: string; next_step: string }
+  | { kind: "review_pending"; review_id: string; reason: string };
 export interface GoalStewardRunInput {
   execution_id: string;
   session_id: string;
@@ -85,12 +89,15 @@ export interface GoalStewardRunResult {
 /** Host-owned catalogs constrain all semantic target and evidence references. */
 export function validateGoalStewardResult(
   input: unknown,
-  mode: "observation" | "completion",
+  mode: "definition" | "completion",
   qualitativeIds: readonly string[],
   evidenceIds: readonly string[],
 ): GoalStewardResult {
   const result = goalStewardResultSchema.parse(input);
-  if ((result.decision === "completion") !== (mode === "completion"))
+  if (
+    (mode === "definition" && result.decision !== "definition") ||
+    (mode === "completion" && result.decision !== "completion")
+  )
     throw new Error("Goal Steward returned a decision for another evaluation mode");
   if (result.decision === "completion") {
     const ids = result.assessments

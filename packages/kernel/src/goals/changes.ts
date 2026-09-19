@@ -17,11 +17,14 @@ export function createGoalChanges(logger: Logger) {
         listeners.delete(key);
       };
     },
-    notify(sessionId: string): void {
+    notify(sessionId: string, formulationPhase?: GoalChange["formulation_phase"]): void {
       for (const subscriber of listeners.values()) {
         if (subscriber.sessionId !== sessionId) continue;
         try {
-          subscriber.listener({ session_id: sessionId });
+          subscriber.listener({
+            session_id: sessionId,
+            ...(formulationPhase === undefined ? {} : { formulation_phase: formulationPhase }),
+          });
         } catch {
           logger.warn(
             { event: "goal.change.delivery_failed", session_id: sessionId },

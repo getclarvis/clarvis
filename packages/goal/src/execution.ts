@@ -83,7 +83,6 @@ export function admitGoalRun(
     phase: "preparing",
     steward_reviews: [],
     steward_review_count: 0,
-    steward_intervention_count: 0,
   });
   if (input.automatic) goal.auto_continuations += 1;
   return changed(state, goal, input.now);

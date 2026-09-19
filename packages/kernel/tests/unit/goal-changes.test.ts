@@ -16,18 +16,24 @@ describe("goal display invalidations", () => {
     });
     changes.notify("session");
     expect(received).toEqual([{ session_id: "session" }]);
-    expect(logger.records).toHaveLength(1);
+    changes.notify("session", "reviewing_definition");
+    expect(received.at(-1)).toEqual({
+      session_id: "session",
+      formulation_phase: "reviewing_definition",
+    });
+    expect(logger.records).toHaveLength(2);
     expect(logger.events("goal.change.delivery_failed")).toEqual([
+      { event: "goal.change.delivery_failed", session_id: "session" },
       { event: "goal.change.delivery_failed", session_id: "session" },
     ]);
     expect(JSON.stringify(logger.records)).not.toContain("private-observer-error");
     off();
     off();
     changes.notify("session");
-    expect(received).toHaveLength(1);
+    expect(received).toHaveLength(2);
     changes.close();
     changes.notify("session");
-    expect(logger.records).toHaveLength(2);
+    expect(logger.records).toHaveLength(3);
     expect(() => changes.subscribe("session", () => {})).toThrow("closed");
   });
 

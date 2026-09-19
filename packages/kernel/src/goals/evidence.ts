@@ -58,6 +58,15 @@ export interface GoalCommandEvidence {
   truncated: boolean;
 }
 
+/** Bounded host-observed receipt for a completed delegated run. */
+export interface GoalDelegationEvidence {
+  id: string;
+  tool: "delegate_task";
+  status: "completed";
+  result_excerpt: string;
+  truncated: boolean;
+}
+
 interface Observation {
   id: string;
   executionId: string;
@@ -68,11 +77,34 @@ interface Observation {
   changeDigest?: string;
   description: string;
   commandEvidence?: Omit<GoalCommandEvidence, "id">;
+  delegationEvidence?: Omit<GoalDelegationEvidence, "id">;
 }
 
 /** A completed tool envelope is required; native command success additionally requires exit zero. */
 function observation(executionId: string, event: TraceEvent): Observation | undefined {
-  if (!isBuiltinTraceEvent(event) || event.type !== "tool_call" || !event.call_id) return undefined;
+  if (!isBuiltinTraceEvent(event)) return undefined;
+  if (event.type === "delegation_completed") {
+    const result = sanitizeText(event.result);
+    return {
+      id: `tool-${goalEvidenceDigest([executionId, "delegate_task", event.delegation_id])}`,
+      executionId,
+      tool: "delegate_task",
+      argumentsDigest: goalEvidenceDigest({
+        delegation_id: event.delegation_id,
+        ...(event.task_id === undefined ? {} : { task_id: event.task_id }),
+      }),
+      resultDigest: goalEvidenceDigest(event.result),
+      successful: event.status === "completed",
+      description: `delegate_task completed; delegation ${event.delegation_id}`.slice(0, 512),
+      delegationEvidence: {
+        tool: "delegate_task",
+        status: "completed",
+        result_excerpt: result.slice(0, 4096),
+        truncated: result.length > 4096,
+      },
+    };
+  }
+  if (event.type !== "tool_call" || !event.call_id) return undefined;
   const tool = event.tool_name ? `${event.mcp_name}.${event.tool_name}` : event.mcp_name;
   if (CONTROL_TOOLS.has(tool)) return undefined;
   if (
@@ -130,6 +162,7 @@ export interface GoalEvidenceSnapshot extends GoalEvidenceVerifier {
   readonly generation: number;
   readonly catalog: GoalEvidenceOption[];
   readonly commands: GoalCommandEvidence[];
+  readonly delegations: GoalDelegationEvidence[];
   resolve(ids: readonly string[]): GoalEvidenceRef[];
   progress(
     ids: readonly string[],
@@ -215,7 +248,11 @@ export function createGoalEvidenceSource(options: {
           run.execution_id === options.executionId
             ? [...live.values()]
             : (options.readTrace(run.execution_id) ?? [])
-                .filter((event) => isBuiltinTraceEvent(event) && event.type === "tool_call")
+                .filter(
+                  (event) =>
+                    isBuiltinTraceEvent(event) &&
+                    (event.type === "tool_call" || event.type === "delegation_completed"),
+                )
                 .slice(-MAX_OBSERVATIONS)
                 .map((event) => observation(run.execution_id, event))
                 .filter((item): item is Observation => item !== undefined);
@@ -289,6 +326,10 @@ export function createGoalEvidenceSource(options: {
         commands: catalog.flatMap(({ id }) => {
           const command = all.get(id)?.commandEvidence;
           return command === undefined ? [] : [{ id, ...command }];
+        }),
+        delegations: catalog.flatMap(({ id }) => {
+          const delegation = all.get(id)?.delegationEvidence;
+          return delegation === undefined ? [] : [{ id, ...delegation }];
         }),
         resolve: resolveReferences,
         async verify(reference, criterion) {

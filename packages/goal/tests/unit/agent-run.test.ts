@@ -46,6 +46,36 @@ const ready = {
 };
 
 describe("Goal semantic agent", () => {
+  it("uses the selected main profile while host-enforcing formulation-only authority", () => {
+    const request = buildGoalAgentRequest(
+      {
+        model_ref: "fallback/model",
+        providers: [],
+        profile: {
+          name: "marshall",
+          model: "selected/model",
+          base_prompt: "Workspace instructions from the selected main agent",
+          tools: ["external.tool"],
+          grants: ["edit_workspace", "run_commands", "delegate"],
+          can_spawn: ["worker"],
+          iteration_limit: 20,
+        },
+      },
+      input,
+    );
+    expect(request.entry).toBe("marshall");
+    expect(request.profiles[0]).toMatchObject({
+      name: "marshall",
+      model: "selected/model",
+      tools: [],
+      grants: ["read_workspace"],
+      can_spawn: [],
+    });
+    expect(request.profiles[0]!.base_prompt).toContain(
+      "Workspace instructions from the selected main agent",
+    );
+  });
+
   it("builds one finite isolated request with no MCP or delegation authority", () => {
     const request = buildGoalAgentRequest(
       { model_ref: "fixture/model", providers: [] },

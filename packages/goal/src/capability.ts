@@ -161,21 +161,6 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                     if (cancelled !== null) return cancelled;
                     try {
                       await refresh(signal);
-                      if (!bc.steerProbe?.()) {
-                        const intervention = await steward?.takeReadyIntervention(signal);
-                        signal?.throwIfAborted();
-                        if (intervention !== undefined && !bc.steerProbe?.()) {
-                          bc.ctx.appendNote(
-                            intervention.kind === "steer"
-                              ? `[goal steward] ${intervention.guidance}`
-                              : `[goal steward] Request update_goal checkpoint after the current safe boundary. Next step: ${intervention.next_step}`,
-                          );
-                          bc.trace.record("goal_steward_intervention", {
-                            work_execution_id: binding.execution_id,
-                            decision: intervention.kind,
-                          });
-                        }
-                      }
                       const cancelled = bc.maybeCancelled();
                       if (cancelled !== null) return cancelled;
                       publish();
@@ -186,7 +171,6 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                   },
                   afterDispatch() {
                     publish();
-                    steward?.scheduleObservation();
                   },
                   async onTeardown() {
                     await steward?.closeCoordinator();
@@ -353,10 +337,13 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                                 note: "Process the pending operator message before concluding this Goal.",
                               };
                             if (decision.kind === "achieved") return { kind: "pass" };
-                            if (decision.kind === "not_achieved")
+                            if (
+                              decision.kind === "needs_work" ||
+                              decision.kind === "needs_evidence"
+                            )
                               return {
                                 kind: "nudge",
-                                note: `[goal steward] ${decision.next_step}`,
+                                note: `[goal steward ${decision.kind === "needs_evidence" ? "evidence request" : "correction"}] ${decision.next_step}`,
                               };
                             return {
                               kind: "terminal",

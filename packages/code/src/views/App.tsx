@@ -1364,7 +1364,10 @@ export function App(props: AppProps): JSX.Element {
     return "working";
   };
   const leadActivityDetail = (): string => {
-    if (props.run.goals?.formulating()) return "Goal formulation · reading context";
+    if (props.run.goals?.formulating())
+      return props.run.goals.formulationPhase() === "reviewing_definition"
+        ? "Goal formulation · reviewing definition"
+        : "Goal formulation · preparing with selected agent";
     const goal = props.run.goals?.view()?.state.current;
     const detail: string[] = goal === undefined ? [] : [`Goal ${goal.status}`];
     if (!props.run.active()) return detail.join(` ${glyph("separator")} `);

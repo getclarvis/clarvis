@@ -269,13 +269,14 @@ the operator uses /goal edit for existing limits. Resume keeps spend/counts.
 Create only while idle with no current Goal: /goal auto uses conversation context; /goal <seed>
 prioritizes the seed; /goal -- <objective> is literal. Insufficient context creates nothing.
 Pause does not stop physical work. /goal inspects. These are operator commands, not settings effects.
-goals.agent.model selects formulation; steward.model overrides it for Steward. formulation and
-steward accept max_net_tokens, timeout_ms, max_iterations, call_timeout_ms, max_retries. Defaults:
+The selected main agent and its repository instructions formulate. formulation and steward accept
+max_net_tokens, timeout_ms, max_iterations, call_timeout_ms, max_retries; steward.model may select a
+review model. Defaults:
 work-sized independent allowance, 120000 ms, 8 iterations, 60000 ms/call, one retry; host ceilings win.
-Steward also bounds reviews/interventions/completion attempts as in the example. It is read-only,
-not the Judge: work runs execute checks and retain receipts. Partial reads cannot attest completion.
-not_achieved returns work; failed/inconclusive completion needs attention. Auxiliary usage/costs
-settle once in session totals outside the work allowance; missing telemetry remains unknown.
+Steward bounds reviews/interventions/completion attempts. It has no repository tools or
+AGENTS.md/CLARVIS.md context. Work runs execute checks and retain receipts. needs_work returns
+corrections; needs_evidence requests proof. Failed review needs attention. Auxiliary usage/costs
+settle once outside the work allowance; missing telemetry remains unknown.
 
 ## Author and configure workflows
 

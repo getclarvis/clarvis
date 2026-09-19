@@ -20,6 +20,7 @@ async function fixture(options: Parameters<typeof goalHostFixture>[0] = {}) {
   return f;
 }
 type ToolEvent = Extract<BuiltinTraceEvent, { type: "tool_call" }>;
+type DelegationEvent = Extract<BuiltinTraceEvent, { type: "delegation_completed" }>;
 const tool = (changes: Partial<ToolEvent> = {}): ToolEvent => ({
   type: "tool_call",
   agent: "lead",
@@ -32,6 +33,14 @@ const tool = (changes: Partial<ToolEvent> = {}): ToolEvent => ({
   arguments: { command: "bun run verify" },
   result: JSON.stringify({ exit_code: 0 }),
   error: null,
+  ...changes,
+});
+const delegation = (changes: Partial<DelegationEvent> = {}): DelegationEvent => ({
+  type: "delegation_completed",
+  delegation_id: "helper-run",
+  completed_at: 2,
+  status: "completed",
+  result: "Implemented the bounded change and returned the inspected file summary.",
   ...changes,
 });
 const toolCriterion: GoalCriterion = {
@@ -543,4 +552,27 @@ it("projects bounded sanitized command receipts from current and prior Goal stag
     }),
   );
   expect((await second.evidence.snapshot((await second.port.read()).goal)).commands).toEqual([]);
+});
+
+it("projects completed delegation receipts from current and prior Goal stages", async () => {
+  const event = delegation({ result: "delegation result line\n".repeat(300) });
+  const f = await fixture({ readTrace: (id) => (id === "first" ? [event] : undefined) });
+  const first = await f.runtime();
+  first.evidence.observe(event);
+  const current = await first.evidence.snapshot((await first.port.read()).goal);
+  expect(current.delegations).toHaveLength(1);
+  expect(current.delegations[0]).toMatchObject({
+    id: current.catalog[0]!.id,
+    tool: "delegate_task",
+    status: "completed",
+    truncated: true,
+  });
+  expect(current.delegations[0]!.result_excerpt).toHaveLength(4096);
+  await first.port.checkpoint({ summary: "Delegated", next_step: "Verify", evidence_ids: [] });
+  await settle(f);
+  await f.admit("second");
+  const second = await f.runtime("second");
+  expect((await second.evidence.snapshot((await second.port.read()).goal)).delegations).toEqual(
+    current.delegations,
+  );
 });

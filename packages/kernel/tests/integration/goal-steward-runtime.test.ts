@@ -446,6 +446,13 @@ it("gives the tool-free Steward actual command receipts instead of only catalog 
       });
       expect(JSON.parse(receipt.arguments_excerpt).command).toBe(command);
       expect(frame.evidence.some((entry: { id: string }) => entry.id === receipt.id)).toBe(true);
+      expect(frame.evidence_details).toHaveLength(1);
+      expect(frame.evidence_details[0]).toMatchObject({
+        id: receipt.id,
+        kind: "command",
+        status: "succeeded",
+        command: { stdout_excerpt: "CHECK_EXECUTED_OK" },
+      });
       expect(receipt.id).toMatch(/^evidence-[a-f0-9]{32}$/u);
       expect(receipt.id).not.toMatch(/^tool-/u);
       expect(request.tools!.map((tool) => tool.function.name)).not.toContain("shell");

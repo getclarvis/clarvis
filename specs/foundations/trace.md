@@ -178,6 +178,17 @@ content. Production: `createTrace` in
 [in-memory-trace.test.ts](../../packages/trace/tests/unit/in-memory-trace.test.ts) and the tool
 projection case in [trace-mapper.test.ts](../../packages/trace/tests/unit/trace-mapper.test.ts).
 
+`ToolCallDetail.tool_evidence` is a bounded producer-side receipt captured before the display cap.
+Its typed status distinguishes successful, failed and incomplete calls; command receipts retain
+bounded exit/timeout/signal metadata and stdout/stderr excerpts, while other tools retain a bounded
+content excerpt. `capDetail` applies independent receipt limits and `mapEntry` preserves the receipt
+through persistence. `DelegationFinishedDetail.result_digest` follows the same complete-result digest
+rule for delegated results. Production: `ToolEvidenceDetail` in
+`packages/capability/src/trace-kinds.ts`, `toolEvidence` in
+`packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts` and `capToolEvidence` in
+`packages/trace/src/cap-detail.ts`. Test: `uses a pre-cap command receipt when the persisted display
+result is truncated` in `packages/kernel/tests/integration/goal-runtime-port.test.ts`.
+
 `ToolCallStartedDetail.control` is the optional `{ tool_execution_id, actions: ["interrupt"] }`
 capability for one live builtin shell invocation. `ToolCallDetail.interruption` is the optional
 `{ source: "operator" }` cause on a selectively interrupted terminal with a non-null error

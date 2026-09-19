@@ -554,6 +554,45 @@ it("projects bounded sanitized command receipts from current and prior Goal stag
   expect((await second.evidence.snapshot((await second.port.read()).goal)).commands).toEqual([]);
 });
 
+it("uses a pre-cap command receipt when the persisted display result is truncated", async () => {
+  const fullResult = JSON.stringify({
+    exit_code: 0,
+    stdout: "CHECK_EXECUTED_OK\n" + "detail\n".repeat(2000),
+    stderr: "",
+  });
+  const event = tool({
+    result: `${fullResult.slice(0, 5000)}...[truncated]`,
+    result_digest: createHash("sha256").update(fullResult).digest("hex"),
+    tool_evidence: {
+      kind: "command",
+      status: "succeeded",
+      total_chars: fullResult.length,
+      excerpt: fullResult.slice(0, 8192),
+      truncated: true,
+      command: {
+        exit_code: 0,
+        stdout_excerpt: "CHECK_EXECUTED_OK\n" + "detail\n".repeat(400),
+        stderr_excerpt: "",
+      },
+    },
+  });
+  const f = await fixture();
+  const first = await f.runtime();
+  first.evidence.observe(event);
+  const snapshot = await first.evidence.snapshot((await first.port.read()).goal);
+  expect(snapshot.commands).toHaveLength(1);
+  expect(snapshot.commands[0]).toMatchObject({
+    exit_code: 0,
+    stdout_excerpt: expect.stringContaining("CHECK_EXECUTED_OK"),
+  });
+  expect(snapshot.details[0]).toMatchObject({
+    kind: "command",
+    status: "succeeded",
+    digest: event.result_digest,
+    truncated: true,
+  });
+});
+
 it("projects completed delegation receipts from current and prior Goal stages", async () => {
   const event = delegation({ result: "delegation result line\n".repeat(300) });
   const f = await fixture({ readTrace: (id) => (id === "first" ? [event] : undefined) });

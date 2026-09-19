@@ -3,7 +3,7 @@ export type GoalCommand =
   | { kind: "show" | "edit" | "resume" | "cancel" | "clear" }
   | { kind: "pause"; running: boolean }
   | { kind: "create"; objective: string }
-  | { kind: "formulate"; mode: "auto" | "guided"; seed?: string };
+  | { kind: "formulate"; mode: "guided"; seed: string };
 
 /** Parse only the explicit reserved verbs; -- introduces a literal objective. */
 export function parseGoalCommand(raw: string): GoalCommand {
@@ -19,11 +19,6 @@ export function parseGoalCommand(raw: string): GoalCommand {
     if (rest !== "")
       throw new Error(`Usage: /goal ${first}. Use /goal -- <text> for a literal objective.`);
     return { kind: first };
-  }
-  if (first === "auto") {
-    if (rest !== "")
-      throw new Error("Usage: /goal auto. Use /goal -- <text> for a literal objective.");
-    return { kind: "formulate", mode: "auto" };
   }
   const objective = first === "--" ? rest : text;
   if (first.startsWith("--") && first !== "--")

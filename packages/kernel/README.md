@@ -228,9 +228,12 @@ validates the Steward's cited reads and semantic targets before accepting its ou
 corrective nudge within the same evaluation budget; a second invalid result fails closed. Batched
 reads remain verifiable from the full-result digest when trace display text is abbreviated.
 Observations reserve evaluation slots for completion, and prior observation failures do not
-reclassify later inconclusive verdicts. Its private frame carries bounded, sanitized command receipts
-from the eligible evidence catalog, including command arguments, exit code and output excerpts,
-so execution checks can be reviewed without granting the Steward command tools.
+reclassify later inconclusive verdicts. Its private frame carries candidate-first bounded evidence
+references, an explicit delivery manifest, typed content details and sanitized command/delegation
+receipts. The host captures terminal facts before the ordinary trace result cap, resolves cited
+references outside the compact discovery catalog and marks frame-budget or unavailable items instead
+of silently dropping them. Execution checks can therefore be reviewed without granting the Steward
+command tools or a filesystem view.
 Session accounting and
 Goal Steward state settle atomically, separately from the unchanged pursuit allowance. Compatible
 evaluations continue their private persisted prefix; observation failure degrades monitoring while

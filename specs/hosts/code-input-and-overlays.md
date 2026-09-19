@@ -40,10 +40,10 @@ Production: `registerBackgroundCommands` in
 Test: [background-commands.test.tsx](../../packages/code/tests/integration/background-commands.test.tsx).
 
 `/goal` uses the same registry for deterministic inspection and controls, including literal
-`/goal -- <objective>`, semantic `/goal auto` from the conversation or `/goal <seed>` from a
-primary request, reviewed replacement, a criteria/limits form, pause, resume, cancel and
-archive. Completion evaluates subcommand visibility against the current Goal: without one it
-offers only the root and automatic formulation; existing Goals expose only applicable edit, pause,
+`/goal -- <objective>`, guided `/goal <seed>` from a primary request, reviewed replacement, a
+criteria/limits form, pause, resume, cancel and archive. Completion evaluates subcommand visibility
+against the current Goal: without one it offers only the root; existing Goals expose only applicable
+edit, pause,
 resume, cancel and archive controls, including physical-execution restrictions. Visibility is
 discovery-only; explicitly typed routes retain their validation. Invalid control syntax returns `block` and remains in the composer. A form pins both the
 conversation generation and the reviewed revision, so navigation cannot retarget an old draft.

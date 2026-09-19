@@ -50,12 +50,21 @@ export function createTrace(
     kind: K,
     detail: TraceDetailFor<K>,
   ): TraceDetailFor<K> => {
-    if (kind !== "tool_call") return capDetail(kind, detail);
-    const tool = detail as TraceDetailFor<"tool_call">;
-    return capDetail(kind, {
-      ...tool,
-      result_digest: createHash("sha256").update(tool.result).digest("hex"),
-    } as TraceDetailFor<K>);
+    if (kind === "tool_call") {
+      const tool = detail as TraceDetailFor<"tool_call">;
+      return capDetail(kind, {
+        ...tool,
+        result_digest: createHash("sha256").update(tool.result).digest("hex"),
+      } as TraceDetailFor<K>);
+    }
+    if (kind === "delegation_completed" || kind === "delegation_failed") {
+      const delegation = detail as TraceDetailFor<"delegation_completed">;
+      return capDetail(kind, {
+        ...delegation,
+        result_digest: createHash("sha256").update(delegation.result).digest("hex"),
+      } as TraceDetailFor<K>);
+    }
+    return capDetail(kind, detail);
   };
   const record = <K extends TraceKind>(kind: K, detail: TraceDetailFor<K>): void => {
     if (sealed) return;

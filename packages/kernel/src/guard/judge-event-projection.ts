@@ -89,6 +89,7 @@ export function createJudgeEventProjection(): (event: TraceEvent) => TraceEvent 
         arguments_original: discard,
         result: text,
         result_digest: discard,
+        tool_evidence: discard,
         error: text.nullable(),
         diff: discard,
         guard: discard,

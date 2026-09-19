@@ -57,12 +57,7 @@ export function registerGoalCommands(
             throw new Error(
               "A goal already exists; review, cancel or clear it before formulating another.",
             );
-          deps.notify(
-            command.mode === "auto"
-              ? "Formulating a Goal from this conversation…"
-              : "Formulating a Goal from your request…",
-            "info",
-          );
+          deps.notify("Formulating a Goal from your request…", "info");
           const receipt = await deps.goals.formulate(command.mode, command.seed);
           if (receipt.formulation.outcome === "created")
             deps.notify("Goal created; the first work stage is starting.", "success");
@@ -136,13 +131,8 @@ export function registerGoalCommands(
     surface: "slash",
     group: "actions",
     desc: "Inspect or control this conversation's persistent objective",
-    args: [{ name: "auto | <seed> | -- <literal objective>" }],
+    args: [{ name: "<seed> | -- <literal objective>" }],
     subcommands: [
-      {
-        name: "auto",
-        visible: () => ready() && current() === undefined,
-        desc: "Formulate from this conversation's trajectory",
-      },
       {
         name: "edit",
         visible: () => ready() && current() !== undefined && !physicallyBusy(),

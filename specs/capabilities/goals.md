@@ -133,10 +133,11 @@ and valid/privileged action cases in [capability.test.ts](../../packages/goal/te
 
 ## Client presentation boundary
 
-The Code goal parser recognizes only explicit control verbs. `/goal auto` formulates from trajectory;
-`/goal <seed>` formulates with the seed as primary; `/goal -- <text>` creates literal text without a
-model call, so `/goal -- auto` is valid. `auto` and control verbs remain reserved only in their exact
-documented forms. A malformed reserved control is refused rather than reinterpreted as a seed. The
+The Code goal parser recognizes only explicit control verbs. `/goal <seed>` formulates with the seed
+as primary; `/goal -- <text>` creates literal text without a model call, so `/goal -- auto` is valid.
+The automatic formulation mode remains available to the host service but is not exposed as a slash
+command. Control verbs remain reserved only in their exact documented forms. A malformed reserved
+control is refused rather than reinterpreted as a seed. The
 presentation controller subscribes before its initial state read, coalesces
 invalidations and suppresses late reads after a conversation generation changes. It never starts
 or schedules a run. Local presentation generations do not cross the goal service seam as authority.
@@ -330,8 +331,9 @@ Production: `GoalFormulateRequest` and `GoalFormulateResult` in
 ### Goal Steward
 
 The admitted entry run has one host coordinator and at most one finite tool-free Steward completion
-evaluation in flight. This is automatic only inside an admitted Goal run; `/goal auto` remains
-explicit formulation and ordinary messages never create a Goal. The Steward is invoked only after a
+evaluation in flight. This is automatic only inside an admitted Goal run; automatic formulation
+remains an explicit host-service operation and ordinary messages never create a Goal. The Steward
+is invoked only after a
 terminal candidate passes the deterministic candidate, evidence, human and Plan gates. It does not
 continuously observe intermediate responses, run in the background or inject corrections at
 iteration boundaries. Accepted operator steering invalidates an in-flight or reusable completion
@@ -344,13 +346,18 @@ request and verified bounded normative-source snapshots. `revise_definition` ret
 correction to the selected main agent; `accept_definition` permits activation. At most three
 formulation/review attempts occur. Completion must cover the definition, objective and exactly the
 qualitative criterion IDs supplied by the host.
-Evidence IDs must belong to the current catalog. The private frame also carries `command_evidence`,
-`delegation_evidence` and `workflow_history`. Kernel-derived command receipts contain arguments,
-successful exit code and sanitized stdout/stderr excerpts. Completed-delegation receipts contain the
-bounded returned result. Persisted Goal history names stage order, automatic continuation, disposition,
-outcome and accepted checkpoint data without exposing runtime identities. Receipts join the catalog by
-stable opaque IDs derived from the durable receipt identity and mapped by the host, while workflow
-history is host-owned lifecycle state; together they establish executed
+Evidence IDs must belong to the host-delivered selection. The compact catalog remains a discovery
+projection, but candidate-cited references are resolved from the complete eligible reference set even
+when they are older than the catalog window. The private frame also carries `evidence_manifest`,
+`evidence_details`, `command_evidence`, `delegation_evidence` and `workflow_history`. Kernel-derived
+command receipts contain arguments, successful exit code and sanitized stdout/stderr excerpts;
+`evidence_details` additionally carries the typed terminal status, complete-result digest, bounded
+content excerpt and explicit coverage. Completed-delegation receipts contain the bounded returned
+result. A manifest marks references omitted by the frame budget or unavailable from the authorized
+scope instead of presenting them as delivered. Persisted Goal history names stage order, automatic
+continuation, disposition, outcome and accepted checkpoint data without exposing runtime identities.
+Receipts join the catalog by stable opaque IDs derived from the durable receipt identity and mapped by
+the host, while workflow history is host-owned lifecycle state; together they establish executed
 checks and required workflow boundaries without giving the Steward command, delegation or Goal tools.
 They do not prove that later source edits were tested, and receipt relevance remains a semantic judgment.
 Missing, unsuccessful or superseded command observations have no successful receipt. Catalog labels
@@ -625,8 +632,13 @@ The kernel's `createGoalEvidenceSource` indexes completed host-observed tool env
 1 MiB payload limits and returns at most 32 catalog options. Native successful command observations
 also retain sanitized excerpts for the private Steward frame: at most 2,048 characters of arguments,
 3,072 of stdout and 1,024 of stderr, with an explicit truncation flag. Completed delegation results
-retain at most 4,096 sanitized characters with the same explicit truncation semantics. They are projected only for
-eligible catalog IDs, never copied into Goal evidence references or protocol catalog fields. Each option has an opaque ID, stamped
+retain at most 4,096 sanitized characters with the same explicit truncation semantics. The producer
+captures a typed pre-cap receipt before the ordinary 5,000-character trace display limit, so command
+classification does not parse an abbreviated JSON result. The coordinator resolves candidate-cited
+references from the complete eligible set, prioritizes them over auxiliary catalog entries and bounds
+delivery to 64 references and 160 KiB of reference/detail material. `evidence_manifest` explicitly
+marks delivered, frame-budget and unavailable references. Details are projected only for delivered
+IDs, never copied into Goal evidence references or protocol catalog fields. Each option has an opaque ID, stamped
 scope, digest and short host-authored description; the description is omitted from persisted evidence.
 Oversized or conflicting live observations fail closed. Prior stages are read through the existing
 owner-scoped trace reader, restricted to this objective revision. Evicted or unavailable references
@@ -644,9 +656,11 @@ exclusion apply to the flat form, without treating a qualified MCP tool as a nat
 Production: `observation` in [evidence.ts](../../packages/kernel/src/goals/evidence.ts), consuming
 `mapEntry` from [trace-mapper.ts](../../packages/trace/src/trace-mapper.ts).
 Test: `interprets the real trace mapper's flat tool names without treating goal controls as evidence`
-in [goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts)
-checks real mapper output, successful/failed commands, control exclusion and qualified MCP names;
-`projects completed delegation receipts from current and prior Goal stages` covers delegation receipts.
+and `uses a pre-cap command receipt when the persisted display result is truncated` in
+[goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts) check
+real mapper output, pre-cap terminal classification, successful/failed commands, control exclusion and
+qualified MCP names; `projects completed delegation receipts from current and prior Goal stages`
+covers delegation receipts.
 
 Artifact criteria read the actual bytes through the shared `readRawFile` descriptor confinement,
 with only the selected workspace admitted and a 16 MiB ceiling. The reference includes the observed

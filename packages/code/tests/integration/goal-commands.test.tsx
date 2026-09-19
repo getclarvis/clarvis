@@ -160,7 +160,7 @@ test("an existing goal refuses guided formulation without replacement", async ()
   expect(f.notices.some((notice) => notice.includes("already exists"))).toBe(true);
 });
 
-test("guided and auto commands formulate outside the composer while literal escape stays direct", async () => {
+test("guided formulation stays outside the composer while literal escape stays direct", async () => {
   const f = fixture({ state: { version: 1, revision: 0, archive: [], receipts: [] } });
   let commands!: ReturnType<typeof createCommands>;
   cleanup.push(
@@ -187,8 +187,7 @@ test("guided and auto commands formulate outside the composer while literal esca
   f.opened.splice(0);
   commands.route("goal.open", "auto");
   await settled();
-  expect(f.formulations[1]).toMatchObject({ mode: "auto" });
-  expect(f.formulations[1]).not.toHaveProperty("seed");
+  expect(f.formulations[1]).toMatchObject({ mode: "guided", seed: "auto" });
 
   commands.route("goal.open", "-- auto");
   await settled();
@@ -199,7 +198,7 @@ test("guided and auto commands formulate outside the composer while literal esca
 test("a clarification result is shown once without automatically repeating analysis", async () => {
   const f = fixture({ state: { version: 1, revision: 0, archive: [], receipts: [] } });
   f.formulationOutcome({
-    mode: "auto",
+    mode: "guided",
     outcome: "insufficient_context",
     question: "Qual resultado você quer?",
   });
@@ -211,7 +210,7 @@ test("a clarification result is shown once without automatically repeating analy
         f.ui,
       );
       registerGoalCommands(commands.scope(), f);
-      commands.route("goal.open", "auto");
+      commands.route("goal.open", "need clarification");
       return () => {
         commands.dispose();
         dispose();
@@ -635,7 +634,7 @@ test("goal completion follows current state without rebuilding the command catal
   const provider = createCommandCompletionProvider({ commands });
   const labels = async () => (await provider.query("goal")).map((item) => item.label);
   await f.goals.refresh();
-  expect(await labels()).toEqual(["/goal", "/goal/auto"]);
+  expect(await labels()).toEqual(["/goal"]);
   const catalog = commands.entries();
   f.setState(goalView());
   await f.goals.refresh();
@@ -658,5 +657,5 @@ test("goal completion follows current state without rebuilding the command catal
   expect(await labels()).toEqual(["/goal", "/goal/pause", "/goal/cancel"]);
   f.setState(empty);
   await f.goals.refresh();
-  expect(await labels()).toEqual(["/goal", "/goal/auto"]);
+  expect(await labels()).toEqual(["/goal"]);
 });

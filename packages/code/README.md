@@ -93,12 +93,12 @@ completion-review count plus the latest summary and actionable next step. Techni
 hidden. `goal_steward_failed` and `goal_steward_inconclusive` appear as Goal-domain attention.
 Only post-closure Kernel settlement may show the Goal as complete.
 Goal command suggestions follow the current Goal and physical execution state. Without a current
-Goal, only `/goal` and `/goal/auto` appear.
-`/goal auto` explicitly asks the selected main agent to formulate
-from the existing trajectory. `/goal <seed>` asks it to treat the seed as primary and use trajectory
-and confined reads only to resolve and enrich that request. Neither mode opens the form or sends the
-slash command to the ordinary conversation model. `/goal -- <objective>` bypasses inference and
-creates that exact literal text, including `/goal -- auto`; an empty literal is refused.
+Goal, only `/goal` appears. `/goal <seed>` asks the selected main agent to treat the seed as primary
+and use trajectory and confined reads only to resolve and enrich that request. The automatic
+formulation mode remains available to the host service but is temporarily not exposed as a slash
+command. Slash formulation does not open the form or send the command to the ordinary conversation
+model. `/goal -- <objective>` bypasses inference and creates that exact literal text, including
+`/goal -- auto`; an empty literal is refused.
 
 Any current Goal blocks formulation until the user reviews, cancels or clears it. Formulation and
 the subsequent tool-free definition review are visible immediately in the Lead activity line and

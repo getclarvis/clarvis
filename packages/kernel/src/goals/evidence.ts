@@ -67,6 +67,24 @@ export interface GoalDelegationEvidence {
   truncated: boolean;
 }
 
+/** Bounded content receipt delivered to the Steward without granting read tools. */
+export interface GoalEvidenceDetail {
+  id: string;
+  kind: "command" | "content";
+  status: "succeeded" | "failed" | "incomplete";
+  digest: string;
+  total_chars: number;
+  excerpt: string;
+  truncated: boolean;
+  command?: {
+    exit_code?: number;
+    timed_out?: boolean;
+    signal?: string;
+    stdout_excerpt: string;
+    stderr_excerpt: string;
+  };
+}
+
 interface Observation {
   id: string;
   executionId: string;
@@ -78,6 +96,7 @@ interface Observation {
   description: string;
   commandEvidence?: Omit<GoalCommandEvidence, "id">;
   delegationEvidence?: Omit<GoalDelegationEvidence, "id">;
+  detail?: Omit<GoalEvidenceDetail, "id">;
 }
 
 /** A completed tool envelope is required; native command success additionally requires exit zero. */
@@ -93,7 +112,7 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
         delegation_id: event.delegation_id,
         ...(event.task_id === undefined ? {} : { task_id: event.task_id }),
       }),
-      resultDigest: goalEvidenceDigest(event.result),
+      resultDigest: event.result_digest ?? goalEvidenceDigest(event.result),
       successful: event.status === "completed",
       description: `delegate_task completed; delegation ${event.delegation_id}`.slice(0, 512),
       delegationEvidence: {
@@ -114,6 +133,7 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
     throw new GoalError("resource_exhausted", "Tool evidence exceeds its payload bound");
   let commandEvidence: Observation["commandEvidence"];
   let successful = event.error === null && event.guard?.outcome !== "denied";
+  const receipt = event.tool_evidence;
   if (event.tool_name === "" && (tool === "shell" || tool === "host_exec")) {
     let command:
       | {
@@ -122,19 +142,32 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
           signal?: unknown;
           stdout?: unknown;
           stderr?: unknown;
+          stdout_excerpt?: string;
+          stderr_excerpt?: string;
         }
       | undefined;
-    try {
-      command = JSON.parse(event.result) as typeof command;
-    } catch {
-      successful = false;
+    if (receipt?.kind === "command") {
+      successful = successful && receipt.status === "succeeded";
+      command = receipt.command;
+    } else {
+      try {
+        command = JSON.parse(event.result) as typeof command;
+      } catch {
+        successful = false;
+      }
+      successful =
+        successful && command?.exit_code === 0 && command.timed_out !== true && !command.signal;
     }
-    successful =
-      successful && command?.exit_code === 0 && command.timed_out !== true && !command.signal;
     if (successful) {
       const args = JSON.stringify(sanitizeDeep(event.arguments, sanitizeText));
-      const stdout = typeof command?.stdout === "string" ? sanitizeText(command.stdout) : "";
-      const stderr = typeof command?.stderr === "string" ? sanitizeText(command.stderr) : "";
+      const stdout =
+        typeof command?.stdout === "string"
+          ? sanitizeText(command.stdout)
+          : sanitizeText(command?.stdout_excerpt ?? "");
+      const stderr =
+        typeof command?.stderr === "string"
+          ? sanitizeText(command.stderr)
+          : sanitizeText(command?.stderr_excerpt ?? "");
       commandEvidence = {
         tool,
         arguments_excerpt: args.slice(0, 2048),
@@ -150,11 +183,32 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
     executionId,
     tool,
     argumentsDigest: goalEvidenceDigest(event.arguments),
-    resultDigest: goalEvidenceDigest(event.result),
+    resultDigest: event.result_digest ?? goalEvidenceDigest(event.result),
     successful,
     ...(event.diff?.trim() ? { changeDigest: goalEvidenceDigest(event.diff) } : {}),
     description: `${tool}; call ${event.call_id}`.slice(0, 512),
     ...(commandEvidence === undefined ? {} : { commandEvidence }),
+    ...(receipt === undefined
+      ? {}
+      : {
+          detail: {
+            kind: receipt.kind,
+            status: receipt.status,
+            digest: event.result_digest ?? goalEvidenceDigest(event.result),
+            total_chars: receipt.total_chars,
+            excerpt: sanitizeText(receipt.excerpt),
+            truncated: receipt.truncated,
+            ...(receipt.command === undefined
+              ? {}
+              : {
+                  command: {
+                    ...receipt.command,
+                    stdout_excerpt: sanitizeText(receipt.command.stdout_excerpt),
+                    stderr_excerpt: sanitizeText(receipt.command.stderr_excerpt),
+                  },
+                }),
+          },
+        }),
   };
 }
 
@@ -163,6 +217,8 @@ export interface GoalEvidenceSnapshot extends GoalEvidenceVerifier {
   readonly catalog: GoalEvidenceOption[];
   readonly commands: GoalCommandEvidence[];
   readonly delegations: GoalDelegationEvidence[];
+  readonly references: GoalEvidenceOption[];
+  readonly details: GoalEvidenceDetail[];
   resolve(ids: readonly string[]): GoalEvidenceRef[];
   progress(
     ids: readonly string[],
@@ -178,8 +234,9 @@ export interface GoalEvidenceSource {
 
 /**
  * Derive evidence from existing trace results and confined file snapshots. The live index retains
- * only bounded digests, metadata and sanitized command excerpts; it is not another authoritative store. Older stage data comes
- * from the caller's owner-scoped trace reader. Missing/evicted proof is never treated as success.
+ * only bounded digests, metadata and sanitized receipts/details; it is not another authoritative
+ * store. Older stage data comes from the caller's owner-scoped trace reader. Missing/evicted proof is
+ * never treated as success.
  */
 export function createGoalEvidenceSource(options: {
   executionId: string;
@@ -323,11 +380,16 @@ export function createGoalEvidenceSource(options: {
       return {
         generation: capturedGeneration,
         catalog,
-        commands: catalog.flatMap(({ id }) => {
+        references: [...references.values()].map((reference) => ({ ...reference })),
+        details: [...references.values()].flatMap(({ id }) => {
+          const detail = all.get(id)?.detail;
+          return detail === undefined ? [] : [{ id, ...detail }];
+        }),
+        commands: [...references.values()].flatMap(({ id }) => {
           const command = all.get(id)?.commandEvidence;
           return command === undefined ? [] : [{ id, ...command }];
         }),
-        delegations: catalog.flatMap(({ id }) => {
+        delegations: [...references.values()].flatMap(({ id }) => {
           const delegation = all.get(id)?.delegationEvidence;
           return delegation === undefined ? [] : [{ id, ...delegation }];
         }),

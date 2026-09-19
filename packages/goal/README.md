@@ -138,8 +138,11 @@ owns the bounded completion call, evidence projection, fencing and durable settl
 Private `continue_from` history preserves compatible prompt prefixes across evaluations and checkpoints.
 The Steward never receives repository instructions such as `AGENTS.md` or `CLARVIS.md` and has no
 workspace tools. The host supplies only the bounded Goal definition, Plan context, trajectory,
-candidate, evidence catalog, command/delegation receipts and Goal workflow history needed for a
-decision. Evidence references use short frame-local IDs that the host maps to durable receipts, so
+candidate, selected evidence references, a delivery manifest, typed content details, command/delegation
+receipts and Goal workflow history needed for a decision. Candidate-cited references are selected before
+auxiliary catalog entries, including when they are older than the compact discovery catalog; an explicit
+manifest marks unavailable or frame-budget-limited material. Evidence references use short frame-local
+IDs that the host maps to durable receipts, so
 the model never has to reproduce storage digests. During creation it first
 reviews the proposed definition against the operator request and verified, bounded snapshots of
 normative sources; a rejected definition returns one correction to the selected main agent, up to

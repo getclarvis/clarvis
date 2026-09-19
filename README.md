@@ -90,22 +90,22 @@ project-specific configuration lives in `<project>/.clarvis`.
 
 Essential controls:
 
-| Input     | Action                                                                   |
-| --------- | ------------------------------------------------------------------------ |
-| `/help`   | Open the complete, context-aware help screen                             |
-| `Esc`     | Clear the current input, close a layer, or return to the previous screen |
-| `Ctrl+C`  | Cancel active work; when idle, enter the quit flow                       |
-| `/doctor` | Inspect configuration, dependencies, and recoverable setup problems      |
-| `/model`  | Choose the default model                                                 |
-| `/effort` | Choose the default reasoning effort supported by that model              |
-| `/goal`   | Create, inspect and control a persistent bounded objective               |
-| `Ctrl+S`  | Choose Host, native Sandbox, Docker, or Podman isolation                 |
-| `Ctrl+G`  | Choose Off, Approval, or automatic LLM command review                    |
+| Input      | Action                                                                   |
+| ---------- | ------------------------------------------------------------------------ |
+| `/help`    | Open the complete, context-aware help screen                             |
+| `Esc`      | Clear the current input, close a layer, or return to the previous screen |
+| `Ctrl+C`   | Cancel active work; when idle, enter the quit flow                       |
+| `/doctor`  | Inspect configuration, dependencies, and recoverable setup problems      |
+| `/model`   | Choose the default model                                                 |
+| `/effort`  | Choose the default reasoning effort supported by that model              |
+| `/goal`    | Create, inspect and control a persistent bounded objective               |
+| `Ctrl+X I` | Choose Host, native Sandbox, Docker, or Podman isolation                 |
+| `Ctrl+X G` | Choose Off, Approval, or automatic LLM command review                    |
 
 Other shortcuts depend on the terminal keyboard profile and appear in the footer and `/help`; the
 README does not duplicate a keymap that the application generates dynamically.
 
-Settings > Isolation, Run Controls, and `Ctrl+S` share the same global
+Settings > Isolation, Run Controls, and `Ctrl+X I` share the same global
 Host/Sandbox/Docker/Podman writer. Docker or Podman connects before a Kernel is created; the simple
 TUI choice uses product-owned limits and ordinary outbound networking. Container runs the complete
 native Kernel with Plans, Memory, Workflows and Goals. Command Review, plugins, skills, hooks, generic

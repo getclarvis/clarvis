@@ -166,9 +166,12 @@ Builtin configuration examples remain owned by `CONFIGURATION_EXAMPLES` in
 [configuration-examples.ts](../../packages/kernel/src/skills/configuration-examples.ts).
 The embedded guide distinguishes idle operator Goal creation (auto, guided or literal) from saved
 creation defaults and bounded formulation/Steward settings. It explains that tool-free Steward
-review grants no command authority or repository access, consumes execution receipts rather than executing checks, and
-settles auxiliary usage separately from the work allowance. The capability example includes both
-auxiliary settings blocks. The owning behavior is specified in [Goals](../capabilities/goals.md).
+review grants no command authority or repository access, consumes execution receipts rather than
+executing checks, and settles auxiliary usage separately from the work allowance. The capability
+example includes both auxiliary settings blocks. The owning behavior is specified in
+[Goals](../capabilities/goals.md). Provider guidance also reflects entitled Grok image-capability
+projection without treating subscription catalog metadata as authored settings; the owning contracts
+are [subscription providers](subscription-providers.md) and [model catalog](model-catalog.md).
 Production: `CLARVIS_CONFIGURE_SKILL` in
 [clarvis-configure.ts](../../packages/kernel/src/skills/clarvis-configure.ts).
 Test: disclosure and body budget in

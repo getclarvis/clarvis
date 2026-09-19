@@ -88,6 +88,7 @@ export function createGoalController(deps: {
     setLoading(false);
     setFormulationActivity(undefined);
     setFailure("");
+    setFormulationActivity(undefined);
     setPendingOperation(pending.get(deps.binding()?.sessionId ?? "")?.operation_id);
   };
   const observe = (binding: GoalBinding): Observation => {

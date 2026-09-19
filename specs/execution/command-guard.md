@@ -168,8 +168,8 @@ Judge. Neutral Capability vocabulary retains `GuardMode`; `GuardJudgeConfig` bel
 
 The mode reaches a run through `judgePayloadFor` (`packages/code/src/runtime.tsx`) and
 `toStartParams` (`packages/code/src/adapters/kernel-run-client.ts`). The `review.picker` command
-opens the independent Off/Approval/Auto selector; its portable route is `Ctrl+G` and its enhanced
-route is `Alt+G` (`packages/code/src/app/commands.tsx`, `packages/code/src/keys/interaction.ts`).
+opens the independent Off/Approval/Auto selector through the portable `Ctrl+X G` sequence
+(`packages/code/src/app/commands.tsx`, `packages/code/src/keys/interaction.ts`).
 
 ---
 
@@ -771,8 +771,8 @@ itself because guard mode is resolved from host settings it never sees"
   `packages/code/src/adapters/code-config.ts`). `cycle()` walks `off → on → auto → off`
   (`packages/code/src/adapters/guard-mode.ts`; pinned at `packages/code/tests/unit/guard-mode.test.ts`).
 - **Quick Review picker** writes the block to `settings.json` through the same controller as Run
-  Controls. It is reached by `Ctrl+G` everywhere and by `Alt+G` on an enhanced keyboard path; neither
-  route changes Isolation (`packages/code/src/views/overlays/ReviewPicker.tsx`,
+  Controls. It is reached by `Ctrl+X G`; the sequence does not change Isolation
+  (`packages/code/src/views/overlays/ReviewPicker.tsx`,
   `packages/code/src/features/run/review.ts`).
 - **Run Controls** writes the block to `settings.json` and *pre-degrades*: choosing `auto` without a
   usable `default_model` persists `"on"` and says so

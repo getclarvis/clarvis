@@ -1098,9 +1098,9 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   closing an automatically revealed section is sticky for that intent, while the first event for a
   different section may still reopen and reorient the Sidebar. Each section is one native ScrollBox
   child, so a later section is scrolled fully into view even when a long Plan precedes it. With the
-  Sidebar closed, the aggregate transcript stays unobstructed. `Ctrl+S` reopens the first available
+  Sidebar closed, the aggregate transcript stays unobstructed. `Ctrl+X S` reopens the first available
   Agents, Parallel work or Plan section and closes the surface when it is open. The footer never
-  duplicates agent, workflow or Plan status; `Ctrl+S` and automatic reveal own access to the
+  duplicates agent, workflow or Plan status; `Ctrl+X S` and automatic reveal own access to the
   responsive surface. Plain Tab follows the active
   screen's focus order and, at shell level, returns transcript block focus to the composer without
   changing Lead/child selection; Return activates or submits the currently focused component.
@@ -1112,7 +1112,7 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   separate `A<spawn order + 1>` namespace; both derive from the current projection and retain no
   native-id allocation ledger across runs.
   Opening the Sidebar never replaces the shortcuts or run strip below the composer. A fixed
-  line inside the Sidebar names `Ctrl+S` for opening and closing it.
+  line inside the Sidebar names `Ctrl+X S` for opening and closing it.
 - Plan activity has no lower pane between history and the composer and contributes no footer text.
   Its complete operational view remains in the Sidebar or the `Ctrl+X P` plan surface; its first live
   projection may reveal the Sidebar once for that execution. The Sidebar's compact task list shows

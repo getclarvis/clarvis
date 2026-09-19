@@ -99,14 +99,14 @@ scope; complete domain/engine qualification is separate from this primitive.
 
 ## Hosted observation infrastructure
 
-The settings assembler captures effective global and workspace context for both the work agent and
+The settings assembler captures effective global and workspace context for the work agent and
 Judge: `CLARVIS.md`, falling back to `AGENTS.md` independently per scope. Host-only request identity
 preserves this snapshot through preparation and workflow admission. Persistent instructions inform
 authorization below direct operator restrictions; arbitrary request fields cannot supply them.
 See [operator authority](../../specs/execution/effect-review.md) for lifetime and inheritance.
-Hosted Goal preparation keeps that detached snapshot with the main agent before applying the Goal
-budget. It is not passed to the tool-free Steward, whose private history contains only the fixed
-review policy and bounded host-projected evidence.
+Hosted Goal preparation gives the tool-free Steward only the bounded Goal definition and execution
+receipts. It has no repository instructions or file-reading context and does not reread context
+files during evaluation.
 
 `src/hosting/admission.ts` separates physical conversation occupancy from interactive control and
 revokes volatile consent scopes on disconnect, takeover or conversation close.
@@ -185,9 +185,8 @@ Production: `prepareHostedGoalTurn` and `goalAuthorityMessages` in
 [run-service-lifecycle.test.ts](tests/unit/run-service-lifecycle.test.ts).
 `GoalService.formulate` owns the interactive semantic pre-run. It checks the full
 session/Goal/physical-work fence before inference, projects bounded owner-scoped conversation
-evidence, and runs the selected main-agent profile without holding the session transaction. The
-host preserves its resolved model and global/workspace instructions while replacing the capability
-list with canonical Tools; only its read-only surface and generic
+evidence, and runs `goal-agent` without holding the session transaction. The isolated dependency set
+replaces the host capability list with canonical Tools; only its read-only surface and generic
 `submit_result` are reachable. There are no MCP, skill, hook, workflow, plan, memory, Goal control or
 delegation ports. The host supplies model/provider/runtime placement, stamps identities, verifies
 complete trace-backed normative reads, rereads confined files and computes their SHA-256 digests.
@@ -195,11 +194,6 @@ Live trace events are reduced to bounded `thinking`, `reading` and `searching` a
 for the initiating Goal subscriber; model text, tool arguments and paths do not cross that projection.
 An explicit `read_file` range is accepted only when its trace rendering still equals the entire
 confined reread and has no continuation marker; genuinely partial ranges remain fail-closed.
-
-Before activation, the tool-free Goal Steward reviews the proposed definition against the operator
-request, trajectory and bounded content snapshots of verified normative sources. A revision returns
-specific guidance to the selected main agent; three rejected attempts fail without creating a Goal.
-The Steward never receives `AGENTS.md`, `CLARVIS.md` or the selected profile prompt.
 
 Every terminal analysis outcome is retained in the existing receipt ring. Ready output creates one
 Goal through `applyGoalFormulation`, persists its receipt and formulation usage, then enters the same
@@ -225,22 +219,20 @@ goal controls and polling never enter the evidence catalog. Shell checks require
 transport succeeded, newer contradictory results invalidate older successes, and confined artifact
 reads recheck their digest. Qualitative relevance remains model judgment.
 Before completion, the host revalidates normative source digests and the current candidate plus
-host/human evidence. `createGoalStewardCoordinator` owns one finite tool-free evaluation at a time
+host/human evidence. `createGoalStewardCoordinator` owns one finite read-only evaluation at a time
 through `createStewardExecutionRuntime`. It binds the late Plan review port, fences semantic output
-and returns internal corrections, evidence requests or a final verdict to the Goal capability. A
-private result gate validates the Steward's semantic targets before accepting its output, allowing
-one corrective nudge within the same evaluation budget; a second invalid result fails closed.
-The Steward is invoked only for completion review after deterministic candidate, evidence and Plan
-gates pass. It does not run background observations or inject work-loop interventions. Its private
-frame carries bounded, sanitized command receipts,
-completed-delegation receipts and persisted Goal stage/checkpoint history. Execution and workflow
-requirements can therefore be reviewed without granting the Steward command, delegation or Goal
-tools. Short frame-local evidence IDs keep model output reliable while the host retains the durable
-receipt mapping and validates every returned reference.
+and returns internal corrections or a final verdict to the Goal capability. A private result gate
+validates the Steward's cited reads and semantic targets before accepting its output, allowing one
+corrective nudge within the same evaluation budget; a second invalid result fails closed. Batched
+reads remain verifiable from the full-result digest when trace display text is abbreviated.
+Observations reserve evaluation slots for completion, and prior observation failures do not
+reclassify later inconclusive verdicts. Its private frame carries bounded, sanitized command receipts
+from the eligible evidence catalog, including command arguments, exit code and output excerpts,
+so execution checks can be reviewed without granting the Steward command tools.
 Session accounting and
 Goal Steward state settle atomically, separately from the unchanged pursuit allowance. Compatible
-completion evaluations continue their private persisted prefix; a failed or inconclusive review
-prevents completion. The same native graph runs in the Container Kernel using its
+evaluations continue their private persisted prefix; observation failure degrades monitoring while
+final failure prevents completion. The same native graph runs in the Container Kernel using its
 injected model broker, without receiving host provider credentials.
 Production: [runtime-port.ts](src/goals/runtime-port.ts) and
 [hosted-turn.ts](src/goals/hosted-turn.ts). Test:
@@ -990,7 +982,8 @@ models, Extension Profiles, plugins, MCP, hooks, memory, plans, goals, tasks, wo
 Isolation, Review, remote SSH, `/loop` scheduling and background runs. Goal guidance distinguishes
 operator-only auto/guided/literal creation from settings, documents `goals.agent.formulation` and
 `goals.agent.steward`, and explains tool-free review, execution receipts, attention outcomes and
-separate auxiliary accounting. For remote connections it distinguishes the
+separate auxiliary accounting. Provider guidance preserves the entitled Grok catalog's image
+capability rules instead of asking an agent to author subscription metadata. For remote connections it distinguishes the
 local TUI from the remote installation, delegates keys/host verification to OpenSSH, requires login
 preparation outside the TUI and records the disabled forwarding/machine-control boundaries. It
 distinguishes TUI-owned, in-memory schedules from runs

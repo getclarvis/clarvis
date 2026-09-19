@@ -100,9 +100,9 @@ and host validate authority separately from the DTO. See [goals](../../specs/cap
 the initial state. Notifications contain the session ID and may carry bounded ephemeral Goal
 formulation activity (`thinking`, `reading`, `searching` or `idle`); activity is presentation-only
 and may retain the last workspace action while the model thinks. It is never durable Goal state.
-Notifications without activity request another canonical read. Neither form grants execution
-authority or announces a completion commit independently of the state. The host bounds
-subscriptions and releases them when the connection closes.
+Notifications without activity request another canonical read.
+Neither form grants execution authority or announces a completion commit independently of the state.
+The host bounds subscriptions and releases them when the connection closes.
 
 `hosting.ts` additionally defines the hosted-run boundary: generation/sequence cursors, immutable
 snapshot pages, execution metadata, control epochs, handoff receipts and `HostingService`.
@@ -137,9 +137,7 @@ goal DTOs, user controls and service contract; defining those types alone does n
 service on a host. A goal run's optional `progress` contains its latest bounded annotation, separate
 from checkpoint disposition and a completion candidate. Optional Steward DTO fields expose its
 compact status, bounded review history and separate consumption without importing domain runtime.
-Completion decisions distinguish `needs_work`, `needs_evidence` and technical `review_pending` from
-`achieved`; `evidence_requested` is a presentation state, not permission or completion. They are
-host-owned audit data, never commands or operator authority. Lifecycle and mutation rules are specified in
+They are host-owned audit data, never commands or operator authority. Lifecycle and mutation rules are specified in
 [sessions](../../specs/hosts/sessions.md#host-owned-conversation-transactions).
 
 `ExtensionProfileService` is the control plane for deterministic activation of already-installed

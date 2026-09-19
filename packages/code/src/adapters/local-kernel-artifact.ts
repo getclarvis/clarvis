@@ -51,11 +51,16 @@ export function resolveLocalKernelArtifact(): Promise<LocalKernelArtifact> {
       digest.update(await readFile(join(repository, "bun.lock")));
       for (const name of (await readdir(join(repository, "packages"))).sort()) {
         const root = join(repository, "packages", name);
-        digest
-          .update(name)
-          .update("\0")
-          .update(await readFile(join(root, "package.json")));
-        await hashTree(join(root, "src"), digest);
+        try {
+          digest
+            .update(name)
+            .update("\0")
+            .update(await readFile(join(root, "package.json")));
+          await hashTree(join(root, "src"), digest);
+        } catch (error) {
+          if ((error as { code?: string }).code === "ENOENT") continue;
+          throw error;
+        }
       }
     } else await hashTree(dirname(entry), digest);
     return {

@@ -9,8 +9,12 @@ as persistent operator instructions. Direct operator restrictions take precedenc
 commands do not require repeated consent merely because static analysis deferred their review.
 The fixed policy separates evidence, authorization, intrinsic risk, decision and private protocol.
 It is command-agnostic; concrete operations and their constraints come from the case and host descriptors.
+A conventional name, path prefix or temporary-directory location is not proof that a target is
+discardable, and a recognized cleanup does not authorize other effects in the same call.
 Trajectory informs the current case only; it neither denies hypothetical future actions nor grants
 future authority. The Judge remains a blocking reviewer, not a high/low trajectory classifier.
+It is the sole reviewer of the case: deny and unsure return to the calling agent; they are not a
+request for a person or a TUI prompt.
 
 The owning contract is [Judge](../../specs/capabilities/judge.md). Host authority, effect validation
 and final consent remain governed by [effect review](../../specs/execution/effect-review.md) and

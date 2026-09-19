@@ -31,9 +31,12 @@ either name today gets the same `not_found` refusal as a typo
 
 `GuardReview.reviewer_decision` optionally preserves the semantic `allow`, `deny`, `unsure` or
 `failed` result separately from the final dispatch outcome. A denied reviewed command labels its
-static trigger separately for semantic decisions. Technical failures instead name the failure category
-and explain that repeated operator authorization does not repair the failure; their message omits the
-static trigger. Structured guard metadata retains the trigger for diagnostics.
+static trigger separately for semantic decisions. When the answerer is the judge, the denied tool
+result says that automatic review denied or was unsure and that this is not a missing UI approval;
+it does not instruct the caller to obtain a human prompt that was not emitted. Technical failures
+instead name the failure category and explain that repeated operator authorization does not repair
+the failure; their message omits the static trigger. Structured guard metadata retains the trigger
+for diagnostics.
 Production: `createAgentTools` in [core.ts](../../packages/tools/src/core.ts) and `GuardReview`
 in [types.ts](../../packages/tools/src/guard/types.ts).
 Test: [guard-dispatch.test.ts](../../packages/tools/tests/integration/guard-dispatch.test.ts).
@@ -213,20 +216,23 @@ else `tools`.
 
 The guard subpath and root export `GuardPlacement` (`"host" | "contained"`) and `GuardCallFacts`.
 The latter supplies optional `matched: string`, `placement`, `network: "none" | "host"`,
-`dangerous`, `within_workspace`, and `touches_outside` fields shared by `GuardDecision` and
-`ElicitRequest`. `applyGuard` forwards only the trusted decision's values, including false booleans;
-same-named model arguments are never promoted to review facts. `ElicitRequest.operator_message`
-is separate optional host-reviewer context, not a replacement for the policy reason.
+`dangerous`, `risk_findings`, `within_workspace`, and `touches_outside` fields shared by
+`GuardDecision` and `ElicitRequest`. `applyGuard` forwards only the trusted decision's values,
+including false booleans; same-named model arguments are never promoted to review facts.
+`ElicitRequest.operator_message` is separate optional host-reviewer context, not a replacement
+for the policy reason.
 Production: `GuardCallFacts` in [types.ts](../../packages/tools/src/guard/types.ts) and `applyGuard`
 in [core.ts](../../packages/tools/src/core.ts). Test: trusted-fact and argument-forgery cases in
 [guard-dispatch.test.ts](../../packages/tools/tests/integration/guard-dispatch.test.ts).
 
 The guard-analysis surface also exports `resolveCandidate` for symlink-aware path classification
-and `isDangerousCommand(shell: ShellFacts)` for the narrow `sudo`/forceful-`rm` review fact.
-Neither helper authorizes a command. The helper uses the trusted normalized command head, including
-admitted absolute executables, but checks force options in argv only before `--`. POSIX Git
-normalization peels consecutive global `--no-pager`/`--no-color` prefixes after wrappers and env
-assignments, never subcommand flags or `-C`; PowerShell is unchanged.
+and `commandRiskFindings(shell: ShellFacts)` / `isDangerousCommand(shell: ShellFacts)` for the
+narrow `sudo` / forceful `rm` / PowerShell `Remove-Item -Force` review facts. Neither helper
+authorizes a command or selects a human channel. Findings use the trusted normalized command head,
+including admitted absolute executables, and check force options in argv only before `--` or
+`--%`. POSIX Git normalization peels consecutive global `--no-pager`/`--no-color` prefixes after
+wrappers and env assignments, never subcommand flags or `-C`; PowerShell canonicalizes `rm`/`del`
+to `Remove-Item`.
 Production: [paths.ts](../../packages/tools/src/guard/paths.ts),
 [helpers.ts](../../packages/tools/src/guard/helpers.ts), and
 [posix.ts](../../packages/tools/src/guard/dialects/posix.ts).
@@ -449,10 +455,10 @@ args, config)` (`packages/tools/src/core.ts`), which is owned by the sibling [co
 produces.
 
 Native Sandbox `require_escalated` is a `host_command` ask after deny-list enforcement: Review `on`
-requires a human, while Auto may judge the host effect (`allow` executes, `deny` refuses). Unsure,
-failed and malformed responses follow `on_unsure` (default `deny`; explicit `ask` may use a human);
-an unavailable model follows the same fallback. Session coverage and `allow_session` never apply to host-command asks,
-including human fallback; clean exact-call judge memoization remains separate. Review `off` supplies
+requires a human, while Auto may judge the host effect (`allow` executes; `deny`, unsure, failed
+and malformed responses refuse to the calling agent). An unavailable model refuses. Session coverage
+and `allow_session` never apply to host-command asks; clean exact-call judge memoization remains
+separate. Review `off` supplies
 no guard, and on Host the field is a no-op under normal command policy. Production: `createShellGuard`
 in `packages/kernel/src/guard/shell-guard.ts` and `createGuardResolver` in
 `packages/kernel/src/guard/resolver.ts`. Test:

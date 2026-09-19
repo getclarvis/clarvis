@@ -37,6 +37,28 @@ export interface ShellAnalysisIssue {
 /** Host effect attestation, never syntax alone, may select judgeable. */
 export type GuardReviewability = "static" | "judgeable" | "human_only";
 
+/** Syntactic high-risk form; not an approval policy or a human-channel decision. */
+export type GuardRiskKind = "forced_removal" | "privilege_elevation";
+
+/** Why extracted removal operands may be incomplete. */
+export type GuardRiskOperandUncertainty = "none" | "dynamic" | "unparsed";
+
+/**
+ * One analyzer finding for a high-risk command form.
+ *
+ * @remarks
+ * Tools reports syntax only. Kernel decides whether a finding requires a human
+ * channel. Operand lists are extractable tokens, not host attestation that the
+ * path exists or is discardable.
+ */
+export interface GuardRiskFinding {
+  segmentIndex: number;
+  kind: GuardRiskKind;
+  recursive?: boolean;
+  operands?: string[];
+  operand_uncertainty?: GuardRiskOperandUncertainty;
+}
+
 /** Trusted host facts for one review; never populated from model-supplied arguments. */
 export interface GuardCallFacts extends EffectReviewDetail {
   effects?: GuardEffectCallFact[];
@@ -44,6 +66,7 @@ export interface GuardCallFacts extends EffectReviewDetail {
   placement?: GuardPlacement;
   network?: "none" | "host";
   dangerous?: boolean;
+  risk_findings?: GuardRiskFinding[];
   within_workspace?: boolean;
   touches_outside?: boolean;
 }

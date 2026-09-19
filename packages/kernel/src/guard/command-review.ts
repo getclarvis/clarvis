@@ -38,15 +38,20 @@ export function createCommandReview(
   human: GuardElicit | undefined,
 ): JudgeElicit {
   const pending = new Map<string, Promise<JudgeElicitAnswer>>();
-  const fallback = async (req: ElicitRequest, note: string): Promise<JudgeElicitAnswer> => {
+  const fallback = async (
+    req: ElicitRequest,
+    note: string,
+    review?: JudgeElicitAnswer["review"],
+  ): Promise<JudgeElicitAnswer> => {
     if (deps.signal?.aborted || config.on_unsure !== "ask" || human === undefined)
-      return { allowed: false, answerer: "judge" };
+      return { allowed: false, answerer: "judge", ...(review === undefined ? {} : { review }) };
     const answer = await human({ ...req, reason: req.reason ? `${req.reason}\n\n${note}` : note });
     return {
       allowed:
         !deps.signal?.aborted &&
         (answer === true || (typeof answer === "object" && answer.allowed === true)),
       answerer: "human",
+      ...(review === undefined ? {} : { review }),
     };
   };
   return (req) => {
@@ -71,7 +76,9 @@ export function createCommandReview(
     const operation = (async (): Promise<JudgeElicitAnswer> => {
       if (deps.signal?.aborted) return { allowed: false, answerer: "judge" };
       if (state?.status !== "active" || state.evidence.length === 0)
-        return fallback(req, "Automatic review has no authenticated operator evidence.");
+        return fallback(req, "Automatic review has no authenticated operator evidence.", {
+          reviewer_decision: "unsure",
+        });
       const isCurrent = () => {
         const current = deps.authority?.snapshot();
         return (
@@ -96,6 +103,7 @@ export function createCommandReview(
         return fallback(
           req,
           "Operator authority or Plan context changed during automatic command review.",
+          { reviewer_decision: "unsure" },
         );
       if (result.receipt.decision !== "unsure")
         return {

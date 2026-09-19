@@ -6,8 +6,9 @@ import {
   type GuardDecision,
   withinWorkspace,
   touchesOutside,
-  isDangerousCommand,
+  commandRiskFindings,
   type GuardPlacement,
+  type GuardRiskFinding,
 } from "@clarvis/tools/guard";
 import { globToRegExp } from "./glob.ts";
 import { commandComparison } from "./command-comparison.ts";
@@ -213,12 +214,64 @@ function commandsAllowed(
  * is handled where it belongs, by refusing to let an unanalyzable command past
  * a deny list at all; see {@link createShellGuard}.
  */
-function commandDenied(bash: ShellFacts, matchers: EntryMatcher[]): boolean {
-  return bash.segments.some((s) => matchers.some((m) => m(s.normalized)));
+function quotedCommand(value: string, max = 160): string {
+  const text = value.trim().replace(/\s+/g, " ");
+  return text.length <= max ? text : `${text.slice(0, Math.max(0, max - 1))}…`;
+}
+
+function deniedHit(
+  bash: ShellFacts,
+  commands: Array<string | undefined>,
+  entries: string[],
+  matchers: EntryMatcher[],
+): { entry: string; segment: string } | undefined {
+  for (const [index, matcher] of matchers.entries()) {
+    const segment =
+      bash.segments.find((item) => matcher(item.normalized))?.normalized ??
+      commands.find((command) => command !== undefined && matcher(command));
+    const entry = entries[index];
+    if (segment !== undefined && entry !== undefined) return { entry: entry.trim(), segment };
+  }
+  return undefined;
+}
+
+function unmatchedCommands(
+  commands: Array<string | undefined>,
+  matchers: EntryMatcher[],
+): string[] {
+  return commands.filter(
+    (command): command is string =>
+      command !== undefined && !matchers.some((matcher) => matcher(command)),
+  );
 }
 
 /** One rule's outcome: a {@link GuardDecision} plus the rule that produced it. */
 type Ruling = GuardDecision & { matched: ShellGuardMatch };
+
+function riskDecision(
+  privileged: boolean,
+  forced: boolean,
+  reviewable: boolean,
+  shell: ShellFacts,
+  findings: GuardRiskFinding[],
+): Ruling {
+  const kind =
+    privileged && forced
+      ? "forced removal or elevated privileges"
+      : privileged
+        ? "elevated privileges"
+        : "forced removal";
+  const segment = findings
+    .map((finding) => shell.segments[finding.segmentIndex]?.normalized)
+    .find((value) => value !== undefined && value.length > 0);
+  const reason =
+    segment === undefined
+      ? `command uses ${kind}`
+      : `command uses ${kind}: ${quotedCommand(segment)}`;
+  return reviewable
+    ? { matched: "dangerous", verdict: "ask", reason }
+    : { matched: "dangerous", verdict: "deny", reason };
+}
 
 /**
  * The observable identity of a command, without the command.
@@ -243,8 +296,9 @@ function digestOf(ctx: GuardContext): { commandDigest?: string } {
  *   configured, else `ask` (human-only on Host unless Auto is enabled); a host command → `ask` through
  *   the configured reviewer; any path outside the workspace → `deny`; a
  *   credential file → `ask`; a non-bash call → `allow`; an environment-prefixed
- *   dangerous command → `ask`; other environment changes → review; a fully allow-listed command →
- *   `allow`; forced removal or sudo → `ask`; a command that may leave the workspace → `ask`;
+ *   dangerous command → Auto `ask` / Approval `deny`; other environment
+ *   changes → review; a fully allow-listed command → `allow`; forced removal or sudo → Auto `ask`
+ *   or Approval `deny`; a command that may leave the workspace → `ask`;
  *   otherwise `ask` (noting whether an allow list was configured at all).
  * @remarks
  * The guard only ever narrows toward asking or denying — it allows solely for
@@ -263,24 +317,24 @@ function digestOf(ctx: GuardContext): { commandDigest?: string } {
  */
 export function createShellGuard(opts?: ShellGuardOptions): Guard {
   const allowed = opts?.allowedCommands?.map(compileCommandEntry);
-  const denied = opts?.deniedCommands?.map(compileCommandEntry);
+  const deniedEntries = opts?.deniedCommands;
+  const denied = deniedEntries?.map(compileCommandEntry);
   const onDecision = opts?.onDecision;
+  const reviewable = opts?.allowHostJudge === true;
   const rule = (
     ctx: GuardContext,
     commands: Array<string | undefined>,
     placement: GuardPlacement,
   ): Ruling => {
-    if (
-      ctx.shell !== undefined &&
-      denied !== undefined &&
-      (commandDenied(ctx.shell, denied) ||
-        commands.some((command) => command !== undefined && denied.some((match) => match(command))))
-    ) {
-      return {
-        matched: "deny_list",
-        verdict: "deny",
-        reason: "command matches the denied commands list",
-      };
+    if (ctx.shell !== undefined && denied !== undefined && deniedEntries !== undefined) {
+      const hit = deniedHit(ctx.shell, commands, deniedEntries, denied);
+      if (hit !== undefined) {
+        return {
+          matched: "deny_list",
+          verdict: "deny",
+          reason: `command matches the denied commands list: ${quotedCommand(hit.segment)} matched ${quotedCommand(hit.entry)}`,
+        };
+      }
     }
     const attested = opts?.attestedReviewable?.(ctx) === true;
     if (ctx.shell?.undecidable && !attested && denied !== undefined && denied.length > 0) {
@@ -322,6 +376,9 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
     }
     const changesEnvironment =
       ctx.shell?.segments.some((segment) => segment.envAssignments.length > 0) === true;
+    const riskFindings = ctx.shell === undefined ? [] : commandRiskFindings(ctx.shell);
+    const privileged = riskFindings.some((finding) => finding.kind === "privilege_elevation");
+    const forced = riskFindings.some((finding) => finding.kind === "forced_removal");
     const sensitive = sensitivePath(ctx);
     if (sensitive !== undefined) {
       return {
@@ -333,12 +390,8 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
     if (ctx.shell === undefined) {
       return { matched: "non_bash", verdict: "allow" };
     }
-    if (changesEnvironment && isDangerousCommand(ctx.shell)) {
-      return {
-        matched: "dangerous",
-        verdict: "ask",
-        reason: "command uses forced removal or elevated privileges",
-      };
+    if (changesEnvironment && (privileged || forced)) {
+      return riskDecision(privileged, forced, reviewable, ctx.shell, riskFindings);
     }
     if (changesEnvironment) {
       return {
@@ -353,12 +406,8 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
     if (allowed !== undefined && commandsAllowed(ctx.shell, commands, allowed)) {
       return { matched: "allow_list", verdict: "allow" };
     }
-    if (isDangerousCommand(ctx.shell)) {
-      return {
-        matched: "dangerous",
-        verdict: "ask",
-        reason: "command uses forced removal or elevated privileges",
-      };
+    if (privileged || forced) {
+      return riskDecision(privileged, forced, reviewable, ctx.shell, riskFindings);
     }
     if (!withinWorkspace(ctx)) {
       /**
@@ -377,13 +426,16 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
         reason: "the paths this command touches could not be determined",
       };
     }
+    const unmatched = allowed === undefined ? [] : unmatchedCommands(commands, allowed);
     return {
       matched: "default",
       verdict: "ask",
       reason:
         allowed === undefined
           ? "no allowed commands list configured"
-          : "command not in the allowed commands list",
+          : unmatched.length === 0
+            ? "command not in the allowed commands list"
+            : `command not in the allowed commands list: unmatched ${unmatched.map((value) => quotedCommand(value)).join("; ")}`,
     };
   };
   return (ctx: GuardContext): GuardDecision => {
@@ -401,12 +453,15 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
       ...(decision.escalate !== undefined ? { escalate: decision.escalate } : {}),
       ...digestOf(ctx),
     });
+    const riskFindings: GuardRiskFinding[] =
+      ctx.shell === undefined ? [] : commandRiskFindings(ctx.shell);
     return {
       ...decision,
       matched,
       placement,
       ...(!unsandbox && opts?.network !== undefined ? { network: opts.network } : {}),
-      dangerous: ctx.shell !== undefined && isDangerousCommand(ctx.shell),
+      dangerous: riskFindings.length > 0,
+      ...(ctx.shell !== undefined ? { risk_findings: riskFindings } : {}),
       within_workspace: withinWorkspace(facts),
       touches_outside: touchesOutside(facts),
     };

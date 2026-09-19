@@ -69,10 +69,15 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Fixed
 
+- Auto command review never elicits a person. Dangerous matches, Judge denials and Judge
+  uncertainty are refused to the principal with the exact policy match; unsandbox is a Judge
+  decision. Approval (`on`) asks a human only for the grey zone that is neither allow-listed nor
+  dangerous. Judge policy now states that deny and unsure are closed refusals to the calling
+  agent, not a handoff to a person or TUI prompt.
 - Grok subscription catalogs keep `vision` unless the entitled payload omits image input, so persisted
   `tool_calling`-only rows can no longer strip composer images as if the model were blind.
-- Auto review now denies uncertainty, model failures and malformed answers by default; only an
-  explicit operator-global `on_unsure: "ask"` selects human fallback. The picker says so directly.
+- Auto review denies uncertainty, model failures and malformed answers to the calling agent and
+  never selects human fallback.
 - `$clarvis-configure` remains literal despite the embedded guide intentionally having no agent
   override, preserving explicit configuration disclosure.
 - SSH sessions no longer claim that a promoted run can survive TUI exit: the SSH stdio channel owns

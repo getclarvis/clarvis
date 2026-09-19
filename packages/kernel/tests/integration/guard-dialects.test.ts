@@ -76,6 +76,6 @@ it("matches an absolute Windows executable suffix against an extensionless deny 
   );
   expect(await createShellGuard({ deniedCommands: ["curl"] })(context)).toMatchObject({
     verdict: "deny",
-    reason: "command matches the denied commands list",
+    reason: expect.stringMatching(/^command matches the denied commands list/),
   });
 });

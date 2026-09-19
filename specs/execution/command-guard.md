@@ -86,13 +86,22 @@ subsystem.
 | `WINDOWS_DEFAULT_ALLOWED_COMMANDS` | const | `packages/tools/src/guard/dialects/powershell.ts` | 137 entries |
 | `withinWorkspace` | fn | `packages/tools/src/guard/helpers.ts` | `(ctx) => boolean` |
 | `touchesOutside` | fn | `packages/tools/src/guard/helpers.ts` | `(ctx) => boolean` |
+| `commandRiskFindings` | fn | `packages/tools/src/guard/helpers.ts` | `(shell) => GuardRiskFinding[]` |
+| `isDangerousCommand` | fn | `packages/tools/src/guard/helpers.ts` | `(shell) => boolean` |
 
 `resolveCandidate` (`packages/tools/src/guard/paths.ts`) is exported through `./guard` so the kernel
 can resolve bare directory operands with the analyzer's existing symlink-aware boundary. `patchPaths`
 remains internal. `GuardPlacement` is `"host" | "contained"`; `GuardCallFacts` carries optional
-`placement`, `network: "none" | "host"`, `matched`, `dangerous`, `within_workspace` and
-`touches_outside` on both `GuardDecision` and `ElicitRequest`. `isDangerousCommand(ShellFacts)`
-reports forced `rm` and `sudo` from normalized argv (`packages/tools/src/guard/helpers.ts`).
+`placement`, `network: "none" | "host"`, `matched`, `dangerous`, `risk_findings`,
+`within_workspace` and `touches_outside` on both `GuardDecision` and `ElicitRequest`.
+`commandRiskFindings(ShellFacts)` reports per-segment forced `rm`/`Remove-Item` and `sudo`
+from normalized argv; `isDangerousCommand` is the derived non-empty predicate
+(`packages/tools/src/guard/helpers.ts`). Findings are syntactic facts, not a human-channel
+policy.
+Production: `commandRiskFindings` in [helpers.ts](../../packages/tools/src/guard/helpers.ts)
+and `createShellGuard` in [shell-guard.ts](../../packages/kernel/src/guard/shell-guard.ts).
+Test: [guard-helpers.test.ts](../../packages/tools/tests/unit/guard-helpers.test.ts) and
+[guard-auto-review.test.ts](../../packages/kernel/tests/integration/guard-auto-review.test.ts).
 
 ### 2.2 `@clarvis/kernel` → `./policy` and internals
 
@@ -591,10 +600,10 @@ Evaluated top-down; the first match returns (`packages/kernel/src/guard/shell-gu
 | 4 | `touchesOutside(ctx)` — some resolved path escapes | `outside_workspace` | `deny` |
 | 5 | some path's `raw` matches a credential pattern and no exception | `credential_file` | `ask` |
 | 6 | `ctx.shell === undefined` (a non-command tool) | `non_bash` | `allow` |
-| 7a | an environment-prefixed command is forced `rm` (`-f`, `--force`, short cluster containing `f`) or `sudo` | `dangerous` | `ask`, human-only |
+| 7a | an environment-prefixed command is forced `rm` (`-f`, `--force`, short cluster containing `f`) or `sudo` | `dangerous` | Auto `ask` (Judge); Approval `deny` with the exact segment |
 | 7b | any segment has a preserved environment assignment | `default` | `ask`; `escalate: "human"` on Host unless `allowHostJudge` is true |
 | 8 | allow list configured and **every** comparison segment matches, ignoring validated POSIX `cd` | `allow_list` | `allow` |
-| 8a | forced `rm` or `sudo` without an environment prefix | `dangerous` | `ask`, human-only |
+| 8a | forced `rm` or `sudo` without an environment prefix | `dangerous` | Auto `ask` (Judge); Approval `deny` with the exact segment |
 | 9 | `!withinWorkspace(ctx)` — i.e. no resolved paths at all | `outside_workspace` | `ask` |
 | 10 | otherwise | `default` | `ask` |
 
@@ -611,8 +620,9 @@ Code omits its stored guard fields and the guest receives no guard policy, autho
 reviewer. Per-call unsandbox overrides placement to Host and
 omits the native network restriction. Its `host_command` ask precedes generic undecidability, but
 never deny-list enforcement. Auto uses the host-validated effect reviewer; unsure, operational
-failures and malformed responses use the normal `on_unsure` fallback. Mode `on` remains human and
-`off` is unchanged. Docker/Podman reject escalation structurally because no host-exec channel exists.
+failures and malformed responses refuse to the calling agent and never use a human. Approval asks a
+human only for the grey zone. `off` is unchanged. Docker/Podman reject escalation structurally
+because no host-exec channel exists.
 
 Production: `createGuardResolver`, `createShellGuard`, `loadGuardSettings` in
 `packages/kernel/src/file-kernel.ts`, `sandboxWouldApply` in `packages/tools/src/sandbox.ts`, and
@@ -650,11 +660,12 @@ Notes the code states about specific rules:
   invented explanations from it" (`packages/kernel/src/guard/shell-guard.ts`).
 - **Deny matching checks normalized and comparison forms, not raw command text.** The substitution
   case is handled by rule 2a (`packages/kernel/src/guard/shell-guard.ts`).
-- **Rule 9's reason has two variants.** `"no allowed commands list configured"` when `allowed`
-  is `undefined` (no `allowed_commands` in settings at all), versus `"command not in the allowed
-  commands list"` when an allow list exists but the command's segments did not fully match it
-  (`packages/kernel/src/guard/shell-guard.ts`). §3.4's example JSON uses the first string without stating which
-  condition produces it.
+- **Rule 9's reason names the miss.** `"no allowed commands list configured"` when `allowed`
+  is `undefined`. When an allow list exists, the reason includes the unmatched comparison
+  segments (`command not in the allowed commands list: unmatched rm -r ./dist`). A deny-list
+  hit names both the segment and the matching entry. Forced-removal and privilege-elevation
+  asks quote the normalized segment. Production: `createShellGuard`. Test:
+  [guard-auto-review.test.ts](../../packages/kernel/tests/integration/guard-auto-review.test.ts).
 - **Environment bindings never inherit static approval from bare argv.** `commandsAllowed`
   rejects any segment carrying `envAssignments`. `commandDenied` retains bare normalized matching
   so an environment prefix cannot hide a denial. Session approval retains exact environment keys.
@@ -678,18 +689,22 @@ to the caller rather than being swallowed into a silent approval" (`packages/ker
 `createGuardResolver` resolves the effective mode and native Host/Sandbox placement, builds the
 immutable effect registry, creates `createHostEffectReview` over the run's authority reader,
 and creates one call-local argv reviewer for generic shell asks. Review `off` returns no guard.
-Review `on` preserves the human channel. Review `auto` prefers complete effect attestation; a sole
-`external.unknown` from an ordinary shell miss goes to the argv reviewer. Known credential and
-dangerous asks plus explicit human escalation stay on the human path. Human-only registered effects
-deny by default, while explicit `on_unsure: "ask"` selects human fallback. Absence of a model/provider
-follows that same fallback. Deterministic denies and exact static allows
-finish before any model call. Shadow mode computes effect evidence while preserving the existing
-call-local Auto or human result.
+Review `on` (Approval) asks a human only when the call is neither an allow-list match nor a
+dangerous match. Dangerous matches in Approval deny to the principal with the exact segment.
+Review `auto` never elicits a person: a sole `external.unknown` goes to the argv reviewer;
+forced removal, privilege elevation, credential-file asks and unsandbox are Judge decisions;
+Judge deny and Judge unsure refuse to the principal. Identified host-inadmissible effects deny
+in Auto without consulting the Judge. Absence of a model/provider refuses. Deterministic denies
+and exact static allows finish before any model call. Shadow mode computes effect evidence while
+preserving the existing call-local Auto result.
 
 Production: [resolver.ts](../../packages/kernel/src/guard/resolver.ts). Test:
 [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts),
-[judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts), and
-[effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts).
+[judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts)
+(`sends Auto mktemp capture cleanup to the call-local reviewer`,
+`sends mixed forced removal and privilege elevation to Auto instead of a human`,
+`keeps registered human-only effects out of the call-local reviewer`),
+and [effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts).
 
 ### 4.7 Answering an `ask`
 
@@ -697,9 +712,10 @@ The composed elicit applies session coverage only to the exact analyzable non-ho
 uses `createHostEffectReview`'s `review` for a complete registered effect and `createCommandReview` for an
 ordinary unknown shell call. Effect allows require exact descriptor coverage. Call-local allows are
 keyed by the authority revision and complete guard request, including the raw command, and install no
-grant. `unsure` denies by default and goes to the human channel only when `on_unsure` is explicitly `ask`. Human
-answers and operational failures are not cached as clean verdicts. `matched: "host_command"` never
-receives sticky session consent.
+grant. Auto refuses `unsure` to the principal and never uses the human channel. Approval asks a
+human only for grey-zone asks. Human answers and operational failures are not cached as clean
+verdicts. `matched: "host_command"` never receives sticky session consent in Auto; Approval may
+ask a person for unsandbox.
 
 `createGuardHumanApproval` reads the current allowlist before and after the question. It refuses late
 answers after the controller or scope is retired. `humanApprovalFor` is available only to native
@@ -756,14 +772,12 @@ Production: `createGuardResolver`, `createHostEffectReview` and `createCommandRe
 
 ### 4.10 Prompt-cache TTL side effect
 
-`guardParksOnHuman(param, guard, judgeConfigured)` returns `true` for mode `on`, and for mode `auto`
-with no judge configured (`packages/kernel/src/guard/resolver.ts`). The run assembler uses
+`guardParksOnHuman(param, guard)` returns `true` only for mode `on`
+(`packages/kernel/src/guard/resolver.ts`). Auto never parks. The run assembler uses
 it to derive `prompt_cache_ttl: "1h"` when the caller named none
 (`packages/kernel/src/runs/settings-assembler.ts`), pinned across the whole truth table
-at `packages/kernel/tests/component/settings-assembler.test.ts`. The reason is stated in
-the function's own docs: such runs "park repeatedly mid-conversation … the loop cannot derive this
-itself because guard mode is resolved from host settings it never sees"
-(`packages/kernel/src/guard/resolver.ts`). The economics belong to [prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md).
+at `packages/kernel/tests/component/settings-assembler.test.ts`. The economics belong to
+[prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md).
 
 ### 4.11 `code`'s surface
 
@@ -915,8 +929,8 @@ broken.
 
 19. **The rule cascade's order is fixed: deny list → undecidable with nonempty deny list →
     guarded host-command review → generic undecidable → outside-workspace → credential file →
-    non-shell allow → environment-prefixed dangerous ask → environment review → allow list →
-    dangerous ask → unbounded-paths ask → default ask.**
+    non-shell allow → environment-prefixed dangerous Auto-ask/Approval-deny → environment review →
+    allow list → dangerous Auto-ask/Approval-deny → unbounded-paths ask → default ask.**
     `packages/kernel/src/guard/shell-guard.ts`. Pinned pair-by-pair:
     `packages/kernel/tests/unit/guard.test.ts`, plus
     `packages/kernel/tests/unit/guard.test.ts` for the credential-file position.
@@ -953,7 +967,12 @@ broken.
 24. **An `escalate: "human"` request bypasses both automatic answerers — the LLM judge and the
     session allow list.** `packages/kernel/src/guard/resolver.ts` (the escalate arm
     returns before the allow-list check). Pinned:
-    `packages/kernel/tests/unit/guard-audit.test.ts`.
+    `packages/kernel/tests/unit/guard-audit.test.ts`. Auto never takes this path. Approval uses it
+    for grey-zone asks (unsandbox, Host undecidable), not for dangerous matches, which deny.
+    Pinned:
+    `packages/kernel/tests/integration/judge.test.ts` (`sends a known privilege_elevation ask to Auto
+    instead of a human`, `sends mixed forced removal and privilege elevation to Auto instead of a
+    human`).
 
 25. **An escalated ask with no human channel denies and emits a warn record**, rather than denying
     in silence. `packages/kernel/src/guard/resolver.ts`. Pinned:
@@ -1039,9 +1058,8 @@ broken.
     `packages/tools/tests/integration/shell-escalation.test.ts`.
 
 40. **Mode `auto` builds a reviewer when a model resolves; `guard_judge` is optional guidance and
-    overrides.** Unavailable models deny by default and fall back to a human only under explicit
-    `on_unsure: "ask"`. Production:
-    `packages/kernel/src/guard/resolver.ts`. Test: `packages/kernel/tests/unit/guard.test.ts`.
+    overrides.** Unavailable models deny to the calling agent and never fall back to a human.
+    Production: `packages/kernel/src/guard/resolver.ts`. Test: `packages/kernel/tests/unit/guard.test.ts`.
 
 41. **A technical Judge failure is not memoized and never invokes human fallback, even with
     `on_unsure: "ask"`.** Invalid responses have up to three correction retries per stage inside
@@ -1052,14 +1070,16 @@ broken.
     `packages/kernel/tests/integration/judge-host.test.ts` and
     `packages/tools/tests/integration/guard-dispatch.test.ts`.
 
-42. **A judge that cannot be constructed denies Auto asks by default; explicit `on_unsure: "ask"`
-    falls back to `humanElicit` without disarming the guard.** `packages/kernel/src/guard/resolver.ts`. Pinned:
-    `packages/kernel/tests/unit/guard.test.ts`.
+42. **A judge that cannot be constructed denies Auto asks; `on_unsure: "ask"` does not open a
+    human prompt.** `packages/kernel/src/guard/resolver.ts`. Pinned:
+    `packages/kernel/tests/unit/guard-audit.test.ts` and
+    `packages/kernel/tests/integration/guard-session-auto.test.ts`.
 
-43. **An omitted `on_unsure` is `"deny"` and never reaches the human, even when a human channel
-    exists; only explicit `"ask"` selects human fallback.**
+43. **Auto never reaches the human channel.** An omitted `on_unsure` remains `"deny"` in the
+    schema; Auto ignores `"ask"` and refuses unsure to the calling agent. Approval still asks a
+    person only for grey-zone asks.
     `packages/loop/src/runtime/capabilities/tools-settings.ts`. Pinned:
-    `packages/kernel/tests/unit/guard.test.ts`.
+    `packages/kernel/tests/unit/guard-audit.test.ts`.
 
 44. **Session approvals are keyed exactly, never by prefix.** `packages/kernel/src/guard/guard-elicit.ts` uses
     `Set.has` on the full key. Pinned: `packages/kernel/tests/unit/guard.test.ts`

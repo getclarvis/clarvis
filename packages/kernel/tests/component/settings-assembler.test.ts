@@ -848,13 +848,13 @@ describe("settings run assembler · prompt cache", () => {
     ).toBeUndefined();
   });
 
-  it("parks Auto on a human when unresolved review explicitly selects ask", async () => {
+  it("does not park Auto on a human when unresolved review explicitly selects ask", async () => {
     expect(
       await ttlFor(
         {},
         { guard_mode: "auto", guard_judge: { model: "openrouter/m", on_unsure: "ask" } },
       ),
-    ).toBe("1h");
+    ).toBeUndefined();
   });
 
   it("leaves the TTL to the loop when the guard is off", async () => {

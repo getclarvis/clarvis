@@ -65,7 +65,11 @@ test("an authority change prevents a clean allow and a late human answer cannot 
       return true;
     },
   );
-  expect(await review(request)).toEqual({ allowed: false, answerer: "human" });
+  expect(await review(request)).toEqual({
+    allowed: false,
+    answerer: "human",
+    review: { reviewer_decision: "unsure" },
+  });
   expect(prompts).toBe(1);
 });
 

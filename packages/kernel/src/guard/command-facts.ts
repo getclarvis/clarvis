@@ -36,6 +36,7 @@ export function callFacts(req: ElicitRequest, evidence: unknown, reviewContext?:
       within_workspace: req.within_workspace,
       touches_outside: req.touches_outside,
       dangerous: req.dangerous,
+      risk_findings: req.risk_findings,
     },
   });
 }

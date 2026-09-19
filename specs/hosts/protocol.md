@@ -64,6 +64,7 @@ Source ownership:
 | `models.ts` | `ModelCatalogService`, `ModelCatalog`, `CatalogProvider`, `CatalogModel` |
 | `provider-auth.ts` | token-free subscription schemes, states, device authorization and `ProviderAuthService` |
 | `workspace.ts` | `WorkspaceService`, `WorkspaceEntry` |
+| `workspace-changes.ts` | `WorkspaceChangesService`, availability/comparison/inventory/detail DTOs |
 | `memory.ts` | `MemoryService`, health/reindex/jobs DTOs, `MemoryIngestDetail` |
 | `plans.ts` | `PlansService`, `PlanDocumentDto`, `PlanTaskDto`, `PlanRef` |
 | `workflows.ts` | `WorkflowsService`, `WorkflowNode`, `WorkflowSequence`, `WorkflowSummary`/`WorkflowDetail` |
@@ -157,6 +158,7 @@ optional hosted-run ownership and a close method:
 | `models` | `ModelCatalogService` | `KernelClient.models` |
 | `providerAuth` | `ProviderAuthService` | `KernelClient.providerAuth` |
 | `files` | `WorkspaceService` | `KernelClient.files` |
+| `changes` | `WorkspaceChangesService` | `KernelClient.changes` |
 | `memory` | `MemoryService` | `KernelClient.memory` |
 | `plans` | `PlansService` | `KernelClient.plans` |
 | `workflows` | `WorkflowsService` | `KernelClient.workflows` |
@@ -185,7 +187,7 @@ Production: `KernelCapabilities` and `RuntimeStatus` in `packages/protocol/src/c
 function — `ConnectOptions` is a shape a transport-specific connector elsewhere accepts; the type
 alone lives here.
 
-### 2.3 The 15 services, method by method
+### 2.3 The required services, method by method
 
 Every signature below is the one declared in its file.
 
@@ -329,6 +331,26 @@ checks compatible/subscription aliases, closed resolution, defensive snapshots a
 | `listFiles` | `(query?: { prefix?, glob?, limit? }) => Promise<WorkspaceEntry[]>` | `packages/protocol/src/workspace.ts` |
 | `readFile` | `(path: string) => Promise<{ path: string; content: string }>` | `packages/protocol/src/workspace.ts` |
 | `readImage` | `(path: string) => Promise<{ path: string; mime: string; data: string }>` | `packages/protocol/src/workspace.ts` |
+
+#### `WorkspaceChangesService` (`packages/protocol/src/workspace-changes.ts`)
+
+Read-only current-workspace change inventory. The UI never sends VCS commands or free paths.
+Comparison IDs, bases, and query/entry IDs are opaque and bound to the selected provider. Git
+command names, index, and object IDs do not appear on this generic surface. Failure to probe is
+never a clean working tree.
+
+| Method | Signature | File |
+| --- | --- | --- |
+| `availability` | `(options?) => Promise<WorkspaceChangesAvailability>` | `packages/protocol/src/workspace-changes.ts` |
+| `list` | `(request?, options?) => Promise<WorkspaceChangesPage>` | `packages/protocol/src/workspace-changes.ts` |
+| `read` | `(request, options?) => Promise<WorkspaceChangeDetail>` | `packages/protocol/src/workspace-changes.ts` |
+
+Production: [workspace-changes.ts](../../packages/protocol/src/workspace-changes.ts) and
+`GitChangesProvider` in
+[git-changes-provider.ts](../../packages/kernel/src/workspace/git-changes-provider.ts).
+Test: [public-contract.fixture.ts](../../packages/protocol/tests/contract/public-contract.fixture.ts)
+and [git-changes-provider.test.ts](../../packages/kernel/tests/integration/git-changes-provider.test.ts).
+The kernel adapter contract is [workspace-changes.md](workspace-changes.md).
 
 #### `MemoryService` (`packages/protocol/src/memory.ts`)
 
@@ -943,12 +965,12 @@ The following are derived directly from this package's own source and tests.
    value-form import of an interface or alias. There is no separate architecture assertion that
    enumerates this property; compiler enforcement is the pin.
 
-3. **`KernelClient` aggregates exactly 15 named services, not more or fewer.**
-   Production: `packages/protocol/src/client.ts` — `runs`, `config`, `plugins`, `secrets`, `models`, `providerAuth`, `files`, `memory`,
-   `plans`, `workflows`, `skills`, `sessions`, `tasks`, `storage`, `extensionProfiles` (15 fields, plus 4
-   readonly identity fields and `close()`).
+3. **`KernelClient` aggregates exactly the required named services, not an ad-hoc subset.**
+   Production: `packages/protocol/src/client.ts` — `runs`, `config`, `plugins`, `secrets`, `models`, `providerAuth`, `files`, `changes`, `memory`,
+   `plans`, `goals`, `workflows`, `skills`, `sessions`, `tasks`, `storage`, `extensionProfiles`
+   (required fields, plus optional `hosting`/`localHost`, identity fields and `close()`).
    Test: `packages/protocol/tests/contract/public-contract.fixture.ts` constructs a literal
-   `satisfies KernelClient` naming every one of the 15 services plus `capabilities`/`project`/
+   `satisfies KernelClient` naming every required service plus `capabilities`/`project`/
    `workspace`/`close` — a fixture that would fail to typecheck (and thus fail `bun run test:contract`,
    which is literally `tsc -p tsconfig.json`, `packages/protocol/package.json`) if a service were
    missing or an extra one were required. The same fixture file separately compile-pins `RunHandle`,
@@ -1078,7 +1100,7 @@ Nothing. `packages/protocol/package.json` has no `dependencies`/`devDependencies
 `optionalDependencies`/`peerDependencies` key at all (`packages/protocol/package.json`, read in
 full — no such key appears). Its own `.ts` files import nothing from any other package; every
 `import type` in the package points at a sibling module inside `packages/protocol/src/`
-(`packages/protocol/src/{client,config,extension-profiles,memory,models,plugins,runs,sessions,skills,tasks,workflows}.ts`).
+(`packages/protocol/src/{client,config,extension-profiles,memory,models,plugins,runs,sessions,skills,tasks,workflows,workspace-changes}.ts`).
 The remaining eight modules import nothing; `index.ts` only type-reexports siblings. There is no
 cross-package source import in this package.
 

@@ -66,6 +66,12 @@ instead of a pipe, `local.ts` reuses the stream framing on reconnectable local I
 `run-event-codec.ts` re-validates every inbound run event against a closed
 schema registry.
 
+The ordinary catalog also includes `changes.availability`, `changes.list` and `changes.read`.
+They are file-sensitive reads. Cancellation travels as request options, not params. Production:
+`OPERATIONS.changes` in [operations.ts](../../packages/kernel/src/transport/operations.ts).
+Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
+The DTO contract is [workspace-changes.md](workspace-changes.md).
+
 The design property the modules exist to hold is that a method string is spelled **once**. `M` in
 `wire.ts` is not a literal table: every entry reads its value out of `OPERATIONS` or
 `SPECIAL_OPERATIONS` (`packages/kernel/src/transport/wire.ts`), and both the client proxy
@@ -1335,7 +1341,7 @@ wire protocol or replay interrupted mutations.
 | `../runs/coalesce-events.ts` | runtime | `packages/kernel/src/transport/client.ts` |
 | `../kernel.ts` (`InProcessKernel`) | **type-only** | `packages/kernel/src/transport/server.ts` — the kernel instance arrives as an argument, so `server.ts` holds no runtime edge to kernel composition |
 
-`operations.ts` imports the fifteen service interfaces purely as types and derives `KernelServices`
+`operations.ts` imports the protocol service interfaces purely as types and derives `KernelServices`
 as a `Pick` of `KernelClient` (`KernelServices` in `packages/kernel/src/transport/operations.ts`). That `Pick` is the type constraint that forces
 the catalog to stay exhaustive: `serviceOperations<Service>` demands an entry for every async method
 of the service it is given (`ServiceOperations` and `serviceOperations` in the same file).
@@ -1500,7 +1506,7 @@ Production: `createKernelServer` in [server.ts](../../packages/kernel/src/transp
 [stdio-codec.test.ts](../../packages/kernel/tests/contract/stdio-codec.test.ts).
 
 **Deliberately delegated.**
-- The DTO shapes every method carries, and `KernelClient`'s fifteen services →
+- The DTO shapes every method carries, and `KernelClient`'s required named services →
   **protocol-kernel-contract**.
 - Which run events exist, what they mean, and the coalescing/droppability policy behind
   `DEFAULT_RUN_EVENT_BUFFER` → **kernel-run-service-and-events**.

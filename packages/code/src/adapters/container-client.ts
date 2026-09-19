@@ -147,6 +147,7 @@ export function composeContainerClient(options: ComposeContainerClientOptions): 
     memory: execution.memory,
     workflows: execution.workflows,
     files: execution.files,
+    changes: execution.changes,
     storage: execution.storage,
     extensionProfiles: execution.extensionProfiles,
     config: operatorConfig(operator.config, configurationSaved),

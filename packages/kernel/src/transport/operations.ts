@@ -14,6 +14,7 @@ import type {
   TaskCallOptions,
   TasksService,
   WorkspaceService,
+  WorkspaceChangesService,
   WorkflowsService,
   ExtensionProfileService,
   HostingService,
@@ -34,6 +35,7 @@ export type KernelServices = Pick<
   | "models"
   | "providerAuth"
   | "files"
+  | "changes"
   | "memory"
   | "plans"
   | "workflows"
@@ -773,6 +775,41 @@ export const OPERATIONS = {
       invoke: (services, p) => services.files.readImage(p.path as string),
     },
   }),
+  changes: serviceOperations<WorkspaceChangesService>({
+    availability: {
+      method: "changes.availability",
+      metadata: read("files"),
+      encode: (_options) => ({}),
+      requestOptions: (options) =>
+        options?.signal === undefined ? undefined : { signal: options.signal },
+      invoke: (services, _p, signal) =>
+        services.changes.availability(signal === undefined ? undefined : { signal }),
+    },
+    list: {
+      method: "changes.list",
+      metadata: read("files"),
+      encode: (request, _options) => ({ request }),
+      requestOptions: (_request, options) =>
+        options?.signal === undefined ? undefined : { signal: options.signal },
+      invoke: (services, p, signal) =>
+        services.changes.list(
+          p.request as Parameters<WorkspaceChangesService["list"]>[0],
+          signal === undefined ? undefined : { signal },
+        ),
+    },
+    read: {
+      method: "changes.read",
+      metadata: read("files"),
+      encode: (request, _options) => ({ request }),
+      requestOptions: (_request, options) =>
+        options?.signal === undefined ? undefined : { signal: options.signal },
+      invoke: (services, p, signal) =>
+        services.changes.read(
+          p.request as Parameters<WorkspaceChangesService["read"]>[0],
+          signal === undefined ? undefined : { signal },
+        ),
+    },
+  }),
   memory: serviceOperations<MemoryService>({
     health: {
       method: "memory.health",
@@ -1088,6 +1125,7 @@ export const ORDINARY_OPERATIONS: readonly AnyOperation[] = [
   ...Object.values(OPERATIONS.models),
   ...Object.values(OPERATIONS.providerAuth),
   ...Object.values(OPERATIONS.files),
+  ...Object.values(OPERATIONS.changes),
   ...Object.values(OPERATIONS.memory),
   ...Object.values(OPERATIONS.plans),
   ...Object.values(OPERATIONS.workflows),

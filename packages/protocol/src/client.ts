@@ -13,6 +13,7 @@ import type { PluginService } from "./plugins.ts";
 import type { SecretService } from "./secrets.ts";
 import type { ModelCatalogService } from "./models.ts";
 import type { WorkspaceService } from "./workspace.ts";
+import type { WorkspaceChangesService } from "./workspace-changes.ts";
 import type { MemoryService } from "./memory.ts";
 import type { PlansService } from "./plans.ts";
 import type { WorkflowsService } from "./workflows.ts";
@@ -139,6 +140,8 @@ export interface KernelClient {
   readonly providerAuth: ProviderAuthService;
   /** Read-only workspace file access. */
   readonly files: WorkspaceService;
+  /** Read-only workspace change inventory and patch detail, independent of transcript tools. */
+  readonly changes: WorkspaceChangesService;
   /** Owner-facing execution memory control plane. */
   readonly memory: MemoryService;
   /** Workspace-local file-backed plan history. */

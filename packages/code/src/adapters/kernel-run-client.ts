@@ -33,6 +33,7 @@ import type {
   TasksService,
   WorkflowsService,
   WorkspaceService,
+  WorkspaceChangesService,
   ProjectRef,
   WorkspaceRef,
 } from "@clarvis/protocol";
@@ -122,6 +123,8 @@ export interface KernelRunClient {
   readonly providerAuth: ProviderAuthService;
   /** Read-only workspace files for the @-picker + image references. */
   readonly files: WorkspaceService;
+  /** Read-only workspace change inventory and patch detail. */
+  readonly changes: WorkspaceChangesService;
   /** The client's session index (persisted server-side, workspace-scoped). */
   readonly sessions: SessionService;
   /** Install/manage plugins and exact hook reviews (server-side). */
@@ -665,6 +668,11 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     readFile: (path) => requireKernel().files.readFile(path),
     readImage: (path) => requireKernel().files.readImage(path),
   };
+  const changes: WorkspaceChangesService = {
+    availability: (options) => requireKernel().changes.availability(options),
+    list: (request, options) => requireKernel().changes.list(request, options),
+    read: (request, options) => requireKernel().changes.read(request, options),
+  };
   const sessions: SessionService = {
     listPage: (page) => requireKernel().sessions.listPage(page),
     list: () => requireKernel().sessions.list(),
@@ -750,6 +758,7 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     models,
     providerAuth,
     files,
+    changes,
     sessions,
     plugins,
     extensionProfiles,

@@ -133,3 +133,27 @@ for (const rejected of [false, true]) {
     expect(await outcome).toEqual({ kind: "terminal", result: cancelled });
   });
 }
+
+it("nudges once then fails closed when Steward result validation keeps rejecting", async () => {
+  const capability = createStewardResultGate(async () => {
+    throw new Error("bad review");
+  });
+  const run = await capability.forRun({} as RunCapabilityContext);
+  const contribution = run!.forAgent({ entry: true, agent: "subagent", grants: [] })!.attach({
+    maybeCancelled: () => null,
+    state: { lastAssistantText: "partial" },
+  } as AgentBuildContext);
+  const gate = contribution.gates![0]!;
+  expect(await gate.check({ mode: "submit", value: {} })).toMatchObject({ kind: "nudge" });
+  expect(await gate.check({ mode: "submit", value: {} })).toEqual({
+    kind: "terminal",
+    result: {
+      status: "error",
+      partialText: "partial",
+      error: {
+        code: "goal_steward_failed",
+        message: "Goal Steward result validation failed",
+      },
+    },
+  });
+});

@@ -37,6 +37,7 @@ import type {
   TasksService,
   SandboxInspection,
   WorkspaceService,
+  WorkspaceChangesService,
   WorkspaceRef,
   StartRunParams,
 } from "@clarvis/protocol";
@@ -57,6 +58,9 @@ import { createPlansService } from "./plans/plans-service.ts";
 import { createSkillsService } from "./skills/skills-service.ts";
 import { createModelCatalogService } from "./models/model-catalog.ts";
 import { createWorkspaceService } from "./workspace/workspace-service.ts";
+import { createWorkspaceChangesService } from "./workspace/workspace-changes-service.ts";
+import { createGitChangesProvider } from "./workspace/git-changes-provider.ts";
+import { createNodeProcessRunner } from "./adapters/process/node-process-runner.ts";
 import { createSessionService, type HostSessionStore } from "./sessions/session-service.ts";
 import { createPluginService } from "./plugins/plugin-service.ts";
 import {
@@ -129,7 +133,7 @@ export interface OwnerLease<T> {
  *
  * @remarks
  * The service fields are exactly the `KernelClient` surface (`runs`, `config`,
- * `memory`, `plans`, `skills`, `secrets`, `models`, `files`, `sessions`,
+ * `memory`, `plans`, `skills`, `secrets`, `models`, `files`, `changes`, `sessions`,
  * `plugins`), so a client written against this object is remote-ready: swapping
  * in a transport-backed kernel needs no client change. The owner-scoped five are
  * inherited from {@link OwnerScopedKernel} and bound to the kernel's default
@@ -167,6 +171,8 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
   readonly providerAuth: ProviderAuthService;
   /** Workspace file access. */
   readonly files: WorkspaceService;
+  /** Workspace change inventory and patch detail. */
+  readonly changes: WorkspaceChangesService;
   /** Installed/enabled plugins. */
   readonly plugins: PluginService;
   /** Resolved Extension Profile and its management control plane. */
@@ -276,7 +282,7 @@ export interface CreateKernelOptions {
    * The logger this kernel and its services write diagnostics through.
    *
    * @remarks Defaults to a no-op. Before this existed `createInProcessKernel`
-   * took no logger at all, so all fifteen services, the scope policy and owner
+   * took no logger at all, so all protocol services, the scope policy and owner
    * retirement were structurally unable to say anything — `createFileKernel`
    * built a logger and kept it to itself.
    *
@@ -315,6 +321,8 @@ export interface CreateKernelOptions {
   ownershipMode?: KernelOwnershipMode;
   /** Immutable raw environment used by effect adapters such as plugin Git. */
   environment?: Readonly<Record<string, string | undefined>>;
+  /** Host-owned workspace-changes service; defaults to the Git adapter. */
+  changesService?: WorkspaceChangesService;
   /** Shared settings-sensitive provider selector used by runs and control plane. */
   taskProviderFactory?: TaskProviderFactory;
   /** Builtin gate for both Tasks run and control-plane surfaces. */
@@ -927,6 +935,20 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   const models = opts.modelCatalogService ?? createModelCatalogService(globalDir, logger);
   const providerAuth = opts.providerAuthService ?? createUnavailableProviderAuthService();
   const files = createWorkspaceService(opts.workspaceRoot);
+  const changes =
+    opts.changesService ??
+    createWorkspaceChangesService({
+      workspaceRoot: opts.workspaceRoot,
+      workspaceId: opts.workspace.id,
+      projectId: opts.project.id,
+      providers: [
+        createGitChangesProvider({
+          processRunner: createNodeProcessRunner(logger),
+          environment: opts.environment ?? process.env,
+          logger,
+        }),
+      ],
+    });
   const plugins =
     opts.pluginService ??
     createPluginService({
@@ -999,6 +1021,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     models,
     providerAuth,
     files,
+    changes,
     plugins,
     extensionProfiles,
     storage,
@@ -1021,6 +1044,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     models,
     providerAuth,
     files,
+    changes,
     plugins,
     extensionProfiles,
     storage,

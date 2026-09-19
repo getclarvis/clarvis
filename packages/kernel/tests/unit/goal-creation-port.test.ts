@@ -3,6 +3,7 @@ import type { GoalCreationInput, GoalRepository, GoalState } from "@clarvis/goal
 import type { Session } from "@clarvis/protocol";
 import type { GoalEvidenceSource } from "../../src/goals/evidence.ts";
 import { createGoalCreationPort } from "../../src/goals/creation-port.ts";
+import { createCreationLifecycle } from "../../src/goals/creation-port-lifecycle.ts";
 
 const session: Session = {
   id: "session",
@@ -63,6 +64,23 @@ function port(repository: GoalRepository) {
 }
 
 describe("createGoalCreationPort", () => {
+  it("exposes idle runtime and in-flight handles before create starts", () => {
+    const { lifecycle } = createCreationLifecycle(
+      {
+        repository: repositoryFixture().repository,
+        session,
+        executionId: "execution",
+        agentInstanceId: "entry",
+        seed: "Define the goal",
+        evidence,
+        defaultLimits: { max_net_tokens: 10_000 },
+      },
+      () => 10,
+    );
+    expect(lifecycle.runtime).toBeUndefined();
+    expect(lifecycle.inFlight).toBeUndefined();
+  });
+
   it("composes formulation, admission and runtime binding behind one idempotent port", async () => {
     const fixture = repositoryFixture();
     const creation = port(fixture.repository);

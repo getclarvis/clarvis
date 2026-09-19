@@ -718,26 +718,23 @@ deactivates").
 
 ### `DiffViewer` (`views/overlays/DiffViewer.tsx`)
 
-With no nodes loaded, the page shows an empty-state hint ("no diff in the transcript yet") rather
-than a blank pane. `projectDiffFiles` splits a multi-file unified diff, groups chronological
-mutations by normalized path and retains every mutation for the selected file.
-`projectDiffTreeRows` projects those paths into expandable folder and file rows. At 80 columns or
-wider, the tree remains beside the selected file's reader; narrower terminals show the tree and
-detail as separate steps. Up/Down moves through visible tree rows without changing the open file;
-Enter expands/collapses a folder or explicitly opens the selected file. Tab/Escape returns from
-detail to the tree, where Escape closes the page. The local footer advertises that Escape route and
-filters the global Ctrl+C cancel/quit hint, matching the Plan and Goal detail-screen pattern.
-Tree rows retain each normalized file path as their selection identity, including a POSIX root or
-UNC prefix, while separately deriving folder and leaf labels for display.
-Mouse selection follows the same path. Each selected file shows its path, tool identity and all of
-its diffs in chronological order through the shared tool-result renderer (`resolveToolRenderer`) in
-`full`/`wrap` mode. A node without a native diff falls back to the renderer's args-reconstructed
-diff. The collection comes from `pickDiffNodes`, so `/diff` includes all mutations in the active
-Lead or selected sub-agent transcript rather than only the newest one. Pinned:
-`packages/code/tests/integration/diff-viewer-render.test.tsx` (empty state, folder expansion,
-per-file selection, grouping, multi-file splitting, narrow navigation, rendering fallbacks and
-long-line access) and `packages/code/tests/integration/app-shell-render.test.tsx` (all
-active-transcript edits open).
+The overlay reads `KernelClient.changes`, not transcript tool calls. Opening `/diff` or `Ctrl+X D`
+always mounts the page, including on an empty conversation. Availability, comparison, inventory and
+on-demand patch detail come from `createWorkspaceChangesController`. A missing or inapplicable
+provider shows a short explanation and refresh, never a clean-tree empty state and never transcript
+tool diffs. When a comparison is empty, the hint is `no workspace changes yet`.
+`projectChangeFiles` and `projectDiffTreeRows` project structured inventory paths into expandable
+folder and file rows with A/M/D/R status letters. At 80 columns or wider, the tree remains beside
+the selected file's reader; narrower terminals show the tree and detail as separate steps. Up/Down
+moves through visible tree rows without changing the open file; Enter expands/collapses a folder or
+explicitly opens the selected file. Tab/Escape returns from detail to the tree, where Escape closes
+the page. The local footer advertises that Escape route and filters the global Ctrl+C cancel/quit
+hint, matching the Plan and Goal detail-screen pattern. Ready text patches render through
+`StableDiff`; binary, conflict, truncated, stale and empty states render as hints. The TUI does not
+branch on provider id. Pinned:
+[diff-viewer-render.test.tsx](../../packages/code/tests/integration/diff-viewer-render.test.tsx)
+and [app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx).
+The kernel contract is [workspace-changes.md](workspace-changes.md).
 
 ### `PlanOverlay` (`views/overlays/PlanOverlay.tsx`)
 

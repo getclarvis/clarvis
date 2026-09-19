@@ -613,7 +613,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerAction({
     name: "transcript.diff",
     title: "Diff viewer",
-    desc: "Open all diffs in the active transcript",
+    desc: "Open the current workspace changes",
     slash: "/diff",
     surface: "slash",
     group: "navigate",

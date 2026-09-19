@@ -26,6 +26,7 @@ import type {
   TasksService,
   WorkspaceRef,
   WorkspaceService,
+  WorkspaceChangesService,
   WorkflowDetail,
   WorkflowSequence,
   WorkflowsService,
@@ -244,6 +245,7 @@ declare const plugins: PluginService;
 declare const models: ModelCatalogService;
 declare const providerAuth: ProviderAuthService;
 declare const files: WorkspaceService;
+declare const changes: WorkspaceChangesService;
 declare const memory: MemoryService;
 declare const plans: PlansService;
 declare const workflows: WorkflowsService;
@@ -265,6 +267,7 @@ const client = {
   models,
   providerAuth,
   files,
+  changes,
   memory,
   plans,
   workflows,

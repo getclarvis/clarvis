@@ -81,6 +81,16 @@ Only two cleanup classes can be named:
   containers. Recent spills, monitor state, occupied run directories and unrecognized files remain.
 - `cache`: the rebuildable global cache tree.
 
+The rebuildable cache includes host-local Container runtime artifacts whose admitted payload files
+and directories are intentionally published read-only. During explicit cleanup only,
+`removeOwnedTree` restores traversal/removal rights on real directories owned by the current POSIX
+user and then removes the tree. It never follows a symbolic link, changes ownership, elevates
+privileges, or makes content world-writable. A linked root, a directory owned by another user, or an
+`EACCES`/`EPERM` refusal fails closed with a path-free conflict; other removal failures likewise use
+a path-free Kernel error. Artifact files and directories retain their immutable modes at every other
+time. This host-filesystem cleanup does not affect the independently managed artifact volume in the
+Container engine.
+
 An empty or unknown category set is `invalid_request`. An apply whose fresh before-snapshot is
 `truncated` is refused with `conflict`, because the preview cannot safely describe the deletion
 scope; Code likewise stops before confirmation when its dry-run snapshot is incomplete. Durable
@@ -95,10 +105,13 @@ Engine-cache inspection and explicit cleanup remain an advanced Docker operation
 exposes a separately reviewed engine-storage contract.
 
 Production: `createStorageService.cleanup` in `packages/kernel/src/storage/storage-service.ts`,
-`sweepGlobalStateArtifacts` in `packages/paths/src/housekeeping.ts`, and `StorageView` in
+`removeOwnedTree` in `packages/kernel/src/storage/owned-tree.ts`, `cacheRuntimeArtifact` in
+`packages/kernel/src/runtime/runtime-artifact.ts`, `sweepGlobalStateArtifacts` in
+`packages/paths/src/housekeeping.ts`, and `StorageView` in
 `packages/code/src/views/config/StorageView.tsx`.
-Test: cleanup preview/apply, truncated-preview refusal, and invalid-category cases in
-`packages/kernel/tests/integration/storage-service.test.ts`; Code refusal in
+Test: cleanup preview/apply and accounting, immutable runtime-artifact removal, link boundaries,
+unsafe ownership, path-free filesystem failures, truncated-preview refusal, and invalid-category
+cases in `packages/kernel/tests/integration/storage-service.test.ts`; Code refusal in
 `packages/code/tests/integration/storage-view-render.test.tsx`; command registration in
 `packages/code/tests/component/command-composition.test.ts`.
 

@@ -281,7 +281,8 @@ The terminal `tool_call` variant optionally carries `guard`, a strict
 `CommandGuardReview` with the final mode, allowed/denied outcome, and answerer.
 It is absent for older and unguarded calls and is part of replay when present.
 Its optional `reviewer_decision` records `allow`, `deny`, `unsure` or `failed` independently of the
-final outcome, including when a human fallback subsequently approves an uncertain case.
+final outcome, including when Approval later answers a grey-zone ask. Auto does not use human
+fallback.
 
 ## Contract boundaries
 

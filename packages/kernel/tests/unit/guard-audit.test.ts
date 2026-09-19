@@ -182,7 +182,7 @@ describe("createShellGuard onDecision", () => {
     const decision = await guard(ctx("shell", { command: "rm -rf x" }, shellFacts("rm -rf x")));
     expect(decision).toMatchObject({
       verdict: "deny",
-      reason: "command matches the denied commands list",
+      reason: expect.stringMatching(/^command matches the denied commands list/),
     });
   });
 });
@@ -277,7 +277,7 @@ describe("guard audit records", () => {
     expect(answerers).toEqual(["human", "session_allowlist"]);
   });
 
-  it("does not attribute an unvalidated auto-mode answer to the judge", async () => {
+  it("does not treat an unvalidated auto-mode model payload as a judge allow", async () => {
     const llm = {
       call: async () => ({ toolCalls: [{ name: "decide", arguments: { decision: "allow" } }] }),
     } as unknown as RunCapabilityContext["llm"];
@@ -300,7 +300,7 @@ describe("guard audit records", () => {
     );
     expect(await resolution!.elicit!(bashReq("echo hi"))).toEqual({
       allowed: false,
-      answerer: "unavailable",
+      answerer: "judge",
       review: {
         effect_id: undefined,
         failure_kind: undefined,
@@ -308,10 +308,13 @@ describe("guard audit records", () => {
         reviewer_decision: "unsure",
       },
     });
-    expect(records.find((r) => r.fields.event === "guard.elicit.answered")).toBeUndefined();
+    expect(records.find((r) => r.fields.event === "guard.elicit.answered")?.fields).toMatchObject({
+      answerer: "judge",
+      answer: "deny",
+    });
   });
 
-  it("attributes a judge failure fallback to the human who answered it", async () => {
+  it("refuses Auto uncertainty without a human fallback", async () => {
     const llm = {
       call: async () => {
         throw new Error("provider unavailable");
@@ -341,8 +344,8 @@ describe("guard audit records", () => {
     );
 
     expect(await resolution!.elicit!(bashReq("bun run test"))).toEqual({
-      allowed: true,
-      answerer: "human",
+      allowed: false,
+      answerer: "judge",
       review: {
         effect_id: undefined,
         failure_kind: undefined,
@@ -351,12 +354,12 @@ describe("guard audit records", () => {
       },
     });
     expect(records.find((r) => r.fields.event === "guard.elicit.answered")?.fields).toMatchObject({
-      answerer: "human",
-      answer: "allow_session",
+      answerer: "judge",
+      answer: "deny",
     });
   });
 
-  it("warns when an escalated ask has no human channel, and still denies", async () => {
+  it("does not send an Auto escalated ask to a missing human channel", async () => {
     const llm = {
       call: async () => ({ toolCalls: [{ name: "decide", arguments: { decision: "allow" } }] }),
     } as unknown as RunCapabilityContext["llm"];
@@ -380,11 +383,15 @@ describe("guard audit records", () => {
     });
     expect(denied).toEqual({
       allowed: false,
-      answerer: "unavailable",
+      answerer: "judge",
+      review: {
+        effect_id: undefined,
+        failure_kind: undefined,
+        relation: "none",
+        reviewer_decision: "unsure",
+      },
     });
-    const escalation = records.find((r) => r.fields.event === "guard.escalation.no_channel");
-    expect(escalation?.level).toBe("warn");
-    expect(escalation?.fields).toMatchObject({ run_id: "run-1" });
+    expect(records.find((r) => r.fields.event === "guard.escalation.no_channel")).toBeUndefined();
   });
 
   it("routes an escalated ask to the human when one exists", async () => {

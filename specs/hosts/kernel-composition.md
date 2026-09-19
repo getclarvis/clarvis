@@ -205,10 +205,9 @@ The tools capability receives the selected workspace, sandbox policy, guard reso
 environment names. It creates the run-owned scratch and appends host system temporary access inside
 the optional tools capability. The kernel guard makes Isolation Sandbox `require_escalated` an `ask`
 matched `host_command`: mode `on` uses `escalate: "human"`, while Auto may use the judge to allow
-or deny. Inconclusive, failed or malformed review follows `on_unsure` (default `deny`; explicit
-`ask` may use a human); an unavailable model follows the same fallback. Host-command asks bypass session coverage
-and never offer `allow_session`, including human fallback; clean exact-call judge memoization is
-separate. Mode `off` returns no guard, so that one command proceeds without command review.
+or deny. Inconclusive, failed or malformed Auto review refuses to the calling agent; an unavailable
+model refuses. Host-command asks bypass session coverage and never offer `allow_session`; clean
+exact-call judge memoization is separate. Mode `off` returns no guard, so that one command proceeds without command review.
 Isolated container guests reject the field instead of forwarding it to the host.
 
 Production: `createGuardResolver` in `packages/kernel/src/guard/resolver.ts` and `createShellGuard`

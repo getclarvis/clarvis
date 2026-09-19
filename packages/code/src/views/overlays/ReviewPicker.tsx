@@ -94,8 +94,8 @@ export function ReviewPicker(props: {
               : choice.value === "off"
                 ? `${glyph("warning")} Commands are not reviewed.`
                 : choice.value === "on"
-                  ? "Clarvis asks you before risky commands."
-                  : "The configured LLM judge reviews commands first."}
+                  ? "Clarvis asks you before unlisted commands that are not classified dangerous."
+                  : "The configured LLM judge reviews commands. Deny and unsure return to the agent, not to you."}
           </text>
           <text fg={tokens.muted}>The selected Isolation boundary does not change.</text>
         </box>

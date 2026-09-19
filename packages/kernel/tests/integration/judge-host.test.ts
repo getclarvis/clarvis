@@ -126,7 +126,6 @@ test.each([
       },
     });
     let childCalls = 0;
-    let humanCalls = 0;
     let childId: string | undefined;
     const base: LLMProvider = {
       async call(params) {
@@ -255,10 +254,6 @@ test.each([
                           signal: ctx.signal,
                         },
                         { on_unsure: "ask" },
-                        async () => {
-                          humanCalls++;
-                          return true;
-                        },
                       );
                       const input = { tool: "shell", args: { command: secret } } as ElicitRequest;
                       if (kind === "persistence_failure") {
@@ -314,7 +309,6 @@ test.each([
       const expectedCalls = kind === "effects" ? 2 : 1;
       const billedCalls = expectedCalls + (retries ? 1 : 0);
       expect(childCalls).toBe(billedCalls);
-      expect(humanCalls).toBe(0);
       expect(failedAppends).toBe(kind === "journal_failure" ? 1 : 0);
       expect(childId).toBeDefined();
       const parent = physical.getById("owner", "parent")!;

@@ -106,10 +106,9 @@ When the sandbox lacks a required host environment variable, credential channel,
 service, the model retries the same `shell` or `monitor_start` command with
 `sandbox_permissions: "require_escalated"` and a short `justification`. Isolation Sandbox then
 spawns that one command on the host after approval: `on` asks a human; Auto uses the judge, with
-`allow` executing and `deny` refusing. Unsure, failed or malformed review follows `on_unsure`
-(default `deny`; explicit `ask` may use a human); an unavailable model follows the same fallback. Host-command asks never
-use session coverage or offer `allow_session`, including fallback; clean exact-call judge memoization
-remains separate. Isolation Host already runs unsandboxed and the field leaves normal review intact.
+`allow` executing and `deny`, unsure, failed or malformed review refusing to the calling agent. An
+unavailable model refuses. Host-command asks never use session coverage or offer `allow_session`;
+clean exact-call judge memoization remains separate. Isolation Host already runs unsandboxed and the field leaves normal review intact.
 Isolated container runs reject the field. Mode `off` proceeds without a reviewer. Executable Git
 options (`--upload-pack`, `--receive-pack`, and `--exec`), custom transport-helper URLs,
 `git credential`, and `gh auth token` remain denied independently of command review.
@@ -151,8 +150,8 @@ Test: `packages/tools/tests/integration/sandbox.test.ts`;
 
 5. **Host fallback is the same command text with `sandbox_permissions: "require_escalated"` and
    follows the operator-selected command-review mode.** Mode `off` proceeds without review; Isolation
-   Sandbox with mode `on` asks a human, while Auto may judge the host effect with ordinary
-   `on_unsure` fallback and no session approval. Isolated containers refuse the field.
+   Sandbox with mode `on` asks a human, while Auto may judge the host effect and refuses
+   unsure to the calling agent with no session approval. Isolated containers refuse the field.
    Production: `packages/tools/src/lib/sandbox-permissions.ts`;
    `packages/kernel/src/guard/shell-guard.ts`.
    Test: `packages/tools/tests/integration/shell-escalation.test.ts`;

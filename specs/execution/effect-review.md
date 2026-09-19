@@ -121,8 +121,8 @@ origin, run ID, completed failed state, supported event, branch, SHA and open PR
 injected argv-only `ProcessRunner`, a three-second timeout and 16 KiB combined output cap. They never
 execute the reviewed mutation. The resolver reattests shell effects before returning a model allow.
 Network, authentication, malformed output or target mismatch closes the attestation. Unsupported
-external variants retain a human-only attestation; Auto denies them by default and uses a human only
-under explicit `on_unsure: "ask"`. Registry membership is not proof that every CLI spelling has a
+external variants retain a human-only attestation; Auto denies them to the calling agent and never
+uses a human. Registry membership is not proof that every CLI spelling has a
 complete attestor.
 Probe lookup and configuration roots are recaptured from the actual shell spawn environment through
 `resolveEffectEnvironment`. Unmatched inherited Git/GitHub overrides or executable-loading variables
@@ -237,9 +237,9 @@ uncertainty. A plugin cannot contribute this block. Explicit run reviewer overri
 The fallback defaults to `deny`: `unsure`, missing authority coverage, an unavailable reviewer,
 provider failure, timeout, or malformed structured output returns a denial to the calling model so it
 can identify a technical review failure rather than missing consent. Technical failures never invoke
-human fallback, even with `on_unsure: "ask"`. That setting remains the explicit opt-in for semantic
-uncertainty; human-only
-policy decisions such as credential, dangerous-command, and explicit escalation asks remain human.
+human fallback, even with `on_unsure: "ask"`. Auto never invokes human fallback, including
+`on_unsure: "ask"`: deny and unsure refuse to the principal. Approval asks a human only for asks
+that are neither allow-listed nor dangerous.
 `guard_judge.guidance` is bounded additional context and cannot replace the
 fixed policy. Both command and effect review use Judge-owned `JUDGE_POLICY`. Code composes operator-global guidance first and appends workspace guidance within the single bounded payload; absent guidance does not disable Auto.
 

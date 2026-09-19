@@ -4,26 +4,41 @@ import {
   type LLMProvider,
   type Logger,
   type OperatorReviewContext,
+  type OperatorReviewContextProvider,
   type TraceEvent,
 } from "@clarvis/capability";
 import {
   admitGoalRun,
   advanceGoalRun,
   createGoalCapability,
+  createGoalCreationCapability,
   goalAdmission,
   goalDeadlineLimit,
   stopGoalContinuation,
   type GoalRepository,
   type GoalRecord,
+  type GoalCreationInput,
+  type GoalLimits,
+  type GoalRuntimePort,
+  type GoalCreationPort,
+  type GoalStewardFinalizeAttempt,
+  type GoalStewardPort,
 } from "@clarvis/goal";
 import type { Message, RunRequest } from "@clarvis/loop";
-import type { ModelCost, RunDetail, SessionService, StartRunParams } from "@clarvis/protocol";
+import type {
+  ModelCost,
+  RunDetail,
+  Session,
+  SessionService,
+  StartRunParams,
+} from "@clarvis/protocol";
 import { generateExecutionId } from "@clarvis/trace";
 import type { HostedExecutionBinding, HostedPreparationContext } from "../hosting/sessions.ts";
 import { kernelError } from "../core/errors.ts";
 import { protoMessagesToEngine } from "../runs/map-message.ts";
 import type { GoalEvidenceSource } from "./evidence.ts";
 import { createGoalRuntimePort } from "./runtime-port.ts";
+import { createGoalCreationPort } from "./creation-port.ts";
 import { goalStateFromSession, goalStateToDto } from "./session-state.ts";
 import { settleGoalSession } from "./settlement.ts";
 import { createGoalUsageTracker, measureGoalRunUsage } from "./usage.ts";
@@ -46,6 +61,13 @@ export interface GoalExecutionPolicy {
   trackModel(provider: LLMProvider): LLMProvider;
   /** Apply after ordinary profile/settings resolution, before immutable launch preparation. */
   constrain(request: RunRequest): RunRequest;
+}
+
+/** Host policy for the first ordinary run that creates a Goal through its model-facing tool. */
+export interface GoalCreationExecutionPolicy {
+  capability: Capability;
+  observe(event: TraceEvent): void;
+  trackModel(provider: LLMProvider): LLMProvider;
 }
 
 async function goalAuthorityMessages(
@@ -417,6 +439,185 @@ export async function prepareHostedGoalTurn(options: {
         };
       },
       stopped,
+    },
+  };
+}
+
+/**
+ * Admit a regular visible conversation turn with a deferred Goal creation capability.  No Goal
+ * state or Steward work exists before the main agent calls create_goal; once it does, the host
+ * binds the current execution as the first stage and the ordinary Goal completion gate applies.
+ */
+export async function prepareHostedGoalCreationTurn(options: {
+  params: StartRunParams;
+  context: HostedPreparationContext;
+  repository: GoalRepository;
+  evidence: GoalEvidenceSource;
+  seed: string;
+  entryTokenLimit?: number;
+  defaultLimits?: Partial<GoalLimits>;
+  prepareExecution(policy: GoalCreationExecutionPolicy): Promise<HostedExecutionBinding>;
+  readRun?(executionId: string): Promise<RunDetail | null>;
+  steward?: {
+    runtime(workTokenLimit: number, ttl: "5m" | "1h"): StewardExecutionRuntime;
+    settle: StewardCoordinatorOptions["settle"];
+  };
+  logger?: Logger;
+  now?: () => number;
+  priceFor?(model: string): ModelCost | undefined;
+  onChange?(sessionId: string): void;
+}): Promise<HostedExecutionBinding> {
+  const params = structuredClone(options.params);
+  const session = options.context.session;
+  const executionId = params.execution_id;
+  const sessionId = session.id;
+  if (
+    executionId === undefined ||
+    params.session_id !== sessionId ||
+    params.agent_instance_id === undefined ||
+    params.skill !== undefined
+  )
+    throw kernelError("unsupported", "Goal creation requires a bound ordinary conversation turn");
+  const existing = goalStateFromSession(session)?.current;
+  if (existing !== undefined && existing.status !== "complete" && existing.status !== "cancelled")
+    throw kernelError("conflict", "A Goal already exists for this conversation");
+  const now = options.now ?? Date.now;
+  const usageTracker = createGoalUsageTracker();
+  let runtime: GoalRuntimePort | undefined;
+  let steward:
+    | (GoalStewardPort & {
+        completionCurrent(result: unknown): Promise<boolean>;
+      })
+    | undefined;
+  let stewardRuntime: StewardExecutionRuntime | undefined;
+  let reviewContextProvider: OperatorReviewContextProvider | undefined;
+  const basePort = createGoalCreationPort({
+    repository: options.repository,
+    session,
+    executionId,
+    agentInstanceId: params.agent_instance_id,
+    seed: options.seed,
+    evidence: options.evidence,
+    defaultLimits: options.defaultLimits,
+    entryTokenLimit: options.entryTokenLimit,
+    signal: options.context.signal,
+    now,
+    onChange: (sessionId) => options.onChange?.(sessionId),
+  });
+  const create = async (
+    input: GoalCreationInput,
+    signal?: AbortSignal,
+  ): Promise<GoalRuntimePort> => {
+    runtime ??= await basePort.create(input, signal);
+    if (steward === undefined && options.steward !== undefined) {
+      const current = await options.repository.read(sessionId);
+      const goal = current?.current;
+      if (goal === undefined) throw kernelError("conflict", "Goal disappeared after creation");
+      steward = createGoalStewardCoordinator({
+        binding: runtime.binding,
+        repository: options.repository,
+        runtimePort: runtime,
+        runtime() {
+          stewardRuntime ??= options.steward!.runtime(
+            options.entryTokenLimit ?? goal.limits.max_net_tokens,
+            "5m",
+          );
+          return stewardRuntime;
+        },
+        initialMessages: params.messages.flatMap((message) =>
+          message.role === "user" && typeof message.content === "string" ? [message.content] : [],
+        ),
+        signal: options.context.signal,
+        settle: options.steward.settle,
+        changed: () => options.onChange?.(sessionId),
+        readEvidence: (currentGoal) => options.evidence.snapshot(currentGoal),
+        ...(options.readRun === undefined
+          ? {}
+          : {
+              recoverUsage: async (id: string) => {
+                const usage = (await options.readRun!(id))?.result?.usage;
+                return {
+                  usage: measureGoalRunUsage(usage),
+                  accounting: usage?.by_agent?.map((row) => ({
+                    ...row,
+                    type: "subagent" as const,
+                  })),
+                };
+              },
+            }),
+      });
+      if (reviewContextProvider !== undefined) steward.bindReviewContext(reviewContextProvider);
+    }
+    return runtime;
+  };
+  const creationPort: GoalCreationPort = {
+    ...basePort,
+    create,
+    bindReviewContext: (provider: OperatorReviewContextProvider) => {
+      reviewContextProvider = provider;
+      steward?.bindReviewContext(provider);
+    },
+    reviewCompletion: (attempt: GoalStewardFinalizeAttempt, signal?: AbortSignal) =>
+      steward?.reviewCompletion(attempt, signal) ??
+      Promise.resolve({
+        kind: "review_pending" as const,
+        review_id: "unavailable",
+        reason: "goal_steward_inconclusive",
+      }),
+  };
+  const policy: GoalCreationExecutionPolicy = {
+    capability: createGoalCreationCapability(creationPort),
+    observe: (event) => options.evidence.observe(event),
+    trackModel: (provider) => usageTracker.wrap(provider),
+  };
+  const execution = await options.prepareExecution(policy);
+  return {
+    ...execution,
+    prepareSettlement: async (result) => {
+      const current = await options.repository.read(sessionId);
+      const goal = current?.current;
+      const run = goal?.runs.find((item) => item.execution_id === executionId);
+      let validationRevision: number | undefined;
+      if (goal !== undefined && run !== undefined && run.phase !== "closed") {
+        if (run.phase === "running")
+          await options.repository.transact(sessionId, (state) => ({
+            state: advanceGoalRun(state!, {
+              goal_id: goal.goal_id,
+              execution_id: executionId,
+              phase: "settling",
+              now: now(),
+            }),
+            result: undefined,
+          }));
+        const latest = await options.repository.read(sessionId);
+        if (
+          result.status === "completed" &&
+          result.disposition !== "checkpoint" &&
+          latest?.current?.candidate?.execution_id === executionId &&
+          runtime !== undefined
+        ) {
+          const validation = await runtime.validateCompletion(options.context.signal);
+          if (
+            validation.valid &&
+            (steward === undefined || (await steward.completionCurrent(result.result)))
+          )
+            validationRevision = validation.revision;
+        }
+      }
+      return (target: Session) =>
+        settleGoalSession(
+          target,
+          result,
+          {
+            disposition: result.disposition ?? "final",
+            usage: usageTracker.measure(),
+            completion_validated:
+              validationRevision !== undefined &&
+              target.goal_state?.revision === validationRevision,
+          },
+          now(),
+          (model) => options.priceFor?.(model),
+        );
     },
   };
 }

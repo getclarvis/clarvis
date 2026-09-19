@@ -17,9 +17,22 @@ Production: the ports in [ports.ts](../../packages/goal/src/ports.ts), strict sc
 Test: `goal user controls` in [domain.test.ts](../../packages/goal/tests/unit/domain.test.ts) verifies
 session isolation, physical exclusion, CAS and operation replay.
 
-## Semantic formulation agent
+## Main-agent Goal creation
 
-Every non-literal creation uses a bounded formulation run based on the conversation's selected main
+Guided `/goal <seed>` is an ordinary turn of the selected main agent. The authenticated host adds
+`create_goal` through `createGoalCreationCapability`; the model keeps its normal prompt, tools,
+workspace context and transcript. The host assigns identity, limits, origin, evidence scope and the
+first-stage execution binding. The first request advertises the stable catalog `create_goal`,
+`get_goal` and `update_goal`; before creation the latter two return deterministic guidance and there
+is no Goal state or Steward call. After creation their handlers activate and the normal completion gate
+applies.
+`create_goal` is idempotent for its admitted execution and cannot be selected by an arbitrary model
+argument. Literal `/goal -- <text>` remains a direct host control.
+
+## Compatibility semantic formulation agent
+
+The control-plane formulation service remains available to older clients but is no longer used by
+the Code guided slash command. Its bounded formulation run is based on the conversation's selected main
 agent profile. Auto mode treats the projected conversation trajectory as primary. Guided mode treats
 its validated seed as the newest authoritative
 request; trajectory and workspace reads may resolve references and retain already stated limits, but
@@ -133,8 +146,9 @@ and valid/privileged action cases in [capability.test.ts](../../packages/goal/te
 
 ## Client presentation boundary
 
-The Code goal parser recognizes only explicit control verbs. `/goal <seed>` formulates with the seed
-as primary; `/goal -- <text>` creates literal text without a model call, so `/goal -- auto` is valid.
+The Code goal parser recognizes only explicit control verbs. `/goal <seed>` submits an ordinary turn
+to the selected main agent, which creates the Goal with `create_goal` and continues the same run;
+`/goal -- <text>` creates literal text without a model call, so `/goal -- auto` is valid.
 The automatic formulation mode remains available to the host service but is not exposed as a slash
 command. Control verbs remain reserved only in their exact documented forms. A malformed reserved
 control is refused rather than reinterpreted as a seed. The
@@ -155,10 +169,10 @@ control or recovered receipt remains successful if its independent follow-up sta
 controller reports a stale view and keeps the confirmed receipt instead of inviting a conflicting
 retry.
 
-`registerGoalCommands` exposes `/goal`, explicit auto/guided formulation, literal objective creation
-and the edit/pause/resume/cancel/clear controls through the normal Code registry. Formulation prepares
-an empty conversation when needed, never dispatches the slash command to the ordinary model, does not
-open a pre-creation form, and does not silently replace a current Goal. Created reveals the compact
+`registerGoalCommands` exposes `/goal`, main-agent guided creation, literal objective creation and the
+edit/pause/resume/cancel/clear controls through the normal Code registry. Guided creation uses the
+ordinary selected conversation, does not open a pre-creation form, and does not silently replace a
+current Goal. Created reveals the compact
 Goal sidebar section without navigating away from the transcript; insufficient, stale and failed
 outcomes show one question/message without automatic retry. The controller exposes the in-flight
 formulation state and the host projects its live trace into bounded `thinking`, `reading` and
@@ -268,7 +282,7 @@ origin and are canonically rewritten by the next host publication; no parallel v
 exists.
 
 A source is normative only when it defines the requested result, was read completely and
-successfully in that formulation run, and was reread through the confined workspace service before
+successfully in the legacy semantic formulation run, and was reread through the confined workspace service before
 commit. The model supplies only a path; the host computes its digest. A missing, partial, invented or
 changed read fails closed. Later drift does not redefine the Goal: the view reports attention and
 completion remains blocked until a semantic edit, or cancel/clear followed by formulation. Files the

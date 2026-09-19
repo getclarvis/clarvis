@@ -10,61 +10,22 @@ import {
   type GateOutcome,
   type HandlerVerdict,
 } from "@clarvis/capability";
-import { z } from "zod";
 import { GOAL_BLOCK_KIND, goalContextBlock, goalModelView } from "./context.ts";
 import { GoalError } from "./errors.ts";
+import type { GoalCreationPort, GoalRuntimePort } from "./ports.ts";
 import { goalModelToolInputSchema } from "./model-input.ts";
-import type { GoalRuntimeBinding, GoalRuntimePort, GoalRuntimeSnapshot } from "./ports.ts";
-import { goalCheckpointSchema, goalEvidenceRefSchema, goalRecordSchema } from "./schemas.ts";
-import { GET_GOAL, UPDATE_GOAL, buildGoalTools, getGoalInputSchema } from "./tools.ts";
+import { goalCheckpointSchema } from "./schemas.ts";
+import { CREATE_GOAL, GET_GOAL, UPDATE_GOAL, buildGoalTools, getGoalInputSchema } from "./tools.ts";
+import { absentReviewContext, checkGoalSnapshot } from "./runtime-validation.ts";
+import { createGoalCreationRunCapability } from "./creation-capability.ts";
+import { GOAL_CAPABILITY_NAME } from "./constants.ts";
 
-export const GOAL_CAPABILITY_NAME = "goal";
+export { GOAL_CAPABILITY_NAME } from "./constants.ts";
 const runtimePorts = new WeakMap<Capability, GoalRuntimePort>();
-const absentReviewContext = { snapshot: () => ({ revision: "absent", contexts: [] }) };
 
 /** Recover trusted placement authority only for a capability created by this factory. */
 export function goalRuntimePortOf(capability: Capability): GoalRuntimePort | undefined {
   return runtimePorts.get(capability);
-}
-const snapshotSchema = z
-  .object({
-    goal: goalRecordSchema,
-    evidence: z.array(goalEvidenceRefSchema.extend({ description: z.string().max(512) })).max(32),
-  })
-  .strict();
-
-/** Fail closed on stale host bindings, including a runtime that returns another run's state. */
-function checkSnapshot(
-  value: GoalRuntimeSnapshot,
-  binding: GoalRuntimeBinding,
-  preparing = false,
-): GoalRuntimeSnapshot {
-  const snapshot = snapshotSchema.parse(value);
-  const { goal, evidence } = snapshot;
-  const run = goal.runs.at(-1);
-  if (
-    goal.goal_id !== binding.goal_id ||
-    goal.session_id !== binding.session_id ||
-    goal.objective_revision !== binding.objective_revision ||
-    (goal.status !== "active" && goal.status !== "paused") ||
-    run?.execution_id !== binding.execution_id ||
-    run.objective_revision !== binding.objective_revision ||
-    (run.phase !== "running" && !(preparing && run.phase === "preparing")) ||
-    (run.phase === "preparing" &&
-      (goal.status !== "active" || run.control_revision !== goal.control_revision)) ||
-    evidence.some(
-      (reference) =>
-        reference.goal_id !== goal.goal_id ||
-        reference.objective_revision !== goal.objective_revision ||
-        !goal.runs.some(
-          (source) =>
-            source.execution_id === reference.execution_id &&
-            source.objective_revision === goal.objective_revision,
-        ),
-    )
-  )
-    throw new GoalError("conflict", "Goal capability is outside its bound execution");
-  return snapshot;
 }
 
 /**
@@ -87,7 +48,7 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
         runContext.request.agent_instance_id !== binding.agent_instance_id
       )
         throw new GoalError("conflict", "Goal capability requires its admitted entry identity");
-      let snapshot = checkSnapshot(await port.read(), binding, true);
+      let snapshot = checkGoalSnapshot(await port.read(), binding, true);
       return {
         name: GOAL_CAPABILITY_NAME,
         required: true,
@@ -130,7 +91,7 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
               const refresh = async (signal?: AbortSignal): Promise<void> => {
                 const next = await port.read(signal);
                 signal?.throwIfAborted();
-                snapshot = checkSnapshot(next, binding);
+                snapshot = checkGoalSnapshot(next, binding);
                 recordReviews();
               };
               const failed = (code: string, message: string): AgentResult => ({
@@ -399,4 +360,22 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
   };
   runtimePorts.set(capability, port);
   return capability;
+}
+
+/**
+ * Main-agent entry capability for a guided `/goal` turn.  It starts with no Goal state, exposes
+ * one host-bound create tool, and activates the normal Goal controls and completion gate only
+ * after that tool has durably created the objective.  This keeps formulation in the visible run
+ * while making the host the sole authority for identity, limits and evidence bindings.
+ */
+export function createGoalCreationCapability(port: GoalCreationPort): Capability {
+  return {
+    name: GOAL_CAPABILITY_NAME,
+    required: true,
+    reservedWireNames: [CREATE_GOAL, GET_GOAL, UPDATE_GOAL],
+    toolEffects: { [CREATE_GOAL]: "control", [GET_GOAL]: "control", [UPDATE_GOAL]: "control" },
+    forRun(runContext) {
+      return createGoalCreationRunCapability(port, runContext);
+    },
+  };
 }

@@ -183,35 +183,23 @@ Production: `prepareHostedGoalTurn` and `goalAuthorityMessages` in
 [run-service.ts](src/runs/run-service.ts). Test: Goal authority cases in
 [goal-hosted-continuation.test.ts](tests/integration/goal-hosted-continuation.test.ts) and
 [run-service-lifecycle.test.ts](tests/unit/run-service-lifecycle.test.ts).
-`GoalService.formulate` owns the interactive semantic pre-run. It checks the full
-session/Goal/physical-work fence before inference, projects bounded owner-scoped conversation
-evidence, and runs `goal-agent` without holding the session transaction. The isolated dependency set
-replaces the host capability list with canonical Tools; only its read-only surface and generic
-`submit_result` are reachable. There are no MCP, skill, hook, workflow, plan, memory, Goal control or
-delegation ports. The host supplies model/provider/runtime placement, stamps identities, verifies
-complete trace-backed normative reads, rereads confined files and computes their SHA-256 digests.
-Live trace events are reduced to bounded `thinking`, `reading` and `searching` activity notifications
-for the initiating Goal subscriber; model text, tool arguments and paths do not cross that projection.
-An explicit `read_file` range is accepted only when its trace rendering still equals the entire
-confined reread and has no continuation marker; genuinely partial ranges remain fail-closed.
+Guided `/goal <seed>` is admitted as the ordinary conversation turn of the selected main agent.
+`prepareHostedGoalCreationTurn` adds the required `createGoalCreationCapability` only for the
+host-authenticated typed intent; it does not start an isolated formulation run, create a hidden
+conversation, or invoke the Steward before a Goal is saved. The model retains its normal tools and
+transcript, and `create_goal` atomically persists the semantic definition and admits the same
+execution as its first Goal stage. The capability then exposes the normal Goal controls and
+completion gate in that same run. Host identity, limits, evidence references and operation
+idempotency remain outside model arguments.
 
-Every terminal analysis outcome is retained in the existing receipt ring. Ready output creates one
-Goal through `applyGoalFormulation`, persists its receipt and formulation usage, then enters the same
-reserved-start/compensation path as literal creation. Insufficient, stale and failed outcomes create
-no Goal or work run. Concurrent identical operations share one process promise; persisted receipt
-recovery never repeats a committed creation. The semantic run has its own trace and execution ID,
-does not create a conversation turn and uses provider call purpose `goal`. Completion revalidates
-normative digests; drift keeps the Goal incomplete and appears as attention until explicit edit or
-reformulation. The effective formulation allowance is cumulative across main-agent attempts and
-definition reviews; each invocation receives only the measured remainder and unknown usage fails
-closed before another ready/review attempt.
-
-Production: `projectGoalTrajectory` in [trajectory.ts](src/goals/trajectory.ts),
-`createKernelGoalAgentRuntime` in [agent-runtime.ts](src/goals/agent-runtime.ts),
-`createGoalService` in [service.ts](src/goals/service.ts), and host wiring in
-[file-host.ts](src/hosting/file-host.ts). Test:
-[goal-trajectory.test.ts](tests/unit/goal-trajectory.test.ts) and
-[goal-formulate-service.test.ts](tests/integration/goal-formulate-service.test.ts).
+The compatibility `GoalService.formulate` endpoint remains available to older clients, but Code no
+longer routes the guided slash command through it. `createGoalCreationPort` owns the session
+transaction and `prepareSettlement` closes the bound stage with the ordinary usage ledger.
+Production: `prepareHostedGoalCreationTurn` and `createGoalCreationPort` in
+[hosted-turn.ts](src/goals/hosted-turn.ts) and [creation-port.ts](src/goals/creation-port.ts),
+with capability composition in [run-service.ts](src/runs/run-service.ts). Test: the new hosted
+port unit coverage in [goal-creation-port.test.ts](tests/unit/goal-creation-port.test.ts), plus
+existing [goal-hosted-continuation.test.ts](tests/integration/goal-hosted-continuation.test.ts).
 `createGoalRuntimePort` implements the bound model operations over that private repository. It
 revalidates execution/revision after asynchronous evidence reads and again in the short transaction.
 Notifications follow successful durable publication; a notification failure does not roll back state.

@@ -26,7 +26,12 @@ import { createLocalHostOperator } from "./operator.ts";
 import { createGoalRepository } from "../goals/repository.ts";
 import { goalStateFromSession, goalStateToDto } from "../goals/session-state.ts";
 import { createGoalEvidenceSource } from "../goals/evidence.ts";
-import { prepareHostedGoalTurn, type GoalExecutionPolicy } from "../goals/hosted-turn.ts";
+import {
+  prepareHostedGoalCreationTurn,
+  prepareHostedGoalTurn,
+  type GoalCreationExecutionPolicy,
+  type GoalExecutionPolicy,
+} from "../goals/hosted-turn.ts";
 import { createGoalService } from "../goals/service.ts";
 import { unavailableGoalService } from "../goals/unavailable.ts";
 import { createGoalChanges } from "../goals/changes.ts";
@@ -204,10 +209,17 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           for (const model of provider.models)
             if (model.cost !== undefined) prices.set(`${provider.id}/${model.id}`, model.cost);
         const extension = await kernel.extensionProfiles.current();
-        const prepareExecution = async (policy?: GoalExecutionPolicy) => {
+        const prepareExecution = async (
+          policy?: GoalExecutionPolicy | GoalCreationExecutionPolicy,
+        ) => {
           assertWritable();
           context.signal.throwIfAborted();
-          const prepared = kernel.prepareRun(params, owner, policy);
+          const prepared = kernel.prepareRun(
+            params,
+            owner,
+            policy !== undefined && "constrain" in policy ? policy : undefined,
+            policy !== undefined && !("constrain" in policy) ? policy : undefined,
+          );
           return {
             detachable: prepared.detachable,
             config: {
@@ -227,8 +239,64 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           };
         };
         const goal = context.session.goal_state?.current;
-        if (goal === undefined || goal.status === "complete" || goal.status === "cancelled")
+        if (goal === undefined || goal.status === "complete" || goal.status === "cancelled") {
+          if (goal === undefined && params.goal_intent?.kind === "create") {
+            const settings = goalsSettingsSchema.parse(
+              (await kernel.config.getSettings()).merged.goals ?? {},
+            );
+            return prepareHostedGoalCreationTurn({
+              params,
+              context,
+              repository,
+              seed: params.goal_intent.seed,
+              entryTokenLimit: kernel.prepareRun(params, owner).tokenLimit,
+              defaultLimits: {
+                max_auto_continuations: settings.max_auto_continuations,
+                max_no_progress_checkpoints: settings.max_no_progress_checkpoints,
+                ...(settings.max_net_tokens === undefined
+                  ? {}
+                  : { max_net_tokens: settings.max_net_tokens }),
+                ...(settings.deadline_at === undefined
+                  ? {}
+                  : { deadline_at: settings.deadline_at }),
+              },
+              steward: {
+                runtime: (limit, ttl) => kernel.goalStewardRuntime(limit, ttl, owner),
+                async settle(mutate, usage, accounting) {
+                  await sessions.transact(context.session.id, (session) => {
+                    const current = goalStateFromSession(session);
+                    if (!current) throw kernelError("conflict", "Goal Steward session disappeared");
+                    const result = mutate(current);
+                    session.goal_state = goalStateToDto(result.state);
+                    if (result.charged)
+                      addGoalAuxiliaryUsage(session.totals, usage, accounting, (model) =>
+                        prices.get(model),
+                      );
+                    return { session, result: undefined };
+                  });
+                },
+              },
+              evidence: createGoalEvidenceSource({
+                executionId: params.execution_id!,
+                workspaceRoot: options.kernel.workspaceRoot,
+                readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
+              }),
+              readRun: async (executionId) => {
+                try {
+                  return await kernel.runs.get(executionId);
+                } catch (error) {
+                  if (toKernelError(error).code === "not_found") return null;
+                  throw error;
+                }
+              },
+              prepareExecution,
+              logger,
+              priceFor: (model) => prices.get(model),
+              onChange: (sessionId) => goalChanges.notify(sessionId),
+            });
+          }
           return prepareExecution();
+        }
         if (context.conversation === undefined)
           throw kernelError(
             "conflict",

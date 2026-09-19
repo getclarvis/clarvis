@@ -50,7 +50,7 @@ import {
   type PreparedRunExecution,
 } from "./runs/run-service.ts";
 import { prepareKernelRun, type PreparedKernelRun } from "./runs/prepare-run.ts";
-import type { GoalExecutionPolicy } from "./goals/hosted-turn.ts";
+import type { GoalCreationExecutionPolicy, GoalExecutionPolicy } from "./goals/hosted-turn.ts";
 import { unavailableGoalService } from "./goals/unavailable.ts";
 import { createMemoryService } from "./memory/memory-service.ts";
 import { createPlansService } from "./plans/plans-service.ts";
@@ -194,7 +194,12 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
    */
   acquireOwner(owner: string): Promise<OwnerLease<OwnerScopedKernel>>;
   /** Prepare immutable execution inputs without launching; owner must come from host authentication. */
-  prepareRun(params: StartRunParams, owner?: string, goal?: GoalExecutionPolicy): PreparedKernelRun;
+  prepareRun(
+    params: StartRunParams,
+    owner?: string,
+    goal?: GoalExecutionPolicy,
+    goalCreation?: GoalCreationExecutionPolicy,
+  ): PreparedKernelRun;
   /** Canonical evidence for host-owned capabilities; raw trace authority is never a protocol service. */
   readRunTrace(executionId: string, owner?: string): readonly TraceEvent[] | undefined;
   /** Build the host-owned isolated Goal formulation runtime for one authenticated owner. */
@@ -491,7 +496,11 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   interface OwnerCacheEntry {
     services: OwnerScopedKernel;
     stateOwner: string;
-    prepareRun(params: StartRunParams, goal?: GoalExecutionPolicy): PreparedKernelRun;
+    prepareRun(
+      params: StartRunParams,
+      goal?: GoalExecutionPolicy,
+      goalCreation?: GoalCreationExecutionPolicy,
+    ): PreparedKernelRun;
     refs: number;
     runRefs: number;
     runDrained?: Promise<void>;
@@ -617,7 +626,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     return {
       services,
       stateOwner,
-      prepareRun(params, goal) {
+      prepareRun(params, goal, goalCreation) {
         const entry = ownerEntries.get(owner);
         if (entry === undefined)
           throw kernelError("unavailable", "run owner generation is no longer resident");
@@ -642,6 +651,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
               workflows.runManagerWorkflow(request, prepared, seed, signal),
           },
           goal,
+          goalCreation,
         );
       },
     };
@@ -1018,8 +1028,8 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     goals: unavailableGoalService(),
     forOwner,
     acquireOwner,
-    prepareRun: (params, owner = defaultOwner, goal) =>
-      residentOwner(owner, false).prepareRun(params, goal),
+    prepareRun: (params, owner = defaultOwner, goal, goalCreation) =>
+      residentOwner(owner, false).prepareRun(params, goal, goalCreation),
     readRunTrace: (executionId, owner = defaultOwner) =>
       runDeps.traceStore.getById(residentOwner(owner, false).stateOwner, executionId)?.trace.events,
     goalStewardRuntime(workTokenLimit, ttl, owner = defaultOwner) {

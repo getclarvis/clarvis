@@ -465,7 +465,7 @@ remains unknown and cannot support completion. Production: `createStewardExecuti
 `settleStewardEvaluation`. Test: `Goal Steward coordinator` in
 [goal-steward.test.ts](../../packages/kernel/tests/unit/goal-steward.test.ts).
 
-The separate semantic Goal formulation run is also hard stop-mode, but its allowance is not the
+The legacy separate semantic Goal formulation run is also hard stop-mode, but its allowance is not the
 persisted Goal pursuit budget. Its omitted token allowance equals the ordinary run budget resolved
 from merged settings or the host fallback, while `goals.agent.formulation.max_net_tokens` may
 override it; the host token ceiling still caps either value. The effective allowance is shared by

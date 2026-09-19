@@ -21,7 +21,7 @@ import type { KernelLifecycle } from "../application/lifecycle.ts";
 import { normalizeRunPagination } from "./pagination.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import type { SteerQueue } from "./steer-queue.ts";
-import type { GoalExecutionPolicy } from "../goals/hosted-turn.ts";
+import type { GoalCreationExecutionPolicy, GoalExecutionPolicy } from "../goals/hosted-turn.ts";
 import { randomUUID } from "node:crypto";
 import { seedRunInstructions } from "./instruction-snapshot.ts";
 import type {
@@ -52,7 +52,12 @@ export type RunRequestAssembler = (params: StartRunParams & { execution_id: stri
 
 /** Trusted host preparation; never accepted as a protocol start parameter. */
 export type PreparedRunExecution =
-  | { kind: "ordinary"; rawBody: unknown; goal?: GoalExecutionPolicy }
+  | {
+      kind: "ordinary";
+      rawBody: unknown;
+      goal?: GoalExecutionPolicy;
+      goalCreation?: GoalCreationExecutionPolicy;
+    }
   | { kind: "workflow"; start(seed?: OperatorAuthoritySeed, signal?: AbortSignal): RunHandle };
 
 /** Run service with a host-only prepared launch sharing ordinary execution-id reservations. */
@@ -233,6 +238,8 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
       lifecycle: cfg.lifecycle,
       async execute(context): Promise<RunResult> {
         const goal = prepared?.kind === "ordinary" ? prepared.goal : undefined;
+        const goalCreation = prepared?.kind === "ordinary" ? prepared.goalCreation : undefined;
+        const boundPolicy = goal ?? goalCreation;
         const request = { ...params, execution_id: executionId };
         const executeRun =
           cfg.executeRun ??
@@ -241,15 +248,15 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
           operatorAuthoritySeed,
           owner,
           deps:
-            goal === undefined
+            boundPolicy === undefined
               ? deps
               : {
                   ...deps,
-                  llm: goal.trackModel(deps.llm),
-                  capabilities: [...(deps.capabilities ?? []), goal.capability],
+                  llm: boundPolicy.trackModel(deps.llm),
+                  capabilities: [...(deps.capabilities ?? []), boundPolicy.capability],
                 },
           onEvent: (ev) => {
-            goal?.observe(ev);
+            boundPolicy?.observe(ev);
             const mapped = engineEventToProto(ev, logger);
             if (mapped !== null) context.emit(mapped);
           },

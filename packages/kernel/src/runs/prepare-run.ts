@@ -11,7 +11,7 @@ import type {
 import { snapshotRunConfiguration, type RunConfigurationSource } from "./configuration-snapshot.ts";
 import type { KernelRunService, RunRequestAssembler, PreparedRunExecution } from "./run-service.ts";
 import { createSettingsRunAssembler, type SettingsAssemblerOptions } from "./settings-assembler.ts";
-import type { GoalExecutionPolicy } from "../goals/hosted-turn.ts";
+import type { GoalCreationExecutionPolicy, GoalExecutionPolicy } from "../goals/hosted-turn.ts";
 import { transferRunInstructions } from "./instruction-snapshot.ts";
 
 /** Host-only admission result; start is single-use and preserves the prepared execution identity. */
@@ -46,6 +46,7 @@ export function prepareKernelRun(
   params: StartRunParams,
   options: PrepareKernelRunOptions,
   goal?: GoalExecutionPolicy,
+  goalCreation?: GoalCreationExecutionPolicy,
 ): PreparedKernelRun {
   const request = structuredClone({
     ...params,
@@ -94,7 +95,12 @@ export function prepareKernelRun(
       start: (seed, signal) => options.startWorkflow({ ...request, agent }, prepared, seed, signal),
     };
   } else {
-    execution = { kind: "ordinary", rawBody, ...(goal === undefined ? {} : { goal }) };
+    execution = {
+      kind: "ordinary",
+      rawBody,
+      ...(goal === undefined ? {} : { goal }),
+      ...(goalCreation === undefined ? {} : { goalCreation }),
+    };
   }
   let started = false;
   return {

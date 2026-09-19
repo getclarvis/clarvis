@@ -558,7 +558,7 @@ only identity — `FinalizeGate` carries no name, `packages/loop/src/runtime/loo
 
 ### 4.5 Host-isolated Goal agents
 
-`@clarvis/goal` may invoke the ordinary `executeRun` contract for its semantic formulation agent,
+`@clarvis/goal` may invoke the ordinary `executeRun` contract for its legacy semantic formulation agent,
 and Goal Steward, but the loop remains generic and contains no Goal branch. The Kernel supplies a copied
 `ExecuteRunDeps` whose capability list replaces the ordinary host list with exactly the canonical
 Tools capability. The fixed Goal profile grants only `read_workspace`, so Tools derives its effective

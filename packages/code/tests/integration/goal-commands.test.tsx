@@ -30,6 +30,7 @@ function fixture(initial: GoalViewDto = goalView()) {
   let state = initial;
   const requests: GoalControlRequest[] = [];
   const formulations: GoalFormulateRequest[] = [];
+  const submittedGoals: string[] = [];
   let formulationOutcome: GoalFormulateResult["formulation"] = {
     mode: "guided",
     outcome: "created",
@@ -86,6 +87,7 @@ function fixture(initial: GoalViewDto = goalView()) {
     },
     requests,
     formulations,
+    submittedGoals,
     opened,
     notices,
     keys,
@@ -104,6 +106,9 @@ function fixture(initial: GoalViewDto = goalView()) {
     },
     formulationOutcome(value: GoalFormulateResult["formulation"]) {
       formulationOutcome = value;
+    },
+    submitGoal: async (seed: string) => {
+      submittedGoals.push(seed);
     },
   };
 }
@@ -160,7 +165,7 @@ test("an existing goal refuses guided formulation without replacement", async ()
   expect(f.notices.some((notice) => notice.includes("already exists"))).toBe(true);
 });
 
-test("guided formulation stays outside the composer while literal escape stays direct", async () => {
+test("guided creation uses one ordinary main-agent turn while literal escape stays direct", async () => {
   const f = fixture({ state: { version: 1, revision: 0, archive: [], receipts: [] } });
   let commands!: ReturnType<typeof createCommands>;
   cleanup.push(
@@ -179,29 +184,23 @@ test("guided formulation stays outside the composer while literal escape stays d
   );
   expect(commands.route("goal.open", "implemente a spec 123")).toBe(true);
   await settled();
-  expect(f.formulations[0]).toMatchObject({ mode: "guided", seed: "implemente a spec 123" });
+  expect(f.submittedGoals).toEqual(["implemente a spec 123"]);
   expect(f.opened).toEqual([]);
-  expect(f.notices).toContain("Formulating a Goal from your request…");
-  expect(f.notices).toContain("Goal created; the first work stage is starting.");
+  expect(f.notices).toContain("The main agent is defining the Goal and starting its work…");
 
   f.opened.splice(0);
   commands.route("goal.open", "auto");
   await settled();
-  expect(f.formulations[1]).toMatchObject({ mode: "guided", seed: "auto" });
+  expect(f.submittedGoals).toEqual(["implemente a spec 123", "auto"]);
 
   commands.route("goal.open", "-- auto");
   await settled();
   expect(f.requests[0]?.action).toEqual({ kind: "create", objective: "auto" });
-  expect(f.formulations).toHaveLength(2);
+  expect(f.formulations).toHaveLength(0);
 });
 
-test("a clarification result is shown once without automatically repeating analysis", async () => {
+test("guided creation does not call the compatibility formulation service", async () => {
   const f = fixture({ state: { version: 1, revision: 0, archive: [], receipts: [] } });
-  f.formulationOutcome({
-    mode: "guided",
-    outcome: "insufficient_context",
-    question: "Qual resultado você quer?",
-  });
   cleanup.push(
     createRoot((dispose) => {
       const commands = createCommands(
@@ -218,8 +217,8 @@ test("a clarification result is shown once without automatically repeating analy
     }),
   );
   await settled();
-  expect(f.notices).toContain("Qual resultado você quer?");
-  expect(f.formulations).toHaveLength(1);
+  expect(f.submittedGoals).toEqual(["need clarification"]);
+  expect(f.formulations).toHaveLength(0);
   expect(f.opened).toEqual([]);
 });
 

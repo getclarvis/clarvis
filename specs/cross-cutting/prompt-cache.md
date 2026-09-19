@@ -96,7 +96,7 @@ plan gates and a final schema;
 the complete preceding history remains a prefix and the catalog/key stay equal. Controlled responses
 prove serialization, not remote cache hits or automatic host continuation.
 
-Goal formulation uses one byte-identical base prompt for auto and guided modes. Both precedence
+The legacy Goal formulation service uses one byte-identical base prompt for auto and guided modes. Both precedence
 rules are fixed policy; mode, seed, trajectory, digest, truncation and workspace availability remain
 in the final volatile message. The call-local Auto reviewer uses Judge's fixed policy, fixed Goal
 and Plan slots, persistent global/workspace instructions in its fixed configuration, chronological

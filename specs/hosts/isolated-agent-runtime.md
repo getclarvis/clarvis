@@ -103,7 +103,7 @@ Test: `native Goal pauses, survives Kernel recreation, and resumes explicitly` i
 [container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
 exercises native composition with a controlled broker; physical engine qualification remains separate.
 
-Goal auto/guided formulation is also native to the guest Kernel. Its semantic run uses the same
+Legacy Goal auto/guided formulation is also native to the guest Kernel. Its semantic run uses the same
 admitted workspace root, canonical read-only Tools capability, owner-scoped trace store, runtime
 placement and logical model resolver as other guest runs. The host broker accepts the distinct
 `goal` call purpose but receives no prompt policy, provider selection or tool authority from the
@@ -114,7 +114,7 @@ remain absent from formulation.
 
 The public `goals.formulate` request/result/receipt crosses the same version 11 Kernel transport as
 Host/Sandbox. Goal state, sessions and formulation traces remain in canonical owner-scoped stores,
-so idle placement changes retain receipts and provenance. A formulation run is not a conversation
+so idle placement changes retain receipts and provenance. A legacy formulation run is not a conversation
 turn, and an interrupted Container does not invent a receipt or replay an unknown creation.
 
 Production: `createContainerNativeKernel` in

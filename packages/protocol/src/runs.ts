@@ -116,6 +116,8 @@ export interface StartRunParams {
   skill?: { name: string; task?: string };
   /** Structured-output schema for the final result. */
   output_schema?: JsonSchema;
+  /** Host-authenticated intent for a normal run to create its conversation Goal. */
+  goal_intent?: { kind: "create"; seed: string };
 }
 
 /** Terminal / in-flight status of a run. */

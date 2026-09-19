@@ -2,7 +2,7 @@
 const PROVIDER_ADAPTER_MARKER = "llm.provider.resolved";
 
 const LAZY_SURFACE_MARKERS = [
-  "no diff in the transcript yet",
+  "no workspace changes yet",
   "no plan yet",
   "Unverified entitlement",
   "no sessions yet",

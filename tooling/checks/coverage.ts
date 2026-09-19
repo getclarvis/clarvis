@@ -130,6 +130,8 @@ const NO_COUNTER_ALLOWLIST = {
     "src/connection-health.ts",
     "src/ports/plugin-repository.ts",
     "src/ports/process-runner.ts",
+    // Type-only: VCS-agnostic adapter port.
+    "src/workspace/changes-provider.ts",
     // Pure re-export barrel for the startup logger path.
     "src/logger.ts",
     // Executable entry point: the `clarvis-kernel` bin. Unlike the server's, this

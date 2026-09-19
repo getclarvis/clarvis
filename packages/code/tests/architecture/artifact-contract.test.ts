@@ -69,7 +69,7 @@ test("the artifact contract rejects a monolithic entrypoint", () => {
 
 test("cold full-page and floating surfaces remain in lazy chunks", () => {
   const javascriptChunks = [
-    { path: "chunk-diff.js", source: 'text: "no diff in the transcript yet"' },
+    { path: "chunk-diff.js", source: 'text: "no workspace changes yet"' },
     { path: "chunk-plan.js", source: 'text: "no plan yet"' },
     { path: "chunk-providers.js", source: 'title: "Unverified entitlement"' },
     { path: "chunk-sessions.js", source: 'text: "no sessions yet"' },

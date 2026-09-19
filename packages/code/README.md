@@ -8,6 +8,8 @@ The flagship Clarvis terminal UI. It connects to an independently owned workspac
 
 The UI programs against the `@clarvis/protocol` service contract, so the same
 shell uses the same typed kernel RPC over a private local socket or Windows named pipe.
+`/diff` and `Ctrl+X D` open the current workspace changes from `KernelClient.changes`, not
+transcript tool history.
 
 The run adapter accepts a backend advertising `hosting`: starts carry a persisted conversation
 revision, while `attachRun` consumes an existing run's snapshot and live tail without starting it

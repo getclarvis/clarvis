@@ -20,6 +20,7 @@ export type * from "./secrets.ts";
 export type * from "./models.ts";
 export type * from "./provider-auth.ts";
 export type * from "./workspace.ts";
+export type * from "./workspace-changes.ts";
 export type * from "./memory.ts";
 export type * from "./plans.ts";
 export type * from "./workflows.ts";

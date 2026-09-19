@@ -3,12 +3,14 @@ import type { Accessor, JSX } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/solid";
 import { reactiveMatcherFromSignal } from "@opentui/keymap/solid";
-import type { TranscriptToolNode } from "../../adapters/store.ts";
-import { toolLabel } from "../../adapters/tool-identity.ts";
+import type {
+  WorkspaceChangeEntry,
+  WorkspaceChangeOperation,
+  WorkspaceChangesService,
+} from "@clarvis/protocol";
 import type { Interaction } from "../../keys/interaction.ts";
 import { LAYER } from "../../keys/keyspec.ts";
 import { uiCommand } from "../../keys/actions.ts";
-import { resolveToolRenderer, splitDiffFiles } from "../tools/registry.tsx";
 import {
   clampListIndex,
   followSelection,
@@ -16,20 +18,26 @@ import {
   registerScrollKeys,
 } from "../../ui/patterns/list-navigation.ts";
 import { PageFrame } from "../PageFrame.tsx";
-import { EmptyHint } from "../config/view-host.tsx";
+import { EmptyHint, LoadingHint } from "../config/view-host.tsx";
 import { glyph } from "../../theme/glyphs.ts";
 import { scrollbarOptions } from "../../theme/surfaces.ts";
 import { tokens } from "../../theme/tokens.ts";
 import { SelectableRow } from "../../ui/primitives/selectable-row.tsx";
+import { StableDiff } from "../../ui/patterns/stable-syntax.tsx";
+import {
+  createWorkspaceChangesController,
+  selectedEntry,
+  type WorkspaceChangesController,
+} from "./workspace-changes-controller.ts";
 
 export interface DiffFile {
   path: string;
-  changes: TranscriptToolNode[];
+  entry: WorkspaceChangeEntry;
 }
 
 export type DiffTreeRow =
   | { kind: "folder"; path: string; name: string; depth: number }
-  | { kind: "file"; path: string; name: string; depth: number };
+  | { kind: "file"; path: string; name: string; depth: number; entry: WorkspaceChangeEntry };
 
 function pathRoot(path: string): string {
   return path.match(/^\/+/)?.[0] ?? "";
@@ -40,42 +48,34 @@ function appendPath(parent: string, part: string): string {
   return `${parent}${parent.endsWith("/") ? "" : "/"}${part}`;
 }
 
-function pathArg(node: TranscriptToolNode): string | undefined {
-  for (const key of ["path", "file", "to", "from", "source"]) {
-    const value = node.args?.[key];
-    if (typeof value === "string" && value.length > 0) return value.replaceAll("\\", "/");
-  }
-  return undefined;
+function entryPath(entry: WorkspaceChangeEntry): string {
+  return entry.new_path ?? entry.old_path ?? entry.id;
 }
 
-/** Groups chronological transcript mutations by the file named in their full diff or arguments. */
-export function projectDiffFiles(nodes: readonly TranscriptToolNode[]): DiffFile[] {
-  const files = new Map<string, TranscriptToolNode[]>();
-  let unnamed = 0;
-  const append = (path: string, node: TranscriptToolNode): void => {
-    const existing = files.get(path);
-    if (existing) existing.push(node);
-    else files.set(path, [node]);
-  };
-  for (const node of nodes) {
-    const split = node.diff === undefined ? null : splitDiffFiles(node.diff);
-    const namedSections = split?.files.filter((file) => file.path !== undefined) ?? [];
-    if (namedSections.length > 0) {
-      for (const section of namedSections) {
-        const path = section.path!.replaceAll("\\", "/");
-        append(path, {
-          ...node,
-          args: { ...(node.args ?? {}), path },
-          diff: section.diff,
-          result: namedSections.length > 1 ? "" : node.result,
-        });
-      }
-      continue;
-    }
-    append(pathArg(node) ?? `Change ${++unnamed}`, node);
-  }
-  return [...files.entries()]
-    .map(([path, changes]) => ({ path, changes }))
+function statusLetter(operation: WorkspaceChangeOperation): string {
+  if (operation === "added") return "A";
+  if (operation === "modified") return "M";
+  if (operation === "deleted") return "D";
+  if (operation === "renamed") return "R";
+  if (operation === "copied") return "C";
+  if (operation === "type_changed") return "T";
+  if (operation === "conflict") return "U";
+  return "S";
+}
+
+function statsLabel(entry: WorkspaceChangeEntry): string {
+  const additions = entry.stats?.additions;
+  const deletions = entry.stats?.deletions;
+  if (additions === undefined && deletions === undefined) return "";
+  const added = additions === undefined ? "" : `+${String(additions)}`;
+  const removed = deletions === undefined ? "" : `-${String(deletions)}`;
+  return [added, removed].filter((part) => part.length > 0).join(" ");
+}
+
+/** Groups provider inventory entries into a path-sorted file list. */
+export function projectChangeFiles(items: readonly WorkspaceChangeEntry[]): DiffFile[] {
+  return items
+    .map((entry) => ({ path: entryPath(entry), entry }))
     .sort((left, right) => left.path.localeCompare(right.path));
 }
 
@@ -88,7 +88,7 @@ function projectDiffTreeRows(
     path: string;
     name: string;
     dirs: Map<string, Directory>;
-    files: Array<{ path: string; name: string }>;
+    files: Array<{ path: string; name: string; entry: WorkspaceChangeEntry }>;
   }
   const root: Directory = { path: "", name: "", dirs: new Map(), files: [] };
   for (const file of files) {
@@ -115,6 +115,7 @@ function projectDiffTreeRows(
     current.files.push({
       path: file.path,
       name: parts.length === 1 && rootPrefix.length > 0 ? `${rootPrefix}${leaf}` : leaf,
+      entry: file.entry,
     });
   }
   const rows: DiffTreeRow[] = [];
@@ -129,6 +130,7 @@ function projectDiffTreeRows(
         path: file.path,
         name: file.name,
         depth,
+        entry: file.entry,
       });
     }
   };
@@ -136,34 +138,78 @@ function projectDiffTreeRows(
   return rows;
 }
 
-function renderNode(node: TranscriptToolNode): JSX.Element {
-  return resolveToolRenderer(
-    node.mcpName ?? "",
-    node.toolName ?? "",
-  )({
-    mcpName: node.mcpName ?? "",
-    toolName: node.toolName ?? "",
-    arguments: node.args ?? {},
-    result: node.result ?? "",
-    diff: node.diff,
-    error: node.error ?? null,
-    status: node.status,
-    full: true,
-    wrap: true,
-  });
+function comparisonLabel(controller: WorkspaceChangesController): string {
+  const availability = controller.availability();
+  if (availability?.status !== "available") return "";
+  const current = availability.provider.comparisons.find(
+    (item) => item.id === controller.comparisonId(),
+  );
+  return current?.label ?? controller.comparisonId();
 }
 
-/** Full-screen file tree and per-file diff reader for every mutation in the active transcript. */
+function availabilityMessage(controller: WorkspaceChangesController): string {
+  const current = controller.availability();
+  if (current !== null && current.status !== "available") return current.reason.message;
+  if (controller.error() !== null) return controller.error() ?? "could not load workspace changes";
+  return "no workspace changes yet";
+}
+
+function headerSubtitle(controller: WorkspaceChangesController): string | undefined {
+  const availability = controller.availability();
+  if (availability?.status === "available") {
+    const page = controller.page();
+    const files = page?.items.length ?? 0;
+    const label = comparisonLabel(controller);
+    const incomplete = page?.incomplete === true ? " truncated" : "";
+    const identity = availability.provider.workspace_identity;
+    const base = page?.resolved_base;
+    return [
+      identity,
+      label,
+      `${String(files)} ${files === 1 ? "file" : "files"}${incomplete}`,
+      base,
+    ]
+      .filter((part) => part !== undefined && part.length > 0)
+      .join(` ${glyph("separator")} `);
+  }
+  return undefined;
+}
+
+function detailBody(controller: WorkspaceChangesController): JSX.Element {
+  const detail = controller.detail();
+  const entry = selectedEntry(controller.page(), controller.selectedId());
+  if (controller.loading() && detail === null) return <LoadingHint text="loading change" />;
+  if (detail === null || entry === null) {
+    return <EmptyHint text="select a file" icon="info" />;
+  }
+  if (detail.status === "ready" && detail.patch !== undefined && detail.patch.length > 0) {
+    return <StableDiff diff={detail.patch} wrapMode="none" />;
+  }
+  const messages: Record<typeof detail.status, string> = {
+    ready: "no text hunks",
+    empty: detail.message ?? "no text hunks",
+    binary: detail.message ?? "binary file",
+    conflict: detail.message ?? "unmerged path",
+    truncated: detail.message ?? "patch exceeds the admitted size",
+    stale: detail.message ?? "change is stale; refresh",
+    unavailable: detail.message ?? "change is unavailable",
+  };
+  return <EmptyHint text={messages[detail.status]} icon="info" hint={entryPath(entry)} />;
+}
+
+/** Full-screen file tree and per-file patch reader for current workspace changes. */
 export function DiffViewer(props: {
   interaction: Interaction;
-  nodes: Accessor<readonly TranscriptToolNode[]>;
+  service?: Accessor<WorkspaceChangesService | undefined>;
   onClose: () => void;
   active?: Accessor<boolean>;
 }): JSX.Element {
   const dimensions = useTerminalDimensions();
-  const files = createMemo(() => projectDiffFiles(props.nodes()));
+  const controller = createWorkspaceChangesController({
+    service: () => props.service?.() ?? undefined,
+  });
+  const files = createMemo(() => projectChangeFiles(controller.page()?.items ?? []));
   const [expanded, setExpanded] = createSignal<ReadonlySet<string>>(new Set());
-  const [selectedPath, setSelectedPath] = createSignal<string | null>(null);
   const [treeIndex, setTreeIndexValue] = createSignal(0);
   const [pane, setPane] = createSignal<"tree" | "detail">("tree");
   let treeScroll: ScrollBoxRenderable | undefined;
@@ -195,17 +241,10 @@ export function DiffViewer(props: {
   });
   const rows = createMemo(() => projectDiffTreeRows(files(), expanded()));
   createEffect(() => {
-    const available = files();
-    if (available.length === 0) {
-      setSelectedPath(null);
-      return;
-    }
-    if (!available.some((file) => file.path === selectedPath()))
-      setSelectedPath(available[0]!.path);
+    const selected = controller.selectedId();
+    const index = rows().findIndex((row) => row.kind === "file" && row.entry.id === selected);
+    if (index >= 0) setTreeIndexValue(index);
   });
-  const selectedFile = createMemo(
-    () => files().find((file) => file.path === selectedPath()) ?? null,
-  );
   const setTreeIndex = (index: number): void => {
     const next = clampListIndex(index, rows().length);
     setTreeIndexValue(next);
@@ -228,13 +267,17 @@ export function DiffViewer(props: {
       toggleFolder(row.path);
       return;
     }
-    setSelectedPath(row.path);
+    controller.select(row.entry.id);
     setPane("detail");
   };
   const surfaceActive = (): boolean => props.active?.() ?? true;
   const treeActive = (): boolean => surfaceActive() && pane() === "tree";
   const detailActive = (): boolean => surfaceActive() && pane() === "detail";
   followSelection(() => treeScroll, "diff-tree-row-", treeIndex);
+  createEffect(() => {
+    controller.setVisible(surfaceActive());
+  });
+  onCleanup(() => controller.dispose());
   onMount(() => {
     const offTree = registerListNav(props.interaction.keymap, {
       count: () => rows().length,
@@ -269,8 +312,30 @@ export function DiffViewer(props: {
           essential: true,
           run: props.onClose,
         }),
+        uiCommand({
+          id: "diff.refresh",
+          title: "Refresh changes",
+          description: "Reload the current comparison",
+          category: "actions",
+          surfaces: ["footer"],
+          footerLabel: "refresh",
+          run: () => controller.refresh(),
+        }),
+        uiCommand({
+          id: "diff.comparison.next",
+          title: "Next comparison",
+          description: "Cycle the workspace comparison",
+          category: "navigation",
+          surfaces: ["footer"],
+          footerLabel: "view",
+          run: () => controller.cycleComparison(1),
+        }),
       ],
-      bindings: [{ key: "escape", cmd: "diff.close" }],
+      bindings: [
+        { key: "escape", cmd: "diff.close" },
+        { key: "r", cmd: "diff.refresh" },
+        { key: "[", cmd: "diff.comparison.next" },
+      ],
     });
     const offReturn = props.interaction.keymap.registerLayer({
       ...(props.active ? { when: "overlay==diff" } : {}),
@@ -301,11 +366,6 @@ export function DiffViewer(props: {
       offTree();
     });
   });
-  const subtitle = (): string | undefined => {
-    if (files().length === 0) return undefined;
-    const changes = files().reduce((total, file) => total + file.changes.length, 0);
-    return `${files().length} ${files().length === 1 ? "file" : "files"} ${glyph("separator")} ${changes} ${changes === 1 ? "change" : "changes"}`;
-  };
   const sidebarWidth = (): number =>
     Math.max(24, Math.min(38, Math.floor(dimensions().width * 0.3)));
   const tree = (): JSX.Element => (
@@ -334,7 +394,7 @@ export function DiffViewer(props: {
                 setTreeIndex(index());
                 if (row.kind === "folder") toggleFolder(row.path);
                 else {
-                  setSelectedPath(row.path);
+                  controller.select(row.entry.id);
                   setPane("detail");
                 }
               }}
@@ -344,7 +404,7 @@ export function DiffViewer(props: {
                 <span style={{ fg: row.kind === "folder" ? tokens.accent : tokens.fg }}>
                   {row.kind === "folder"
                     ? `${expanded().has(row.path) ? glyph("collapse") : glyph("expand")} ${row.name}`
-                    : `${glyph("file")} ${row.name}`}
+                    : `${statusLetter(row.entry.operation)} ${row.name}${statsLabel(row.entry) ? ` ${statsLabel(row.entry)}` : ""}`}
                 </span>
               </SelectableRow>
             </box>
@@ -364,13 +424,13 @@ export function DiffViewer(props: {
       border={wide() ? ["left"] : undefined}
       borderColor={tokens.muted}
     >
-      <Show when={selectedFile()}>
-        {(file: Accessor<DiffFile>) => (
+      <Show when={selectedEntry(controller.page(), controller.selectedId())}>
+        {(entry: Accessor<WorkspaceChangeEntry>) => (
           <>
             <text fg={tokens.accent} flexShrink={0} paddingBottom={1} wrapMode="none" truncate>
-              <b>{file().path}</b>
+              <b>{entryPath(entry())}</b>
               <span style={{ fg: tokens.muted }}>
-                {`  ${glyph("separator")} ${file().changes.length === 1 ? toolLabel(file().changes[0]!.mcpName, file().changes[0]!.toolName) + ` ${glyph("separator")} ` : ""}${file().changes.length} ${file().changes.length === 1 ? "change" : "changes"}`}
+                {`  ${glyph("separator")} ${statusLetter(entry().operation)}${entry().old_path !== undefined && entry().new_path !== undefined && entry().old_path !== entry().new_path ? ` ${entry().old_path} -> ${entry().new_path}` : ""}`}
               </span>
             </text>
             <scrollbox
@@ -379,39 +439,49 @@ export function DiffViewer(props: {
               minHeight={0}
               verticalScrollbarOptions={scrollbarOptions()}
             >
-              <For each={file().changes}>
-                {(node, index) => (
-                  <box flexDirection="column" marginTop={index() === 0 ? 0 : 1}>
-                    <Show when={file().changes.length > 1}>
-                      <text fg={tokens.muted} wrapMode="none">
-                        {`${toolLabel(node.mcpName, node.toolName)} ${glyph("separator")} change ${index() + 1}/${file().changes.length}`}
-                      </text>
-                    </Show>
-                    {renderNode(node)}
-                  </box>
-                )}
-              </For>
+              {detailBody(controller)}
             </scrollbox>
           </>
         )}
       </Show>
     </box>
   );
+  const availability = (): WorkspaceChangesAvailabilityState => {
+    const current = controller.availability();
+    if (controller.loading() && current === null) return "loading";
+    if (controller.error() !== null && current === null) return "error";
+    if (current?.status === "not_applicable") return "not_applicable";
+    if (current?.status === "unavailable") return "unavailable";
+    if (current?.status === "available" && (controller.page()?.items.length ?? 0) === 0)
+      return "empty";
+    return "ready";
+  };
   return (
     <PageFrame
       title="Diff"
-      subtitle={subtitle()}
+      subtitle={headerSubtitle(controller)}
       interaction={props.interaction}
       actionFilter={(action) => action.id !== "run.cancel"}
     >
       <Show
-        when={files().length > 0}
+        when={availability() === "ready"}
         fallback={
-          <EmptyHint
-            text="no diff in the transcript yet"
-            icon="info"
-            hint="run a file-editing tool to populate one"
-          />
+          <Show
+            when={availability() === "loading"}
+            fallback={
+              <EmptyHint
+                text={availabilityMessage(controller)}
+                icon="info"
+                hint={
+                  availability() === "empty"
+                    ? "working tree matches the selected comparison"
+                    : "press r to recheck"
+                }
+              />
+            }
+          >
+            <LoadingHint text="loading workspace changes" />
+          </Show>
         }
       >
         <Show
@@ -431,3 +501,6 @@ export function DiffViewer(props: {
     </PageFrame>
   );
 }
+
+type WorkspaceChangesAvailabilityState =
+  "loading" | "error" | "not_applicable" | "unavailable" | "empty" | "ready";

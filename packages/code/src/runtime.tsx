@@ -1669,6 +1669,9 @@ async function runApp(
     get plans() {
       return runClient.plans;
     },
+    get changes() {
+      return runClient.changes;
+    },
     get models() {
       return runClient.models;
     },

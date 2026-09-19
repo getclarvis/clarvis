@@ -6,8 +6,8 @@ export function stewardStatusLabel(goal: GoalRecord): string | undefined {
   const status = goal.steward?.status;
   return status === undefined || status === "idle"
     ? undefined
-    : status === "new_run_recommended"
-      ? "new run recommended"
+    : status === "evidence_requested"
+      ? "evidence requested"
       : status;
 }
 

@@ -105,7 +105,7 @@ Coordinate work carefully, preserve unrelated changes, and report validation evi
     "agent": {
       "formulation": {"max_net_tokens": 20000, "max_iterations": 8},
       "steward": {"max_net_tokens": 20000, "max_reviews_per_work_run": 8,
-        "max_interventions_per_work_run": 3, "max_completion_reviews_per_attempt": 1}
+        "max_completion_reviews_per_attempt": 1}
     }
   },
   "tasks": {

@@ -344,8 +344,10 @@ case; [index-pass-deps.test.ts](../../packages/kernel/tests/unit/index-pass-deps
 filtered capability set and preservation of input dependencies.
 
 Workflow manager and leader executions preserve the host's Judge capability. Goal formulation and
-Steward replace inherited capabilities with their own restricted surface, excluding Judge even when
-the inherited capability declares itself required. Memory indexing removes Judge before admission.
+Steward replace inherited capabilities with their own restricted surfaces, excluding Judge even
+when the inherited capability declares itself required. Formulation retains only canonical
+workspace reads; Steward retains only its result tool. Memory indexing removes Judge before
+admission.
 
 Production: [workflows-service.ts](../../packages/kernel/src/workflows/workflows-service.ts),
 `auxiliaryWorkflowRunDeps`; [run-leader.ts](../../packages/workflows/src/run-leader.ts), `runLeader`;
@@ -356,7 +358,7 @@ the workflow memory ownership journey observes Judge activation in manager and l
 [goal-auxiliary-usage.test.ts](../../packages/kernel/tests/unit/goal-auxiliary-usage.test.ts) inspects
 the formulation executor dependencies;
 [goal-steward-runtime.test.ts](../../packages/kernel/tests/unit/goal-steward-runtime.test.ts) verifies
-required Judge exclusion while retaining tools and the Steward result gate.
+required Judge exclusion while retaining only the Steward result gate.
 
 The Container boundary rejects every supplied `guard_judge` value, including an empty object,
 and guard modes Auto/On before inference. Guard off remains admitted without a Judge child.

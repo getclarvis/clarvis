@@ -96,6 +96,13 @@ describe("trace-mapper — tool projection", () => {
           result: "Replaced 1 occurrence in a.ts.",
           error: null,
           diff: "@@ -1 +1 @@\n-old\n+new\n",
+          tool_evidence: {
+            kind: "content",
+            status: "succeeded",
+            total_chars: 31,
+            excerpt: "Replaced 1 occurrence in a.ts.",
+            truncated: false,
+          },
           guard: { mode: "auto", outcome: "allowed", answerer: "judge" },
         },
       },
@@ -106,6 +113,13 @@ describe("trace-mapper — tool projection", () => {
       createHash("sha256").update("Replaced 1 occurrence in a.ts.").digest("hex"),
     );
     expect(ev.guard).toEqual({ mode: "auto", outcome: "allowed", answerer: "judge" });
+    expect(ev.tool_evidence).toEqual({
+      kind: "content",
+      status: "succeeded",
+      total_chars: 31,
+      excerpt: "Replaced 1 occurrence in a.ts.",
+      truncated: false,
+    });
   });
 });
 

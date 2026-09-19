@@ -96,7 +96,7 @@ plan gates and a final schema;
 the complete preceding history remains a prefix and the catalog/key stay equal. Controlled responses
 prove serialization, not remote cache hits or automatic host continuation.
 
-Goal formulation uses one byte-identical base prompt for auto and guided modes. Both precedence
+The legacy Goal formulation service uses one byte-identical base prompt for auto and guided modes. Both precedence
 rules are fixed policy; mode, seed, trajectory, digest, truncation and workspace availability remain
 in the final volatile message. The call-local Auto reviewer uses Judge's fixed policy, fixed Goal
 and Plan slots, persistent global/workspace instructions in its fixed configuration, chronological
@@ -117,27 +117,24 @@ lifecycle/progress fields never enter either review context. Production: `goalAg
 framing tests and the real-engine host case in
 [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts).
 
-Goal Steward uses a fixed policy, read-only catalog and output schema for observation and completion.
-Its canonical host instruction configuration is the first user message of a fresh private history,
-before Goal-specific and volatile data. Global and workspace context use fixed field order; host
-metadata adds no execution IDs, timestamps or absolute paths (operator-authored content is preserved
-after sanitization). Independent fresh executions with the
-same instructions retain this identical head. Compatible continuations reuse the stored message,
-never insert another copy ahead of or after history. The configuration participates in the runtime
-fingerprint: instruction changes restart history and invalidate from that configuration message,
-not from the fixed system policy or catalog. Mid-stage filesystem changes wait for new preparation.
+Goal Steward uses a fixed policy, tool-free catalog and one output schema for definition and
+completion review. Repository instructions and the selected main-agent prompt are
+absent from its private history; `AGENTS.md` and `CLARVIS.md` remain in the main-agent formulation and
+work prefixes. Independent fresh Steward executions therefore retain an identical fixed head without
+duplicating a host-configuration message. Definition review places bounded verified source content
+only in its volatile evidence frame.
 Each evaluation appends a delimited user frame to its own persisted context using `continue_from`,
 a stable `goal-steward` instance and the real conversation ID. Host IDs, revisions and digests remain
 outside model frames. Command execution receipts belong only to the appended evidence frame; the
-fixed policy distinguishes those receipts from fresh artifact inspection. The runtime fingerprint covers model execution metadata, configuration generation,
-profile, catalog, schema, compaction policy and TTL; incompatibility starts a fresh base. No earlier
-message is rewritten. A rejected Steward submission appends its corrective nudge and fresh tool
-reads in the same evaluation without replacing historical messages, the catalog or the cache key.
+fixed policy distinguishes those receipts from model claims. The runtime fingerprint covers model
+execution metadata, catalog, schema, compaction policy and TTL; incompatibility starts a fresh base. No earlier
+message is rewritten. A rejected Steward submission appends its schema-correction nudge in the same
+evaluation without replacing historical messages, the catalog or the cache key.
 Production: `buildGoalStewardRequest`, `createStewardExecutionRuntime` and `createStewardResultGate`.
 Test: `returns unfinished work to the same run and preserves the private serialized prefix` in
 [goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts)
-and `rejects historical artifact reads and repairs in the same evaluation` compare actual SDK
-messages, tools and composed cache keys. This proves prefix serialization,
+and the no-repository-instructions continuation case compare actual SDK messages, tools and composed
+cache keys. This proves prefix serialization,
 not a remote provider cache hit.
 
 Judge's canonical configuration likewise retains identical bytes when instruction object-key order
@@ -147,7 +144,7 @@ engine-bound messages, tool catalogs, cache breakpoints and stable `parent_judge
 independent command/effect executions in
 [executor.test.ts](../../packages/judge/tests/integration/executor.test.ts). Steward tests compare
 actual SDK messages, catalog and conversation affinity across in-run reviews and checkpointed work
-runs, including changed-instruction restart. These are composition guarantees, not measured remote
+runs while confirming repository instructions stay absent. These are composition guarantees, not measured remote
 KV-cache hit rates; TTL, provider retention and deliberately changed input still affect reuse.
 
 Goal snapshot refreshes during tool handling defer reminder publication until dispatch has appended

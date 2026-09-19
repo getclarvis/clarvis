@@ -9,8 +9,8 @@ import {
   suppressSecondaryRejection,
   levelEnabled,
   NOOP_LOGGER,
+  type AgentProfile,
   type ProviderConfig,
-  type OperatorInstructions,
   type Logger,
   type TraceEvent,
 } from "@clarvis/capability";
@@ -50,7 +50,7 @@ import {
   type PreparedRunExecution,
 } from "./runs/run-service.ts";
 import { prepareKernelRun, type PreparedKernelRun } from "./runs/prepare-run.ts";
-import type { GoalExecutionPolicy } from "./goals/hosted-turn.ts";
+import type { GoalCreationExecutionPolicy, GoalExecutionPolicy } from "./goals/hosted-turn.ts";
 import { unavailableGoalService } from "./goals/unavailable.ts";
 import { createMemoryService } from "./memory/memory-service.ts";
 import { createPlansService } from "./plans/plans-service.ts";
@@ -68,6 +68,7 @@ import { createConfigService } from "./config/config-service.ts";
 import type { ConfigStore } from "./config/config-store.ts";
 import {
   createSettingsRunAssembler,
+  resolveEntryAgentProfile,
   type SettingsAssemblerOptions,
 } from "./runs/settings-assembler.ts";
 import {
@@ -193,12 +194,18 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
    */
   acquireOwner(owner: string): Promise<OwnerLease<OwnerScopedKernel>>;
   /** Prepare immutable execution inputs without launching; owner must come from host authentication. */
-  prepareRun(params: StartRunParams, owner?: string, goal?: GoalExecutionPolicy): PreparedKernelRun;
+  prepareRun(
+    params: StartRunParams,
+    owner?: string,
+    goal?: GoalExecutionPolicy,
+    goalCreation?: GoalCreationExecutionPolicy,
+  ): PreparedKernelRun;
   /** Canonical evidence for host-owned capabilities; raw trace authority is never a protocol service. */
   readRunTrace(executionId: string, owner?: string): readonly TraceEvent[] | undefined;
   /** Build the host-owned isolated Goal formulation runtime for one authenticated owner. */
   goalAgentRuntime(owner?: string): {
     workspaceReadAvailable: boolean;
+    formulationTokenLimit: number;
     run(input: GoalAgentRunInput): Promise<GoalAgentRunResult>;
   };
   /** Host-only isolated runtime; token allowance comes from the admitted work request. */
@@ -206,7 +213,6 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
     workTokenLimit: number,
     ttl: "5m" | "1h",
     owner?: string,
-    instructions?: readonly OperatorInstructions[],
   ): StewardExecutionRuntime;
   /** Lists the configured agents, delegating to {@link ConfigService.listAgents}. */
   listAgents(): Promise<AgentSummary[]>;
@@ -490,7 +496,11 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   interface OwnerCacheEntry {
     services: OwnerScopedKernel;
     stateOwner: string;
-    prepareRun(params: StartRunParams, goal?: GoalExecutionPolicy): PreparedKernelRun;
+    prepareRun(
+      params: StartRunParams,
+      goal?: GoalExecutionPolicy,
+      goalCreation?: GoalCreationExecutionPolicy,
+    ): PreparedKernelRun;
     refs: number;
     runRefs: number;
     runDrained?: Promise<void>;
@@ -616,7 +626,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     return {
       services,
       stateOwner,
-      prepareRun(params, goal) {
+      prepareRun(params, goal, goalCreation) {
         const entry = ownerEntries.get(owner);
         if (entry === undefined)
           throw kernelError("unavailable", "run owner generation is no longer resident");
@@ -641,6 +651,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
               workflows.runManagerWorkflow(request, prepared, seed, signal),
           },
           goal,
+          goalCreation,
         );
       },
     };
@@ -1017,29 +1028,30 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     goals: unavailableGoalService(),
     forOwner,
     acquireOwner,
-    prepareRun: (params, owner = defaultOwner, goal) =>
-      residentOwner(owner, false).prepareRun(params, goal),
+    prepareRun: (params, owner = defaultOwner, goal, goalCreation) =>
+      residentOwner(owner, false).prepareRun(params, goal, goalCreation),
     readRunTrace: (executionId, owner = defaultOwner) =>
       runDeps.traceStore.getById(residentOwner(owner, false).stateOwner, executionId)?.trace.events,
-    goalStewardRuntime(workTokenLimit, ttl, owner = defaultOwner, instructions = []) {
+    goalStewardRuntime(workTokenLimit, ttl, owner = defaultOwner) {
       const merged = structuredClone(opts.configStore.readSettings().merged) as Record<
         string,
         unknown
       >;
       const goals = (merged.goals ?? {}) as {
-        agent?: { model?: string; steward?: { model?: string } };
+        agent?: { steward?: { model?: string } };
       };
       const model =
-        goals.agent?.steward?.model ??
-        goals.agent?.model ??
-        merged.default_model ??
-        opts.assemblerOptions?.defaultModel;
+        goals.agent?.steward?.model ?? merged.default_model ?? opts.assemblerOptions?.defaultModel;
       if (typeof model !== "string")
         throw kernelError("invalid_request", "Goal Steward requires a configured model");
       return createStewardExecutionRuntime({
-        instructions,
         owner: residentOwner(owner, false).stateOwner,
         model,
+        ...(typeof merged.default_reasoning_effort === "string"
+          ? {
+              reasoningEffort: merged.default_reasoning_effort as AgentProfile["reasoning_effort"],
+            }
+          : {}),
         providers:
           runDeps.modelExecutionResolver === undefined && Array.isArray(merged.providers)
             ? (merged.providers as ProviderConfig[])
@@ -1085,12 +1097,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
         typeof goalSettings.agent === "object" && goalSettings.agent !== null
           ? (goalSettings.agent as Record<string, unknown>)
           : {};
-      const configuredModel =
-        typeof agentSettings.model === "string"
-          ? agentSettings.model
-          : typeof merged.default_model === "string"
-            ? merged.default_model
-            : opts.assemblerOptions?.defaultModel;
       const formulation =
         typeof agentSettings.formulation === "object" && agentSettings.formulation !== null
           ? (agentSettings.formulation as GoalAgentRunInput["budget"])
@@ -1104,21 +1110,27 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
           ? runBudget.total_token_limit
           : (opts.assemblerOptions?.fallbackTokenLimit ??
             runDeps.env.CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT);
+      const formulationTokenLimit = Math.min(
+        formulation?.max_net_tokens ?? ordinaryRunTokenLimit,
+        runDeps.env.CLARVIS_TOKEN_CEILING,
+      );
       return {
+        formulationTokenLimit,
         workspaceReadAvailable:
           runDeps.env.CLARVIS_AGENT_TOOLS_ENABLED === true &&
           (runDeps.capabilities ?? []).filter((capability) => capability.name === "tools")
             .length === 1 &&
           runDeps.env.CLARVIS_AGENT_TOOLS_MAX_GRANT !== "none",
         run: (input) => {
-          if (configuredModel === undefined)
-            throw kernelError(
-              "invalid_request",
-              "Goal agent has no model and no default_model is set",
-            );
+          const profile = resolveEntryAgentProfile(
+            opts.configStore,
+            input.agent_name,
+            opts.assemblerOptions,
+          );
           const runtime = createKernelGoalAgentRuntime({
             owner: residentOwner(owner, false).stateOwner,
-            model: configuredModel,
+            model: profile.model,
+            profile,
             providers:
               runDeps.modelExecutionResolver === undefined && Array.isArray(merged.providers)
                 ? (merged.providers as ProviderConfig[])
@@ -1130,7 +1142,8 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
             ...input,
             budget: {
               max_net_tokens: Math.min(
-                formulation?.max_net_tokens ?? ordinaryRunTokenLimit,
+                input.budget?.max_net_tokens ?? formulationTokenLimit,
+                formulationTokenLimit,
                 runDeps.env.CLARVIS_TOKEN_CEILING,
               ),
               timeout_ms: Math.min(

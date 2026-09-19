@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { malformedArgumentsMessage } from "@clarvis/capability";
-import type { LLMToolCall, ToolInvocationControl, TracePort } from "@clarvis/capability";
+import type {
+  LLMToolCall,
+  ToolEvidenceDetail,
+  ToolInvocationControl,
+  TracePort,
+} from "@clarvis/capability";
 import { wasOperatorInterrupted } from "../tool-interrupt.ts";
 import type { ConvergenceGuards } from "../../guards/convergence-guards.ts";
 import type { AgentRole } from "@clarvis/capability";
@@ -52,6 +57,66 @@ export interface AgentToolDispatchArgs {
 function originalArgumentsPatch(call: LLMToolCall): { arguments_original?: object } {
   const from = call.rewrittenFrom;
   return typeof from === "object" && from !== null ? { arguments_original: from } : {};
+}
+
+const TOOL_EVIDENCE_EXCERPT_MAX = 8192;
+const TOOL_EVIDENCE_STDOUT_MAX = 3072;
+const TOOL_EVIDENCE_STDERR_MAX = 1024;
+
+/** Capture bounded facts before the trace's user-facing result projection is capped. */
+function toolEvidence(tool: string, result: string, error: string | null): ToolEvidenceDetail {
+  const excerpt = result.slice(0, TOOL_EVIDENCE_EXCERPT_MAX);
+  const commandTool = tool === "shell" || tool === "host_exec";
+  if (!commandTool)
+    return {
+      kind: "content",
+      status: error === null ? "succeeded" : "failed",
+      total_chars: result.length,
+      excerpt,
+      truncated: result.length > excerpt.length,
+    };
+  let parsed:
+    | {
+        exit_code?: unknown;
+        timed_out?: unknown;
+        signal?: unknown;
+        stdout?: unknown;
+        stderr?: unknown;
+      }
+    | undefined;
+  try {
+    parsed = JSON.parse(result) as typeof parsed;
+  } catch {
+    parsed = undefined;
+  }
+  const exitCode = typeof parsed?.exit_code === "number" ? parsed.exit_code : undefined;
+  const timedOut = parsed?.timed_out === true;
+  const signal = typeof parsed?.signal === "string" ? parsed.signal : undefined;
+  const status =
+    error !== null
+      ? "failed"
+      : exitCode === 0 && !timedOut && signal === undefined
+        ? "succeeded"
+        : "incomplete";
+  const stdout = typeof parsed?.stdout === "string" ? parsed.stdout : "";
+  const stderr = typeof parsed?.stderr === "string" ? parsed.stderr : "";
+  return {
+    kind: "command",
+    status,
+    total_chars: result.length,
+    excerpt,
+    truncated:
+      result.length > excerpt.length ||
+      stdout.length > TOOL_EVIDENCE_STDOUT_MAX ||
+      stderr.length > TOOL_EVIDENCE_STDERR_MAX,
+    command: {
+      ...(exitCode === undefined ? {} : { exit_code: exitCode }),
+      ...(timedOut ? { timed_out: true } : {}),
+      ...(signal === undefined ? {} : { signal }),
+      stdout_excerpt: stdout.slice(0, TOOL_EVIDENCE_STDOUT_MAX),
+      stderr_excerpt: stderr.slice(0, TOOL_EVIDENCE_STDERR_MAX),
+    },
+  };
 }
 
 /**
@@ -114,6 +179,7 @@ export async function executeAgentToolCall(
       name: call.name,
       arguments: tracedArguments,
       result: errText,
+      tool_evidence: toolEvidence(call.name, errText, errText),
       error: errText,
     });
     if (!signal?.aborted) {
@@ -182,6 +248,7 @@ export async function executeAgentToolCall(
     arguments: tracedArguments,
     ...originalArgumentsPatch(call),
     result: resultText,
+    tool_evidence: toolEvidence(call.name, resultText, errText),
     error: errText,
     ...(diff !== undefined ? { diff } : {}),
     ...(guard !== undefined ? { guard } : {}),

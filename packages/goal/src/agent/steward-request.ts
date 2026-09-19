@@ -14,7 +14,7 @@ export const goalStewardOutputSchema: Record<string, unknown> = JSON.parse(
 
 /** Stable profile, catalog and identity; only a new frame and execution id vary. */
 export function buildGoalStewardRequest(
-  runtime: Pick<GoalStewardRuntime, "model_ref" | "providers" | "operator_instructions">,
+  runtime: Pick<GoalStewardRuntime, "model_ref" | "providers" | "reasoning_effort">,
   input: GoalStewardRunInput,
 ): RunRequest {
   if (
@@ -28,32 +28,19 @@ export function buildGoalStewardRequest(
     session_id: input.session_id,
     agent_instance_id: GOAL_STEWARD_INSTANCE,
     ...(input.continue_from === undefined ? {} : { continue_from: input.continue_from }),
-    messages: [
-      ...(input.continue_from === undefined
-        ? [
-            {
-              role: "user" as const,
-              content: JSON.stringify({
-                goal_steward_configuration_v1: {
-                  operator_instructions: (runtime.operator_instructions ?? []).map(
-                    ({ scope, source, content }) => ({ scope, source, content }),
-                  ),
-                },
-              }),
-            },
-          ]
-        : []),
-      { role: "user", content: input.projection },
-    ],
+    messages: [{ role: "user", content: input.projection }],
     servers: [],
     providers: runtime.providers,
     profiles: [
       {
         name: GOAL_STEWARD_INSTANCE,
         model: runtime.model_ref,
+        ...(runtime.reasoning_effort === undefined
+          ? {}
+          : { reasoning_effort: runtime.reasoning_effort }),
         base_prompt: GOAL_STEWARD_PROMPT,
         tools: [],
-        grants: ["read_workspace"],
+        grants: [],
         can_spawn: [],
         iteration_limit: input.budget.max_iterations,
         call_timeout_ms: input.budget.call_timeout_ms,

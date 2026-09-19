@@ -14,8 +14,6 @@ import { createGoalStewardCoordinator } from "../../src/goals/steward-coordinato
 
 function fixture(options: { usage?: GoalUsage; honorAbort?: boolean; maxReviews?: number } = {}) {
   let planRevision = "absent";
-  let trace: TraceEvent[] = [];
-  let content = "";
   let state = applyGoalControl(
     undefined,
     {
@@ -87,9 +85,7 @@ function fixture(options: { usage?: GoalUsage; honorAbort?: boolean; maxReviews?
   };
   const calls: GoalStewardRunInput[] = [];
   const admitted = Promise.withResolvers<void>();
-  const successor = Promise.withResolvers<void>();
   const settle = Promise.withResolvers<GoalStewardResult>();
-  const committed = Promise.withResolvers<void>();
   let charged = 0;
   const coordinator = createGoalStewardCoordinator({
     binding,
@@ -99,10 +95,8 @@ function fixture(options: { usage?: GoalUsage; honorAbort?: boolean; maxReviews?
     signal: new AbortController().signal,
     runtime: () => ({
       fingerprint: "same",
-      workspaceReadAvailable: true,
       promptCacheTtl: "5m",
       maxReviews: options.maxReviews ?? 8,
-      maxInterventions: 3,
       budget: {
         max_net_tokens: 10000,
         timeout_ms: 120000,
@@ -113,7 +107,6 @@ function fixture(options: { usage?: GoalUsage; honorAbort?: boolean; maxReviews?
       async run(input) {
         calls.push(input);
         admitted.resolve();
-        if (calls.length === 2) successor.resolve();
         return {
           execution_id: input.execution_id,
           result: await (options.honorAbort
@@ -131,11 +124,7 @@ function fixture(options: { usage?: GoalUsage; honorAbort?: boolean; maxReviews?
         };
       },
     }),
-    readTrace: () => trace,
-    readFile: async (path) => ({ path, content }),
-    changed() {
-      if (state.current!.steward.pending_execution_id === undefined) committed.resolve();
-    },
+    changed() {},
     async settle(mutate) {
       const result = mutate(state);
       state = result.state;
@@ -150,39 +139,34 @@ function fixture(options: { usage?: GoalUsage; honorAbort?: boolean; maxReviews?
   } as TraceEvent);
   return {
     coordinator,
-    setRead(next: TraceEvent[], bytes: string) {
-      trace = next;
-      content = bytes;
-    },
     setPlanRevision(value: string) {
       planRevision = value;
     },
     calls,
     admitted,
-    successor,
     settle,
-    committed,
     state: () => state,
     charged: () => charged,
   };
 }
 
 describe("Goal Steward coordinator", () => {
-  it("does not wait for observation and retains independently charged usage on teardown", async () => {
+  it("reviews only completion and retains independently charged usage", async () => {
     const f = fixture();
-    f.coordinator.scheduleObservation();
-    await f.admitted.promise;
-    expect(await f.coordinator.takeReadyIntervention()).toBeUndefined();
     f.settle.resolve({
-      decision: "steer",
-      summary: "Missing answer",
-      guidance: "Provide the answer",
+      decision: "completion",
+      verdict: "achieved",
+      summary: "Delivered",
+      assessments: ["definition", "objective"].map((scope) => ({
+        scope: scope as "definition" | "objective",
+        verdict: "satisfied",
+        rationale: "Answer observed",
+        evidence_ids: [],
+      })),
     });
-    await f.committed.promise;
-    expect(await f.coordinator.takeReadyIntervention()).toEqual({
-      kind: "steer",
-      guidance: "Provide the answer",
-    });
+    expect((await f.coordinator.reviewCompletion({ mode: "text", text: "The answer" })).kind).toBe(
+      "achieved",
+    );
     await f.coordinator.closeCoordinator();
     expect(f.charged()).toBe(1);
     expect(f.state().current!.consumption.net_tokens).toBe(0);
@@ -190,9 +174,9 @@ describe("Goal Steward coordinator", () => {
     expect(f.calls[0]!.budget.max_net_tokens).toBe(10000);
   });
 
-  it("discards a late observation after accepted human steering but still accounts for it", async () => {
+  it("discards a completion review after accepted human steering but still accounts for it", async () => {
     const f = fixture();
-    f.coordinator.scheduleObservation();
+    const pending = f.coordinator.reviewCompletion({ mode: "text", text: "The answer" });
     await f.admitted.promise;
     f.coordinator.observe({
       type: "user_steering",
@@ -200,9 +184,18 @@ describe("Goal Steward coordinator", () => {
       message: "Changed direction",
       iteration_ref: 1,
     } as TraceEvent);
-    f.settle.resolve({ decision: "steer", summary: "Old", guidance: "Old direction" });
-    await f.committed.promise;
-    expect(await f.coordinator.takeReadyIntervention()).toBeUndefined();
+    f.settle.resolve({
+      decision: "completion",
+      verdict: "achieved",
+      summary: "Old",
+      assessments: ["definition", "objective"].map((scope) => ({
+        scope: scope as "definition" | "objective",
+        verdict: "satisfied",
+        rationale: "Old direction",
+        evidence_ids: [],
+      })),
+    });
+    expect((await pending).kind).toBe("review_pending");
     await f.coordinator.closeCoordinator();
     expect(f.charged()).toBe(1);
     expect(f.state().current!.runs[0]!.steward_reviews).toEqual([]);
@@ -219,7 +212,6 @@ describe("Goal Steward coordinator", () => {
         verdict: "satisfied",
         rationale: "Answer observed",
         evidence_ids: [],
-        inspected_paths: [],
       })),
     });
     const attempt = { mode: "text" as const, text: "The answer" };
@@ -231,14 +223,24 @@ describe("Goal Steward coordinator", () => {
     expect(await f.coordinator.completionCurrent("Changed answer")).toBe(false);
     await f.coordinator.closeCoordinator();
   });
-  it("invalidates a ready correction when Plan changes without altering operator authority", async () => {
+  it("invalidates a completion decision when Plan changes during review", async () => {
     const f = fixture();
-    f.coordinator.scheduleObservation();
+    const pending = f.coordinator.reviewCompletion({ mode: "text", text: "The answer" });
     await f.admitted.promise;
-    f.settle.resolve({ decision: "steer", summary: "Review", guidance: "Finish the current plan" });
-    await f.committed.promise;
     f.setPlanRevision("edited");
-    expect(await f.coordinator.takeReadyIntervention()).toBeUndefined();
+    f.settle.resolve({
+      decision: "completion",
+      verdict: "needs_work",
+      summary: "Review",
+      next_step: "Finish the current plan",
+      assessments: ["definition", "objective"].map((scope) => ({
+        scope: scope as "definition" | "objective",
+        verdict: "unsatisfied",
+        rationale: "Plan changed",
+        evidence_ids: [],
+      })),
+    });
+    expect((await pending).kind).toBe("review_pending");
     await f.coordinator.closeCoordinator();
     expect(f.charged()).toBe(1);
   });
@@ -254,44 +256,31 @@ describe("Goal Steward coordinator", () => {
         verdict: "satisfied",
         rationale: "Claimed",
         evidence_ids: [],
-        inspected_paths: [],
       })),
     });
     expect((await f.coordinator.reviewCompletion({ mode: "text", text: "Answer" })).kind).toBe(
-      "inconclusive",
+      "review_pending",
     );
     expect(f.state().current!.steward.consumption.usage_unknown).toBe(true);
     expect(f.state().current!.consumption.net_tokens).toBe(0);
+    expect(f.state().current!.steward.status).toBe("attention");
+    expect(f.state().current!.runs[0]!.steward_reviews.at(-1)).toMatchObject({
+      decision: "review_pending",
+      summary: "Provider or runtime review failed after bounded retries",
+    });
+    expect(f.state().current!.steward.last_steward_execution_id).toBeUndefined();
     await f.coordinator.closeCoordinator();
   });
 
-  it("retains cancellation until evaluation settlement and leaves no pending reservation", async () => {
+  it("retains cancellation until completion-review settlement and leaves no pending reservation", async () => {
     const f = fixture({ honorAbort: true });
-    f.coordinator.scheduleObservation();
+    const pending = f.coordinator.reviewCompletion({ mode: "text", text: "Answer" });
     await f.admitted.promise;
     await f.coordinator.closeCoordinator();
+    expect((await pending).kind).toBe("review_pending");
     expect(f.state().current!.steward.pending_execution_id).toBeUndefined();
     expect(f.charged()).toBe(1);
-    f.coordinator.scheduleObservation();
     expect(f.calls).toHaveLength(1);
-  });
-
-  it("coalesces complete responses into one successor and preserves the private predecessor", async () => {
-    const f = fixture();
-    f.coordinator.scheduleObservation();
-    await f.admitted.promise;
-    for (const response of ["Second result", "Third result"]) {
-      f.coordinator.observe({ type: "lead_iteration", response, iteration: 2 } as TraceEvent);
-      f.coordinator.scheduleObservation();
-    }
-    expect(f.calls).toHaveLength(1);
-    f.settle.resolve({ decision: "aligned", summary: "Aligned" });
-    await f.successor.promise;
-    expect(f.calls).toHaveLength(2);
-    expect(f.calls[1]!.continue_from).toBe(f.calls[0]!.execution_id);
-    expect(f.calls[1]!.projection).toContain("Second result");
-    expect(f.calls[1]!.projection).toContain("Third result");
-    await f.coordinator.closeCoordinator();
   });
 });
 
@@ -299,10 +288,20 @@ describe("Goal Steward recovery", () => {
   it("retires an orphaned reservation once and never replays a write", async () => {
     const f = fixture();
     f.state().current!.steward.pending_execution_id = "crashed-steward";
-    f.coordinator.scheduleObservation();
-    await f.admitted.promise;
-    f.settle.resolve({ decision: "aligned", summary: "Recovered read-only analysis" });
-    await f.committed.promise;
+    f.settle.resolve({
+      decision: "completion",
+      verdict: "achieved",
+      summary: "Recovered completion review",
+      assessments: ["definition", "objective"].map((scope) => ({
+        scope: scope as "definition" | "objective",
+        verdict: "satisfied",
+        rationale: "Answer observed",
+        evidence_ids: [],
+      })),
+    });
+    expect((await f.coordinator.reviewCompletion({ mode: "text", text: "Answer" })).kind).toBe(
+      "achieved",
+    );
     await f.coordinator.closeCoordinator();
     expect(f.charged()).toBe(2);
     expect(f.calls).toHaveLength(1);
@@ -312,33 +311,10 @@ describe("Goal Steward recovery", () => {
   });
 });
 
-it("discards a ready observation if its inspected artifact changes", async () => {
-  const f = fixture();
-  const trace = [
-    {
-      type: "tool_call",
-      mcp_name: "read_file",
-      arguments: { path: "answer.txt" },
-      result: "     1\told",
-      error: null,
-    },
-  ] as TraceEvent[];
-  f.setRead(trace, "old");
-  f.coordinator.scheduleObservation();
-  await f.admitted.promise;
-  f.settle.resolve({ decision: "steer", summary: "Old file", guidance: "Correct the old file" });
-  await f.committed.promise;
-  f.setRead(trace, "changed");
-  expect(await f.coordinator.takeReadyIntervention()).toBeUndefined();
-  await f.coordinator.closeCoordinator();
-  expect(f.charged()).toBe(1);
-});
-
 for (const maxReviews of [1, 2]) {
-  it(`reserves the final evaluation when observations reach their allowance (${maxReviews})`, async () => {
+  it(`admits the last bounded completion review (${maxReviews})`, async () => {
     const f = fixture({ maxReviews });
     f.state().current!.runs[0]!.steward_review_count = maxReviews - 1;
-    f.coordinator.scheduleObservation();
     f.settle.resolve({
       decision: "completion",
       verdict: "achieved",
@@ -348,7 +324,6 @@ for (const maxReviews of [1, 2]) {
         verdict: "satisfied",
         rationale: "Observed",
         evidence_ids: [],
-        inspected_paths: [],
       })),
     });
     expect((await f.coordinator.reviewCompletion({ mode: "text", text: "Answer" })).kind).toBe(
@@ -360,26 +335,23 @@ for (const maxReviews of [1, 2]) {
     await f.coordinator.closeCoordinator();
   });
 }
-it("does not classify a later inconclusive verdict as an earlier observation failure", async () => {
+it("returns a semantic evidence request without classifying it as a runtime failure", async () => {
   const f = fixture();
-  f.coordinator.scheduleObservation();
-  await f.admitted.promise;
   f.settle.resolve({
     decision: "completion",
-    verdict: "inconclusive",
+    verdict: "needs_evidence",
+    next_step: "Provide the missing evidence",
     summary: "Evidence unavailable",
     assessments: ["definition", "objective"].map((scope) => ({
       scope: scope as "definition" | "objective",
       verdict: "inconclusive",
       rationale: "Missing evidence",
       evidence_ids: [],
-      inspected_paths: [],
     })),
   });
-  await f.committed.promise;
   expect(await f.coordinator.reviewCompletion({ mode: "text", text: "Answer" })).toMatchObject({
-    kind: "inconclusive",
-    reason: "goal_steward_inconclusive",
+    kind: "needs_evidence",
+    next_step: "Provide the missing evidence",
   });
   await f.coordinator.closeCoordinator();
 });

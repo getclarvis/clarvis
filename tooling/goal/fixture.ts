@@ -7,18 +7,19 @@ export const GOAL_FIXTURE_VERSION = 1;
 export type GoalScenario = "goal-continuation";
 export type GoalPhysicalCall = CacheCall<GoalScenario>;
 export const GOAL_TRIAL_LIMITS: CacheLimits = {
-  calls: 32,
-  input: 500000,
+  calls: 48,
+  input: 750000,
   output: 24000,
   durationMs: 6 * 60000,
 };
 export const GOAL_GLOBAL_LIMITS: CacheLimits = {
-  calls: 128,
-  input: 2000000,
+  calls: 192,
+  input: 3000000,
   output: 96000,
   durationMs: 30 * 60000,
 };
 export const GOAL_MODELS = ["gpt-5.6-terra", "gpt-5.6-luna"] as const;
+export const GOAL_MAX_NET_TOKENS = 100_000;
 export const GOAL_OBJECTIVE = [
   "Fix sumEvenSquares in solution.ts to sum the squares of only the even integers in its input.",
   "The readonly specification is solution.test.ts; do not modify that test file.",
@@ -57,7 +58,7 @@ export async function prepareGoalLiveFixture(root: string, model: string): Promi
       guard: { type: "shell", mode: "off" },
       budget: {
         on_exceed: "stop",
-        total_token_limit: 30000,
+        total_token_limit: GOAL_MAX_NET_TOKENS,
         timeout_ms: GOAL_TRIAL_LIMITS.durationMs,
       },
     }),

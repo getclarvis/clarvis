@@ -5,10 +5,6 @@ import { goalLimitsSchema } from "./schemas.ts";
 
 export const goalAgentSettingsSchema = schema
   .object({
-    model: schema
-      .string()
-      .regex(/^[a-z0-9_-]+\/[a-zA-Z0-9_./:-]+$/u)
-      .optional(),
     formulation: schema
       .object({
         max_net_tokens: schema
@@ -41,7 +37,6 @@ export const goalAgentSettingsSchema = schema
         call_timeout_ms: schema.number().int().positive().max(60_000).optional(),
         max_retries: schema.number().int().nonnegative().max(1).optional(),
         max_reviews_per_work_run: schema.number().int().min(1).max(32).optional(),
-        max_interventions_per_work_run: schema.number().int().min(1).max(8).optional(),
         max_completion_reviews_per_attempt: schema.number().int().min(1).max(2).optional(),
       })
       .strict()

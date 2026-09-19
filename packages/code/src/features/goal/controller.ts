@@ -86,6 +86,7 @@ export function createGoalController(deps: {
     setView(undefined);
     setAvailable(false);
     setLoading(false);
+    setFormulationActivity(undefined);
     setFailure("");
     setFormulationActivity(undefined);
     setPendingOperation(pending.get(deps.binding()?.sessionId ?? "")?.operation_id);

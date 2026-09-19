@@ -16,7 +16,6 @@ const assessment = (
   ...(criterion_id === undefined ? {} : { criterion_id }),
   rationale: "Observed the requested output",
   evidence_ids: [],
-  inspected_paths: [],
 });
 
 describe("Goal Steward contract", () => {
@@ -37,9 +36,7 @@ describe("Goal Steward contract", () => {
     const runtime = {
       model_ref: "fixture/model",
       providers: [],
-      operator_instructions: [
-        { scope: "global" as const, source: "AGENTS.md", content: "Validate changes" },
-      ],
+      reasoning_effort: "medium" as const,
     };
     const first = buildGoalStewardRequest(runtime, input);
     const next = buildGoalStewardRequest(runtime, {
@@ -53,25 +50,22 @@ describe("Goal Steward contract", () => {
     expect(first.profiles[0]).toMatchObject({
       name: "goal-steward",
       tools: [],
-      grants: ["read_workspace"],
+      grants: [],
       can_spawn: [],
+      reasoning_effort: "medium",
     });
     expect(first.agent_instance_id).toBe(next.agent_instance_id);
     expect(first.session_id).toBe(next.session_id);
     expect(first.budget.total_token_limit).toBe(12345);
     expect(next.continue_from).toBe("first");
     expect(next.messages).toEqual([{ role: "user", content: "new completion frame" }]);
-    expect(first.messages[0]!.content).toContain("Validate changes");
-    const fresh = buildGoalStewardRequest(
-      {
-        ...runtime,
-        operator_instructions: [
-          { content: "Validate changes", source: "AGENTS.md", scope: "global" },
-        ],
-      },
-      { ...input, execution_id: "fresh", projection: "different goal" },
-    );
-    expect(fresh.messages[0]).toEqual(first.messages[0]);
+    expect(first.messages).toEqual([{ role: "user", content: "initial definition" }]);
+    const fresh = buildGoalStewardRequest(runtime, {
+      ...input,
+      execution_id: "fresh",
+      projection: "different goal",
+    });
+    expect(fresh.messages).toEqual([{ role: "user", content: "different goal" }]);
     expect(fresh.profiles).toEqual(first.profiles);
     expect(fresh.output_schema).toEqual(first.output_schema);
   });
@@ -99,7 +93,6 @@ describe("Goal Steward contract", () => {
       "completion",
     );
     expect(() => validateGoalStewardResult(complete, "completion", ["c2"], [])).toThrow();
-    expect(() => validateGoalStewardResult(complete, "observation", ["c1"], [])).toThrow();
     expect(
       goalStewardResultSchema.safeParse({
         ...complete,
@@ -128,52 +121,52 @@ it.each([
   },
   {
     label: "Promessa sem entrega / promise without delivery",
-    verdict: "not_achieved",
+    verdict: "needs_work",
     objective: "unsatisfied",
     criterion: "satisfied",
     next: "Entregue o resultado / deliver the result",
   },
   {
     label: "Pedido composto incompleto / partial compound request",
-    verdict: "not_achieved",
+    verdict: "needs_work",
     objective: "unsatisfied",
     criterion: "unsatisfied",
     next: "Conclua a segunda parte / finish the second part",
   },
   {
     label: "Restrição violada / violated constraint",
-    verdict: "not_achieved",
+    verdict: "needs_work",
     objective: "satisfied",
     criterion: "unsatisfied",
     next: "Respeite a restrição / satisfy the constraint",
   },
   {
     label: "Exclusão invadida / excluded work",
-    verdict: "not_achieved",
+    verdict: "needs_work",
     objective: "satisfied",
     criterion: "unsatisfied",
     next: "Retorne ao escopo / return to scope",
   },
   {
     label: "Plan incompleto / incomplete Plan",
-    verdict: "not_achieved",
+    verdict: "needs_work",
     objective: "unsatisfied",
     criterion: "satisfied",
     next: "Finalize a tarefa necessária / finish the necessary task",
   },
   {
     label: "Artifact alterado / changed artifact",
-    verdict: "inconclusive",
+    verdict: "needs_evidence",
     objective: "inconclusive",
     criterion: "satisfied",
-    next: undefined,
+    next: "Provide current artifact evidence",
   },
   {
     label: "Ambiguidade / ambiguity",
-    verdict: "inconclusive",
+    verdict: "needs_evidence",
     objective: "inconclusive",
     criterion: "inconclusive",
-    next: undefined,
+    next: "Clarify the ambiguous evidence",
   },
 ])("keeps bilingual assessment consistency: $label", (scenario) => {
   const result = {
@@ -247,10 +240,9 @@ describe("Steward settlement", () => {
     state = settled.state;
     for (const [decision, status] of [
       ["achieved", "verified"],
-      ["aligned", "aligned"],
-      ["new_run", "new_run_recommended"],
-      ["steer", "intervened"],
-      ["inconclusive", "attention"],
+      ["needs_evidence", "evidence_requested"],
+      ["needs_work", "attention"],
+      ["review_pending", "attention"],
     ] as const) {
       state.current!.steward.pending_execution_id = "review";
       const review = {
@@ -267,7 +259,6 @@ describe("Steward settlement", () => {
         evidence_digest: "c".repeat(64),
         decision,
         summary: "Reviewed",
-        inspected_artifacts: [],
         usage: input.usage,
         reviewed_at: 4,
       };
@@ -319,7 +310,15 @@ describe("Steward settlement", () => {
                 ? { status: "cancelled" as const, result: null }
                 : {
                     status: "completed" as const,
-                    result: status === "invalid" ? {} : { decision: "aligned", summary: "Aligned" },
+                    result:
+                      status === "invalid"
+                        ? {}
+                        : {
+                            decision: "completion",
+                            verdict: "achieved",
+                            summary: "Aligned",
+                            assessments: [assessment("definition"), assessment("objective")],
+                          },
                   }),
             usage: {
               iterations_used: 1,

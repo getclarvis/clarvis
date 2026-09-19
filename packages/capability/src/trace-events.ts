@@ -10,7 +10,7 @@ import type {
 } from "./run.ts";
 import type { ExecutionStatus } from "./execution-status.ts";
 import type { FinalizationDisposition } from "./finalization.ts";
-import type { CommandGuardReview } from "./trace-kinds.ts";
+import type { CommandGuardReview, ToolEvidenceDetail } from "./trace-kinds.ts";
 
 /**
  * The public, persisted shape of a single loop event: a flat discriminated union
@@ -94,6 +94,8 @@ export type BuiltinTraceEvent =
       result: string;
       /** SHA-256 of the complete pre-retention result, for host-side snapshot attestation. */
       result_digest?: string;
+      /** Host-owned bounded receipt captured before the display result is capped. */
+      tool_evidence?: ToolEvidenceDetail;
       error: string | null;
       diff?: string;
       guard?: CommandGuardReview;
@@ -160,6 +162,7 @@ export type BuiltinTraceEvent =
       completed_at: number;
       status: string;
       result: string;
+      result_digest?: string;
     }
   | {
       type: "delegation_failed";
@@ -168,6 +171,7 @@ export type BuiltinTraceEvent =
       completed_at: number;
       status: string;
       result: string;
+      result_digest?: string;
     }
   | {
       type: "budget_check";

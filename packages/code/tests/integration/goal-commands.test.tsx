@@ -30,6 +30,7 @@ function fixture(initial: GoalViewDto = goalView()) {
   let state = initial;
   const requests: GoalControlRequest[] = [];
   const formulations: GoalFormulateRequest[] = [];
+  const submittedGoals: string[] = [];
   let formulationOutcome: GoalFormulateResult["formulation"] = {
     mode: "guided",
     outcome: "created",
@@ -86,6 +87,7 @@ function fixture(initial: GoalViewDto = goalView()) {
     },
     requests,
     formulations,
+    submittedGoals,
     opened,
     notices,
     keys,
@@ -104,6 +106,9 @@ function fixture(initial: GoalViewDto = goalView()) {
     },
     formulationOutcome(value: GoalFormulateResult["formulation"]) {
       formulationOutcome = value;
+    },
+    submitGoal: async (seed: string) => {
+      submittedGoals.push(seed);
     },
   };
 }
@@ -160,7 +165,7 @@ test("an existing goal refuses guided formulation without replacement", async ()
   expect(f.notices.some((notice) => notice.includes("already exists"))).toBe(true);
 });
 
-test("guided and auto commands formulate outside the composer while literal escape stays direct", async () => {
+test("guided creation uses one ordinary main-agent turn while literal escape stays direct", async () => {
   const f = fixture({ state: { version: 1, revision: 0, archive: [], receipts: [] } });
   let commands!: ReturnType<typeof createCommands>;
   cleanup.push(
@@ -179,30 +184,23 @@ test("guided and auto commands formulate outside the composer while literal esca
   );
   expect(commands.route("goal.open", "implemente a spec 123")).toBe(true);
   await settled();
-  expect(f.formulations[0]).toMatchObject({ mode: "guided", seed: "implemente a spec 123" });
+  expect(f.submittedGoals).toEqual(["implemente a spec 123"]);
   expect(f.opened).toEqual([]);
-  expect(f.notices).toContain("Formulating a Goal from your request…");
-  expect(f.notices).toContain("Goal created; the first work stage is starting.");
+  expect(f.notices).toContain("The main agent is defining the Goal and starting its work…");
 
   f.opened.splice(0);
   commands.route("goal.open", "auto");
   await settled();
-  expect(f.formulations[1]).toMatchObject({ mode: "auto" });
-  expect(f.formulations[1]).not.toHaveProperty("seed");
+  expect(f.submittedGoals).toEqual(["implemente a spec 123", "auto"]);
 
   commands.route("goal.open", "-- auto");
   await settled();
   expect(f.requests[0]?.action).toEqual({ kind: "create", objective: "auto" });
-  expect(f.formulations).toHaveLength(2);
+  expect(f.formulations).toHaveLength(0);
 });
 
-test("a clarification result is shown once without automatically repeating analysis", async () => {
+test("guided creation does not call the compatibility formulation service", async () => {
   const f = fixture({ state: { version: 1, revision: 0, archive: [], receipts: [] } });
-  f.formulationOutcome({
-    mode: "auto",
-    outcome: "insufficient_context",
-    question: "Qual resultado você quer?",
-  });
   cleanup.push(
     createRoot((dispose) => {
       const commands = createCommands(
@@ -211,7 +209,7 @@ test("a clarification result is shown once without automatically repeating analy
         f.ui,
       );
       registerGoalCommands(commands.scope(), f);
-      commands.route("goal.open", "auto");
+      commands.route("goal.open", "need clarification");
       return () => {
         commands.dispose();
         dispose();
@@ -219,8 +217,8 @@ test("a clarification result is shown once without automatically repeating analy
     }),
   );
   await settled();
-  expect(f.notices).toContain("Qual resultado você quer?");
-  expect(f.formulations).toHaveLength(1);
+  expect(f.submittedGoals).toEqual(["need clarification"]);
+  expect(f.formulations).toHaveLength(0);
   expect(f.opened).toEqual([]);
 });
 
@@ -579,11 +577,10 @@ test("unknown physical work remains visible and prevents review without a hosted
 test("Goal view exposes bounded Steward state without technical identifiers", async () => {
   const run = goalRun("private-work-id");
   run.steward_review_count = 2;
-  run.steward_intervention_count = 1;
   run.steward_reviews = [
     {
       steward_execution_id: "private-steward-id",
-      mode: "observation",
+      mode: "completion",
       goal_id: "goal-fixture",
       work_execution_id: "private-work-id",
       control_revision: 1,
@@ -593,10 +590,9 @@ test("Goal view exposes bounded Steward state without technical identifiers", as
       plan_context_revision: "private-revision",
       operator_steering_epoch: 0,
       evidence_digest: "c".repeat(64),
-      decision: "steer",
+      decision: "needs_work",
       summary: "Result still needs verification",
-      guidance: "Verify the final artifact",
-      inspected_artifacts: [],
+      next_step: "Verify the final artifact",
       usage: { kind: "measured", input: 10, output: 5, cached: 0 },
       reviewed_at: 1,
     },
@@ -608,7 +604,7 @@ test("Goal view exposes bounded Steward state without technical identifiers", as
         last_consumed_work_sequence: 1,
         runtime_fingerprint: "a".repeat(64),
         prompt_cache_ttl: "5m",
-        status: "intervened",
+        status: "attention",
         consumption: { input: 10, output: 5, cached: 0, net_tokens: 15, usage_unknown: false },
       },
     }),
@@ -637,7 +633,7 @@ test("goal completion follows current state without rebuilding the command catal
   const provider = createCommandCompletionProvider({ commands });
   const labels = async () => (await provider.query("goal")).map((item) => item.label);
   await f.goals.refresh();
-  expect(await labels()).toEqual(["/goal", "/goal/auto"]);
+  expect(await labels()).toEqual(["/goal"]);
   const catalog = commands.entries();
   f.setState(goalView());
   await f.goals.refresh();
@@ -660,5 +656,5 @@ test("goal completion follows current state without rebuilding the command catal
   expect(await labels()).toEqual(["/goal", "/goal/pause", "/goal/cancel"]);
   f.setState(empty);
   await f.goals.refresh();
-  expect(await labels()).toEqual(["/goal", "/goal/auto"]);
+  expect(await labels()).toEqual(["/goal"]);
 });

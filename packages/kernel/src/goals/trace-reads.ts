@@ -133,8 +133,3 @@ export async function verifyTraceNormativeSources(options: {
   }
   return artifacts;
 }
-
-/** Complete text reads in this evaluation are fenced even when observation output has no path field. */
-export function completeTraceReadPaths(trace: readonly TraceEvent[]): string[] {
-  return [...new Set(completeReads(trace).flatMap((read) => read.paths))];
-}

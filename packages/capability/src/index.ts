@@ -333,6 +333,7 @@ export type {
   LeadIterationDetail,
   SubagentIterationDetail,
   ToolCallDetail,
+  ToolEvidenceDetail,
   CommandGuardReview,
   ToolCallStartedDetail,
   ToolOutputDeltaDetail,

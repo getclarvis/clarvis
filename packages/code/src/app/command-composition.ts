@@ -69,7 +69,12 @@ export function registerCodeCommands(deps: CodeCommandDeps): CodeCommandWiring {
   if (deps.loops)
     registerLoopCommands(featureScope, { loops: deps.loops, ui: deps.ui, notify: deps.notify });
   if (deps.goals)
-    registerGoalCommands(featureScope, { goals: deps.goals, ui: deps.ui, notify: deps.notify });
+    registerGoalCommands(featureScope, {
+      goals: deps.goals,
+      ui: deps.ui,
+      notify: deps.notify,
+      ...(deps.onSubmitGoal === undefined ? {} : { submitGoal: deps.onSubmitGoal }),
+    });
   registerProvidersCommands(featureScope, {
     settings: features.settings,
     catalog: features.catalog,

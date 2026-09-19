@@ -89,24 +89,25 @@ See [hosted runs](../../specs/hosts/hosted-runs.md) for authority and recovery b
 
 `/goal` shows the conversation's objective, semantic definition, origin, compact budget and Goal
 Steward status. The sidebar adds one short Steward line; the complete view shows bounded review and
-intervention counts plus the latest summary and actionable guidance. Technical execution IDs remain
+completion-review count plus the latest summary and actionable next step. Technical execution IDs remain
 hidden. `goal_steward_failed` and `goal_steward_inconclusive` appear as Goal-domain attention.
 Only post-closure Kernel settlement may show the Goal as complete.
 Goal command suggestions follow the current Goal and physical execution state. Without a current
-Goal, only `/goal` and `/goal/auto` appear.
-`/goal auto` explicitly asks the Goal agent to formulate
-from the existing trajectory. `/goal <seed>` asks it to treat the seed as primary and use trajectory
-and confined reads only to resolve and enrich that request. Neither mode opens the form or sends the
-slash command to the ordinary conversation model. `/goal -- <objective>` bypasses inference and
-creates that exact literal text, including `/goal -- auto`; an empty literal is refused.
+Goal, only `/goal` appears. `/goal <seed>` asks the selected main agent to treat the seed as primary
+and use trajectory and confined reads only to resolve and enrich that request. The automatic
+formulation mode remains available to the host service but is temporarily not exposed as a slash
+command. Slash formulation does not open the form or send the command to the ordinary conversation
+model. `/goal -- <objective>` bypasses inference and creates that exact literal text, including
+`/goal -- auto`; an empty literal is refused.
 
-Any current Goal blocks formulation until the user reviews, cancels or clears it. Formulation is
-visible immediately in the Lead activity line and automatically reveals a compact Goal section in
+Any current Goal blocks a new guided creation until the user reviews, cancels or clears it. The
+ordinary main-agent creation turn is visible immediately in the Lead activity line and
+automatically reveal a compact Goal section in
 the same activity sidebar used by Plans, parallel work and agents. The section remains after
 creation with objective, status and stage count, using the same title/status/key anatomy and lifecycle
 tones as Plan, with the `full goal` navigation label; `Ctrl+X O` toggles the complete Goal view while
-that section is revealed. While formulation runs, both surfaces show its current bounded activity as
-thinking, reading referenced files or searching the workspace, with the current iteration when known.
+that section is revealed. While the ordinary creation turn runs, both surfaces show its normal
+bounded activity and current iteration when known.
 The sidebar retains the latest completed workspace activity above the current thinking line so a
 short read or search remains observable after the next model iteration begins.
 Creation never switches screens automatically. Insufficient, stale or

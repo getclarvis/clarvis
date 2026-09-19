@@ -152,7 +152,7 @@ export const goalOriginSchema = z.discriminatedUnion("kind", [
 export const goalStewardReviewSchema = z
   .object({
     steward_execution_id: id,
-    mode: z.enum(["observation", "completion"]),
+    mode: z.literal("completion"),
     goal_id: id,
     work_execution_id: id,
     control_revision: counter,
@@ -164,11 +164,9 @@ export const goalStewardReviewSchema = z
     candidate_digest: digest.optional(),
     final_attempt_digest: digest.optional(),
     evidence_digest: digest,
-    decision: z.enum(["aligned", "steer", "new_run", "achieved", "not_achieved", "inconclusive"]),
+    decision: z.enum(["achieved", "needs_work", "needs_evidence", "review_pending"]),
     summary: text,
-    guidance: text.optional(),
     next_step: text.optional(),
-    inspected_artifacts: z.array(goalDefinitionSourceSchema).max(32),
     usage: goalUsageSchema,
     reviewed_at: counter,
   })
@@ -183,16 +181,7 @@ export const goalStewardChainSchema = z
     last_consumed_work_sequence: counter,
     runtime_fingerprint: z.string().max(64),
     prompt_cache_ttl: z.enum(["5m", "1h"]),
-    status: z.enum([
-      "idle",
-      "observing",
-      "aligned",
-      "intervened",
-      "new_run_recommended",
-      "verifying",
-      "verified",
-      "attention",
-    ]),
+    status: z.enum(["idle", "verifying", "verified", "evidence_requested", "attention"]),
     consumption: z
       .object({
         input: counter,
@@ -224,7 +213,6 @@ export const goalRunSchema = z
     candidate: goalCandidateSchema.optional(),
     steward_reviews: z.array(goalStewardReviewSchema).max(8).default([]),
     steward_review_count: counter.default(0),
-    steward_intervention_count: counter.default(0),
   })
   .strict();
 

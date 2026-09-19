@@ -19,7 +19,10 @@ import {
   type GoalLimits,
   type GoalAgentRunInput,
   type GoalAgentRunResult,
+  type GoalStewardRunResult,
   GoalAgentRunFailure,
+  GoalStewardRunFailure,
+  goalNetTokens,
   type GoalDefinitionSource,
 } from "@clarvis/goal";
 import type { TraceEvent } from "@clarvis/capability";
@@ -48,6 +51,47 @@ const identifier = z
   .max(256)
   .regex(/^[a-zA-Z0-9._:-]+$/u);
 const requestSchema = goalControlSchema.extend({ session_id: identifier });
+const DEFINITION_SOURCE_CONTEXT_MAX_BYTES = 128 * 1024;
+
+interface GoalDefinitionSourceContext extends GoalDefinitionSource {
+  content: string;
+  truncated: boolean;
+}
+
+function appendUsage(
+  left: GoalAgentRunResult["usage"],
+  right: GoalAgentRunResult["usage"],
+): GoalAgentRunResult["usage"] {
+  if (left.kind !== "measured" || right.kind !== "measured") return { kind: "unknown" };
+  return {
+    kind: "measured",
+    input: left.input + right.input,
+    output: left.output + right.output,
+    ...(left.cached === undefined || right.cached === undefined
+      ? {}
+      : { cached: left.cached + right.cached }),
+  };
+}
+
+async function definitionSourceContext(
+  sources: readonly GoalDefinitionSource[],
+  readFile: (path: string) => Promise<{ path: string; content: string }>,
+): Promise<GoalDefinitionSourceContext[]> {
+  let remaining = DEFINITION_SOURCE_CONTEXT_MAX_BYTES;
+  const context: GoalDefinitionSourceContext[] = [];
+  for (const source of sources) {
+    const current = await readFile(source.path);
+    const bytes = Buffer.from(current.content, "utf8");
+    const included = bytes.subarray(0, Math.max(0, remaining));
+    context.push({
+      ...source,
+      content: included.toString("utf8"),
+      truncated: included.byteLength < bytes.byteLength,
+    });
+    remaining -= included.byteLength;
+  }
+  return context;
+}
 
 /** One authenticated connection's user controls over the host's private conversation store. */
 export function createGoalService(options: {
@@ -68,7 +112,18 @@ export function createGoalService(options: {
   readTrace(executionId: string): readonly TraceEvent[] | undefined;
   readWorkspaceFile(path: string): Promise<{ path: string; content: string }>;
   priceFor?: (model: string) => ModelCost | undefined;
+  /** Effective cumulative formulation allowance shared by the main agent and definition reviews. */
+  formulationTokenLimit: number;
   formulateRun(input: GoalAgentRunInput): Promise<GoalAgentRunResult>;
+  reviewDefinition(input: {
+    session_id: string;
+    request: { mode: "auto" | "guided"; seed?: string };
+    proposal: Extract<GoalAgentRunResult["result"], { status: "ready" }>;
+    sources: readonly GoalDefinitionSourceContext[];
+    trajectory: GoalAgentRunInput["trajectory"];
+    signal: AbortSignal;
+    token_limit: number;
+  }): Promise<GoalStewardRunResult>;
   workspaceReadAvailable: boolean;
 }): { service: GoalService; close(): Promise<void> } {
   const logger = options.logger ?? NOOP_LOGGER;
@@ -93,10 +148,7 @@ export function createGoalService(options: {
         ? "searching"
         : undefined;
     if (phase === undefined) return undefined;
-    return {
-      phase,
-      iteration: event.iteration_ref,
-    };
+    return { phase, iteration: event.iteration_ref };
   };
   const assert = (authority: HostedConversationAuthority): void => {
     options.assertWritable();
@@ -310,7 +362,16 @@ export function createGoalService(options: {
           question: "What outcome should Clarvis pursue?",
         });
 
-      formulationExecutionId = generateExecutionId();
+      let analyzed: GoalAgentRunResult | undefined;
+      let accumulatedUsage: GoalAgentRunResult["usage"] | undefined;
+      const accumulatedAccounting: NonNullable<GoalAgentRunResult["accounting"]> = [];
+      let revisionGuidance: string | undefined;
+      let previousDefinition: GoalAgentRunResult["result"] | undefined;
+      const formulationTokenLimit = options.formulationTokenLimit;
+      const remainingFormulationTokens = (): number | undefined => {
+        const spent = accumulatedUsage === undefined ? 0 : goalNetTokens(accumulatedUsage);
+        return spent === undefined ? undefined : formulationTokenLimit - spent;
+      };
       let latestActivity = "";
       let lastWorkspaceActivity: "reading" | "searching" | undefined;
       const publishActivity = (activity: GoalFormulationActivity): void => {
@@ -320,30 +381,113 @@ export function createGoalService(options: {
         options.publishFormulationActivity(request.session_id, activity);
       };
       publishActivity({ phase: "thinking" });
-      let analyzed: GoalAgentRunResult;
       try {
-        analyzed = await options.formulateRun({
-          mode: request.mode,
-          ...(request.mode === "guided" ? { seed: request.seed } : {}),
-          trajectory,
-          execution_id: formulationExecutionId,
-          agent_instance_id: randomUUID(),
-          session_id: request.session_id,
-          signal: authority.signal,
-          on_event: (event) => {
-            const activity = activityFor(event);
-            if (activity === undefined) return;
-            if (activity.phase === "reading" || activity.phase === "searching")
-              lastWorkspaceActivity = activity.phase;
-            publishActivity({
-              ...activity,
-              ...(lastWorkspaceActivity === undefined
-                ? {}
-                : { last_workspace_activity: lastWorkspaceActivity }),
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt > 0)
+            publishActivity({ phase: "thinking", last_workspace_activity: lastWorkspaceActivity });
+          const mainTokenLimit = remainingFormulationTokens();
+          if (mainTokenLimit === undefined || mainTokenLimit <= 0)
+            throw new Error("Goal formulation token allowance exhausted");
+          formulationExecutionId = generateExecutionId();
+          analyzed = await options.formulateRun({
+            mode: request.mode,
+            ...(request.mode === "guided" ? { seed: request.seed } : {}),
+            trajectory,
+            execution_id: formulationExecutionId,
+            agent_instance_id: randomUUID(),
+            ...(captured.agent_profile === undefined ? {} : { agent_name: captured.agent_profile }),
+            ...(revisionGuidance === undefined
+              ? {}
+              : { revision_guidance: revisionGuidance, previous_definition: previousDefinition }),
+            session_id: request.session_id,
+            signal: authority.signal,
+            budget: { max_net_tokens: mainTokenLimit },
+            on_event: (event) => {
+              const activity = activityFor(event);
+              if (activity === undefined) return;
+              if (activity.phase === "reading" || activity.phase === "searching")
+                lastWorkspaceActivity = activity.phase;
+              publishActivity({
+                ...activity,
+                ...(lastWorkspaceActivity === undefined
+                  ? {}
+                  : { last_workspace_activity: lastWorkspaceActivity }),
+              });
+            },
+          });
+          accumulatedUsage =
+            accumulatedUsage === undefined
+              ? analyzed.usage
+              : appendUsage(accumulatedUsage, analyzed.usage);
+          accumulatedAccounting.push(...(analyzed.accounting ?? []));
+          if (analyzed.result.status !== "ready") break;
+          const reviewTokenLimit = remainingFormulationTokens();
+          if (reviewTokenLimit === undefined || reviewTokenLimit <= 0)
+            throw new Error("Goal formulation token allowance exhausted");
+          let proposedSources: GoalDefinitionSource[];
+          try {
+            proposedSources = await verifyTraceNormativeSources({
+              trace: options.readTrace(formulationExecutionId) ?? [],
+              paths: analyzed.result.normative_source_paths,
+              readFile: (path) => options.readWorkspaceFile(path),
             });
-          },
-        });
+          } catch {
+            return commitReceipt(
+              "insufficient_context",
+              { message: "A normative source could not be revalidated; invoke /goal again" },
+              accumulatedUsage,
+              accumulatedAccounting,
+            );
+          }
+          publishActivity({
+            phase: "thinking",
+            ...(lastWorkspaceActivity === undefined
+              ? {}
+              : { last_workspace_activity: lastWorkspaceActivity }),
+          });
+          const reviewed = await options.reviewDefinition({
+            session_id: request.session_id,
+            request:
+              request.mode === "guided" ? { mode: "guided", seed: request.seed } : { mode: "auto" },
+            proposal: analyzed.result,
+            sources: await definitionSourceContext(proposedSources, (path) =>
+              options.readWorkspaceFile(path),
+            ),
+            trajectory,
+            signal: authority.signal,
+            token_limit: reviewTokenLimit,
+          });
+          if (reviewed.result.decision !== "definition")
+            throw new Error("Goal Steward returned another review mode");
+          accumulatedUsage = appendUsage(accumulatedUsage, reviewed.usage);
+          accumulatedAccounting.push(...(reviewed.accounting ?? []));
+          analyzed = {
+            ...analyzed,
+            usage: accumulatedUsage,
+            accounting: accumulatedAccounting,
+          };
+          if (reviewed.result.verdict === "accept_definition") {
+            const remaining = remainingFormulationTokens();
+            if (remaining === undefined) throw new Error("Goal formulation usage is unknown");
+            if (remaining < 0) throw new Error("Goal formulation token allowance exhausted");
+            break;
+          }
+          revisionGuidance = reviewed.result.guidance;
+          previousDefinition = analyzed.result;
+          if (attempt === 2) throw new Error("Goal definition revision limit reached");
+        }
       } catch (error) {
+        const failedRun =
+          error instanceof GoalAgentRunFailure || error instanceof GoalStewardRunFailure
+            ? error
+            : undefined;
+        const failureUsage =
+          failedRun === undefined
+            ? accumulatedUsage
+            : accumulatedUsage === undefined
+              ? failedRun.usage
+              : appendUsage(accumulatedUsage, failedRun.usage);
+        const failureAccounting = [...accumulatedAccounting, ...(failedRun?.accounting ?? [])];
         logger.warn(
           {
             event: "goal.formulation.failed",
@@ -355,10 +499,19 @@ export function createGoalService(options: {
         return commitReceipt(
           "failed",
           { message: "Goal formulation failed; try again" },
-          error instanceof GoalAgentRunFailure ? error.usage : undefined,
-          error instanceof GoalAgentRunFailure ? error.accounting : undefined,
+          failureUsage,
+          failureAccounting,
         );
       }
+      if (analyzed === undefined) throw new Error("Goal formulation produced no result");
+      analyzed = {
+        ...analyzed,
+        usage: accumulatedUsage ?? analyzed.usage,
+        accounting: accumulatedAccounting,
+      };
+      if (formulationExecutionId === undefined)
+        throw new Error("Goal formulation execution identity is unavailable");
+      const acceptedFormulationExecutionId = formulationExecutionId;
       if (analyzed.result.status === "insufficient_context")
         return commitReceipt(
           "insufficient_context",
@@ -371,7 +524,7 @@ export function createGoalService(options: {
       let sources: GoalDefinitionSource[];
       try {
         sources = await verifyTraceNormativeSources({
-          trace: options.readTrace(formulationExecutionId) ?? [],
+          trace: options.readTrace(acceptedFormulationExecutionId) ?? [],
           paths: ready.normative_source_paths,
           readFile: (path) => options.readWorkspaceFile(path),
         });
@@ -395,7 +548,7 @@ export function createGoalService(options: {
             operation_id: request.operation_id,
             expected_revision: goalStateFromSession(session)?.revision ?? 0,
             fingerprint,
-            formulation_execution_id: formulationExecutionId,
+            formulation_execution_id: acceptedFormulationExecutionId,
             mode: request.mode,
             outcome: "stale_context",
             message: "Conversation changed during formulation; invoke /goal again",
@@ -416,7 +569,7 @@ export function createGoalService(options: {
             ? {
                 kind: "guided" as const,
                 seed: request.seed,
-                formulation_execution_id: formulationExecutionId,
+                formulation_execution_id: acceptedFormulationExecutionId,
                 source_session_revision: captured.revision ?? 0,
                 source_execution_ids: trajectory.source_execution_ids,
                 trajectory_digest: trajectory.digest,
@@ -425,7 +578,7 @@ export function createGoalService(options: {
               }
             : {
                 kind: "auto" as const,
-                formulation_execution_id: formulationExecutionId,
+                formulation_execution_id: acceptedFormulationExecutionId,
                 source_session_revision: captured.revision ?? 0,
                 source_execution_ids: trajectory.source_execution_ids,
                 trajectory_digest: trajectory.digest,

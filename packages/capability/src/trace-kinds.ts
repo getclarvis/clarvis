@@ -136,6 +136,8 @@ export interface ToolCallDetail {
   result: string;
   /** SHA-256 of the complete result before retention caps are applied. */
   result_digest?: string;
+  /** Host-owned bounded receipt captured before the display result is capped. */
+  tool_evidence?: ToolEvidenceDetail;
   error: string | null;
   diff?: string;
   /** Final command-review outcome, present only when the host guard exposes its mode. */
@@ -145,6 +147,28 @@ export interface ToolCallDetail {
    * signal aborted while the run remained live. Implies a non-null `error`.
    */
   interruption?: { source: "operator" };
+}
+
+/**
+ * Bounded, non-authoritative facts captured at the tool boundary.
+ *
+ * The ordinary `result` remains a display projection. Consumers that need to
+ * classify a command or show a read receipt must use this envelope instead of
+ * parsing a possibly truncated result string.
+ */
+export interface ToolEvidenceDetail {
+  kind: "command" | "content";
+  status: "succeeded" | "failed" | "incomplete";
+  total_chars: number;
+  excerpt: string;
+  truncated: boolean;
+  command?: {
+    exit_code?: number;
+    timed_out?: boolean;
+    signal?: string;
+    stdout_excerpt: string;
+    stderr_excerpt: string;
+  };
 }
 
 /** Persisted final command-review fact attached to its terminal tool call. */
@@ -293,6 +317,8 @@ export interface DelegationFinishedDetail {
   task_id?: string;
   status: string;
   result: string;
+  /** SHA-256 of the complete result before retention caps are applied. */
+  result_digest?: string;
 }
 
 /**

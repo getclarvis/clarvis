@@ -364,7 +364,10 @@ Mirrors §4.3's shape without a registry resolve step (the toolset's `dispatch` 
 other tools publish it before dispatch. Denied review and failed spawn expose no control.
 `toolset.dispatch` runs with an `onOutput`
 callback relayed as `tool_output_delta` trace **signals**, and the terminal `tool_call`
-record carries any returned `diff` and final command-review `guard` metadata. The convergence-guard signature always uses
+record carries any returned `diff`, final command-review `guard` metadata and a bounded
+`tool_evidence` receipt captured before the display result is capped. Shell-family receipts classify
+exit code, timeout and signal and retain bounded stdout/stderr; other tools retain a bounded content
+excerpt. The convergence-guard signature always uses
 `safeStringify(call.arguments)` here — there is no malformed-preview branch for the signal, because
 malformed arguments already returned above. `packages/loop/tests/unit/malformed-tool-arguments.test.ts`
 is the primary test for both dispatchers' malformed-argument path: refusal instead of dispatching on

@@ -1,4 +1,4 @@
-import { opendir, lstat, rm } from "node:fs/promises";
+import { opendir, lstat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 
 import type {
@@ -12,6 +12,7 @@ import type {
 } from "@clarvis/protocol";
 import { globalPaths, isSpillFile, sweepGlobalStateArtifacts } from "@clarvis/paths";
 import { kernelError } from "../core/errors.ts";
+import { removeOwnedTree, UnsafeOwnedTreeError } from "./owned-tree.ts";
 
 const MAX_ENTRIES = 100_000;
 const MAX_DEPTH = 24;
@@ -72,6 +73,8 @@ async function credentialPosture(path: string): Promise<CredentialFilePosture> {
 interface StorageInspectionLimits {
   maxEntries?: number;
   maxDepth?: number;
+  currentUid?: number;
+  removeTree?: typeof removeOwnedTree;
 }
 
 function isMissing(error: unknown): boolean {
@@ -216,7 +219,22 @@ export function createStorageService(
         );
       }
       if (selected.has("temporary")) await sweepGlobalStateArtifacts(globalDir);
-      if (selected.has("cache")) await rm(paths.cache, { recursive: true, force: true });
+      if (selected.has("cache")) {
+        try {
+          await (limits.removeTree ?? removeOwnedTree)(paths.cache, {
+            currentUid: limits.currentUid,
+          });
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException | undefined)?.code;
+          if (error instanceof UnsafeOwnedTreeError || code === "EACCES" || code === "EPERM") {
+            throw kernelError(
+              "conflict",
+              "storage cleanup refused because cache permissions are unsafe for the current user",
+            );
+          }
+          throw kernelError("internal", "storage cleanup failed while removing rebuildable cache");
+        }
+      }
       const after = await inspect();
       return {
         dry_run: false,

@@ -17,6 +17,7 @@ import {
   openArtifactFile,
   writeArtifactBytes,
 } from "./runtime-artifact-archive.ts";
+import { removeOwnedTree, UnsafeOwnedTreeError } from "../storage/owned-tree.ts";
 import {
   artifactFailure,
   assertArtifactSelection,
@@ -324,17 +325,12 @@ async function cachedResult(
  * Cleanup deliberately ignores cancellation so no partial stage is abandoned on abort.
  */
 export async function removeArtifactStage(stage: string): Promise<void> {
-  const restore = async (path: string): Promise<void> => {
-    const info = await lstat(path);
-    if (!info.isDirectory() || info.isSymbolicLink()) return;
-    if (process.platform !== "win32" && info.uid !== process.getuid?.())
-      artifactFailure("stage directory owner changed");
-    await chmod(path, 0o700);
-    const entries = await opendir(path);
-    for await (const entry of entries) await restore(join(path, entry.name));
-  };
-  await restore(stage);
-  await rm(stage, { recursive: true, force: true });
+  try {
+    await removeOwnedTree(stage);
+  } catch (error) {
+    if (error instanceof UnsafeOwnedTreeError) artifactFailure("stage directory owner changed");
+    throw error;
+  }
 }
 
 /** Acquire immutable bytes into a digest-keyed, host-owned local cache.

@@ -755,8 +755,8 @@ Before a shell command runs, the guard rules on it. Its mode lives in
 
 - **`off`** — no ruling at all.
 - **`on`** (default) — an `ask` verdict becomes a confirmation prompt for you.
-- **`auto`** — an LLM reviews each `ask`; uncertainty denies by default, while an explicit
-  `effect_review.on_unsure: "ask"` selects human fallback.
+- **`auto`** — an LLM reviews each `ask`; deny and unsure refuse to the calling agent. Auto never
+  asks a person, including `on_unsure: "ask"`.
 
 On first setup, Clarvis writes a visible, editable starter `allowed_commands`
 list into global settings. It covers conventional inspection, build, test, lint
@@ -797,8 +797,8 @@ it comes back on the next boot.
 model and always supplies its safety policy first. Optional workspace/global `guard-judge.md`
 files provide guidance below that policy, never authority. When both exist, Code preserves the
 operator-global guidance first and appends workspace guidance within the 32 KiB request bound.
-Code sends guidance only when present. An unsure, failed or malformed review is denied by default;
-only operator-global `on_unsure: "ask"` sends that outcome to a person. Docker/Podman runs do not run
+Code sends guidance only when present. An unsure, failed or malformed review is denied to the
+calling agent; Auto never sends that outcome to a person. Docker/Podman runs do not run
 Auto Guard; an explicit Review `on` or `auto` request is incompatible with those placements.
 
 It is plain prose — no frontmatter, no schema. Write the standing rules you would
@@ -816,8 +816,9 @@ Never approve a command that pipes a network fetch into a shell.
 The effect reviewer uses host-attributed operator evidence and mechanically attested effects.
 The local and CI-retry paths validate effect-model allows against current grants. An ordinary shell
 ask without a registered effect instead uses the exact-call Judge in Auto: its payload separates
-segment source, executable, parameters and environment bindings, while deny-list, path, credential
-and dangerous-command rules retain precedence. The prompt shows segment causes, effect identity and
+segment source, executable, parameters and environment bindings, while deny-list and path rules retain precedence. Auto never asks a person: the Judge decides
+forced removal, privilege elevation, credential-file access and unsandbox, and refusals name the
+exact match. Approval asks a human only when the call is neither allow-listed nor dangerous. The prompt shows segment causes, effect identity and
 operational failure kind. See the [effect-review contract](../../specs/execution/effect-review.md).
 
 `~/.clarvis` is `$CLARVIS_HOME` when that is set.

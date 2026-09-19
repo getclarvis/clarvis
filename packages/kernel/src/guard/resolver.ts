@@ -1,8 +1,4 @@
-import {
-  JUDGE_DEFAULTS,
-  judgeRequestConfig,
-  type EffectReviewConfig,
-} from "@clarvis/judge/settings";
+import { judgeRequestConfig, type EffectReviewConfig } from "@clarvis/judge/settings";
 import {
   NOOP_LOGGER,
   OPERATOR_AUTHORITY_PORT,
@@ -129,20 +125,17 @@ export function resolveGuardMode(
  * @param guard - the guard settings block supplying the default.
  * @param judgeConfigured - whether the effective reviewer model/provider resolves.
  * @param onUnsure - whether unavailable automatic review explicitly falls back to a human.
- * @returns `true` for mode `on`, and for mode `auto` without a reviewer when fallback is `ask`.
- * @remarks Auto denies by default when its model/provider cannot resolve. Explicit `ask` runs
- *   park repeatedly mid-conversation, which is what makes the extended
- *   prompt-cache TTL worth its higher write price; the loop cannot derive this
- *   itself because guard mode is resolved from host settings it never sees.
+ * @returns `true` only for mode `on`. Auto never parks on a human.
+ * @remarks Approval asks a person only for the grey zone that is neither an
+ *   allow-list match nor a dangerous match. Auto denies unsure and never elicits.
  */
 export function guardParksOnHuman(
   param: GuardMode | undefined,
   guard: GuardConfig | undefined,
-  judgeConfigured: boolean,
-  onUnsure: "ask" | "deny" | undefined = "deny",
+  _judgeConfigured?: boolean,
+  _onUnsure?: "ask" | "deny",
 ): boolean {
-  const mode = resolveGuardMode(param, guard);
-  return mode === "on" || (mode === "auto" && !judgeConfigured && onUnsure === "ask");
+  return resolveGuardMode(param, guard) === "on";
 }
 
 /**
@@ -253,10 +246,9 @@ function noHumanChannel(audit: Logger, runId: string): { allowed: false; answere
  *   {@link GuardResolverDeps}.
  * @returns a resolver that, per run, reads settings, computes the mode, and
  *   returns `undefined` in mode `off` (no guard). Otherwise it returns a guard
- *   plus an elicit: `on` uses the human prompt; `auto` uses the LLM judge when a
- *   model resolves, with optional request overrides, else falls back
- *   to the human prompt. The chosen elicit is wrapped so a command already
- *   covered by the session allowlist passes without prompting.
+ *   plus an elicit: `on` uses the human prompt for grey-zone asks; `auto` uses
+ *   the LLM judge and never elicits a person. The chosen elicit is wrapped so a
+ *   command already covered by the session allowlist passes without prompting.
  * @remarks The default {@link GuardSessionAllowlist} is shared across this resolver's runs.
  *   A persistent host supplies `sessionAllowlistFor` to bind consent to live interactive control.
  *   Each human question captures its current list, so late responses cannot authorize a new scope.
@@ -394,7 +386,24 @@ function createGuardRuntimeResolver(
               );
             return finish(first);
           }
-          if (batch.reviewability === "human_only") return finish({ ...first, ...detail });
+          if (batch.reviewability === "human_only") {
+            const callLocal =
+              call.shell !== undefined &&
+              batch.facts.length === 1 &&
+              batch.facts[0]?.id === "external.unknown";
+            if (!callLocal && guardMode === "auto") {
+              const id = effect?.id ?? "external.unknown";
+              return finish({
+                ...first,
+                ...detail,
+                verdict: "deny",
+                reason:
+                  `Host policy does not admit this effect for automatic review (${id}). ` +
+                  "The Judge was not consulted. Change the command; this is not a UI approval request.",
+              });
+            }
+            return finish({ ...first, ...detail });
+          }
           const attested = buildGuard(
             settings.guard,
             guardMode,
@@ -449,31 +458,25 @@ function createGuardRuntimeResolver(
               reviewContext: () => ctx.services?.get(PLANS_REVIEW_CONTEXT_PORT),
               signal: ctx.signal,
             },
-            { ...settings.effect_review, ...judgeConfig },
-            humanElicit,
+            { ...settings.effect_review, ...judgeConfig, on_unsure: "deny" },
           )
         : undefined;
-    const onUnsure =
-      judgeConfig?.on_unsure ?? settings.effect_review?.on_unsure ?? JUDGE_DEFAULTS.onUnsure;
-    const chosenHuman =
-      guardMode === "on" ||
-      (guardMode === "auto" && judgeElicit === undefined && onUnsure === "ask")
-        ? humanElicit
-        : undefined;
+    const chosenHuman = guardMode === "on" ? humanElicit : undefined;
     audit.info(
       {
         event: "guard.resolved",
         mode: guardMode,
         source: ctx.request.guard_mode !== undefined ? "request" : "settings",
         judge_configured: judgeConfig !== undefined,
-        human_channel: humanElicit !== undefined,
+        human_channel: chosenHuman !== undefined,
       },
       "the run's command guard is resolved; every guarded call is ruled on under this mode",
     );
     /**
-     * Review on uses the human channel. Auto prefers mechanically covered effect-review receipts;
-     * a sole generic shell effect may receive a call-local verdict over the complete command. Both
-     * paths recheck the authority revision and route unsure through the configured fallback.
+     * Review on uses the human channel only for asks that are neither allow-listed nor
+     * dangerous. Auto never elicits a person: the Judge allows or the call is refused to
+     * the principal, including unsure and unsandbox. Identified host-inadmissible effects
+     * deny in Auto without a Judge call.
      */
     const elicit: GuardElicit | undefined =
       effectEnabled ||
@@ -481,12 +484,7 @@ function createGuardRuntimeResolver(
       judgeElicit !== undefined ||
       humanElicit !== undefined
         ? async (req) => {
-            if (
-              req.escalate === "human" ||
-              req.matched === "credential_file" ||
-              req.matched === "dangerous" ||
-              req.dangerous === true
-            ) {
+            if (guardMode !== "auto" && req.escalate === "human") {
               if (humanElicit === undefined) return noHumanChannel(audit, ctx.executionId);
               return humanElicit(req);
             }
@@ -503,7 +501,6 @@ function createGuardRuntimeResolver(
                 batch.facts[0]?.id === "external.unknown";
               if (callLocalReview) {
                 if (judgeElicit === undefined) {
-                  if (onUnsure === "ask" && humanElicit !== undefined) return humanElicit(req);
                   recordAnswer(audit, "judge", false, false);
                   return { allowed: false, answerer: "judge" };
                 }
@@ -551,33 +548,8 @@ function createGuardRuntimeResolver(
                 recordAnswer(audit, "judge", result.decision === "allow", false);
                 return { allowed: result.decision === "allow", answerer: "judge", review };
               }
-              if (onUnsure !== "ask" || result?.failure_kind !== undefined)
-                return { allowed: false, answerer: "judge", review };
-              const answer =
-                humanElicit === undefined
-                  ? noHumanChannel(audit, ctx.executionId)
-                  : await humanElicit({
-                      ...req,
-                      authority: {
-                        revision: result?.revision ?? 0,
-                        relation: result?.relation ?? "none",
-                        within_scope: false,
-                      },
-                      reviewer: {
-                        status:
-                          result?.failure_kind === "invalid_response"
-                            ? "invalid"
-                            : result?.failure_kind === undefined
-                              ? "unsure"
-                              : "failed",
-                        failure_kind: result?.failure_kind,
-                        elapsed_ms: result?.elapsed_ms,
-                        attempts: result?.attempts,
-                      },
-                    });
-              return typeof answer === "object"
-                ? { ...answer, review }
-                : { allowed: answer, answerer: "human", review };
+              recordAnswer(audit, "judge", false, false);
+              return { allowed: false, answerer: "judge", review };
             }
             const afterCoverage = (covered: boolean): ReturnType<GuardElicit> => {
               if (covered) {
@@ -590,7 +562,7 @@ function createGuardRuntimeResolver(
                     recordAnswer(audit, "judge", answer.allowed, false);
                   return answer;
                 });
-              if (guardMode === "auto" && onUnsure !== "ask") {
+              if (guardMode === "auto") {
                 recordAnswer(audit, "judge", false, false);
                 return { allowed: false, answerer: "judge" };
               }

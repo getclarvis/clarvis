@@ -405,7 +405,7 @@ sandbox uses type: native, enabled, availability (required|optional), filesystem
 (workspace-write|workspace-read-only), network (host|none) and optional toolchains/pass_env.
 Isolation and Review are independent: Ctrl+X I persists global Host/Sandbox/Docker/Podman placement;
 Ctrl+X G chooses current Off/Approval/Auto. Changing one never changes the other. Without a usable
-review model, the picker saves Approval instead of Auto; authored Auto follows on_unsure. Container
+review model, the picker saves Approval instead of Auto; authored Auto never asks a person. Container
 stores but does not apply Review.
 
 guard uses {type: shell, mode: on|off|auto}; omitted mode defaults to on. off skips command review.
@@ -419,8 +419,9 @@ ${configurationExample("review")}
 
 effect_review sets model, timeout_ms, max_retries and on_unsure. Only global settings choose model or
 rollout; workspace may tighten limits or require deny. Omitted limits inherit ordinary model-call
-defaults; Judge has no private timer/retry loop. Auto needs no custom guidance. Semantic unsure denies
-unless global on_unsure: ask enables human fallback. Invalid protocol gets three corrections
+defaults; Judge has no private timer/retry loop. Auto needs no custom guidance. Semantic unsure,
+failed and malformed Auto review refuse to the calling agent; on_unsure: ask does not open a human
+prompt. Invalid protocol gets three corrections
 per stage; unavailable, timed-out or still-invalid Judge always denies without asking. Unknown effects
 and incomplete or mismatched targets never receive automatic allow.
 Container configuration is projected once per generation. Host administration can save changes while

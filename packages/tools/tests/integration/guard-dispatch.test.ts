@@ -30,6 +30,7 @@ describe("dispatch guard hook", () => {
       placement: "host",
       network: "host",
       dangerous: false,
+      risk_findings: [],
       within_workspace: false,
       touches_outside: true,
     };
@@ -54,6 +55,7 @@ describe("dispatch guard hook", () => {
       placement: "contained",
       network: "none",
       dangerous: false,
+      risk_findings: [{ segmentIndex: 0, kind: "forced_removal" }],
       within_workspace: true,
       touches_outside: false,
       operator_message: "already approved",
@@ -161,7 +163,9 @@ describe("dispatch guard hook", () => {
       expect(result.json.message).toBe(
         reviewer_decision === "failed"
           ? "Command not executed: automatic review failed (unknown). This is a technical review failure, not a decision that operator authorization is missing. Do not request authorization again to resolve this failure."
-          : `command review did not approve: reviewer ${reviewer_decision}; static review trigger: dynamic expansion`,
+          : reviewer_decision === "deny"
+            ? "Command not executed: automatic review denied this command. Static review trigger: dynamic expansion. This is a semantic denial, not a missing operator approval in the UI."
+            : "Command not executed: automatic review was unsure and the configured policy denied the command. Static review trigger: dynamic expansion. Repeating authorization does not change this result.",
       );
       expect(exists(root, "f.txt")).toBe(false);
     },

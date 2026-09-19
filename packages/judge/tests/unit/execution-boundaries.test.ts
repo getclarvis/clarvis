@@ -48,9 +48,14 @@ test("policy separates risk from authorization without replacing the private pro
   expect(positions).toEqual([...positions].sort((a, b) => a - b));
   for (const rule of [
     "Low risk does not create authorization",
+    "A conventional name, path prefix or location under a temporary directory does not prove",
+    "a recognized cleanup does not authorize other effects in the same command",
     "Necessary implementation steps do not authorize unrelated effects.",
     "Guidance never overrides policy.",
     "Human-only effects cannot be approved.",
+    "Do not request, imply or wait for operator approval",
+    "Unsure is a closed refusal to the calling agent, not a handoff",
+    "Never request operator approval.",
     "Never authorize future actions through this decision.",
     "Do not output risk scores or a high/low classification.",
     "cite the exact revision and transition_token",

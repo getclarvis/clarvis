@@ -832,8 +832,8 @@ Call-local command review obtains `JUDGE_PORT` lazily and executes the private J
 work run's effective base provider. The child owns its `judge` identity, resolved TTL, fixed policy,
 canonical snapshot breakpoint and separate volatile case. Effect compilation and decision use the same private execution boundary. Both retain canonical session affinity and recheck
 live Plans context before accepting a result. Plan progress fields are excluded from its projection.
-The command adapter coalesces concurrent human fallbacks without caching human answers. Missing
-Judge composition and architecture faults propagate; retirement never asks a human.
+The command adapter coalesces concurrent identical Auto reviews without caching refusals as
+consent. Missing Judge composition and architecture faults propagate; retirement never asks a human.
 Each real call-local or effect-review provider invocation also records one kernel-owned
 `guard_reviewer_model_call` event through `RUN_TRACE_PORT`. It totals winning and retried usage,
 retains unknown usage/cache flags, and reports a cache-read ratio only when cache counters are
@@ -857,9 +857,13 @@ resolved GitHub remote, bounded JSON inspection of its current open pull request
 refspecs, force variants and unsupported observation flags remain closed. Other ordinary
 Host/Sandbox asks and allow-list misses can use the call-local argv reviewer in Auto, including
 options, wrappers, dynamic arguments and environment prefixes.
-Review `on`, credential-file asks, forced `rm` and `sudo` remain human decisions. A nonempty deny
-list rejects undecidable commands before any reviewer. No unmatched contained silent-allow rule is
-installed.
+Review `on` (Approval) asks a human only for the grey zone that is neither allow-listed nor
+dangerous; a dangerous match, including forced removal of a credential file, denies to the
+principal with the exact segment. Auto never elicits a
+person: the Judge decides forced removal, privilege elevation, credential-file asks and unsandbox,
+and both deny and unsure refuse to the principal. Identified host-inadmissible effects deny in Auto
+without a Judge call. A nonempty deny list rejects undecidable commands before any reviewer. No
+unmatched contained silent-allow rule is installed.
 
 POSIX Git presentation globals normalize for matching, while validated `cd <in-workspace>` and
 Git `-C` directory operands receive comparison-only handling for straight `&&` chains.
@@ -882,19 +886,18 @@ reviving the prior envelope, refusals or consumed effects. Synthetic continuatio
 changes cannot reactivate settled evidence.
 
 A resolved judge reports which channel ultimately answered. An `allow` or `deny` is attributed to
-the judge; `unsure`, a provider failure, a malformed response, or an unavailable reviewer denies by
-default. Explicit `on_unsure: "ask"` may route those inconclusive outcomes to an interactive human
-channel. Failed and malformed attempts are not memoized, so fixing a transient provider problem
-restores automatic review without restarting the session.
+the judge; `unsure`, a provider failure, a malformed response, or an unavailable reviewer denies to
+the calling agent. Auto never routes those outcomes to a person, including `on_unsure: "ask"`.
+Failed and malformed attempts are not memoized, so fixing a transient provider problem restores
+automatic review without restarting the session.
 
 A `shell` or `monitor_start` call with `sandbox_permissions: "require_escalated"` under Isolation
 Sandbox is a `host_command` ask, after deny-list matches and undecidability with a nonempty deny
 list are rejected. The resolver passes `allowHostJudge: true` to `createShellGuard` only in Auto;
 otherwise this ask carries `escalate: "human"`. Auto's judge may allow or deny the host effect;
-unsure, failed and malformed responses follow `on_unsure` (`deny` by default; explicit `ask` may
-use a human). An absent usable model follows the same fallback. Host-command asks bypass volatile session
-coverage and never offer `allow_session`, even on human fallback; clean exact-call judge memoization
-remains separate. Isolation Host already runs unsandboxed, so the field does not add
+unsure, failed and malformed responses refuse to the calling agent. An absent usable model refuses.
+Host-command asks bypass volatile session coverage and never offer `allow_session`; clean exact-call
+judge memoization remains separate. Isolation Host already runs unsandboxed, so the field does not add
 a second prompt. Mode `off` supplies no guard and proceeds without command review, honoring the
 operator's explicit choice. Isolated container guests reject the field instead of forwarding it to
 the host.

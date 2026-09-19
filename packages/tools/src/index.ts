@@ -92,6 +92,7 @@ export {
   withinWorkspace,
   touchesOutside,
   isDangerousCommand,
+  commandRiskFindings,
 } from "./guard/index.ts";
 export type {
   Verdict,
@@ -107,6 +108,9 @@ export type {
   ShellAnalysisIssueKind,
   ShellAnalysisImpact,
   GuardReviewability,
+  GuardRiskKind,
+  GuardRiskOperandUncertainty,
+  GuardRiskFinding,
   PathFact,
   GuardContext,
   Guard,

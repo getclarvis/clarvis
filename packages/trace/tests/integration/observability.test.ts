@@ -115,35 +115,25 @@ describe("json-trace-store — a refused insert", () => {
   });
 
   it("names the deleted owner when a write is rolled back mid-insert", async () => {
-    const store = open();
     const startedAt = 50;
     const finalPath = recordPath(OWNER, "straddler", startedAt);
     const statePath = join(dir, ".locks", `${ownerSegment(OWNER)}.delete-generation`);
-    let flipped = false;
-    const flip = async (): Promise<void> => {
-      for (let attempt = 0; attempt < 20_000 && !flipped; attempt += 1) {
-        if (existsSync(finalPath)) {
-          writeFileSync(
-            statePath,
-            JSON.stringify({ version: 1, state: "deleting", generation: "g2" }),
-          );
-          flipped = true;
-          return;
-        }
-        await new Promise((resolve) => setImmediate(resolve));
-      }
-    };
+    mkdirSync(join(dir, ".locks"), { recursive: true, mode: 0o700 });
+    const store = open({
+      afterInsertWrite() {
+        writeFileSync(
+          statePath,
+          JSON.stringify({ version: 1, state: "deleting", generation: "g2" }),
+        );
+      },
+    });
 
-    const inserting = store.insert(
-      makeExecutionRecord({ id: "straddler", owner_key_name: OWNER, started_at: startedAt }),
-    );
-    const [outcome] = await Promise.all([
-      inserting.then(() => "ok" as const).catch(() => "no"),
-      flip(),
-    ]);
+    await expect(
+      store.insert(
+        makeExecutionRecord({ id: "straddler", owner_key_name: OWNER, started_at: startedAt }),
+      ),
+    ).rejects.toThrow();
 
-    expect(flipped).toBe(true);
-    expect(outcome).toBe("no");
     const aborted = oneEvent(records, "trace.insert_aborted_deleted_owner");
     expect(aborted.level).toBe("warn");
     expect(aborted.fields).toMatchObject({

@@ -169,6 +169,20 @@ interface GuardGate {
   authoringReviewed?: boolean;
 }
 
+function reviewDenialMessage(review: GuardReview | undefined, reason: string): string {
+  if (review?.reviewer_decision === "failed")
+    return `Command not executed: automatic review failed (${review.failure_kind ?? "unknown"}). This is a technical review failure, not a decision that operator authorization is missing. Do not request authorization again to resolve this failure.`;
+  if (review?.answerer === "judge") {
+    if (review.reviewer_decision === "deny")
+      return `Command not executed: automatic review denied this command. Static review trigger: ${reason}. This is a semantic denial, not a missing operator approval in the UI.`;
+    if (review.reviewer_decision === "unsure")
+      return `Command not executed: automatic review was unsure and the configured policy denied the command. Static review trigger: ${reason}. Repeating authorization does not change this result.`;
+    return `Command not executed: automatic review did not approve this command. Static review trigger: ${reason}. This is not a request to obtain UI approval.`;
+  }
+  if (review?.reviewer_decision === undefined) return `command review did not approve: ${reason}`;
+  return `command review did not approve: reviewer ${review.reviewer_decision}; static review trigger: ${reason}`;
+}
+
 async function applyGuard(
   name: string,
   args: Record<string, unknown>,
@@ -207,6 +221,7 @@ async function applyGuard(
       ...(decision.placement !== undefined ? { placement: decision.placement } : {}),
       ...(decision.network !== undefined ? { network: decision.network } : {}),
       ...(decision.dangerous !== undefined ? { dangerous: decision.dangerous } : {}),
+      ...(decision.risk_findings !== undefined ? { risk_findings: decision.risk_findings } : {}),
       ...(decision.within_workspace !== undefined
         ? { within_workspace: decision.within_workspace }
         : {}),
@@ -231,16 +246,7 @@ async function applyGuard(
             ) === true,
         }
       : {
-          denied: errorResult(
-            new ToolError(
-              "denied",
-              finalReview?.reviewer_decision === "failed"
-                ? `Command not executed: automatic review failed (${finalReview.failure_kind ?? "unknown"}). This is a technical review failure, not a decision that operator authorization is missing. Do not request authorization again to resolve this failure.`
-                : finalReview?.reviewer_decision === undefined
-                  ? `command review did not approve: ${reason}`
-                  : `command review did not approve: reviewer ${finalReview.reviewer_decision}; static review trigger: ${reason}`,
-            ),
-          ),
+          denied: errorResult(new ToolError("denied", reviewDenialMessage(finalReview, reason))),
           review: finalReview,
         };
   } catch (err) {

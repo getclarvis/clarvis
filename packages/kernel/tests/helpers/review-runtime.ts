@@ -11,7 +11,6 @@ import {
 } from "@clarvis/capability";
 import type { GuardJudgeConfig } from "@clarvis/judge/settings";
 import { createTestRunInfrastructure } from "@clarvis/loop/testing";
-import type { GuardElicit } from "@clarvis/loop";
 import { createJudgeCoordinator } from "@clarvis/judge/testing";
 import { createCommandReview } from "../../src/guard/command-review.ts";
 import { createHostEffectReview } from "../../src/guard/effect-review.ts";
@@ -75,10 +74,9 @@ function runtime(deps: ProviderDeps & { signal?: AbortSignal }, config: GuardJud
 export function commandReviewFixture(
   deps: ProviderDeps & Omit<Parameters<typeof createCommandReview>[0], "judge">,
   config: GuardJudgeConfig,
-  human: GuardElicit | undefined,
 ) {
   const judge = runtime(deps, config);
-  return createCommandReview({ ...deps, judge: () => judge }, config, human);
+  return createCommandReview({ ...deps, judge: () => judge }, config);
 }
 
 /** Exercise host attestation, authority installation and private Judge execution together. */

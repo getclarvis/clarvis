@@ -5,7 +5,8 @@
  * the elicitation ports ({@link Guard}, {@link Elicit}, {@link ElicitRequest}),
  * the {@link analyzeShell} command analyzer and the {@link ShellDialect} front
  * ends it parses with, the {@link buildGuardContext} assembler, and the
- * {@link withinWorkspace}/{@link touchesOutside} predicates.
+ * {@link withinWorkspace}/{@link touchesOutside} predicates and syntactic
+ * risk findings.
  */
 export type {
   Verdict,
@@ -21,6 +22,9 @@ export type {
   ShellAnalysisIssueKind,
   ShellAnalysisImpact,
   GuardReviewability,
+  GuardRiskKind,
+  GuardRiskOperandUncertainty,
+  GuardRiskFinding,
   PathFact,
   GuardContext,
   Guard,
@@ -34,6 +38,11 @@ export { POSIX_DEFAULT_ALLOWED_COMMANDS } from "./dialects/posix.ts";
 export { WINDOWS_DEFAULT_ALLOWED_COMMANDS } from "./dialects/powershell.ts";
 export { buildGuardContext } from "./context.ts";
 export { resolveCandidate } from "./paths.ts";
-export { withinWorkspace, touchesOutside, isDangerousCommand } from "./helpers.ts";
+export {
+  withinWorkspace,
+  touchesOutside,
+  isDangerousCommand,
+  commandRiskFindings,
+} from "./helpers.ts";
 export type { GuardEffectCallFact, EffectReviewDetail } from "./effect-review.ts";
 export { isCanonicalAuthoringPath } from "./authoring-path.ts";

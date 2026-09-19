@@ -23,7 +23,8 @@ and `effectReviewFixture`, exercised by the Kernel Judge and effect-review integ
 `effect_review` accepts optional model, positive timeout up to the timer representation ceiling,
 validated against `CLARVIS_TIMEOUT_CEILING_MS` by the ordinary profile validator, nonnegative retries
 bounded by `CLARVIS_RETRY_CEILING`,
-`on_unsure` (`ask` or `deny`) and rollout (`shadow`, `local`, `ci_retry`). Its merge is last-wins,
+`on_unsure` (`ask` or `deny`; Auto ignores `ask` and refuses to the calling agent) and rollout
+(`shadow`, `local`, `ci_retry`). Its merge is last-wins,
 with global/workspace restrictions applied by Kernel. Calls inherit `CLARVIS_DEFAULT_CALL_TIMEOUT_MS`
 (180000 ms by default) and `CLARVIS_DEFAULT_MAX_RETRIES` (three retries by default), with denial on
 uncertainty. There is no private transport retry default or ceiling. The strict per-run `guard_judge` parameter accepts the same model,
@@ -207,7 +208,12 @@ Policy treats captured instructions as operator intent, with direct operator mes
 precedence. Routine necessary inspection, local validation and bounded prerequisites do not need
 the operator to repeat each command. An allowlist miss or static dynamic-expansion limitation is
 a review trigger, not evidence of prohibition. The reviewer evaluates every segment and side effect;
-`unsure` is reserved for material missing facts. This does not widen publication authorization,
+`unsure` is reserved for material missing facts and is a closed refusal to the calling agent, not a
+handoff to a person. The reviewer must not request, imply or wait for operator approval or a TUI
+prompt. A conventional name, path prefix or location under
+a temporary directory does not prove that a target is discardable; a recognized cleanup does not
+authorize other effects in the same call; a constructor in the command text is not filesystem
+attestation. This does not widen publication authorization,
 descriptor ceilings, human-only boundaries or the configured fallback.
 Policy separates evidence precedence, operator authorization, intrinsic risk, decision and protocol.
 Low risk cannot create authority; explicit authorization does not make dangerous effects low risk.

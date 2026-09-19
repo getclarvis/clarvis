@@ -158,11 +158,10 @@ the run Isolation. `require_escalated` plus a short `justification` asks to run 
 the host after review when Isolation is Sandbox. Isolation Host already runs unsandboxed, so the
 field is a no-op. The complete Container Kernel runs all ordinary commands without Command Review and rejects
 `require_escalated`: the guest has no channel to the machine host and no placement fallback. In
-native Host/Sandbox, mode `on` sends that unsandbox ask to a human. Mode `auto` sends it to the judge: `allow` executes,
-`deny` refuses, and unsure, failed or malformed review follows `on_unsure` (`deny` by default;
-explicit `ask` may use a human). An unavailable judge follows the same fallback. Host-command review bypasses
-session coverage and never offers `allow_session`, including human fallback; clean judge decisions
-retain their exact-call memo. Mode `off` proceeds without a reviewer. Git credential output,
+native Host/Sandbox, mode `on` sends that unsandbox ask to a human. Mode `auto` sends it to the
+judge: `allow` executes, and `deny`, unsure, failed or malformed review refuse to the calling agent.
+An unavailable judge refuses. Host-command review bypasses session coverage and never offers
+`allow_session`; clean judge decisions retain their exact-call memo. Mode `off` proceeds without a reviewer. Git credential output,
 `gh auth token`, Git `--exec` helpers, and
 `scheme::` transport URLs are denied on every command tool. Direct Git/GitHub token output remains
 unavailable. The ordinary sandbox remains the default; the model should request escalation only after
@@ -296,9 +295,10 @@ When the host's guard includes its effective mode, `DispatchResult.guard` also
 records the final allowed/denied outcome and whether policy, the judge, the user,
 the session allowlist, or an unavailable review channel answered it.
 Optional `reviewer_decision` separates the semantic result (`allow`, `deny`, `unsure`, `failed`)
-from the final outcome. Semantic denials label the static review trigger separately from that result;
-technical failures instead report the failure category and explain that repeated consent is not a fix;
-they do not invent a semantic explanation from the shell analyzer's reason.
+from the final outcome. Semantic denials label the static review trigger separately from that result.
+When automatic review denied or was unsure, the message says so and does not ask for a UI approval
+that was not presented. Technical failures instead report the failure category and explain that
+repeated consent is not a fix; they do not invent a semantic explanation from the shell analyzer's reason.
 
 The exported POSIX and PowerShell starter allowlists cover routine inspection,
 build, test, lint and type-check commands across JavaScript/TypeScript, Python,
@@ -311,17 +311,19 @@ policy, not containment: builds and tests may run repository-controlled code, so
 hosts that require isolation must also enable the native sandbox.
 
 `GuardPlacement` (`"host" | "contained"`) and `GuardCallFacts` describe optional trusted per-call
-review facts: `matched`, `placement`, `network`, `dangerous`, `within_workspace`, and
+review facts: `matched`, `placement`, `network`, `dangerous`, `risk_findings`, `within_workspace`, and
 `touches_outside`. `GuardDecision` and `ElicitRequest` share those fields; dispatch copies only
 decision-supplied facts, never same-named model arguments. `ElicitRequest.operator_message` is an
 optional host-reviewer message separate from the policy reason. These facts do not themselves
 authorize execution.
 
-`isDangerousCommand(shell: ShellFacts)` inspects the normalized command identity and argv options
-for `sudo` or forceful `rm` (`-f`, `--force`, or a short option cluster containing `f` before `--`).
-It is deliberately not a general danger classifier. POSIX normalization removes consecutive Git
+`commandRiskFindings(shell: ShellFacts)` reports per-segment `forced_removal` and
+`privilege_elevation` findings, including extractable operands and whether a removal is recursive.
+`isDangerousCommand` is true when any finding exists. Neither helper is an approval policy or a
+human-channel decision. Force options count only before `--` or `--%`; PowerShell `rm`/`del` are
+canonicalized to `Remove-Item`. POSIX normalization removes consecutive Git
 `--no-pager`/`--no-color` global prefixes after environment assignments and wrappers; it preserves
-subcommand flags and `-C` for host policy analysis. PowerShell normalization is unchanged.
+subcommand flags and `-C` for host policy analysis. PowerShell still canonicalizes only `argv[0]`.
 `resolveCandidate(raw, workspaceRoot, opts?)` exposes the same symlink-aware path facts used by
 the context builder, with optional shell tilde expansion and explicitly admitted roots. These
 helpers and types are exported from both the root and `@clarvis/tools/guard`.

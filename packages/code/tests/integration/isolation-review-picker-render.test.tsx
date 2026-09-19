@@ -382,7 +382,7 @@ test("the review picker preserves saved approval while Container makes it inappl
   const frame = rendered.captureCharFrame();
   expect(frame).toContain("Select Guard");
   expect(frame).toContain("Not applicable in Container");
-  expect(frame).toContain("uncertainty is denied by default");
+  expect(frame).toContain("never asks a person");
 
   press("down");
   press("return");

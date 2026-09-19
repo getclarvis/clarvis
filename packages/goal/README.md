@@ -102,9 +102,11 @@ replacing a goal; changes to configuration never rewrite existing limits, usage 
 The non-contributable `goals.agent.formulation` block may override the formulation token allowance.
 When omitted, that allowance equals the ordinary run token budget resolved from merged settings or
 the host fallback; it belongs only to formulation and definition review and is capped by the same
-host ceiling. Time, iteration, call-timeout and retry defaults remain 120,000 ms, eight iterations,
-60,000 ms per call and one transport retry. The selected main-agent profile owns the formulation
-model.
+host ceiling. The allowance is cumulative across formulation attempts and definition reviews, so
+each invocation receives only its measured remainder; unknown usage fails closed before another
+ready/review attempt. Time, iteration, call-timeout and retry defaults remain 120,000 ms, eight
+iterations, 60,000 ms per call and one transport retry. The selected main-agent profile owns the
+formulation model.
 
 `createGoalCapability` consumes a host-bound `GoalRuntimePort` and requires activation for that
 session, execution and persisted entry-agent instance. It contributes `get_goal` and `update_goal`

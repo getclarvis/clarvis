@@ -200,6 +200,7 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
   /** Build the host-owned isolated Goal formulation runtime for one authenticated owner. */
   goalAgentRuntime(owner?: string): {
     workspaceReadAvailable: boolean;
+    formulationTokenLimit: number;
     run(input: GoalAgentRunInput): Promise<GoalAgentRunResult>;
   };
   /** Host-only isolated runtime; token allowance comes from the admitted work request. */
@@ -1099,7 +1100,12 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
           ? runBudget.total_token_limit
           : (opts.assemblerOptions?.fallbackTokenLimit ??
             runDeps.env.CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT);
+      const formulationTokenLimit = Math.min(
+        formulation?.max_net_tokens ?? ordinaryRunTokenLimit,
+        runDeps.env.CLARVIS_TOKEN_CEILING,
+      );
       return {
+        formulationTokenLimit,
         workspaceReadAvailable:
           runDeps.env.CLARVIS_AGENT_TOOLS_ENABLED === true &&
           (runDeps.capabilities ?? []).filter((capability) => capability.name === "tools")
@@ -1126,7 +1132,8 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
             ...input,
             budget: {
               max_net_tokens: Math.min(
-                formulation?.max_net_tokens ?? ordinaryRunTokenLimit,
+                input.budget?.max_net_tokens ?? formulationTokenLimit,
+                formulationTokenLimit,
                 runDeps.env.CLARVIS_TOKEN_CEILING,
               ),
               timeout_ms: Math.min(

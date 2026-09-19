@@ -89,6 +89,67 @@ describe("Goal formulation through the real file host", () => {
     });
   });
 
+  it("shares one formulation allowance across the agent and definition reviews", async () => {
+    const fixture = await createGoalFileHostFixture({ formulationTokenLimit: 1000 });
+    cleanups.push(fixture.close);
+    let reviews = 0;
+    fixture.setResponder(async (request) => {
+      if (request.tools?.some((tool) => tool.function.name === "submit_result"))
+        return {
+          name: "submit_result",
+          arguments: {
+            status: "ready",
+            objective: "Create one reviewed goal",
+            criteria: [],
+            constraints: [],
+            exclusions: [],
+            assumptions: [],
+            normative_source_paths: [],
+          },
+        };
+      return {
+        name: "update_goal",
+        arguments: { update: { action: "blocked", reason: "Fixture work run is observable" } },
+      };
+    });
+    fixture.setStewardResponder(async () => {
+      reviews++;
+      return {
+        name: "submit_result",
+        arguments:
+          reviews === 1
+            ? {
+                decision: "definition",
+                verdict: "revise_definition",
+                summary: "Request one revision",
+                guidance: "Keep the requested objective",
+              }
+            : {
+                decision: "definition",
+                verdict: "accept_definition",
+                summary: "Definition is faithful",
+              },
+      };
+    });
+
+    const receipt = await fixture.client.goals.formulate({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "shared-formulation-budget",
+      mode: "guided",
+      seed: "Create one reviewed goal",
+    });
+
+    expect(receipt.formulation.outcome).toBe("failed");
+    expect(reviews).toBe(1);
+    expect(
+      fixture.requests.filter((request) =>
+        request.tools?.some((tool) => tool.function.name === "submit_result"),
+      ),
+    ).toHaveLength(1);
+    expect(fixture.stewardRequests).toHaveLength(1);
+  });
+
   it("creates one inspectable guided Goal from a separate read-only run and starts normal work", async () => {
     const fixture = await createGoalFileHostFixture({ budgetTokenLimit: 123_456 });
     cleanups.push(fixture.close);

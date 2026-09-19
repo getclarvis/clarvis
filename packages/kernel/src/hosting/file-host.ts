@@ -463,6 +463,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
             readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
             readWorkspaceFile: (path) => kernel.files.readFile(path),
             priceFor: (model) => prices.get(model),
+            formulationTokenLimit: goalAgentAvailability.formulationTokenLimit,
             formulateRun: (input) => kernel.goalAgentRuntime(owner).run(input),
             reviewDefinition: async (input) => {
               const runtime = kernel.goalStewardRuntime(input.token_limit, "5m", owner);

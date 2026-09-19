@@ -22,7 +22,7 @@ import {
   type GoalStewardRunResult,
   GoalAgentRunFailure,
   GoalStewardRunFailure,
-  GOAL_FORMULATION_DEFAULTS,
+  goalNetTokens,
   type GoalDefinitionSource,
 } from "@clarvis/goal";
 import type { TraceEvent } from "@clarvis/capability";
@@ -112,6 +112,8 @@ export function createGoalService(options: {
   readTrace(executionId: string): readonly TraceEvent[] | undefined;
   readWorkspaceFile(path: string): Promise<{ path: string; content: string }>;
   priceFor?: (model: string) => ModelCost | undefined;
+  /** Effective cumulative formulation allowance shared by the main agent and definition reviews. */
+  formulationTokenLimit: number;
   formulateRun(input: GoalAgentRunInput): Promise<GoalAgentRunResult>;
   reviewDefinition(input: {
     session_id: string;
@@ -365,6 +367,11 @@ export function createGoalService(options: {
       const accumulatedAccounting: NonNullable<GoalAgentRunResult["accounting"]> = [];
       let revisionGuidance: string | undefined;
       let previousDefinition: GoalAgentRunResult["result"] | undefined;
+      const formulationTokenLimit = options.formulationTokenLimit;
+      const remainingFormulationTokens = (): number | undefined => {
+        const spent = accumulatedUsage === undefined ? 0 : goalNetTokens(accumulatedUsage);
+        return spent === undefined ? undefined : formulationTokenLimit - spent;
+      };
       let latestActivity = "";
       let lastWorkspaceActivity: "reading" | "searching" | undefined;
       const publishActivity = (activity: GoalFormulationActivity): void => {
@@ -378,6 +385,9 @@ export function createGoalService(options: {
         for (let attempt = 0; attempt < 3; attempt++) {
           if (attempt > 0)
             publishActivity({ phase: "thinking", last_workspace_activity: lastWorkspaceActivity });
+          const mainTokenLimit = remainingFormulationTokens();
+          if (mainTokenLimit === undefined || mainTokenLimit <= 0)
+            throw new Error("Goal formulation token allowance exhausted");
           formulationExecutionId = generateExecutionId();
           analyzed = await options.formulateRun({
             mode: request.mode,
@@ -391,6 +401,7 @@ export function createGoalService(options: {
               : { revision_guidance: revisionGuidance, previous_definition: previousDefinition }),
             session_id: request.session_id,
             signal: authority.signal,
+            budget: { max_net_tokens: mainTokenLimit },
             on_event: (event) => {
               const activity = activityFor(event);
               if (activity === undefined) return;
@@ -410,6 +421,9 @@ export function createGoalService(options: {
               : appendUsage(accumulatedUsage, analyzed.usage);
           accumulatedAccounting.push(...(analyzed.accounting ?? []));
           if (analyzed.result.status !== "ready") break;
+          const reviewTokenLimit = remainingFormulationTokens();
+          if (reviewTokenLimit === undefined || reviewTokenLimit <= 0)
+            throw new Error("Goal formulation token allowance exhausted");
           let proposedSources: GoalDefinitionSource[];
           try {
             proposedSources = await verifyTraceNormativeSources({
@@ -441,7 +455,7 @@ export function createGoalService(options: {
             ),
             trajectory,
             signal: authority.signal,
-            token_limit: GOAL_FORMULATION_DEFAULTS.max_net_tokens,
+            token_limit: reviewTokenLimit,
           });
           if (reviewed.result.decision !== "definition")
             throw new Error("Goal Steward returned another review mode");
@@ -452,7 +466,12 @@ export function createGoalService(options: {
             usage: accumulatedUsage,
             accounting: accumulatedAccounting,
           };
-          if (reviewed.result.verdict === "accept_definition") break;
+          if (reviewed.result.verdict === "accept_definition") {
+            const remaining = remainingFormulationTokens();
+            if (remaining === undefined) throw new Error("Goal formulation usage is unknown");
+            if (remaining < 0) throw new Error("Goal formulation token allowance exhausted");
+            break;
+          }
           revisionGuidance = reviewed.result.guidance;
           previousDefinition = analyzed.result;
           if (attempt === 2) throw new Error("Goal definition revision limit reached");

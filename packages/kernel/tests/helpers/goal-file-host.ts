@@ -32,6 +32,7 @@ export async function createGoalFileHostFixture(
     memory?: boolean;
     preserveRecentTokens?: number;
     budgetTokenLimit?: number;
+    formulationTokenLimit?: number;
   } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "clarvis-goal-file-host-"));
@@ -223,6 +224,11 @@ export async function createGoalFileHostFixture(
         ...(options.budgetTokenLimit === undefined
           ? {}
           : { budget: { on_exceed: "stop", total_token_limit: options.budgetTokenLimit } }),
+        ...(options.formulationTokenLimit === undefined
+          ? {}
+          : {
+              goals: { agent: { formulation: { max_net_tokens: options.formulationTokenLimit } } },
+            }),
       }),
     );
     await mkdir(global.agentsDir);

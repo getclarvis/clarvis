@@ -76,13 +76,16 @@ source cases in
 plus batch/empty/line-ending/literal-marker acceptance and changed/missing/partial/forged/unlisted
 rejection in [goal-trace-reads.test.ts](../../packages/kernel/tests/unit/goal-trace-reads.test.ts).
 
-The default request takes the ordinary run's resolved token allowance as its own independent budget
-and stops at 120,000 ms or eight iterations. Each provider call is
+The default request takes the ordinary run's resolved token allowance as its formulation allowance
+and stops at 120,000 ms or eight iterations. That allowance is one cumulative ledger shared by the
+main formulation attempts and their definition reviews: before every invocation the host passes only
+the measured remainder, so a revision cannot multiply the configured cap. Each provider call is
 limited to 60,000 ms with at most one transport retry. Existing environment ceilings may only lower
 these values. The non-contributable `goals.agent.formulation` settings block may override the
-formulation token allowance while lowering the other limits. The selected main-agent profile owns
-the model. The run has host-minted execution and agent-instance
-IDs, its own persisted trace, no conversation turn, and provider `callPurpose: "goal"`.
+formulation token allowance while lowering the other limits. If measured usage becomes unknown, the
+host fails closed before another ready/review attempt. The selected main-agent profile owns the
+model. The run has host-minted execution and agent-instance IDs, its own persisted trace, no
+conversation turn, and provider `callPurpose: "goal"`.
 
 When work starts, the command reviewers receive the complete persisted definition as host-attested
 Goal review context alongside, but separate from, the exact operator evidence that created it. The
@@ -346,8 +349,8 @@ Evidence IDs must belong to the current catalog. The private frame also carries 
 successful exit code and sanitized stdout/stderr excerpts. Completed-delegation receipts contain the
 bounded returned result. Persisted Goal history names stage order, automatic continuation, disposition,
 outcome and accepted checkpoint data without exposing runtime identities. Receipts join the catalog by
-short frame-local opaque ID mapped by the host to the durable receipt, while workflow history is
-host-owned lifecycle state; together they establish executed
+stable opaque IDs derived from the durable receipt identity and mapped by the host, while workflow
+history is host-owned lifecycle state; together they establish executed
 checks and required workflow boundaries without giving the Steward command, delegation or Goal tools.
 They do not prove that later source edits were tested, and receipt relevance remains a semantic judgment.
 Missing, unsuccessful or superseded command observations have no successful receipt. Catalog labels

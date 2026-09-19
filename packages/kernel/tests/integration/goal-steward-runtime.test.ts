@@ -50,7 +50,7 @@ describe("Goal Steward through the native host and SDK", () => {
         const frame = JSON.parse(
           String(request.messages.findLast((message) => message.role === "user")!.content),
         );
-        expect(frame.evidence[0].id).toBe("evidence-1");
+        expect(frame.evidence[0].id).toMatch(/^evidence-[a-f0-9]{32}$/u);
         return {
           name: "submit_result",
           arguments: {
@@ -188,27 +188,29 @@ describe("Goal Steward through the native host and SDK", () => {
   it("returns unfinished work to the same run and preserves the private serialized prefix", async () => {
     const f = await createGoalFileHostFixture({ plansMode: "off" });
     try {
-      f.setResponder(async () =>
-        f.requests.length === 1
-          ? {
-              name: "update_goal",
-              arguments: {
-                update: {
-                  action: "candidate",
-                  summary: "Answer prepared",
-                  assessments: [
-                    {
-                      criterion_id: "objective",
-                      kind: "qualitative",
-                      justification: "Answer available",
-                      evidence_ids: [],
-                    },
-                  ],
-                },
+      const command = `"${process.execPath}" -e "process.stdout.write('CHECK_EXECUTED_OK')"`;
+      f.setResponder(async () => {
+        if (f.requests.length === 1) return { name: "shell", arguments: { command, cwd: "." } };
+        if (f.requests.length === 2)
+          return {
+            name: "update_goal",
+            arguments: {
+              update: {
+                action: "candidate",
+                summary: "Answer prepared",
+                assessments: [
+                  {
+                    criterion_id: "objective",
+                    kind: "qualitative",
+                    justification: "Answer available",
+                    evidence_ids: [],
+                  },
+                ],
               },
-            }
-          : { text: f.requests.length === 2 ? "Draft answer" : "Complete answer" },
-      );
+            },
+          };
+        return { text: f.requests.length === 3 ? "Draft answer" : "Complete answer" };
+      });
       f.setStewardResponder(async () => {
         const achieved = f.stewardRequests.length > 1;
         return {
@@ -250,7 +252,7 @@ describe("Goal Steward through the native host and SDK", () => {
       );
       await f.until(() => f.host.stats().runs === 0);
       expect(f.errors).toEqual([]);
-      expect(f.requests).toHaveLength(3);
+      expect(f.requests).toHaveLength(4);
       expect(f.stewardRequests).toHaveLength(2);
       const [first, second] = f.stewardRequests;
       expect(second!.messages.slice(0, first!.messages.length)).toEqual(first!.messages);
@@ -258,6 +260,14 @@ describe("Goal Steward through the native host and SDK", () => {
       expect(first!.prompt_cache_key).toBe("conversation_goal-steward");
       expect(second!.prompt_cache_key).toBe(first!.prompt_cache_key);
       expect(first!.tools!.map((tool) => tool.function.name)).toEqual(["submit_result"]);
+      const firstFrame = JSON.parse(
+        String(first!.messages.findLast((message) => message.role === "user")!.content),
+      ) as { evidence: Array<{ id: string }> };
+      const secondFrame = JSON.parse(
+        String(second!.messages.findLast((message) => message.role === "user")!.content),
+      ) as { evidence: Array<{ id: string }> };
+      expect(firstFrame.evidence[0]!.id).toMatch(/^evidence-[a-f0-9]{32}$/u);
+      expect(secondFrame.evidence[0]!.id).toBe(firstFrame.evidence[0]!.id);
       const goal = (await f.client.goals.get("conversation")).state.current!;
       expect(goal.runs).toHaveLength(1);
       expect(goal.runs[0]!.steward_reviews!.map((review) => review.decision)).toEqual([
@@ -436,7 +446,7 @@ it("gives the tool-free Steward actual command receipts instead of only catalog 
       });
       expect(JSON.parse(receipt.arguments_excerpt).command).toBe(command);
       expect(frame.evidence.some((entry: { id: string }) => entry.id === receipt.id)).toBe(true);
-      expect(receipt.id).toMatch(/^evidence-\d+$/u);
+      expect(receipt.id).toMatch(/^evidence-[a-f0-9]{32}$/u);
       expect(receipt.id).not.toMatch(/^tool-/u);
       expect(request.tools!.map((tool) => tool.function.name)).not.toContain("shell");
       return {

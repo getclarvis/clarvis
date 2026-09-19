@@ -202,7 +202,9 @@ no Goal or work run. Concurrent identical operations share one process promise; 
 recovery never repeats a committed creation. The semantic run has its own trace and execution ID,
 does not create a conversation turn and uses provider call purpose `goal`. Completion revalidates
 normative digests; drift keeps the Goal incomplete and appears as attention until explicit edit or
-reformulation.
+reformulation. The effective formulation allowance is cumulative across main-agent attempts and
+definition reviews; each invocation receives only the measured remainder and unknown usage fails
+closed before another ready/review attempt.
 
 Production: `projectGoalTrajectory` in [trajectory.ts](src/goals/trajectory.ts),
 `createKernelGoalAgentRuntime` in [agent-runtime.ts](src/goals/agent-runtime.ts),

@@ -468,7 +468,10 @@ remains unknown and cannot support completion. Production: `createStewardExecuti
 The separate semantic Goal formulation run is also hard stop-mode, but its allowance is not the
 persisted Goal pursuit budget. Its omitted token allowance equals the ordinary run budget resolved
 from merged settings or the host fallback, while `goals.agent.formulation.max_net_tokens` may
-override it; the host token ceiling still caps either value. `buildGoalAgentRequest` keeps fixed
+override it; the host token ceiling still caps either value. The effective allowance is shared by
+the main formulation attempts and definition reviews, with each invocation receiving only the
+measured remainder; unknown usage fails closed before another ready/review attempt.
+`buildGoalAgentRequest` keeps fixed
 defaults of 120,000 ms, eight entry iterations, 60,000 ms per provider call and one transport retry;
 the ordinary environment/provider ceilings can lower those values again during validation. It has no
 soft escalation, elicitation or spawn budget. Measured semantic usage is committed once to Session

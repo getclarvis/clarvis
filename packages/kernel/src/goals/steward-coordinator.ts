@@ -169,9 +169,16 @@ export function createGoalStewardCoordinator(
     const plan = provider.snapshot();
     const trajectory = input.snapshot();
     const snapshot = await options.runtimePort.read();
-    const evidenceAliases = new Map(
-      snapshot.evidence.map((reference, index) => [reference.id, `evidence-${index + 1}`]),
-    );
+    const evidenceAliases = new Map<string, string>();
+    const evidenceAliasOwners = new Map<string, string>();
+    for (const reference of snapshot.evidence) {
+      const alias = `evidence-${stewardDigest(reference.id).slice(0, 32)}`;
+      const owner = evidenceAliasOwners.get(alias);
+      if (owner !== undefined && owner !== reference.id)
+        throw new Error("Goal evidence alias collision");
+      evidenceAliases.set(reference.id, alias);
+      evidenceAliasOwners.set(alias, reference.id);
+    }
     const evidenceAlias = (id: string) => evidenceAliases.get(id) ?? id;
     const definition = stewardDefinition(before.goal);
     const fingerprint = stewardDigest({

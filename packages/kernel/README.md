@@ -623,7 +623,16 @@ engine-to-protocol mapping.
 The operator-scoped `StorageService` walks Clarvis-owned roots with entry/depth bounds, reports
 logical category totals without exposing persisted content, paths or credential sizes, and applies
 only explicitly requested cleanup of stale temporary artifacts and rebuildable cache. A truncated
-inventory remains previewable but cannot authorize an apply. Workspace
+inventory remains previewable but cannot authorize an apply. Cache cleanup also removes the
+intentionally immutable runtime-artifact tree: `removeOwnedTree` restores removal rights only on
+real directories owned by the current POSIX user, never traverses links, and refuses unsafe
+ownership without elevation or disclosing the local path. Published artifacts keep their read-only
+modes outside that bounded cleanup. Production: `createStorageService` in
+[`src/storage/storage-service.ts`](src/storage/storage-service.ts), `removeOwnedTree` in
+[`src/storage/owned-tree.ts`](src/storage/owned-tree.ts), and `cacheRuntimeArtifact` in
+[`src/runtime/runtime-artifact.ts`](src/runtime/runtime-artifact.ts). Test:
+[`tests/integration/storage-service.test.ts`](tests/integration/storage-service.test.ts) and
+[`tests/unit/runtime-artifact.test.ts`](tests/unit/runtime-artifact.test.ts). Workspace
 bootstrap also sweeps inactive workspace spill/run scratch state and repairs recognized spill modes
 to `0600` on POSIX.
 

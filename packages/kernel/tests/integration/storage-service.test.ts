@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -67,6 +76,112 @@ describe("StorageService", () => {
       Buffer.byteLength("new"),
     );
     expect(applied.after?.categories.find((row) => row.category === "cache")?.bytes).toBe(0);
+  });
+
+  it("removes current-user-owned immutable runtime artifacts without weakening their published modes", async () => {
+    const paths = globalPaths(dir);
+    const payload = join(paths.cache, "runtime-artifacts", "digest", "payload");
+    const bin = join(payload, "bin");
+    const executable = join(bin, "clarvis-kernel");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(executable, "artifact");
+    if (process.platform !== "win32") {
+      chmodSync(executable, 0o555);
+      chmodSync(bin, 0o555);
+      chmodSync(payload, 0o555);
+    }
+    const service = createStorageService(dir);
+
+    const preview = await service.cleanup({ categories: ["cache"], dry_run: true });
+    expect(preview.reclaimable_bytes).toBe(Buffer.byteLength("artifact"));
+    expect(existsSync(executable)).toBe(true);
+
+    const applied = await service.cleanup({ categories: ["cache"], dry_run: false });
+    expect(applied.removed_bytes).toBe(Buffer.byteLength("artifact"));
+    expect(existsSync(paths.cache)).toBe(false);
+    expect(applied.after?.categories.find((row) => row.category === "cache")?.bytes).toBe(0);
+  });
+
+  it("does not follow links while removing rebuildable cache", async () => {
+    if (process.platform === "win32") return;
+    const paths = globalPaths(dir);
+    const external = join(dir, "external");
+    const retained = join(external, "retained");
+    mkdirSync(paths.cache, { recursive: true });
+    mkdirSync(external);
+    writeFileSync(retained, "keep");
+    symlinkSync(external, join(paths.cache, "linked"), "dir");
+
+    await createStorageService(dir).cleanup({ categories: ["cache"], dry_run: false });
+
+    expect(existsSync(paths.cache)).toBe(false);
+    expect(existsSync(retained)).toBe(true);
+
+    symlinkSync(external, paths.cache, "dir");
+    await expect(
+      createStorageService(dir).cleanup({ categories: ["cache"], dry_run: false }),
+    ).rejects.toMatchObject({
+      code: "conflict",
+      message: "storage cleanup refused because cache permissions are unsafe for the current user",
+    });
+    expect(existsSync(retained)).toBe(true);
+  });
+
+  it("refuses unsafe cache ownership with a path-free conflict", async () => {
+    if (process.platform === "win32") return;
+    const paths = globalPaths(dir);
+    mkdirSync(paths.cache, { recursive: true });
+    writeFileSync(join(paths.cache, "cached"), "value");
+    const actualUid = process.getuid?.();
+    expect(actualUid).toBeNumber();
+    const service = createStorageService(dir, { currentUid: actualUid! + 1 });
+
+    try {
+      await service.cleanup({ categories: ["cache"], dry_run: false });
+      throw new Error("expected unsafe ownership refusal");
+    } catch (error) {
+      expect(error).toMatchObject({ code: "conflict" });
+      expect(error).toHaveProperty(
+        "message",
+        "storage cleanup refused because cache permissions are unsafe for the current user",
+      );
+      expect((error as Error).message).not.toContain(dir);
+    }
+    expect(existsSync(paths.cache)).toBe(true);
+  });
+
+  it("sanitizes permission and other filesystem removal failures", async () => {
+    const paths = globalPaths(dir);
+    mkdirSync(paths.cache, { recursive: true });
+    writeFileSync(join(paths.cache, "cached"), "value");
+
+    for (const expected of [
+      {
+        errno: "EACCES",
+        code: "conflict",
+        message:
+          "storage cleanup refused because cache permissions are unsafe for the current user",
+      },
+      {
+        errno: "EIO",
+        code: "internal",
+        message: "storage cleanup failed while removing rebuildable cache",
+      },
+    ] as const) {
+      const service = createStorageService(dir, {
+        removeTree: async () => {
+          throw Object.assign(new Error(`cannot remove ${paths.cache}`), { code: expected.errno });
+        },
+      });
+      try {
+        await service.cleanup({ categories: ["cache"], dry_run: false });
+        throw new Error("expected filesystem removal failure");
+      } catch (error) {
+        expect(error).toMatchObject({ code: expected.code, message: expected.message });
+        expect((error as Error).message).not.toContain(dir);
+      }
+      expect(existsSync(paths.cache)).toBe(true);
+    }
   });
 
   it("rejects an empty or unknown cleanup category set", async () => {

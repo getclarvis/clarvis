@@ -305,8 +305,8 @@ test("a refresh that never settles stays one physical request and becomes visibl
     height: 24,
   });
   await captureUntil(t, "Running");
-  const frame = await captureUntil(t, "Refresh is still pending");
   await new Promise((resolve) => setTimeout(resolve, 20));
+  const frame = await captureUntil(t, "Refresh is still pending");
   expect(frame).toContain("backend may be unavailable");
   expect(calls).toBe(2);
   t.renderer.destroy();

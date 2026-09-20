@@ -654,12 +654,12 @@ answer `{ execution_id }`.
 2. `onElicitSettled` → `N.runElicitationSettled` with `{ execution_id, elicitation_id }`, so the
    client showing that question learns it was retired without answering it. A handle whose bridge
    pushes no settlement (an older or narrower one) simply registers nothing.
-2. An async loop over `handle.events` awaiting `notifications.notify(N.runEvent, …)` per event, whose
+3. An async loop over `handle.events` awaiting `notifications.notify(N.runEvent, …)` per event, whose
    `finally` marks `streamSettled`, releases the `live` entry if both halves settled, and sends
    `N.runStreamEnd`.
-3. `handle.done` → `N.runResult`. A rejected `done` is still sent as a result, synthesized as
+4. `handle.done` → `N.runResult`. A rejected `done` is still sent as a result, synthesized as
    `status: "failed"` with `code: "internal"` and a `sanitizeErrorMessage`'d message.
-4. `handle.closed` → drop the `live` entry unconditionally.
+5. `handle.closed` → drop the `live` entry unconditionally.
 
 `liveOrThrow` (`packages/kernel/src/transport/server.ts`, `liveOrThrow`) governs
 `runs.steer`, `runs.cancel`, `runs.respond` and `runs.present`: it treats a missing connection-local

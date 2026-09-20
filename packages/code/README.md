@@ -1238,11 +1238,14 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 - User elicitation during a run.
   A model-originated `ask_user` question arrives with a 30-second decision window (`window_ms`,
   declared by this frontend as `elicit_policy.ask_user_window_ms`): the block confirms its own
-  presentation once it is really laid out in the viewport, then shows one discreet line counting the
-  kernel's projection down — `The model decides in N s.`. At zero the line becomes `No response in
-  time; decision returned to the model.` and that question's form, choices and decision commands are
+  presentation once it is really laid out in the viewport, and shows one discreet line counting the
+  kernel's projection down — `The model decides in N s.` — only once that confirmation has been
+  answered, so a question the kernel did not project carries no countdown instead of a declared one.
+  At zero the line becomes `No response in
+time; decision returned to the model.` and that question's form, choices and decision commands are
   retired, because the kernel owns the outcome: it settles the question and reports the closure by
-  id, which removes the block without this frontend answering an already-settled id. Typing, focus,
+  id, which removes the block without this frontend answering an already-settled id. Its settled
+  transcript annotation reads `no answer: …`, never `answered:`. Typing, focus,
   remounting or reconnecting never extend the window, and no partial draft, default option or
   synthetic answer is ever submitted. Guard confirmations, plan and workflow reviews and relayed MCP
   questions declare no window and render no countdown. See

@@ -161,17 +161,17 @@ function modelRetryText(event: Extract<RunEvent, { type: "model_retry" }>): stri
 function elicitationOutcomeText(
   event: Extract<RunEvent, { type: "elicitation_resolved" }>,
 ): string {
-  const outcome =
-    event.no_response !== undefined
-      ? event.no_response === "window_elapsed"
-        ? "no response in time; decision returned to the model"
-        : "no response; the wait window elapsed"
-      : event.outcome === "accept" && event.answer?.trim()
-        ? event.answer.trim()
-        : event.outcome === "accept"
-          ? "accepted"
-          : event.outcome;
-  return `asked: ${event.question}\nanswered: ${outcome}`;
+  const unanswered = event.no_response !== undefined;
+  const outcome = unanswered
+    ? event.no_response === "window_elapsed"
+      ? "no response in time; decision returned to the model"
+      : "no response; the wait window elapsed"
+    : event.outcome === "accept" && event.answer?.trim()
+      ? event.answer.trim()
+      : event.outcome === "accept"
+        ? "accepted"
+        : event.outcome;
+  return `asked: ${event.question}\n${unanswered ? "no answer" : "answered"}: ${outcome}`;
 }
 
 /** Receives one callback per event span phase: opened, an interior point, or closed. */

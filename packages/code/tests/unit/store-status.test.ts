@@ -704,7 +704,7 @@ test("a question the kernel closed without an answer records why, never a human 
 
   expect(nodes.find((node) => node.kind === "annotation")).toMatchObject({
     status: "ok",
-    text: "asked: Which environment?\nanswered: no response in time; decision returned to the model",
+    text: "asked: Which environment?\nno answer: no response in time; decision returned to the model",
   });
 });
 
@@ -721,7 +721,7 @@ test("an operational wait bound and a human decision stay visually distinct", ()
     }),
   ]);
   expect(bound.find((node) => node.kind === "annotation")).toMatchObject({
-    text: "asked: Which environment?\nanswered: no response; the wait window elapsed",
+    text: "asked: Which environment?\nno answer: no response; the wait window elapsed",
   });
 
   const human = replay([

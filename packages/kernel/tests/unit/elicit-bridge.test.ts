@@ -2,7 +2,11 @@ import { expect, test } from "bun:test";
 import type { ElicitParams } from "@clarvis/capability";
 import type { ElicitationRequest } from "@clarvis/protocol";
 import type { GuardElicitParams } from "../../src/guard/guard-elicit.ts";
-import { createElicitBridge, type ElicitWindowRuntime } from "../../src/runs/elicit-bridge.ts";
+import {
+  createElicitBridge,
+  MAX_ELICIT_WINDOW_MS,
+  type ElicitWindowRuntime,
+} from "../../src/runs/elicit-bridge.ts";
 
 /** Controllable monotonic clock and scheduler, so no test waits on wall time. */
 function fakeWindowRuntime(): {
@@ -207,9 +211,17 @@ test("only the model's own ask_user receives a window; provenance and naming are
   bridge.close();
 });
 
-test("a policy without a positive whole window publishes none and schedules nothing", async () => {
+test("a policy without a representable positive window publishes none and schedules nothing", async () => {
   const clock = fakeWindowRuntime();
-  for (const ask_user_window_ms of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 2]) {
+  for (const ask_user_window_ms of [
+    0,
+    -1,
+    1.5,
+    Number.NaN,
+    MAX_ELICIT_WINDOW_MS + 1,
+    Number.MAX_SAFE_INTEGER,
+    Number.MAX_SAFE_INTEGER + 2,
+  ]) {
     const bridge = createElicitBridge(`exec_invalid_${String(ask_user_window_ms)}`, {
       policy: { ask_user_window_ms },
       runtime: clock.runtime,
@@ -225,6 +237,27 @@ test("a policy without a positive whole window publishes none and schedules noth
     bridge.close();
     expect(await result).toEqual({ action: "cancel" });
   }
+});
+
+test("the longest representable window is granted, so the ceiling is honored and not overshot", async () => {
+  const clock = fakeWindowRuntime();
+  const bridge = createElicitBridge("exec_ceiling", {
+    policy: { ask_user_window_ms: MAX_ELICIT_WINDOW_MS },
+    runtime: clock.runtime,
+  });
+  const result = bridge.elicit(modelAskUser(), {});
+  const requests: ElicitationRequest[] = [];
+  bridge.onElicit((request) => requests.push(request));
+
+  expect(requests[0]?.window_ms).toBe(MAX_ELICIT_WINDOW_MS);
+  expect(bridge.present({ id: requests[0]!.id, presenter: "tui-1" })).toEqual({
+    accepted: true,
+    remaining_ms: MAX_ELICIT_WINDOW_MS,
+  });
+  expect(clock.scheduled()).toBe(1);
+
+  clock.advance(MAX_ELICIT_WINDOW_MS);
+  expect(await result).toEqual({ action: "decline", windowElapsed: true });
 });
 
 test("an elicitation raised before onElicit registration is delivered when the handler attaches", async () => {

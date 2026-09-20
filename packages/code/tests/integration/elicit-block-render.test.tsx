@@ -562,8 +562,8 @@ test("a windowed question counts the kernel's projection down on screen", async 
   expect(out).toContain("staging-box");
 });
 
-test("before the kernel projects a window the block shows the declared one", async () => {
-  const out = await frame(() => (
+test("a question with no projection renders no countdown instead of a declared one", async () => {
+  const waiting = await frame(() => (
     <ElicitBlock
       interaction={stubInteraction}
       request={ASK_USER}
@@ -571,7 +571,15 @@ test("before the kernel projects a window the block shows the declared one", asy
       onResolve={() => {}}
     />
   ));
-  expect(out).toContain("The model decides in 30 s.");
+  expect(waiting).not.toContain("The model decides");
+  expect(waiting).not.toContain("No response in time");
+  expect(waiting).toContain("staging-box");
+
+  const unwired = await frame(() => (
+    <ElicitBlock interaction={stubInteraction} request={ASK_USER} onResolve={() => {}} />
+  ));
+  expect(unwired).not.toContain("The model decides");
+  expect(unwired).toContain("staging-box");
 });
 
 test("an elapsed window stops offering the controls and returns the decision", async () => {

@@ -114,6 +114,7 @@ see **command-guard-and-approval**. This document covers only how the guard's ye
 | `ElicitBridge` | `packages/kernel/src/runs/elicit-bridge.ts` | engine `elicit`, removable `onElicit`/`onSettled` observers, `respond`, `present` and `close` |
 | `createElicitBridge(executionId, options?)` | `packages/kernel/src/runs/elicit-bridge.ts` | one bridge per run, ids namespaced `<executionId>:elicit:<n>`; `options.policy` is the run's `elicit_policy`, `options.runtime` a clock/scheduler seam |
 | `ElicitWindowRuntime` | `packages/kernel/src/runs/elicit-bridge.ts` | `{ now(): number; schedule(task, delayMs): { cancel() } }` — monotonic in production (`performance.now` plus an unref'd `setTimeout`), injectable for deterministic tests |
+| `MAX_ELICIT_WINDOW_MS` | `packages/kernel/src/runs/elicit-bridge.ts` | the longest delay a host timer honours; a declared window above it is refused where the policy is read, never silently shortened |
 
 ### 2.5 Protocol wire shapes (`@clarvis/protocol`)
 
@@ -177,12 +178,12 @@ concern of **kernel-transport-and-wire**; this document stops at the DTO shapes 
 
 | Symbol | Location | Shape |
 | --- | --- | --- |
-| `ElicitRequestParams` | `packages/code/src/adapters/elicit-types.ts` | `{ id?, windowMs?, message, kind?, detail?, requestedSchema?, mode?, url? }` — a local mirror of the protocol type, kept dependency-free of the SDK; `id`/`windowMs` are what a presentation confirmation and the countdown need |
+| `ElicitRequestParams` | `packages/code/src/adapters/elicit-types.ts` | `{ id?, windowMs?, message, kind?, detail?, requestedSchema?, mode?, url? }` — a local mirror of the protocol type, kept dependency-free of the SDK; `id` is what a presentation confirmation names and `windowMs` marks a question the kernel windowed, whose countdown the block renders only from the projected remaining time |
 | `ElicitCommandDetail` | `packages/code/src/adapters/elicit-types.ts` | `{ command, cwd, reason, warning? }` |
 | `ElicitResult` | `packages/code/src/adapters/elicit-types.ts` | `{ action, content? }` |
 | `ElicitPresenter` | `packages/code/src/adapters/elicit-types.ts` | `() => Promise<number \| undefined>` — confirms presentation and yields the kernel's remaining projection, or `undefined` when no window applies |
-| `elicitCountdownText(remainingMs)` | `packages/code/src/adapters/elicit-types.ts` | the discreet one-line countdown the block shows while the window is open |
-| `ELICIT_NO_RESPONSE_TEXT` | `packages/code/src/adapters/elicit-types.ts` | the expired-state line (`"No response in time; decision returned to the model."`), plus the transcript wording in `packages/code/src/adapters/store.ts` |
+| `elicitCountdownText(remainingMs)` | `packages/code/src/adapters/elicit-types.ts` | the discreet one-line countdown the block shows while the window is open, and only once the kernel has projected a remaining time — the block never renders a declared window as if it were counting |
+| `ELICIT_NO_RESPONSE_TEXT` | `packages/code/src/adapters/elicit-types.ts` | the expired-state line (`"No response in time; decision returned to the model."`), plus the transcript wording in `packages/code/src/adapters/store.ts`, which labels an unanswered question `no answer:` rather than `answered:` |
 | `ElicitSlot` | `packages/code/src/adapters/elicit-slot.ts` | `{ request, remaining, ask(params, present?), present(), resolve(result), cancelPending() }` — single-slot queue; `remaining` is the local projection of the kernel's deadline |
 | `parseElicitForm(params)` | `packages/code/src/adapters/elicitation.ts` | derives a renderable `ElicitForm` from the wire params and projects recognized iteration-limit copy for the TUI |
 | `ElicitField`/`ElicitFieldKind` | `packages/code/src/adapters/elicitation.ts` | one input field of a parsed form — `{name, title, description?, required, kind: "select"\|"text"\|"number"\|"boolean", options, default?}` |
@@ -441,6 +442,7 @@ When `enabled` is `false` or no `elicit` was supplied, no serializer or relay is
 | entry pending | the elicit call's `opts.signal` aborts | entry and listener removed, settlement observers notified, promise resolves as `{action:"cancel"}` |
 | bridge closed or signal already aborted | `elicit` called | resolves as cancellation without publishing or retaining a question |
 | bridge open | `close` called | retires the bridge, cancels pending questions (and their window timers) and releases observer references |
+| policy declares a window above the host timer ceiling | `windowFor` (`MAX_ELICIT_WINDOW_MS`) | publishes no `window_ms` and arms nothing — a delay the timer cannot honour carries no window at all |
 | entry pending with a window policy, not yet confirmed | `bridge.present({id, presenter})` — first valid confirmation | starts the id's one monotonic deadline of `window_ms`, schedules its expiry, answers `{accepted:true, remaining_ms}` |
 | entry pending, window already started | `bridge.present(...)` again — a duplicate, another observer, a reconnect or a remount | idempotent: answers `{accepted:true, remaining_ms}` with the current remaining; the deadline is never restarted |
 | entry absent (unknown/already-settled id) | `bridge.present(...)` | answers `{accepted:false}`; nothing restarts and no question is revived |
@@ -664,8 +666,11 @@ frontend does.
 `origin`, or `origin: "external"` (a relayed MCP question, rebuilt at the relay boundary, §3.1), never
 window — even when they name `kind: "ask_user"`, which is presentation vocabulary rather than
 provenance. Guard confirmations, plan reviews, workflow reviews and the soft-budget ask are not
-windowed and keep the wait policies of §4.2. A policy with an absent, non-integer or non-positive
-`ask_user_window_ms` publishes no window at all.
+windowed and keep the wait policies of §4.2. A policy with an absent, non-integer, non-positive or
+unrepresentable `ask_user_window_ms` publishes no window at all: a duration above
+`MAX_ELICIT_WINDOW_MS` — the longest delay a host timer honours
+(`packages/kernel/src/runs/elicit-bridge.ts`) — is refused where the policy is read, because a host
+must never promise time it cannot grant.
 
 **Publication.** When the policy applies, the published `ElicitationRequest` carries `window_ms` — a
 duration, so no wall-clock synchronization between a frontend and a remote kernel is assumed. The
@@ -711,6 +716,7 @@ is rebuilt as `{action, content}`, so `windowElapsed` never crosses the MCP boun
 | Duplicate / repeated presentation confirmation | `accepted: true` with the current remaining projection; the deadline is unchanged |
 | Presentation confirmation after settlement | `accepted: false`; nothing restarts |
 | Presentation confirmation for an unmarked or `"external"` request | `accepted: true`, no `remaining_ms`, no timer — never a window |
+| Policy declaring a window above the host's timer ceiling | no `window_ms` is published and no timer is armed; the question keeps the ordinary policies of §4.2 |
 | Reconnect or remount while the question is pending | the pending request is replayed with its `window_ms`; a fresh confirmation reports the original deadline's remaining time, not a restart |
 | Run aborted or bridge closed while the window is open | the question is cancelled and its timer retired with it |
 
@@ -815,13 +821,16 @@ unavailable and timed-out preflights start nothing).
 
 **ELI-09.** A decision window applies only to a question whose params are marked `origin: "model"`
 and whose `kind` is `"ask_user"`, and only when the run declared a positive
-`elicit_policy.ask_user_window_ms`. An unmarked request, a relayed external one, or one that merely
+`elicit_policy.ask_user_window_ms` that this host can actually measure — one at most
+`MAX_ELICIT_WINDOW_MS`, since a longer delay is not honoured by a host timer and would close the
+question almost immediately. An unmarked request, a relayed external one, or one that merely
 names `kind: "ask_user"` never receives `window_ms`, never expires by window, and never receives the
 window's continuation guidance; guard confirmations, plan reviews, workflow reviews, soft-budget
 asks, headless runs and server runs keep their existing wait policies.
-Production: `packages/kernel/src/runs/elicit-bridge.ts` (`windowFor`),
+Production: `packages/kernel/src/runs/elicit-bridge.ts` (`windowFor`, `MAX_ELICIT_WINDOW_MS`),
 `packages/loop/src/runtime/elicit-relay.ts` (`buildElicitRelay`'s relay rebuild).
-Test: `packages/kernel/tests/unit/elicit-bridge.test.ts` (policy, provenance and forged-kind cases),
+Test: `packages/kernel/tests/unit/elicit-bridge.test.ts` (policy, provenance and forged-kind cases,
+the unrepresentable-window cases above the ceiling, and the ceiling itself granted),
 `packages/loop/tests/unit/elicit-relay.test.ts` (a relayed question is rebuilt as `origin: "external"`).
 
 **ELI-10.** The window starts on the first valid presentation confirmation for that id and never
@@ -845,24 +854,29 @@ human cancel, duplicate after settlement).
 guidance rather than a wait-window note, the outcome carries `noResponseReason: "window_elapsed"`
 distinct from `"wait_bound_elapsed"`, from a human decline and from a cancellation, and the expiry
 admits no operator evidence. The internal marker never crosses an MCP boundary, and the reason
-survives the trace record, the public `elicitation_resolved` event and the transcript.
+survives the trace record, the public `elicitation_resolved` event, the transcript and the agent
+projection the same trace feeds.
 Production: `packages/loop/src/runtime/tools/ask-user-tool.ts` (`mapOutcomeToText`,
 `WINDOW_ELAPSED_GUIDANCE`), `packages/loop/src/runtime/tools/ask-user-call.ts`,
 `packages/loop/src/runtime/elicit-relay.ts`, `packages/trace/src/trace-mapper.ts`,
-`packages/code/src/adapters/store.ts` (`elicitationOutcomeText`).
+`packages/code/src/adapters/store.ts` (`elicitationOutcomeText`),
+`packages/supervision/src/projection.ts` (the `user_question` line names the bound).
 Test: `packages/loop/tests/unit/ask-user-tool.test.ts` (three distinct no-answer texts),
 `packages/loop/tests/unit/ask-user-call.test.ts` (`no_response` recorded, absent for a human
 decline), `packages/loop/tests/component/execute-run.test.ts` ("does not admit a window expiry as
 operator evidence and hands the model the guidance"),
 `packages/kernel/tests/integration/transport.test.ts` (`runs.present` keeps the reason on the wire),
-`packages/code/tests/unit/store-status.test.ts` (the transcript names the window).
+`packages/code/tests/unit/store-status.test.ts` (the transcript names the window),
+`packages/supervision/tests/unit/projection.test.ts` (a window expiry reads as an unanswered
+question, not as a refusal).
 
 **ELI-13.** The interactive TUI confirms a question's presentation only after the block is really on
 screen, arms no timer of its own and never decides the outcome: it projects the kernel's remaining
 time as a discreet countdown, and the question disappears when the kernel settles it — the closure
 arrives by id through `RunHandle.onElicitSettled`, closes exactly that prompt through
 `ElicitSlot.settle`, and is never answered. A settled question never reappears after a remount or
-reconnect.
+reconnect, and a question the kernel never projected carries no countdown at all: the block renders
+no remaining time it was not given.
 Production: `packages/code/src/adapters/elicit-slot.ts` (`present`, `remaining`, `settle`),
 `packages/code/src/views/ElicitBlock.tsx` (countdown and expired state),
 `packages/code/src/views/App.tsx` (the visibility barrier),
@@ -871,8 +885,12 @@ Production: `packages/code/src/adapters/elicit-slot.ts` (`present`, `remaining`,
 settlement notification of §4.8).
 Test: `packages/code/tests/unit/elicit-slot.test.ts` (the kernel's projection arms the countdown, the
 slot arms no timer by itself, and a settlement by id closes only its own question),
-`packages/code/tests/integration/elicit-block-render.test.tsx` (countdown, expired state, guard
-confirmation unaffected), `packages/code/tests/component/kernel-run-client.test.ts` (the settlement
+`packages/code/tests/integration/elicit-block-render.test.tsx` (countdown, expired state, no
+countdown without a projection, guard confirmation unaffected),
+`packages/code/tests/integration/app-shell-render.test.tsx` (the block is confirmed only once it is
+really visible — not while a dirty overlay still hides it — and the countdown follows the projected
+remaining time),
+`packages/code/tests/component/kernel-run-client.test.ts` (the settlement
 closes the question for the UI and sends no answer back),
 `packages/kernel/tests/integration/transport.test.ts` (each settled windowed question reaches the
 direct client under its own id).
@@ -884,8 +902,9 @@ direct client under its own id).
 | `ask_user` called with invalid arguments (fails `askUserTool.inputSchema`) | `openCallEnvelope`'s `envelope.invalid` (`packages/loop/src/runtime/tools/ask-user-call.ts`) | error tool result; `askUser` is **never invoked** |
 | The wait bound elapses with no answer | `ElicitTimeoutError` swallowed by `elicitWithClockPause` (`packages/capability/src/elicit.ts`) | `{action:"decline", noResponse:true, noResponseReason:"wait_bound_elapsed"}` — the model reads this as an ordinary decline, never as an exception |
 | The interactive decision window elapses with no answer (§4.11) | the bridge's monotonic deadline timer (`packages/kernel/src/runs/elicit-bridge.ts`) | `{action:"decline", windowElapsed:true}` → `noResponseReason:"window_elapsed"` and the continuation guidance; never evidence, and distinct from the wait-bound row above |
+| A declared window is longer than the host's timer ceiling | `windowFor` (`packages/kernel/src/runs/elicit-bridge.ts`, `MAX_ELICIT_WINDOW_MS`) | no `window_ms` is published and no timer is armed — the question keeps the ordinary policies instead of expiring the moment it appears |
 | A presentation confirmation arrives for an unknown or already-settled id | `pending.get(id) === undefined` short-circuit (`packages/kernel/src/runs/elicit-bridge.ts`) | `{accepted:false}` — nothing restarts and no question is revived |
-| A windowed question is never presented (no client attached, no paint, an observer-only run) | the window only starts in `present` (`packages/kernel/src/runs/elicit-bridge.ts`) | no window runs; the question keeps the ordinary policies (wait bound, abort, teardown) |
+| A windowed question is never presented (no client attached, no paint, an observer-only run) | the window only starts in `present` (`packages/kernel/src/runs/elicit-bridge.ts`) | no window runs; the question keeps the ordinary policies (wait bound, abort, teardown), and a block that received no projection renders no countdown |
 | The frontend's local countdown reaches zero | `remaining` alone (`packages/code/src/adapters/elicit-slot.ts`) | presentation only — the kernel's settlement remains the authority and removes the question; the local countdown decides nothing |
 | The run's own signal aborts while `askUser` is pending | `handleAskUserCall`'s catch checks `signal?.aborted` (`packages/loop/src/runtime/tools/ask-user-call.ts`) | `{kind:"cancelled"}` — no trace record, no tool-result text; the run is unwinding |
 | `askUser` rejects for any other reason (transport failure, non-abort, non-timeout) | same catch, non-abort branch (`packages/loop/src/runtime/tools/ask-user-call.ts`) | error tool result `` `could not reach the user (${reason}).` ``, `error: true` |

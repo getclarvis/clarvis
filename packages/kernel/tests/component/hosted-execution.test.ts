@@ -36,6 +36,7 @@ async function until(condition: () => boolean): Promise<void> {
 
 async function fixture(
   overrides: Partial<Pick<HostedExecutionOptions, "maxBuffered" | "reconcile">> = {},
+  options: { withoutPresent?: boolean } = {},
 ) {
   let data = Buffer.alloc(0);
   let fault = false;
@@ -67,16 +68,17 @@ async function fixture(
     },
   });
   const context = await entered.promise;
+  const handle = options.withoutPresent === true ? { ...source, present: undefined } : source;
   const reconciled: RunResult[] = [];
   const execution = createHostedExecution({
-    handle: source,
+    handle,
     projection,
     reconcile: async (result) => {
       reconciled.push(result);
     },
     ...overrides,
   });
-  const observe = () => execution.observe(source);
+  const observe = () => execution.observe(handle);
   const read = async (
     attachment: Pick<HostedRunAttachment, "snapshot">,
   ): Promise<HostedRunFrame[]> => {
@@ -269,6 +271,33 @@ describe("hosted execution observation", () => {
     expect(restored.pending_elicitations).toEqual([]);
     await expect(restored.handle.respond({ id, action: "accept" })).rejects.toThrow("settled");
     expect(f.execution.state().attention).toBe("none");
+    f.finish();
+    await f.execution.settled;
+    await f.execution.dispose();
+  });
+
+  it("refuses a presentation a handle cannot window instead of claiming acceptance", async () => {
+    const f = await fixture({}, { withoutPresent: true });
+    const abort = new AbortController();
+    const answer = f.context.elicit(
+      {
+        message: "Approve this?",
+        kind: "ask_user",
+        origin: "model",
+        requestedSchema: { type: "object", properties: {}, required: [] },
+      },
+      { signal: abort.signal },
+    );
+    const attachment = await f.observe();
+    expect(attachment.pending_elicitations).toHaveLength(1);
+    const id = attachment.pending_elicitations[0]!.id;
+
+    expect(await attachment.handle.present!({ id, presenter: "tui" })).toEqual({
+      accepted: false,
+    });
+
+    abort.abort();
+    expect(await answer).toEqual({ action: "cancel" });
     f.finish();
     await f.execution.settled;
     await f.execution.dispose();

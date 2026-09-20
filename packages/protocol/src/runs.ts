@@ -86,7 +86,10 @@ export interface ElicitWindowPolicy {
    * Milliseconds the model's own `ask_user` question stays open once a client
    * has confirmed it is on screen. Omit for no window. Never applies to other
    * kinds, to an unmarked request, or to a question relayed from an external
-   * MCP server.
+   * MCP server. A duration the host cannot actually measure — non-integral,
+   * non-positive, or longer than a host timer honours (`MAX_ELICIT_WINDOW_MS`
+   * in `@clarvis/kernel`) — grants no window at all, because a host must not
+   * promise time it cannot grant.
    */
   ask_user_window_ms?: number;
 }

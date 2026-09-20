@@ -779,7 +779,8 @@ An interactive frontend declares its question window on the run-creation request
 `elicitWindowFor`), confirms the question is on screen with `runs.present` and
 the hosted `hosting.present`, and keeps the operational `elicit_wait_ms` ceiling
 for a question nobody ever presented. Only a request the engine marked
-`origin: "model"` with `kind: "ask_user"` receives a window; a relayed MCP
+`origin: "model"` with `kind: "ask_user"` receives a window, and only for a
+duration a host timer can hold (`MAX_ELICIT_WINDOW_MS`); a relayed MCP
 question, a guard confirmation, a plan or workflow review and the soft-budget ask
 keep their existing policies. See
 [elicitation](../../specs/cross-cutting/elicitation.md).

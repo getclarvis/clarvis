@@ -166,8 +166,9 @@ export function projectAgentEvent(
       const age = state.waitingSince === undefined ? undefined : now - state.waitingSince;
       state.waitingSince = undefined;
       const outcome = str(d, "outcome") ?? "?";
+      const reason = str(d, "no_response");
       const waited = age === undefined ? "" : ` after ${String(Math.round(age / 1000))}s`;
-      return `${tag(state)} elicit resolved: ${outcome}${waited}`;
+      return `${tag(state)} elicit resolved: ${outcome}${reason === undefined ? "" : ` (${reason})`}${waited}`;
     }
     case "user_steering": {
       const message = str(d, "message") ?? "";

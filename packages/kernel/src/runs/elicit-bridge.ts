@@ -46,6 +46,18 @@ export interface ElicitWindowTimer {
 }
 
 /**
+ * The longest decision window a run may declare, in milliseconds.
+ *
+ * @remarks A host scheduler cannot represent a longer delay: a timer above this
+ *   ceiling is not honoured for the duration asked for, so a window longer than
+ *   it would close a question far earlier than the policy promised — the
+ *   opposite of leaving it open. A policy above the ceiling therefore publishes
+ *   no window at all, and the question keeps the operational wait bound as the
+ *   only way its wait ends.
+ */
+export const MAX_ELICIT_WINDOW_MS = 2_147_483_647;
+
+/**
  * Monotonic clock and scheduler seam for the question window.
  *
  * @remarks Deliberately not the wall clock: an operator's machine may step its
@@ -60,7 +72,12 @@ export interface ElicitWindowTimer {
 export interface ElicitWindowRuntime {
   /** Milliseconds from an arbitrary monotonic origin. */
   now(): number;
-  /** Run `task` after `delayMs`, returning a cancelable handle. */
+  /**
+   * Run `task` after `delayMs`, returning a cancelable handle.
+   *
+   * @remarks Never called with a delay above {@link MAX_ELICIT_WINDOW_MS}: the
+   *   window is refused where the policy is read, not silently shortened here.
+   */
   schedule(task: () => void, delayMs: number): ElicitWindowTimer;
 }
 
@@ -115,13 +132,23 @@ const DEFAULT_WINDOW_RUNTIME: ElicitWindowRuntime = {
  *   name; the engine marks its own `ask_user` tool's requests `origin: "model"`
  *   and the relay layer marks everything else `"external"`, and only an
  *   explicit model-origin `ask_user` may receive a host window.
+ *
+ *   The declared duration must also be one this host can actually measure: a
+ *   policy that is absent, non-integral, non-positive or longer than
+ *   {@link MAX_ELICIT_WINDOW_MS} publishes no window, because a host must never
+ *   promise time it cannot grant.
  */
 function windowFor(
   policy: ElicitWindowPolicy | undefined,
   params: ElicitParams,
 ): number | undefined {
   const configured = policy?.ask_user_window_ms;
-  if (typeof configured !== "number" || !Number.isSafeInteger(configured) || configured <= 0) {
+  if (
+    typeof configured !== "number" ||
+    !Number.isSafeInteger(configured) ||
+    configured <= 0 ||
+    configured > MAX_ELICIT_WINDOW_MS
+  ) {
     return undefined;
   }
   if (params.origin !== "model" || params.kind !== "ask_user") return undefined;

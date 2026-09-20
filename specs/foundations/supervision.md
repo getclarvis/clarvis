@@ -231,7 +231,9 @@ From `packages/supervision/tests/unit/projection.test.ts`, a `tool_call` entry
 
 An elicitation opens with `[i3] elicit "may I run bun install?" — WAITING`
 (`packages/supervision/tests/unit/projection.test.ts`) and its resolution closes with
-`[i3] elicit resolved: accept after 42s`.
+`[i3] elicit resolved: accept after 42s`. A resolution nobody made names the bound that closed it —
+`[i3] elicit resolved: decline (window_elapsed) after 12s` — so the activity line never reads a
+decision window's silence as a human refusal.
 
 ## 4. Behavior
 

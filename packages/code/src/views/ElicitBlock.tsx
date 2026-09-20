@@ -65,7 +65,9 @@ export function ElicitBlock(props: {
    *
    * @remarks Read by the countdown line only. The kernel owns when the window
    *   ends; at zero the block stops offering controls and says the decision
-   *   went back to the model, and the kernel's own closure removes it.
+   *   went back to the model, and the kernel's own closure removes it. `null`
+   *   until the kernel answers this block's presentation confirmation, and the
+   *   block then renders no countdown at all rather than inventing one.
    */
   remaining?: Accessor<number | null>;
 }): JSX.Element {
@@ -81,12 +83,17 @@ export function ElicitBlock(props: {
       : isPlanReview || isWorkflowReview
         ? tokens.accent2
         : tokens.accent;
-  /** Whether a host window policy applies to this question. Guard
-   * confirmations, plan/workflow reviews, relayed MCP questions and headless
-   * runs declare no window and render no countdown. */
-  const windowed = (): boolean =>
-    props.request.kind === "ask_user" && props.request.windowMs !== undefined;
   const windowLeft = (): number | null => props.remaining?.() ?? null;
+  /** Whether this question's decision window is really running on screen: the
+   * request declares one and the kernel has projected what is left of it. Guard
+   * confirmations, plan/workflow reviews, relayed MCP questions and headless
+   * runs declare no window, and a confirmation that never reached the kernel
+   * projects nothing — neither renders a countdown, because this block never
+   * invents a remaining time. */
+  const windowed = (): boolean =>
+    props.request.kind === "ask_user" &&
+    props.request.windowMs !== undefined &&
+    windowLeft() !== null;
   /** Local zero is display state only: the grant of time starts and ends in the
    * kernel, which settles the question and pushes the closure that unmounts
    * this block. */
@@ -374,9 +381,7 @@ export function ElicitBlock(props: {
       </text>
       <Show when={windowed()}>
         <text fg={tokens.muted} flexShrink={0}>
-          {expired()
-            ? ELICIT_NO_RESPONSE_TEXT
-            : elicitCountdownText(windowLeft() ?? props.request.windowMs ?? 0)}
+          {expired() ? ELICIT_NO_RESPONSE_TEXT : elicitCountdownText(windowLeft() ?? 0)}
         </text>
       </Show>
       <Show when={planSummary()} keyed>

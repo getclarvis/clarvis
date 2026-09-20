@@ -353,7 +353,7 @@ export function createHostedExecution(options: HostedExecutionOptions): HostedEx
             async present(presentation) {
               assertObserver();
               if (!questions.has(presentation.id)) return { accepted: false };
-              if (controls.present === undefined) return { accepted: true };
+              if (controls.present === undefined) return { accepted: false };
               return controls.present(presentation);
             },
             onElicit(listener) {

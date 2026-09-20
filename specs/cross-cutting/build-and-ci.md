@@ -799,9 +799,13 @@ short temporary roots, each is validated exactly as before (a real directory tha
 operator state), and `ancestorTrust` additionally requires the account-owned chain the kernel will
 re-check for the private state published under `CLARVIS_HOME`. A host offering no acceptable candidate
 fails `smoke_fixture_no_usable_parent` naming every refusal, instead of landing somewhere the boot then
-rejects or reporting it as a timeout. `SmokeContextOptions.parentRoot` and `parentCandidates` pin or
-replace that list for a nested harness or a test. Production:
-`createSmokeContext`, `allocateFixtureRoot` and `allocateSocketRoot` in
+rejects or reporting it as a timeout. One validated list serves both roots: the fixture's own parent is
+chosen from it, and the socket root falls back to it followed by the host's short temporary roots, so a
+pinned deep parent cannot make the fixture's address unreservable. `SmokeContextOptions.parentRoot`,
+`parentCandidates` and `socketParentCandidates` pin or replace those lists for a nested harness or a
+test; a host where no socket parent can hold an address short enough for a socket name fails
+`smoke_socket_root_unavailable` naming every refusal. Production:
+`createSmokeContext`, `validateParents`, `allocateFixtureRoot` and `allocateSocketRoot` in
 `packages/code/tooling/artifact/isolation.ts`. Tests: `packages/code/tests/unit/artifact-isolation.test.ts`.
 
 The PTY is obtained by `script(1)` where available, with a platform-split argv — `script -q /dev/null …`
@@ -1247,6 +1251,7 @@ no publish, registry, release-manifest or running-container commit path. Product
 | A build asset moved | throws naming the asset, its reader, and the two files to update | `packages/code/tooling/artifact/build.ts` |
 | Smoke run with no artifact | `throw` with `"run: bun --filter @clarvis/code build"` | `packages/code/tooling/artifact/smoke.ts` |
 | Smoke fixture already has a models cache | `throw new Error("fixture is not a fresh install: it has a models cache")` — refuses to run rather than measure the wrong branch | `packages/code/tooling/artifact/smoke.ts`; `createSmokeFixture` |
+| Smoke fixture has no usable or short-enough parent | `throw new Error("smoke_fixture_no_usable_parent:<candidate>: <refusal>;…")`, or `smoke_socket_root_unavailable:…` when only the socket root cannot be reserved, naming every refusal | `packages/code/tooling/artifact/isolation.ts` (`validateParents`, `allocateFixtureRoot`, `allocateSocketRoot`) |
 | Smoke boot times out or hits `"failed to start"` | prints stripped screen tail + stderr tail, terminates owned children, removes only its own fixture and socket roots, and exits 1 | `packages/code/tooling/artifact/smoke.ts`; `SmokeContext.cleanup` and `packages/code/tooling/artifact/pty.ts` |
 | Smoke painted but wrote no `app.boot.painted` | `exit 1` with "`--debug` is the only diagnostic channel a bundled clarvis has" | `packages/code/tooling/artifact/smoke.ts` |
 | Required smoke confinement has no usable native backend | `throw new Error("smoke_native_confinement_unavailable:<reason>")`; no fallback PTY is started | `packages/code/tooling/artifact/isolation.ts` (`requireNativeSmokeConfinement`) |

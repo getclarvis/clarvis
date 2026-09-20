@@ -330,7 +330,7 @@ also ships one, but it is not on this list: the engine does not load it at all.
 Run teardown removes that short scratch allocation - its directory and its recovery metadata - and each
 exact temporary directory registered as created by that run. Pre-authorized system temporary roots are
 not owned or traversed by teardown. The global paths sweeper reclaims abandoned allocations a same-host
-record proves dead whose subtree holds no file, plus stale empty legacy run containers left by a crash, so
+record proves dead whose subtree holds no file or symlink, plus stale empty legacy run containers left by a crash, so
 a normal run does not accumulate scratch state. Production: `createAgentToolsCapability`,
 `allocateShortTemporaryRoot` and `collectAbandonedShortTemporaryRoots` in
 `packages/paths/src/short-temporaries.ts`. Tests: `packages/loop/tests/integration/command-guard-wiring.test.ts`

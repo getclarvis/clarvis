@@ -416,6 +416,61 @@ describe("abandoned short temporary roots", () => {
     expect(existsSync(malformed)).toBe(true);
   });
 
+  test.skipIf(windows)(
+    "preserves an abandoned allocation that holds a symlink or a nested file",
+    async () => {
+      const base = ownedRoot("clarvis-short-links-");
+      const elsewhere = ownedRoot("clarvis-short-link-target-");
+      writeFileSync(join(elsewhere, "kept.txt"), "content a run left elsewhere");
+      const { container } = allocate(base);
+      const symlinked = plant(container, "symlinkd", record("symlinkd"));
+      symlinkSync(elsewhere, join(symlinked, "target"));
+      const nested = plant(container, "nestedfl", record("nestedfl"));
+      mkdirSync(join(nested, "one", "two"), { recursive: true, mode: 0o700 });
+      writeFileSync(join(nested, "one", "two", "deep.txt"), "output");
+
+      const report = await collectAbandonedShortTemporaryRoots({
+        candidates: [base],
+        budgetBytes: 4096,
+        requireTrustedAncestors: false,
+        graceMs: 0,
+        isProcessAlive: (pid) => pid === process.pid,
+        logger: recorder().logger,
+      });
+
+      expect(report.removed).toBe(0);
+      expect(report.preservedContent).toBe(2);
+      expect(existsSync(join(symlinked, "target", "kept.txt"))).toBe(true);
+      expect(existsSync(join(nested, "one", "two", "deep.txt"))).toBe(true);
+    },
+  );
+
+  test("never treats a name that is not an allocation id as one", async () => {
+    const base = ownedRoot("clarvis-short-id-shape-");
+    const { allocation, container } = allocate(base);
+    const forged = ["..json", "....json"];
+    for (const name of forged)
+      writeFileSync(
+        join(container, "a", name),
+        JSON.stringify(record(name.slice(0, -".json".length))),
+      );
+
+    const report = await collectAbandonedShortTemporaryRoots({
+      candidates: [base],
+      budgetBytes: 4096,
+      requireTrustedAncestors: false,
+      graceMs: 0,
+      isProcessAlive: (pid) => pid === process.pid,
+      logger: recorder().logger,
+    });
+
+    expect(report.removed).toBe(0);
+    expect(report.preservedUnverified).toBe(2);
+    expect(existsSync(join(container, "a", "..json"))).toBe(true);
+    expect(existsSync(allocation.path)).toBe(true);
+    expect(existsSync(join(container, "r"))).toBe(true);
+  });
+
   test("drops a record whose allocation is already gone", async () => {
     const base = ownedRoot("clarvis-short-stale-");
     const { allocation, container } = allocate(base);

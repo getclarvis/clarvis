@@ -1474,9 +1474,11 @@ to every child and rejects root-sensitive overrides outside the fixture. That ro
 the kernel re-checks for its own private state, and a host offering none fails with
 `smoke_fixture_no_usable_parent` rather than landing somewhere unpredictable. Sockets are a reserved
 resource: `socketPath(label)` builds an exclusive address inside the root whenever the endpoint budget
-allows it and otherwise from a short root of its own, which `writableRoots` declares as an extra mount for
-confinement and which cleanup removes after the children settle. The fixture lifecycle terminates
-registered children before removing its roots. It asserts the shipped snapshot
+allows it and otherwise from a short root of its own, taken from the same validated parents followed by
+the host's short temporary roots, and a host where none of them can hold an address fails
+`smoke_socket_root_unavailable` instead of starting a backend that cannot bind. `writableRoots` declares
+the socket root as an extra mount for confinement, and cleanup removes it after the children settle. The
+fixture lifecycle terminates registered children before removing its roots. It asserts the shipped snapshot
 exists for a later Providers open, and proves first paint emits no `catalog.load.started` while
 `deferred_catalog` remains true.
 

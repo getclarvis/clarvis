@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
@@ -19,6 +19,17 @@ async function fixture(prefix: string): Promise<SmokeContext> {
   const context = await createSmokeFixture(prefix);
   contexts.push(context);
   return context;
+}
+
+/**
+ * A parent deep enough that neither a socket directory beneath it nor a socket
+ * name survives the endpoint budget; `release` removes the disposable tree.
+ */
+async function deepParent(): Promise<{ deep: string; release: () => Promise<void> }> {
+  const outer = await mkdtemp(join(tmpdir(), "clarvis-smoke-deep-"));
+  const deep = join(outer, "x".repeat(60));
+  await mkdir(deep, { recursive: true, mode: 0o700 });
+  return { deep, release: () => rm(outer, { recursive: true, force: true }) };
 }
 
 /**
@@ -169,14 +180,14 @@ describe("smoke fixture isolation", () => {
   });
 
   test("keeps the fixture outside a deep inherited temporary root and reserves its sockets", async () => {
-    const deep = join(await mkdtemp(join(tmpdir(), "clarvis-smoke-deep-")), "x".repeat(60));
-    await mkdir(deep, { recursive: true, mode: 0o700 });
+    const { deep, release } = await deepParent();
     try {
       const context = await createSmokeContext("clarvis-isolation-short-", {
-        parentCandidates: [deep],
+        parentRoot: deep,
       });
       contexts.push(context);
       expect(context.root.startsWith(deep)).toBe(true);
+      expect(context.sockets.startsWith(deep)).toBe(false);
       expect(context.sockets.startsWith(context.root)).toBe(false);
       expect(relative(context.root, context.sockets)).toMatch(/^\.\./);
       const socket = context.socketPath("tmux");
@@ -191,12 +202,78 @@ describe("smoke fixture isolation", () => {
       expect(signalled).toEqual([true, true]);
       expect(existsSync(context.root)).toBe(false);
       expect(existsSync(context.sockets)).toBe(false);
-      for (const release of unregister) release();
+      for (const releaseChild of unregister) releaseChild();
       contexts.splice(contexts.indexOf(context), 1);
     } finally {
-      await rm(deep, { recursive: true, force: true });
+      await release();
     }
   });
+
+  test("reports a host whose every socket parent is too long for an address", async () => {
+    const { deep, release } = await deepParent();
+    try {
+      const outcome = await createSmokeContext("clarvis-isolation-sockets-", {
+        parentCandidates: [deep],
+        socketParentCandidates: [deep],
+      }).then(
+        (context) => {
+          contexts.push(context);
+          return "accepted";
+        },
+        (error: unknown) => String(error),
+      );
+      expect(outcome).toContain("smoke_socket_root_unavailable");
+      expect(outcome).toContain("x".repeat(60));
+    } finally {
+      await release();
+    }
+  });
+
+  test("names a candidate it refuses, before allocating anything", async () => {
+    const { deep, release } = await deepParent();
+    try {
+      const absent = join(deep, "absent");
+      const outcome = await createSmokeContext("clarvis-isolation-refused-", {
+        parentCandidates: [absent],
+        socketParentCandidates: [absent],
+      }).then(
+        (context) => {
+          contexts.push(context);
+          return "accepted";
+        },
+        (error: unknown) => String(error),
+      );
+      expect(outcome).toContain("smoke_fixture_no_usable_parent");
+      expect(outcome).toContain("smoke_fixture_parent_must_be_a_real_directory");
+      expect(outcome).toContain("absent");
+    } finally {
+      await release();
+    }
+  });
+
+  test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "reports a validated parent that cannot host an allocation",
+    async () => {
+      const { deep, release } = await deepParent();
+      try {
+        await chmod(deep, 0o500);
+        const outcome = await createSmokeContext("clarvis-isolation-unwritable-", {
+          parentCandidates: [deep],
+        }).then(
+          (context) => {
+            contexts.push(context);
+            return "accepted";
+          },
+          (error: unknown) => String(error),
+        );
+        expect(outcome).toContain("smoke_fixture_no_usable_parent");
+        expect(outcome).toContain("short_temporary_root_unavailable");
+      } finally {
+        await chmod(deep, 0o700);
+        await release();
+      }
+    },
+  );
 
   test("reports a socket address that cannot fit the operating-system budget", async () => {
     const context = await fixture("clarvis-isolation-budget-");

@@ -44,6 +44,21 @@ export const SHORT_SCRATCH_BUDGET_BYTES = 40;
 /** Bytes of randomness in one allocation id: 48 bits, base64url, eight characters. */
 const ALLOCATION_ID_BYTES = 6;
 
+/** Characters one allocation id occupies: base64url of {@link ALLOCATION_ID_BYTES}. */
+const ALLOCATION_ID_LENGTH = (ALLOCATION_ID_BYTES * 4) / 3;
+
+/**
+ * The only names a recovery pass may treat as an allocation id.
+ *
+ * @remarks The pass derives a removal path from a directory listing and the id is
+ *   its last component, so `.`, `..` and an empty stem would collapse that path
+ *   onto the shared container instead of one allocation. A plain single component
+ *   is the rule the pass enforces; the allocator itself draws
+ *   {@link ALLOCATION_ID_LENGTH} base64url characters, which this accepts, so a
+ *   differently derived id cannot silently become uncollectable.
+ */
+const ALLOCATION_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
 /** Bounded retries when a racing or hostile creator already claimed a drawn id. */
 const ALLOCATION_ATTEMPTS = 8;
 
@@ -60,7 +75,7 @@ const METADATA_SCHEMA = 1;
 /** Default grace before an abandoned allocation with no content may be collected. */
 const DEFAULT_SWEEP_GRACE_MS = 24 * 60 * 60 * 1000;
 
-/** Default bound on the records one sweep pass reads per container. */
+/** Default bound on the entries one sweep pass examines per directory of a container. */
 const DEFAULT_SWEEP_ENTRIES = 1_000;
 
 /** Whether this platform expresses privacy through directory modes. */
@@ -211,7 +226,7 @@ function allocationShape(base: string): string {
     base,
     `${CONTAINER_PREFIX}${accountSegment()}`,
     ALLOCATION_DIR,
-    "x".repeat((ALLOCATION_ID_BYTES * 4) / 3),
+    "x".repeat(ALLOCATION_ID_LENGTH),
   );
 }
 
@@ -410,8 +425,10 @@ function createAllocation(
  * @param opts - see {@link ShortTemporaryRootOptions}.
  * @returns the allocation and its idempotent {@link ShortTemporaryRoot.remove}.
  * @throws when no candidate root accepts an allocation; the message names the
- *   platform, the budget and how many candidates were rejected, and every
- *   rejection is also reported as `paths.temporary_root_candidate_rejected`.
+ *   label, the platform and the budget, and every rejection is also reported as
+ *   `paths.temporary_root_candidate_rejected` during selection or as
+ *   `paths.temporary_root_allocation_failed` when a candidate could not host the
+ *   allocation.
  *
  * @remarks
  * The directory name carries only a random id, never the run's identity: the
@@ -546,7 +563,7 @@ export function allocateShortTemporaryRoot(opts: ShortTemporaryRootOptions): Sho
 
 /** Options for {@link collectAbandonedShortTemporaryRoots}. */
 export interface ShortTemporarySweepOptions extends ShortTemporaryCandidateOptions {
-  /** Maximum metadata records read per container; defaults to 1000. */
+  /** Maximum entries examined per directory of one container; defaults to 1000. */
   maxEntries?: number;
   /** Minimum age before an allocation with no content may be collected. */
   graceMs?: number;
@@ -576,11 +593,29 @@ export interface ShortTemporarySweepReport {
   truncated: boolean;
 }
 
-/** Whether an allocation subtree holds nothing a run could still own. */
+/**
+ * Whether an allocation subtree holds nothing a run could still own.
+ *
+ * @param path - the allocation directory.
+ * @returns `true` only when every entry beneath it, at any depth, is a real
+ *   directory.
+ *
+ * @remarks The walk is explicit rather than `readdirSync(..., { recursive: true })`
+ *   because Bun follows a symlinked directory during a recursive listing while
+ *   Node does not: one link a run left to a tree it does not own would spend a
+ *   whole pass there, and every later pass again. A symlink, a file or any other
+ *   entry refuses the allocation immediately, so a target is never entered.
+ */
 function holdsOnlyDirectories(path: string): boolean {
-  return readdirSync(path, { recursive: true, withFileTypes: true }).every((entry) =>
-    entry.isDirectory(),
-  );
+  const pending = [path];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      if (entry.isSymbolicLink() || !entry.isDirectory()) return false;
+      pending.push(join(current, entry.name));
+    }
+  }
+  return true;
 }
 
 /**
@@ -651,13 +686,21 @@ function readMetadata(file: string): AllocationMetadata | undefined {
  * @returns the pass's report, also logged once as `paths.temporary_root_sweep`.
  *
  * @remarks
- * A record authorises removal only when all of the following hold: its schema is
- * known, its host is this host, its process is provably dead on this host, it is
- * older than the grace, its directory is still this account's owner-only
- * directory, and its whole subtree contains no files and no symlinks. Age, name
- * shape or a lone PID never authorise a recursive removal, and an allocation with
+ * A record authorises removal only when all of the following hold: its file name
+ * is a plain allocation id — a single component that is neither `.` nor `..`, so
+ * the path derived from it cannot collapse onto the shared container — its schema
+ * is known, its host is this host, its process is provably dead on this host, it is
+ * older than the grace, its directory is still a real directory of this account,
+ * and its whole subtree contains no files and no symlinks. Age, a plain id or a
+ * lone PID never authorise a recursive removal on their own, and an allocation with
  * no readable record is never a candidate at all — which is what keeps a crashed
  * run's output available to whoever is still looking at it.
+ *
+ * A record is evidence written by the allocating process, not a statement this
+ * pass can authenticate, so the pass assumes same-account cooperation and refuses
+ * to reclaim anything that could still be someone's. That is also why the walk
+ * descends only into real directories, never through a symlink, whose target the
+ * allocation does not own.
  */
 export async function collectAbandonedShortTemporaryRoots(
   opts: ShortTemporarySweepOptions = {},
@@ -696,17 +739,21 @@ export async function collectAbandonedShortTemporaryRoots(
     report.containers += 1;
     let scanned = 0;
     for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.endsWith(".json")) {
-        report.preservedUnverified += 1;
-        continue;
-      }
       if (scanned >= maxEntries) {
         report.truncated = true;
         break;
       }
       scanned += 1;
+      if (!entry.isFile() || !entry.name.endsWith(".json")) {
+        report.preservedUnverified += 1;
+        continue;
+      }
       report.records += 1;
       const id = entry.name.slice(0, -".json".length);
+      if (!ALLOCATION_ID_PATTERN.test(id)) {
+        report.preservedUnverified += 1;
+        continue;
+      }
       const recordFile = join(container, METADATA_DIR, entry.name);
       const directory = join(container, ALLOCATION_DIR, id);
       const record = readMetadata(recordFile);
@@ -735,13 +782,14 @@ export async function collectAbandonedShortTemporaryRoots(
         report.preservedUnverified += 1;
       }
     }
+    let allocationEntries = 0;
     try {
       for (const entry of readdirSync(join(container, ALLOCATION_DIR), { withFileTypes: true })) {
-        if (scanned >= maxEntries) {
+        if (allocationEntries >= maxEntries) {
           report.truncated = true;
           break;
         }
-        scanned += 1;
+        allocationEntries += 1;
         if (!existsSync(join(container, METADATA_DIR, `${entry.name}.json`)))
           report.preservedUnverified += 1;
       }

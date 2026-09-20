@@ -170,6 +170,91 @@ export interface SmokeContextOptions {
   parentRoot?: string;
   /** Ordered candidate parents; defaults to the host's short temporary roots. */
   parentCandidates?: readonly string[];
+  /**
+   * Ordered parents for the socket root alone; defaults to the fixture's own
+   * validated parents followed by the host's short temporary roots.
+   *
+   * @remarks A socket address has an operating-system limit, so the socket root
+   *   must be able to escape a parent that is too long for one. Every candidate
+   *   here is validated exactly like a fixture parent, and when none can hold a
+   *   short enough allocation the context fails with
+   *   `smoke_socket_root_unavailable` instead of reserving an address that cannot
+   *   work.
+   */
+  socketParentCandidates?: readonly string[];
+}
+
+/** Parents a fixture may allocate under, and the candidates that were refused. */
+interface ValidatedParents {
+  /** Canonical parents that passed validation, in the order they were requested. */
+  parents: string[];
+  /** One `<candidate>: <reason>` entry per refusal, for the failure message. */
+  refused: string[];
+}
+
+/** One refusal reason, whether an `Error` or anything else was thrown. */
+function refusalReason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Canonical, deduplicated, validated parents for one requested candidate list. */
+async function validateParents(requested: readonly string[]): Promise<ValidatedParents> {
+  const parents: string[] = [];
+  const refused: string[] = [];
+  for (const candidate of requested) {
+    try {
+      const parent = await assertSafeParent(candidate);
+      if (!parents.includes(parent)) parents.push(parent);
+    } catch (error) {
+      refused.push(`${candidate}: ${refusalReason(error)}`);
+    }
+  }
+  return { parents, refused };
+}
+
+/** The parents a fixture may live under when the caller fixes none. */
+function fixtureParentRequest(options: SmokeContextOptions): readonly string[] {
+  if (options.parentRoot !== undefined) return [options.parentRoot];
+  return (
+    options.parentCandidates ??
+    shortTemporaryRootCandidates({ budgetBytes: SHORT_SCRATCH_BUDGET_BYTES })
+  );
+}
+
+/**
+ * The parents a socket root may be allocated under.
+ *
+ * @param options - the caller's explicit socket parents, if any.
+ * @param fixtureParents - the fixture's own validated parents.
+ * @returns the candidate list, unextended when the caller fixed one.
+ *
+ * @remarks The fixture's validated parents come first, so a caller that pinned a
+ *   short parent keeps its sockets there. The host's short temporary roots follow,
+ *   because escaping a parent that is too long is the entire point of a separate
+ *   socket root: a pinned deep temporary directory must not make the endpoint
+ *   unreservable. An explicit list is used exactly as given, which is what lets a
+ *   caller prove the failure rather than depend on the host.
+ */
+function socketParentRequest(
+  options: SmokeContextOptions,
+  fixtureParents: readonly string[],
+): readonly string[] {
+  if (options.socketParentCandidates !== undefined) return options.socketParentCandidates;
+  return [
+    ...fixtureParents,
+    ...shortTemporaryRootCandidates({ budgetBytes: SHORT_SCRATCH_BUDGET_BYTES }),
+  ];
+}
+
+/**
+ * Remove a context's allocations, newest first.
+ *
+ * @param allocations - everything this context allocated, fixture root included.
+ * @returns nothing; every `remove()` is idempotent and refuses a path it cannot
+ *   still prove is its own allocation.
+ */
+function releaseAllocations(allocations: readonly ShortTemporaryRoot[]): void {
+  for (const allocation of [...allocations].reverse()) allocation.remove();
 }
 
 function isWithin(candidate: string, root: string): boolean {
@@ -337,8 +422,8 @@ function baseEnvironment(
  *   in its recovery metadata; the directory name carries only a random id, which
  *   is what keeps a deep workspace or developer `TMPDIR` out of the fixture's
  *   path length.
- * @param options - an explicit parent or candidate list, for tests and for a
- *   harness that must pin where its fixture lands.
+ * @param options - an explicit parent, candidate list or socket parent list, for
+ *   tests and for a harness that must pin where its fixture lands.
  * @returns a context whose roots are all safe to remove only after child shutdown.
  *
  * @remarks Nothing here is inherited from the environment that merely happens to
@@ -358,11 +443,16 @@ export async function createSmokeContext(
   let cleaned = false;
   let root = "";
   try {
-    root = (await allocateFixtureRoot(prefix, options, allocations)).path;
+    const fixtureParents = await validateParents(fixtureParentRequest(options));
+    root = allocateFixtureRoot(prefix, fixtureParents, allocations).path;
     await assertSafeFixtureRoot(root);
     await assertOwnedDirectory(root, dirname(root));
     const directories = await createDirectories(root);
-    const sockets = allocateSocketRoot(root, options, allocations);
+    const sockets = allocateSocketRoot(
+      root,
+      await validateParents(socketParentRequest(options, fixtureParents.parents)),
+      allocations,
+    );
     const paths = globalPaths(directories.global);
     const environment = baseEnvironment({ ...directories, sockets });
     const context: SmokeContext = {
@@ -420,7 +510,7 @@ export async function createSmokeContext(
           }),
         );
         children.clear();
-        for (const allocation of [...allocations].reverse()) allocation.remove();
+        releaseAllocations(allocations);
       },
     };
     await mkdir(join(directories.home, ".config"), { recursive: true, mode: 0o700 });
@@ -429,7 +519,7 @@ export async function createSmokeContext(
     await assertOwnedDirectory(directories.global, root);
     return context;
   } catch (error) {
-    for (const allocation of allocations) allocation.remove();
+    releaseAllocations(allocations);
     throw error;
   }
 }
@@ -437,35 +527,30 @@ export async function createSmokeContext(
 /**
  * Allocate the fixture's own short root, or explain why none is usable.
  *
+ * @param prefix - the allocation's label.
+ * @param candidates - the already validated parents, with the refusals that
+ *   produced them.
+ * @param allocations - the list this context is building, newest last.
+ * @returns the fixture's allocation.
+ *
  * @throws `smoke_fixture_no_usable_parent` listing every candidate and its
  *   refusal, which is what a container whose temporary roots are foreign-owned
  *   needs to be diagnosed from.
  *
  * @remarks The root is deliberately *not* derived from the inherited `TMPDIR`: a
  *   developer's deep run scope used to decide where a fixture landed, and a
- *   socket beneath it then exceeded the operating system's address limit. The
- *   fixture still validates the parent it chooses as strictly as before, including
- *   the ownership chain the kernel will re-check for its own private state.
+ *   socket beneath it then exceeded the operating system's address limit. Only a
+ *   parent that already passed {@link assertSafeParent} is tried, so the
+ *   ownership chain the kernel re-checks for its own private state is validated
+ *   once for both roots.
  */
-async function allocateFixtureRoot(
+function allocateFixtureRoot(
   prefix: string,
-  options: SmokeContextOptions,
+  candidates: ValidatedParents,
   allocations: ShortTemporaryRoot[],
-): Promise<ShortTemporaryRoot> {
-  const candidates =
-    options.parentRoot !== undefined
-      ? [options.parentRoot]
-      : (options.parentCandidates ??
-        shortTemporaryRootCandidates({ budgetBytes: SHORT_SCRATCH_BUDGET_BYTES }));
-  const refused: string[] = [];
-  for (const candidate of candidates) {
-    let parent: string;
-    try {
-      parent = await assertSafeParent(candidate);
-    } catch (error) {
-      refused.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`);
-      continue;
-    }
+): ShortTemporaryRoot {
+  const refused = [...candidates.refused];
+  for (const parent of candidates.parents) {
     try {
       const allocation = allocateShortTemporaryRoot({
         label: prefix,
@@ -476,7 +561,7 @@ async function allocateFixtureRoot(
       allocations.push(allocation);
       return allocation;
     } catch (error) {
-      refused.push(`${parent}: ${error instanceof Error ? error.message : String(error)}`);
+      refused.push(`${parent}: ${refusalReason(error)}`);
     }
   }
   throw new Error(`smoke_fixture_no_usable_parent:${refused.join(";")}`);
@@ -485,34 +570,42 @@ async function allocateFixtureRoot(
 /**
  * The socket directory for a fixture: its own when the budget allows, otherwise a
  * short temporary root of its own, which is returned to `writableRoots` and cleanup.
+ *
+ * @param root - the fixture root.
+ * @param candidates - the validated socket parents.
+ * @param allocations - the list this context is building, newest last.
+ * @returns the directory every socket of this context is named under.
+ *
+ * @throws `smoke_socket_root_unavailable` when no validated parent can hold an
+ *   allocation short enough for a socket name, so an unusable host is reported as
+ *   itself instead of as a failing PTY backend.
  */
 function allocateSocketRoot(
   root: string,
-  options: SmokeContextOptions,
+  candidates: ValidatedParents,
   allocations: ShortTemporaryRoot[],
 ): string {
   const internal = join(root, SOCKETS_DIR);
   const reserve = 1 + Buffer.byteLength(SOCKETS_DIR, "utf8") + SOCKET_NAME_RESERVE_BYTES;
   if (unixSocketPathFits(join(internal, "x".repeat(SOCKET_NAME_RESERVE_BYTES)))) return internal;
-  const request = {
-    label: "socks",
-    identity: `${process.pid}`,
-    budgetBytes: UNIX_SOCKET_PATH_BUDGET_BYTES - reserve,
-    requireBudget: true,
-    requireTrustedAncestors: true,
-  };
-  let allocation: ShortTemporaryRoot;
-  try {
-    allocation = allocateShortTemporaryRoot(
-      options.parentCandidates === undefined
-        ? request
-        : { ...request, candidates: options.parentCandidates },
-    );
-  } catch {
-    allocation = allocateShortTemporaryRoot(request);
+  const refused = [...candidates.refused];
+  for (const parent of candidates.parents) {
+    try {
+      const allocation = allocateShortTemporaryRoot({
+        label: "socks",
+        identity: `${process.pid}`,
+        candidates: [parent],
+        budgetBytes: UNIX_SOCKET_PATH_BUDGET_BYTES - reserve,
+        requireBudget: true,
+        requireTrustedAncestors: true,
+      });
+      allocations.push(allocation);
+      return allocation.path;
+    } catch (error) {
+      refused.push(`${parent}: ${refusalReason(error)}`);
+    }
   }
-  allocations.push(allocation);
-  return allocation.path;
+  throw new Error(`smoke_socket_root_unavailable:${refused.join(";")}`);
 }
 
 function existingSystemRoot(path: string): boolean {

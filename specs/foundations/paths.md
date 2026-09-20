@@ -339,10 +339,15 @@ budget, so a host whose every root is long still gets scratch; a candidate whose
 account-owned is dropped. Nothing is created, repaired or chmod'ed during selection.
 
 `collectAbandonedShortTemporaryRoots` (`packages/paths/src/short-temporaries.ts`) is the recovery pass. A
-record authorises removal only when its schema is known, its host is this host, its process is provably
-dead here, it is older than the grace, its directory is still this account's owner-only directory, and
-its whole subtree holds no file and no symlink. Age, name shape or a lone PID never authorise a recursive
-removal, and an allocation with no readable record is never a candidate at all.
+record authorises removal only when its file name is an allocation id that cannot collapse a path (a
+plain single component, never `.` or `..`), its schema is known, its host is this host, its process is
+provably dead here, it is older than the grace, its directory is still a real directory of this account,
+and its whole subtree holds no file and no symlink. The walk descends only into real directories, never
+through a symlink — a link a run left to a tree the allocation does not own is not entered at all — and
+each directory scan is bounded by `maxEntries`. Age, a plain id or a lone PID never authorise a recursive
+removal on their own, and an allocation with no readable record is never a candidate at all. A record is
+evidence the allocating process wrote rather than a statement the pass can authenticate, so the pass
+assumes same-account cooperation and reclaims nothing that could still be someone's.
 `sweepGlobalStateArtifacts` runs that pass unless the caller passes `temporaryRoots: false`
 (`packages/paths/src/housekeeping.ts`), and still reclaims stale empty legacy run containers, whose
 producer no longer exists, under the same content rule.

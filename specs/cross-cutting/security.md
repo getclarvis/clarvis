@@ -435,7 +435,7 @@ add exactly the new directory it created after a before/after snapshot proves th
 symlinks, and uid ownership matches. Lifecycle ownership remains separate: the loop removes only its own
 allocation and those exact registered directories, never a system parent or unrelated pre-existing
 child, and an abandoned allocation is collected later only when a same-host record proves it dead and its
-subtree holds no file. Choosing that root also applies the same private-state ancestor policy the kernel
+subtree holds no file or symlink. Choosing that root also applies the same private-state ancestor policy the kernel
 enforces, so a foreign-owned scratch root is refused instead of accepted and then rejected by the
 component that publishes private state beneath it. Production:
 `allocateShortTemporaryRoot`, `ancestorTrust` and `UNIX_SOCKET_PATH_BUDGET_BYTES` in

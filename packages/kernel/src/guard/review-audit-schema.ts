@@ -4,7 +4,7 @@ import { createGuardEffectRegistry } from "./effects/registry.ts";
 const registry = createGuardEffectRegistry();
 const effect = z.string().refine((id) => registry.get(id) !== undefined);
 const count = z.number().int().nonnegative();
-const consumer = z.enum(["command_guard", "configure_clarvis"]);
+const consumer = z.literal("configure_clarvis");
 const stage = z.enum(["compile", "decide"]);
 const common = {
   consumer,
@@ -24,7 +24,7 @@ export const effectReviewAuditSchema = z.discriminatedUnion("event", [
       model: z.string().regex(/^[A-Za-z0-9_./:-]{1,128}$/),
       provider: z.string().regex(/^[a-z0-9_-]{1,64}$/),
       revision: count,
-      effect_id: effect,
+      effect_id: effect.optional(),
     })
     .strict(),
   z

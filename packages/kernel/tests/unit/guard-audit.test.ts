@@ -1,4 +1,9 @@
-import { createCapabilityRequestView } from "@clarvis/capability";
+import {
+  createCapabilityServices,
+  createCapabilityRequestView,
+  OPERATOR_AUTHORITY_PORT,
+} from "@clarvis/capability";
+import { JUDGE_PORT } from "@clarvis/judge";
 import { describe, it, expect } from "bun:test";
 import { resolve } from "node:path";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
@@ -6,8 +11,10 @@ import type { ShellFacts, GuardContext } from "@clarvis/tools/guard";
 import type { Elicit, ElicitRequest, RunCapabilityContext } from "@clarvis/loop";
 import { createShellGuard, type ShellGuardDecision } from "../../src/guard/shell-guard.ts";
 import { createGuardResolver } from "../../src/guard/resolver.ts";
+import { createOperatorAuthorityRuntime } from "../../src/guard/operator-authority.ts";
 import { createAuditLogger } from "../../src/component-loggers.ts";
 import { recordingLogger, type LogRecord } from "../helpers/logger.ts";
+import { judgePort } from "../helpers/judge-port.ts";
 
 function recorder(): { logger: Logger; records: LogRecord[] } {
   const logger = recordingLogger();
@@ -71,6 +78,26 @@ function runCtx(over: Partial<RunCapabilityContext>): RunCapabilityContext {
 
 function bashReq(command: string, shell: ShellFacts = shellFacts(command)): ElicitRequest {
   return { tool: "shell", args: { command }, shell };
+}
+
+/** Auto posture with a live authority ledger and the caller's semantic-port double. */
+function autoServices(review: Parameters<typeof judgePort>[0]) {
+  const services = createCapabilityServices();
+  services.provide(
+    OPERATOR_AUTHORITY_PORT,
+    createOperatorAuthorityRuntime({
+      owner: "owner-1",
+      executionId: "run-1",
+      seed: {
+        binding: { owner_key_name: "owner-1", session_id: "session", controller_epoch: "epoch" },
+        evidence: [
+          { id: "operator", source: "start", text: "Run the tests", execution_id: "run-1" },
+        ],
+      },
+    }).reader,
+  );
+  services.provide(JUDGE_PORT, judgePort(review));
+  return services;
 }
 
 describe("createShellGuard onDecision", () => {
@@ -277,11 +304,19 @@ describe("guard audit records", () => {
     expect(answerers).toEqual(["human", "session_allowlist"]);
   });
 
-  it("does not treat an unvalidated auto-mode model payload as a judge allow", async () => {
-    const llm = {
-      call: async () => ({ toolCalls: [{ name: "decide", arguments: { decision: "allow" } }] }),
-    } as unknown as RunCapabilityContext["llm"];
+  it("denies an Auto ask whose reviewer fails, and records the answer", async () => {
+    const elicit: Elicit = async () => ({
+      action: "accept",
+      content: { decision: "allow_session" },
+    });
     const { logger, records } = recorder();
+    const services = autoServices(async () => ({
+      kind: "failed",
+      failureKind: "admission",
+      elapsedMs: 0,
+      attempts: 1,
+      cacheHit: false,
+    }));
     const resolver = createGuardResolver({
       loadSettings: () => ({
         providers: [{ name: "anthropic", kind: "anthropic" }],
@@ -291,21 +326,20 @@ describe("guard audit records", () => {
     });
     const resolution = await resolver(
       runCtx({
+        services,
         request: {
           guard_mode: "auto",
           guard_judge: { guidance: "judge", on_unsure: "ask" },
         } as never,
-        llm,
+        elicit,
       }),
     );
     expect(await resolution!.elicit!(bashReq("echo hi"))).toEqual({
       allowed: false,
       answerer: "judge",
       review: {
-        effect_id: undefined,
-        failure_kind: undefined,
-        relation: "none",
-        reviewer_decision: "unsure",
+        failure_kind: "admission",
+        reviewer_decision: "failed",
       },
     });
     expect(records.find((r) => r.fields.event === "guard.elicit.answered")?.fields).toMatchObject({
@@ -315,16 +349,19 @@ describe("guard audit records", () => {
   });
 
   it("refuses Auto uncertainty without a human fallback", async () => {
-    const llm = {
-      call: async () => {
-        throw new Error("provider unavailable");
-      },
-    } as unknown as RunCapabilityContext["llm"];
-    const elicit: Elicit = async () => ({
-      action: "accept",
-      content: { decision: "allow_session" },
-    });
+    let prompts = 0;
+    const elicit: Elicit = async () => {
+      prompts++;
+      return { action: "accept", content: { decision: "allow_session" } };
+    };
     const { logger, records } = recorder();
+    const services = autoServices(async () => ({
+      kind: "reviewed",
+      receipt: { action: "decide_command", decision: "unsure" },
+      elapsedMs: 0,
+      attempts: 1,
+      cacheHit: false,
+    }));
     const resolver = createGuardResolver({
       loadSettings: () => ({
         providers: [{ name: "anthropic", kind: "anthropic" }],
@@ -334,11 +371,11 @@ describe("guard audit records", () => {
     });
     const resolution = await resolver(
       runCtx({
+        services,
         request: {
           guard_mode: "auto",
           guard_judge: { guidance: "judge", on_unsure: "ask" },
         } as never,
-        llm,
         elicit,
       }),
     );
@@ -346,24 +383,24 @@ describe("guard audit records", () => {
     expect(await resolution!.elicit!(bashReq("bun run test"))).toEqual({
       allowed: false,
       answerer: "judge",
-      review: {
-        effect_id: undefined,
-        failure_kind: undefined,
-        relation: "none",
-        reviewer_decision: "unsure",
-      },
+      review: { reviewer_decision: "unsure" },
     });
     expect(records.find((r) => r.fields.event === "guard.elicit.answered")?.fields).toMatchObject({
       answerer: "judge",
       answer: "deny",
     });
+    expect(prompts).toBe(0);
   });
 
   it("does not send an Auto escalated ask to a missing human channel", async () => {
-    const llm = {
-      call: async () => ({ toolCalls: [{ name: "decide", arguments: { decision: "allow" } }] }),
-    } as unknown as RunCapabilityContext["llm"];
     const { logger, records } = recorder();
+    const services = autoServices(async () => ({
+      kind: "reviewed",
+      receipt: { action: "decide_command", decision: "allow" },
+      elapsedMs: 0,
+      attempts: 1,
+      cacheHit: false,
+    }));
     const resolver = createGuardResolver({
       loadSettings: () => ({
         providers: [{ name: "anthropic", kind: "anthropic" }],
@@ -373,8 +410,8 @@ describe("guard audit records", () => {
     });
     const resolution = await resolver(
       runCtx({
+        services,
         request: { guard_mode: "auto", guard_judge: { guidance: "judge" } } as never,
-        llm,
       }),
     );
     const denied = await resolution!.elicit!({
@@ -382,14 +419,9 @@ describe("guard audit records", () => {
       escalate: "human",
     });
     expect(denied).toEqual({
-      allowed: false,
+      allowed: true,
       answerer: "judge",
-      review: {
-        effect_id: undefined,
-        failure_kind: undefined,
-        relation: "none",
-        reviewer_decision: "unsure",
-      },
+      review: { reviewer_decision: "allow" },
     });
     expect(records.find((r) => r.fields.event === "guard.escalation.no_channel")).toBeUndefined();
   });

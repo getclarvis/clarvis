@@ -55,19 +55,25 @@ describe("Judge settings ownership", () => {
     { max_retries: -1 },
     { max_retries: 0.5 },
     { on_unsure: "allow" },
-    { rollout: "ci_retry" },
+    { rollout: "local" },
     { grants: [] },
   ])("rejects invalid request override %j", (value) => {
     expect(guardJudgeSchema.safeParse(value).success).toBe(false);
   });
 
-  test.each(["shadow", "local", "ci_retry"])(
-    "preserves rollout %s only on operator settings",
-    (rollout) => {
-      expect(effectReviewSchema.parse({ rollout })).toEqual({ rollout });
-      expect(guardJudgeSchema.safeParse({ rollout }).success).toBe(false);
-    },
-  );
+  test.each(["shadow", "local"])("preserves rollout %s only on operator settings", (rollout) => {
+    expect(effectReviewSchema.parse({ rollout })).toEqual({ rollout });
+    expect(guardJudgeSchema.safeParse({ rollout }).success).toBe(false);
+  });
+
+  test("normalizes the withdrawn ci_retry stage instead of rejecting the whole document", () => {
+    expect(effectReviewSchema.parse({ rollout: "ci_retry" })).toEqual({ rollout: "local" });
+    expect(effectReviewSchema.parse({ rollout: "ci_retry", max_retries: 0 })).toEqual({
+      rollout: "local",
+      max_retries: 0,
+    });
+    expect(effectReviewSchema.safeParse({ rollout: "canary" }).success).toBe(false);
+  });
 
   test("preserves strict settings limits and operator-only registration", () => {
     for (const value of [

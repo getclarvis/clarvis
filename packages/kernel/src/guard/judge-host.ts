@@ -86,7 +86,9 @@ export function createHostJudge(options: {
                         model: params.model,
                         provider: params.provider,
                         revision: authority.snapshot().revision,
-                        effect_id: observation.effectId ?? "external.unknown",
+                        ...(observation.effectId === undefined
+                          ? {}
+                          : { effect_id: observation.effectId }),
                       },
                       "effect review started",
                     );

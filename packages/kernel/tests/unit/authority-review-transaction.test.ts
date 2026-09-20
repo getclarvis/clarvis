@@ -9,6 +9,7 @@ import {
   installedAuthorityTransition,
 } from "../../src/guard/authority-review-transaction.ts";
 import { createGuardEffectRegistry } from "../../src/guard/effects/registry.ts";
+import { configurationFact } from "../helpers/configuration-mutation.ts";
 
 function fixture() {
   const ledger = createOperatorAuthorityRuntime({
@@ -20,6 +21,8 @@ function fixture() {
     },
   });
   let revision = "plan-1";
+  const registry = createGuardEffectRegistry();
+  const batch = { facts: [configurationFact(registry)], reviewability: "static" as const };
   const envelope: AuthorityEnvelopeV1 = {
     version: 1,
     revision: ledger.reader.snapshot().revision,
@@ -30,22 +33,8 @@ function fixture() {
   const make = (caseDigest = "case-1") =>
     createAuthorityReviewTransaction({
       authority: ledger.reader,
-      registry: createGuardEffectRegistry(),
-      batch: {
-        facts: [
-          {
-            id: "git.commit",
-            class: "local_mutation",
-            inference: "bounded",
-            target: { kind: "repository", digest: "target" },
-            constraints: {},
-            attestation: "complete",
-            reviewability: "static",
-            analysis_issues: [],
-          },
-        ],
-        reviewability: "static",
-      },
+      registry,
+      batch,
       caseDigest,
       expectedAuthorityRevision: ledger.reader.snapshot().revision,
       expectedReviewContextRevision: revision,
@@ -54,6 +43,7 @@ function fixture() {
   return {
     ledger,
     envelope,
+    batch,
     make,
     changePlan: () => {
       revision = "plan-2";
@@ -70,7 +60,7 @@ test("compile returns one ledger-bound transition and another case cannot reuse 
   expect(f.make().isCurrent(transition)).toBe(true);
   expect(f.make("case-2").isCurrent(transition)).toBe(false);
   expect(transaction.validateAndInstall(f.envelope)).toBeUndefined();
-  transition.envelope.exclusions.push({ effect_id: "git.push" });
+  transition.envelope.exclusions.push({ effect_id: "clarvis.operational_config.write" });
   expect(f.ledger.reader.snapshot().envelope?.exclusions).toEqual([]);
 });
 
@@ -100,12 +90,14 @@ test("an intervening installation at the same revision cannot be overwritten", (
   expect(
     installAuthorityEnvelope(
       f.ledger.reader,
-      { ...f.envelope, exclusions: [{ effect_id: "git.push" }] },
+      { ...f.envelope, exclusions: [{ effect_id: "clarvis.operational_config.write" }] },
       "plan-1",
     ),
   ).toBe(true);
   expect(transaction.validateAndInstall(f.envelope)).toBeUndefined();
-  expect(f.ledger.reader.snapshot().envelope?.exclusions).toEqual([{ effect_id: "git.push" }]);
+  expect(f.ledger.reader.snapshot().envelope?.exclusions).toEqual([
+    { effect_id: "clarvis.operational_config.write" },
+  ]);
 });
 
 test("post-install context changes invalidate the receipt without rolling back the envelope", () => {
@@ -120,11 +112,10 @@ test("post-install context changes invalidate the receipt without rolling back t
 
 test("the compile's own authenticated outcome revision remains current", () => {
   const f = fixture();
+  const target = f.batch.facts[0]!.target!.digest;
   const initial = {
     ...f.envelope,
-    objectives: [
-      { id: "old", summary: "Old", target_digests: ["target"], evidence_ids: ["input"] },
-    ],
+    objectives: [{ id: "old", summary: "Old", target_digests: [target], evidence_ids: ["input"] }],
   };
   expect(installAuthorityEnvelope(f.ledger.reader, initial, "plan-1")).toBe(true);
   f.ledger.onSteer({ agent: "lead", iteration: 1, message: "New objective" });

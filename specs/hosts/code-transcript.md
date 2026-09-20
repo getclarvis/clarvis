@@ -585,8 +585,13 @@ split without crossing it. The split gives the same rule to the inline `ElicitBl
 color plus one column of padding; a focused block paints `focusBg()` and a `run` node
 paints no background at all. Sub-agent content keeps its actor-colored left rail without synthesized section chrome.
 
-Per-kind bodies (`packages/code/src/views/blocks.tsx`): `user` gets a `userBandBg()` band with a rail glyph; `reasoning` renders nothing at all when collapsed and, when visible beneath its `thinking` label, passes through `thinkingDisplayText`, which removes Markdown presentation delimiters without changing ordinary transcript prose — pinned at
-`packages/code/tests/integration/reasoning-hidden-render.test.tsx`; `thinking` is a spinner plus animated dots; `assistant` uses one static bullet plus segmented Markdown in both running and terminal
+Per-kind bodies (`packages/code/src/views/blocks.tsx`): `user` gets a `userBandBg()` band with a rail glyph; `reasoning` renders nothing at all when collapsed and, when visible beneath its `thinking` label, passes through `thinkingDisplayText`, which removes Markdown presentation delimiters without changing ordinary transcript prose.
+`thinkingPreview` in `packages/code/src/views/truncate.ts` limits the body to three terminal-cell-aware
+wrapped lines, appending `...` on the third line only when content is hidden. The preview recomputes
+when text or available width changes; persisted reasoning remains complete. Production:
+`BlockView` in `packages/code/src/views/blocks.tsx`. Test: the wrapping, resize and streaming cases in
+[reasoning-hidden-render.test.tsx](../../packages/code/tests/integration/reasoning-hidden-render.test.tsx).
+`thinking` is a spinner plus animated dots; `assistant` uses one static bullet plus segmented Markdown in both running and terminal
 states, and preserves a provider-declared `commentary` phase without synthesizing a visible label or
 changing its body; `subagent` is a bounded one-line plain-text
 preview of the delegation brief with a click affordance for the full Markdown detail modal, hidden

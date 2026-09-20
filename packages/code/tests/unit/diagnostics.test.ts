@@ -146,8 +146,12 @@ test("a diagnostic record states the path of the file it is written to", () => {
   session.close();
 
   const start = records(session.path)[0];
-  const expectedPath = session.path.replace(/\/ws_[^/]+(?=\/)/, "/[redacted]");
-  expect((start?.details as { path?: string } | undefined)?.path).toBe(expectedPath);
+  // A path reaching the sink passes through the kernel's sanitizer, whose catch-all replaces any
+  // unbroken 48+ character token (packages/capability/src/sanitize.ts, COARSE_FALLBACK). An agent
+  // scratch root under a workspace state directory carries the workspace identity that way, so the
+  // record is expected with exactly that substitution and nothing else changed.
+  const recorded = (start?.details as { path?: string } | undefined)?.path;
+  expect(recorded).toBe(session.path.replace(/\b[A-Za-z0-9_-]{48,}={0,2}\b/g, "[redacted]"));
 });
 
 test("sanitization is bounded before traversal and never invokes accessors", () => {

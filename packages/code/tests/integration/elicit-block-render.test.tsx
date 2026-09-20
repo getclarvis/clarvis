@@ -210,14 +210,18 @@ test("effect review shows segment value position and a distinct timeout receipt"
             reviewability: "judgeable",
             issues: [{ segmentIndex: 1, kind: "command_substitution", impact: "value" }],
           },
-          effect: { id: "git.commit", class: "local_mutation", attestation: "complete" },
+          effect: {
+            id: "clarvis.operational_config.write",
+            class: "authority_change",
+            attestation: "complete",
+          },
           reviewer: { status: "failed", failure_kind: "timeout", attempts: 1 },
         },
       }}
       onResolve={() => {}}
     />
   ));
-  expect(out).toContain("git.commit");
+  expect(out).toContain("clarvis.operational config.write");
   expect(out).toContain("Segment 2: command substitution");
   expect(out).toContain("argument value");
   expect(out).toContain("Reviewer timed out after 1 attempt");

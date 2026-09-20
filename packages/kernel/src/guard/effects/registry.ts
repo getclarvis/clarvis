@@ -1,64 +1,38 @@
 import type { ReviewedEffectClass, ReviewedEffectInference } from "@clarvis/capability";
 import type { GuardEffectDescriptor } from "./types.ts";
 
+/**
+ * The closed descriptor vocabulary of configuration review.
+ *
+ * @remarks Every producer and consumer of an effect fact lives in the restricted configuration
+ * path: `attestConfiguration` builds the fact, `createConfigurationReview` reviews it, and the
+ * authority envelope compiles a grant only for one of these four ids. Command review does not
+ * consult this registry at all, so an operation name is never an authorization rule.
+ */
 const BUILTINS: ReadonlyArray<readonly [string, ReviewedEffectClass, ReviewedEffectInference]> = [
-  ["workspace.inspect", "read", "bounded"],
   ["workspace.content.write", "local_mutation", "bounded"],
-  ["process.execute", "unknown", "human_only"],
-  ["environment.temporary_root", "local_mutation", "bounded"],
-  ["value.literal_data", "read", "bounded"],
   ["clarvis.authoring.write", "local_mutation", "bounded"],
   ["clarvis.operational_config.write", "authority_change", "explicit"],
-  ["git.commit", "local_mutation", "bounded"],
-  ["git.push", "external_mutation", "explicit"],
-  ["git.history_rewrite", "destructive", "human_only"],
-  ["github.pr.open_or_update", "external_mutation", "explicit"],
-  ["github.pr.merge", "external_mutation", "human_only"],
-  ["github.checks.observe", "external_observation", "bounded"],
-  ["github.actions.rerun_failed", "external_mutation", "bounded"],
-  ["github.actions.rerun_all", "external_mutation", "human_only"],
-  ["github.actions.dispatch", "external_mutation", "human_only"],
-  ["release.publish", "external_mutation", "human_only"],
-  ["deploy.publish", "external_mutation", "human_only"],
-  ["credential.access", "credential", "human_only"],
   ["destructive.delete", "destructive", "human_only"],
-  ["external.unknown", "unknown", "human_only"],
 ];
 
-/** Closed constraint vocabulary; unknown keys never disappear during validation. */
-function validConstraints(id: string, value: Record<string, string | number | boolean>): boolean {
-  if (
-    id === "clarvis.authoring.write" &&
-    Object.keys(value).length === 1 &&
-    typeof value.path_digest === "string"
-  )
-    return /^[a-f0-9]{64}$/.test(value.path_digest);
-  const keys =
-    id === "github.actions.rerun_failed"
-      ? ["failed_only", "attempts", "head_sha", "run_id"]
-      : id === "environment.temporary_root"
-        ? ["root"]
-        : id === "value.literal_data"
-          ? ["bytes"]
-          : id === "git.commit"
-            ? ["head_sha"]
-            : id === "git.push"
-              ? ["head_sha", "set_upstream"]
-              : [
-                    "workspace.content.write",
-                    "clarvis.authoring.write",
-                    "clarvis.operational_config.write",
-                    "destructive.delete",
-                  ].includes(id)
-                ? [
-                    "expected_revision",
-                    "next_revision",
-                    "bytes",
-                    "operation",
-                    "field_class",
-                    "diff_digest",
-                  ]
-                : [];
+/**
+ * One configuration mutation's closed constraint vocabulary.
+ *
+ * @param value - the constraints attached to a fact or to a compiled grant.
+ * @returns whether every key belongs to the vocabulary and every value fits its shape.
+ * @remarks Unknown keys never disappear during validation: an unexpected key fails the fact, and
+ * coverage comparison requires the fact and the grant to carry the same constraints key by key.
+ */
+function configurationConstraints(value: Record<string, string | number | boolean>): boolean {
+  const keys = [
+    "expected_revision",
+    "next_revision",
+    "bytes",
+    "operation",
+    "field_class",
+    "diff_digest",
+  ];
   if (Object.keys(value).some((key) => !keys.includes(key))) return false;
   if (
     Object.values(value).some((item) =>
@@ -68,53 +42,23 @@ function validConstraints(id: string, value: Record<string, string | number | bo
     )
   )
     return false;
-  if (id === "github.actions.rerun_failed")
-    return (
-      value.failed_only === true &&
-      value.attempts === 1 &&
-      typeof value.head_sha === "string" &&
-      /^[a-f0-9]{40,64}$/.test(value.head_sha) &&
-      typeof value.run_id === "string" &&
-      /^[0-9]+$/.test(value.run_id)
-    );
-  if (id === "environment.temporary_root") return typeof value.root === "string";
-  if (id === "value.literal_data") return typeof value.bytes === "number" && value.bytes <= 4096;
-  if (id === "git.commit")
-    return typeof value.head_sha === "string" && /^[a-f0-9]{40,64}$/.test(value.head_sha);
-  if (id === "git.push")
-    return (
-      typeof value.head_sha === "string" &&
-      /^[a-f0-9]{40,64}$/.test(value.head_sha) &&
-      typeof value.set_upstream === "boolean"
-    );
-  if (
-    [
-      "workspace.content.write",
-      "clarvis.authoring.write",
-      "clarvis.operational_config.write",
-      "destructive.delete",
-    ].includes(id)
-  ) {
-    if (id === "workspace.content.write" && Object.keys(value).length === 0) return true;
-    return (
-      typeof value.expected_revision === "string" &&
-      /^(?:absent|[a-f0-9]{64})$/.test(value.expected_revision) &&
-      typeof value.next_revision === "string" &&
-      /^(?:absent|[a-f0-9]{64})$/.test(value.next_revision) &&
-      typeof value.bytes === "number" &&
-      value.bytes <= 262144 &&
-      (value.operation === undefined ||
-        ["write", "edit", "delete"].includes(String(value.operation))) &&
-      (value.field_class === undefined || typeof value.field_class === "string") &&
-      (value.diff_digest === undefined ||
-        (typeof value.diff_digest === "string" && /^[a-f0-9]{64}$/.test(value.diff_digest)))
-    );
-  }
-  return true;
+  return (
+    typeof value.expected_revision === "string" &&
+    /^(?:absent|[a-f0-9]{64})$/.test(value.expected_revision) &&
+    typeof value.next_revision === "string" &&
+    /^(?:absent|[a-f0-9]{64})$/.test(value.next_revision) &&
+    typeof value.bytes === "number" &&
+    value.bytes <= 262144 &&
+    (value.operation === undefined ||
+      ["write", "edit", "delete"].includes(String(value.operation))) &&
+    (value.field_class === undefined || typeof value.field_class === "string") &&
+    (value.diff_digest === undefined ||
+      (typeof value.diff_digest === "string" && /^[a-f0-9]{64}$/.test(value.diff_digest)))
+  );
 }
 
 /** Registry cannot be mutated after composition; workspace configuration never registers effects. */
-export function createGuardEffectRegistry(additional: readonly GuardEffectDescriptor[] = []) {
+export function createGuardEffectRegistry() {
   const descriptors = new Map<string, GuardEffectDescriptor>();
   for (const [id, effectClass, inference] of BUILTINS) {
     descriptors.set(
@@ -123,7 +67,7 @@ export function createGuardEffectRegistry(additional: readonly GuardEffectDescri
         id,
         class: effectClass,
         inference,
-        validateConstraints: (value) => validConstraints(id, value),
+        validateConstraints: configurationConstraints,
         covers(grant, fact) {
           return (
             inference !== "human_only" &&
@@ -136,8 +80,8 @@ export function createGuardEffectRegistry(additional: readonly GuardEffectDescri
             fact.target !== undefined &&
             grant.target_digests.includes(fact.target.digest) &&
             (grant.relation === "direct" || inference === "bounded") &&
-            validConstraints(id, grant.constraints) &&
-            validConstraints(id, fact.constraints) &&
+            configurationConstraints(grant.constraints) &&
+            configurationConstraints(fact.constraints) &&
             Object.entries(fact.constraints).every(
               ([key, value]) => grant.constraints[key] === value,
             ) &&
@@ -149,15 +93,11 @@ export function createGuardEffectRegistry(additional: readonly GuardEffectDescri
       }),
     );
   }
-  for (const descriptor of additional) {
-    if (descriptors.has(descriptor.id)) throw new Error("effect descriptor cannot be replaced");
-    descriptors.set(descriptor.id, Object.freeze({ ...descriptor }));
-  }
   return Object.freeze({
     get: (id: string) => descriptors.get(id),
     list: () => [...descriptors.values()],
   });
 }
 
-/** Registry port consumed only by host review services. */
+/** Registry port consumed only by the configuration review flow. */
 export type GuardEffectRegistry = ReturnType<typeof createGuardEffectRegistry>;

@@ -114,7 +114,7 @@ files during evaluation.
 revokes volatile consent scopes on disconnect, takeover or conversation close.
 Native Host/Sandbox guard decisions use the current interactive command allowlist. Container guests
 receive no guard policy, approval bridge, reviewer or operator authority. Retired native scopes
-reject late answers, including one-time approval, and effect review caches only host-validated final
+reject late answers, including one-time approval, and configuration review caches only host-validated final
 decisions. Configuration mutations consume the same host-owned authority reader and revocation
 signal as command review. `createFileKernel` installs the restricted writer into admitted editable
 Host/Sandbox runs; the ordinary agent and placement remain in use.
@@ -816,59 +816,60 @@ human, `auto` has an LLM answer it. In `on` and `auto`, a **deny** is enforced b
 review, and `denied_commands` outranks `allowed_commands`. Mode `off` supplies no command guard;
 independent filesystem, credential, capability and runtime boundaries remain active.
 
-The kernel supplies nonreplaceable policies for effect and call-local command review. Auto resolves its model from
+The kernel supplies nonreplaceable policies for command review and for the transactional
+configuration review. Auto resolves its model from
 operator-owned `effect_review` settings or the default model; `guard_judge` supplies optional
 overrides and guidance. Code no longer supplies a complete system prompt. Workspace guidance
-cannot grant authority. The [effect-review contract](../../specs/execution/effect-review.md)
-owns the host evidence ledger, effect registry, rollout and validated effect path. A generic shell
-ask whose sole fact is `external.unknown` instead reaches `createCommandReview` with the complete call
-and the same host-owned evidence. Hosted Goal runs supply their complete persisted definition, and
+cannot grant authority. The [command-guard contract](../../specs/execution/command-guard.md)
+owns the single deterministic policy and the one review path: every Auto `ask` that applicable
+session consent does not cover reaches `createCommandReview` with the complete call, and no effect
+classification, operation rule or probe sits between the policy and the Judge. The
+[effect-review contract](../../specs/execution/effect-review.md)
+owns the host evidence ledger, effect registry and validated effect path, which now scope the
+restricted configuration writers (`configure_clarvis` and native authoring reviewed through
+`reviewMutation`). Hosted Goal runs supply their complete persisted definition, and
 the active Plans capability supplies only its stable substantive specification, as separate
-host-attested review context. Both reviewers treat those definitions as the operator's semantic
+host-attested review context. The reviewer treats those definitions as the operator's semantic
 objective and implementation path, so a necessary bounded prerequisite such as installing declared
-dependencies can be approved. They cannot infer human-only effects, publication, deployment,
+dependencies can be approved. It cannot infer publication, deployment,
 destruction, credential access or external contact from that context. A verdict is valid only for the exact call and installs no
 descriptor, envelope grant or session permission. The evidence is chronological: a fresh publication
 instruction can refer to the authenticated implementation scope from earlier turns, while an old
 publication instruction alone cannot authorize a changed outcome. Accepted entry-agent `ask_user`
 answers join that evidence before the next review; their model-authored questions are labeled
 untrusted context, and decline, cancel or another elicitation kind grants nothing.
-Call-local command review obtains `JUDGE_PORT` lazily and executes the private Judge run through the
+Command review obtains `JUDGE_PORT` lazily and executes the private Judge run through the
 work run's effective base provider. The child owns its `judge` identity, resolved TTL, fixed policy,
-canonical snapshot breakpoint and separate volatile case. Effect compilation and decision use the same private execution boundary. Both retain canonical session affinity and recheck
+canonical snapshot breakpoint and separate volatile case. The configuration compiler and decision use the same private execution boundary. Both retain canonical session affinity and recheck
 live Plans context before accepting a result. Plan progress fields are excluded from its projection.
 The command adapter coalesces concurrent identical Auto reviews without caching refusals as
 consent. Missing Judge composition and architecture faults propagate; retirement never asks a human.
-Each real call-local or effect-review provider invocation also records one kernel-owned
+Each real command-review or configuration-review provider invocation also records one kernel-owned
 `guard_reviewer_model_call` event through `RUN_TRACE_PORT`. It totals winning and retried usage,
 retains unknown usage/cache flags, and reports a cache-read ratio only when cache counters are
 complete. Verdict memoization emits nothing. The persisted event contains identity, timing, status,
 attempts, token counters and bounded authority/effect identifiers only; it is deliberately dropped
 before protocol projection and never enters run usage totals or context.
 Auto reuses eligible exact human session approvals before invoking the reviewer, while deny-list
-matches and explicit Host escalation retain their precedence. Shell attestation recaptures process
-lookup/configuration roots from the actual spawn and refuses unmatched execution-affecting
-environment overrides. Historical target exclusions survive reviews of other targets without
+matches and explicit Host escalation retain their precedence. Historical target exclusions survive
+configuration reviews of other targets without
 authorizing grants for those historical targets.
 
 The resolver snapshots host-owned placement once per run: enabled native sandbox means
 contained-or-fail-closed, including legacy optional availability; Docker/Podman guests also count
 as contained. Host and disabled native policies do not. Explicit per-call unsandbox is reviewed as
 Host, with native network restrictions omitted; Auto may judge it, while `on` requires a human.
-Complete effect attestations refine syntactic opacity into mechanically covered effects after
-deterministic denials. This includes an explicit non-forced push of the checked-out branch to a
-resolved GitHub remote, bounded JSON inspection of its current open pull request, and numeric
-`gh pr checks` observation with optional `--watch` and a positive `--interval` only alongside it; ambiguous
-refspecs, force variants and unsupported observation flags remain closed. Other ordinary
-Host/Sandbox asks and allow-list misses can use the call-local argv reviewer in Auto, including
-options, wrappers, dynamic arguments and environment prefixes.
+The policy is the only classifier: it decides `allow`, `deny` or `ask`, and Auto sends every
+remaining `ask` to the call-local reviewer, including
+options, wrappers, dynamic arguments, environment prefixes and a command whose operation name once
+carried its own rule — an explicit push, a pull-request edit, a rerun or a release publishes no
+operation-specific refusal before review.
 Review `on` (Approval) asks a human only for the grey zone that is neither allow-listed nor
 dangerous; a dangerous match, including forced removal of a credential file, denies to the
 principal with the exact segment. Auto never elicits a
 person: the Judge decides forced removal, privilege elevation, credential-file asks and unsandbox,
-and both deny and unsure refuse to the principal. Identified host-inadmissible effects deny in Auto
-without a Judge call. A nonempty deny list rejects undecidable commands before any reviewer. No
-unmatched contained silent-allow rule is installed.
+and both deny and unsure refuse to the principal. A nonempty deny list rejects undecidable commands
+before any reviewer. No unmatched contained silent-allow rule is installed.
 
 POSIX Git presentation globals normalize for matching, while validated `cd <in-workspace>` and
 Git `-C` directory operands receive comparison-only handling for straight `&&` chains.
@@ -881,13 +882,13 @@ approval keys keep their original normalized identities; unsupported control flo
 retain ordinary matching. Paths still participate in denial.
 
 Operator evidence is captured before synthetic message assembly and transported outside the public
-request. The effect reviewer reads the live revisioned ledger, and does not derive grants from
+request. The configuration reviewer reads the live revisioned ledger, and does not derive grants from
 assistant text, child briefs, command arguments, justification or role-filtered final context. Its
 seed accepts the same message-count and character envelope as validated run input, including the
 separator overhead of extracted multipart text, so a valid long operator prompt does not silently
 disable Auto review. When a new authenticated operator turn continues the same host controller after
 the previous run settled, the host carries its authenticated evidence into a fresh outcome without
-reviving the prior envelope, refusals or consumed effects. Synthetic continuations and controller
+reviving the prior envelope or refusals. Synthetic continuations and controller
 changes cannot reactivate settled evidence.
 
 A resolved judge reports which channel ultimately answered. An `allow` or `deny` is attributed to
@@ -972,7 +973,11 @@ roots. It validates settings, Agent Profiles, Skills, and Workflows, binds mutat
 revisions, and excludes private state, credentials and links. An external edit during review causes
 conflict. Workspace trust carries only across the authorized target bytes when every other input is
 unchanged. An editing entry agent may also use ordinary atomic file tools for canonical workspace
-Agent Profile, `WORKFLOW.md`, or `SKILL.md` authoring. `createAuthoringMutationReview` prepares the
+Agent Profile, `WORKFLOW.md`, or `SKILL.md` authoring when the run carries the host-owned
+`reviewMutation` port; without it — a Container guest, a ceiling other than `edit`/`exec`, or disabled
+builtin tools — the file tool refuses the target with the `configure_clarvis` message before the guard
+runs, and a generic command approval never becomes configuration approval.
+`createAuthoringMutationReview` prepares the
 complete batch, validates each canonical document, captures every target and exact revision, reviews
 it once through the same host authority, and commits all or none. Operational configuration, global
 roots, private targets, and selected skill packages do not enter that route.
@@ -1397,7 +1402,9 @@ validation and separate deterministic, live-provider and installed-artifact qual
 canonical document, captures every target, reviews one complete batch (including local skill
 membership), rechecks revisions, and carries trust only after the asynchronous transaction succeeds.
 Concurrent changes to other executable inputs withhold trust. Profile definition/selection leases
-remain held through async file mutation and rollback companion changes on failure.
+remain held through async file mutation and rollback companion changes on failure. The port is the
+only route for file-tool authoring: without it the tool refuses a canonical authoring target before
+the command guard is consulted.
 
 Concrete configuration refusals live in the shared authority ledger. Identical before/after bytes cannot trigger another prompt merely by switching edit and write; corrected bytes receive their own decision. The bounded ledger persists only under the validated authority binding and is invalidated by fresh admitted evidence. See [self-configuration](../../specs/hosts/self-configuration.md).
 
@@ -1422,7 +1429,7 @@ editing/execution profiles in Auto and guard-off mode (automatic configuration r
 explicit human-only mode and disabled tools. Memory indexing removes the capability.
 Actual private calls emit one payload-free parent event with `judge_execution_id`; cache reuse emits
 none, and child usage does not enter the parent execution ledger. Real JSON integration tests verify
-private visibility and removal of case/model prose. Command, effect and configuration consumers use this binding. See the [Judge contract](../../specs/capabilities/judge.md).
+private visibility and removal of case/model prose. Command and configuration consumers use this binding. See the [Judge contract](../../specs/capabilities/judge.md).
 
 The authority ledger retains `envelope_context_revision` beside the installed envelope. This
 host-owned binding survives a validated checkpoint and is replaced atomically with compilation;

@@ -127,6 +127,8 @@ does not continuously observe work or inject background corrections. A not-achie
 concrete correction to the same run; failure or inconclusive review prevents completion. The domain
 owns the fixed schema, request policy, settings, review state and idempotent usage reducer; the Kernel
 owns the bounded completion call, evidence projection, fencing and durable settlement.
+Formulation and Steward output schemas declare an explicit object root and retain their exclusive
+variants; the same schema is sent to every model without provider-specific rewriting.
 `goals.agent.steward` selects the optional model and finite allowance independently of the work budget.
 Private `continue_from` history preserves compatible prompt prefixes across evaluations and checkpoints.
 The Steward never receives repository instructions such as `AGENTS.md` or `CLARVIS.md` and has no

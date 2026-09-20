@@ -141,6 +141,7 @@ export function goalFormulationFingerprint(request: ParsedGoalFormulateRequest):
 }
 
 export const goalFormulationOutputSchema = {
+  type: "object",
   oneOf: [
     {
       type: "object",

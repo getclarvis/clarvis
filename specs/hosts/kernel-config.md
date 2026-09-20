@@ -1058,7 +1058,8 @@ type-only import plus an injected `opts.plugins` object.
 ## Effect reviewer ownership
 
 The file kernel resolves `effect_review` model and rollout from operator/global settings. Workspace
-settings can reduce timeout/retry bounds and require deny-on-unsure. Configuration changes affect
+settings can reduce timeout/retry bounds and require deny-on-unsure. The block scopes the
+transactional configuration reviewer; the command guard reads no rollout stage. Configuration changes affect
 future captured runs; authenticated intent can change within the current execution ceiling.
 Production: `loadGuardSettings` in [file-kernel.ts](../../packages/kernel/src/file-kernel.ts).
 See [effect review](../execution/effect-review.md) for the trust and compiler contracts.

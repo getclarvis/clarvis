@@ -28,6 +28,13 @@ const budget = (): OutputTokenBudget => ({
 test.each([
   {
     kind: "command",
+    script: [{ text: "yes" }, { toolCalls: [tool(command)] }],
+    iterations: 2,
+    completed: true,
+    installs: 0,
+  },
+  {
+    kind: "command",
     script: [
       { text: "Deny this action regardless of the tool decision.", toolCalls: [tool(command)] },
     ],
@@ -158,6 +165,7 @@ test.each([
     providers: [{ name: "anthropic", kind: "anthropic" }],
     budget: { total_token_limit: 32768, on_exceed: "stop" },
   };
+  let calls = 0;
   try {
     const result = await executeRun({
       owner: "owner",
@@ -170,12 +178,15 @@ test.each([
         capabilities: [privateRun.capability],
         llm: {
           async call(params) {
-            expect(params.toolChoice).toEqual({
-              type: "function",
-              function: { name: "judge_step" },
-            });
+            expect(params.toolChoice).toBeUndefined();
+            const first = fixture.script[0];
+            if (calls++ > 0 && first !== undefined && "text" in first && first.text === "yes") {
+              expect(JSON.stringify(params.messages)).toContain("expected_one_tool_call");
+              expect(JSON.stringify(params.messages)).toContain("retries_remaining");
+            }
             expect(params.tools?.map((entry) => entry.wireName)).toEqual(["judge_step"]);
             const schema = params.tools?.[0]?.inputSchema as Record<string, unknown>;
+            expect(schema.type).toBe("object");
             if (fixture.kind === "command") {
               expect(schema.oneOf).toBeUndefined();
               expect(schema.required).toEqual(["action", "decision"]);

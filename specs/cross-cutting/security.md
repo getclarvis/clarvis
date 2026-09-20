@@ -671,14 +671,15 @@ Transitions:
 
 Within workspace configuration roots, the generic `@clarvis/tools` API admits ordinary native
 file-mutation tools only for canonical Agent Profile, `WORKFLOW.md`, and `SKILL.md` destinations when
-the guard's `ask` carries a complete `clarvis.authoring.write` effect and is approved. A partial,
-missing, or unapproved effect remains denied. The file kernel instead gives an editing entry agent a
+the run carries the restricted `MutationReview` writer. Without that port the file tool refuses the
+target with the `configure_clarvis` message, and a generic command approval is never treated as
+configuration approval. The file kernel gives an editing entry agent that
 host-owned `MutationReview`: it prepares the complete atomic batch, validates each canonical
 document, captures every target and exact revision, reviews all effects together, and calls
 `withOperatorWrite` only for an exact successful transaction. Operational destinations direct the
 agent to `configure_clarvis`; private destinations remain denied. Selected skill packages stay
 immutable to native file tools, and command execution retains its separate shell/sandbox boundary
-rather than becoming an alternate writer. Production: `protectWorkspaceConfiguration` in
+rather than becoming an alternate writer. Production: `protectWorkspaceConfiguration` and `dispatch` in
 `packages/tools/src/core.ts`, `isCanonicalAuthoringPath` in
 `packages/tools/src/guard/authoring-path.ts`, and `createAuthoringMutationReview` in
 `packages/kernel/src/configuration/authoring-mutations.ts`. Test: the authoring review case in
@@ -1368,10 +1369,9 @@ The execution ceiling and captured placement do not change when intent changes. 
 [effect-review.ts](../../packages/kernel/src/guard/effect-review.ts).
 Test: [effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
 The complete boundaries are in [effect review](../execution/effect-review.md).
-Host effect probes do not attest a shell whose inherited Git/GitHub or executable-loading overrides
-differ from the admitted probe environment. Only lookup/configuration roots are recaptured from the
-actual spawn; arbitrary host variables are not forwarded. The comparison is repeated after review.
-Production: `resolveEffectEnvironment` in
-[environment.ts](../../packages/kernel/src/guard/effects/environment.ts). Test:
-[effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts), including
-environment changes during a reviewer decision.
+Host probes never attest a shell command, and a command is never classified by operation: the guard
+resolves its policy once and sends every remaining Auto `ask` to the call-local Judge reviewer. Only
+lookup/configuration roots are recaptured from the actual spawn, and arbitrary host variables are
+never forwarded to a probe. Production and tests:
+[command-guard.md](../execution/command-guard.md) and
+[effect review](../execution/effect-review.md).

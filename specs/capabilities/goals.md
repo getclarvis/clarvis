@@ -368,7 +368,15 @@ iteration boundaries. Accepted operator steering invalidates an in-flight or reu
 decision through the existing semantic fences. Review-limit exhaustion requires explicit operator
 action.
 
-The fixed output schema accepts definition or completion assessments. Before activation, definition
+The fixed output schema accepts definition or completion assessments. Formulation and Steward
+output schemas declare an explicit `type: "object"` root with exclusive `oneOf` variants,
+without model-specific rewriting or relaxing local validation.
+Production: `goalFormulationOutputSchema` in [request.ts](../../packages/goal/src/agent/request.ts)
+and `goalStewardOutputSchema` in [steward-request.ts](../../packages/goal/src/agent/steward-request.ts).
+Test: [agent-run.test.ts](../../packages/goal/tests/unit/agent-run.test.ts) and
+[steward.test.ts](../../packages/goal/tests/unit/steward.test.ts).
+
+Before activation, definition
 review compares the proposed definition with the operator
 request and verified bounded normative-source snapshots. `revise_definition` returns one specific
 correction to the selected main agent; `accept_definition` permits activation. At most three

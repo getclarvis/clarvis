@@ -24,7 +24,11 @@ and `effectReviewFixture`, exercised by the Kernel Judge and effect-review integ
 validated against `CLARVIS_TIMEOUT_CEILING_MS` by the ordinary profile validator, nonnegative retries
 bounded by `CLARVIS_RETRY_CEILING`,
 `on_unsure` (`ask` or `deny`; Auto ignores `ask` and refuses to the calling agent) and rollout
-(`shadow`, `local`, `ci_retry`). Its merge is last-wins,
+(`shadow`, `local`; both scope configuration review only, never command authorization). A document
+written before the `ci_retry` stage was withdrawn still parses: that spelling normalizes to the
+conservative `local` ceiling rather than failing validation, because a rejected document is
+discarded whole and would silently drop every unrelated setting beside it. Any other value is still
+rejected. Its merge is last-wins,
 with global/workspace restrictions applied by Kernel. Calls inherit `CLARVIS_DEFAULT_CALL_TIMEOUT_MS`
 (180000 ms by default) and `CLARVIS_DEFAULT_MAX_RETRIES` (three retries by default), with denial on
 uncertainty. There is no private transport retry default or ceiling. The strict per-run `guard_judge` parameter accepts the same model,
@@ -34,7 +38,11 @@ Unknown fields are rejected, not translated. `guard_mode` remains owned by tools
 
 Production: `effectReviewSchema`, `guardJudgeSchema`, `JUDGE_DEFAULTS` and `judgeRequestConfig` in
 [settings.ts](../../packages/judge/src/settings.ts).
-Test: [settings.test.ts](../../packages/judge/tests/unit/settings.test.ts), `Judge settings ownership`.
+Test: [settings.test.ts](../../packages/judge/tests/unit/settings.test.ts), `Judge settings ownership`
+(the withdrawn-stage normalization and the still-rejected unknown value), and the store-level upgrade
+regression in
+[file-config-store.test.ts](../../packages/kernel/tests/integration/file-config-store.test.ts),
+`FileConfigStore — settings upgrade`.
 
 Absent runtime overrides remain absent through settings merging. Workspace configuration may only
 lower the effective runtime defaults or explicit operator limits. Protocol correction remains
@@ -151,11 +159,12 @@ transitions, rejection before installation, host fault propagation and late-resu
 ## Private run contribution
 
 `createJudgeRunCapability` creates one mandatory `judge-private` contribution for the entry agent,
-with one forced `judge_step` tool and an injected aggregate output budget. Its response-admission
+with one `judge_step` tool, no provider-side forced selection, and an injected aggregate output budget. Its response-admission
 seam checks the complete model response before dispatch without executing authority transactions.
 A command run publishes the strict `decide_command` schema rather than the three-action union;
 admission applies that same schema, the state machine still enforces its stage, and effect runs
-retain their staged protocol.
+retain their staged protocol. Both schemas declare an explicit object root while preserving their
+closed variants. Tool selection is enforced by local admission and bounded correction for every model.
 A handler without admission fails closed. Compile invokes the host transaction in the handler and
 returns a tool result; decide returns a terminal completed structured receipt in that same iteration.
 A raw text finalization without response admission is terminal `judge_invalid_response`.
@@ -176,7 +185,8 @@ Production: [run-capability.ts](../../packages/judge/src/run-capability.ts),
 Test: [run-capability.test.ts](../../packages/judge/tests/integration/run-capability.test.ts)
 runs the ordinary engine and asserts the command-only provider schema, one iteration for command,
 two for compile/decide, terminal
-errors after bounded correction, a single tool catalog and no partial compile on multiple calls.
+errors after bounded correction, recovery from text-only output with correction feedback, explicit
+object roots without forced selection, a single tool catalog and no partial compile on multiple calls.
 
 
 ## Isolated execution and cache prefix
@@ -243,7 +253,7 @@ The host resolves absent call overrides from its effective environment; workspac
 only reduce that default or the explicit operator limit. `ModelCallInactivityError` is the shared
 Capability error subtype, preserving timeout classification and usage without inspecting error prose.
 The adapter permits four correction calls per stage but fences provider/framing failures so the
-engine's forced-tool rejection fallback cannot issue another external call after such a failure.
+engine cannot issue another external call after such a failure.
 The original provider failure remains available for host policy. Retries
 inside the existing provider wrapper retain their configured limits and accounting.
 
@@ -324,7 +334,7 @@ identity are architecture errors, not uncertainty.
 The pure eligibility predicate includes edit/exec profiles when tools are enabled and mode is Auto
 or off; automatic configuration review remains possible in off mode. Explicit human-only mode and
 read-only ceilings exclude it. Memory indexing filters Judge from inherited capabilities. Container
-composition does not invoke the native FileKernel factory. Command, effect and configuration review use this binding.
+composition does not invoke the native FileKernel factory. Command, configuration and effect review use this binding.
 
 Each actual inference emits one parent `guard_reviewer_model_call` with private
 `judge_execution_id`, live stage/authority revision and consumer metadata. Cache hits emit none.

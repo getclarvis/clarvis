@@ -281,6 +281,57 @@ describe("FileConfigStore — parse errors and dir conventions", () => {
   });
 });
 
+describe("FileConfigStore — settings upgrade", () => {
+  const upgradeSettings = () =>
+    JSON.stringify({
+      default_model: "anthropic/claude-upgrade",
+      guard: { type: "shell", mode: "auto", denied_commands: ["git push"] },
+      effect_review: { rollout: "ci_retry", model: "anthropic/reviewer-upgrade" },
+    });
+
+  it("normalizes the withdrawn ci_retry stage instead of discarding the whole document", () => {
+    const root = mkdtempSync(join(tmpdir(), "clarvis-cfg-upgrade-"));
+    const globalDir = join(root, "global");
+    seedGlobal(globalPaths(globalDir).settingsFile, upgradeSettings());
+    const store = createFileConfigStore({ workspaceRoot: root, globalDir });
+    const snapshot = store.readSettings();
+    expect(snapshot.sources.find((source) => source.scope === "global")?.error).toBeUndefined();
+    expect(snapshot.scopes.global).toMatchObject({
+      default_model: "anthropic/claude-upgrade",
+      guard: { mode: "auto", denied_commands: ["git push"] },
+      effect_review: { rollout: "local" },
+    });
+    expect(snapshot.merged).toMatchObject({
+      default_model: "anthropic/claude-upgrade",
+      guard: { type: "shell", mode: "auto", denied_commands: ["git push"] },
+      effect_review: {
+        rollout: "local",
+        model: "anthropic/reviewer-upgrade",
+        on_unsure: "deny",
+      },
+    });
+  });
+
+  it("still fails closed on a rollout value that was never a stage", () => {
+    const root = mkdtempSync(join(tmpdir(), "clarvis-cfg-upgrade-bad-"));
+    const globalDir = join(root, "global");
+    seedGlobal(
+      globalPaths(globalDir).settingsFile,
+      JSON.stringify({
+        default_model: "anthropic/claude-upgrade",
+        effect_review: { rollout: "canary" },
+      }),
+    );
+    const store = createFileConfigStore({ workspaceRoot: root, globalDir });
+    const snapshot = store.readSettings();
+    expect(snapshot.sources.find((source) => source.scope === "global")?.error).toContain(
+      "rollout",
+    );
+    expect(snapshot.scopes.global).toBeUndefined();
+    expect(snapshot.merged).toEqual({});
+  });
+});
+
 describe("FileConfigStore — resource bounds", () => {
   it("reports an oversized sparse settings file without reading its body", () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-cfg-large-settings-"));

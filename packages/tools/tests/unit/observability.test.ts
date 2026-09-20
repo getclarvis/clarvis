@@ -9,7 +9,14 @@ import { boundOrSpill, createCaptureSink } from "../../src/lib/output.ts";
 import { sandboxCommand } from "../../src/sandbox.ts";
 import { readExitState } from "../../src/lib/monitor.ts";
 import { bestEffort } from "../../src/lib/tasks.ts";
-import { callTool, cleanup, makeConfig, makeWorkspace, write } from "../helpers/fixtures.ts";
+import {
+  callTool,
+  cleanup,
+  fixtureStatePaths,
+  makeConfig,
+  makeWorkspace,
+  write,
+} from "../helpers/fixtures.ts";
 
 interface Record_ {
   level: "debug" | "info" | "warn" | "error";
@@ -311,15 +318,16 @@ describe("tools.monitor_exit_unreadable", () => {
   it("an unparsable sentinel is reported, not silently folded into 'killed'", async () => {
     root = makeWorkspace();
     const { logger, records } = recorder();
-    const { ensureWorkspaceLocalDir, workspaceStatePaths } = await import("@clarvis/paths");
-    ensureWorkspaceLocalDir(root);
-    const exit = workspaceStatePaths(root).monitorExit("mon_badexit");
+    const { ensureWorkspaceLocalDir } = await import("@clarvis/paths");
+    const statePaths = fixtureStatePaths(root);
+    ensureWorkspaceLocalDir(statePaths);
+    const exit = statePaths.monitorExit("mon_badexit");
     const { mkdirSync, writeFileSync } = await import("node:fs");
     const { dirname } = await import("node:path");
     mkdirSync(dirname(exit), { recursive: true });
     writeFileSync(exit, "not-a-number\n");
 
-    const state = await readExitState(root, "mon_badexit", logger);
+    const state = await readExitState(statePaths, "mon_badexit", logger);
     expect(state).toEqual({ exited: true, code: null });
     const [record] = eventsOf(records, "tools.monitor_exit_unreadable");
     expect(record?.level).toBe("warn");
@@ -334,7 +342,7 @@ describe("tools.monitor_exit_unreadable", () => {
   it("a still-running monitor with no sentinel says nothing", async () => {
     root = makeWorkspace();
     const { logger, records } = recorder();
-    expect(await readExitState(root, "mon_absent", logger)).toEqual({
+    expect(await readExitState(fixtureStatePaths(root), "mon_absent", logger)).toEqual({
       exited: false,
       code: null,
     });

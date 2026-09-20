@@ -2,9 +2,9 @@
 /** Install, reinstall and uninstall the native archive through the public installer contract. */
 import {
   chmod,
+  copyFile,
   lstat,
   mkdir,
-  mkdtemp,
   readFile,
   readdir,
   rename,
@@ -13,12 +13,10 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { globalPaths } from "@clarvis/paths";
-
+import { createSmokeFixture } from "../artifact/isolation.ts";
 import { releaseAssetName, releaseTarget } from "../../src/update-contract.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -31,7 +29,7 @@ async function run(
 ): Promise<string> {
   const child = Bun.spawn(command, {
     cwd: repositoryRoot,
-    env: { ...process.env, ...environment },
+    env: environment,
     stdin: stdin === undefined ? "ignore" : "pipe",
     stdout: "pipe",
     stderr: "pipe",
@@ -58,7 +56,7 @@ async function run(
 async function refusal(command: string[], environment: Record<string, string>): Promise<string> {
   const child = Bun.spawn(command, {
     cwd: repositoryRoot,
-    env: { ...process.env, ...environment },
+    env: environment,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -246,7 +244,7 @@ function windowsPathContains(path: string | null, expected: string): boolean {
 
 async function capture(command: string[], environment: Record<string, string>): Promise<string> {
   const child = Bun.spawn(command, {
-    env: { ...process.env, ...environment },
+    env: environment,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -263,26 +261,38 @@ async function capture(command: string[], environment: Record<string, string>): 
 async function main(): Promise<void> {
   const target = releaseTarget();
   if (target === undefined) throw new Error("native platform is not a release target");
+  if (process.platform === "win32" && process.env.CLARVIS_INSTALLER_SMOKE_DISPOSABLE !== "1") {
+    throw new Error(
+      "installer_smoke_unavailable: Windows User PATH coverage requires a proven disposable account",
+    );
+  }
   const product = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")) as {
     version: string;
   };
-  const releaseDirectory = join(repositoryRoot, "build", "release");
   const asset = releaseAssetName(product.version, target);
-  const sidecar = (await readFile(join(releaseDirectory, `${asset}.sha256`), "utf8")).trim();
-  await writeFile(join(releaseDirectory, "SHA256SUMS"), `${sidecar}\n`);
-  const temporary = await mkdtemp(join(tmpdir(), "clarvis-installer-smoke-"));
-  const installRoot = join(temporary, "install");
+  const sourceReleaseDirectory = join(repositoryRoot, "build", "release");
+  const context = await createSmokeFixture("clarvis-installer-smoke-");
+  const temporary = context.root;
+  const releaseDirectory = join(temporary, "release");
+  const installRoot = context.install;
   const binDirectory = join(temporary, "bin");
-  const environment = {
-    CLARVIS_RELEASE_DIRECTORY: releaseDirectory,
-    CLARVIS_INSTALL_ROOT: installRoot,
-    CLARVIS_BIN_DIR: binDirectory,
-    CLARVIS_SKIP_PATH: "1",
-    LC_ALL: "C.UTF-8",
-    HOME: join(temporary, "home"),
-    USERPROFILE: join(temporary, "home"),
-  };
   try {
+    await mkdir(releaseDirectory, { recursive: true });
+    await copyFile(join(sourceReleaseDirectory, asset), join(releaseDirectory, asset));
+    const sidecar = (
+      await readFile(join(sourceReleaseDirectory, `${asset}.sha256`), "utf8")
+    ).trim();
+    await copyFile(
+      join(sourceReleaseDirectory, `${asset}.sha256`),
+      join(releaseDirectory, `${asset}.sha256`),
+    );
+    await writeFile(join(releaseDirectory, "SHA256SUMS"), `${sidecar}\n`);
+    const environment = context.environmentFor({
+      CLARVIS_RELEASE_DIRECTORY: releaseDirectory,
+      CLARVIS_INSTALL_ROOT: installRoot,
+      CLARVIS_BIN_DIR: binDirectory,
+      CLARVIS_SKIP_PATH: "1",
+    });
     const installer =
       process.platform === "win32"
         ? ["pwsh", "-NoProfile", "-File", join(repositoryRoot, "install.ps1")]
@@ -364,10 +374,7 @@ async function main(): Promise<void> {
     }
     await rm(lock);
 
-    const userState = globalPaths(undefined, {
-      env: {},
-      home: join(temporary, "home"),
-    }).settingsFile;
+    const userState = context.paths.settingsFile;
     await mkdir(dirname(userState), { recursive: true });
     await writeFile(userState, '{"preserve":true}\n');
 
@@ -568,7 +575,7 @@ async function main(): Promise<void> {
       `installer smoke ok - ${target} guarded install and uninstall passed for ${product.version}\n`,
     );
   } finally {
-    await rm(temporary, { recursive: true, force: true });
+    await context.cleanup();
   }
 }
 

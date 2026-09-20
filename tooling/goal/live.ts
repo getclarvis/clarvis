@@ -21,6 +21,7 @@ export async function runGoalLive(options: {
   models: readonly string[];
   trials: number;
   output: string;
+  useGlobalOAuth: boolean;
 }): Promise<void> {
   if (
     !Number.isInteger(options.trials) ||
@@ -64,6 +65,45 @@ export async function runGoalLive(options: {
     verdict: "incomplete",
   };
   const save = () => writeFile(join(output, "report.json"), JSON.stringify(report, null, 2));
+  const environmentFor = (
+    root: string,
+    global: string,
+    workspace: string,
+  ): Record<string, string> => {
+    const environment: Record<string, string> = {};
+    for (const key of [
+      "PATH",
+      "BUN_INSTALL",
+      "SystemRoot",
+      "COMSPEC",
+      "PATHEXT",
+      "LANG",
+      "LC_ALL",
+      "LC_CTYPE",
+      "TERM",
+      "TZ",
+    ]) {
+      const value = process.env[key];
+      if (value !== undefined && value.length > 0) environment[key] = value;
+    }
+    const home = join(root, "home");
+    environment.HOME = home;
+    environment.USERPROFILE = home;
+    environment.CLARVIS_HOME = global;
+    environment.CLARVIS_WORKSPACE_ROOT = workspace;
+    environment.TMPDIR = join(root, "tmp");
+    environment.TMP = environment.TMPDIR;
+    environment.TEMP = environment.TMPDIR;
+    environment.XDG_CONFIG_HOME = join(home, ".config");
+    environment.XDG_CACHE_HOME = join(root, "cache");
+    environment.XDG_DATA_HOME = join(home, ".local", "share");
+    environment.XDG_STATE_HOME = join(home, ".local", "state");
+    environment.XDG_RUNTIME_DIR = join(root, "runtime");
+    environment.TERM = "xterm-256color";
+    environment.LANG ??= "C.UTF-8";
+    environment.LC_ALL = "C.UTF-8";
+    return environment;
+  };
   await save();
   process.stdout.write(JSON.stringify({ event: "goal.qualification_limits", ...config }) + "\n");
   for (const expected of report.expected) {
@@ -79,16 +119,19 @@ export async function runGoalLive(options: {
     let auth: Awaited<ReturnType<typeof prepareHostAuthView>> | undefined;
     try {
       await prepareGoalLiveFixture(root, expected.model);
-      auth = await prepareHostAuthView({
-        authenticationRoot: globalPaths().root,
-        isolatedRoot: join(root, "global"),
-        mountedRoot: join(root, "auth-view"),
-      });
+      if (options.useGlobalOAuth)
+        auth = await prepareHostAuthView({
+          authenticationRoot: globalPaths().root,
+          isolatedRoot: join(root, "global"),
+          mountedRoot: join(root, "auth-view"),
+        });
       const outputFile = join(output, `${expected.model}-${expected.trial}.json`);
+      const workspace = join(root, "workspace");
+      const global = auth?.globalDir ?? join(root, "global");
       const job: GoalLiveJob = {
         ...expected,
         root,
-        globalDir: auth.globalDir,
+        globalDir: global,
         outputFile,
         sdkVersion: source.sdkVersion,
         globalCalls: budget.calls,
@@ -97,11 +140,12 @@ export async function runGoalLive(options: {
       const jobFile = join(root, "job.json");
       await writeFile(jobFile, JSON.stringify(job));
       process.stdout.write(JSON.stringify({ event: "goal.trial_started", ...expected }) + "\n");
-      const worker = Bun.spawn([...auth.command, process.execPath, workerPath, jobFile], {
+      const environment = environmentFor(root, global, workspace);
+      const worker = Bun.spawn([...(auth?.command ?? []), process.execPath, workerPath, jobFile], {
         stdin: "ignore",
         stdout: "inherit",
         stderr: "inherit",
-        env: { ...process.env, CLARVIS_HOME: auth.globalDir },
+        env: environment,
         timeout: GOAL_TRIAL_LIMITS.durationMs + 20000,
       });
       const status = await worker.exited;
@@ -159,5 +203,6 @@ if (import.meta.main) {
     models: option("--models", GOAL_MODELS.join(",")).split(","),
     trials: Number(option("--trials", "2")),
     output: option("--output", "build/goal-live"),
+    useGlobalOAuth: process.argv.includes("--use-global-oauth"),
   });
 }

@@ -1293,6 +1293,12 @@ The suite is classified by its primary boundary while the architecture migration
   runtime; the kernel test suite does not require a second language runtime. Helpers are not test
   entrypoints and own no behavior matrix.
 
+Qualification harnesses are not production kernel roots. The cache and goal live runners construct
+their File Kernel with explicit trial globals, workspaces and lock directories; the auth-view
+qualification stages disposable configuration and state and admits only the explicitly selected
+subscription document. Deterministic kernel tests never establish that live OAuth or an installed
+artifact is safe to use.
+
 `tests/unit/managed-run.test.ts` is the single owner of run-handle buffering, drain-acknowledged
 steering and close-before-drain refusal, explicit
 compaction, cancellation, elicitation replay, memory-ingest grace/renewal, dropped-event reporting

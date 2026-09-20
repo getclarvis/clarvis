@@ -95,6 +95,11 @@ g.runtimeRecipeLeaseFile("sha256:…"); // …/state/runtime-recipes/<segment>.l
 ```
 
 Two environment variables override the roots: `CLARVIS_HOME` and `CLARVIS_WORKSPACE_ROOT`.
+Production precedence remains `CLARVIS_HOME` over the supplied `home` (and therefore over the
+process HOME fallback); `globalRoot` and `globalPaths` do not create a test namespace or silently
+rewrite that contract. Harnesses that need isolation must pass an explicit root/environment to
+their child and derive `globalPaths` from that root, as the Code `SmokeContext` does, rather than
+assuming that a temporary `home` argument can redirect every consumer.
 The second is the name `@clarvis/hooks` already injects into every hook subprocess, so a hook
 that invokes Clarvis inherits a variable that points at the right tree. They replaced
 `CLARVIS_SERVER_CONFIG_DIR`, `CLARVIS_SERVER_WORKSPACE` and `CLARVIS_CODE_WORKSPACE`, which are

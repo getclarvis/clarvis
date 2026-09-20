@@ -18,6 +18,40 @@ entry says what a source read could and could not settle.
 
 ---
 
+## Smoke qualification remains environment-dependent
+
+**Status: implementation is isolated; several qualification surfaces remain unverified in the
+current environment.** `createSmokeFixture` and `SmokeContext` now give artifact, release, first-paint
+and installer callers an exclusive root, explicit `CLARVIS_HOME`, allowlisted child environment and
+owned lifecycle. The required native path is deliberately stricter: `requireNativeSmokeConfinement`
+reports `smoke_native_confinement_unavailable` when its Bubblewrap probe cannot launch, and never
+falls back to an unconfined PTY. The deterministic smoke regression is
+`packages/code/tests/unit/artifact-isolation.test.ts`; benchmark root isolation is covered by
+`packages/code/tests/unit/benchmark-isolation.test.ts`. The per-runner structural canary is
+`tooling/tests/unit/harness-isolation-contract.test.ts`; Plan fixture lock placement is covered by
+`packages/plan/tests/integration/file-repository.test.ts`, and the auth view's symlink/overlap
+refusals by `tooling/tests/unit/prompt-cache-artifact.test.ts`.
+
+The ordinary smoke path reached the application in the isolated fixture but remained blocked by the
+host's `local host state has an unsafe parent directory` ownership check. This is an environmental
+failure, not evidence to weaken the private-state check or to make the fixture reuse an operator
+root. A host run with a safe temporary parent is required before claiming the complete artifact
+journey.
+
+The current Linux installer smoke completed its staged archive, install, lock, cancellation,
+preservation and uninstall checks. The artifact and release smoke runners both reached their
+isolated TUI and then received the same application-level `local host state has an unsafe parent
+directory` refusal; neither result is a passing complete-app PTY claim.
+
+Windows User `Path` coverage in `installer-smoke.ts` remains unavailable unless a disposable account
+or VM is explicitly proven; the harness refuses before mutating persistent User `Path`. The auth
+regressions cover synthetic refresh, lock and staging behavior in
+`tooling/tests/unit/prompt-cache-artifact.test.ts`; real subscription OAuth was not run. The
+`--use-global-oauth` path is therefore an explicit, platform-scoped qualification mode rather than
+an assertion that deterministic or synthetic evidence proves live credentials.
+
+---
+
 ## Four defects that were confirmed here, and have since been fixed
 
 Carried from the gap report's §1.1 and closed during the same audit. They are kept because the
@@ -2124,12 +2158,12 @@ _(That is a CI observation and is **unverifiable** by reading source — the fou
 90-second timeout cannot be re-measured. What can be checked is that both repairs are still in the
 tree, and they are.)_
 
-- The fixture builds its HOME from `globalPaths()` instead of string joins. It has since moved out
-  of `packages/code/tooling/artifact/smoke.ts` into `makeCleanHome`
-  (`packages/code/tooling/artifact/pty.ts`), which resolves the layout with
-  `globalPaths(undefined, { home })` and writes only `paths.settingsFile`. The entry script
-  still exists — root `package.json` → `packages/code/package.json` — and reaches the layout
-  the same way (`packages/code/tooling/artifact/smoke.ts`).
+- The fixture builds its HOME from `globalPaths()` instead of string joins. It now lives in
+  `createSmokeFixture`/`SmokeContext` (`packages/code/tooling/artifact/isolation.ts`), which derives
+  the full global layout from an explicit fixture root, writes only `paths.settingsFile`, and owns
+  cleanup. The retained `makeCleanHome` export is a private compatibility alias; the entry script
+  still exists — root `package.json` → `packages/code/package.json` — and reaches the layout through
+  the shared context (`packages/code/tooling/artifact/smoke.ts`).
 - `packages/paths/tests/architecture/invariant.test.ts` scans package `tooling/` as well as `src/` —
   restricting it to `src/` is what let the drift through. The two globs remain, and their TSDoc
   still names the artifact smoke and the 90-second timeout as the reason the

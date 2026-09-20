@@ -176,7 +176,9 @@ test("portable packaging and installation pin archive commands to the C locale",
     packager.indexOf("async function createArchive"),
     packager.indexOf("async function main"),
   );
-  expect(archiveBody).toContain('env: { ...process.env, LC_ALL: "C" }');
+  expect(archiveBody).toContain("const environment: Record<string, string> = {");
+  expect(archiveBody).toContain('LC_ALL: "C"');
+  expect(archiveBody).not.toContain("...process.env");
 
   const installer = readFileSync(new URL("../../../../install.sh", import.meta.url), "utf8");
   expect(installer).toContain(

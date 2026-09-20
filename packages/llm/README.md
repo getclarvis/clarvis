@@ -58,6 +58,11 @@ Run an individual layer with `test:unit`, `test:component`, `test:integration`, 
 `test:architecture`. The ordinary `test` and `test:coverage` commands continue to execute every
 layer together, so classification does not change the covered behavior.
 
+Prompt-cache qualification keeps deterministic SDK tests credential-free and gives every live or
+installed trial explicit HOME, `CLARVIS_HOME`, workspace, temporary and cache roots. Reusing an
+operator subscription is a separate opt-in boundary owned by the tooling auth view; it does not
+change provider request or cache-key semantics.
+
 ## Usage
 
 ```ts

@@ -1,5 +1,5 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { globalPaths, workspacePaths, ownerFromWorkspace } from "@clarvis/paths";
 import { createFileKernel } from "@clarvis/kernel/bootstrap";
@@ -83,6 +83,65 @@ async function command(
   return output;
 }
 
+const OPERATIONAL_ENVIRONMENT_KEYS = [
+  "PATH",
+  "BUN_INSTALL",
+  "SystemRoot",
+  "COMSPEC",
+  "PATHEXT",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TERM",
+  "TZ",
+] as const;
+
+function isolatedEnvironment(options: {
+  root: string;
+  workspace: string;
+  global: string;
+  installation: string;
+  bin: string;
+  releaseDirectory: string;
+  version: string;
+  timeoutMs: number;
+}): Record<string, string> {
+  const environment: Record<string, string> = {};
+  for (const key of OPERATIONAL_ENVIRONMENT_KEYS) {
+    const value = process.env[key];
+    if (value !== undefined && value.length > 0) environment[key] = value;
+  }
+  const home = join(options.root, "home");
+  environment.HOME = home;
+  environment.USERPROFILE = home;
+  environment.CLARVIS_HOME = options.global;
+  environment.CLARVIS_WORKSPACE_ROOT = options.workspace;
+  environment.TMPDIR = join(options.root, "tmp");
+  environment.TMP = environment.TMPDIR;
+  environment.TEMP = environment.TMPDIR;
+  environment.XDG_CONFIG_HOME = join(home, ".config");
+  environment.XDG_CACHE_HOME = join(options.root, "cache");
+  environment.XDG_DATA_HOME = join(home, ".local", "share");
+  environment.XDG_STATE_HOME = join(home, ".local", "state");
+  environment.XDG_RUNTIME_DIR = join(options.root, "sockets");
+  environment.LANG ??= "C.UTF-8";
+  environment.LC_ALL = "C.UTF-8";
+  environment.CLARVIS_INSTALL_ROOT = options.installation;
+  environment.CLARVIS_BIN_DIR = options.bin;
+  environment.CLARVIS_RELEASE_DIRECTORY = options.releaseDirectory;
+  environment.CLARVIS_VERSION = options.version;
+  environment.CLARVIS_TIMEOUT_CEILING_MS = String(options.timeoutMs);
+  return environment;
+}
+
+function overlaps(left: string, right: string): boolean {
+  const relation = (child: string, parent: string) => {
+    const value = relative(parent, child);
+    return value === "" || (value !== ".." && !value.startsWith(`..${sep}`) && !isAbsolute(value));
+  };
+  return relation(left, right) || relation(right, left);
+}
+
 /** Read only this isolated host's trace documents; credential files never enter the evidence walk. */
 async function traces(root: string): Promise<Array<Record<string, any>>> {
   const results: Array<Record<string, any>> = [];
@@ -110,6 +169,11 @@ export async function runCacheArtifact(args: {
   globalBudget?: CacheBudget;
   authenticationRoot?: string;
 }): Promise<{ trial: CacheTrial; artifact: NonNullable<CacheReport["artifact"]> }> {
+  const hostGlobal = resolve(globalPaths().root);
+  const requestedGlobal = resolve(args.globalDir);
+  if (!args.authenticationRoot && overlaps(requestedGlobal, hostGlobal)) {
+    throw new Error("isolated_cache_global_overlaps_operator_global");
+  }
   const limits = trialLimits("C11");
   const source = await cacheSourceIdentity({
     scenario: "C11",
@@ -133,16 +197,16 @@ export async function runCacheArtifact(args: {
   const bin = join(args.outputDirectory, "bin");
   await mkdir(workspace, { recursive: true });
   const version = JSON.parse(await readFile("package.json", "utf8")).version as string;
-  const environment = {
-    ...process.env,
-    CLARVIS_HOME: args.globalDir,
-    CLARVIS_CODE_SOURCE: undefined,
-    CLARVIS_INSTALL_ROOT: installation,
-    CLARVIS_BIN_DIR: bin,
-    CLARVIS_RELEASE_DIRECTORY: args.archiveDirectory,
-    CLARVIS_VERSION: version,
-    CLARVIS_TIMEOUT_CEILING_MS: String(limits.durationMs),
-  };
+  const environment = isolatedEnvironment({
+    root,
+    workspace,
+    global: args.globalDir,
+    installation,
+    bin,
+    releaseDirectory: args.archiveDirectory,
+    version,
+    timeoutMs: limits.durationMs,
+  });
   await command(["sh", resolve("install.sh")], { env: environment });
   const launcher = join(bin, "clarvis");
   const payload = join(installation, "versions", `v${version}`);
@@ -305,26 +369,28 @@ export async function runCacheArtifact(args: {
         `CLARVIS_TIMEOUT_CEILING_MS=${limits.durationMs}`,
         launcher,
       ],
-      { cwd: workspace },
+      { cwd: workspace, env: environment },
     );
-    await command(["tui", "wait", name, "--text", "cache-leader", "--timeout", "30s"]);
+    await command(["tui", "wait", name, "--text", "cache-leader", "--timeout", "30s"], {
+      env: environment,
+    });
     for (const [prompt, token] of [
       [firstPrompt, "FIRST-TURN-VERIFIED"],
       [secondPrompt, "SECOND-TURN-VERIFIED"],
     ]) {
       while (Date.now() - startedAt < limits.durationMs) {
-        screen = readable(await command(["tui", "snap", name, "--raw"]));
+        screen = readable(await command(["tui", "snap", name, "--raw"], { env: environment }));
         if (screen.includes("• ready")) break;
         await Bun.sleep(1000);
       }
       if (!screen.includes("• ready")) throw new Error("tui_turn_readiness_timeout");
-      await command(["tui", "keys", name, "Escape"]);
+      await command(["tui", "keys", name, "Escape"], { env: environment });
       const turnStartedAt = Date.now();
-      await command(["tui", "paste", name, "--file", prompt]);
-      await command(["tui", "keys", name, "Enter"]);
+      await command(["tui", "paste", name, "--file", prompt], { env: environment });
+      await command(["tui", "keys", name, "Enter"], { env: environment });
       let completed = false;
       while (Date.now() - startedAt < limits.durationMs) {
-        screen = readable(await command(["tui", "snap", name, "--raw"]));
+        screen = readable(await command(["tui", "snap", name, "--raw"], { env: environment }));
         const observations = (await readFile(evidence, "utf8").catch(() => ""))
           .trim()
           .split("\n")
@@ -389,11 +455,11 @@ export async function runCacheArtifact(args: {
       if (settled.length >= 2) break;
       await Bun.sleep(1000);
     }
-    screen = readable(await command(["tui", "snap", name, "--raw"]));
+    screen = readable(await command(["tui", "snap", name, "--raw"], { env: environment }));
   } catch (error) {
     trial.diagnostics.push(error instanceof Error ? error.message : "artifact_journey_failed");
   } finally {
-    await command(["tui", "stop", name]).catch(() => undefined);
+    await command(["tui", "stop", name], { env: environment }).catch(() => undefined);
     const entries = (await readFile(evidence, "utf8").catch(() => ""))
       .trim()
       .split("\n")

@@ -1,10 +1,8 @@
 #!/usr/bin/env bun
 /** Verify the native portable archive, fast paths, and real-PTY complete-app boot. */
-import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { globalPaths } from "@clarvis/paths";
 
 import {
   releaseAssetName,
@@ -17,16 +15,25 @@ import {
   parseReleaseManifest,
   verifyReleaseTree,
 } from "../../src/update/release-manifest.ts";
-import { bootAndObserve, makeCleanHome, readable } from "../artifact/pty.ts";
+import { createSmokeFixture } from "../artifact/isolation.ts";
+import { bootAndObserve, readable } from "../artifact/pty.ts";
 import { APP_READY_MARKER } from "../artifact/markers.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const repositoryRoot = join(packageRoot, "..", "..");
+const confinement =
+  process.env.CLARVIS_SMOKE_REQUIRE_CONFINEMENT === "1" ? "required" : "environment";
 
 async function commandOutput(
   command: string[],
+  environment: Record<string, string>,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const child = Bun.spawn(command, { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const child = Bun.spawn(command, {
+    env: environment,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const [code, stdout, stderr] = await Promise.all([
     child.exited,
     new Response(child.stdout).text(),
@@ -75,13 +82,13 @@ async function main(): Promise<void> {
     "release",
     releaseAssetName(product.version, target),
   );
-  const temporary = await mkdtemp(join(tmpdir(), "clarvis-release-smoke-"));
-  const installRoot = join(temporary, "install");
+  const fixture = await createSmokeFixture("clarvis-release-smoke-");
+  const temporary = fixture.root;
+  const installRoot = fixture.install;
   const versionRoot = join(installRoot, "versions", `v${product.version}`);
-  const home = await makeCleanHome();
-  const workspace = join(temporary, "workspace");
   try {
-    const smokePaths = globalPaths(undefined, { home });
+    const environment = fixture.environmentFor({ CLARVIS_INSTALL_ROOT: installRoot });
+    const smokePaths = fixture.paths;
     await mkdir(smokePaths.state, { recursive: true });
     await writeFile(
       smokePaths.codeConfigFile,
@@ -132,7 +139,10 @@ async function main(): Promise<void> {
     );
     if (process.platform !== "win32") await chmod(runtime, 0o755);
     const entry = join(versionRoot, "packages", "code", "src", "cli.ts");
-    const identity = await commandOutput([runtime, "-e", "process.stdout.write(process.execPath)"]);
+    const identity = await commandOutput(
+      [runtime, "-e", "process.stdout.write(process.execPath)"],
+      environment,
+    );
     if (
       identity.code !== 0 ||
       identity.stderr !== "" ||
@@ -141,11 +151,10 @@ async function main(): Promise<void> {
       throw new Error("portable runtime did not retain the Clarvis executable identity");
     }
     if (process.platform === "linux") {
-      const comm = await commandOutput([
-        runtime,
-        "-e",
-        'process.stdout.write((await Bun.file("/proc/self/comm").text()).trim())',
-      ]);
+      const comm = await commandOutput(
+        [runtime, "-e", 'process.stdout.write((await Bun.file("/proc/self/comm").text()).trim())'],
+        environment,
+      );
       if (comm.code !== 0 || comm.stderr !== "" || comm.stdout !== "clarvis") {
         throw new Error("portable runtime was not exposed as clarvis by the Linux process table");
       }
@@ -154,12 +163,12 @@ async function main(): Promise<void> {
       ["--version", `clarvis ${product.version}\n`],
       ["--help", "--update"],
     ] as const) {
-      const result = await commandOutput([runtime, entry, flag]);
+      const result = await commandOutput([runtime, entry, flag], environment);
       if (result.code !== 0 || result.stderr !== "" || !result.stdout.includes(expected)) {
         throw new Error(`portable ${flag} smoke failed with exit ${String(result.code)}`);
       }
     }
-    const legacy = await commandOutput([legacyRuntime, entry, "--version"]);
+    const legacy = await commandOutput([legacyRuntime, entry, "--version"], environment);
     if (
       legacy.code !== 0 ||
       legacy.stderr !== "" ||
@@ -173,17 +182,17 @@ async function main(): Promise<void> {
       );
       return;
     }
-    await mkdir(workspace, { recursive: true });
     const boot = await bootAndObserve({
       runtime,
       entry,
       args: ["--debug"],
-      home,
-      workspace,
+      context: fixture,
       markers: [{ name: "ready", text: APP_READY_MARKER }],
       timeoutMs: Number(process.env.SMOKE_TIMEOUT_MS ?? 90_000),
       pollMs: 100,
-      extraEnv: { CLARVIS_INSTALL_ROOT: installRoot },
+      overrides: { CLARVIS_INSTALL_ROOT: installRoot },
+      confinement,
+      readOnlyRoots: [],
     });
     if (boot.outcome !== "ready") {
       throw new Error(
@@ -194,8 +203,7 @@ async function main(): Promise<void> {
       `release smoke ok - ${target} ${product.version} observed the complete-app marker after ${boot.elapsed.toFixed(0)}ms of outer PTY/polling time\n`,
     );
   } finally {
-    await rm(home, { recursive: true, force: true });
-    await rm(temporary, { recursive: true, force: true });
+    await fixture.cleanup();
   }
 }
 

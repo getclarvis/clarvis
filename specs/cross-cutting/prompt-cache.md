@@ -361,12 +361,17 @@ while the cache percentage uses cached divided by gross input; output is the ses
 Other native platforms are unverified until their own installed-provider journey runs.
 
 The Linux installed harness can reuse the operator's global OAuth through
-[`prepareHostAuthView`](../../tooling/cache/host-auth-view.ts): a host mount namespace shares the
-original renewable subscription store and masks unrelated global state with disposable directories.
-No credential file is copied into fixture state or a guest. Authentication refresh still uses the
-kernel's normal store, lease and resolver. Test-created mountpoints are removed only after the owned
-processes stop. The artifact observer test exercises renewal against the original synthetic store
-and verifies that application writes land only in isolated state.
+[`prepareHostAuthView`](../../tooling/cache/host-auth-view.ts), but only after the caller explicitly
+selects that mode. A host mount namespace exposes a disposable staged global root: unrelated global
+entries come from fixture overlays, while the live `subscriptions.json` is copied into the staging
+root so the kernel can perform its normal atomic replacement. Cleanup synchronizes that one file
+back only when the live source still matches the setup snapshot; concurrent changes fail closed.
+No other credential or host-global entry is copied into evidence or a guest. Test-created staging
+paths are removed only after owned processes stop. The artifact observer test exercises synthetic
+refresh and isolation, while a real OAuth run remains a separate, explicitly authorized evidence
+layer. The view also rejects symlinked or overlapping authentication, fixture and mounted roots
+before it creates staging paths; `tooling/tests/unit/prompt-cache-artifact.test.ts` covers both
+the refresh path and these root-boundary refusals.
 
 **PC06 — complete, artifact-bound evidence.** `sealCacheArtifact` seals the existing archive after
 packaging. The full runner checks source inputs before scheduling each trial and requires all

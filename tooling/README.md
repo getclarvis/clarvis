@@ -98,10 +98,11 @@ before attaching that pair to a source candidate or stable release.
 
 `goal/` qualifies the persistent-goal host with a synthetic implementation, delegated helper,
 checkpoint and automatic verification stage. Run `bun tooling/goal/live.ts --models
-gpt-5.6-terra,gpt-5.6-luna --trials 2 --output <directory>` locally with the existing global Clarvis
-OAuth. The Linux Bubblewrap host view below keeps credentials authoritative while isolating
-configuration and state. Each worker uses the real FileRunHost, IPC and subscription SDK; its
-observation wrapper calls the existing provider, retaining the host's goal usage tracker.
+gpt-5.6-terra,gpt-5.6-luna --trials 2 --output <directory>` locally for synthetic, credential-free
+trials. Reusing the operator's subscription requires the explicit `--use-global-oauth` flag and a
+working Linux Bubblewrap view; without it each worker receives only its trial roots. Each worker
+uses the real FileRunHost, IPC and subscription SDK; its observation wrapper calls the existing
+provider, retaining the host's goal usage tracker.
 The shared HTTP recorder and finite attempt ledger accept a typed scenario namespace; goal reports
 use `goal-continuation`, separately from the C01-C11 cache qualification matrix.
 Per trial, the limits are 48 physical calls, 750,000 input tokens, 24,000 output tokens and six
@@ -117,16 +118,17 @@ execution. No goal live command runs in CI. Its contract is [goals](../specs/cap
 `cache/` owns the typed schema-versioned physical-call report, independent per-agent evaluator,
 bounded HTTP observation and synthetic sequential-cursor fixture. `bun run test:cache` runs the
 credential-free real-SDK contracts; `bun run test:cache:live -- --scenarios C01,C02 --models
-gpt-6-astra --trials 3 --output <directory>` uses the kernel's host subscription authority. Every
-live invocation prints fixed per-trial/global limits and retains failed or incomplete trials.
+gpt-6-astra --trials 3 --output <directory>` uses only explicit trial roots by default. A live
+subscription is selected only by an explicit auth-view option, and every live invocation prints
+fixed per-trial/global limits and retains failed or incomplete trials.
 The JSON verdict and scenario checkpoints govern qualification, including absent usage and missing
 drivers; a process exit alone is insufficient. See the
 [prompt-cache contract](../specs/cross-cutting/prompt-cache.md) for the full matrix and final installed
 artifact requirements. Source evidence does not qualify an installed bundle.
 
 The deterministic cache gate also runs in every pull request, without credentials or provider
-calls. Live qualification runs locally with the operator's existing Clarvis subscription OAuth;
-it does not require an API key or a GitHub secret.
+calls. Live qualification is a local, explicitly authorized subscription run; it does not require
+an API key or a GitHub secret, and no live credential is inferred from the ambient environment.
 For a reduced local C01/C02/C06 series, run `bun run test:cache:live --scenarios C01,C02,C06
 --models gpt-6-astra --trials 1 --output <directory>`. Keep its JSON evidence; this reduced
 coverage does not grant full release qualification.
@@ -140,12 +142,13 @@ hashing them, and tees the unchanged production HTTP transport. Synthetic worksp
 credential-free reports remain separate from the application's credential store. The source
 matrix and installed result must identify the same final build inputs.
 
-On Linux with Bubblewrap, `--use-global-oauth` reuses the existing global subscription store.
-The host's mount namespace keeps that renewable store authoritative while binding disposable
-settings, sessions, traces and caches over the other global entries. It copies no credentials,
-does not change the installed resolver or HTTP protocol, and removes test-created empty mountpoints
-after the owned processes stop. This flag is available to both artifact and full-matrix commands;
-it requires no new login. This filesystem qualification method makes no claim for other platforms.
+On Linux with Bubblewrap, `--use-global-oauth` admits the existing global subscription store through
+`prepareHostAuthView`. The view stages configuration/state in a disposable global root, copies only
+the selected `subscriptions.json` into the trial view, masks unrelated host entries, and reconciles
+an updated subscription atomically only if the live file did not change concurrently. It copies no
+credential into evidence or a guest, removes staging after owned processes stop, and fails closed
+when Bubblewrap is unavailable. This filesystem qualification method makes no claim for other
+platforms.
 
 After packaging, `bun run test:cache:artifact --seal --manifest <manifest.json>` binds the existing
 archive and bundle to the full source-input digest. Run `bun run test:cache:live --full
@@ -159,5 +162,13 @@ and checks every trial's artifact binding and every installed trial's loaded bun
 Restart-worker failures retain observed physical calls in the global budget. The PTY driver waits
 for a ready composer between turns and settled memory traces before reconciling the UI's session
 cache percentage, uncached input and output against the captured leader calls.
+The artifact, release and installer smoke runners share the Code `SmokeContext` fixture contract;
+their structural isolation canary is `tooling/tests/unit/harness-isolation-contract.test.ts`.
+`packages/code/tests/unit/artifact-isolation.test.ts` proves the owned roots, allowlisted child
+environment, lifecycle cleanup and native-confinement fail-closed behavior. The installer smoke
+uses a staged archive/checksum directory and passed the Linux install/uninstall journey; release
+and artifact complete-app PTY claims still require a host whose private-state parent ownership is
+accepted by the application. `prepareHostAuthView` also rejects symlinked or overlapping roots
+before staging, covered by `tooling/tests/unit/prompt-cache-artifact.test.ts`.
 Compaction retains the production summarizer options, including omitted requested reasoning effort;
 its recorded usage contributes to budgets without entering an agent's cache-performance window.

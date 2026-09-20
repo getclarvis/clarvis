@@ -682,6 +682,14 @@ reported in place. Only a new explicit operator selection can place a later run 
 Nothing retries a failed backend command launch. Process lifecycle, timeouts, output bounds, and kill
 semantics remain owned by [tools-shell-and-monitor.md](tools-shell-and-monitor.md).
 
+The artifact smoke harness has a separate, narrower native gate in
+`packages/code/tooling/artifact/isolation.ts`: when its required-confinement mode is selected, the
+Bubblewrap probe must succeed before a PTY command is returned. It mounts the selected checkout and
+runtime read-only, masks operator `.clarvis`, `.agents` and `.git`, binds only the smoke fixture
+writable, disables networking and reports `smoke_native_confinement_unavailable` without an
+unconfined fallback. The ordinary smoke mode is environment/filesystem isolation only and must not
+be described as proof of the product's configurable native Sandbox contract.
+
 ## 7. Coupling
 
 ### 7.1 Outbound

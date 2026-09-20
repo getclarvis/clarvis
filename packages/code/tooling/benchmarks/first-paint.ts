@@ -25,12 +25,17 @@
  *
  * Usage: `bun run bench:code [--n=7] [--arm=source] [--json] [--force]`
  */
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { cpus, loadavg, tmpdir } from "node:os";
+import { cpus, loadavg } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { bootAndObserve, makeCleanHome, readable } from "../artifact/pty.ts";
+import {
+  createSmokeFixture,
+  type SmokeContext,
+  type SmokeEnvironmentOverride,
+} from "../artifact/isolation.ts";
+import { bootAndObserve, readable } from "../artifact/pty.ts";
 import {
   APP_PAINT_MARKER as PAINT_MARKER,
   APP_READY_MARKER as READY_MARKER,
@@ -39,6 +44,9 @@ import {
 } from "../artifact/markers.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
+const repositoryRoot = join(packageRoot, "..", "..");
+const confinement =
+  process.env.CLARVIS_SMOKE_REQUIRE_CONFINEMENT === "1" ? "required" : "environment";
 
 const N = Number(process.env.BENCH_N ?? 7);
 const POLL_MS = Number(process.env.BENCH_POLL_MS ?? 25);
@@ -56,7 +64,7 @@ interface Arm {
    * launcher, which loads the bundle, so without it every arm measures the same
    * artifact and the report reads as "bundling changes nothing". It once did.
    */
-  env?: Record<string, string>;
+  env?: SmokeEnvironmentOverride;
 }
 
 /** The machine state a sample was taken under; two reports are comparable only if these match. */
@@ -167,34 +175,50 @@ function summarise(samples: number[]): Stats | undefined {
 }
 
 /**
- * Time `<entry> --version`, which loads the module graph and prints one string.
+ * Measure the module-graph arm in an isolated fixture.
  *
+ * @param inspect - internal test hook invoked before the fixture is cleaned up.
  * @throws if the child fails or prints something other than the version, because
  *   timing a crash-fast path is the classic way to report an improvement that is
  *   really a regression.
  */
-async function timeVersion(
+export async function timeVersion(
   entry: string,
-  cwd: string,
-  extraEnv?: Record<string, string>,
+  overrides?: SmokeEnvironmentOverride,
+  inspect?: (context: SmokeContext) => Promise<void>,
 ): Promise<number> {
+  const context = await createSmokeFixture("clarvis-bench-version-");
   const started = performance.now();
-  const child = Bun.spawn([process.execPath, entry, "--version"], {
-    cwd,
-    env: { ...process.env, ...extraEnv },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const stdout = await new Response(child.stdout).text();
-  await child.exited;
-  const elapsed = performance.now() - started;
-  if (child.exitCode !== 0) {
-    throw new Error(`${entry} --version exited ${child.exitCode}: ${stdout.slice(0, 200)}`);
+  try {
+    let elapsed = 0;
+    const child = Bun.spawn([process.execPath, entry, "--version"], {
+      cwd: context.workspace,
+      env: context.environmentFor(overrides),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const unregister = context.registerChild(child);
+    try {
+      const [stdout, stderr] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      await child.exited;
+      elapsed = performance.now() - started;
+      if (child.exitCode !== 0) {
+        throw new Error(`${entry} --version exited ${child.exitCode}: ${stderr.slice(0, 200)}`);
+      }
+      if (!/^clarvis \d/.test(stdout.trim())) {
+        throw new Error(`${entry} --version printed something unexpected: ${stdout.slice(0, 200)}`);
+      }
+    } finally {
+      unregister();
+    }
+    if (inspect !== undefined) await inspect(context);
+    return elapsed;
+  } finally {
+    await context.cleanup();
   }
-  if (!/^clarvis \d/.test(stdout.trim())) {
-    throw new Error(`${entry} --version printed something unexpected: ${stdout.slice(0, 200)}`);
-  }
-  return elapsed;
 }
 
 interface PaintSample {
@@ -207,15 +231,13 @@ interface PaintSample {
 /** Boot the TUI on a fresh fixture and time the parser-free shell, header and input dock. */
 async function timeFirstPaint(
   entry: string,
-  extraEnv?: Record<string, string>,
+  overrides?: SmokeEnvironmentOverride,
 ): Promise<PaintSample> {
-  const home = await makeCleanHome();
-  const workspace = await mkdtemp(join(tmpdir(), "clarvis-bench-ws-"));
+  const context = await createSmokeFixture("clarvis-bench-boot-");
   try {
     const observed = await bootAndObserve({
       entry,
-      home,
-      workspace,
+      context,
       markers: [
         { name: "shell", text: SHELL_MARKER },
         { name: "startupReady", text: STARTUP_READY_MARKER },
@@ -224,7 +246,9 @@ async function timeFirstPaint(
       ],
       timeoutMs: TIMEOUT_MS,
       pollMs: POLL_MS,
-      ...(extraEnv === undefined ? {} : { extraEnv }),
+      overrides,
+      confinement,
+      readOnlyRoots: [repositoryRoot],
     });
     if (observed.outcome !== "ready") {
       throw new Error(
@@ -240,8 +264,7 @@ async function timeFirstPaint(
       ready: observed.marks.ready!,
     };
   } finally {
-    await rm(home, { recursive: true, force: true });
-    await rm(workspace, { recursive: true, force: true });
+    await context.cleanup();
   }
 }
 
@@ -275,11 +298,11 @@ interface ArmResult {
   ready: Stats | undefined;
 }
 
-async function measure(arm: Arm, workspace: string): Promise<ArmResult> {
+async function measure(arm: Arm): Promise<ArmResult> {
   process.stderr.write(`measuring '${arm.name}' (warm-up + ${N})\n`);
-  await timeVersion(arm.entry, workspace, arm.env).catch(() => 0);
+  await timeVersion(arm.entry, arm.env).catch(() => 0);
   const versions: number[] = [];
-  for (let i = 0; i < N; i++) versions.push(await timeVersion(arm.entry, workspace, arm.env));
+  for (let i = 0; i < N; i++) versions.push(await timeVersion(arm.entry, arm.env));
 
   await timeFirstPaint(arm.entry, arm.env).catch(() => undefined);
   const shells: number[] = [];
@@ -365,13 +388,8 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const workspace = await mkdtemp(join(tmpdir(), "clarvis-bench-cwd-"));
   const results: ArmResult[] = [];
-  try {
-    for (const arm of arms) results.push(await measure(arm, workspace));
-  } finally {
-    await rm(workspace, { recursive: true, force: true });
-  }
+  for (const arm of arms) results.push(await measure(arm));
 
   const after = readEnvironment();
   const drifted = Math.abs(after.loadPerCore - before.loadPerCore) > 0.25;
@@ -384,14 +402,18 @@ async function main(): Promise<void> {
 
   if (asJson) {
     process.stdout.write(
-      JSON.stringify({ trusted, before, after, cwd: workspace, n: N, results }, null, 2) + "\n",
+      JSON.stringify(
+        { trusted, before, after, cwd: "isolated fixture workspace", n: N, results },
+        null,
+        2,
+      ) + "\n",
     );
     return;
   }
-  const text = report(results, before, workspace, trusted);
+  const text = report(results, before, "isolated fixture workspace", trusted);
   process.stdout.write(text + "\n");
   const summary = process.env.GITHUB_STEP_SUMMARY;
   if (summary !== undefined) await Bun.write(summary, text + "\n");
 }
 
-await main();
+if (import.meta.main) await main();

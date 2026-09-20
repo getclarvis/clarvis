@@ -147,20 +147,30 @@ function ensureWorktreeIgnore(primaryWorkspaceRoot: string): void {
   if (!ignored) throw new Error("workspace .clarvis/.gitignore does not exclude worktrees/");
 }
 
-async function preferredBaseRef(
-  cwd: string,
+/**
+ * Resolve the commit `HEAD` names in the checkout Clarvis was started from.
+ *
+ * A new `clarvis/<name>` branch starts from the operator's local history. Bootstrap never
+ * consults a remote default ref, so the created checkout does not depend on the configured
+ * upstream, on connectivity, or on which branch the remote considers default. The commit is
+ * resolved before the destination is prepared, so an unborn or unreadable `HEAD` fails without
+ * creating a branch, a checkout, or any nested directory.
+ */
+async function sourceHeadCommit(
+  sourceCheckout: string,
   runGit: (cwd: string, args: readonly string[]) => Promise<GitResult>,
 ): Promise<string> {
+  let commit: string;
   try {
-    await runGit(cwd, ["fetch", "--quiet", "origin"]);
-  } catch {}
-  try {
-    const remote = (
-      await runGit(cwd, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])
+    commit = (
+      await runGit(sourceCheckout, ["rev-parse", "--verify", "HEAD^{commit}"])
     ).stdout.trim();
-    if (remote) return remote;
-  } catch {}
-  return "HEAD";
+  } catch (error) {
+    throw new Error("cannot create a worktree: the source checkout has no commit at HEAD", {
+      cause: error,
+    });
+  }
+  return commit;
 }
 
 /**
@@ -213,6 +223,7 @@ export async function bootstrapWorktree(
       managedLocation: resolve(existing.path) === resolve(destination),
     };
   }
+  const baseCommit = await sourceHeadCommit(topLevel, runGit);
   ensureWorktreeIgnore(primaryWorkspaceRoot);
   try {
     await runGit(primaryWorkspaceRoot, [
@@ -242,8 +253,7 @@ export async function bootstrapWorktree(
   if (branchExists) {
     await runGit(topLevel, ["worktree", "add", "--", destination, branch]);
   } else {
-    const baseRef = await preferredBaseRef(topLevel, runGit);
-    await runGit(topLevel, ["worktree", "add", "-b", branch, "--", destination, baseRef]);
+    await runGit(topLevel, ["worktree", "add", "-b", branch, "--", destination, baseCommit]);
   }
   return {
     workspaceRoot: realpathSync(destination),

@@ -210,24 +210,34 @@ function bounded(input: GoalAgentRunInput): GoalAgentBudget {
 
 /** Build the immutable, read-only semantic-agent run request. */
 export function buildGoalAgentRequest(
-  runtime: Pick<GoalAgentRuntime, "model_ref" | "providers">,
+  runtime: Pick<GoalAgentRuntime, "model_ref" | "providers" | "profile">,
   input: GoalAgentRunInput,
 ): RunRequest {
   const parsed = goalFormulateInputSchema.parse(
     input.mode === "auto" ? { mode: input.mode } : { mode: input.mode, seed: input.seed },
   );
   const budget = bounded(input);
+  const selected = runtime.profile;
   const profile: AgentProfile = {
-    name: "goal-agent",
-    model: runtime.model_ref,
-    base_prompt: goalAgentPrompt(),
+    name: selected?.name ?? "goal-agent",
+    model: selected?.model ?? runtime.model_ref,
+    base_prompt: [selected?.base_prompt, goalAgentPrompt()].filter(Boolean).join("\n\n"),
     tools: [],
     grants: ["read_workspace"],
     can_spawn: [],
     iteration_limit: budget.max_iterations,
-    call_timeout_ms: budget.call_timeout_ms,
+    call_timeout_ms: Math.min(
+      selected?.call_timeout_ms ?? budget.call_timeout_ms,
+      budget.call_timeout_ms,
+    ),
     retry: { max_retries: budget.max_retries, max_retry_after_ms: budget.call_timeout_ms },
-    compaction: { enabled: false, prompt_mode: "none" },
+    compaction: selected?.compaction ?? { enabled: false, prompt_mode: "none" },
+    ...(selected?.reasoning_effort === undefined
+      ? {}
+      : { reasoning_effort: selected.reasoning_effort }),
+    ...(selected?.reasoning_summary === undefined
+      ? {}
+      : { reasoning_summary: selected.reasoning_summary }),
   };
   return {
     execution_id: input.execution_id,
@@ -243,13 +253,21 @@ export function buildGoalAgentRequest(
           trajectory_digest: input.trajectory.digest,
           trajectory_truncated: input.trajectory.truncated,
           workspace_read_available: input.trajectory.workspace_read_available,
+          ...(input.revision_guidance === undefined
+            ? {}
+            : {
+                definition_review: {
+                  guidance: input.revision_guidance,
+                  previous_definition: input.previous_definition,
+                },
+              }),
         }),
       },
     ],
     servers: [],
     providers: runtime.providers,
     profiles: [profile],
-    entry: "goal-agent",
+    entry: profile.name,
     shared_prompt: "",
     budget: {
       on_exceed: "stop",

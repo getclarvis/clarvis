@@ -26,6 +26,7 @@ import {
 } from "../../../../tooling/goal/evidence.ts";
 import {
   GOAL_GLOBAL_LIMITS,
+  GOAL_MAX_NET_TOKENS,
   GOAL_OBJECTIVE,
   GOAL_TEST_SOURCE,
   GOAL_TRIAL_LIMITS,
@@ -219,7 +220,7 @@ export async function runGoalLiveWorker(job: GoalLiveJob): Promise<GoalLiveResul
       action: {
         kind: "create" as const,
         objective: GOAL_OBJECTIVE,
-        limits: { max_net_tokens: 30000, max_auto_continuations: 3 },
+        limits: { max_net_tokens: GOAL_MAX_NET_TOKENS, max_auto_continuations: 3 },
       },
     };
     const receipt = await client.goals.control(control);
@@ -273,14 +274,23 @@ export async function runGoalLiveWorker(job: GoalLiveJob): Promise<GoalLiveResul
     ]);
     await writeFile(job.outputFile + ".verification.txt", stdout + stderr);
     const tools = result.calls.flatMap((call) => call.toolCalls.map((tool) => tool.name));
-    const totals = result.calls.reduce(
-      (sum, call) => ({
-        input: sum.input + (call.usage?.input ?? 0),
-        output: sum.output + (call.usage?.output ?? 0),
-        cached: sum.cached + (call.usage?.cached ?? 0),
-      }),
-      { input: 0, output: 0, cached: 0 },
+    const sumCalls = (calls: typeof result.calls) =>
+      calls.reduce(
+        (sum, call) => ({
+          input: sum.input + (call.usage?.input ?? 0),
+          output: sum.output + (call.usage?.output ?? 0),
+          cached: sum.cached + (call.usage?.cached ?? 0),
+        }),
+        { input: 0, output: 0, cached: 0 },
+      );
+    const totals = sumCalls(result.calls);
+    const stewardTotals = sumCalls(
+      result.calls.filter((call) => call.agentInstanceId === "goal-steward"),
     );
+    const workTotals = sumCalls(
+      result.calls.filter((call) => call.agentInstanceId !== "goal-steward"),
+    );
+    const stewardConsumption = goal.steward?.consumption;
     result.checkpoints = {
       completed: goal.status === "complete",
       automatic_continuation: goal.auto_continuations >= 1 && goal.runs.length >= 2,
@@ -308,9 +318,14 @@ export async function runGoalLiveWorker(job: GoalLiveJob): Promise<GoalLiveResul
         ),
       accounting:
         !goal.consumption.usage_unknown &&
-        totals.input === goal.consumption.input &&
-        totals.output === goal.consumption.output &&
-        totals.cached === goal.consumption.cached &&
+        stewardConsumption !== undefined &&
+        !stewardConsumption.usage_unknown &&
+        workTotals.input === goal.consumption.input &&
+        workTotals.output === goal.consumption.output &&
+        workTotals.cached === goal.consumption.cached &&
+        stewardTotals.input === stewardConsumption.input &&
+        stewardTotals.output === stewardConsumption.output &&
+        stewardTotals.cached === stewardConsumption.cached &&
         session?.totals.input === totals.input &&
         session?.totals.output === totals.output &&
         session?.totals.cached === totals.cached,

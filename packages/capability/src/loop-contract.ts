@@ -125,6 +125,21 @@ export interface ToolInvocationContext {
  * `handle` executes the claimed call at the given iteration, yielding a
  * {@link HandlerVerdict}.
  */
+/**
+ * A capability's per-call ruling on whether dispatch may proceed to hooks and
+ * handlers. Consulted in contribution order; the first refusal wins and is
+ * returned as a tool result without running workspace hooks or the matched
+ * handler.
+ *
+ * @remarks This is the generic effect/admissibility seam. A policy gates on
+ *   {@link import("./tool-effect.ts").ToolEffect} or other run-local state; the
+ *   engine does not name product features. Refusing before hooks is what keeps
+ *   an operator `pre_tool_use` from executing a blocked call.
+ */
+export interface DispatchPolicy {
+  admit(call: LLMToolCall): { ok: true } | { ok: false; reason: string };
+}
+
 export interface ToolHandler {
   matches(call: LLMToolCall): boolean;
   /** Stable tool identity for lifecycle consumers when the wire name is projected. */

@@ -273,6 +273,7 @@ export function applyGoalControl(
         admission.reason,
       );
     start = true;
+    delete state.creation_intent;
   } else {
     const goal = requireCurrent(state);
     if (action.kind !== "clear") requireNonterminal(goal);
@@ -315,6 +316,7 @@ export function applyGoalControl(
       delete goal.steward.last_steward_execution_id;
       archive(state, goal);
       delete state.current;
+      delete state.creation_intent;
     } else if (action.kind === "pause" || action.kind === "cancel") {
       goal.status = action.kind === "pause" ? "paused" : "cancelled";
       if (action.kind === "cancel") delete goal.steward.last_steward_execution_id;

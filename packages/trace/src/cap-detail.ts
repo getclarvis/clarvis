@@ -3,6 +3,7 @@ import type {
   TraceDetailFor,
   TraceDetailMap,
   TraceKind,
+  ToolEvidenceDetail,
 } from "@clarvis/capability";
 import { DELEGATE_TASK_MAX_CHARS, isBuiltinTraceKind } from "@clarvis/capability";
 
@@ -54,6 +55,11 @@ export const DIFF_MAX = 20000;
 
 /** Character cap for one live output/stream chunk, kept as a tail. */
 export const LIVE_CHUNK_MAX = 8192;
+
+/** Bounded receipt excerpt retained separately from the display result cap. */
+const TOOL_EVIDENCE_EXCERPT_MAX = 8192;
+const TOOL_EVIDENCE_STDOUT_MAX = 3072;
+const TOOL_EVIDENCE_STDERR_MAX = 1024;
 
 /**
  * Character cap applied to each individual string inside a tool call's
@@ -282,8 +288,22 @@ function capKinded(e: KindedDetail): unknown {
       const result = truncate(d.result, RESULT_MAX);
       const args = capStrings(d.arguments, ARGS_MAX);
       const diff = d.diff === undefined ? undefined : truncate(d.diff, DIFF_MAX);
-      if (result === d.result && args === d.arguments && diff === d.diff) return d;
-      return { ...d, result, arguments: args, ...(diff === undefined ? {} : { diff }) };
+      const toolEvidence =
+        d.tool_evidence === undefined ? undefined : capToolEvidence(d.tool_evidence);
+      if (
+        result === d.result &&
+        args === d.arguments &&
+        diff === d.diff &&
+        toolEvidence === d.tool_evidence
+      )
+        return d;
+      return {
+        ...d,
+        result,
+        arguments: args,
+        ...(diff === undefined ? {} : { diff }),
+        ...(toolEvidence === undefined ? {} : { tool_evidence: toolEvidence }),
+      };
     }
     case "tool_call_started": {
       const d = e.detail;
@@ -362,6 +382,30 @@ function capKinded(e: KindedDetail): unknown {
     default:
       return e.detail;
   }
+}
+
+function capToolEvidence(value: ToolEvidenceDetail): ToolEvidenceDetail {
+  const excerpt = truncate(value.excerpt, TOOL_EVIDENCE_EXCERPT_MAX);
+  const stdout = value.command?.stdout_excerpt ?? "";
+  const stderr = value.command?.stderr_excerpt ?? "";
+  const command =
+    value.command === undefined
+      ? undefined
+      : {
+          ...value.command,
+          stdout_excerpt: truncate(stdout, TOOL_EVIDENCE_STDOUT_MAX),
+          stderr_excerpt: truncate(stderr, TOOL_EVIDENCE_STDERR_MAX),
+        };
+  return {
+    ...value,
+    excerpt,
+    truncated:
+      value.truncated ||
+      excerpt !== value.excerpt ||
+      (command !== undefined &&
+        (stdout !== command.stdout_excerpt || stderr !== command.stderr_excerpt)),
+    ...(command === undefined ? {} : { command }),
+  };
 }
 
 /**

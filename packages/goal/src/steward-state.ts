@@ -56,21 +56,26 @@ export function settleStewardEvaluation(
     goal.objective_revision === input.review.objective_revision
   ) {
     run.steward_reviews = [...run.steward_reviews, input.review].slice(-8);
-    chain.last_steward_execution_id = input.executionId;
-    chain.last_consumed_work_sequence = input.sequence;
-    chain.runtime_fingerprint = input.fingerprint;
-    chain.trajectory_digest = input.trajectoryDigest;
-    chain.operator_steering_epoch = input.steeringEpoch ?? chain.operator_steering_epoch;
+    if (input.review.decision === "interrupted") delete chain.last_steward_execution_id;
+    else {
+      chain.last_steward_execution_id = input.executionId;
+      chain.last_consumed_work_sequence = input.sequence;
+      chain.runtime_fingerprint = input.fingerprint;
+      chain.trajectory_digest = input.trajectoryDigest;
+      chain.operator_steering_epoch = input.steeringEpoch ?? chain.operator_steering_epoch;
+    }
+    if (input.review.decision === "needs_evidence" && input.review.question !== undefined)
+      chain.pending_question = {
+        review_id: input.review.steward_execution_id,
+        question: input.review.question,
+      };
+    else delete chain.pending_question;
     chain.status =
       input.review.decision === "achieved"
         ? "verified"
-        : input.review.decision === "aligned"
-          ? "aligned"
-          : input.review.decision === "new_run"
-            ? "new_run_recommended"
-            : input.review.decision === "steer"
-              ? "intervened"
-              : "attention";
+        : input.review.decision === "needs_evidence"
+          ? "evidence_requested"
+          : "attention";
   } else {
     chain.status = "attention";
   }

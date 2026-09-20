@@ -86,6 +86,7 @@ export function createGoalController(deps: {
     setView(undefined);
     setAvailable(false);
     setLoading(false);
+    setFormulationActivity(undefined);
     setFailure("");
     setFormulationActivity(undefined);
     setPendingOperation(pending.get(deps.binding()?.sessionId ?? "")?.operation_id);
@@ -204,7 +205,9 @@ export function createGoalController(deps: {
     view,
     available,
     busy,
-    formulating,
+    formulating: () =>
+      formulating() ||
+      (view()?.state.creation_intent !== undefined && view()?.state.current === undefined),
     formulationActivity,
     loading,
     failure,

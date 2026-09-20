@@ -1,5 +1,5 @@
 import { createGoalUsageTracker } from "./usage.ts";
-import type { ProviderConfig } from "@clarvis/capability";
+import type { AgentProfile, ProviderConfig } from "@clarvis/capability";
 import {
   runGoalAgent,
   GoalAgentRunFailure,
@@ -15,6 +15,7 @@ export interface KernelGoalAgentRuntimeOptions {
   providers: ProviderConfig[];
   deps: ExecuteRunDeps;
   executeRun: RunExecutor;
+  profile?: AgentProfile;
 }
 
 /** Replace the host capability surface with its canonical tools capability only. */
@@ -43,6 +44,7 @@ export function createKernelGoalAgentRuntime(options: KernelGoalAgentRuntimeOpti
             providers: options.providers,
             execute_run: options.executeRun,
             deps: { ...deps, llm: tracker.wrap(deps.llm) },
+            ...(options.profile === undefined ? {} : { profile: options.profile }),
           },
           input,
         );

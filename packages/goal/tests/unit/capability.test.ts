@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   createCapabilityServices,
   loadEnv,
+  TOOL_EFFECT_PORT,
   type AgentBuildContext,
   type RunCapabilityContext,
   type RunRequest,
@@ -11,11 +12,13 @@ import {
   advanceGoalRun,
   applyGoalControl,
   createGoalCapability,
+  createGoalCreationCapability,
   goalRuntimePortOf,
   recordGoalCandidate,
   recordGoalCheckpoint,
   recordGoalProgress,
   type GoalRuntimePort,
+  type GoalCreationPort,
   type GoalStewardCompletionDecision,
 } from "../../src/index.ts";
 
@@ -151,7 +154,18 @@ function fixture(overrides: Partial<GoalRuntimePort> = {}) {
     },
     emit: () => undefined,
     requestParam: () => undefined,
-    services: createCapabilityServices(),
+    services: (() => {
+      const services = createCapabilityServices();
+      services.provide(TOOL_EFFECT_PORT, {
+        effect(name) {
+          if (name === "read_file" || name === "grep" || name === "list_dir") return "read";
+          if (name === "write_file" || name === "shell" || name === "edit_file") return "mutate";
+          if (name === "run_workflow" || name === "run_leader") return "spawn_run";
+          return "unknown";
+        },
+      });
+      return services;
+    })(),
   };
   const bc: AgentBuildContext = {
     agent: "lead",
@@ -197,7 +211,307 @@ function fixture(overrides: Partial<GoalRuntimePort> = {}) {
   };
 }
 
+function inputForCreation() {
+  return {
+    objective: "Create the synthetic Goal",
+    criteria: [],
+    constraints: [],
+    exclusions: [],
+    assumptions: [],
+  };
+}
+
 describe("host-bound goal capability", () => {
+  it("keeps create, read and update tools stable across Goal creation", async () => {
+    const f = fixture();
+    const port: GoalCreationPort = {
+      session_id: "session",
+      agent_instance_id: "entry",
+      execution_id: "run",
+      create: async () => f.port,
+    };
+    const capability = createGoalCreationCapability(port);
+    const run = (await capability.forRun(f.runContext))!;
+    const contribution = run.forAgent({ agent: "lead", entry: true, grants: [] })!.attach(f.bc);
+    const initialTools = contribution.tools!.map((tool) => tool.wireName);
+    expect(initialTools).toEqual(["create_goal", "get_goal", "update_goal"]);
+
+    const created = await contribution.handlers![0]!.handle(
+      {
+        id: "create",
+        name: "create_goal",
+        arguments: { objective: "Verify the synthetic feature", criteria: [] },
+      },
+      1,
+    );
+
+    expect(created).toMatchObject({ kind: "result", progress: false });
+    expect(contribution.tools!.map((tool) => tool.wireName)).toEqual(initialTools);
+    expect(
+      await contribution.handlers![0]!.handle({ id: "get", name: "get_goal", arguments: {} }, 2),
+    ).toMatchObject({ kind: "result", progress: false });
+  });
+
+  it("covers the creation-stage controls and completion gate", async () => {
+    const f = fixture();
+    const port: GoalCreationPort = {
+      session_id: "session",
+      agent_instance_id: "entry",
+      execution_id: "run",
+      create: async () => f.port,
+    };
+    const capability = createGoalCreationCapability(port);
+    const run = (await capability.forRun(f.runContext))!;
+    const contribution = run.forAgent({ agent: "lead", entry: true, grants: [] })!.attach(f.bc);
+    const handler = contribution.handlers![0]!;
+
+    await contribution.hooks!.beforeIteration!();
+    contribution.hooks!.afterDispatch!();
+    expect(f.blocks.some((block) => block.kind === "goal_formulation")).toBe(true);
+    expect(
+      contribution.dispatchPolicy?.admit({ id: "write", name: "write_file", arguments: {} }),
+    ).toMatchObject({ ok: false, reason: expect.stringContaining("create_goal") });
+    expect(
+      contribution.dispatchPolicy?.admit({ id: "read", name: "read_file", arguments: {} }),
+    ).toEqual({ ok: true });
+    expect(
+      contribution.dispatchPolicy?.admit({ id: "shell", name: "shell", arguments: {} }),
+    ).toMatchObject({ ok: false });
+    expect(
+      contribution.dispatchPolicy?.admit({
+        id: "delegate",
+        name: "delegate_task",
+        arguments: {},
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      await handler.handle({ id: "get-before", name: "get_goal", arguments: {} }, 1),
+    ).toMatchObject({ kind: "result", text: expect.stringContaining("Create the Goal first") });
+    expect(
+      await handler.handle(
+        {
+          id: "update-before",
+          name: "update_goal",
+          arguments: { update: { action: "progress", summary: "not yet" } },
+        },
+        1,
+      ),
+    ).toMatchObject({ kind: "result", text: expect.stringContaining("Create the Goal first") });
+    expect(
+      await handler.handle({ id: "invalid", name: "create_goal", arguments: { objective: "" } }, 1),
+    ).toMatchObject({ kind: "result", text: expect.stringContaining("Invalid Goal arguments") });
+    expect(
+      await contribution.gates![0]!.check({ mode: "text", text: "A premature answer" }),
+    ).toMatchObject({ kind: "nudge" });
+    expect(
+      await contribution.gates![0]!.check({ mode: "text", text: "Still premature" }),
+    ).toMatchObject({ kind: "terminal", result: { error: { code: "goal_blocked" } } });
+
+    expect(
+      await handler.handle({ id: "create", name: "create_goal", arguments: inputForCreation() }, 2),
+    ).toMatchObject({ kind: "result", text: expect.stringContaining("Goal created") });
+    expect(
+      contribution.dispatchPolicy?.admit({ id: "write-after", name: "write_file", arguments: {} }),
+    ).toEqual({ ok: true });
+    expect(
+      await handler.handle(
+        { id: "duplicate", name: "create_goal", arguments: inputForCreation() },
+        3,
+      ),
+    ).toMatchObject({ kind: "result", text: expect.stringContaining("already exists") });
+    expect(
+      await handler.handle(
+        {
+          id: "progress",
+          name: "update_goal",
+          arguments: { update: { action: "progress", summary: "Inspected the implementation" } },
+        },
+        4,
+      ),
+    ).toMatchObject({ kind: "result", text: expect.stringContaining("Progress recorded") });
+    const checkpoint = await handler.handle(
+      {
+        id: "checkpoint",
+        name: "update_goal",
+        arguments: {
+          update: { action: "checkpoint", summary: "Stage complete", next_step: "Continue" },
+        },
+      },
+      5,
+    );
+    expect(checkpoint).toMatchObject({
+      kind: "finalize",
+      text: expect.stringContaining("Checkpoint"),
+    });
+    if (checkpoint.kind !== "finalize") throw new Error("Expected checkpoint finalization");
+    expect(await contribution.gates![0]!.check(checkpoint.attempt)).toEqual({ kind: "pass" });
+
+    expect(
+      await handler.handle(
+        {
+          id: "candidate",
+          name: "update_goal",
+          arguments: {
+            update: {
+              action: "candidate",
+              summary: "Verified",
+              assessments: [
+                { criterion_id: "objective", kind: "qualitative", justification: "Observed" },
+              ],
+            },
+          },
+        },
+        6,
+      ),
+    ).toMatchObject({ kind: "result", text: expect.stringContaining("Human acceptance") });
+    f.allowCompletion();
+    expect(await contribution.gates![0]!.check({ mode: "text", text: "Done" })).toEqual({
+      kind: "pass",
+    });
+    expect(f.calls).toEqual(["progress", "checkpoint", "candidate", "validate"]);
+  });
+
+  it("covers creation review feedback, invalid candidates and bounded failures", async () => {
+    let decision: GoalStewardCompletionDecision = {
+      kind: "needs_evidence",
+      review_id: "review",
+      next_step: "Run the browser-level check",
+    };
+    let reviewThrows = false;
+    const f = fixture();
+    const port: GoalCreationPort = {
+      session_id: "session",
+      agent_instance_id: "entry",
+      execution_id: "run",
+      create: async () => f.port,
+      reviewCompletion: async () => {
+        if (reviewThrows) throw new Error("private review detail");
+        return decision;
+      },
+    };
+    const capability = createGoalCreationCapability(port);
+    const run = (await capability.forRun(f.runContext))!;
+    const contribution = run.forAgent({ agent: "lead", entry: true, grants: [] })!.attach(f.bc);
+    const handler = contribution.handlers![0]!;
+    await handler.handle({ id: "create", name: "create_goal", arguments: inputForCreation() }, 1);
+
+    expect(await contribution.gates![0]!.check({ mode: "text", text: "Done" })).toMatchObject({
+      kind: "nudge",
+    });
+    expect(await contribution.gates![0]!.check({ mode: "text", text: "Done again" })).toMatchObject(
+      {
+        kind: "terminal",
+        result: { error: { code: "goal_blocked" } },
+      },
+    );
+    f.allowCompletion();
+    expect(await contribution.gates![0]!.check({ mode: "text", text: "Done" })).toMatchObject({
+      kind: "nudge",
+      note: expect.stringContaining("clarification"),
+    });
+    decision = { kind: "needs_work", review_id: "review", next_step: "Fix the failing path" };
+    expect(
+      await contribution.gates![0]!.check({ mode: "submit", value: { done: true } }),
+    ).toMatchObject({
+      kind: "nudge",
+      note: expect.stringContaining("correction"),
+    });
+    decision = {
+      kind: "interrupted",
+      review_id: "review",
+      reason: "goal_steward_failed",
+      cause: "transport",
+    };
+    expect(await contribution.gates![0]!.check({ mode: "text", text: "Done" })).toMatchObject({
+      kind: "terminal",
+      result: { error: { code: "goal_steward_failed" } },
+    });
+    decision = { kind: "achieved", review_id: "review" };
+    expect(await contribution.gates![0]!.check({ mode: "text", text: "Done" })).toEqual({
+      kind: "pass",
+    });
+    reviewThrows = true;
+    expect(await contribution.gates![0]!.check({ mode: "text", text: "Done" })).toMatchObject({
+      kind: "terminal",
+      result: { error: { code: "goal_control_failed" } },
+    });
+    expect(
+      await contribution.gates![0]!.check({ mode: "text", text: "x".repeat(128 * 1024) }),
+    ).toMatchObject({
+      kind: "terminal",
+      result: { error: { code: "goal_steward_inconclusive" } },
+    });
+  });
+
+  it("stops creation controls on blocked and storage failures", async () => {
+    const blocked = fixture();
+    const blockedPort: GoalCreationPort = {
+      session_id: "session",
+      agent_instance_id: "entry",
+      execution_id: "run",
+      create: async () => blocked.port,
+    };
+    const blockedCapability = createGoalCreationCapability(blockedPort);
+    const blockedRun = (await blockedCapability.forRun(blocked.runContext))!;
+    const blockedContribution = blockedRun
+      .forAgent({ agent: "lead", entry: true, grants: [] })!
+      .attach(blocked.bc);
+    const blockedHandler = blockedContribution.handlers![0]!;
+    await blockedHandler.handle(
+      { id: "create", name: "create_goal", arguments: inputForCreation() },
+      1,
+    );
+    expect(
+      await blockedHandler.handle(
+        {
+          id: "blocked",
+          name: "update_goal",
+          arguments: { update: { action: "blocked", reason: "Missing browser evidence" } },
+        },
+        2,
+      ),
+    ).toMatchObject({ kind: "terminal", result: { error: { code: "goal_blocked" } } });
+
+    const failed = fixture({
+      progress: async () => {
+        throw new Error("private store detail");
+      },
+    });
+    const failedPort: GoalCreationPort = {
+      session_id: "session",
+      agent_instance_id: "entry",
+      execution_id: "run",
+      create: async () => failed.port,
+    };
+    const failedCapability = createGoalCreationCapability(failedPort);
+    const failedRun = (await failedCapability.forRun(failed.runContext))!;
+    const failedContribution = failedRun
+      .forAgent({ agent: "lead", entry: true, grants: [] })!
+      .attach(failed.bc);
+    const failedHandler = failedContribution.handlers![0]!;
+    await failedHandler.handle(
+      { id: "create", name: "create_goal", arguments: inputForCreation() },
+      1,
+    );
+    expect(
+      await failedHandler.handle(
+        {
+          id: "progress",
+          name: "update_goal",
+          arguments: { update: { action: "progress", summary: "Record progress" } },
+        },
+        2,
+      ),
+    ).toMatchObject({ kind: "terminal", result: { error: { code: "goal_control_failed" } } });
+    failed.port.read = async () => {
+      throw new Error("private read detail");
+    };
+    expect(await failedContribution.hooks!.beforeIteration!()).toMatchObject({
+      status: "error",
+      error: { code: "goal_control_failed" },
+    });
+  });
+
   it("requires admission, filters children and composes without an anchor or output budget", async () => {
     const f = fixture();
     expect(f.capability.required).toBe(true);
@@ -629,8 +943,6 @@ it("routes Steward completion decisions and respects pending operator steering",
   const f = fixture({
     steward: {
       bindReviewContext: () => undefined,
-      scheduleObservation: () => undefined,
-      takeReadyIntervention: async () => undefined,
       closeCoordinator: async () => undefined,
       reviewCompletion: async () => {
         if (throws) throw new Error("Unavailable");
@@ -643,13 +955,13 @@ it("routes Steward completion decisions and respects pending operator steering",
   const c = await f.attach();
   const gate = c.gates![0]!;
   expect(await gate.check({ mode: "text", text: "Done" })).toEqual({ kind: "pass" });
-  decision = { kind: "not_achieved", review_id: "review", next_step: "Run tests" };
+  decision = { kind: "needs_work", review_id: "review", next_step: "Run tests" };
   expect(await gate.check({ mode: "submit", value: { done: true } })).toMatchObject({
     kind: "nudge",
-    note: "[goal steward] Run tests",
+    note: "[goal steward correction] Run tests",
   });
   for (const reason of ["goal_steward_failed", "goal_steward_inconclusive"]) {
-    decision = { kind: "inconclusive", review_id: "review", reason };
+    decision = { kind: "interrupted", review_id: "review", reason, cause: "transport" };
     expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({
       kind: "terminal",
       result: { error: { code: reason } },
@@ -666,30 +978,4 @@ it("routes Steward completion decisions and respects pending operator steering",
   });
   pending = true;
   expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({ kind: "nudge" });
-});
-
-it("delivers Steward interventions only at an iteration boundary", async () => {
-  let kind: "steer" | "new_run" = "steer";
-  const notes: string[] = [];
-  const f = fixture({
-    steward: {
-      bindReviewContext: () => undefined,
-      scheduleObservation: () => undefined,
-      closeCoordinator: async () => undefined,
-      reviewCompletion: async () => ({ kind: "achieved", review_id: "review" }),
-      takeReadyIntervention: async () =>
-        kind === "steer"
-          ? { kind, guidance: "Verify output" }
-          : { kind, next_step: "Finish tests" },
-    },
-  });
-  f.bc.ctx.appendNote = (note) => {
-    notes.push(note);
-  };
-  const c = await f.attach();
-  await c.hooks!.beforeIteration!();
-  kind = "new_run";
-  await c.hooks!.beforeIteration!();
-  expect(notes[0]).toBe("[goal steward] Verify output");
-  expect(notes[1]).toContain("checkpoint");
 });

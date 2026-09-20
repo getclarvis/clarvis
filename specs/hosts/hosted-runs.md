@@ -66,7 +66,7 @@ the proposed result and fences without another model call. Production: `prepareH
 `createFileRunHost`. Test:
 [goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
 
-Goal formulation uses the same authenticated controller but is not a hosted conversation turn. The
+Legacy Goal formulation uses the same authenticated controller but is not a hosted conversation turn. The
 host rejects it before inference when a Goal or physical run already owns the conversation. Its
 separate semantic execution is persisted in the owner-scoped run/trace store, while the session lock
 is released. After a ready result passes the full-session revision CAS, the host publishes Goal and

@@ -40,10 +40,10 @@ Production: `registerBackgroundCommands` in
 Test: [background-commands.test.tsx](../../packages/code/tests/integration/background-commands.test.tsx).
 
 `/goal` uses the same registry for deterministic inspection and controls, including literal
-`/goal -- <objective>`, semantic `/goal auto` from the conversation or `/goal <seed>` from a
-primary request, reviewed replacement, a criteria/limits form, pause, resume, cancel and
-archive. Completion evaluates subcommand visibility against the current Goal: without one it
-offers only the root and automatic formulation; existing Goals expose only applicable edit, pause,
+`/goal -- <objective>`, guided `/goal <seed>` in the ordinary selected main-agent turn, reviewed replacement, a
+criteria/limits form, pause, resume, cancel and archive. Completion evaluates subcommand visibility
+against the current Goal: without one it offers only the root; existing Goals expose only applicable
+edit, pause,
 resume, cancel and archive controls, including physical-execution restrictions. Visibility is
 discovery-only; explicitly typed routes retain their validation. Invalid control syntax returns `block` and remains in the composer. A form pins both the
 conversation generation and the reviewed revision, so navigation cannot retarget an old draft.
@@ -51,7 +51,7 @@ Physical execution gates editing independently from goal status; pause alone doe
 run. Replacement, including editing a terminal goal, requires explicit confirmation.
 Human criteria show whether the host accepted them for the current objective revision. The
 acceptance picker offers only pending criteria; historical approvals cannot satisfy a revised goal.
-Formulation publishes immediate activity instead of freezing the composer or switching screens. A
+Guided creation publishes the ordinary run activity instead of freezing the composer or switching screens. The main agent calls the host-bound `create_goal` tool before implementation work; a
 compact Goal section shares the activity sidebar with Plan, parallel work and agents; it shows
 formulation/progress state and uses Plan's title, lifecycle-tone, metadata and key placement. It uses
 `Ctrl+X O` to toggle the existing full Goal view while revealed;
@@ -63,7 +63,7 @@ compact budget and actionable review state. Source digests are abbreviated visua
 execution IDs, full digests, detailed accounting and candidate narration do not compete with the
 definition. A Plan projection whose tasks are all done renders `Completed` and no current-task
 highlight even if its aggregate status has not settled yet.
-Successful formulation and literal creation leave the user in the transcript. A domain
+Successful main-agent creation and literal creation leave the user in the transcript. A domain
 `goal_blocked` becomes Goal attention rather than a generic `guard_trip` error row.
 Production: `registerGoalCommands` in
 [commands.ts](../../packages/code/src/features/goal/commands.ts), `GoalForm` and `GoalView` in

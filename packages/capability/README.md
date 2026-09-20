@@ -438,8 +438,9 @@ they do not authorize human-only effects, publication, deployment, destructive w
 access or external contact. Goal context is inherited only with already-fenced run authority, while
 Plan context is read live and revalidated after inference; a changed revision makes the decision
 unsure and prevents stale cache or envelope reuse. Terminal `tool_call` trace
-vocabulary likewise carries an optional `result_digest`, minted before result-text retention caps so
-a host can attest complete bytes without retaining the omitted text. The owning contracts are
+vocabulary likewise carries an optional `result_digest`, minted before result-text retention caps, and
+a bounded `tool_evidence` receipt captured at the producer boundary. Hosts can attest complete bytes
+and classify terminal command/content status without retaining the omitted display text. The owning contracts are
 [command guard](../../specs/execution/command-guard.md) and
 [trace](../../specs/foundations/trace.md).
 

@@ -915,7 +915,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
       const bounded = boundTranscriptText(
         error.code === "goal_blocked"
           ? `Goal blocked: ${error.message}`
-          : `Goal Steward: ${error.code === "goal_steward_failed" ? "review failed" : "review inconclusive"}`,
+          : `Goal Steward: review pending · ${error.message}`,
       );
       upsert(`${prefix}goal-blocked`, () => ({
         kind: "annotation",

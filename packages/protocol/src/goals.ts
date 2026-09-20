@@ -99,13 +99,12 @@ export interface GoalRun {
   candidate?: GoalCandidate;
   steward_reviews?: GoalStewardReview[];
   steward_review_count?: number;
-  steward_intervention_count?: number;
 }
 
 /** Bounded audit only; prompts, tool exchanges and pending decisions remain host-private. */
 export interface GoalStewardReview {
   steward_execution_id: string;
-  mode: "observation" | "completion";
+  mode: "completion";
   goal_id: string;
   work_execution_id: string;
   control_revision: number;
@@ -117,11 +116,16 @@ export interface GoalStewardReview {
   candidate_digest?: string;
   final_attempt_digest?: string;
   evidence_digest: string;
-  decision: "aligned" | "steer" | "new_run" | "achieved" | "not_achieved" | "inconclusive";
+  decision: "achieved" | "needs_work" | "needs_evidence" | "interrupted";
   summary: string;
-  guidance?: string;
   next_step?: string;
-  inspected_artifacts: GoalDefinitionSource[];
+  question?: string;
+  answer?: string;
+  speakers?: Array<{
+    speaker: "operator" | "work_agent" | "steward";
+    kind: "request" | "correction" | "report" | "question" | "answer";
+  }>;
+  interruption_cause?: "timeout" | "transport" | "invalid_output" | "cancelled";
   usage: GoalUsage;
   reviewed_at: number;
 }
@@ -134,15 +138,8 @@ export interface GoalStewardChainState {
   last_consumed_work_sequence: number;
   runtime_fingerprint: string;
   prompt_cache_ttl: "5m" | "1h";
-  status:
-    | "idle"
-    | "observing"
-    | "aligned"
-    | "intervened"
-    | "new_run_recommended"
-    | "verifying"
-    | "verified"
-    | "attention";
+  status: "idle" | "verifying" | "verified" | "evidence_requested" | "attention";
+  pending_question?: { review_id: string; question: string };
   consumption: {
     input: number;
     output: number;
@@ -222,6 +219,15 @@ export interface GoalFormulateResult extends GoalReceipt {
   formulation: NonNullable<GoalReceipt["formulation"]>;
 }
 
+/** Admitted guided creation; it is not a Goal and does not authorize implementation. */
+export interface GoalCreationIntent {
+  seed: string;
+  execution_id: string;
+  operation_id: string;
+  phase: "formulating";
+  admitted_at: number;
+}
+
 /** Optional private-session field, writable only by the host's short transaction. */
 export interface GoalState {
   version: 1;
@@ -229,6 +235,7 @@ export interface GoalState {
   current?: GoalRecord;
   archive: GoalRecord[];
   receipts: GoalReceipt[];
+  creation_intent?: GoalCreationIntent;
 }
 
 export type GoalControlAction =

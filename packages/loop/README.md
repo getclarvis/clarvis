@@ -68,6 +68,10 @@ actor, call identity, tool name, iteration and attempt. Every cumulative `tool_i
 `complete: true`, is a live signal. Argument `chars` and optional provider `stream_chars` remain
 separate counters. Retry advances the attempt and clears the announcement set, preserving identity
 even when a provider reuses its call ID. No partial arguments or per-delta journal growth are needed.
+At terminal dispatch, `executeAgentToolCall` also captures a bounded `tool_evidence` receipt before
+the ordinary trace result cap. Shell-family calls retain typed exit/timeout/signal status and bounded
+stdout/stderr; other tools retain a bounded content excerpt. The receipt is observational metadata,
+not a second execution or authority path.
 The durable vocabulary and replay contract are owned by
 [`foundations/trace.md`](../../specs/foundations/trace.md).
 

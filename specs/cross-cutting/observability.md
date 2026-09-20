@@ -69,8 +69,8 @@ and `packages/kernel/tests/unit/observability.test.ts`.
 
 Goal Steward keeps its own ordinary execution trace and provider purpose `goal`. Its operational
 `goal.steward.failed` and `goal.steward.settled` records contain execution identity, mode, disposition
-and usage kind, without semantic payloads. The work trace records bounded `goal_steward_review` and
-`goal_steward_intervention` metadata; the durable domain review remains the source for UI substance.
+and usage kind, without semantic payloads. The work trace records bounded `goal_steward_review`
+completion metadata; the durable domain review remains the source for UI substance.
 Production: `createGoalStewardCoordinator` and `createGoalCapability`. Test:
 [goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
 

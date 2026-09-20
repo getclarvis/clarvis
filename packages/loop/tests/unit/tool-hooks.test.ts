@@ -137,6 +137,52 @@ describe("tool hooks", () => {
     expect(results[0]).toBe("DENIED by a workspace hook: blocked");
   });
 
+  it("dispatch policy refuses a call before workspace hooks and the handler", async () => {
+    let handled = false;
+    let hooked = false;
+    const contribution: AgentLoopContribution = {
+      tools: [noopTool("noop")],
+      handlers: [
+        {
+          matches: (c) => c.name === "noop",
+          handle: async () => {
+            handled = true;
+            return { kind: "result", text: "ok", progress: true };
+          },
+        },
+      ],
+      dispatchPolicy: {
+        admit: (call) =>
+          call.name === "noop"
+            ? { ok: false, reason: "Persist first; this tool is not admitted yet" }
+            : { ok: true },
+      },
+      gates: [],
+      hooks: {},
+    };
+    const llm = new SnapshotLLM({
+      script: [
+        { toolCalls: [{ name: "noop", arguments: {} }] },
+        { toolCalls: [{ name: "submit_result", arguments: { name: "Ada" } }] },
+      ],
+    });
+    const hooks: LifecycleHook[] = [
+      {
+        beforeToolUse: async (call) => {
+          if (call.tool === "noop") hooked = true;
+          return { kind: "pass" as const };
+        },
+      },
+    ];
+    const res = await runAgent(makeInput(llm, { hooks, buildContribution: () => contribution }));
+    expect(res.status).toBe("completed");
+    expect(handled).toBe(false);
+    expect(hooked).toBe(false);
+    expect(toolResults(llm.snapshots[1]!)).toEqual([
+      "Tool 'noop' result: Persist first; this tool is not admitted yet",
+    ]);
+  });
+
   it("PreToolUse advise still invokes the handler and appends the advisor message to the result", async () => {
     let handled = false;
     const contribution: AgentLoopContribution = {

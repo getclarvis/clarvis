@@ -75,10 +75,7 @@ const TYPE_ONLY_PACKAGES = new Set(["protocol"]);
 // below is one of the three permanent reasons. Do not open a fourth: an
 // untested module belongs in a test, not here.
 const NO_COUNTER_ALLOWLIST = {
-  judge: [
-    // Pure re-export barrel.
-    "src/index.ts",
-  ],
+  judge: [],
   capability: [
     // Type-only: declares interfaces/aliases and emits nothing at runtime.
     "src/agents-port.ts",
@@ -123,6 +120,8 @@ const NO_COUNTER_ALLOWLIST = {
   kernel: [
     // Type-only: internal subscription adapter and persistence contracts.
     "src/subscriptions/types.ts",
+    // Type-only: options and lifecycle contracts used by the creation port.
+    "src/goals/creation-port-types.ts",
     // Type-only.
     "src/runtime/tool-policy.ts",
     "src/config/builtin-agents/types.ts",

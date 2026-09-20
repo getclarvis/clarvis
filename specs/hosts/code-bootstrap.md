@@ -52,8 +52,10 @@ coalesce state reads and follow host-started stages through `RunHost.synchronize
 disposes subscriptions and late presentation callbacks. Goal continuation has no client timer or
 run-start bypass. The activity line combines durable goal status with the independently tracked run
 status, and a checkpoint is displayed separately from final completion.
-Semantic formulation is also a first-class presentation state: it drives the Lead activity line and
-the Goal section of the shared activity sidebar until the host returns a receipt. Creation keeps the
+Legacy semantic formulation remains a first-class compatibility presentation state: the host emits
+transient `preparing` and `reviewing_definition` invalidations only for that control-plane service;
+they never become durable Goal state or authority. Guided creation is an ordinary selected-agent
+turn and keeps the
 transcript mounted; the complete Goal view opens only by explicit `/goal`, click, or contextual
 `Ctrl+X O` from that sidebar section. Once open, the same `Ctrl+X O` returns to the transcript.
 Production: goal controller composition and `closeWorkspace` in

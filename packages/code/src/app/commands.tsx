@@ -105,6 +105,8 @@ export interface AppCommandDeps {
     statusLine: () => string;
   };
   notify: (message: string, tone?: HintTone) => void;
+  /** Submit a normal main-agent turn carrying the host-authenticated Goal intent. */
+  onSubmitGoal?: (seed: string) => Promise<void> | void;
   settings: SettingsAdapter;
   dirs: ClarvisDirs;
   catalog: ModelsCatalog | null;

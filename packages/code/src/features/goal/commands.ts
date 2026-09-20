@@ -6,13 +6,14 @@ import { parseGoalCommand } from "./parser.ts";
 import { createGoalDraft, type GoalDraft } from "./draft.ts";
 import type { GoalController } from "./controller.ts";
 
-/** Explicit user controls enter the goal service; the slash text never becomes a model prompt. */
+/** Explicit controls use the goal service; guided creation enters the ordinary main-agent turn. */
 export function registerGoalCommands(
   commands: CommandScope,
   deps: {
     goals: GoalController;
     ui: CommandUi;
     notify(message: string, tone?: HintTone): void;
+    submitGoal?: (seed: string) => Promise<void> | void;
   },
 ): void {
   let draft: GoalDraft | undefined;
@@ -57,22 +58,10 @@ export function registerGoalCommands(
             throw new Error(
               "A goal already exists; review, cancel or clear it before formulating another.",
             );
-          deps.notify(
-            command.mode === "auto"
-              ? "Formulating a Goal from this conversation…"
-              : "Formulating a Goal from your request…",
-            "info",
-          );
-          const receipt = await deps.goals.formulate(command.mode, command.seed);
-          if (receipt.formulation.outcome === "created")
-            deps.notify("Goal created; the first work stage is starting.", "success");
-          else
-            deps.notify(
-              receipt.formulation.question ??
-                receipt.formulation.message ??
-                "Goal formulation did not create a goal.",
-              "warn",
-            );
+          if (deps.submitGoal === undefined)
+            throw new Error("Goal creation is unavailable on this host.");
+          deps.notify("The main agent is defining the Goal and starting its work…", "info");
+          await deps.submitGoal(command.seed);
           return;
         }
         if (command.kind === "edit" || (command.kind === "create" && current !== undefined)) {
@@ -136,13 +125,8 @@ export function registerGoalCommands(
     surface: "slash",
     group: "actions",
     desc: "Inspect or control this conversation's persistent objective",
-    args: [{ name: "auto | <seed> | -- <literal objective>" }],
+    args: [{ name: "<seed> | -- <literal objective>" }],
     subcommands: [
-      {
-        name: "auto",
-        visible: () => ready() && current() === undefined,
-        desc: "Formulate from this conversation's trajectory",
-      },
       {
         name: "edit",
         visible: () => ready() && current() !== undefined && !physicallyBusy(),

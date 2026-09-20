@@ -259,16 +259,29 @@ export function GoalView(
                     >{`Steward  ${stewardStatusLabel(current())}`}</text>
                     <text
                       fg={tokens.muted}
-                    >{`${current().runs.at(-1)?.steward_review_count ?? 0} reviews ${glyph("separator")} ${current().runs.at(-1)?.steward_intervention_count ?? 0} interventions`}</text>
+                    >{`${current().runs.at(-1)?.steward_review_count ?? 0} completion reviews`}</text>
                     <Show when={current().runs.at(-1)?.steward_reviews?.at(-1)}>
                       {(review: Accessor<GoalStewardReview>) => (
                         <>
                           <text marginTop={1} fg={tokens.fg} wrapMode="word">
                             {review().summary}
                           </text>
-                          <Show when={review().next_step ?? review().guidance}>
+                          <Show when={review().decision === "needs_evidence" && review().question}>
                             <text marginTop={1} fg={tokens.warn} wrapMode="word">
-                              {`Next step: ${review().next_step ?? review().guidance}`}
+                              {`Steward asked: ${review().question}`}
+                            </text>
+                            <text fg={tokens.muted} wrapMode="word">
+                              The main agent is answering. This is not an action for you.
+                            </text>
+                          </Show>
+                          <Show when={review().decision === "needs_work" && review().next_step}>
+                            <text marginTop={1} fg={tokens.warn} wrapMode="word">
+                              {`Next step: ${review().next_step}`}
+                            </text>
+                          </Show>
+                          <Show when={review().decision === "interrupted"}>
+                            <text marginTop={1} fg={tokens.warn} wrapMode="word">
+                              {`Steward review interrupted${review().interruption_cause === undefined ? "" : ` (${review().interruption_cause})`}`}
                             </text>
                           </Show>
                         </>

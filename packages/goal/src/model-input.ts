@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { goalAssessmentSchema, goalEvidenceRefSchema, goalProgressSchema } from "./schemas.ts";
+import {
+  goalAssessmentSchema,
+  goalCriterionSchema,
+  goalEvidenceRefSchema,
+  goalProgressSchema,
+} from "./schemas.ts";
 
 const summary = goalProgressSchema.shape.summary;
 const evidenceIds = z.array(goalEvidenceRefSchema.shape.id).max(8).default([]);
@@ -36,3 +41,16 @@ export const goalModelToolInputSchema = z
 export type GoalProgressInput = z.infer<typeof goalProgressInputSchema>;
 export type GoalCheckpointInput = z.infer<typeof goalCheckpointInputSchema>;
 export type GoalCandidateInput = z.infer<typeof goalCandidateInputSchema>;
+
+/** Main-agent proposal used by the host-bound create_goal tool. */
+export const goalCreationInputSchema = z
+  .object({
+    objective: z.string().trim().min(1).max(16384),
+    criteria: z.array(goalCriterionSchema).max(32).default([]),
+    constraints: z.array(z.string().trim().min(1).max(4096)).max(16).default([]),
+    exclusions: z.array(z.string().trim().min(1).max(4096)).max(16).default([]),
+    assumptions: z.array(z.string().trim().min(1).max(4096)).max(16).default([]),
+  })
+  .strict();
+
+export type GoalCreationInput = z.infer<typeof goalCreationInputSchema>;

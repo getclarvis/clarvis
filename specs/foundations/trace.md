@@ -30,8 +30,8 @@ When the process dies before the batch path completes, `recoverOrphans` folds th
 `packages/trace/src/journal-recovery.ts`).
 
 Goal Steward evaluations use ordinary persisted executions with their own IDs and continuation
-contexts. The work capability records `goal_steward_review` and `goal_steward_intervention` through
-the open trace vocabulary; no builtin event or engine dependency is added. Production:
+contexts. The work capability records `goal_steward_review` completion metadata through the open
+trace vocabulary; no builtin event or engine dependency is added. Production:
 `createGoalCapability` in [capability.ts](../../packages/goal/src/capability.ts) and `runGoalSteward`
 in [steward-run.ts](../../packages/goal/src/agent/steward-run.ts). Test:
 [goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
@@ -177,6 +177,17 @@ content. Production: `createTrace` in
 [trace-mapper.ts](../../packages/trace/src/trace-mapper.ts). Test: `createTrace capping` in
 [in-memory-trace.test.ts](../../packages/trace/tests/unit/in-memory-trace.test.ts) and the tool
 projection case in [trace-mapper.test.ts](../../packages/trace/tests/unit/trace-mapper.test.ts).
+
+`ToolCallDetail.tool_evidence` is a bounded producer-side receipt captured before the display cap.
+Its typed status distinguishes successful, failed and incomplete calls; command receipts retain
+bounded exit/timeout/signal metadata and stdout/stderr excerpts, while other tools retain a bounded
+content excerpt. `capDetail` applies independent receipt limits and `mapEntry` preserves the receipt
+through persistence. `DelegationFinishedDetail.result_digest` follows the same complete-result digest
+rule for delegated results. Production: `ToolEvidenceDetail` in
+`packages/capability/src/trace-kinds.ts`, `toolEvidence` in
+`packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts` and `capToolEvidence` in
+`packages/trace/src/cap-detail.ts`. Test: `uses a pre-cap command receipt when the persisted display
+result is truncated` in `packages/kernel/tests/integration/goal-runtime-port.test.ts`.
 
 `ToolCallStartedDetail.control` is the optional `{ tool_execution_id, actions: ["interrupt"] }`
 capability for one live builtin shell invocation. `ToolCallDetail.interruption` is the optional

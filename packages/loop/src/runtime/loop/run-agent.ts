@@ -541,6 +541,7 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
     ctx,
     tools,
     handlers,
+    ...(folded.dispatchPolicy !== undefined ? { dispatchPolicy: folded.dispatchPolicy } : {}),
     guards,
     progress,
     ...(anchor ? { anchor } : {}),

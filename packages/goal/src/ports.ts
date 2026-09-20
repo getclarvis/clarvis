@@ -2,11 +2,11 @@ import type { Logger, OperatorReviewContextProvider } from "@clarvis/capability"
 import type {
   GoalStewardCompletionDecision,
   GoalStewardFinalizeAttempt,
-  GoalStewardIntervention,
 } from "./agent/steward-types.ts";
 import type { GoalCheckpoint, GoalEvidenceRef, GoalRecord, GoalState } from "./schemas.ts";
 import type { GoalCompletionValidation } from "./criteria.ts";
 import type { GoalCandidateInput, GoalCheckpointInput, GoalProgressInput } from "./model-input.ts";
+import type { GoalCreationInput } from "./model-input.ts";
 
 /** A host transaction updates its existing session document; this port does not own another store. */
 export interface GoalRepository {
@@ -60,11 +60,22 @@ export interface GoalRuntimePort {
   blocked(reason: string, signal?: AbortSignal): Promise<void>;
 }
 
+/** Host-owned bridge exposed only during the first main-agent turn of a guided Goal. */
+export interface GoalCreationPort {
+  readonly session_id: string;
+  readonly agent_instance_id: string;
+  readonly execution_id: string;
+  create(input: GoalCreationInput, signal?: AbortSignal): Promise<GoalRuntimePort>;
+  bindReviewContext?(provider: OperatorReviewContextProvider): void;
+  reviewCompletion?(
+    attempt: GoalStewardFinalizeAttempt,
+    signal?: AbortSignal,
+  ): Promise<GoalStewardCompletionDecision>;
+}
+
 /** Host attestation only; the Goal capability owns notes and finalization gate policy. */
 export interface GoalStewardPort {
   bindReviewContext(provider: OperatorReviewContextProvider): void;
-  scheduleObservation(): void;
-  takeReadyIntervention(signal?: AbortSignal): Promise<GoalStewardIntervention | undefined>;
   reviewCompletion(
     attempt: GoalStewardFinalizeAttempt,
     signal?: AbortSignal,

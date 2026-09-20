@@ -38,12 +38,22 @@ function protectSkillPackages(
   }
 }
 
-/** Admit reviewed canonical authoring and route operational configuration to its restricted writer. */
+/**
+ * Admit canonical authoring only under the restricted configuration writer.
+ *
+ * @param name - the dispatched tool name; non-mutating tools are unaffected.
+ * @param args - validated arguments, read for the paths the call touches.
+ * @param config - the resolved run config; its `reviewMutation` port *is* the restricted writer.
+ * @param authoringWriter - whether this run has that writer. Without it a file tool has no way to
+ *   review an authored change, so a canonical authoring target is refused outright instead of being
+ *   approved by a generic command review. Operational configuration under the same roots is always
+ *   refused here, writer or not.
+ */
 function protectWorkspaceConfiguration(
   name: string,
   args: Record<string, unknown>,
   config: RuntimeConfig,
-  authoringReviewed = false,
+  authoringWriter = false,
 ): void {
   if (!NATIVE_MUTATION_TOOLS.has(name)) return;
   const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
@@ -55,7 +65,7 @@ function protectWorkspaceConfiguration(
       (name === "replace" &&
         config.reviewMutation !== undefined &&
         isAuthoringSearchScope(fact.resolved, config.workspaceRoot)) ||
-      (authoringReviewed && isCanonicalAuthoringPath(fact.resolved, config.workspaceRoot))
+      (authoringWriter && isCanonicalAuthoringPath(fact.resolved, config.workspaceRoot))
     )
       continue;
     assertOutsideRoots(fact.resolved, protectedRoots, fact.raw, {
@@ -166,6 +176,7 @@ export function listTools(config: RuntimeConfig): ToolInfo[] {
 interface GuardGate {
   denied?: DispatchResult;
   review?: GuardReview;
+  /** Set only when the call was handed to the restricted configuration writer instead of the guard. */
   authoringReviewed?: boolean;
 }
 
@@ -238,13 +249,7 @@ async function applyGuard(
       Object.assign(finalReview, answer.review);
     }
     return allowed
-      ? {
-          review: finalReview,
-          authoringReviewed:
-            decision.effects?.some(
-              (fact) => fact.id === "clarvis.authoring.write" && fact.attestation === "complete",
-            ) === true,
-        }
+      ? { review: finalReview }
       : {
           denied: errorResult(new ToolError("denied", reviewDenialMessage(finalReview, reason))),
           review: finalReview,
@@ -292,8 +297,9 @@ export async function dispatch(
     return errorResult(new ToolError("invalid_input", detail || "invalid arguments"));
   }
 
+  const authoringWriter = config.reviewMutation !== undefined;
   try {
-    protectWorkspaceConfiguration(name, filled, config, true);
+    protectWorkspaceConfiguration(name, filled, config, authoringWriter);
     protectSkillPackages(name, filled, config);
   } catch (error) {
     return errorResult(error);
@@ -301,7 +307,7 @@ export async function dispatch(
 
   const deferredAuthoring =
     tool.atomicMutation === true &&
-    config.reviewMutation !== undefined &&
+    authoringWriter &&
     buildGuardContext(name, filled, config).paths.some(
       (fact) =>
         isCanonicalAuthoringPath(fact.resolved, config.workspaceRoot) ||

@@ -23,7 +23,7 @@ import {
   createAuthorityReviewTransaction,
   installedAuthorityTransition,
 } from "./authority-review-transaction.ts";
-import { consumeAuthorityEffects, denyAuthorityEffect } from "./operator-authority.ts";
+import { denyAuthorityEffect } from "./operator-authority.ts";
 import {
   reviewerAuthoritySnapshot,
   reviewerContextIsCurrent,
@@ -61,7 +61,7 @@ export function createHostEffectReview(deps: {
       if (unboundRefusals.size >= 32) throw new Error("Configuration refusal budget exhausted.");
       unboundRefusals.add(key);
     },
-    attest(fact: GuardEffectFact, consumer: "command_guard" | "configure_clarvis"): void {
+    attest(fact: GuardEffectFact, consumer: "configure_clarvis"): void {
       audit.info(
         {
           event: "effect_review.effect.attested",
@@ -78,8 +78,7 @@ export function createHostEffectReview(deps: {
     async review(
       batch: GuardEffectBatch,
       call: unknown,
-      consumer: "command_guard" | "configure_clarvis",
-      reserve = true,
+      consumer: "configure_clarvis",
     ): Promise<EffectReviewReceipt> {
       const started = performance.now();
       const authority = deps.authority;
@@ -116,11 +115,6 @@ export function createHostEffectReview(deps: {
       const context = reviewerContextSnapshot(state.review_context, deps.reviewContext);
       const currentCase = JSON.parse(JSON.stringify({ effects: batch.facts, call })) as JudgeJson;
       const caseDigest = effectDigest(canonicalJudgeJson(currentCase));
-      const limitedKeys = batch.facts
-        .filter((fact) => fact.id === "github.actions.rerun_failed")
-        .map((fact) => effectDigest(fact.id, fact.target!.digest));
-      if (limitedKeys.some((key) => state.consumed_effects?.includes(key)))
-        return receipt("unsure");
       const transaction = createAuthorityReviewTransaction({
         authority,
         registry: deps.registry,
@@ -270,12 +264,6 @@ export function createHostEffectReview(deps: {
       if (!isCurrent(outcome.receipt) || !validateReceipt(outcome.receipt))
         return failed("invalid_response");
       revision = outcome.receipt.revision;
-      if (
-        reserve &&
-        outcome.receipt.decision === "allow" &&
-        !consumeAuthorityEffects(authority, revision, limitedKeys)
-      )
-        return receipt("unsure");
       audit.info(
         {
           event: "effect_review.reviewer.completed",

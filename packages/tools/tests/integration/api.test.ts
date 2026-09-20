@@ -122,10 +122,9 @@ describe("createAgentTools (library API)", () => {
     );
   });
 
-  it("requires complete authoring review and never admits operational settings through it", async () => {
+  it("refuses canonical authoring through a generic guard approval and admits it only through the restricted writer", async () => {
     const roots = configurationRoots({ workspaceRoot: root });
     const authored = join(roots.workspace_clarvis, "agents/helper.md");
-    let complete = false;
     let reviews = 0;
     const t = createAgentTools({
       workspaceRoot: root,
@@ -138,7 +137,7 @@ describe("createAgentTools (library API)", () => {
             class: "local_mutation",
             inference: "bounded",
             constraints: {},
-            attestation: complete ? "complete" : "partial",
+            attestation: "complete",
             reviewability: "static",
             analysis_issues: [],
           },
@@ -149,15 +148,10 @@ describe("createAgentTools (library API)", () => {
         return true;
       },
     });
-    expect((await t.callTool("write_file", { path: authored, content: "bounded" })).isError).toBe(
-      true,
-    );
-    complete = true;
-    expect((await t.callTool("write_file", { path: authored, content: "bounded" })).isError).toBe(
-      false,
-    );
-    expect(readFileSync(authored, "utf8")).toBe("bounded");
-    const before = reviews;
+    const refused = await t.callTool("write_file", { path: authored, content: "bounded" });
+    expect(refused.isError).toBe(true);
+    expect(resultText(refused.content)).toContain("configure_clarvis writer in this conversation");
+    expect(reviews).toBe(0);
     expect(
       (
         await t.callTool("write_file", {
@@ -166,7 +160,52 @@ describe("createAgentTools (library API)", () => {
         })
       ).isError,
     ).toBe(true);
-    expect(reviews).toBe(before);
+    expect(reviews).toBe(0);
+
+    const writer = createAgentTools({
+      workspaceRoot: root,
+      probeRipgrep: () => false,
+      reviewMutation: (_operations, commit) => commit(),
+    });
+    const admitted = await writer.callTool("write_file", { path: authored, content: "bounded" });
+    expect(admitted.isError).toBe(false);
+    expect(readFileSync(authored, "utf8")).toBe("bounded");
+    expect(
+      (
+        await writer.callTool("write_file", {
+          path: join(roots.workspace_clarvis, "settings.json"),
+          content: "{}",
+        })
+      ).isError,
+    ).toBe(true);
+  });
+
+  it("defers canonical authoring to the restricted writer instead of the generic guard", async () => {
+    const roots = configurationRoots({ workspaceRoot: root });
+    const authored = join(roots.workspace_clarvis, "agents/deferred.md");
+    let guarded = 0;
+    const writer = createAgentTools({
+      workspaceRoot: root,
+      probeRipgrep: () => false,
+      guard: () => {
+        guarded++;
+        return { verdict: "deny", reason: "generic guard" };
+      },
+      elicit: () => {
+        throw new Error("the generic elicit must not be consulted for a deferred authoring batch");
+      },
+      reviewMutation: (_operations, commit) => commit(),
+    });
+    const admitted = await writer.callTool("write_file", { path: authored, content: "deferred" });
+    expect(admitted.isError).toBe(false);
+    expect(readFileSync(authored, "utf8")).toBe("deferred");
+    expect(guarded).toBe(0);
+    const ordinary = await writer.callTool("write_file", {
+      path: join(root, "notes.md"),
+      content: "ordinary",
+    });
+    expect(ordinary.isError).toBe(true);
+    expect(guarded).toBe(1);
   });
 
   it("lets native tools read scratch created by shell inside the run-owned temporary root", async () => {

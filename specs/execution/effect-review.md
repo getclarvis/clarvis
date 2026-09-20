@@ -1,5 +1,15 @@
 # Host-attested effects and operator authority
 
+## Scope
+
+This contract owns the transactional review of an operational configuration change. Its host
+descriptor vocabulary, authority envelope, compiler, ledger and refusals serve the restricted
+writers: `configure_clarvis`, native authoring routed through `reviewMutation`, and their operational
+content mutations. It does not intercept a shell command. Command authorization is one
+deterministic policy plus one Judge review path, owned by
+[command-guard.md](command-guard.md); a command compiles no envelope, consumes no grant and reads no
+rollout stage.
+
 ## Trust boundaries
 
 Host-captured global and workspace context documents are persistent operator instructions.
@@ -77,8 +87,7 @@ with the same session and epoch. Controller retirement uses a separate authority
 already running in the background is not cancelled as a side effect of semantic revocation.
 
 Workflow leaders receive only an active compiled intersection with a parent identity. Their briefs
-are not evidence. The live parent revision fences same-process children. One-attempt CI retry grants
-are excluded from independent child projections because those children have no shared atomic counter.
+are not evidence. The live parent revision fences same-process children.
 An inherited runtime without a live parent reader fails closed.
 
 Production: `createOperatorAuthorityRuntime` in
@@ -101,61 +110,33 @@ the settled-conversation carry-forward cases in that same test, and
 `ShellAnalysisIssue` records kind, affected position and zero-based segment index. The legacy
 `undecidable` value remains the conservative fold over issues. Syntax alone never proves authority
 or workspace confinement. Environment prefixes, including assignment-only segments, never inherit
-a bare command's static allowlist entry. Deny matching still sees normalized bare commands.
+a bare command's static allowlist entry. Deny matching still sees normalized bare commands. Those
+facts feed the policy and the command reviewer; they produce no effect fact and enter no envelope.
 
-The initial POSIX composition accepts literal `export TMPDIR` only for a host-admitted temporary
-root, bounded commit message arguments, and closed `git status`/`git log` observation forms. A
-quoted heredoc producer must contain exactly operand-free `cat`, a quoted literal delimiter, no
-additional redirection or command, at most 4 KiB of data, and occupy an entire double-quoted message
-argument. Unquoted substitution, file-reading `cat`, an expandable heredoc, dynamic executable or
-subcommand, redirections, and unknown batch segments cannot receive partial approval.
+An effect fact exists only for a configuration change. The restricted configuration writer produces
+revision, next-revision, byte, operation, field and diff-digest constraints only after its path,
+content, schema and CAS validation; its existing explicit native consent remains a
+deterministic authorization route and does not become operator evidence. Native file tools do not
+manufacture a fact: a canonical authoring target requires the run's `reviewMutation` port, and without
+it the tool refuses the target rather than turning a generic command approval into configuration
+approval. Operational settings, executable manifests, private state and credentials never inherit
+generic content-write authority.
 
-Git probes resolve repository root, current branch and HEAD. An explicit non-forced push of that
-branch to a named GitHub remote also resolves the push URL and binds its repository, destination,
-HEAD and upstream-setting intent; implicit refspecs, another source or destination, additional
-options and every force spelling retain human review. A JSON `gh pr view` observation with the
-supported metadata/check fields, or numeric `gh pr checks` with optional canonical `--repo`,
-optional `--watch`, and a positive `--interval` only alongside `--watch`, resolves the canonical origin and binds the requested open
-PR to the current branch and HEAD. GitHub failed-only rerun probes additionally correlate the canonical
-origin, run ID, completed failed state, supported event, branch, SHA and open PR head. Probes use an
-injected argv-only `ProcessRunner`, a three-second timeout and 16 KiB combined output cap. They never
-execute the reviewed mutation. The resolver reattests shell effects before returning a model allow.
-Network, authentication, malformed output or target mismatch closes the attestation. Unsupported
-external variants retain a human-only attestation; Auto denies them to the calling agent and never
-uses a human. Registry membership is not proof that every CLI spelling has a
-complete attestor.
-Probe lookup and configuration roots are recaptured from the actual shell spawn environment through
-`resolveEffectEnvironment`. Unmatched inherited Git/GitHub overrides or executable-loading variables
-close attestation before any query; arbitrary environment values are not copied into probes. The
-same check runs during reattestation after review, including explicit Host escalation. Production:
-[environment.ts](../../packages/kernel/src/guard/effects/environment.ts). Test:
-`refuses an inherited %s override before querying or approving a target` and
-`routes the real resolver through complete attestation and validated grants` in
-[effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts).
-Literal `git -C` is resolved within the workspace; dynamic or escaping directories remain closed.
-An omitted GitHub repository is resolved only from the canonical host origin.
-
-Native content effects use resolved `PathFact`s. Canonical agent, skill and workflow Markdown may be
-reviewed as authoring. Operational settings, executable manifests, private state and credentials
-never inherit generic content-write authority. Native tools still reject operational configuration
-before review. The restricted configuration writer produces revision, next-revision and byte facts
-only after its path, content and CAS validation; its existing explicit native consent remains a
-deterministic authorization route and does not become operator evidence.
+The descriptor vocabulary is closed and small: `workspace.content.write`, `clarvis.authoring.write`,
+`clarvis.operational_config.write` and `destructive.delete`. Those four are the only ids the registry
+accepts, so an operation name is never an authorization rule and no removed classification can be
+reintroduced through the audit schema. Repository, GitHub, release, deployment and process
+classification, the argv probes they needed, and the environment recapture that fenced them were
+deleted with the command classifier.
 
 Production: [analyze-shell.ts](../../packages/tools/src/guard/analyze-shell.ts),
-[shell.ts](../../packages/kernel/src/guard/effects/shell.ts),
-[git.ts](../../packages/kernel/src/guard/effects/git.ts),
-[github-cli.ts](../../packages/kernel/src/guard/effects/github-cli.ts),
-[literal-data.ts](../../packages/kernel/src/guard/effects/literal-data.ts),
-[workspace.ts](../../packages/kernel/src/guard/effects/workspace.ts),
+[registry.ts](../../packages/kernel/src/guard/effects/registry.ts),
 [configuration.ts](../../packages/kernel/src/guard/effects/configuration.ts), and
 [files.ts](../../packages/kernel/src/configuration/files.ts).
 Test: [analysis-issues.test.ts](../../packages/tools/tests/unit/analysis-issues.test.ts),
-[effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts), and
-[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
-Native authoring approval is also exercised in
-[api.test.ts](../../packages/tools/tests/integration/api.test.ts): incomplete authoring facts do not
-authorize a write, and operational settings are refused before elicitation.
+[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts), and
+[api.test.ts](../../packages/tools/tests/integration/api.test.ts) ("refuses canonical authoring
+through a generic guard approval and admits it only through the restricted writer").
 
 ## Compiler and decision
 
@@ -195,10 +176,8 @@ Test: `keeps compile context with its envelope across continuation and clears it
 `reuses installed compile context across reviewers and recompiles when Plans disappears` in
 [effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
 
-Cache identity includes authority revision and exact facts. Failures, invalid responses, uncertainty
-and human fallback do not become clean cached verdicts. Failed-only rerun identity is reserved once
-before execution and persists across recompilation and continuation; execution failure does not
-refund the attempt. A stale revision cannot install an envelope or execute an allow.
+Cache identity includes authority revision and exact facts. Failures, invalid responses and uncertainty
+do not become clean cached verdicts. A stale revision cannot install an envelope or execute an allow.
 
 The compile transaction captures authority revision, installed interpretation identity, live context
 revision and case digest before inference. It rechecks them before and after candidate validation,
@@ -225,7 +204,7 @@ shares inference, configuration or caches. The host ledger shares installed enve
 while Judge owns semantic receipt caches and in-flight inference. The restricted writer's explicit consent path needs no
 additional model decision.
 
-Production: `createHostEffectReview`, `validateAuthorityEnvelope`, `consumeAuthorityEffects`.
+Production: `createHostEffectReview` and `validateAuthorityEnvelope`.
 Test: [effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
 
 ## Reviewer configuration and rollout
@@ -243,23 +222,28 @@ that are neither allow-listed nor dangerous.
 `guard_judge.guidance` is bounded additional context and cannot replace the
 fixed policy. Both command and effect review use Judge-owned `JUDGE_POLICY`. Code composes operator-global guidance first and appends workspace guidance within the single bounded payload; absent guidance does not disable Auto.
 
-The explicit rollout stages are `shadow`, `local` and `ci_retry`. Shadow computes review evidence
-without changing the existing guard outcome. An absent rollout uses the same conservative effect
-ceiling as `local`: fully attested local effects only. CI retry
-also permits the tightly correlated failed-only effect. Unknown effects remain closed to the grant
-compiler. A separate call-local command reviewer may answer an ordinary shell ask whose sole fact is
-`external.unknown`; that answer applies only to the exact command and never enters the authority
-envelope. It reads evidence chronologically, allowing the newest instruction to refer to authenticated
+The explicit rollout stages are `shadow` and `local`, and they scope configuration review only. Shadow
+computes configuration review evidence
+without changing the existing configuration outcome. An absent rollout uses the same conservative effect
+ceiling as `local`: fully attested local effects only. The withdrawn `ci_retry` spelling is still
+accepted from an existing settings document and normalizes to that same `local` ceiling, so an upgrade
+cannot discard the unrelated settings a rejected document would take with it. Unknown ids remain closed to the grant
+compiler. Command authorization reads no rollout stage: the removal of the `ci_retry` stage went with
+the command classifier that reserved a failed-only rerun, and no command compiles an envelope. The
+command reviewer reads evidence chronologically, allowing the newest instruction to refer to
+authenticated
 scope from earlier turns without treating an earlier outcome-bounded external action as renewed after
 the newest instruction changes scope. Review `on` remains human review,
 and deterministic deny rules precede a reviewer. Review `off` supplies no command guard and does not
 disable filesystem, credential, capability, placement or host/guest invariants.
-Auto consults exact human session consent before effect review for eligible asks. Deny-list rulings
+Auto consults exact human session consent before review for eligible asks. Deny-list rulings
 still stop the call first, and explicit Host escalation never consumes session consent. Human
 consent is not operator evidence. Production: `createGuardResolver` in
-[resolver.ts](../../packages/kernel/src/guard/resolver.ts) and `createCommandReview` in
-[command-review.ts](../../packages/kernel/src/guard/command-review.ts). Test:
-[guard-session-auto.test.ts](../../packages/kernel/tests/integration/guard-session-auto.test.ts) and
+[resolver.ts](../../packages/kernel/src/guard/resolver.ts), `createCommandReview` in
+[command-review.ts](../../packages/kernel/src/guard/command-review.ts) and `createConfigurationReview`
+in [review.ts](../../packages/kernel/src/configuration/review.ts). Test:
+[guard-session-auto.test.ts](../../packages/kernel/tests/integration/guard-session-auto.test.ts),
+[command-guard-routing.test.ts](../../packages/kernel/tests/integration/command-guard-routing.test.ts) and
 [judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts).
 
 Compiler and decision stages use the shared model-call inactivity timeout and transport retries,
@@ -323,7 +307,9 @@ Container guard fields before submission and the Container composition has no ef
 capability. Effect review has no Container channel method or descriptor.
 
 The public elicitation detail has optional analysis, effect, authority and reviewer fields. Older
-details still validate. The UI shows a one-based segment, affected argument position, effect and
+details still validate. A command elicitation now carries the analyzer's analysis only: no command
+produces a reviewed effect, so the resolved effect, authority and reviewer fields describe a
+configuration review or a hosted client's own detail. The UI shows a one-based segment, affected argument position, effect and
 failure kind. Durable shell rows retain answerer, effect, relation and failure vocabulary without
 reviewer prose. The standalone tools DTO and dependency-free protocol DTO share no package edge.
 
@@ -336,17 +322,19 @@ DTO discriminator drift is checked by
 
 ## Inert corpus and opt-in probes
 
-[effect-review-corpus.json](../../packages/kernel/tests/fixtures/effect-review-corpus.json) is a
-versioned, inert corpus. Its commands are parsed or fed to fake argv evidence; they are never executed.
-The accompanying [attestation test](../../packages/kernel/tests/unit/effect-attestation.test.ts)
-asserts zero silent allow for execution-affecting environment prefixes in Host and containment,
-and rejects unknown compositions, protected paths and synthetic evidence sources.
+[guard-corpus.json](../../packages/kernel/tests/fixtures/guard-corpus.json) is a
+versioned, inert corpus of commands and synthetic evidence sources. Its commands are parsed or fed to
+the shell policy; they are never executed. The policy suite asserts that no entry in
+`policy_never_allowed` is ever allowed under either placement or Auto, that no `execution_environment`
+prefix inherits a bare allowlist entry, and that no `non_operator_sources` entry is admitted as
+evidence.
 
 `runEffectReviewCanary` in
 [effect-review.ts](../../packages/kernel/tests/canary/effect-review.ts) is outside the mandatory suite.
 An authorized host caller supplies the real SDK's subscription resolver, explicit opt-in and two
 distinct subscription model identities selected by the operator. One to three trials run native Judge capability
-compile/decide contracts, a short timeout and injected invalid-response handling. Each scenario
+compile/decide contracts over a configuration mutation, a short timeout and injected invalid-response
+handling. Each scenario
 must persist exactly one projected internal run in disposable storage. Results retain provider
 cache counters when available, stage usage, attempts,
 failure kinds and latency percentiles, without prompts, commands, credentials or evidence text.
@@ -362,11 +350,11 @@ authorization failure still exercises native private execution without exposing 
 `createHostEffectReview` supplies current case facts separately from live host snapshots and trusted
 compile/validation callbacks. A usable transition is exposed only when its grants cover the current
 facts. The host validates cited grants in fact order, relation, revision and transition token again
-after inference; only then may it reserve a one-attempt effect. Exact refusals are checked before and
+after inference. Exact refusals are checked before and
 after inference. A compiled exclusion denies without a decide invocation. Cancelled reviews never
 fall through to a human question. Configuration accepts the host's own compilation revision while
 still rejecting external changes before the write. Architecture errors propagate without fallback.
-Production: `createHostEffectReview`, `createConfigurationReview` and `createGuardRuntimeResolver`.
+Production: `createHostEffectReview` and `createConfigurationReview`.
 Test: [effect-review.test.ts](../../packages/kernel/tests/unit/effect-review.test.ts) checks shared
 ledger/refusals, invalid grant/relation/revision/token, exclusions and missing composition;
 [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts)
@@ -376,7 +364,8 @@ this private execution path. Real-provider/cache qualification remains outstandi
 
 
 The native factory emits `effect_review.reviewer.started` once per actual provider invocation, with
-stage/consumer read from the private execution descriptor and live authority revision. Cache hits
+stage/consumer read from the private execution descriptor and live authority revision; the effect id
+is present only when the host named one. Cache hits
 emit no start. The host adapter records typed operational/validation failures with the compile or
 decide stage and aggregate attempts; logs contain no case or provider prose. The separate parent
 model-call event remains the usage authority, one event per actual invocation. Compilation records

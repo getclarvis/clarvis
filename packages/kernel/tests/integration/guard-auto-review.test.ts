@@ -10,6 +10,7 @@ import {
   type GuardContext,
 } from "@clarvis/tools/guard";
 import { createShellGuard } from "../../src/guard/shell-guard.ts";
+import corpus from "../fixtures/guard-corpus.json" with { type: "json" };
 
 let root: string;
 beforeEach(() => {
@@ -50,6 +51,25 @@ describe("POSIX guard comparison", () => {
       }
     }
   });
+  it("never allows a corpus command under either placement or Auto", async () => {
+    for (const command of corpus.policy_never_allowed) {
+      for (const placement of ["host", "contained"] as const) {
+        expect((await createShellGuard({ placement })(context(command))).verdict).not.toBe("allow");
+        expect(
+          (await createShellGuard({ placement, allowHostJudge: true })(context(command))).verdict,
+        ).not.toBe("allow");
+      }
+    }
+  });
+  it.each(corpus.execution_environment)(
+    "never inherits a bare allowlist entry across %s",
+    async (assignment) => {
+      for (const placement of ["host", "contained"] as const) {
+        const guard = createShellGuard({ allowedCommands: ["git status"], placement });
+        expect((await guard(context(`${assignment} git status`))).verdict).not.toBe("allow");
+      }
+    },
+  );
   it("retains bare deny matching under an environment prefix", async () => {
     expect(
       await createShellGuard({ deniedCommands: ["git status"] })(context("FOO=1 git status")),

@@ -37,14 +37,6 @@ function reviewPayload(params: LLMCallParams) {
 }
 
 const workspace = resolve(".");
-const attestationEnvironmentName =
-  /^(?:GIT_|GH_|GITHUB_|LD_|DYLD_|BASH_FUNC_)|^(?:PATH|HOME|USERPROFILE|SYSTEMROOT|APPDATA|LOCALAPPDATA|XDG_CONFIG_HOME|XDG_CONFIG_DIRS|ENV|BASH_ENV|NODE_OPTIONS|PYTHONPATH|RUBYOPT)$/i;
-
-function ambientAttestationEnvironment(): Record<string, string | undefined> {
-  return Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => attestationEnvironmentName.test(name)),
-  );
-}
 
 function authority(text = "Run the relevant tests") {
   return createOperatorAuthorityRuntime({
@@ -744,7 +736,7 @@ it("routes parameterized, environment-prefixed and dynamic asks to Auto without 
   expect(prompts).toBe(0);
 });
 
-it("keeps the call-local Auto outcome while effect review runs in shadow", async () => {
+it("routes call-local Auto review independently of the configuration rollout stage", async () => {
   const ledger = authority("Run the kernel tests");
   const services = createCapabilityServices();
   services.provide(OPERATOR_AUTHORITY_PORT, ledger.reader);
@@ -813,7 +805,7 @@ it("keeps the call-local Auto outcome while effect review runs in shadow", async
   expect(prompts).toBe(0);
 });
 
-it("keeps an environment-prefixed privilege elevation on Auto while effect review runs in shadow", async () => {
+it("keeps an environment-prefixed privilege elevation on Auto review", async () => {
   const ledger = authority("Run only safe workspace inspections");
   const services = createCapabilityServices();
   services.provide(OPERATOR_AUTHORITY_PORT, ledger.reader);
@@ -1160,18 +1152,30 @@ it("sends mixed forced removal and privilege elevation to Auto instead of a huma
   expect(prompted).toBe(0);
 });
 
-it("keeps registered human-only effects out of the call-local reviewer", async () => {
+it("routes a formerly human-only command to the same call-local reviewer as any other ask", async () => {
   const ledger = authority("Inspect the repository without rewriting history");
   const services = createCapabilityServices();
   services.provide(OPERATOR_AUTHORITY_PORT, ledger.reader);
-  let inferred = 0;
+  let reviewed = 0;
   let prompted = 0;
+  services.provide(
+    JUDGE_PORT,
+    judgePort(async () => {
+      reviewed++;
+      return {
+        kind: "reviewed",
+        receipt: { action: "decide_command", decision: "deny" },
+        elapsedMs: 0,
+        attempts: 1,
+        cacheHit: false,
+      };
+    }),
+  );
   const resolver = createGuardResolver({
     loadSettings: () => ({
       providers: [{ name: "anthropic", kind: "anthropic" }],
       defaultModel: "anthropic/test",
     }),
-    effectEnvironment: ambientAttestationEnvironment(),
   });
   const resolved = await resolver({
     owner: "owner",
@@ -1186,7 +1190,7 @@ it("keeps registered human-only effects out of the call-local reviewer", async (
       return { action: "accept", content: { decision: "deny" } };
     },
     logger: { debug() {}, info() {}, warn() {}, error() {} },
-    llm: { call: async () => (inferred++, {}) } as unknown as LLMProvider,
+    llm: { call: async () => ({}) } as unknown as LLMProvider,
   } as unknown as RunCapabilityContext);
   const call = buildGuardContext(
     "shell",
@@ -1200,9 +1204,11 @@ it("keeps registered human-only effects out of the call-local reviewer", async (
     posixDialect,
   );
   const decision = await resolved!.guard!(call);
-  expect(decision.verdict).toBe("deny");
-  expect(decision.reason).toContain("git.history_rewrite");
-  expect(decision.reason).toContain("The Judge was not consulted");
-  expect(inferred).toBe(0);
+  expect(decision.verdict).toBe("ask");
+  expect(decision.reason).not.toContain("git.history_rewrite");
+  expect(
+    await resolved!.elicit!({ tool: "shell", args: call.args, shell: call.shell, ...decision }),
+  ).toMatchObject({ allowed: false, answerer: "judge", review: { reviewer_decision: "deny" } });
+  expect(reviewed).toBe(1);
   expect(prompted).toBe(0);
 });

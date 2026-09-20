@@ -5,12 +5,6 @@ import {
   PLANS_REVIEW_CONTEXT_PORT,
   type RunCapabilityContext,
 } from "@clarvis/capability";
-import type { ProcessRunner } from "../ports/process-runner.ts";
-import { createGuardEffectRegistry } from "./effects/registry.ts";
-import { attestShell } from "./effects/shell.ts";
-import { attestWorkspace } from "./effects/workspace.ts";
-import type { GuardEffectBatch } from "./effects/types.ts";
-import { createHostEffectReview } from "./effect-review.ts";
 import type {
   Guard,
   GuardElicit,
@@ -22,12 +16,8 @@ import type {
 } from "@clarvis/loop";
 import { defaultGuardMode, type GuardConfig, type SandboxSettings } from "@clarvis/loop/host";
 import { sandboxWouldApply } from "@clarvis/tools/sandbox";
-import type { GuardPlacement, GuardContext, GuardDecision } from "@clarvis/tools/guard";
-import {
-  createShellGuard,
-  type ShellGuardDecision,
-  type ShellGuardOptions,
-} from "./shell-guard.ts";
+import type { GuardPlacement } from "@clarvis/tools/guard";
+import { createShellGuard, type ShellGuardDecision } from "./shell-guard.ts";
 import { createGuardSessionAllowlist, type GuardSessionAllowlist } from "./guard-elicit.ts";
 import { createGuardHumanApproval, type GuardHumanApproval } from "./human-approval.ts";
 import { JUDGE_PORT } from "@clarvis/judge";
@@ -54,10 +44,6 @@ export type GuardSettingsLoader = () => GuardSettings;
 
 /** Dependencies for {@link createGuardResolver}. */
 export interface GuardResolverDeps {
-  /** Explicit host-owned argv probe capability; guests do not receive it. */
-  effectRunner?: ProcessRunner;
-  /** Minimal environment already admitted by the host. */
-  effectEnvironment?: Readonly<Record<string, string | undefined>>;
   /** Reads the live {@link GuardSettings}, re-invoked on every resolution. */
   loadSettings: GuardSettingsLoader;
   /** Optional logger passed down to the judge (falls back to the run's logger). */
@@ -143,8 +129,14 @@ export function guardParksOnHuman(
  *
  * @param guardConfig - the guard settings supplying the allow/deny command lists.
  * @param mode - the effective guard mode.
+ * @param onDecision - observer notified of every ruling.
+ * @param placement - host-attested run placement.
+ * @param network - native networking policy, when one applies.
  * @returns `undefined` when `mode` is `"off"` (no guarding); otherwise a
  *   {@link createShellGuard} wired with the configured allow/deny lists.
+ * @remarks The policy decides alone: `allow` runs, `deny` refuses, and `ask`
+ *   reaches whoever may answer it under the mode. No later step reclassifies a
+ *   deterministic ruling.
  */
 function buildGuard(
   guardConfig: GuardConfig | undefined,
@@ -152,7 +144,6 @@ function buildGuard(
   onDecision: (decision: ShellGuardDecision) => void,
   placement: GuardPlacement,
   network: "none" | "host" | undefined,
-  attestedReviewable?: ShellGuardOptions["attestedReviewable"],
 ): Guard | undefined {
   if (mode === "off") return undefined;
   const guard = createShellGuard({
@@ -163,7 +154,6 @@ function buildGuard(
       ? { deniedCommands: guardConfig.denied_commands }
       : {}),
     onDecision,
-    ...(attestedReviewable === undefined ? {} : { attestedReviewable }),
     allowHostJudge: mode === "auto",
     placement,
     ...(network !== undefined ? { network } : {}),
@@ -246,14 +236,21 @@ function noHumanChannel(audit: Logger, runId: string): { allowed: false; answere
  *   {@link GuardResolverDeps}.
  * @returns a resolver that, per run, reads settings, computes the mode, and
  *   returns `undefined` in mode `off` (no guard). Otherwise it returns a guard
- *   plus an elicit: `on` uses the human prompt for grey-zone asks; `auto` uses
- *   the LLM judge and never elicits a person. The chosen elicit is wrapped so a
- *   command already covered by the session allowlist passes without prompting.
+ *   plus an elicit: `on` uses the human prompt for grey-zone asks; `auto` routes
+ *   every `ask` without applicable session consent straight to the LLM judge and
+ *   never elicits a person. The chosen elicit is wrapped so a command already
+ *   covered by the session allowlist passes without prompting.
  * @remarks The default {@link GuardSessionAllowlist} is shared across this resolver's runs.
  *   A persistent host supplies `sessionAllowlistFor` to bind consent to live interactive control.
  *   Each human question captures its current list, so late responses cannot authorize a new scope.
  *   The review model falls back to `CLARVIS_DEFAULT_MODEL` from the run env when settings
  *   name none.
+ *
+ *   Auto has exactly two outcomes for an `ask`: session consent already covers it, or the Judge
+ *   decides the complete call. Nothing between the policy and the Judge classifies the command
+ *   again — no effect catalogue, operation rule, probe or compiled grant — so a recognised
+ *   operation cannot be refused before review and an unclassified composition cannot reach it by
+ *   accident.
  */
 function createGuardRuntimeResolver(
   deps: GuardResolverDeps,
@@ -279,153 +276,14 @@ function createGuardRuntimeResolver(
       : sandboxWouldApply(settings.sandbox)
         ? settings.sandbox?.network
         : undefined;
-    const shadow = guardMode === "auto" && settings.effect_review?.rollout === "shadow";
-    const effectEnabled = guardMode === "auto" && !shadow;
-    const effectPath = guardMode === "on" || guardMode === "auto";
-    const registry = createGuardEffectRegistry();
-    const batches = new WeakMap<object, GuardEffectBatch>();
-    const calls = new WeakMap<object, GuardContext>();
-    const reviewer = createHostEffectReview({
-      judge: () => ctx.services?.get(JUDGE_PORT),
-      authority: ctx.services?.get(OPERATOR_AUTHORITY_PORT),
-      reviewContext: () => ctx.services?.get(PLANS_REVIEW_CONTEXT_PORT),
-      registry,
-      audit,
-      signal: ctx.signal,
-      options: {
-        ...settings.effect_review,
-        ...judgeConfig,
-        guidance: judgeConfig?.guidance,
-      },
-    });
-    const initialGuard = buildGuard(
+    const guard = buildGuard(
       settings.guard,
       guardMode,
       (decision) => recordDecision(audit, guardMode, decision),
       placement,
       network,
     );
-    if (initialGuard === undefined) return undefined;
-    const guard: Guard = !effectPath
-      ? initialGuard
-      : async (call) => {
-          let observed: ShellGuardDecision | undefined;
-          const inspect = buildGuard(
-            settings.guard,
-            guardMode,
-            (decision) => {
-              observed = decision;
-            },
-            placement,
-            network,
-          )!;
-          const finish = (decision: GuardDecision): GuardDecision => {
-            if (observed !== undefined)
-              recordDecision(audit, guardMode, { ...observed, verdict: decision.verdict });
-            return decision;
-          };
-          const first = await inspect(call);
-          if (
-            (first.verdict === "allow" && call.shell !== undefined) ||
-            (first.verdict === "deny" && first.matched !== "undecidable")
-          )
-            return finish(first);
-          const attestorDeps = {
-            registry,
-            runner: deps.effectRunner,
-            environment: deps.effectEnvironment ?? {},
-            signal: ctx.signal,
-            guest: container,
-          };
-          const batch =
-            call.shell === undefined
-              ? attestWorkspace(call, attestorDeps)
-              : await attestShell(call, attestorDeps);
-          if (
-            first.verdict === "allow" &&
-            !batch.facts.some((fact) => fact.id === "clarvis.authoring.write")
-          )
-            return finish(first);
-          if (
-            batch.facts.some(
-              (fact) =>
-                fact.class === "external_mutation" &&
-                (settings.effect_review?.rollout !== "ci_retry" ||
-                  fact.id !== "github.actions.rerun_failed"),
-            )
-          )
-            batch.reviewability = "human_only";
-          batches.set(call.args, batch);
-          calls.set(call.args, call);
-          const effect =
-            batch.facts.find(
-              (fact) =>
-                fact.id !== "value.literal_data" && fact.id !== "environment.temporary_root",
-            ) ?? batch.facts[0];
-          const detail = {
-            effects: batch.facts,
-            analysis: {
-              reviewability: batch.reviewability,
-              issues: call.shell?.analysisIssues ?? [],
-            },
-            effect: {
-              id: effect?.id ?? "external.unknown",
-              class: effect?.class ?? "unknown",
-              attestation: effect?.attestation ?? "none",
-              target_digest: effect?.target?.digest,
-            },
-          };
-          for (const fact of batch.facts) reviewer.attest(fact, "command_guard");
-          if (shadow) {
-            if (guardMode === "auto")
-              await reviewer.review(
-                batch,
-                { tool: call.tool, args: call.args },
-                "command_guard",
-                false,
-              );
-            return finish(first);
-          }
-          if (batch.reviewability === "human_only") {
-            const callLocal =
-              call.shell !== undefined &&
-              batch.facts.length === 1 &&
-              batch.facts[0]?.id === "external.unknown";
-            if (!callLocal && guardMode === "auto") {
-              const id = effect?.id ?? "external.unknown";
-              return finish({
-                ...first,
-                ...detail,
-                verdict: "deny",
-                reason:
-                  `Host policy does not admit this effect for automatic review (${id}). ` +
-                  "The Judge was not consulted. Change the command; this is not a UI approval request.",
-              });
-            }
-            return finish({ ...first, ...detail });
-          }
-          const attested = buildGuard(
-            settings.guard,
-            guardMode,
-            (decision) => {
-              observed = decision;
-            },
-            placement,
-            network,
-            () => true,
-          )!;
-          return finish({
-            ...(await attested(call)),
-            ...detail,
-            reason: "The identified effect requires authority review",
-            ...(call.shell === undefined
-              ? {
-                  verdict: "ask" as const,
-                  reason: "Authored configuration change requires effect review",
-                }
-              : {}),
-          });
-        };
+    if (guard === undefined) return undefined;
     const sessionAllowlist = (): GuardSessionAllowlist | undefined =>
       deps.sessionAllowlistFor === undefined ? defaultAllowlist : deps.sessionAllowlistFor(ctx);
     const approval =
@@ -473,83 +331,17 @@ function createGuardRuntimeResolver(
       "the run's command guard is resolved; every guarded call is ruled on under this mode",
     );
     /**
-     * Review on uses the human channel only for asks that are neither allow-listed nor
-     * dangerous. Auto never elicits a person: the Judge allows or the call is refused to
-     * the principal, including unsure and unsandbox. Identified host-inadmissible effects
-     * deny in Auto without a Judge call.
+     * Approval reviews grey-zone asks on the human channel and never falls through to the Judge.
+     * Auto routes every ask the policy did not deterministically resolve, and that applicable
+     * session consent does not already cover, straight to the Judge for the complete call. Only the
+     * allow/deny lists decide without review, and a `deny` never becomes an `ask`.
      */
     const elicit: GuardElicit | undefined =
-      effectEnabled ||
-      chosenHuman !== undefined ||
-      judgeElicit !== undefined ||
-      humanElicit !== undefined
+      chosenHuman !== undefined || judgeElicit !== undefined
         ? async (req) => {
             if (guardMode !== "auto" && req.escalate === "human") {
               if (humanElicit === undefined) return noHumanChannel(audit, ctx.executionId);
               return humanElicit(req);
-            }
-            if (effectEnabled && guardMode === "auto") {
-              if (req.matched !== "host_command" && (await approval?.covers(req)) === true) {
-                recordAnswer(audit, "session_allowlist", true, false);
-                return { allowed: true, answerer: "session_allowlist" };
-              }
-              const batch = batches.get(req.args);
-              const original = calls.get(req.args);
-              const callLocalReview =
-                original?.shell !== undefined &&
-                batch?.facts.length === 1 &&
-                batch.facts[0]?.id === "external.unknown";
-              if (callLocalReview) {
-                if (judgeElicit === undefined) {
-                  recordAnswer(audit, "judge", false, false);
-                  return { allowed: false, answerer: "judge" };
-                }
-                const answer = await judgeElicit(req);
-                if (answer.answerer === "judge")
-                  recordAnswer(audit, "judge", answer.allowed, false);
-                return answer;
-              }
-              let result =
-                batch === undefined
-                  ? undefined
-                  : await reviewer.review(
-                      batch,
-                      { tool: req.tool, args: req.args },
-                      "command_guard",
-                    );
-              if (result?.decision === "allow" && original?.shell !== undefined) {
-                const fresh = await attestShell(original, {
-                  registry,
-                  runner: deps.effectRunner,
-                  environment: deps.effectEnvironment ?? {},
-                  signal: ctx.signal,
-                  guest: container,
-                });
-                if (JSON.stringify(fresh) !== JSON.stringify(batch))
-                  result = { ...result, decision: "unsure", relation: "none" };
-              }
-              const currentAuthority = ctx.services?.get(OPERATOR_AUTHORITY_PORT)?.snapshot();
-              if (
-                result?.decision === "allow" &&
-                (currentAuthority?.status !== "active" ||
-                  currentAuthority.revision !== result.revision)
-              )
-                result = { ...result, decision: "unsure", relation: "none" };
-              const review = {
-                reviewer_decision:
-                  result?.failure_kind === undefined
-                    ? (result?.decision ?? "unsure")
-                    : ("failed" as const),
-                effect_id: req.effect?.id,
-                relation: result?.relation ?? "none",
-                failure_kind: result?.failure_kind,
-              };
-              if (result?.decision === "allow" || result?.decision === "deny") {
-                recordAnswer(audit, "judge", result.decision === "allow", false);
-                return { allowed: result.decision === "allow", answerer: "judge", review };
-              }
-              recordAnswer(audit, "judge", false, false);
-              return { allowed: false, answerer: "judge", review };
             }
             const afterCoverage = (covered: boolean): ReturnType<GuardElicit> => {
               if (covered) {
@@ -562,10 +354,6 @@ function createGuardRuntimeResolver(
                     recordAnswer(audit, "judge", answer.allowed, false);
                   return answer;
                 });
-              if (guardMode === "auto") {
-                recordAnswer(audit, "judge", false, false);
-                return { allowed: false, answerer: "judge" };
-              }
               if (chosenHuman === undefined) return noHumanChannel(audit, ctx.executionId);
               return chosenHuman(req);
             };

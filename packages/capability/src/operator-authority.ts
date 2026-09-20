@@ -88,7 +88,6 @@ export interface OperatorAuthoritySeed {
   /** Independent child runs may only inherit an already compiled intersection. */
   parent_run_id?: string;
   ceiling?: AuthorityEnvelopeV1;
-  consumed_effects?: string[];
 }
 
 /** Validated semantic interpretation constrained by host effect descriptors. */
@@ -131,8 +130,6 @@ export interface OperatorAuthorityState {
   /** Inherited limits cannot be enlarged by child interpretation. */
   ceiling?: AuthorityEnvelopeV1;
   parent_run_id?: string;
-  /** Stable one-attempt identities, retained across continuation and recompilation. */
-  consumed_effects?: string[];
   /** Exact refused batches at the current evidence revision; these never grant authority. */
   denied_effects?: string[];
 }
@@ -160,12 +157,7 @@ export function inheritOperatorAuthority(
   return {
     binding: state.binding,
     parent_run_id: parentRunId,
-    ceiling: {
-      ...state.envelope,
-      grants: state.envelope.grants.filter(
-        (grant) => grant.effect_id !== "github.actions.rerun_failed",
-      ),
-    },
+    ceiling: structuredClone(state.envelope),
     evidence: state.evidence.map(({ prompt: _prompt, ...entry }) => ({
       ...entry,
       source: "inherited",
@@ -173,7 +165,6 @@ export function inheritOperatorAuthority(
     ...(state.review_context === undefined
       ? {}
       : { review_context: structuredClone(state.review_context) }),
-    consumed_effects: state.consumed_effects ?? [],
     ...(state.instructions === undefined
       ? {}
       : { instructions: structuredClone(state.instructions) }),

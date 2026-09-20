@@ -40,8 +40,13 @@ import {
 
 export { agentToolsActive };
 import { executeAgentToolCall } from "../tools/builtin/execute-agent-tool-call.ts";
-import { mkdirSync, rmSync, rmdirSync } from "node:fs";
-import { DIR_MODE, workspaceStatePaths, type WorkspaceStatePaths } from "@clarvis/paths";
+import { rmSync } from "node:fs";
+import {
+  allocateShortTemporaryRoot,
+  workspaceStatePaths,
+  type ShortTemporaryRoot,
+  type WorkspaceStatePaths,
+} from "@clarvis/paths";
 
 /** Registry name of the built-in coding-tools capability. */
 export const AGENT_TOOLS_CAPABILITY_NAME = "tools";
@@ -128,8 +133,15 @@ export function withGuardElicitWaitBound(
  * @param opts - Optional host ports for guard and sandbox resolution.
  * @returns A {@link Capability} whose `forRun` returns null unless
  *   `CLARVIS_AGENT_TOOLS_ENABLED` is set; when active it resolves the guard and
- *   sandbox once per run (a sandbox explicitly `enabled: false` is dropped) and
- *   hands each agent a toolset ceilinged by its grants.
+ *   sandbox once per run (a sandbox explicitly `enabled: false` is dropped),
+ *   allocates the run's own short scratch root, and hands each agent a toolset
+ *   ceilinged by its grants.
+ * @remarks The scratch root is allocated by `@clarvis/paths` rather than derived
+ *   from the workspace state tree, so a deep `CLARVIS_HOME`, workspace path or run
+ *   id cannot consume the socket and path budget of everything the run's commands
+ *   place under `TMPDIR`. It is shared by every agent of the run and released
+ *   once, after the run has ended. An unusable host fails the run here rather than
+ *   handing its commands a scratch nobody can prove is the run's own.
  */
 export function createAgentToolsCapability(opts?: AgentToolsCapabilityOptions): Capability {
   return {
@@ -139,8 +151,11 @@ export function createAgentToolsCapability(opts?: AgentToolsCapabilityOptions): 
       const resolution = await opts?.resolveGuard?.(ctx);
       const sandbox = opts?.resolveSandbox?.(ctx);
       const statePaths = opts?.statePaths ?? workspaceStatePaths(ctx.workspaceRoot);
-      const temporaryRoot = statePaths.runTempDir(ctx.executionId);
-      mkdirSync(temporaryRoot, { recursive: true, mode: DIR_MODE });
+      const scratch = allocateShortTemporaryRoot({
+        label: "run",
+        identity: ctx.executionId,
+        ...(ctx.logger !== undefined ? { logger: ctx.logger } : {}),
+      });
       const skillExecutionRoots = opts?.resolveSkillExecutionRoots?.(ctx) ?? [];
       return createAgentToolsRunCapability(
         ctx,
@@ -149,15 +164,8 @@ export function createAgentToolsCapability(opts?: AgentToolsCapabilityOptions): 
         opts?.resolveSecretNames?.(ctx) ?? [],
         skillExecutionRoots,
         opts?.allowHostEscalation,
-        temporaryRoot,
+        scratch,
         statePaths,
-        () => {
-          for (const dir of [statePaths.runDir(ctx.executionId), statePaths.runsDir]) {
-            try {
-              rmdirSync(dir);
-            } catch {}
-          }
-        },
       );
     },
   };
@@ -178,11 +186,11 @@ function createAgentToolsRunCapability(
   secretEnvNames: readonly string[],
   skillExecutionRoots: readonly string[],
   allowHostEscalation: boolean | undefined,
-  temporaryRoot: string,
+  scratch: ShortTemporaryRoot,
   statePaths: WorkspaceStatePaths,
-  removeEmptyRunDirs: () => void,
 ): RunCapability {
   const elicitWaitMs = ctx.request.elicit_wait_ms ?? ctx.env.CLARVIS_DEFAULT_ELICIT_WAIT_MS;
+  const temporaryRoot = scratch.path;
   const ownedTemporaryRoots = new Set([temporaryRoot]);
   const accessibleTemporaryRoots = [...new Set([temporaryRoot, ...systemTemporaryRoots()])];
   return {
@@ -205,6 +213,7 @@ function createAgentToolsRunCapability(
     },
     onRunEnd() {
       for (const root of ownedTemporaryRoots) {
+        if (root === temporaryRoot) continue;
         try {
           rmSync(root, { recursive: true, force: true });
         } catch (error) {
@@ -218,7 +227,7 @@ function createAgentToolsRunCapability(
           );
         }
       }
-      removeEmptyRunDirs();
+      scratch.remove();
     },
     forAgent(scope): AgentCapability | null {
       const caps = agentToolCaps(scope.grants, ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT);

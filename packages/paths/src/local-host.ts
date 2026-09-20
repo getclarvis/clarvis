@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { globalPaths } from "./global.ts";
+import { UNIX_SOCKET_PATH_BUDGET_BYTES, unixSocketPathFits } from "./short-temporaries.ts";
 
 /** Identity inputs for the operator's single host of one canonical workspace. */
 export interface LocalHostPathOptions {
@@ -90,7 +91,7 @@ export function localHostPaths(options: LocalHostPathOptions): LocalHostPaths {
   for (const candidate of candidates) {
     const directory = join(candidate, accountDirectory);
     const candidateEndpoint = join(directory, identity.slice(0, 32));
-    if (Buffer.byteLength(candidateEndpoint, "utf8") <= 100) {
+    if (unixSocketPathFits(candidateEndpoint)) {
       endpointDirectory = directory;
       endpoint = candidateEndpoint;
       break;
@@ -98,11 +99,11 @@ export function localHostPaths(options: LocalHostPathOptions): LocalHostPaths {
   }
   if (endpointDirectory === undefined || endpoint === undefined)
     throw new Error(
-      `no local host socket endpoint candidate fits within 100 UTF-8 bytes (${candidates.length} candidates)`,
+      `no local host socket endpoint candidate fits within ${UNIX_SOCKET_PATH_BUDGET_BYTES} UTF-8 bytes (${candidates.length} candidates)`,
     );
   assert(
-    Buffer.byteLength(endpoint, "utf8") <= 100,
-    "local host socket endpoint exceeds 100 UTF-8 bytes",
+    unixSocketPathFits(endpoint),
+    `local host socket endpoint exceeds ${UNIX_SOCKET_PATH_BUDGET_BYTES} UTF-8 bytes`,
   );
   return {
     identity,

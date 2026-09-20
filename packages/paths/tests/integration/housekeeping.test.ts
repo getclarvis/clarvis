@@ -14,6 +14,7 @@ import { join } from "node:path";
 
 import {
   HOME_ENV,
+  ownerSegment,
   setPathsLogger,
   sweepGlobalStateArtifacts,
   sweepSpillDir,
@@ -174,11 +175,12 @@ describe("sweepGlobalStateArtifacts", () => {
     if (process.platform !== "win32") expect(statSync(recent).mode & 0o777).toBe(0o600);
   });
 
-  test("removes only stale empty run containers", async () => {
+  test("removes only stale empty legacy run containers", async () => {
     const paths = workspaceStatePaths(root);
-    const stale = paths.runDir("stale");
-    const active = paths.runDir("active");
-    const occupied = paths.runDir("occupied");
+    const legacyRunDir = (id: string): string => join(paths.localDir, "runs", ownerSegment(id));
+    const stale = legacyRunDir("stale");
+    const active = legacyRunDir("active");
+    const occupied = legacyRunDir("occupied");
     for (const dir of [join(stale, "tmp"), join(active, "tmp"), join(occupied, "tmp")]) {
       mkdirSync(dir, { recursive: true });
     }

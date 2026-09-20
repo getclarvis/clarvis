@@ -426,17 +426,24 @@ additions:
 | `shell`, `monitor_start` guard analysis | `config.temporaryRoots` plus exact host-selected `config.skillExecutionRoots`; an absolute command head may use only a platform system executable root (including `/opt/homebrew` on Darwin) or configured sandbox runtime root, and that exception is occurrence-local so an identical operand remains outside; only when a sandbox is configured, each exact verified state spill is also admitted and mounted read-only | `packages/tools/src/guard/context.ts`, `packages/tools/src/lib/system-executables.ts`, `packages/tools/src/lib/state-artifacts.ts` |
 
 The state-root widening remains reachable from exactly two call sites, both read-only. Temporary
-roots are different: the loop creates one owner-only scratch directory per run and places it first,
-then appends `systemTemporaryRoots()` — the existing environment temp plus `/tmp` on POSIX, or only
-the environment temp on Windows. Guard analysis, native confinement, post-open validation and native
-sandboxes admit the complete list, while the shell environment continues to name the owner-only
-first root. An explicit absolute `mktemp -d` template may add exactly the new directory it created
-after a before/after snapshot proves the match, lstat rejects symlinks, and uid ownership matches.
-Lifecycle ownership remains separate: the loop removes only its run root and those exact registered
-directories, never a system parent or unrelated pre-existing child. Production:
-`WorkspaceStatePaths.runTempDir`, `createAgentToolsRunCapability`, `systemTemporaryRoots`, `RuntimeConfig.temporaryRoots`,
+roots are different: the loop allocates one short, exclusive, account-owned scratch root per run with
+`allocateShortTemporaryRoot` and places it first, then appends `systemTemporaryRoots()` — the existing
+environment temp plus `/tmp` on POSIX, or only the environment temp on Windows. Guard analysis, native
+confinement, post-open validation and native sandboxes admit the complete list, while the shell
+environment continues to name the owner-only first root. An explicit absolute `mktemp -d` template may
+add exactly the new directory it created after a before/after snapshot proves the match, lstat rejects
+symlinks, and uid ownership matches. Lifecycle ownership remains separate: the loop removes only its own
+allocation and those exact registered directories, never a system parent or unrelated pre-existing
+child, and an abandoned allocation is collected later only when a same-host record proves it dead and its
+subtree holds no file or symlink. Choosing that root also applies the same private-state ancestor policy the kernel
+enforces, so a foreign-owned scratch root is refused instead of accepted and then rejected by the
+component that publishes private state beneath it. Production:
+`allocateShortTemporaryRoot`, `ancestorTrust` and `UNIX_SOCKET_PATH_BUDGET_BYTES` in
+`packages/paths/src/short-temporaries.ts`, `createAgentToolsRunCapability`, `systemTemporaryRoots`, `RuntimeConfig.temporaryRoots`,
 `RuntimeConfig.registerTemporaryRoot`, `snapshotExplicitTemporaryDirectories`,
-`createdTemporaryDirectories`, `buildGuardContext`, and `readFileOptions`. Tests:
+`createdTemporaryDirectories`, `buildGuardContext`, `readFileOptions` and
+`assertPrivateHostDirectory` in `packages/kernel/src/hosting/private-files.ts`. Tests:
+`packages/paths/tests/integration/short-temporaries.test.ts`,
 `packages/loop/tests/integration/command-guard-wiring.test.ts`,
 `packages/tools/tests/integration/api.test.ts`, and
 `packages/tools/tests/integration/guard-dispatch.test.ts`.

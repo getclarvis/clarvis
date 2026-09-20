@@ -23,7 +23,11 @@ entry says what a source read could and could not settle.
 **Status: implementation is isolated; several qualification surfaces remain unverified in the
 current environment.** `createSmokeFixture` and `SmokeContext` now give artifact, release, first-paint
 and installer callers an exclusive root, explicit `CLARVIS_HOME`, allowlisted child environment and
-owned lifecycle. The required native path is deliberately stricter: `requireNativeSmokeConfinement`
+owned lifecycle. That root is also chosen rather than inherited: it comes from a short, account-owned
+temporary root, so a host whose every candidate is foreign-owned (/tmp owned by another account) reports
+`smoke_fixture_no_usable_parent` naming each refusal instead of booting somewhere the kernel rejects, and
+a host without `script(1)` still needs tmux for the PTY. The required native path is deliberately
+stricter: `requireNativeSmokeConfinement`
 reports `smoke_native_confinement_unavailable` when its Bubblewrap probe cannot launch, and never
 falls back to an unconfined PTY. The deterministic smoke regression is
 `packages/code/tests/unit/artifact-isolation.test.ts`; benchmark root isolation is covered by

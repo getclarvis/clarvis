@@ -236,11 +236,13 @@ Built-ins cover:
 - coding tools and command guards, including Isolation guidance so an exec-capable agent can retry a
   blocked `shell` or `monitor_start` with `sandbox_permissions: "require_escalated"` instead of a
   second tool. Isolated container guests set `allowHostEscalation: false` so that retry is refused;
-- one owner-only temporary root per run, advertised as `TMPDIR`, `TEMP`, and `TMP`, plus the host's
-  existing system temporary roots pre-authorized across command and native tools. The system roots
-  are compatibility access only and are never removed by Clarvis. A verified directory created
-  through an explicit absolute POSIX `mktemp -d` template joins the run-owned set, whose members are
-  removed after the run record is persisted;
+- one owner-only scratch root per run, allocated by `@clarvis/paths` as a short, exclusive,
+  account-owned directory and advertised as `TMPDIR`, `TEMP` and `TMP`, plus the host's existing system
+  temporary roots pre-authorized across command and native tools. Shortness is what keeps a tool's own
+  socket address inside the operating system's limit when `CLARVIS_HOME`, the workspace path or the run
+  id is deep; the system roots are compatibility access only and are never removed by Clarvis. A verified
+  directory created through an explicit absolute POSIX `mktemp -d` template joins the run-owned set,
+  whose members are removed after the run record is persisted;
 - skills, including package-scoped helper execution for roots the host explicitly approves: the
   loop passes only each selected skill's own directory to command tools, never executes a helper on
   selection, and relies on `@clarvis/tools` to protect it from native mutations and mount it
@@ -325,11 +327,14 @@ their feature packages instead, each behind that package's `./capability` entry;
 `@clarvis/loop` no longer exports a subpath for any of them. `@clarvis/memory`
 also ships one, but it is not on this list: the engine does not load it at all.
 
-Run teardown removes the Clarvis-created run root and each exact temporary directory registered as
-created by that run, then prunes its now-empty execution and `runs/` containers. Pre-authorized
-system temporary roots are not owned or traversed by teardown. The global paths sweeper separately
-reclaims stale empty Clarvis containers left by a crash, so a normal run does not accumulate
-directory-only scratch state.
+Run teardown removes that short scratch allocation - its directory and its recovery metadata - and each
+exact temporary directory registered as created by that run. Pre-authorized system temporary roots are
+not owned or traversed by teardown. The global paths sweeper reclaims abandoned allocations a same-host
+record proves dead whose subtree holds no file or symlink, plus stale empty legacy run containers left by a crash, so
+a normal run does not accumulate scratch state. Production: `createAgentToolsCapability`,
+`allocateShortTemporaryRoot` and `collectAbandonedShortTemporaryRoots` in
+`packages/paths/src/short-temporaries.ts`. Tests: `packages/loop/tests/integration/command-guard-wiring.test.ts`
+and `packages/paths/tests/integration/short-temporaries.test.ts`.
 
 The doom-loop guard counts only genuine tool execution failures. A command or path refused by
 policy/human review is still returned and traced as a tool error, but it is a `denied` dispatch — it

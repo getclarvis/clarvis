@@ -44,7 +44,8 @@ mechanisms: pure assertion functions run inside the build itself
 artifact through an exclusive `SmokeContext` (`packages/code/tooling/artifact/isolation.ts`), used
 by `packages/code/tooling/artifact/smoke.ts`. The context fixes HOME, `CLARVIS_HOME`, workspace,
 temporary, cache, logs, sockets and installation roots and passes an allowlisted environment to
-children; an inherited operator root is never treated as a fixture.
+children; its socket directory may be a sibling short root when the endpoint budget requires one, and
+an inherited operator root is never treated as a fixture.
 
 The bundle itself exists for a measured cost, stated in `packages/code/tooling/artifact/build.ts`: running
 the TUI from source pipes every `.tsx` file through Babel via the OpenTUI Solid plugin on every launch
@@ -760,8 +761,10 @@ Step 4 must follow step 3: `assertLazyProviderChunk` reads the entry from `entry
    in-memory output.
 3. Checks each `REQUIRED_ASSETS` path exists, "so a missing one is reported as itself rather than as
    an opaque startup failure".
-4. Creates an exclusive `SmokeContext` via `createSmokeFixture()` with HOME, `CLARVIS_HOME`,
-   workspace, cache, logs and sockets below one validated temporary root, then refuses with
+4. Creates an exclusive `SmokeContext` via `createSmokeFixture()`. Its root is a short, account-owned
+   allocation under one of the host's short temporary roots — never the inherited `TMPDIR` — holding
+   HOME, `CLARVIS_HOME`, workspace, cache, logs and managed-install paths, while the socket directory
+   is reserved separately by the same allocator. It then refuses with
    `"fixture is not a fresh install: it has a models cache"` if the fixture's explicit cache path
    exists.
 5. Boots the artifact under a PTY with `--debug`, waiting for the marker `"New task…"` up to
@@ -791,10 +794,30 @@ ships as data inside the bundle, so a home with an empty `agents/` directory is 
 really looks like." The retained `makeCleanHome` name is a private compatibility alias, not the
 fixture contract.
 
+The fixture's parent is chosen, not inherited: `shortTemporaryRootCandidates` proposes the host's
+short temporary roots, each is validated exactly as before (a real directory that does not overlap
+operator state), and `ancestorTrust` additionally requires the account-owned chain the kernel will
+re-check for the private state published under `CLARVIS_HOME`. A host offering no acceptable candidate
+fails `smoke_fixture_no_usable_parent` naming every refusal, instead of landing somewhere the boot then
+rejects or reporting it as a timeout. One validated list serves both roots: the fixture's own parent is
+chosen from it, and the socket root falls back to it followed by the host's short temporary roots, so a
+pinned deep parent cannot make the fixture's address unreservable. `SmokeContextOptions.parentRoot`,
+`parentCandidates` and `socketParentCandidates` pin or replace those lists for a nested harness or a
+test; a host where no socket parent can hold an address short enough for a socket name fails
+`smoke_socket_root_unavailable` naming every refusal. Production:
+`createSmokeContext`, `validateParents`, `allocateFixtureRoot` and `allocateSocketRoot` in
+`packages/code/tooling/artifact/isolation.ts`. Tests: `packages/code/tests/unit/artifact-isolation.test.ts`.
+
 The PTY is obtained by `script(1)` where available, with a platform-split argv — `script -q /dev/null …`
 on darwin, `script -qec '<quoted argv>' /dev/null` elsewhere
 (`packages/code/tooling/artifact/pty.ts`) — and falls back to a tmux server only in ordinary
-environment-isolated mode. The tmux socket is below the `SmokeContext` root and every PTY child
+environment-isolated mode. `SmokeContext.socketPath(label)` reserves an exclusive address and
+validates its UTF-8 length against `UNIX_SOCKET_PATH_BUDGET_BYTES` before any process is started, so
+a too-deep root is reported as itself rather than as a failing backend; tmux receives that address
+through `-S` and every capture and `kill-server` command names the same endpoint. The socket directory
+stays inside the fixture root while the endpoint budget allows it and otherwise becomes a short root of
+its own, which `SmokeContext.writableRoots` declares as an additional read-write bind for required
+confinement and which cleanup removes after the children settle. Every PTY child
 receives `environmentFor(...)`. Required native-confinement mode probes Bubblewrap first and throws
 `smoke_native_confinement_unavailable` rather than using an unconfined PTY when the backend is
 absent or unusable; ordinary mode still throws
@@ -1228,7 +1251,8 @@ no publish, registry, release-manifest or running-container commit path. Product
 | A build asset moved | throws naming the asset, its reader, and the two files to update | `packages/code/tooling/artifact/build.ts` |
 | Smoke run with no artifact | `throw` with `"run: bun --filter @clarvis/code build"` | `packages/code/tooling/artifact/smoke.ts` |
 | Smoke fixture already has a models cache | `throw new Error("fixture is not a fresh install: it has a models cache")` — refuses to run rather than measure the wrong branch | `packages/code/tooling/artifact/smoke.ts`; `createSmokeFixture` |
-| Smoke boot times out or hits `"failed to start"` | prints stripped screen tail + stderr tail, terminates owned children, removes only the `SmokeContext` root, and exits 1 | `packages/code/tooling/artifact/smoke.ts`; `SmokeContext.cleanup` and `packages/code/tooling/artifact/pty.ts` |
+| Smoke fixture has no usable or short-enough parent | `throw new Error("smoke_fixture_no_usable_parent:<candidate>: <refusal>;…")`, or `smoke_socket_root_unavailable:…` when only the socket root cannot be reserved, naming every refusal | `packages/code/tooling/artifact/isolation.ts` (`validateParents`, `allocateFixtureRoot`, `allocateSocketRoot`) |
+| Smoke boot times out or hits `"failed to start"` | prints stripped screen tail + stderr tail, terminates owned children, removes only its own fixture and socket roots, and exits 1 | `packages/code/tooling/artifact/smoke.ts`; `SmokeContext.cleanup` and `packages/code/tooling/artifact/pty.ts` |
 | Smoke painted but wrote no `app.boot.painted` | `exit 1` with "`--debug` is the only diagnostic channel a bundled clarvis has" | `packages/code/tooling/artifact/smoke.ts` |
 | Required smoke confinement has no usable native backend | `throw new Error("smoke_native_confinement_unavailable:<reason>")`; no fallback PTY is started | `packages/code/tooling/artifact/isolation.ts` (`requireNativeSmokeConfinement`) |
 | Ordinary smoke has no `script(1)` and no `tmux` | `throw new Error("observing a boot requires either script(1) or tmux to provide a PTY")` | `packages/code/tooling/artifact/pty.ts` |

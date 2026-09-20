@@ -10,6 +10,11 @@
  * benchmark needed the same boot but several markers and many repetitions;
  * keeping one implementation is what stops the two from disagreeing about what
  * "first paint" means.
+ *
+ * The tmux path reserves its address from the fixture before it spawns anything:
+ * a socket address has a hard operating-system limit, and a deep developer
+ * `TMPDIR` used to spend it, so tmux failed with "File name too long" while the
+ * artifact was in fact fine.
  */
 import { join } from "node:path";
 import { existsSync } from "node:fs";
@@ -198,7 +203,7 @@ async function observeViaTmux(options: BootOptions): Promise<BootObservation> {
   if (tmux === null) {
     throw new Error("observing a boot requires either script(1) or tmux to provide a PTY");
   }
-  const socket = join(options.context.sockets, `tmux-${process.pid}-${Date.now()}.sock`);
+  const socket = options.context.socketPath("tmux");
   const target = "boot";
   const environment = options.context.environmentFor(options.overrides);
   const command = [

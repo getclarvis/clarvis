@@ -888,7 +888,9 @@ identity; neither id is interpreted as a path component.
 
 Unix socket names use a short account-scoped temporary directory independently of HOME length. The
 host supplies an ordered list derived from its launch snapshot, and `localHostPaths` chooses the first
-candidate whose complete endpoint fits 100 UTF-8 bytes; normal composition includes `/tmp` after the
+candidate whose complete endpoint fits `UNIX_SOCKET_PATH_BUDGET_BYTES` — 100 UTF-8 bytes, the budget
+`unixSocketPathFits` in `packages/paths/src/short-temporaries.ts` also applies to a fixture's reserved
+socket; normal composition includes `/tmp` after the
 preferred temp. Candidate selection is based only on length. A short but missing, inaccessible,
 symlinked, foreign-owned or permissive root still fails closed in the existing transport preparation;
 there is no post-bind security fallback. Windows uses its unchanged named-pipe namespace. These

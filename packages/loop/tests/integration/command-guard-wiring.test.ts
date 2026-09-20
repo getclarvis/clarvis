@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
 import { makeHarness, type TestHarness } from "./_helpers.ts";
 import type { Guard, GuardContext, GuardDecision, ElicitRequest } from "../../src/lib.ts";
-import { workspaceStatePaths } from "@clarvis/paths";
+import { UNIX_SOCKET_PATH_BUDGET_BYTES, ancestorTrust, workspaceStatePaths } from "@clarvis/paths";
 
 let harness: TestHarness | null = null;
 const dirs: string[] = [];
@@ -118,10 +118,9 @@ describe("tools guard wiring", () => {
     },
   );
 
-  it("shares one run-owned temporary root between shell and native tools, then removes it", async () => {
+  it("gives the run one short scratch outside every managed tree, then removes it", async () => {
     const root = workspace();
     const executionId = "exec_run_owned_tmp";
-    const temporaryRoot = workspaceStatePaths(root).runTempDir(executionId);
     const explicitPrefix = `clarvis-loop-explicit-${process.pid}-${Date.now()}-`;
     const llm = new MockLLM({
       script: [
@@ -133,7 +132,8 @@ describe("tools guard wiring", () => {
               arguments: {
                 command:
                   `made=$(mktemp -d /tmp/${explicitPrefix}XXXXXX) && ` +
-                  'printf alpha > "$made/a.txt" && mkdir -p "$TMPDIR/research"',
+                  'printf alpha > "$made/a.txt" && mkdir -p "$TMPDIR/research" && ' +
+                  'printf "scratch=%s" "$TMPDIR"',
               },
             },
           ],
@@ -155,9 +155,16 @@ describe("tools guard wiring", () => {
 
     expect(res.status).toBe("completed");
     const calls = await toolEvents(harness, executionId);
-    expect(calls.find((event) => event.mcp_name === "shell")?.error).toBeNull();
-    expect(existsSync(temporaryRoot)).toBe(false);
-    expect(existsSync(workspaceStatePaths(root).runsDir)).toBe(false);
+    const shell = calls.find((event) => event.mcp_name === "shell");
+    expect(shell?.error).toBeNull();
+    const scratch = /scratch=(\S+)/.exec(shell?.result ?? "")?.[1];
+    expect(scratch).toBeDefined();
+    const stateRoot = workspaceStatePaths(root).root;
+    expect(scratch!.startsWith(root)).toBe(false);
+    expect(scratch!.startsWith(stateRoot)).toBe(false);
+    expect(Buffer.byteLength(scratch!, "utf8")).toBeLessThanOrEqual(UNIX_SOCKET_PATH_BUDGET_BYTES);
+    expect(ancestorTrust(scratch!).trusted).toBe(true);
+    expect(existsSync(scratch!)).toBe(false);
     expect(readdirSync(tmpdir()).some((name) => name.startsWith(explicitPrefix))).toBe(false);
   });
 

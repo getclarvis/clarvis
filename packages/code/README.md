@@ -1467,18 +1467,27 @@ bundling-only defect is invisible to it: 1017 tests passed green while a bundled
 `code` died on startup for want of the models.dev snapshot. `bun run smoke` is the
 step that covers it. Artifact, release and first-paint smoke use `createSmokeFixture` and its
 `SmokeContext` (`packages/code/tooling/artifact/isolation.ts`), not an ambient or merely renamed
-HOME. The context owns an exclusive temporary root containing HOME, `CLARVIS_HOME`, workspace,
-cache, logs, sockets and managed-install paths; `environmentFor` passes an allowlisted environment
-to every child and rejects root-sensitive overrides outside the fixture. The fixture lifecycle
-terminates registered children before removing only its own root. It asserts the shipped snapshot
+HOME. The context owns a short, exclusive, account-owned temporary root containing HOME, `CLARVIS_HOME`,
+workspace, cache, logs and managed-install paths; `environmentFor` passes an allowlisted environment
+to every child and rejects root-sensitive overrides outside the fixture. That root is never the inherited
+`TMPDIR`: its candidates are the host's short temporary roots filtered by the account-owned ancestor chain
+the kernel re-checks for its own private state, and a host offering none fails with
+`smoke_fixture_no_usable_parent` rather than landing somewhere unpredictable. Sockets are a reserved
+resource: `socketPath(label)` builds an exclusive address inside the root whenever the endpoint budget
+allows it and otherwise from a short root of its own, taken from the same validated parents followed by
+the host's short temporary roots, and a host where none of them can hold an address fails
+`smoke_socket_root_unavailable` instead of starting a backend that cannot bind. `writableRoots` declares
+the socket root as an extra mount for confinement, and cleanup removes it after the children settle. The
+fixture lifecycle terminates registered children before removing its roots. It asserts the shipped snapshot
 exists for a later Providers open, and proves first paint emits no `catalog.load.started` while
 `deferred_catalog` remains true.
 
 The normal smoke mode isolates environment and filesystem state. The opt-in native mode requires a
 working Bubblewrap probe, mounts only selected runtime/checkout roots read-only, masks `.clarvis`,
 `.agents` and `.git`, disables network, and fails as unavailable instead of falling back to an
-unconfined PTY. `script(1)` and tmux both use the fixture environment; tmux uses a fixture-owned
-socket. Installer smoke copies release inputs into the fixture and refuses Windows User `Path`
+unconfined PTY. `script(1)` and tmux both use the fixture environment; tmux receives the fixture's
+reserved socket through `-S` and every capture and `kill-server` command names that same endpoint.
+Installer smoke copies release inputs into the fixture and refuses Windows User `Path`
 coverage unless a disposable account is explicitly proven. The regression coverage is
 `packages/code/tests/unit/artifact-isolation.test.ts` plus
 `packages/code/tests/unit/benchmark-isolation.test.ts`, which executes the benchmark's version arm

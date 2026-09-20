@@ -66,6 +66,15 @@ describe("Judge settings ownership", () => {
     expect(guardJudgeSchema.safeParse({ rollout }).success).toBe(false);
   });
 
+  test("normalizes the withdrawn ci_retry stage instead of rejecting the whole document", () => {
+    expect(effectReviewSchema.parse({ rollout: "ci_retry" })).toEqual({ rollout: "local" });
+    expect(effectReviewSchema.parse({ rollout: "ci_retry", max_retries: 0 })).toEqual({
+      rollout: "local",
+      max_retries: 0,
+    });
+    expect(effectReviewSchema.safeParse({ rollout: "canary" }).success).toBe(false);
+  });
+
   test("preserves strict settings limits and operator-only registration", () => {
     for (const value of [
       { model: "" },
@@ -73,7 +82,6 @@ describe("Judge settings ownership", () => {
       { max_retries: -1 },
       { timeout_ms: 0 },
       { rollout: "unknown" },
-      { rollout: "ci_retry" },
       { guidance: "not a settings field" },
     ])
       expect(effectReviewSchema.safeParse(value).success).toBe(false);

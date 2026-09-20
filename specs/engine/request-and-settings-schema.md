@@ -855,12 +855,18 @@ is a compile-time-only edge with zero runtime cost.
 
 `effect_review` is a non-plugin cross-cutting settings block. It carries model, timeout, retry,
 uncertainty fallback and the operator rollout stage (`shadow` or `local`), which scopes the
-transactional configuration reviewer. Kernel scope resolution admits only reductions from
+transactional configuration reviewer. A settings document written before the `ci_retry` stage was
+withdrawn still loads — that spelling normalizes to `local` — because a schema-invalid document is
+discarded whole, which would silently drop every unrelated setting stored beside it; any other
+unknown value still fails closed. Kernel scope resolution admits only reductions from
 workspace configuration. Command authorization reads neither the block's rollout stage nor a
 per-operation effect: it is one deterministic policy plus one Judge review path. `guard_judge` accepts optional `guidance` and explicit overrides; additional guidance is not required.
 Unknown keys are rejected rather than converted to guidance. Authority seeds remain absent from the strict
 public request schema. Production:
 [settings.ts](../../packages/judge/src/settings.ts),
 [tools-settings.ts](../../packages/loop/src/runtime/capabilities/tools-settings.ts), and
-[run-service.ts](../../packages/kernel/src/runs/run-service.ts). The complete contract is
-[effect review](../execution/effect-review.md).
+[run-service.ts](../../packages/kernel/src/runs/run-service.ts). Test: the withdrawn-stage upgrade
+regression in
+[file-config-store.test.ts](../../packages/kernel/tests/integration/file-config-store.test.ts) and the
+schema cases in [settings.test.ts](../../packages/judge/tests/unit/settings.test.ts). The complete
+contract is [effect review](../execution/effect-review.md).

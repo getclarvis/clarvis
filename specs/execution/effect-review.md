@@ -225,7 +225,9 @@ fixed policy. Both command and effect review use Judge-owned `JUDGE_POLICY`. Cod
 The explicit rollout stages are `shadow` and `local`, and they scope configuration review only. Shadow
 computes configuration review evidence
 without changing the existing configuration outcome. An absent rollout uses the same conservative effect
-ceiling as `local`: fully attested local effects only. Unknown ids remain closed to the grant
+ceiling as `local`: fully attested local effects only. The withdrawn `ci_retry` spelling is still
+accepted from an existing settings document and normalizes to that same `local` ceiling, so an upgrade
+cannot discard the unrelated settings a rejected document would take with it. Unknown ids remain closed to the grant
 compiler. Command authorization reads no rollout stage: the removal of the `ci_retry` stage went with
 the command classifier that reserved a failed-only rerun, and no command compiles an envelope. The
 command reviewer reads evidence chronologically, allowing the newest instruction to refer to

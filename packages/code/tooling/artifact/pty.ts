@@ -202,36 +202,39 @@ async function observeViaTmux(options: BootOptions): Promise<BootObservation> {
   const target = "boot";
   const environment = options.context.environmentFor(options.overrides);
   const command = [
-    "exec env",
+    "exec env -i",
     ...Object.entries(environment).map(([name, value]) => `${name}=${shellQuote(value)}`),
     shellQuote(options.runtime ?? process.execPath),
     shellQuote(options.entry),
     ...(options.args ?? []).map(shellQuote),
   ].join(" ");
   const started = performance.now();
-  const start = Bun.spawnSync([
-    tmux,
-    "-S",
-    socket,
-    "new-session",
-    "-d",
-    "-s",
-    target,
-    "-x",
-    "200",
-    "-y",
-    "50",
-    "-c",
-    options.context.workspace,
-    command,
-  ]);
+  const start = Bun.spawnSync(
+    [
+      tmux,
+      "-S",
+      socket,
+      "new-session",
+      "-d",
+      "-s",
+      target,
+      "-x",
+      "200",
+      "-y",
+      "50",
+      "-c",
+      options.context.workspace,
+      command,
+    ],
+    { env: environment },
+  );
   const startError = start.stderr.toString();
   if (start.exitCode !== 0) {
     throw new Error(`tmux could not start the boot PTY: ${startError}`);
   }
   const tmuxChild: SmokeChild = {
     kill: () => {
-      Bun.spawnSync([tmux, "-S", socket, "kill-server"]);
+      Bun.spawnSync([tmux, "-S", socket, "kill-server"], { env: environment });
     },
     exited: Promise.resolve(0),
   };
@@ -260,7 +263,7 @@ async function observeViaTmux(options: BootOptions): Promise<BootObservation> {
       await sleep(options.pollMs);
     }
   } finally {
-    Bun.spawnSync([tmux, "-S", socket, "kill-server"]);
+    Bun.spawnSync([tmux, "-S", socket, "kill-server"], { env: environment });
     unregister();
   }
   return { outcome, elapsed: performance.now() - started, marks, screen, stderr: startError };

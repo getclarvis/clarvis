@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
+import { UNIX_SOCKET_PATH_BUDGET_BYTES, ancestorTrust } from "@clarvis/paths";
+
 import {
+  createSmokeContext,
   createSmokeFixture,
   type SmokeContext,
   requireNativeSmokeConfinement,
@@ -16,6 +19,24 @@ async function fixture(prefix: string): Promise<SmokeContext> {
   const context = await createSmokeFixture(prefix);
   contexts.push(context);
   return context;
+}
+
+/**
+ * Register a child the lifecycle owner must terminate, recording whether the
+ * fixture roots still existed when it was signalled.
+ */
+function registeredChild(context: SmokeContext, observed: boolean[]): () => void {
+  let settle = (): void => undefined;
+  const exited = new Promise<number>((resolve) => {
+    settle = () => resolve(0);
+  });
+  return context.registerChild({
+    kill: () => {
+      observed.push(existsSync(context.root));
+      settle();
+    },
+    exited,
+  });
 }
 
 afterEach(async () => {
@@ -117,7 +138,10 @@ describe("smoke fixture isolation", () => {
       [
         process.execPath,
         "-e",
-        `const {createSmokeContext}=await import(${JSON.stringify(modulePath)});try{await createSmokeContext("clarvis-invalid-parent-");process.exit(2)}catch(error){process.stdout.write(String(error))}`,
+        `const {createSmokeContext}=await import(${JSON.stringify(modulePath)});` +
+          `const viaParent=await createSmokeContext("clarvis-invalid-parent-",{parentRoot:process.env.CLARVIS_HOME}).then(()=>"accepted",(error)=>String(error));` +
+          `const viaCandidates=await createSmokeContext("clarvis-invalid-parent-",{parentCandidates:[process.env.CLARVIS_HOME]}).then(()=>"accepted",(error)=>String(error));` +
+          `process.stdout.write(JSON.stringify({viaParent,viaCandidates}))`,
       ],
       {
         cwd: process.cwd(),
@@ -137,8 +161,49 @@ describe("smoke fixture isolation", () => {
     if (child.exitCode !== 0) {
       throw new Error(`smoke parent probe failed (${child.exitCode}): ${error}\n${output}`);
     }
-    expect(output).toContain("smoke_fixture_parent_overlaps_operator_state");
+    const verdicts = JSON.parse(output) as { viaParent: string; viaCandidates: string };
+    expect(verdicts.viaParent).toContain("smoke_fixture_parent_overlaps_operator_state");
+    expect(verdicts.viaCandidates).toContain("smoke_fixture_no_usable_parent");
+    expect(verdicts.viaCandidates).toContain("smoke_fixture_parent_overlaps_operator_state");
     await rm(external, { recursive: true, force: true });
+  });
+
+  test("keeps the fixture outside a deep inherited temporary root and reserves its sockets", async () => {
+    const deep = join(await mkdtemp(join(tmpdir(), "clarvis-smoke-deep-")), "x".repeat(60));
+    await mkdir(deep, { recursive: true, mode: 0o700 });
+    try {
+      const context = await createSmokeContext("clarvis-isolation-short-", {
+        parentCandidates: [deep],
+      });
+      contexts.push(context);
+      expect(context.root.startsWith(deep)).toBe(true);
+      expect(context.sockets.startsWith(context.root)).toBe(false);
+      expect(relative(context.root, context.sockets)).toMatch(/^\.\./);
+      const socket = context.socketPath("tmux");
+      expect(Buffer.byteLength(socket, "utf8")).toBeLessThanOrEqual(UNIX_SOCKET_PATH_BUDGET_BYTES);
+      expect(context.writableRoots).toContain(context.root);
+      expect(context.writableRoots).toContain(context.sockets);
+      expect(ancestorTrust(join(context.root, "state")).trusted).toBe(true);
+
+      const signalled: boolean[] = [];
+      const unregister = [registeredChild(context, signalled), registeredChild(context, signalled)];
+      await context.cleanup();
+      expect(signalled).toEqual([true, true]);
+      expect(existsSync(context.root)).toBe(false);
+      expect(existsSync(context.sockets)).toBe(false);
+      for (const release of unregister) release();
+      contexts.splice(contexts.indexOf(context), 1);
+    } finally {
+      await rm(deep, { recursive: true, force: true });
+    }
+  });
+
+  test("reports a socket address that cannot fit the operating-system budget", async () => {
+    const context = await fixture("clarvis-isolation-budget-");
+    const overBudget = Array.from({ length: UNIX_SOCKET_PATH_BUDGET_BYTES / 2 }, () => "é").join(
+      "",
+    );
+    expect(() => context.socketPath(overBudget)).toThrow("smoke_socket_path_exceeds_budget");
   });
 
   test("native confinement either proves the boundary or reports unavailable", async () => {

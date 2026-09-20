@@ -137,3 +137,21 @@ export { withoutGitRepositoryEnvironment } from "./git-environment.ts";
 
 export { sweepGlobalStateArtifacts, sweepSpillDir } from "./housekeeping.ts";
 export type { GlobalStateSweepReport } from "./housekeeping.ts";
+
+export {
+  SHORT_SCRATCH_BUDGET_BYTES,
+  UNIX_SOCKET_PATH_BUDGET_BYTES,
+  allocateShortTemporaryRoot,
+  ancestorTrust,
+  collectAbandonedShortTemporaryRoots,
+  shortTemporaryRootCandidates,
+  unixSocketPathFits,
+  type AncestorTrust,
+  type AncestorTrustOptions,
+  type AncestorTrustRefusal,
+  type ShortTemporaryCandidateOptions,
+  type ShortTemporaryRoot,
+  type ShortTemporaryRootOptions,
+  type ShortTemporarySweepOptions,
+  type ShortTemporarySweepReport,
+} from "./short-temporaries.ts";

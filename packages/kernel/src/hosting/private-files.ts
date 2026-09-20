@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath } from "node:fs/promises";
-import { dirname, parse, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
-import { DIR_MODE, FILE_MODE } from "@clarvis/paths";
+import { DIR_MODE, FILE_MODE, ancestorTrust } from "@clarvis/paths";
 import { kernelError } from "../core/errors.ts";
 
 const executeFile = promisify(execFile);
@@ -68,22 +68,8 @@ export async function assertPrivateHostDirectory(path: string): Promise<void> {
   }
   if (info.uid !== process.getuid?.() || (info.mode & 0o777) !== DIR_MODE)
     throw kernelError("unauthorized", "local host directory must be private and account-owned");
-  const rootOwner = (await lstat(parse(resolve(path)).root)).uid;
-  for (let parent = dirname(path); ;) {
-    const ancestor = await lstat(parent);
-    const trustedOwner = ancestor.uid === rootOwner || ancestor.uid === process.getuid?.();
-    const sticky = (ancestor.mode & 0o1000) !== 0;
-    if (
-      !ancestor.isDirectory() ||
-      ancestor.isSymbolicLink() ||
-      !trustedOwner ||
-      ((ancestor.mode & 0o022) !== 0 && !sticky)
-    )
-      throw kernelError("unauthorized", "local host state has an unsafe parent directory");
-    const next = dirname(parent);
-    if (next === parent) break;
-    parent = next;
-  }
+  if (!ancestorTrust(path).trusted)
+    throw kernelError("unauthorized", "local host state has an unsafe parent directory");
 }
 
 /** Create the private directory before publishing any credential, then verify its real ownership. */

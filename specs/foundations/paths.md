@@ -212,8 +212,9 @@ connection record, run index and generation/execution-specific observation proje
 ids are hashed rather than interpreted as path segments. Its Unix socket endpoint uses a separate,
 short temporary directory. Ordered `LocalHostPathOptions.endpointRootCandidates` are normalized and
 deduplicated in order; when omitted they default to the effective process temp followed by `/tmp`.
-The first candidate whose **complete endpoint** fits the conservative 100-byte UTF-8 budget wins,
-so multibyte roots are measured by bytes rather than characters. Explicit empty lists, empty strings
+The first candidate whose **complete endpoint** fits `UNIX_SOCKET_PATH_BUDGET_BYTES` (100 UTF-8 bytes,
+the same budget `unixSocketPathFits` exposes) wins, so multibyte roots are measured by bytes rather than
+characters. Explicit empty lists, empty strings
 and NUL are rejected, and failure reports only the budget and candidate count. Selection performs no
 filesystem mutation, canonicalization, access probe or authentication; transport remains responsible
 for preparing and validating the chosen directory. Windows uses the unchanged named pipe and ignores
@@ -290,7 +291,6 @@ record (`packages/paths/src/workspace-state.ts`) rooted at `<global>/state/works
 | `promptHistoryFile` | `<root>/local/prompt-history` | `packages/paths/src/workspace-state.ts` |
 | `codeConfigFile` | `<root>/local/code.json` | `packages/paths/src/workspace-state.ts` |
 | `extensionProfileSelectionFile` | `<root>/local/extension-profile.json` | `packages/paths/src/workspace-state.ts` |
-| `runTempDir(executionId)` | `<root>/local/runs/<ownerSegment(executionId)>/tmp` | `WorkspaceStatePaths.runTempDir`, `workspaceStatePaths` |
 | `runtimesDir` | `<root>/runtimes` | `WorkspaceStatePaths.runtimesDir`, `workspaceStatePaths` |
 | `runtimeDir(runtimeId)` | `<root>/runtimes/<ownerSegment(runtimeId)>` | `WorkspaceStatePaths.runtimeDir`, `workspaceStatePaths` |
 | `memoryMachineryRootForOwner(owner)` | `<root>/owners/<seg>/memory` | `packages/paths/src/workspace-state.ts` |
@@ -318,6 +318,50 @@ Ensure functions: `ensureWorkspaceStateDir(root?, opts?)` (`packages/paths/src/w
 `ensureWorkspaceLocalDir(root?, opts?)` (`packages/paths/src/workspace-state.ts`) both `mkdirSync` with
 `{ recursive: true, mode: DIR_MODE }` and seed nothing — "Nothing needs ignoring here, because
 nothing here is in a repository." (`packages/paths/src/workspace-state.ts`).
+
+### 2.6.1 Short temporary roots and the endpoint budget (`packages/paths/src/short-temporaries.ts`)
+
+A run's scratch is not derived from the workspace state tree, because everything a command places under
+`TMPDIR` inherits its length and a Unix socket address has a hard limit; a deep `CLARVIS_HOME`, workspace
+path or run id used to spend that limit for the command's own socket. `allocateShortTemporaryRoot`
+(`packages/paths/src/short-temporaries.ts`) creates an exclusive, account-owned directory shaped
+`<base>/clv-<account>/r/<id>` (`0700`, `id` = eight base64url characters) and records
+`<base>/clv-<account>/a/<id>.json` holding `{ schema, id, label, identity, pid, host, created_at }`. The
+identity of a run is metadata rather than a path component; an existing entry is never adopted, a
+pre-existing container must have exactly Clarvis's type, owner and mode, and the returned `remove()`
+is idempotent and removes only a path it first proves is still that allocation.
+
+`shortTemporaryRootCandidates` (`packages/paths/src/short-temporaries.ts`) orders the host's short
+temporary roots — `XDG_RUNTIME_DIR`, `/tmp`, `/dev/shm`, then the environment's own temporary root —
+canonicalizing each and inspecting it read-only. A candidate whose allocation shape exceeds
+`SHORT_SCRATCH_BUDGET_BYTES` (40) is ordered last rather than dropped unless the caller requires the
+budget, so a host whose every root is long still gets scratch; a candidate whose ancestor chain is not
+account-owned is dropped. Nothing is created, repaired or chmod'ed during selection.
+
+`collectAbandonedShortTemporaryRoots` (`packages/paths/src/short-temporaries.ts`) is the recovery pass. A
+record authorises removal only when its schema is known, its host is this host, its process is provably
+dead here, it is older than the grace, its directory is still this account's owner-only directory, and
+its whole subtree holds no file and no symlink. Age, name shape or a lone PID never authorise a recursive
+removal, and an allocation with no readable record is never a candidate at all.
+`sweepGlobalStateArtifacts` runs that pass unless the caller passes `temporaryRoots: false`
+(`packages/paths/src/housekeeping.ts`), and still reclaims stale empty legacy run containers, whose
+producer no longer exists, under the same content rule.
+
+`ancestorTrust(path)` (`packages/paths/src/short-temporaries.ts`) is the single implementation of the
+private-state ancestor policy: every ancestor from the parent upward must be a real directory, never a
+symlink, owned by the filesystem root's owner or the current account, and not group- or world-writable
+unless sticky. `packages/kernel/src/hosting/private-files.ts` enforces it for private host state, and
+this package's own selection asks it before proposing a root, so a chooser and a validator cannot drift
+apart. `unixSocketPathFits(path, budgetBytes?)` applies `UNIX_SOCKET_PATH_BUDGET_BYTES`; Windows named
+pipes are not filesystem paths and are never measured by it. Production:
+`allocateShortTemporaryRoot`, `shortTemporaryRootCandidates`, `collectAbandonedShortTemporaryRoots`,
+`ancestorTrust` and `unixSocketPathFits` in `packages/paths/src/short-temporaries.ts`,
+`sweepGlobalStateArtifacts` in `packages/paths/src/housekeeping.ts`, and
+`assertPrivateHostDirectory` in `packages/kernel/src/hosting/private-files.ts`. Tests:
+`packages/paths/tests/unit/short-temporaries.test.ts`,
+`packages/paths/tests/integration/short-temporaries.test.ts`,
+`packages/loop/tests/integration/command-guard-wiring.test.ts` and
+`packages/code/tests/unit/artifact-isolation.test.ts`.
 
 ### 2.7 Ensure functions and the workspace `.gitignore` (`packages/paths/src/ensure.ts`)
 

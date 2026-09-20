@@ -57,12 +57,6 @@ export interface WorkspaceStatePaths {
   codeConfigFile: string;
   /** Machine-local Extension Profile selection for this workspace. */
   extensionProfileSelectionFile: string;
-  /** Parent directory containing every run-owned scratch directory. */
-  runsDir: string;
-  /** One run's scratch container, removed after its final temporary root. */
-  runDir(executionId: string): string;
-  /** Run-owned scratch root shared by shell and native coding tools. */
-  runTempDir(executionId: string): string;
   /**
    * Resolve an owner's memory machinery root.
    *
@@ -184,9 +178,7 @@ export function workspaceStatePaths(root?: string, opts?: RootOptions): Workspac
   const ws = root === undefined ? workspaceRoot(opts) : resolve(root);
   const base = join(globalPaths(undefined, opts).state, "workspaces", segmentFor(ws));
   const localDir = join(base, "local");
-  const runsDir = join(localDir, "runs");
   const ownerBase = (owner: string) => join(base, "owners", ownerSegment(owner));
-  const runDir = (executionId: string): string => join(runsDir, ownerSegment(executionId));
   return {
     root: base,
     workspaceRoot: ws,
@@ -199,9 +191,6 @@ export function workspaceStatePaths(root?: string, opts?: RootOptions): Workspac
     promptHistoryFile: join(localDir, "prompt-history"),
     codeConfigFile: join(localDir, "code.json"),
     extensionProfileSelectionFile: join(localDir, "extension-profile.json"),
-    runsDir,
-    runDir,
-    runTempDir: (executionId: string) => join(runDir(executionId), "tmp"),
     memoryMachineryRootForOwner: (owner: string) => join(ownerBase(owner), "memory"),
     plansLockDirForOwner: (owner: string) => join(ownerBase(owner), "plans"),
     monitorSidecar: (id: string) =>

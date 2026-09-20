@@ -4,6 +4,10 @@ import { join } from "node:path";
 import { pathsLogger, type PathsLogger } from "./diag.ts";
 import { FILE_MODE } from "./constants.ts";
 import { globalPaths } from "./global.ts";
+import {
+  collectAbandonedShortTemporaryRoots,
+  type ShortTemporarySweepOptions,
+} from "./short-temporaries.ts";
 import { isSpillFile, workspaceStatePaths, type WorkspaceStatePaths } from "./workspace-state.ts";
 
 const SPILL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -15,6 +19,10 @@ export interface GlobalStateSweepReport {
   spillsRemoved: number;
   spillModesRepaired: number;
   runDirsRemoved: number;
+  /** Abandoned short temporary allocations removed from the platform roots. */
+  temporaryRootsRemoved: number;
+  /** Short temporary allocations, or their unrecognised metadata, left in place. */
+  temporaryRootsPreserved: number;
   truncated: boolean;
 }
 
@@ -153,12 +161,23 @@ export async function sweepSpillDir(
  * Sweep bounded disposable artifacts across every persisted workspace state root.
  *
  * @param root - Clarvis global root; defaults through {@link globalPaths}.
- * @param options - Workspace/entry/concurrency bounds for one pass.
+ * @param options - Workspace/entry/concurrency bounds for one pass, and whether the
+ *   platform roots are swept for abandoned short temporary allocations.
  * @returns Aggregate work performed and whether a scan bound truncated the pass.
+ *
+ * @remarks The platform pass exists because a run's scratch no longer lives in the
+ *   workspace's state tree. It removes only allocations a record proves are this
+ *   host's, dead and empty; `temporaryRoots: false` restores the previous scope for
+ *   a caller that must not touch a shared root.
  */
 export async function sweepGlobalStateArtifacts(
   root?: string,
-  options: { maxWorkspaces?: number; maxEntriesPerWorkspace?: number; concurrency?: number } = {},
+  options: {
+    maxWorkspaces?: number;
+    maxEntriesPerWorkspace?: number;
+    concurrency?: number;
+    temporaryRoots?: false | ShortTemporarySweepOptions;
+  } = {},
 ): Promise<GlobalStateSweepReport> {
   const workspacesDir = join(globalPaths(root).state, "workspaces");
   const maxWorkspaces = Math.max(0, options.maxWorkspaces ?? 1_000);
@@ -169,10 +188,15 @@ export async function sweepGlobalStateArtifacts(
     spillsRemoved: 0,
     spillModesRepaired: 0,
     runDirsRemoved: 0,
+    temporaryRootsRemoved: 0,
+    temporaryRootsPreserved: 0,
     truncated: false,
   };
   const handle = await fs.opendir(workspacesDir).catch(ignoreFsFailure);
-  if (handle === undefined) return report;
+  if (handle === undefined) {
+    await sweepPlatformTemporaryRoots(options.temporaryRoots, report);
+    return report;
+  }
   try {
     for await (const entry of handle) {
       if (!entry.isDirectory()) continue;
@@ -196,5 +220,19 @@ export async function sweepGlobalStateArtifacts(
   } finally {
     await Promise.resolve(handle.close()).catch(ignoreFsFailure);
   }
+  await sweepPlatformTemporaryRoots(options.temporaryRoots, report);
   return report;
+}
+
+/** Fold one platform short-temporary pass into the aggregate report. */
+async function sweepPlatformTemporaryRoots(
+  options: false | ShortTemporarySweepOptions | undefined,
+  report: GlobalStateSweepReport,
+): Promise<void> {
+  if (options === false) return;
+  const pass = await collectAbandonedShortTemporaryRoots(options ?? {});
+  report.temporaryRootsRemoved += pass.removed;
+  report.temporaryRootsPreserved +=
+    pass.preservedActive + pass.preservedContent + pass.preservedUnverified;
+  report.truncated ||= pass.truncated;
 }

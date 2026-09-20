@@ -996,7 +996,7 @@
     {
       "mechanism": "subprocess",
       "file": "packages/code/tests/unit/artifact-isolation.test.ts",
-      "identity": "subprocess|describe:smoke fixture isolation/test:context creation rejects a temporary parent inside operator global state|Bun.spawn( [ process.execPath, \"-e\", `const {createSmokeContext}=await import(${JSON.stringify(modulePath)});try{await createSmokeContext(\"clarvis-invalid-parent-\");process.exit(2)}catch(error){process.stdout.write(String(error))}`, ], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? \"\", HOME: process.env.HOME ?? tmpdir(), CLARVIS_HOME: external, TMPDIR: external, }, stdout: \"pipe\", stderr: \"pipe\", }, )|0",
+      "identity": "subprocess|describe:smoke fixture isolation/test:context creation rejects a temporary parent inside operator global state|Bun.spawn( [ process.execPath, \"-e\", `const {createSmokeContext}=await import(${JSON.stringify(modulePath)});` + `const viaParent=await createSmokeContext(\"clarvis-invalid-parent-\",{parentRoot:process.env.CLARVIS_HOME}).then(()=>\"accepted\",(error)=>String(error));` + `const viaCandidates=await createSmokeContext(\"clarvis-invalid-parent-\",{parentCandidates:[process.env.CLARVIS_HOME]}).then(()=>\"accepted\",(error)=>String(error));` + `process.stdout.write(JSON.stringify({viaParent,viaCandidates}))`, ], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? \"\", HOME: process.env.HOME ?? tmpdir(), CLARVIS_HOME: external, TMPDIR: external, }, stdout: \"pipe\", stderr: \"pipe\", }, )|0",
       "package_owner": "@clarvis/code",
       "classification": "boundary-canary",
       "reason": "physical boundary canary required by the test"

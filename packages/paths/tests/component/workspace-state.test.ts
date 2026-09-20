@@ -73,9 +73,6 @@ describe("workspaceStatePaths", () => {
       p.promptHistoryFile,
       p.codeConfigFile,
       p.extensionProfileSelectionFile,
-      p.runsDir,
-      p.runDir("run/with separators"),
-      p.runTempDir("run/with separators"),
       p.monitorSidecar("m"),
       p.monitorLog("m"),
       p.monitorExit("m"),
@@ -107,11 +104,6 @@ describe("workspaceStatePaths", () => {
     expect(p.promptHistoryFile).toBe(join(p.localDir, "prompt-history"));
     expect(p.codeConfigFile).toBe(join(p.localDir, "code.json"));
     expect(p.extensionProfileSelectionFile).toBe(join(p.localDir, "extension-profile.json"));
-    expect(p.runsDir).toBe(join(p.localDir, "runs"));
-    expect(p.runDir("run/with separators")).toBe(
-      join(p.runsDir, ownerSegment("run/with separators")),
-    );
-    expect(p.runTempDir("run/with separators")).toBe(join(p.runDir("run/with separators"), "tmp"));
   });
 
   test("owner roots separate a server's tenants under one segment dir", () => {

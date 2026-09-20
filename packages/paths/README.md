@@ -44,7 +44,53 @@ runtime requirement of the loop's main entry.
 `sweepGlobalStateArtifacts(globalRoot)` applies the same bounded policy across inactive workspace
 state as well as the current workspace. It also repairs recognized spill files to `0600` on POSIX
 and removes run containers older than 24 hours only when their descendants are empty temporary
-directories. Active, recent, occupied and unrecognized paths are preserved.
+directories. Active, recent, occupied and unrecognized paths are preserved. It then runs the platform
+pass described below unless the caller passes `temporaryRoots: false`.
+
+## Short temporary roots
+
+A run's scratch cannot be as deep as a workspace state tree. Everything a command places under
+`TMPDIR` inherits its length, and a Unix socket address has a hard limit — a deep `CLARVIS_HOME`,
+workspace path or run id used to spend it, so a tool failed with `File name too long` while the
+product was fine.
+
+`allocateShortTemporaryRoot({ label, identity })` creates the short, exclusive, account-owned
+directory instead:
+
+```text
+<base>/clv-<account>/r/<8 random base64url characters>   the allocation itself, 0700
+<base>/clv-<account>/a/<id>.json                          { schema, id, label, identity, pid, host, created_at }
+```
+
+The directory name carries **only** a random id. The run's identity lives in the record, which the
+agent's own commands cannot see or forge, and which is what a recovery pass reads later. An existing
+entry is never adopted: a collision draws a new id, a pre-existing container is accepted only when its
+type, owner and mode are exactly Clarvis's own, and `remove()` — the only lifecycle operation, and
+idempotent — refuses to remove a path it cannot first prove is still this allocation.
+
+Candidate roots are the host's short temporary roots in order, each canonicalized and read-only
+inspected: `XDG_RUNTIME_DIR`, `/tmp`, `/dev/shm`, then the environment's own temporary root. A
+candidate whose allocation shape exceeds `SHORT_SCRATCH_BUDGET_BYTES` (40) is preferred last rather
+than dropped, because a host whose every root is long still needs scratch; a candidate whose ancestor
+chain is not account-owned is dropped, because the kernel would refuse the private state published
+beneath it (see `ancestorTrust`). Nothing is created, repaired or chmod'ed during selection.
+
+`collectAbandonedShortTemporaryRoots` is the recovery pass. A record authorises removal only when its
+schema is known, its host is this host, its process is provably dead here, it is older than the grace,
+its directory is still this account's owner-only directory, and its whole subtree holds no file and no
+symlink. Age, name shape or a lone PID never authorise a recursive removal, and an allocation with no
+readable record is never a candidate at all — which is what keeps a crashed run's output available to
+whoever is still looking at it.
+
+`ancestorTrust(path)` is the one implementation of the private-state ancestor policy: every ancestor
+from the parent upward must be a real directory (never a symlink), owned by the filesystem root's owner
+or the current account, and not group- or world-writable unless sticky. `@clarvis/kernel` verifies its
+private host state with it, and this package's own selection asks it before proposing a root, so a
+chooser and a validator cannot drift apart.
+
+`unixSocketPathFits(path, budgetBytes?)` applies `UNIX_SOCKET_PATH_BUDGET_BYTES` (100) — the same budget
+`localHostPaths` selects a reconnectable endpoint against. Windows named pipes are not filesystem paths
+and are never measured by it.
 
 ## Shape
 
@@ -123,7 +169,7 @@ history; `plans/` and `memory/` are generated Markdown the user is expected to o
 always excluded by `.clarvis/.gitignore` before Git creates a checkout.
 
 `<global>/state/workspaces/<segment>/` holds that workspace's **machinery** — `local/` (prompt
-history, the UI's `code.json`, bounded opt-in diagnostics, per-run temporary roots, monitor sidecars and logs, shell and tool-result spills), the memory
+history, the UI's `code.json`, bounded opt-in diagnostics, legacy run containers from before the scratch moved to a short root, monitor sidecars and logs, shell and tool-result spills), the memory
 wiki's `.history`/`.journal`/`.state`/`.lock`, plan lockfiles and workspace-scoped trace locks. The segment is
 `ownerSegment(ownerFromWorkspace(root))`, the same composition `state/traces` and `state/sessions`
 already use, so one workspace's generated data all lands under one name.
@@ -358,20 +404,25 @@ sites between them) reach the process-wide `setPathsLogger` sink instead. That s
 only, never per run**: one slot, last writer wins, which is correct for one host process and
 ambiguous the moment two share one. `@clarvis/loop`'s `buildExecuteRunDeps` installs it.
 
-| Level | Event                           | Fields                                                                                                                    |
-| ----- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| warn  | `paths.lease_reclaimed`         | `path`, `prior_pid`, `prior_host`, `age_ms`, `reason` (`retired`/`dead_pid`/`no_record`)                                  |
-| warn  | `paths.lease_lost`              | `path`, `token`, `phase` (`renew`/`release`/`stat`)                                                                       |
-| warn  | `paths.atomic_staging_failed`   | `file`, `code`, `durable`, `tmp_removed`                                                                                  |
-| debug | `paths.lease_reclaim_refused`   | `path`, `stage` (`identity_changed`/`rename_failed`/`quarantine_mismatch`/`unlink_failed`)                                |
-| debug | `paths.lease_contended`         | `path`, `attempt`, `waited_ms`                                                                                            |
-| debug | `paths.rename_retried`          | `to`, `attempt`, `code`, `backoff_ms`                                                                                     |
-| debug | `paths.fsync_dir_unsupported`   | `dir`, `code` — once per process per errno                                                                                |
-| debug | `paths.gitignore_seed_skipped`  | `file`, `code` — `EEXIST` is normal, `EACCES`/`EROFS` are not                                                             |
-| warn  | `paths.gitignore_update_failed` | `file`, `code` — an existing ignore file could not receive the mandatory `worktrees/` exclusion                           |
-| debug | `paths.spill_sweep`             | `dir`, `scanned`, `candidates`, `removed`, `truncated`                                                                    |
-| debug | `paths.roots_resolved`          | `global_root`/`workspace_root`, `global_from` (`env`/`home`) / `workspace_from` (`env`/`cwd`) — once per process per root |
-| debug | `paths.command_resolved`        | `command`, `resolved`, `found` — once per command, because the answer is memoized                                         |
+| Level | Event                                                               | Fields                                                                                                                    |
+| ----- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| warn  | `paths.lease_reclaimed`                                             | `path`, `prior_pid`, `prior_host`, `age_ms`, `reason` (`retired`/`dead_pid`/`no_record`)                                  |
+| warn  | `paths.lease_lost`                                                  | `path`, `token`, `phase` (`renew`/`release`/`stat`)                                                                       |
+| warn  | `paths.atomic_staging_failed`                                       | `file`, `code`, `durable`, `tmp_removed`                                                                                  |
+| debug | `paths.lease_reclaim_refused`                                       | `path`, `stage` (`identity_changed`/`rename_failed`/`quarantine_mismatch`/`unlink_failed`)                                |
+| debug | `paths.lease_contended`                                             | `path`, `attempt`, `waited_ms`                                                                                            |
+| debug | `paths.rename_retried`                                              | `to`, `attempt`, `code`, `backoff_ms`                                                                                     |
+| debug | `paths.fsync_dir_unsupported`                                       | `dir`, `code` — once per process per errno                                                                                |
+| debug | `paths.gitignore_seed_skipped`                                      | `file`, `code` — `EEXIST` is normal, `EACCES`/`EROFS` are not                                                             |
+| warn  | `paths.gitignore_update_failed`                                     | `file`, `code` — an existing ignore file could not receive the mandatory `worktrees/` exclusion                           |
+| debug | `paths.spill_sweep`                                                 | `dir`, `scanned`, `candidates`, `removed`, `truncated`                                                                    |
+| warn  | `paths.temporary_root_allocation_failed`                            | `label`, `base`, `reason` (`collision`/`metadata`/`unusable`), `code`                                                     |
+| warn  | `paths.temporary_root_cleanup_failed`                               | `path`, `label`, `reason` (`identity_changed`/`remove_failed`), `code`                                                    |
+| debug | `paths.temporary_root_candidate_rejected`                           | `candidate`, `reason` (`unusable`/`not_a_directory`/`budget`/`untrusted_ancestors:…`)                                     |
+| debug | `paths.temporary_root_allocated`, `paths.temporary_container_ready` | `path`, `label`, `bytes` / `container`                                                                                    |
+| debug | `paths.temporary_root_sweep`                                        | `containers`, `records`, `removed`, `preserved_active`, `preserved_content`, `preserved_unverified`, `truncated`          |
+| debug | `paths.roots_resolved`                                              | `global_root`/`workspace_root`, `global_from` (`env`/`home`) / `workspace_from` (`env`/`cwd`) — once per process per root |
+| debug | `paths.command_resolved`                                            | `command`, `resolved`, `found` — once per command, because the answer is memoized                                         |
 
 Three of these exist because the code path they describe resolves to a boolean nobody can read:
 
@@ -412,8 +463,8 @@ data owner, canonical workspace and effective global root. Its lease, discovery 
 handoff index live under global `state/hosts/`, apart from agent scratch. Unix endpoints use a short
 temporary directory so HOME length does not consume the socket path budget. The host may supply
 ordered `endpointRootCandidates`; otherwise the builder considers the effective process temp and
-`/tmp`, normalizes and deduplicates them, and selects the first whose complete endpoint fits the
-conservative 100-byte UTF-8 limit. Selection checks bytes rather than characters and never creates,
+`/tmp`, normalizes and deduplicates them, and selects the first whose complete endpoint fits
+`UNIX_SOCKET_PATH_BUDGET_BYTES`. Selection checks bytes rather than characters and never creates,
 stats or probes a candidate. Windows endpoints use named pipes and ignore filesystem candidates.
 The builder neither opens a listener nor grants access. Hosts must verify directory ownership,
 protect credentials and authenticate their connections. See

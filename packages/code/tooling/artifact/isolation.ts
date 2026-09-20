@@ -1,8 +1,19 @@
-import { lstat, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { AGENTS_DIR, CLARVIS_DIR, globalPaths, type GlobalPaths } from "@clarvis/paths";
+import {
+  AGENTS_DIR,
+  CLARVIS_DIR,
+  SHORT_SCRATCH_BUDGET_BYTES,
+  UNIX_SOCKET_PATH_BUDGET_BYTES,
+  allocateShortTemporaryRoot,
+  globalPaths,
+  shortTemporaryRootCandidates,
+  unixSocketPathFits,
+  type GlobalPaths,
+  type ShortTemporaryRoot,
+} from "@clarvis/paths";
 
 const RESERVED_ENVIRONMENT_KEYS = new Set([
   "HOME",
@@ -44,6 +55,19 @@ const INHERITED_OPERATIONAL_KEYS = [
   "TZ",
   "TERM",
 ] as const;
+
+/** Directory inside a fixture root that holds its sockets when the budget allows. */
+const SOCKETS_DIR = "sockets";
+
+/**
+ * Bytes reserved for the longest socket name a context can create.
+ *
+ * @remarks The name is `<label>-<pid base36>-<counter base36>.sock`, so the
+ *   reservation covers a seven-digit pid, a four-digit counter and the `tmux`
+ *   label. {@link SmokeContext.socketPath} validates the real name anyway; the
+ *   reservation is what decides *where* the socket directory may live.
+ */
+const SOCKET_NAME_RESERVE_BYTES = 22;
 
 /** A subprocess environment override admitted by the smoke harness. */
 export type SmokeEnvironmentOverride = Partial<
@@ -89,7 +113,15 @@ export interface SmokeContext {
   cache: string;
   /** Synthetic diagnostic/log directory. */
   logs: string;
-  /** Synthetic PTY/tmux socket directory. */
+  /**
+   * The directory this context's sockets live in.
+   *
+   * @remarks Inside {@link root} whenever the shortest candidate root leaves the
+   *   budget for a socket name, and otherwise a short temporary root of its own,
+   *   owned and removed by this context like the fixture itself. A socket path has
+   *   a hard operating-system limit, so it is never left to the length of the
+   *   developer's `TMPDIR`.
+   */
   sockets: string;
   /** Synthetic installation root used by managed-install smoke. */
   install: string;
@@ -101,12 +133,44 @@ export interface SmokeContext {
   registerChild(child: SmokeChild): () => void;
   /** Build an explicit child environment after validating allowed overrides. */
   environmentFor(overrides?: SmokeEnvironmentOverride): Record<string, string>;
-  /** Terminate registered children and remove only this context's root. */
+  /**
+   * Every directory in this context a confined child may write in.
+   *
+   * @remarks More than one exactly when the sockets live outside {@link root},
+   *   which is what makes an external socket root a declared mount rather than an
+   *   accident.
+   */
+  writableRoots: readonly string[];
+  /**
+   * Reserve an exclusive socket address and validate it before any process uses it.
+   *
+   * @param label - a short label for the endpoint, such as `tmux`.
+   * @returns the complete socket path.
+   * @throws when the address does not fit the POSIX endpoint budget, so a
+   *   too-deep root is reported as itself instead of as a failing backend.
+   */
+  socketPath(label: string): string;
+  /** Terminate registered children and remove only this context's roots. */
   cleanup(): Promise<void>;
 }
 
 /** Whether the PTY child must use a real native filesystem/process boundary. */
 export type SmokeConfinement = "environment" | "required";
+
+/** Inputs a caller may fix instead of letting the harness choose them. */
+export interface SmokeContextOptions {
+  /**
+   * The fixture parent to allocate under.
+   *
+   * @remarks Bypasses candidate selection, so a caller - a test or another
+   *   harness - can pin the parent. It is validated exactly as a selected
+   *   candidate is: a real account-owned directory that does not overlap the
+   *   operator's state.
+   */
+  parentRoot?: string;
+  /** Ordered candidate parents; defaults to the host's short temporary roots. */
+  parentCandidates?: readonly string[];
+}
 
 function isWithin(candidate: string, root: string): boolean {
   const child = relative(root, candidate);
@@ -269,25 +333,45 @@ function baseEnvironment(
 /**
  * Create a fresh, self-owned smoke execution context.
  *
- * @param prefix - unique prefix for the exclusive root directory.
- * @returns a context whose root is safe to remove only after child shutdown.
+ * @param prefix - the allocation's label. It names the fixture in diagnostics and
+ *   in its recovery metadata; the directory name carries only a random id, which
+ *   is what keeps a deep workspace or developer `TMPDIR` out of the fixture's
+ *   path length.
+ * @param options - an explicit parent or candidate list, for tests and for a
+ *   harness that must pin where its fixture lands.
+ * @returns a context whose roots are all safe to remove only after child shutdown.
+ *
+ * @remarks Nothing here is inherited from the environment that merely happens to
+ *   be set: not the parent, not the socket directory. The root comes from the
+ *   host's short temporary roots filtered by an account-owned ancestor chain,
+ *   because the kernel re-checks that chain for the private state it publishes
+ *   under `CLARVIS_HOME` - a fixture in a foreign-owned `/tmp` used to boot to
+ *   `local host state has an unsafe parent directory`.
  */
-export async function createSmokeContext(prefix = "clarvis-smoke-"): Promise<SmokeContext> {
-  const parent = await assertSafeParent(tmpdir());
-  const root = await mkdtemp(join(parent, prefix));
+export async function createSmokeContext(
+  prefix = "clarvis-smoke-",
+  options: SmokeContextOptions = {},
+): Promise<SmokeContext> {
+  const allocations: ShortTemporaryRoot[] = [];
   const children = new Set<SmokeChild>();
+  const socketCounter = { value: 0 };
   let cleaned = false;
+  let root = "";
   try {
+    root = (await allocateFixtureRoot(prefix, options, allocations)).path;
     await assertSafeFixtureRoot(root);
-    await assertOwnedDirectory(root, parent);
+    await assertOwnedDirectory(root, dirname(root));
     const directories = await createDirectories(root);
+    const sockets = allocateSocketRoot(root, options, allocations);
     const paths = globalPaths(directories.global);
-    const environment = baseEnvironment({ ...directories, sockets: directories.sockets });
+    const environment = baseEnvironment({ ...directories, sockets });
     const context: SmokeContext = {
       root,
       ...directories,
+      sockets,
       paths,
       environment,
+      writableRoots: [...new Set([root, ...allocations.map((entry) => entry.path)])],
       registerChild(child) {
         if (cleaned) throw new Error("smoke_fixture_already_cleaned");
         children.add(child);
@@ -296,6 +380,18 @@ export async function createSmokeContext(prefix = "clarvis-smoke-"): Promise<Smo
       environmentFor(overrides = {}) {
         if (cleaned) throw new Error("smoke_fixture_already_cleaned");
         return { ...environment, ...validateOverrides(overrides, root) };
+      },
+      socketPath(label) {
+        socketCounter.value += 1;
+        const path = join(
+          sockets,
+          `${label}-${process.pid.toString(36)}-${socketCounter.value.toString(36)}.sock`,
+        );
+        if (!unixSocketPathFits(path))
+          throw new Error(
+            `smoke_socket_path_exceeds_budget:${Buffer.byteLength(path, "utf8")}>${UNIX_SOCKET_PATH_BUDGET_BYTES}:${path}`,
+          );
+        return path;
       },
       async cleanup() {
         if (cleaned) return;
@@ -324,7 +420,7 @@ export async function createSmokeContext(prefix = "clarvis-smoke-"): Promise<Smo
           }),
         );
         children.clear();
-        await rm(root, { recursive: true, force: true });
+        for (const allocation of [...allocations].reverse()) allocation.remove();
       },
     };
     await mkdir(join(directories.home, ".config"), { recursive: true, mode: 0o700 });
@@ -333,9 +429,90 @@ export async function createSmokeContext(prefix = "clarvis-smoke-"): Promise<Smo
     await assertOwnedDirectory(directories.global, root);
     return context;
   } catch (error) {
-    await rm(root, { recursive: true, force: true });
+    for (const allocation of allocations) allocation.remove();
     throw error;
   }
+}
+
+/**
+ * Allocate the fixture's own short root, or explain why none is usable.
+ *
+ * @throws `smoke_fixture_no_usable_parent` listing every candidate and its
+ *   refusal, which is what a container whose temporary roots are foreign-owned
+ *   needs to be diagnosed from.
+ *
+ * @remarks The root is deliberately *not* derived from the inherited `TMPDIR`: a
+ *   developer's deep run scope used to decide where a fixture landed, and a
+ *   socket beneath it then exceeded the operating system's address limit. The
+ *   fixture still validates the parent it chooses as strictly as before, including
+ *   the ownership chain the kernel will re-check for its own private state.
+ */
+async function allocateFixtureRoot(
+  prefix: string,
+  options: SmokeContextOptions,
+  allocations: ShortTemporaryRoot[],
+): Promise<ShortTemporaryRoot> {
+  const candidates =
+    options.parentRoot !== undefined
+      ? [options.parentRoot]
+      : (options.parentCandidates ??
+        shortTemporaryRootCandidates({ budgetBytes: SHORT_SCRATCH_BUDGET_BYTES }));
+  const refused: string[] = [];
+  for (const candidate of candidates) {
+    let parent: string;
+    try {
+      parent = await assertSafeParent(candidate);
+    } catch (error) {
+      refused.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`);
+      continue;
+    }
+    try {
+      const allocation = allocateShortTemporaryRoot({
+        label: prefix,
+        identity: `${process.pid}`,
+        candidates: [parent],
+        requireBudget: false,
+      });
+      allocations.push(allocation);
+      return allocation;
+    } catch (error) {
+      refused.push(`${parent}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  throw new Error(`smoke_fixture_no_usable_parent:${refused.join(";")}`);
+}
+
+/**
+ * The socket directory for a fixture: its own when the budget allows, otherwise a
+ * short temporary root of its own, which is returned to `writableRoots` and cleanup.
+ */
+function allocateSocketRoot(
+  root: string,
+  options: SmokeContextOptions,
+  allocations: ShortTemporaryRoot[],
+): string {
+  const internal = join(root, SOCKETS_DIR);
+  const reserve = 1 + Buffer.byteLength(SOCKETS_DIR, "utf8") + SOCKET_NAME_RESERVE_BYTES;
+  if (unixSocketPathFits(join(internal, "x".repeat(SOCKET_NAME_RESERVE_BYTES)))) return internal;
+  const request = {
+    label: "socks",
+    identity: `${process.pid}`,
+    budgetBytes: UNIX_SOCKET_PATH_BUDGET_BYTES - reserve,
+    requireBudget: true,
+    requireTrustedAncestors: true,
+  };
+  let allocation: ShortTemporaryRoot;
+  try {
+    allocation = allocateShortTemporaryRoot(
+      options.parentCandidates === undefined
+        ? request
+        : { ...request, candidates: options.parentCandidates },
+    );
+  } catch {
+    allocation = allocateShortTemporaryRoot(request);
+  }
+  allocations.push(allocation);
+  return allocation.path;
 }
 
 function existingSystemRoot(path: string): boolean {
@@ -425,7 +602,11 @@ export async function requireNativeSmokeConfinement(
       if (existsSync(path)) args.push("--tmpfs", path);
     }
   }
-  args.push("--bind", context.root, context.root, "--chdir", context.workspace, "--", ...command);
+  args.push("--bind", context.root, context.root);
+  for (const writable of context.writableRoots) {
+    if (!pathOverlaps(writable, context.root)) args.push("--bind", writable, writable);
+  }
+  args.push("--chdir", context.workspace, "--", ...command);
 
   const boundary = args.indexOf("--bind");
   const probe = Bun.spawnSync([...args.slice(0, boundary), "--", "/bin/sh", "-c", ":"]);
@@ -442,8 +623,11 @@ export async function requireNativeSmokeConfinement(
  *
  * @returns the complete context, not a path that can be mixed with another run.
  */
-export async function createSmokeFixture(prefix = "clarvis-smoke-"): Promise<SmokeContext> {
-  const context = await createSmokeContext(prefix);
+export async function createSmokeFixture(
+  prefix = "clarvis-smoke-",
+  options: SmokeContextOptions = {},
+): Promise<SmokeContext> {
+  const context = await createSmokeContext(prefix, options);
   try {
     await mkdir(context.paths.root, { recursive: false }).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "EEXIST") throw error;

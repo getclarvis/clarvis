@@ -47,6 +47,7 @@ describe("Goal Steward contract", () => {
     });
     expect(first.profiles).toEqual(next.profiles);
     expect(first.output_schema).toEqual(next.output_schema);
+    expect(first.output_schema).toMatchObject({ type: "object", oneOf: expect.any(Array) });
     expect(first.profiles[0]).toMatchObject({
       name: "goal-steward",
       tools: [],

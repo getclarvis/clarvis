@@ -159,11 +159,12 @@ transitions, rejection before installation, host fault propagation and late-resu
 ## Private run contribution
 
 `createJudgeRunCapability` creates one mandatory `judge-private` contribution for the entry agent,
-with one forced `judge_step` tool and an injected aggregate output budget. Its response-admission
+with one `judge_step` tool, no provider-side forced selection, and an injected aggregate output budget. Its response-admission
 seam checks the complete model response before dispatch without executing authority transactions.
 A command run publishes the strict `decide_command` schema rather than the three-action union;
 admission applies that same schema, the state machine still enforces its stage, and effect runs
-retain their staged protocol.
+retain their staged protocol. Both schemas declare an explicit object root while preserving their
+closed variants. Tool selection is enforced by local admission and bounded correction for every model.
 A handler without admission fails closed. Compile invokes the host transaction in the handler and
 returns a tool result; decide returns a terminal completed structured receipt in that same iteration.
 A raw text finalization without response admission is terminal `judge_invalid_response`.
@@ -184,7 +185,8 @@ Production: [run-capability.ts](../../packages/judge/src/run-capability.ts),
 Test: [run-capability.test.ts](../../packages/judge/tests/integration/run-capability.test.ts)
 runs the ordinary engine and asserts the command-only provider schema, one iteration for command,
 two for compile/decide, terminal
-errors after bounded correction, a single tool catalog and no partial compile on multiple calls.
+errors after bounded correction, recovery from text-only output with correction feedback, explicit
+object roots without forced selection, a single tool catalog and no partial compile on multiple calls.
 
 
 ## Isolated execution and cache prefix
@@ -251,7 +253,7 @@ The host resolves absent call overrides from its effective environment; workspac
 only reduce that default or the explicit operator limit. `ModelCallInactivityError` is the shared
 Capability error subtype, preserving timeout classification and usage without inspecting error prose.
 The adapter permits four correction calls per stage but fences provider/framing failures so the
-engine's forced-tool rejection fallback cannot issue another external call after such a failure.
+engine cannot issue another external call after such a failure.
 The original provider failure remains available for host policy. Retries
 inside the existing provider wrapper retain their configured limits and accounting.
 

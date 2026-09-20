@@ -8,9 +8,10 @@ import {
 } from "./steward-types.ts";
 
 export const GOAL_STEWARD_INSTANCE = "goal-steward";
-export const goalStewardOutputSchema: Record<string, unknown> = JSON.parse(
-  JSON.stringify(z.toJSONSchema(goalStewardResultSchema, { target: "draft-7" })),
-) as Record<string, unknown>;
+export const goalStewardOutputSchema: Record<string, unknown> = {
+  ...z.toJSONSchema(goalStewardResultSchema, { target: "draft-7" }),
+  type: "object",
+};
 
 /** Stable profile, catalog and identity; only a new frame and execution id vary. */
 export function buildGoalStewardRequest(

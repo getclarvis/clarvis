@@ -110,7 +110,7 @@ describe("Goal semantic agent", () => {
         },
       ],
     });
-    expect(request.output_schema).toBeDefined();
+    expect(request.output_schema).toMatchObject({ type: "object", oneOf: expect.any(Array) });
     expect(JSON.parse(request.messages[0]!.content as string)).toMatchObject({
       mode: "guided",
       seed: "Implemente a spec sem publicar",

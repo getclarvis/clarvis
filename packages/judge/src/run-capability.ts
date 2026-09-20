@@ -27,9 +27,10 @@ const tool = (binding: JudgeStepBinding): NamespacedTool => ({
     binding.kind === "command"
       ? "Decide the exact command case with action decide_command."
       : "Return exactly the requested private review stage.",
-  inputSchema: z.toJSONSchema(
-    binding.kind === "command" ? decideCommandStepSchema : judgeStepSchema,
-  ),
+  inputSchema: {
+    ...z.toJSONSchema(binding.kind === "command" ? decideCommandStepSchema : judgeStepSchema),
+    type: "object",
+  },
 });
 const invalidResult = (): AgentResult => ({
   status: "error",
@@ -101,7 +102,6 @@ export function createJudgeRunCapability(
               return {
                 tools: [runTool],
                 outputBudget,
-                forcedChoice: () => ({ type: "function", function: { name: "judge_step" } }),
                 gates: [
                   {
                     check() {

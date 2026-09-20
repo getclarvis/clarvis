@@ -171,6 +171,8 @@ performance, run hosting, transcript projection, input/overlays, domain hubs, se
 keyboard policy, theme, and onboarding. The performance contract and measurement review live
 in [`code-performance.md`](../../specs/hosts/code-performance.md). Image entry and the vision pre-pass are specified in
 [`engine/vision-routing.md`](../../specs/engine/vision-routing.md).
+Thinking text shows at most three wrapped lines, with `...` when additional content is hidden.
+Resizing updates the preview; the persisted reasoning is unchanged.
 Transcript snapshot rendering remains in
 [`code-transcript.md`](../../specs/hosts/code-transcript.md); publication, visual stability and the
 committed-history/live-frontier contract are separated into

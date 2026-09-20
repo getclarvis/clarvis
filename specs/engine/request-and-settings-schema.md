@@ -854,8 +854,10 @@ is a compile-time-only edge with zero runtime cost.
 ## Shared reviewer settings
 
 `effect_review` is a non-plugin cross-cutting settings block. It carries model, timeout, retry,
-uncertainty fallback and operator rollout. Kernel scope resolution admits only reductions from
-workspace configuration. `guard_judge` accepts optional `guidance` and explicit overrides; additional guidance is not required.
+uncertainty fallback and the operator rollout stage (`shadow` or `local`), which scopes the
+transactional configuration reviewer. Kernel scope resolution admits only reductions from
+workspace configuration. Command authorization reads neither the block's rollout stage nor a
+per-operation effect: it is one deterministic policy plus one Judge review path. `guard_judge` accepts optional `guidance` and explicit overrides; additional guidance is not required.
 Unknown keys are rejected rather than converted to guidance. Authority seeds remain absent from the strict
 public request schema. Production:
 [settings.ts](../../packages/judge/src/settings.ts),

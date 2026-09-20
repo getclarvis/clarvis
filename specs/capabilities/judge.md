@@ -24,7 +24,7 @@ and `effectReviewFixture`, exercised by the Kernel Judge and effect-review integ
 validated against `CLARVIS_TIMEOUT_CEILING_MS` by the ordinary profile validator, nonnegative retries
 bounded by `CLARVIS_RETRY_CEILING`,
 `on_unsure` (`ask` or `deny`; Auto ignores `ask` and refuses to the calling agent) and rollout
-(`shadow`, `local`, `ci_retry`). Its merge is last-wins,
+(`shadow`, `local`; both scope configuration review only, never command authorization). Its merge is last-wins,
 with global/workspace restrictions applied by Kernel. Calls inherit `CLARVIS_DEFAULT_CALL_TIMEOUT_MS`
 (180000 ms by default) and `CLARVIS_DEFAULT_MAX_RETRIES` (three retries by default), with denial on
 uncertainty. There is no private transport retry default or ceiling. The strict per-run `guard_judge` parameter accepts the same model,
@@ -324,7 +324,7 @@ identity are architecture errors, not uncertainty.
 The pure eligibility predicate includes edit/exec profiles when tools are enabled and mode is Auto
 or off; automatic configuration review remains possible in off mode. Explicit human-only mode and
 read-only ceilings exclude it. Memory indexing filters Judge from inherited capabilities. Container
-composition does not invoke the native FileKernel factory. Command, effect and configuration review use this binding.
+composition does not invoke the native FileKernel factory. Command, configuration and effect review use this binding.
 
 Each actual inference emits one parent `guard_reviewer_model_call` with private
 `judge_execution_id`, live stage/authority revision and consumer metadata. Cache hits emit none.

@@ -304,7 +304,6 @@ describe("run-service lifecycle reservation", () => {
           execution_id: "implementation",
         },
       ],
-      consumed_effects: [],
     };
     await traceStore.insert(previous);
     let captured: ExecuteRunArgs | undefined;
@@ -372,7 +371,6 @@ describe("run-service lifecycle reservation", () => {
           execution_id: "implementation",
         },
       ],
-      consumed_effects: [],
     };
     await traceStore.insert(previous);
     let captured: ExecuteRunArgs | undefined;

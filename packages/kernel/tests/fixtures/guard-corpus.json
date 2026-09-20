@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "shell_human_only": [
+  "version": 2,
+  "policy_never_allowed": [
     "git $SUBCOMMAND",
     "$(cat command)",
     "git commit -m \"$(cat message.txt)\"",
@@ -42,19 +42,6 @@
     "PYTHONPATH=/evil",
     "RUBYOPT=-r/evil",
     "GIT_SSH_COMMAND=evil"
-  ],
-  "protected_paths": [
-    ".clarvis/settings.json",
-    ".clarvis/guard-judge.md",
-    ".clarvis/runtime/script.sh",
-    ".agents/settings.json",
-    ".env",
-    ".env.production",
-    ".git/config",
-    "package.json",
-    "Dockerfile",
-    "id_ed25519",
-    "certificate.pem"
   ],
   "non_operator_sources": [
     "assistant",

@@ -4,7 +4,7 @@ import {
   type OperatorAuthorityState,
 } from "../../src/operator-authority.ts";
 
-test("inherits detached bounded grants and excludes retry authority requiring a shared counter", () => {
+test("inherits detached bounded grants and refuses to project an uncompiled state", () => {
   const state: OperatorAuthorityState = {
     version: 1,
     binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
@@ -18,17 +18,17 @@ test("inherits detached bounded grants and excludes retry authority requiring a 
       grants: [
         {
           id: "a",
-          effect_id: "git.commit",
+          effect_id: "clarvis.operational_config.write",
           relation: "direct",
-          target_digests: ["repo"],
+          target_digests: ["settings"],
           constraints: {},
           evidence_ids: ["operator"],
         },
         {
           id: "b",
-          effect_id: "github.actions.rerun_failed",
+          effect_id: "workspace.content.write",
           relation: "bounded_prerequisite",
-          target_digests: ["repo"],
+          target_digests: ["settings"],
           constraints: {},
           evidence_ids: ["operator"],
         },
@@ -41,10 +41,8 @@ test("inherits detached bounded grants and excludes retry authority requiring a 
   const seed = inheritOperatorAuthority(reader, "parent")!;
   expect(seed.evidence[0]?.source).toBe("inherited");
   expect(seed.parent_run_id).toBe("parent");
-  expect(seed.ceiling?.grants.map((grant) => grant.id)).toEqual(["a"]);
-  expect(seed.consumed_effects).toEqual([]);
-  state.consumed_effects = ["used"];
-  expect(inheritOperatorAuthority(reader, "parent")?.consumed_effects).toEqual(["used"]);
+  expect(seed.ceiling?.grants.map((grant) => grant.id)).toEqual(["a", "b"]);
+  expect(seed.ceiling?.grants).not.toBe(state.envelope!.grants);
   state.revision++;
   expect(inheritOperatorAuthority(reader, "parent")).toBeUndefined();
   state.status = "revoked";

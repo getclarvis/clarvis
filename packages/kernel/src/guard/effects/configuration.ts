@@ -29,7 +29,7 @@ export function attestConfiguration(
           ? "destructive.delete"
           : "clarvis.operational_config.write";
   return effectFact(
-    { registry, environment: {} },
+    registry,
     id,
     {
       kind: "external_resource",

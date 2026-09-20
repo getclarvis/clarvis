@@ -13,7 +13,7 @@ export const effectReviewSchema = z
     timeout_ms: z.number().int().positive().max(2_147_483_647).optional(),
     max_retries: z.number().int().nonnegative().optional(),
     on_unsure: z.enum(["ask", "deny"]).optional(),
-    rollout: z.enum(["shadow", "local", "ci_retry"]).optional(),
+    rollout: z.enum(["shadow", "local"]).optional(),
   })
   .strict();
 

@@ -498,9 +498,14 @@ The package requires Bun 1.4.0 or newer.
 ### Effect facts and authoring
 
 The standalone guard DTO can carry host-attested effect facts and review receipts without importing
-capability. Canonical agent, skill and workflow Markdown may pass native mutation protection only
-after an explicit host effect review; operational configuration retains its restricted writer.
-An absent/off guard does not authorize authoring writes. See [effect review](../../specs/execution/effect-review.md).
+capability. Those facts describe a configuration change, not a command: the command guard resolves
+one deterministic policy and sends every remaining Auto `ask` to the call-local reviewer without
+classifying an operation. Canonical agent, skill and workflow Markdown passes native mutation
+protection only through the host's `reviewMutation` port; operational configuration retains its
+restricted writer. Without that port — a Container guest, a ceiling other than `edit`/`exec`, or
+disabled builtin tools — the file tool refuses a canonical authoring target with the
+`configure_clarvis` message before the guard runs, and an absent/off guard never authorizes an
+authoring write. See [effect review](../../specs/execution/effect-review.md).
 
 Host-bound file tools prepare complete atomic mutation batches before effect review. The entry agent receives the host `reviewMutation` callback; profiles cannot install it. Authoring batches reuse the configuration reviewer, validate all resulting documents and check captured revisions before staging. Copy uses captured UTF-8 bytes for authored destinations; rename/delete include their source effects. Mixed patches and recursive replacement review all prepared targets together. The callback carries exact workspace trust and notifies catalogs after success. Ordinary binary file operations retain their existing behavior.
 

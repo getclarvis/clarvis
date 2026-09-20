@@ -22,8 +22,8 @@ import { createGuardEffectRegistry } from "../../src/guard/effects/registry.ts";
 import { attestConfiguration } from "../../src/guard/effects/configuration.ts";
 import { effectDigest } from "../../src/guard/effects/facts.ts";
 import type { GuardEffectBatch } from "../../src/guard/effects/types.ts";
+import { configurationFact } from "../helpers/configuration-mutation.ts";
 
-const target = effectDigest("repo", "branch");
 function fixture() {
   const ledger = createOperatorAuthorityRuntime({
     owner: "owner",
@@ -31,7 +31,7 @@ function fixture() {
     seed: {
       binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
       evidence: [
-        { id: "operator", source: "start", text: "Commit the changes", execution_id: "run" },
+        { id: "operator", source: "start", text: "Update the settings", execution_id: "run" },
       ],
       review_context: {
         kind: "goal",
@@ -39,45 +39,32 @@ function fixture() {
       },
     },
   });
-  const batch: GuardEffectBatch = {
-    reviewability: "static",
-    facts: [
-      {
-        id: "git.commit",
-        class: "local_mutation",
-        inference: "bounded",
-        target: { kind: "repository", digest: target },
-        constraints: { head_sha: "a".repeat(40) },
-        attestation: "complete",
-        reviewability: "static",
-        analysis_issues: [],
-      },
-    ],
-  };
+  const registry = createGuardEffectRegistry();
+  const fact = configurationFact(registry);
+  const batch: GuardEffectBatch = { reviewability: "static", facts: [fact] };
   const envelope: AuthorityEnvelopeV1 = {
     version: 1,
     revision: ledger.reader.snapshot().revision,
     objectives: [
       {
         id: "outcome",
-        summary: "Commit changes",
-        target_digests: [target],
+        summary: "Update the workspace settings",
+        target_digests: [fact.target!.digest],
         evidence_ids: ["operator"],
       },
     ],
     grants: [
       {
-        id: "commit",
-        effect_id: "git.commit",
+        id: "operational",
+        effect_id: fact.id,
         relation: "direct",
-        target_digests: [target],
-        constraints: batch.facts[0]!.constraints,
+        target_digests: [fact.target!.digest],
+        constraints: fact.constraints,
         evidence_ids: ["operator"],
       },
     ],
     exclusions: [],
   };
-  const registry = createGuardEffectRegistry();
   return { ledger, batch, envelope, registry };
 }
 function response(args: unknown): LLMCallResult {
@@ -120,22 +107,23 @@ describe("effect review through the production Judge runtime", () => {
               : effectDecision(params, {
                   decision: "allow",
                   relation: "direct",
-                  grant_ids: ["commit"],
+                  grant_ids: ["operational"],
                 });
           },
         },
       });
-    expect((await create().review(batch, {}, "command_guard")).decision).toBe("allow");
+    expect((await create().review(batch, {}, "configure_clarvis")).decision).toBe("allow");
     expect(ledger.reader.snapshot().envelope_context_revision).toBe("plan-1");
-    expect((await create().review(batch, {}, "command_guard")).decision).toBe("allow");
+    expect((await create().review(batch, {}, "configure_clarvis")).decision).toBe("allow");
     expect(stages).toEqual(["compile", "decide", "decide"]);
     live = false;
-    expect((await create().review(batch, {}, "command_guard")).decision).toBe("allow");
+    expect((await create().review(batch, {}, "configure_clarvis")).decision).toBe("allow");
     expect(stages).toEqual(["compile", "decide", "decide", "compile", "decide"]);
     expect(ledger.reader.snapshot().envelope_context_revision).toBeUndefined();
   });
   test("retains historical target exclusions without admitting historical target grants", () => {
     const { ledger, registry, batch, envelope } = fixture();
+    const target = batch.facts[0]!.target!.digest;
     const exclusions = [{ effect_id: "workspace.content.write", target_digests: [target] }];
     expect(installAuthorityEnvelope(ledger.reader, { ...envelope, exclusions })).toBe(true);
     const nextTarget = effectDigest("other", "branch");
@@ -189,7 +177,10 @@ describe("effect review through the production Judge runtime", () => {
         batch,
       ),
     ).toBeUndefined();
-    const restricted = { ...envelope, exclusions: [{ effect_id: "git.push" }] };
+    const restricted = {
+      ...envelope,
+      exclusions: [{ effect_id: "clarvis.operational_config.write" }],
+    };
     expect(installAuthorityEnvelope(ledger.reader, restricted)).toBe(true);
     expect(validateAuthorityEnvelope(envelope, ledger.reader, registry, batch)).toBeUndefined();
     expect(validateAuthorityEnvelope(restricted, ledger.reader, registry, batch)).toEqual(
@@ -202,13 +193,20 @@ describe("effect review through the production Judge runtime", () => {
     const reader = {
       snapshot: () => ({
         ...state,
-        ceiling: { ...envelope, grants: [], exclusions: [{ effect_id: "git.push" }] },
+        ceiling: {
+          ...envelope,
+          grants: [],
+          exclusions: [{ effect_id: "clarvis.operational_config.write" }],
+        },
       }),
     };
     expect(validateAuthorityEnvelope(envelope, reader, registry, batch)).toBeUndefined();
     const withoutGrants = { ...envelope, grants: [] };
     expect(validateAuthorityEnvelope(withoutGrants, reader, registry, batch)).toBeUndefined();
-    const narrowed = { ...withoutGrants, exclusions: [{ effect_id: "git.push" }] };
+    const narrowed = {
+      ...withoutGrants,
+      exclusions: [{ effect_id: "clarvis.operational_config.write" }],
+    };
     expect(validateAuthorityEnvelope(narrowed, reader, registry, batch)).toEqual(narrowed);
     const unchanged = { snapshot: () => ({ ...state, ceiling: envelope }) };
     expect(validateAuthorityEnvelope(envelope, unchanged, registry, batch)).toEqual(envelope);
@@ -236,18 +234,19 @@ describe("effect review through the production Judge runtime", () => {
   });
   test("composes direct effects with bounded prerequisites without widening either grant", async () => {
     const { ledger, registry, batch, envelope } = fixture();
-    batch.facts.push({
-      ...batch.facts[0]!,
-      id: "workspace.inspect",
-      class: "read",
-      constraints: {},
+    const prerequisite = configurationFact(registry, {
+      canonicalPath: "notes.md",
+      root: "workspace",
+      surface: "workspace",
     });
+    batch.facts.push(prerequisite);
     envelope.grants.push({
-      ...envelope.grants[0]!,
-      id: "inspect",
-      effect_id: "workspace.inspect",
+      id: "content",
+      effect_id: prerequisite.id,
       relation: "bounded_prerequisite",
-      constraints: {},
+      target_digests: [prerequisite.target!.digest],
+      constraints: prerequisite.constraints,
+      evidence_ids: ["operator"],
     });
     const service = effectReviewFixture({
       authority: ledger.reader,
@@ -261,12 +260,12 @@ describe("effect review through the production Judge runtime", () => {
             : effectDecision(params, {
                 decision: "allow",
                 relation: "bounded_prerequisite",
-                grant_ids: ["commit", "inspect"],
+                grant_ids: ["operational", "content"],
               });
         },
       },
     });
-    expect(await service.review(batch, {}, "command_guard")).toMatchObject({
+    expect(await service.review(batch, {}, "configure_clarvis")).toMatchObject({
       decision: "allow",
       relation: "bounded_prerequisite",
     });
@@ -293,7 +292,7 @@ describe("effect review through the production Judge runtime", () => {
           return effectDecision(params, {
             decision: "allow",
             relation: "direct",
-            grant_ids: ["commit"],
+            grant_ids: ["operational"],
           });
         },
       },
@@ -304,44 +303,6 @@ describe("effect review through the production Judge runtime", () => {
     expect(compilePayload?.operator_evidence).toEqual(ledger.reader.snapshot().evidence);
     expect(JSON.stringify(compilePayload)).toContain("May I update SAFE-09 through SAFE-11?");
     expect(JSON.stringify(compilePayload)).toContain("Authorize the three lines");
-  });
-  test("reserves a CI retry once across concurrent decisions and persisted continuation", async () => {
-    const { ledger, registry, batch, envelope } = fixture();
-    Object.assign(batch.facts[0]!, {
-      id: "github.actions.rerun_failed",
-      class: "external_mutation",
-      constraints: { head_sha: "a".repeat(40), failed_only: true, attempts: 1, run_id: "42" },
-    });
-    Object.assign(envelope.grants[0]!, {
-      effect_id: "github.actions.rerun_failed",
-      constraints: batch.facts[0]!.constraints,
-    });
-    const service = effectReviewFixture({
-      authority: ledger.reader,
-      registry,
-      providers: [{ name: "anthropic", kind: "anthropic" }],
-      defaultModel: "anthropic/test",
-      llm: {
-        async call(params) {
-          return effectReviewInput(params).transition === undefined
-            ? compileResponse(envelope)
-            : effectDecision(params, {
-                decision: "allow",
-                relation: "direct",
-                grant_ids: ["commit"],
-              });
-        },
-      },
-    });
-    const results = await Promise.all([
-      service.review(batch, {}, "command_guard"),
-      service.review(batch, {}, "command_guard"),
-    ]);
-    expect(results.filter((result) => result.decision === "allow")).toHaveLength(1);
-    expect(
-      ledger.finalize({ status: "completed", disposition: "checkpoint" }).consumed_effects,
-    ).toHaveLength(1);
-    expect((await service.review(batch, {}, "command_guard")).decision).toBe("unsure");
   });
   test.each([
     [new ProviderError("sensitive auth detail", { kind: "auth" }), "auth"],
@@ -364,7 +325,7 @@ describe("effect review through the production Judge runtime", () => {
         llm: { call: () => Promise.reject(error) },
       });
       expect(
-        await service.review(batch, { command: "sensitive command" }, "command_guard"),
+        await service.review(batch, { command: "sensitive command" }, "configure_clarvis"),
       ).toMatchObject({
         decision: "unsure",
         failure_kind: kind,
@@ -393,7 +354,7 @@ describe("effect review through the production Judge runtime", () => {
         defaultModel: "anthropic/test",
         llm: { call: () => Promise.resolve(compileResponse(output)) },
       });
-      expect((await service.review(batch, {}, "command_guard")).failure_kind).toBe(
+      expect((await service.review(batch, {}, "configure_clarvis")).failure_kind).toBe(
         "invalid_response",
       );
       expect(audit.events("effect_review.reviewer.completed")).toHaveLength(0);
@@ -408,7 +369,7 @@ describe("effect review through the production Judge runtime", () => {
     expect(validateAuthorityEnvelope(envelope, ledger.reader, registry, batch)).toEqual(envelope);
     for (const change of [
       { effect_id: "invented" },
-      { effect_id: "git.history_rewrite" },
+      { effect_id: "destructive.delete" },
       { evidence_ids: ["assistant"] },
       { target_digests: ["other"] },
       { constraints: { force: true } },
@@ -437,7 +398,7 @@ describe("effect review through the production Judge runtime", () => {
               ? compileResponse(envelope)
               : effectDecision(params, {
                   decision: "allow",
-                  grant_ids: ["commit"],
+                  grant_ids: ["operational"],
                   relation: "direct",
                 });
           },
@@ -448,22 +409,22 @@ describe("effect review through the production Judge runtime", () => {
         },
       ),
     });
-    expect((await service.review(batch, { command: "untrusted" }, "command_guard")).decision).toBe(
-      "allow",
-    );
-    expect((await service.review(batch, { command: "untrusted" }, "command_guard")).attempts).toBe(
-      0,
-    );
+    expect(
+      (await service.review(batch, { command: "untrusted" }, "configure_clarvis")).decision,
+    ).toBe("allow");
+    expect(
+      (await service.review(batch, { command: "untrusted" }, "configure_clarvis")).attempts,
+    ).toBe(0);
     expect(calls).toHaveLength(2);
     expect(trace.entries().map((entry) => entry.detail)).toEqual([
       expect.objectContaining({
         path: "effect_review",
-        consumer: "command_guard",
+        consumer: "configure_clarvis",
         stage: "compile",
       }),
       expect.objectContaining({
         path: "effect_review",
-        consumer: "command_guard",
+        consumer: "configure_clarvis",
         stage: "decide",
       }),
     ]);
@@ -513,11 +474,11 @@ describe("effect review through the production Judge runtime", () => {
         },
       },
     });
-    expect(await service.review(batch, {}, "command_guard")).toMatchObject({
+    expect(await service.review(batch, {}, "configure_clarvis")).toMatchObject({
       decision: "unsure",
       failure_kind: "invalid_response",
     });
-    await service.review(batch, {}, "command_guard");
+    await service.review(batch, {}, "configure_clarvis");
     expect(calls).toBe(9);
   });
   test("a concurrent steer invalidates the model's previous revision", async () => {
@@ -534,7 +495,7 @@ describe("effect review through the production Judge runtime", () => {
         },
       },
     });
-    expect((await service.review(batch, {}, "command_guard")).decision).toBe("unsure");
+    expect((await service.review(batch, {}, "configure_clarvis")).decision).toBe("unsure");
     expect(ledger.reader.snapshot().envelope).toBeUndefined();
   });
   test("a concurrent Plan revision invalidates compilation before authority is installed", async () => {
@@ -566,7 +527,7 @@ describe("effect review through the production Judge runtime", () => {
         },
       },
     });
-    const decision = service.review(batch, {}, "command_guard");
+    const decision = service.review(batch, {}, "configure_clarvis");
     await entered.promise;
     planRevision = "plan:2";
     release.resolve();
@@ -587,7 +548,7 @@ describe("effect review through the production Judge runtime", () => {
         },
       },
     });
-    expect(await service.review(batch, {}, "command_guard")).toMatchObject({
+    expect(await service.review(batch, {}, "configure_clarvis")).toMatchObject({
       decision: "unsure",
       failure_kind: "timeout",
       attempts: 1,
@@ -629,7 +590,7 @@ test("a refused exact revision is shared across consumers but not across correct
     facts: [attestConfiguration({ ...mutation, operation: "write" }, registry)],
   };
   expect(service.wasRefused(equivalent)).toBe(true);
-  expect(await service.review(equivalent, {}, "command_guard")).toMatchObject({
+  expect(await service.review(equivalent, {}, "configure_clarvis")).toMatchObject({
     decision: "deny",
     attempts: 0,
   });
@@ -685,5 +646,5 @@ test("a late automatic decision cannot override a concurrent refusal of the same
       },
     },
   });
-  expect(await service.review(batch, {}, "command_guard")).toMatchObject({ decision: "deny" });
+  expect(await service.review(batch, {}, "configure_clarvis")).toMatchObject({ decision: "deny" });
 });

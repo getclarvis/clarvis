@@ -59,8 +59,6 @@ export interface ShellGuardDecision {
  * Command entries may include `*` globs matched against normalized bash segments.
  */
 export interface ShellGuardOptions {
-  /** Complete host proof may refine syntactic uncertainty, never a deterministic denial. */
-  attestedReviewable?: (ctx: GuardContext) => boolean;
   /** Auto review lets the judge answer non-sensitive Host asks after deterministic rules. */
   allowHostJudge?: boolean;
   /** Host-attested run placement; omitted means ordinary host execution. */
@@ -337,8 +335,7 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
         };
       }
     }
-    const attested = opts?.attestedReviewable?.(ctx) === true;
-    if (ctx.shell?.undecidable && !attested && denied !== undefined && denied.length > 0) {
+    if (ctx.shell?.undecidable && denied !== undefined && denied.length > 0) {
       return {
         matched: "undecidable",
         verdict: "deny",
@@ -358,7 +355,7 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
             : "this command will run outside the sandbox on the host",
       };
     }
-    if (ctx.shell?.undecidable && !attested) {
+    if (ctx.shell?.undecidable) {
       return {
         matched: "undecidable",
         verdict: "ask",

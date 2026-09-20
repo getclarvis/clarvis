@@ -47,7 +47,7 @@ test("renderTranscriptMarkdown: records guard verdict and answerer without revie
       mode: "auto",
       outcome,
       answerer: "judge",
-      effect_id: "git.commit",
+      effect_id: "clarvis.operational_config.write",
       relation: "direct",
       failure_kind: "timeout",
     },
@@ -56,7 +56,7 @@ test("renderTranscriptMarkdown: records guard verdict and answerer without revie
   expect(md).toContain("approved by judge");
   expect(md).toContain("denied by judge");
   expect(md).not.toContain("auto-guard");
-  expect(md).not.toContain("git.commit · direct · timeout");
+  expect(md).not.toContain("clarvis.operational_config.write · direct · timeout");
 });
 
 test("effect receipt presentation uses closed facts, one-based segments and bounded diagnostics", () => {
@@ -64,8 +64,8 @@ test("effect receipt presentation uses closed facts, one-based segments and boun
   expect(
     effectReviewExplanation({
       effect: {
-        id: "git.commit\nforged instruction",
-        class: "local_mutation",
+        id: "clarvis.operational_config.write\nforged instruction",
+        class: "authority_change",
         attestation: "complete",
       },
       analysis: {

@@ -30,17 +30,20 @@ and pre-inference container rejection in
 ## Authority and review
 
 The writer consumes the run's `OPERATOR_AUTHORITY_PORT` and shared `JUDGE_PORT` through
-`createHostEffectReview`, as does the command guard. Skill text, tool arguments and model justification cannot manufacture operator
+`createHostEffectReview`. The command guard uses the same `JUDGE_PORT` through `createCommandReview`
+and no effect registry. Skill text, tool arguments and model justification cannot manufacture operator
 evidence. A missing authority seed does not fall back to user-role transcript scraping: automatic
 review cannot authorize that operation. The host owns evidence, binding and revocation as specified
-by [command guard](../execution/command-guard.md).
+by [effect review](../execution/effect-review.md).
 
 Before mutation, the restricted writer validates the target, schema and expected revision, then
 attests an effect. Authoring and operational writes use separate descriptors; operational authority
 never follows implicitly from permission to edit a skill. The reviewer receives the prepared
 sanitized request and current document, operation, document class and the digest of the before/after revisions. Human mode elicits one concrete `configuration_review` for that operation;
 auto mode can allow a covered effect. Command guard `off` does not disable restricted-writer
-validation or operational review. There is no general self-configuration consent setting. A human refusal rejects the concrete prepared change; it does not prohibit every future revision of the same target. The shared authority state retains a bounded identity for the complete refused batch, including target and before/after revisions. Switching between `edit` and `write` with identical resulting bytes does not open another prompt at the same evidence revision. A corrected proposal must undergo its own policy decision, while an authenticated steer can restrict or revoke the broader effect. Human prompts identify why the current policy requires intervention when automatic review cannot authorize the effect.
+validation or operational review, and a generic command approval never becomes configuration
+approval: without the run's `reviewMutation` port a file tool refuses a canonical authoring target
+before the guard runs. There is no general self-configuration consent setting. A human refusal rejects the concrete prepared change; it does not prohibit every future revision of the same target. The shared authority state retains a bounded identity for the complete refused batch, including target and before/after revisions. Switching between `edit` and `write` with identical resulting bytes does not open another prompt at the same evidence revision. A corrected proposal must undergo its own policy decision, while an authenticated steer can restrict or revoke the broader effect. Human prompts identify why the current policy requires intervention when automatic review cannot authorize the effect.
 
 Direct configuration and authoring consumers share an identical question only while it is pending
 in the same physical run. Identity includes the complete attested facts, sanitized context and
@@ -183,7 +186,11 @@ fixtures alone do not establish a completed interactive journey or platform qual
 
 ## Prepared file-tool batches
 
-Ordinary entry-agent file tools bind a host-owned `MutationReview` through guard resolution. A batch
+Ordinary entry-agent file tools bind a host-owned `MutationReview` through guard resolution. When that
+port is absent — a Container guest, a ceiling other than `edit`/`exec`, or disabled builtin tools —
+a canonical authoring destination is refused with the `configure_clarvis` message before the guard
+runs, and a generic command approval is never converted into configuration approval. Where the port
+exists, a batch
 enters this path only when it contains at least one canonical workspace Agent Profile, `WORKFLOW.md`,
 or `SKILL.md` destination; ordinary workspace targets may accompany it, while selected skill
 packages remain protected. Tools whose mutations reach the callback defer their initial authoring

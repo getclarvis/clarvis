@@ -8,7 +8,7 @@ import { createOperatorAuthorityRuntime } from "../../src/guard/operator-authori
 import { createGuardEffectRegistry } from "../../src/guard/effects/registry.ts";
 import type { GuardEffectBatch } from "../../src/guard/effects/types.ts";
 import { judgePort } from "../helpers/judge-port.ts";
-
+import { configurationFact } from "../helpers/configuration-mutation.ts";
 function fixture(change?: (receipt: JudgeEffectReceipt) => void) {
   const authority = createOperatorAuthorityRuntime({
     owner: "owner",
@@ -16,25 +16,18 @@ function fixture(change?: (receipt: JudgeEffectReceipt) => void) {
     seed: {
       binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
       evidence: [
-        { id: "operator", source: "start", text: "Commit the changes", execution_id: "run" },
+        {
+          id: "operator",
+          source: "start",
+          text: "Update the workspace settings",
+          execution_id: "run",
+        },
       ],
     },
   });
-  const batch: GuardEffectBatch = {
-    reviewability: "static",
-    facts: [
-      {
-        id: "git.commit",
-        class: "local_mutation",
-        inference: "bounded",
-        target: { kind: "repository", digest: "target" },
-        constraints: { head_sha: "a".repeat(40) },
-        attestation: "complete",
-        reviewability: "static",
-        analysis_issues: [],
-      },
-    ],
-  };
+  const registry = createGuardEffectRegistry();
+  const fact = configurationFact(registry);
+  const batch: GuardEffectBatch = { reviewability: "static", facts: [fact] };
   const candidate: AuthorityEnvelopeV1 = {
     version: 1,
     revision: authority.reader.snapshot().revision,
@@ -43,10 +36,10 @@ function fixture(change?: (receipt: JudgeEffectReceipt) => void) {
     grants: [
       {
         id: "grant",
-        effect_id: "git.commit",
+        effect_id: fact.id,
         relation: "direct",
-        target_digests: ["target"],
-        constraints: batch.facts[0]!.constraints,
+        target_digests: [fact.target!.digest],
+        constraints: fact.constraints,
         evidence_ids: ["operator"],
       },
     ],
@@ -76,7 +69,7 @@ function fixture(change?: (receipt: JudgeEffectReceipt) => void) {
   });
   const deps = {
     authority: authority.reader,
-    registry: createGuardEffectRegistry(),
+    registry,
     judge: () => port,
   };
   return {
@@ -89,13 +82,13 @@ function fixture(change?: (receipt: JudgeEffectReceipt) => void) {
   };
 }
 
-test("separate consumers reuse the ledger and share exact refusals without a WeakMap service", async () => {
+test("configuration review and refusals share the host ledger across services", async () => {
   const f = fixture();
-  expect((await f.create().review(f.batch, {}, "command_guard")).decision).toBe("allow");
+  expect((await f.create().review(f.batch, {}, "configure_clarvis")).decision).toBe("allow");
   expect((await f.create().review(f.batch, {}, "configure_clarvis")).decision).toBe("allow");
   expect(f.counts()).toEqual({ compiles: 1, decisions: 2 });
   f.create().refuse(f.batch, f.authority.reader.snapshot().revision);
-  expect((await f.create().review(f.batch, {}, "command_guard")).decision).toBe("deny");
+  expect((await f.create().review(f.batch, {}, "configure_clarvis")).decision).toBe("deny");
   expect(f.counts()).toEqual({ compiles: 1, decisions: 2 });
 });
 
@@ -111,8 +104,8 @@ test("a reused receipt remains bound when equivalent call properties are reorder
         .create()
         .review(
           f.batch,
-          { tool: "shell", args: { command: "git commit", cwd: "." } },
-          "command_guard",
+          { surface: "operational", target: { path: ".clarvis/settings.json" } },
+          "configure_clarvis",
         )
     ).decision,
   ).toBe("allow");
@@ -122,8 +115,8 @@ test("a reused receipt remains bound when equivalent call properties are reorder
         .create()
         .review(
           f.batch,
-          { args: { cwd: ".", command: "git commit" }, tool: "shell" },
-          "command_guard",
+          { target: { path: ".clarvis/settings.json" }, surface: "operational" },
+          "configure_clarvis",
         )
     ).decision,
   ).toBe("allow");
@@ -139,7 +132,7 @@ test.each(["grant", "relation", "revision", "token"] as const)(
       if (field === "revision") receipt.revision++;
       if (field === "token") receipt.transition_token = "invented";
     });
-    expect(await f.create().review(f.batch, {}, "command_guard")).toMatchObject({
+    expect(await f.create().review(f.batch, {}, "configure_clarvis")).toMatchObject({
       decision: "unsure",
       failure_kind: "invalid_response",
     });
@@ -148,8 +141,8 @@ test.each(["grant", "relation", "revision", "token"] as const)(
 
 test("an installed exclusion denies without a decide call or human fallback", async () => {
   const f = fixture();
-  f.candidate.exclusions = [{ effect_id: "git.commit" }];
-  expect((await f.create().review(f.batch, {}, "command_guard")).decision).toBe("deny");
+  f.candidate.exclusions = [{ effect_id: "clarvis.operational_config.write" }];
+  expect((await f.create().review(f.batch, {}, "configure_clarvis")).decision).toBe("deny");
   expect(f.counts()).toEqual({ compiles: 1, decisions: 0 });
   expect(f.authority.reader.snapshot().envelope?.exclusions).toEqual(f.candidate.exclusions);
 });
@@ -157,7 +150,7 @@ test("an installed exclusion denies without a decide call or human fallback", as
 test("missing composition throws instead of returning unsure", async () => {
   const f = fixture();
   const review = createHostEffectReview({ ...f.deps, judge: () => undefined });
-  await expect(review.review(f.batch, {}, "command_guard")).rejects.toBeInstanceOf(
+  await expect(review.review(f.batch, {}, "configure_clarvis")).rejects.toBeInstanceOf(
     JudgeArchitectureError,
   );
 });
@@ -179,7 +172,7 @@ test.each(["compile", "decide"] as const)(
       });
     const review = createHostEffectReview({ ...f.deps, audit });
     expect(
-      (await review.review(f.batch, { secret: "PRIVATE_CASE" }, "command_guard")).decision,
+      (await review.review(f.batch, { secret: "PRIVATE_CASE" }, "configure_clarvis")).decision,
     ).toBe("unsure");
     const events = audit.events("effect_review.reviewer.failed");
     expect(events).toHaveLength(1);
@@ -200,20 +193,30 @@ test("human-only facts never enter semantic inference", async () => {
   expect(f.counts()).toEqual({ compiles: 0, decisions: 0 });
 });
 
-test("one-attempt effects are consumed once across concurrent consumers", async () => {
+test("the audit schema admits a configuration attested event and rejects removed effects and the command consumer", () => {
   const f = fixture();
-  const constraints = { failed_only: true, attempts: 1, head_sha: "a".repeat(40), run_id: "7" };
-  Object.assign(f.batch.facts[0]!, {
-    id: "github.actions.rerun_failed",
-    class: "external_mutation",
-    constraints,
+  const audit = recordingLogger();
+  createHostEffectReview({ ...f.deps, audit }).attest(f.batch.facts[0]!, "configure_clarvis");
+  const [event] = audit.events("effect_review.effect.attested");
+  expect(effectReviewAuditSchema.safeParse(event).success).toBe(true);
+  expect(effectReviewAuditSchema.safeParse({ ...event, effect_id: "git.push" }).success).toBe(
+    false,
+  );
+  expect(effectReviewAuditSchema.safeParse({ ...event, consumer: "command_guard" }).success).toBe(
+    false,
+  );
+});
+
+test("a refusal without a host ledger stays bounded and loud", () => {
+  const registry = createGuardEffectRegistry();
+  const review = createHostEffectReview({ registry, judge: () => undefined });
+  const batch = (index: number): GuardEffectBatch => ({
+    reviewability: "static",
+    facts: [configurationFact(registry, { canonicalPath: `.clarvis/settings-${index}.json` })],
   });
-  Object.assign(f.candidate.grants[0]!, { effect_id: "github.actions.rerun_failed", constraints });
-  const answers = await Promise.all([
-    f.create().review(f.batch, {}, "command_guard"),
-    f.create().review(f.batch, {}, "command_guard"),
-  ]);
-  expect(answers.filter((answer) => answer.decision === "allow")).toHaveLength(1);
-  expect(f.authority.reader.snapshot().consumed_effects).toHaveLength(1);
-  expect((await f.create().review(f.batch, {}, "command_guard")).decision).toBe("unsure");
+  for (let index = 0; index < 32; index++) {
+    review.refuse(batch(index), 0);
+    expect(review.wasRefused(batch(index))).toBe(true);
+  }
+  expect(() => review.refuse(batch(32), 0)).toThrow("Configuration refusal budget exhausted.");
 });

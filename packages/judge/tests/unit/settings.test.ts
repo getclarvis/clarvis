@@ -55,19 +55,16 @@ describe("Judge settings ownership", () => {
     { max_retries: -1 },
     { max_retries: 0.5 },
     { on_unsure: "allow" },
-    { rollout: "ci_retry" },
+    { rollout: "local" },
     { grants: [] },
   ])("rejects invalid request override %j", (value) => {
     expect(guardJudgeSchema.safeParse(value).success).toBe(false);
   });
 
-  test.each(["shadow", "local", "ci_retry"])(
-    "preserves rollout %s only on operator settings",
-    (rollout) => {
-      expect(effectReviewSchema.parse({ rollout })).toEqual({ rollout });
-      expect(guardJudgeSchema.safeParse({ rollout }).success).toBe(false);
-    },
-  );
+  test.each(["shadow", "local"])("preserves rollout %s only on operator settings", (rollout) => {
+    expect(effectReviewSchema.parse({ rollout })).toEqual({ rollout });
+    expect(guardJudgeSchema.safeParse({ rollout }).success).toBe(false);
+  });
 
   test("preserves strict settings limits and operator-only registration", () => {
     for (const value of [
@@ -76,6 +73,7 @@ describe("Judge settings ownership", () => {
       { max_retries: -1 },
       { timeout_ms: 0 },
       { rollout: "unknown" },
+      { rollout: "ci_retry" },
       { guidance: "not a settings field" },
     ])
       expect(effectReviewSchema.safeParse(value).success).toBe(false);

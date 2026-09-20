@@ -488,6 +488,12 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
           assertControl(connection, entry, observation.epoch);
           await source.respond(response);
         },
+        async present(presentation) {
+          assertControl(connection, entry, observation.epoch);
+          return source.present === undefined
+            ? { accepted: false }
+            : await source.present(presentation);
+        },
       });
       assertConnection(connection, control !== "observe");
       if (entry.handoff !== undefined)

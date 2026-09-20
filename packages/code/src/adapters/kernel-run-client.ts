@@ -37,7 +37,7 @@ import type {
   ProjectRef,
   WorkspaceRef,
 } from "@clarvis/protocol";
-import type { ElicitRequestParams, ElicitResult } from "./elicit-types.ts";
+import type { ElicitRequestParams, ElicitPresenter, ElicitResult } from "./elicit-types.ts";
 import type { EventSource } from "./event-span.ts";
 import { hasKernelErrorCode } from "./kernel-errors.ts";
 import { detachObserved } from "../core/tasks.ts";
@@ -70,7 +70,19 @@ export interface KernelRunClientCallbacks {
   onEvent(event: RunEvent, source: EventSource, executionId: string): void;
   onProgress?(progress: RunProgress, executionId: string): void;
   onMemoryIngest?(notice: MemoryIngestNotice): void;
-  onElicit?(params: ElicitRequestParams): Promise<ElicitResult>;
+  onElicit?(params: ElicitRequestParams, present: ElicitPresenter): Promise<ElicitResult>;
+  /**
+   * A question the kernel retired by itself, so the UI must drop exactly that
+   * prompt.
+   *
+   * @param id - the kernel's identity for the settled question.
+   * @param executionId - the run that question belonged to, for diagnostics.
+   * @remarks Reported for an answer given elsewhere, a decision window that
+   *   elapsed and a run torn down with a question still pending. The run client
+   *   then skips the answer it would otherwise send, because the kernel has
+   *   already settled that id.
+   */
+  onElicitSettled?(id: string, executionId: string): void;
 }
 
 /** The run-slice surface a {@link createKernelRunClient} exposes to the UI's run host. */
@@ -160,6 +172,17 @@ interface ProtoRunHandle extends ProtocolRunHandle {
   settleObservation?(consumed: Promise<unknown>): Promise<void>;
 }
 
+/**
+ * How long the TUI keeps a model question open once the block is on screen.
+ *
+ * @remarks Declared by the frontend on every interactive run, because the
+ *   window belongs to the surface that can actually present a question: a
+ *   headless caller, the HTTP server or a task-driven run omits the policy and
+ *   keeps only the operational wait ceiling. The kernel starts the window when
+ *   the frontend confirms presentation, never when the request is queued.
+ */
+const ASK_USER_WINDOW_MS = 30_000;
+
 function toStartParams(
   input: StartRunInput,
   executionId: string,
@@ -190,12 +213,19 @@ function toStartParams(
     ...(!container && input.task ? { task: input.task } : {}),
     ...(!container && input.skill ? { skill: input.skill } : {}),
     ...(input.goalIntent ? { goal_intent: input.goalIntent } : {}),
+    elicit_policy: { ask_user_window_ms: ASK_USER_WINDOW_MS },
   };
 }
 
 /** Build the TUI run adapter over a protocol client supplied by the application composition. */
 export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClient {
   const { createKernel, callbacks } = deps;
+  /**
+   * Stable identity of this frontend for presentation confirmations: it names
+   * the UI instance, never a human, and lets the kernel tell a re-confirmation
+   * of the same question from a different surface presenting it.
+   */
+  const presenterId = "code:" + crypto.randomUUID();
   let kernel: KernelClient | undefined;
   let lastCapabilities: KernelCapabilities | undefined;
   let lastExtensionProfile: ExtensionProfileRunRef | undefined;
@@ -337,27 +367,71 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     return { action: "cancel" };
   }
 
-  function wireElicit(handle: ProtoRunHandle): void {
+  function wireElicit(handle: ProtoRunHandle, executionId: string): void {
     handle.onElicit((req: ElicitationRequest) => {
       const params: ElicitRequestParams = {
         message: req.prompt,
         kind: req.kind,
         ...(req.detail !== undefined ? { detail: req.detail } : {}),
         requestedSchema: req.schema ?? { type: "object", properties: {} },
+        id: req.id,
+        ...(req.window_ms !== undefined ? { windowMs: req.window_ms } : {}),
       };
+      /**
+       * Confirm this exact question is on screen, naming the question and this
+       * frontend.
+       *
+       * @returns the kernel's remaining-window projection, or `undefined` when
+       *   no window applies or the kernel could not be reached.
+       * @remarks The kernel starts the window on the first accepted
+       *   confirmation; a duplicate or late confirmation reports the remaining
+       *   time without restarting it. A failed round trip only costs the
+       *   countdown.
+       */
+      const present = async (): Promise<number | undefined> => {
+        if (handle.present === undefined) return undefined;
+        const ack = await handle
+          .present({ id: req.id, presenter: presenterId })
+          .catch((error: unknown) => {
+            diagnosticEvent("elicit.present.failed", { execution_id: executionId, error }, "warn");
+            return undefined;
+          });
+        return ack?.accepted ? ack.remaining_ms : undefined;
+      };
+      /**
+       * The kernel retired this exact question, so the UI stops showing it.
+       *
+       * @remarks Registered before the question is handed to the UI and
+       *   released once it is answered, so a later question in the same run
+       *   cannot inherit the observer.
+       */
+      const offSettled = handle.onElicitSettled?.((id) => {
+        if (id !== req.id) return;
+        callbacks.onElicitSettled?.(req.id, executionId);
+      });
       detachObserved("kernel_elicitation_response", async () => {
-        let result: ElicitResult;
         try {
-          result = callbacks.onElicit ? await callbacks.onElicit(params) : { action: "decline" };
-        } catch (error) {
-          result = reportElicitFailure(error);
+          let result: ElicitResult;
+          try {
+            result = callbacks.onElicit
+              ? await callbacks.onElicit(params, present)
+              : { action: "decline" };
+          } catch (error) {
+            result = reportElicitFailure(error);
+          }
+          // A question the kernel already settled is retired by id: answering
+          // it would only be a no-op round trip against a run that may be
+          // gone, and the UI never produced this outcome.
+          if (result.settled === true) return;
+          const response: ElicitationResponse = {
+            id: req.id,
+            action: result.action,
+            ...(result.content !== undefined ? { content: result.content } : {}),
+          };
+          await handle.respond(response);
+        } finally {
+          offSettled?.();
         }
-        const response: ElicitationResponse = {
-          id: req.id,
-          action: result.action,
-          ...(result.content !== undefined ? { content: result.content } : {}),
-        };
-        await handle.respond(response);
       });
     });
   }
@@ -420,7 +494,7 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     const started = handleP.then((handle) => {
       protocolHandle = handle;
       if (handle.interactive !== false) {
-        wireElicit(handle);
+        wireElicit(handle, executionId);
         elicitationWired = true;
       }
       return { handle, pump: pumpEvents(executionId, handle) };
@@ -458,7 +532,7 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
                 throw new Error("hosted control is unavailable");
               await handle.acquireControl(control);
               if (!elicitationWired) {
-                wireElicit(handle);
+                wireElicit(handle, executionId);
                 elicitationWired = true;
               }
             },

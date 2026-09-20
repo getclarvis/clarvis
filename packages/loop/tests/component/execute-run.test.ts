@@ -14,6 +14,7 @@ import { MockLLM, mockConnections, mockMCPFactory } from "../helpers/fixtures.ts
 import { makeTestTraceStore } from "../contract/_helpers.ts";
 import { makeExecutionRecord } from "../helpers/execution-record.ts";
 import { createAskUserCapability } from "../../src/runtime/capabilities/ask-user.ts";
+import { WINDOW_ELAPSED_GUIDANCE } from "../../src/runtime/tools/index.ts";
 
 const BODY = {
   messages: [{ role: "user", content: "hi" }],
@@ -510,6 +511,66 @@ describe("executeRun (shared engine)", () => {
       expect(state.revision).toBe(1);
     },
   );
+
+  it("does not admit a window expiry as operator evidence and hands the model the guidance", async () => {
+    const state: OperatorAuthorityState = {
+      version: 1,
+      status: "active",
+      revision: 1,
+      binding: { owner_key_name: "o", session_id: "session", controller_epoch: "epoch" },
+      evidence: [{ id: "seed", source: "start", text: "Inspect", execution_id: "run" }],
+    };
+    let admissions = 0;
+    const llm = new MockLLM({
+      script: [
+        { toolCalls: [{ name: "ask_user", arguments: { question: "Proceed?" } }] },
+        { text: "done" },
+      ],
+    });
+    const result = await executeRun({
+      rawBody: {
+        ...BODY,
+        profiles: [
+          {
+            name: "solo",
+            model: "anthropic/x",
+            tools: [],
+            iteration_limit: 3,
+            grants: ["ask_user"],
+          },
+        ],
+      },
+      owner: "o",
+      operatorAuthoritySeed: { binding: state.binding, evidence: state.evidence },
+      elicit: async (params) => {
+        expect(params.origin).toBe("model");
+        return { action: "decline", windowElapsed: true };
+      },
+      deps: makeDeps({
+        capabilities: [createAskUserCapability()],
+        llm,
+        operatorAuthority() {
+          return {
+            reader: { snapshot: () => structuredClone(state) },
+            onSteer() {},
+            onElicitation() {
+              admissions++;
+            },
+            finalize: () => structuredClone(state),
+          };
+        },
+      }),
+    });
+
+    expect(result.response.status).toBe("completed");
+    expect(admissions).toBe(0);
+    expect(state.revision).toBe(1);
+    const followUp = llm.calls[1];
+    expect(followUp).toBeDefined();
+    const transcript = JSON.stringify(followUp!.messages);
+    expect(transcript).toContain(WINDOW_ELAPSED_GUIDANCE);
+    expect(transcript).not.toContain("User did not respond within the wait window.");
+  });
 
   it("runs a subagent-only request to completion and returns an execution id + response", async () => {
     const { executionId, response } = await executeRun({

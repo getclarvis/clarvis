@@ -1,6 +1,7 @@
 import type { ErrorCode, ExecutionMode, ProviderErrorDetails, RunEndedReason } from "./run.ts";
 import type { AgentRole, AssistantMessagePhase, ToolTransport } from "./api.ts";
 import type { FinalizationDisposition } from "./finalization.ts";
+import type { ElicitNoResponseReason } from "./elicit.ts";
 
 /**
  * Every trace kind the engine itself records, as a runtime list.
@@ -424,8 +425,10 @@ export interface CompactionSkippedDetail {
 
 /**
  * A question the agent put to the user and its resolution: the `question` text,
- * the `outcome` (`accept`, `decline`, or `cancel`), and — when accepted — the
- * `answer` and any `options` offered.
+ * the `outcome` (`accept`, `decline`, or `cancel`), why an unanswered question
+ * ended (`no_response`, so a reconstructed transcript never presents silence as
+ * a human decision), and — when accepted — the `answer` and any `options`
+ * offered.
  */
 export interface UserQuestionDetail {
   agent: AgentRole;
@@ -435,6 +438,8 @@ export interface UserQuestionDetail {
   outcome: "accept" | "decline" | "cancel";
   answer?: string;
   options?: string[];
+  /** Set with a `decline` that nobody made; see {@link ElicitNoResponseReason}. */
+  no_response?: ElicitNoResponseReason;
 }
 
 /**

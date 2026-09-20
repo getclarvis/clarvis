@@ -128,11 +128,13 @@ export interface TracePort {
 
 export type {
   Elicit,
+  ElicitOrigin,
   ElicitParams,
   ElicitRawResult,
   ElicitRequestedSchema,
   ElicitationAction,
   ElicitationOutcome,
+  ElicitNoResponseReason,
 } from "./elicit.ts";
 export type { AgentRegistryPort } from "./agents-port.ts";
 export type { LLMProvider, ToolChoice } from "./llm-port.ts";

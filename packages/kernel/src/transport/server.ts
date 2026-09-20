@@ -23,6 +23,7 @@ import {
 } from "./operations.ts";
 import { createUnavailableProviderAuthService } from "../subscriptions/unavailable.ts";
 import { createHostingDispatcher } from "./hosting-server.ts";
+import { wirePresentation } from "./hosting-codec.ts";
 
 /**
  * The sink a connection pushes server→client notifications through — one per
@@ -370,12 +371,14 @@ export function createKernelServer(
           [M.hostingCancel]: ["subscription_id"],
           [M.hostingInterruptTool]: ["subscription_id", "tool_execution_id"],
           [M.hostingRespond]: ["subscription_id", "response"],
+          [M.hostingPresent]: ["subscription_id", "presentation"],
           [M.runsStart]: ["params"],
           [M.runsSteer]: ["execution_id", "message"],
           [M.runsCompact]: ["execution_id", "request", "options"],
           [M.runsCancel]: ["execution_id"],
           [M.runsInterruptTool]: ["execution_id", "tool_execution_id"],
           [M.runsRespond]: ["execution_id", "response"],
+          [M.runsPresent]: ["execution_id", "presentation"],
           [M.configSubscribe]: ["kinds", "subscription_id"],
           [M.configUnsubscribe]: ["subscription_id"],
           [M.goalsSubscribe]: ["session_id", "subscription_id"],
@@ -405,6 +408,18 @@ export function createKernelServer(
         handle.onElicit((request) => {
           suppressSecondaryRejection(
             notifications.notify(N.runElicitation, { request }),
+            "the kernel notification channel",
+          );
+        });
+        // The client showing a question learns the kernel retired it without
+        // having to answer it; a handle whose bridge pushes no settlement
+        // registers nothing.
+        handle.onElicitSettled?.((elicitation_id) => {
+          suppressSecondaryRejection(
+            notifications.notify(N.runElicitationSettled, {
+              execution_id: handle.execution_id,
+              elicitation_id,
+            }),
             "the kernel notification channel",
           );
         });
@@ -517,6 +532,7 @@ export function createKernelServer(
             case M.hostingCancel:
             case M.hostingInterruptTool:
             case M.hostingRespond:
+            case M.hostingPresent:
               return hosted.handle(method, p);
             case M.hello: {
               if (helloStarted) {
@@ -619,6 +635,15 @@ export function createKernelServer(
                 p.response as ElicitationResponse,
               );
               return {};
+            case M.runsPresent: {
+              const presentation = wirePresentation(p.presentation);
+              if (presentation === null)
+                throw kernelError("invalid_request", "presentation is required");
+              const handle = liveOrThrow(p.execution_id as string);
+              return handle.present === undefined
+                ? { accepted: false }
+                : await handle.present(presentation);
+            }
             case M.goalsSubscribe: {
               const id = p.subscription_id;
               if (typeof id !== "string" || !/^[a-zA-Z0-9._:-]{1,256}$/u.test(id))

@@ -17,7 +17,10 @@ import {
 import type { HostedProjection } from "./projection.ts";
 
 type Observation = Omit<HostedRunAttachment, "run">;
-type Controls = Pick<RunHandle, "steer" | "compact" | "cancel" | "interruptTool" | "respond">;
+type Controls = Pick<
+  RunHandle,
+  "steer" | "compact" | "cancel" | "interruptTool" | "respond" | "present"
+>;
 
 /** One live subscriber; its failure must never become abandonment of the execution's source. */
 interface Subscriber {
@@ -346,6 +349,12 @@ export function createHostedExecution(options: HostedExecutionOptions): HostedEx
               if (!questions.has(response.id))
                 throw kernelError("not_found", "elicitation has already settled");
               await controls.respond(response);
+            },
+            async present(presentation) {
+              assertObserver();
+              if (!questions.has(presentation.id)) return { accepted: false };
+              if (controls.present === undefined) return { accepted: true };
+              return controls.present(presentation);
             },
             onElicit(listener) {
               const stop = subscribe(subscriber.questions, listener);

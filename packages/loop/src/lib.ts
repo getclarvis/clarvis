@@ -114,6 +114,8 @@ export { isMcpRequestTimeout } from "@clarvis/mcp-client";
 export { ElicitTimeoutError } from "./runtime/tools/ask-user-tool.ts";
 export type {
   Elicit,
+  ElicitNoResponseReason,
+  ElicitOrigin,
   ElicitParams,
   ElicitRawResult,
   ElicitRequestedSchema,

@@ -139,7 +139,7 @@ admission; receipt absence alone never permits replay. A definite refusal does n
 operation identity, allowing clients to retry after resolving its cause.
 The existing RPC catalog exposes that registry through an explicitly hosted connection.
 Attachment transfers snapshot metadata and subscribes to
-sequenced tail, result, elicitation and physical-closure notifications.
+sequenced tail, result, elicitation (question and settlement) and physical-closure notifications.
 An operator can explicitly acquire or take over control for an existing observation without
 creating another snapshot or stream. Only that observation receives the new controller epoch;
 the previous controller is fenced.
@@ -768,7 +768,21 @@ request does not poison later admissions with an unserializable exception object
 
 Run elicitation is buffered until a client registers `RunHandle.onElicit`.
 Questions raised during startup therefore survive the asynchronous
-`runs.start` boundary.
+`runs.start` boundary. The same connection pushes `run.elicitation_settled`
+(`{ execution_id, elicitation_id }`) when the run retires a question, and the
+client then drops a request still sitting in that buffer and reports the
+settlement to every `onElicitSettled` observer, so a frontend showing the prompt
+removes it without answering an id the kernel already settled.
+
+An interactive frontend declares its question window on the run-creation request
+(`elicit_policy.ask_user_window_ms`, carried into the bridge by
+`elicitWindowFor`), confirms the question is on screen with `runs.present` and
+the hosted `hosting.present`, and keeps the operational `elicit_wait_ms` ceiling
+for a question nobody ever presented. Only a request the engine marked
+`origin: "model"` with `kind: "ask_user"` receives a window; a relayed MCP
+question, a guard confirmation, a plan or workflow review and the soft-budget ask
+keep their existing policies. See
+[elicitation](../../specs/cross-cutting/elicitation.md).
 
 `RunHandle.steer` acknowledges a message only after the loop drains it from the run-scoped steering
 source. If the run closes first, the pending call rejects with `not_found`; a host can therefore

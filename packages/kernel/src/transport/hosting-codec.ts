@@ -1,4 +1,5 @@
 import type {
+  ElicitationPresentation,
   ElicitationRequest,
   HostedRunAttachment,
   HostedRunFrame,
@@ -37,6 +38,13 @@ export function wireId(value: unknown): value is string {
   );
 }
 
+/** Presentation identities are bounded scalars; the presenter is never an authority. */
+export function wirePresentation(value: unknown): ElicitationPresentation | null {
+  if (!wireRecord(value)) return null;
+  if (!wireId(value.id) || !wireId(value.presenter)) return null;
+  return { id: value.id, presenter: value.presenter };
+}
+
 function only(value: Record<string, unknown>, keys: string[]): boolean {
   return Object.keys(value).every((key) => keys.includes(key));
 }
@@ -66,6 +74,12 @@ function validHostedQuestion(value: unknown): value is ElicitationRequest {
     !wireId(value.execution_id) ||
     typeof value.kind !== "string" ||
     typeof value.prompt !== "string"
+  )
+    return false;
+  const window = value.window_ms;
+  if (
+    window !== undefined &&
+    !(typeof window === "number" && Number.isSafeInteger(window) && window > 0)
   )
     return false;
   const detail = value.detail;

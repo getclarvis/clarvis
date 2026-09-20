@@ -800,7 +800,7 @@ async function runApp(
       if (target?.ownsExecution(executionId)) target.setRunStatus(progressStatusText(p));
     },
     onMemoryIngest: (notice) => callbackTarget.current()?.onMemoryIngest(notice),
-    onElicit: (params) => {
+    onElicit: (params, present) => {
       if (!isActiveWorkspaceCallbackTarget(callbackTarget, runCallbackTarget)) {
         return Promise.resolve({ action: "cancel" });
       }
@@ -808,12 +808,13 @@ async function runApp(
         "Clarvis needs approval: " + (params.message.split("\n", 1)[0] ?? "").trim(),
       );
       attention.setTitle("waiting for approval");
-      return elicit.ask(params).finally(() => {
+      return elicit.ask(params, present).finally(() => {
         if (isActiveWorkspaceCallbackTarget(callbackTarget, runCallbackTarget)) {
           attention.setTitle(callbackTarget.current()?.runActive() ? "running" : null);
         }
       });
     },
+    onElicitSettled: (id) => elicit.settle(id),
   });
   const createWorkspaceRunClient = (
     workspaceId: string,
@@ -1592,6 +1593,8 @@ async function runApp(
     registerDraftRestore: (fn) => runHost.registerDraftRestore(fn),
     elicit: () => elicit.request(),
     resolveElicit: (r) => elicit.resolve(r),
+    elicitRemaining: elicit.remaining,
+    presentElicit: () => elicit.present(),
     switching: () => false,
   };
   const sessionControls: AppSessionControls = {

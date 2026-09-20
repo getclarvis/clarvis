@@ -9,6 +9,7 @@ import { kernelError } from "../core/errors.ts";
 import { M, N } from "./wire.ts";
 import {
   wireId,
+  wirePresentation,
   wireRecord,
   type HostedAttachmentReply,
   type HostedObservationNote,
@@ -144,6 +145,16 @@ export function createHostingDispatcher(options: {
             );
           await handle.respond(params.response as unknown as ElicitationResponse);
           break;
+        case M.hostingPresent: {
+          const presentation = wirePresentation(params.presentation);
+          if (presentation === null)
+            throw kernelError(
+              "invalid_request",
+              "hosted presentation requires an elicitation identity",
+            );
+          if (handle.present === undefined) return { accepted: false };
+          return handle.present(presentation);
+        }
         default:
           throw kernelError("invalid_request", "unknown hosted observation operation");
       }

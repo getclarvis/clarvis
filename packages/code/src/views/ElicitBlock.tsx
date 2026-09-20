@@ -1,7 +1,8 @@
-import type { JSX } from "solid-js";
+import type { Accessor, JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { InputRenderable } from "@opentui/core";
 import { PLAN_REVIEW_ELICIT_KIND } from "../adapters/elicit-types.ts";
+import { ELICIT_NO_RESPONSE_TEXT, elicitCountdownText } from "../adapters/elicit-types.ts";
 import { effectReviewExplanation } from "../core/transcript/effect-review.ts";
 import type {
   ElicitCommandDetail,
@@ -58,6 +59,15 @@ export function ElicitBlock(props: {
   onOpenPlan?: () => void;
   /** Uses the full width of a containing split pane instead of the reading cap. */
   fillAvailableWidth?: () => boolean;
+  /**
+   * Milliseconds left in this question's decision window, as projected by the
+   * kernel after the block was confirmed on screen.
+   *
+   * @remarks Read by the countdown line only. The kernel owns when the window
+   *   ends; at zero the block stops offering controls and says the decision
+   *   went back to the model, and the kernel's own closure removes it.
+   */
+  remaining?: Accessor<number | null>;
 }): JSX.Element {
   const form = parseElicitForm(props.request);
   const fields = form.fields;
@@ -71,6 +81,16 @@ export function ElicitBlock(props: {
       : isPlanReview || isWorkflowReview
         ? tokens.accent2
         : tokens.accent;
+  /** Whether a host window policy applies to this question. Guard
+   * confirmations, plan/workflow reviews, relayed MCP questions and headless
+   * runs declare no window and render no countdown. */
+  const windowed = (): boolean =>
+    props.request.kind === "ask_user" && props.request.windowMs !== undefined;
+  const windowLeft = (): number | null => props.remaining?.() ?? null;
+  /** Local zero is display state only: the grant of time starts and ends in the
+   * kernel, which settles the question and pushes the closure that unmounts
+   * this block. */
+  const expired = (): boolean => windowed() && windowLeft() === 0;
 
   /** `title` + `revision N · M tasks · retention: keep`, or null when the plan
    * projection has not arrived. */
@@ -130,6 +150,7 @@ export function ElicitBlock(props: {
   }
 
   function submit(merged: Record<string, string>): void {
+    if (expired()) return;
     if (form.mode === "url") {
       props.onResolve(DECLINE_RESULT);
       return;
@@ -160,6 +181,7 @@ export function ElicitBlock(props: {
   }
 
   function pickDigit(n: number): void {
+    if (expired()) return;
     const f = activeField();
     if (!isChoice(f) || n > f.options.length) return;
     const option = f.options[n - 1];
@@ -190,7 +212,8 @@ export function ElicitBlock(props: {
         description: `Choose and immediately submit answer option ${index + 1}`,
         category: "primary",
         surfaces: ["full-help"],
-        enabled: () => isChoice(activeField()) && index < activeField()!.options.length,
+        enabled: () =>
+          isChoice(activeField()) && index < activeField()!.options.length && !expired(),
         run: () => pickDigit(index + 1),
       }),
     );
@@ -255,6 +278,7 @@ export function ElicitBlock(props: {
           hintPriority: 100,
           hintGroup: "primary",
           essential: true,
+          enabled: () => !expired(),
           run: accept,
         }),
         ...(isPlanReview && props.onOpenPlan
@@ -285,6 +309,7 @@ export function ElicitBlock(props: {
           footerLabel: isGuard ? "deny" : isWorkflowReview ? "do not run" : "decline",
           hintPriority: 80,
           hintGroup: "mutation",
+          enabled: () => !expired(),
           run: () => props.onResolve(DECLINE_RESULT),
         }),
         uiCommand({
@@ -297,6 +322,7 @@ export function ElicitBlock(props: {
           hintPriority: 90,
           hintGroup: "escape",
           essential: true,
+          enabled: () => !expired(),
           run: () => props.onResolve(CANCEL_RESULT),
         }),
         ...choiceCommands,
@@ -346,6 +372,13 @@ export function ElicitBlock(props: {
                 ? "Workflow approval required"
                 : "Agent asks"}
       </text>
+      <Show when={windowed()}>
+        <text fg={tokens.muted} flexShrink={0}>
+          {expired()
+            ? ELICIT_NO_RESPONSE_TEXT
+            : elicitCountdownText(windowLeft() ?? props.request.windowMs ?? 0)}
+        </text>
+      </Show>
       <Show when={planSummary()} keyed>
         {(summary: { title: string; meta: string }) => (
           <box paddingTop={1} flexDirection="column" flexShrink={0}>
@@ -389,81 +422,83 @@ export function ElicitBlock(props: {
       </Show>
 
       <box paddingTop={1} flexDirection="column" flexShrink={0}>
-        <For each={fields}>
-          {(f, i) => {
-            const on = (): boolean => i() === active();
-            return (
-              <box flexDirection="column" paddingTop={i() === 0 ? 0 : 1} flexShrink={0}>
-                <text selectable={false}>
-                  <span style={{ fg: on() ? tokens.accent : tokens.muted }}>
-                    {on() ? glyph("chevronRight") + " " : "  "}
-                  </span>
-                  <span style={{ fg: on() ? tokens.fg : tokens.muted }}>
-                    {fieldLabel(f.name, f.title)}
-                  </span>
-                  <span style={{ fg: f.required ? tokens.warn : tokens.muted }}>
-                    {f.required ? " — required" : " — optional"}
-                  </span>
-                </text>
-                <Show when={f.description}>
-                  <text fg={tokens.muted} wrapMode="word" paddingLeft={2} selectable={false}>
-                    {f.description}
+        <Show when={!expired()}>
+          <For each={fields}>
+            {(f, i) => {
+              const on = (): boolean => i() === active();
+              return (
+                <box flexDirection="column" paddingTop={i() === 0 ? 0 : 1} flexShrink={0}>
+                  <text selectable={false}>
+                    <span style={{ fg: on() ? tokens.accent : tokens.muted }}>
+                      {on() ? glyph("chevronRight") + " " : "  "}
+                    </span>
+                    <span style={{ fg: on() ? tokens.fg : tokens.muted }}>
+                      {fieldLabel(f.name, f.title)}
+                    </span>
+                    <span style={{ fg: f.required ? tokens.warn : tokens.muted }}>
+                      {f.required ? " — required" : " — optional"}
+                    </span>
                   </text>
-                </Show>
+                  <Show when={f.description}>
+                    <text fg={tokens.muted} wrapMode="word" paddingLeft={2} selectable={false}>
+                      {f.description}
+                    </text>
+                  </Show>
 
-                <Show when={isChoice(f)}>
-                  <box paddingLeft={2} flexDirection="column" flexShrink={0}>
-                    <ChoiceRows
-                      choices={f.options.map((o, oi) => ({
-                        value: o.value,
-                        label: oi < 10 ? `[${oi === 9 ? 0 : oi + 1}] ${o.label}` : o.label,
-                        description: oi < 10 ? "answer now" : "",
-                      }))}
-                      selected={() => choiceIndex(f)}
-                      labelWidth={Math.max(
-                        ...f.options.map((o, index) => o.label.length + (index < 10 ? 4 : 0)),
-                      )}
-                      base={tokens.bg}
-                      onSelect={(index) => {
-                        setActive(i());
-                        setChoice(f, index);
-                      }}
-                      onConfirm={accept}
-                    />
-                  </box>
-                </Show>
+                  <Show when={isChoice(f)}>
+                    <box paddingLeft={2} flexDirection="column" flexShrink={0}>
+                      <ChoiceRows
+                        choices={f.options.map((o, oi) => ({
+                          value: o.value,
+                          label: oi < 10 ? `[${oi === 9 ? 0 : oi + 1}] ${o.label}` : o.label,
+                          description: oi < 10 ? "answer now" : "",
+                        }))}
+                        selected={() => choiceIndex(f)}
+                        labelWidth={Math.max(
+                          ...f.options.map((o, index) => o.label.length + (index < 10 ? 4 : 0)),
+                        )}
+                        base={tokens.bg}
+                        onSelect={(index) => {
+                          setActive(i());
+                          setChoice(f, index);
+                        }}
+                        onConfirm={accept}
+                      />
+                    </box>
+                  </Show>
 
-                <Show when={f.kind === "text" || f.kind === "number"}>
-                  <box
-                    border
-                    borderStyle="rounded"
-                    customBorderChars={borderChars()}
-                    borderColor={on() ? tokens.accent : tokens.muted}
-                    paddingLeft={1}
-                    marginLeft={2}
-                    flexShrink={0}
-                  >
-                    <input
-                      ref={(el: InputRenderable) => {
-                        inputs[f.name] = el;
-                        el.value = values()[f.name] ?? "";
-                        el.onContentChange = () => setValues({ ...values(), [f.name]: el.value });
-                      }}
-                      placeholder={
-                        f.kind === "number"
-                          ? "number" + glyph("ellipsis")
-                          : "type your answer" + glyph("ellipsis")
-                      }
-                      placeholderColor={tokens.muted}
-                      textColor={tokens.fg}
-                      focusedTextColor={tokens.fg}
-                    />
-                  </box>
-                </Show>
-              </box>
-            );
-          }}
-        </For>
+                  <Show when={f.kind === "text" || f.kind === "number"}>
+                    <box
+                      border
+                      borderStyle="rounded"
+                      customBorderChars={borderChars()}
+                      borderColor={on() ? tokens.accent : tokens.muted}
+                      paddingLeft={1}
+                      marginLeft={2}
+                      flexShrink={0}
+                    >
+                      <input
+                        ref={(el: InputRenderable) => {
+                          inputs[f.name] = el;
+                          el.value = values()[f.name] ?? "";
+                          el.onContentChange = () => setValues({ ...values(), [f.name]: el.value });
+                        }}
+                        placeholder={
+                          f.kind === "number"
+                            ? "number" + glyph("ellipsis")
+                            : "type your answer" + glyph("ellipsis")
+                        }
+                        placeholderColor={tokens.muted}
+                        textColor={tokens.fg}
+                        focusedTextColor={tokens.fg}
+                      />
+                    </box>
+                  </Show>
+                </box>
+              );
+            }}
+          </For>
+        </Show>
       </box>
     </box>
   );

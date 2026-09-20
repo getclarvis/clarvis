@@ -778,6 +778,31 @@ Enter. Production: `packages/code/src/views/ElicitBlock.tsx` (`pickDigit`, `subm
 (immediate numbered submission, arrow-plus-Enter submission, tenth-option zero binding and text-field
 deactivation).
 
+### `ask_user` decision window countdown (`views/ElicitBlock.tsx`, `adapters/elicit-slot.ts`)
+
+A model-originated `ask_user` question whose request declares `window_ms` shows one discreet extra
+line — `The model decides in N s.` — counting down the kernel's own projection. The slot confirms the
+presentation once the block is really on screen (the visibility transition in `views/App.tsx`) and
+then only re-renders that number from the projection the kernel answered; ticks never touch the
+transcript, the composer or focus. Reaching zero replaces the line with
+`No response in time; decision returned to the model.` and retires that block's form, choices and
+decision commands, while the outcome remains the kernel's to settle: the closure arrives by id
+through `RunHandle.onElicitSettled`, `wireElicit` hands it to the host and `ElicitSlot.settle`
+removes exactly that question — no answer is sent for an id the kernel already retired, and a
+settlement naming another question or run leaves this block alone. Guard confirmations, plan/workflow
+reviews and any request without `window_ms`
+render exactly as before — no countdown, no expired state. Production:
+`packages/code/src/adapters/elicit-slot.ts` (`ask`, `present`, `remaining`, `settle`),
+`packages/code/src/views/ElicitBlock.tsx` (`windowed`, `expired`),
+`packages/code/src/adapters/elicit-types.ts` (`elicitCountdownText`, `ELICIT_NO_RESPONSE_TEXT`,
+`ElicitResult.settled`), `packages/code/src/adapters/kernel-run-client.ts` (`wireElicit`) and
+`packages/code/src/runtime.tsx` (`onElicitSettled`).
+Test: `packages/code/tests/unit/elicit-slot.test.ts`,
+`packages/code/tests/component/kernel-run-client.test.ts` (a settled question is closed for the UI
+without an answer going back) and
+`packages/code/tests/integration/elicit-block-render.test.tsx` (windowed countdown, windowed expired
+state without controls, guard unaffected, no countdown when the request declares no window).
+
 Guard and configuration decision fields project the wire values in affirmative-first order without
 changing those values: `allow, deny` normally and `allow, allow_session, deny` when the session grant
 exists. Their labels remain `allow once`, `allow for this session` and `deny`. The parser assigns

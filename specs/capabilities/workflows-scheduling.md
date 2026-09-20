@@ -403,12 +403,24 @@ the second's spend.
 | --- | --- | --- |
 | reservation | uses `heldReservation` or takes one; `null` → `budget_exhausted` with `EMPTY_USAGE`, no assemble, no run | `packages/workflows/src/run-leader.ts` |
 | assemble | await `ctx.assemble(spec, {parentRunId: ctx.managerRunId, runId})`, then `execution_id` is overwritten with `runId` | `packages/workflows/src/run-leader.ts` |
-| channels | `elicitForLeader(runId)`, `steerForLeader(runId)`, `onLeaderEvent` wrapped to tag the run id | `packages/workflows/src/run-leader.ts` |
+| channels | `elicitForLeader(runId)`, `steerForLeader(runId)`, `onLeaderEvent` wrapped to tag the run id; the leader's questions drain through the manager run's own elicitation channel | `packages/workflows/src/run-leader.ts` |
 | execute | `ctx.runDeps.executeRun({rawBody, owner, deps, externalSignal: ctx.signal, capabilities:[budget-only capability]})` | `packages/workflows/src/run-leader.ts` |
 | account | `reservation.reconcile(response.usage)` | `packages/workflows/src/run-leader.ts` |
 | project | `status === "error"` → `LeaderResult.error = {code,message}`; otherwise status/result/usage passed through | `packages/workflows/src/run-leader.ts` |
 | fault | a thrown `executeRun` is caught, logged at `error` with a stack, and returned as `status:"error"`, `code:"leader_run_failed"` | `packages/workflows/src/run-leader.ts` |
 | always | `reservation.release()` | `packages/workflows/src/run-leader.ts` |
+
+A leader's prompt is multiplexed into the manager run's channel (`createElicitMux`), and the leader
+channel only prefixes the message with `[leader …]` while spreading the params — so a leader's
+question keeps its `kind` and its trusted `origin` and meets the same host policy as the manager's.
+The manager run's `elicit_policy` therefore covers the leaders of the same interactive experience;
+a leader run owns no bridge of its own. A prompt parked in the tree-wide queue starts its decision
+window only after it reaches the front and a frontend confirms it is on screen, so queue time never
+consumes the window. Production: `packages/workflows/src/elicit-mux.ts`,
+`packages/kernel/src/workflows/workflows-service.ts` (`elicitWindowFor` on the manager's start
+params). Test: `packages/workflows/tests/contract/elicit-mux.test.ts` (the leader channel preserves
+the request params behind its label) and `packages/kernel/tests/unit/elicit-bridge.test.ts` (the
+window keys on provenance and starts on presentation, for whatever enters that bridge).
 
 The capability list a leader run receives is **replaced**, not extended: exactly one tool-free
 capability carrying the reservation as its `outputBudget` (`packages/workflows/src/run-leader.ts`).

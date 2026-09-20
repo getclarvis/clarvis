@@ -657,6 +657,90 @@ describe("kernel loopback transport", () => {
     await kernel.close();
   });
 
+  it("presents a model question, expires its window and settles the silence as window_elapsed", async () => {
+    const { kernel, transport } = makeRemote({
+      script: [
+        { toolCalls: [{ name: "ask_user", arguments: { question: "proceed?" } }] },
+        { text: "Decided without an answer." },
+      ],
+      extraAgents: [{ name: "asker", grants: ["ask_user"] }],
+    });
+    const client = await connectKernelClient(transport);
+    const handle = await client.runs.start({
+      messages: [{ role: "user", content: "ask away" }],
+      agent: "asker",
+      elicit_policy: { ask_user_window_ms: 60 },
+    });
+    const ack = Promise.withResolvers<{ accepted: boolean; remaining_ms?: number }>();
+    const windows: (number | undefined)[] = [];
+    handle.onElicit((request) => {
+      windows.push(request.window_ms);
+      void handle
+        .present?.({ id: request.id, presenter: "transport-test" })
+        .then(ack.resolve, ack.reject);
+    });
+    const resolved: RunEvent[] = [];
+    for await (const event of handle.events) {
+      if (event.type === "elicitation_resolved") resolved.push(event);
+    }
+
+    expect((await handle.done).status).toBe("completed");
+    expect(windows).toEqual([60]);
+    const presented = await ack.promise;
+    expect(presented.accepted).toBe(true);
+    expect(presented.remaining_ms).toBeGreaterThan(0);
+    expect(presented.remaining_ms).toBeLessThanOrEqual(60);
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]).toMatchObject({ outcome: "decline", no_response: "window_elapsed" });
+
+    await client.close();
+    await kernel.close();
+  });
+
+  it("reports each settled windowed question by id to the direct client presenting it", async () => {
+    const { kernel, transport } = makeRemote({
+      script: [
+        { toolCalls: [{ name: "ask_user", arguments: { question: "proceed?" } }] },
+        { toolCalls: [{ name: "ask_user", arguments: { question: "and now?" } }] },
+        { text: "Decided without answers." },
+      ],
+      extraAgents: [{ name: "asker", grants: ["ask_user"] }],
+    });
+    const client = await connectKernelClient(transport);
+    const handle = await client.runs.start({
+      messages: [{ role: "user", content: "ask away" }],
+      agent: "asker",
+      elicit_policy: { ask_user_window_ms: 60 },
+    });
+    const asked: string[] = [];
+    const settled: string[] = [];
+    const bothSettled = Promise.withResolvers<void>();
+    handle.onElicit((request) => {
+      asked.push(request.id);
+      void handle.present?.({ id: request.id, presenter: "transport-test" });
+    });
+    const off = handle.onElicitSettled?.((id) => {
+      settled.push(id);
+      if (settled.length === asked.length && asked.length === 2) bothSettled.resolve();
+    });
+    expect(off).toBeFunction();
+    const resolved: RunEvent[] = [];
+    for await (const event of handle.events) {
+      if (event.type === "elicitation_resolved") resolved.push(event);
+    }
+
+    await bothSettled.promise;
+    expect(settled).toEqual(asked);
+    expect(resolved).toHaveLength(2);
+    for (const event of resolved)
+      expect(event).toMatchObject({ outcome: "decline", no_response: "window_elapsed" });
+    expect((await handle.done).status).toBe("completed");
+    off?.();
+
+    await client.close();
+    await kernel.close();
+  });
+
   it("closes the connection when the notification sender rejects or stalls", async () => {
     for (const senderFailure of ["reject", "stall"] as const) {
       const { kernel, transport } = makeRemote();

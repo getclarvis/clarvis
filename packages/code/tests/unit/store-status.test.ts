@@ -688,6 +688,57 @@ test("an elicitation request remains a pending attributed frontier annotation", 
   });
 });
 
+test("a question the kernel closed without an answer records why, never a human decision", () => {
+  const nodes = replay([
+    ev({ type: "run_started", at: 0 }),
+    ev({ type: "elicitation_requested", at: 1, agent: "lead", question: "Which environment?" }),
+    ev({
+      type: "elicitation_resolved",
+      at: 2,
+      agent: "lead",
+      question: "Which environment?",
+      outcome: "decline",
+      no_response: "window_elapsed",
+    }),
+  ]);
+
+  expect(nodes.find((node) => node.kind === "annotation")).toMatchObject({
+    status: "ok",
+    text: "asked: Which environment?\nanswered: no response in time; decision returned to the model",
+  });
+});
+
+test("an operational wait bound and a human decision stay visually distinct", () => {
+  const bound = replay([
+    ev({ type: "run_started", at: 0 }),
+    ev({
+      type: "elicitation_resolved",
+      at: 1,
+      agent: "lead",
+      question: "Which environment?",
+      outcome: "decline",
+      no_response: "wait_bound_elapsed",
+    }),
+  ]);
+  expect(bound.find((node) => node.kind === "annotation")).toMatchObject({
+    text: "asked: Which environment?\nanswered: no response; the wait window elapsed",
+  });
+
+  const human = replay([
+    ev({ type: "run_started", at: 0 }),
+    ev({
+      type: "elicitation_resolved",
+      at: 1,
+      agent: "lead",
+      question: "Which environment?",
+      outcome: "decline",
+    }),
+  ]);
+  expect(human.find((node) => node.kind === "annotation")).toMatchObject({
+    text: "asked: Which environment?\nanswered: decline",
+  });
+});
+
 test("user message keys stay unique after a reconcile shrinks the transcript (no silent drop)", () => {
   createRoot((dispose) => {
     const store = createTranscriptStore();

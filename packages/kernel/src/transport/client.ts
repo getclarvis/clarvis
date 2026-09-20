@@ -38,6 +38,7 @@ import {
   type HelloParams,
   type HelloResult,
   type RunElicitationNote,
+  type RunElicitationSettledNote,
   type RunEventNote,
   type RunResultNote,
   type RunStreamEndNote,
@@ -116,13 +117,17 @@ function deferred<T>(): Deferred<T> {
  *
  * @remarks {@link pendingElicits} buffers elicitation requests that arrive before
  *   the caller has registered any handler via `onElicit`; they are flushed the
- *   moment the first handler attaches.
+ *   moment the first handler attaches. {@link elicitSettledHandlers} observes the
+ *   questions the kernel retired by id, so a frontend can remove a prompt it is
+ *   showing without answering it — a question settled before any handler attached
+ *   never reaches that flush.
  */
 interface ClientRun {
   stream: EventStream<RunEvent>;
   resolveDone: (result: RunResult) => void;
   resolveClosed: () => void;
   elicitHandlers: ((req: ElicitationRequest) => void)[];
+  elicitSettledHandlers: ((id: string) => void)[];
   pendingElicits: ElicitationRequest[];
   resultReceived: boolean;
   streamEnded: boolean;
@@ -136,10 +141,12 @@ interface ClientRun {
  *   the returned kernel, whose {@link RemoteKernel.close} closes it.
  * @param opts - handshake options (client info, workspace, auth).
  * @returns a connected {@link RemoteKernel} whose services issue wire requests.
- * @remarks Before the handshake, this wires the four notification listeners
- *   ({@link N.runEvent}, {@link N.runElicitation}, {@link N.runResult},
- *   {@link N.configChange}) and, when the transport supports it, an `onClose`
- *   observer that settles every in-flight run as `unavailable`. `runs.start`
+ * @remarks Before the handshake, this wires the run, elicitation (request and
+ *   settlement), result, stream-end and config notification listeners
+ *   ({@link N.runEvent}, {@link N.runElicitation}, {@link N.runElicitationSettled},
+ *   {@link N.runResult}, {@link N.runStreamEnd}, {@link N.configChange}) and,
+ *   when the transport supports it, an `onClose` observer that settles every
+ *   in-flight run as `unavailable`. `runs.start`
  *   assigns an `execution_id` up front (client-supplied or a fresh UUID) so the
  *   handle's event stream is live before the start request resolves; a start that
  *   throws settles the run as `failed` rather than leaving it hanging. A failed
@@ -281,6 +288,16 @@ export async function connectKernelClient(
    */
   const isCommandDetail = (value: unknown): boolean =>
     elicitationCommandDetailSchema.safeParse(value).success;
+  /**
+   * A published decision window is a positive whole number of milliseconds or absent.
+   *
+   * @remarks The countdown a frontend renders and the confirmation it sends back both
+   *   start from this projection, so a malformed value must not reach either one. The
+   *   kernel remains the authority that expires the question; this only protects the
+   *   projection.
+   */
+  const isWindowMs = (value: unknown): boolean =>
+    typeof value === "number" && Number.isSafeInteger(value) && value > 0;
   observe(N.runElicitation, (params) => {
     if (
       !isRecord(params) ||
@@ -291,6 +308,7 @@ export async function connectKernelClient(
       typeof params.request.kind !== "string" ||
       typeof params.request.prompt !== "string" ||
       (params.request.detail !== undefined && !isCommandDetail(params.request.detail)) ||
+      (params.request.window_ms !== undefined && !isWindowMs(params.request.window_ms)) ||
       (params.request.kind === "guard_confirm" && !isCommandDetail(params.request.detail))
     ) {
       protocolViolation("invalid run.elicitation notification");
@@ -301,6 +319,25 @@ export async function connectKernelClient(
     if (run === undefined) return;
     if (run.elicitHandlers.length === 0) run.pendingElicits.push(request);
     else for (const handler of run.elicitHandlers) handler(request);
+  });
+  observe(N.runElicitationSettled, (params) => {
+    if (
+      !isRecord(params) ||
+      !hasOnly(params, ["execution_id", "elicitation_id"]) ||
+      typeof params.execution_id !== "string" ||
+      typeof params.elicitation_id !== "string"
+    ) {
+      protocolViolation("invalid run.elicitation_settled notification");
+      return;
+    }
+    const { execution_id, elicitation_id } = params as unknown as RunElicitationSettledNote;
+    const run = clientRuns.get(execution_id);
+    if (run === undefined) return;
+    // Drop the buffered copy first: a question the kernel retired must not be
+    // flushed to a handler that attaches a moment later.
+    const queued = run.pendingElicits.findIndex((request) => request.id === elicitation_id);
+    if (queued >= 0) run.pendingElicits.splice(queued, 1);
+    for (const handler of [...run.elicitSettledHandlers]) handler(elicitation_id);
   });
   observe(N.configChange, (params) => {
     if (
@@ -469,7 +506,7 @@ export async function connectKernelClient(
 
   /**
    * Build a client-side streaming handle (a {@link RunHandle}) whose
-   * `events`/`done`/`onElicit` are driven by the {@link N} run notifications the
+   * `events`/`done`/`onElicit`/`onElicitSettled` are driven by the {@link N} run notifications the
    * server pushes for this `execution_id`. Used by `runs.start`; a workflow uses
    * the same path, since the kernel routes a manager run through `runs.start`.
    *
@@ -485,6 +522,7 @@ export async function connectKernelClient(
       cancel: string;
       interruptTool: string;
       respond: string;
+      present: string;
     },
     params: { execution_id?: string },
   ): Promise<RunHandle> => {
@@ -523,6 +561,7 @@ export async function connectKernelClient(
       resolveDone: done.resolve,
       resolveClosed: runClosed.resolve,
       elicitHandlers: [],
+      elicitSettledHandlers: [],
       pendingElicits: [],
       resultReceived: false,
       streamEnded: false,
@@ -565,12 +604,27 @@ export async function connectKernelClient(
       async respond(response) {
         await transport.request(methods.respond, { execution_id: executionId, response });
       },
+      async present(presentation) {
+        return transport.request(methods.present, {
+          execution_id: executionId,
+          presentation,
+        });
+      },
       onElicit(handler) {
         const run = clientRuns.get(executionId);
         if (run === undefined) return;
         run.elicitHandlers.push(handler);
         const queued = run.pendingElicits.splice(0);
         for (const request of queued) handler(request);
+      },
+      onElicitSettled(handler) {
+        const run = clientRuns.get(executionId);
+        if (run === undefined) return () => {};
+        run.elicitSettledHandlers.push(handler);
+        return () => {
+          const index = run.elicitSettledHandlers.indexOf(handler);
+          if (index >= 0) run.elicitSettledHandlers.splice(index, 1);
+        };
       },
       buffered: () => {
         const stats = stream.stats();
@@ -607,6 +661,7 @@ export async function connectKernelClient(
           cancel: M.runsCancel,
           interruptTool: M.runsInterruptTool,
           respond: M.runsRespond,
+          present: M.runsPresent,
         },
         params,
       );

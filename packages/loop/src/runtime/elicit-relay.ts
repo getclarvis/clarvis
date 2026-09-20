@@ -24,6 +24,35 @@ export function createElicitSerializer(): <T>(job: () => Promise<T>) => Promise<
 }
 
 /**
+ * Rebuild a relayed MCP question as an explicitly external {@link ElicitParams}.
+ *
+ * @param params - the external server's elicit request params, treated as
+ *   untrusted input.
+ * @returns the host's own question object: the server's `message` and
+ *   `requestedSchema`, framed as a plain `ask_user` question and marked
+ *   `origin: "external"`.
+ * @remarks The relay is the trust boundary. Forwarding the server's object
+ *   verbatim let it borrow host vocabulary — a question could arrive named
+ *   `guard_confirm`, so a UI framed it as a command approval, or claim to be
+ *   the engine's own `ask_user`, which is exactly the claim no host may trust.
+ *   A relayed question keeps the operational wait bound and never receives an
+ *   interactive question window.
+ */
+function externalElicitParams(params: unknown): ElicitParams {
+  const source = (params ?? {}) as { message?: unknown; requestedSchema?: unknown };
+  return {
+    kind: "ask_user",
+    origin: "external",
+    message: typeof source.message === "string" ? source.message : "",
+    requestedSchema: (source.requestedSchema ?? {
+      type: "object",
+      properties: {},
+      required: [],
+    }) as ElicitParams["requestedSchema"],
+  };
+}
+
+/**
  * The two elicitation surfaces built from one user-facing `elicit`: the
  * `serializedElicit` the built-in `ask_user` tool calls, and the `relay` that
  * MCP servers use to request elicitation, both funneled through one serializer
@@ -84,7 +113,7 @@ export function buildElicitRelay(input: {
               const releaseCompute = clock?.pauseCompute();
               try {
                 const combined = combineSignals(clockHolder.signal ?? signal, incomingSignal);
-                const elicitParams = params as unknown as ElicitParams;
+                const elicitParams = externalElicitParams(params);
                 trace.record("elicitation_requested", {
                   source: "tool_relay",
                   question: typeof elicitParams.message === "string" ? elicitParams.message : "",

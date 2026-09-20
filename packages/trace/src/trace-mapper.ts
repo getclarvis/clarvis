@@ -367,6 +367,7 @@ function mapEntryRaw(
       if (d.subagent_instance_id !== undefined) event.subagent_instance_id = d.subagent_instance_id;
       if (d.answer !== undefined) event.answer = d.answer;
       if (d.options !== undefined) event.options = d.options;
+      if (d.no_response !== undefined) event.no_response = d.no_response;
       return event;
     }
     case "user_steering": {

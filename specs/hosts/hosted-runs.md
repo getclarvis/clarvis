@@ -419,8 +419,10 @@ immutable prefix followed by a contiguous tail, including when new events arrive
 sync. Completed runs can still issue snapshots until the registry disposes their retained projection.
 
 The pump registers one question observer and one settlement observer. Expired/answered questions
-leave its pending map, and responding to such an id fails with `not_found`. Repeated attaches do not
-register another callback on the source handle. Subscriber callbacks are removable and bounded.
+leave its pending map, and responding to such an id fails with `not_found`. A pending question keeps
+its published `window_ms` intact, so a reattachment replays the request with the deadline that is
+already running instead of arming a new one. Repeated attaches do not register another callback on
+the source handle. Subscriber callbacks are removable and bounded.
 
 Semantic `done`, source event end, physical `closed` and host reconciliation are independent. The
 execution's `settled` promise also awaits its owner's `commitTerminal` transaction. Successful
@@ -815,6 +817,14 @@ settlement, result, event end and physical/reconciliation closure. Stream end an
 cannot imply physical closure. Control calls target the connection's observation and its captured
 controller epoch, so takeover invalidates old controls without transferring a credential.
 
+A pending question is replayed to an attaching observation, so its client can present it again:
+`hosting.present` carries the `{ id, presenter }` presentation of one pending elicitation to the
+observed handle and answers with that handle's `ElicitationPresentationAck`, whose `remaining_ms` is
+the original deadline's remainder — a reattachment never restarts a question's window. A
+presentation for an unknown or already-settled id answers `accepted: false`, and a source handle
+without `present` answers the same instead of failing. Presenting is an observation control: it never
+answers the question and never grants execution authority.
+
 The remote client registers before admission, buffering at most 1,024 notifications/16 MiB until
 the reply binds the snapshot cut. It validates execution, workspace and generation and then requires
 contiguous sequence intervals after that cut. Tail buffers are also bounded at 1,024 items/16 MiB;
@@ -839,7 +849,8 @@ Production: `createHostingDispatcher`, `createHostingClient`, `decodeHostedNote`
 Test: [hosted-transport.test.ts](../../packages/kernel/tests/integration/hosted-transport.test.ts)
 exercises the same managed execution over loopback and a real local socket, file-backed snapshots,
 notifications before the attach response, sequence corruption, response loss, pending-question
-expiry, old controls, and completion with zero clients. It uses controlled run work and persistence
+expiry, an on-screen presentation that starts the question's window, a replayed presentation that
+reports the remaining time without restarting it, old controls, and completion with zero clients. It uses controlled run work and persistence
 ports; it does not establish independent process survival or subscription-provider execution.
 [hosting-client.test.ts](../../packages/kernel/tests/component/hosting-client.test.ts) exercises
 early/tail saturation, bounded question maps and listeners, late admission replies, and closure

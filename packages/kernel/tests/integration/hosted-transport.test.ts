@@ -20,6 +20,7 @@ import { createMemoryConfigStore } from "../../src/config.ts";
 import { createHostedRegistry } from "../../src/hosting/registry.ts";
 import { openHostedProjection } from "../../src/hosting/projection.ts";
 import { createManagedRun, type ManagedRunContext } from "../../src/runs/managed-run.ts";
+import { elicitWindowFor } from "../../src/runs/elicit-bridge.ts";
 import { createKernelServer } from "../../src/transport/server.ts";
 import { connectKernelClient } from "../../src/transport/client.ts";
 import { createLoopbackTransport } from "../../src/transport/loopback.ts";
@@ -117,8 +118,10 @@ async function fixture(kind: "loopback" | "local") {
         async commitIntent() {},
         async start() {
           starts++;
+          const elicitation = elicitWindowFor(value.params);
           return createManagedRun({
             executionId: value.params.execution_id,
+            ...(elicitation === undefined ? {} : { elicitation }),
             execute(context) {
               const end = Promise.withResolvers<RunResult>();
               contexts.set(context.executionId, context);
@@ -540,6 +543,59 @@ describe("hosted runs on the existing kernel RPC", () => {
       control: "takeover",
     });
     await expect(attached.handle.cancel()).rejects.toMatchObject({ code: "conflict" });
+    f.finish();
+  });
+
+  test("a presented hosted question keeps its single deadline across a reattachment", async () => {
+    const f = await fixture("local");
+    const first = await f.connect();
+    await first.hosting!.start({
+      ...input(),
+      params: {
+        ...input().params,
+        elicit_policy: { ask_user_window_ms: 30_000 },
+      },
+    });
+    await f.detach(first.hosting!);
+    await first.close();
+    const answer = f.contexts.get("run-1")!.elicit(
+      {
+        message: "Which option?",
+        kind: "ask_user",
+        origin: "model",
+        requestedSchema: { type: "object", properties: {}, required: [] },
+      },
+      {},
+    );
+    const second = await f.connect();
+    const attached = await second.hosting!.attach({
+      execution_id: "run-1",
+      host_generation: "generation",
+      control: "acquire",
+    });
+    expect(attached.pending_elicitations).toHaveLength(1);
+    expect(attached.pending_elicitations[0]!.window_ms).toBe(30_000);
+    const id = attached.pending_elicitations[0]!.id;
+    const opened = await attached.handle.present!({ id, presenter: "tui-1" });
+    expect(opened.accepted).toBe(true);
+    expect(opened.remaining_ms).toBeGreaterThan(0);
+    expect(opened.remaining_ms).toBeLessThanOrEqual(30_000);
+
+    const third = await f.connect();
+    const reattached = await third.hosting!.attach({
+      execution_id: "run-1",
+      host_generation: "generation",
+      control: "takeover",
+    });
+    const again = await reattached.handle.present!({ id, presenter: "tui-1" });
+    expect(again.accepted).toBe(true);
+    expect(again.remaining_ms).toBeGreaterThan(0);
+    expect(again.remaining_ms).toBeLessThanOrEqual(opened.remaining_ms!);
+    await expect(attached.handle.present!({ id, presenter: "tui-1" })).rejects.toMatchObject({
+      code: "conflict",
+    });
+    await reattached.handle.respond({ id, action: "accept", content: { response: "b" } });
+    expect(await answer).toEqual({ action: "accept", content: { response: "b" } });
     f.finish();
   });
 

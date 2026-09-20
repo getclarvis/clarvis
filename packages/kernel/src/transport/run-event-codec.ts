@@ -467,6 +467,7 @@ const RUN_EVENT_SCHEMAS = {
       outcome: z.enum(["accept", "decline", "cancel"]),
       answer: text.optional(),
       options: z.array(text).optional(),
+      no_response: z.enum(["window_elapsed", "wait_bound_elapsed"]).optional(),
     })
     .strict(),
   steering_applied: z

@@ -12,7 +12,7 @@ import {
   sizeOfCoalescedRunEvent,
   sizeOfRunEvent,
 } from "./coalesce-events.ts";
-import { createElicitBridge } from "./elicit-bridge.ts";
+import { createElicitBridge, type ElicitBridgeOptions } from "./elicit-bridge.ts";
 import {
   DEFAULT_INGEST_CLOSE_GRACE_MS,
   DEFAULT_INGEST_CLOSE_MAX_WAIT_MS,
@@ -72,6 +72,16 @@ export interface ManagedRunSpec {
    * @internal
    */
   ingestMaxWaitMs?: number;
+  /**
+   * Host policy for this run's interactive question window, plus the
+   * deterministic clock seam for it; see {@link ElicitBridgeOptions}.
+   *
+   * @remarks Set from the run-creation request's `elicit_policy`, so a client
+   *   that presents questions declares how long one may stay open. Absent — the
+   *   default — means no question gets a window and the operational wait bound
+   *   remains the only way an unanswered question ends.
+   */
+  elicitation?: ElicitBridgeOptions;
   /** Kernel lifecycle that owns and cancels this run. */
   lifecycle?: KernelLifecycle;
 }
@@ -191,7 +201,7 @@ export function createManagedRunWithRuntime(
   const steer = createSteerQueue();
   const compaction = createCompactionQueue();
   const toolInterrupts = createToolInterruptChannel();
-  const bridge = createElicitBridge(spec.executionId);
+  const bridge = createElicitBridge(spec.executionId, spec.elicitation);
   const boundedIngestWait = (value: number, fallback: number): number =>
     Number.isFinite(value)
       ? Math.min(MAX_INGEST_CLOSE_WAIT_MS, Math.max(0, Math.floor(value)))
@@ -350,6 +360,9 @@ export function createManagedRunWithRuntime(
     },
     async respond(response) {
       bridge.respond(response);
+    },
+    async present(presentation) {
+      return bridge.present(presentation);
     },
     onElicit(handler) {
       return bridge.onElicit(handler);

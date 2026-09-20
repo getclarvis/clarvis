@@ -151,6 +151,47 @@ describe("handleAskUserCall", () => {
     const detail = userQuestion(trace) as Record<string, unknown>;
     expect(detail.outcome).toBe("decline");
     expect("answer" in detail).toBe(false);
+    expect("no_response" in detail).toBe(false);
+  });
+
+  it("records the host decision-window reason on the question trace", async () => {
+    const trace = createTrace();
+    const res = await handleAskUserCall({
+      call: call({ arguments: { question: "ok?" } }),
+      askUser: async () => ({
+        action: "decline",
+        noResponse: true,
+        noResponseReason: "window_elapsed",
+      }),
+      trace,
+      agent: "subagent",
+      iteration: 1,
+      validateArgs,
+    });
+    if (res.kind === "result") expect(res.text).toContain("Do not read the silence as approval");
+    const detail = userQuestion(trace) as Record<string, unknown>;
+    expect(detail.outcome).toBe("decline");
+    expect(detail.no_response).toBe("window_elapsed");
+    expect("answer" in detail).toBe(false);
+  });
+
+  it("keeps the operational wait bound distinct from the decision window on the trace", async () => {
+    const trace = createTrace();
+    const res = await handleAskUserCall({
+      call: call({ arguments: { question: "ok?" } }),
+      askUser: async () => ({
+        action: "decline",
+        noResponse: true,
+        noResponseReason: "wait_bound_elapsed",
+      }),
+      trace,
+      agent: "subagent",
+      iteration: 1,
+      validateArgs,
+    });
+    if (res.kind === "result") expect(res.text).toContain("did not respond within the wait window");
+    const detail = userQuestion(trace) as Record<string, unknown>;
+    expect(detail.no_response).toBe("wait_bound_elapsed");
   });
 
   it("maps a cancel outcome", async () => {

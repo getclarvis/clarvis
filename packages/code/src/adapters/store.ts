@@ -162,11 +162,15 @@ function elicitationOutcomeText(
   event: Extract<RunEvent, { type: "elicitation_resolved" }>,
 ): string {
   const outcome =
-    event.outcome === "accept" && event.answer?.trim()
-      ? event.answer.trim()
-      : event.outcome === "accept"
-        ? "accepted"
-        : event.outcome;
+    event.no_response !== undefined
+      ? event.no_response === "window_elapsed"
+        ? "no response in time; decision returned to the model"
+        : "no response; the wait window elapsed"
+      : event.outcome === "accept" && event.answer?.trim()
+        ? event.answer.trim()
+        : event.outcome === "accept"
+          ? "accepted"
+          : event.outcome;
   return `asked: ${event.question}\nanswered: ${outcome}`;
 }
 

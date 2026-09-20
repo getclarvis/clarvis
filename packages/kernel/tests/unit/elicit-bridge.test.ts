@@ -1,7 +1,231 @@
 import { expect, test } from "bun:test";
+import type { ElicitParams } from "@clarvis/capability";
 import type { ElicitationRequest } from "@clarvis/protocol";
 import type { GuardElicitParams } from "../../src/guard/guard-elicit.ts";
-import { createElicitBridge } from "../../src/runs/elicit-bridge.ts";
+import { createElicitBridge, type ElicitWindowRuntime } from "../../src/runs/elicit-bridge.ts";
+
+/** Controllable monotonic clock and scheduler, so no test waits on wall time. */
+function fakeWindowRuntime(): {
+  runtime: ElicitWindowRuntime;
+  advance(ms: number): void;
+  scheduled(): number;
+} {
+  let now = 0;
+  let next = 0;
+  const timers = new Map<number, { at: number; task: () => void }>();
+  return {
+    runtime: {
+      now: () => now,
+      schedule(task, delayMs) {
+        const id = next++;
+        timers.set(id, { at: now + delayMs, task });
+        return { cancel: () => void timers.delete(id) };
+      },
+    } satisfies ElicitWindowRuntime,
+    advance(ms) {
+      now += ms;
+      for (const [id, timer] of [...timers]) {
+        if (timer.at <= now) {
+          timers.delete(id);
+          timer.task();
+        }
+      }
+    },
+    scheduled: () => timers.size,
+  };
+}
+
+/** The engine's own question: provenance and naming both come from the tool. */
+function modelAskUser(): ElicitParams {
+  return {
+    message: "Which option?",
+    kind: "ask_user",
+    origin: "model",
+    requestedSchema: { type: "object", properties: {}, required: [] },
+  };
+}
+
+test("the model's presented question receives a single deadline and expires as windowElapsed", async () => {
+  const clock = fakeWindowRuntime();
+  const bridge = createElicitBridge("exec_window", {
+    policy: { ask_user_window_ms: 30_000 },
+    runtime: clock.runtime,
+  });
+  const result = bridge.elicit(modelAskUser(), {});
+  let request: ElicitationRequest | undefined;
+  bridge.onElicit((value) => {
+    request = value;
+  });
+
+  expect(request?.window_ms).toBe(30_000);
+  clock.advance(30_000);
+  expect(clock.scheduled()).toBe(0);
+  expect(await Promise.race([result, Promise.resolve("still pending" as const)])).toBe(
+    "still pending",
+  );
+
+  const confirmation = bridge.present({ id: request!.id, presenter: "tui-1" });
+  expect(confirmation).toEqual({ accepted: true, remaining_ms: 30_000 });
+
+  clock.advance(29_999);
+  expect(await Promise.race([result, Promise.resolve("still pending" as const)])).toBe(
+    "still pending",
+  );
+  clock.advance(1);
+  expect(await result).toEqual({ action: "decline", windowElapsed: true });
+});
+
+test("presentation is idempotent and never restarts the deadline", async () => {
+  const clock = fakeWindowRuntime();
+  const bridge = createElicitBridge("exec_present", {
+    policy: { ask_user_window_ms: 30_000 },
+    runtime: clock.runtime,
+  });
+  const result = bridge.elicit(modelAskUser(), {});
+  const ids: string[] = [];
+  bridge.onElicit((request) => ids.push(request.id));
+
+  expect(bridge.present({ id: ids[0]!, presenter: "tui-1" })).toEqual({
+    accepted: true,
+    remaining_ms: 30_000,
+  });
+  clock.advance(10_000);
+  expect(bridge.present({ id: ids[0]!, presenter: "tui-1" })).toEqual({
+    accepted: true,
+    remaining_ms: 20_000,
+  });
+  expect(bridge.present({ id: ids[0]!, presenter: "tui-reconnected" })).toEqual({
+    accepted: true,
+    remaining_ms: 20_000,
+  });
+  expect(clock.scheduled()).toBe(1);
+
+  clock.advance(20_000);
+  expect(await result).toEqual({ action: "decline", windowElapsed: true });
+  expect(bridge.present({ id: ids[0]!, presenter: "tui-late" })).toEqual({ accepted: false });
+});
+
+test("an answer before the deadline wins and a late answer is ignored", async () => {
+  const clock = fakeWindowRuntime();
+  const bridge = createElicitBridge("exec_answer", {
+    policy: { ask_user_window_ms: 30_000 },
+    runtime: clock.runtime,
+  });
+  const answered = bridge.elicit(modelAskUser(), {});
+  const late = bridge.elicit(modelAskUser(), {});
+  const ids: string[] = [];
+  bridge.onElicit((request) => ids.push(request.id));
+  bridge.present({ id: ids[0]!, presenter: "tui-1" });
+  bridge.present({ id: ids[1]!, presenter: "tui-1" });
+
+  clock.advance(5_000);
+  bridge.respond({ id: ids[0]!, action: "accept", content: { choice: "b" } });
+  expect(await answered).toEqual({ action: "accept", content: { choice: "b" } });
+  expect(clock.scheduled()).toBe(1);
+
+  clock.advance(25_000);
+  expect(await late).toEqual({ action: "decline", windowElapsed: true });
+  bridge.respond({ id: ids[1]!, action: "accept", content: { choice: "a" } });
+  expect(clock.scheduled()).toBe(0);
+});
+
+test("a human cancellation before the deadline retires the window timer", async () => {
+  const clock = fakeWindowRuntime();
+  const bridge = createElicitBridge("exec_cancel", {
+    policy: { ask_user_window_ms: 30_000 },
+    runtime: clock.runtime,
+  });
+  const controller = new AbortController();
+  const result = bridge.elicit(modelAskUser(), { signal: controller.signal });
+  const ids: string[] = [];
+  bridge.onElicit((request) => ids.push(request.id));
+  bridge.present({ id: ids[0]!, presenter: "tui-1" });
+  controller.abort();
+
+  expect(await result).toEqual({ action: "cancel" });
+  expect(clock.scheduled()).toBe(0);
+  clock.advance(60_000);
+  expect(bridge.present({ id: ids[0]!, presenter: "tui-1" })).toEqual({ accepted: false });
+});
+
+test("a question nobody presented never expires on its own", async () => {
+  const clock = fakeWindowRuntime();
+  const bridge = createElicitBridge("exec_unpresented", {
+    policy: { ask_user_window_ms: 30_000 },
+    runtime: clock.runtime,
+  });
+  const result = bridge.elicit(modelAskUser(), {});
+  bridge.onElicit(() => {});
+
+  clock.advance(10 * 60_000);
+  expect(clock.scheduled()).toBe(0);
+  expect(await Promise.race([result, Promise.resolve("still pending" as const)])).toBe(
+    "still pending",
+  );
+  bridge.close();
+  expect(await result).toEqual({ action: "cancel" });
+});
+
+test("only the model's own ask_user receives a window; provenance and naming are both required", async () => {
+  const clock = fakeWindowRuntime();
+  const bridge = createElicitBridge("exec_provenance", {
+    policy: { ask_user_window_ms: 30_000 },
+    runtime: clock.runtime,
+  });
+  const cases: ElicitParams[] = [
+    { ...modelAskUser(), origin: "external" },
+    { ...modelAskUser(), origin: undefined },
+    { ...modelAskUser(), kind: "guard_confirm" },
+    { ...modelAskUser(), kind: undefined },
+  ];
+  const results = cases.map((params) => bridge.elicit(params, {}));
+  const requests: ElicitationRequest[] = [];
+  bridge.onElicit((request) => requests.push(request));
+
+  expect(requests.map((request) => request.window_ms)).toEqual([
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+  ]);
+  expect(requests.map((request) => request.kind)).toEqual([
+    "ask_user",
+    "ask_user",
+    "guard_confirm",
+    "ask_user",
+  ]);
+  for (const request of requests) {
+    expect(bridge.present({ id: request.id, presenter: "tui-1" })).toEqual({ accepted: true });
+  }
+  clock.advance(10 * 60_000);
+  expect(clock.scheduled()).toBe(0);
+  expect(
+    (
+      await Promise.all(results.map((result) => Promise.race([result, Promise.resolve(null)])))
+    ).every((answer) => answer === null),
+  ).toBe(true);
+  bridge.close();
+});
+
+test("a policy without a positive whole window publishes none and schedules nothing", async () => {
+  const clock = fakeWindowRuntime();
+  for (const ask_user_window_ms of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 2]) {
+    const bridge = createElicitBridge(`exec_invalid_${String(ask_user_window_ms)}`, {
+      policy: { ask_user_window_ms },
+      runtime: clock.runtime,
+    });
+    const result = bridge.elicit(modelAskUser(), {});
+    const requests: ElicitationRequest[] = [];
+    bridge.onElicit((request) => requests.push(request));
+    expect(requests[0]?.window_ms).toBeUndefined();
+    expect(bridge.present({ id: requests[0]!.id, presenter: "tui-1" })).toEqual({
+      accepted: true,
+    });
+    expect(clock.scheduled()).toBe(0);
+    bridge.close();
+    expect(await result).toEqual({ action: "cancel" });
+  }
+});
 
 test("an elicitation raised before onElicit registration is delivered when the handler attaches", async () => {
   const bridge = createElicitBridge("exec_early");

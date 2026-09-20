@@ -47,6 +47,7 @@ import { DEFAULT_INGEST_CLOSE_GRACE_MS } from "../runs/memory-ingest-phase.ts";
 import { engineResultToProto } from "../runs/map-result.ts";
 import type { RunExecutor, RunExecutorArgs, RunRequestAssembler } from "../runs/run-service.ts";
 import { createManagedRun } from "../runs/managed-run.ts";
+import { elicitWindowFor } from "../runs/elicit-bridge.ts";
 import {
   WORKFLOW_MAX_EDGES,
   WORKFLOW_MAX_ERROR_BYTES,
@@ -438,11 +439,13 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
       saves.flush();
     }
 
+    const elicitation = elicitWindowFor(params);
     return createManagedRun({
       executionId: managerRunId,
       eventBuffer: cfg.eventBuffer,
       ingestGraceMs,
       lifecycle: cfg.lifecycle,
+      ...(elicitation === undefined ? {} : { elicitation }),
       observe,
       settle(result) {
         finalize(result.status);

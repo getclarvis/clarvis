@@ -1,5 +1,11 @@
-import type { Elicit, ElicitRawResult } from "@clarvis/loop";
-import type { ElicitationRequest, ElicitationResponse } from "@clarvis/protocol";
+import type { Elicit, ElicitParams, ElicitRawResult } from "@clarvis/loop";
+import type {
+  ElicitationPresentation,
+  ElicitationPresentationAck,
+  ElicitationRequest,
+  ElicitationResponse,
+  ElicitWindowPolicy,
+} from "@clarvis/protocol";
 import type { GuardElicitParams } from "../guard/guard-elicit.ts";
 import { kernelError } from "../core/errors.ts";
 
@@ -17,8 +23,109 @@ export interface ElicitBridge {
   onSettled(handler: (id: string) => void): () => void;
   /** Completes a pending elicit with the client's response. */
   respond(res: ElicitationResponse): void;
+  /**
+   * Confirm a pending question is on screen, starting the run's question window
+   * when its policy declares one and the request is the model's own `ask_user`.
+   *
+   * @param presentation - the question's id and the presenting client's identity.
+   * @returns whether the question was still pending, plus the window's remaining
+   *   projection when one applies.
+   * @remarks Idempotent: only the first valid confirmation starts the single
+   *   deadline, and every later confirmation (from any presenter) reports what is
+   *   left. A confirmation for an unknown, settled or never-windowed request
+   *   changes nothing.
+   */
+  present(presentation: ElicitationPresentation): ElicitationPresentationAck;
   /** Retire the bridge and cancel every outstanding question. */
   close(): void;
+}
+
+/** Cancelable timer owned by the bridge's window scheduler. @internal */
+export interface ElicitWindowTimer {
+  cancel(): void;
+}
+
+/**
+ * Monotonic clock and scheduler seam for the question window.
+ *
+ * @remarks Deliberately not the wall clock: an operator's machine may step its
+ *   wall clock (NTP, timezone-independent but still skewed) while a question is
+ *   on screen, and a window measured by wall time could then expire early,
+ *   expire late, or never. Durations only, so nothing here needs to agree with a
+ *   remote frontend's clock — that is why the protocol carries a remaining-time
+ *   projection instead of a deadline timestamp.
+ *
+ * @internal
+ */
+export interface ElicitWindowRuntime {
+  /** Milliseconds from an arbitrary monotonic origin. */
+  now(): number;
+  /** Run `task` after `delayMs`, returning a cancelable handle. */
+  schedule(task: () => void, delayMs: number): ElicitWindowTimer;
+}
+
+/** What a run may configure on its bridge beyond the run id. */
+export interface ElicitBridgeOptions {
+  /**
+   * Host policy for an interactive question window, taken from the run-creation
+   * request. Omit it and no question gets a window.
+   */
+  policy?: ElicitWindowPolicy;
+  /**
+   * Deterministic clock seam for the window; see {@link ElicitWindowRuntime}.
+   *
+   * @internal
+   */
+  runtime?: ElicitWindowRuntime;
+}
+
+/**
+ * The interactive question window a run-creation request declares, if any.
+ *
+ * @param params - the validated run-creation parameters.
+ * @returns the bridge options for that run, or `undefined` when the caller
+ *   declared no policy and every question keeps the operational wait bound.
+ * @remarks Read where each run is constructed — an ordinary run, a workflow
+ *   manager whose leaders present through its bridge — so the window belongs to
+ *   the execution the request asked for rather than to a process-wide default.
+ *   A headless caller and the MCP facade never declare one.
+ * @internal
+ */
+export function elicitWindowFor(params: {
+  elicit_policy?: ElicitWindowPolicy;
+}): ElicitBridgeOptions | undefined {
+  return params.elicit_policy === undefined ? undefined : { policy: params.elicit_policy };
+}
+
+const DEFAULT_WINDOW_RUNTIME: ElicitWindowRuntime = {
+  now: () => performance.now(),
+  schedule(task, delayMs) {
+    const timer = setTimeout(task, delayMs);
+    (timer as { unref?: () => void }).unref?.();
+    return { cancel: () => clearTimeout(timer) };
+  },
+};
+
+/**
+ * The window a request may receive, in milliseconds, or `undefined` for none.
+ *
+ * @remarks Eligibility is a provenance decision, never a naming one. The
+ *   projected `kind` defaults to `ask_user` when a request omits it and travels
+ *   verbatim to the UI, so a relayed external request could arrive wearing that
+ *   name; the engine marks its own `ask_user` tool's requests `origin: "model"`
+ *   and the relay layer marks everything else `"external"`, and only an
+ *   explicit model-origin `ask_user` may receive a host window.
+ */
+function windowFor(
+  policy: ElicitWindowPolicy | undefined,
+  params: ElicitParams,
+): number | undefined {
+  const configured = policy?.ask_user_window_ms;
+  if (typeof configured !== "number" || !Number.isSafeInteger(configured) || configured <= 0) {
+    return undefined;
+  }
+  if (params.origin !== "model" || params.kind !== "ask_user") return undefined;
+  return configured;
 }
 
 /**
@@ -26,16 +133,27 @@ export interface ElicitBridge {
  *
  * @param executionId - the run this bridge belongs to; namespaces each pending
  *   request id (`<executionId>:elicit:<n>`).
+ * @param options - the run's window policy and clock seam; see
+ *   {@link ElicitBridgeOptions}.
  * @returns a bridge whose `elicit` the engine calls and whose `onElicit` /
- *   `respond` the client drives.
+ *   `respond` / `present` the client drives.
  * @remarks A late-registered handler is replayed the still-pending requests, so
  *   a client that subscribes after a question was raised still sees it. A
  *   handler that throws cannot break or settle the engine's pending question -
  *   the throw is swallowed. Each pending elicit settles as `cancel` when its
  *   call's abort signal fires; an unknown or already-settled response id is
- *   ignored.
+ *   ignored. When a window policy applies, the request is published with its
+ *   duration and the kernel starts the single deadline only once a client
+ *   confirms the question is on screen; reaching that deadline resolves the
+ *   question as an unattributed decline carrying `windowElapsed`, so the engine
+ *   can tell the host's window from the operational wait bound and from a human
+ *   refusal.
  */
-export function createElicitBridge(executionId: string): ElicitBridge {
+export function createElicitBridge(
+  executionId: string,
+  options: ElicitBridgeOptions = {},
+): ElicitBridge {
+  const runtime = options.runtime ?? DEFAULT_WINDOW_RUNTIME;
   let seq = 0;
   const handlers = new Set<(req: ElicitationRequest) => void>();
   const settled = new Set<(id: string) => void>();
@@ -48,6 +166,11 @@ export function createElicitBridge(executionId: string): ElicitBridge {
       resolve: (result: ElicitRawResult) => void;
       bytes: number;
       cleanup(): void;
+      /** Duration of the question's window, when the request may receive one. */
+      windowMs?: number;
+      /** Absolute monotonic deadline; set by the first valid presentation. */
+      deadline?: number;
+      timer?: ElicitWindowTimer;
     }
   >();
 
@@ -64,6 +187,7 @@ export function createElicitBridge(executionId: string): ElicitBridge {
     if (item === undefined) return;
     pending.delete(id);
     pendingBytes -= item.bytes;
+    item.timer?.cancel();
     item.cleanup();
     for (const handler of settled) {
       try {
@@ -88,6 +212,7 @@ export function createElicitBridge(executionId: string): ElicitBridge {
   const enqueue = (
     request: Omit<ElicitationRequest, "id" | "execution_id">,
     signal?: AbortSignal,
+    windowMs?: number,
   ): Promise<ElicitRawResult> =>
     new Promise<ElicitRawResult>((resolve) => {
       if (closed || signal?.aborted) {
@@ -98,6 +223,7 @@ export function createElicitBridge(executionId: string): ElicitBridge {
       const req: ElicitationRequest = {
         id,
         execution_id: executionId,
+        ...(windowMs !== undefined ? { window_ms: windowMs } : {}),
         ...request,
       };
       const bytes = Buffer.byteLength(JSON.stringify(req));
@@ -109,6 +235,7 @@ export function createElicitBridge(executionId: string): ElicitBridge {
         request: req,
         resolve,
         bytes,
+        ...(windowMs === undefined ? {} : { windowMs }),
         cleanup: () => signal?.removeEventListener("abort", abort),
       });
       pendingBytes += bytes;
@@ -129,6 +256,7 @@ export function createElicitBridge(executionId: string): ElicitBridge {
         ...(detail !== undefined ? { detail } : {}),
       },
       opts.signal,
+      windowFor(options.policy, params),
     );
   };
 
@@ -145,6 +273,20 @@ export function createElicitBridge(executionId: string): ElicitBridge {
         action: res.action,
         ...(res.content !== undefined ? { content: res.content as Record<string, unknown> } : {}),
       });
+    },
+    present(presentation): ElicitationPresentationAck {
+      const item = pending.get(presentation.id);
+      if (item === undefined) return { accepted: false };
+      if (item.windowMs === undefined) return { accepted: true };
+      if (item.deadline === undefined) {
+        item.deadline = runtime.now() + item.windowMs;
+        item.timer = runtime.schedule(
+          () => finish(item.request.id, { action: "decline", windowElapsed: true }),
+          item.windowMs,
+        );
+      }
+      const remaining = item.deadline - runtime.now();
+      return { accepted: true, remaining_ms: Math.max(0, Math.ceil(remaining)) };
     },
     close() {
       closed = true;

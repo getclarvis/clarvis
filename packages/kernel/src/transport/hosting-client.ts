@@ -311,6 +311,8 @@ export function createHostingClient(options: {
               tool_execution_id: toolExecutionId,
             }),
           respond: (response) => control(M.hostingRespond, { response }),
+          present: (presentation) =>
+            transport.request(M.hostingPresent, { subscription_id: id, presentation }),
           onElicit(listener) {
             const unsubscribe = listen(subscription.questionListeners, listener);
             for (const question of subscription.questions.values())

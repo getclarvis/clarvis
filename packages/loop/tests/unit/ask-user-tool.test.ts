@@ -7,6 +7,7 @@ import {
   elicitWithClockPause,
   ElicitTimeoutError,
   ELICIT_RESPONSE_FIELD,
+  WINDOW_ELAPSED_GUIDANCE,
   type Elicit,
 } from "../../src/runtime/tools/index.ts";
 import { createComputeClock, type ComputeClock } from "../../src/runtime/support/index.ts";
@@ -15,6 +16,7 @@ describe("ask-user-tool helpers", () => {
   it("buildElicitParams: free-text one-field schema by default", () => {
     const p = buildElicitParams({ question: "What name?" });
     expect(p.kind).toBe("ask_user");
+    expect(p.origin).toBe("model");
     expect(p.message).toBe("What name?");
     expect(p.requestedSchema.required).toEqual([ELICIT_RESPONSE_FIELD]);
     const field = p.requestedSchema.properties[ELICIT_RESPONSE_FIELD]!;
@@ -85,7 +87,47 @@ describe("buildAskUser bridge", () => {
     const clock = createComputeClock(1000);
     const elicit: Elicit = () => Promise.reject(new ElicitTimeoutError());
     const askUser = buildAskUser(elicit, clock, undefined, 10);
-    expect(await askUser({ question: "?" })).toEqual({ action: "decline", noResponse: true });
+    const outcome = await askUser({ question: "?" });
+    expect(outcome).toEqual({
+      action: "decline",
+      noResponse: true,
+      noResponseReason: "wait_bound_elapsed",
+    });
+    expect(mapOutcomeToText(outcome)).toBe("User did not respond within the wait window.");
+  });
+
+  it("host window elapse → decline carrying the continuation guidance, not the wait note", async () => {
+    const clock = createComputeClock(1000);
+    const elicit: Elicit = async () => ({ action: "decline", windowElapsed: true });
+    const askUser = buildAskUser(elicit, clock);
+    const outcome = await askUser({ question: "?" });
+    expect(outcome).toEqual({
+      action: "decline",
+      noResponse: true,
+      noResponseReason: "window_elapsed",
+    });
+    expect(mapOutcomeToText(outcome)).toBe(WINDOW_ELAPSED_GUIDANCE);
+    expect(WINDOW_ELAPSED_GUIDANCE).not.toBe("User did not respond within the wait window.");
+    expect(WINDOW_ELAPSED_GUIDANCE).toContain("Do not read the silence as approval");
+  });
+
+  it("a human decline is not a no-response and never carries a window reason", async () => {
+    const clock = createComputeClock(1000);
+    const askUser = buildAskUser(async () => ({ action: "decline" }), clock);
+    const outcome = await askUser({ question: "?" });
+    expect(outcome).toEqual({ action: "decline" });
+    expect(mapOutcomeToText(outcome)).toBe("User declined to answer the question.");
+  });
+
+  it("an accepted answer wins even if a host marks the window flag", async () => {
+    const clock = createComputeClock(1000);
+    const elicit: Elicit = async () => ({
+      action: "accept",
+      content: { response: "staging" },
+      windowElapsed: true,
+    });
+    const askUser = buildAskUser(elicit, clock);
+    expect(await askUser({ question: "?" })).toEqual({ action: "accept", answer: "staging" });
   });
 
   it("run-level abort propagates (so the loop returns cancelled)", async () => {

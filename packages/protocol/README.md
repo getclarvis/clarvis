@@ -55,8 +55,19 @@ generation, allowing command listings to refresh without reconnecting. See
 [self-configuration.md](../../specs/hosts/self-configuration.md).
 
 Managed `RunHandle` implementations can return an unsubscribe function from `onElicit` and expose
-`onElicitSettled` to retire answered or expired questions. Hosted observations carry sequenced event
-frames and reuse run control methods; they are separate from the single source event consumer.
+`onElicitSettled`, which reports by id every question the kernel retired — answered, expired, or torn
+down with the run — so a frontend removes that prompt instead of answering it. Hosted observations
+carry sequenced event frames and reuse run control methods; they are separate from the single source
+event consumer.
+
+A surface that can put a question in front of a human declares how long it may stay open on the run
+request (`StartRunParams.elicit_policy`, `ElicitWindowPolicy.ask_user_window_ms`). The kernel then
+publishes `ElicitationRequest.window_ms` for the model's own `ask_user` question only, and the
+frontend arms that window with `RunHandle.present({ id, presenter })` once the question is really on
+screen; the answer is an `ElicitationPresentationAck` carrying the remaining projection, and a
+duplicate confirmation never restarts it. An elapsed window is never an answer:
+`elicitation_resolved` carries `no_response: "window_elapsed"`, distinct from the operational
+`wait_bound_elapsed`. See [elicitation](../../specs/cross-cutting/elicitation.md).
 
 `KernelClient` carries the connected `project`/`workspace` identity and groups asynchronous
 services:

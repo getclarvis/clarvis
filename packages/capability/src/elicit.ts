@@ -15,6 +15,19 @@ import type { Logger } from "./ports.ts";
 export type ElicitationAction = "accept" | "decline" | "cancel";
 
 /**
+ * Why a question ended without an answer: a host-side interactive decision
+ * window elapsed, or the operational wait bound did.
+ *
+ * @remarks The two are different facts about the same silence and a caller must
+ *   not conflate them. `window_elapsed` means a human had the question on
+ *   screen for its whole window and did not answer it, so the decision returns
+ *   to the model. `wait_bound_elapsed` means the run's operational ceiling
+ *   (`elicit_wait_ms`) elapsed first, so the run never learned whether anyone
+ *   ever saw the question. Only the first carries the continuation guidance.
+ */
+export type ElicitNoResponseReason = "window_elapsed" | "wait_bound_elapsed";
+
+/**
  * The normalized result of asking the human: the {@link ElicitationAction},
  * the `answer` text when accepted, and `noResponse` set when a `decline` was
  * synthesized from an elapsed wait window rather than an explicit refusal.
@@ -22,7 +35,14 @@ export type ElicitationAction = "accept" | "decline" | "cancel";
 export interface ElicitationOutcome {
   action: ElicitationAction;
   answer?: string;
+  /**
+   * True when nobody answered. Carries no authority: an unanswered question is
+   * never an approval, and {@link ElicitationOutcome.noResponseReason} says
+   * which clock ran out.
+   */
   noResponse?: boolean;
+  /** Set together with `noResponse`; see {@link ElicitNoResponseReason}. */
+  noResponseReason?: ElicitNoResponseReason;
 }
 
 /**
@@ -53,7 +73,28 @@ export interface ElicitParams {
    * the protocol elicit `kind`.
    */
   kind?: "ask_user" | "guard_confirm" | "plan_review" | "workflow_review" | (string & {});
+  /**
+   * Trusted provenance of the request, set by whoever raised it.
+   *
+   * @remarks Host policy keys on this field and never on {@link ElicitParams.kind}:
+   *   `kind` travels verbatim for the UI and an external MCP server can name any
+   *   kind it likes, while `origin` is written only by the engine's own
+   *   `ask_user` tool (`"model"`) or by the host's relay layer (`"external"`).
+   *   Omit it for anything else; an unmarked request must be treated as
+   *   external, and no host may hand a question window to a request it cannot
+   *   attribute.
+   */
+  origin?: ElicitOrigin;
 }
+
+/**
+ * Who raised an elicitation, as a claim only the engine or the host's own
+ * relay layer can make.
+ *
+ * - `model`: the engine's `ask_user` tool, raised by the model itself.
+ * - `external`: a question an MCP server relayed to this host.
+ */
+export type ElicitOrigin = "model" | "external";
 
 /**
  * The elicitation `kind` identifying a plan-approval request, so a UI frames it
@@ -75,6 +116,18 @@ export const PLAN_REVIEW_ELICIT_KIND = "plan_review";
 export interface ElicitRawResult {
   action: ElicitationAction;
   content?: Record<string, unknown>;
+  /**
+   * Set when the host closed the question itself because an interactive
+   * decision window elapsed, without any human answer.
+   *
+   * @remarks Host-internal and never forwarded: a relayed external request has
+   *   no window, and the relay builds its own `{action, content}` reply, so no
+   *   MCP server can observe this. It exists to let the engine distinguish a
+   *   window expiry from an explicit refusal, from a cancellation, and from the
+   *   operational wait bound — a boundary that must not be guessed from the
+   *   `action` alone.
+   */
+  windowElapsed?: boolean;
 }
 
 /**

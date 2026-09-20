@@ -68,6 +68,32 @@ export type MemoryMode = "on" | "off";
  */
 export type PlansMode = "off" | "on" | "review";
 
+/**
+ * Host policy for how long an interactive question stays open.
+ *
+ * @remarks The window belongs to the surface that can actually put a question
+ *   in front of a human, and it travels with the run-creation request rather
+ *   than being inferred by the kernel: a terminal UI declares it, a headless
+ *   caller or an MCP facade simply omits it, and the kernel applies it per run
+ *   — including a hosted execution started with these params and a workflow
+ *   manager's leaders, which present through the manager's own channel. It is
+ *   deliberately separate from `elicit_wait_ms`: the policy is how long the
+ *   question is *shown*, while the request's wait bound remains the operational
+ *   ceiling that ends a wait nobody ever presented.
+ */
+export interface ElicitWindowPolicy {
+  /**
+   * Milliseconds the model's own `ask_user` question stays open once a client
+   * has confirmed it is on screen. Omit for no window. Never applies to other
+   * kinds, to an unmarked request, or to a question relayed from an external
+   * MCP server. A duration the host cannot actually measure — non-integral,
+   * non-positive, or longer than a host timer honours (`MAX_ELICIT_WINDOW_MS`
+   * in `@clarvis/kernel`) — grants no window at all, because a host must not
+   * promise time it cannot grant.
+   */
+  ask_user_window_ms?: number;
+}
+
 /** Parameters for {@link RunService.start}. */
 export interface StartRunParams {
   /** Client-chosen id for idempotency + continuation; the kernel echoes it. */
@@ -118,6 +144,14 @@ export interface StartRunParams {
   output_schema?: JsonSchema;
   /** Host-authenticated intent for a normal run to create its conversation Goal. */
   goal_intent?: { kind: "create"; seed: string };
+  /**
+   * Host policy for an interactive question window; see {@link ElicitWindowPolicy}.
+   *
+   * @remarks Omit it and every question keeps today's behavior: a frontend may
+   *   still answer it, and the run's `elicit_wait_ms` bound ends an unanswered
+   *   one. Only a surface that presents questions itself should declare one.
+   */
+  elicit_policy?: ElicitWindowPolicy;
 }
 
 /** Terminal / in-flight status of a run. */
@@ -719,6 +753,15 @@ export type RunEvent =
       outcome: "accept" | "decline" | "cancel";
       answer?: string;
       options?: string[];
+      /**
+       * Why an unanswered question ended, mirroring the engine's
+       * `ElicitNoResponseReason` (`packages/capability/src/elicit.ts`). Absent
+       * for an answer, a refusal and a cancellation: a `window_elapsed` silence
+       * is the host's own decision window, while `wait_bound_elapsed` is the
+       * run's operational ceiling, and a resume must not read either as an
+       * operator decision.
+       */
+      no_response?: "window_elapsed" | "wait_bound_elapsed";
     }
   | (Attributed & { type: "steering_applied"; message: string })
   | { type: "memory_ingest"; at: Timestamp; detail: MemoryIngestDetail }
@@ -787,6 +830,50 @@ export interface ElicitationRequest {
    * the human-readable fallback.
    */
   detail?: ElicitationCommandDetail;
+  /**
+   * Milliseconds this question stays open after a client confirms it is on
+   * screen; omitted when no window policy applies to the request.
+   *
+   * @remarks A duration, never a wall-clock timestamp: the kernel and a remote
+   *   frontend do not share a clock, so the client derives its own countdown
+   *   from this projection and the kernel stays the authority that ends the
+   *   window. A question already on screen is replayed with the same projection
+   *   — a reconnect never restarts the window.
+   */
+  window_ms?: number;
+}
+
+/**
+ * The fact that a client is showing a pending {@link ElicitationRequest}.
+ *
+ * @remarks Confirm only after the question is actually on screen, not when the
+ *   notification arrives: a request queued behind another prompt, hidden by an
+ *   overlay, or delivered to a client that never renders it must not consume
+ *   the human's window. A client that never confirms leaves the question on the
+ *   operational wait bound.
+ */
+export interface ElicitationPresentation {
+  /** Id of the {@link ElicitationRequest} now on screen. */
+  id: string;
+  /**
+   * Stable identity of the presenting client (a UI instance, not a person, and
+   * never a credential). Used to key idempotency and diagnostics; a different
+   * presenter confirming the same question does not restart its window.
+   */
+  presenter: string;
+}
+
+/** Kernel answer to an {@link ElicitationPresentation}. */
+export interface ElicitationPresentationAck {
+  /** True when the request was still pending and the confirmation is accepted. */
+  accepted: boolean;
+  /**
+   * Milliseconds left in the question's window at the moment of the answer,
+   * projected from the kernel's own monotonic clock. Omitted when no window
+   * applies. A duplicate confirmation returns what is left; it is never a fresh
+   * window.
+   */
+  remaining_ms?: number;
 }
 
 /** Client answer to a pending {@link ElicitationRequest}. */
@@ -848,13 +935,38 @@ export interface RunHandle {
   respond(response: ElicitationResponse): Promise<void>;
 
   /**
+   * Confirm that a pending elicitation is actually on screen, starting its
+   * decision window when the run's policy declares one.
+   *
+   * @param presentation - The question's id and the presenting client's identity.
+   * @returns whether the question was still pending, plus the window's remaining
+   *   projection when one applies.
+   * @remarks Optional because not every handle has a client that presents
+   *   questions — the MCP facade declines them instead. A handle without it (or
+   *   a client that never calls it) keeps the operational wait bound as the only
+   *   way a question ends unanswered.
+   */
+  present?(presentation: ElicitationPresentation): Promise<ElicitationPresentationAck>;
+
+  /**
    * Register an elicitation handler (alternative to scanning `events`).
    *
    * @param handler - Called when the kernel asks the user a question.
    */
   onElicit(handler: (req: ElicitationRequest) => void): void | (() => void);
 
-  /** Observe a question's response or expiry without retaining stale prompts on reconnect. */
+  /**
+   * Observe a question the kernel retired, by id, without retaining stale
+   * prompts on reconnect.
+   *
+   * @param handler - Called once with the id of a question that was answered,
+   *   cancelled, or expired by the run's own decision window. A frontend showing
+   *   that prompt must remove it and must not answer it afterwards.
+   * @returns an unsubscribe, so the observer is released once its question is
+   *   done — the direct and hosted transports both implement it.
+   * @remarks Optional like `present`: a handle whose transport carries no
+   *   settlement leaves the client to learn the outcome from the run's events.
+   */
   onElicitSettled?(handler: (id: string) => void): () => void;
 
   /** Resolves when execution ends; it does not imply that `events` has closed. */

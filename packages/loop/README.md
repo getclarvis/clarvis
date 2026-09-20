@@ -259,6 +259,17 @@ Built-ins cover:
 - agent supervision (`agent_list`, `agent_poll`, `agent_stop`, `agent_steer`,
   `await_agents`), over the run-scoped registry in `@clarvis/supervision`.
 
+The built-in `ask_user` tool asks that question and normalizes the answer. Its requests are marked
+`origin: "model"`, so a host can tell the engine's own question from a relayed external one, and its
+tool result keeps three no-answer facts apart: a human refusal, the run's operational wait ceiling
+(`noResponseReason: "wait_bound_elapsed"`, "User did not respond within the wait window."), and a host
+decision window that elapsed while the question was on screen (`"window_elapsed"`, which returns the
+continuation guidance — decide with the information available, do not read the silence as approval,
+do not repeat the question). A question relayed from an MCP server is rebuilt at the relay boundary as
+a plain `ask_user` marked `origin: "external"`, so it keeps the operational bound and never receives a
+host window. Neither no-answer outcome is evidence: only an accepted `ask_user` answer enters operator
+authority. See [`elicitation`](../../specs/cross-cutting/elicitation.md).
+
 `spawn_subagent` is always the plan-free route and has no `task_id` property. A task-tracking
 capability adds `delegate_task`, whose `task_id` is required and must name an existing open work
 item. An unknown or closed id is rejected with the currently spawnable ids and an explicit

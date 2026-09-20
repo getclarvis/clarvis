@@ -17,6 +17,7 @@ import { capabilityEventToProto, engineEventToProto } from "./map-events.ts";
 import { engineResultToProto, storedToDetail, summaryToProto } from "./map-result.ts";
 import { kernelError } from "../core/errors.ts";
 import { createManagedRun } from "./managed-run.ts";
+import { elicitWindowFor } from "./elicit-bridge.ts";
 import type { KernelLifecycle } from "../application/lifecycle.ts";
 import { normalizeRunPagination } from "./pagination.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
@@ -218,6 +219,7 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
               ? { review_context: prepared.goal.reviewContext }
               : {}),
           };
+    const elicitation = elicitWindowFor(params);
     if (prepared?.kind === "workflow")
       return prepared.start(operatorAuthoritySeed, authorityAdmission?.signal);
     if (
@@ -236,6 +238,7 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
       eventBuffer: cfg.eventBuffer,
       ingestGraceMs,
       lifecycle: cfg.lifecycle,
+      ...(elicitation === undefined ? {} : { elicitation }),
       async execute(context): Promise<RunResult> {
         const goal = prepared?.kind === "ordinary" ? prepared.goal : undefined;
         const goalCreation = prepared?.kind === "ordinary" ? prepared.goalCreation : undefined;

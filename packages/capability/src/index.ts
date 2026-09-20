@@ -273,6 +273,8 @@ export { ElicitTimeoutError, PLAN_REVIEW_ELICIT_KIND, elicitWithClockPause } fro
 export type {
   ElicitationAction,
   ElicitationOutcome,
+  ElicitNoResponseReason,
+  ElicitOrigin,
   ElicitRequestedSchema,
   ElicitParams,
   ElicitRawResult,

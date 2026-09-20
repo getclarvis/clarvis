@@ -237,6 +237,23 @@ provider error body.
 Widening a port is a design decision, not a convenience — every member added here is a member the
 engine can no longer change freely.
 
+### The elicitation port carries provenance, not a naming convention
+
+`elicit.ts` holds the vocabulary a host keys elicitation policy on. `ElicitParams.origin`
+(`ElicitOrigin`) is trusted provenance: the engine's own `ask_user` tool writes `"model"`, the host's
+relay boundary writes `"external"`, and an omitted `origin` must be treated as external — `kind`
+travels verbatim only so a UI can frame the question, and a relayed MCP server may name any kind it
+likes, so `kind` alone can never decide policy.
+
+`ElicitNoResponseReason` separates the two ways a question ends with nobody answering: a host's
+interactive window that elapsed while the question really was on screen (`"window_elapsed"`, so the
+decision returns to the model) and the run's operational wait ceiling (`"wait_bound_elapsed"`).
+`ElicitRawResult.windowElapsed` is the host-internal marker for the first — never forwarded, because
+a relayed reply is rebuilt as `{action, content}` — and `buildAskUser` projects either into
+`ElicitationOutcome.noResponseReason`; `mapOutcomeToText` returns the continuation guidance only for
+the window, and `handleAskUserCall` records it as `user_question.no_response`. See
+[elicitation](../../specs/cross-cutting/elicitation.md).
+
 ## The trace kinds are open
 
 `TraceKind` is `BuiltinTraceKind | (string & {})`, so a capability records its own kinds without the

@@ -693,6 +693,7 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         outcome: ev.outcome,
         ...(ev.answer !== undefined ? { answer: ev.answer } : {}),
         ...(ev.options !== undefined ? { options: ev.options } : {}),
+        ...(ev.no_response !== undefined ? { no_response: ev.no_response } : {}),
       };
     case "user_steering":
       return {

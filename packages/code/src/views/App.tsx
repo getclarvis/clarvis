@@ -291,6 +291,16 @@ export interface AppRunControls {
   registerDraftRestore?: (fn: (text: string, content?: MessageContent) => void) => void;
   elicit: Accessor<ElicitRequestParams | null>;
   resolveElicit: (result: ElicitResult) => void;
+  /** Milliseconds left in the pending question's decision window, or null. */
+  elicitRemaining?: Accessor<number | null>;
+  /**
+   * Tell the kernel the pending question is really on screen.
+   *
+   * @remarks Called by the elicitation transition once the block is laid out
+   *   inside the viewport — the kernel starts its window then, so queueing
+   *   behind an overlay never costs the user part of it.
+   */
+  presentElicit?: () => void;
   /** True while a fully booted workspace runtime is being prepared/published. */
   switching?: Accessor<boolean>;
 }
@@ -1511,6 +1521,7 @@ export function App(props: AppProps): JSX.Element {
         return;
       }
       setElicitComposerHidden(true);
+      props.run.presentElicit?.();
       if (!props.shell.renderer.isDestroyed) props.shell.renderer.requestRender();
     };
     revealHistoryTail(finishTransition);

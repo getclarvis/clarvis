@@ -777,6 +777,74 @@ describe("remote run codec", () => {
     expect((await handle.done).error?.code).toBe("unavailable");
   });
 
+  it("drops a buffered question the kernel settles before any handler attaches", async () => {
+    const transport = new FakeTransport();
+    transport.onRequest = (method) => {
+      if (method === SPECIAL_OPERATIONS.runsStart.method) {
+        transport.emit("run.elicitation", {
+          request: {
+            id: "exec-settled-buffer:elicit:0",
+            execution_id: "exec-settled-buffer",
+            kind: "ask_user",
+            prompt: "Approve?",
+            window_ms: 30_000,
+          },
+        });
+        transport.emit("run.elicitation_settled", {
+          execution_id: "exec-settled-buffer",
+          elicitation_id: "exec-settled-buffer:elicit:0",
+        });
+      }
+      return {};
+    };
+    const client = await connectKernelClient(transport);
+    const handle = await client.runs.start({
+      execution_id: "exec-settled-buffer",
+      messages: [],
+    });
+    const delivered: string[] = [];
+
+    handle.onElicit((request) => delivered.push(request.id));
+
+    expect(delivered).toEqual([]);
+    transport.emit("run.result", {
+      execution_id: handle.execution_id,
+      result: { execution_id: handle.execution_id, status: "completed" },
+    });
+    transport.emit("run.stream_end", { execution_id: handle.execution_id });
+    expect((await handle.done).status).toBe("completed");
+    await client.close();
+  });
+
+  it("keeps a buffered question when the settlement names another run", async () => {
+    const transport = new FakeTransport();
+    transport.onRequest = (method) => {
+      if (method === SPECIAL_OPERATIONS.runsStart.method) {
+        transport.emit("run.elicitation", {
+          request: {
+            id: "exec-scope:elicit:0",
+            execution_id: "exec-scope",
+            kind: "ask_user",
+            prompt: "Approve?",
+          },
+        });
+        transport.emit("run.elicitation_settled", {
+          execution_id: "exec-scope-elsewhere",
+          elicitation_id: "exec-scope:elicit:0",
+        });
+      }
+      return {};
+    };
+    const client = await connectKernelClient(transport);
+    const handle = await client.runs.start({ execution_id: "exec-scope", messages: [] });
+    const delivered: string[] = [];
+
+    handle.onElicit((request) => delivered.push(request.id));
+
+    expect(delivered).toEqual(["exec-scope:elicit:0"]);
+    await client.close();
+  });
+
   it("settles every live handle as unavailable when the transport disconnects", async () => {
     const transport = new FakeTransport();
     const client = await connectKernelClient(transport);
@@ -1020,6 +1088,7 @@ describe("remote run codec", () => {
   it.each([
     ["run.result", { execution_id: "exec-invalid-envelope", result: { status: "bogus" } }],
     ["run.stream_end", { execution_id: 7 }],
+    ["run.elicitation_settled", { execution_id: "exec-invalid-envelope", elicitation_id: 7 }],
     ["config.change", { subscription_id: "config-invalid", change: { kind: "unknown", at: 1 } }],
   ])("closes fail-closed on an invalid %s envelope", async (method, params) => {
     const transport = new FakeTransport();

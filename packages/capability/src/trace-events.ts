@@ -11,6 +11,7 @@ import type {
 import type { ExecutionStatus } from "./execution-status.ts";
 import type { FinalizationDisposition } from "./finalization.ts";
 import type { CommandGuardReview, ToolEvidenceDetail } from "./trace-kinds.ts";
+import type { ElicitNoResponseReason } from "./elicit.ts";
 
 /**
  * The public, persisted shape of a single loop event: a flat discriminated union
@@ -241,6 +242,8 @@ export type BuiltinTraceEvent =
       outcome: "accept" | "decline" | "cancel";
       answer?: string;
       options?: string[];
+      /** Set with a `decline` that nobody made; see {@link ElicitNoResponseReason}. */
+      no_response?: ElicitNoResponseReason;
     }
   | {
       type: "user_steering";

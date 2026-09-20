@@ -15,6 +15,7 @@ import {
   type KernelRunClientCallbacks,
 } from "../../src/adapters/kernel-run-client.ts";
 import type { RunProgress } from "../../src/adapters/run-types.ts";
+import type { ElicitRequestParams, ElicitResult } from "../../src/adapters/elicit-types.ts";
 import { recordDiagnostics } from "../helpers/recording-diagnostics.ts";
 
 async function flushMicrotasks(): Promise<void> {
@@ -49,9 +50,12 @@ function controllableHandle(executionId: string) {
   let settle!: (r: RunResult) => void;
   const done = new Promise<RunResult>((r) => (settle = r));
   let elicitHandler: ((req: ElicitationRequest) => void) | undefined;
+  let elicitSettledHandler: ((id: string) => void) | undefined;
+  let settlementOffs = 0;
   const steered: unknown[] = [];
   const compacted: unknown[] = [];
   const responded: unknown[] = [];
+  const presented: unknown[] = [];
   const handle = {
     execution_id: executionId,
     events: { [Symbol.asyncIterator]: () => gen() },
@@ -63,8 +67,19 @@ function controllableHandle(executionId: string) {
       status: "not_running" as const,
     }),
     respond: async (r: unknown) => void responded.push(r),
+    present: async (p: unknown) => {
+      presented.push(p);
+      return { accepted: true, remaining_ms: 17_500 };
+    },
     onElicit: (h: (req: ElicitationRequest) => void) => {
       elicitHandler = h;
+    },
+    onElicitSettled: (h: (id: string) => void) => {
+      elicitSettledHandler = h;
+      return () => {
+        settlementOffs += 1;
+        elicitSettledHandler = undefined;
+      };
     },
     done,
     closed,
@@ -82,9 +97,12 @@ function controllableHandle(executionId: string) {
     },
     settle,
     fireElicit: (req: ElicitationRequest) => elicitHandler?.(req),
+    fireSettled: (id: string) => elicitSettledHandler?.(id),
+    settlementOffs: () => settlementOffs,
     steered,
     compacted,
     responded,
+    presented,
   };
 }
 
@@ -310,6 +328,8 @@ test("hosted admission uses the persisted session and waits for projection plus 
         execution_id: "hosted-execution",
         agent: "coder",
         messages: [{ role: "user", content: "literal /quit" }],
+        // The TUI declares its interactive question window on the run request.
+        elicit_policy: { ask_user_window_ms: 30_000 },
       },
     },
   ]);
@@ -894,6 +914,133 @@ test("elicitation bridges request→UI→respond", async () => {
   ]);
 
   ctrl.settle({ execution_id: "exec_3", status: "completed" });
+  ctrl.close();
+  await handle.done;
+});
+
+test("a windowed question reaches the UI with its identity and window, and presentation reports the rest", async () => {
+  const ctrl = controllableHandle("exec_w");
+  let delivered: { id?: string; windowMs?: number } = {};
+  let projection: number | undefined;
+  const { c } = client(
+    { start: async () => ctrl.handle },
+    {
+      onElicit: async (params, present) => {
+        delivered = { id: params.id, windowMs: params.windowMs };
+        projection = await present();
+        return { action: "decline" };
+      },
+    },
+  );
+  await c.connect();
+  const handle = c.startRun({ messages: [], profile: "coder" });
+  await flushMicrotasks();
+
+  ctrl.fireElicit({
+    id: "exec_w:elicit:0",
+    execution_id: "exec_w",
+    kind: "ask_user",
+    prompt: "Deploy to prod?",
+    window_ms: 30_000,
+  });
+  await flushMicrotasks();
+
+  expect(delivered).toEqual({ id: "exec_w:elicit:0", windowMs: 30_000 });
+  expect(projection).toBe(17_500);
+  expect(ctrl.presented).toEqual([
+    { id: "exec_w:elicit:0", presenter: expect.stringMatching(/^code:/) },
+  ]);
+  expect(ctrl.responded).toEqual([{ id: "exec_w:elicit:0", action: "decline" }]);
+
+  ctrl.settle({ execution_id: "exec_w", status: "completed" });
+  ctrl.close();
+  await handle.done;
+});
+
+test("a presentation that cannot reach the kernel only costs the countdown", async () => {
+  const ctrl = controllableHandle("exec_p");
+  ctrl.handle.present = async () => {
+    throw new Error("the transport is gone");
+  };
+  let projection: number | undefined | "unset" = "unset";
+  const { c } = client(
+    { start: async () => ctrl.handle },
+    {
+      onElicit: async (_params, present) => {
+        projection = await present();
+        return { action: "decline" };
+      },
+    },
+  );
+  await c.connect();
+  const handle = c.startRun({ messages: [], profile: "coder" });
+  await flushMicrotasks();
+
+  const recording = recordDiagnostics();
+  try {
+    ctrl.fireElicit({
+      id: "exec_p:elicit:0",
+      execution_id: "exec_p",
+      kind: "ask_user",
+      prompt: "Deploy to prod?",
+      window_ms: 30_000,
+    });
+    await flushMicrotasks();
+  } finally {
+    recording.uninstall();
+  }
+
+  expect(projection).toBeUndefined();
+  expect(recording.first("elicit.present.failed")?.level).toBe("warn");
+  expect(ctrl.responded).toEqual([{ id: "exec_p:elicit:0", action: "decline" }]);
+
+  ctrl.settle({ execution_id: "exec_p", status: "completed" });
+  ctrl.close();
+  await handle.done;
+});
+
+test("a question the kernel settles is closed for the UI without answering it", async () => {
+  const ctrl = controllableHandle("exec_settled");
+  const answer = Promise.withResolvers<ElicitResult>();
+  const delivered: ElicitRequestParams[] = [];
+  const settled: string[] = [];
+  const { c } = client(
+    { start: async () => ctrl.handle },
+    {
+      onElicit: (params) => {
+        delivered.push(params);
+        return answer.promise;
+      },
+      onElicitSettled: (id) => {
+        settled.push(id);
+        answer.resolve({ action: "decline", settled: true });
+      },
+    },
+  );
+  await c.connect();
+  const handle = c.startRun({ messages: [], profile: "coder" });
+  await flushMicrotasks();
+
+  ctrl.fireElicit({
+    id: "exec_settled:elicit:0",
+    execution_id: "exec_settled",
+    kind: "ask_user",
+    prompt: "Deploy to prod?",
+    window_ms: 30_000,
+  });
+  await flushMicrotasks();
+  expect(delivered.map((p) => p.id)).toEqual(["exec_settled:elicit:0"]);
+
+  ctrl.fireSettled("exec_settled:elicit:0");
+  await flushMicrotasks();
+
+  // The run client reports the settlement to the UI and releases its observer;
+  // the kernel already retired the id, so no answer travels back.
+  expect(settled).toEqual(["exec_settled:elicit:0"]);
+  expect(ctrl.responded).toEqual([]);
+  expect(ctrl.settlementOffs()).toBe(1);
+
+  ctrl.settle({ execution_id: "exec_settled", status: "completed" });
   ctrl.close();
   await handle.done;
 });

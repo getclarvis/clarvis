@@ -32,12 +32,14 @@ export const M = {
   hostingCancel: SPECIAL_OPERATIONS.hostingCancel.method,
   hostingInterruptTool: SPECIAL_OPERATIONS.hostingInterruptTool.method,
   hostingRespond: SPECIAL_OPERATIONS.hostingRespond.method,
+  hostingPresent: SPECIAL_OPERATIONS.hostingPresent.method,
   runsStart: SPECIAL_OPERATIONS.runsStart.method,
   runsSteer: SPECIAL_OPERATIONS.runsSteer.method,
   runsCompact: SPECIAL_OPERATIONS.runsCompact.method,
   runsCancel: SPECIAL_OPERATIONS.runsCancel.method,
   runsInterruptTool: SPECIAL_OPERATIONS.runsInterruptTool.method,
   runsRespond: SPECIAL_OPERATIONS.runsRespond.method,
+  runsPresent: SPECIAL_OPERATIONS.runsPresent.method,
   runsGet: OPERATIONS.runs.get.method,
   runsList: OPERATIONS.runs.list.method,
   runsDelete: OPERATIONS.runs.delete.method,
@@ -78,6 +80,7 @@ export const N = {
   hostedObservation: "hosting.observation",
   runEvent: "run.event",
   runElicitation: "run.elicitation",
+  runElicitationSettled: "run.elicitation_settled",
   runResult: "run.result",
   runStreamEnd: "run.stream_end",
   configChange: "config.change",
@@ -135,6 +138,24 @@ export interface RunEventNote {
  */
 export interface RunElicitationNote {
   request: ElicitationRequest;
+}
+
+/**
+ * Payload of a {@link N.runElicitationSettled} notification: the fact that a run
+ * no longer has an outstanding question under that id.
+ *
+ * @remarks The kernel retires a question by id — a human answered it, the run
+ *   was torn down, or the interactive decision window elapsed. A frontend that
+ *   is showing the question must remove exactly that prompt and must not answer
+ *   it afterwards; the run's `done` and `run.stream_end` still own the terminal
+ *   lifecycle. Both fields are explicit rather than derived from the id's own
+ *   shape, so the id format stays an implementation detail of the bridge.
+ */
+export interface RunElicitationSettledNote {
+  /** Run the settled question belongs to. */
+  execution_id: string;
+  /** Identity of the question the kernel retired. */
+  elicitation_id: string;
 }
 
 /**

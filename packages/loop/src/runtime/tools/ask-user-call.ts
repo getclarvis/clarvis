@@ -100,6 +100,9 @@ export async function handleAskUserCall(args: {
     question: askArgs.question,
     outcome: outcome.action,
     ...(outcome.answer !== undefined ? { answer: outcome.answer } : {}),
+    ...(outcome.noResponse === true && outcome.noResponseReason !== undefined
+      ? { no_response: outcome.noResponseReason }
+      : {}),
     ...(options ? { options } : {}),
   });
   return { kind: "result", text: envelope.ok(mapOutcomeToText(outcome)) };

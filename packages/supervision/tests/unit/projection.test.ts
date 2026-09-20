@@ -119,6 +119,31 @@ describe("agents projection — included kinds", () => {
     expect(waitAgeSeconds(state, NOW + 90_000)).toBeUndefined();
   });
 
+  it("an unanswered question names the bound that closed it instead of reading as a refusal", () => {
+    const windowed: ProjectionState = { lastIteration: 3 };
+    project(
+      entry("elicitation_requested", { source: "ask_user", question: "may I run bun install?" }),
+      windowed,
+      NOW,
+    );
+    expect(
+      project(
+        entry("user_question", {
+          question: "…",
+          outcome: "decline",
+          no_response: "window_elapsed",
+        }),
+        windowed,
+        NOW + 12_000,
+      ),
+    ).toBe("[i3] elicit resolved: decline (window_elapsed) after 12s");
+
+    const human: ProjectionState = { lastIteration: 3 };
+    expect(
+      project(entry("user_question", { question: "…", outcome: "decline" }), human, NOW + 12_000),
+    ).toBe("[i3] elicit resolved: decline");
+  });
+
   it("a grandchild spawn is visible to the grandparent's poll", () => {
     expect(
       project(entry("delegation_created", { title: "extract the plaintiff" }), {

@@ -369,6 +369,8 @@ function defaultProps(overrides: {
   status?: Accessor<string>;
   goals?: AppProps["run"]["goals"];
   elicit?: Accessor<ElicitRequestParams | null>;
+  elicitRemaining?: Accessor<number | null>;
+  presentElicit?: () => void;
   switching?: Accessor<boolean>;
   seedStream?: RunEvent[];
   code?: AppFleet["code"];
@@ -444,6 +446,12 @@ function defaultProps(overrides: {
         registerDraftRestore: () => {},
         elicit: overrides.elicit ?? (() => null),
         resolveElicit: () => {},
+        ...(overrides.elicitRemaining === undefined
+          ? {}
+          : { elicitRemaining: overrides.elicitRemaining }),
+        ...(overrides.presentElicit === undefined
+          ? {}
+          : { presentElicit: overrides.presentElicit }),
         switching: overrides.switching,
       },
       session: {
@@ -3562,7 +3570,8 @@ test("a pending elicitation dismisses a clean overlay so the question becomes vi
 
 test("a pending elicitation does not discard an in-progress config edit", async () => {
   const [elicit, setElicit] = createSignal<ElicitRequestParams | null>(null);
-  const t = await mountApp(defaultProps({ elicit }));
+  const presentations: number[] = [];
+  const t = await mountApp(defaultProps({ elicit, presentElicit: () => presentations.push(1) }));
   await captureUntil(t, "New task");
   await t.mockInput.typeText("/settings");
   await t.renderOnce();
@@ -3584,6 +3593,8 @@ test("a pending elicitation does not discard an in-progress config edit", async 
   expect(kept).toContain("Unsaved");
   expect(kept).toContain("contrast checker");
   expect(kept).not.toContain("allow this command?");
+  // The question is not on screen, so its decision window must not have started.
+  expect(presentations).toHaveLength(0);
 
   await settleSyntaxSurfaces(t);
   const coveredFrame = t.captureCharFrame();
@@ -3600,6 +3611,52 @@ test("a pending elicitation does not discard an in-progress config edit", async 
   press(t, "escape");
   const answered = await captureUntil(t, "allow this command?");
   expect(answered).not.toContain("contrast checker");
+  // Only now that the block is really visible does the frontend confirm it, once.
+  await t.renderOnce();
+  expect(presentations).toHaveLength(1);
+  t.renderer.destroy();
+});
+
+test("the visible question counts the kernel's projection down and retires itself at zero", async () => {
+  const [elicit, setElicit] = createSignal<ElicitRequestParams | null>(null);
+  const [remaining, setRemaining] = createSignal<number | null>(null);
+  const presentations: number[] = [];
+  const t = await mountApp(
+    defaultProps({
+      elicit,
+      elicitRemaining: remaining,
+      presentElicit: () => presentations.push(1),
+    }),
+  );
+  await captureUntil(t, "New task");
+
+  setElicit({
+    message: "Which deploy target?",
+    kind: "ask_user",
+    id: "exec_window:elicit:0",
+    windowMs: 30_000,
+    requestedSchema: {
+      type: "object",
+      properties: { target: { type: "string", enum: ["staging-box", "production-box"] } },
+      required: ["target"],
+    },
+  });
+  const asked = await captureUntil(t, "Which deploy target?");
+  // No projection has arrived, so the block claims no remaining time at all.
+  expect(asked).not.toContain("The model decides");
+  expect(asked).toContain("staging-box");
+
+  await t.renderOnce();
+  expect(presentations).toHaveLength(1);
+
+  setRemaining(17_500);
+  expect(await captureUntil(t, "The model decides in 18 s.")).toContain("staging-box");
+
+  setRemaining(0);
+  const expired = await captureUntil(t, "No response in time; decision returned to the model.");
+  expect(expired).not.toContain("staging-box");
+
+  setElicit(null);
   t.renderer.destroy();
 });
 

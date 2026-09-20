@@ -536,3 +536,85 @@ test("an elicitation can fill the transcript side of a split layout", async () =
   expect(border).toBeDefined();
   expect(border!.indexOf("╮")).toBe(159);
 });
+
+const ASK_USER: ElicitRequestParams = {
+  message: "Which deploy target?",
+  kind: "ask_user",
+  id: "q1",
+  windowMs: 30_000,
+  requestedSchema: {
+    type: "object",
+    properties: { target: { type: "string", enum: ["staging-box", "production-box"] } },
+    required: ["target"],
+  },
+};
+
+test("a windowed question counts the kernel's projection down on screen", async () => {
+  const out = await frame(() => (
+    <ElicitBlock
+      interaction={stubInteraction}
+      request={ASK_USER}
+      remaining={() => 17_500}
+      onResolve={() => {}}
+    />
+  ));
+  expect(out).toContain("The model decides in 18 s.");
+  expect(out).toContain("staging-box");
+});
+
+test("a question with no projection renders no countdown instead of a declared one", async () => {
+  const waiting = await frame(() => (
+    <ElicitBlock
+      interaction={stubInteraction}
+      request={ASK_USER}
+      remaining={() => null}
+      onResolve={() => {}}
+    />
+  ));
+  expect(waiting).not.toContain("The model decides");
+  expect(waiting).not.toContain("No response in time");
+  expect(waiting).toContain("staging-box");
+
+  const unwired = await frame(() => (
+    <ElicitBlock interaction={stubInteraction} request={ASK_USER} onResolve={() => {}} />
+  ));
+  expect(unwired).not.toContain("The model decides");
+  expect(unwired).toContain("staging-box");
+});
+
+test("an elapsed window stops offering the controls and returns the decision", async () => {
+  const out = await frame(() => (
+    <ElicitBlock
+      interaction={stubInteraction}
+      request={ASK_USER}
+      remaining={() => 0}
+      onResolve={() => {}}
+    />
+  ));
+  expect(out).toContain("No response in time; decision returned to the model.");
+  expect(out).not.toContain("staging-box");
+  expect(out).not.toContain("production-box");
+});
+
+test("a guard confirmation never counts down, even with a stale projection", async () => {
+  const out = await frame(() => (
+    <ElicitBlock
+      interaction={stubInteraction}
+      request={{
+        message: "Run bun test?",
+        kind: "guard_confirm",
+        detail: { command: "bun test", cwd: "/work/repo", reason: "no allowed commands list" },
+        requestedSchema: {
+          type: "object",
+          properties: { decision: { type: "string", enum: ["deny", "allow", "allow_session"] } },
+          required: ["decision"],
+        },
+      }}
+      remaining={() => 0}
+      onResolve={() => {}}
+    />
+  ));
+  expect(out).not.toContain("The model decides");
+  expect(out).not.toContain("No response in time");
+  expect(out).toContain("allow for this session");
+});

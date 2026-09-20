@@ -41,6 +41,17 @@ export interface TranscriptRegionRun {
   elicit: Accessor<ElicitRequestParams | null>;
   resolveElicit: (result: ElicitResult) => void;
   workflowActivity: Accessor<WorkflowActivity | null>;
+  /** Milliseconds left in the pending question's decision window, or null. */
+  elicitRemaining?: Accessor<number | null>;
+  /**
+   * Confirm the pending question is on screen, called once the block is
+   * actually laid out inside the viewport.
+   *
+   * @remarks The visibility seam owns the moment: confirming on notification
+   *   would start the kernel's window while the block is still queued behind an
+   *   overlay, and the user would lose part of it.
+   */
+  presentElicit?: () => void;
 }
 
 /** Layout projections consumed by the transcript region. */
@@ -183,6 +194,7 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
                 plan={() => props.activity.plan}
                 onOpenPlan={props.openPlan}
                 fillAvailableWidth={splitOpen}
+                remaining={props.run.elicitRemaining}
               />
             )}
           </Show>

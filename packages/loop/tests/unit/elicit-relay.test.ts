@@ -3,6 +3,7 @@ import { buildElicitRelay } from "../../src/runtime/elicit-relay.ts";
 import {
   ElicitTimeoutError,
   type Elicit,
+  type ElicitParams,
   type ElicitRawResult,
 } from "../../src/runtime/tools/ask-user-tool.ts";
 import { createTrace } from "@clarvis/trace";
@@ -57,6 +58,25 @@ describe("buildElicitRelay — relay.handle", () => {
     const result = await relay.handle({ message: "Proceed?" }, undefined);
 
     expect(result).toEqual({ action: "accept", content: { response: "yes" } });
+  });
+
+  it("marks a relayed question external, normalizes its kind, and strips internal outcome fields", async () => {
+    let seen: ElicitParams | undefined;
+    const { relay } = build(async (params) => {
+      seen = params;
+      return { action: "decline", windowElapsed: true };
+    });
+
+    const result = await relay.handle(
+      { message: "Run it?", kind: "guard_confirm", origin: "model" },
+      undefined,
+    );
+
+    expect(seen?.origin).toBe("external");
+    expect(seen?.kind).toBe("ask_user");
+    expect(seen?.message).toBe("Run it?");
+    expect(result).toEqual({ action: "decline" });
+    expect("windowElapsed" in (result as object)).toBe(false);
   });
 
   it("does not build a relay when elicitation is disabled", () => {

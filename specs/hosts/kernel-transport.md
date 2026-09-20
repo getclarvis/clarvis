@@ -272,12 +272,14 @@ The special operations and their metadata:
 | `hosting.cancel` | write | — |
 | `hosting.interrupt_tool` | write | — |
 | `hosting.respond` | write | — |
+| `hosting.present` | write | — |
 | `runs.start` | write | — |
 | `runs.steer` | write | — |
 | `runs.compact` | write | — |
 | `runs.cancel` | write | — |
 | `runs.interrupt_tool` | write | — |
 | `runs.respond` | write | — |
+| `runs.present` | write | — |
 | `config.subscribe` | read | — |
 | `config.unsubscribe` | read | — |
 
@@ -386,6 +388,7 @@ operations; `hosting`, `runs`, `config`, `memory`, `plans`, `workflows`, `skills
 | --- | --- | --- | --- |
 | `runEvent` | `run.event` | `RunEventNote { execution_id, event }` | `packages/kernel/src/transport/wire.ts` |
 | `runElicitation` | `run.elicitation` | `RunElicitationNote { request }` | `packages/kernel/src/transport/wire.ts` |
+| `runElicitationSettled` | `run.elicitation_settled` | `RunElicitationSettledNote { execution_id, elicitation_id }` | `packages/kernel/src/transport/wire.ts` |
 | `runResult` | `run.result` | `RunResultNote { execution_id, result }` | `packages/kernel/src/transport/wire.ts` |
 | `runStreamEnd` | `run.stream_end` | `RunStreamEndNote { execution_id }` | `packages/kernel/src/transport/wire.ts` |
 | `configChange` | `config.change` | `ConfigChangeNote { subscription_id, change }` | `packages/kernel/src/transport/wire.ts` |
@@ -393,6 +396,11 @@ operations; `hosting`, `runs`, `config`, `memory`, `plans`, `workflows`, `skills
 
 `run.elicitation` carries no `execution_id` of its own — the run is identified by
 `request.execution_id` (`packages/kernel/src/transport/wire.ts`, consumed at `packages/kernel/src/transport/client.ts`).
+`run.elicitation_settled` is its closure: the kernel states that the run no longer has an outstanding
+question under `elicitation_id`, whether a human answered it, the interactive decision window elapsed,
+or the run was torn down with it still pending. Both fields are explicit so the id format stays the
+bridge's own business, and the notification is never an answer — a frontend removes exactly that
+prompt instead of responding to it.
 
 ### 2.5 Server options
 
@@ -640,20 +648,25 @@ connection closed while awaiting, cancel the handle and throw `unavailable`; oth
 record `{ handle, resultSettled: false, streamSettled: false }` in `live`, call `pump(handle)`, and
 answer `{ execution_id }`.
 
-`pump` (`packages/kernel/src/transport/server.ts`) attaches four things to the handle:
+`pump` (`packages/kernel/src/transport/server.ts`) attaches five things to the handle:
 
 1. `onElicit` → `N.runElicitation` with `{ request }`.
-2. An async loop over `handle.events` awaiting `notifications.notify(N.runEvent, …)` per event, whose
+2. `onElicitSettled` → `N.runElicitationSettled` with `{ execution_id, elicitation_id }`, so the
+   client showing that question learns it was retired without answering it. A handle whose bridge
+   pushes no settlement (an older or narrower one) simply registers nothing.
+3. An async loop over `handle.events` awaiting `notifications.notify(N.runEvent, …)` per event, whose
    `finally` marks `streamSettled`, releases the `live` entry if both halves settled, and sends
    `N.runStreamEnd`.
-3. `handle.done` → `N.runResult`. A rejected `done` is still sent as a result, synthesized as
+4. `handle.done` → `N.runResult`. A rejected `done` is still sent as a result, synthesized as
    `status: "failed"` with `code: "internal"` and a `sanitizeErrorMessage`'d message.
-4. `handle.closed` → drop the `live` entry unconditionally.
+5. `handle.closed` → drop the `live` entry unconditionally.
 
 `liveOrThrow` (`packages/kernel/src/transport/server.ts`, `liveOrThrow`) governs
-`runs.steer`, `runs.cancel`, and `runs.respond`: it treats a missing connection-local entry or one
-whose result has settled as `not_found` `no live run '<id>'`. The integration test named "rejects
-control requests for an execution not live on that connection" pins those three methods.
+`runs.steer`, `runs.cancel`, `runs.respond` and `runs.present`: it treats a missing connection-local
+entry or one whose result has settled as `not_found` `no live run '<id>'`. The integration test named
+"rejects control requests for an execution not live on that connection" pins those methods. A live
+entry whose handle exposes no `present` answers `{ accepted: false }` instead of failing, so a handle
+from a kernel that predates the presentation contract stays usable.
 
 `runs.compact` deliberately follows a different route (`packages/kernel/src/transport/server.ts`,
 the `M.runsCompact` case). It accepts `request?` plus
@@ -712,6 +725,7 @@ only through the service-level call for a settled run.
 | `run.result` | `hasOnly(["execution_id","result"])`, `result.execution_id === execution_id`, status in `completed\|failed\|cancelled` | resolve `done`, set `resultReceived`, delete the entry if the stream already ended |
 | `run.stream_end` | `hasOnly(["execution_id"])` | close the stream, resolve `closed`, delete the entry if the result already arrived |
 | `run.elicitation` | `hasOnly(["request"])`; string `request.id`/`execution_id`/`kind`/`prompt`; when `detail` is present, `isCommandDetail` requires exactly `command`, `cwd`, `reason`, `warning?`, with the first three strings and `warning` absent or a string (`packages/kernel/src/transport/client.ts`, `isCommandDetail` and the `N.runElicitation` observer) | buffer into `pendingElicits` when no handler yet, else fan out |
+| `run.elicitation_settled` | `hasOnly(["execution_id","elicitation_id"])` and both members strings (`packages/kernel/src/transport/client.ts`, the `N.runElicitationSettled` observer) | drop the still-buffered request with that id, then call every `onElicitSettled` handler of `clientRuns.get(execution_id)` |
 | `config.change` | `hasOnly(["subscription_id","change"])`, change `hasOnly(["kind","scope","at"])`, kind in `settings\|agents\|context`, finite `at`, scope `global\|workspace` or absent | `configSubs.get(id)?.(change)` |
 
 Every failure calls `protocolViolation(message)`, which is fail-closed: mark closed,
@@ -994,8 +1008,17 @@ replace the first handle.
 Production: `packages/kernel/src/transport/client.ts`.
 Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 
-**INV-221.** `steer`/`compact`/`cancel`/`interruptTool`/`respond` each forward with the handle's own `execution_id`
-under the stable names `runs.steer`, `runs.compact`, `runs.cancel`, `runs.interrupt_tool`, `runs.respond`.
+**INV-221.** `steer`/`compact`/`cancel`/`interruptTool`/`respond`/`present` each forward with the handle's own `execution_id`
+under the stable names `runs.steer`, `runs.compact`, `runs.cancel`, `runs.interrupt_tool`, `runs.respond`,
+`runs.present`. `runs.present` carries the `{ id, presenter }` presentation of a pending elicitation and
+answers `ElicitationPresentationAck`; it is the only wire method that can start a question's decision
+window, and it never settles a question by itself. Its envelope is key-checked (`execution_id`,
+`presentation`) and `wirePresentation` requires both members to be non-empty bounded strings.
+Production: `packages/kernel/src/transport/client.ts` (the streaming handle and its bound method names),
+`packages/kernel/src/transport/wire.ts` (`M.runsPresent`).
+Test: `packages/kernel/tests/contract/transport-codecs.test.ts` ("forwards steer, compact, cancel, and
+respond with the handle's execution id") and `packages/kernel/tests/integration/transport.test.ts`
+("presents a model question, expires its window and settles the silence as window_elapsed").
 
 Interrupt receipt statuses describe registry outcomes, not transport health. A transport failure
 rejects the handle's request as sanitized `unavailable`; expiry before delivery to a subscriber
@@ -1006,8 +1029,6 @@ than translating it through a private execution protocol. The bounded channel co
 `packages/kernel/src/hosting/container-channel.ts`. Test:
 `packages/kernel/tests/contract/transport-codecs.test.ts` and
 `packages/kernel/tests/contract/container-channel.test.ts`.
-Production: `packages/kernel/src/transport/client.ts`, names bound at `packages/kernel/src/transport/client.ts`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 
 **INV-222.** An elicitation emitted before `runs.start` resolves is buffered and delivered to a
 handler registered afterwards.
@@ -1027,6 +1048,23 @@ discriminator.
 Production: `decodeRunEvent` in `packages/kernel/src/transport/run-event-codec.ts` (its `Object.hasOwn` guard is
 what rejects inherited keys), `protocolViolation` `packages/kernel/src/transport/client.ts`.
 Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
+
+**INV-326.** A question the run retired is reported to the direct client by id, and never as an
+answer: the server's pump subscribes `handle.onElicitSettled` and pushes
+`run.elicitation_settled` carrying `{ execution_id, elicitation_id }`; the client validates both
+members strictly, retires a request still buffered in `pendingElicits` under that id, and calls every
+`onElicitSettled` handler registered on that run — a settlement naming another run or an unknown id
+changes nothing. `RunHandle.onElicitSettled` returns an unsubscribe, and the notification carries no
+answer, so nothing here can answer a question on the frontend's behalf.
+Production: `packages/kernel/src/transport/wire.ts` (`N.runElicitationSettled`,
+`RunElicitationSettledNote`), `packages/kernel/src/transport/server.ts` (`pump`),
+`packages/kernel/src/transport/client.ts` (the `N.runElicitationSettled` observer and the streaming
+handle's `onElicitSettled`).
+Test: `packages/kernel/tests/integration/transport.test.ts` ("reports each settled windowed question by
+id to the direct client presenting it") and `packages/kernel/tests/contract/transport-codecs.test.ts`
+("drops a buffered question the kernel settles before any handler attaches", "keeps a buffered
+question when the settlement names another run", and the invalid-envelope case for
+`run.elicitation_settled`).
 
 **INV-T1.** A wire method name is declared exactly once, in `KernelOperation.method`; `M` reads its
 values from the catalog rather than restating them.
@@ -1110,7 +1148,7 @@ unknown unsubscribe is an idempotent no-op.
 Production: `packages/kernel/src/transport/server.ts` (config subscription map).
 Test: `packages/kernel/tests/integration/transport.test.ts`.
 
-**INV-T14.** `runs.steer`, `runs.cancel`, and `runs.respond` are connection-live-only and return
+**INV-T14.** `runs.steer`, `runs.cancel`, `runs.respond` and `runs.present` are connection-live-only and return
 `not_found` when their execution is absent or result-settled on that connection. `runs.compact` is
 hybrid: it targets a connection-local handle while one remains, rejects mechanical fitting there,
 and otherwise delegates to the owner-bound `RunService.compact` so a settled persisted run can be

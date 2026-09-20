@@ -59,9 +59,11 @@ The host alone validates and installs authority; its operational faults propagat
 semantic rejection. Closing the machine fences pending transaction results without rolling back an
 already installed envelope. These modules feed the private run capability; the native host composes the public capability with command, effect and configuration consumers integrated.
 
-The private `createJudgeRunCapability` uses the ordinary Loop contribution contract: one forced
-`judge_step` tool, a shared output budget, a terminal finalize gate and lifecycle cleanup. A complete
+The private `createJudgeRunCapability` uses the ordinary Loop contribution contract: one
+`judge_step` tool without provider-side forced selection, a shared output budget, a terminal finalize gate and lifecycle cleanup. A complete
 provider response must pass admission before dispatch; admission performs no host transaction.
+Every advertised schema has an explicit object root, including the staged union. Tool selection
+is enforced through local admission and bounded correction, independently of the selected model.
 Compile returns the authoritative tool result and advances to the decision stage; valid decisions return a
 completed structured receipt immediately. Host transaction faults terminate with `internal_error`
 and remain separately available to the executor. Invalid output terminates with the fixed private

@@ -1,5 +1,49 @@
 import { glyph } from "../theme/glyphs.ts";
 
+/** Wraps a reasoning preview by terminal cells, retaining at most three visible lines. */
+export function thinkingPreview(text: string, columns: number): string {
+  const width = Math.max(3, Math.floor(columns));
+  const lines: string[] = [];
+  let line = "";
+  const push = (): boolean => {
+    lines.push(line.trimEnd());
+    line = "";
+    return lines.length === 3;
+  };
+  const shortened = (): string => {
+    let last = lines[2] ?? "";
+    const segments = [
+      ...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(last),
+    ].map((entry) => entry.segment);
+    while (Bun.stringWidth(last) > width - 3) {
+      segments.pop();
+      last = segments.join("");
+    }
+    lines[2] = last.trimEnd() + "...";
+    return lines.join("\n");
+  };
+  const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+  for (const token of text.matchAll(/\n|[^\S\n]+|[^\s]+/gu)) {
+    const word = token[0];
+    if (word === "\n") {
+      if (push()) return shortened();
+      continue;
+    }
+    if (line && Bun.stringWidth(line + word) > width) {
+      if (push()) return shortened();
+      if (word.trim() === "") continue;
+    }
+    for (const { segment } of graphemes.segment(word)) {
+      if (Bun.stringWidth(line + segment) > width) {
+        if (push()) return shortened();
+      }
+      line += segment;
+    }
+  }
+  lines.push(line.trimEnd());
+  return lines.join("\n");
+}
+
 /**
  * Truncates `s` to at most `max` characters, dropping the end and appending
  * an ellipsis glyph.

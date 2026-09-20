@@ -170,7 +170,7 @@ Test: [review-context.test.ts](../../packages/kernel/tests/unit/review-context.t
 `a newly available Plans context invalidates a review begun without one`.
 
 
-The compiler runs lazily for a revision whose effects are not covered. Its forced tool uses a closed,
+The compiler runs lazily for a revision whose effects are not covered. Its locally validated tool uses a closed,
 bounded schema. Unknown effects, evidence IDs, targets or constraints invalidate the entire output.
 Only bounded descriptors accept prerequisite inference. Explicit effects require direct evidence;
 human-only descriptors are never inferable. Existing exclusions and inherited ceilings cannot be

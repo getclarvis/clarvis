@@ -1,4 +1,4 @@
-import { createMemo, For, Match, onCleanup, Show, Switch, untrack } from "solid-js";
+import { createMemo, createSignal, For, Match, onCleanup, Show, Switch, untrack } from "solid-js";
 import type { JSX } from "solid-js";
 import { tokens } from "../theme/tokens.ts";
 import { borderChars, glyph } from "../theme/glyphs.ts";
@@ -37,7 +37,7 @@ import { isLeadMutation, mutationStats, type DiffStats } from "./tools/mutation-
 import { resolveToolCallSignature } from "./tools/signature.ts";
 import type { BlockOverride } from "./block-focus.ts";
 import { formatElapsed, spinnerChar, thinkingDots, tickNow } from "./spinner.ts";
-import { fmtCount, moreChip } from "./truncate.ts";
+import { fmtCount, moreChip, thinkingPreview } from "./truncate.ts";
 import { activityPreview, type ActivityDetail } from "./activity-detail.ts";
 import { StableMarkdown } from "../ui/patterns/stable-syntax.tsx";
 
@@ -581,6 +581,7 @@ export function BlockView(props: {
    * sibling such as the activity sidebar. */
   fillAvailableWidth?: () => boolean;
 }): JSX.Element {
+  const [thinkingWidth, setThinkingWidth] = createSignal(MEASURE_MAX_COLS - 1);
   const interactive = (): boolean => props.interactive?.() ?? true;
   const onToggle = (): void => {
     if (interactive()) props.onToggle?.();
@@ -655,7 +656,14 @@ export function BlockView(props: {
 
                   <Match when={props.node.kind === "reasoning"}>
                     <Show when={!collapsed()}>
-                      <box paddingTop={1} paddingLeft={1} flexDirection="column">
+                      <box
+                        paddingTop={1}
+                        paddingLeft={1}
+                        flexDirection="column"
+                        onSizeChange={function () {
+                          setThinkingWidth(this.width - 1);
+                        }}
+                      >
                         <text>
                           <span style={{ fg: railColor(props.node) }}>
                             {(props.node.status === "running" ? spinnerChar() : glyph("spark")) +
@@ -663,7 +671,9 @@ export function BlockView(props: {
                           </span>
                           <span style={{ fg: tokens.muted }}>thinking</span>
                         </text>
-                        <text fg={tokens.muted}>{thinkingDisplayText(props.node)}</text>
+                        <text fg={tokens.muted} width="100%" maxHeight={3} wrapMode="word">
+                          {thinkingPreview(thinkingDisplayText(props.node), thinkingWidth())}
+                        </text>
                       </box>
                     </Show>
                   </Match>

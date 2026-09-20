@@ -782,12 +782,15 @@ Every one of `shell`'s and `monitor_start`'s process-kill paths (`timeout`, `abo
   one call site (`packages/loop/src/runtime/build-run-deps.ts`); whether `@clarvis/server` or
   a bare `createAgentTools` consumer does anything with the default `stderr` sink is not visible from
   this package's own source.
-## Effect review boundary
+## Guard boundary
 
-Shell/monitor execution consumes the host guard outcome without changing its coarse tool effect.
-Segment issues and literal-data proof are review facts, not a shell fallback. Git/GitHub probes use
-a separate host-injected argv runner and never dispatch the command under review. Docker/Podman
+Shell/monitor execution consumes the host guard outcome without changing its coarse tool effect: the
+policy decides `allow`, `deny` or `ask`, and Auto sends every remaining `ask` to the call-local Judge
+reviewer with the complete call. Segment issues are review facts, not a shell fallback, and a command
+is never classified by Git/GitHub operation. Docker/Podman
 retain their escalation refusal. Production:
-[shell.ts](../../packages/kernel/src/guard/effects/shell.ts).
-Test: [effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts).
-See [effect review](effect-review.md).
+[resolver.ts](../../packages/kernel/src/guard/resolver.ts),
+[shell-guard.ts](../../packages/kernel/src/guard/shell-guard.ts).
+Test: [command-guard-routing.test.ts](../../packages/kernel/tests/integration/command-guard-routing.test.ts)
+and [guard-auto-review.test.ts](../../packages/kernel/tests/integration/guard-auto-review.test.ts).
+See [command guard](command-guard.md) and [effect review](effect-review.md).

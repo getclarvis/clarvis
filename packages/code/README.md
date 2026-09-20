@@ -819,13 +819,14 @@ or edits files under `infra/`.
 Never approve a command that pipes a network fetch into a shell.
 ```
 
-The effect reviewer uses host-attributed operator evidence and mechanically attested effects.
-The local and CI-retry paths validate effect-model allows against current grants. An ordinary shell
-ask without a registered effect instead uses the exact-call Judge in Auto: its payload separates
+The configuration reviewer uses host-attributed operator evidence and mechanically attested effects;
+the `shadow` and `local` stages validate effect-model allows against current grants. Every shell
+`ask` the allow/deny lists did not resolve instead uses the exact-call Judge in Auto: its payload separates
 segment source, executable, parameters and environment bindings, while deny-list and path rules retain precedence. Auto never asks a person: the Judge decides
 forced removal, privilege elevation, credential-file access and unsandbox, and refusals name the
 exact match. Approval asks a human only when the call is neither allow-listed nor dangerous. The prompt shows segment causes, effect identity and
-operational failure kind. See the [effect-review contract](../../specs/execution/effect-review.md).
+operational failure kind. See the [command-guard contract](../../specs/execution/command-guard.md)
+and the [effect-review contract](../../specs/execution/effect-review.md).
 
 `~/.clarvis` is `$CLARVIS_HOME` when that is set.
 

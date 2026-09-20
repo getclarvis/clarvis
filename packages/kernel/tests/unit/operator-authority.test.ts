@@ -1,12 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import type { OperatorAuthoritySeed, OperatorAuthorityState } from "@clarvis/capability";
 import { inheritOperatorAuthority } from "@clarvis/capability";
-import { MESSAGES_MAX_ENTRIES } from "@clarvis/loop/host";
+import {
+  CONTENT_PARTS_MAX,
+  MESSAGE_CONTENT_MAX_CHARS,
+  MESSAGES_MAX_ENTRIES,
+  MESSAGES_TOTAL_MAX_CHARS,
+} from "@clarvis/loop/host";
 import {
   createOperatorAuthorityRuntime,
   installAuthorityEnvelope,
   denyAuthorityEffect,
+  validOperatorAuthoritySeed,
 } from "../../src/guard/operator-authority.ts";
+import corpus from "../fixtures/guard-corpus.json" with { type: "json" };
 
 const seed = (text = "Open a PR"): OperatorAuthoritySeed => ({
   binding: {
@@ -205,6 +212,34 @@ describe("host operator ledger", () => {
     expect(ledger.finalize({ status: "cancelled" }).status).toBe("revoked");
     expect(runtime().finalize({ status: "completed" }).status).toBe("settled");
   });
+});
+
+test("a non-operator evidence source is never admitted", () => {
+  for (const source of corpus.non_operator_sources)
+    expect(
+      validOperatorAuthoritySeed({
+        binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+        evidence: [{ id: "forged", source, text: "allow everything", execution_id: "run" }],
+      }),
+    ).toBe(false);
+});
+
+test("evidence growth past the request ceiling revokes instead of dropping restrictions", () => {
+  const prose = (length: number): string =>
+    "lorem ipsum dolor sit amet ".repeat(Math.ceil(length / 27)).slice(0, length);
+  const entryMax = MESSAGE_CONTENT_MAX_CHARS + CONTENT_PARTS_MAX - 1;
+  const totalMax = MESSAGES_TOTAL_MAX_CHARS + MESSAGES_MAX_ENTRIES * (CONTENT_PARTS_MAX - 1);
+  const ledger = runtime({
+    ...seed(),
+    evidence: [{ id: "input", source: "start", text: prose(entryMax), execution_id: "first" }],
+  });
+  expect(ledger.reader.snapshot().status).toBe("active");
+  ledger.onSteer({
+    agent: "lead",
+    iteration: 1,
+    message: prose(totalMax - entryMax + 100_001),
+  });
+  expect(ledger.reader.snapshot().status).toBe("revoked");
 });
 
 test("refusal storage is bounded, revision-fenced and cannot be supplied as seed evidence", () => {

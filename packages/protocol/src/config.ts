@@ -124,7 +124,7 @@ export interface EffectReviewConfig {
   timeout_ms?: number;
   max_retries?: number;
   on_unsure?: "ask" | "deny";
-  rollout?: "shadow" | "local" | "ci_retry";
+  rollout?: "shadow" | "local";
 }
 
 /**

@@ -17,6 +17,7 @@ import { createMemoryConfigStore } from "../../src/config/memory-config-store.ts
 import { validateAuthorityEnvelope } from "../../src/guard/authority-validation.ts";
 import { createGuardEffectRegistry } from "../../src/guard/effects/registry.ts";
 import type { GuardEffectBatch } from "../../src/guard/effects/types.ts";
+import { configurationFact } from "../helpers/configuration-mutation.ts";
 
 const seed: OperatorAuthoritySeed = {
   binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
@@ -141,6 +142,12 @@ test("effect compilation accepts captured instruction IDs but rejects invented p
     executionId: "run",
     seed: admitted,
   });
+  const registry = createGuardEffectRegistry();
+  const batch: GuardEffectBatch = {
+    facts: [configurationFact(registry)],
+    reviewability: "static",
+  };
+  const target = batch.facts[0]!.target!.digest;
   const envelope: AuthorityEnvelopeV1 = {
     version: 1,
     revision: runtime.reader.snapshot().revision,
@@ -149,27 +156,11 @@ test("effect compilation accepts captured instruction IDs but rejects invented p
         id: "inspect",
         summary: "Inspect",
         evidence_ids: [admitted.instructions![0]!.id],
-        target_digests: ["target"],
+        target_digests: [target],
       },
     ],
     grants: [],
     exclusions: [],
-  };
-  const registry = createGuardEffectRegistry();
-  const batch: GuardEffectBatch = {
-    facts: [
-      {
-        id: "workspace.inspect",
-        class: "read",
-        inference: "bounded",
-        target: { kind: "repository", digest: "target" },
-        constraints: {},
-        attestation: "complete",
-        reviewability: "static",
-        analysis_issues: [],
-      },
-    ],
-    reviewability: "static",
   };
   expect(validateAuthorityEnvelope(envelope, runtime.reader, registry, batch)).toEqual(envelope);
   envelope.objectives[0]!.evidence_ids = ["invented"];

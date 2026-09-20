@@ -32,6 +32,7 @@ import {
   captureRunInstructions,
   seedRunInstructions,
 } from "../../src/runs/instruction-snapshot.ts";
+import { configurationFact } from "../helpers/configuration-mutation.ts";
 
 const instructionSeed = seedRunInstructions(
   {
@@ -222,16 +223,10 @@ test.each([
                         const batch: GuardEffectBatch = {
                           reviewability: "static",
                           facts: [
-                            {
-                              id: "clarvis.authoring.write",
-                              class: "local_mutation",
-                              inference: "bounded",
-                              target: { kind: "workspace", digest: "target" },
-                              constraints: { path_digest: "a".repeat(64) },
-                              attestation: "complete",
-                              reviewability: "static",
-                              analysis_issues: [],
-                            },
+                            configurationFact(createGuardEffectRegistry(), {
+                              surface: "authoring",
+                              canonicalPath: ".clarvis/agents/helper.md",
+                            }),
                           ],
                         };
                         const concurrent = await Promise.all(

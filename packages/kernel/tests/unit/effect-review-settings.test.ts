@@ -6,7 +6,7 @@ test("workspace settings cannot choose a reviewer, enable rollout or increase bo
   expect(
     resolveEffectReviewSettings(undefined, {
       model: "evil/model",
-      rollout: "ci_retry",
+      rollout: "shadow",
       timeout_ms: 120000,
       max_retries: 2,
     }),
@@ -22,7 +22,7 @@ test("workspace settings cannot choose a reviewer, enable rollout or increase bo
       },
       {
         model: "evil/model",
-        rollout: "ci_retry",
+        rollout: "shadow",
         timeout_ms: 500,
         max_retries: 2,
         on_unsure: "ask",

@@ -24,7 +24,11 @@ and `effectReviewFixture`, exercised by the Kernel Judge and effect-review integ
 validated against `CLARVIS_TIMEOUT_CEILING_MS` by the ordinary profile validator, nonnegative retries
 bounded by `CLARVIS_RETRY_CEILING`,
 `on_unsure` (`ask` or `deny`; Auto ignores `ask` and refuses to the calling agent) and rollout
-(`shadow`, `local`, `ci_retry`). Its merge is last-wins,
+(`shadow`, `local`; both scope configuration review only, never command authorization). A document
+written before the `ci_retry` stage was withdrawn still parses: that spelling normalizes to the
+conservative `local` ceiling rather than failing validation, because a rejected document is
+discarded whole and would silently drop every unrelated setting beside it. Any other value is still
+rejected. Its merge is last-wins,
 with global/workspace restrictions applied by Kernel. Calls inherit `CLARVIS_DEFAULT_CALL_TIMEOUT_MS`
 (180000 ms by default) and `CLARVIS_DEFAULT_MAX_RETRIES` (three retries by default), with denial on
 uncertainty. There is no private transport retry default or ceiling. The strict per-run `guard_judge` parameter accepts the same model,
@@ -34,7 +38,11 @@ Unknown fields are rejected, not translated. `guard_mode` remains owned by tools
 
 Production: `effectReviewSchema`, `guardJudgeSchema`, `JUDGE_DEFAULTS` and `judgeRequestConfig` in
 [settings.ts](../../packages/judge/src/settings.ts).
-Test: [settings.test.ts](../../packages/judge/tests/unit/settings.test.ts), `Judge settings ownership`.
+Test: [settings.test.ts](../../packages/judge/tests/unit/settings.test.ts), `Judge settings ownership`
+(the withdrawn-stage normalization and the still-rejected unknown value), and the store-level upgrade
+regression in
+[file-config-store.test.ts](../../packages/kernel/tests/integration/file-config-store.test.ts),
+`FileConfigStore — settings upgrade`.
 
 Absent runtime overrides remain absent through settings merging. Workspace configuration may only
 lower the effective runtime defaults or explicit operator limits. Protocol correction remains
@@ -326,7 +334,7 @@ identity are architecture errors, not uncertainty.
 The pure eligibility predicate includes edit/exec profiles when tools are enabled and mode is Auto
 or off; automatic configuration review remains possible in off mode. Explicit human-only mode and
 read-only ceilings exclude it. Memory indexing filters Judge from inherited capabilities. Container
-composition does not invoke the native FileKernel factory. Command, effect and configuration review use this binding.
+composition does not invoke the native FileKernel factory. Command, configuration and effect review use this binding.
 
 Each actual inference emits one parent `guard_reviewer_model_call` with private
 `judge_execution_id`, live stage/authority revision and consumer metadata. Cache hits emit none.

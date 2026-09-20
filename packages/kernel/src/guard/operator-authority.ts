@@ -56,7 +56,8 @@ const evidenceList = z
         EVIDENCE_TOTAL_MAX_CHARS &&
       new Set(entries.map((entry) => entry.id)).size === entries.length,
   );
-const consumedSchema = z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(32);
+/** Exact refusals share one bounded digest shape. */
+const digestListSchema = z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(32);
 const instructionsSchema = z
   .array(
     z
@@ -100,7 +101,6 @@ const seedSchema = z
     review_context: reviewContextSchema.optional(),
     parent_run_id: identifier.optional(),
     ceiling: authorityEnvelopeSchema.optional(),
-    consumed_effects: consumedSchema.optional(),
   })
   .strict()
   .refine((seed) =>
@@ -129,10 +129,6 @@ const compilers = new WeakMap<
   OperatorAuthorityReader,
   (envelope: AuthorityEnvelopeV1, contextRevision?: string) => boolean
 >();
-const consumers = new WeakMap<
-  OperatorAuthorityReader,
-  (revision: number, keys: string[]) => boolean
->();
 
 const refusals = new WeakMap<OperatorAuthorityReader, (revision: number, key: string) => boolean>();
 
@@ -143,15 +139,6 @@ export function denyAuthorityEffect(
   key: string,
 ): boolean {
   return refusals.get(reader)?.(revision, key) ?? false;
-}
-
-/** Reserve bounded one-attempt effects before execution; failed execution does not refund authority. */
-export function consumeAuthorityEffects(
-  reader: OperatorAuthorityReader,
-  revision: number,
-  keys: string[],
-): boolean {
-  return consumers.get(reader)?.(revision, keys) ?? false;
 }
 
 /** Install only an envelope already validated by effect policy, fenced by the current revision. */
@@ -207,7 +194,6 @@ export function createOperatorAuthorityRuntime(input: {
     ...(seed?.ceiling === undefined
       ? {}
       : { ceiling: seed.ceiling, parent_run_id: seed.parent_run_id }),
-    consumed_effects: seed?.consumed_effects ?? [],
   };
   const revoke = (): void => {
     if (state.status === "revoked") return;
@@ -251,13 +237,11 @@ export function createOperatorAuthorityRuntime(input: {
     const contextRevision = compiledContextRevisionSchema.safeParse(
       prior.envelope_context_revision,
     );
-    const consumed = consumedSchema.safeParse(prior.consumed_effects ?? []);
-    const denied = consumedSchema.safeParse(prior.denied_effects ?? []);
+    const denied = digestListSchema.safeParse(prior.denied_effects ?? []);
     if (
       evidence.success &&
       contextRevision.success &&
       (contextRevision.data === undefined || envelope?.success === true) &&
-      consumed.success &&
       denied.success &&
       (envelope === undefined || envelope.success)
     )
@@ -265,7 +249,6 @@ export function createOperatorAuthorityRuntime(input: {
         ...state,
         revision: prior.revision,
         evidence: evidence.data,
-        consumed_effects: consumed.data,
         denied_effects: denied.data,
         ...(envelope?.success ? { envelope: envelope.data } : {}),
         ...(contextRevision.data === undefined
@@ -328,22 +311,9 @@ export function createOperatorAuthorityRuntime(input: {
     else state.envelope_context_revision = contextRevision;
     return true;
   });
-  consumers.set(reader, (revision, keys) => {
-    if (reader.snapshot().status !== "active" || state.revision !== revision) return false;
-    const consumed = state.consumed_effects ?? [];
-    if (new Set(keys).size !== keys.length || keys.some((key) => consumed.includes(key)))
-      return false;
-    const next = consumedSchema.safeParse([...consumed, ...keys]);
-    if (!next.success) {
-      revoke();
-      return false;
-    }
-    state = { ...state, consumed_effects: next.data };
-    return true;
-  });
   refusals.set(reader, (revision, key) => {
     if (reader.snapshot().status !== "active" || state.revision !== revision) return false;
-    const next = consumedSchema.safeParse([...new Set([...(state.denied_effects ?? []), key])]);
+    const next = digestListSchema.safeParse([...new Set([...(state.denied_effects ?? []), key])]);
     if (!next.success) {
       revoke();
       return false;

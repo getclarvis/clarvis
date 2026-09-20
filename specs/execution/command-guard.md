@@ -247,17 +247,14 @@ escaping rules can only be right or wrong once" (`packages/capability/src/glob.t
 
 ### 3.4 `guard_judge` guidance and automatic decisions
 
-`guard_judge.guidance` is the only typed field for bounded additional guidance. Code composes operator-global guidance before workspace guidance. Complete registered
-effects use `EFFECT_REVIEW_POLICY`, the live authority envelope and mechanical descriptor coverage.
-An ordinary shell ask that cannot produce such an effect uses the call-local reviewer in `judge.ts`:
-it receives the complete command and host guard facts plus host-owned operator evidence. Top-level
+`guard_judge.guidance` is the only typed field for bounded additional guidance. Code composes operator-global guidance before workspace guidance. Every command ask the allow/deny lists did not deterministically resolve uses the call-local reviewer in
+`judge.ts`: it receives the complete command and host guard facts plus host-owned operator evidence. Top-level
 `review_context` contains the complete persisted Goal definition and the stable substantive Plan
-projection when present, separate from `operator_evidence`. Both reviewer paths treat those
+projection when present, separate from `operator_evidence`. The reviewer treats those
 host-attested definitions as the operator's semantic objective and intended implementation path;
 they may establish a necessary routine bounded prerequisite such as installing declared project
-dependencies. They cannot authorize human-only effects, publication, deployment, destructive
-actions, credential access or external contact from that context, nor override constraints or
-exclusions. The Judge serializes the bounded Goal and Plan projections in dedicated fixed-position
+dependencies. They cannot by themselves authorize publication, deployment, destructive
+actions, credential access or external contact from that context, nor override an exclusion. The Judge serializes the bounded Goal and Plan projections in dedicated fixed-position
 slots, then one message per chronological operator-evidence entry. It does not receive the work
 run's Goal operational reminder, Plan CAS/task-status header or transcript. The volatile authority
 block omits evidence and review context already sent in those slots, preventing duplicate prompt
@@ -266,34 +263,31 @@ verdict applies to that exact call and cannot register an effect, install an aut
 session coverage. Each segment supplies its exact source, normalized argv, explicit executable and
 parameter list, environment bindings split at their first `=`, and structured analysis issues. This
 lets the reviewer assess options, wrappers, `NAME=value`, `env NAME=value command` and dynamic values
-without treating parameter syntax alone as uncertainty. Both paths recheck the authority revision
-and the atomically captured Plans semantic revision after inference. A changed Plans revision also
-invalidates a compiled envelope before reuse. Missing evidence, invalid output and stale revisions
+without treating parameter syntax alone as uncertainty. Command review rechecks the authority revision
+and the atomically captured Plans semantic revision after inference; a changed Plans revision also
+invalidates a compiled configuration envelope before reuse. Missing evidence, invalid output and stale revisions
 become `unsure` and refuse to the calling agent.
 Command review resolves `JUDGE_PORT` at invocation and uses its private child run. The Judge owns
 fixed policy, canonical snapshot breakpoint, separate volatile case, resolved TTL and semantic
 memoization. The host adapter keeps only in-flight answer deduplication for concurrent identical
 cases; human answers are never cached as semantic verdicts. Missing port or
 architecture failure propagates without elicitation. Retirement denies without asking a human.
-Effect review uses the same port and private execution boundary.
-Both paths preserve `judge` affinity and recheck authority and live Plans context.
 
 Production: `createCommandReview` in
-[command-review.ts](../../packages/kernel/src/guard/command-review.ts).
+[command-review.ts](../../packages/kernel/src/guard/command-review.ts), composed by
+`createGuardResolver` in [resolver.ts](../../packages/kernel/src/guard/resolver.ts).
 Test: [command-review.test.ts](../../packages/kernel/tests/unit/command-review.test.ts) pins eight
 concurrent callers, configured fallback counts, architecture faults and cancellation;
 [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts) runs the adapter
-through the real coordinator/engine and proves cache reuse and private accounting.
-The command and effect review integration fixtures compose the production coordinator, Loop and
-host consumers. They contain no alternate reviewer policy or direct-provider review implementation.
-Production: `createHostEffectReview` in
-[effect-review.ts](../../packages/kernel/src/guard/effect-review.ts) and
-`createCommandReview` in [command-review.ts](../../packages/kernel/src/guard/command-review.ts), composed by
-`createGuardResolver` in [resolver.ts](../../packages/kernel/src/guard/resolver.ts).
-Test: [effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts),
-[judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts),
-[operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts), and
-[guard-judge-prompt.test.ts](../../packages/code/tests/integration/guard-judge-prompt.test.ts).
+through the real coordinator/engine and proves cache reuse and private accounting;
+[command-guard-routing.test.ts](../../packages/kernel/tests/integration/command-guard-routing.test.ts)
+pins the single path for simple and composite commands.
+The command review integration fixtures compose the production coordinator and Loop with host
+consumers. They contain no alternate reviewer policy or direct-provider review implementation.
+Configuration changes are reviewed by the separate transactional path owned by
+[effect review](effect-review.md). Test:
+[judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts) and
+[operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).
 
 ### 3.5 Elicitation payload for a `guard_confirm`
 
@@ -359,10 +353,11 @@ in the table above, with no trace of the omission. Pinned:
 [prompt.ts](../../packages/judge/src/prompt.ts) is always the first system
 message. Workspace and global guidance are additional data and never replace it. Admitted operator
 evidence anchors authority; host-attested Goal and Plan semantics let the reviewer interpret that
-evidence for routine bounded prerequisites. The enabled rollout requires host validation of
-registered effect, target, evidence and grant coverage after the model responds; uncertain or
-noninferable effects stay human-only. Review on remains human review, and containment alone grants
-no semantic authority.
+evidence for routine bounded prerequisites. Configuration review requires host validation of
+registered effect, target, evidence and grant coverage after the model responds; an uncertain or
+noninferable configuration effect is refused. Review on remains human review, and containment alone grants
+no semantic authority. Command review compiles no envelope: the Judge answers the exact call, and a
+recognised operation name is never an authorization rule.
 
 Goal Steward output is a completion verdict or correction, never an operator message, approval or
 new authority anchor. It cannot invoke Auto Guard or grant effects. Production:
@@ -374,15 +369,15 @@ evidence. Literal Goals supply the complete definition explicitly declared by th
 supply the exact source-execution user messages followed by the exact seed; auto Goals supply only
 those exact source messages. Inferred objective, criteria, constraints, exclusions and assumptions,
 together with stable Plan substance, can authorize only a necessary routine bounded prerequisite;
-they never satisfy an explicit or human-only authority boundary. Production: `goalAuthorityMessages` in
+they never satisfy an explicit authority boundary. Production: `goalAuthorityMessages` in
 [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts) and its use by `createRunService` in
 [run-service.ts](../../packages/kernel/src/runs/run-service.ts). Test: the exact literal/guided Goal
 authority cases in
 [goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts)
 and [run-service-lifecycle.test.ts](../../packages/kernel/tests/unit/run-service-lifecycle.test.ts).
 
-Production: `createHostEffectReview` and `createGuardResolver`.
-Test: [effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts)
+Production: `createGuardResolver` and `createCommandReview`.
+Test: [command-guard-routing.test.ts](../../packages/kernel/tests/integration/command-guard-routing.test.ts)
 and [guard-judge-prompt.test.ts](../../packages/code/tests/integration/guard-judge-prompt.test.ts).
 
 ---
@@ -461,8 +456,8 @@ delegates everything syntactic:
 `ShellAnalysisIssueKind` distinguishes parameter, command and process substitution, dynamic
 command/subcommand/path, opaque command/path, unbalanced syntax and tokenizer gaps.
 `ShellAnalysisImpact` distinguishes value, executable, subcommand, path, environment and control
-flow. These are syntax facts, never permission. `GuardReviewability` reserves `judgeable` for a
-host effect attestor; the call-local reviewer may use these facts only for its exact command verdict.
+flow. These are syntax facts, never permission. The call-local reviewer may use these facts only for
+its exact command verdict.
 POSIX assignment values are classified as paths separately from their variable names. Production:
 [analyzer](../../packages/tools/src/guard/analyze-shell.ts) (`analyzeShell`) and
 [dialects](../../packages/tools/src/guard/dialects/index.ts). Test:
@@ -619,7 +614,7 @@ effective native policy resolver as tool execution. Container placement is outsi
 Code omits its stored guard fields and the guest receives no guard policy, authority ledger or
 reviewer. Per-call unsandbox overrides placement to Host and
 omits the native network restriction. Its `host_command` ask precedes generic undecidability, but
-never deny-list enforcement. Auto uses the host-validated effect reviewer; unsure, operational
+never deny-list enforcement. Auto asks the reviewer; unsure, operational
 failures and malformed responses refuse to the calling agent and never use a human. Approval asks a
 human only for the grey zone. `off` is unchanged. Docker/Podman reject escalation structurally
 because no host-exec channel exists.
@@ -687,48 +682,46 @@ to the caller rather than being swallowed into a silent approval" (`packages/ker
 
 ### 4.6 Resolving a run's guard
 
-`createGuardResolver` resolves the effective mode and native Host/Sandbox placement, builds the
-immutable effect registry, creates `createHostEffectReview` over the run's authority reader,
-and creates one call-local argv reviewer for generic shell asks. Review `off` returns no guard.
-Review `on` (Approval) asks a human only when the call is neither an allow-list match nor a
+`createGuardResolver` resolves the effective mode and native Host/Sandbox placement and builds one
+policy guard for the resolved mode. Review `off` returns no guard and no elicit. Review `on`
+(Approval) asks a human only when the call is neither an allow-list match nor a
 dangerous match. Dangerous matches in Approval deny to the principal with the exact segment.
-Review `auto` never elicits a person: a sole `external.unknown` goes to the argv reviewer;
-forced removal, privilege elevation, credential-file asks and unsandbox are Judge decisions;
-Judge deny and Judge unsure refuse to the principal. Identified host-inadmissible effects deny
-in Auto without consulting the Judge. Absence of a model/provider refuses. Deterministic denies
-and exact static allows finish before any model call. Shadow mode computes effect evidence while
-preserving the existing call-local Auto result.
+Review `auto` never elicits a person: every `ask` that applicable session consent does not already
+cover goes to the call-local reviewer, including forced removal, privilege elevation,
+credential-file asks and unsandbox. Judge deny and Judge unsure refuse to the principal. Absence of
+a reviewer port or model refuses. Deterministic denies and exact static allows finish before any
+model call. The policy decides alone: no effect catalogue, operation rule, probe or compiled
+envelope sits between it and the Judge.
 
 Production: [resolver.ts](../../packages/kernel/src/guard/resolver.ts). Test:
 [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts),
 [judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts)
 (`sends Auto mktemp capture cleanup to the call-local reviewer`,
 `sends mixed forced removal and privilege elevation to Auto instead of a human`,
-`keeps registered human-only effects out of the call-local reviewer`),
-and [effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts).
+`routes a formerly human-only command to the same call-local reviewer as any other ask`),
+[guard-session-auto.test.ts](../../packages/kernel/tests/integration/guard-session-auto.test.ts), and
+[command-guard-routing.test.ts](../../packages/kernel/tests/integration/command-guard-routing.test.ts).
 
 ### 4.7 Answering an `ask`
 
-The composed elicit applies session coverage only to the exact analyzable non-host command. Auto
-uses `createHostEffectReview`'s `review` for a complete registered effect and `createCommandReview` for an
-ordinary unknown shell call. Effect allows require exact descriptor coverage. Call-local allows are
-keyed by the authority revision and complete guard request, including the raw command, and install no
-grant. Auto refuses `unsure` to the principal and never uses the human channel. Approval asks a
-human only for grey-zone asks. Human answers and operational failures are not cached as clean
-verdicts. `matched: "host_command"` never receives sticky session consent in Auto; Approval may
-ask a person for unsandbox.
+The composed elicit applies session coverage only to the exact analyzable non-host command and then
+routes the ask to the channel the mode selects: the Judge for `auto`, a human for Approval's grey
+zone. A call-local allow is keyed by the authority revision and the complete guard request, including
+the raw command, and installs no grant. Auto refuses `unsure` to the principal and never uses the
+human channel. Approval asks a human only for grey-zone asks. Human answers and operational failures
+are not cached as clean verdicts. `matched: "host_command"` never receives sticky session consent in
+Auto; Approval may ask a person for unsandbox.
 
 `createGuardHumanApproval` reads the current allowlist before and after the question. It refuses late
 answers after the controller or scope is retired. `humanApprovalFor` is available only to native
 Host/Sandbox runs; Container guests receive no approval port.
 
 Production: [resolver.ts](../../packages/kernel/src/guard/resolver.ts),
-[effect-review.ts](../../packages/kernel/src/guard/effect-review.ts), and
 [command-review.ts](../../packages/kernel/src/guard/command-review.ts),
 [human-approval.ts](../../packages/kernel/src/guard/human-approval.ts). Test:
 [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts),
 [judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts),
-[effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts), and
+[command-guard-routing.test.ts](../../packages/kernel/tests/integration/command-guard-routing.test.ts), and
 [container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
 
 ### 4.8 The engine's wiring
@@ -758,17 +751,18 @@ lead-spawned subagents too (`packages/loop/tests/integration/command-guard-wirin
 
 ### 4.9 Automatic review boundaries
 
-Review `auto` first uses the shared effect-review service when the host can identify a registered
-effect. The service compiles authority lazily, validates effect IDs, evidence IDs, targets,
-constraints and inference ceilings, then validates every decision through `descriptor.covers`.
-When the only attestation is `external.unknown`, the call-local argv reviewer can answer the exact
-shell ask without converting its verdict into authority. Its payload labels command arguments as
-untrusted data and supplies authenticated intent separately. Both cache keys include the ledger
-revision; a steer invalidates an in-flight result. Shadow mode records effect analysis while
-preserving the existing call-local Auto or human outcome.
+Review `auto` has exactly two outcomes for an `ask`: applicable session consent already covers the
+exact analyzable non-host command, or the Judge decides the complete call. The command payload
+carries the original call, its segments, resolved paths, explicit environment bindings, placement,
+the policy reason and host-owned operator evidence; it carries no operation catalogue and no
+compiled grant. Its payload labels command arguments as
+untrusted data and supplies authenticated intent separately. The case key includes the ledger
+revision; a steer invalidates an in-flight result. The configuration rollout stage
+(`effect_review.rollout`) scopes the transactional configuration reviewer only and never changes
+command routing.
 
-Production: `createGuardResolver`, `createHostEffectReview` and `createCommandReview`. Test:
-[effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts) and
+Production: `createGuardResolver` and `createCommandReview`. Test:
+[command-guard-routing.test.ts](../../packages/kernel/tests/integration/command-guard-routing.test.ts) and
 [judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts).
 
 ### 4.10 Prompt-cache TTL side effect
@@ -1226,6 +1220,41 @@ broken.
     `packages/code/tests/component/kernel-run-client.test.ts` and
     `packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
+62. **One policy decides, and one channel reviews a command.** A command `ask` that applicable
+    session consent does not cover is reviewed by `createCommandReview` with the complete call. No
+    effect classifier, operation rule, probe or compiled envelope intervenes between the policy and
+    the Judge, and `createGuardResolver` builds one `createShellGuard` per resolution rather than
+    re-running an attested variant. Production: `createGuardRuntimeResolver` and `buildGuard` in
+    `packages/kernel/src/guard/resolver.ts`. Test:
+    `packages/kernel/tests/integration/command-guard-routing.test.ts` ("sends the complete call to
+    the Judge without an effect review", "decides by policy or Judge, never by operation name").
+
+63. **A command never enters the configuration effect path.** `createGuardResolver` reads no
+    `effect_review.rollout`, builds no effect registry, and calls no `reviewEffects`; `git.push` and
+    `github.pr.open_or_update` no longer exist as authorization rules in the descriptor vocabulary.
+    Production: `packages/kernel/src/guard/resolver.ts` and
+    `packages/kernel/src/guard/effects/registry.ts`. Test:
+    `packages/kernel/tests/integration/command-guard-routing.test.ts` ("keeps command routing
+    independent of the configuration rollout stage").
+
+64. **A deterministic deny is never promoted.** A `denied_commands` hit and the conservative denial
+    of an opaque command under a non-empty deny list both rule `deny`, and no secondary attestation
+    converts that ruling into an `ask`. Production: `createShellGuard` in
+    `packages/kernel/src/guard/shell-guard.ts`. Test:
+    `packages/kernel/tests/integration/guard-auto-review.test.ts` and
+    `packages/kernel/tests/integration/command-guard-routing.test.ts` ("keeps a denied segment above
+    an allow-listed composite without consulting the Judge", "keeps a conservative denial for an
+    opaque command with a non-empty deny list").
+
+65. **File-tool authoring requires the restricted writer.** A canonical authoring target is admitted
+    only when the run carries the `reviewMutation` port. Without it the file tool refuses the target
+    with the `configure_clarvis` message — before any guard or Judge call — and a generic command
+    approval never becomes configuration approval. Operational configuration under the same roots is
+    refused in both cases. Production: `protectWorkspaceConfiguration` and `dispatch` in
+    `packages/tools/src/core.ts`. Test: `packages/tools/tests/integration/api.test.ts` ("refuses
+    canonical authoring through a generic guard approval and admits it only through the restricted
+    writer").
+
 ---
 
 ## 6. Failure modes and degradation
@@ -1406,16 +1435,20 @@ separately postures guard confirmations per principal
   independent Isolation control ([sandbox-and-toolchains](sandbox.md) and
   [isolated-agent-runtime](../hosts/isolated-agent-runtime.md)); and the prompt-cache economics
   behind the `1h` TTL ([prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md)).
-## Host-attested rollout
+## Single command-review path
 
-Complete effect attestation may refine the global undecidable route into a judgeable effect; it never
-overrides a deterministic deny. An ordinary shell call that remains `external.unknown` may instead
-receive an exact-call Auto verdict from `createCommandReview`, without entering the effect registry or
-authority envelope. Syntax issues remain available for both review paths and do not themselves prove
-confinement. The compiler, ledger, composition, target checks, exact grants and structured failures
-are owned by [effect review](effect-review.md). Production: `createGuardResolver`, `attestShell` and
-`createCommandReview`. Test: [effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts)
-and [judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts).
+One deterministic policy decides `allow`, `deny` or `ask`; an Auto `ask` that session consent does
+not cover reaches `createCommandReview` with the complete call, independent of Git/GitHub operation,
+segment count or effect classification. Nothing between the policy and the Judge revises that
+ruling: `createGuardResolver` builds one `createShellGuard`, and `deny` never becomes `ask`.
+Operation names such as `git.push` or `github.pr.open_or_update` are not authorization rules, so a
+recognised operation cannot be refused before review, and an unclassified composition cannot enter a
+different route. The configuration writer, its authority envelope, exact grants and structured
+failures are owned by [effect review](effect-review.md). Production: `createGuardResolver` in
+[resolver.ts](../../packages/kernel/src/guard/resolver.ts), `buildGuard` in
+[shell-guard.ts](../../packages/kernel/src/guard/shell-guard.ts) and `createCommandReview`.
+Test: [command-guard-routing.test.ts](../../packages/kernel/tests/integration/command-guard-routing.test.ts)
+and [guard-session-auto.test.ts](../../packages/kernel/tests/integration/guard-session-auto.test.ts).
 
 
 Native `createGuardHumanApproval` deduplicates identical in-flight requests per current allowlist

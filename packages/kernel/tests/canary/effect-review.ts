@@ -16,7 +16,7 @@ import { createHostJudge } from "../../src/guard/judge-host.ts";
 import { createHostEffectReview } from "../../src/guard/effect-review.ts";
 import { createOperatorAuthorityRuntime } from "../../src/guard/operator-authority.ts";
 import { createGuardEffectRegistry } from "../../src/guard/effects/registry.ts";
-import { effectDigest } from "../../src/guard/effects/facts.ts";
+import { configurationFact } from "../helpers/configuration-mutation.ts";
 import { recordingLogger } from "../helpers/logger.ts";
 
 export const EFFECT_REVIEW_CANARY_MAX_EXTERNAL_CALLS = 20;
@@ -144,34 +144,24 @@ export async function runEffectReviewCanary(options: {
         const consumer: Capability = {
           name: "canary-consumer",
           forRun(ctx) {
+            const registry = createGuardEffectRegistry();
             const service = createHostEffectReview({
               judge: () => ctx.services.get(JUDGE_PORT),
               authority: ctx.services.get(OPERATOR_AUTHORITY_PORT),
-              registry: createGuardEffectRegistry(),
+              registry,
               audit,
             });
             reviewOperation = service
               .review(
                 {
                   reviewability: "static",
-                  facts: [
-                    {
-                      id: "git.commit",
-                      class: "local_mutation",
-                      inference: "bounded",
-                      attestation: "complete",
-                      reviewability: "static",
-                      analysis_issues: [],
-                      constraints: { head_sha: "a".repeat(40) },
-                      target: {
-                        kind: "repository",
-                        digest: effectDigest("canary", "branch"),
-                      },
-                    },
-                  ],
+                  facts: [configurationFact(registry)],
                 },
-                { tool: "shell", args: { command: "git commit -m fixture" } },
-                "command_guard",
+                {
+                  surface: "operational",
+                  canonical_path: ".clarvis/settings.json",
+                },
+                "configure_clarvis",
               )
               .then((value) => {
                 receipt = value;
@@ -196,7 +186,7 @@ export async function runEffectReviewCanary(options: {
                   id: "operator",
                   source: "start",
                   execution_id: "canary",
-                  text: "Commit the local changes in this repository.",
+                  text: "Update the workspace settings this run was asked to change.",
                 },
               ],
             },

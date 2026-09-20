@@ -1,4 +1,5 @@
-import { createCapabilityRequestView } from "@clarvis/capability";
+import { createCapabilityServices, createCapabilityRequestView } from "@clarvis/capability";
+import { JUDGE_PORT } from "@clarvis/judge";
 import { describe, it, expect } from "bun:test";
 import { isAbsolute, relative, resolve } from "node:path";
 import { analyzeShell, type ShellFacts, type GuardContext } from "@clarvis/tools/guard";
@@ -11,6 +12,7 @@ import {
   type GuardSessionAllowlist,
 } from "../../src/guard/guard-elicit.ts";
 import { createGuardResolver, resolveGuardMode } from "../../src/guard/resolver.ts";
+import { judgePort } from "../helpers/judge-port.ts";
 
 const ROOT = resolve("/tmp/clarvis-kernel-guard-ws");
 
@@ -665,6 +667,20 @@ describe("createGuardResolver", () => {
   it("denies without asking when authenticated operator authority evidence is absent", async () => {
     let judged = false;
     let asked = false;
+    const services = createCapabilityServices();
+    services.provide(
+      JUDGE_PORT,
+      judgePort(async () => {
+        judged = true;
+        return {
+          kind: "reviewed",
+          receipt: { action: "decide_command", decision: "allow" },
+          elapsedMs: 0,
+          attempts: 1,
+          cacheHit: false,
+        };
+      }),
+    );
     const resolver = createGuardResolver({
       loadSettings: () => ({
         providers: [{ name: "anthropic", kind: "anthropic" }],
@@ -673,6 +689,7 @@ describe("createGuardResolver", () => {
     });
     const resolution = await resolver(
       ctx({
+        services,
         request: { guard_mode: "auto", guard_judge: { guidance: "judge" } } as never,
         elicit: async () => {
           asked = true;
@@ -689,7 +706,7 @@ describe("createGuardResolver", () => {
     expect(await resolution!.elicit!(bashReq("echo hi"))).toMatchObject({
       allowed: false,
       answerer: "judge",
-      review: { relation: "none" },
+      review: { reviewer_decision: "unsure" },
     });
     expect(asked).toBe(false);
     expect(judged).toBe(false);

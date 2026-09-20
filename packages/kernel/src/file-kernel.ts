@@ -752,13 +752,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       resolveGuard: async (ctx) => {
         const resolution = await createGuardResolver({
           loadSettings: loadGuardSettings,
-          effectRunner: createNodeProcessRunner(componentLogger("guard")),
-          effectEnvironment: Object.fromEntries(
-            ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "APPDATA", "GH_CONFIG_DIR"].map((key) => [
-              key,
-              environment.values[key],
-            ]),
-          ),
           logger: componentLogger("guard"),
           audit: auditLogger,
           sessionAllowlistFor,
@@ -1004,5 +997,4 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   });
 }
 import { createOperatorAuthorityRuntime } from "./guard/operator-authority.ts";
-import { createNodeProcessRunner } from "./adapters/process/node-process-runner.ts";
 import { resolveEffectReviewSettings } from "./config/effect-review-settings.ts";

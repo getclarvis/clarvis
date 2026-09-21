@@ -74,7 +74,7 @@ function layout(over: Partial<TranscriptRegionLayout> = {}): TranscriptRegionLay
     mode: () => "wide" as LayoutMode,
     sidebarVisible: () => false,
     sidebarWidth: () => 28,
-    drawerOpen: () => false,
+    secondaryOpen: () => false,
     contentInset: () => 0,
     width: () => 120,
     height: () => 34,
@@ -837,7 +837,7 @@ test("the split sidebar is the sole owner of the agent roster", async () => {
   t.renderer.destroy();
 });
 
-test("single mode with the drawer open renders the sidebar as an absolute-positioned overlay", async () => {
+test("the compact band presents explicitly opened activity across the whole content region", async () => {
   const t = await mount(
     baseProps({
       store: store([toolNode()]),
@@ -846,17 +846,22 @@ test("single mode with the drawer open renders the sidebar as an absolute-positi
           { id: "s1", order: 0, status: "running", title: "Drawer worker", input: 0, output: 0 },
         ] as ActivityStore["subagents"],
       }),
-      layout: layout({ mode: () => "single", sidebarVisible: () => false, drawerOpen: () => true }),
+      layout: layout({
+        mode: () => "single",
+        sidebarVisible: () => false,
+        secondaryOpen: () => true,
+      }),
     }),
   );
   const out = t.captureCharFrame();
+  expect(out).toContain("Activity");
   expect(out).toContain("Lead transcript");
   expect(out).toContain("Drawer worker");
   expect(out).not.toContain("Viewing A1");
   t.renderer.destroy();
 });
 
-test("single mode with the drawer closed leaves the aggregate transcript unobstructed", async () => {
+test("single mode with activity closed summarises it instead of obstructing the transcript", async () => {
   const t = await mount(
     baseProps({
       store: store([toolNode()]),
@@ -868,7 +873,7 @@ test("single mode with the drawer closed leaves the aggregate transcript unobstr
       layout: layout({
         mode: () => "single",
         sidebarVisible: () => true,
-        drawerOpen: () => false,
+        secondaryOpen: () => false,
       }),
     }),
   );
@@ -876,6 +881,8 @@ test("single mode with the drawer closed leaves the aggregate transcript unobstr
   expect(out).not.toContain("All agents");
   expect(out).not.toContain("Lead transcript");
   expect(out).not.toContain("A1 Hidden worker");
+  expect(t.renderer.root.findDescendantById("activity-summary")).toBeDefined();
+  expect(out).toContain("Agents 0/1");
   t.renderer.destroy();
 });
 

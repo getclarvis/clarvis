@@ -621,12 +621,14 @@ instead of requesting all-key escape reports, preserving dead-key and IME compos
 `ß` remains ordinary text. The three run-control pickers are loaded on first use and retained after their first
 mount. `Ctrl+X S` is the sole keyboard route for toggling the responsive activity Sidebar; it opens
 the first available Agents, Parallel work or Plan section when closed and closes the surface when open.
-The first live Plan, first workflow state/leader and first typed delegation each own an independent,
+In the compact band (24 to 71 columns) it opens that surface across the whole content region, and the
+summary strip names the same effective binding so the route stays discoverable while no panel is
+mounted. The first live Plan, first workflow state/leader and first typed delegation each own an independent,
 once-per-execution automatic reveal intent for the responsive Plan, Parallel work and Agents
 sections. Those reveals keep the Lead transcript selected and never open result detail. Closing the
-split or drawer dismisses the intent that opened it, so later updates of that kind do not reopen it
+split, drawer or compact panel dismisses the intent that opened it, so later updates of that kind do not reopen it
 automatically; the first event for another section may still reveal and orient the Sidebar. Escape
-does not close either presentation. Agent, workflow and Plan rosters remain in the Sidebar; the
+does not close any presentation. Agent, workflow and Plan rosters remain in the Sidebar; the
 canonical footer contains only run context/session usage and does not repeat their counts.
 
 Scrollable collections use shared ownership patterns rather than page-local windowing code.
@@ -1125,15 +1127,24 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   Sidebar-only. Ordinary Lead `thinking`/`working` state occupies one fixed activity line
   immediately above the composer, outside the transcript ScrollBox; child-owned tools/content remain
   available only in that child's selected transcript.
-- The combined activity Sidebar has one responsive owner: a wide split or compact drawer. It has
+- The combined activity Sidebar has one responsive owner: a wide split, a drawer between 72 and 99
+  columns, or — in the compact band of 24 to 71 columns — a whole-region panel opened on request. It has
   three independent, once-per-execution automatic reveal intents: the first live Plan reveals
   **Plan**, the first workflow state or leader reveals **Parallel work**, and the first delegation reveals
   **Agents** while Lead remains selected. Repeated updates of the same kind do not flap the layout;
   closing an automatically revealed section is sticky for that intent, while the first event for a
   different section may still reopen and reorient the Sidebar. Each section is one native ScrollBox
-  child, so a later section is scrolled fully into view even when a long Plan precedes it. With the
+  child, so a later section is scrolled fully into view even when a long Plan precedes it. **In the
+  compact band no automatic reveal opens anything**: activity is stated as one summary line below the
+  transcript (`Goal Completed · Plan 1/2 · Agents 0/1`), the intent is spent once so widening cannot
+  replay it, and its section is preferred by the next explicit open. A width that shrinks into that
+  band collapses a surface only an automatic intent had opened; a surface the reader opened survives
+  at full width. The summary states canonical group facts only — never titles, paths, task lists or
+  token metrics — wraps whole facts into at most two rows (one on short terminals) and sheds settled
+  work before in-flight or attention facts. With the
   Sidebar closed, the aggregate transcript stays unobstructed. `Ctrl+X S` reopens the first available
-  Agents, Parallel work or Plan section and closes the surface when it is open. The footer never
+  Agents, Parallel work or Plan section and closes the surface when it is open, naming the same
+  effective binding the summary strip shows. The footer never
   duplicates agent, workflow or Plan status; `Ctrl+X S` and automatic reveal own access to the
   responsive surface. Plain Tab follows the active
   screen's focus order and, at shell level, returns transcript block focus to the composer without

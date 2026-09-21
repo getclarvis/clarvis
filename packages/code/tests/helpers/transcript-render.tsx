@@ -52,7 +52,7 @@ export async function openTranscript(width = 120, height = 32) {
           mode: () => "wide",
           sidebarVisible: split,
           sidebarWidth: () => 28,
-          drawerOpen: () => false,
+          secondaryOpen: () => false,
           contentInset: () => 0,
           width: () => dimensions().width,
           height: () => dimensions().height,

@@ -196,6 +196,8 @@ of native residence. No section grouping, status-based ordering or rendering-bat
 | `views/spinner.ts` | `SPINNER_FRAMES`, `SPINNER_ASCII`, `charForFrame`, `spinnerChar`, `thinkingDots`, `tickNow`, `formatElapsed` (re-export), `useSpinnerClock` | — |
 | `views/Prose.tsx` | `Prose`, `stripDocChrome` | — |
 | `views/Sidebar.tsx` | `PLAN_SIDEBAR_TASK_LIMIT`, `AGENT_SIDEBAR_ROW_LIMIT`, `WORKFLOW_SIDEBAR_ROW_LIMIT`, `planTaskWindow`, `contextMeter`, `rosterSummary`, `subagentProgress`, `workflowProgress`, `Sidebar` | source symbols |
+| `views/activity-summary.ts` | `ActivitySummarySection`, `ActivitySummaryTone`, `ActivitySummaryPriority`, `ActivitySummaryFact`, `ActivitySummaryInput`, `ACTIVITY_SUMMARY_MAX_ROWS`, `ACTIVITY_SUMMARY_SINGLE_ROW_MAX_HEIGHT`, `planDisplayLifecycle`, `activitySummaryFacts`, `activitySummaryRoute`, `activitySummaryRows`, `activitySummaryRowBudget`, `activitySummaryRowText` | source symbols |
+| `views/ActivitySummaryStrip.tsx` | `ACTIVITY_SUMMARY_PADDING`, `ActivitySummaryStrip` | source symbols |
 | `views/activity-detail.ts` | `ActivityDetail`, `activityPreview` | source symbols |
 | `views/overlays/ActivityDetail.tsx` | `ActivityDetail` | source symbol |
 | `core/marks.ts` | `MarkForms`, `MarkName`, `GLYPHS`/`GlyphForms`/`GlyphName` aliases, `applyAsciiMode`, `asciiMode`, `mark`, `glyph` (`@deprecated`), `borderChars` | — |
@@ -967,17 +969,36 @@ becomes transcript content.
 **Two mounts, one component.** `TranscriptRegion` mounts `Sidebar` twice from identical props — as a
 split column when `layout.secondaryMode()` is `"split"`
 (`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`) and inside a scrim-backed
-absolute drawer when it is `"drawer"`. No `PlanStrip` or other live pane is mounted below history:
+absolute drawer when it is `"drawer"` — and, in the compact band, once as a whole-region panel when it
+is `"full"`. The split and `full` presentations share one inline mount whose width accessor is the
+sidebar's own width or the region's; `full` adds the fixed `Activity` header above it and mounts no
+scrim, no transcript column and no residual pane of conversation beside it. No `PlanStrip` or other
+live pane is mounted below history:
 the Sidebar owns compact plan detail and `Ctrl+X P` owns the full plan. App owns three
 independent execution-scoped automatic intents: the first live Plan, first workflow state/leader and first
 typed delegation open the same combined Sidebar and reveal `Plan`, `Parallel work` or `Agents`.
 `Ctrl+X S` closes an open Sidebar or reopens the first available Agents, Parallel work or Plan
-section. `createLayoutController.secondaryMode` projects that explicit intent as split or drawer.
+section. `createLayoutController.secondaryMode` projects that intent as split, drawer or full.
 
-The effective secondary mode also owns roster placement. A split or drawer is the sole detailed
-roster surface. Each of the three first-event intents is consumed independently. Explicitly closing
+**The compact band summarises instead.** While `TranscriptRegion`'s `secondaryMode()` is `"closed"` in
+the `single` band it mounts `ActivitySummaryStrip` as `#activity-summary` below the transcript instead
+of leaving the band empty: one row (two above `ACTIVITY_SUMMARY_SINGLE_ROW_MAX_HEIGHT`) of canonical
+Goal/Plan/Workflow/Agents facts with the effective `activity.toggle` binding last, wrapping whole facts
+and shedding settled ones first. The strip is the only compact owner of activity state; when the panel
+or a full-region surface occupies the content it is not mounted, so nothing is stated twice. Its facts
+come from `activitySummaryFacts`, never from a formatted title or a second query, and it is the pointer
+route to the panel. The grammar, row budget and priority order are specified in
+[bootstrap](code-bootstrap.md#4101-the-compact-activity-summary).
+
+The effective secondary mode also owns roster placement. A split, drawer or whole-region panel is the
+sole detailed roster surface; in the compact band a closed secondary surface mounts no roster, and the
+summary strip states the group facts instead. Each of the three first-event intents is consumed
+independently. Explicitly closing
 an automatic reveal is sticky for later updates of that same section/execution, but does not consume
-the first event for another section; the latter may reopen and reorient the Sidebar. The Agents
+the first event for another section; the latter may reopen and reorient the Sidebar. In the compact
+band an automatic intent never opens a surface: it is spent once into the summary, and its section
+becomes the preference for the next explicit open (see
+[bootstrap section 4.10](code-bootstrap.md#410-layout-breakpoints)). The Agents
 intent does not change the Lead selection or open `ActivityDetail`. The outer Sidebar ScrollBox
 reveals the whole section owner with native `scrollChildIntoView`, so a long Plan cannot hide later
 workflow or Agents content below the viewport. When closed, the Lead transcript mounts no
@@ -1472,8 +1493,10 @@ curated shell renderer and the generic fallback, asserting useful output and sig
 JSON key/value presentation is absent.
 
 **INV-T48.** Detailed Plan, Parallel work and Agents state has exactly one responsive owner. In
-`split` and `drawer` modes it is the combined `Sidebar`; a closed secondary surface mounts no roster
-or Plan/workflow pane in the Lead transcript. The application footer retains canonical
+`split`, `drawer` and `full` modes it is the combined `Sidebar`; in the compact band a closed
+secondary surface mounts no roster or Plan/workflow pane in the Lead transcript and states the group
+facts in the one summary strip instead (`ActivitySummaryStrip`,
+`packages/code/src/views/ActivitySummaryStrip.tsx`). The application footer retains canonical
 Context/Session state without a second agent/workflow/Plan roster or a hidden pointer route. The
 Sidebar's own fixed footer names `Ctrl+X S` as the sole keyboard toggle. Escape does not close
 the Sidebar, and no `/activity` command exists. The first live Plan, first workflow state/leader and first delegation own independent
@@ -1488,8 +1511,10 @@ automatically. The Agents and Parallel work headers report settled/total and onl
 count while work is active; both bounded inner scrolls render each child as one plan-tone status
 glyph, handle and title without failure totals, lifecycle or execution-detail copy. Their visible
 order follows Plan status priority while their projected handles remain stable. Production:
-`packages/code/src/views/app/TranscriptRegion.tsx` (`secondaryMode`, focused-agent context and the two
-`Sidebar` mounts), `packages/code/src/views/Sidebar.tsx` (`SidebarRevealIntent`, `Sidebar` section
+`packages/code/src/views/app/TranscriptRegion.tsx` (`secondaryMode`, `summaryVisible`, `activityPanel`,
+`splashInset`, focused-agent context and the two
+`Sidebar` mounts), `packages/code/src/views/activity-summary.ts` (`activitySummaryFacts`) and
+`packages/code/src/views/Sidebar.tsx` (`SidebarRevealIntent`, `Sidebar` section
 owners and native reveal), and `packages/code/src/views/App.tsx` (`visiblePlanContext`,
 `visibleSubagentContext`, `requestAutomaticSidebar`, `closeActivitySidebar`,
 `openActivitySidebar`, the `activity.toggle` command and `footerRunStrip`). Tests:
@@ -1614,6 +1639,25 @@ the projection before constructing its observation. Production:
 `packages/code/tests/integration/local-shell.test.ts` ("strips ANSI escapes from captured output")
 and `packages/code/tests/integration/tool-live-tail-render.test.tsx` ("Prisma cursor controls stay
 inert and live output keeps its settled text column").
+
+**INV-T60.** The compact activity summary states canonical facts and nothing else. Each present group
+contributes at most its own progress or state fact plus its own unsuccessful-work counts, in Sidebar
+order, and `Agents` counts sub-agents only — the Lead is never part of that group, so no work is
+counted in two groups. Vocabulary is reused, not re-derived: Goal labels come from
+`goalStatusPresentation`, Plan progress from `planDisplayLifecycle` with the lifecycle word appended
+for a terminal outcome that is not completion, and a finished/total count is never presented as a
+success count on its own. No title, path, task list or token metric enters the strip, and no fact is
+abbreviated with an ellipsis. `activitySummaryRows` wraps whole facts into at most
+`activitySummaryRowBudget(height)` rows — one at or below `ACTIVITY_SUMMARY_SINGLE_ROW_MAX_HEIGHT`,
+two above it — and never splits a fact: when the budget cannot seat every fact it drops the least
+load-bearing one and re-wraps, so settled work leaves before in-flight work, attention outranks both,
+and the trailing `activity.toggle` affordance is dropped only when nothing else remains to drop.
+Production: `packages/code/src/views/activity-summary.ts` (`activitySummaryFacts`,
+`activitySummaryRows`, `activitySummaryRowBudget`, `activitySummaryRoute`, `planDisplayLifecycle`) and
+`packages/code/src/views/ActivitySummaryStrip.tsx` (`ActivitySummaryStrip`). Tests:
+`packages/code/tests/unit/activity-summary.test.ts` and
+`packages/code/tests/integration/app-shell-render.test.tsx` ("the compact band summarises run activity
+instead of covering the conversation").
 
 ---
 

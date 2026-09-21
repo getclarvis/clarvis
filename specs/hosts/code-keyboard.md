@@ -171,11 +171,15 @@ subscribe to those predicates (`packages/code/src/keys/commands.ts`, `CommandEnt
 The application composition adds one contextual navigation action after registry construction:
 `activity.toggle` has the portable `Ctrl+X S` binding whenever any run-activity section exists. It
 closes the responsive Sidebar when open and otherwise reveals the first available Agents, Parallel
-work or Plan section. It has no slash-command surface, and Escape does not close the Sidebar
-(`packages/code/src/views/App.tsx`, `toggleActivitySidebar` and the `activity.toggle`
-registration). The production-shaped command path is pinned by
+work or Plan section — in the compact band it opens the whole content region instead of a drawer,
+preferring the section the summary strip last accounted for. It has no slash-command surface, and
+Escape does not close the Sidebar
+(`packages/code/src/views/App.tsx`, `toggleActivitySidebar`, `openActivitySidebar` and the
+`activity.toggle`
+registration). The producer of the command path is pinned by
 `packages/code/tests/integration/app-shell-render.test.tsx` ("Plan, Parallel work, and Agents own
-independent once-per-run sidebar reveals").
+independent once-per-run sidebar reveals", "Ctrl+X S toggles a narrow inspector while Escape leaves it
+open", "Ctrl+X S opens the compact band's activity across the whole content region").
 
 The interactive composition registers `loop.open` as the native `/loop` action. Its parser and
 controls do not consume a model turn. A validation error returns `"block"` through the registry and
@@ -359,7 +363,8 @@ Alt is the modifier terminals actually intercept (`packages/code/src/keys/intera
 
 `focus.next` is navigation only. A focused screen may reserve Tab for its own ordered controls; at
 shell level `App.focusNext` clears the transcript's logical block cursor and focuses the composer,
-regardless of whether the activity Sidebar is closed, split or in a drawer. It never activates a
+regardless of whether the activity Sidebar is closed, split, in a drawer or the compact band's
+whole-region panel. It never activates a
 control and never changes Lead/child transcript selection. Return remains the activation/submission
 key for the component that owns focus, and Shift+Tab remains the explicit agent-picker route.
 Production: `packages/code/src/keys/interaction.ts` (`focus.next`) and
@@ -1078,14 +1083,18 @@ The renderer keeps Kitty keyboard reporting in its conservative mode and
 never requests all-key escape reports, so terminal-native dead-key and IME text composition remains
 intact. A literal `ß` remains composer text.
 `Ctrl+X S` is the sole keyboard binding for the responsive activity Sidebar. It closes an open
-surface or opens the first available Agents, Parallel work or Plan section. No `/activity` slash
+surface or opens the first available Agents, Parallel work or Plan section. In the compact band it
+opens the whole content region and prefers the section the summary last accounted for; the summary
+strip names this same effective binding, so the route stays discoverable while no panel is mounted
+(`packages/code/src/views/App.tsx`, `activityToggleKey`). No `/activity` slash
 action exists. The first live Plan, first
 workflow leader and first visible sub-agent each own an independent automatic
 reveal once per execution for Plan, Parallel work and Agents. Closing the surface is sticky for
 later updates of the intent that opened it, while the first event for another section may still
 reveal it. Escape does not close the Sidebar or suppress its automatic reveal; `Ctrl+X S` performs
 the explicit toggle. The bounded agent/workflow footer strip remains a pointer reopen route,
-whose split or drawer presentation is determined by the viewport; Plan never contributes footer
+whose split, drawer or compact whole-region presentation is determined by the viewport; Plan never
+contributes footer
 text.
 
 Production: `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES`, `DEFAULT_WHEN`),
@@ -1093,10 +1102,10 @@ Production: `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES
 `packages/code/src/views/config/KeyboardView.tsx` (`PROBES`, `KeyboardDiagnostic`),
 `packages/code/src/app/commands.tsx` (`isolation.picker`, `review.picker`, `memory.picker`),
 `packages/code/src/views/InputDock.tsx` (`prompt.editor.open`, `prompt.editor.close`),
-`packages/code/src/app/layout.ts` (`createLayoutController`), and
-`packages/code/src/views/App.tsx` (`requestAutomaticSidebar`, `visiblePlanContext`,
-`visibleSubagentContext`, `closeActivitySidebar`, `openActivitySidebar`, the `activity.toggle` command
-and `compactActivityStrip`). Tests:
+`packages/code/src/app/layout.ts` (`createLayoutController`, `openSecondary`, `secondaryOrigin`), and
+`packages/code/src/views/App.tsx` (`requestAutomaticSidebar`, `openActivitySidebar`,
+`activityToggleKey`, `visiblePlanContext`,
+`visibleSubagentContext`, `closeActivitySidebar`, the `activity.toggle` command). Tests:
 `packages/code/tests/integration/interaction.test.ts`,
 `packages/code/tests/integration/app-shell-render.test.tsx`,
 `packages/code/tests/integration/platform-lifecycle.test.ts`,

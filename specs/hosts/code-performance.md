@@ -384,10 +384,11 @@ onto these families without measurement:
   (`packages/code/src/views/config/MarketplaceBrowser.tsx`, `collections`, `changeCollection`, and
   `StableWindowedList`; `packages/code/tooling/benchmarks/overlays.tsx`,
   `marketplace-collections-retained-196-listings`).
-- the compact activity drawer mounts a full-bleed scrim and Sidebar, while editor expansion merely
-  changes layout properties on the already-mounted input region
-  (`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`'s drawer `SurfaceBoundary`,
-  `packages/code/src/views/App.tsx`).
+- the narrow activity drawer mounts a full-bleed scrim and Sidebar, while editor expansion merely
+  changes layout properties on the already-mounted input region. The compact band's summary strip and
+  whole-region panel are conditional in the same sense and mount no scrim
+  (`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`'s drawer `SurfaceBoundary`
+  and its `summaryVisible`/`activityPanel` owners, `packages/code/src/views/App.tsx`).
 - Splash, elicitation, terminal-floor and fatal-boot surfaces are conditional, but they are not
   normal high-frequency modal routes. They still belong in control cases because input churn can
   accidentally remount Splash and make an autocomplete measurement invalid

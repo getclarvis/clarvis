@@ -14,6 +14,7 @@ import { TestRecorder } from "@opentui/core/testing";
 import type {
   MemoryService,
   ModelCatalog,
+  PlanTaskStatus,
   PluginService,
   ResolvedExtensionProfile,
   RunDetail,
@@ -2813,6 +2814,262 @@ test("Ctrl+X S toggles a narrow inspector while Escape leaves it open", async ()
   // drawer roster.
   expect(t.captureCharFrame()).not.toContain("│ Agents");
   expect(cancels).toEqual([]);
+  t.renderer.destroy();
+});
+
+/** One plan whose two tasks make the compact summary's progress line meaningful. */
+function compactPlanTasks(
+  statuses: readonly PlanTaskStatus[],
+): Extract<RunEvent, { type: "plan_created" }>["tasks"] {
+  return statuses.map((status, index) => ({
+    id: `t${index + 1}`,
+    title: `Compact task ${index + 1}`,
+    status,
+  }));
+}
+
+/** The plan, delegation and transcript anchors the compact-band cases mount with. */
+function compactBandStream(): RunEvent[] {
+  return [
+    ev({ type: "run_started", at: 1 }),
+    ...leadTurn(1, "COMPACT BAND ANCHOR", 2),
+    ev({
+      type: "delegation_created",
+      delegation_id: "w1",
+      at: 6,
+      title: "compact explorer",
+      task: "look around",
+      tools: [],
+    }),
+  ];
+}
+
+function compactPlan(path: string): RunEvent {
+  return ev({
+    type: "plan_created",
+    at: 7,
+    id: "compact-plan",
+    path,
+    title: "Compact plan",
+    status: "active",
+    retention: "keep",
+    revision: 1,
+    spec_revision: 1,
+    tasks: compactPlanTasks(["done", "in_progress"]),
+  });
+}
+
+test("the compact band summarises run activity instead of covering the conversation", async () => {
+  const store = createTranscriptStore();
+  const activity = createActivityStore();
+  const sink = store.openRun("exec_compact_summary");
+  const activitySink = activity.openRun();
+  applyRunEvents(sink, compactBandStream(), "live");
+  applyRunEvents(activitySink, compactBandStream(), "live");
+  applyRunEvents(sink, [compactPlan(".clarvis/plans/compact.md")], "live");
+  applyRunEvents(activitySink, [compactPlan(".clarvis/plans/compact.md")], "live");
+
+  const t = await mountApp(defaultProps({ store, activity }), { width: 40, height: 16 });
+  const frame = await captureUntil(t, "[Ctrl+X S] activity");
+  expect(frame).toContain("Plan 1/2 · [Ctrl+X S] activity");
+  expect(frame).toContain("explorer");
+  expect(frame).not.toContain("Lead transcript");
+  expect(t.renderer.root.findDescendantById("activity-summary")?.height).toBe(1);
+  expect(t.renderer.root.findDescendantById("transcript-viewport")).toBeDefined();
+  t.renderer.destroy();
+});
+
+test("Ctrl+X S opens the compact band's activity across the whole content region", async () => {
+  const store = createTranscriptStore();
+  const activity = createActivityStore();
+  const sink = store.openRun("exec_compact_open");
+  const activitySink = activity.openRun();
+  applyRunEvents(sink, compactBandStream(), "live");
+  applyRunEvents(activitySink, compactBandStream(), "live");
+
+  const t = await mountApp(defaultProps({ store, activity }), { width: 40, height: 16 });
+  await captureUntil(t, "[Ctrl+X S] activity");
+  press(t, "x", { ctrl: true });
+  press(t, "s");
+  await t.renderOnce();
+  const opened = t.captureCharFrame();
+  expect(t.renderer.root.findDescendantById("activity-panel")).toBeDefined();
+  expect(t.renderer.root.findDescendantById("transcript-viewport")).toBeUndefined();
+  expect(t.renderer.root.findDescendantById("activity-summary")).toBeUndefined();
+  expect(opened).toContain("Activity");
+  expect(opened).toContain("[Ctrl+X S] close");
+  expect(opened).toContain("Agents");
+  expect(opened).not.toContain("explorer");
+
+  press(t, "x", { ctrl: true });
+  press(t, "s");
+  await t.renderOnce();
+  expect(t.renderer.root.findDescendantById("activity-panel")).toBeUndefined();
+  expect(t.renderer.root.findDescendantById("transcript-viewport")).toBeDefined();
+  expect(await captureUntil(t, "Agents 0/1 · [Ctrl+X S] activity")).toContain(
+    "[Ctrl+X S] activity",
+  );
+  t.renderer.destroy();
+});
+
+test("a width that shrinks into the compact band collapses an automatic reveal into the summary", async () => {
+  const store = createTranscriptStore();
+  const activity = createActivityStore();
+  const sink = store.openRun("exec_compact_shrink");
+  const activitySink = activity.openRun();
+  applyRunEvents(sink, [...compactBandStream(), compactPlan(".clarvis/plans/shrink.md")], "live");
+  applyRunEvents(
+    activitySink,
+    [...compactBandStream(), compactPlan(".clarvis/plans/shrink.md")],
+    "live",
+  );
+
+  const t = await mountApp(defaultProps({ store, activity }), { width: 90, height: 24 });
+  const narrow = await captureUntil(t, "Lead transcript");
+  expect(narrow).toContain("│ Agents");
+
+  t.resize(60, 24);
+  await t.renderOnce();
+  await t.renderOnce();
+  const compact = t.captureCharFrame();
+  expect(t.renderer.root.findDescendantById("activity-summary")).toBeDefined();
+  expect(compact).not.toContain("Lead transcript");
+  expect(compact.replace(/\s+/g, " ")).toContain("Plan 1/2 · Agents 0/1 · [Ctrl+X S] activity");
+  expect(compact).toContain("compact explorer");
+
+  t.resize(90, 24);
+  await t.renderOnce();
+  await t.renderOnce();
+  const widened = t.captureCharFrame();
+  expect(t.renderer.root.findDescendantById("activity-summary")).toBeUndefined();
+  expect(widened).not.toContain("Lead transcript");
+  expect(widened).toContain("compact explorer");
+  t.renderer.destroy();
+});
+
+test("an explicitly opened activity surface follows the width in and out of the compact band", async () => {
+  const store = createTranscriptStore();
+  const activity = createActivityStore();
+  const sink = store.openRun("exec_compact_explicit");
+  const activitySink = activity.openRun();
+  applyRunEvents(sink, compactBandStream(), "live");
+  applyRunEvents(activitySink, compactBandStream(), "live");
+
+  const t = await mountApp(defaultProps({ store, activity }), { width: 120, height: 30 });
+  await captureUntil(t, "Lead transcript");
+  press(t, "x", { ctrl: true });
+  press(t, "s");
+  await t.renderOnce();
+  press(t, "x", { ctrl: true });
+  press(t, "s");
+  await t.renderOnce();
+  expect(t.renderer.root.findDescendantById("transcript-viewport")).toBeDefined();
+  expect(t.captureCharFrame()).toContain("│ Agents");
+
+  t.resize(60, 30);
+  await t.renderOnce();
+  await t.renderOnce();
+  expect(t.renderer.root.findDescendantById("activity-panel")).toBeDefined();
+  expect(t.renderer.root.findDescendantById("transcript-viewport")).toBeUndefined();
+
+  t.resize(120, 30);
+  await t.renderOnce();
+  await t.renderOnce();
+  expect(t.renderer.root.findDescendantById("activity-panel")).toBeUndefined();
+  expect(t.renderer.root.findDescendantById("transcript-viewport")).toBeDefined();
+  expect(t.captureCharFrame()).toContain("Lead transcript");
+  t.renderer.destroy();
+});
+
+test("the compact summary keeps the section it accounted for while activity was automatic", async () => {
+  const store = createTranscriptStore();
+  const activity = createActivityStore();
+  const sink = store.openRun("exec_compact_preserved");
+  const activitySink = activity.openRun();
+  applyRunEvents(sink, compactBandStream(), "live");
+  applyRunEvents(activitySink, compactBandStream(), "live");
+
+  const t = await mountApp(defaultProps({ store, activity }), { width: 90, height: 24 });
+  await captureUntil(t, "Lead transcript");
+
+  const plan: RunEvent[] = [
+    ev({
+      type: "plan_created",
+      at: 8,
+      id: "compact-plan",
+      path: ".clarvis/plans/preserved.md",
+      title: "Compact plan",
+      status: "active",
+      retention: "keep",
+      revision: 1,
+      spec_revision: 1,
+      tasks: compactPlanTasks([
+        "in_progress",
+        ...Array.from({ length: 11 }, (): PlanTaskStatus => "pending"),
+      ]),
+    }),
+  ];
+  applyRunEvents(sink, plan, "live");
+  applyRunEvents(activitySink, plan, "live");
+  await captureUntil(t, "Compact plan");
+
+  t.resize(60, 24);
+  await t.renderOnce();
+  await t.renderOnce();
+  expect(t.renderer.root.findDescendantById("activity-summary")).toBeDefined();
+
+  press(t, "x", { ctrl: true });
+  press(t, "s");
+  await t.renderOnce();
+  const opened = t.captureCharFrame();
+  expect(t.renderer.root.findDescendantById("activity-panel")).toBeDefined();
+  expect(opened).toContain("Compact plan");
+  expect(opened).not.toContain("Lead transcript");
+  t.renderer.destroy();
+});
+
+test("a new event never reopens activity the reader closed in the compact band", async () => {
+  const store = createTranscriptStore();
+  const activity = createActivityStore();
+  const sink = store.openRun("exec_compact_dismissed");
+  const activitySink = activity.openRun();
+  applyRunEvents(sink, compactBandStream(), "live");
+  applyRunEvents(activitySink, compactBandStream(), "live");
+
+  const t = await mountApp(defaultProps({ store, activity }), { width: 40, height: 16 });
+  await captureUntil(t, "[Ctrl+X S] activity");
+  press(t, "x", { ctrl: true });
+  press(t, "s");
+  await t.renderOnce();
+  press(t, "x", { ctrl: true });
+  press(t, "s");
+  await t.renderOnce();
+  expect(t.renderer.root.findDescendantById("activity-panel")).toBeUndefined();
+
+  const update: RunEvent[] = [
+    ev({
+      type: "plan_created",
+      at: 9,
+      id: "compact-plan",
+      path: ".clarvis/plans/dismissed.md",
+      title: "Compact plan",
+      status: "active",
+      retention: "keep",
+      revision: 1,
+      spec_revision: 1,
+      tasks: compactPlanTasks(["done", "done"]),
+    }),
+  ];
+  applyRunEvents(sink, update, "live");
+  applyRunEvents(activitySink, update, "live");
+  await t.renderOnce();
+  await t.renderOnce();
+  const frame = t.captureCharFrame();
+  expect(t.renderer.root.findDescendantById("activity-panel")).toBeUndefined();
+  expect(t.renderer.root.findDescendantById("transcript-viewport")).toBeDefined();
+  expect(t.renderer.root.findDescendantById("activity-summary")).toBeDefined();
+  expect(frame).toContain("Agents 0/1");
+  expect(frame).not.toContain("Lead transcript");
   t.renderer.destroy();
 });
 

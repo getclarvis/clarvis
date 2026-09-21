@@ -502,12 +502,35 @@ export function App(props: AppProps): JSX.Element {
     props.activity.plan != null ||
     props.activity.subagents.length > 0 ||
     [...(props.run.workflowActivity()?.nodes.values() ?? [])].some((n) => n.kind === "leader");
+  type AutoSidebarIntent = "goal" | "plan" | "workflow" | "agents";
+  interface AutoSidebarState {
+    context: string | null;
+    opened: boolean;
+    dismissed: boolean;
+  }
+  const autoSidebar: Record<AutoSidebarIntent, AutoSidebarState> = {
+    goal: { context: null, opened: false, dismissed: false },
+    plan: { context: null, opened: false, dismissed: false },
+    workflow: { context: null, opened: false, dismissed: false },
+    agents: { context: null, opened: false, dismissed: false },
+  };
+  const [sidebarReveal, setSidebarReveal] = createSignal<{
+    section: AutoSidebarIntent;
+    context: string;
+  } | null>(null);
+  let autoSidebarOwner: AutoSidebarIntent | null = null;
+  let compactRevealSection: AutoSidebarIntent | null = null;
   const layout = createLayoutController({
     dims,
     hasSidebarContent: sidebarHasContent,
+    onCompactCollapse: () => {
+      const revealed = sidebarReveal()?.section;
+      if (revealed !== undefined) compactRevealSection = revealed;
+    },
   });
   const layoutMode = layout.layoutMode;
-  const drawerOpen = layout.drawerOpen;
+  const compactLayout = layout.compact;
+  const secondaryOpen = layout.secondaryOpen;
   const sidebarVisible = layout.sidebarVisible;
   const sidebarWidth = layout.sidebarWidth;
   const secondaryMode = layout.secondaryMode;
@@ -572,24 +595,14 @@ export function App(props: AppProps): JSX.Element {
     historyHandle?.returnToLeadTail();
     submit();
   };
-  type AutoSidebarIntent = "goal" | "plan" | "workflow" | "agents";
-  interface AutoSidebarState {
-    context: string | null;
-    opened: boolean;
-    dismissed: boolean;
-  }
-  const autoSidebar: Record<AutoSidebarIntent, AutoSidebarState> = {
-    goal: { context: null, opened: false, dismissed: false },
-    plan: { context: null, opened: false, dismissed: false },
-    workflow: { context: null, opened: false, dismissed: false },
-    agents: { context: null, opened: false, dismissed: false },
-  };
-  const [sidebarReveal, setSidebarReveal] = createSignal<{
-    section: AutoSidebarIntent;
-    context: string;
-  } | null>(null);
-  let autoSidebarOwner: AutoSidebarIntent | null = null;
-
+  /**
+   * Consumes one automatic reveal intent.
+   *
+   * @remarks In the compact band the intent never opens a surface: the summary
+   *   strip states the fact, the section stays recorded for the next explicit
+   *   open, and the intent is spent here so widening the terminal cannot replay a
+   *   reveal the reader already saw summarised.
+   */
   const requestAutomaticSidebar = (intent: AutoSidebarIntent, context: string): void => {
     const state = autoSidebar[intent];
     if (state.context !== context) {
@@ -601,13 +614,17 @@ export function App(props: AppProps): JSX.Element {
     state.opened = true;
     autoSidebarOwner = intent;
     setSidebarReveal({ section: intent, context });
-    layout.setDrawerOpen(true);
+    if (compactLayout()) {
+      compactRevealSection = intent;
+      return;
+    }
+    layout.openSecondary("automatic");
   };
 
   const closeActivitySidebar = (): void => {
-    if (layout.drawerOpen() && autoSidebarOwner !== null)
+    if (layout.secondaryOpen() && autoSidebarOwner !== null)
       autoSidebar[autoSidebarOwner].dismissed = true;
-    layout.setDrawerOpen(false);
+    layout.closeSecondary();
   };
 
   const sidebarSectionAvailable = (section: AutoSidebarIntent): boolean => {
@@ -625,8 +642,12 @@ export function App(props: AppProps): JSX.Element {
   };
   let manualSidebarReveal = 0;
   const openActivitySidebar = (requested?: AutoSidebarIntent): void => {
+    const preserved = compactRevealSection;
     const section =
       requested ??
+      (compactLayout() && preserved !== null && sidebarSectionAvailable(preserved)
+        ? preserved
+        : undefined) ??
       (["goal", "agents", "workflow", "plan"] as const).find(sidebarSectionAvailable) ??
       null;
     if (section === null || !sidebarSectionAvailable(section)) {
@@ -641,10 +662,10 @@ export function App(props: AppProps): JSX.Element {
     autoSidebarOwner = null;
     manualSidebarReveal += 1;
     setSidebarReveal({ section, context: `manual:${manualSidebarReveal}` });
-    layout.setDrawerOpen(true);
+    layout.openSecondary("explicit");
   };
   const toggleActivitySidebar = (): void => {
-    if (layout.drawerOpen()) closeActivitySidebar();
+    if (layout.secondaryOpen()) closeActivitySidebar();
     else openActivitySidebar();
   };
 
@@ -1432,10 +1453,11 @@ export function App(props: AppProps): JSX.Element {
     });
     return runStrip;
   };
+  /** The effective `activity.toggle` label, absent while no binding is registered. */
+  const activityToggleKey = (): string | undefined =>
+    commandKeyLabel(interaction.keymap, "activity.toggle", { visibility: "registered" });
   const activitySidebarHint = (): string => {
-    const toggleKey = commandKeyLabel(interaction.keymap, "activity.toggle", {
-      visibility: "registered",
-    });
+    const toggleKey = activityToggleKey();
     if (sidebarReveal()?.section === "goal" && sidebarSectionAvailable("goal")) {
       return `${toggleKey === undefined ? "Ctrl+X S" : `[${toggleKey}]`} close`;
     }
@@ -1446,7 +1468,7 @@ export function App(props: AppProps): JSX.Element {
     if (
       overlays.overlay() === "none" &&
       transientOverlay() === "none" &&
-      !drawerOpen() &&
+      !secondaryOpen() &&
       !props.run.elicit() &&
       !props.run.switching?.()
     )
@@ -1589,12 +1611,14 @@ export function App(props: AppProps): JSX.Element {
                     sidebarVisible,
                     secondaryMode,
                     sidebarWidth,
-                    drawerOpen,
-                    closeDrawer: closeActivitySidebar,
+                    secondaryOpen,
+                    closeSecondary: closeActivitySidebar,
                     contentInset,
                     width: () => dims().w,
                     height: () => dims().h,
                     sidebarHint: activitySidebarHint,
+                    toggleKey: activityToggleKey,
+                    toggleActivity: toggleActivitySidebar,
                   }}
                   contextWindow={contextWindow}
                   agent={agentName}

@@ -470,7 +470,8 @@ fail with `execution_id_conflict` before model or tool work is performed.
 The list below is the whole of `package.json`'s `exports` map:
 
 - `@clarvis/loop` — stable engine and host-facing types, including `VERSION` sourced from the root
-  Clarvis product manifest.
+  Clarvis product manifest, and `createToolArgValidator`: the engine's own rule for a tool call's
+  arguments, for a host that rules on one itself (a workflow title's `set_title` call).
 - `@clarvis/loop/capabilities/tools` — coding tools and guard integration.
 - `@clarvis/loop/host` — the narrow host-composition surface for config,
   provider, plugin and sandbox policy that `@clarvis/kernel` programs against, including dependency

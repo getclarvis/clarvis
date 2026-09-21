@@ -84,10 +84,10 @@ function warnings(): { logger: Logger; lines: Array<[unknown, string]> } {
 describe("generateWorkflowTitle", () => {
   it("exposes the catalog instead of forcing the title tool, and accepts one valid call", async () => {
     const fake = provider(title("  Implementar   títulos curtos  "));
-    const signal = new AbortController().signal;
+    const run = new AbortController();
 
     await expect(
-      generateWorkflowTitle({ request: request(), llm: fake.llm, signal }),
+      generateWorkflowTitle({ request: request(), llm: fake.llm, signal: run.signal }),
     ).resolves.toBe("Implementar títulos curtos");
 
     expect(fake.calls).toHaveLength(1);
@@ -103,7 +103,12 @@ describe("generateWorkflowTitle", () => {
     expect(call.reasoningEffort).toBe("off");
     expect(call.maxOutputTokens).toBe(64);
     expect(call.maxRetries).toBe(0);
-    expect(call.signal).toBe(signal);
+    // The call carries the operation's own budget signal combined with the run's, so
+    // a cancelled run still reaches the provider and the budget can stop it too.
+    expect(call.signal).toBeDefined();
+    expect(call.signal?.aborted).toBe(false);
+    run.abort();
+    expect(call.signal?.aborted).toBe(true);
     expect(call.timeoutMs).toBeGreaterThan(0);
     expect(call.timeoutMs).toBeLessThanOrEqual(WORKFLOW_TITLE_TIMEOUT_MS);
   });
@@ -128,6 +133,27 @@ describe("generateWorkflowTitle", () => {
     [
       "undecodable arguments",
       { toolCalls: [{ id: "t", name: "set_title", arguments: "{" }], usage: ZERO_USAGE },
+    ],
+    [
+      "an undeclared extra argument",
+      {
+        toolCalls: [
+          {
+            id: "t",
+            name: "set_title",
+            arguments: { title: "Título válido", unexpected: true },
+          },
+        ],
+        usage: ZERO_USAGE,
+      },
+    ],
+    [
+      "a missing title",
+      { toolCalls: [{ id: "t", name: "set_title", arguments: {} }], usage: ZERO_USAGE },
+    ],
+    [
+      "a payload that is not an object",
+      { toolCalls: [{ id: "t", name: "set_title", arguments: 42 }], usage: ZERO_USAGE },
     ],
   ] satisfies Array<[string, LLMCallResult]>)(
     "corrects %s once, then accepts the valid call",
@@ -162,6 +188,54 @@ describe("generateWorkflowTitle", () => {
       for (const result of results) expect(result.content).toContain("workflow_title:");
     },
   );
+
+  it("refuses a title that arrives after the wall budget, however valid it is", async () => {
+    // The provider's `timeoutMs` is an inactivity window, so an adapter can return
+    // after the operation's own ten seconds with a perfectly good title. Adopting it
+    // would let a stalled auxiliary call outlive the budget it was given.
+    const fake = scriptedProvider([title("Título atrasado"), title("Título seguinte")]);
+    const log = warnings();
+    let now = 1_000_000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const late: LLMProvider = {
+        call: async (params) => {
+          const result = await fake.llm.call(params);
+          now += WORKFLOW_TITLE_TIMEOUT_MS + 1;
+          return result;
+        },
+      };
+
+      await expect(
+        generateWorkflowTitle({ request: request(), llm: late, logger: log.logger }),
+      ).resolves.toBeNull();
+    } finally {
+      clock.mockRestore();
+    }
+
+    expect(fake.calls).toHaveLength(1);
+    expect(log.lines).toHaveLength(1);
+    expect(log.lines[0]?.[1]).toContain("time budget is spent");
+    expect(log.lines[0]?.[1]).toContain("keeping the provisional title");
+  });
+
+  it("refuses a title that arrives after the run was cancelled", async () => {
+    const controller = new AbortController();
+    const fake = scriptedProvider([title("Título cancelado")]);
+    const cancelling: LLMProvider = {
+      call: async (params) => {
+        const result = await fake.llm.call(params);
+        controller.abort();
+        return result;
+      },
+    };
+
+    await expect(
+      generateWorkflowTitle({ request: request(), llm: cancelling, signal: controller.signal }),
+    ).resolves.toBeNull();
+
+    expect(fake.calls).toHaveLength(1);
+  });
 
   it("keeps the provisional title after two invalid responses, naming the violation", async () => {
     const fake = scriptedProvider([

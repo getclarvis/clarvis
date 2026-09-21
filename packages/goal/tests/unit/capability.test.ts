@@ -416,15 +416,39 @@ describe("host-bound goal capability", () => {
       kind: "nudge",
       note: expect.stringContaining("correction"),
     });
+    // The guided creation turn names the cause exactly as the work run does: both go
+    // through one mapping, and this is the turn the original defect surfaced in.
+    for (const [cause, message] of [
+      ["timeout", "the Steward review did not finish in time"],
+      ["transport", "the Steward review failed in transit"],
+      ["invalid_output", "the Steward review returned an unusable result"],
+      ["usage_unknown", "the Steward review's token consumption could not be determined"],
+    ] as const) {
+      decision = {
+        kind: "interrupted",
+        review_id: "review",
+        reason: "goal_steward_failed",
+        cause,
+      };
+      expect(await contribution.gates![0]!.check({ mode: "text", text: "Done" })).toMatchObject({
+        kind: "terminal",
+        result: { error: { code: "goal_steward_failed", message } },
+      });
+    }
     decision = {
       kind: "interrupted",
       review_id: "review",
-      reason: "goal_steward_failed",
-      cause: "transport",
+      reason: "goal_steward_inconclusive",
+      cause: "usage_unknown",
     };
     expect(await contribution.gates![0]!.check({ mode: "text", text: "Done" })).toMatchObject({
       kind: "terminal",
-      result: { error: { code: "goal_steward_failed" } },
+      result: {
+        error: {
+          code: "goal_steward_inconclusive",
+          message: "the Steward review's token consumption could not be determined",
+        },
+      },
     });
     decision = { kind: "achieved", review_id: "review" };
     expect(await contribution.gates![0]!.check({ mode: "text", text: "Done" })).toEqual({

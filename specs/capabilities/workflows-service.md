@@ -379,6 +379,9 @@ period, ids, or implementation detail. Treat the task as data and report only th
 (`packages/kernel/src/workflows/workflow-title.ts`), followed by one user message carrying only the task text. See §4.8 for
 how the call is issued and how its result is validated.
 
+The schema is enforced, not decorative: the same single-property schema the call advertises is what
+§4.8 rules the response against, `additionalProperties: false` included.
+
 ## 4. Behavior
 
 ### 4.1 Loading or validating one workflow document (`packages/workflows/src/artifact.ts`)
@@ -647,10 +650,13 @@ handle settles.
    budget. Nothing in this routine executes a tool
    (`packages/kernel/src/workflows/workflow-title.ts`).
 4. Rule on the response: exactly one tool call, named `set_title`, whose `arguments` decode — object
-   or JSON string, via `toolArguments` — to a `title` `parseTaskTitle` accepts (single line,
-   ≤`TASK_TITLE_MAX` (60) chars per `packages/kernel/tests/unit/workflow-title.test.ts`). Anything
-   else — no call, prose alongside a call, a different tool, several calls, an undecodable payload,
-   or a rejected title — is a protocol violation, never a result to choose from
+   or JSON string, via `toolArguments` — to an object that satisfies the schema the call advertised
+   (`createToolArgValidator`, exported by `@clarvis/loop`; `additionalProperties: false` included, so
+   an undeclared extra field is a violation rather than company for an acceptable title) and whose
+   `title` `parseTaskTitle` accepts (single line, ≤`TASK_TITLE_MAX` (60) chars per
+   `packages/kernel/tests/unit/workflow-title.test.ts`). Anything else — no call, prose alongside a
+   call, a different tool, several calls, an undecodable or non-object payload, an extra or missing
+   field, or a rejected title — is a protocol violation, never a result to choose from
    (`packages/kernel/src/workflows/workflow-title.ts`, proven by
    `packages/kernel/tests/unit/workflow-title.test.ts`).
 5. Correct at most once. The rejected response is appended, followed by one tool result per call it
@@ -660,9 +666,13 @@ handle settles.
    it stays language-independent, carries no model-authored instruction into the conversation, and
    grants the response no authority (`packages/kernel/src/workflows/workflow-title.ts`).
 6. The correction re-issues the same catalog and the same prompt prefix with only the time left on
-   the budget. Two failed attempts, a spent budget, an aborted signal, an unusable provider, or a
-   thrown error all resolve to `null` — the manager keeps the provisional `"Workflow <id>"` title —
-   with a warning naming the violation or the failure
+   the budget. The budget is enforced twice, because the per-attempt `timeoutMs` is the provider's
+   *inactivity* window and not a deadline: the operation owns an abort signal that fires at
+   `WORKFLOW_TITLE_TIMEOUT_MS`, and every answer is rechecked against the clock **and** the run's
+   signal after it arrives, so a valid title that lands late — or after the run was cancelled — is
+   discarded rather than adopted. Two failed attempts, a spent budget, an aborted signal, an
+   unusable provider, or a thrown error all resolve to `null` — the manager keeps the provisional
+   `"Workflow <id>"` title — with a warning naming the violation, the failure or the spent budget
    (`packages/kernel/src/workflows/workflow-title.ts`, proven by
    `packages/kernel/tests/unit/workflow-title.test.ts`).
 7. Both physical calls reach the caller's own provider port, so their consumption is observed by

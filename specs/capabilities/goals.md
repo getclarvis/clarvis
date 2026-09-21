@@ -403,6 +403,16 @@ cannot charge. Final failures retain the domain codes
 `goal_steward_failed` or `goal_steward_inconclusive`. Cancellation during result validation remains
 cancellation.
 
+Both entry capabilities — the guided creation turn (`createGoalCreationRunCapability`) and the
+bound work run (`createGoalCapability`) — end the Goal through one mapping,
+`stewardInterruptionOutcome` (`packages/goal/src/agent/steward-types.ts`), which pairs the domain
+code with fixed operator-facing text for the cause. The guided creation turn is the one the original
+defect surfaced in, and it reported no cause at all until the two shared the mapping. Production:
+`stewardInterruptionOutcome` in `packages/goal/src/agent/steward-types.ts`. Test:
+`routes Steward completion decisions and respects pending operator steering` and
+`covers creation review feedback, invalid candidates and bounded failures` in
+`packages/goal/tests/unit/capability.test.ts`.
+
 The coordinator checks Goal/control/objective identity, cumulative operator trajectory, operator
 epoch, candidate and final attempt before effects. Plan context is bound for the host but is not
 sent in the Steward frame and does not fence a completion decision. The host's private result gate

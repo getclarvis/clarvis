@@ -176,6 +176,7 @@ export function createGoalRuntimePort(options: {
           reasons: ["Goal or evidence changed during completion validation"],
           qualitative_criteria: result.qualitative_criteria,
           revision: latest.revision,
+          cause: "state_conflict",
         };
       return result;
     }, signal);

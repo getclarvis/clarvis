@@ -768,11 +768,11 @@ describe("goal physical settlement, usage and continuation", () => {
         disposition: "final",
         ...overrides,
       });
-    expect(failed(run(create()), { failure_cause: "no_progress" }).current).toMatchObject({
+    expect(failed(run(create()), { failure_cause: "stagnation" }).current).toMatchObject({
       status: "blocked",
     });
-    expect(failed(run(create()), { failure_cause: "no_progress" }).current!.reason).toContain(
-      "no progress across its unproductive-attempt allowance",
+    expect(failed(run(create()), { failure_cause: "stagnation" }).current!.reason).toContain(
+      "repeated attempts without progress",
     );
     expect(failed(run(create()), { failure_cause: "control_failure" }).current!.reason).toContain(
       "Goal control was unavailable",
@@ -793,7 +793,7 @@ describe("goal physical settlement, usage and continuation", () => {
       reason: "Missing browser evidence",
       now: 215,
     });
-    const settled = failed(declared, { failure_cause: "no_progress" });
+    const settled = failed(declared, { failure_cause: "stagnation" });
     expect(settled.current).toMatchObject({
       status: "blocked",
       reason: "Missing browser evidence",

@@ -24,12 +24,32 @@ export interface GoalSettlementDecision {
  *   only needs to know that a stage stagnated or that its control failed. The
  *   result's `message` is never forwarded — a reason in durable goal state must not
  *   be whatever prose the failed run produced.
+ *
+ *   Every code in {@link STAGNATION_CODES} means the same thing to an operator: the
+ *   stage kept going without advancing. Naming only the loop's own no-progress
+ *   streak would leave a stage that repeated identical tool results, or the same
+ *   failing call, reporting a generic failure for a condition the plan requires to
+ *   be diagnosed specifically. A structural failure such as an empty response, and
+ *   a run whose tools all disappeared, are not repetition: they keep the generic
+ *   wording because the run's own message already explains them.
  */
 function goalFailureCause(result: RunResult): GoalRunFailureCause | undefined {
-  if (result.error?.code === "no_progress") return "no_progress";
+  if (STAGNATION_CODES.has(result.error?.code ?? "")) return "stagnation";
   if (result.error?.code === "goal_control_failed") return "control_failure";
   return undefined;
 }
+
+/**
+ * The run codes that mean one thing to a goal operator: this stage stopped without
+ * advancing. `no_progress` is the loop's unproductive-attempt streak,
+ * `tool_failure_loop` is the doom-loop guard on a repeatedly failing call, and
+ * `stagnation_detected` is the convergence guard on identical repeated results.
+ */
+const STAGNATION_CODES: ReadonlySet<string> = new Set([
+  "no_progress",
+  "tool_failure_loop",
+  "stagnation_detected",
+]);
 
 /**
  * Apply goal settlement and its confirmed session usage within the caller's canonical transaction.

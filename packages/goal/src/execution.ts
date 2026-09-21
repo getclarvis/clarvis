@@ -296,8 +296,8 @@ function failureReason(
   cause: GoalRunFailureCause | undefined,
 ): string {
   if (outcome === "cancelled") return "Goal run was cancelled";
-  if (cause === "no_progress")
-    return "The stage stopped after making no progress across its unproductive-attempt allowance; the goal requires an explicit resume or edit";
+  if (cause === "stagnation")
+    return "The stage stopped after repeated attempts without progress; the goal requires an explicit resume or edit";
   if (cause === "control_failure")
     return "Goal control was unavailable; the goal requires host attention";
   return "Goal run failed";
@@ -356,14 +356,16 @@ export function recordGoalUsageEstimate(
  *
  * @remarks A closed vocabulary rather than free text: the domain owns the
  *   operator-facing sentence, and a host cannot put a model's or an objective's
- *   prose into durable goal state through the settlement path. `no_progress` is
- *   execution stagnation — the stage kept producing unusable attempts until the
- *   run's unproductive-attempt allowance was spent — and is deliberately distinct
- *   from `control_failure`, where the stage stopped because its bound control
- *   could not be read. Omitting the cause keeps the generic failed-stage wording,
- *   so a host that has nothing specific to report changes nothing.
+ *   prose into durable goal state through the settlement path. `stagnation` is
+ *   execution stagnation — the stage stopped because it was repeating itself
+ *   without advancing, whether the loop's unproductive-attempt allowance ran out
+ *   or a convergence guard tripped on repeated results — and it is deliberately
+ *   distinct from `control_failure`, where the stage stopped because its bound
+ *   control could not be read or ruled on. Omitting the cause keeps the generic
+ *   failed-stage wording, so a host that has nothing specific to report changes
+ *   nothing.
  */
-export type GoalRunFailureCause = "no_progress" | "control_failure";
+export type GoalRunFailureCause = "stagnation" | "control_failure";
 
 /**
  * Reconcile only after physical closure. Late usage always belongs to the original binding,

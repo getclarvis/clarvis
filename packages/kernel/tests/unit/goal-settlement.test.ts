@@ -71,22 +71,20 @@ function settle(session: Session, result: RunResult): void {
 }
 
 describe("goal stage settlement cause", () => {
-  test("names a stagnated stage as stagnation rather than a missing candidate", () => {
-    const session = sessionWithRunningStage();
+  test.each(["no_progress", "stagnation_detected", "tool_failure_loop"])(
+    "names %s as stagnation rather than a missing candidate",
+    (code) => {
+      const session = sessionWithRunningStage();
 
-    settle(
-      session,
-      failedResult("no_progress", "Lead made no progress for 6 consecutive iterations"),
-    );
+      settle(session, failedResult(code, "the run repeated itself"));
 
-    expect(session.goal_state!.current).toMatchObject({ status: "blocked" });
-    expect(session.goal_state!.current!.reason).toContain(
-      "no progress across its unproductive-attempt allowance",
-    );
-    expect(session.goal_state!.current!.reason).not.toContain("Goal run failed");
-    expect(session.goal_state!.current!.reason).not.toContain("candidate");
-    expect(JSON.stringify(session.goal_state)).not.toContain("6 consecutive iterations");
-  });
+      expect(session.goal_state!.current).toMatchObject({ status: "blocked" });
+      expect(session.goal_state!.current!.reason).toContain("repeated attempts without progress");
+      expect(session.goal_state!.current!.reason).not.toContain("Goal run failed");
+      expect(session.goal_state!.current!.reason).not.toContain("candidate");
+      expect(JSON.stringify(session.goal_state)).not.toContain("the run repeated itself");
+    },
+  );
 
   test("keeps an unreadable control distinct from stagnation", () => {
     const session = sessionWithRunningStage();
@@ -94,12 +92,14 @@ describe("goal stage settlement cause", () => {
     settle(session, failedResult("goal_control_failed", "Host attention is required"));
 
     expect(session.goal_state!.current!.reason).toContain("Goal control was unavailable");
-    expect(session.goal_state!.current!.reason).not.toContain("unproductive-attempt");
+    expect(session.goal_state!.current!.reason).not.toContain("without progress");
   });
 
   test("keeps the generic wording for a failure the host cannot name", () => {
     const session = sessionWithRunningStage();
 
+    // An empty completion is a structural failure, not repetition: the run's own
+    // message already explains it, and the goal reason must not claim stagnation.
     settle(session, failedResult("empty_response"));
 
     expect(session.goal_state!.current!.reason).toBe("Goal run failed");

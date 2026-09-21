@@ -31,7 +31,7 @@ import {
   getGoalInputSchema,
 } from "./tools.ts";
 import { absentReviewContext, checkGoalSnapshot } from "./runtime-validation.ts";
-import { goalRecoveryCause, recoverGoalFinalization } from "./finalization-recovery.ts";
+import { recoverGoalFinalization, ruleGoalFinalization } from "./finalization-recovery.ts";
 import { GOAL_CAPABILITY_NAME } from "./constants.ts";
 import { stewardInterruptionOutcome } from "./agent/steward-types.ts";
 
@@ -232,7 +232,13 @@ function createCreationGate(
     async check(attempt): Promise<GateOutcome> {
       const cancelled = bc.maybeCancelled();
       if (cancelled !== null) return { kind: "terminal", result: cancelled };
-      if (state.runtime === undefined)
+      const runtime = state.runtime;
+      /**
+       * Before durable creation there is no host validation to rule on: the only
+       * recoverable condition is that the Goal does not exist yet, which is its own
+       * typed cause rather than a missing candidate.
+       */
+      if (runtime === undefined)
         return recoverGoalFinalization({
           trace: bc.trace,
           execution_id: port.execution_id,
@@ -257,49 +263,58 @@ function createCreationGate(
             ),
           };
         }
-        const validation = await state.runtime.validateCompletion(bc.signal);
-        if (validation.valid) {
-          if (port.reviewCompletion === undefined) return { kind: "pass" };
-          const projected =
-            attempt.mode === "text"
-              ? { mode: "text" as const, text: attempt.text ?? "" }
-              : { mode: "submit" as const, text: attempt.text, submitted_value: attempt.value };
-          if (Buffer.byteLength(JSON.stringify(projected), "utf8") > 128 * 1024)
-            return {
-              kind: "terminal",
-              result: errorResult(
-                bc,
-                "goal_steward_inconclusive",
-                "Final attempt exceeds the Goal Steward review bound",
-              ),
-            };
-          const decision = await port.reviewCompletion(projected, bc.signal);
-          if (decision.kind === "achieved") return { kind: "pass" };
-          if (decision.kind === "needs_work" || decision.kind === "needs_evidence")
-            return {
-              kind: "nudge",
-              note: `[goal steward ${decision.kind === "needs_evidence" ? "clarification" : "correction"}] ${decision.next_step}`,
-            };
-          const outcome = stewardInterruptionOutcome(decision);
-          return { kind: "terminal", result: errorResult(bc, outcome.code, outcome.reason) };
-        }
-        if (attempt.mode === "text" && (attempt.text?.trim().length ?? 0) === 0)
-          return {
-            kind: "terminal",
-            result: errorResult(
-              bc,
-              "goal_blocked",
-              "Run ended without a valid Goal completion candidate",
-            ),
-          };
-        return recoverGoalFinalization({
+        const ruling = await ruleGoalFinalization({
+          validation: await runtime.validateCompletion(bc.signal),
+          revalidate: () => runtime.validateCompletion(bc.signal),
           trace: bc.trace,
           execution_id: port.execution_id,
           agent: bc.agent,
           mode: attempt.mode,
-          cause: goalRecoveryCause(validation),
-          reasons: validation.reasons,
         });
+        if (ruling.kind === "conflict")
+          return {
+            kind: "terminal",
+            result: errorResult(
+              bc,
+              "goal_control_failed",
+              "Goal control is unavailable; execution stopped",
+            ),
+          };
+        if (ruling.kind === "recover") {
+          if (attempt.mode === "text" && (attempt.text?.trim().length ?? 0) === 0)
+            return {
+              kind: "terminal",
+              result: errorResult(
+                bc,
+                "goal_blocked",
+                "Run ended without a valid Goal completion candidate",
+              ),
+            };
+          return ruling.outcome;
+        }
+        if (port.reviewCompletion === undefined) return { kind: "pass" };
+        const projected =
+          attempt.mode === "text"
+            ? { mode: "text" as const, text: attempt.text ?? "" }
+            : { mode: "submit" as const, text: attempt.text, submitted_value: attempt.value };
+        if (Buffer.byteLength(JSON.stringify(projected), "utf8") > 128 * 1024)
+          return {
+            kind: "terminal",
+            result: errorResult(
+              bc,
+              "goal_steward_inconclusive",
+              "Final attempt exceeds the Goal Steward review bound",
+            ),
+          };
+        const decision = await port.reviewCompletion(projected, bc.signal);
+        if (decision.kind === "achieved") return { kind: "pass" };
+        if (decision.kind === "needs_work" || decision.kind === "needs_evidence")
+          return {
+            kind: "nudge",
+            note: `[goal steward ${decision.kind === "needs_evidence" ? "clarification" : "correction"}] ${decision.next_step}`,
+          };
+        const outcome = stewardInterruptionOutcome(decision);
+        return { kind: "terminal", result: errorResult(bc, outcome.code, outcome.reason) };
       } catch {
         return {
           kind: "terminal",

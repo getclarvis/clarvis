@@ -116,16 +116,75 @@ export function recoverGoalFinalization(p: {
 }
 
 /**
- * Classify a failed completion validation that is already known to be recoverable.
+ * Which failed completion validation an answer is being decided for.
  *
- * @param validation - the host's deterministic completion verdict.
- * @returns `no_candidate` when the bound stage recorded no candidate at all, or
- *   `incomplete_candidate` when one exists but does not satisfy the criteria.
- * @remarks The host sets `cause: "no_candidate"` only on the early return that
- *   finds nothing to validate. Reading it here — rather than matching the
- *   verdict's prose — is what keeps the two recoverable shapes distinguishable
- *   without the gate guessing at human-readable text.
+ * @returns `no_candidate` when the bound stage recorded no candidate at all and
+ *   `incomplete_candidate` when one exists but does not satisfy the criteria, or
+ *   `null` for a verdict that is not a deficiency of the candidate at all.
  */
-export function goalRecoveryCause(validation: GoalCompletionValidation): GoalRecoveryCause {
+function goalRecoveryCause(validation: GoalCompletionValidation): GoalRecoveryCause | null {
+  if (validation.cause === "state_conflict") return null;
   return validation.cause === "no_candidate" ? "no_candidate" : "incomplete_candidate";
+}
+
+/**
+ * What a finalize gate does with one deterministic completion validation.
+ *
+ * @remarks `valid` lets the caller continue to the Steward and the remaining
+ *   gates, `recover` carries the orientation to append, and `conflict` means the
+ *   attempt cannot be ruled on at all: the caller stops the stage with
+ *   `goal_control_failed` and host attention.
+ */
+export type GoalFinalizationRuling =
+  { kind: "valid" } | { kind: "recover"; outcome: GateOutcome } | { kind: "conflict" };
+
+/**
+ * Rule on a completion validation under the one policy both Goal gates share.
+ *
+ * @param p.validation - the host's verdict on the attempt.
+ * @param p.revalidate - re-runs that same deterministic validation.
+ * @returns the ruling described by {@link GoalFinalizationRuling}.
+ * @remarks A verdict that rejects the candidate on its merits recovers: the stage
+ *   may simply not be finished, so the model is oriented and the run continues
+ *   under the loop's own unproductive-attempt bound.
+ *
+ *   `state_conflict` is neither. It reports that the goal or its observation
+ *   generation moved while the check ran, so the verdict says nothing about the
+ *   candidate, and answering it with a candidate-deficiency orientation would
+ *   consume the run's allowance for a condition the model cannot act on — and
+ *   would report stagnation for a stage that never stagnated. It is re-read once
+ *   instead: accepting a human criterion is exactly what makes such a candidate
+ *   completable, so a non-revoking human acceptance landing inside the window
+ *   must still be able to settle the attempt, and the host revalidates before the
+ *   durable commit for the same reason. Only a conflict that survives the re-read
+ *   ends the stage.
+ */
+export async function ruleGoalFinalization(p: {
+  validation: GoalCompletionValidation;
+  revalidate: () => Promise<GoalCompletionValidation>;
+  trace: TracePort;
+  execution_id: string;
+  agent: AgentRole;
+  mode: FinalizeAttempt["mode"];
+}): Promise<GoalFinalizationRuling> {
+  const recoverable = (validation: GoalCompletionValidation): GoalFinalizationRuling => {
+    const cause = goalRecoveryCause(validation);
+    if (cause === null) return { kind: "conflict" };
+    return {
+      kind: "recover",
+      outcome: recoverGoalFinalization({
+        trace: p.trace,
+        execution_id: p.execution_id,
+        agent: p.agent,
+        mode: p.mode,
+        cause,
+        reasons: validation.reasons,
+      }),
+    };
+  };
+  if (p.validation.valid) return { kind: "valid" };
+  if (p.validation.cause !== "state_conflict") return recoverable(p.validation);
+  const refreshed = await p.revalidate();
+  if (refreshed.valid) return { kind: "valid" };
+  return recoverable(refreshed);
 }

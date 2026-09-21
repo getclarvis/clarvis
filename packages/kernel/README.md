@@ -248,7 +248,10 @@ call/result correlation in the persisted context and subsequent request.
 turn closure and confirmed usage together. It also translates the run's own safe terminal code into
 the goal domain's closed failure vocabulary, so a stalled stage and an unreadable bound control are
 named as themselves in a blocked goal's reason while every other failure keeps the domain's generic
-wording; the run's message is never forwarded. Unknown usage remains explicit in the goal audit;
+wording; the run's message is never forwarded. Stagnation covers the whole family the engine reports
+for repetition without advancement — the loop's unproductive-attempt streak, the doom-loop guard and
+the convergence guard on identical results — because naming only one of them would leave the others
+reporting a generic failure. Unknown usage remains explicit in the goal audit;
 late measurements update the original binding once, including after archival. `measureGoalRunUsage`
 normalizes either aggregate or agent detail without charging independent memory runs or cache writes.
 `addRunUsage` in `src/sessions/usage.ts`, exposed through `./policy`,

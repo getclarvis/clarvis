@@ -147,20 +147,43 @@ function ensureWorktreeIgnore(primaryWorkspaceRoot: string): void {
   if (!ignored) throw new Error("workspace .clarvis/.gitignore does not exclude worktrees/");
 }
 
-async function preferredBaseRef(
-  cwd: string,
+/**
+ * Resolve the commit `HEAD` names in the checkout Clarvis was started from.
+ *
+ * A new `clarvis/<name>` branch starts from the operator's local history. Bootstrap never
+ * consults a remote default ref, so the created checkout does not depend on the configured
+ * upstream, on connectivity, or on which branch the remote considers default. The commit is
+ * resolved before the destination is prepared, so an unborn or unreadable `HEAD` fails without
+ * creating a branch, a checkout, or any nested directory. This runs only when bootstrap must
+ * create the branch: reusing an existing `clarvis/<name>` reads no `HEAD`.
+ */
+async function sourceHeadCommit(
+  sourceCheckout: string,
   runGit: (cwd: string, args: readonly string[]) => Promise<GitResult>,
 ): Promise<string> {
   try {
-    await runGit(cwd, ["fetch", "--quiet", "origin"]);
-  } catch {}
+    return (await runGit(sourceCheckout, ["rev-parse", "--verify", "HEAD^{commit}"])).stdout.trim();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `cannot create a worktree: the source checkout has no commit at HEAD (${detail})`,
+      { cause: error },
+    );
+  }
+}
+
+/** True when `refs/heads/<branch>` already exists in the repository. */
+async function branchRefExists(
+  topLevel: string,
+  branch: string,
+  runGit: (cwd: string, args: readonly string[]) => Promise<GitResult>,
+): Promise<boolean> {
   try {
-    const remote = (
-      await runGit(cwd, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])
-    ).stdout.trim();
-    if (remote) return remote;
-  } catch {}
-  return "HEAD";
+    await runGit(topLevel, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -213,6 +236,10 @@ export async function bootstrapWorktree(
       managedLocation: resolve(existing.path) === resolve(destination),
     };
   }
+  const reusesExistingBranch = await branchRefExists(topLevel, branch, runGit);
+  const creation = reusesExistingBranch
+    ? ({ kind: "reuse" } as const)
+    : ({ kind: "new", commit: await sourceHeadCommit(topLevel, runGit) } as const);
   ensureWorktreeIgnore(primaryWorkspaceRoot);
   try {
     await runGit(primaryWorkspaceRoot, [
@@ -233,17 +260,10 @@ export async function bootstrapWorktree(
     );
   }
   await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
-  let branchExists = true;
-  try {
-    await runGit(topLevel, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`]);
-  } catch {
-    branchExists = false;
-  }
-  if (branchExists) {
+  if (creation.kind === "reuse") {
     await runGit(topLevel, ["worktree", "add", "--", destination, branch]);
   } else {
-    const baseRef = await preferredBaseRef(topLevel, runGit);
-    await runGit(topLevel, ["worktree", "add", "-b", branch, "--", destination, baseRef]);
+    await runGit(topLevel, ["worktree", "add", "-b", branch, "--", destination, creation.commit]);
   }
   return {
     workspaceRoot: realpathSync(destination),

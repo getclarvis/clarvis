@@ -16,6 +16,13 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 - `/diff` no longer blinks the open file patch on an unchanged poll. `StableDiff` stays mounted
   until the selected unified diff actually changes.
+- `clarvis --worktree` bases a new `clarvis/<name>` branch on the commit at `HEAD` of the checkout it
+  was started in, not on the remote default branch. Creation no longer fetches `origin`, so an
+  unreachable remote, a differently configured `origin/HEAD`, or a commit that exists only locally
+  cannot change the base. A source checkout without a commit fails, once a new branch is required,
+  before creating a branch or checkout, while an existing `clarvis/<name>` branch is still reused;
+  uncommitted changes stay where they were, and the new branch records no upstream, so `git push`
+  inside the checkout cannot inherit the remote default branch.
 
 ### Added
 

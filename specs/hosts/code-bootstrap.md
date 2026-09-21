@@ -881,8 +881,13 @@ unreadable, or semantically negated exclusion fails startup. Git's NUL-delimited
 `worktree list --porcelain -z` is the only registry. A registered destination or registered
 `clarvis/<name>` branch checkout is reopened without requiring nested-path setup or a writable
 primary checkout; an unregistered existing destination is refused.
-For a new checkout Clarvis reuses `clarvis/<name>` when that branch exists, otherwise it best-effort
-fetches `origin`, chooses `origin/HEAD` or `HEAD`, and creates the branch with `git worktree add -b`.
+For a new checkout Clarvis reuses `clarvis/<name>` when that branch exists, otherwise it resolves the
+commit at `HEAD` of the checkout it was started in — a linked worktree or a detached `HEAD` included —
+before it prepares the destination, and creates the branch with `git worktree add -b` at that commit
+id. It never fetches and never reads a remote default ref, so an unreachable `origin`, a differently
+configured remote default, or locally unpublished commits cannot change the base. A source checkout
+without a commit fails startup before any branch, checkout, or nested directory is created once a new
+branch is required, while an existing `clarvis/<name>` branch is still reused without reading `HEAD`.
 It writes no lease, journal, or parallel registry.
 
 For an interactive launch selected with `--worktree`, the final user-quit path checks
@@ -900,7 +905,9 @@ environment, caps combined output at 1 MiB and kills the child after 15 seconds
 (`packages/code/src/bootstrap/worktree.ts`). Production behavior is pinned by
 `packages/code/tests/integration/worktree-bootstrap.test.ts` (create, reopen, inherited Git
 environment isolation, primary anchoring, ignore protection, clean removal, dirty refusal,
-generated name, path collision and invalid name) and parsing is
+generated name, path collision, invalid name, local-`HEAD` base selection against a remote default,
+unpublished commits, nested-worktree and detached-`HEAD` launches, branch reuse with and without a
+commit at `HEAD`, missing commit, and uncopied uncommitted changes) and parsing is
 pinned by `packages/code/tests/unit/cli-args.test.ts`.
 
 **Callback identity remains local, not a switching API.** `createWorkspaceCallbackTarget` is a

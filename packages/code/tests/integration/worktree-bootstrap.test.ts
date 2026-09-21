@@ -17,6 +17,7 @@ import { withoutGitRepositoryEnvironment } from "@clarvis/kernel/local";
 import {
   bootstrapWorktree,
   removeWorktreeCheckout,
+  runBootstrapGit,
   worktreeIsClean,
 } from "../../src/bootstrap/worktree.ts";
 import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
@@ -40,17 +41,42 @@ function git(cwd: string, args: string[]): string {
   return result.stdout.trim();
 }
 
-function repository(): { root: string; parent: string } {
+function repository(options: { commit?: boolean } = {}): { root: string; parent: string } {
   const parent = mkdtempSync(join(tmpdir(), "clarvis-worktree-bootstrap-"));
   roots.push(parent);
   const root = join(parent, "repo");
   git(parent, ["init", "--quiet", "--initial-branch=main", root]);
   git(root, ["config", "user.name", "Clarvis Test"]);
   git(root, ["config", "user.email", "test@clarvis.invalid"]);
-  writeFileSync(join(root, "README.md"), "primary\n");
-  git(root, ["add", "README.md"]);
-  git(root, ["commit", "--quiet", "-m", "initial"]);
+  if (options.commit !== false) {
+    writeFileSync(join(root, "README.md"), "primary\n");
+    git(root, ["add", "README.md"]);
+    git(root, ["commit", "--quiet", "-m", "initial"]);
+  }
   return { root: realpathSync(root), parent: realpathSync(parent) };
+}
+
+/** Commit `files` in `cwd` and return the resulting commit id. */
+function commit(cwd: string, message: string, files: Record<string, string>): string {
+  for (const [name, content] of Object.entries(files)) writeFileSync(join(cwd, name), content);
+  git(cwd, ["add", ...Object.keys(files)]);
+  git(cwd, ["commit", "--quiet", "-m", message]);
+  return git(cwd, ["rev-parse", "HEAD"]);
+}
+
+/** Record every Git invocation bootstrap makes while delegating to the real runner. */
+function recordingGit(): {
+  calls: Array<{ cwd: string; args: readonly string[] }>;
+  runGit: (cwd: string, args: readonly string[]) => ReturnType<typeof runBootstrapGit>;
+} {
+  const calls: Array<{ cwd: string; args: readonly string[] }> = [];
+  return {
+    calls,
+    runGit: (cwd, args) => {
+      calls.push({ cwd, args: [...args] });
+      return runBootstrapGit(cwd, args);
+    },
+  };
 }
 
 test("bootstrapWorktree creates and then reopens a deterministic Git-owned checkout", async () => {
@@ -145,6 +171,146 @@ test("bootstrapWorktree reopens a registered Clarvis branch at its existing loca
   await removeWorktreeCheckout(reopened, { changeDirectory: () => {} });
   expect(existsSync(legacy)).toBe(false);
   expect(existsSync(externalParent)).toBe(true);
+});
+
+test("bootstrapWorktree bases a new branch on the local HEAD, not the remote default", async () => {
+  const repo = repository();
+  const origin = join(repo.parent, "origin.git");
+  git(repo.parent, ["init", "--quiet", "--bare", "--initial-branch=main", origin]);
+  git(repo.root, ["remote", "add", "origin", origin]);
+  git(repo.root, ["push", "--quiet", "origin", "main"]);
+  git(repo.root, ["remote", "set-head", "origin", "--auto"]);
+  const mainCommit = git(repo.root, ["rev-parse", "HEAD"]);
+  git(repo.root, ["checkout", "--quiet", "-b", "develop"]);
+  const developCommit = commit(repo.root, "develop work", { "develop.txt": "unpublished\n" });
+  expect(developCommit).not.toBe(mainCommit);
+  expect(git(repo.root, ["symbolic-ref", "refs/remotes/origin/HEAD"])).toBe(
+    "refs/remotes/origin/main",
+  );
+
+  const recorder = recordingGit();
+  const created = await bootstrapWorktree(repo.root, "from-head", { runGit: recorder.runGit });
+
+  expect(git(created.workspaceRoot, ["rev-parse", "HEAD"])).toBe(developCommit);
+  expect(readFileSync(join(created.workspaceRoot, "develop.txt"), "utf8")).toBe("unpublished\n");
+  expect(recorder.calls.filter((call) => call.args[0] === "fetch")).toEqual([]);
+  expect(recorder.calls.filter((call) => call.args.includes("origin"))).toEqual([]);
+  expect(git(created.workspaceRoot, ["config", "--local", "--list"])).not.toContain(
+    "branch.clarvis/",
+  );
+});
+
+test("bootstrapWorktree includes commits that exist only in the source checkout", async () => {
+  const repo = repository();
+  const localCommit = commit(repo.root, "local only", { "local-only.txt": "local\n" });
+
+  const created = await bootstrapWorktree(repo.root, "local-only");
+
+  expect(git(created.workspaceRoot, ["rev-parse", "HEAD"])).toBe(localCommit);
+  expect(existsSync(join(created.workspaceRoot, "local-only.txt"))).toBe(true);
+});
+
+test("bootstrapWorktree bases a nested launch on the source checkout's HEAD", async () => {
+  const repo = repository();
+  const primaryCommit = git(repo.root, ["rev-parse", "HEAD"]);
+  const first = await bootstrapWorktree(repo.root, "first");
+  const linkedCommit = commit(first.workspaceRoot, "linked work", { "linked.txt": "linked\n" });
+  expect(linkedCommit).not.toBe(primaryCommit);
+
+  const second = await bootstrapWorktree(first.workspaceRoot, "second");
+
+  expect(second.primaryWorkspaceRoot).toBe(repo.root);
+  expect(second.workspaceRoot).toBe(join(repo.root, ".clarvis", "worktrees", "second"));
+  expect(git(second.workspaceRoot, ["rev-parse", "HEAD"])).toBe(linkedCommit);
+  expect(existsSync(join(second.workspaceRoot, "linked.txt"))).toBe(true);
+});
+
+test("bootstrapWorktree bases a new branch on the commit of a detached HEAD", async () => {
+  const repo = repository();
+  const firstCommit = git(repo.root, ["rev-parse", "HEAD"]);
+  commit(repo.root, "second", { "second.txt": "second\n" });
+  git(repo.root, ["checkout", "--quiet", "--detach", firstCommit]);
+
+  const created = await bootstrapWorktree(repo.root, "detached");
+
+  expect(git(created.workspaceRoot, ["rev-parse", "HEAD"])).toBe(firstCommit);
+  expect(existsSync(join(created.workspaceRoot, "second.txt"))).toBe(false);
+});
+
+test("bootstrapWorktree reopens a registered checkout without rewriting its history", async () => {
+  const repo = repository();
+  const created = await bootstrapWorktree(repo.root, "keeps-history");
+  const advanced = commit(created.workspaceRoot, "worktree work", { "worktree.txt": "kept\n" });
+
+  const reopened = await bootstrapWorktree(repo.root, "keeps-history");
+
+  expect(reopened.created).toBe(false);
+  expect(reopened.workspaceRoot).toBe(created.workspaceRoot);
+  expect(git(reopened.workspaceRoot, ["rev-parse", "HEAD"])).toBe(advanced);
+  expect(git(repo.root, ["rev-parse", "HEAD"])).not.toBe(advanced);
+  expect(existsSync(join(reopened.workspaceRoot, "worktree.txt"))).toBe(true);
+});
+
+test("bootstrapWorktree reuses an existing clarvis branch without redefining it", async () => {
+  const repo = repository();
+  const initial = git(repo.root, ["rev-parse", "HEAD"]);
+  commit(repo.root, "later", { "later.txt": "later\n" });
+  git(repo.root, ["branch", "clarvis/reused", initial]);
+
+  const recorder = recordingGit();
+  const created = await bootstrapWorktree(repo.root, "reused", { runGit: recorder.runGit });
+
+  expect(created.created).toBe(true);
+  expect(git(created.workspaceRoot, ["rev-parse", "HEAD"])).toBe(initial);
+  expect(git(repo.root, ["rev-parse", "clarvis/reused"])).toBe(initial);
+  expect(existsSync(join(created.workspaceRoot, "later.txt"))).toBe(false);
+  expect(recorder.calls.filter((call) => call.args.includes("HEAD^{commit}"))).toEqual([]);
+});
+
+test("bootstrapWorktree reuses an existing clarvis branch when HEAD is unborn", async () => {
+  const repo = repository();
+  const initial = git(repo.root, ["rev-parse", "HEAD"]);
+  git(repo.root, ["branch", "clarvis/unborn", initial]);
+  git(repo.root, ["checkout", "--quiet", "--orphan", "fresh"]);
+  const recorder = recordingGit();
+
+  const created = await bootstrapWorktree(repo.root, "unborn", { runGit: recorder.runGit });
+
+  expect(created.created).toBe(true);
+  expect(git(created.workspaceRoot, ["rev-parse", "HEAD"])).toBe(initial);
+  expect(git(repo.root, ["rev-parse", "clarvis/unborn"])).toBe(initial);
+  expect(recorder.calls.filter((call) => call.args.includes("HEAD^{commit}"))).toEqual([]);
+});
+
+test("bootstrapWorktree fails clearly without a commit and creates nothing", async () => {
+  const repo = repository({ commit: false });
+
+  await expect(bootstrapWorktree(repo.root, "no-commit")).rejects.toThrow("no commit at HEAD");
+
+  expect(existsSync(join(repo.root, ".clarvis"))).toBe(false);
+  expect(git(repo.root, ["branch", "--list"])).toBe("");
+  expect(git(repo.root, ["worktree", "list", "--porcelain"])).not.toContain("clarvis/no-commit");
+});
+
+test("bootstrapWorktree leaves uncommitted source changes in place and copies none of them", async () => {
+  const repo = repository();
+  const committed = git(repo.root, ["rev-parse", "HEAD"]);
+  writeFileSync(join(repo.root, "README.md"), "modified\n");
+  writeFileSync(join(repo.root, "staged.txt"), "staged\n");
+  git(repo.root, ["add", "staged.txt"]);
+  writeFileSync(join(repo.root, "untracked.txt"), "untracked\n");
+  const status = ["status", "--porcelain=v1", "--untracked-files=all"];
+  const before = git(repo.root, status);
+  expect(before).toContain("README.md");
+
+  const created = await bootstrapWorktree(repo.root, "clean-base");
+
+  expect(git(repo.root, status)).toBe(before);
+  expect(git(created.workspaceRoot, ["rev-parse", "HEAD"])).toBe(committed);
+  expect(readFileSync(join(created.workspaceRoot, "README.md"), "utf8")).toBe("primary\n");
+  expect(existsSync(join(created.workspaceRoot, "staged.txt"))).toBe(false);
+  expect(existsSync(join(created.workspaceRoot, "untracked.txt"))).toBe(false);
+  expect(await worktreeIsClean(created)).toBe(true);
 });
 
 test("clean checkout removal keeps the branch and removes an empty worktree directory", async () => {

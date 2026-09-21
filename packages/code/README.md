@@ -877,6 +877,15 @@ source of truth; Clarvis keeps no parallel registry. Before creation, Code ensur
 worktree's `.clarvis/.gitignore` excludes `worktrees/` so the nested checkout cannot be staged by
 accident.
 
+A new `clarvis/<name>` branch starts from the commit at `HEAD` of the checkout where `clarvis` was
+started — that checkout also when it is a linked worktree. Bootstrap never fetches and never consults
+a remote default branch, so commits that exist only locally are included and creation does not depend
+on connectivity. An existing `clarvis/<name>` branch or a registered checkout is reused exactly as it
+stands and without reading `HEAD`, so reuse still works when the launching checkout's `HEAD` is
+unborn; uncommitted changes remain in the source checkout and are not copied, and a repository without
+a commit fails with a clear error before any branch or checkout is created once a new branch is
+required.
+
 `--remote <user@host> --remote-workspace <path>` starts the installed `clarvis` command through
 OpenSSH and carries the ordinary kernel protocol over that process's stdio. Both flags are required
 and cannot be combined with `--worktree`. SSH owns host/user authentication and encryption; Clarvis
@@ -1014,14 +1023,18 @@ the kernel independently refuses an apply against an incomplete inventory.
 
 Normal boot remains in the checkout where `clarvis` started. `--worktree [name]` creates or
 reopens a checkout before the kernel and TUI boot, then the process stays pinned to it. There is no
-in-TUI selector or runtime switching. When an interactive launch selected a managed worktree and
-that checkout is clean, exit asks whether to remove the checkout or keep it. Removal is explicit,
-first asks the host to retire admission, which is refused while hosted work remains occupied. It then
-closes the workspace and completes outside the platform's bounded shutdown path, rechecks
-cleanliness, uses `git worktree remove` without force, and preserves `clarvis/<name>` so a clean tree
-with unmerged commits cannot lose its branch. Clarvis removes an empty parent only for its canonical
-`.clarvis/worktrees/` location; an externally registered checkout's parent remains untouched. A
-dirty checkout exits without offering removal.
+in-TUI selector or runtime switching. A newly created checkout branches from the commit at `HEAD` of
+the checkout that launched Clarvis, even when that is a linked worktree or a detached `HEAD`; the
+primary checkout only anchors the destination. A new branch also records no upstream, so `git push`
+inside the checkout never inherits the remote default branch. Reopening and branch reuse preserve the
+existing history, no fetch runs, and uncommitted source changes are never copied. When an interactive
+launch selected a managed worktree and that checkout is clean, exit asks whether to remove the
+checkout or keep it. Removal is explicit, first asks the host to retire admission, which is refused
+while hosted work remains occupied. It then closes the workspace and completes outside the platform's
+bounded shutdown path, rechecks cleanliness, uses `git worktree remove` without force, and preserves
+`clarvis/<name>` so a clean tree with unmerged commits cannot lose its branch. Clarvis removes an
+empty parent only for its canonical `.clarvis/worktrees/` location; an externally registered
+checkout's parent remains untouched. A dirty checkout exits without offering removal.
 
 Settings saves are serialized by the adapter and carry the exact source revision returned by the
 kernel. Another process editing the same scope produces an explicit conflict; Code never retries by

@@ -257,12 +257,29 @@ test("bootstrapWorktree reuses an existing clarvis branch without redefining it"
   commit(repo.root, "later", { "later.txt": "later\n" });
   git(repo.root, ["branch", "clarvis/reused", initial]);
 
-  const created = await bootstrapWorktree(repo.root, "reused");
+  const recorder = recordingGit();
+  const created = await bootstrapWorktree(repo.root, "reused", { runGit: recorder.runGit });
 
   expect(created.created).toBe(true);
   expect(git(created.workspaceRoot, ["rev-parse", "HEAD"])).toBe(initial);
   expect(git(repo.root, ["rev-parse", "clarvis/reused"])).toBe(initial);
   expect(existsSync(join(created.workspaceRoot, "later.txt"))).toBe(false);
+  expect(recorder.calls.filter((call) => call.args.includes("HEAD^{commit}"))).toEqual([]);
+});
+
+test("bootstrapWorktree reuses an existing clarvis branch when HEAD is unborn", async () => {
+  const repo = repository();
+  const initial = git(repo.root, ["rev-parse", "HEAD"]);
+  git(repo.root, ["branch", "clarvis/unborn", initial]);
+  git(repo.root, ["checkout", "--quiet", "--orphan", "fresh"]);
+  const recorder = recordingGit();
+
+  const created = await bootstrapWorktree(repo.root, "unborn", { runGit: recorder.runGit });
+
+  expect(created.created).toBe(true);
+  expect(git(created.workspaceRoot, ["rev-parse", "HEAD"])).toBe(initial);
+  expect(git(repo.root, ["rev-parse", "clarvis/unborn"])).toBe(initial);
+  expect(recorder.calls.filter((call) => call.args.includes("HEAD^{commit}"))).toEqual([]);
 });
 
 test("bootstrapWorktree fails clearly without a commit and creates nothing", async () => {

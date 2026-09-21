@@ -886,8 +886,9 @@ commit at `HEAD` of the checkout it was started in — a linked worktree or a de
 before it prepares the destination, and creates the branch with `git worktree add -b` at that commit
 id. It never fetches and never reads a remote default ref, so an unreachable `origin`, a differently
 configured remote default, or locally unpublished commits cannot change the base. A source checkout
-without a commit fails startup before any branch, checkout, or nested directory is created. It writes
-no lease, journal, or parallel registry.
+without a commit fails startup before any branch, checkout, or nested directory is created once a new
+branch is required, while an existing `clarvis/<name>` branch is still reused without reading `HEAD`.
+It writes no lease, journal, or parallel registry.
 
 For an interactive launch selected with `--worktree`, the final user-quit path checks
 `git status --porcelain=v1 --untracked-files=all --ignore-submodules=none`. A clean checkout opens
@@ -905,8 +906,8 @@ environment, caps combined output at 1 MiB and kills the child after 15 seconds
 `packages/code/tests/integration/worktree-bootstrap.test.ts` (create, reopen, inherited Git
 environment isolation, primary anchoring, ignore protection, clean removal, dirty refusal,
 generated name, path collision, invalid name, local-`HEAD` base selection against a remote default,
-unpublished commits, nested-worktree and detached-`HEAD` launches, branch reuse, missing commit, and
-uncopied uncommitted changes) and parsing is
+unpublished commits, nested-worktree and detached-`HEAD` launches, branch reuse with and without a
+commit at `HEAD`, missing commit, and uncopied uncommitted changes) and parsing is
 pinned by `packages/code/tests/unit/cli-args.test.ts`.
 
 **Callback identity remains local, not a switching API.** `createWorkspaceCallbackTarget` is a

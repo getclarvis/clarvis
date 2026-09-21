@@ -154,23 +154,36 @@ function ensureWorktreeIgnore(primaryWorkspaceRoot: string): void {
  * consults a remote default ref, so the created checkout does not depend on the configured
  * upstream, on connectivity, or on which branch the remote considers default. The commit is
  * resolved before the destination is prepared, so an unborn or unreadable `HEAD` fails without
- * creating a branch, a checkout, or any nested directory.
+ * creating a branch, a checkout, or any nested directory. This runs only when bootstrap must
+ * create the branch: reusing an existing `clarvis/<name>` reads no `HEAD`.
  */
 async function sourceHeadCommit(
   sourceCheckout: string,
   runGit: (cwd: string, args: readonly string[]) => Promise<GitResult>,
 ): Promise<string> {
-  let commit: string;
   try {
-    commit = (
-      await runGit(sourceCheckout, ["rev-parse", "--verify", "HEAD^{commit}"])
-    ).stdout.trim();
+    return (await runGit(sourceCheckout, ["rev-parse", "--verify", "HEAD^{commit}"])).stdout.trim();
   } catch (error) {
-    throw new Error("cannot create a worktree: the source checkout has no commit at HEAD", {
-      cause: error,
-    });
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `cannot create a worktree: the source checkout has no commit at HEAD (${detail})`,
+      { cause: error },
+    );
   }
-  return commit;
+}
+
+/** True when `refs/heads/<branch>` already exists in the repository. */
+async function branchRefExists(
+  topLevel: string,
+  branch: string,
+  runGit: (cwd: string, args: readonly string[]) => Promise<GitResult>,
+): Promise<boolean> {
+  try {
+    await runGit(topLevel, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -223,7 +236,10 @@ export async function bootstrapWorktree(
       managedLocation: resolve(existing.path) === resolve(destination),
     };
   }
-  const baseCommit = await sourceHeadCommit(topLevel, runGit);
+  const reusesExistingBranch = await branchRefExists(topLevel, branch, runGit);
+  const creation = reusesExistingBranch
+    ? ({ kind: "reuse" } as const)
+    : ({ kind: "new", commit: await sourceHeadCommit(topLevel, runGit) } as const);
   ensureWorktreeIgnore(primaryWorkspaceRoot);
   try {
     await runGit(primaryWorkspaceRoot, [
@@ -244,16 +260,10 @@ export async function bootstrapWorktree(
     );
   }
   await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
-  let branchExists = true;
-  try {
-    await runGit(topLevel, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`]);
-  } catch {
-    branchExists = false;
-  }
-  if (branchExists) {
+  if (creation.kind === "reuse") {
     await runGit(topLevel, ["worktree", "add", "--", destination, branch]);
   } else {
-    await runGit(topLevel, ["worktree", "add", "-b", branch, "--", destination, baseCommit]);
+    await runGit(topLevel, ["worktree", "add", "-b", branch, "--", destination, creation.commit]);
   }
   return {
     workspaceRoot: realpathSync(destination),

@@ -55,15 +55,16 @@ does not require the primary checkout to be writable. The primary `.clarvis/.git
 is required only when Clarvis is about to create its canonical nested destination.
 
 A new branch starts from the commit at `HEAD` of the checkout Clarvis was started in, resolved before
-the destination is prepared; that checkout is the source even when it is a linked worktree or has a
-detached `HEAD`, while the primary checkout stays the location anchor. Bootstrap never fetches and
-never reads a remote default ref, so an unreachable or differently configured `origin` cannot change
-the base and commits that exist only locally are included. An existing `clarvis/<name>` branch is
-reused exactly as it stands. Creation passes the resolved commit id to `git worktree add`, which runs
-argv-only with prompts disabled, a 15-second bound, and a 1 MiB output bound. Because the start point
-is a commit id rather than a remote-tracking ref, the new branch records no upstream at all; a
-remote-tracking start point would have made `clarvis/<name>` track the remote default branch, so an
-ordinary `git push` inside the checkout could target it.
+the destination is prepared and only when the branch does not exist yet; that checkout is the source
+even when it is a linked worktree or has a detached `HEAD`, while the primary checkout stays the
+location anchor. Bootstrap never fetches and never reads a remote default ref, so an unreachable or
+differently configured `origin` cannot change the base and commits that exist only locally are
+included. An existing `clarvis/<name>` branch is reused exactly as it stands and without reading
+`HEAD`, so it is still reused when that checkout's `HEAD` is unborn. Creation passes the resolved
+commit id to `git worktree add`, which runs argv-only with prompts disabled, a 15-second bound, and a
+1 MiB output bound. Because the start point is a commit id rather than a remote-tracking ref, the new
+branch records no upstream at all; a remote-tracking start point would have made `clarvis/<name>`
+track the remote default branch, so an ordinary `git push` inside the checkout could target it.
 
 On interactive user exit, Code offers checkout removal only when the selected Clarvis worktree is
 clean. `y` first closes the workspace and completes removal before entering the platform's bounded
@@ -166,7 +167,7 @@ Test: `packages/tools/tests/integration/sandbox.test.ts`;
 
 6. **A newly created branch starts from the commit at `HEAD` of the checkout Clarvis was started
    in; bootstrap neither fetches nor consults a remote default ref, and uncommitted changes are
-   never copied.**
+   never copied. An existing `clarvis/<name>` branch is reused without reading `HEAD`.**
    Production: `sourceHeadCommit` and `bootstrapWorktree` in
    `packages/code/src/bootstrap/worktree.ts`.
    Test: `packages/code/tests/integration/worktree-bootstrap.test.ts`.
@@ -188,7 +189,7 @@ Test: `packages/tools/tests/integration/sandbox.test.ts`;
 | Destination exists but Git does not register it | startup refuses to overwrite or adopt it |
 | Primary `.clarvis/.gitignore` cannot be protected with `worktrees/` | startup refuses before `git worktree add` |
 | Git command times out or exceeds output bound | startup fails; the ignore entry, parent directory, or Git branch/worktree metadata created by an earlier step may remain, but Clarvis writes no parallel registry |
-| The source checkout has no commit at `HEAD` | startup fails before preparing the destination; no branch, checkout, or nested directory is created |
+| `HEAD` names no commit and no `clarvis/<name>` branch exists to reuse | startup fails before preparing the destination; no branch, checkout, or nested directory is created |
 | Sandbox cannot validate linked Git metadata | no extra metadata mount is added |
 | Linked Git metadata changes after toolset configuration | commands retain the originally validated pinned mount |
 | `require_escalated` has no guard because command review is `off` | that one command proceeds on the host |

@@ -758,6 +758,49 @@ describe("goal physical settlement, usage and continuation", () => {
     expect(resumed.current!.consumption.net_tokens).toBe(90);
   });
 
+  it("names the host's typed failure cause instead of a generic stage failure", () => {
+    const failed = (
+      state: GoalState,
+      overrides: Partial<Parameters<typeof settleGoalRun>[1]> = {},
+    ): GoalState =>
+      settle(state, "run-1", measured, {
+        outcome: "failed",
+        disposition: "final",
+        ...overrides,
+      });
+    expect(failed(run(create()), { failure_cause: "stagnation" }).current).toMatchObject({
+      status: "blocked",
+    });
+    expect(failed(run(create()), { failure_cause: "stagnation" }).current!.reason).toContain(
+      "repeated attempts without progress",
+    );
+    expect(failed(run(create()), { failure_cause: "control_failure" }).current!.reason).toContain(
+      "Goal control was unavailable",
+    );
+    // A stage that stagnated must not read as one that never produced a candidate,
+    // and an unnamed failure keeps the generic wording rather than inventing a cause.
+    expect(failed(run(create())).current!.reason).toBe("Goal run failed");
+    expect(
+      settle(run(create()), "run-1", measured, { outcome: "cancelled", disposition: "final" })
+        .current!.reason,
+    ).toBe("Goal run was cancelled");
+    // A model-declared block stays authoritative: the goal already left `active`, so
+    // settlement records the closure and charges usage without rewriting the reason.
+    const declared = blockGoalRun(run(create()), {
+      goal_id: "goal-1",
+      execution_id: "run-1",
+      objective_revision: 1,
+      reason: "Missing browser evidence",
+      now: 215,
+    });
+    const settled = failed(declared, { failure_cause: "stagnation" });
+    expect(settled.current).toMatchObject({
+      status: "blocked",
+      reason: "Missing browser evidence",
+    });
+    expect(settled.current!.consumption.net_tokens).toBe(30);
+  });
+
   it("does not count changing prose around the same activity as fresh progress", () => {
     let state = settle(checkpoint(run(create()), "run-1", "a".repeat(64)));
     state = settle(checkpoint(run(state, "run-2", true), "run-2", "a".repeat(64)), "run-2");

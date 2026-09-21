@@ -178,8 +178,20 @@ export interface CheckpointAttempt {
 
 /**
  * A finalize gate's ruling on a {@link FinalizeAttempt}: `pass` lets it through,
- * `nudge` sends the model back with a `note` (an `unbounded` nudge is exempt from
- * the nudge budget), or `terminal` ends the agent with the given result.
+ * `nudge` sends the model back with a `note`, or `terminal` ends the agent with
+ * the given result.
+ *
+ * @remarks `unbounded` marks a nudge the issuing capability will keep repeating
+ *   for as long as the condition holds. It means two things. The refusal is exempt
+ *   from that capability's own nudge budget, so the gate does not have to count
+ *   attempts itself. And the loop counts the refused attempt once as an
+ *   unproductive iteration, which is what makes the repetition finite without a
+ *   second counter: any productive iteration clears the sequence, and the run
+ *   ends with `no_progress` only when the unproductive streak reaches the
+ *   persona's limit. Exemption from a nudge budget is therefore not permission to
+ *   run forever — it borrows the run's existing no-progress bound instead of
+ *   inventing one. A bounded nudge (the default) promises the opposite: the
+ *   capability ends the repetition itself, and the loop does not count it.
  */
 export type GateOutcome =
   | { kind: "pass" }

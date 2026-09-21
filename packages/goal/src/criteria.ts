@@ -14,6 +14,23 @@ export interface GoalCompletionValidation {
   qualitative_criteria: string[];
   /** Exact durable goal-state revision fenced by this validation. */
   revision: number;
+  /**
+   * Which failed verdict this is, when the host can say.
+   *
+   * @remarks The two are unrelated conditions that share the `valid: false` shape,
+   *   and only the first is a deficiency the work agent can act on. `no_candidate`
+   *   means the bound stage has nothing to validate. `state_conflict` means a
+   *   candidate existed but the validation's own fence no longer holds — the goal
+   *   or its observation generation moved while the check was running — so the
+   *   verdict says nothing about the candidate at all and must not be answered as
+   *   though it did. A verdict that carries neither is a completed validation that
+   *   rejected the candidate on its merits.
+   *
+   *   `validateGoalCandidate` is never responsible for `no_candidate`: it only runs
+   *   when a candidate exists. The host's early returns supply both values, so
+   *   nothing downstream has to infer them from the verdict's human-readable prose.
+   */
+  cause?: "no_candidate" | "state_conflict";
 }
 
 /** Check exact criterion coverage and scoped evidence; qualitative judgments remain explicitly labeled. */

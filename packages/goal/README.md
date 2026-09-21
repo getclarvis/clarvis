@@ -22,6 +22,9 @@ automatic continuation, a TUI journey, a container or an installed artifact.
   existing bounded receipt audit without creating a draft store.
 - `admitGoalRun`, `advanceGoalRun` and `settleGoalRun` separate durable intent, physical lifecycle,
   confirmed usage and semantic status. Late usage belongs to its original goal, including archives.
+  A host may pass a typed `GoalRunFailureCause`, so an unsuccessful stage names execution stagnation
+  — the whole family the engine reports for a stage that repeated itself without advancing — or an
+  unreadable control, instead of the generic failed-stage reason when the goal is settled as blocked.
 - `recordGoalCheckpoint`, `recordGoalCandidate` and `validateGoalCandidate` retain scoped evidence,
   explicitly labeled qualitative judgments and recorded human acceptance. Validation returns the
   exact goal revision it inspected so a host can fence the later completion commit.
@@ -143,8 +146,19 @@ valid `achieved`, but its consumption could not be determined and a Goal cannot 
 review the host cannot charge.
 The host checks semantic targets
 before accepting output and allows one bounded schema-correction nudge inside the same evaluation.
-One nonempty invalid final receives a recovery nudge; a repeated invalid final or the first empty
-final stops with explicit blocking. Reporting a blocker uses safe interruption without requiring
+A premature final is answered by one shared recovery policy: an attempt whose completion validation
+rejects the candidate on its merits is nudged with the same orientation however many times it
+repeats, and the run's own unproductive-attempt sequence is what bounds it. A productive iteration
+clears that sequence, so an earlier refusal never condemns a later attempt, and a genuinely stuck
+stage ends with `no_progress` rather than a blocked Goal. A verdict fenced out because the goal or
+its evidence moved is a state conflict, not a deficiency: it is re-read once so a non-revoking human
+acceptance inside the window can still settle the attempt, and a conflict that survives stops the
+stage with `goal_control_failed` and host attention rather than consuming the recovery bound. The
+orientation never requires a fabricated candidate before continuing and never names the Steward; the
+typed cause and the host's own verdicts are recorded as bounded trace evidence without model or
+objective text. Only recoverable verdicts recover: a failed read, foreign binding or obsolete
+revision stays `goal_control_failed`, and an empty final stays a structural terminal. Reporting a
+blocker uses safe interruption without requiring
 plan task completion. Checkpoint requests still pass all plan/review/delegation gates. Plan state
 is preserved on interruption. Neither acceptance nor a capability teardown commits goal completion.
 

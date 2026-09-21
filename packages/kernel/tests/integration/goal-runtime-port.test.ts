@@ -3,9 +3,14 @@ import { createHash } from "node:crypto";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BuiltinTraceEvent } from "@clarvis/capability";
-import { advanceGoalRun, settleGoalRun, type GoalCriterion } from "@clarvis/goal";
+import {
+  advanceGoalRun,
+  settleGoalRun,
+  type GoalCriterion,
+  type GoalRepository,
+} from "@clarvis/goal";
 import { mapEntry } from "@clarvis/trace";
-import { goalEvidenceDigest } from "../../src/goals/evidence.ts";
+import { createGoalEvidenceSource, goalEvidenceDigest } from "../../src/goals/evidence.ts";
 import { createGoalRuntimePort } from "../../src/goals/runtime-port.ts";
 import { goalHostFixture } from "../helpers/goal-host.ts";
 
@@ -300,6 +305,66 @@ describe("durable host goal runtime port", () => {
       valid: true,
       qualitative_criteria: [],
     });
+    expect((await f.repository.read("session"))!.current!.status).toBe("active");
+  });
+
+  it("reports a state conflict, not a candidate deficiency, when the goal moves during validation", async () => {
+    const f = await fixture({
+      criteria: [{ id: "review", kind: "human", description: "User review" }],
+    });
+    const goal = (await f.repository.read("session"))!.current!;
+    const evidence = createGoalEvidenceSource({
+      executionId: "first",
+      workspaceRoot: f.workspaceRoot,
+      readTrace: () => undefined,
+    });
+    /**
+     * One validation reads the bound state twice and then re-reads it to rule on
+     * what the check actually saw. Moving the goal immediately before that third
+     * read is the race a slow evidence check leaves open, and it needs no timing:
+     * reads are only counted once armed, which happens after the candidate is durable.
+     */
+    let reads = 0;
+    let armed = false;
+    let moved = false;
+    const repository: GoalRepository = {
+      read: async (sessionId) => {
+        if (armed) {
+          reads += 1;
+          if (reads === 3 && !moved) {
+            moved = true;
+            // A non-revoking human acceptance is the real shape of this race, and it
+            // is what makes the candidate completable once the state is quiet again.
+            await f.control({ kind: "accept", criterion_id: "review", objective_revision: 1 });
+          }
+        }
+        return f.repository.read(sessionId);
+      },
+      transact: (sessionId, mutation) => f.repository.transact(sessionId, mutation),
+    };
+    const port = createGoalRuntimePort({
+      repository,
+      evidence,
+      binding: {
+        session_id: "session",
+        agent_instance_id: "entry",
+        execution_id: "first",
+        goal_id: goal.goal_id,
+        objective_revision: goal.objective_revision,
+      },
+    });
+    expect(await port.candidate(candidate("review", "human"))).toMatchObject({ valid: false });
+
+    armed = true;
+    // The verdict says nothing about the candidate, so it must not be reported as
+    // one, and the next quiet validation settles the same attempt.
+    expect(await port.validateCompletion()).toMatchObject({
+      valid: false,
+      reasons: ["Goal or evidence changed during completion validation"],
+      cause: "state_conflict",
+    });
+    expect(moved).toBe(true);
+    expect(await port.validateCompletion()).toMatchObject({ valid: true });
     expect((await f.repository.read("session"))!.current!.status).toBe("active");
   });
 

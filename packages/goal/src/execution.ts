@@ -280,6 +280,29 @@ export function blockGoalRun(
   return changed(state, goal, input.now);
 }
 
+/**
+ * The operator-facing sentence for an unsuccessful stage, chosen from the closed cause.
+ *
+ * @param outcome - the physical outcome the host reported.
+ * @param cause - the host's typed reason, when it has one.
+ * @returns a fixed sentence. Stagnation and a control failure are named as
+ *   themselves rather than folded into the generic failed-stage wording, because a
+ *   blocked goal is what the operator must act on: a stalled stage needs an
+ *   explicit resume or edit, and an unreadable control needs host attention.
+ *   Cancellation keeps its own wording, and an absent cause keeps the generic one.
+ */
+function failureReason(
+  outcome: "failed" | "cancelled",
+  cause: GoalRunFailureCause | undefined,
+): string {
+  if (outcome === "cancelled") return "Goal run was cancelled";
+  if (cause === "stagnation")
+    return "The stage stopped after repeated attempts without progress; the goal requires an explicit resume or edit";
+  if (cause === "control_failure")
+    return "Goal control was unavailable; the goal requires host attention";
+  return "Goal run failed";
+}
+
 function reconcileUsage(goal: GoalRecord): void {
   const totals: GoalRecord["consumption"] = {
     input: 0,
@@ -329,6 +352,22 @@ export function recordGoalUsageEstimate(
 }
 
 /**
+ * Why an unsuccessful goal stage stopped, as the host observed it.
+ *
+ * @remarks A closed vocabulary rather than free text: the domain owns the
+ *   operator-facing sentence, and a host cannot put a model's or an objective's
+ *   prose into durable goal state through the settlement path. `stagnation` is
+ *   execution stagnation — the stage stopped because it was repeating itself
+ *   without advancing, whether the loop's unproductive-attempt allowance ran out
+ *   or a convergence guard tripped on repeated results — and it is deliberately
+ *   distinct from `control_failure`, where the stage stopped because its bound
+ *   control could not be read or ruled on. Omitting the cause keeps the generic
+ *   failed-stage wording, so a host that has nothing specific to report changes
+ *   nothing.
+ */
+export type GoalRunFailureCause = "stagnation" | "control_failure";
+
+/**
  * Reconcile only after physical closure. Late usage always belongs to the original binding,
  * even after pause/cancel; status changes require the still-current control/objective revision.
  * Missing telemetry blocks continuation, and a checkpoint never turns a failed run into success.
@@ -343,6 +382,7 @@ export function settleGoalRun(
     disposition: "final" | "checkpoint";
     usage: GoalUsage;
     completion_validated: boolean;
+    failure_cause?: GoalRunFailureCause;
     now: number;
   },
 ): GoalState {
@@ -391,7 +431,7 @@ export function settleGoalRun(
       goal.reason = decision.reason;
     } else {
       goal.status = "blocked";
-      goal.reason = input.outcome === "cancelled" ? "Goal run was cancelled" : "Goal run failed";
+      goal.reason = failureReason(input.outcome, input.failure_cause);
     }
   } else if (input.disposition === "final") {
     if (

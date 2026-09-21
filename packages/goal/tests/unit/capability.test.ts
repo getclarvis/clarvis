@@ -48,6 +48,7 @@ function fixture(overrides: Partial<GoalRuntimePort> = {}) {
   state = advanceGoalRun(state, { goal_id: "goal", execution_id: "run", phase: "running", now: 3 });
   const calls: string[] = [];
   const blocks: Array<{ kind: string; content: string }> = [];
+  const traceEntries: Array<{ kind: string; detail: unknown }> = [];
   let completionValid = false;
   const port: GoalRuntimePort = {
     binding: {
@@ -181,7 +182,13 @@ function fixture(overrides: Partial<GoalRuntimePort> = {}) {
         if (blocks.at(-1)?.content !== content) blocks.push({ kind, content });
       },
     },
-    trace: { now: () => 0, record: () => undefined, signal: () => undefined },
+    trace: {
+      now: () => 0,
+      record: (kind, detail) => {
+        traceEntries.push({ kind: kind as string, detail });
+      },
+      signal: () => undefined,
+    },
     guards: {
       record: () => undefined,
       takeSoft: () => [],
@@ -200,6 +207,7 @@ function fixture(overrides: Partial<GoalRuntimePort> = {}) {
     bc,
     blocks,
     calls,
+    traceEntries,
     state: () => state,
     allowCompletion: () => {
       completionValid = true;
@@ -302,14 +310,27 @@ describe("host-bound goal capability", () => {
     ).toMatchObject({ kind: "result", text: expect.stringContaining("Invalid Goal arguments") });
     expect(
       await contribution.gates![0]!.check({ mode: "text", text: "A premature answer" }),
-    ).toMatchObject({ kind: "nudge" });
+    ).toMatchObject({ kind: "nudge", unbounded: true });
     expect(
       await contribution.gates![0]!.check({ mode: "text", text: "Still premature" }),
-    ).toMatchObject({ kind: "terminal", result: { error: { code: "goal_blocked" } } });
+    ).toMatchObject({
+      kind: "nudge",
+      unbounded: true,
+      note: expect.stringContaining("create_goal"),
+    });
 
     expect(
       await handler.handle({ id: "create", name: "create_goal", arguments: inputForCreation() }, 2),
     ).toMatchObject({ kind: "result", text: expect.stringContaining("Goal created") });
+    // Only a checkpoint this bound handler issued is admitted: a hand-made attempt is
+    // a control violation rather than a premature final, so it stops the stage.
+    expect(
+      await contribution.gates![0]!.check({
+        mode: "checkpoint",
+        disposition: "checkpoint",
+        checkpoint: { summary: "Stage", next_step: "Continue" },
+      }),
+    ).toMatchObject({ kind: "terminal", result: { error: { code: "goal_blocked" } } });
     expect(
       contribution.dispatchPolicy?.admit({ id: "write-after", name: "write_file", arguments: {} }),
     ).toEqual({ ok: true });
@@ -364,11 +385,17 @@ describe("host-bound goal capability", () => {
         6,
       ),
     ).toMatchObject({ kind: "result", text: expect.stringContaining("Human acceptance") });
+    // An empty final stays the structural terminal it always was: recovery is for an
+    // attempt that carried text and no valid candidate, not for one that carried nothing.
+    expect(await contribution.gates![0]!.check({ mode: "text", text: "   " })).toMatchObject({
+      kind: "terminal",
+      result: { error: { code: "goal_blocked" } },
+    });
     f.allowCompletion();
     expect(await contribution.gates![0]!.check({ mode: "text", text: "Done" })).toEqual({
       kind: "pass",
     });
-    expect(f.calls).toEqual(["progress", "checkpoint", "candidate", "validate"]);
+    expect(f.calls).toEqual(["progress", "checkpoint", "candidate", "validate", "validate"]);
   });
 
   it("covers creation review feedback, invalid candidates and bounded failures", async () => {
@@ -397,11 +424,12 @@ describe("host-bound goal capability", () => {
 
     expect(await contribution.gates![0]!.check({ mode: "text", text: "Done" })).toMatchObject({
       kind: "nudge",
+      unbounded: true,
     });
     expect(await contribution.gates![0]!.check({ mode: "text", text: "Done again" })).toMatchObject(
       {
-        kind: "terminal",
-        result: { error: { code: "goal_blocked" } },
+        kind: "nudge",
+        unbounded: true,
       },
     );
     f.allowCompletion();
@@ -465,6 +493,43 @@ describe("host-bound goal capability", () => {
       kind: "terminal",
       result: { error: { code: "goal_steward_inconclusive" } },
     });
+  });
+
+  it("stops the creation turn on a state conflict instead of orienting it", async () => {
+    const f = fixture({
+      validateCompletion: async () => ({
+        valid: false,
+        reasons: ["Goal or evidence changed during completion validation"],
+        qualitative_criteria: [],
+        revision: 9,
+        cause: "state_conflict" as const,
+      }),
+    });
+    const port: GoalCreationPort = {
+      session_id: "session",
+      agent_instance_id: "entry",
+      execution_id: "run",
+      create: async () => f.port,
+    };
+    const run = (await createGoalCreationCapability(port).forRun(f.runContext))!;
+    const contribution = run.forAgent({ agent: "lead", entry: true, grants: [] })!.attach(f.bc);
+    await contribution.handlers![0]!.handle(
+      { id: "create", name: "create_goal", arguments: inputForCreation() },
+      1,
+    );
+
+    // The creation turn answers a conflict exactly as the bound run does: a verdict
+    // fenced out by a concurrent change is not a candidate deficiency, so it neither
+    // orients the model nor records a recovery.
+    expect(
+      await contribution.gates![0]!.check({ mode: "text", text: "A premature answer" }),
+    ).toMatchObject({
+      kind: "terminal",
+      result: { status: "error", error: { code: "goal_control_failed" } },
+    });
+    expect(f.traceEntries.filter((entry) => entry.kind === "goal_finalization_recovery")).toEqual(
+      [],
+    );
   });
 
   it("stops creation controls on blocked and storage failures", async () => {
@@ -882,15 +947,164 @@ describe("host-bound goal capability", () => {
     },
   );
 
-  it("allows only one final recovery nudge before explicit blocking", async () => {
+  it("keeps recovering from a premature final without a lifetime nudge allowance", async () => {
     const f = fixture();
     const contribution = await f.attach();
     const gate = contribution.gates![0]!;
-    expect(await gate.check({ mode: "text", text: "All done" })).toMatchObject({ kind: "nudge" });
-    expect(await gate.check({ mode: "text", text: "Really done" })).toMatchObject({
-      kind: "terminal",
-      result: { error: { code: "goal_blocked" } },
+    for (const text of ["All done", "Really done", "Still done"]) {
+      expect(await gate.check({ mode: "text", text })).toMatchObject({
+        kind: "nudge",
+        unbounded: true,
+      });
+    }
+    // Recovery is not a completion claim and never a block: the loop's own
+    // unproductive sequence bounds the repetition, so the stage, its control fence
+    // and its host state are untouched and a later valid candidate still settles.
+    expect(f.calls).toEqual(["validate", "validate", "validate"]);
+    expect(f.calls).not.toContain("blocked");
+    expect(f.state().current!.status).toBe("active");
+    f.allowCompletion();
+    expect(await gate.check({ mode: "text", text: "Done" })).toEqual({ kind: "pass" });
+  });
+
+  it("records a typed recovery cause without copying model text or the objective", async () => {
+    const f = fixture({
+      validateCompletion: async () => ({
+        valid: false,
+        reasons: ["Criterion criterion-01 requires host-verifiable evidence"],
+        qualitative_criteria: [],
+        revision: 7,
+      }),
     });
+    const contribution = await f.attach();
+    const gate = contribution.gates![0]!;
+    const attempt = { mode: "text" as const, text: "A private draft answer" };
+    expect(await gate.check(attempt)).toMatchObject({ kind: "nudge", unbounded: true });
+    expect(f.traceEntries).toEqual([
+      {
+        kind: "goal_finalization_recovery",
+        detail: {
+          execution_id: "run",
+          agent: "lead",
+          mode: "text",
+          cause: "incomplete_candidate",
+          reasons: ["Criterion criterion-01 requires host-verifiable evidence"],
+        },
+      },
+    ]);
+    expect(JSON.stringify(f.traceEntries)).not.toContain("private draft answer");
+    expect(JSON.stringify(f.traceEntries)).not.toContain("synthetic feature");
+  });
+
+  it("names a missing candidate as its own recoverable cause", async () => {
+    const f = fixture({
+      validateCompletion: async () => ({
+        valid: false,
+        reasons: ["The current stage has no completion candidate"],
+        qualitative_criteria: [],
+        revision: 8,
+        cause: "no_candidate",
+      }),
+    });
+    const contribution = await f.attach();
+    expect(
+      await contribution.gates![0]!.check({ mode: "submit", value: { done: true } }),
+    ).toMatchObject({
+      kind: "nudge",
+      unbounded: true,
+      note: expect.stringContaining("no completion candidate has been recorded"),
+    });
+    expect(f.traceEntries).toMatchObject([
+      { kind: "goal_finalization_recovery", detail: { cause: "no_candidate", mode: "submit" } },
+    ]);
+  });
+
+  it("re-reads a state conflict once and lets a settled state decide the attempt", async () => {
+    let reads = 0;
+    const f = fixture({
+      validateCompletion: async () => {
+        reads += 1;
+        return reads === 1
+          ? {
+              valid: false,
+              reasons: ["Goal or evidence changed during completion validation"],
+              qualitative_criteria: [],
+              revision: 7,
+              cause: "state_conflict" as const,
+            }
+          : { valid: true, reasons: [], qualitative_criteria: ["objective"], revision: 8 };
+      },
+    });
+    const contribution = await f.attach();
+    const gate = contribution.gates![0]!;
+
+    // A non-revoking human acceptance landing inside the window is exactly what
+    // makes a candidate completable, so the re-read must still be able to settle.
+    expect(await gate.check({ mode: "text", text: "Done" })).toEqual({ kind: "pass" });
+    expect(reads).toBe(2);
+    expect(f.traceEntries).toEqual([]);
+  });
+
+  it("never recovers a state conflict that survives the re-read", async () => {
+    const f = fixture({
+      validateCompletion: async () => ({
+        valid: false,
+        reasons: ["Goal or evidence changed during completion validation"],
+        qualitative_criteria: [],
+        revision: 9,
+        cause: "state_conflict" as const,
+      }),
+    });
+    const contribution = await f.attach();
+    const gate = contribution.gates![0]!;
+
+    // A conflict says nothing about the candidate, so it is not answered with a
+    // candidate-deficiency orientation: stopping with host attention is the honest
+    // outcome, and nothing is recorded as a recovery.
+    expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({
+      kind: "terminal",
+      result: { status: "error", error: { code: "goal_control_failed" } },
+    });
+    expect(f.traceEntries).toEqual([]);
+  });
+
+  it("recovers on the refreshed verdict when the conflict clears into a real deficiency", async () => {
+    let reads = 0;
+    const f = fixture({
+      validateCompletion: async () => {
+        reads += 1;
+        return reads === 1
+          ? {
+              valid: false,
+              reasons: ["Goal or evidence changed during completion validation"],
+              qualitative_criteria: [],
+              revision: 9,
+              cause: "state_conflict" as const,
+            }
+          : {
+              valid: false,
+              reasons: ["Criterion objective requires host-verifiable evidence"],
+              qualitative_criteria: [],
+              revision: 10,
+            };
+      },
+    });
+    const contribution = await f.attach();
+    const gate = contribution.gates![0]!;
+
+    expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({
+      kind: "nudge",
+      unbounded: true,
+      note: expect.stringContaining("Criterion objective requires host-verifiable evidence"),
+    });
+    expect(f.traceEntries).toMatchObject([
+      {
+        detail: {
+          cause: "incomplete_candidate",
+          reasons: ["Criterion objective requires host-verifiable evidence"],
+        },
+      },
+    ]);
   });
 
   it("reports blocking through safe interruption and respects cancellation before host mutation", async () => {

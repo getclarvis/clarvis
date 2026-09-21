@@ -17,6 +17,7 @@ import { goalModelToolInputSchema } from "./model-input.ts";
 import { goalCheckpointSchema } from "./schemas.ts";
 import { CREATE_GOAL, GET_GOAL, UPDATE_GOAL, buildGoalTools, getGoalInputSchema } from "./tools.ts";
 import { absentReviewContext, checkGoalSnapshot } from "./runtime-validation.ts";
+import { ruleGoalFinalization } from "./finalization-recovery.ts";
 import { createGoalCreationRunCapability } from "./creation-capability.ts";
 import { GOAL_CAPABILITY_NAME } from "./constants.ts";
 import { stewardInterruptionOutcome } from "./agent/steward-types.ts";
@@ -71,7 +72,6 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
               );
               const tools = buildGoalTools();
               let checkpoint: CheckpointMetadata | undefined;
-              let finalNudged = false;
               const reviewed = new Set<string>();
               const recordReviews = (): void => {
                 for (const review of snapshot.goal.runs.at(-1)?.steward_reviews ?? []) {
@@ -265,83 +265,88 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                             ),
                           };
                         }
-                        const validation = await port.validateCompletion();
-                        if (validation.valid) {
-                          if (steward === undefined) return { kind: "pass" };
+                        const ruling = await ruleGoalFinalization({
+                          validation: await port.validateCompletion(),
+                          revalidate: () => port.validateCompletion(),
+                          trace: bc.trace,
+                          execution_id: binding.execution_id,
+                          agent: bc.agent,
+                          mode: attempt.mode,
+                        });
+                        /**
+                         * A validation fenced out by a concurrent change says nothing
+                         * about the candidate, so it is never answered as a candidate
+                         * deficiency: a conflict that survives the one re-read stops the
+                         * stage with host attention instead of consuming the run's
+                         * unproductive allowance.
+                         */
+                        if (ruling.kind === "conflict")
+                          return { kind: "terminal", result: unavailable() };
+                        if (ruling.kind === "recover") {
+                          if (attempt.mode === "text" && (attempt.text?.trim().length ?? 0) === 0)
+                            return {
+                              kind: "terminal",
+                              result: await block(
+                                "Run ended without a valid goal completion candidate",
+                              ),
+                            };
+                          return ruling.outcome;
+                        }
+                        if (steward === undefined) return { kind: "pass" };
+                        if (bc.steerProbe?.())
+                          return {
+                            kind: "nudge",
+                            note: "Process the pending operator message before concluding this Goal.",
+                          };
+                        const resume = bc.clock?.pauseCompute();
+                        try {
+                          const projected =
+                            attempt.mode === "text"
+                              ? { mode: "text" as const, text: attempt.text ?? "" }
+                              : {
+                                  mode: "submit" as const,
+                                  text: attempt.text,
+                                  submitted_value: attempt.value,
+                                };
+                          if (Buffer.byteLength(JSON.stringify(projected), "utf8") > 128 * 1024)
+                            return {
+                              kind: "terminal",
+                              result: failed(
+                                "goal_steward_inconclusive",
+                                "Final attempt exceeds the Goal Steward review bound",
+                              ),
+                            };
+                          const decision = await steward.reviewCompletion(projected, bc.signal);
+                          await refresh();
                           if (bc.steerProbe?.())
                             return {
                               kind: "nudge",
                               note: "Process the pending operator message before concluding this Goal.",
                             };
-                          const resume = bc.clock?.pauseCompute();
-                          try {
-                            const projected =
-                              attempt.mode === "text"
-                                ? { mode: "text" as const, text: attempt.text ?? "" }
-                                : {
-                                    mode: "submit" as const,
-                                    text: attempt.text,
-                                    submitted_value: attempt.value,
-                                  };
-                            if (Buffer.byteLength(JSON.stringify(projected), "utf8") > 128 * 1024)
-                              return {
-                                kind: "terminal",
-                                result: failed(
-                                  "goal_steward_inconclusive",
-                                  "Final attempt exceeds the Goal Steward review bound",
-                                ),
-                              };
-                            const decision = await steward.reviewCompletion(projected, bc.signal);
-                            await refresh();
-                            if (bc.steerProbe?.())
-                              return {
-                                kind: "nudge",
-                                note: "Process the pending operator message before concluding this Goal.",
-                              };
-                            if (decision.kind === "achieved") return { kind: "pass" };
-                            if (
-                              decision.kind === "needs_work" ||
-                              decision.kind === "needs_evidence"
-                            )
-                              return {
-                                kind: "nudge",
-                                note: `[goal steward ${decision.kind === "needs_evidence" ? "clarification" : "correction"}] ${decision.next_step}`,
-                              };
-                            const outcome = stewardInterruptionOutcome(decision);
+                          if (decision.kind === "achieved") return { kind: "pass" };
+                          if (decision.kind === "needs_work" || decision.kind === "needs_evidence")
                             return {
-                              kind: "terminal",
-                              result: failed(outcome.code, outcome.reason),
+                              kind: "nudge",
+                              note: `[goal steward ${decision.kind === "needs_evidence" ? "clarification" : "correction"}] ${decision.next_step}`,
                             };
-                          } catch {
-                            return {
-                              kind: "terminal",
-                              result:
-                                bc.maybeCancelled() ??
-                                failed(
-                                  "goal_steward_failed",
-                                  "Goal Steward could not verify completion",
-                                ),
-                            };
-                          } finally {
-                            resume?.();
-                          }
-                        }
-                        if (
-                          !finalNudged &&
-                          (attempt.mode !== "text" || (attempt.text?.trim().length ?? 0) > 0)
-                        ) {
-                          finalNudged = true;
+                          const outcome = stewardInterruptionOutcome(decision);
                           return {
-                            kind: "nudge",
-                            note: "The goal has no valid completion candidate. Read get_goal, then use update_goal candidate with every current criterion, checkpoint for remaining work, or blocked for a missing decision. A final answer alone cannot complete the goal.",
+                            kind: "terminal",
+                            result: failed(outcome.code, outcome.reason),
                           };
+                        } catch {
+                          return {
+                            kind: "terminal",
+                            result:
+                              bc.maybeCancelled() ??
+                              failed(
+                                "goal_steward_failed",
+                                "Goal Steward could not verify completion",
+                              ),
+                          };
+                        } finally {
+                          resume?.();
                         }
-                        return {
-                          kind: "terminal",
-                          result: await block(
-                            "Run ended without a valid goal completion candidate or accepted checkpoint",
-                          ),
-                        };
                       } catch {
                         return { kind: "terminal", result: unavailable() };
                       }

@@ -1,8 +1,8 @@
 import { NOOP_LOGGER, composePromptCacheKey, type Logger } from "@clarvis/capability";
 import {
   GoalError,
-  blockGoalRun,
   boundedGoalState,
+  declareGoalImpediment,
   goalCandidateInputSchema,
   goalCheckpointInputSchema,
   goalProgressInputSchema,
@@ -11,6 +11,7 @@ import {
   recordGoalProgress,
   validateGoalCandidate,
   type GoalCompletionValidation,
+  type GoalOperationOutcome,
   type GoalRecord,
   type GoalRepository,
   type GoalRuntimeBinding,
@@ -180,6 +181,27 @@ export function createGoalRuntimePort(options: {
         };
       return result;
     }, signal);
+  /**
+   * Resolve the model's own evidence identifiers before anything is written.
+   *
+   * @param resolve - the host's resolution step, which refuses an identifier it does
+   *   not currently admit for this objective.
+   * @returns the references, or the bounded host sentence that tells the model to read
+   *   the catalog again. A refusal never names another owner, another goal or a reason.
+   * @remarks The step happens before the session transaction, so a rejected set leaves
+   *   the previous candidate, revision and consumption exactly as they were and cannot
+   *   be half-applied. Only a rejection raised here is corrigible: an error thrown from
+   *   the durable write stays an error, because the host cannot claim nothing happened.
+   */
+  const resolveEvidence = <T>(resolve: () => T): GoalOperationOutcome<T> => {
+    try {
+      return { kind: "ok", value: resolve() };
+    } catch (error) {
+      if (error instanceof GoalError && error.code === "invalid_request")
+        return { kind: "invalid", reason: error.message };
+      throw error;
+    }
+  };
   return {
     binding,
     logger,
@@ -192,10 +214,9 @@ export function createGoalRuntimePort(options: {
       guard(async () => {
         const parsed = goalProgressInputSchema.parse(input);
         const { evidence } = await snapshot("write", signal);
-        const progress = {
-          summary: parsed.summary,
-          evidence: evidence.resolve(parsed.evidence_ids),
-        };
+        const resolved = resolveEvidence(() => evidence.resolve(parsed.evidence_ids));
+        if (resolved.kind === "invalid") return resolved;
+        const progress = { summary: parsed.summary, evidence: resolved.value };
         await mutate(
           "progress",
           evidence,
@@ -205,18 +226,21 @@ export function createGoalRuntimePort(options: {
           }),
           signal,
         );
+        return { kind: "ok" as const, value: undefined };
       }, signal),
     checkpoint: (input, signal) =>
       guard(async () => {
         const parsed = goalCheckpointInputSchema.parse(input);
         const { evidence } = await snapshot("write", signal);
+        const resolved = resolveEvidence(() => evidence.resolve(parsed.evidence_ids));
+        if (resolved.kind === "invalid") return resolved;
         const checkpoint = {
           summary: parsed.summary,
           next_step: parsed.next_step,
-          evidence: evidence.resolve(parsed.evidence_ids),
+          evidence: resolved.value,
           ...evidence.progress(parsed.evidence_ids),
         };
-        return mutate(
+        const recorded = await mutate(
           "checkpoint",
           evidence,
           (state) => {
@@ -225,19 +249,25 @@ export function createGoalRuntimePort(options: {
           },
           signal,
         );
+        return { kind: "ok" as const, value: recorded };
       }, signal),
     candidate: (input, signal) =>
       guard(async () => {
         const parsed = goalCandidateInputSchema.parse(input);
         const { evidence } = await snapshot("write", signal);
+        /** The whole set is refused together: one unusable identifier leaves nothing written. */
+        const resolved = resolveEvidence(() =>
+          parsed.assessments.map(({ evidence_ids, ...assessment }) => ({
+            ...assessment,
+            evidence: evidence.resolve(evidence_ids),
+          })),
+        );
+        if (resolved.kind === "invalid") return resolved;
         const candidate = {
           summary: parsed.summary,
           execution_id: binding.execution_id,
           objective_revision: binding.objective_revision,
-          assessments: parsed.assessments.map(({ evidence_ids, ...assessment }) => ({
-            ...assessment,
-            evidence: evidence.resolve(evidence_ids),
-          })),
+          assessments: resolved.value,
         };
         await mutate(
           "candidate",
@@ -248,7 +278,7 @@ export function createGoalRuntimePort(options: {
           }),
           signal,
         );
-        return validateCompletion(signal);
+        return { kind: "ok" as const, value: await validateCompletion(signal) };
       }, signal),
     validateCompletion,
     blocked: (reason, signal) =>
@@ -257,7 +287,7 @@ export function createGoalRuntimePort(options: {
           "blocked",
           undefined,
           (state) => ({
-            state: blockGoalRun(state, { ...binding, reason, now: now() }),
+            state: declareGoalImpediment(state, { ...binding, reason, now: now() }),
             result: undefined,
           }),
           signal,

@@ -22,16 +22,22 @@ automatic continuation, a TUI journey, a container or an installed artifact.
   existing bounded receipt audit without creating a draft store.
 - `admitGoalRun`, `advanceGoalRun` and `settleGoalRun` separate durable intent, physical lifecycle,
   confirmed usage and semantic status. Late usage belongs to its original goal, including archives.
-  A host may pass a typed `GoalRunFailureCause`, so an unsuccessful stage names execution stagnation
-  — the whole family the engine reports for a stage that repeated itself without advancing — or an
-  unreadable control, instead of the generic failed-stage reason when the goal is settled as blocked.
+  A closed stage records one decision from a closed vocabulary — `complete`, `continue`, `attention`
+  or `closed` — beside the host's typed `GoalRunCause` and whether the stage advanced the work. A
+  recoverable ending keeps the goal active and records `continue`, so the host can admit one successor
+  without a model checkpoint; the stage allowance, goal budget, deadline and continuation ceiling are
+  what stop it. A cause the host cannot name is never presumed recoverable, and a durable fact the run
+  code does not carry outranks that classification: a declared impediment and a completion review
+  whose consumption could not be determined both settle as blocked rather than continuing.
 - `recordGoalCheckpoint`, `recordGoalCandidate` and `validateGoalCandidate` retain scoped evidence,
   explicitly labeled qualitative judgments and recorded human acceptance. Validation returns the
   exact goal revision it inspected so a host can fence the later completion commit.
 - `recordGoalProgress` stores a bounded annotation without ending a stage or resetting stagnation.
-- `blockGoalRun` records a running stage's blocker without claiming physical closure or overriding
-  a later user pause/cancel decision.
-- `goalAdmission` checks remaining tokens, deadline, continuation and stagnation limits. The host
+- `declareGoalImpediment` records a running stage's declared blocker without revoking the goal's
+  authority: the status, control revision, limits, approvals and spend are unchanged, the declaration
+  is durable on the stage, and the settlement blocks the goal with the declared reason. No automatic
+  successor follows a declaration the host cannot separate from an operator's refusal.
+- `goalAdmission` checks remaining tokens, deadline, continuation and stage-progress limits. The host
   must additionally hold the conversation reservation and current controller authority.
 - `goalDeadlineLimit` gives execution and settlement the same absolute deadline decision as
   admission. The host checks it before every physical model call; work already in flight may finish,
@@ -69,7 +75,10 @@ Before `create_goal` there is no Goal state and no Goal Steward activity. The fi
 advertises the stable catalog `create_goal`, `get_goal` and `update_goal`; the latter two return
 deterministic pre-creation guidance until `create_goal` succeeds. After durable creation their
 handlers become active and the completion gate validates a candidate against host-issued evidence
-before settling the stage. The creation bridge is idempotent for the
+before settling the stage. That first stage is an ordinary stage in every other respect: it runs the
+same settlement and the same continuation policy as any later one, so a checkpoint or a recoverable
+ending in the creating stage starts exactly one bounded successor. Until the Goal exists durably the
+policy proposes nothing. The creation bridge is idempotent for the
 admitted execution and cannot be selected by arbitrary model arguments or another conversation.
 Literal `/goal -- <text>` remains a direct host control and does not invoke the model. The older
 semantic formulation service remains available only as a compatibility control-plane API while
@@ -83,8 +92,9 @@ Limit-only edits retain formulation provenance.
 
 Production: `createGoalCreationCapability` and `goalCreationInputSchema` in
 [src/capability.ts](src/capability.ts) and [src/model-input.ts](src/model-input.ts), with the
-host bridge supplied through `GoalCreationPort`. Test: the capability and hosted-turn integration
-tests plus the host-port unit test verify one visible main-agent run, idempotent creation and no
+host bridge supplied through `GoalCreationPort`, and the shared settlement/continuation composition
+in the kernel's `prepareHostedGoalCreationTurn`. Test: the capability and hosted-turn integration
+tests plus the host-port unit test verify one visible main-agent run, idempotent creation, no
 pre-save Steward invocation.
 
 ## Entry capability
@@ -93,7 +103,11 @@ pre-save Steward invocation.
 `GoalsSettingsBlock`. Hosts register the strict `goals` settings block before reading configuration.
 The nearest scope's whole block wins; plugins cannot contribute it, and it adds no run parameter.
 Its optional `max_net_tokens` overrides the finite entry budget for the whole objective, while
-`max_auto_continuations` defaults to 8 and `max_no_progress_checkpoints` to 3. `deadline_at` is an
+`max_auto_continuations` defaults to 8 and `max_no_progress_stages` to 3 — the stage allowance counts
+closed stages that advanced nothing, including recoverable endings a successor re-evaluates, and it is
+compared with the goal's whole recorded activity history. The field was renamed from
+`max_no_progress_checkpoints`; `resolveGoalsSettings` admits and normalizes the old spelling in memory,
+so a document that still carries it is not discarded whole. `deadline_at` is an
 optional absolute Unix timestamp in milliseconds. These defaults are copied only when creating or
 replacing a goal; changes to configuration never rewrite existing limits, usage or receipts.
 The legacy non-contributable `goals.agent.formulation` block is retained for compatibility with the
@@ -117,6 +131,12 @@ factory. Placement adapters cannot substitute an object merely named `goal`. The
 Kernel constructs the same canonical capability locally. Optional operation
 signals supplement the execution signal; host implementations check them again inside each mutation,
 so a cancelled queued operation cannot publish when its transaction eventually starts.
+
+`progress`, `checkpoint` and `candidate` answer with `GoalOperationOutcome`: an evidence identifier
+that is absent, duplicated, obsolete or unsuccessful is resolved before any durable write and returned
+as corrigible input, which the entry capability answers as a tool error so the model can read the
+catalog again. A lost binding, unreadable control, storage fault or state conflict still throws and
+still ends the stage with host attention, because the host cannot present it as a rejected argument.
 
 `update_goal` takes one `update` object whose action selects progress, checkpoint, candidate or
 blocked fields. The advertised nested alternatives and runtime parser share one schema; fields for
@@ -146,6 +166,10 @@ valid `achieved`, but its consumption could not be determined and a Goal cannot 
 review the host cannot charge.
 The host checks semantic targets
 before accepting output and allows one bounded schema-correction nudge inside the same evaluation.
+A review whose consumption was measured leaves the goal continuable by one bounded successor stage,
+which re-establishes the result and is reviewed again; a review the host could not charge
+(`usage_unknown`) never admits one, because the goal cannot continue on an evaluation the host cannot
+account for.
 A premature final is answered by one shared recovery policy: an attempt whose completion validation
 rejects the candidate on its merits is nudged with the same orientation however many times it
 repeats, and the run's own unproductive-attempt sequence is what bounds it. A productive iteration

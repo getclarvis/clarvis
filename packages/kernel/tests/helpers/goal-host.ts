@@ -89,7 +89,7 @@ export async function goalHostFixture(
     kind: "create",
     objective: "Verify the synthetic result",
     criteria: options.criteria ?? [],
-    limits: { max_net_tokens: 100000, max_auto_continuations: 8, max_no_progress_checkpoints: 3 },
+    limits: { max_net_tokens: 100000, max_auto_continuations: 8, max_no_progress_stages: 3 },
   });
   return {
     root,

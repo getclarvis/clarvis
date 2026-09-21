@@ -4,8 +4,8 @@ import {
   admitGoalRun,
   advanceGoalRun,
   applyGoalControl,
-  blockGoalRun,
   boundedGoalState,
+  declareGoalImpediment,
   emptyGoalState,
   goalAdmission,
   goalNetTokens,
@@ -26,7 +26,7 @@ import {
 } from "../../src/index.ts";
 
 const context = { session_id: "session", new_goal_id: "goal-1", now: 100, physically_busy: false };
-const limits = { max_net_tokens: 1000, max_auto_continuations: 8, max_no_progress_checkpoints: 3 };
+const limits = { max_net_tokens: 1000, max_auto_continuations: 8, max_no_progress_stages: 3 };
 const measured: GoalUsage = { kind: "measured", input: 100, cached: 80, output: 10 };
 
 describe("guided creation intent", () => {
@@ -144,7 +144,7 @@ describe("host continuation retirement", () => {
           limits: {
             max_net_tokens: 1000,
             max_auto_continuations: 20,
-            max_no_progress_checkpoints: 5,
+            max_no_progress_stages: 5,
           },
         },
       },
@@ -162,7 +162,7 @@ describe("host continuation retirement", () => {
     expect(edited.state.current!.limits).toEqual({
       max_net_tokens: 2000,
       max_auto_continuations: 20,
-      max_no_progress_checkpoints: 5,
+      max_no_progress_stages: 5,
     });
     expect(edited.state.current!.objective_revision).toBe(
       created.state.current!.objective_revision,
@@ -183,7 +183,7 @@ describe("host continuation retirement", () => {
     expect(created.state.current!.limits).toEqual({
       max_net_tokens: 1234,
       max_auto_continuations: 8,
-      max_no_progress_checkpoints: 3,
+      max_no_progress_stages: 3,
     });
     expect(created.receipt.execution_id).toBe("first");
     const replayed = applyGoalControl(created.state, input, {
@@ -347,7 +347,7 @@ function candidate(state: GoalState, execution_id = "run-1"): GoalCandidate {
 }
 
 describe("goal user controls", () => {
-  it("records blocking without claiming physical closure and preserves later user controls", () => {
+  it("records a declared impediment without revoking the Goal's own authority", () => {
     const running = run(create());
     const input = {
       goal_id: "goal-1",
@@ -356,21 +356,34 @@ describe("goal user controls", () => {
       reason: "User authority is required",
       now: 210,
     };
-    const blocked = blockGoalRun(running, input);
-    expect(blocked.current!.status).toBe("blocked");
-    expect(blocked.current!.control_revision).toBe(blocked.revision);
-    expect(blocked.current!.runs).toEqual(running.current!.runs);
-    expect(blocked.current!.consumption).toEqual(running.current!.consumption);
-    expect(blockGoalRun(blocked, { ...input, reason: "Repeated" })).toEqual(blocked);
+    const declared = declareGoalImpediment(running, input);
+    expect(declared.current!.status).toBe("active");
+    expect(declared.current!.control_revision).toBe(running.current!.control_revision);
+    expect(declared.current!.runs.at(-1)).toMatchObject({
+      execution_id: "run-1",
+      phase: "running",
+      impediment: { reason: "User authority is required", declared_at: 210 },
+    });
+    expect(declared.current!.consumption).toEqual(running.current!.consumption);
+    expect(declareGoalImpediment(declared, input)).toEqual(declared);
+    expect(
+      declareGoalImpediment(declared, {
+        ...input,
+        reason: "A different impediment",
+        now: 211,
+      }),
+    ).toEqual(declared);
     for (const action of [{ kind: "pause", running: false }, { kind: "cancel" }] as const) {
       const controlled = control(running, action);
-      expect(blockGoalRun(controlled, input)).toEqual(controlled);
+      expect(declareGoalImpediment(controlled, input)).toEqual(controlled);
     }
-    expect(() => blockGoalRun(running, { ...input, objective_revision: 2 })).toThrow("obsolete");
-    expect(() => blockGoalRun(running, { ...input, execution_id: "foreign" })).toThrow();
-    expect(() => blockGoalRun(running, { ...input, reason: "" })).toThrow();
+    expect(() => declareGoalImpediment(running, { ...input, objective_revision: 2 })).toThrow(
+      "obsolete",
+    );
+    expect(() => declareGoalImpediment(running, { ...input, execution_id: "foreign" })).toThrow();
+    expect(() => declareGoalImpediment(running, { ...input, reason: "" })).toThrow();
     const closed = settle(checkpoint(running));
-    expect(() => blockGoalRun(closed, input)).toThrow("running stage");
+    expect(() => declareGoalImpediment(closed, input)).toThrow("running stage");
     expect(running.current!.status).toBe("active");
   });
 
@@ -387,7 +400,7 @@ describe("goal user controls", () => {
     const progress = recordGoalProgress(paused, progressInput);
     expect(progress.current!.status).toBe("paused");
     expect(progress.current!.runs[0]!.progress).toEqual(progressInput.progress);
-    expect(progress.current!.no_progress_checkpoints).toBe(0);
+    expect(progress.current!.no_progress_stages).toBe(0);
     expect(progress.current!.consumption).toEqual(paused.current!.consumption);
     const proposed = recordGoalCandidate(progress, {
       goal_id: "goal-1",
@@ -615,7 +628,7 @@ describe("goal physical settlement, usage and continuation", () => {
     expect(state.current).toMatchObject({
       status: "active",
       consumption: { net_tokens: 30 },
-      no_progress_checkpoints: 0,
+      no_progress_stages: 0,
     });
     expect(goalAdmission(state.current!, 220, true)).toEqual({
       allowed: true,
@@ -751,9 +764,9 @@ describe("goal physical settlement, usage and continuation", () => {
       const executionId = `run-${index}`;
       state = settle(checkpoint(run(state, executionId, index > 0), executionId), executionId);
     }
-    expect(state.current).toMatchObject({ status: "blocked", no_progress_checkpoints: 3 });
+    expect(state.current).toMatchObject({ status: "blocked", no_progress_stages: 3 });
     const resumed = control(state, { kind: "resume" });
-    expect(resumed.current!.no_progress_checkpoints).toBe(0);
+    expect(resumed.current!.no_progress_stages).toBe(0);
     expect(resumed.current!.auto_continuations).toBe(2);
     expect(resumed.current!.consumption.net_tokens).toBe(90);
   });
@@ -768,45 +781,191 @@ describe("goal physical settlement, usage and continuation", () => {
         disposition: "final",
         ...overrides,
       });
-    expect(failed(run(create()), { failure_cause: "stagnation" }).current).toMatchObject({
+    expect(failed(run(create()), { cause: "control_failure" }).current).toMatchObject({
       status: "blocked",
     });
-    expect(failed(run(create()), { failure_cause: "stagnation" }).current!.reason).toContain(
-      "repeated attempts without progress",
-    );
-    expect(failed(run(create()), { failure_cause: "control_failure" }).current!.reason).toContain(
+    expect(failed(run(create()), { cause: "control_failure" }).current!.reason).toContain(
       "Goal control was unavailable",
     );
-    // A stage that stagnated must not read as one that never produced a candidate,
-    // and an unnamed failure keeps the generic wording rather than inventing a cause.
+    // An ending the host cannot classify keeps the generic wording rather than inventing a cause.
     expect(failed(run(create())).current!.reason).toBe("Goal run failed");
     expect(
       settle(run(create()), "run-1", measured, { outcome: "cancelled", disposition: "final" })
         .current!.reason,
     ).toBe("Goal run was cancelled");
-    // A model-declared block stays authoritative: the goal already left `active`, so
-    // settlement records the closure and charges usage without rewriting the reason.
-    const declared = blockGoalRun(run(create()), {
+  });
+
+  it("keeps the Goal active and continues after a recoverable ending", () => {
+    for (const cause of [
+      "local_limit",
+      "stagnation",
+      "empty_response",
+      "transient",
+      "steward_interrupted",
+    ] as const) {
+      const state = settle(run(create()), "run-1", measured, {
+        outcome: "failed",
+        disposition: "final",
+        cause,
+      });
+      expect(state.current).toMatchObject({ status: "active", no_progress_stages: 1 });
+      expect(state.current!.runs.at(-1)).toMatchObject({
+        phase: "closed",
+        decision: "continue",
+        cause,
+        progress_observed: false,
+      });
+      expect(goalAdmission(state.current!, 230, true).allowed).toBe(true);
+    }
+    // A transient ending records the earliest instant the host may start the successor.
+    const delayed = settle(run(create()), "run-1", measured, {
+      outcome: "failed",
+      disposition: "final",
+      cause: "transient",
+      not_before: 600,
+    });
+    expect(delayed.current!.runs.at(-1)!.not_before).toBe(600);
+  });
+
+  it("clears the progress sequence when the stage advanced the work and spends it otherwise", () => {
+    const productive = settle(run(create()), "run-1", measured, {
+      outcome: "failed",
+      disposition: "final",
+      cause: "stagnation",
+      progress_observed: true,
+      activity_fingerprint: "c".repeat(64),
+    });
+    expect(productive.current).toMatchObject({ status: "active", no_progress_stages: 0 });
+    expect(productive.current!.runs.at(-1)).toMatchObject({
+      progress_observed: true,
+      activity_fingerprint: "c".repeat(64),
+      decision: "continue",
+    });
+    let state = create();
+    for (let index = 1; index <= 3; index++) {
+      const executionId = `run-${index}`;
+      const admitted = index === 1 ? run(state) : run(state, executionId, true);
+      state = settle(admitted, executionId, measured, {
+        outcome: "failed",
+        disposition: "final",
+        cause: "stagnation",
+      });
+      if (index < 3)
+        expect(state.current).toMatchObject({ status: "active", no_progress_stages: index });
+    }
+    expect(state.current).toMatchObject({
+      status: "blocked",
+      reason: "Goal stage progress limit reached",
+      no_progress_stages: 3,
+    });
+    expect(state.current!.runs.at(-1)!.decision).toBe("closed");
+  });
+
+  it("blocks on a declared impediment once without spending the Goal's own authority", () => {
+    let state = run(create());
+    state = declareGoalImpediment(state, {
       goal_id: "goal-1",
       execution_id: "run-1",
-      objective_revision: 1,
-      reason: "Missing browser evidence",
-      now: 215,
+      objective_revision: state.current!.objective_revision,
+      reason: "The requested source credentials are unavailable",
+      now: 205,
     });
-    const settled = failed(declared, { failure_cause: "stagnation" });
-    expect(settled.current).toMatchObject({
+    const control_revision = state.current!.control_revision;
+    state = settle(state, "run-1", measured, {
+      outcome: "failed",
+      disposition: "final",
+      cause: "unclassified",
+    });
+    expect(state.current).toMatchObject({
       status: "blocked",
-      reason: "Missing browser evidence",
+      reason: "The requested source credentials are unavailable",
+      no_progress_stages: 0,
     });
-    expect(settled.current!.consumption.net_tokens).toBe(30);
+    expect(state.current!.runs.at(-1)).toMatchObject({
+      decision: "attention",
+      cause: "impediment",
+    });
+    expect(state.current!.control_revision).toBe(control_revision);
+    /**
+     * The declaration ends the Goal's automatic path, so a successor can never retry an
+     * authenticated refusal the model reported as its own blocker. What it does not cost
+     * the Goal is authority: resume continues with the same limits, approvals and spend.
+     */
+    const resumed = control(state, { kind: "resume" });
+    expect(resumed.current).toMatchObject({ status: "active", auto_continuations: 0 });
+    expect(resumed.current!.limits).toEqual(state.current!.limits);
+    expect(resumed.current!.consumption).toEqual(state.current!.consumption);
+  });
+
+  it("never presumes an unclassified or refused ending recoverable", () => {
+    for (const cause of [
+      "provider_refused",
+      "tools_unavailable",
+      "control_failure",
+      "usage_unknown",
+      "unclassified",
+    ] as const) {
+      const state = settle(run(create()), "run-1", measured, {
+        outcome: "failed",
+        disposition: "final",
+        cause,
+      });
+      expect(state.current).toMatchObject({ status: "blocked", no_progress_stages: 0 });
+      expect(state.current!.runs.at(-1)!.decision).toBe("attention");
+    }
+    /** A context overflow replays the payload that did not fit unless the stage advanced the work. */
+    const overflow = settle(run(create()), "run-1", measured, {
+      outcome: "failed",
+      disposition: "final",
+      cause: "context_overflow",
+    });
+    expect(overflow.current!.status).toBe("blocked");
+    expect(overflow.current!.runs.at(-1)!.decision).toBe("attention");
+    const progressing = settle(run(create()), "run-1", measured, {
+      outcome: "failed",
+      disposition: "final",
+      cause: "context_overflow",
+      progress_observed: true,
+    });
+    expect(progressing.current!.status).toBe("active");
+    expect(progressing.current!.runs.at(-1)!.decision).toBe("continue");
+  });
+
+  it("closes the automatic path on an operator refusal or a durable control", () => {
+    const declined = settle(run(create()), "run-1", measured, {
+      outcome: "failed",
+      disposition: "final",
+      cause: "declined",
+    });
+    expect(declined.current).toMatchObject({ status: "blocked" });
+    expect(declined.current!.reason).toContain("declined");
+    expect(declined.current!.runs.at(-1)!.decision).toBe("closed");
+    for (const action of [{ kind: "pause", running: false }, { kind: "cancel" }] as const) {
+      const controlled = control(run(create()), action);
+      const settled = settle(controlled, "run-1", measured, {
+        outcome: "failed",
+        disposition: "final",
+        cause: "stagnation",
+      });
+      expect(settled.current!.status).toBe(action.kind === "pause" ? "paused" : "cancelled");
+      expect(settled.current!.runs.at(-1)!.decision).toBe("closed");
+    }
+    const cancelled = settle(run(create()), "run-1", measured, {
+      outcome: "cancelled",
+      disposition: "final",
+    });
+    expect(cancelled.current!.runs.at(-1)).toMatchObject({
+      decision: "closed",
+      cause: "unclassified",
+    });
   });
 
   it("does not count changing prose around the same activity as fresh progress", () => {
     let state = settle(checkpoint(run(create()), "run-1", "a".repeat(64)));
     state = settle(checkpoint(run(state, "run-2", true), "run-2", "a".repeat(64)), "run-2");
-    expect(state.current!.no_progress_checkpoints).toBe(1);
+    expect(state.current!.no_progress_stages).toBe(1);
     state = settle(checkpoint(run(state, "run-3", true), "run-3", "b".repeat(64)), "run-3");
-    expect(state.current!.no_progress_checkpoints).toBe(0);
+    expect(state.current!.no_progress_stages).toBe(0);
   });
 
   it("pauses on disconnect/restart while retaining physical occupancy and accumulated spend", () => {

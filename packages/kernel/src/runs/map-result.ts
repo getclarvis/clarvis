@@ -8,6 +8,7 @@ import type {
 } from "@clarvis/loop";
 import type {
   PerAgentUsage as ProtoPerAgentUsage,
+  ProviderFailureKind,
   RunDetail,
   RunEvent,
   RunResult,
@@ -76,6 +77,46 @@ function liveUsage(usage: Usage): RunUsage {
   };
 }
 
+/** The provider classifications this projection keeps; anything else is dropped. */
+const PROVIDER_FAILURE_KINDS: ReadonlySet<string> = new Set<ProviderFailureKind>([
+  "transient",
+  "context_overflow",
+  "client",
+  "auth",
+  "quota",
+  "content_policy",
+]);
+
+/**
+ * Project the engine's bounded provider classification onto the wire error, if any.
+ *
+ * @param details - the engine error's opaque details, or nothing.
+ * @returns the classification and the provider-requested backoff, each only when it
+ *   is a value this vocabulary admits.
+ * @remarks `provider_error` is what every provider kind reports unless it earns its
+ *   own code, so a consumer that has to distinguish a retryable fault from a
+ *   credential or request fault cannot read it out of the code. Only the two bounded
+ *   fields cross; the rest of the engine's detail object stays host-private.
+ */
+function providerFailureFields(details: unknown): {
+  kind?: ProviderFailureKind;
+  retry_after_ms?: number;
+} {
+  if (typeof details !== "object" || details === null) return {};
+  const record = details as Record<string, unknown>;
+  const kind =
+    typeof record.kind === "string" && PROVIDER_FAILURE_KINDS.has(record.kind)
+      ? (record.kind as ProviderFailureKind)
+      : undefined;
+  const retry = record.retry_after_ms;
+  return {
+    ...(kind === undefined ? {} : { kind }),
+    ...(typeof retry === "number" && Number.isFinite(retry) && retry >= 0
+      ? { retry_after_ms: Math.floor(retry) }
+      : {}),
+  };
+}
+
 /**
  * Maps a live engine {@link RunResponse} to a protocol {@link RunResult} for `executionId`.
  *
@@ -98,7 +139,7 @@ export function engineResultToProto(executionId: string, response: RunResponse):
         }
       : {};
   if (response.status === "error") {
-    const e = response.error as { code?: unknown; message?: unknown };
+    const e = response.error as { code?: unknown; message?: unknown; details?: unknown };
     return {
       execution_id: executionId,
       status: "failed",
@@ -106,6 +147,7 @@ export function engineResultToProto(executionId: string, response: RunResponse):
       error: {
         code: typeof e.code === "string" ? e.code : "error",
         message: typeof e.message === "string" ? e.message : "run failed",
+        ...providerFailureFields(e.details),
       },
       usage,
     };

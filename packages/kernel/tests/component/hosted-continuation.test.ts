@@ -1,15 +1,16 @@
 import { describe, expect, it } from "bun:test";
-import type { StartHostedTurnParams } from "@clarvis/protocol";
+import type { HostedContinuationProposal } from "../../src/hosting/registry.ts";
 import { fixture, input, until } from "../helpers/hosted-registry.ts";
 
 const checkpoint = {
   disposition: "checkpoint" as const,
   checkpoint: { summary: "Stage complete", next_step: "Continue bounded work" },
 };
-function next(previous: string, id: string, sessionId = "session-1"): StartHostedTurnParams {
+/** One successor proposal; `not_before` is set only by a case that needs the transient wait. */
+function next(previous: string, id: string, sessionId = "session-1"): HostedContinuationProposal {
   const value = input(id, sessionId);
   value.params.continue_from = previous;
-  return value;
+  return { input: value };
 }
 
 describe("host-owned continuation admission", () => {
@@ -243,9 +244,9 @@ describe("host-owned continuation admission", () => {
         continuation: () => ({
           async prepare() {
             const value = next("run-1", "automatic");
-            if (field === "session") value.session_id = "foreign";
-            else if (field === "predecessor") value.params.continue_from = "foreign";
-            else value.kind = "transcript";
+            if (field === "session") value.input.session_id = "foreign";
+            else if (field === "predecessor") value.input.params.continue_from = "foreign";
+            else value.input.kind = "transcript";
             return value;
           },
           async stopped(reason) {
@@ -266,6 +267,125 @@ describe("host-owned continuation admission", () => {
       }
     },
   );
+
+  it("holds the successor until the terminal index commit completes", async () => {
+    const gate = Promise.withResolvers<void>();
+    let held = false;
+    let proposals = 0;
+    const f = fixture({
+      async commit(state) {
+        if (!held && state.runs.some((item) => item.run.execution_state === "closed")) {
+          held = true;
+          await gate.promise;
+        }
+      },
+      continuation: () => ({
+        async prepare() {
+          proposals++;
+          return next("run-1", "run-2");
+        },
+        async stopped() {},
+      }),
+    });
+    try {
+      const peer = f.registry.connect("operator");
+      const first = await peer.service.start(input());
+      f.finish("run-1", checkpoint);
+      await first.handle.done;
+      await until(() => held);
+      /**
+       * The terminal index commit is the last barrier. A resident result is not enough:
+       * the policy is not even asked, so no successor can be started from a run whose
+       * physical closure is not yet durable.
+       */
+      expect(proposals).toBe(0);
+      expect(f.starts()).toBe(1);
+      gate.resolve();
+      await until(() => f.starts() === 2);
+      expect(proposals).toBe(1);
+      f.finish("run-2");
+    } finally {
+      gate.resolve();
+      await f.registry.close();
+    }
+  });
+
+  it("waits for a proposed minimum instant and re-asks its policy before starting", async () => {
+    let proposals = 0;
+    const f = fixture({
+      continuation: () => ({
+        async prepare() {
+          proposals++;
+          const value = next("run-1", "run-2");
+          /** The first proposal is already startable; the host must still re-ask after it. */
+          return proposals === 1 ? { ...value, not_before: Date.now() - 1 } : value;
+        },
+        async stopped() {},
+      }),
+    });
+    try {
+      const peer = f.registry.connect("operator");
+      const first = await peer.service.start(input());
+      f.finish("run-1", checkpoint);
+      await first.handle.closed;
+      await until(() => f.starts() === 2);
+      /** A typed instant makes the host re-validate the proposal instead of trusting it. */
+      expect(proposals).toBe(2);
+      f.finish("run-2");
+    } finally {
+      await f.registry.close();
+    }
+  });
+
+  it("starts nothing when the re-asked proposal still asks to wait", async () => {
+    let proposals = 0;
+    const f = fixture({
+      continuation: () => ({
+        async prepare() {
+          proposals++;
+          /** Every proposal carries an elapsed instant, so the host keeps re-asking and never starts. */
+          return { ...next("run-1", "run-2"), not_before: Date.now() - 1 };
+        },
+        async stopped() {},
+      }),
+    });
+    try {
+      const peer = f.registry.connect("operator");
+      const first = await peer.service.start(input());
+      f.finish("run-1", checkpoint);
+      await first.handle.closed;
+      await until(() => proposals >= 2);
+      /** A proposal that still schedules its own start is revalidated, not started. */
+      expect(f.starts()).toBe(1);
+    } finally {
+      await f.registry.close();
+    }
+  });
+
+  it("abandons a pending instant when the continuation authority is retired", async () => {
+    const proposed = Promise.withResolvers<void>();
+    let proposals = 0;
+    const f = fixture({
+      continuation: () => ({
+        async prepare() {
+          proposals++;
+          proposed.resolve();
+          const value = next("run-1", "run-2");
+          return proposals === 1 ? { ...value, not_before: Date.now() + 60_000 } : value;
+        },
+        async stopped() {},
+      }),
+    });
+    const peer = f.registry.connect("operator");
+    const first = await peer.service.start(input());
+    f.finish("run-1", checkpoint);
+    await first.handle.closed;
+    await proposed.promise;
+    /** Losing the conversation retires the authority, so the host stops waiting and starts nothing. */
+    await f.registry.close();
+    expect(proposals).toBe(1);
+    expect(f.starts()).toBe(1);
+  });
 
   it("stops after bounded preparation timeout and ignores a late result", async () => {
     const release = Promise.withResolvers<void>();

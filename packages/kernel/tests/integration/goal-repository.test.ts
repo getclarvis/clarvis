@@ -35,7 +35,7 @@ const create: GoalControl = {
     kind: "create",
     objective: "Produce and verify a scoped result",
     criteria: [],
-    limits: { max_net_tokens: 10000, max_auto_continuations: 8, max_no_progress_checkpoints: 3 },
+    limits: { max_net_tokens: 10000, max_auto_continuations: 8, max_no_progress_stages: 3 },
   },
 };
 

@@ -263,7 +263,7 @@ with clarvis.tasks.v2 support; a fake server name cannot activate Tasks.
 ${configurationExample("capabilities")}
 
 goals configures creation: max_net_tokens is the total cap, inheriting the finite entry budget once
-if omitted. Defaults: max_auto_continuations=8, max_no_progress_checkpoints=3; deadline_at is optional
+if omitted. Defaults: max_auto_continuations=8, max_no_progress_stages=3; deadline_at is optional
 absolute Unix milliseconds. Nearest whole block wins. Settings do not create/edit goals; /goal edit
 changes existing limits, and resume retains spend/counts.
 

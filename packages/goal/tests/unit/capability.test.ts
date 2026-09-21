@@ -68,6 +68,7 @@ function fixture(overrides: Partial<GoalRuntimePort> = {}) {
         now: 4,
         progress: { summary: input.summary, evidence: [] },
       });
+      return { kind: "ok", value: undefined };
     },
     checkpoint: async (input) => {
       calls.push("checkpoint");
@@ -85,7 +86,7 @@ function fixture(overrides: Partial<GoalRuntimePort> = {}) {
         now: 5,
         checkpoint,
       });
-      return checkpoint;
+      return { kind: "ok", value: checkpoint };
     },
     candidate: async (input) => {
       calls.push("candidate");
@@ -104,10 +105,13 @@ function fixture(overrides: Partial<GoalRuntimePort> = {}) {
         },
       });
       return {
-        valid: completionValid,
-        reasons: completionValid ? [] : ["Human acceptance is missing"],
-        qualitative_criteria: ["objective"],
-        revision: state.current!.revision,
+        kind: "ok",
+        value: {
+          valid: completionValid,
+          reasons: completionValid ? [] : ["Human acceptance is missing"],
+          qualitative_criteria: ["objective"],
+          revision: state.current!.revision,
+        },
       };
     },
     validateCompletion: async () => {
@@ -121,8 +125,7 @@ function fixture(overrides: Partial<GoalRuntimePort> = {}) {
     },
     blocked: async (reason) => {
       calls.push("blocked");
-      state.current!.status = "blocked";
-      state.current!.reason = reason;
+      state.current!.runs.at(-1)!.impediment = { reason, declared_at: 10 };
     },
     ...overrides,
   };
@@ -601,6 +604,49 @@ describe("host-bound goal capability", () => {
     });
   });
 
+  it("answers a refused evidence set in the creation turn without ending the stage", async () => {
+    const refusal = {
+      kind: "invalid" as const,
+      reason: "Goal evidence is absent, obsolete or unsuccessful",
+    };
+    const f = fixture({
+      progress: async () => refusal,
+      checkpoint: async () => refusal,
+      candidate: async () => refusal,
+    });
+    const port: GoalCreationPort = {
+      session_id: "session",
+      agent_instance_id: "entry",
+      execution_id: "run",
+      create: async () => f.port,
+    };
+    const run = (await createGoalCreationCapability(port).forRun(f.runContext))!;
+    const contribution = run.forAgent({ agent: "lead", entry: true, grants: [] })!.attach(f.bc);
+    const handler = contribution.handlers![0]!;
+    await handler.handle({ id: "create", name: "create_goal", arguments: inputForCreation() }, 1);
+    for (const update of [
+      { action: "progress", summary: "Inspected the implementation" },
+      { action: "checkpoint", summary: "Stage tested", next_step: "Continue remaining work" },
+      {
+        action: "candidate",
+        summary: "Requested result verified",
+        assessments: [
+          { criterion_id: "objective", kind: "qualitative", justification: "Observed" },
+        ],
+      },
+    ]) {
+      const result = await handler.handle(
+        { id: "update", name: "update_goal", arguments: { update } },
+        2,
+      );
+      expect(result).toMatchObject({ kind: "result", progress: false });
+      expect((result as { text: string }).text).toContain("absent, obsolete or unsuccessful");
+      expect((result as { text: string }).text).not.toContain("Invalid Goal arguments");
+    }
+    // The refusal is a corrigible argument mistake: the bound control is untouched.
+    expect(f.state().current!.status).toBe("active");
+  });
+
   it("requires admission, filters children and composes without an anchor or output budget", async () => {
     const f = fixture();
     expect(f.capability.required).toBe(true);
@@ -840,7 +886,7 @@ describe("host-bound goal capability", () => {
     expect(result).toMatchObject({ kind: "result", progress: false });
     expect(f.state().current!.runs[0]!.progress?.summary).toBe("Inspected implementation");
     expect(f.state().current!.runs[0]!.checkpoint).toBeUndefined();
-    expect(f.state().current!.no_progress_checkpoints).toBe(0);
+    expect(f.state().current!.no_progress_stages).toBe(0);
     f.state().current!.consumption.input += 20;
     await contribution.hooks!.beforeIteration!();
     expect(contribution.tools).toEqual(tools);
@@ -852,6 +898,39 @@ describe("host-bound goal capability", () => {
     expect(f.blocks).toHaveLength(2);
     expect(f.blocks[0]!.content).toContain('"status":"active"');
     expect(f.blocks[1]!.content).toContain('"status":"paused"');
+  });
+
+  it("answers a refused evidence set as a corrigible tool error without ending the stage", async () => {
+    const refusal = {
+      kind: "invalid" as const,
+      reason: "Goal evidence is absent, obsolete or unsuccessful",
+    };
+    const f = fixture({
+      progress: async () => refusal,
+      checkpoint: async () => refusal,
+      candidate: async () => refusal,
+    });
+    const { handlers } = await f.attach();
+    for (const update of [
+      { action: "progress", summary: "Inspected the implementation" },
+      { action: "checkpoint", summary: "Stage tested", next_step: "Continue remaining work" },
+      {
+        action: "candidate",
+        summary: "Requested result verified",
+        assessments: [
+          { criterion_id: "objective", kind: "qualitative", justification: "Observed" },
+        ],
+      },
+    ]) {
+      const result = await handlers![0]!.handle(
+        { id: "update", name: "update_goal", arguments: { update } },
+        1,
+      );
+      /** A corrigible refusal is answered, not converted into host attention. */
+      expect(result).toMatchObject({ kind: "result", progress: false });
+      expect((result as { text: string }).text).toContain("absent, obsolete or unsuccessful");
+    }
+    expect(f.state().current!.status).toBe("active");
   });
 
   it("requests checkpoint through the gate without completing the goal or changing limits", async () => {

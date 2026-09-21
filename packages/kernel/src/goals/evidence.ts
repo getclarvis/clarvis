@@ -99,6 +99,61 @@ interface Observation {
   detail?: Omit<GoalEvidenceDetail, "id">;
 }
 
+/**
+ * Longest host-authored catalog label; the argument summary is presentation, not authority.
+ */
+const MAX_LABEL_CHARS = 160;
+
+/**
+ * Argument keys a catalog label may name, in the order they identify the operation.
+ *
+ * @remarks These are the observable subject of an operation — the command that ran,
+ *   the path a read or write touched, the pattern a search used — rather than its
+ *   result. The model already knows the arguments it sent; a successor stage sees a
+ *   bounded summary instead of having to correlate an opaque model-chosen call id.
+ */
+const LABEL_ARGUMENT_KEYS = [
+  "command",
+  "path",
+  "paths",
+  "pattern",
+  "query",
+  "task_id",
+  "subagent",
+  "monitor_id",
+  "name",
+  "title",
+] as const;
+
+/**
+ * Build the short host-authored label of one completed tool call.
+ *
+ * @param tool - the canonical tool name already resolved from the trace entry.
+ * @param args - the call's arguments, which are untrusted observed data.
+ * @returns one sanitized, bounded line naming the operation.
+ * @remarks The label replaces `<tool>; call <call id>`, which forced manual correlation
+ *   with the work and told the model nothing actionable. It names the operation's own
+ *   subject instead. This is presentation only: the opaque identifier, its stamped scope
+ *   and its digest stay the authority, and a command that exited zero gains no strength
+ *   from being described.
+ */
+function goalEvidenceLabel(tool: string, args: unknown): string {
+  const record = typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+  for (const key of LABEL_ARGUMENT_KEYS) {
+    const value = record[key];
+    const subject = Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string").join(", ")
+      : typeof value === "string"
+        ? value
+        : undefined;
+    const trimmed = subject?.replace(/\s+/gu, " ").trim();
+    if (trimmed === undefined || trimmed.length === 0) continue;
+    const label = `${tool}: ${sanitizeText(trimmed)}`;
+    return label.length > MAX_LABEL_CHARS ? `${label.slice(0, MAX_LABEL_CHARS)}…` : label;
+  }
+  return tool;
+}
+
 /** A completed tool envelope is required; native command success additionally requires exit zero. */
 function observation(executionId: string, event: TraceEvent): Observation | undefined {
   if (!isBuiltinTraceEvent(event)) return undefined;
@@ -186,7 +241,7 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
     resultDigest: event.result_digest ?? goalEvidenceDigest(event.result),
     successful,
     ...(event.diff?.trim() ? { changeDigest: goalEvidenceDigest(event.diff) } : {}),
-    description: `${tool}; call ${event.call_id}`.slice(0, 512),
+    description: goalEvidenceLabel(tool, event.arguments).slice(0, 512),
     ...(commandEvidence === undefined ? {} : { commandEvidence }),
     ...(receipt === undefined
       ? {}
@@ -223,6 +278,16 @@ export interface GoalEvidenceSnapshot extends GoalEvidenceVerifier {
   progress(
     ids: readonly string[],
   ): Pick<GoalCheckpoint, "activity_fingerprint" | "progress_accepted" | "reason">;
+  /**
+   * Digest of the activity this stage itself observed, or `undefined` when it observed none.
+   *
+   * @remarks Deliberately restricted to the bound execution's own observations. A
+   *   reference recovered from an earlier stage may still support completion, but it
+   *   must not be counted again as this stage's progress. The caller compares the
+   *   digest with the Goal's whole recorded history, so repeating an earlier stage's
+   *   activity — even in a different order or with different wording — is not progress.
+   */
+  stageActivity(): string | undefined;
 }
 
 export interface GoalEvidenceSource {
@@ -376,6 +441,44 @@ export function createGoalEvidenceSource(options: {
           return { ...reference };
         });
       };
+      /**
+       * Stable fingerprints of the observable activity these references stand for.
+       *
+       * @remarks A fingerprint omits call ids, execution ids and output wording, so
+       *   repeating the same check — with different prose around it — cannot look like
+       *   progress. Artifacts contribute their current path and digest; an observed
+       *   workspace change or a criterion's declared verification contributes the tool
+       *   and argument digest. Polling and Goal controls never reach this list.
+       */
+      const activityOf = (ids: readonly string[]): string[] => {
+        const changes: string[] = [];
+        for (const id of ids) {
+          const artifact = artifacts.get(id);
+          if (artifact !== undefined) {
+            changes.push(goalEvidenceDigest([artifact.path, artifact.digest]));
+            continue;
+          }
+          const item = all.get(id);
+          if (item === undefined) continue;
+          const relevantCheck = goal.criteria.some(
+            (criterion) =>
+              criterion.verification?.kind === "tool_success" &&
+              criterion.verification.tool_name === item.tool &&
+              (criterion.verification.arguments_digest === undefined ||
+                criterion.verification.arguments_digest === item.argumentsDigest),
+          );
+          if (item.changeDigest !== undefined || relevantCheck)
+            changes.push(
+              goalEvidenceDigest([item.tool, item.argumentsDigest, item.changeDigest ?? null]),
+            );
+        }
+        return changes;
+      };
+      /** One order-independent digest of an activity set, or nothing when it is empty. */
+      const fingerprintOf = (changes: readonly string[]): string | undefined => {
+        const unique = [...new Set(changes)].sort();
+        return unique.length === 0 ? undefined : goalEvidenceDigest(unique);
+      };
       const catalog = [...references.values()].slice(-32).map((reference) => ({ ...reference }));
       return {
         generation: capturedGeneration,
@@ -443,27 +546,7 @@ export function createGoalEvidenceSource(options: {
           return { valid: true };
         },
         progress(ids) {
-          const refs = resolveReferences(ids);
-          const changes: string[] = [];
-          for (const ref of refs) {
-            const artifact = artifacts.get(ref.id);
-            if (artifact !== undefined) {
-              changes.push(goalEvidenceDigest([artifact.path, artifact.digest]));
-              continue;
-            }
-            const item = all.get(ref.id)!;
-            const relevantCheck = goal.criteria.some(
-              (criterion) =>
-                criterion.verification?.kind === "tool_success" &&
-                criterion.verification.tool_name === item.tool &&
-                (criterion.verification.arguments_digest === undefined ||
-                  criterion.verification.arguments_digest === item.argumentsDigest),
-            );
-            if (item.changeDigest !== undefined || relevantCheck)
-              changes.push(
-                goalEvidenceDigest([item.tool, item.argumentsDigest, item.changeDigest ?? null]),
-              );
-          }
+          const changes = activityOf(resolveReferences(ids).map((reference) => reference.id));
           return changes.length === 0
             ? {
                 progress_accepted: false,
@@ -471,12 +554,14 @@ export function createGoalEvidenceSource(options: {
                   "No referenced workspace change or declared verification; prose and polling do not establish progress",
               }
             : {
-                activity_fingerprint: goalEvidenceDigest([...new Set(changes)].sort()),
+                activity_fingerprint: fingerprintOf(changes)!,
                 progress_accepted: true,
                 reason:
                   "Entry attributed observed workspace change or declared verification to the goal; semantic usefulness is not independently verified",
               };
         },
+        /** This stage's own activity, never what it merely cited from an earlier stage. */
+        stageActivity: () => fingerprintOf(activityOf([...live.keys()])),
       };
     },
   };

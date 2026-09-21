@@ -164,21 +164,30 @@ function createCreationHandler(
           };
         const action = goalModelToolInputSchema.parse(call.arguments).update;
         switch (action.action) {
-          case "progress":
-            await state.runtime.progress({
+          case "progress": {
+            const outcome = await state.runtime.progress({
               summary: action.summary,
               evidence_ids: action.evidence_ids,
             });
+            /**
+             * A refused evidence set is a corrigible argument mistake, not unavailable
+             * control: the model reads the catalog again, and nothing was written.
+             */
+            if (outcome.kind === "invalid")
+              return { kind: "result", text: envelope.fail(outcome.reason), progress: false };
             await refresh();
             return { kind: "result", text: envelope.ok("Progress recorded"), progress: false };
+          }
           case "checkpoint": {
-            const recorded = await state.runtime.checkpoint({
+            const outcome = await state.runtime.checkpoint({
               summary: action.summary,
               next_step: action.next_step,
               evidence_ids: action.evidence_ids,
             });
+            if (outcome.kind === "invalid")
+              return { kind: "result", text: envelope.fail(outcome.reason), progress: false };
             await refresh();
-            const checkpoint = goalCheckpointSchema.parse(recorded);
+            const checkpoint = goalCheckpointSchema.parse(outcome.value);
             state.checkpoint = { summary: checkpoint.summary, next_step: checkpoint.next_step };
             return {
               kind: "finalize",
@@ -192,14 +201,16 @@ function createCreationHandler(
             };
           }
           case "candidate": {
-            const validation = await state.runtime.candidate({
+            const outcome = await state.runtime.candidate({
               summary: action.summary,
               assessments: action.assessments,
             });
+            if (outcome.kind === "invalid")
+              return { kind: "result", text: envelope.fail(outcome.reason), progress: false };
             await refresh();
             return {
               kind: "result",
-              text: envelope.ok(JSON.stringify(validation)),
+              text: envelope.ok(JSON.stringify(outcome.value)),
               progress: false,
             };
           }
@@ -210,7 +221,7 @@ function createCreationHandler(
               result: errorResult(
                 bc,
                 "goal_blocked",
-                "Goal blocked; user intervention is required",
+                "Impediment recorded; the host re-evaluates it under the goal's remaining limits",
               ),
             };
         }

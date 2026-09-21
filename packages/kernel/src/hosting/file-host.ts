@@ -1,7 +1,7 @@
 import { addGoalAuxiliaryUsage } from "../goals/usage.ts";
 import { createHash } from "node:crypto";
 import { bestEffort, NOOP_LOGGER, sanitizeText } from "@clarvis/capability";
-import { goalsSettingsSchema } from "@clarvis/goal/settings";
+import { resolveGoalsSettings } from "@clarvis/goal/settings";
 import { validateGoalStewardResult } from "@clarvis/goal";
 import { generateExecutionId } from "@clarvis/trace";
 import { ownerFromWorkspace, workspaceScopeKey } from "@clarvis/paths";
@@ -241,18 +241,17 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
         const goal = context.session.goal_state?.current;
         if (goal === undefined || goal.status === "complete" || goal.status === "cancelled") {
           if (goal === undefined && params.goal_intent?.kind === "create") {
-            const settings = goalsSettingsSchema.parse(
-              (await kernel.config.getSettings()).merged.goals ?? {},
-            );
+            const settings = resolveGoalsSettings((await kernel.config.getSettings()).merged.goals);
             return prepareHostedGoalCreationTurn({
               params,
               context,
               repository,
+              sessions: sessions.sessions,
               seed: params.goal_intent.seed,
               entryTokenLimit: kernel.prepareRun(params, owner).tokenLimit,
               defaultLimits: {
                 max_auto_continuations: settings.max_auto_continuations,
-                max_no_progress_checkpoints: settings.max_no_progress_checkpoints,
+                max_no_progress_stages: settings.max_no_progress_stages,
                 ...(settings.max_net_tokens === undefined
                   ? {}
                   : { max_net_tokens: settings.max_net_tokens }),
@@ -497,12 +496,12 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
               };
             },
             defaultLimits: async () => {
-              const settings = goalsSettingsSchema.parse(
-                (await kernel.config.getSettings()).merged.goals ?? {},
+              const settings = resolveGoalsSettings(
+                (await kernel.config.getSettings()).merged.goals,
               );
               return {
                 max_auto_continuations: settings.max_auto_continuations,
-                max_no_progress_checkpoints: settings.max_no_progress_checkpoints,
+                max_no_progress_stages: settings.max_no_progress_stages,
                 ...(settings.max_net_tokens === undefined
                   ? {}
                   : { max_net_tokens: settings.max_net_tokens }),

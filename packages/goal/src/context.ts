@@ -32,7 +32,7 @@ export function goalModelView({ goal, evidence }: GoalRuntimeSnapshot): Record<s
     limits: goal.limits,
     consumption: goal.consumption,
     auto_continuations: goal.auto_continuations,
-    no_progress_checkpoints: goal.no_progress_checkpoints,
+    no_progress_stages: goal.no_progress_stages,
     progress: run?.progress,
     checkpoint: run?.checkpoint,
     evidence,

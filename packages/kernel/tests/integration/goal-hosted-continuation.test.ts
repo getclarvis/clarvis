@@ -315,7 +315,7 @@ async function fixture(
     limits: {
       max_net_tokens: 10000,
       max_auto_continuations: 8,
-      max_no_progress_checkpoints: 3,
+      max_no_progress_stages: 3,
       deadline_at: options.deadlineAt,
     },
   });
@@ -638,7 +638,7 @@ describe("goals through real hosted continuation, loop and SDK", () => {
     await view.handle.closed;
     expect((await f.state())!.current).toMatchObject({
       status: "blocked",
-      no_progress_checkpoints: 3,
+      no_progress_stages: 3,
       auto_continuations: 2,
     });
     expect(f.starts).toHaveLength(3);

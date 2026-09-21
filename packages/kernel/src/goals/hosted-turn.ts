@@ -20,21 +20,25 @@ import {
   type GoalRecord,
   type GoalCreationInput,
   type GoalLimits,
+  type GoalRunCause,
   type GoalRuntimePort,
   type GoalCreationPort,
   type GoalStewardFinalizeAttempt,
   type GoalStewardPort,
+  type GoalUsage,
 } from "@clarvis/goal";
 import type { Message, RunRequest } from "@clarvis/loop";
 import type {
   ModelCost,
   RunDetail,
+  RunResult,
   Session,
   SessionService,
   StartRunParams,
 } from "@clarvis/protocol";
 import { generateExecutionId } from "@clarvis/trace";
 import type { HostedExecutionBinding, HostedPreparationContext } from "../hosting/sessions.ts";
+import type { HostedContinuationProposal, HostedTurnContinuation } from "../hosting/registry.ts";
 import { kernelError } from "../core/errors.ts";
 import { protoMessagesToEngine } from "../runs/map-message.ts";
 import type { GoalEvidenceSource } from "./evidence.ts";
@@ -116,6 +120,255 @@ function goalReviewContext(goal: GoalRecord): OperatorReviewContext {
 }
 
 /**
+ * The host-authored orientation a successor Goal stage starts from.
+ *
+ * @remarks Keyed by the closed cause the settlement recorded, so the successor is told
+ *   what happened without copying the failed run's prose, the objective or any new
+ *   authorization. The checkpoint wording is the original one, because that handoff is
+ *   unchanged; a recovery names its ending and asks for a different approach instead of
+ *   a repeat, and it never claims a permission the Goal did not already have.
+ */
+const CONTINUATION_TURNS: Record<GoalRunCause, string> = {
+  checkpoint:
+    "Continue the current goal from its accepted checkpoint. Preserve the current objective, approvals and remaining limits.",
+  local_limit:
+    "The previous stage reached its own limit before finishing. Continue the current goal from its observable result, and do not repeat work that is already done.",
+  declined:
+    "Continue the current goal from its last settled stage. The previous stage stopped because the extension was declined; the current objective and limits still apply.",
+  cancelled:
+    "Continue the current goal from its last settled stage. Preserve the current objective, approvals and remaining limits.",
+  stagnation:
+    "The previous stage stopped without progress. Continue the current goal by changing the approach: state what did not work, choose a different one, and do not repeat the same calls.",
+  empty_response:
+    "The previous stage produced no answer. Continue the current goal from its observable result.",
+  impediment:
+    "The previous stage reported an impediment. Continue the current goal only within the authorization it already has.",
+  transient:
+    "The previous stage ended on a transient provider failure. Continue the current goal from its observable result.",
+  steward_interrupted:
+    "The completion review of the previous stage was interrupted. Continue the current goal and re-establish what still needs verification.",
+  usage_unknown:
+    "Continue the current goal from its last settled stage. The current objective, approvals and limits still apply.",
+  context_overflow:
+    "The previous stage could not fit its context. Continue the current goal from its observable result without repeating the same payload.",
+  provider_refused:
+    "Continue the current goal from its last settled stage. The current objective, approvals and limits still apply.",
+  tools_unavailable:
+    "Continue the current goal from its last settled stage. The current objective, approvals and limits still apply.",
+  control_failure:
+    "Continue the current goal from its last settled stage. The current objective, approvals and limits still apply.",
+  unclassified:
+    "Continue the current goal from its last settled stage. Preserve the current objective, approvals and remaining limits.",
+};
+
+/** Short operator-facing label for the same cause, used as the successor's preview. */
+const CONTINUATION_PREVIEWS: Record<GoalRunCause, string> = {
+  checkpoint: "checkpoint",
+  local_limit: "stage limit reached",
+  declined: "extension declined",
+  cancelled: "cancelled",
+  stagnation: "no progress",
+  empty_response: "no answer",
+  impediment: "impediment declared",
+  transient: "provider transient failure",
+  steward_interrupted: "completion review interrupted",
+  usage_unknown: "review consumption unknown",
+  context_overflow: "context limit reached",
+  provider_refused: "provider refused",
+  tools_unavailable: "tools unavailable",
+  control_failure: "control failure",
+  unclassified: "stage failed",
+};
+
+/**
+ * Compose one Goal stage's settlement, shared by the guided creation turn and every later
+ * stage.
+ *
+ * @param scope - the durable store, the bound identities, the clock and the optional
+ *   completion prerequisites of this stage.
+ * @returns the host policy the registry calls once, after physical closure and
+ *   reconciliation.
+ * @remarks Both turns settle the same way: the stage's physical phase advances, the
+ *   candidate is revalidated outside the session lock when this stage is the one that
+ *   produced it, and the returned closure applies the domain's settlement inside the
+ *   caller's canonical transaction. The guided creation turn used to have its own copy
+ *   without the checkpoint chain, which is why a first stage that handed off a checkpoint
+ *   could not start a successor.
+ *
+ *   The stage's own activity is observed here, once, from the host's trace-derived
+ *   evidence rather than from the model's citations, and it is compared with the Goal's
+ *   whole recorded history: repeating an earlier stage's checks is not progress. An
+ *   observation that cannot be taken leaves the stage counted as unproductive, because
+ *   absence of evidence is not evidence of work — it only spends the bounded recovery
+ *   allowance.
+ */
+function createGoalStageSettlement(scope: {
+  repository: GoalRepository;
+  sessionId: string;
+  executionId: string;
+  signal: AbortSignal;
+  now: () => number;
+  usageTracker: { measure(): GoalUsage };
+  /** The bound runtime, once the Goal exists. */
+  runtime: () => GoalRuntimePort | undefined;
+  /** Whether the Steward's completion decision still covers this attempt. */
+  stewardCompletion?: (result: unknown) => Promise<boolean>;
+  /** Revalidate host-owned normative snapshots immediately before a completion commit. */
+  validateDefinitionSources?: (
+    sources: readonly { path: string; digest: string }[],
+  ) => Promise<boolean>;
+  /** Host-observed activity digest for this stage, when the host can take one. */
+  observeActivity?: (goal: GoalRecord) => Promise<string | undefined>;
+  priceFor?: (model: string) => ModelCost | undefined;
+}): (result: RunResult) => Promise<(session: Session) => boolean> {
+  return async (result) => {
+    const current = await scope.repository.read(scope.sessionId);
+    const goal = current?.current;
+    const run = goal?.runs.find((item) => item.execution_id === scope.executionId);
+    let validated: number | undefined;
+    let progress: { progress_observed: boolean; activity_fingerprint?: string } = {
+      progress_observed: false,
+    };
+    if (goal !== undefined && run !== undefined && run.phase !== "closed") {
+      if (scope.observeActivity !== undefined) {
+        const fingerprint = await scope.observeActivity(goal);
+        if (fingerprint !== undefined)
+          progress = {
+            progress_observed: !goal.runs.some(
+              (item) =>
+                item.execution_id !== scope.executionId &&
+                item.activity_fingerprint === fingerprint,
+            ),
+            activity_fingerprint: fingerprint,
+          };
+      }
+      if (run.phase !== "settling")
+        await scope.repository.transact(scope.sessionId, (state) => ({
+          state: advanceGoalRun(state!, {
+            goal_id: goal.goal_id,
+            execution_id: scope.executionId,
+            phase: "settling",
+            now: scope.now(),
+          }),
+          result: undefined,
+        }));
+      const before = (await scope.repository.read(scope.sessionId))?.current;
+      const runtime = scope.runtime();
+      if (
+        result.status === "completed" &&
+        result.disposition !== "checkpoint" &&
+        before?.status === "active" &&
+        before.candidate?.execution_id === scope.executionId &&
+        runtime !== undefined &&
+        !scope.signal.aborted
+      ) {
+        try {
+          const sourcesCurrent =
+            scope.validateDefinitionSources === undefined ||
+            (await scope.validateDefinitionSources(before.sources));
+          if (sourcesCurrent) {
+            const validation = await runtime.validateCompletion();
+            if (
+              validation.valid &&
+              (scope.stewardCompletion === undefined ||
+                (await scope.stewardCompletion(result.result)))
+            )
+              validated = validation.revision;
+          }
+        } catch (error) {
+          const latest = (await scope.repository.read(scope.sessionId))?.current;
+          if (
+            latest?.goal_id !== goal.goal_id ||
+            (latest.status === "active" && latest.control_revision === goal.control_revision)
+          )
+            throw error;
+        }
+      }
+    }
+    return (session) =>
+      settleGoalSession(
+        session,
+        result,
+        {
+          disposition: result.disposition ?? "final",
+          usage: scope.usageTracker.measure(),
+          completion_validated:
+            validated !== undefined && session.goal_state?.revision === validated,
+          ...progress,
+        },
+        scope.now(),
+        scope.priceFor,
+      );
+  };
+}
+
+/**
+ * Compose the automatic-continuation policy of one Goal stage, shared by both turns.
+ *
+ * @param scope - the canonical session reader, the predecessor identity and the policy's
+ *   own failure notification.
+ * @returns the policy the registry evaluates after its whole barrier.
+ * @remarks Eligibility is read from the durable decision the settlement recorded on the
+ *   closed stage, revalidated against the canonical session each time: the same Goal, its
+ *   current control and objective revision, the same latest stage, and admission under the
+ *   remaining limits. A proposal is a *successor* the registry may start; it never carries
+ *   authority, and the registry still owns exclusion and the single-use reservation. The
+ *   guided creation turn returns nothing until its Goal exists durably, so a stage that
+ *   never created one cannot invent a successor.
+ */
+function createGoalContinuation(scope: {
+  sessionId: string;
+  sessions: Pick<SessionService, "get">;
+  executionId: string;
+  /** The predecessor's resolved request, minus anything that belonged to its own turn. */
+  params: StartRunParams;
+  goalId: () => string | undefined;
+  signal: AbortSignal;
+  now: () => number;
+  stopped: (reason: "revoked" | "superseded" | "failed") => Promise<void>;
+}): HostedTurnContinuation {
+  return {
+    async prepare(signal): Promise<HostedContinuationProposal | undefined> {
+      signal.throwIfAborted();
+      const goalId = scope.goalId();
+      if (goalId === undefined) return undefined;
+      const session = await scope.sessions.get(scope.sessionId);
+      signal.throwIfAborted();
+      if (session === null) return undefined;
+      const current = goalStateFromSession(session)?.current;
+      const predecessor = current?.runs.at(-1);
+      if (
+        current?.goal_id !== goalId ||
+        predecessor?.execution_id !== scope.executionId ||
+        predecessor.phase !== "closed" ||
+        predecessor.decision !== "continue" ||
+        predecessor.control_revision !== current.control_revision ||
+        predecessor.objective_revision !== current.objective_revision ||
+        !goalAdmission(current, scope.now(), true).allowed
+      )
+        return undefined;
+      const cause = predecessor.cause ?? "unclassified";
+      return {
+        input: {
+          session_id: scope.sessionId,
+          session_revision: session.revision ?? 0,
+          kind: "conversation",
+          user_preview: `Continue the persistent goal (previous stage: ${CONTINUATION_PREVIEWS[cause]})`,
+          params: {
+            ...scope.params,
+            execution_id: generateExecutionId(),
+            continue_from: scope.executionId,
+            messages: [{ role: "user", content: CONTINUATION_TURNS[cause] }],
+          },
+        },
+        ...(predecessor.not_before === undefined ? {} : { not_before: predecessor.not_before }),
+      };
+    },
+    stopped: (reason) => scope.stopped(reason),
+  };
+}
+
+/**
  * Compose goal intent, model authority, settlement and continuation with the existing hosting ports.
  * The caller prepares the ordinary executor with the supplied mandatory capability and request
  * policy. No public peer is created and no run is started until the registry commits its intent.
@@ -170,10 +423,11 @@ export async function prepareHostedGoalTurn(options: {
       options.context.continuationOf !== previous.execution_id ||
       params.continue_from !== previous.execution_id ||
       previous.phase !== "closed" ||
-      previous.disposition !== "checkpoint" ||
-      previous.outcome !== "completed")
+      previous.decision !== "continue" ||
+      previous.control_revision !== goal.control_revision ||
+      previous.objective_revision !== goal.objective_revision)
   )
-    throw kernelError("conflict", "Goal continuation does not follow its settled checkpoint");
+    throw kernelError("conflict", "Goal continuation does not follow its settled stage");
   const admission = goalAdmission(goal, now(), automatic);
   if (admission.allowed === false) throw kernelError("conflict", admission.reason);
   const binding = {
@@ -351,96 +605,46 @@ export async function prepareHostedGoalTurn(options: {
       options.context.signal.throwIfAborted();
       return execution.start();
     },
-    async prepareSettlement(result) {
-      const current = await options.repository.read(sessionId);
-      const owned = current?.current;
-      const run = owned?.runs.find((item) => item.execution_id === executionId);
-      let validationRevision: number | undefined;
-      if (owned?.goal_id === goal.goal_id && run !== undefined && run.phase !== "closed") {
-        await options.repository.transact(sessionId, (state) => ({
-          state: advanceGoalRun(state!, { ...binding, phase: "settling", now: now() }),
-          result: undefined,
-        }));
-        const before = await options.repository.read(sessionId);
-        if (
-          result.status === "completed" &&
-          result.disposition !== "checkpoint" &&
-          before?.current?.status === "active" &&
-          before.current.candidate?.execution_id === executionId &&
-          !options.context.signal.aborted
-        ) {
-          try {
-            const sourcesCurrent =
-              options.validateDefinitionSources === undefined ||
-              (await options.validateDefinitionSources(before.current.sources));
-            if (sourcesCurrent) {
-              const validation = await runtime.validateCompletion();
-              if (
-                validation.valid &&
-                (steward === undefined || (await steward.completionCurrent(result.result)))
-              )
-                validationRevision = validation.revision;
-            }
-          } catch (error) {
-            const latest = (await options.repository.read(sessionId))?.current;
-            if (
-              latest?.goal_id !== goal.goal_id ||
-              (latest.status === "active" && latest.control_revision === goal.control_revision)
-            )
-              throw error;
-          }
-        }
-      }
-      return (session) =>
-        settleGoalSession(
-          session,
-          result,
-          {
-            disposition: result.disposition ?? "final",
-            usage: usageTracker.measure(),
-            completion_validated:
-              validationRevision !== undefined &&
-              session.goal_state?.revision === validationRevision,
-          },
-          now(),
-          (model) => options.priceFor?.(model),
-        );
-    },
-    continuation: {
-      async prepare(signal) {
-        signal.throwIfAborted();
-        const session = await options.sessions.get(sessionId);
-        signal.throwIfAborted();
-        const current = session === null ? undefined : goalStateFromSession(session)?.current;
-        if (
-          session === null ||
-          current?.goal_id !== goal.goal_id ||
-          current.control_revision !== goal.control_revision ||
-          current.runs.at(-1)?.execution_id !== executionId ||
-          !goalAdmission(current, now(), true).allowed
-        )
+    prepareSettlement: createGoalStageSettlement({
+      repository: options.repository,
+      sessionId,
+      executionId,
+      signal: options.context.signal,
+      now,
+      usageTracker,
+      runtime: () => runtime,
+      ...(steward === undefined
+        ? {}
+        : { stewardCompletion: (result: unknown) => steward.completionCurrent(result) }),
+      ...(options.validateDefinitionSources === undefined
+        ? {}
+        : {
+            validateDefinitionSources: (sources: readonly { path: string; digest: string }[]) =>
+              options.validateDefinitionSources!(sources),
+          }),
+      observeActivity: async (current) => {
+        try {
+          return (await options.evidence.snapshot(current)).stageActivity();
+        } catch {
+          options.logger?.warn(
+            { event: "goal.stage.activity_unavailable", execution_id: executionId },
+            "Goal stage activity could not be observed; the stage is counted as unproductive",
+          );
           return undefined;
-        return {
-          session_id: sessionId,
-          session_revision: session.revision ?? 0,
-          kind: "conversation",
-          user_preview: "Continue the persistent goal",
-          params: {
-            ...params,
-            execution_id: generateExecutionId(),
-            continue_from: executionId,
-            messages: [
-              {
-                role: "user",
-                content:
-                  "Continue the current goal from its accepted checkpoint. Preserve the current objective, approvals and remaining limits.",
-              },
-            ],
-          },
-        };
+        }
       },
+      priceFor: (model) => options.priceFor?.(model),
+    }),
+    continuation: createGoalContinuation({
+      sessionId,
+      sessions: options.sessions,
+      executionId,
+      params,
+      goalId: () => goal.goal_id,
+      signal: options.context.signal,
+      now,
       stopped,
-    },
+    }),
   };
 }
 
@@ -453,6 +657,8 @@ export async function prepareHostedGoalCreationTurn(options: {
   params: StartRunParams;
   context: HostedPreparationContext;
   repository: GoalRepository;
+  /** Canonical conversation reads; a successor is evaluated against the durable session. */
+  sessions: Pick<SessionService, "get">;
   evidence: GoalEvidenceSource;
   seed: string;
   entryTokenLimit?: number;
@@ -469,6 +675,9 @@ export async function prepareHostedGoalCreationTurn(options: {
   onChange?(sessionId: string): void;
 }): Promise<HostedExecutionBinding> {
   const params = structuredClone(options.params);
+  /** A successor continues the Objective; it must not replay this turn's creation intent. */
+  const successorParams = structuredClone(params);
+  delete successorParams.goal_intent;
   const session = options.context.session;
   const executionId = params.execution_id;
   const sessionId = session.id;
@@ -485,6 +694,21 @@ export async function prepareHostedGoalCreationTurn(options: {
   const now = options.now ?? Date.now;
   const usageTracker = createGoalUsageTracker();
   let runtime: GoalRuntimePort | undefined;
+  /** The durably created Goal, once this stage has one; it is what a successor may follow. */
+  let created: { goal_id: string; control_revision: number } | undefined;
+  const stopped = async (reason: "revoked" | "superseded" | "failed"): Promise<void> => {
+    if (reason === "superseded" || created === undefined) return;
+    await options.repository.transact(sessionId, (state) => ({
+      state: stopGoalContinuation(state!, {
+        goal_id: created!.goal_id,
+        execution_id: executionId,
+        control_revision: created!.control_revision,
+        reason,
+        now: now(),
+      }),
+      result: undefined,
+    }));
+  };
   let steward:
     | (GoalStewardPort & {
         completionCurrent(result: unknown): Promise<boolean>;
@@ -510,6 +734,12 @@ export async function prepareHostedGoalCreationTurn(options: {
     signal?: AbortSignal,
   ): Promise<GoalRuntimePort> => {
     runtime ??= await basePort.create(input, signal);
+    if (created === undefined) {
+      const current = await options.repository.read(sessionId);
+      const goal = current?.current;
+      if (goal === undefined) throw kernelError("conflict", "Goal disappeared after creation");
+      created = { goal_id: goal.goal_id, control_revision: goal.control_revision };
+    }
     if (steward === undefined && options.steward !== undefined) {
       const current = await options.repository.read(sessionId);
       const goal = current?.current;
@@ -590,51 +820,39 @@ export async function prepareHostedGoalCreationTurn(options: {
         }),
       );
     },
-    prepareSettlement: async (result) => {
-      const current = await options.repository.read(sessionId);
-      const goal = current?.current;
-      const run = goal?.runs.find((item) => item.execution_id === executionId);
-      let validationRevision: number | undefined;
-      if (goal !== undefined && run !== undefined && run.phase !== "closed") {
-        if (run.phase === "running")
-          await options.repository.transact(sessionId, (state) => ({
-            state: advanceGoalRun(state!, {
-              goal_id: goal.goal_id,
-              execution_id: executionId,
-              phase: "settling",
-              now: now(),
-            }),
-            result: undefined,
-          }));
-        const latest = await options.repository.read(sessionId);
-        if (
-          result.status === "completed" &&
-          result.disposition !== "checkpoint" &&
-          latest?.current?.candidate?.execution_id === executionId &&
-          runtime !== undefined
-        ) {
-          const validation = await runtime.validateCompletion(options.context.signal);
-          if (
-            validation.valid &&
-            (steward === undefined || (await steward.completionCurrent(result.result)))
-          )
-            validationRevision = validation.revision;
+    prepareSettlement: createGoalStageSettlement({
+      repository: options.repository,
+      sessionId,
+      executionId,
+      signal: options.context.signal,
+      now,
+      usageTracker,
+      runtime: () => runtime,
+      stewardCompletion: async (result) =>
+        steward === undefined || (await steward.completionCurrent(result)),
+      observeActivity: async (current) => {
+        try {
+          return (await options.evidence.snapshot(current)).stageActivity();
+        } catch {
+          options.logger?.warn(
+            { event: "goal.stage.activity_unavailable", execution_id: executionId },
+            "Goal stage activity could not be observed; the stage is counted as unproductive",
+          );
+          return undefined;
         }
-      }
-      return (target: Session) =>
-        settleGoalSession(
-          target,
-          result,
-          {
-            disposition: result.disposition ?? "final",
-            usage: usageTracker.measure(),
-            completion_validated:
-              validationRevision !== undefined &&
-              target.goal_state?.revision === validationRevision,
-          },
-          now(),
-          (model) => options.priceFor?.(model),
-        );
-    },
+      },
+      priceFor: (model) => options.priceFor?.(model),
+    }),
+    continuation: createGoalContinuation({
+      sessionId,
+      sessions: options.sessions,
+      executionId,
+      /** A successor continues the Objective; it must not replay this turn's creation intent. */
+      params: successorParams,
+      goalId: () => created?.goal_id,
+      signal: options.context.signal,
+      now,
+      stopped,
+    }),
   };
 }

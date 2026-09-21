@@ -171,15 +171,15 @@ subscribe to those predicates (`packages/code/src/keys/commands.ts`, `CommandEnt
 The application composition adds one contextual navigation action after registry construction:
 `activity.toggle` has the portable `Ctrl+X S` binding whenever any run-activity section exists. It
 closes the responsive Sidebar when open and otherwise reveals the first available Agents, Parallel
-work or Plan section — in the compact band it opens the whole content region instead of a drawer,
+work or Plan section — below the split it opens the whole content region instead of a narrow drawer,
 preferring the section the summary strip last accounted for. It has no slash-command surface, and
 Escape does not close the Sidebar
 (`packages/code/src/views/App.tsx`, `toggleActivitySidebar`, `openActivitySidebar` and the
 `activity.toggle`
 registration). The producer of the command path is pinned by
 `packages/code/tests/integration/app-shell-render.test.tsx` ("Plan, Parallel work, and Agents own
-independent once-per-run sidebar reveals", "Ctrl+X S toggles a narrow inspector while Escape leaves it
-open", "Ctrl+X S opens the compact band's activity across the whole content region").
+independent once-per-run sidebar reveals", "Ctrl+X S toggles the whole-region panel below the split while
+Escape leaves it open", "Ctrl+X S opens the compact band's activity across the whole content region").
 
 The interactive composition registers `loop.open` as the native `/loop` action. Its parser and
 controls do not consume a model turn. A validation error returns `"block"` through the registry and

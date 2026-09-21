@@ -966,37 +966,36 @@ Its own TSDoc states the scope rule (`Sidebar` in `packages/code/src/views/Sideb
 transcript; workflow activity remains structure/status in the Sidebar and never
 becomes transcript content.
 
-**Two mounts, one component.** `TranscriptRegion` mounts `Sidebar` twice from identical props — as a
-split column when `layout.secondaryMode()` is `"split"`
-(`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`) and inside a scrim-backed
-absolute drawer when it is `"drawer"` — and, in the compact band, once as a whole-region panel when it
-is `"full"`. The split and `full` presentations share one inline mount whose width accessor is the
-sidebar's own width or the region's; `full` adds the fixed `Activity` header above it and mounts no
-scrim, no transcript column and no residual pane of conversation beside it. No `PlanStrip` or other
+**One mount, one component.** `TranscriptRegion` mounts `Sidebar` once as its inline presentation
+(`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`): a split column when
+`layout.secondaryMode()` is `"split"`, and the whole content region when it is `"full"`. `"full"` adds
+the fixed `Activity` header above it and mounts no scrim, no transcript column and no residual pane of
+conversation beside it; there is no narrower drawer presentation. No `PlanStrip` or other
 live pane is mounted below history:
 the Sidebar owns compact plan detail and `Ctrl+X P` owns the full plan. App owns three
 independent execution-scoped automatic intents: the first live Plan, first workflow state/leader and first
 typed delegation open the same combined Sidebar and reveal `Plan`, `Parallel work` or `Agents`.
 `Ctrl+X S` closes an open Sidebar or reopens the first available Agents, Parallel work or Plan
-section. `createLayoutController.secondaryMode` projects that intent as split, drawer or full.
+section. `createLayoutController.secondaryMode` projects that intent as split or full.
 
-**The compact band summarises instead.** While `TranscriptRegion`'s `secondaryMode()` is `"closed"` in
-the `single` band it mounts `ActivitySummaryStrip` as `#activity-summary` below the transcript instead
-of leaving the band empty: one row (two above `ACTIVITY_SUMMARY_SINGLE_ROW_MAX_HEIGHT`) of canonical
+**Below the split, activity is summarised instead.** While `TranscriptRegion`'s `secondaryMode()` is
+`"closed"` and the width cannot seat the split, it mounts `ActivitySummaryStrip` as `#activity-summary`
+below the transcript instead of leaving the band empty: one row (two above
+`ACTIVITY_SUMMARY_SINGLE_ROW_MAX_HEIGHT`) of canonical
 Goal/Plan/Workflow/Agents facts with the effective `activity.toggle` binding last, wrapping whole facts
-and shedding settled ones first. The strip is the only compact owner of activity state; when the panel
+and shedding settled ones first. The strip is the only owner of activity state there; when the panel
 or a full-region surface occupies the content it is not mounted, so nothing is stated twice. Its facts
 come from `activitySummaryFacts`, never from a formatted title or a second query, and it is the pointer
 route to the panel. The grammar, row budget and priority order are specified in
-[bootstrap](code-bootstrap.md#4101-the-compact-activity-summary).
+[bootstrap](code-bootstrap.md#4101-the-activity-summary-below-the-split).
 
-The effective secondary mode also owns roster placement. A split, drawer or whole-region panel is the
-sole detailed roster surface; in the compact band a closed secondary surface mounts no roster, and the
+The effective secondary mode also owns roster placement. A split or whole-region panel is the
+sole detailed roster surface; below the split a closed secondary surface mounts no roster, and the
 summary strip states the group facts instead. Each of the three first-event intents is consumed
 independently. Explicitly closing
 an automatic reveal is sticky for later updates of that same section/execution, but does not consume
-the first event for another section; the latter may reopen and reorient the Sidebar. In the compact
-band an automatic intent never opens a surface: it is spent once into the summary, and its section
+the first event for another section; the latter may reopen and reorient the Sidebar. Below the split
+an automatic intent never opens a surface: it is spent once into the summary, and its section
 becomes the preference for the next explicit open (see
 [bootstrap section 4.10](code-bootstrap.md#410-layout-breakpoints)). The Agents
 intent does not change the Lead selection or open `ActivityDetail`. The outer Sidebar ScrollBox
@@ -1493,7 +1492,7 @@ curated shell renderer and the generic fallback, asserting useful output and sig
 JSON key/value presentation is absent.
 
 **INV-T48.** Detailed Plan, Parallel work and Agents state has exactly one responsive owner. In
-`split`, `drawer` and `full` modes it is the combined `Sidebar`; in the compact band a closed
+`split` and `full` modes it is the combined `Sidebar`; below the split a closed
 secondary surface mounts no roster or Plan/workflow pane in the Lead transcript and states the group
 facts in the one summary strip instead (`ActivitySummaryStrip`,
 `packages/code/src/views/ActivitySummaryStrip.tsx`). The application footer retains canonical
@@ -1505,7 +1504,7 @@ open/reveal their whole section. Closing one is sticky only for repeated events 
 first event for another section may reopen and reorient the Sidebar. The Agents intent keeps `Lead
 transcript` selected and opens no `ActivityDetail`. Repeated updates cannot flap the layout, and a
 long Plan cannot clip a later revealed section. An individually focused agent mounts only one compact
-context row. Tab remains the keyboard route through the roster in both split and drawer modes. Any
+context row. Tab remains the keyboard route through the roster in both split and whole-region modes. Any
 agent-row activation only selects that child's isolated transcript; it never opens `ActivityDetail`
 automatically. The Agents and Parallel work headers report settled/total and only add a running
 count while work is active; both bounded inner scrolls render each child as one plan-tone status
@@ -1751,7 +1750,7 @@ document. Four concrete couplings matter here:
 | `views/config/McpBrowser.tsx` | `renderToolPreview` (`packages/code/src/views/tools/registry.tsx`, `renderToolPreview`) |
 | `packages/code/src/views/ElicitBlock.tsx` | `MEASURE_MAX_COLS` |
 | `views/Sidebar.tsx`, `views/overlays/PlanOverlay.tsx` | `taskTone` (`packages/code/src/views/blocks.tsx`) |
-| `packages/code/src/views/app/TranscriptRegion.tsx` | `Sidebar` (the split column and drawer mounts), the focused-agent identity row and the fixed physical reading runway |
+| `packages/code/src/views/app/TranscriptRegion.tsx` | `Sidebar` (the split column and whole-region panel mounts), the focused-agent identity row and the fixed physical reading runway |
 | `packages/code/src/views/App.tsx` | `LeadActivityLine` immediately above `InputDock`; the footer carries only bounded activity summaries |
 | `packages/code/src/runtime.tsx` (`describeToolCall`) | `formatToolCall` + `mutationStats` composed into `describeToolCall` |
 | `src/run-host.ts`, `src/cli-mode.ts`, `src/features/run/status-presenter.ts` | `core/run-status.ts`'s `plainStatusLine`/`memoryNoticeStatus`/`progressStatus`/`liveRunStatus` |

@@ -7,8 +7,6 @@ import type { WorkflowActivity } from "../../adapters/workflow-projection.ts";
 import type { LayoutMode, SecondarySurfaceMode } from "../../app/layout.ts";
 import type { Interaction } from "../../keys/interaction.ts";
 import { tokens } from "../../theme/tokens.ts";
-import { mixHex } from "../../theme/model.ts";
-import { scrimColor } from "../../theme/surfaces.ts";
 import { Sidebar, type SidebarRevealIntent } from "../Sidebar.tsx";
 import { ActivitySummaryStrip, ACTIVITY_SUMMARY_PADDING } from "../ActivitySummaryStrip.tsx";
 import {
@@ -20,7 +18,6 @@ import { Splash } from "../Splash.tsx";
 import type { TranscriptState } from "../transcript-state.ts";
 import type { HintTone } from "../hint.ts";
 import type { ActivityDetail } from "../activity-detail.ts";
-import { SurfaceBoundary, SurfaceOverlay } from "../../ui/patterns/surface-lifecycle.tsx";
 import {
   TranscriptViewport,
   type TranscriptViewportHandle,
@@ -63,8 +60,9 @@ export interface TranscriptRegionRun {
 /** Layout projections consumed by the transcript region. */
 export interface TranscriptRegionLayout {
   mode: Accessor<LayoutMode>;
-  sidebarVisible: Accessor<boolean>;
   secondaryMode?: Accessor<SecondarySurfaceMode>;
+  /** Whether this width can seat the inspector beside the transcript. */
+  splitEligible?: Accessor<boolean>;
   sidebarWidth: Accessor<number>;
   secondaryOpen: Accessor<boolean>;
   closeSecondary?: () => void;
@@ -128,17 +126,13 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
   const regionActive = (): boolean => props.active?.() ?? true;
   const secondaryMode = (): SecondarySurfaceMode =>
     props.layout.secondaryMode?.() ??
-    (props.layout.mode() === "single" && props.layout.secondaryOpen()
-      ? "full"
-      : props.layout.mode() !== "single" &&
-          props.layout.mode() !== "floor" &&
-          props.layout.sidebarVisible()
-        ? "split"
-        : "closed");
+    (props.layout.secondaryOpen() ? (props.layout.mode() === "wide" ? "split" : "full") : "closed");
   const splitOpen = (): boolean => secondaryMode() === "split";
   const fullOpen = (): boolean => secondaryMode() === "full";
+  const splitEligible = (): boolean =>
+    props.layout.splitEligible?.() ?? props.layout.mode() === "wide";
   const summaryVisible = (): boolean =>
-    props.layout.mode() === "single" && secondaryMode() === "closed";
+    !splitEligible() && props.layout.mode() !== "floor" && secondaryMode() === "closed";
   const inlineWidth = (): number =>
     fullOpen() ? props.layout.width() : props.layout.sidebarWidth();
   /**
@@ -321,34 +315,6 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
             rightInset={splashInset}
           />
         </Show>
-        <SurfaceBoundary active={() => secondaryMode() === "drawer"} retention="retain-one">
-          {() => (
-            <SurfaceOverlay>
-              <box
-                position="absolute"
-                left={0}
-                right={0}
-                top={0}
-                bottom={0}
-                backgroundColor={mixHex(tokens.bg, scrimColor(), 0.72)}
-                zIndex={2}
-                onMouseDown={() => props.layout.closeSecondary?.()}
-              />
-              <box
-                position="absolute"
-                flexDirection="row"
-                right={0}
-                top={0}
-                bottom={0}
-                width={props.layout.sidebarWidth()}
-                backgroundColor={tokens.bg}
-                zIndex={3}
-              >
-                {activityPanel()}
-              </box>
-            </SurfaceOverlay>
-          )}
-        </SurfaceBoundary>
       </box>
       <Show when={summaryVisible()}>
         <ActivitySummaryStrip

@@ -50,9 +50,9 @@ export async function openTranscript(width = 120, height = 32) {
         run={{ elicit: () => null, resolveElicit: () => {}, workflowActivity: () => null }}
         layout={{
           mode: () => "wide",
-          sidebarVisible: split,
+          secondaryMode: () => (split() ? "split" : "closed"),
           sidebarWidth: () => 28,
-          secondaryOpen: () => false,
+          secondaryOpen: split,
           contentInset: () => 0,
           width: () => dimensions().width,
           height: () => dimensions().height,

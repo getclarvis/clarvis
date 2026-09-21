@@ -72,7 +72,7 @@ function store(
 function layout(over: Partial<TranscriptRegionLayout> = {}): TranscriptRegionLayout {
   return {
     mode: () => "wide" as LayoutMode,
-    sidebarVisible: () => false,
+    secondaryMode: () => "closed",
     sidebarWidth: () => 28,
     secondaryOpen: () => false,
     contentInset: () => 0,
@@ -163,7 +163,7 @@ test("with no nodes and no elicitation, the splash screen renders", async () => 
   t.renderer.destroy();
 });
 
-test("a current plan stays out of the transcript tail when the sidebar is closed", async () => {
+test("a current plan states its progress in the band without mounting a Plan pane", async () => {
   const nodes = [toolNode()];
   const plan: TranscriptNode = {
     key: "exec-live-plan::plan",
@@ -184,6 +184,7 @@ test("a current plan stays out of the transcript tail when the sidebar is closed
   const t = await mount(
     baseProps({
       store: liveStore,
+      layout: layout({ mode: () => "narrow" }),
       activity: activity({
         plan: {
           id: "live-plan",
@@ -198,7 +199,8 @@ test("a current plan stays out of the transcript tail when the sidebar is closed
     }),
   );
   const out = t.captureCharFrame();
-  expect(out).not.toContain("Plan 0/1");
+  expect(out).toContain("Plan 0/1");
+  expect(out).not.toContain("Keep history still");
   expect(out).not.toContain("Measure the physical window");
   t.renderer.destroy();
 });
@@ -640,7 +642,7 @@ test("the sidebar is hidden in single-column mode even when marked visible", asy
           { id: "s1", order: 0, status: "running", title: "Worker", input: 0, output: 0 },
         ] as ActivityStore["subagents"],
       }),
-      layout: layout({ mode: () => "single", sidebarVisible: () => true }),
+      layout: layout({ mode: () => "single", secondaryOpen: () => true }),
     }),
   );
   const out = t.captureCharFrame();
@@ -657,7 +659,7 @@ test("the sidebar renders inline in wide mode when visible and content exists", 
           { id: "s1", order: 0, status: "running", title: "Worker", input: 0, output: 0 },
         ] as ActivityStore["subagents"],
       }),
-      layout: layout({ mode: () => "wide", sidebarVisible: () => true }),
+      layout: layout({ mode: () => "wide", secondaryMode: () => "split" }),
     }),
   );
   const out = t.captureCharFrame();
@@ -680,7 +682,7 @@ test("the sidebar omits plan results and keeps full-plan navigation", async () =
           tasks: [{ id: "t1", title: "Research", status: "done", result }],
         },
       }),
-      layout: layout({ sidebarVisible: () => true, sidebarWidth: () => 42 }),
+      layout: layout({ secondaryMode: () => "split", sidebarWidth: () => 42 }),
     }),
   );
   const frame = t.captureCharFrame();
@@ -698,7 +700,7 @@ test("transcript blocks use the available width when the inline sidebar is absen
   const t = await mount(
     baseProps({
       store: store(nodes),
-      layout: layout({ width: () => 160, sidebarVisible: () => false }),
+      layout: layout({ width: () => 160 }),
     }),
     160,
   );
@@ -724,7 +726,7 @@ test("transcript blocks use the available pane beside an inline sidebar", async 
       store: store(nodes),
       layout: layout({
         width: () => width,
-        sidebarVisible: () => true,
+        secondaryMode: () => "split",
         sidebarWidth: () => sidebarWidth,
       }),
     }),
@@ -802,7 +804,7 @@ test("the aggregate transcript does not duplicate the roster when the optional s
           { id: "s1", order: 0, status: "running", title: "Worker", input: 0, output: 0 },
         ] as ActivityStore["subagents"],
       }),
-      layout: layout({ mode: () => "wide", sidebarVisible: () => false }),
+      layout: layout({ mode: () => "wide" }),
     }),
   );
   const out = t.captureCharFrame();
@@ -823,7 +825,6 @@ test("the split sidebar is the sole owner of the agent roster", async () => {
       }),
       layout: layout({
         mode: () => "wide",
-        sidebarVisible: () => true,
         secondaryMode: () => "split",
       }),
     }),
@@ -837,7 +838,7 @@ test("the split sidebar is the sole owner of the agent roster", async () => {
   t.renderer.destroy();
 });
 
-test("the compact band presents explicitly opened activity across the whole content region", async () => {
+test("the whole-region panel is the only presentation below the split", async () => {
   const t = await mount(
     baseProps({
       store: store([toolNode()]),
@@ -847,8 +848,8 @@ test("the compact band presents explicitly opened activity across the whole cont
         ] as ActivityStore["subagents"],
       }),
       layout: layout({
-        mode: () => "single",
-        sidebarVisible: () => false,
+        mode: () => "narrow",
+        secondaryMode: () => "full",
         secondaryOpen: () => true,
       }),
     }),
@@ -861,7 +862,7 @@ test("the compact band presents explicitly opened activity across the whole cont
   t.renderer.destroy();
 });
 
-test("single mode with activity closed summarises it instead of obstructing the transcript", async () => {
+test("activity closed below the split summarises it instead of obstructing the transcript", async () => {
   const t = await mount(
     baseProps({
       store: store([toolNode()]),
@@ -872,7 +873,7 @@ test("single mode with activity closed summarises it instead of obstructing the 
       }),
       layout: layout({
         mode: () => "single",
-        sidebarVisible: () => true,
+        secondaryMode: () => "closed",
         secondaryOpen: () => false,
       }),
     }),
@@ -904,7 +905,7 @@ test("a workflow leader in the sidebar suppresses the splash's empty-transcript 
   const t = await mount(
     baseProps({
       run: run({ workflowActivity: () => workflow }),
-      layout: layout({ mode: () => "wide", sidebarVisible: () => true }),
+      layout: layout({ mode: () => "wide", secondaryMode: () => "split" }),
     }),
   );
   const out = t.captureCharFrame();
@@ -1044,7 +1045,7 @@ test("clicking a sidebar sub-agent row toggles the transcript's selection", asyn
         { id: "s1", order: 0, status: "running", title: "Worker", input: 0, output: 0 },
       ] as ActivityStore["subagents"],
     }),
-    layout: layout({ mode: () => "wide", sidebarVisible: () => true }),
+    layout: layout({ mode: () => "wide", secondaryMode: () => "split" }),
   });
   const t = await mount(props);
   const rows = t.captureCharFrame().split("\n");

@@ -805,7 +805,14 @@ test("a completed Plan never contributes a task counter to the compact footer", 
     height: 24,
   });
   const closed = await captureUntil(t, "Completed");
-  expect(closed).not.toMatch(/Plan \d+\/\d+/);
+  // The band above the composer states the finished plan's progress; the composer's own
+  // footer rows must not gain a task counter.
+  expect(closed).toMatch(/Plan 5\/5/);
+  const lines = closed.split("\n");
+  const footerStart = lines.findIndex((line) => line.includes("[↵] send"));
+  expect(footerStart).toBeGreaterThan(0);
+  const footer = lines.slice(footerStart).join("\n");
+  expect(footer).not.toMatch(/Plan \d+\/\d+/);
   t.renderer.destroy();
 });
 
@@ -2729,7 +2736,7 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   t.renderer.destroy();
 });
 
-test("clicking the drawer scrim keeps dismissal sticky for later sub-agents", async () => {
+test("below the split a delegation never opens a surface and blocks nothing", async () => {
   const store = createTranscriptStore();
   const activity = createActivityStore();
   const sink = store.openRun("exec_scrim");
@@ -2748,15 +2755,19 @@ test("clicking the drawer scrim keeps dismissal sticky for later sub-agents", as
   applyRunEvents(sink, firstDelegation, "live");
   applyRunEvents(activitySink, firstDelegation, "live");
   const t = await mountApp(defaultProps({ store, activity }), { width: 90, height: 30 });
-  const open = await captureUntil(t, "Lead transcript");
+  const open = await captureUntil(t, "Agents 0/1");
   expect(open).toContain("scrim explorer");
+  expect(open).toContain("[Ctrl+X S] activity");
+  expect(open).not.toContain("│ Agents");
+  expect(open).not.toContain("Lead transcript");
 
   await t.mockMouse.click(2, 5);
   await t.renderOnce();
   await t.renderOnce();
-  const closed = t.captureCharFrame();
-  expect(closed).not.toContain("│ Agents");
-  expect(closed).not.toContain("Lead transcript");
+  const afterClick = t.captureCharFrame();
+  expect(afterClick).toContain("scrim explorer");
+  expect(t.renderer.root.findDescendantById("transcript-viewport")).toBeDefined();
+  expect(t.renderer.root.findDescendantById("activity-panel")).toBeUndefined();
 
   const laterDelegation: RunEvent[] = [
     ev({
@@ -2772,13 +2783,14 @@ test("clicking the drawer scrim keeps dismissal sticky for later sub-agents", as
   applyRunEvents(activitySink, laterDelegation, "live");
   await t.renderOnce();
   await t.renderOnce();
-  const stillClosed = t.captureCharFrame();
-  expect(stillClosed).not.toContain("│ Agents");
-  expect(stillClosed).not.toContain("Lead transcript");
+  const later = t.captureCharFrame();
+  expect(later).toContain("Agents 0/2");
+  expect(later).not.toContain("│ Agents");
+  expect(later).not.toContain("Lead transcript");
   t.renderer.destroy();
 });
 
-test("Ctrl+X S toggles a narrow inspector while Escape leaves it open", async () => {
+test("Ctrl+X S toggles the whole-region panel below the split while Escape leaves it open", async () => {
   const subStream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
@@ -2800,19 +2812,27 @@ test("Ctrl+X S toggles a narrow inspector while Escape leaves it open", async ()
     }),
     { width: 90, height: 30 },
   );
-  const open = await captureUntil(t, "Lead transcript");
-  expect(open).toContain("drawer explorer");
+  const summary = await captureUntil(t, "Agents 0/1");
+  expect(summary).toContain("drawer explorer");
+  expect(summary).not.toContain("Lead transcript");
 
-  press(t, "escape");
-  await t.renderOnce();
-  expect(t.captureCharFrame()).toContain("│ Agents");
   press(t, "x", { ctrl: true });
   press(t, "s");
   await t.renderOnce();
+  await t.renderOnce();
+  const opened = t.captureCharFrame();
+  expect(t.renderer.root.findDescendantById("activity-panel")).toBeDefined();
+  expect(t.renderer.root.findDescendantById("transcript-viewport")).toBeUndefined();
+  expect(opened).toContain("Lead transcript");
 
-  // Closing the drawer preserves transcript orientation but removes the
-  // drawer roster.
-  expect(t.captureCharFrame()).not.toContain("│ Agents");
+  // Escape leaves the panel open, and the toggle closes it without cancelling the run.
+  press(t, "escape");
+  await t.renderOnce();
+  expect(t.renderer.root.findDescendantById("activity-panel")).toBeDefined();
+  press(t, "x", { ctrl: true });
+  press(t, "s");
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("Lead transcript");
   expect(cancels).toEqual([]);
   t.renderer.destroy();
 });
@@ -2912,7 +2932,7 @@ test("Ctrl+X S opens the compact band's activity across the whole content region
   t.renderer.destroy();
 });
 
-test("a width that shrinks into the compact band collapses an automatic reveal into the summary", async () => {
+test("a width that stops supporting the split collapses an automatic reveal into the summary", async () => {
   const store = createTranscriptStore();
   const activity = createActivityStore();
   const sink = store.openRun("exec_compact_shrink");
@@ -2924,11 +2944,11 @@ test("a width that shrinks into the compact band collapses an automatic reveal i
     "live",
   );
 
-  const t = await mountApp(defaultProps({ store, activity }), { width: 90, height: 24 });
-  const narrow = await captureUntil(t, "Lead transcript");
-  expect(narrow).toContain("│ Agents");
+  const t = await mountApp(defaultProps({ store, activity }), { width: 140, height: 24 });
+  const split = await captureUntil(t, "Lead transcript");
+  expect(split).toContain("│ Agents");
 
-  t.resize(60, 24);
+  t.resize(84, 24);
   await t.renderOnce();
   await t.renderOnce();
   const compact = t.captureCharFrame();
@@ -2936,12 +2956,14 @@ test("a width that shrinks into the compact band collapses an automatic reveal i
   expect(compact).not.toContain("Lead transcript");
   expect(compact.replace(/\s+/g, " ")).toContain("Plan 1/2 · Agents 0/1 · [Ctrl+X S] activity");
   expect(compact).toContain("compact explorer");
+  expect(t.renderer.root.findDescendantById("activity-panel")).toBeUndefined();
 
-  t.resize(90, 24);
+  t.resize(140, 24);
   await t.renderOnce();
   await t.renderOnce();
   const widened = t.captureCharFrame();
   expect(t.renderer.root.findDescendantById("activity-summary")).toBeUndefined();
+  expect(t.renderer.root.findDescendantById("activity-panel")).toBeUndefined();
   expect(widened).not.toContain("Lead transcript");
   expect(widened).toContain("compact explorer");
   t.renderer.destroy();
@@ -2989,7 +3011,7 @@ test("the compact summary keeps the section it accounted for while activity was 
   applyRunEvents(sink, compactBandStream(), "live");
   applyRunEvents(activitySink, compactBandStream(), "live");
 
-  const t = await mountApp(defaultProps({ store, activity }), { width: 90, height: 24 });
+  const t = await mountApp(defaultProps({ store, activity }), { width: 140, height: 24 });
   await captureUntil(t, "Lead transcript");
 
   const plan: RunEvent[] = [
@@ -3013,7 +3035,7 @@ test("the compact summary keeps the section it accounted for while activity was 
   applyRunEvents(activitySink, plan, "live");
   await captureUntil(t, "Compact plan");
 
-  t.resize(60, 24);
+  t.resize(84, 24);
   await t.renderOnce();
   await t.renderOnce();
   expect(t.renderer.root.findDescendantById("activity-summary")).toBeDefined();
@@ -3731,7 +3753,7 @@ test("clicking a completed agent opens its isolated transcript without a detail 
   t.renderer.destroy();
 });
 
-test("the sidebar is the only compact sub-agent roster", async () => {
+test("below the split the summary owns agent state and mounts no roster", async () => {
   const subStream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
@@ -3748,18 +3770,20 @@ test("the sidebar is the only compact sub-agent roster", async () => {
     width: 80,
     height: 24,
   });
-  const frame = await captureUntil(t, "Lead transcript");
+  const frame = await captureUntil(t, "Agents 0/1");
+  expect(frame).toContain("[Ctrl+X S] activity");
   expect(frame).toContain("responsive explorer");
-  expect(frame).toContain("│ Agents");
-  expect(frame.replace(/[│\s]+/gu, " ")).toContain("0/1 finished · 1 running");
+  expect(frame).not.toContain("│ Agents");
+  expect(frame).not.toContain("Lead transcript");
   expect(frame).not.toContain("Agents 1 · 1 running");
   press(t, "x", { ctrl: true });
   press(t, "s");
   await t.renderOnce();
   await t.renderOnce();
-  const closed = t.captureCharFrame();
-  expect(closed).not.toContain("Lead transcript");
-  expect(closed).not.toContain("Agents 1 · 1 running");
+  const opened = t.captureCharFrame();
+  expect(t.renderer.root.findDescendantById("activity-panel")).toBeDefined();
+  expect(opened).toContain("Lead transcript");
+  expect(opened.replace(/[│\s]+/gu, " ")).toContain("0/1 finished · 1 running");
   t.renderer.destroy();
 });
 

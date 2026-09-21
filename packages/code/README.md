@@ -621,12 +621,13 @@ instead of requesting all-key escape reports, preserving dead-key and IME compos
 `ß` remains ordinary text. The three run-control pickers are loaded on first use and retained after their first
 mount. `Ctrl+X S` is the sole keyboard route for toggling the responsive activity Sidebar; it opens
 the first available Agents, Parallel work or Plan section when closed and closes the surface when open.
-In the compact band (24 to 71 columns) it opens that surface across the whole content region, and the
+In every width below the split it opens that surface across the whole content region instead of a narrow
+drawer, and the
 summary strip names the same effective binding so the route stays discoverable while no panel is
 mounted. The first live Plan, first workflow state/leader and first typed delegation each own an independent,
 once-per-execution automatic reveal intent for the responsive Plan, Parallel work and Agents
 sections. Those reveals keep the Lead transcript selected and never open result detail. Closing the
-split, drawer or compact panel dismisses the intent that opened it, so later updates of that kind do not reopen it
+split or whole-region panel dismisses the intent that opened it, so later updates of that kind do not reopen it
 automatically; the first event for another section may still reveal and orient the Sidebar. Escape
 does not close any presentation. Agent, workflow and Plan rosters remain in the Sidebar; the
 canonical footer contains only run context/session usage and does not repeat their counts.
@@ -1127,18 +1128,18 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   Sidebar-only. Ordinary Lead `thinking`/`working` state occupies one fixed activity line
   immediately above the composer, outside the transcript ScrollBox; child-owned tools/content remain
   available only in that child's selected transcript.
-- The combined activity Sidebar has one responsive owner: a wide split, a drawer between 72 and 99
-  columns, or — in the compact band of 24 to 71 columns — a whole-region panel opened on request. It has
+- The combined activity Sidebar has one responsive owner: a wide split from 100 columns, or — below
+  that threshold (24 to 99 columns) — a whole-region panel opened on request. It has
   three independent, once-per-execution automatic reveal intents: the first live Plan reveals
   **Plan**, the first workflow state or leader reveals **Parallel work**, and the first delegation reveals
   **Agents** while Lead remains selected. Repeated updates of the same kind do not flap the layout;
   closing an automatically revealed section is sticky for that intent, while the first event for a
   different section may still reopen and reorient the Sidebar. Each section is one native ScrollBox
-  child, so a later section is scrolled fully into view even when a long Plan precedes it. **In the
-  compact band no automatic reveal opens anything**: activity is stated as one summary line below the
+  child, so a later section is scrolled fully into view even when a long Plan precedes it. **Below the
+  split no automatic reveal opens anything**: activity is stated as one summary line below the
   transcript (`Goal Completed · Plan 1/2 · Agents 0/1`), the intent is spent once so widening cannot
-  replay it, and its section is preferred by the next explicit open. A width that shrinks into that
-  band collapses a surface only an automatic intent had opened; a surface the reader opened survives
+  replay it, and its section is preferred by the next explicit open. A width that stops supporting the
+  split collapses a surface only an automatic intent had opened; a surface the reader opened survives
   at full width. The summary states canonical group facts only — never titles, paths, task lists or
   token metrics — wraps whole facts into at most two rows (one on short terminals) and sheds settled
   work before in-flight or attention facts. With the
@@ -1611,12 +1612,12 @@ Pass case names after `--` to run a subset; `OVERLAY_SOAK_{CYCLES,BATCH,WARMUP,S
 the measurement. A parent watchdog kills a child after 120 seconds or 1 GiB RSS. Production cases
 fail above 5 MiB PSS per 100 cycles on Linux (RSS elsewhere) or when live renderable, lifecycle-pass
 or key-layer counts do not balance; the corresponding limits are configurable through
-`OVERLAY_SOAK_{MAX_MIB_PER_100,WATCHDOG_MS,WATCHDOG_RSS_MB}`. The case set includes the production floating modals, pickers, activity drawer,
+`OVERLAY_SOAK_{MAX_MIB_PER_100,WATCHDOG_MS,WATCHDOG_RSS_MB}`. The case set includes the production floating modals, pickers, activity sidebar,
 elicitation, Splash, HintToast and an empty configuration page, not only primitive frames. The current
 lifecycle keeps the transcript shell mounted, paused and input-inert behind every full-region
 configuration, Workflow, Plan and Diff page. Diff and Plan are lazily retained after first use;
 configuration frames remain bounded by their stack and dispose when popped. Agent Profile Picker,
-Isolation Picker, Review Picker, Catalog Picker, the narrow drawer and a bounded ten-slot
+Isolation Picker, Review Picker, Catalog Picker and a bounded ten-slot
 autocomplete projection are also retained lazily.
 The autocomplete cases cover both visibility churn and a retained ten-row scrolling mutation; both
 must keep renderable, lifecycle-pass and key-layer ownership constant. Immediate RSS/PSS may rise

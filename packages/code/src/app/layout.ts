@@ -6,13 +6,13 @@ export type LayoutMode = "wide" | "narrow" | "single" | "floor";
 /**
  * How the current secondary activity/detail surface is presented.
  *
- * @remarks `"full"` is the compact band's explicit presentation: the activity
- *   sections take the whole content region instead of opening beside the
- *   transcript.
+ * @remarks `"full"` is the presentation below the split threshold: the activity
+ *   sections take the whole content region, with no transcript column, no scrim
+ *   and no residual strip of conversation beside them.
  */
-export type SecondarySurfaceMode = "closed" | "split" | "drawer" | "full";
+export type SecondarySurfaceMode = "closed" | "split" | "full";
 
-/** Why the secondary surface is open; the compact band treats the two origins differently. */
+/** Why the secondary surface is open; the two origins are treated differently. */
 export type SecondaryOrigin = "automatic" | "explicit";
 
 export const INSPECTOR_MIN_WIDTH = 32;
@@ -24,9 +24,10 @@ export const INSPECTOR_SPLIT_MIN_WIDTH = 100;
  *
  * @remarks
  * Breakpoints: below 24 columns or 6 rows is `"floor"` (too small to render
- * normally), below 72 columns is `"single"` (one column: the compact band, which
- * summarises activity instead of opening a surface), below 100 columns is
- * `"narrow"`, otherwise `"wide"`.
+ * normally), below 72 columns is `"single"`, below 100 columns is `"narrow"`,
+ * otherwise `"wide"`. `"single"` and `"narrow"` share one activity policy — a
+ * summary instead of an opened surface — because neither can seat the inspector
+ * beside a readable transcript.
  */
 /** The smallest terminal the shell renders in: below either, it shows the floor screen. */
 export const FLOOR_MIN_COLUMNS = 24;
@@ -40,11 +41,11 @@ function layoutModeFromDims(w: number, h: number): LayoutMode {
   return "wide";
 }
 
-/** Reactive layout state and controls for the shell's sidebar, drawer and compact activity panel. */
+/** Reactive layout state and controls for the shell's inspector and activity panel. */
 export interface LayoutController {
   layoutMode: Accessor<LayoutMode>;
-  /** Whether the terminal is in the compact band where activity is summarised, not opened. */
-  compact: Accessor<boolean>;
+  /** Whether this width can seat the inspector beside the transcript. */
+  splitEligible: Accessor<boolean>;
   secondaryOpen: Accessor<boolean>;
   /** Which intent opened the current surface, or `null` while it is closed. */
   secondaryOrigin: Accessor<SecondaryOrigin | null>;
@@ -63,27 +64,26 @@ export interface LayoutController {
  * application shell.
  *
  * @param opts - Accessors for terminal dimensions and secondary content presence, plus the
- *   compact-collapse notification.
+ *   automatic-collapse notification.
  * @returns The layout controller.
  *
- * @remarks The compact band never keeps an automatically opened surface open. An automatic
- *   intent that arrives there belongs to the activity summary, and a width that shrinks into the
- *   band collapses the surface the intent had opened, so a later widening cannot surprise the
- *   reader with a panel they never asked for. An explicit intent survives the same shrink and is
- *   presented at full width.
- *   `onCompactCollapse` reports that collapse; the shell owns which section the reader was
- *   looking at, so it can restore it on the next explicit open.
+ * @remarks Below the split threshold nothing opens by itself. An automatic intent that arrives
+ *   there belongs to the activity summary, and a width that stops supporting the split collapses
+ *   the surface that intent had opened, so a resize can never leave a panel the reader did not
+ *   ask for. An explicit intent survives the same shrink and is presented across the whole
+ *   content region. `onAutomaticCollapse` reports that collapse; the shell owns which section the
+ *   reader was looking at, so it can restore it on the next explicit open.
  */
 export function createLayoutController(opts: {
   dims: Accessor<{ w: number; h: number }>;
   hasSidebarContent: Accessor<boolean>;
-  onCompactCollapse?: () => void;
+  onAutomaticCollapse?: () => void;
 }): LayoutController {
   const layoutMode = createMemo(() => {
     const { w, h } = opts.dims();
     return layoutModeFromDims(w, h);
   });
-  const compact = createMemo(() => layoutMode() === "single");
+  const splitEligible = createMemo(() => opts.dims().w >= INSPECTOR_SPLIT_MIN_WIDTH);
   const [secondaryOpen, setSecondaryOpen] = createSignal(false);
   const [secondaryOrigin, setSecondaryOrigin] = createSignal<SecondaryOrigin | null>(null);
   const openSecondary: LayoutController["openSecondary"] = (origin) => {
@@ -95,11 +95,9 @@ export function createLayoutController(opts: {
     setSecondaryOpen(false);
     setSecondaryOrigin(null);
   };
-  const splitEligible = createMemo(() => opts.dims().w >= INSPECTOR_SPLIT_MIN_WIDTH);
   const secondaryMode = createMemo<SecondarySurfaceMode>(() => {
     if (!secondaryOpen()) return "closed";
-    if (splitEligible()) return "split";
-    return compact() ? "full" : "drawer";
+    return splitEligible() ? "split" : "full";
   });
   const sidebarVisible = createMemo(() => secondaryMode() === "split");
   const sidebarWidth = createMemo(() => {
@@ -111,14 +109,14 @@ export function createLayoutController(opts: {
   const contentInset = createMemo(() => (sidebarVisible() ? sidebarWidth() : 0));
 
   createEffect(() => {
-    if (!compact() || !secondaryOpen() || secondaryOrigin() !== "automatic") return;
+    if (splitEligible() || !secondaryOpen() || secondaryOrigin() !== "automatic") return;
     closeSecondary();
-    opts.onCompactCollapse?.();
+    opts.onAutomaticCollapse?.();
   });
 
   return {
     layoutMode,
-    compact,
+    splitEligible,
     secondaryOpen,
     secondaryOrigin,
     openSecondary,

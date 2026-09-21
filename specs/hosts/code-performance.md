@@ -384,11 +384,12 @@ onto these families without measurement:
   (`packages/code/src/views/config/MarketplaceBrowser.tsx`, `collections`, `changeCollection`, and
   `StableWindowedList`; `packages/code/tooling/benchmarks/overlays.tsx`,
   `marketplace-collections-retained-196-listings`).
-- the narrow activity drawer mounts a full-bleed scrim and Sidebar, while editor expansion merely
-  changes layout properties on the already-mounted input region. The compact band's summary strip and
-  whole-region panel are conditional in the same sense and mount no scrim
-  (`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`'s drawer `SurfaceBoundary`
-  and its `summaryVisible`/`activityPanel` owners, `packages/code/src/views/App.tsx`).
+- the activity panel replaces the transcript column in place — no scrim, no residual strip — while
+  editor expansion merely
+  changes layout properties on the already-mounted input region. The summary strip is conditional in the
+  same sense
+  (`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`'s
+  `summaryVisible`/`activityPanel` owners, `packages/code/src/views/App.tsx`).
 - Splash, elicitation, terminal-floor and fatal-boot surfaces are conditional, but they are not
   normal high-frequency modal routes. They still belong in control cases because input churn can
   accidentally remount Splash and make an autocomplete measurement invalid
@@ -1025,7 +1026,7 @@ The correction followed the attribution order and was widened beyond F1:
    exposed larger lifecycle amplifiers that the primitive-only result did not predict.
 3. `SurfaceBoundary` now owns lazy construction, `dispose-on-close`/`retain-one`, activation identity,
    root-portal placement, focus release and stale-async guards. Every root-Portal surface uses
-   `retain-one`; Agent Profile Picker, every Catalog Picker and the narrow activity drawer do the same in
+   `retain-one`; Agent Profile Picker and every Catalog Picker do the same in
    their respective hosts. The component-local `*Mounted` latches and retained-spec proxy are gone.
    Inactive key layers use stable reactive matchers, and a catalog resets filter and cursor state
    when its spec changes.
@@ -1157,7 +1158,7 @@ Run every row below independently so one surface cannot inherit another's retain
 | `WorktreeExitPrompt` | cancel path, using an isolated disposable clean-worktree fixture |
 | autocomplete | slash and workspace-file triggers; zero, one and ten visible rows; fixed non-empty draft so Splash does not churn |
 | full-region pages | full Help; empty and populated Diff; empty, task-heavy and Markdown-heavy current Plan; root and nested Settings views |
-| shell overlays | activity drawer; Splash visibility; terminal-floor resize transition; editor expansion control |
+| shell overlays | activity panel; Splash visibility; terminal-floor resize transition; editor expansion control |
 
 The harness becomes the regression gate; one-off `ps` snapshots remain diagnostic evidence only.
 
@@ -1260,7 +1261,7 @@ than another family of component-local booleans:
    `overflow="hidden"` and ScrollBox viewport culling remain paint/layout controls and must not be
    described as allocation bounds. Retained surfaces declare a finite native-row/renderable budget.
 5. **Migrate by measured policy.** Autocomplete, every root-Portal float, Agent Profile Picker, Catalog
-   Picker, Plan, Diff and the narrow activity drawer use `retain-one`; bounded floats gate inactive
+   Picker, Plan and Diff use `retain-one`; bounded floats gate inactive
    keys and Activity Detail clears its document payload on close. Configuration parents retain only
    while present in their existing stack and dispose on pop. Elicitation, Splash, HintToast and
    other non-Portal conditional surfaces keep measured disposal semantics.

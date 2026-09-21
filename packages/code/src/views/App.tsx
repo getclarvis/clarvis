@@ -519,19 +519,19 @@ export function App(props: AppProps): JSX.Element {
     context: string;
   } | null>(null);
   let autoSidebarOwner: AutoSidebarIntent | null = null;
-  let compactRevealSection: AutoSidebarIntent | null = null;
+  /** The section the summary last accounted for; restored by the next explicit open. */
+  let summarizedSection: AutoSidebarIntent | null = null;
   const layout = createLayoutController({
     dims,
     hasSidebarContent: sidebarHasContent,
-    onCompactCollapse: () => {
+    onAutomaticCollapse: () => {
       const revealed = sidebarReveal()?.section;
-      if (revealed !== undefined) compactRevealSection = revealed;
+      if (revealed !== undefined) summarizedSection = revealed;
     },
   });
   const layoutMode = layout.layoutMode;
-  const compactLayout = layout.compact;
+  const splitEligible = layout.splitEligible;
   const secondaryOpen = layout.secondaryOpen;
-  const sidebarVisible = layout.sidebarVisible;
   const sidebarWidth = layout.sidebarWidth;
   const secondaryMode = layout.secondaryMode;
   const contentInset = layout.contentInset;
@@ -598,7 +598,7 @@ export function App(props: AppProps): JSX.Element {
   /**
    * Consumes one automatic reveal intent.
    *
-   * @remarks In the compact band the intent never opens a surface: the summary
+   * @remarks Below the split threshold the intent never opens a surface: the summary
    *   strip states the fact, the section stays recorded for the next explicit
    *   open, and the intent is spent here so widening the terminal cannot replay a
    *   reveal the reader already saw summarised.
@@ -614,8 +614,8 @@ export function App(props: AppProps): JSX.Element {
     state.opened = true;
     autoSidebarOwner = intent;
     setSidebarReveal({ section: intent, context });
-    if (compactLayout()) {
-      compactRevealSection = intent;
+    if (!splitEligible()) {
+      summarizedSection = intent;
       return;
     }
     layout.openSecondary("automatic");
@@ -642,11 +642,11 @@ export function App(props: AppProps): JSX.Element {
   };
   let manualSidebarReveal = 0;
   const openActivitySidebar = (requested?: AutoSidebarIntent): void => {
-    const preserved = compactRevealSection;
+    const summarized = summarizedSection;
     const section =
       requested ??
-      (compactLayout() && preserved !== null && sidebarSectionAvailable(preserved)
-        ? preserved
+      (!splitEligible() && summarized !== null && sidebarSectionAvailable(summarized)
+        ? summarized
         : undefined) ??
       (["goal", "agents", "workflow", "plan"] as const).find(sidebarSectionAvailable) ??
       null;
@@ -1608,8 +1608,8 @@ export function App(props: AppProps): JSX.Element {
                   active={() => overlayFallbackActive(overlays)}
                   layout={{
                     mode: layoutMode,
-                    sidebarVisible,
                     secondaryMode,
+                    splitEligible,
                     sidebarWidth,
                     secondaryOpen,
                     closeSecondary: closeActivitySidebar,

@@ -1059,12 +1059,11 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/src/views/overlay-host.ts` (`mountView`, `popView`, `closeView`).
     Test: `packages/code/tests/unit/overlay-host.test.ts` and
     `packages/code/tests/integration/overlay-region-render.test.tsx`.
-39. **High-churn picker and drawer trees mount lazily once, then hide without owning inactive
-    keys.** Agent Profile Picker, Catalog Picker and the narrow activity drawer retain their renderer trees
+39. **High-churn picker trees mount lazily once, then hide without owning inactive
+    keys.** Agent Profile Picker and Catalog Picker retain their renderer trees
     only after first use. A retained catalog resets its filter and cursor whenever the active picker
     spec changes. Production: `packages/code/src/ui/patterns/surface-lifecycle.tsx`
     (`SurfaceBoundary`), `packages/code/src/views/App.tsx` (agent-picker boundary),
-    `packages/code/src/views/app/TranscriptRegion.tsx` (drawer boundary),
     `packages/code/src/views/config/CatalogPicker.tsx` (`CatalogPicker`),
     `packages/code/src/ui/patterns/level-host.tsx` (`LevelHost`), and
     `packages/code/src/views/config/field-editor.tsx` (`PickerInput`). Test:

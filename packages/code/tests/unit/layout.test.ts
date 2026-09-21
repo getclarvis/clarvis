@@ -31,7 +31,7 @@ function harness(
     controller = createLayoutController({
       dims,
       hasSidebarContent: hasContent,
-      onCompactCollapse: () => collapses.push(1),
+      onAutomaticCollapse: () => collapses.push(1),
     });
     return d;
   });
@@ -84,6 +84,19 @@ test("inspector width stays useful when possible and clamps to the viewport", ()
   compact.dispose();
 });
 
+test("splitEligible follows the 100-column boundary", () => {
+  for (const w of [24, 40, 71, 72, 84, 99]) {
+    const { controller, dispose } = harness({ w, h: 40 });
+    expect([w, controller.splitEligible()]).toEqual([w, false]);
+    dispose();
+  }
+  for (const w of [100, 120, 200]) {
+    const { controller, dispose } = harness({ w, h: 40 });
+    expect([w, controller.splitEligible()]).toEqual([w, true]);
+    dispose();
+  }
+});
+
 test("the secondary surface changes only after explicit content-backed intent", () => {
   const { controller, setHasContent, dispose } = harness({ w: 200, h: 60 }, false);
   expect(controller.sidebarVisible()).toBe(false);
@@ -118,10 +131,11 @@ test("contentInset is inspector width only when the split is eligible and visibl
   expect(wideHidden.controller.contentInset()).toBe(0);
   wideHidden.dispose();
 
-  const single = harness({ w: 50, h: 40 }, true);
-  expect(single.controller.layoutMode()).toBe("single");
-  expect(single.controller.contentInset()).toBe(0);
-  single.dispose();
+  const below = harness({ w: 84, h: 40 }, true);
+  below.controller.openSecondary("explicit");
+  expect(below.controller.secondaryMode()).toBe("full");
+  expect(below.controller.contentInset()).toBe(0);
+  below.dispose();
 });
 
 test("the exact split boundary opens a 32-column inspector at 100 columns", () => {
@@ -129,7 +143,7 @@ test("the exact split boundary opens a 32-column inspector at 100 columns", () =
   expect(below.controller.secondaryMode()).toBe("closed");
   expect(below.controller.sidebarVisible()).toBe(false);
   below.controller.openSecondary("explicit");
-  expect(below.controller.secondaryMode()).toBe("drawer");
+  expect(below.controller.secondaryMode()).toBe("full");
   expect(below.controller.contentInset()).toBe(0);
   below.dispose();
 
@@ -142,84 +156,61 @@ test("the exact split boundary opens a 32-column inspector at 100 columns", () =
   at.dispose();
 });
 
-test("the compact band opens explicit activity at full width, never as a residual drawer", () => {
-  const { controller, collapses, dispose } = harness({ w: 40, h: 16 }, true);
-  expect(controller.layoutMode()).toBe("single");
-  expect(controller.compact()).toBe(true);
-  expect(controller.secondaryMode()).toBe("closed");
-  controller.openSecondary("explicit");
-  expect(controller.secondaryOpen()).toBe(true);
-  expect(controller.secondaryMode()).toBe("full");
-  expect(controller.sidebarVisible()).toBe(false);
-  expect(controller.contentInset()).toBe(0);
-  expect(collapses).toEqual([]);
-  controller.closeSecondary();
-  expect(controller.secondaryMode()).toBe("closed");
-  dispose();
+test("every width below the split presents the whole-region panel, never a residual drawer", () => {
+  for (const w of [24, 40, 71, 72, 84, 99]) {
+    const { controller, collapses, dispose } = harness({ w, h: 24 }, true);
+    controller.openSecondary("explicit");
+    expect([w, controller.secondaryMode()]).toEqual([w, "full"]);
+    expect([w, controller.sidebarVisible()]).toEqual([w, false]);
+    expect([w, controller.contentInset()]).toEqual([w, 0]);
+    expect([w, collapses]).toEqual([w, []]);
+    controller.closeSecondary();
+    expect([w, controller.secondaryMode()]).toEqual([w, "closed"]);
+    dispose();
+  }
 });
 
-test("an automatic intent never keeps a surface open in the compact band", () => {
-  const { controller, collapses, dispose } = harness({ w: 40, h: 16 }, true);
-  controller.openSecondary("automatic");
-  expect(controller.secondaryMode()).toBe("closed");
-  expect(controller.secondaryOpen()).toBe(false);
-  expect(controller.secondaryOrigin()).toBe(null);
-  expect(collapses.length).toBeGreaterThan(0);
-  dispose();
+test("an automatic intent never keeps a surface open below the split", () => {
+  for (const w of [40, 72, 84, 99]) {
+    const { controller, collapses, dispose } = harness({ w, h: 24 }, true);
+    controller.openSecondary("automatic");
+    expect([w, controller.secondaryMode()]).toEqual([w, "closed"]);
+    expect([w, controller.secondaryOpen()]).toEqual([w, false]);
+    expect([w, controller.secondaryOrigin()]).toEqual([w, null]);
+    expect([w, collapses.length > 0]).toEqual([w, true]);
+    dispose();
+  }
 });
 
-test("a width that shrinks into the compact band collapses an automatic surface once", () => {
-  const { controller, setDims, collapses, dispose } = harness({ w: 90, h: 30 }, true);
-  controller.openSecondary("automatic");
-  expect(controller.secondaryMode()).toBe("drawer");
-  setDims({ w: 71, h: 30 });
-  expect(controller.layoutMode()).toBe("single");
-  expect(controller.secondaryMode()).toBe("closed");
-  expect(controller.secondaryOpen()).toBe(false);
-  expect(collapses).toEqual([1]);
-  setDims({ w: 90, h: 30 });
-  expect(controller.secondaryMode()).toBe("closed");
-  expect(collapses).toEqual([1]);
-  dispose();
-});
-
-test("an explicit surface survives the compact shrink and adapts as the width returns", () => {
-  const { controller, setDims, collapses, dispose } = harness({ w: 90, h: 30 }, true);
-  controller.openSecondary("explicit");
-  expect(controller.secondaryMode()).toBe("drawer");
-  setDims({ w: 71, h: 30 });
-  expect(controller.secondaryMode()).toBe("full");
-  expect(controller.secondaryOrigin()).toBe("explicit");
-  setDims({ w: 90, h: 30 });
-  expect(controller.secondaryMode()).toBe("drawer");
-  setDims({ w: 120, h: 30 });
-  expect(controller.secondaryMode()).toBe("split");
-  expect(controller.secondaryOrigin()).toBe("explicit");
-  expect(collapses).toEqual([]);
-  dispose();
-});
-
-test("an automatic split collapses when the width crosses into the compact band", () => {
+test("a width that stops supporting the split collapses an automatic surface once", () => {
   const { controller, setDims, collapses, dispose } = harness({ w: 140, h: 40 }, true);
   controller.openSecondary("automatic");
   expect(controller.secondaryMode()).toBe("split");
   setDims({ w: 99, h: 40 });
-  expect(controller.secondaryMode()).toBe("drawer");
-  expect(collapses).toEqual([]);
-  setDims({ w: 60, h: 40 });
+  expect(controller.secondaryMode()).toBe("closed");
+  expect(controller.secondaryOpen()).toBe(false);
+  expect(collapses).toEqual([1]);
+  setDims({ w: 84, h: 40 });
+  expect(controller.secondaryMode()).toBe("closed");
+  setDims({ w: 140, h: 40 });
   expect(controller.secondaryMode()).toBe("closed");
   expect(collapses).toEqual([1]);
   dispose();
 });
 
-test("the compact summary presentation is reactive to the dims crossing the band", () => {
-  const { controller, setDims, dispose } = harness({ w: 71, h: 16 }, true);
-  expect(controller.compact()).toBe(true);
-  setDims({ w: 72, h: 16 });
-  expect(controller.compact()).toBe(false);
-  setDims({ w: 23, h: 16 });
-  expect(controller.layoutMode()).toBe("floor");
-  expect(controller.compact()).toBe(false);
+test("an explicit surface survives the shrink and adapts as the width returns", () => {
+  const { controller, setDims, collapses, dispose } = harness({ w: 140, h: 30 }, true);
+  controller.openSecondary("explicit");
+  expect(controller.secondaryMode()).toBe("split");
+  setDims({ w: 84, h: 30 });
+  expect(controller.secondaryMode()).toBe("full");
+  expect(controller.secondaryOrigin()).toBe("explicit");
+  setDims({ w: 72, h: 30 });
+  expect(controller.secondaryMode()).toBe("full");
+  setDims({ w: 140, h: 30 });
+  expect(controller.secondaryMode()).toBe("split");
+  expect(controller.secondaryOrigin()).toBe("explicit");
+  expect(collapses).toEqual([]);
   dispose();
 });
 

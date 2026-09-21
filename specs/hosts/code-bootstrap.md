@@ -264,7 +264,7 @@ member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard 
 | `packages/code/src/cli-mode.ts`                         | `resolveResumeMeta`                                                                                | `(store, owner, workspace, mode) => SessionMeta \| null`                                                                         |
 | `packages/code/src/cli-mode.ts`                         | `createPrintStream`                                                                                | `(write: (chunk: string) => void) => (event: RunEvent) => void`                                                                  |
 | `packages/code/src/cli-mode.ts`                         | `drainPrintEvents`                                                                                 | `(events, sink) => { transcriptDone: Promise<void>; drained: Promise<void> }`                                                    |
-| `packages/code/src/app/layout.ts`                       | `LayoutMode` / `SecondarySurfaceMode` / `SecondaryOrigin`                                         | `"wide"\|"narrow"\|"single"\|"floor"` / `"closed"\|"split"\|"drawer"\|"full"` / `"automatic"\|"explicit"`             |
+| `packages/code/src/app/layout.ts`                       | `LayoutMode` / `SecondarySurfaceMode` / `SecondaryOrigin`                                         | `"wide"\|"narrow"\|"single"\|"floor"` / `"closed"\|"split"\|"full"` / `"automatic"\|"explicit"`             |
 | `packages/code/src/app/layout.ts`                       | `INSPECTOR_MIN_WIDTH` / `INSPECTOR_MAX_WIDTH` / `INSPECTOR_SPLIT_MIN_WIDTH`                        | `32` / `56` / `100`                                                                                                              |
 | `packages/code/src/app/layout.ts`                       | `FLOOR_MIN_COLUMNS` / `FLOOR_MIN_ROWS`                                                             | `24` / `6`                                                                                                                       |
 | `packages/code/src/app/layout.ts`                       | `LayoutController` / `createLayoutController`                                                      | content- and viewport-driven reactive controller                                                                                 |
@@ -928,23 +928,24 @@ teardown.
 | otherwise           | `wide`       |
 
 These bands are presentation policy, not device detection: no device, browser or user agent is inspected.
-`"single"` is the **compact band**. There the conversation and the composer stay the default
-presentation, run activity is summarised in one strip below the transcript, and the complete activity
-surface opens only on request, across the whole content region. `"narrow"` keeps the drawer and
-`"wide"` keeps the split; the compact rule changes nothing outside `"single"`.
+`"single"` (24–71 columns) and `"narrow"` (72–99) share one activity policy: the conversation and
+the composer stay the default presentation, run activity is summarised in one strip below the
+transcript, and the complete activity surface opens only on request, across the whole content region.
+Only `"wide"` (100 and above) can seat the inspector beside a readable transcript, and there the
+first Plan, workflow leader or delegation still reveals it by itself.
 
 `secondaryMode` (`packages/code/src/app/layout.ts`, `createLayoutController`):
 
-| `secondaryOpen` | `w >= 100` | compact (`single`) | result   |
-| --------------- | ---------- | ------------------ | -------- |
-| false           | —          | —                  | `closed` |
-| true            | true       | no                 | `split`  |
-| true            | false      | yes                | `full`   |
-| true            | false      | no                 | `drawer` |
+| `secondaryOpen` | `w >= 100` | result   |
+| --------------- | ---------- | -------- |
+| false           | —          | `closed` |
+| true            | true       | `split`  |
+| true            | false      | `full`   |
 
 `sidebarVisible` is exactly `secondaryMode() === "split"`; `contentInset` is `sidebarWidth()`
 when visible, else `0`. A `"full"` panel therefore keeps `contentInset` at `0`: it takes the whole
-content region instead of sitting beside the transcript, and mounts no scrim. `sidebarWidth` is
+content region instead of sitting beside the transcript, and mounts no scrim, so no residual strip of
+conversation is painted next to it. `sidebarWidth` is
 `clamp(round(w * 0.32), 32, 56)` then clamped again
 to the viewport, so a 24-column terminal yields `24` — pinned at
 `packages/code/tests/unit/layout.test.ts`. In split mode, `TranscriptRegion.splitOpen()` also
@@ -956,11 +957,11 @@ pins content beyond the old 110-column cap and no transcript text past the sideb
 
 **The presentation records why it is open.** `createLayoutController.openSecondary(origin)`
 (`packages/code/src/app/layout.ts`) stores `"automatic"` or `"explicit"` and `secondaryOrigin()`
-reports it; `closeSecondary()` clears both. The compact band never keeps an automatically opened
-surface open: an automatic intent that arrives there belongs to the summary, and a width that
-shrinks into the band collapses the surface that intent had opened, so a later widening cannot
+reports it; `closeSecondary()` clears both. Nothing opens automatically below the split threshold:
+an automatic intent that arrives there belongs to the summary, and a width that stops supporting the
+split collapses the surface that intent had opened, so a later widening cannot
 surprise the reader with a panel they never asked for. An explicit intent survives the same shrink
-and is presented at `"full"`. `onCompactCollapse` reports that collapse, because the shell — not the
+and is presented at `"full"`. `onAutomaticCollapse` reports that collapse, because the shell — not the
 controller — owns which section the reader was looking at.
 
 There is no stored sidebar preference and no global toggle. `App` owns three independent automatic
@@ -969,31 +970,34 @@ and the first typed delegation reveals Agents once for that execution context. E
 the Lead transcript selection and never opens `ActivityDetail`. Escape or scrim close dismisses the
 intent that opened the surface, so later updates of that kind cannot reopen it; the first event for a
 different section may still reveal and orient the Sidebar. A new execution context resets the
-corresponding intent. In the compact band (`App.requestAutomaticSidebar`) the intent opens nothing:
+corresponding intent. Below the split threshold (`App.requestAutomaticSidebar`) the intent opens nothing:
 the strip states the fact, the intent is spent exactly once so widening cannot replay it, and the
 section stays recorded for the next explicit open (`App.openActivitySidebar`), which prefers it over
 the first available section. The controller presents an automatic or explicit intent as a split at 100
-columns or wider, as the whole-region panel in the compact band, and as a drawer between them. The
+columns or wider, and as the whole-region panel below it; there is no third, narrower presentation. The
 application footer contains only the canonical run strip; it does not repeat agent or workflow counts
 and is not a second Sidebar route.
 Production:
 `packages/code/src/app/layout.ts` (`createLayoutController`, `openSecondary`, `secondaryOrigin`,
-`full`) and
+`splitEligible`, `full`) and
 `packages/code/src/views/App.tsx` (`requestAutomaticSidebar`, `openActivitySidebar`,
 `visiblePlanContext`, `visibleSubagentContext`, `closeActivitySidebar`,
 `footerRunStrip`, `dismissTopOverlay`). Tests:
-`packages/code/tests/unit/layout.test.ts` (responsive intent mechanics, compact presentation and the
-resize transitions that consume an automatic origin) and
+`packages/code/tests/unit/layout.test.ts` (responsive intent mechanics, the whole-region presentation
+at every width below the split, and the resize transitions that consume an automatic origin) and
 `packages/code/tests/integration/app-shell-render.test.tsx` ("Plan, Parallel work, and Agents own
 independent once-per-run sidebar reveals", "the first workflow leader opens and reveals Parallel
-work", the narrow-drawer Escape case, isolated child selection, and the compact-band cases named in
+work", "Ctrl+X S toggles the whole-region panel below the split while Escape leaves it open", isolated
+child selection, and the summary cases named in
 section 4.10.1).
 
-### 4.10.1 The compact activity summary
+### 4.10.1 The activity summary below the split
 
-The compact band presents activity as one read-only strip between the transcript and the Lead
+At every width below the split threshold — `"single"` and `"narrow"` alike — activity is presented as
+one read-only strip between the transcript and the Lead
 activity line: `packages/code/src/views/ActivitySummaryStrip.tsx` (`ActivitySummaryStrip`, mounted by
-`TranscriptRegion` as `#activity-summary`). It is not a second Sidebar and holds no run state: every
+`TranscriptRegion` as `#activity-summary` whenever the secondary surface is closed there). It is not a
+second Sidebar and holds no run state: every
 fact comes from `activitySummaryFacts` (`packages/code/src/views/activity-summary.ts`), the same Goal,
 Plan, `WorkflowActivity` and `ActivityStore.subagents` projections the Sidebar reads, with no extra
 query and no parsing of formatted titles or lines.
@@ -1013,20 +1017,24 @@ query and no parsing of formatted titles or lines.
   `activity.toggle` binding is the last fact, so a one-row strip still carries both it and the most
   important fact (`Plan 1/2`) rather than either alone. The strip is also the pointer route to the
   panel.
-- **One owner.** While the panel (`#activity-panel`) or a full-region surface occupies the content,
+- **One owner.** While the panel (`#activity-panel`) occupies the content,
   the strip is not mounted and nothing is repeated. Overlays replace the whole region, so the strip
-  disappears under them exactly as the transcript does.
+  disappears under them exactly as the transcript does. At 100 columns or wider the split is the sole
+  owner instead: a closed split shows no strip, because that width can seat the inspector beside the
+  conversation whenever the reader asks for it.
 
 The panel reuses the combined `Sidebar` with no new component and no second section implementation: a
 fixed header states `Activity` and the effective `activity.toggle` binding for closing, the body keeps
 Goal, Plan, workflows and agents with their detail, and the Lead activity line, composer and footer stay
-below it. Its transcript column is not mounted at all, so no residual strip of conversation is painted
-beside it, and selection, reading anchor and composer draft are untouched by the transition. Opening or
+below it. It is the *only* presentation below the split: it takes the whole content region, mounts no
+scrim and no narrower sidebar column, so the conversation is either fully visible or fully replaced and
+never reduced to a residual strip. Selection, reading anchor and composer draft are untouched by the
+transition. Opening or
 closing it never starts, pauses or cancels a run, and an elicitation keeps the same precedence it has
-with a drawer.
+with the split.
 
-Production: `packages/code/src/views/app/TranscriptRegion.tsx` (`summaryVisible`, `activityPanel`,
-`splashInset`, `#activity-summary`, `#activity-panel`) and
+Production: `packages/code/src/views/app/TranscriptRegion.tsx` (`summaryVisible`, `splitEligible`,
+`activityPanel`, `splashInset`, `#activity-summary`, `#activity-panel`) and
 `packages/code/src/views/activity-summary.ts` (`activitySummaryFacts`, `activitySummaryRows`,
 `activitySummaryRowBudget`, `activitySummaryRoute`, `planDisplayLifecycle`). Tests:
 `packages/code/tests/unit/activity-summary.test.ts` and
@@ -1034,9 +1042,9 @@ Production: `packages/code/src/views/app/TranscriptRegion.tsx` (`summaryVisible`
 instead of covering the conversation", "Ctrl+X S opens the compact band's activity across the whole
 content region", "the compact summary keeps the section it accounted for while activity was
 automatic", and "a new event never reopens activity the reader closed in the compact band") plus
-`packages/code/tests/integration/transcript-region-render.test.tsx` ("the compact band presents
-explicitly opened activity across the whole content region", "single mode with activity closed
-summarises it instead of obstructing the transcript").
+`packages/code/tests/integration/transcript-region-render.test.tsx` ("the whole-region panel is the only
+presentation below the split", "activity closed below the split summarises it instead of obstructing the
+transcript").
 
 **The splash never paints under a visible surface.** `TranscriptRegion` derives the inset it hands
 `Splash` from its own presentation: `splashInset()` is the split column's width when this region
@@ -1477,10 +1485,11 @@ context: the first live Plan reveals Plan, the first workflow state/leader revea
 first visible sub-agent reveals Agents. Each preserves `Lead transcript` selection and leaves
 `ActivityDetail` closed. An explicit close is sticky for later updates of the intent that opened the
 surface; the first event for a different section may still reveal it, and a new execution context
-may reveal each section once again. Automatic and explicit `Ctrl+X S` intent both produce a split at
-≥100 columns and a drawer between 72 and 99 columns; while closed, and for every drawer or
-whole-region presentation, `contentInset` stays 0. There is no stored sidebar preference or global
-toggle command.
+may reveal each section once again. An explicit `Ctrl+X S` intent produces a split at
+≥100 columns and the whole-region panel below that; an automatic intent produces the split only,
+because below 100 columns it opens nothing at all and is stated by the summary instead. While closed,
+and for every whole-region presentation, `contentInset` stays 0. There is no stored sidebar preference
+or global toggle command.
 Production: `packages/code/src/app/layout.ts` (`createLayoutController`) and
 `packages/code/src/views/App.tsx` (`requestAutomaticSidebar`, `visiblePlanContext`,
 `visibleSubagentContext`, `closeActivitySidebar`,
@@ -1488,9 +1497,9 @@ Production: `packages/code/src/app/layout.ts` (`createLayoutController`) and
 `packages/code/tests/unit/layout.test.ts` (responsive intent mechanics) and
 `packages/code/tests/integration/app-shell-render.test.tsx` ("Plan, Parallel work, and Agents own
 independent once-per-run sidebar reveals", including new Plan and Workflow contexts; "the first
-visible sub-agent opens Agents once per run and an explicit close is sticky"; "clicking the drawer
-scrim keeps dismissal sticky for later sub-agents"; "Escape closes a narrow-layout inspector drawer
-without canceling the active run"; and the isolated child-selection cases).
+visible sub-agent opens Agents once per run and an explicit close is sticky"; "below the split a
+delegation never opens a surface and blocks nothing"; "Ctrl+X S toggles the whole-region panel below the
+split while Escape leaves it open"; and the isolated child-selection cases).
 
 **INV-CB-31.** `sidebarWidth` never exceeds the viewport, so the inspector's nominal 32-column minimum
 degrades rather than overflowing on a 24-column terminal.
@@ -1677,21 +1686,25 @@ before starting the TUI. Production: `packages/code/src/cli-args.ts`, `packages/
 `packages/code/tests/component/workspace-client-manager.test.ts`, and
 `packages/kernel/tests/integration/remote-ssh.test.ts`.
 
-**INV-CB-51.** In the compact band (`single`, 24–71 columns) the default presentation of run activity
-is a summary, not an opened surface. `secondaryMode` reports `full` only for an explicitly opened
-surface there, and no automatic intent keeps one open: an automatic intent that arrives in the band
+**INV-CB-51.** Below the split threshold (24–99 columns) the default presentation of run activity is a
+summary, not an opened surface, and no automatic intent keeps one open: an automatic intent that
+arrives there
 opens nothing, is spent exactly once so a later widening cannot replay it, and leaves its section
-recorded as the preference for the next explicit open. A width that shrinks into the band collapses a
-surface opened automatically — reporting it through `onCompactCollapse` — while a surface opened
-explicitly survives the shrink at `full` width and adapts back to drawer or split when the width
+recorded as the preference for the next explicit open. `secondaryMode` reports `full` for every
+explicitly opened surface below 100 columns, and `split` from 100 up. A width that stops supporting the
+split collapses a
+surface opened automatically — reporting it through `onAutomaticCollapse` — while a surface opened
+explicitly survives the shrink at `full` width and adapts back to the split when the width
 returns. A close by the reader is sticky for later events. `full` mounts no scrim, keeps
-`contentInset` at 0, and takes the whole content region.
-Production: `packages/code/src/app/layout.ts` (`createLayoutController.compact`, `openSecondary`,
-`secondaryOrigin`, `onCompactCollapse`) and `packages/code/src/views/App.tsx`
+`contentInset` at 0, and takes the whole content region, so no residual column of conversation is
+painted beside it.
+Production: `packages/code/src/app/layout.ts` (`createLayoutController.splitEligible`, `openSecondary`,
+`secondaryOrigin`, `onAutomaticCollapse`) and `packages/code/src/views/App.tsx`
 (`requestAutomaticSidebar`, `openActivitySidebar`, `toggleActivitySidebar`). Pinned:
-`packages/code/tests/unit/layout.test.ts` (compact presentation, automatic collapse and explicit
+`packages/code/tests/unit/layout.test.ts` (the whole-region presentation at every width below the split,
+automatic collapse and explicit
 survival across resize) and `packages/code/tests/integration/app-shell-render.test.tsx` ("a width that
-shrinks into the compact band collapses an automatic reveal into the summary", "an explicitly opened
+stops supporting the split collapses an automatic reveal into the summary", "an explicitly opened
 activity surface follows the width in and out of the compact band", "the compact summary keeps the
 section it accounted for while activity was automatic", "a new event never reopens activity the reader
 closed in the compact band").

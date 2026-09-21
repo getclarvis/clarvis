@@ -7,6 +7,15 @@ export const GOAL_ARCHIVE_MAX = 8;
 export const GOAL_RUNS_MAX = 256;
 export const GOAL_RECEIPTS_MAX = 64;
 
+/**
+ * Receipts one closed stage may record as its own contribution to the Goal's history.
+ *
+ * @remarks The history is the union of every stage's contribution, so the per-stage bound is
+ *   what keeps a long objective from growing the record without limit while still comparing
+ *   individual receipts rather than one digest of a set.
+ */
+export const GOAL_STAGE_ACTIVITY_MAX = 32;
+
 const id = z
   .string()
   .min(1)
@@ -43,7 +52,7 @@ export const goalLimitsSchema = z
       .positive()
       .max(Number.MAX_SAFE_INTEGER - 1),
     max_auto_continuations: counter.max(255).default(8),
-    max_no_progress_checkpoints: z.number().int().min(1).max(32).default(3),
+    max_no_progress_stages: z.number().int().min(1).max(32).default(3),
     deadline_at: counter.optional(),
   })
   .strict();
@@ -217,6 +226,48 @@ export const goalStewardChainSchema = z
   })
   .strict();
 
+/**
+ * What a closed stage leaves for the host's automatic path.
+ *
+ * @remarks A closed vocabulary, not a status: `complete` says the Goal concluded,
+ *   `continue` says another stage may take the work forward under the remaining
+ *   limits, `closed` says an operator control or a durable limit ended the
+ *   automatic path, and `attention` says the host could not class the ending as
+ *   recoverable at all. Only `continue` admits a successor, and the host re-reads
+ *   it from durable state rather than inferring it from a physical outcome.
+ */
+export const goalStageDecisionSchema = z.enum(["complete", "continue", "attention", "closed"]);
+
+/**
+ * Why a stage ended, in the host's closed vocabulary.
+ *
+ * @remarks The cause is what a successor stage is told and what the durable goal
+ *   state remembers, so it is enumerated rather than copied from a run message.
+ *   `checkpoint` and `local_limit` are ordinary endings; `stagnation`,
+ *   `empty_response`, `impediment`, `transient`, `steward_interrupted` and a
+ *   progressing `context_overflow` may be re-evaluated by a successor under the
+ *   stage allowance; `declined`, `cancelled`, `provider_refused`,
+ *   `tools_unavailable`, `control_failure` and `unclassified` are not presumed
+ *   recoverable.
+ */
+export const goalRunCauseSchema = z.enum([
+  "checkpoint",
+  "local_limit",
+  "declined",
+  "cancelled",
+  "stagnation",
+  "empty_response",
+  "impediment",
+  "transient",
+  "steward_interrupted",
+  "usage_unknown",
+  "context_overflow",
+  "provider_refused",
+  "tools_unavailable",
+  "control_failure",
+  "unclassified",
+]);
+
 export const goalRunSchema = z
   .object({
     execution_id: id,
@@ -229,6 +280,20 @@ export const goalRunSchema = z
     ended_at: counter.optional(),
     disposition: z.enum(["final", "checkpoint"]).optional(),
     outcome: z.enum(["completed", "failed", "cancelled"]).optional(),
+    decision: goalStageDecisionSchema.optional(),
+    cause: goalRunCauseSchema.optional(),
+    progress_observed: z.boolean().optional(),
+    /**
+     * The receipts this stage contributed that the Goal had not already recorded.
+     *
+     * @remarks Individual receipts, not a digest of the stage's whole activity set: a later
+     *   stage that recombines receipts an earlier stage already presented contributes nothing,
+     *   however different the combined set looks. The Goal's history is the union of these
+     *   lists across its runs.
+     */
+    activity: z.array(digest).max(GOAL_STAGE_ACTIVITY_MAX).optional(),
+    not_before: counter.optional(),
+    impediment: z.object({ reason: text, declared_at: counter }).strict().optional(),
     usage: goalUsageSchema.optional(),
     usage_estimate: z.object({ sequence: counter, usage: goalUsageSchema }).strict().optional(),
     checkpoint: goalCheckpointSchema.optional(),
@@ -278,7 +343,7 @@ export const goalRecordSchema = z
       })
       .strict(),
     auto_continuations: counter,
-    no_progress_checkpoints: counter,
+    no_progress_stages: counter,
     runs: z.array(goalRunSchema).max(GOAL_RUNS_MAX),
     candidate: goalCandidateSchema.optional(),
     human_acceptances: z
@@ -388,6 +453,8 @@ export type GoalCheckpoint = z.infer<typeof goalCheckpointSchema>;
 export type GoalProgress = z.infer<typeof goalProgressSchema>;
 export type GoalUsage = z.infer<typeof goalUsageSchema>;
 export type GoalRun = z.infer<typeof goalRunSchema>;
+export type GoalRunCause = z.infer<typeof goalRunCauseSchema>;
+export type GoalStageDecision = z.infer<typeof goalStageDecisionSchema>;
 export type GoalRecord = z.infer<typeof goalRecordSchema>;
 export type GoalReceipt = z.infer<typeof goalReceiptSchema>;
 export type GoalCreationIntent = z.infer<typeof goalCreationIntentSchema>;

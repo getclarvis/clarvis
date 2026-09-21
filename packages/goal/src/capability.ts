@@ -179,25 +179,42 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                           };
                         const action = goalModelToolInputSchema.parse(call.arguments).update;
                         switch (action.action) {
-                          case "progress":
-                            await port.progress({
+                          case "progress": {
+                            const outcome = await port.progress({
                               summary: action.summary,
                               evidence_ids: action.evidence_ids,
                             });
+                            /**
+                             * A refused evidence set is a corrigible argument mistake, not
+                             * unavailable control: the model reads the catalog again and
+                             * re-sends, and nothing was written in the meantime.
+                             */
+                            if (outcome.kind === "invalid")
+                              return {
+                                kind: "result",
+                                text: envelope.fail(outcome.reason),
+                                progress: false,
+                              };
                             await refresh();
                             return {
                               kind: "result",
                               text: envelope.ok("Progress recorded; stage remains open"),
                               progress: false,
                             };
+                          }
                           case "checkpoint": {
-                            const recorded = goalCheckpointSchema.parse(
-                              await port.checkpoint({
-                                summary: action.summary,
-                                next_step: action.next_step,
-                                evidence_ids: action.evidence_ids,
-                              }),
-                            );
+                            const outcome = await port.checkpoint({
+                              summary: action.summary,
+                              next_step: action.next_step,
+                              evidence_ids: action.evidence_ids,
+                            });
+                            if (outcome.kind === "invalid")
+                              return {
+                                kind: "result",
+                                text: envelope.fail(outcome.reason),
+                                progress: false,
+                              };
+                            const recorded = goalCheckpointSchema.parse(outcome.value);
                             await refresh();
                             checkpoint = {
                               summary: recorded.summary,
@@ -217,21 +234,27 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                             };
                           }
                           case "candidate": {
-                            const validation = await port.candidate({
+                            const outcome = await port.candidate({
                               summary: action.summary,
                               assessments: action.assessments,
                             });
+                            if (outcome.kind === "invalid")
+                              return {
+                                kind: "result",
+                                text: envelope.fail(outcome.reason),
+                                progress: false,
+                              };
                             await refresh();
                             return {
                               kind: "result",
-                              text: envelope.ok(JSON.stringify(validation)),
+                              text: envelope.ok(JSON.stringify(outcome.value)),
                               progress: false,
                             };
                           }
                           case "blocked": {
                             const result = await block(action.reason);
                             envelope.ok(
-                              "Goal blocked; user intervention and explicit resume are required",
+                              "Impediment recorded; this stage ends and the host re-evaluates it under the goal's remaining limits",
                             );
                             return { kind: "terminal", result };
                           }

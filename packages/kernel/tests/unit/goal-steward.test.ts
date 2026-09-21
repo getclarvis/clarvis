@@ -62,12 +62,15 @@ function fixture(options: { usage?: GoalUsage; honorAbort?: boolean; maxReviews?
   const port: GoalRuntimePort = {
     binding,
     read: async () => ({ goal: structuredClone(state.current!), evidence: [] }),
-    progress: async () => {},
+    progress: async () => ({ kind: "ok", value: undefined }),
     candidate: async () => ({
-      valid: true,
-      reasons: [],
-      qualitative_criteria: [],
-      revision: state.revision,
+      kind: "ok",
+      value: {
+        valid: true,
+        reasons: [],
+        qualitative_criteria: [],
+        revision: state.revision,
+      },
     }),
     checkpoint: async () => {
       throw new Error("unused");
@@ -79,8 +82,7 @@ function fixture(options: { usage?: GoalUsage; honorAbort?: boolean; maxReviews?
       revision: state.revision,
     }),
     blocked: async (reason) => {
-      state.current!.status = "blocked";
-      state.current!.reason = reason;
+      state.current!.runs.at(-1)!.impediment = { reason, declared_at: 10 };
     },
   };
   const calls: GoalStewardRunInput[] = [];

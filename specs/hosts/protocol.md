@@ -707,7 +707,7 @@ on the same part rather than separate variants.
 | `AgentRole` | `"lead" \| "subagent"` | `packages/protocol/src/runs.ts` |
 | `PerAgentUsage` | `{ role: AgentRole \| "vision"; model; input_tokens; output_tokens; cached_tokens; cache_write_tokens; iterations? }` | `packages/protocol/src/runs.ts` |
 | `RunUsage` | `{ iterations; elapsed_ms; input_tokens?; output_tokens?; cached_tokens?; by_agent?: PerAgentUsage[]; warnings? }` | `packages/protocol/src/runs.ts` |
-| `RunResult` | `{ execution_id; status: RunStatus; result?; ended_reason?; usage?: RunUsage; error?: { code; message } }` plus final disposition or `disposition: "checkpoint"` with separate `checkpoint: { summary, next_step }` | `packages/protocol/src/runs.ts` |
+| `RunResult` | `{ execution_id; status: RunStatus; result?; ended_reason?; usage?: RunUsage; error?: { code; message; kind?; retry_after_ms? } }` plus final disposition or `disposition: "checkpoint"` with separate `checkpoint: { summary, next_step }` | `packages/protocol/src/runs.ts` |
 | `RunSummary` | `{ execution_id; owner?; status; created_at; ended_at? }` | `packages/protocol/src/runs.ts` |
 | `RunDetail` (extends `RunSummary`) | `+ messages: Message[]; events: RunEvent[]; result?: RunResult; continue_from?; plan_ref?: PlanRef; active_task?: ActiveTaskBindingDto; extension_profile?: ExtensionProfileRunRef; recovery?: RunRecovery` | `packages/protocol/src/runs.ts` |
 
@@ -1069,7 +1069,7 @@ errors in, and documents on individual methods where a specific code applies:
 | A settings write raced a concurrent edit | `conflict` | `packages/protocol/src/config.ts` (`updateSettings`) (`repairSettings`) |
 | Memory not configured on this kernel | `capability_disabled` (implied by `KernelErrorCode`, applied per `packages/protocol/src/memory.ts`'s doc comment "the methods reject with a `capability_disabled` / memory-disabled `KernelError`") | `packages/protocol/src/memory.ts` |
 | Deleting a plan that is still `active`/`awaiting_approval` | throws (unspecified which `KernelErrorCode`, but the method's own doc says "throws when the plan is still live") | `packages/protocol/src/plans.ts` |
-| A run ended on a failure | `RunResult.error?: { code: string; message: string }`, "present only on a `failed` run" | `packages/protocol/src/runs.ts` |
+| A run ended on a failure | `RunResult.error?: { code: string; message: string; kind?: ProviderFailureKind; retry_after_ms?: number }`, "present only on a `failed` run" | `packages/protocol/src/runs.ts` |
 | A workflow leader failed | `workflow_run_failed`'s `error?: { code; message }` | `RunEvent` in `packages/protocol/src/runs.ts` |
 | A run was rebuilt from a damaged crash journal | `RunDetail.recovery?: RunRecovery` — `skipped_lines` and `synthesized_tool_calls` counts, "present ... only when something was actually lost or synthesized, so its absence means the record is intact" | `packages/protocol/src/runs.ts` |
 | A settings scope file exists but fails to parse/validate | `SettingsSource.error?: string` — "the UI shows this instead of silently treating the scope as empty" | `packages/protocol/src/config.ts` |

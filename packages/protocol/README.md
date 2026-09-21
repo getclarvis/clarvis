@@ -30,6 +30,13 @@ The successful `run_ended` event also carries optional `disposition: "final" | "
 Clients use it to distinguish stage closure from final completion in live and restored transcripts;
 its absence means ordinary final completion. Failure and cancellation remain separate statuses.
 
+A failed run's `error` carries the stable `code` and a sanitized `message`, plus the provider's own
+classification (`kind`) and requested backoff (`retry_after_ms`) when the failure came from a
+provider. `provider_error` is what every provider kind reports unless it earns its own code, so those
+two bounded fields are the only way a consumer can tell a retryable fault from a credential, request,
+quota or content-policy refusal without parsing prose. Nothing else from the engine's error details
+crosses.
+
 A UI programs against one `KernelClient`, obtained from a concrete client implementation.
 
 ```ts

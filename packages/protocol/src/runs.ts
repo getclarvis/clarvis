@@ -217,8 +217,34 @@ export type RunResult = RunFinalization & {
   ended_reason?: string;
   usage?: RunUsage;
   /** Present only on a `failed` run: a stable code plus a message. */
-  error?: { code: string; message: string };
+  error?: {
+    code: string;
+    message: string;
+    /**
+     * The provider's own classification of the failed call, when the failure came from one.
+     *
+     * @remarks `provider_error` is the code for every provider kind that does not
+     *   deserve its own, so `auth`, `client` and `transient` are indistinguishable from
+     *   the code alone — and a consumer that must decide whether a retryable fault may
+     *   be attempted again cannot guess it from prose. The engine's own error payload
+     *   carries this; the projection keeps the bounded value and drops the rest.
+     */
+    kind?: ProviderFailureKind;
+    /** Provider-requested backoff in milliseconds; the retry logic already honors it. */
+    retry_after_ms?: number;
+  };
 };
+
+/**
+ * How a provider classified a failure, mirrored from the engine's failure vocabulary.
+ *
+ * @remarks `transient` is retryable, `auth` is a credential or permission failure,
+ *   `quota` an exhausted allowance, `content_policy` a refusal on content grounds,
+ *   `context_overflow` a payload that did not fit and `client` a non-retryable request
+ *   fault.
+ */
+export type ProviderFailureKind =
+  "transient" | "context_overflow" | "client" | "auth" | "quota" | "content_policy";
 
 /** Result of requesting compaction through the runs service. */
 export type RunCompactionResult =

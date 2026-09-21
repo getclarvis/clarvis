@@ -24,9 +24,7 @@ const criteria = z.array(goalCriterionSchema).max(32);
 const semanticItems = z.array(z.string().trim().min(1).max(4096)).max(16);
 const limitOverrides = goalLimitsSchema.partial().extend({
   max_auto_continuations: goalLimitsSchema.shape.max_auto_continuations.removeDefault().optional(),
-  max_no_progress_checkpoints: goalLimitsSchema.shape.max_no_progress_checkpoints
-    .removeDefault()
-    .optional(),
+  max_no_progress_stages: goalLimitsSchema.shape.max_no_progress_stages.removeDefault().optional(),
 });
 const id = z
   .string()
@@ -262,7 +260,7 @@ export function applyGoalControl(
         overrun_tokens: 0,
       },
       auto_continuations: 0,
-      no_progress_checkpoints: 0,
+      no_progress_stages: 0,
       runs: [],
       human_acceptances: [],
     });
@@ -325,7 +323,7 @@ export function applyGoalControl(
         cancel_execution_id = goal.runs.find((run) => run.phase !== "closed")?.execution_id;
     } else if (action.kind === "resume") {
       requireInactive(goal, context);
-      const candidate = { ...goal, status: "active" as const, no_progress_checkpoints: 0 };
+      const candidate = { ...goal, status: "active" as const, no_progress_stages: 0 };
       const decision = goalAdmission(candidate, context.now, true);
       if (!decision.allowed)
         throw new GoalError(
@@ -333,7 +331,7 @@ export function applyGoalControl(
           decision.reason,
         );
       goal.status = "active";
-      goal.no_progress_checkpoints = 0;
+      goal.no_progress_stages = 0;
       delete goal.reason;
       start = true;
     } else {

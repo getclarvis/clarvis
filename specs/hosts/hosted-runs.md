@@ -356,11 +356,21 @@ commit, host index persistence and supervision. They create neither a public pee
 The internal preparation context records the predecessor; public start arguments cannot assert that
 an admission is automatic.
 
-Only a successful checkpoint with physical closure, event drainage, canonical reconciliation,
-terminal index commit and admission release reaches continuation preparation. A pending or failed
-barrier prevents it. Read-only continuation preparation and its stop notification each have a
-five-second default deadline. Late results cannot start work after timeout or revocation. The
-host policy must still revalidate its durable revisions during ordinary intent commit and start.
+Only after physical closure, event drainage, canonical reconciliation, terminal index commit and
+admission release does the registry ask that policy whether this execution has a successor. A pending
+or failed barrier prevents the question entirely. The policy rules from durable state — its own
+revisions, the Goal's admission and the decision its settlement recorded — so the registry no longer
+tests the predecessor's physical shape and a stage that ended with a recoverable failure continues
+exactly as one that handed off a checkpoint. A run whose preparation provided no policy is inert.
+Read-only continuation preparation and its stop notification each have a five-second default deadline.
+Late results cannot start work after timeout or revocation. The host policy must still revalidate its
+durable revisions during ordinary intent commit and start.
+
+A proposal may carry `not_before`: the earliest instant a successor may start, which is how a
+provider-requested backoff is honored. The wait happens outside the short preparation deadline, with
+one abortable timer bounded by the platform's timer ceiling, and the policy is asked again afterwards
+so only a fresh proposal starts. Losing the authority during the wait abandons the instant and starts
+nothing; the instant is durable on the closed stage, so a host restart cannot extend it.
 
 Disconnect, conversation close, takeover and background handoff revoke future control without
 granting physical release. Revocation notifies the host policy immediately, even while the current
@@ -376,8 +386,9 @@ Production: `captureContinuation`, `reserveContinuation` and `retireContinuation
 Test: [hosted-admission.test.ts](../../packages/kernel/tests/unit/hosted-admission.test.ts) checks
 identity forgery, single-use reservation, controller retirement and independent conversations;
 [hosted-continuation.test.ts](../../packages/kernel/tests/component/hosted-continuation.test.ts)
-holds physical closure and durable barriers separately and covers two automatic successors,
-human/disconnect/takeover races, foreign proposals and bounded late preparation.
+holds physical closure, the terminal index commit and durable barriers separately and covers two
+automatic successors, human/disconnect/takeover races, foreign proposals, the typed minimum instant
+with its re-ask, the abandonment of a pending instant and bounded late preparation.
 
 ### Physical execution and observation
 
@@ -400,13 +411,19 @@ Test: `fences tool interrupts by observation, connection, run and control epoch`
 loopback and local IPC.
 The proof crosses preparation only through the private host context. Process-owned start admission
 also applies to automatic starts, and pending continuations/goal controls prevent maintenance.
+A guided Goal creation turn claims the conversation control for the operator connection that starts
+it, because every Goal stage requires a live conversation controller and the first stage must be able
+to start its own successor; a peer that already holds the conversation is still refused by the
+ordinary claim, so a takeover stays explicit.
 Production: `claimConversation`, `assertConversation` and `releaseConversation` in
-[admission.ts](../../packages/kernel/src/hosting/admission.ts), and the controlled start methods in
-[registry.ts](../../packages/kernel/src/hosting/registry.ts).
+[admission.ts](../../packages/kernel/src/hosting/admission.ts), and the controlled start methods and
+the guided Goal claim in `startEntry` in [registry.ts](../../packages/kernel/src/hosting/registry.ts).
 Test: `keeps conversation control between stages and requires explicit takeover` and
 `physical takeover retires old goal control without releasing occupancy` in
-[hosted-admission.test.ts](../../packages/kernel/tests/unit/hosted-admission.test.ts), and
-[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+[hosted-admission.test.ts](../../packages/kernel/tests/unit/hosted-admission.test.ts),
+[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts), and
+`starts a successor when the guided creation stage itself checkpointed` in
+[goal-file-host.test.ts](../../packages/kernel/tests/integration/goal-file-host.test.ts).
 
 `createHostedExecution` immediately consumes one managed `RunHandle`. That source consumer survives
 zero subscribers, an abandoned iterator and a saturated observer. Each observer defaults to 1,024

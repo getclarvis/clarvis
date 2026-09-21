@@ -223,6 +223,19 @@ inconclusive review assessments; raw execution IDs, full digests, detailed accou
 candidate prose and satisfied review narration stay out of the primary presentation. A semantic edit
 announces that it converts the whole definition to literal and clears source bindings; limit-only
 edits preserve them. A paused goal may still have a running physical stage.
+
+A recovering Goal is visible as recovering. The settlement leaves the goal active with a reason that
+names the closing stage's ending, and the full view renders that reason for every non-complete goal,
+so the operator sees why the stage stopped while the Kernel continues it. The successor's transcript
+turn carries a host-authored preview naming the same ending, while the original run's outcome and
+cause stay consultable in its history. Nothing paints the continuation as a completion, and no
+recovery text is presented as an operator decision.
+Production: `GoalView` in [view.tsx](../../packages/code/src/features/goal/view.tsx) and the
+continuation preview in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts).
+Test: `goal view shows a recovered stage and a resuming goal without claiming completion` in
+[goal-commands.test.tsx](../../packages/code/tests/integration/goal-commands.test.tsx) and
+`starts a successor when the guided creation stage itself checkpointed` in
+[goal-file-host.test.ts](../../packages/kernel/tests/integration/goal-file-host.test.ts).
 Human criteria display pending or accepted status from the host's persisted acceptance for the
 same criterion and objective revision. The acceptance picker excludes criteria already accepted
 for that revision; missing, foreign-criterion or older-revision approvals remain pending.
@@ -466,6 +479,23 @@ and completion-attempt defaults are eight and one; their setting maxima are 32 a
 usage never enters Goal work consumption. The TUI presents `needs_evidence` as a Steward
 clarification that the main agent is answering, not as an operator action.
 
+A technical interruption ends the stage, and what follows depends on whether the host can charge the
+review. A review that timed out, failed in transit or returned unusable output was measured: the
+Closed stage records `steward_interrupted`, and one bounded successor stage may re-establish the
+result and be reviewed again, so a failed evaluation does not by itself make the Goal the operator's
+responsibility. A review whose consumption could not be determined is the opposite case — the
+evaluation answered, possibly with a valid `achieved`, but the Goal cannot continue on a review the
+host cannot account for, so the stage records `usage_unknown` and never admits a successor. Both
+outcomes keep the Goal distinct from a completion: the interrupted review is persisted with its typed
+cause, and no recovery dispenses with the validation and evaluation the contract requires.
+Production: `stewardInterruptionOutcome` in [steward-types.ts](../../packages/goal/src/agent/steward-types.ts)
+and the `unaccountable` override in [execution.ts](../../packages/goal/src/execution.ts).
+Test: `fails closed on unknown auxiliary usage and retains it outside the work allowance` in
+[goal-steward.test.ts](../../packages/kernel/tests/unit/goal-steward.test.ts), and
+`blocks completion when the provider never reports the review's consumption` with
+`gives the review exactly one correction before the Goal is left unresolved` in
+[goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
+
 Production: `createGoalStewardCoordinator` in
 [steward-coordinator.ts](../../packages/kernel/src/goals/steward-coordinator.ts),
 `createStewardResultGate` in [steward-result-gate.ts](../../packages/kernel/src/goals/steward-result-gate.ts),
@@ -542,11 +572,18 @@ Production: `recordGoalProgress`, `recordGoalCheckpoint` and `recordGoalCandidat
 Test: `retains progress and candidates from a running stage after future-only pause without resuming
 or completing` in [domain.test.ts](../../packages/goal/tests/unit/domain.test.ts).
 
-`blockGoalRun` records a running stage's blocker and advances the control fence without changing
-its physical phase, usage or continuation count. Repeated blockers are idempotent. A newer pause,
-cancel or terminal state remains unchanged; a foreign binding or obsolete objective still fails.
-Production: `blockGoalRun` in [execution.ts](../../packages/goal/src/execution.ts).
-Test: `records blocking without claiming physical closure and preserves later user controls` in
+`declareGoalImpediment` records a running stage's declared blocker without revoking the Goal's own
+authority: the status, the control revision and the stage's physical phase are unchanged, the
+declaration is durable on the stage, and a repeated declaration is idempotent. The settlement then
+blocks the Goal with the declared reason, so the operator still acts on the impediment the model
+reported — but with the same limits, approvals, spend and continuation allowance a resume would have
+had. The host never admits an automatic successor for a declaration it cannot separate from a refusal
+the operator just made: a refused plan review reaches settlement through the model's own blocker, and
+continuing it automatically would retry work an authenticated decision had refused. A newer pause,
+cancel or terminal state keeps precedence; a foreign binding or obsolete objective still fails.
+Production: `declareGoalImpediment` in [execution.ts](../../packages/goal/src/execution.ts).
+Test: `records a declared impediment without revoking the Goal's own authority` and `blocks on a
+declared impediment once without spending the Goal's own authority` in
 [domain.test.ts](../../packages/goal/tests/unit/domain.test.ts).
 
 Admission records one execution/admission identity and the current objective/control revisions.
@@ -561,11 +598,25 @@ Duplicate settlement has no effect. Completion also requires validated current c
 gates, successful run outcome and unchanged control/objective revision. A candidate is inspectable
 data until this durable commit. A checkpoint never converts failure or cancellation into success.
 
-Production: admission, phase, candidate, checkpoint, policy-pause and settlement functions in
-[execution.ts](../../packages/goal/src/execution.ts).
-Test: `goal physical settlement, usage and continuation` in
-[domain.test.ts](../../packages/goal/tests/unit/domain.test.ts), including late cancelled/archived
-usage, pending-admission pause and unknown physical outcomes.
+The closed stage records one decision from a closed vocabulary — `complete`, `continue`, `attention`
+or `closed` — beside the cause the host classified and whether the stage advanced the work. `continue`
+is what lets the Kernel keep responsibility for a pending Goal without a model-generated checkpoint:
+the host admits the successor from that durable record rather than from the run's physical shape. A
+recoverable ending keeps the Goal `active` and spends one stage of the progress allowance when the
+stage did not advance the work; the ordinary admission path then blocks the Goal when that allowance
+is exhausted, instead of the stage looping or the Goal becoming the operator's responsibility for a
+single failure. `closed` covers a control or a durable limit that ended the automatic path, and
+`attention` covers an ending the host could not class as recoverable at all.
+
+Production: settlement, phase, candidate, checkpoint, policy-pause and settlement functions in
+[execution.ts](../../packages/goal/src/execution.ts), and `goalStageOutcome` in
+[settlement.ts](../../packages/kernel/src/goals/settlement.ts).
+Test: `goal physical settlement, usage and continuation` and `keeps the Goal active and continues
+after a recoverable ending` in [domain.test.ts](../../packages/goal/tests/unit/domain.test.ts), the
+classification table in
+[goal-settlement.test.ts](../../packages/kernel/tests/unit/goal-settlement.test.ts), and
+`continues a stalled stage in a successor and stops at the stage progress limit` in
+[goal-file-host.test.ts](../../packages/kernel/tests/integration/goal-file-host.test.ts).
 
 ## Limits and progress
 
@@ -582,10 +633,28 @@ or override these host values.
 Creation and replacement resolve limits in this order: explicit user control, effective `goals`
 configuration, then domain defaults. An omitted `max_net_tokens` inherits the finite entry run
 budget once; it is never multiplied by a continuation count. `max_auto_continuations` defaults to
-8 (range 0–255), `max_no_progress_checkpoints` to 3 (range 1–32). The token cap is a positive safe
+8 (range 0–255), `max_no_progress_stages` to 3 (range 1–32). The token cap is a positive safe
 integer below `Number.MAX_SAFE_INTEGER`. Optional `deadline_at` is an absolute Unix timestamp in
 milliseconds within that safe counter range; it is independent of run idle timeout. These defaults
 are policy values, not measured reliability claims.
+
+The stage allowance counts closed stages that advanced nothing: an accepted checkpoint whose
+activity was not new, and every recoverable ending a successor re-evaluates. A stage that advanced
+the work clears the sequence, and the allowance is compared with the goal's whole recorded history
+rather than the previous stage, so repeating an earlier stage's checks — in another order or with
+different wording — cannot reset it. `max_auto_continuations` remains an independent global ceiling
+on automatic stages.
+
+The settings field was renamed from `max_no_progress_checkpoints` when the counter became stage rather
+than checkpoint based. A document that still carries the old spelling is admitted by the settings
+schema and normalized in memory by `resolveGoalsSettings`, so the nearest scope is never discarded
+whole over the rename and the operator's value is honored; nothing is rewritten on a read.
+Production: `goalLimitsSchema` in [schemas.ts](../../packages/goal/src/schemas.ts) and
+`resolveGoalsSettings` in [settings.ts](../../packages/goal/src/settings.ts).
+Test: `accepts the renamed stage limit and normalizes it in memory` in
+[settings.test.ts](../../packages/goal/tests/unit/settings.test.ts) and
+`admits bounded goal defaults only through the kernel settings registry` in
+[capability-settings-schema.test.ts](../../packages/kernel/tests/integration/capability-settings-schema.test.ts).
 
 The host reads defaults only after receipt lookup and only for creation/replacement. Persisted
 limits, consumption and counts survive settings changes and resume. An exhausted continuation
@@ -619,30 +688,42 @@ Test: failed/cancelled settlement and newer-control cases in
 the real loop stops with exhausted measured usage` in
 [goal-file-host.test.ts](../../packages/kernel/tests/integration/goal-file-host.test.ts).
 
-An unsuccessful stage also carries the host's typed failure cause: execution stagnation and an
-unreadable bound control are named as themselves instead of the generic failed-stage wording, so a
-blocked goal's reason tells the operator which action it needs. `stagnation` is the whole family the
-engine reports for a stage that kept going without advancing — the loop's unproductive-attempt
-streak, the doom-loop guard on a repeatedly failing call and the convergence guard on identical
-repeated results — because naming only one member would leave the others reporting a generic
-failure for the condition the operator has to act on. A structural failure such as an empty
-completion, and a run whose tools all disappeared, are not repetition and keep the generic wording.
-Cancellation, a model-declared blocker, an exhausted budget, an expired deadline and unknown usage
-all keep their existing precedence, and the cause is a closed host vocabulary rather than the failed
-run's own message.
-Production: `GoalRunFailureCause` and `settleGoalRun` in [execution.ts](../../packages/goal/src/execution.ts),
-and `goalFailureCause` with its `STAGNATION_CODES` set in
+An unsuccessful stage also carries the host's typed failure cause, from a closed vocabulary the
+domain owns, so a blocked goal's reason tells the operator which action it needs instead of repeating
+a generic failed-stage sentence. `stagnation` is the whole family the engine reports for a stage that
+kept going without advancing — the loop's unproductive-attempt streak, the doom-loop guard on a
+repeatedly failing call and the convergence guard on identical repeated results — because naming only
+one member would leave the others reporting a generic failure for the condition the operator has to
+act on. `local_limit`, `empty_response`, `transient`, `steward_interrupted` and a progressing
+`context_overflow` are the endings one bounded successor may re-evaluate; `declined`, `cancelled`,
+`provider_refused`, `tools_unavailable`, `control_failure`, `impediment`, `usage_unknown` and
+`unclassified` are never presumed recoverable. A structural failure such as an empty completion, and
+a run whose tools all disappeared, keep the generic wording where no cause applies. The vocabulary is
+host-owned: the failed run's own message never becomes the reason, and the host preserves only the
+provider's own classification and requested backoff from the engine's error payload — `provider_error`
+alone cannot tell a retryable fault from a credential, quota or content refusal. A call that failed
+reports no usage, so a stage that ended on a provider fault usually leaves the Goal's consumption
+unknown: unmeasured consumption blocks the Goal before any recovery rule is asked, and the recorded
+backoff is what the operator's later resume honours.
+Production: `GoalRunCause`, `GoalStageDecision` and `settleGoalRun` in [execution.ts](../../packages/goal/src/execution.ts),
+and `goalStageOutcome` with its `STAGNATION_CODES` and `REFUSAL_CODES` sets in
 [settlement.ts](../../packages/kernel/src/goals/settlement.ts).
-Test: `names the host's typed failure cause instead of a generic stage failure` in
-[domain.test.ts](../../packages/goal/tests/unit/domain.test.ts) and
-[goal-settlement.test.ts](../../packages/kernel/tests/unit/goal-settlement.test.ts).
+Test: `names the host's typed failure cause instead of a generic stage failure`,
+`never presumes an unclassified or refused ending recoverable` and `closes the automatic path on an
+operator refusal or a durable control` in [domain.test.ts](../../packages/goal/tests/unit/domain.test.ts),
+the classification table in [goal-settlement.test.ts](../../packages/kernel/tests/unit/goal-settlement.test.ts),
+and `never repeats a credential, quota or content refusal on its own` with `resumes a transient
+provider fault once its backoff has been recorded` there.
 
 Admission requires remaining tokens, deadline and continuation allowance, physical closure and known
 usage. Resume preserves spend and used continuations; it cannot grant budget or bypass expired
 limits. User intervention may restart a recorded stagnation evaluation. Repeated host activity
-fingerprints cannot reset stagnation even if checkpoint wording changes. The host decides relevance
-from observed activity; fresh activity alone does not prove useful semantic progress. The independent
-run bound remains in force. An invalid final or missing checkpoint blocks immediately.
+fingerprints cannot reset stagnation even if checkpoint wording changes: settlement compares the
+stage's own observed activity digest with the Goal's whole recorded history, and a stage whose set was
+already seen does not count as progress however its summary reads. The host decides relevance from
+observed activity and never requires the model to cite an identifier for it; fresh activity alone
+still does not prove useful semantic progress. The independent run bound remains in force. An invalid
+final or missing checkpoint blocks immediately.
 
 The host reuses the admission deadline decision before each physical model call in the active
 stage. A call already in flight may finish and remains chargeable, but the stage cannot issue a
@@ -663,7 +744,8 @@ flat measure. It never adds both forms, cache writes or independent memory jobs.
 output, empty agent detail and invalid/overflowing counters produce unknown usage. Missing cache
 is retained as absence and charged conservatively. `settleGoalSession` combines the domain result
 and confirmed session accounting under `HostedSessionOptions.settleSession`, in the same durable
-write as the terminal turn. A repeated callback does not charge again. Late measured usage can
+write as the terminal turn, and stamps the stage's closed decision in that same transaction. A
+repeated callback does not charge again. Late measured usage can
 resolve a closed unknown binding even after the goal was archived. Unknown usage remains explicit
 in goal state; session totals include only the confirmed subset until reconciliation.
 Production: [usage.ts](../../packages/kernel/src/goals/usage.ts),
@@ -708,10 +790,18 @@ delivery to 64 references and 160 KiB of reference/detail material. `evidence_ma
 marks delivered, frame-budget and unavailable references. Details are projected only for delivered
 IDs, never copied into Goal evidence references or protocol catalog fields. Each option has an opaque ID, stamped
 scope, digest and short host-authored description; the description is omitted from persisted evidence.
+That description names the operation rather than the call: the command a shell ran, the path a read or
+write touched, the pattern a search used — sanitized, single-line and bounded — because the previous
+`<tool>; call <call id>` form told the model nothing it could act on and forced manual correlation with
+the work. It is presentation only: the opaque ID, its stamped scope and its digest remain the
+authority, and an exit-zero command gains no strength from being described.
 Oversized or conflicting live observations fail closed. Prior stages are read through the existing
 owner-scoped trace reader, restricted to this objective revision. Evicted or unavailable references
 cannot establish success. Duplicate persisted events do not move an old result past a newer failure;
 conflicting duplicates refuse the snapshot.
+Production: `goalEvidenceLabel` in [evidence.ts](../../packages/kernel/src/goals/evidence.ts).
+Test: `describes a catalog option by its operation instead of an opaque call id` in
+[goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts).
 
 Transport success alone does not prove a native `shell` or `host_exec` command succeeded: the parsed
 result must report exit zero without timeout or termination signal. The latest result for the same
@@ -742,6 +832,30 @@ verification. Goal controls and polling are excluded. Stable fingerprints omit c
 IDs and output wording, so repeating the same check cannot reset stagnation. The recorded reason
 states that the entry attributed this activity to the goal; usefulness is not independently verified.
 Finite continuation limits still apply even when new activity is accepted.
+
+The same criteria are evaluated by the host at settlement, over the observations the bound execution
+itself produced rather than the identifiers the model chose to cite. Each receipt is compared with the
+receipts the Goal already recorded, one by one, and only the ones the Goal had not seen are stored on
+the stage: recombining receipts an earlier stage already presented is not new progress, however
+different the combined set looks, and neither is repeating one of them. A receipt is a *successful*
+observation's stable fingerprint — the same admission rule the catalog applies — so a command that
+failed, a call that was denied or a reference recovered from an earlier stage cannot establish
+progress; the latter may still support completion, which is what distinguishes evidence still being
+available from progress newly accepted. At most 32 receipts per stage, and a stage that observed
+nothing new is unproductive: when the host cannot take the observation at all the stage is counted as
+unproductive rather than blocking, because absence of evidence is not proof that no work happened and
+it only spends the bounded stage allowance.
+Production: `stageActivity` in [evidence.ts](../../packages/kernel/src/goals/evidence.ts),
+`pendingInstant` in [settlement.ts](../../packages/kernel/src/goals/settlement.ts) and
+`createGoalStageSettlement` in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts).
+Test: `reports only the bound stage's own successful receipts, never what it merely cited` and
+`reuses prior trace evidence but rejects repeated checks as new progress across stages` in
+[goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts),
+`does not count changing prose around the same activity as fresh progress` and `does not count receipts
+an earlier stage already presented as fresh progress` in
+[domain.test.ts](../../packages/goal/tests/unit/domain.test.ts), and
+`counts host-observed activity at settlement without a model-declared fingerprint` in
+[goal-file-host.test.ts](../../packages/kernel/tests/integration/goal-file-host.test.ts).
 Production: `createGoalEvidenceSource` and `goalEvidenceDigest` in
 [evidence.ts](../../packages/kernel/src/goals/evidence.ts).
 Test: [goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts)
@@ -769,6 +883,24 @@ returns an error even if canonical publication already happened, with persisted 
 authoritative for recovery. No runtime-port method starts another execution or retries an uncertain
 write automatically. Domain/schema/storage failures map to bounded protocol errors and structured
 diagnostics without objective text, evidence payloads, file paths or private exception details.
+
+A rejected argument is not one of those failures. Each model operation answers with a discriminated
+outcome: an evidence identifier that is absent, duplicated, obsolete or unsuccessful for this
+objective is resolved before any durable write and answered as corrigible input, so the model reads
+the catalog again and re-sends while the previous candidate, revision and consumption stay exactly as
+they were. The sentence never reveals whether an identifier belongs to another owner. Everything the
+host cannot present as a rejected argument — a lost binding, an unreadable control, a storage fault,
+a state conflict — still throws and still ends the stage with host attention, because an operation the
+host could not confirm must never look like one the model may simply retry.
+Production: `GoalOperationOutcome` in [ports.ts](../../packages/goal/src/ports.ts), `resolveEvidence`
+in [runtime-port.ts](../../packages/kernel/src/goals/runtime-port.ts), and the handler branches in
+[capability.ts](../../packages/goal/src/capability.ts) and
+[creation-capability.ts](../../packages/goal/src/creation-capability.ts).
+Test: `refuses an unusable evidence set as corrigible input without writing anything` in
+[goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts), and
+`answers a refused evidence set as a corrigible tool error without ending the stage` with
+`answers a refused evidence set in the creation turn without ending the stage` in
+[capability.test.ts](../../packages/goal/tests/unit/capability.test.ts).
 Production: [runtime-port.ts](../../packages/kernel/src/goals/runtime-port.ts) and
 [errors.ts](../../packages/kernel/src/goals/errors.ts).
 Test: [goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts)
@@ -903,23 +1035,54 @@ validation snapshot can therefore settle, while a later revision still fails the
 that wins during validation is preserved while the run's confirmed usage is still charged. A slow
 callback cannot restore completion from an old objective or reopen a closed execution.
 
-After the full registry barrier, its continuation policy re-reads the canonical session, requires
-the same active goal/control and latest accepted checkpoint, evaluates remaining limits and returns
-one fresh execution identity. The conversation and entry-agent identity remain unchanged. The
-registry's host-only continuation provenance distinguishes this from a human stage. A superseding
-human reservation discards the old proposal. Retirement pauses and host failure blocks only the
-matching stage or still-pending preparation; `stopGoalContinuation` preserves newer controls,
-replacement and successor admission without releasing physical work.
+After the full registry barrier, its continuation policy re-reads the canonical session and rules from
+the durable decision the settlement recorded on that closed stage: the same active Goal, control and
+objective revision, that stage as the latest one, `decision: "continue"`, and remaining admission.
+It returns one fresh execution identity and a host-authored orientation keyed by the stage's cause,
+never the failed run's prose or a new authorization. The conversation and entry-agent identity remain
+unchanged, and the successor's request keeps the predecessor's resolved identity without replaying the
+creation intent. The registry's host-only continuation provenance distinguishes this from a human
+stage. The registry no longer rules on the predecessor's physical shape, so a stage that ended with a
+recoverable failure continues exactly as a checkpoint handoff does; a run without a continuation
+policy stays inert. A provider-requested backoff travels as a typed minimum instant with the proposal,
+is waited for abortably outside the short preparation deadline, and the policy is asked again before
+anyone starts, so a stale proposal cannot create a successor. That instant is a *pending* wait, not a
+permanent condition: it is recorded durably on the closed stage — including when the Goal blocks for
+another reason, so a later resume still honours the provider's own backoff — while the policy only
+hands it over while it is still in the future, and admission refuses a refreshed proposal only while
+it still asks for a future instant. An elapsed instant, including the one a zero backoff lands on,
+therefore starts its successor instead of leaving the Goal with none. A superseding human reservation discards
+the old proposal. Retirement pauses and host failure blocks only the matching stage or still-pending
+preparation; `stopGoalContinuation` preserves newer controls, replacement and successor admission
+without releasing physical work.
+
+The guided creation turn runs the same settlement and the same continuation policy as every later
+stage; it simply returns nothing until its Goal exists durably, so a stage that never created one
+cannot invent a successor. That turn is also what claims the conversation control for the operator
+connection that started it, exactly as an explicit goal control does for a literal Goal: every Goal
+stage requires a live conversation controller, so without that claim a first-stage checkpoint could
+never start its successor.
 
 Production: [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts),
-`stopGoalContinuation` in [execution.ts](../../packages/goal/src/execution.ts), and the admission,
-registry and coordinator in [hosting](../hosts/hosted-runs.md).
+`stopGoalContinuation` in [execution.ts](../../packages/goal/src/execution.ts), and the continuation
+admission in [registry.ts](../../packages/kernel/src/hosting/registry.ts).
 Test: `settles the exact revision validated after a non-revoking human confirmation` in
 [goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts)
-pins the validation/settlement race.
+pins the validation/settlement race, and `starts a successor when the guided creation stage itself
+checkpointed` with `continues a stalled stage in a successor and stops at the stage progress limit` in
+[goal-file-host.test.ts](../../packages/kernel/tests/integration/goal-file-host.test.ts) prove the
+first-stage continuation and the non-checkpoint one through the real file host.
 Test: `host continuation retirement` in
 [domain.test.ts](../../packages/goal/tests/unit/domain.test.ts), and
-[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts).
+[hosted-continuation.test.ts](../../packages/kernel/tests/component/hosted-continuation.test.ts)
+separately holds the terminal-commit barrier, the typed minimum instant with its re-ask, the
+abandonment of a pending instant when the authority is retired, an elapsed instant that must start a
+successor, and an instant still in the future that must defer. The pending-instant rule itself is
+pinned by `treats a recorded instant as a pending wait rather than a permanent condition` in
+[goal-settlement.test.ts](../../packages/kernel/tests/unit/goal-settlement.test.ts), and the durable
+instant a provider backoff leaves on a stage that blocked for another reason by
+`records a transient ending with its durable instant and blocks on unmeasured consumption` in
+[goal-file-host.test.ts](../../packages/kernel/tests/integration/goal-file-host.test.ts).
 The latter composes private file sessions, actual hosting, goal gates, loop and SDK with controlled
 responses. It verifies two automatic continuations, three separate run intents, decreasing budgets,
 single-count usage, complete serialized prefix/cache identity, stagnation, incompatible request

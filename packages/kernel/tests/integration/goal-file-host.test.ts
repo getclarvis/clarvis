@@ -235,6 +235,218 @@ describe("goal through the real file host and SDK HTTP", () => {
     });
   });
 
+  it("continues a stalled stage in a successor and stops at the stage progress limit", async () => {
+    const f = await createGoalFileHostFixture();
+    cleanups.push(f.close);
+    f.setResponder(async () => ({ name: "get_goal", arguments: {} }));
+    await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "create",
+      action: {
+        kind: "create",
+        objective: "Keep stalling until the goal stops admitting stages",
+        limits: { max_net_tokens: 100_000 },
+      },
+    });
+    await f.until(
+      async () => (await f.client.goals.get("conversation")).state.current?.status !== "active",
+    );
+    await f.until(() => f.host.stats().runs === 0);
+    const goal = (await f.client.goals.get("conversation")).state.current!;
+    /**
+     * A stage that stopped without advancing is the Kernel's own responsibility: the Goal
+     * stays active and a successor is admitted from the durable decision, without any
+     * checkpoint. The bound is the Goal's own stage allowance, and it blocks the Goal
+     * through the ordinary admission path rather than looping.
+     */
+    expect(goal).toMatchObject({
+      status: "blocked",
+      reason: "Goal stage progress limit reached",
+      auto_continuations: 2,
+      no_progress_stages: 3,
+    });
+    expect(goal.runs.map((run) => run.outcome)).toEqual(["failed", "failed", "failed"]);
+    expect(goal.runs.map((run) => run.cause)).toEqual(["stagnation", "stagnation", "stagnation"]);
+    expect(goal.runs.map((run) => run.decision)).toEqual(["continue", "continue", "closed"]);
+    expect(goal.runs.every((run) => run.checkpoint === undefined)).toBe(true);
+    /** The successor is told how the previous stage ended, in the host's own words. */
+    const successor = f.requests[6]!;
+    expect(successor.messages.at(-1)).toMatchObject({
+      content: expect.stringContaining("The previous stage stopped without progress"),
+    });
+  });
+
+  it("counts host-observed activity at settlement without a model-declared fingerprint", async () => {
+    const f = await createGoalFileHostFixture();
+    cleanups.push(f.close);
+    f.setResponder(async () => {
+      switch (f.requests.length) {
+        case 1:
+          return { name: "write_file", arguments: { path: "result.txt", content: "done\n" } };
+        case 2:
+          return {
+            name: "update_goal",
+            arguments: {
+              update: { action: "checkpoint", summary: "Wrote the result", next_step: "Verify it" },
+            },
+          };
+        default:
+          return {
+            name: "update_goal",
+            arguments: { update: { action: "blocked", reason: "Review the written result" } },
+          };
+      }
+    });
+    await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "create",
+      action: {
+        kind: "create",
+        objective: "Write and verify the result",
+        criteria: [
+          {
+            id: "written",
+            description: "The result file was written",
+            kind: "host",
+            verification: { kind: "tool_success", tool_name: "write_file" },
+          },
+        ],
+        limits: { max_net_tokens: 100_000 },
+      },
+    });
+    await f.until(() => f.host.stats().runs === 0);
+    const goal = (await f.client.goals.get("conversation")).state.current!;
+    /**
+     * The host decides relevance from the activity it observed, not from the identifiers the
+     * model chose to cite: this stage checkpointed without naming any evidence, and its
+     * workspace change still counts as progress, so the sequence resets instead of spending
+     * a stage of the allowance.
+     */
+    expect(goal.runs[0]).toMatchObject({
+      disposition: "checkpoint",
+      decision: "continue",
+      progress_observed: true,
+    });
+    expect(goal.runs[0]!.activity?.length).toBeGreaterThan(0);
+    expect(goal.no_progress_stages).toBe(0);
+    expect(goal).toMatchObject({ status: "blocked", auto_continuations: 1 });
+  });
+
+  it("records a transient ending with its durable instant and blocks on unmeasured consumption", async () => {
+    const f = await createGoalFileHostFixture();
+    cleanups.push(f.close);
+    f.setResponder(async () => {
+      /** The provider fails once, transiently and without a Retry-After. */
+      if (f.requests.length === 1) return { status: 503, message: "Synthetic provider outage" };
+      return {
+        name: "update_goal",
+        arguments: { update: { action: "blocked", reason: "The provider recovered" } },
+      };
+    });
+    await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "create",
+      action: {
+        kind: "create",
+        objective: "Survive a transient provider failure",
+        limits: { max_net_tokens: 100_000 },
+      },
+    });
+    await f.until(() => f.host.stats().runs === 0);
+    const goal = (await f.client.goals.get("conversation")).state.current!;
+    /**
+     * A call that failed reports no usage, so the recovered charge is unknown and unmeasured
+     * consumption blocks the Goal before any recovery rule is asked — the pending instant a
+     * bounded backoff records is still stored, and admission is what must not keep refusing an
+     * instant that has already passed.
+     */
+    expect(goal.runs[0]).toMatchObject({
+      outcome: "failed",
+      cause: "transient",
+      decision: "attention",
+      progress_observed: false,
+    });
+    expect(goal.runs[0]!.not_before).toBeDefined();
+    expect(goal).toMatchObject({ status: "blocked", auto_continuations: 0 });
+    expect(goal.reason).toContain("Usage is unknown");
+    expect(goal.runs).toHaveLength(1);
+  });
+
+  it("starts a successor when the guided creation stage itself checkpointed", async () => {
+    const f = await createGoalFileHostFixture();
+    cleanups.push(f.close);
+    f.setResponder(async () => {
+      switch (f.requests.length) {
+        case 1:
+          return {
+            name: "create_goal",
+            arguments: { objective: "Keep the guided request running across stages" },
+          };
+        case 2:
+          return {
+            name: "update_goal",
+            arguments: {
+              update: {
+                action: "checkpoint",
+                summary: "The first stage ended",
+                next_step: "Finish the verification",
+              },
+            },
+          };
+        case 3:
+          return {
+            name: "update_goal",
+            arguments: {
+              update: {
+                action: "candidate",
+                summary: "Requested result verified",
+                assessments: [
+                  {
+                    criterion_id: "objective",
+                    kind: "qualitative",
+                    justification: "Observed the requested result",
+                  },
+                ],
+              },
+            },
+          };
+        default:
+          return { text: "Done" };
+      }
+    });
+    const session = (await f.client.sessions.get("conversation"))!;
+    const guided = await f.client.hosting!.start({
+      session_id: "conversation",
+      session_revision: session.revision!,
+      kind: "conversation",
+      user_preview: "Keep the guided request running",
+      params: {
+        execution_id: "guided-creation",
+        agent: "solo",
+        messages: [{ role: "user", content: "Keep the guided request running" }],
+        goal_intent: { kind: "create", seed: "Keep the guided request running" },
+      },
+    });
+    expect((await guided.handle.done).disposition).toBe("checkpoint");
+    await f.until(() => f.host.stats().runs === 0);
+    const goal = (await f.client.goals.get("conversation")).state.current!;
+    expect(goal).toMatchObject({ status: "complete", auto_continuations: 1 });
+    expect(goal.runs).toHaveLength(2);
+    expect(goal.runs[0]).toMatchObject({ disposition: "checkpoint", decision: "continue" });
+    expect(goal.runs[1]).toMatchObject({
+      automatic: true,
+      outcome: "completed",
+      decision: "complete",
+    });
+    const stored = (await f.client.sessions.get("conversation"))!.turns.map(
+      (turn) => turn.user_preview,
+    );
+    expect(stored[1]).toContain("previous stage: checkpoint");
+  });
+
   it("continues with conservative input accounting when only the provider cache detail is missing", async () => {
     const f = await createGoalFileHostFixture();
     cleanups.push(f.close);

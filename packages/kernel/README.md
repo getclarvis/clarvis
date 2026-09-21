@@ -130,9 +130,18 @@ checks byte/sequence continuity through the immutable cut and releases the snaps
 `src/hosting/registry.ts` provides shared admission, controller epochs and connection-independent
 handoff receipts over injected turn/persistence ports.
 An internal continuation policy can admit another stage after the complete terminal barrier, using
-authority captured from the actual controller. Its reservation is single-use, preserves the session,
+authority captured from the actual controller. The policy rules from durable state — a Goal stage's
+own closed decision and admission — so the registry no longer requires the predecessor to have been a
+successful checkpoint, and a run with no policy stays inert. A proposal may carry the earliest
+instant a successor may start; the wait happens abortably outside the short preparation deadline and
+the policy is asked again, so only a fresh proposal starts and a retired authority abandons the wait.
+That instant is pending only until it elapses: an elapsed one — including the instant a zero backoff
+lands on — starts its successor, and admission never refuses a proposal merely for carrying it.
+Its reservation is single-use, preserves the session,
 and loses to admitted human work. Disconnect, conversation close, takeover and background handoff
-revoke future authority. Preparation and failure notification are bounded; old-stage cleanup cannot
+revoke future authority. Preparation and failure notification are bounded, and a failed continuation
+logs the sanitized reason beside the execution identity so the refusal is diagnosable without
+payloads; old-stage cleanup cannot
 revoke its successor. No public peer or extra observation is synthesized for the automatic stage.
 Handoff failures classify their operation identity as refused before admission or uncertain after
 admission; receipt absence alone never permits replay. A definite refusal does not consume the
@@ -171,7 +180,10 @@ before every physical model call. An already-started call may finish and remains
 settlement refuses a late completion and records the still-current goal as usage limited. Its
 composition test executes an initial stage and
 two automatic continuations through the real loop and SDK, retaining the serialized prefix and
-agent affinity. `createFileRunHost` registers that policy through ordinary immutable run preparation
+agent affinity. A stage that ended with a recoverable failure is continued the same way, from the
+durable decision its settlement recorded rather than from the run's physical shape; the guided
+creation turn shares that settlement and policy, so a checkpoint or a recoverable ending in the first
+stage starts exactly one bounded successor. `createFileRunHost` registers that policy through ordinary immutable run preparation
 and exposes connection-scoped `goals` controls over the existing RPC catalog. Creation and resume
 persist an operation receipt with the reserved execution ID before the internal hosted start; replay
 returns that receipt without another run. Native and compatible container hosts expose this surface;
@@ -945,7 +957,11 @@ unrecognized key.
 
 The strict `goals` block configures creation defaults: `max_net_tokens` optionally overrides the
 finite entry budget for the whole objective; `max_auto_continuations` defaults to 8 and
-`max_no_progress_checkpoints` to 3. `deadline_at` is an optional absolute Unix timestamp in
+`max_no_progress_stages` to 3, counting closed stages that advanced nothing — including the
+recoverable endings a successor may re-evaluate — against the goal's whole recorded activity history.
+The field was renamed from `max_no_progress_checkpoints`, and `resolveGoalsSettings` admits and
+normalizes the old spelling in memory so a scope that still carries it is not discarded whole.
+`deadline_at` is an optional absolute Unix timestamp in
 milliseconds. Workspace configuration replaces the whole global block, following plan/workflow
 scope precedence. `createFileRunHost` resolves those defaults through the effective configuration
 only for creation or replacement, after receipt lookup. Explicit control limits take precedence.

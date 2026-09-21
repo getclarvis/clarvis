@@ -54,7 +54,23 @@ const run: z.ZodType<HostedRunRef> = z.strictObject({
     .strictObject({
       status: z.enum(["running", "completed", "failed", "cancelled"]),
       ended_reason: text.optional(),
-      error: z.strictObject({ code: text, message: text }).optional(),
+      error: z
+        .strictObject({
+          code: text,
+          message: text,
+          /**
+           * The provider's classification, projected from the engine error payload.
+           *
+           * @remarks Persisted so a later goal settlement can still tell a retryable
+           *   provider fault from a credential, quota or content refusal after the
+           *   host restarted, without the engine's detail object entering this index.
+           */
+          kind: z
+            .enum(["transient", "context_overflow", "client", "auth", "quota", "content_policy"])
+            .optional(),
+          retry_after_ms: z.number().nonnegative().finite().optional(),
+        })
+        .optional(),
       usage: z
         .strictObject({
           iterations: natural,

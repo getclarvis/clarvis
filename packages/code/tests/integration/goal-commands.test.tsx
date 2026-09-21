@@ -245,6 +245,27 @@ test("goal view separates pause from physical execution and identifies qualitati
   expect(f.requests[0]?.action).toEqual({ kind: "pause", running: true });
 });
 
+test("goal view shows a recovered stage and a resuming goal without claiming completion", async () => {
+  const f = fixture(
+    goalView({
+      status: "active",
+      reason: "The stage stopped without progress; the next stage must change its approach",
+      runs: [goalRun("stage-1", "closed"), goalRun("stage-2")],
+    }),
+  );
+  await f.goals.refresh();
+  const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 32 });
+  await rendered.renderOnce();
+  const frame = rendered.captureCharFrame();
+  /**
+   * The stage's ending is what the operator needs to see while the Goal is still the
+   * Kernel's responsibility: the reason names the recovery, and an active Goal that is
+   * being continued must never be painted as a finished one.
+   */
+  expect(frame).toContain("The stage stopped without progress");
+  expect(frame).not.toContain("Completed");
+});
+
 test("goal view does not repeat an objective-only qualitative criterion", async () => {
   const objective = "Validate compact goal presentation";
   const f = fixture(
@@ -402,7 +423,7 @@ test("goal detail keeps actionable review state compact and accepts a pending hu
     limits: {
       max_net_tokens: 10000,
       max_auto_continuations: 8,
-      max_no_progress_checkpoints: 3,
+      max_no_progress_stages: 3,
       deadline_at: Date.parse("2030-01-01T00:00:00Z"),
     },
     consumption: {
@@ -415,7 +436,7 @@ test("goal detail keeps actionable review state compact and accepts a pending hu
       overrun_tokens: 5,
     },
     auto_continuations: 2,
-    no_progress_checkpoints: 1,
+    no_progress_stages: 1,
     runs: [run],
     candidate: {
       objective_revision: 1,

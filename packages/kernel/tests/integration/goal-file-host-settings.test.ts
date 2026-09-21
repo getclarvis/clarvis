@@ -40,7 +40,7 @@ describe("goal defaults through file configuration, IPC and the real SDK", () =>
     const limits = {
       max_net_tokens: 6000,
       max_auto_continuations: 0,
-      max_no_progress_checkpoints: 2,
+      max_no_progress_stages: 2,
       deadline_at: Date.now() + 60000,
     };
     await configure(f, "global", { goals: limits });
@@ -56,7 +56,7 @@ describe("goal defaults through file configuration, IPC and the real SDK", () =>
     expect(before).toMatchObject({ status: "usage_limited", auto_continuations: 0 });
     expect(f.requests).toHaveLength(1);
     await configure(f, "global", {
-      goals: { max_net_tokens: 9000, max_auto_continuations: 7, max_no_progress_checkpoints: 9 },
+      goals: { max_net_tokens: 9000, max_auto_continuations: 7, max_no_progress_stages: 9 },
     });
     expect(await f.client.goals.control(request)).toEqual(receipt);
     expect((await f.client.goals.get("conversation")).state.current).toEqual(before);
@@ -111,7 +111,7 @@ describe("goal defaults through file configuration, IPC and the real SDK", () =>
     expect(replacement.limits).toEqual({
       max_net_tokens: 9000,
       max_auto_continuations: 7,
-      max_no_progress_checkpoints: 9,
+      max_no_progress_stages: 9,
     });
     expect((await f.client.goals.get("conversation")).state.archive[0]).toMatchObject({
       goal_id: resumed.goal_id,
@@ -126,7 +126,7 @@ describe("goal defaults through file configuration, IPC and the real SDK", () =>
     cleanups.push(f.close);
     checkpoint(f);
     await configure(f, "global", {
-      goals: { max_net_tokens: 8000, max_auto_continuations: 6, max_no_progress_checkpoints: 2 },
+      goals: { max_net_tokens: 8000, max_auto_continuations: 6, max_no_progress_stages: 2 },
     });
     await f.client.goals.control({
       session_id: "conversation",
@@ -141,7 +141,7 @@ describe("goal defaults through file configuration, IPC and the real SDK", () =>
     expect((await settle(f)).limits).toEqual({
       max_net_tokens: 6000,
       max_auto_continuations: 0,
-      max_no_progress_checkpoints: 2,
+      max_no_progress_stages: 2,
     });
     expect(f.requests).toHaveLength(1);
   });
@@ -151,7 +151,7 @@ describe("goal defaults through file configuration, IPC and the real SDK", () =>
     cleanups.push(f.close);
     checkpoint(f);
     await configure(f, "global", {
-      goals: { max_net_tokens: 8000, max_auto_continuations: 6, max_no_progress_checkpoints: 2 },
+      goals: { max_net_tokens: 8000, max_auto_continuations: 6, max_no_progress_stages: 2 },
       budget: { total_token_limit: 5000, on_exceed: "escalate" },
     });
     await configure(f, "workspace", { goals: { max_auto_continuations: 0 } });
@@ -165,7 +165,7 @@ describe("goal defaults through file configuration, IPC and the real SDK", () =>
     expect(goal.limits).toEqual({
       max_net_tokens: 5000,
       max_auto_continuations: 0,
-      max_no_progress_checkpoints: 3,
+      max_no_progress_stages: 3,
     });
     expect(f.requests).toHaveLength(1);
   });

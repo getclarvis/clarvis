@@ -45,9 +45,22 @@ export interface PreparedHostedTurn {
   continuation?: HostedTurnContinuation;
 }
 
+/** One prepared automatic successor, with the earliest instant the host may start it. */
+export interface HostedContinuationProposal {
+  input: StartHostedTurnParams;
+  /**
+   * Earliest start instant, from a provider-requested backoff.
+   *
+   * @remarks Carried out of the short preparation deadline so the host owns the wait: it
+   *   is abortable with the continuation authority and accounted, and the policy is asked
+   *   again afterwards, rather than a proposal going stale inside a bounded read.
+   */
+  not_before?: number;
+}
+
 /** Evaluated once after successful physical/durable settlement, under revocable controller authority. */
 export interface HostedTurnContinuation {
-  prepare(signal: AbortSignal): Promise<StartHostedTurnParams | undefined>;
+  prepare(signal: AbortSignal): Promise<HostedContinuationProposal | undefined>;
   /** Persist policy attention after revocation or failure; must preserve a newer user/run decision. */
   stopped(reason: "revoked" | "superseded" | "failed"): Promise<void>;
 }
@@ -172,6 +185,9 @@ interface ConnectionState {
   activities: Map<string, HostedOccupancy>;
   observing: number;
 }
+
+/** Platform ceiling for one timer, so no accepted duration can be shortened silently. */
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 function positive(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value <= 0)
@@ -582,6 +598,26 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     return entry.continuationStop;
   };
 
+  /**
+   * Longest single wait the continuation path honors before re-asking its policy.
+   *
+   * @remarks A provider-requested backoff is bounded where it is classified, and the
+   *   timer is clamped here as well so no duration reaching this path can be shortened
+   *   silently by the platform's timer range.
+   */
+  const waitUntil = (instant: number, signal: AbortSignal): Promise<void> => {
+    const delay = instant - now();
+    if (signal.aborted || delay <= 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      const finish = (): void => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", finish);
+        resolve();
+      };
+      const timer = setTimeout(finish, Math.min(delay, MAX_TIMER_DELAY_MS));
+      signal.addEventListener("abort", finish, { once: true });
+    });
+  };
   const continueEntry = async (connection: ConnectionState, entry: Entry): Promise<void> => {
     const policy = entry.prepared?.continuation;
     const authority = entry.continuationAuthority;
@@ -590,18 +626,8 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       stopContinuation(entry, reason);
     const revoked = () =>
       stopped(authority.signal.reason === "superseded" ? "superseded" : "revoked");
-    try {
-      const state = entry.execution?.state();
-      if (state?.terminalCommitted !== true) {
-        await stopped("failed");
-        return;
-      }
-      if (state.result?.status !== "completed" || state.result.disposition !== "checkpoint") return;
-      if (authority.signal.aborted) {
-        await revoked();
-        return;
-      }
-      const input = await boundPromise(() => policy.prepare(authority.signal), {
+    const propose = () =>
+      boundPromise(() => policy.prepare(authority.signal), {
         signal: authority.signal,
         timeoutMs: continuationTimeout,
         onTimeout: () => {
@@ -609,11 +635,52 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
         },
         onAbort: () => undefined,
       });
+    try {
+      const state = entry.execution?.state();
+      if (state?.terminalCommitted !== true) {
+        await stopped("failed");
+        return;
+      }
       if (authority.signal.aborted) {
         await revoked();
         return;
       }
-      if (input === undefined) return;
+      /**
+       * The whole barrier above succeeded, so the policy is asked whether this run has a
+       * successor. It rules from the durable decision its settlement recorded, not from the
+       * physical shape of the predecessor: a stage that ended with a recoverable failure is
+       * as continuable as one that handed off a checkpoint. A run without a continuation
+       * policy stays inert, and the registry keeps exclusion, authority and the single-use
+       * reservation regardless of what the policy proposes.
+       */
+      const proposal = await propose();
+      if (authority.signal.aborted) {
+        await revoked();
+        return;
+      }
+      if (proposal === undefined) return;
+      let input = proposal.input;
+      if (proposal.not_before !== undefined) {
+        await waitUntil(proposal.not_before, authority.signal);
+        if (authority.signal.aborted) {
+          await revoked();
+          return;
+        }
+        if (now() < proposal.not_before) return;
+        const refreshed = await propose();
+        if (authority.signal.aborted) {
+          await revoked();
+          return;
+        }
+        if (refreshed === undefined) return;
+        /**
+         * A refreshed proposal is refused only while it still asks the host to wait: an
+         * instant that has already passed — a bounded or zero backoff that elapsed during the
+         * wait — must start its successor rather than leave the Goal with none.
+         */
+        if (refreshed.not_before !== undefined && refreshed.not_before > now()) return;
+        input = refreshed.input;
+      }
       if (
         input.session_id !== authority.sessionId ||
         input.kind !== "conversation" ||
@@ -624,9 +691,13 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
           "Continuation must preserve its conversation and predecessor",
         );
       await startEntry(connection, input, authority);
-    } catch {
+    } catch (error) {
       logger.warn(
-        { event: "hosting.continuation.failed", execution_id: entry.ref.execution_id },
+        {
+          event: "hosting.continuation.failed",
+          execution_id: entry.ref.execution_id,
+          reason: sanitizeErrorMessage(toKernelError(error).message),
+        },
         "Automatic continuation was refused or could not be prepared",
       );
       await stopped("failed");
@@ -671,6 +742,16 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       continuation === undefined
         ? admission.reserve(peer, input.session_id, "run", input.params.execution_id)
         : admission.reserveContinuation(continuation, input.params.execution_id);
+    /**
+     * A guided Goal creation turn begins this conversation's Goal work, so the operator
+     * connection that starts it holds the conversation's control for the stages that
+     * follow — exactly as an explicit goal control claims it. Without that claim the
+     * creation stage could never start its own successor, because every Goal stage
+     * requires a live conversation controller; a peer that already holds the conversation
+     * is still refused by the ordinary claim, which is what keeps a takeover explicit.
+     */
+    if (continuation === undefined && input.params.goal_intent !== undefined)
+      admission.claimConversation(peer, input.session_id);
     const entry: Entry = {
       operatorInput: continuation === undefined,
       occupancy,

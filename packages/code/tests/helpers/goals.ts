@@ -27,7 +27,7 @@ export function goalView(overrides: Partial<GoalRecord> = {}, physical?: HostedR
         limits: {
           max_net_tokens: 10000,
           max_auto_continuations: 8,
-          max_no_progress_checkpoints: 3,
+          max_no_progress_stages: 3,
         },
         consumption: {
           input: 0,
@@ -39,7 +39,7 @@ export function goalView(overrides: Partial<GoalRecord> = {}, physical?: HostedR
           overrun_tokens: 0,
         },
         auto_continuations: 0,
-        no_progress_checkpoints: 0,
+        no_progress_stages: 0,
         runs: [],
         human_acceptances: [],
         ...overrides,

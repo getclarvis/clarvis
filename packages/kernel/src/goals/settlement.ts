@@ -1,4 +1,4 @@
-import { settleGoalRun, type GoalRunFailureCause, type GoalUsage } from "@clarvis/goal";
+import { settleGoalRun, type GoalRunCause, type GoalUsage } from "@clarvis/goal";
 import type { ModelCost, RunResult, Session } from "@clarvis/protocol";
 import { kernelError } from "../core/errors.ts";
 import { addRunUsage } from "../sessions/usage.ts";
@@ -9,34 +9,36 @@ import { measureGoalRunUsage } from "./usage.ts";
 export interface GoalSettlementDecision {
   disposition: "final" | "checkpoint";
   completion_validated: boolean;
+  /**
+   * The stage's own successful activity receipts, as the host collected them.
+   *
+   * @remarks Receipts rather than a verdict: the domain compares each one with the Goal's whole
+   *   recorded history, so a stage that only recombined receipts an earlier stage already
+   *   presented contributes nothing, and a stage that observed nothing is unproductive without
+   *   the host having to rule on its semantic value.
+   */
+  activity?: readonly string[];
   /** When supplied, measured at the host provider port rather than inferred from loop totals. */
   usage?: GoalUsage;
 }
 
+/** Why a physically closed stage ended, and how soon a successor may start. */
+export interface GoalStageOutcome {
+  cause: GoalRunCause;
+  /** Earliest instant the host may admit a successor; a provider-requested backoff. */
+  not_before?: number;
+}
+
 /**
- * Translate the run's own safe terminal code into the goal domain's failure vocabulary.
+ * The durable instant a successor must still wait for, or nothing once it has passed.
  *
- * @param result - the physically closed run result.
- * @returns the typed cause for a stop the domain can name, or `undefined` for any
- *   other failure so the domain keeps its generic wording.
- * @remarks The mapping is deliberately closed and lives here rather than in the
- *   domain: the engine's error codes are engine vocabulary, and the goal domain
- *   only needs to know that a stage stagnated or that its control failed. The
- *   result's `message` is never forwarded — a reason in durable goal state must not
- *   be whatever prose the failed run produced.
- *
- *   Every code in {@link STAGNATION_CODES} means the same thing to an operator: the
- *   stage kept going without advancing. Naming only the loop's own no-progress
- *   streak would leave a stage that repeated identical tool results, or the same
- *   failing call, reporting a generic failure for a condition the plan requires to
- *   be diagnosed specifically. A structural failure such as an empty response, and
- *   a run whose tools all disappeared, are not repetition: they keep the generic
- *   wording because the run's own message already explains them.
+ * @remarks A recorded backoff is a *pending* wait, not a permanent condition. Handing an
+ *   elapsed instant to admission refuses the successor for a delay that no longer exists —
+ *   which is how a bounded, or zero, provider backoff left a Goal with no successor at all.
+ *   The wait is honoured while it remains and dropped once it has elapsed.
  */
-function goalFailureCause(result: RunResult): GoalRunFailureCause | undefined {
-  if (STAGNATION_CODES.has(result.error?.code ?? "")) return "stagnation";
-  if (result.error?.code === "goal_control_failed") return "control_failure";
-  return undefined;
+export function pendingInstant(notBefore: number | undefined, now: number): number | undefined {
+  return notBefore === undefined || notBefore <= now ? undefined : notBefore;
 }
 
 /**
@@ -50,6 +52,69 @@ const STAGNATION_CODES: ReadonlySet<string> = new Set([
   "tool_failure_loop",
   "stagnation_detected",
 ]);
+
+/** Provider refusals a successor must not repeat without a valid change of conditions. */
+const REFUSAL_CODES: ReadonlySet<string> = new Set([
+  "provider_quota_exhausted",
+  "provider_content_policy",
+]);
+
+/**
+ * Longest provider-requested backoff the host waits before starting a successor.
+ *
+ * @remarks The provider already retried inside the stage under its own ceiling, so
+ *   this is only the remainder it asked the caller to respect. Bounding it keeps the
+ *   wait a bounded pause in the continuation path rather than a scheduler.
+ */
+const TRANSIENT_WAIT_MAX_MS = 60_000;
+
+/**
+ * Classify one physically closed stage into the goal domain's closed cause vocabulary.
+ *
+ * @param result - the run's terminal result, after protocol projection.
+ * @param now - the host clock, used only to bound a provider-requested backoff.
+ * @returns the typed cause and, for a transient provider fault, the earliest instant a
+ *   successor may start.
+ * @remarks The mapping is deliberately closed and comparative rather than semantic: the
+ *   result's own `message` is never forwarded, and the goal domain is never asked to
+ *   classify an ending. Everything the host cannot name is `unclassified`, which the
+ *   domain refuses to continue — an unrecognised failure is never assumed recoverable.
+ *
+ *   `budget_exhausted` is reported as a local limit on purpose: only the Goal's own
+ *   durable admission can tell a stage that spent its partition from one that exhausted
+ *   the objective's budget, so the domain makes that call from its own accounting. The
+ *   distinction between a retryable provider fault and a credential or request fault
+ *   comes from the provider's own classification, which the engine carries on the error
+ *   and the projection preserves as a bounded field.
+ */
+export function goalStageOutcome(result: RunResult, now: number): GoalStageOutcome {
+  if (result.status === "completed")
+    return { cause: result.disposition === "checkpoint" ? "checkpoint" : "unclassified" };
+  if (result.status === "cancelled") return { cause: "cancelled" };
+  if (result.ended_reason === "soft_limit_declined") return { cause: "declined" };
+  if (result.ended_reason !== undefined)
+    return { cause: result.ended_reason === "budget_exhausted" ? "local_limit" : "unclassified" };
+  const error = result.error;
+  if (error === undefined) return { cause: "unclassified" };
+  if (STAGNATION_CODES.has(error.code)) return { cause: "stagnation" };
+  if (error.code === "empty_response") return { cause: "empty_response" };
+  if (error.code === "all_tools_unavailable") return { cause: "tools_unavailable" };
+  if (error.code === "context_overflow") return { cause: "context_overflow" };
+  if (error.code === "goal_control_failed") return { cause: "control_failure" };
+  if (error.code === "goal_steward_failed" || error.code === "goal_steward_inconclusive")
+    return { cause: "steward_interrupted" };
+  if (REFUSAL_CODES.has(error.code)) return { cause: "provider_refused" };
+  if (error.code === "provider_error") {
+    if (error.kind === "auth" || error.kind === "quota" || error.kind === "content_policy")
+      return { cause: "provider_refused" };
+    if (error.kind === "transient")
+      return {
+        cause: "transient",
+        not_before: now + Math.min(error.retry_after_ms ?? 0, TRANSIENT_WAIT_MAX_MS),
+      };
+  }
+  return { cause: "unclassified" };
+}
 
 /**
  * Apply goal settlement and its confirmed session usage within the caller's canonical transaction.
@@ -75,7 +140,7 @@ export function settleGoalSession(
   const run = goal.runs.find((run) => run.execution_id === result.execution_id)!;
   const alreadyCharged = run.phase === "closed" && run.usage?.kind === "measured";
   const usage = decision.usage ?? measureGoalRunUsage(result.usage);
-  const failureCause = goalFailureCause(result);
+  const stage = goalStageOutcome(result, now);
   const next = settleGoalRun(state, {
     goal_id: goal.goal_id,
     execution_id: result.execution_id,
@@ -83,8 +148,10 @@ export function settleGoalSession(
     outcome: result.status,
     disposition: decision.disposition,
     completion_validated: decision.completion_validated,
+    cause: stage.cause,
+    ...(stage.not_before === undefined ? {} : { not_before: stage.not_before }),
+    ...(decision.activity === undefined ? {} : { activity: decision.activity }),
     usage,
-    ...(failureCause === undefined ? {} : { failure_cause: failureCause }),
     now,
   });
   session.goal_state = goalStateToDto(next);

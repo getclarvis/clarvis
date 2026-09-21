@@ -6,11 +6,14 @@ import {
   goalCheckpointSchema,
   goalProgressSchema,
   goalUsageSchema,
+  GOAL_STAGE_ACTIVITY_MAX,
   type GoalCandidate,
   type GoalCheckpoint,
   type GoalProgress,
   type GoalRecord,
   type GoalRun,
+  type GoalRunCause,
+  type GoalStageDecision,
   type GoalState,
   type GoalUsage,
 } from "./schemas.ts";
@@ -250,10 +253,25 @@ export function recordGoalProgress(
 }
 
 /**
- * Persist a bound stage's blocker without overriding a newer user pause/cancel or physical state.
- * A repeated block is idempotent. This does not terminate the process or settle its eventual usage.
+ * Record a bound stage's declared impediment without revoking the Goal's own authority.
+ *
+ * @param previous - the durable goal state.
+ * @param input - the bound goal/stage, objective revision, the model's reason and the clock.
+ * @returns the state with the declaration recorded on the stage, or the unchanged state.
+ * @remarks `update_goal blocked` is a report, not an operator control. It used to set
+ *   `status: blocked` and advance the control fence, so one declared blocker spent the
+ *   Goal's whole automatic path and made a human intervention mandatory even when the
+ *   model could still make progress under the same objective and authorization. The
+ *   declaration is now durable evidence on the closing stage: the stage still ends, the
+ *   settlement decides under the remaining limits whether a successor may re-evaluate
+ *   down a different approach, and a persistent impediment still blocks the Goal with its
+ *   bounded reason once that allowance is spent. No human authority is invented, and a
+ *   genuine operator pause, cancel or replacement keeps immediate precedence because
+ *   the current control revision and objective revision are what the settlement fences
+ *   against. A repeated declaration is idempotent and does not move the revision: one
+ *   stage reports at most one blocker, and the first one is what the operator sees.
  */
-export function blockGoalRun(
+export function declareGoalImpediment(
   previous: GoalState,
   input: {
     goal_id: string;
@@ -270,37 +288,120 @@ export function blockGoalRun(
     run.objective_revision !== input.objective_revision ||
     goal.objective_revision !== input.objective_revision
   )
-    throw new GoalError("conflict", "Blocker belongs to an obsolete goal revision");
+    throw new GoalError("conflict", "Impediment belongs to an obsolete goal revision");
   if (goal.status !== "active") return state;
   if (run.phase !== "running")
-    throw new GoalError("conflict", "Blocker requires the bound running stage");
-  goal.reason = goalProgressSchema.shape.summary.parse(input.reason);
-  goal.status = "blocked";
-  goal.control_revision = state.revision + 1;
+    throw new GoalError("conflict", "Impediment requires the bound running stage");
+  const reason = goalProgressSchema.shape.summary.parse(input.reason);
+  if (run.impediment !== undefined) return state;
+  run.impediment = { reason, declared_at: input.now };
   return changed(state, goal, input.now);
 }
 
 /**
- * The operator-facing sentence for an unsuccessful stage, chosen from the closed cause.
+ * The operator-facing sentence for one unsuccessful stage, chosen from the closed cause.
  *
  * @param outcome - the physical outcome the host reported.
- * @param cause - the host's typed reason, when it has one.
+ * @param cause - the host's typed reason for this stage.
  * @returns a fixed sentence. Stagnation and a control failure are named as
  *   themselves rather than folded into the generic failed-stage wording, because a
  *   blocked goal is what the operator must act on: a stalled stage needs an
  *   explicit resume or edit, and an unreadable control needs host attention.
- *   Cancellation keeps its own wording, and an absent cause keeps the generic one.
+ *   Cancellation keeps its own wording, and a cause the host cannot name keeps the
+ *   generic one. The cause map is data rather than a branch per cause so that every
+ *   member of the closed vocabulary owns exactly one sentence.
  */
-function failureReason(
-  outcome: "failed" | "cancelled",
-  cause: GoalRunFailureCause | undefined,
-): string {
-  if (outcome === "cancelled") return "Goal run was cancelled";
-  if (cause === "stagnation")
-    return "The stage stopped after repeated attempts without progress; the goal requires an explicit resume or edit";
-  if (cause === "control_failure")
-    return "Goal control was unavailable; the goal requires host attention";
-  return "Goal run failed";
+const FAILURE_REASONS: Record<GoalRunCause, string> = {
+  checkpoint: "Run ended without an accepted checkpoint and no successor could be admitted",
+  local_limit: "The stage reached its own limit and no successor could be admitted",
+  declined: "The limit extension was declined; the goal requires an explicit operator decision",
+  cancelled: "Goal run was cancelled",
+  stagnation:
+    "The stage stopped after repeated attempts without progress; the goal requires an explicit resume or edit",
+  empty_response: "The stage ended without producing an answer and no successor could be admitted",
+  impediment: "The stage declared an impediment; the goal requires operator action",
+  transient: "The provider failed transiently and no successor could be admitted",
+  steward_interrupted: "The completion review was interrupted and no successor could be admitted",
+  usage_unknown:
+    "The completion review's consumption could not be determined; reconcile it before continuing",
+  context_overflow: "The stage could not fit its context",
+  provider_refused: "The provider refused the request; the goal requires operator action",
+  tools_unavailable: "Every configured tool became unavailable",
+  control_failure: "Goal control was unavailable; the goal requires host attention",
+  unclassified: "Goal run failed",
+};
+
+/**
+ * The sentence a Goal carries while it stays active and another stage continues it.
+ *
+ * @remarks The reason names the ending, never a prompt, an objective or a model's
+ *   prose: the operator has to be able to tell why a stage stopped and that the Goal
+ *   did not become their responsibility because of it.
+ */
+const CONTINUATION_REASONS: Record<GoalRunCause, string> = {
+  checkpoint: "The stage handed off with an accepted checkpoint; another stage continues the goal",
+  local_limit: "The stage reached its own limit; another stage continues the goal",
+  declined: "The limit extension was declined; the goal requires an explicit operator decision",
+  cancelled: "The stage was cancelled; the goal requires an explicit resume",
+  stagnation: "The stage stopped without progress; the next stage must change its approach",
+  empty_response: "The stage produced no answer; another stage continues the goal",
+  impediment: "The stage declared an impediment; another stage re-evaluates it",
+  transient: "The provider failed transiently; another stage resumes the goal",
+  steward_interrupted: "The completion review was interrupted; another stage continues the goal",
+  usage_unknown: "The completion review's consumption could not be determined and the goal stopped",
+  context_overflow: "The stage could not fit its context; another stage continues the goal",
+  provider_refused: "The provider refused the request; the goal requires operator action",
+  tools_unavailable: "Every configured tool became unavailable",
+  control_failure: "Goal control was unavailable; the goal requires host attention",
+  unclassified: "Goal run failed",
+};
+
+/**
+ * The causes a successor stage may re-evaluate under the Goal's remaining limits.
+ *
+ * @remarks Membership is what makes an ending recoverable, and every member still
+ *   spends one stage of the Goal's progress allowance when the stage did not advance
+ *   the work — so repetition of the same failure cannot restart indefinitely and no
+ *   recovery invents authorization, budget or evidence. `context_overflow` is not a
+ *   member: continuing it is only safe when the stage also observed progress, because
+ *   otherwise the successor would replay the payload that did not fit. Everything
+ *   absent — a credential or quota refusal, unavailable tools, an unreadable control,
+ *   an unclassified fault and a model-declared impediment — is never presumed
+ *   recoverable.
+ *
+ *   A declared impediment is deliberately outside this set. The host cannot separate a
+ *   model reporting its own dead end from a model reporting a refusal the operator just
+ *   made — a refused plan review reaches settlement through the model's own blocker — so
+ *   admitting a successor for it would let the recovery path retry work an authenticated
+ *   decision had just refused. The declaration still costs the Goal nothing: it is
+ *   recorded on the stage, the control revision does not move, and resume continues with
+ *   the same budget, limits and approvals.
+ */
+const RECOVERABLE_CAUSES: ReadonlySet<GoalRunCause> = new Set<GoalRunCause>([
+  "checkpoint",
+  "local_limit",
+  "stagnation",
+  "empty_response",
+  "transient",
+  "steward_interrupted",
+]);
+
+/** Whether the closed stage may be continued automatically by one successor stage. */
+function stageContinuationAllowed(cause: GoalRunCause, progressObserved: boolean): boolean {
+  if (cause === "context_overflow") return progressObserved;
+  return RECOVERABLE_CAUSES.has(cause);
+}
+
+function failureReason(outcome: "failed" | "cancelled", cause: GoalRunCause): string {
+  return outcome === "cancelled" ? "Goal run was cancelled" : FAILURE_REASONS[cause];
+}
+
+/**
+ * A stage's activity as the Goal recorded it so far, so a successor can be compared with the
+ * whole history rather than with its predecessor alone.
+ */
+function recordedActivity(goal: GoalRecord): Set<string> {
+  return new Set(goal.runs.flatMap((item) => item.activity ?? []));
 }
 
 function reconcileUsage(goal: GoalRecord): void {
@@ -352,25 +453,25 @@ export function recordGoalUsageEstimate(
 }
 
 /**
- * Why an unsuccessful goal stage stopped, as the host observed it.
+ * Reconcile only after physical closure, and decide what the closed stage leaves behind.
  *
- * @remarks A closed vocabulary rather than free text: the domain owns the
- *   operator-facing sentence, and a host cannot put a model's or an objective's
- *   prose into durable goal state through the settlement path. `stagnation` is
- *   execution stagnation — the stage stopped because it was repeating itself
- *   without advancing, whether the loop's unproductive-attempt allowance ran out
- *   or a convergence guard tripped on repeated results — and it is deliberately
- *   distinct from `control_failure`, where the stage stopped because its bound
- *   control could not be read or ruled on. Omitting the cause keeps the generic
- *   failed-stage wording, so a host that has nothing specific to report changes
- *   nothing.
- */
-export type GoalRunFailureCause = "stagnation" | "control_failure";
-
-/**
- * Reconcile only after physical closure. Late usage always belongs to the original binding,
- * even after pause/cancel; status changes require the still-current control/objective revision.
- * Missing telemetry blocks continuation, and a checkpoint never turns a failed run into success.
+ * @param previous - the durable goal state.
+ * @param input - the physical facts, the host's classification of the ending and the clock.
+ * @returns the state with the stage closed and its durable decision recorded.
+ * @remarks Late usage always belongs to the original binding, even after pause or archive;
+ *   status changes require the still-current control/objective revision; missing telemetry
+ *   blocks continuation, and a checkpoint never turns a failed run into success.
+ *
+ *   The host supplies the physical facts and one classified `cause`; the decision is the
+ *   domain's. A recoverable ending keeps the Goal `active` and records `decision: "continue"`,
+ *   which is what lets the Kernel keep responsibility for a pending Goal without a
+ *   model-generated checkpoint: the host admits the successor from this durable record rather
+ *   than from the run's physical shape. A stage that advanced the work clears the no-progress
+ *   sequence, one that did not spends a stage of it, and an exhausted allowance blocks the
+ *   Goal through the ordinary admission path instead of looping. Everything the host could not
+ *   classify is `attention`, and a successor is never automatic for it.
+ *   `progress_observed` is the host's own observation of the stage's activity — an accepted
+ *   checkpoint is one way to have it, not the only one.
  */
 export function settleGoalRun(
   previous: GoalState,
@@ -382,7 +483,17 @@ export function settleGoalRun(
     disposition: "final" | "checkpoint";
     usage: GoalUsage;
     completion_validated: boolean;
-    failure_cause?: GoalRunFailureCause;
+    cause?: GoalRunCause;
+    /**
+     * The stage's own observed activity receipts, as the host collected them.
+     *
+     * @remarks Receipts, not a verdict: the domain compares each one with the Goal's whole
+     *   recorded history and decides both what this stage contributed and whether it advanced
+     *   the work. A stage that observed nothing, or only receipts an earlier stage already
+     *   presented, contributes nothing — recombining old receipts is not new progress.
+     */
+    activity?: readonly string[];
+    not_before?: number;
     now: number;
   },
 ): GoalState {
@@ -410,30 +521,95 @@ export function settleGoalRun(
   run.outcome = input.outcome;
   run.disposition = input.disposition;
   run.usage = usage;
+  /**
+   * The run's own durable record outranks the host's classification in two cases, because
+   * the host only ever sees the code the loop reported.
+   *
+   * A declared impediment is what the model reported. A completion review whose consumption
+   * could not be determined is a technical interruption the code does not carry: the
+   * evaluation answered — possibly with a valid `achieved` — but the host cannot charge it,
+   * so the Goal is never continued on it automatically, while a review that merely timed
+   * out, failed in transit or returned unusable output may be re-evaluated by one bounded
+   * successor stage under the ordinary stage allowance. A stage that produced a validated
+   * completion has no failure cause to record.
+   */
+  const concluded = input.outcome === "completed" && input.disposition === "final";
+  /**
+   * What this stage contributes is decided per receipt against the Goal's whole history, not
+   * by digesting the stage's activity set: a stage that only recombines receipts an earlier
+   * stage already presented advanced nothing, however different the combined set looks.
+   */
+  const seen = recordedActivity(goal);
+  const contributed = [...new Set(input.activity ?? [])].filter((item) => !seen.has(item)).sort();
+  run.activity = contributed.slice(0, GOAL_STAGE_ACTIVITY_MAX);
+  const unaccountable =
+    run.steward_reviews.at(-1)?.interruption_cause === "usage_unknown" && !concluded;
+  const cause: GoalRunCause =
+    run.impediment !== undefined && input.outcome !== "completed"
+      ? "impediment"
+      : unaccountable
+        ? "usage_unknown"
+        : (input.cause ?? "unclassified");
+  if (concluded) delete run.cause;
+  else run.cause = cause;
+  /**
+   * The classified instant is a durable fact about the stage, recorded whether or not this
+   * settlement ends up admitting a successor: a Goal that blocks on unknown consumption must
+   * still honour the provider's own backoff when the operator resolves it and work resumes.
+   */
+  if (concluded || input.not_before === undefined) delete run.not_before;
+  else run.not_before = input.not_before;
+  const progressObserved = contributed.length > 0 || run.checkpoint?.progress_accepted === true;
+  run.progress_observed = progressObserved;
   reconcileUsage(goal);
+  const closed = (decision: GoalStageDecision): GoalState => {
+    run.decision = decision;
+    return changed(state, goal, input.now);
+  };
+  /** Spend one stage of the progress allowance; true when admission refused a successor. */
+  const spendStage = (): boolean => {
+    goal.no_progress_stages = progressObserved ? 0 : goal.no_progress_stages + 1;
+    const admission = goalAdmission(goal, input.now, true);
+    if (admission.allowed) return false;
+    goal.status = admission.status;
+    goal.reason = admission.reason;
+    return true;
+  };
   const deadline = goalDeadlineLimit(goal, input.now);
   if (
     goal.status !== "active" ||
     run.control_revision !== goal.control_revision ||
     run.objective_revision !== goal.objective_revision
   )
-    return changed(state, goal, input.now);
+    return closed("closed");
   if (goal.consumption.usage_unknown) {
     goal.status = "blocked";
     goal.reason = "Usage is unknown; reconcile it before resuming";
-  } else if (deadline !== undefined) {
+    return closed("attention");
+  }
+  if (deadline !== undefined) {
     goal.status = deadline.status;
     goal.reason = deadline.reason;
-  } else if (input.outcome !== "completed") {
-    const decision = goalAdmission(goal, input.now, false);
-    if (!decision.allowed && decision.status === "budget_limited") {
-      goal.status = decision.status;
-      goal.reason = decision.reason;
-    } else {
+    return closed("closed");
+  }
+  if (input.outcome !== "completed") {
+    if (!stageContinuationAllowed(cause, progressObserved)) {
+      const budget = goalAdmission(goal, input.now, false);
+      if (!budget.allowed && budget.status === "budget_limited") {
+        goal.status = budget.status;
+        goal.reason = budget.reason;
+        return closed("closed");
+      }
       goal.status = "blocked";
-      goal.reason = failureReason(input.outcome, input.failure_cause);
+      goal.reason =
+        run.impediment !== undefined ? run.impediment.reason : failureReason(input.outcome, cause);
+      return closed(input.outcome === "cancelled" || cause === "declined" ? "closed" : "attention");
     }
-  } else if (input.disposition === "final") {
+    if (spendStage()) return closed("closed");
+    goal.reason = CONTINUATION_REASONS[cause];
+    return closed("continue");
+  }
+  if (input.disposition === "final") {
     if (
       input.completion_validated &&
       run.candidate !== undefined &&
@@ -442,24 +618,20 @@ export function settleGoalRun(
       goal.status = "complete";
       delete goal.steward.last_steward_execution_id;
       goal.reason = "Completion committed after criteria, gates and durable reconciliation";
-    } else {
-      goal.status = "blocked";
-      goal.reason = "Run ended without a validated completion candidate or checkpoint";
+      return closed("complete");
     }
-  } else if (run.checkpoint === undefined) {
+    goal.status = "blocked";
+    goal.reason = "Run ended without a validated completion candidate or checkpoint";
+    return closed("attention");
+  }
+  if (run.checkpoint === undefined) {
     goal.status = "blocked";
     goal.reason = "Run ended without an accepted checkpoint";
-  } else {
-    goal.no_progress_checkpoints = run.checkpoint.progress_accepted
-      ? 0
-      : goal.no_progress_checkpoints + 1;
-    const decision = goalAdmission(goal, input.now, true);
-    if (!decision.allowed) {
-      goal.status = decision.status;
-      goal.reason = decision.reason;
-    }
+    return closed("attention");
   }
-  return changed(state, goal, input.now);
+  if (spendStage()) return closed("closed");
+  goal.reason = CONTINUATION_REASONS.checkpoint;
+  return closed("continue");
 }
 
 /** Disconnect/restart revokes future runs; any ongoing run retains its physical and cost binding. */

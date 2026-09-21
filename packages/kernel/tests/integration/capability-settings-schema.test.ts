@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveGoalsSettings } from "@clarvis/goal/settings";
 import { globalPaths } from "@clarvis/paths";
 import { settingsSchema } from "@clarvis/loop/host";
 import {
@@ -24,16 +25,31 @@ describe("kernelSettingsSchema", () => {
     const block = { goals: { max_net_tokens: 6000 } };
     expect(settingsSchema.safeParse(block).success).toBe(false);
     expect(kernelSettingsSchema.parse(block)).toMatchObject({
-      goals: { max_net_tokens: 6000, max_auto_continuations: 8, max_no_progress_checkpoints: 3 },
+      goals: { max_net_tokens: 6000, max_auto_continuations: 8 },
     });
     expect(kernelSettingsSchema.parse({ goals: {} })).toMatchObject({
-      goals: { max_auto_continuations: 8, max_no_progress_checkpoints: 3 },
+      goals: { max_auto_continuations: 8 },
     });
+    /**
+     * The stage progress limit deliberately carries no settings-level default. Its
+     * default lives in the Goal domain's limits, which creation resolves, and leaving
+     * the parsed field absent is what lets a document that still names the previous
+     * spelling be normalized instead of reset to the default: a scope's document is
+     * discarded whole when it fails validation, so the renamed key is admitted and the
+     * value is moved in memory.
+     */
+    expect(
+      resolveGoalsSettings(
+        (kernelSettingsSchema.parse({ goals: {} }) as { goals?: unknown }).goals,
+      ),
+    ).toMatchObject({ max_auto_continuations: 8 });
+    expect(resolveGoalsSettings({ max_no_progress_checkpoints: 2 }).max_no_progress_stages).toBe(2);
     for (const goals of [
       { max_net_tokens: 0 },
       { max_net_tokens: Infinity },
       { max_auto_continuations: 256 },
-      { max_no_progress_checkpoints: 0 },
+      { max_no_progress_stages: 0 },
+      { max_no_progress_checkpoints: 33 },
       { deadline_at: -1 },
       { enabled: true },
     ])

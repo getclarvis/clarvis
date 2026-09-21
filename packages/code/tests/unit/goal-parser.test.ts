@@ -58,9 +58,9 @@ describe("goal review validation", () => {
         })),
       }),
     ).toThrow("32 criteria");
-    expect(() =>
-      goalDraftAction({ ...draft, limits: { max_no_progress_checkpoints: 1.5 } }),
-    ).toThrow("whole positive");
+    expect(() => goalDraftAction({ ...draft, limits: { max_no_progress_stages: 1.5 } })).toThrow(
+      "whole positive",
+    );
     expect(() => goalDraftAction({ ...draft, limits: { max_auto_continuations: -1 } })).toThrow(
       "whole positive",
     );

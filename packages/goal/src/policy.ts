@@ -95,7 +95,7 @@ export function goalAdmission(
     };
   if (goal.runs.length >= GOAL_RUNS_MAX)
     return { allowed: false, status: "blocked", reason: "Goal execution audit capacity reached" };
-  if (goal.no_progress_checkpoints >= goal.limits.max_no_progress_checkpoints)
-    return { allowed: false, status: "blocked", reason: "Goal checkpoint progress limit reached" };
+  if (goal.no_progress_stages >= goal.limits.max_no_progress_stages)
+    return { allowed: false, status: "blocked", reason: "Goal stage progress limit reached" };
   return { allowed: true, remaining_tokens };
 }

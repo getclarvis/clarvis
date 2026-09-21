@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BuiltinTraceEvent } from "@clarvis/capability";
 import {
   advanceGoalRun,
   settleGoalRun,
   type GoalCriterion,
+  type GoalOperationOutcome,
   type GoalRepository,
 } from "@clarvis/goal";
 import { mapEntry } from "@clarvis/trace";
@@ -23,6 +24,12 @@ async function fixture(options: Parameters<typeof goalHostFixture>[0] = {}) {
   cleanup.push(f.close);
   await f.admit();
   return f;
+}
+
+/** Unwrap an accepted model operation; a refusal here is a test failure, not an expected shape. */
+function accepted<T>(outcome: GoalOperationOutcome<T>): T {
+  if (outcome.kind !== "ok") throw new Error(`goal operation was refused: ${outcome.reason}`);
+  return outcome.value;
 }
 type ToolEvent = Extract<BuiltinTraceEvent, { type: "tool_call" }>;
 type DelegationEvent = Extract<BuiltinTraceEvent, { type: "delegation_completed" }>;
@@ -139,16 +146,16 @@ describe("durable host goal runtime port", () => {
     expect((await port.read()).evidence).toEqual([]);
     evidence.observe(mapped("remote.shell", "Remote tool completed"));
     const remote = (await port.read()).evidence[0]!;
-    expect(remote.description).toStartWith("remote.shell;");
-    expect(await port.candidate(candidate("check", "host", [remote.id]))).toMatchObject({
+    expect(remote.description).toStartWith("remote.shell: ");
+    expect(accepted(await port.candidate(candidate("check", "host", [remote.id])))).toMatchObject({
       valid: false,
     });
     evidence.observe(mapped("shell", JSON.stringify({ exit_code: 0 })));
     const native = (await port.read()).evidence.find((ref) =>
-      ref.description.startsWith("shell;"),
+      ref.description.startsWith("shell: "),
     )!;
     expect(native).toBeDefined();
-    expect(await port.candidate(candidate("check", "host", [native.id]))).toMatchObject({
+    expect(accepted(await port.candidate(candidate("check", "host", [native.id])))).toMatchObject({
       valid: true,
     });
     evidence.observe(mapped("shell", JSON.stringify({ exit_code: 1 })));
@@ -160,13 +167,15 @@ describe("durable host goal runtime port", () => {
     const { port } = await f.runtime();
     await port.progress({ summary: "Prepared the result", evidence_ids: [] });
     expect(
-      await port.checkpoint({
-        summary: "Stage ended",
-        next_step: "Check result",
-        evidence_ids: [],
-      }),
+      accepted(
+        await port.checkpoint({
+          summary: "Stage ended",
+          next_step: "Check result",
+          evidence_ids: [],
+        }),
+      ),
     ).toMatchObject({ progress_accepted: false });
-    expect(await port.candidate(candidate())).toMatchObject({
+    expect(accepted(await port.candidate(candidate()))).toMatchObject({
       valid: true,
       qualitative_criteria: ["objective"],
     });
@@ -183,21 +192,26 @@ describe("durable host goal runtime port", () => {
     const { port, evidence } = await f.runtime();
     evidence.observe(tool({ arguments: { command: "unrelated" }, call_id: "unrelated" }));
     const unrelated = (await port.read()).evidence[0]!;
-    expect(await port.candidate(candidate("check", "host", [unrelated.id]))).toMatchObject({
+    expect(
+      accepted(await port.candidate(candidate("check", "host", [unrelated.id]))),
+    ).toMatchObject({
       valid: false,
     });
     evidence.observe(tool());
-    const ref = (await port.read()).evidence.find((ref) => ref.description.endsWith("call check"))!;
-    expect(await port.candidate(candidate("check", "host", [ref.id]))).toMatchObject({
+    const ref = (await port.read()).evidence.find(
+      (ref) => ref.description === "shell: bun run verify",
+    )!;
+    expect(accepted(await port.candidate(candidate("check", "host", [ref.id])))).toMatchObject({
       valid: true,
     });
     evidence.observe(
       tool({ call_id: "later", result: JSON.stringify({ exit_code: 1 }), error: null }),
     );
     expect(await port.validateCompletion()).toMatchObject({ valid: false });
-    await expect(
-      port.progress({ summary: "Obsolete success", evidence_ids: [ref.id] }),
-    ).rejects.toMatchObject({ code: "invalid_request" });
+    /** An obsolete identifier is corrigible input, not an unavailable control. */
+    expect(
+      await port.progress({ summary: "Obsolete success", evidence_ids: [ref.id] }),
+    ).toMatchObject({ kind: "invalid" });
     expect((await port.read()).evidence.map((item) => item.id)).not.toContain(ref.id);
   });
 
@@ -213,7 +227,9 @@ describe("durable host goal runtime port", () => {
     const { port, evidence } = await f.runtime();
     evidence.observe(tool({ result }));
     expect((await port.read()).evidence).toEqual([]);
-    expect(await port.candidate(candidate("check", "host"))).toMatchObject({ valid: false });
+    expect(accepted(await port.candidate(candidate("check", "host")))).toMatchObject({
+      valid: false,
+    });
   });
 
   it("rejects fabricated references and stamps valid scope without leaking catalog metadata into state", async () => {
@@ -222,12 +238,12 @@ describe("durable host goal runtime port", () => {
     evidence.observe(tool());
     const snapshot = await port.read();
     const ref = snapshot.evidence[0]!;
-    await expect(
-      port.progress({ summary: "Invented", evidence_ids: ["foreign-run-proof"] }),
-    ).rejects.toMatchObject({ code: "invalid_request" });
-    await expect(
-      port.progress({ summary: "Repeated", evidence_ids: [ref.id, ref.id] }),
-    ).rejects.toMatchObject({ code: "invalid_request" });
+    expect(
+      await port.progress({ summary: "Invented", evidence_ids: ["foreign-run-proof"] }),
+    ).toMatchObject({ kind: "invalid" });
+    expect(
+      await port.progress({ summary: "Repeated", evidence_ids: [ref.id, ref.id] }),
+    ).toMatchObject({ kind: "invalid" });
     await port.progress({ summary: "Observed", evidence_ids: [ref.id] });
     const stored = (await f.repository.read("session"))!.current!.runs[0]!.progress!.evidence[0]!;
     expect(stored).toMatchObject({
@@ -254,19 +270,32 @@ describe("durable host goal runtime port", () => {
     const { goal, evidence: catalog } = await port.read();
     const ref = catalog[0]!;
     expect(ref.digest).toBe(digest);
-    expect(await port.candidate(candidate("artifact", "host", [ref.id]))).toMatchObject({
+    expect(accepted(await port.candidate(candidate("artifact", "host", [ref.id])))).toMatchObject({
       valid: true,
     });
     const snapshot = await evidence.snapshot(goal);
+    /** A reference the stage cites as an artifact still counts as that stage's progress. */
+    const checkpoint = await port.checkpoint({
+      summary: "Artifact verified",
+      next_step: "Report the result",
+      evidence_ids: [ref.id],
+    });
+    expect(accepted(checkpoint).progress_accepted).toBe(true);
     await writeFile(join(f.workspaceRoot, "result.txt"), "changed");
     expect(
       await snapshot.verify(ref, { id: "q", kind: "qualitative", description: "q" }),
     ).toMatchObject({ valid: false });
     expect(await port.validateCompletion()).toMatchObject({ valid: false });
-    await expect(port.candidate(candidate("artifact", "host", [ref.id]))).rejects.toMatchObject({
-      code: "invalid_request",
+    expect(await port.candidate(candidate("artifact", "host", [ref.id]))).toMatchObject({
+      kind: "invalid",
     });
     expect((await port.read()).evidence[0]!.id).not.toBe(ref.id);
+    /** An artifact that vanished cannot support completion at all, and it stays corrigible. */
+    await rm(join(f.workspaceRoot, "result.txt"));
+    expect(
+      await snapshot.verify(ref, { id: "q", kind: "qualitative", description: "q" }),
+    ).toMatchObject({ valid: false, reason: "Current artifact digest is unavailable" });
+    expect((await port.read()).evidence).toEqual([]);
   });
 
   it("refuses outside workspace artifacts, including directory links, and unavailable bytes", async () => {
@@ -281,7 +310,9 @@ describe("durable host goal runtime port", () => {
     await symlink(external, join(f.workspaceRoot, "escape"), "junction");
     const { port } = await f.runtime();
     expect((await port.read()).evidence).toEqual([]);
-    expect(await port.candidate(candidate("artifact", "host"))).toMatchObject({ valid: false });
+    expect(accepted(await port.candidate(candidate("artifact", "host")))).toMatchObject({
+      valid: false,
+    });
     const missing = await f.runtime("first", {
       readArtifact: async () => {
         throw new Error("private-file-path");
@@ -299,7 +330,9 @@ describe("durable host goal runtime port", () => {
       criteria: [{ id: "review", kind: "human", description: "User review" }],
     });
     const { port } = await f.runtime();
-    expect(await port.candidate(candidate("review", "human"))).toMatchObject({ valid: false });
+    expect(accepted(await port.candidate(candidate("review", "human")))).toMatchObject({
+      valid: false,
+    });
     await f.control({ kind: "accept", criterion_id: "review", objective_revision: 1 });
     expect(await port.validateCompletion()).toMatchObject({
       valid: true,
@@ -353,7 +386,9 @@ describe("durable host goal runtime port", () => {
         objective_revision: goal.objective_revision,
       },
     });
-    expect(await port.candidate(candidate("review", "human"))).toMatchObject({ valid: false });
+    expect(accepted(await port.candidate(candidate("review", "human")))).toMatchObject({
+      valid: false,
+    });
 
     armed = true;
     // The verdict says nothing about the candidate, so it must not be reported as
@@ -452,7 +487,9 @@ describe("durable host goal runtime port", () => {
       },
     });
     await port.blocked("Need user authority");
-    expect((await f.reopen().get("session"))!.goal_state!.current!.status).toBe("blocked");
+    const declared = (await f.reopen().get("session"))!.goal_state!.current!;
+    expect(declared.runs[0]!.impediment).toMatchObject({ reason: "Need user authority" });
+    expect(declared.status).toBe("active");
     expect(f.logger.events("goal.notification.failed")).toHaveLength(1);
     expect(JSON.stringify(f.logger.records)).not.toContain("private-observer");
     await port.blocked("Repeated blocker");
@@ -503,7 +540,7 @@ describe("durable host goal runtime port", () => {
       next_step: "Continue",
       evidence_ids: [ref.id],
     });
-    expect(checkpoint.progress_accepted).toBe(true);
+    expect(accepted(checkpoint).progress_accepted).toBe(true);
     await settle(f);
     await f.admit("second");
     const second = await f.runtime("second");
@@ -517,11 +554,13 @@ describe("durable host goal runtime port", () => {
     const newRef = (await second.port.read()).evidence[0]!;
     expect(newRef.id).not.toBe(ref.id);
     expect(
-      await second.port.checkpoint({
-        summary: "Checked again",
-        next_step: "Continue again",
-        evidence_ids: [newRef.id],
-      }),
+      accepted(
+        await second.port.checkpoint({
+          summary: "Checked again",
+          next_step: "Continue again",
+          evidence_ids: [newRef.id],
+        }),
+      ),
     ).toMatchObject({ progress_accepted: false });
     events.push(tool({ result: JSON.stringify({ exit_code: 1 }) }));
     await expect(second.port.read()).rejects.toMatchObject({ code: "conflict" });
@@ -559,7 +598,40 @@ describe("durable host goal runtime port", () => {
     await f.admit("second");
     const second = await f.runtime("second");
     expect((await second.port.read()).evidence).toEqual([]);
-    expect(await second.port.candidate(candidate("check", "host"))).toMatchObject({ valid: false });
+    expect(accepted(await second.port.candidate(candidate("check", "host")))).toMatchObject({
+      valid: false,
+    });
+  });
+
+  it("describes a catalog option by its operation instead of an opaque call id", async () => {
+    const f = await fixture({ criteria: [toolCriterion] });
+    const { port, evidence } = await f.runtime();
+    evidence.observe(tool({ call_id: "model-chosen-id" }));
+    const option = (await port.read()).evidence[0]!;
+    expect(option.description).toBe("shell: bun run verify");
+    evidence.observe(tool({ call_id: "unlabelled", arguments: { unrelated: true } }));
+    expect((await port.read()).evidence.at(-1)!.description).toBe("shell");
+    /** The label is presentation: identity, scope and digest remain the authority. */
+    expect(option.id).toStartWith("tool-");
+    expect(option.execution_id).toBe("first");
+    expect(option.digest).toMatch(/^[0-9a-f]{64}$/u);
+  });
+
+  it("reports only the bound stage's own successful receipts, never what it merely cited", async () => {
+    const f = await fixture({ criteria: [toolCriterion] });
+    const { port, evidence } = await f.runtime();
+    expect((await evidence.snapshot((await port.read()).goal)).stageActivity()).toEqual([]);
+    /** A command that failed is not a receipt: it must not read as this stage's progress. */
+    evidence.observe(tool({ call_id: "failed-check", result: JSON.stringify({ exit_code: 1 }) }));
+    expect((await evidence.snapshot((await port.read()).goal)).stageActivity()).toEqual([]);
+    evidence.observe(tool());
+    const snapshot = await evidence.snapshot((await port.read()).goal);
+    expect(snapshot.stageActivity()).toHaveLength(1);
+    /** Receipts are a set: the same check repeated under another call id adds nothing. */
+    evidence.observe(tool({ call_id: "another", arguments: { command: "bun run verify" } }));
+    expect((await evidence.snapshot((await port.read()).goal)).stageActivity()).toEqual(
+      snapshot.stageActivity(),
+    );
   });
 
   it("refuses caller-selected authority and oversized evidence without publishing model state", async () => {
@@ -571,6 +643,49 @@ describe("durable host goal runtime port", () => {
     await expect(port.read()).rejects.toMatchObject({ code: "resource_exhausted" });
     expect((await f.repository.read("session"))!.current!.runs[0]!.progress).toBeUndefined();
     expect(f.changes).toEqual([]);
+  });
+
+  it("refuses an unusable evidence set as corrigible input without writing anything", async () => {
+    const f = await fixture({ criteria: [toolCriterion] });
+    const { port, evidence } = await f.runtime();
+    evidence.observe(tool());
+    const known = (await port.read()).evidence[0]!.id;
+    const before = structuredClone((await f.repository.read("session"))!.current!);
+    const unacceptable = [["tool-absent"], [known, known], [known, "tool-absent"]];
+    for (const evidence_ids of unacceptable)
+      expect(await port.progress({ summary: "Inspected the work", evidence_ids })).toMatchObject({
+        kind: "invalid",
+      });
+    for (const evidence_ids of unacceptable)
+      expect(
+        await port.checkpoint({ summary: "Stage ended", next_step: "Continue", evidence_ids }),
+      ).toMatchObject({ kind: "invalid" });
+    /**
+     * A list past the advertised bound is refused by the schema before the port sees it, which
+     * is one of the arguments the capability answers as corrigible tool input.
+     */
+    await expect(
+      port.progress({
+        summary: "Inspected the work",
+        evidence_ids: Array.from({ length: 9 }, (_, index) => `tool-${index}`),
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    /** A candidate is refused as a whole: one unusable identifier leaves nothing recorded. */
+    expect(await port.candidate(candidate("check", "host", [known, "tool-absent"]))).toMatchObject({
+      kind: "invalid",
+    });
+
+    const after = (await f.repository.read("session"))!.current!;
+    expect(after.revision).toBe(before.revision);
+    expect(after.runs[0]!.progress).toBeUndefined();
+    expect(after.runs[0]!.checkpoint).toBeUndefined();
+    expect(after.runs[0]!.candidate).toBeUndefined();
+    expect(f.changes).toEqual([]);
+
+    // A usable set still resolves, so the refusal was about the identifiers and nothing else.
+    expect(
+      await port.progress({ summary: "Inspected the work", evidence_ids: [known] }),
+    ).toMatchObject({ kind: "ok" });
   });
 });
 

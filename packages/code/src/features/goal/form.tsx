@@ -127,8 +127,8 @@ export function GoalForm(
     },
     {
       label: "No progress",
-      value: String(draft().limits.max_no_progress_checkpoints ?? "3 (host default)"),
-      edit: () => limit("max_no_progress_checkpoints", "Consecutive checkpoints without progress"),
+      value: String(draft().limits.max_no_progress_stages ?? "3 (host default)"),
+      edit: () => limit("max_no_progress_stages", "Consecutive stages without progress"),
     },
     {
       label: "Deadline",

@@ -7,7 +7,7 @@ export type GoalStatus =
 export interface GoalLimits {
   max_net_tokens: number;
   max_auto_continuations: number;
-  max_no_progress_checkpoints: number;
+  max_no_progress_stages: number;
   deadline_at?: number;
 }
 
@@ -81,6 +81,31 @@ export interface GoalProgress {
 export type GoalUsage =
   { kind: "unknown" } | { kind: "measured"; input: number; output: number; cached?: number };
 
+/**
+ * Why a stage ended, in the host's closed vocabulary.
+ *
+ * @remarks Mirrors the Goal domain's own enum so a client can name an ending
+ *   without parsing prose. Only `checkpoint`, `local_limit`, `stagnation`,
+ *   `empty_response`, `impediment`, `transient` and `steward_interrupted` may be
+ *   re-evaluated by a successor stage; the rest are never presumed recoverable.
+ */
+export type GoalRunCause =
+  | "checkpoint"
+  | "local_limit"
+  | "declined"
+  | "cancelled"
+  | "stagnation"
+  | "empty_response"
+  | "impediment"
+  | "transient"
+  | "steward_interrupted"
+  | "usage_unknown"
+  | "context_overflow"
+  | "provider_refused"
+  | "tools_unavailable"
+  | "control_failure"
+  | "unclassified";
+
 export interface GoalRun {
   execution_id: string;
   admission_id: string;
@@ -94,6 +119,23 @@ export interface GoalRun {
   outcome?: "completed" | "failed" | "cancelled";
   usage?: GoalUsage;
   usage_estimate?: { sequence: number; usage: GoalUsage };
+  /**
+   * What the closed stage leaves for the host's automatic path.
+   *
+   * @remarks Written by the Goal domain's settlement, read by the host's
+   *   continuation policy. `decision` is the one field that admits a successor;
+   *   `cause` is the closed vocabulary the successor is told, and
+   *   `progress_observed` is the host's own observation that the stage advanced the
+   *   work rather than repeating itself.
+   */
+  decision?: "complete" | "continue" | "attention" | "closed";
+  cause?: GoalRunCause;
+  progress_observed?: boolean;
+  /** Receipts this stage contributed that the Goal had not already recorded. */
+  activity?: string[];
+  not_before?: number;
+  /** A model-declared blocker: evidence the stage reported, never an operator control. */
+  impediment?: { reason: string; declared_at: number };
   checkpoint?: GoalCheckpoint;
   progress?: GoalProgress;
   candidate?: GoalCandidate;
@@ -186,7 +228,7 @@ export interface GoalRecord {
     overrun_tokens: number;
   };
   auto_continuations: number;
-  no_progress_checkpoints: number;
+  no_progress_stages: number;
   runs: GoalRun[];
   candidate?: GoalCandidate;
   human_acceptances: Array<{

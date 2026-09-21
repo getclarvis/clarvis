@@ -713,26 +713,41 @@ it("gives the review exactly one correction before the Goal is left unresolved",
   try {
     await writeFile(join(f.workspaceRoot, "answer.txt"), "The answer is 42.\n");
     f.setResponder(async () => {
-      if (f.requests.length === 1) return { name: "read_file", arguments: { path: "answer.txt" } };
-      if (f.requests.length === 2)
-        return {
-          name: "update_goal",
-          arguments: {
-            update: {
-              action: "candidate",
-              summary: "Answer ready",
-              assessments: [
-                {
-                  criterion_id: "objective",
-                  kind: "qualitative",
-                  justification: "Answer inspected",
-                  evidence_ids: [],
-                },
-              ],
+      switch (f.requests.length) {
+        case 1:
+          return { name: "read_file", arguments: { path: "answer.txt" } };
+        case 2:
+          return {
+            name: "update_goal",
+            arguments: {
+              update: {
+                action: "candidate",
+                summary: "Answer ready",
+                assessments: [
+                  {
+                    criterion_id: "objective",
+                    kind: "qualitative",
+                    justification: "Answer inspected",
+                    evidence_ids: [],
+                  },
+                ],
+              },
             },
-          },
-        };
-      return { text: "The answer is 42." };
+          };
+        case 3:
+          return { text: "The answer is 42." };
+        default:
+          /**
+           * The interrupted review leaves the Goal active, so the host continues it in one
+           * successor stage; declaring an impediment there ends the journey deterministically.
+           */
+          return {
+            name: "update_goal",
+            arguments: {
+              update: { action: "blocked", reason: "The review cannot decide this result" },
+            },
+          };
+      }
     });
     // The reserved target is never a valid assessment, so the one correction the
     // gate grants cannot rescue the review and its second refusal is terminal.
@@ -781,7 +796,16 @@ it("gives the review exactly one correction before the Goal is left unresolved",
     expect(goal.status).not.toBe("complete");
     expect(f.stewardRequests).toHaveLength(2);
     expect(requestsImposeNothing(f)).toBe(true);
-    expect(goal.runs.at(-1)!.steward_reviews!.at(-1)!.decision).toBe("interrupted");
+    /**
+     * The one correction the gate grants could not rescue the review, so it was settled as
+     * interrupted — and because its consumption was measured, the Kernel continued the Goal
+     * in exactly one successor stage instead of handing it to the operator.
+     */
+    expect(goal.runs[0]!.steward_reviews!.at(-1)!.decision).toBe("interrupted");
+    expect(goal.runs[0]!.decision).toBe("continue");
+    expect(goal).toMatchObject({ status: "blocked", auto_continuations: 1 });
+    expect(goal.runs).toHaveLength(2);
+    expect(goal.runs[1]).toMatchObject({ decision: "attention", cause: "impediment" });
   } finally {
     await f.close();
   }

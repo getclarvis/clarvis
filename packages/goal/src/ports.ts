@@ -41,6 +41,21 @@ export interface GoalEvidenceOption extends GoalEvidenceRef {
 }
 
 /**
+ * The outcome of a model operation that can be refused as corrigible input.
+ *
+ * @remarks A rejected argument — an evidence identifier that is absent, obsolete,
+ *   duplicated or unsuccessful — is a mistake the model can fix by reading the
+ *   catalog again, not proof that the bound control is unavailable. Returning it as
+ *   a value keeps the two apart: the caller answers the model instead of ending the
+ *   stage with host attention. Thrown errors stay reserved for infrastructure,
+ *   authority and state conflicts, and only ever report a rejection that happened
+ *   *before* any durable write, so an operation the host could not confirm is never
+ *   presented as an argument the model may simply retry.
+ */
+export type GoalOperationOutcome<T> =
+  { kind: "ok"; value: T } | { kind: "invalid"; reason: string };
+
+/**
  * Entry-agent authority is captured by the host, never selected through model arguments.
  * Every operation revalidates the bound run and revision. Evidence IDs are resolved and stamped
  * by the host; model prose cannot establish scope, successful activity or human acceptance.
@@ -52,9 +67,15 @@ export interface GoalRuntimePort {
   readonly logger?: Logger;
   readonly steward?: GoalStewardPort;
   read(signal?: AbortSignal): Promise<GoalRuntimeSnapshot>;
-  progress(input: GoalProgressInput, signal?: AbortSignal): Promise<void>;
-  checkpoint(input: GoalCheckpointInput, signal?: AbortSignal): Promise<GoalCheckpoint>;
-  candidate(input: GoalCandidateInput, signal?: AbortSignal): Promise<GoalCompletionValidation>;
+  progress(input: GoalProgressInput, signal?: AbortSignal): Promise<GoalOperationOutcome<void>>;
+  checkpoint(
+    input: GoalCheckpointInput,
+    signal?: AbortSignal,
+  ): Promise<GoalOperationOutcome<GoalCheckpoint>>;
+  candidate(
+    input: GoalCandidateInput,
+    signal?: AbortSignal,
+  ): Promise<GoalOperationOutcome<GoalCompletionValidation>>;
   /** Deterministic candidate and host/human evidence validation; this never invokes a model. */
   validateCompletion(signal?: AbortSignal): Promise<GoalCompletionValidation>;
   blocked(reason: string, signal?: AbortSignal): Promise<void>;

@@ -267,7 +267,7 @@ added to or subtracted from `consumed()`; cache **reads** (`cached`) are subtrac
 | `soft_limit_check` | `{agent, dimension, used, limit, outcome, new_checkpoint?, escalations}` | `packages/capability/src/trace-kinds.ts` | `evaluateSoftBudget` (`packages/loop/src/runtime/budget/soft-budget.ts`) |
 | `convergence_warning` | `{agent, subagent_instance_id?, code, message}` | `packages/capability/src/trace-kinds.ts` | the iteration driver after each soft-tier warning (`packages/loop/src/runtime/loop/loop.ts`) |
 | `guard_escalation` | `{agent, subagent_instance_id?, code, outcome, escalations}` | `packages/capability/src/trace-kinds.ts` | `run-agent.ts`'s `onGuardTrip` (`packages/loop/src/runtime/loop/run-agent.ts`) |
-| `terminate` | `unknown` (observed `{reason: string}`) | `packages/capability/src/trace-kinds.ts` | multiple call sites, incl. `packages/loop/src/runtime/loop/run-agent.ts` (no_progress), `packages/loop/src/runtime/loop/loop.ts` (`trip.code`) |
+| `terminate` | `unknown` (observed `{reason: string}`; the `no_progress` form adds `streak` and `limit`) | `packages/capability/src/trace-kinds.ts` | multiple call sites, incl. `packages/loop/src/runtime/loop/run-agent.ts` (no_progress), `packages/loop/src/runtime/loop/loop.ts` (`trip.code`) |
 
 `outcome` on both `soft_limit_check` and `guard_escalation` is one of
 `"continued"|"declined"|"no_response"|"escalations_exhausted"` (`packages/capability/src/trace-kinds.ts`) — the two
@@ -356,7 +356,10 @@ Within one iteration of `runAgentLoop`, after a model call and tool dispatch, th
    Any other outcome ends the loop with `d.results.guardTrip(trip)`, or with the escalation's own
    cancellation result if the abort raced the prompt (`packages/loop/src/runtime/loop/loop.ts`).
 5. The no-progress tracker is bumped (`d.progress.bump`); a stuck run ends here
-   (`packages/loop/src/runtime/loop/loop.ts`).
+   (`packages/loop/src/runtime/loop/loop.ts`). A text-only finalize refused by an `unbounded` gate
+   nudge bumps the same tracker before its own budget checkpoint
+   (`packages/loop/src/runtime/loop/run-agent.ts`), which is what bounds a gate that keeps refusing
+   without giving the capability a second counter.
 6. `checkpoint()` — the budget checkpoint runs last in the iteration (`packages/loop/src/runtime/loop/loop.ts`), via
    `runBudgetCheckpoint` (`packages/loop/src/runtime/loop/run-agent.ts`).
 

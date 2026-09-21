@@ -116,6 +116,14 @@ unsuccessful termination keeps its existing reason and does not claim a saved ch
 Capability finalizers receive `preserveState` for checkpoints and for interruptions when a
 registered capability sets `preserveStateOnInterruption`. Scheduling the next run belongs to the host.
 
+A finalize gate that refuses an attempt answers with a `nudge`, never by choosing the model's next
+tool. A bounded nudge promises the gate ends the repetition itself, so the loop does not count it. An
+`unbounded` nudge promises the opposite: the gate keeps refusing while the condition holds, and the
+loop counts that attempt once as an unproductive iteration. Any productive iteration clears the
+sequence, and the run ends with `no_progress` only when the unproductive streak reaches the persona's
+limit. Exemption from a capability's own nudge budget is therefore a bound borrowed from the run, not
+permission to iterate forever.
+
 Iteration preparation awaits `OrchestrationHooks.beforeIteration` in contribution order before
 compaction or inference, under a five-second wall bound and run cancellation. An interruption result
 ends the stage; successful completion or checkpoint is refused outside the finalization gates; a failed or timed-out sweep cannot proceed to the model. Its signal is retired on
@@ -540,19 +548,19 @@ free to change. Three correlation scopes are bound with `bind()`: the run
 `subagent_instance_id`) in `runAgent`, and `iteration` as a plain field — a child logger per
 iteration would allocate per iteration for nothing.
 
-| Level   | `event`                            | Fields                                                                                            |
-| ------- | ---------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `warn`  | `context.prefix_break`             | `index`, `entries`, `char_offset`, `chars_recharged`, `cause`                                     |
-| `warn`  | `compaction.summarizer_failed`     | `mode`, `reason`, `fell_back`, `cause`                                                            |
-| `warn`  | `compaction.unreachable`           | `declared_window_tokens`, `high_water_tokens`, `observed_tokens`                                  |
-| `warn`  | `tool.args_validation_failed_open` | `tool`, `reason`                                                                                  |
-| `warn`  | `iteration.cache` (escalated)      | `iteration`, `input_tokens`, `cached_tokens`, `ratio`                                             |
-| `info`  | `run.composed`                     | `capabilities`, `builtins`, `tools`, `mcp_servers`, `entry_agent`, `model`, `mode`, `seed_blocks` |
-| `debug` | `capability.activated`             | `capability`, `duration_ms`, `tools`, `has_seed_block`                                            |
-| `debug` | `gate.nudged`                      | `gate`, `mode`, `nudge_count`                                                                     |
-| `debug` | `iteration.cache`                  | as above                                                                                          |
-| `debug` | `optional_package`                 | `package`, `feature`, `outcome`                                                                   |
-| `debug` | `skills.roots_unavailable`         | `cause`                                                                                           |
+| Level   | `event`                            | Fields                                                                                                         |
+| ------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `warn`  | `context.prefix_break`             | `index`, `entries`, `char_offset`, `chars_recharged`, `cause`                                                  |
+| `warn`  | `compaction.summarizer_failed`     | `mode`, `reason`, `fell_back`, `cause`                                                                         |
+| `warn`  | `compaction.unreachable`           | `declared_window_tokens`, `high_water_tokens`, `observed_tokens`                                               |
+| `warn`  | `tool.args_validation_failed_open` | `tool`, `reason`                                                                                               |
+| `warn`  | `iteration.cache` (escalated)      | `iteration`, `input_tokens`, `cached_tokens`, `ratio`                                                          |
+| `info`  | `run.composed`                     | `capabilities`, `builtins`, `tools`, `mcp_servers`, `entry_agent`, `model`, `mode`, `seed_blocks`              |
+| `debug` | `capability.activated`             | `capability`, `duration_ms`, `tools`, `has_seed_block`                                                         |
+| `debug` | `gate.nudged`                      | `gate`, `mode`, `nudge_count`, and for a text-mode unbounded refusal `no_progress_streak`, `no_progress_limit` |
+| `debug` | `iteration.cache`                  | as above                                                                                                       |
+| `debug` | `optional_package`                 | `package`, `feature`, `outcome`                                                                                |
+| `debug` | `skills.roots_unavailable`         | `cause`                                                                                                        |
 
 Plus the degradation warnings the engine already emitted, now named:
 `mcp.connect.failed`, `vision.capability_missing`, `vision.call_failed`, `trace.ingest_failed`,

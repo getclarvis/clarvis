@@ -363,7 +363,11 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
   }
 
   const noProgressResult = (): AgentResult => {
-    trace.record("terminate", { reason: "no_progress" });
+    trace.record("terminate", {
+      reason: "no_progress",
+      streak: progress.streak(),
+      limit: input.noProgressLimit,
+    });
     return {
       status: "error",
       partialText: state.lastAssistantText,
@@ -461,11 +465,15 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
    *   what the gate's own note already asks for.
    */
   let nudgeCount = 0;
-  const noteGateNudged = (gate: number, mode: FinalizeAttempt["mode"]): void => {
+  const noteGateNudged = (
+    gate: number,
+    mode: FinalizeAttempt["mode"],
+    extra?: { no_progress_streak: number; no_progress_limit: number },
+  ): void => {
     nudgeCount += 1;
     if (!levelEnabled(logger, "debug")) return;
     logger.debug(
-      { event: "gate.nudged", gate, mode, nudge_count: nudgeCount },
+      { event: "gate.nudged", gate, mode, nudge_count: nudgeCount, ...extra },
       "a finalize gate refused the finish and nudged instead; the agent iterates again",
     );
   };
@@ -626,7 +634,11 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
           ctx.appendNote("[runtime: result not yet submitted; call submit_result to finalize]");
           if (progress.bump(false)) {
             if (input.textNoSubmitMessage) {
-              trace.record("terminate", { reason: "no_progress" });
+              trace.record("terminate", {
+                reason: "no_progress",
+                streak: progress.streak(),
+                limit: input.noProgressLimit,
+              });
               return {
                 kind: "return",
                 result: {
@@ -651,11 +663,23 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
         const { outcome: g, gate } = await runGates(gates, { mode: "text", text });
         if (g.kind === "terminal") return { kind: "return", result: g.result };
         if (g.kind === "nudge") {
-          noteGateNudged(gate, "text");
           ctx.appendNote(g.note);
-          if (g.unbounded === true && progress.bump(false)) {
-            return { kind: "return", result: noProgressResult() };
-          }
+          /**
+           * An unbounded refusal is bounded here rather than by the gate: it counts
+           * once as an unproductive iteration, a productive iteration clears it, and
+           * the streak reaching the persona's limit ends the run. The log records the
+           * resulting streak and limit so the repetition is attributable without
+           * copying the gate's note into it.
+           */
+          const exhausted = g.unbounded === true && progress.bump(false);
+          noteGateNudged(
+            gate,
+            "text",
+            g.unbounded === true
+              ? { no_progress_streak: progress.streak(), no_progress_limit: input.noProgressLimit }
+              : undefined,
+          );
+          if (exhausted) return { kind: "return", result: noProgressResult() };
           const cp = await checkpoint();
           if (cp) return { kind: "return", result: cp };
           return { kind: "continue" };

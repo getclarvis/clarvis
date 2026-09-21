@@ -14,6 +14,17 @@ export interface GoalCompletionValidation {
   qualitative_criteria: string[];
   /** Exact durable goal-state revision fenced by this validation. */
   revision: number;
+  /**
+   * Set only when the bound stage had no candidate to validate at all.
+   *
+   * @remarks The absence of a candidate and an incomplete one are both
+   *   recoverable, but they are different conditions and the finalize gate has to
+   *   name which one it answered. `validateGoalCandidate` is never responsible for
+   *   this field: it only runs when a candidate exists. The host's early return
+   *   supplies it, so nothing downstream has to infer the absence from the
+   *   verdict's human-readable prose.
+   */
+  cause?: "no_candidate";
 }
 
 /** Check exact criterion coverage and scoped evidence; qualitative judgments remain explicitly labeled. */

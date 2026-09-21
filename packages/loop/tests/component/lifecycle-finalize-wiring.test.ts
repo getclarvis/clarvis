@@ -47,6 +47,8 @@ function input(
     noProgressLimit?: number;
     /** Supplied by a case that needs to compare the counted iterations with the calls made. */
     counter?: IterationCounter;
+    /** Supplied by a case that reads the durable engine trace of the run it starts. */
+    trace?: ReturnType<typeof createTrace>;
   } = {},
 ): RunAgentInput {
   const capability: AgentCapability | undefined =
@@ -71,7 +73,7 @@ function input(
       counter: options.counter ?? createIterationCounter(50),
       usage: { input: 0, output: 0, cached: 0, cache_write: 0 },
     },
-    runtime: { trace: createTrace() },
+    runtime: { trace: options.trace ?? createTrace() },
     compaction: DISABLED_COMPACTION,
     registry: buildRegistry([], []),
     ...(options.contract !== false ? { contract: compileResultContract(RESULT_SCHEMA) } : {}),
@@ -312,6 +314,94 @@ describe("a finalize-gate nudge never forces a tool call", () => {
     expect(result).toMatchObject({ status: "error", error: { code: "no_progress" } });
     expect(counter.count()).toBe(llm.calls.length);
     expect(llm.calls.every((call) => call.toolChoice === undefined)).toBe(true);
+  });
+
+  it("records the unproductive streak and its limit on a no-progress termination", async () => {
+    const trace = createTrace();
+    const llm = new MockLLM({
+      script: Array.from({ length: 6 }, () => ({ text: "still not submitted" })),
+    });
+
+    const result = await runAgent(
+      input(llm, {
+        contribution: nudgeFirst(Number.POSITIVE_INFINITY, true),
+        contract: false,
+        noProgressLimit: 2,
+        trace,
+      }),
+    );
+
+    expect(result).toMatchObject({ status: "error", error: { code: "no_progress" } });
+    expect(
+      trace
+        .entries()
+        .filter((entry) => entry.kind === "terminate")
+        .map((entry) => entry.detail),
+    ).toEqual([{ reason: "no_progress", streak: 2, limit: 2 }]);
+  });
+
+  it("counts a refused submit once, so the submit path is bounded like the text path", async () => {
+    const counter = createIterationCounter(50);
+    const llm = new MockLLM({ script: [submit, submit, submit, submit] });
+
+    const result = await runAgent(
+      input(llm, {
+        contribution: nudgeFirst(Number.POSITIVE_INFINITY, true),
+        noProgressLimit: 2,
+        counter,
+      }),
+    );
+
+    expect(result).toMatchObject({ status: "error", error: { code: "no_progress" } });
+    expect(counter.count()).toBe(llm.calls.length);
+    expect(llm.calls).toHaveLength(2);
+  });
+
+  it("clears the unproductive sequence on a productive iteration instead of condemning a later refusal", async () => {
+    let attempts = 0;
+    const contribution: AgentLoopContribution = {
+      tools: [
+        {
+          fullName: "noop",
+          wireName: "noop",
+          mcpName: "",
+          toolName: "noop",
+          inputSchema: { type: "object", properties: {} },
+        },
+      ],
+      handlers: [
+        {
+          matches: (call) => call.name === "noop",
+          handle: async () => ({ kind: "result", text: "ok", progress: true }),
+        },
+      ],
+      gates: [
+        {
+          check: async () => {
+            attempts += 1;
+            return attempts <= 2
+              ? { kind: "nudge", note: NUDGE_NOTE, unbounded: true }
+              : { kind: "pass" };
+          },
+        },
+      ],
+    };
+    const llm = new MockLLM({
+      script: [
+        { text: "not yet" },
+        { toolCalls: [{ name: "noop", arguments: {} }] },
+        { text: "still not yet" },
+        { text: "done" },
+      ],
+    });
+
+    const result = await runAgent(
+      input(llm, { contribution, contract: false, noProgressLimit: 2 }),
+    );
+
+    expect(result.status).toBe("completed");
+    expect(attempts).toBe(3);
+    expect(llm.calls).toHaveLength(4);
   });
 });
 

@@ -769,7 +769,14 @@ Ordinary final results have two paths, chosen by whether `RunAgentInput.contract
   continues. Pinned by `packages/loop/tests/unit/run-agent.test.ts`.
 
 **Without a contract**: `onTextOnly` appends the text, runs the gates, and completes on
-`pass`; a `nudge` appends the note, and only an `unbounded` nudge bumps the progress tracker.
+`pass`; a `nudge` appends the note, and only an `unbounded` nudge counts the attempt as an
+unproductive iteration before the budget checkpoint. The count is what bounds a gate that keeps
+refusing: a productive iteration clears the sequence, and the streak reaching the persona's limit
+ends the run with `no_progress`, whose `terminate` entry carries the `streak` and `limit` it reached.
+The `gate.nudged` debug entry carries the same two fields for a text-mode unbounded refusal, so the
+repetition is attributable without copying the gate's note into the log. The submit and checkpoint
+paths count the refused attempt once through the ordinary post-dispatch `progress.bump` instead, so
+no path counts it twice.
 
 `runGates` (`packages/loop/src/runtime/loop/loop-contract.ts`) runs gates in order and
 short-circuits on the first non-`pass`, returning the gate's **ordinal** as its only identity — the
@@ -895,8 +902,12 @@ Every way a run reaches its terminal `RunResponse`:
 
 `completed`, `noProgress` and `emptyResponse` each record a `terminate` entry with a reason
 (`packages/loop/src/runtime/loop/run-agent.ts`), as does a non-escalated guard trip (`packages/loop/src/runtime/loop/loop.ts`) and
-`all_tools_unavailable` (`packages/loop/src/runtime/loop/loop-iteration.ts`). `terminate` is not wire-visible
-(`packages/trace/src/trace-mapper.ts`).
+`all_tools_unavailable` (`packages/loop/src/runtime/loop/loop-iteration.ts`). The `no_progress` entry
+also carries the `streak` it reached and the persona's `limit`, so a stage that exhausted its
+unproductive-attempt allowance is diagnosable from the engine record itself. `terminate` is not wire-visible
+(`packages/trace/src/trace-mapper.ts`); the durable wire evidence of a no-progress stop is the
+`run_ended` event, whose `reason` is `guard_trip`, whose `code` is `no_progress`, and whose message
+names the streak (`packages/loop/src/runtime/run-trace.ts`).
 
 ## 5. Invariants
 
@@ -1205,6 +1216,17 @@ Every way a run reaches its terminal `RunResponse`:
     `packages/loop/tests/component/execute-run.test.ts`. The loop does not import or validate the
     Extension Profile DTO stored there; that host contract belongs to
     [`hosts/extension-profiles.md`](../hosts/extension-profiles.md).
+73. **An `unbounded` nudge is finite because a productive iteration clears it.** — The flag exempts a
+    refusal from the issuing capability's own nudge budget; the loop then counts the refused attempt
+    once as an unproductive iteration, so a run that keeps working between refusals is never
+    condemned by an earlier one, and a genuinely stuck one reaches `no_progress` carrying the
+    `streak` and `limit` it reached. Production: `GateOutcome` in
+    `packages/capability/src/loop-contract.ts` and the text-path nudge branch in
+    `packages/loop/src/runtime/loop/run-agent.ts`. Test:
+    `packages/loop/tests/component/lifecycle-finalize-wiring.test.ts` ("records the unproductive
+    streak and its limit on a no-progress termination", "counts a refused submit once, so the submit
+    path is bounded like the text path", "clears the unproductive sequence on a productive iteration
+    instead of condemning a later refusal").
 
 ## 6. Failure modes and degradation
 

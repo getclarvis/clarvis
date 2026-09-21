@@ -619,6 +619,17 @@ Test: failed/cancelled settlement and newer-control cases in
 the real loop stops with exhausted measured usage` in
 [goal-file-host.test.ts](../../packages/kernel/tests/integration/goal-file-host.test.ts).
 
+An unsuccessful stage also carries the host's typed failure cause: execution stagnation and an
+unreadable bound control are named as themselves instead of the generic failed-stage wording, so a
+blocked goal's reason tells the operator which action it needs. Cancellation, a model-declared
+blocker, an exhausted budget, an expired deadline and unknown usage all keep their existing
+precedence, and the cause is a closed host vocabulary rather than the failed run's own message.
+Production: `GoalRunFailureCause` and `settleGoalRun` in [execution.ts](../../packages/goal/src/execution.ts),
+and `goalFailureCause` in [settlement.ts](../../packages/kernel/src/goals/settlement.ts).
+Test: `names the host's typed failure cause instead of a generic stage failure` in
+[domain.test.ts](../../packages/goal/tests/unit/domain.test.ts) and
+[goal-settlement.test.ts](../../packages/kernel/tests/unit/goal-settlement.test.ts).
+
 Admission requires remaining tokens, deadline and continuation allowance, physical closure and known
 usage. Resume preserves spend and used continuations; it cannot grant budget or bypass expired
 limits. User intervention may restart a recorded stagnation evaluation. Repeated host activity
@@ -776,10 +787,42 @@ Tool names, descriptions, schemas and order are independent of goal revisions an
 Checkpoint returns `HandlerVerdict.finalize` with separate bounded handoff metadata. The goal gate
 accepts only a checkpoint requested through its own bound handler, and the remaining gates still
 run. The ordinary-final gate always has `fastAcceptOk=false` and asks the host to validate completion
-again. A first nonempty invalid final receives one recovery nudge; another invalid final, or the
-first empty final, durably reports blocking and stops. An explicit `blocked` action uses interruption
-without requiring open tasks to be closed. Storage or binding failure produces `goal_control_failed`
-and host attention without reflecting private exception details in the model response.
+again. An explicit `blocked` action uses interruption without requiring open tasks to be closed.
+Storage or binding failure produces `goal_control_failed` and host attention without reflecting
+private exception details in the model response.
+
+Premature finalization has one recovery policy shared by both entry capabilities. A final attempt
+whose deterministic completion validation fails is answered with the same orientation and an
+`unbounded` nudge, and the gate keeps no lifetime allowance of its own — so a refusal is not spent by
+a stage that keeps working afterwards. The orientation states that the Goal cannot conclude yet and
+leaves continuing the work, reading the criteria and requesting a checkpoint equally valid: the model
+is never required to fabricate a candidate before it may work. It never names the Goal Steward, which
+this path is reachable without invoking. The typed cause distinguishes a stage with no candidate at
+all from one whose recorded candidate does not satisfy the current criteria, and the guided creation
+turn names its own cause while the Goal is not yet created. Only recoverable verdicts are answered
+this way: a failed read, foreign binding or obsolete revision stays terminal `goal_control_failed`,
+and an empty final remains a structural terminal. The bound is the run's own unproductive-attempt
+sequence, so a productive iteration clears it and a genuinely stuck stage ends the run with
+`no_progress` instead of the Goal being marked blocked by the gate. A recovery answers with a nudge
+and nothing else: it starts no run, creates no stage, consumes no automatic continuation and
+synthesizes no checkpoint. Each answer records a bounded `goal_finalization_recovery` trace entry
+carrying the execution identity, agent, attempt mode, typed cause and the host's own verdicts — never
+the model's text, the objective or reasoning.
+Production: `recoverGoalFinalization`, `goalRecoveryNote`, `goalRecoveryCause` and
+`GOAL_RECOVERY_TRACE_KIND` in
+[finalization-recovery.ts](../../packages/goal/src/finalization-recovery.ts), used by
+`createGoalCapability` in [capability.ts](../../packages/goal/src/capability.ts) and
+`createGoalCreationRunCapability` in [creation-capability.ts](../../packages/goal/src/creation-capability.ts);
+`GateOutcome` in [loop-contract.ts](../../packages/capability/src/loop-contract.ts) and the text-path
+nudge branch in [run-agent.ts](../../packages/loop/src/runtime/loop/run-agent.ts) own the count and the
+`no_progress` termination. Test: `keeps recovering from a premature final without a lifetime nudge
+allowance`, `records a typed recovery cause without copying model text or the objective` and `names a
+missing candidate as its own recoverable cause` in
+[capability.test.ts](../../packages/goal/tests/unit/capability.test.ts); `records the unproductive
+streak and its limit on a no-progress termination`, `counts a refused submit once, so the submit path
+is bounded like the text path` and `clears the unproductive sequence on a productive iteration
+instead of condemning a later refusal` in
+[lifecycle-finalize-wiring.test.ts](../../packages/loop/tests/component/lifecycle-finalize-wiring.test.ts).
 
 The activation sets `preserveStateOnInterruption`; it never marks the goal complete in a teardown
 hook. Progress wording and status reads are not productive-tool claims. Actual progress acceptance

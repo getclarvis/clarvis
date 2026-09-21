@@ -31,6 +31,7 @@ import {
   getGoalInputSchema,
 } from "./tools.ts";
 import { absentReviewContext, checkGoalSnapshot } from "./runtime-validation.ts";
+import { goalRecoveryCause, recoverGoalFinalization } from "./finalization-recovery.ts";
 import { GOAL_CAPABILITY_NAME } from "./constants.ts";
 import { stewardInterruptionOutcome } from "./agent/steward-types.ts";
 
@@ -45,7 +46,6 @@ type CreationState = {
   runtime?: GoalRuntimePort;
   snapshot?: GoalRuntimeSnapshot;
   checkpoint?: { summary: string; next_step: string };
-  finalNudged: boolean;
 };
 
 function errorResult(bc: AgentBuildContext, code: string, message: string): AgentResult {
@@ -53,7 +53,7 @@ function errorResult(bc: AgentBuildContext, code: string, message: string): Agen
 }
 
 function createCreationState(): CreationState {
-  return { finalNudged: false };
+  return {};
 }
 
 function createCreationHooks(
@@ -232,19 +232,14 @@ function createCreationGate(
     async check(attempt): Promise<GateOutcome> {
       const cancelled = bc.maybeCancelled();
       if (cancelled !== null) return { kind: "terminal", result: cancelled };
-      if (state.runtime === undefined) {
-        if (!state.finalNudged) {
-          state.finalNudged = true;
-          return {
-            kind: "nudge",
-            note: "Define the objective and criteria first with create_goal, then continue the work.",
-          };
-        }
-        return {
-          kind: "terminal",
-          result: errorResult(bc, "goal_blocked", "Run ended before the Goal was created"),
-        };
-      }
+      if (state.runtime === undefined)
+        return recoverGoalFinalization({
+          trace: bc.trace,
+          execution_id: port.execution_id,
+          agent: bc.agent,
+          mode: attempt.mode,
+          cause: "no_goal",
+        });
       try {
         if (attempt.mode === "checkpoint") {
           if (
@@ -288,24 +283,23 @@ function createCreationGate(
           const outcome = stewardInterruptionOutcome(decision);
           return { kind: "terminal", result: errorResult(bc, outcome.code, outcome.reason) };
         }
-        if (
-          !state.finalNudged &&
-          (attempt.mode !== "text" || (attempt.text?.trim().length ?? 0) > 0)
-        ) {
-          state.finalNudged = true;
+        if (attempt.mode === "text" && (attempt.text?.trim().length ?? 0) === 0)
           return {
-            kind: "nudge",
-            note: `The Goal is not complete. Record a candidate covering every criterion, or checkpoint remaining work. ${validation.reasons.join("; ")}`,
+            kind: "terminal",
+            result: errorResult(
+              bc,
+              "goal_blocked",
+              "Run ended without a valid Goal completion candidate",
+            ),
           };
-        }
-        return {
-          kind: "terminal",
-          result: errorResult(
-            bc,
-            "goal_blocked",
-            "Run ended without a valid Goal completion candidate",
-          ),
-        };
+        return recoverGoalFinalization({
+          trace: bc.trace,
+          execution_id: port.execution_id,
+          agent: bc.agent,
+          mode: attempt.mode,
+          cause: goalRecoveryCause(validation),
+          reasons: validation.reasons,
+        });
       } catch {
         return {
           kind: "terminal",

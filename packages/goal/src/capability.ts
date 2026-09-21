@@ -17,6 +17,7 @@ import { goalModelToolInputSchema } from "./model-input.ts";
 import { goalCheckpointSchema } from "./schemas.ts";
 import { CREATE_GOAL, GET_GOAL, UPDATE_GOAL, buildGoalTools, getGoalInputSchema } from "./tools.ts";
 import { absentReviewContext, checkGoalSnapshot } from "./runtime-validation.ts";
+import { goalRecoveryCause, recoverGoalFinalization } from "./finalization-recovery.ts";
 import { createGoalCreationRunCapability } from "./creation-capability.ts";
 import { GOAL_CAPABILITY_NAME } from "./constants.ts";
 import { stewardInterruptionOutcome } from "./agent/steward-types.ts";
@@ -71,7 +72,6 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
               );
               const tools = buildGoalTools();
               let checkpoint: CheckpointMetadata | undefined;
-              let finalNudged = false;
               const reviewed = new Set<string>();
               const recordReviews = (): void => {
                 for (const review of snapshot.goal.runs.at(-1)?.steward_reviews ?? []) {
@@ -326,22 +326,21 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                             resume?.();
                           }
                         }
-                        if (
-                          !finalNudged &&
-                          (attempt.mode !== "text" || (attempt.text?.trim().length ?? 0) > 0)
-                        ) {
-                          finalNudged = true;
+                        if (attempt.mode === "text" && (attempt.text?.trim().length ?? 0) === 0)
                           return {
-                            kind: "nudge",
-                            note: "The goal has no valid completion candidate. Read get_goal, then use update_goal candidate with every current criterion, checkpoint for remaining work, or blocked for a missing decision. A final answer alone cannot complete the goal.",
+                            kind: "terminal",
+                            result: await block(
+                              "Run ended without a valid goal completion candidate",
+                            ),
                           };
-                        }
-                        return {
-                          kind: "terminal",
-                          result: await block(
-                            "Run ended without a valid goal completion candidate or accepted checkpoint",
-                          ),
-                        };
+                        return recoverGoalFinalization({
+                          trace: bc.trace,
+                          execution_id: binding.execution_id,
+                          agent: bc.agent,
+                          mode: attempt.mode,
+                          cause: goalRecoveryCause(validation),
+                          reasons: validation.reasons,
+                        });
                       } catch {
                         return { kind: "terminal", result: unavailable() };
                       }

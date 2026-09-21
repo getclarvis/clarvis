@@ -11,7 +11,6 @@ import {
 } from "solid-js";
 import type { InputRenderable, KeyEvent, Renderable } from "@opentui/core";
 import type { Keymap } from "@opentui/keymap";
-import { useTerminalDimensions } from "@opentui/solid";
 import { glyph, type GlyphName } from "../../theme/glyphs.ts";
 import { fuzzyFilter } from "../../core/fuzzy.ts";
 import { clampListIndex } from "../../ui/patterns/list-navigation.ts";
@@ -26,8 +25,9 @@ import {
 import { tokens } from "../../theme/tokens.ts";
 import { EmptyHint } from "../../ui/primitives/hints.tsx";
 import { windowRows } from "../../ui/patterns/windowed-list.tsx";
-import { FLOAT_CHROME_ROWS, floatMaxRows, FloatFrame } from "./FloatFrame.tsx";
+import { FLOAT_CHROME_ROWS, floatContentWidth, floatMaxRows, FloatFrame } from "./FloatFrame.tsx";
 import { InteractionNavigationBar } from "../../ui/patterns/navigation-bar.tsx";
+import { useTerminalSize } from "../../ui/patterns/terminal-size.tsx";
 import type { Interaction } from "../../keys/interaction.ts";
 import { FilterField } from "./FilterField.tsx";
 import { PickerRow, type PickerCell } from "./PickerRow.tsx";
@@ -164,7 +164,7 @@ export function ListPicker<T>(props: {
     return level;
   };
 
-  const dims = useTerminalDimensions();
+  const dims = useTerminalSize();
   const contentRows = (): number => {
     if (rows().length > 0) return rows().length;
     return (props.empty?.(term()) ?? { text: "" }).hint !== undefined ? 2 : 1;
@@ -261,6 +261,9 @@ export function ListPicker<T>(props: {
               if (action.id === "ui.level.escape") return { ...action, footerLabel: escapeLabel() };
               return action;
             }}
+            usableWidth={() =>
+              floatContentWidth(dims().width, props.size ?? "lg") - Bun.stringWidth(footer())
+            }
           />
         ) : undefined
       }

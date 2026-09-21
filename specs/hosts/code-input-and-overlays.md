@@ -207,6 +207,7 @@ Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL
 | `SurfaceBoundary(props)` | Lazy surface owner with explicit `dispose-on-close`/`retain-one`, activation identity and optional stable root-portal placement; portal placement requires `retain-one` | `packages/code/src/ui/patterns/surface-lifecycle.tsx` (`SurfaceBoundary`) |
 | `SurfaceRegion` / `SurfaceOverlay` / `SurfacePortal` | Hidden retained region, full-bleed in-region surface and stable root portal primitives | `packages/code/src/ui/patterns/surface-lifecycle.tsx` |
 | `FloatFrame(props)` | Generic centered animated card (title/footer/nav), scrim behind it, `sm`/`lg` sizing; its floating host belongs to the surrounding `SurfaceBoundary` | `packages/code/src/views/overlays/FloatFrame.tsx` (`FloatFrame`) |
+| `floatContentWidth(terminalWidth, size)` | Cells a card can really give its body or footer band: 85% of the viewport capped by the size's `maxWidth`, floored at 40 cells but never wider than the viewport, less the card's own border and padding | `packages/code/src/views/overlays/FloatFrame.tsx` |
 | `floatMaxRows(terminalRows)` | `Math.floor(terminalRows * 0.8)` | `packages/code/src/views/overlays/FloatFrame.tsx` |
 | `FLOAT_CHROME_ROWS` | `5` | `packages/code/src/views/overlays/FloatFrame.tsx` |
 | `FLOAT_Z` | `100` — z-index every `FloatFrame`/scrim paints at | `packages/code/src/views/overlays/FloatFrame.tsx` |
@@ -731,9 +732,28 @@ explicitly opens the selected file. Tab/Escape returns from detail to the tree, 
 the page. The local footer advertises that Escape route and filters the global Ctrl+C cancel/quit
 hint, matching the Plan and Goal detail-screen pattern. Ready text patches render through
 `StableDiff`; binary, conflict, truncated, stale and empty states render as hints. The TUI does not
-branch on provider id. Pinned:
+branch on provider id.
+
+**File identity before the patch.** `Changed files` is followed by a compact identity block for the
+cursor's row, so a file is identifiable without opening it: the relative path (wrapped by
+`wrapCells`), then the operation word and the added/removed counts when the entry has them. The
+block follows the *selection* and never reads what the detail pane loaded. In split mode it stands
+down while the cursor is on the file that pane already names; a different file, a folder, or the
+single-pane tree keeps it, and a selection that differs is labelled `Selected` so it cannot be
+mistaken for the open patch's header. A folder never inherits the last file's counts, and an empty
+inventory leaves no identity behind. Tree rows give the basename the room: the counts leave the row
+before the name does, and a name wider than the sidebar wraps onto continuation lines aligned to its
+own start — no ellipsis, and no repeated chevron, status letter or expander on those lines. Each
+file stays one logical item whose selection band, click target and scroll anchor cover every line,
+while Up/Down move between items. The detail header keeps the whole relative path and wraps it,
+and names the open file's operation and rename endpoints rather than a transient selection.
+Production: `treeLines`, `selectionLines` and `treeTextWidth` in
+`packages/code/src/views/overlays/DiffViewer.tsx`, with `wrapCells` in
+`packages/code/src/views/truncate.ts`. Pinned:
 [diff-viewer-render.test.tsx](../../packages/code/tests/integration/diff-viewer-render.test.tsx)
-and [app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx).
+("a deep name stays whole in the single-pane tree instead of being abbreviated", "moving the tree
+selection identifies it without loading its patch") and
+[app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx).
 The kernel contract is [workspace-changes.md](workspace-changes.md).
 
 ### `PlanOverlay` (`views/overlays/PlanOverlay.tsx`)
@@ -1122,13 +1142,7 @@ the picker only while the complete splash fits`).
     `packages/code/src/views/InputDock.tsx` (`visualRows`, `inlineRows`, `syncDraftState`, textarea
     `wrapMode`). Test: `packages/code/tests/integration/input-dock-submit.test.tsx` ("a soft-wrapped
     logical line grows the inline composer and keeps its prefix visible").
-48. **Autocomplete scroll mode changes only the retained row/header projection.** It uses every
-    available content line without overflow-count labels and keeps the popup's top and bottom frame
-    rows fixed as selection moves. Production:
-    `packages/code/src/ui/patterns/windowed-list.tsx` (`WindowOverflowMode`, `windowRows`,
-    `windowGroupedRows`) and `packages/code/src/views/input/AutocompletePopup.tsx`
-    (`contentLines`, `overflowMode`). Tests: `packages/code/tests/unit/autocomplete.test.ts`
-    (scroll-mode cases) and `packages/code/tests/integration/autocomplete-popup-render.test.tsx`
+49. **A nested band is admitted by the cells its own container has, and one tree shares one terminal-size subscription.** A surface that owns a frame passes computed geometry to the navigation projection instead of the terminal width: `ViewFrame` subtracts its own padding and the width of the pinned status beside it, `PageFrame` its padding, and a card its border, padding and pinned footer text via `floatContentWidth`. Every one of them reads `useTerminalSize`, which returns the shell's single subscription when a `TerminalSizeProvider` is above it and falls back to its own only for a frame mounted alone; subscribing once per mounted frame both overspends the renderer's resize-listener budget and rebuilds the same value per resize. A card's resolved width is capped by the viewport, so the 40-cell floor can never paint a card wider than the screen. Production: `packages/code/src/ui/patterns/terminal-size.tsx` (`TerminalSizeProvider`, `useTerminalSize`), `packages/code/src/ui/patterns/view-frame.tsx`, `packages/code/src/views/PageFrame.tsx`, and `packages/code/src/views/overlays/FloatFrame.tsx` (`floatContentWidth`). Tests: `packages/code/tests/integration/float-frame-render.test.tsx` ("a card never paints past a narrow viewport"), `packages/code/tests/integration/app-shell-render.test.tsx` (the resize-listener budget assertions), and `packages/code/tests/integration/navigation-bar-render.test.tsx`.
     (fixed-frame scrolling case).
 
 ## 6. Failure modes and degradation

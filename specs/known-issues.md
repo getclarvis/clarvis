@@ -604,57 +604,61 @@ credential state or file permissions could matter and the TUI always showed “I
 enabled in this build”. The project decision is not represented as provider endorsement; future
 unapproved `public-oss-reference` records still fail closed.
 
-## A `FloatFrame` card's navigation row is budgeted against the terminal, not the card
+## A band narrower than one whole segment announces nothing
 
-**Open, low. The direct fix was tried, measured and reverted.**
+**Open, low. The row never overflows; the cost is an empty band.**
 
-`InteractionNavigationBar` (`packages/code/src/ui/patterns/navigation-bar.tsx`) delegates to
-`NavigationBarForInteraction`, which reads `useTerminalDimensions()` and passes
-`width={() => dimensions().width}` down
-(`packages/code/src/ui/patterns/navigation-bar.tsx`), so the segments are budgeted with
-`budgetFooterActions(actions, terminalWidth)`
-(`packages/code/src/ui/patterns/active-actions.ts`, `budgetFooterActions`). That is right for `ViewFrame`
-(`packages/code/src/ui/patterns/view-frame.tsx`) and `PageFrame`
-(`packages/code/src/views/PageFrame.tsx`), which span the terminal, and wrong inside a
-`FloatFrame`: the card is `min(85% of the terminal, 100)` columns
-(`packages/code/src/views/overlays/FloatFrame.tsx`), so at 140 columns the card's
-content has 96 and the row is measured against 138 — `fits` checks against `width - 2`
-(`packages/code/src/ui/patterns/active-actions.ts`, `budgetFooterActions`). `NavigationBar` renders
-`wrapMode="none"` with no `truncate` (`packages/code/src/ui/patterns/navigation-bar.tsx`) and
-the card's navigation slot is a plain `<box flexGrow={1} minWidth={0}>` with no `overflow="hidden"`
-(`packages/code/src/views/overlays/FloatFrame.tsx`) — unlike the card's own title and footer,
-which both carry `truncate` — so a row that overruns paints through the card's
-border. `ListPicker` is now the remaining consumer
-(`packages/code/src/views/overlays/ListPicker.tsx`, `InteractionNavigationBar`).
+The adaptation sequence is: full wording, authored short wording, wrap, and only then a dropped
+segment. A segment that still does not fit is dropped even when it is `essential`, because the row
+must never paint past its own container — that width check is what stopped a set of essentials from
+overflowing before it existed. The consequence is that a container with fewer cells than one whole
+segment shows an empty band rather than a clipped one. Reaching it needs a container narrower than
+one segment: the shell's own 24-column floor is not, and a card's interior reaches that only on a
+terminal at the floor. Production: `fitRow` and `budgetFooterActions` in
+`packages/code/src/ui/patterns/active-actions.ts`. Test:
+`packages/code/tests/unit/active-actions.test.ts` ("a band narrower than one segment seats nothing
+rather than overflowing").
 
-**Why passing the card's width is not the fix.** `budgetFooterActions` takes a *band* width and does
-two things with it: `fits` width-checks each seat and subtracts the row's own 2 columns, while
-`tierLimit` caps the *count* at 10 seats for widths at least 100, 4 at 72, 3 at 48, and 2 below
-(`packages/code/src/ui/patterns/active-actions.ts`, `budgetFooterActions`, `tierLimit`). Only the fit
-check needed to become card-aware. Passing the 96-column card interior drops the tier from 10 to 4
-as well. The reverted experiment was measured on the former Context Help surface at a
-48-column terminal, where it cost that surface its escape route:
+---
+
+## Resolved: a `FloatFrame` card's navigation row was budgeted against the terminal, not the card
+
+**Fixed by separating the row's fit budget from its editorial seat cap.**
+
+`InteractionNavigationBar` used to read `useTerminalDimensions()` and pass the terminal width into
+`budgetFooterActions`, which spends one number twice: `fits` width-checks the seats and subtracts the
+row's own two columns, while `tierLimit` caps the seat *count*. A card is narrower than its terminal
+(`floatContentWidth` in `packages/code/src/views/overlays/FloatFrame.tsx`), so its row was measured
+against cells the card did not have, painted past its border, and — after the fix — was admitted by
+the card's real interior.
+
+The earlier attempt, passing the card's interior for both budgets, was correctly reverted: it cost
+the former Context Help surface its escape route at 48 columns, because the tier fell from 10 to 4
+the moment the interior reached `fits`. The two budgets are now separate (`FooterBudget` in
+`packages/code/src/ui/patterns/active-actions.ts`): the band `width` decides which segments fit and
+`capWidth` decides the editorial count cap. `NavigationBar` passes a container's real interior as the
+band width and keeps the terminal as the cap scope; `ViewFrame` subtracts its own padding and the
+pinned status beside it, `PageFrame` its padding, and a card `floatContentWidth` less its pinned
+footer text. A card's own row no longer fixes its height either, so a confirmation's two verbs can
+wrap instead of losing one.
+
+The historical measurement stays as the reason the split exists:
 
 ```
-before:  [↵] run  [↑/k] move  [esc/f1] close     35 cells in a 36-cell card - it fitted
-after:   [↵] run  [↑/k] move                     tier 2, close dropped
+before:          [↵] run  [↑/k] move  [esc/f1] close   35 cells in a 36-cell card - it fitted
+one-width fix:   [↵] run  [↑/k] move                   tier 2, close dropped
+split budgets:   the same three seats, fitted in the card
 ```
 
-That experiment was correctly reverted at the time because it removed the only visible close route.
-Its dedicated test was removed with the surface; it is historical evidence, not a current acceptance
-case for `ListPicker`.
-
-**What a real fix needs:** separate the two budgets, so a caller can pass the card's width for `fits`
-while the count tier stays keyed to the terminal — or reserve an essential `escape` action before
-using the card width for both decisions. `budgetFooterActions` no longer has a special Help-group
-reservation; any future correction must be expressed as generic essential/escape policy. That is
-footer policy, not a width argument, which is why it was not done under a QA-fix change.
-
-**Reverified, still open for `ListPicker`.** Context Help is gone, but
-`navigation-bar.tsx`, `active-actions.ts`, `FloatFrame.tsx` and `ListPicker.tsx` still pass terminal
-width into one budget; the row still has no `truncate`, the card slot still has no clip, and
-`budgetFooterActions` still has no card-aware second width. No current test pins the horizontal
-overrun.
+Production: `FooterBudget` and `budgetFooterActions` in
+`packages/code/src/ui/patterns/active-actions.ts`, `NavigationBar` in
+`packages/code/src/ui/patterns/navigation-bar.tsx`, and `floatContentWidth` in
+`packages/code/src/views/overlays/FloatFrame.tsx`. Tests:
+`packages/code/tests/unit/active-actions.test.ts` ("a card's row fits its own interior without losing
+the terminal's seat cap") and `packages/code/tests/integration/float-frame-render.test.tsx` ("a card
+never paints past a narrow viewport"). The band contract these fixes implement is in
+[`hosts/code-keyboard.md`](hosts/code-keyboard.md) §3.6 and
+[`hosts/code-input-and-overlays.md`](hosts/code-input-and-overlays.md) invariant 49.
 
 ---
 

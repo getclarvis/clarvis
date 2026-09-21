@@ -98,6 +98,70 @@ export function fmtCount(n: number): string {
 }
 
 /**
+ * Characters a wrapped line prefers to break after, so a path or a word stays as
+ * close to whole as the cell budget allows.
+ */
+const BREAK_CHARS = new Set(["/", "\\", "-", "_", ".", " "]);
+
+/**
+ * Where to break a full line when the next grapheme no longer fits.
+ *
+ * @param parts - the graphemes currently on the line.
+ * @param limit - the line's cell budget.
+ * @returns the number of graphemes to keep, or `null` for a hard break.
+ */
+function breakAt(parts: readonly string[], limit: number): number | null {
+  const floor = Math.max(1, Math.floor(limit / 4));
+  let cut: number | null = null;
+  let cells = 0;
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index]!;
+    cells += Bun.stringWidth(part);
+    if (cells >= floor && BREAK_CHARS.has(part)) cut = index + 1;
+  }
+  return cut;
+}
+
+/**
+ * Lays text out as lines that each fit a cell budget, breaking rather than abbreviating.
+ *
+ * @param text - the text to lay out; `null`/`undefined` lays out as one empty line.
+ * @param width - the cell budget per line, at least 1.
+ * @returns one entry per painted line, in reading order.
+ * @remarks Graphemes are never split, so a name with no separator at all — a
+ *   minified bundle, a deep path — still lays out inside its panel instead of
+ *   being abbreviated away. A break prefers the last separator past a quarter of
+ *   the budget, which is what keeps `nome-completo-do-arquivo.test.ts` readable;
+ *   an explicit `\n` always starts a new line. Nothing is dropped, so a caller
+ *   renders the whole identity and pays for it in height.
+ */
+export function wrapCells(text: string | undefined | null, width: number): string[] {
+  const limit = Math.max(1, Math.floor(width));
+  const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+  const lines: string[] = [];
+  for (const paragraph of (text ?? "").split("\n")) {
+    let parts: string[] = [];
+    const cells = (): number => Bun.stringWidth(parts.join(""));
+    for (const { segment } of graphemes.segment(paragraph)) {
+      if (parts.length > 0 && cells() + Bun.stringWidth(segment) > limit) {
+        const cut = breakAt(parts, limit);
+        if (cut === null) {
+          lines.push(parts.join(""));
+          parts = [segment];
+        } else {
+          lines.push(parts.slice(0, cut).join(""));
+          parts = [...parts.slice(cut), segment];
+        }
+        continue;
+      }
+      parts.push(segment);
+    }
+    lines.push(parts.join(""));
+  }
+  return lines;
+}
+
+/**
  * Formats the "more lines hidden" chip shown when a block is folded.
  *
  * @param hidden - The number of lines hidden from view.

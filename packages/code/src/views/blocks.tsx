@@ -260,9 +260,11 @@ function nodeTone(node: TranscriptNode): ToneStyle {
  * One tool call's header line, plus its live tail and/or body when shown.
  *
  * @remarks
- * The header truncates instead of wrapping so identity remains exactly one row.
- * A collapsed failure adds one bounded diagnostic row below it rather than
- * squeezing the signature and error into the same horizontal measure.
+ * The header breaks instead of being clipped so identity survives a narrow
+ * terminal: a call's path is the thing a reader matches against the filesystem,
+ * and `truncate` dropped its tail with no ellipsis and no way to recover it in
+ * this row. A collapsed failure adds its own wrapped diagnostic row below rather
+ * than squeezing the signature and error into the same horizontal measure.
  */
 function ToolLine(props: {
   node: TranscriptToolNode;
@@ -283,17 +285,16 @@ function ToolLine(props: {
     (props.node.status === "error" ||
       (props.node.warn === true &&
         toolIdentity(props.node.mcpName, props.node.toolName) === "shell"));
-  const firstErrorLine = (error: string): string =>
-    terminalPlainText(toolErrorSummaryText(error)).split("\n")[0]!.slice(0, 160);
+  const errorSummary = (error: string): string => terminalPlainText(toolErrorSummaryText(error));
   const failureSummary = (): string => {
     if (props.node.interruption?.source === "operator") return "Interrupted by operator";
     const error = display().error ?? "No authoritative result";
     if (toolIdentity(props.node.mcpName, props.node.toolName) === "shell") {
       const shell = parseBash(display().result, error);
       if (shell.exitCode !== null) return `exit ${shell.exitCode}`;
-      return firstErrorLine(shell.stderr || error);
+      return errorSummary(shell.stderr || error);
     }
-    return firstErrorLine(error);
+    return errorSummary(error);
   };
   const inlineExitSummary = (): string => {
     if (
@@ -344,12 +345,17 @@ function ToolLine(props: {
       overflow="hidden"
       backgroundColor={tokens.bg}
     >
-      <box paddingLeft={props.indent ? 3 : 1} flexDirection="row" width="100%" flexShrink={0}>
+      <box
+        paddingLeft={props.indent ? 3 : 1}
+        flexDirection="row"
+        width="100%"
+        flexShrink={0}
+        alignItems="flex-start"
+      >
         <box flexShrink={1} minWidth={0}>
           <text
             onMouseDown={props.indent ? undefined : props.onHeaderClick}
-            wrapMode="none"
-            truncate
+            wrapMode="char"
             selectable={false}
           >
             <span style={{ fg: nodeTone(props.node).fg }}>{nodeTone(props.node).glyph + " "}</span>
@@ -427,7 +433,7 @@ function ToolLine(props: {
       </box>
       <Show when={hasDiagnostic() && inlineExitSummary().length === 0}>
         <box paddingLeft={props.indent ? 6 : 4} paddingRight={1}>
-          <text fg={tokens.del} wrapMode="none" truncate selectable={false}>
+          <text fg={tokens.del} wrapMode="char" selectable={false}>
             {failureSummary()}
           </text>
         </box>

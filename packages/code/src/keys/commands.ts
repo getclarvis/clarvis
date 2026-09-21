@@ -77,6 +77,8 @@ interface CommandDefBase {
   /** Action-discovery projections. Defaults from `surface`; footer inclusion is always explicit. */
   actionSurfaces?: readonly ActionSurface[];
   footerLabel?: string;
+  /** Shorter footer wording admitted before this action loses its seat. */
+  footerShortLabel?: string;
   hintPriority?: number;
   hintGroup?: ActionHintGroup;
   essential?: boolean;
@@ -420,6 +422,7 @@ export function createCommands(
       category: def.group,
       surfaces: def.actionSurfaces ?? ["full-help"],
       ...(def.footerLabel ? { footerLabel: def.footerLabel } : {}),
+      ...(def.footerShortLabel ? { footerShortLabel: def.footerShortLabel } : {}),
       ...(def.hintPriority === undefined ? {} : { hintPriority: def.hintPriority }),
       ...(def.hintGroup ? { hintGroup: def.hintGroup } : {}),
       ...(def.essential === undefined ? {} : { essential: def.essential }),
@@ -453,6 +456,7 @@ export function createCommands(
       category: def.group,
       surfaces: def.actionSurfaces ?? ["full-help"],
       ...(def.footerLabel ? { footerLabel: def.footerLabel } : {}),
+      ...(def.footerShortLabel ? { footerShortLabel: def.footerShortLabel } : {}),
       ...(def.hintPriority === undefined ? {} : { hintPriority: def.hintPriority }),
       ...(def.hintGroup ? { hintGroup: def.hintGroup } : {}),
       ...(def.essential === undefined ? {} : { essential: def.essential }),

@@ -7,9 +7,10 @@ import { LAYER } from "../../keys/keyspec.ts";
 import { tokens } from "../../theme/tokens.ts";
 import { scrollbarOptions } from "../../theme/surfaces.ts";
 import { InteractionNavigationBar } from "../../ui/patterns/navigation-bar.tsx";
+import { useTerminalSize } from "../../ui/patterns/terminal-size.tsx";
 import { Prose } from "../Prose.tsx";
 import type { ActivityDetail as ActivityDetailValue } from "../activity-detail.ts";
-import { FloatFrame } from "./FloatFrame.tsx";
+import { FloatFrame, floatContentWidth } from "./FloatFrame.tsx";
 import { useOptionalSurfaceLifecycle } from "../../ui/patterns/surface-lifecycle.tsx";
 
 const EMPTY_DETAIL: ActivityDetailValue = { title: "Activity detail", content: "" };
@@ -21,6 +22,7 @@ export function ActivityDetail(props: {
   onClose(): void;
 }): JSX.Element {
   const lifecycle = useOptionalSurfaceLifecycle();
+  const dims = useTerminalSize();
   const active = lifecycle?.active ?? (() => true);
   const detail = (): ActivityDetailValue => props.detail() ?? EMPTY_DETAIL;
   onMount(() => {
@@ -53,6 +55,7 @@ export function ActivityDetail(props: {
         <InteractionNavigationBar
           interaction={props.interaction}
           actionFilter={(action) => action.id === "activity.detail.close"}
+          usableWidth={() => floatContentWidth(dims().width, "lg")}
         />
       }
     >

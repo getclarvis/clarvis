@@ -415,6 +415,11 @@ Defaults, Memory, Sandbox and Run controls use the same stable overview/detail i
 Agents: the overview keeps one compact row per setting, Enter edits, and `i` opens configured,
 effective, source and application details without expanding the list in place. Sandbox host and
 toolchain diagnostics live with the Sandbox detail, where errors remain visible and refreshable.
+Settings > Memory presents its effective summary and rows as one list — the effective state, then
+`Memory`, `Extraction model` when a block exists, and `Session memory` — with no intermediate scope
+headings: each row names its own origin (`from <scope>`, `this client`) and its own timing
+(`next run`, `now`), and the session control stays client-local and immediate whatever scope page it
+is shown from.
 Editing a shipped agent in `/settings` → agents writes a **customization**, not a copy: only the
 fields you changed reach `agents/<name>.md`, and everything else keeps following the shipped
 default. Deleting that file is offered as a reset — the shipped agent comes back. A shipped agent
@@ -588,16 +593,24 @@ folder tree lists all changed files and can collapse or expand directories; sele
 all of its recorded diffs in chronological order. Narrow terminals show the tree and file detail as
 separate steps. Retained bodies are rehydrated before display instead of silently falling back to
 only the newest edit. Moving through the tree does not replace the open file until Enter confirms
-the selected row. Escape returns from file detail to the tree, then closes `/diff`; its footer omits
+the selected row. Above the tree, a compact block identifies the cursor's file by its whole relative
+path, operation and counts, so a file is recognisable before it is opened; in the split layout it
+stands down while the cursor is on the file the reader already names, and says `Selected` when the
+cursor and the open patch differ. Tree rows keep the whole basename — the counts leave the row first
+and a long name wraps instead of being abbreviated — and the file reader's header keeps the whole
+path too. Escape returns from file detail to the tree, then closes `/diff`; its footer omits
 the global Ctrl+C cancel/quit action like the Plan and Goal detail screens.
 
-Isolation and Guard have separate persisted controls; Memory's quick control is session-only.
+isolation and Guard have separate persisted controls; Memory's quick control is session-only.
 Application actions use Ctrl+X: I for Isolation, G for Guard, M for Memory, R for Run controls,
 P for Plan, O for Goal, W for Workflow, D for Diff, S for the activity Sidebar, K for block expansion, and E
 for the expanded editor. Ctrl+X Up/Down enter transcript-block focus; while a block is focused,
-plain Up/Down move between blocks and Tab returns to the composer. The activity line above the
-composer shows `Ctrl+X active · choose a key` while the prefix is pending. During a run it appears
-after the working/thinking details and interrupt hint. These defaults are identical
+plain Up/Down move between blocks and Tab returns to the composer. While a Ctrl+X prefix is pending,
+the navigation band names the sequence the user actually holds and lists the continuations the
+keymap would dispatch next (`Ctrl+X active ▸ [K] expand · [I] isolation …`), so the options appear
+next to the prefix they belong to and the activity line keeps reporting the run instead. A pending
+prefix is announced once, on the surface that owns the band, and each continuation reflects the
+binding that would really fire there. These defaults are identical
 on macOS, Windows and Linux: press Ctrl+X, release it, then press the second key.
 The prefix expires after two seconds; Escape clears it and retains normal back behavior. Manual overrides remain
 available in Keyboard settings. All shortcut labels spell out Ctrl and Shift instead of a caret.
@@ -1215,7 +1228,9 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   percentage and cost available before and after a run settles (token totals and cache percentage
   appear in the wide band). It does not repeat
   `Running`, elapsed time or iteration there; those live-run facts sit beside `thinking`/`working`
-  immediately above the composer. `/status` and Sessions expose the same session-level totals for
+  immediately above the composer, where the current phase leads and the details after it stay muted.
+  When a full-region page (Plan, Diff, a view) owns the reading area, that activity line prefixes
+  `Run` so its facts are not read as the page's. `/status` and Sessions expose the same session-level totals for
   explicit inspection.
 - **Every `In` token count on screen reports input the provider had to read** — the gross prompt less
   what its prefix cache served (`uncachedInput`, and the run strip's own subtraction from
@@ -1628,4 +1643,10 @@ Agent Profile frontmatter uses the closed kernel schema. Unknown keys mark a doc
 
 The application header and action footer wrap with terminal width. Narrow layouts retain
 configuration fields and available footer actions on additional rows; shared Ctrl+X
-hints repeat their modifier prefix on each continuation row. Help shows full key combinations.
+hints repeat their modifier prefix on each continuation row, and an action with an authored shorter
+wording uses it before its segment is dropped. Every band is admitted by the cells its own container
+really offers — a detail frame subtracts its padding and pinned status, a picker card its border,
+padding and footer text — while the seat cap stays keyed to the terminal, and a card never paints
+wider than the screen. A tool call's identity, a changed file's name and an error's diagnostic
+break onto another row instead of being abbreviated away; the argument *preview* in a tool header
+keeps its own explicit character bound. Help shows full key combinations.

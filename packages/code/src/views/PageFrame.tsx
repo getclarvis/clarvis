@@ -1,10 +1,14 @@
 import type { ActiveAction } from "../ui/patterns/active-actions.ts";
 import type { JSX } from "solid-js";
 import { Show } from "solid-js";
+import { useTerminalSize } from "../ui/patterns/terminal-size.tsx";
 import { tokens } from "../theme/tokens.ts";
 import { glyph } from "../theme/glyphs.ts";
 import type { Interaction } from "../keys/interaction.ts";
 import { InteractionNavigationBar } from "../ui/patterns/navigation-bar.tsx";
+
+/** Cells this frame's own left padding spends before its content. */
+const FRAME_PADDING = 1;
 
 /**
  * A full-page overlay chrome: title/subtitle row, keymap-derived navigation and content.
@@ -21,12 +25,13 @@ export function PageFrame(props: {
   children: JSX.Element;
   actionFilter?: (action: ActiveAction) => boolean;
 }): JSX.Element {
+  const dims = useTerminalSize();
   return (
     <box
       flexGrow={1}
       flexDirection="column"
       backgroundColor={tokens.bg}
-      paddingLeft={1}
+      paddingLeft={FRAME_PADDING}
       paddingTop={1}
     >
       <box height={1} flexShrink={0} backgroundColor={tokens.bg} zIndex={1}>
@@ -55,6 +60,7 @@ export function PageFrame(props: {
         <InteractionNavigationBar
           interaction={props.interaction}
           actionFilter={props.actionFilter}
+          usableWidth={() => dims().width - FRAME_PADDING}
         />
       </box>
     </box>

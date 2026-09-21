@@ -2,11 +2,12 @@ import type { Accessor, JSX } from "solid-js";
 import { createSignal, For, Show } from "solid-js";
 import type { InputRenderable, KeyEvent, Renderable } from "@opentui/core";
 import type { Keymap } from "@opentui/keymap";
-import { useTerminalDimensions } from "@opentui/solid";
+import { useTerminalSize } from "../../ui/patterns/terminal-size.tsx";
 import { tokens } from "../../theme/tokens.ts";
 import { labelRuns } from "../../core/fuzzy.ts";
 import { LAYER } from "../../ui/patterns/level-keys.ts";
 import { ListPicker } from "../overlays/ListPicker.tsx";
+import { floatContentWidth } from "../overlays/FloatFrame.tsx";
 import type { PickerCell } from "../overlays/PickerRow.tsx";
 import { filterRows, MODEL_LABEL_WIDTH, type CatalogRow } from "./catalog-pick.ts";
 import { glyph, glyphColWidth } from "../../theme/glyphs.ts";
@@ -66,7 +67,7 @@ export interface CatalogPickerSurfaceProps {
  * length can override either.
  */
 export function CatalogPicker(props: CatalogPickerProps | CatalogPickerSurfaceProps): JSX.Element {
-  const dims = useTerminalDimensions();
+  const dims = useTerminalSize();
   const [term, setTerm] = createSignal("");
   let inputEl: InputRenderable | undefined;
   let latest: CatalogPickerSpec | undefined;
@@ -81,8 +82,8 @@ export function CatalogPicker(props: CatalogPickerProps | CatalogPickerSurfacePr
   const resetKey = "spec" in props ? props.spec : props.resetKey;
   const showFirstRunSplash = (): boolean =>
     props.firstRun === true && firstRunSplashFits(dims().width, dims().height);
-  const pickerContentWidth = (): number =>
-    Math.max(0, Math.min(Math.floor(dims().width * 0.85), 100) - 4);
+  /** Cells the picker card can really give its own content; one shared formula, not a copy. */
+  const pickerContentWidth = (): number => floatContentWidth(dims().width, "lg");
   const firstRunIntroRows = (): number => (showFirstRunSplash() ? BANNER.length + 1 : 0);
 
   const compact = (): boolean => current().compact ?? current().rows().length <= COMPACT_FILTER_MAX;

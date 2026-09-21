@@ -192,6 +192,79 @@ test("inventory identity is the structured path, not a Change N label", () => {
   ).toEqual(["gone.ts", "src/a.ts"]);
 });
 
+test("a deep name stays whole in the single-pane tree instead of being abbreviated", async () => {
+  const name = "a-very-long-file-name-that-must-not-be-abbreviated.test.ts";
+  const { interaction } = fakeInteraction();
+  const service = fakeChanges([
+    {
+      id: "deep",
+      new_path: `packages/kernel/tests/integration/${name}`,
+      operation: "modified",
+      stats: { additions: 67, deletions: 2 },
+    },
+  ]);
+  const t = await openRender(
+    (() => (
+      <DiffViewer interaction={interaction} service={() => service} onClose={() => undefined} />
+    )) as never,
+    // Narrower than the split threshold: the tree is the whole frame, so the
+    // selection's identity block is the only place the file is named.
+    { width: 60, height: 30 },
+  );
+  await t.renderOnce();
+  const out = t.captureCharFrame();
+  const joined = out
+    .split("\n")
+    .map((line) => line.trim())
+    .join("");
+  expect(joined).toContain(name);
+  expect(out).toContain("packages/kernel/tests/integration/");
+  expect(out).toContain("Modified");
+  expect(out).toContain("+67");
+  expect(out).not.toContain("…");
+  t.renderer.destroy();
+});
+
+test("moving the tree selection identifies it without loading its patch", async () => {
+  const { keymap, press } = createFakeKeymap();
+  const interaction = { keymap } as unknown as Interaction;
+  const service = fakeChanges(
+    [
+      { id: "first", new_path: "src/first.ts", operation: "modified", stats: { additions: 2 } },
+      { id: "second", new_path: "src/second.ts", operation: "added", stats: { additions: 9 } },
+    ],
+    {
+      first: "--- src/first.ts\n+++ src/first.ts\n@@ -1 +1 @@\n-old first\n+new first",
+      second: "--- src/second.ts\n+++ src/second.ts\n@@ -1 +1 @@\n-old second\n+new second",
+    },
+  );
+  const t = await openRender(
+    (() => (
+      <DiffViewer interaction={interaction} service={() => service} onClose={() => undefined} />
+    )) as never,
+    { width: 100, height: 40 },
+  );
+  await settleSyntaxSurfaces(t);
+  // At rest the cursor is on the file the detail pane has open, so the pane header
+  // names it and the tree does not repeat the identity.
+  const atRest = t.captureCharFrame();
+  expect(atRest).toContain("src/first.ts");
+  expect(atRest).not.toContain("Selected");
+  press("down");
+  press("down");
+  await t.renderOnce();
+  const moved = t.captureCharFrame();
+  // The cursor's file is identified as a selection while the open patch keeps its
+  // own header: moving the cursor reads nothing.
+  expect(moved).toContain("Selected");
+  expect(moved).toContain("second.ts");
+  expect(moved).toContain("Added");
+  expect(moved).toContain("+9");
+  expect(moved).toContain("new first");
+  expect(moved).not.toContain("new second");
+  t.renderer.destroy();
+});
+
 test("a narrow terminal opens file detail as a separate step and Escape returns to the tree", async () => {
   const { keymap, press } = createFakeKeymap();
   const interaction = { keymap } as unknown as Interaction;

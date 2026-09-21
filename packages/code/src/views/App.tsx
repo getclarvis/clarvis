@@ -13,11 +13,7 @@ import {
   Suspense,
 } from "solid-js";
 import { useSelectionHandler, useTerminalDimensions } from "@opentui/solid";
-import {
-  KeymapProvider,
-  reactiveMatcherFromSignal,
-  useKeymapSelector,
-} from "@opentui/keymap/solid";
+import { KeymapProvider, reactiveMatcherFromSignal } from "@opentui/keymap/solid";
 import type {
   CliRenderer,
   MouseEvent,
@@ -110,6 +106,7 @@ import { OverlayRegion, overlayFallbackActive } from "./app/OverlayRegion.tsx";
 import { TranscriptRegion } from "./app/TranscriptRegion.tsx";
 import type { TranscriptViewportHandle } from "./transcript/TranscriptViewport.tsx";
 import { NavigationBar } from "../ui/patterns/navigation-bar.tsx";
+import { TerminalSizeProvider } from "../ui/patterns/terminal-size.tsx";
 import { isAvailablePlan, isLivePlan } from "../adapters/plan-projection.ts";
 import { bindSyntaxStyleRenderer } from "../theme/syntax.ts";
 import {
@@ -127,22 +124,6 @@ import { detachObserved } from "../core/tasks.ts";
 import { activeDiagnosticLogger } from "../core/diagnostic-events.ts";
 import { SurfaceBoundary, SurfacePortal } from "../ui/patterns/surface-lifecycle.tsx";
 import { productVersion } from "../cli-args.ts";
-
-function LeadActivityStatus(props: {
-  phase: () => LeadActivityPhase;
-  detail: () => string;
-}): JSX.Element {
-  const commandPrefixActive = useKeymapSelector((keymap) =>
-    keymap.getPendingSequence().some((part) => part.tokenName === "leader"),
-  );
-  return (
-    <LeadActivityLine
-      phase={props.phase}
-      detail={props.detail}
-      commandPrefixActive={commandPrefixActive}
-    />
-  );
-}
 
 const IsolationPicker = lazy(async () => {
   const module = await import("./overlays/IsolationPicker.tsx");
@@ -1357,6 +1338,14 @@ export function App(props: AppProps): JSX.Element {
       : overlays.overlay() !== "none" || transientOverlay() !== "none"
         ? { text: "", tone: "info" }
         : hint();
+  /**
+   * Names the scope of the activity band while a full-region page owns the reading area.
+   *
+   * @remarks `plan`, `diff` and `view` overlays replace the transcript but not this band, so an
+   *   unlabelled `thinking` under an open Plan reads as the *page* working. The label states that
+   *   the facts belong to the run instead, and stays silent while the transcript is above it.
+   */
+  const activityIdentity = (): string => (overlayFallbackActive(overlays) ? "" : "Run");
   const leadActivityPhase = (): LeadActivityPhase => {
     const busy =
       props.run.active() ||
@@ -1565,370 +1554,379 @@ export function App(props: AppProps): JSX.Element {
   );
 
   return (
-    <KeymapProvider keymap={interaction.keymap}>
-      <box flexDirection="column" flexGrow={1} backgroundColor={tokens.bg}>
-        <HeaderRows plan={headerPlan} />
-        <box
-          height={1}
-          flexShrink={0}
-          border={["top"]}
-          borderStyle="single"
-          customBorderChars={borderChars()}
-          borderColor={ruleColor()}
-          backgroundColor={tokens.bg}
-          zIndex={1}
-        />
-
-        <box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
-          <OverlayRegion
-            host={overlays}
-            interaction={interaction}
-            changes={() => props.backend.changes}
-            activity={props.activity}
-            plans={props.backend.plans}
-            fallback={
-              <TranscriptRegion
-                store={props.store}
-                transcript={ts}
-                activity={props.activity}
-                interaction={interaction}
-                run={props.run}
-                active={() => overlayFallbackActive(overlays)}
-                layout={{
-                  mode: layoutMode,
-                  sidebarVisible,
-                  secondaryMode,
-                  sidebarWidth,
-                  drawerOpen,
-                  closeDrawer: closeActivitySidebar,
-                  contentInset,
-                  width: () => dims().w,
-                  height: () => dims().h,
-                  sidebarHint: activitySidebarHint,
-                }}
-                contextWindow={contextWindow}
-                agent={agentName}
-                model={resolvedModel}
-                notify={notify}
-                openPlan={() => effects.openPlan()}
-                sidebarReveal={sidebarReveal}
-                onOpenDetail={openActivityDetail}
-                onScrollbox={(el) => (scrollEl = el)}
-                onHistoryHandle={(handle) => (historyHandle = handle)}
-                draftNonEmpty={draftNonEmpty}
-                goals={props.run.goals}
-                onOpenGoal={() => commands.runCommand("goal.open")}
-              />
-            }
-          />
-        </box>
-
-        <SurfaceBoundary
-          active={() => overlays.overlay() === "agentPicker"}
-          retention="retain-one"
-          placement="portal"
-        >
-          {(lifecycle) => (
-            <AgentProfilePicker
-              interaction={interaction}
-              enabled={lifecycle.active}
-              list={props.fleet.agents.list}
-              active={props.fleet.agents.active}
-              isRunnable={(name) =>
-                props.fleet.agents.isRunnable(name) &&
-                (!isContainerIsolation(runControls().isolation) ||
-                  isContainerCompatibleProfile(name, props.fleet.agents.list()))
-              }
-              defaults={() => {
-                const global = props.fleet.code.read("global").agent?.default;
-                const workspace = props.fleet.code.read("workspace").agent?.default;
-                return {
-                  ...(global !== undefined ? { global } : {}),
-                  ...(workspace !== undefined ? { workspace } : {}),
-                } satisfies AgentDefaults;
-              }}
-              onConfirm={(name) => {
-                props.fleet.agents.setActive(name);
-                overlays.dismissTop();
-              }}
-              onSetDefault={(name, scope) => {
-                try {
-                  props.fleet.agents.setDefault(name, scope);
-                  const workspaceOverride = props.fleet.code.read("workspace").agent?.default;
-                  notify(
-                    scope === "global" && workspaceOverride !== undefined
-                      ? `global default set to ${name}; this workspace still overrides it with ${workspaceOverride}`
-                      : `${scope} default agent set to ${name}`,
-                    "success",
-                  );
-                  return true;
-                } catch (e) {
-                  notify(`set default failed: ${errorText(e)}`, "error");
-                  return false;
-                }
-              }}
-              onClearDefault={(scope) => {
-                if (props.fleet.code.read(scope).agent?.default === undefined) {
-                  notify(`no ${scope} default agent is configured`, "warn");
-                  return false;
-                }
-                try {
-                  props.fleet.code.clearAgentDefault(scope);
-                  const inherited = props.fleet.code.agentDefault();
-                  notify(
-                    `${scope} default agent cleared${inherited ? `; effective default is now ${inherited}` : ""}`,
-                    "success",
-                  );
-                  return true;
-                } catch (e) {
-                  notify(`clear default failed: ${errorText(e)}`, "error");
-                  return false;
-                }
-              }}
-            />
-          )}
-        </SurfaceBoundary>
-        <SurfaceBoundary
-          active={() => overlays.overlay() === "isolationPicker"}
-          retention="retain-one"
-          placement="portal"
-        >
-          {(lifecycle) => (
-            <Suspense fallback={<text>Loading isolation{glyph("ellipsis")}</text>}>
-              <IsolationPicker
-                interaction={interaction}
-                settings={props.fleet.settings}
-                runActive={props.run.active}
-                active={lifecycle.active}
-                notify={notify}
-                reload={() => props.backend.reconnect("reload")}
-                {...(props.backend.restoreIsolation === undefined
-                  ? {}
-                  : { restore: props.backend.restoreIsolation })}
-                onClose={() => overlays.dismissTop()}
-                onApplied={() => overlays.dismissTop()}
-              />
-            </Suspense>
-          )}
-        </SurfaceBoundary>
-        <SurfaceBoundary
-          active={() => overlays.overlay() === "reviewPicker"}
-          retention="retain-one"
-          placement="portal"
-        >
-          {(lifecycle) => (
-            <Suspense fallback={<text>Loading Guard{glyph("ellipsis")}</text>}>
-              <ReviewPicker
-                interaction={interaction}
-                settings={props.fleet.settings}
-                guard={props.fleet.guard}
-                scope={() =>
-                  props.fleet.settings.read("workspace") !== undefined ? "workspace" : "global"
-                }
-                runActive={props.run.active}
-                active={lifecycle.active}
-                notify={notify}
-                onClose={() => overlays.dismissTop()}
-                onApplied={() => overlays.dismissTop()}
-              />
-            </Suspense>
-          )}
-        </SurfaceBoundary>
-        <SurfaceBoundary
-          active={() => overlays.overlay() === "memoryPicker"}
-          retention="retain-one"
-          placement="portal"
-        >
-          {(lifecycle) => (
-            <Suspense fallback={<text>Loading memory{glyph("ellipsis")}</text>}>
-              <MemoryPicker
-                interaction={interaction}
-                settings={props.fleet.settings}
-                memory={props.fleet.memoryMode}
-                active={lifecycle.active}
-                notify={notify}
-                onClose={() => overlays.dismissTop()}
-                onApplied={() => overlays.dismissTop()}
-              />
-            </Suspense>
-          )}
-        </SurfaceBoundary>
-        <SurfaceBoundary
-          active={() => transientOverlay() === "activityDetail" && activityDetail() !== null}
-          retention="retain-one"
-          placement="portal"
-        >
-          {() => (
-            <ActivityDetail
-              interaction={interaction}
-              detail={activityDetail}
-              onClose={() => closeTransientOverlay()}
-            />
-          )}
-        </SurfaceBoundary>
-        <SurfaceBoundary
-          active={() => transientOverlay() === "worktreeExit" && props.shell.worktree !== undefined}
-          retention="retain-one"
-          placement="portal"
-        >
-          {() => (
-            <WorktreeExitPrompt
-              interaction={interaction}
-              name={props.shell.worktree!.name}
-              branch={props.shell.worktree!.branch}
-              onRemove={() => {
-                if (removingWorktreeForExit) return;
-                removingWorktreeForExit = true;
-                notify("removing clean worktree" + glyph("ellipsis"));
-                detachObserved(
-                  "worktree_exit_remove",
-                  async () => {
-                    await props.shell.worktree!.requestRemoval();
-                    props.shell.quit();
-                  },
-                  () => props.shell.quit(),
-                );
-              }}
-              onKeep={props.shell.quit}
-              onCancel={() => closeTransientOverlay()}
-            />
-          )}
-        </SurfaceBoundary>
-        <SurfaceBoundary
-          active={() => overlays.overlay() !== "none" || transientOverlay() !== "none"}
-          retention="dispose-on-close"
-        >
-          {() => <HintToast hint={hint} />}
-        </SurfaceBoundary>
-        <box
-          flexDirection="column"
-          flexShrink={editorExpanded() ? 1 : 0}
-          flexGrow={editorExpanded() ? 1 : 0}
-          minHeight={editorExpanded() ? 0 : undefined}
-          position={editorExpanded() ? "absolute" : "relative"}
-          left={editorExpanded() ? 0 : "auto"}
-          right={editorExpanded() ? 0 : "auto"}
-          top={editorExpanded() ? 2 : "auto"}
-          bottom={editorExpanded() ? 0 : "auto"}
-          backgroundColor={tokens.bg}
-          zIndex={editorExpanded() ? 3 : 1}
-        >
-          <Show when={!inputPopupOpen()}>
-            <LeadActivityStatus phase={leadActivityPhase} detail={leadActivityDetail} />
-          </Show>
-          <InputDock
-            interaction={interaction}
-            renderer={props.shell.renderer}
-            platform={props.shell.platform}
-            history={props.session.history}
-            providers={providerList()}
-            visible={() =>
-              overlays.overlay() === "none" && !elicitComposerHidden() && !props.run.switching?.()
-            }
-            runActive={() => props.run.active()}
-            submissionBlocked={pressureBlockedReason}
-            onSubmit={(content) => {
-              submitFromLeadTail(() => props.run.submit(content));
-            }}
-            onSlashCommand={onSlashCommand}
-            onBashCommand={props.run.bang}
-            onReady={(el) => {
-              inputEl = el;
-              if (props.initialDraft !== undefined && el.plainText.length === 0) {
-                el.setText(props.initialDraft);
-                el.gotoBufferEnd();
-              }
-              props.run.registerDraftRestore?.((text, content) => {
-                if ((el.plainText ?? "").trim().length > 0) return;
-                el.setText(text);
-                el.gotoBufferEnd();
-                if (Array.isArray(content)) dock?.restoreAttachments(content);
-              });
-            }}
-            onDock={(value) => {
-              dock = value;
-            }}
-            onExpandedChange={setEditorExpanded}
-            onPopupOpenChange={setInputPopupOpen}
-            onDraftChange={setDraftNonEmpty}
-            targetLabel={() => {
-              if (pressureBlocked()) return "New work paused";
-              if (props.run.active())
-                return props.run.workflowActivity() ? "Message workflow" : "Steer this run";
-              if (/done|completed|cancel/i.test(props.run.status())) return "Ask for an adjustment";
-              return "New task";
-            }}
-            onNotify={notify}
-          />
-          <Footer
-            hint={footerHint}
-            status={() => {
-              const restoring = memoryPressureStatus(pressure().phase);
-              if (restoring)
-                return {
-                  text: restoring,
-                  tone: pressure().phase === "failed" ? "error" : "running",
-                };
-              return { text: "", tone: "info" };
-            }}
-            runStrip={footerRunStrip}
-            navigation={
-              <NavigationBar
-                environment={interaction.keyboardEnvironment}
-                width={() => dims().w}
-                responsive
-                actionTransform={(action) => {
-                  if (!transcriptNavigationActive()) return action;
-                  if (action.id === "transcript.focusPrev")
-                    return { ...action, keys: [glyph("arrowUp")] };
-                  if (action.id === "transcript.focusNext")
-                    return { ...action, keys: [glyph("arrowDown")] };
-                  return action;
-                }}
-                active={() =>
-                  overlays.overlay() === "none" &&
-                  transientOverlay() === "none" &&
-                  !props.run.switching?.()
-                }
-              />
-            }
-          />
-        </box>
-        <SurfacePortal visible={() => props.run.switching?.() ?? false} zIndex={FLOAT_Z + 3}>
+    <TerminalSizeProvider size={term}>
+      <KeymapProvider keymap={interaction.keymap}>
+        <box flexDirection="column" flexGrow={1} backgroundColor={tokens.bg}>
+          <HeaderRows plan={headerPlan} />
           <box
-            position="absolute"
-            left={0}
-            right={0}
-            top={0}
-            bottom={0}
-            backgroundColor={POINTER_BLOCKER_BG}
-            onMouse={consumePointerEvent}
+            height={1}
+            flexShrink={0}
+            border={["top"]}
+            borderStyle="single"
+            customBorderChars={borderChars()}
+            borderColor={ruleColor()}
+            backgroundColor={tokens.bg}
+            zIndex={1}
           />
-        </SurfacePortal>
-        <Show when={layoutMode() === "floor"}>
-          {/* Above the float layer on purpose: this message is the only route
+
+          <box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
+            <OverlayRegion
+              host={overlays}
+              interaction={interaction}
+              changes={() => props.backend.changes}
+              activity={props.activity}
+              plans={props.backend.plans}
+              fallback={
+                <TranscriptRegion
+                  store={props.store}
+                  transcript={ts}
+                  activity={props.activity}
+                  interaction={interaction}
+                  run={props.run}
+                  active={() => overlayFallbackActive(overlays)}
+                  layout={{
+                    mode: layoutMode,
+                    sidebarVisible,
+                    secondaryMode,
+                    sidebarWidth,
+                    drawerOpen,
+                    closeDrawer: closeActivitySidebar,
+                    contentInset,
+                    width: () => dims().w,
+                    height: () => dims().h,
+                    sidebarHint: activitySidebarHint,
+                  }}
+                  contextWindow={contextWindow}
+                  agent={agentName}
+                  model={resolvedModel}
+                  notify={notify}
+                  openPlan={() => effects.openPlan()}
+                  sidebarReveal={sidebarReveal}
+                  onOpenDetail={openActivityDetail}
+                  onScrollbox={(el) => (scrollEl = el)}
+                  onHistoryHandle={(handle) => (historyHandle = handle)}
+                  draftNonEmpty={draftNonEmpty}
+                  goals={props.run.goals}
+                  onOpenGoal={() => commands.runCommand("goal.open")}
+                />
+              }
+            />
+          </box>
+
+          <SurfaceBoundary
+            active={() => overlays.overlay() === "agentPicker"}
+            retention="retain-one"
+            placement="portal"
+          >
+            {(lifecycle) => (
+              <AgentProfilePicker
+                interaction={interaction}
+                enabled={lifecycle.active}
+                list={props.fleet.agents.list}
+                active={props.fleet.agents.active}
+                isRunnable={(name) =>
+                  props.fleet.agents.isRunnable(name) &&
+                  (!isContainerIsolation(runControls().isolation) ||
+                    isContainerCompatibleProfile(name, props.fleet.agents.list()))
+                }
+                defaults={() => {
+                  const global = props.fleet.code.read("global").agent?.default;
+                  const workspace = props.fleet.code.read("workspace").agent?.default;
+                  return {
+                    ...(global !== undefined ? { global } : {}),
+                    ...(workspace !== undefined ? { workspace } : {}),
+                  } satisfies AgentDefaults;
+                }}
+                onConfirm={(name) => {
+                  props.fleet.agents.setActive(name);
+                  overlays.dismissTop();
+                }}
+                onSetDefault={(name, scope) => {
+                  try {
+                    props.fleet.agents.setDefault(name, scope);
+                    const workspaceOverride = props.fleet.code.read("workspace").agent?.default;
+                    notify(
+                      scope === "global" && workspaceOverride !== undefined
+                        ? `global default set to ${name}; this workspace still overrides it with ${workspaceOverride}`
+                        : `${scope} default agent set to ${name}`,
+                      "success",
+                    );
+                    return true;
+                  } catch (e) {
+                    notify(`set default failed: ${errorText(e)}`, "error");
+                    return false;
+                  }
+                }}
+                onClearDefault={(scope) => {
+                  if (props.fleet.code.read(scope).agent?.default === undefined) {
+                    notify(`no ${scope} default agent is configured`, "warn");
+                    return false;
+                  }
+                  try {
+                    props.fleet.code.clearAgentDefault(scope);
+                    const inherited = props.fleet.code.agentDefault();
+                    notify(
+                      `${scope} default agent cleared${inherited ? `; effective default is now ${inherited}` : ""}`,
+                      "success",
+                    );
+                    return true;
+                  } catch (e) {
+                    notify(`clear default failed: ${errorText(e)}`, "error");
+                    return false;
+                  }
+                }}
+              />
+            )}
+          </SurfaceBoundary>
+          <SurfaceBoundary
+            active={() => overlays.overlay() === "isolationPicker"}
+            retention="retain-one"
+            placement="portal"
+          >
+            {(lifecycle) => (
+              <Suspense fallback={<text>Loading isolation{glyph("ellipsis")}</text>}>
+                <IsolationPicker
+                  interaction={interaction}
+                  settings={props.fleet.settings}
+                  runActive={props.run.active}
+                  active={lifecycle.active}
+                  notify={notify}
+                  reload={() => props.backend.reconnect("reload")}
+                  {...(props.backend.restoreIsolation === undefined
+                    ? {}
+                    : { restore: props.backend.restoreIsolation })}
+                  onClose={() => overlays.dismissTop()}
+                  onApplied={() => overlays.dismissTop()}
+                />
+              </Suspense>
+            )}
+          </SurfaceBoundary>
+          <SurfaceBoundary
+            active={() => overlays.overlay() === "reviewPicker"}
+            retention="retain-one"
+            placement="portal"
+          >
+            {(lifecycle) => (
+              <Suspense fallback={<text>Loading Guard{glyph("ellipsis")}</text>}>
+                <ReviewPicker
+                  interaction={interaction}
+                  settings={props.fleet.settings}
+                  guard={props.fleet.guard}
+                  scope={() =>
+                    props.fleet.settings.read("workspace") !== undefined ? "workspace" : "global"
+                  }
+                  runActive={props.run.active}
+                  active={lifecycle.active}
+                  notify={notify}
+                  onClose={() => overlays.dismissTop()}
+                  onApplied={() => overlays.dismissTop()}
+                />
+              </Suspense>
+            )}
+          </SurfaceBoundary>
+          <SurfaceBoundary
+            active={() => overlays.overlay() === "memoryPicker"}
+            retention="retain-one"
+            placement="portal"
+          >
+            {(lifecycle) => (
+              <Suspense fallback={<text>Loading memory{glyph("ellipsis")}</text>}>
+                <MemoryPicker
+                  interaction={interaction}
+                  settings={props.fleet.settings}
+                  memory={props.fleet.memoryMode}
+                  active={lifecycle.active}
+                  notify={notify}
+                  onClose={() => overlays.dismissTop()}
+                  onApplied={() => overlays.dismissTop()}
+                />
+              </Suspense>
+            )}
+          </SurfaceBoundary>
+          <SurfaceBoundary
+            active={() => transientOverlay() === "activityDetail" && activityDetail() !== null}
+            retention="retain-one"
+            placement="portal"
+          >
+            {() => (
+              <ActivityDetail
+                interaction={interaction}
+                detail={activityDetail}
+                onClose={() => closeTransientOverlay()}
+              />
+            )}
+          </SurfaceBoundary>
+          <SurfaceBoundary
+            active={() =>
+              transientOverlay() === "worktreeExit" && props.shell.worktree !== undefined
+            }
+            retention="retain-one"
+            placement="portal"
+          >
+            {() => (
+              <WorktreeExitPrompt
+                interaction={interaction}
+                name={props.shell.worktree!.name}
+                branch={props.shell.worktree!.branch}
+                onRemove={() => {
+                  if (removingWorktreeForExit) return;
+                  removingWorktreeForExit = true;
+                  notify("removing clean worktree" + glyph("ellipsis"));
+                  detachObserved(
+                    "worktree_exit_remove",
+                    async () => {
+                      await props.shell.worktree!.requestRemoval();
+                      props.shell.quit();
+                    },
+                    () => props.shell.quit(),
+                  );
+                }}
+                onKeep={props.shell.quit}
+                onCancel={() => closeTransientOverlay()}
+              />
+            )}
+          </SurfaceBoundary>
+          <SurfaceBoundary
+            active={() => overlays.overlay() !== "none" || transientOverlay() !== "none"}
+            retention="dispose-on-close"
+          >
+            {() => <HintToast hint={hint} />}
+          </SurfaceBoundary>
+          <box
+            flexDirection="column"
+            flexShrink={editorExpanded() ? 1 : 0}
+            flexGrow={editorExpanded() ? 1 : 0}
+            minHeight={editorExpanded() ? 0 : undefined}
+            position={editorExpanded() ? "absolute" : "relative"}
+            left={editorExpanded() ? 0 : "auto"}
+            right={editorExpanded() ? 0 : "auto"}
+            top={editorExpanded() ? 2 : "auto"}
+            bottom={editorExpanded() ? 0 : "auto"}
+            backgroundColor={tokens.bg}
+            zIndex={editorExpanded() ? 3 : 1}
+          >
+            <Show when={!inputPopupOpen()}>
+              <LeadActivityLine
+                phase={leadActivityPhase}
+                detail={leadActivityDetail}
+                identity={activityIdentity}
+              />
+            </Show>
+            <InputDock
+              interaction={interaction}
+              renderer={props.shell.renderer}
+              platform={props.shell.platform}
+              history={props.session.history}
+              providers={providerList()}
+              visible={() =>
+                overlays.overlay() === "none" && !elicitComposerHidden() && !props.run.switching?.()
+              }
+              runActive={() => props.run.active()}
+              submissionBlocked={pressureBlockedReason}
+              onSubmit={(content) => {
+                submitFromLeadTail(() => props.run.submit(content));
+              }}
+              onSlashCommand={onSlashCommand}
+              onBashCommand={props.run.bang}
+              onReady={(el) => {
+                inputEl = el;
+                if (props.initialDraft !== undefined && el.plainText.length === 0) {
+                  el.setText(props.initialDraft);
+                  el.gotoBufferEnd();
+                }
+                props.run.registerDraftRestore?.((text, content) => {
+                  if ((el.plainText ?? "").trim().length > 0) return;
+                  el.setText(text);
+                  el.gotoBufferEnd();
+                  if (Array.isArray(content)) dock?.restoreAttachments(content);
+                });
+              }}
+              onDock={(value) => {
+                dock = value;
+              }}
+              onExpandedChange={setEditorExpanded}
+              onPopupOpenChange={setInputPopupOpen}
+              onDraftChange={setDraftNonEmpty}
+              targetLabel={() => {
+                if (pressureBlocked()) return "New work paused";
+                if (props.run.active())
+                  return props.run.workflowActivity() ? "Message workflow" : "Steer this run";
+                if (/done|completed|cancel/i.test(props.run.status()))
+                  return "Ask for an adjustment";
+                return "New task";
+              }}
+              onNotify={notify}
+            />
+            <Footer
+              hint={footerHint}
+              status={() => {
+                const restoring = memoryPressureStatus(pressure().phase);
+                if (restoring)
+                  return {
+                    text: restoring,
+                    tone: pressure().phase === "failed" ? "error" : "running",
+                  };
+                return { text: "", tone: "info" };
+              }}
+              runStrip={footerRunStrip}
+              navigation={
+                <NavigationBar
+                  environment={interaction.keyboardEnvironment}
+                  width={() => dims().w}
+                  responsive
+                  actionTransform={(action) => {
+                    if (!transcriptNavigationActive()) return action;
+                    if (action.id === "transcript.focusPrev")
+                      return { ...action, keys: [glyph("arrowUp")] };
+                    if (action.id === "transcript.focusNext")
+                      return { ...action, keys: [glyph("arrowDown")] };
+                    return action;
+                  }}
+                  active={() =>
+                    overlays.overlay() === "none" &&
+                    transientOverlay() === "none" &&
+                    !props.run.switching?.()
+                  }
+                />
+              }
+            />
+          </box>
+          <SurfacePortal visible={() => props.run.switching?.() ?? false} zIndex={FLOAT_Z + 3}>
+            <box
+              position="absolute"
+              left={0}
+              right={0}
+              top={0}
+              bottom={0}
+              backgroundColor={POINTER_BLOCKER_BG}
+              onMouse={consumePointerEvent}
+            />
+          </SurfacePortal>
+          <Show when={layoutMode() === "floor"}>
+            {/* Above the float layer on purpose: this message is the only route
               out, and an overlay that painted over it left the user with a
               shredded card and no instruction. `refuseAtFloor` stops one being
               opened; this stops one already open from covering the message. */}
-          <box
-            position="absolute"
-            left={0}
-            right={0}
-            top={0}
-            bottom={0}
-            backgroundColor={tokens.bg}
-            justifyContent="center"
-            alignItems="center"
-            flexDirection="column"
-            zIndex={FLOAT_Z + 2}
-          >
-            <text fg={tokens.warn}>terminal too small</text>
-            <text fg={tokens.muted}>
-              {`needs ${FLOOR_MIN_COLUMNS}x${FLOOR_MIN_ROWS}, have ${dims().w}x${dims().h}`}
-            </text>
-          </box>
-        </Show>
-      </box>
-    </KeymapProvider>
+            <box
+              position="absolute"
+              left={0}
+              right={0}
+              top={0}
+              bottom={0}
+              backgroundColor={tokens.bg}
+              justifyContent="center"
+              alignItems="center"
+              flexDirection="column"
+              zIndex={FLOAT_Z + 2}
+            >
+              <text fg={tokens.warn}>terminal too small</text>
+              <text fg={tokens.muted}>
+                {`needs ${FLOOR_MIN_COLUMNS}x${FLOOR_MIN_ROWS}, have ${dims().w}x${dims().h}`}
+              </text>
+            </box>
+          </Show>
+        </box>
+      </KeymapProvider>
+    </TerminalSizeProvider>
   );
 }

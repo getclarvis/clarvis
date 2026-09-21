@@ -1521,10 +1521,17 @@ test("Lead thinking and working reuse one fixed line immediately above the compo
 
   t.mockInput.pressKey("x", { ctrl: true });
   await t.renderOnce();
-  const pendingActivity = t.captureCharFrame().split("\n")[line!.y] ?? "";
-  expect(pendingActivity).toMatch(/working.*Ctrl\+C to interrupt.*Ctrl\+X active.*choose a key/);
+  const pendingFrame = t.captureCharFrame();
+  const pendingActivity = pendingFrame.split("\n")[line!.y] ?? "";
+  // The activity band reports the run; the pending prefix is announced once, in the navigation
+  // band, together with the continuations it offers.
+  expect(pendingActivity).toMatch(/working.*Ctrl\+C to interrupt/);
+  expect(pendingActivity).not.toContain("Ctrl+X active");
+  expect(pendingFrame.match(/Ctrl\+X active/g)?.length).toBe(1);
+  expect(pendingFrame).toMatch(/Ctrl\+X active.*\[K\] expand/);
   press(t, "escape");
   await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("Ctrl+X active");
 
   applyRunEvents(
     sink,
@@ -3827,7 +3834,7 @@ test("legacy wire input opens leader pickers without consuming the draft and kee
       "[I] isolation",
       "[G] guard",
       "[M] memory",
-      "[E] expand editor",
+      "[E] editor",
     ])
       expect(initial).toContain(text);
     for (const [key, title] of [
@@ -3836,13 +3843,14 @@ test("legacy wire input opens leader pickers without consuming the draft and kee
       ["m", "Select memory"],
     ] as const) {
       press(t, "x", { ctrl: true });
-      const pending = await captureUntil(t, "Ctrl+X active · choose a key");
+      const pending = await captureUntil(t, "Ctrl+X active");
       const activityLine = t.renderer.root.findDescendantById("lead-activity-line");
       expect(activityLine).toBeDefined();
-      expect(pending.split("\n")[activityLine!.y]).toContain("Ctrl+X active · choose a key");
+      expect(pending.split("\n")[activityLine!.y]).not.toContain("Ctrl+X active");
+      expect(pending).toMatch(/Ctrl\+X active/);
       press(t, key);
       await captureUntil(t, title);
-      expect(t.captureCharFrame()).not.toContain("Ctrl+X active · choose a key");
+      expect(t.captureCharFrame()).not.toContain("Ctrl+X active");
       press(t, "escape");
       await captureUntil(t, "draft preserved");
     }
@@ -3851,8 +3859,72 @@ test("legacy wire input opens leader pickers without consuming the draft and kee
     await t.renderOnce();
     const escaped = t.captureCharFrame();
     expect(escaped).not.toContain("Select memory");
-    expect(escaped).not.toContain("Ctrl+X active · choose a key");
+    expect(escaped).not.toContain("Ctrl+X active");
   } finally {
     t.renderer.destroy();
   }
+});
+
+test("the open plan page names one owner per sequence and keeps the run identified", async () => {
+  // The page binds Ctrl+X P to its own close verb while the shell binds the same
+  // sequence to `open plan`. Only the page's verb can fire there, so the band must
+  // not advertise both — that was the ambiguity a reader could not resolve. The
+  // activity band stays visible below the page and says whose facts it reports.
+  const doc = {
+    id: "plan-active",
+    path: ".clarvis/plans/active.md",
+    title: "Active checkout plan",
+    status: "active" as const,
+    retention: "keep" as const,
+    revision: 1,
+    spec_revision: 1,
+    created_at: "2026-08-08T00:00:00Z",
+    updated_at: "2026-08-08T00:00:00Z",
+    created_by_run: "exec_1",
+    objective: "Ship checkout safely.",
+    context: "",
+    tasks: [],
+    validation: [],
+    notes: "",
+    extra_sections: {},
+    markdown: "## Objective\n\nShip checkout safely.",
+  };
+  const plans: AppBackend["plans"] = { read: async () => doc };
+  const stream: RunEvent[] = [
+    ev({ type: "run_started", at: 1 }),
+    ev({
+      type: "plan_created",
+      at: 2,
+      id: doc.id,
+      path: doc.path,
+      title: doc.title,
+      status: doc.status,
+      retention: doc.retention,
+      revision: doc.revision,
+      spec_revision: doc.spec_revision,
+      tasks: [{ id: "t1", title: "Implement checkout", status: "in_progress" }],
+    }),
+  ];
+  const t = await mountApp(
+    defaultProps({
+      seedStream: stream,
+      backend: baseBackend({ plans }),
+      active: () => true,
+    }),
+  );
+  await captureUntil(t, "Active checkout plan");
+  press(t, "x", { ctrl: true });
+  press(t, "p");
+  const open = await captureUntil(t, "Ship checkout safely.");
+  expect(open).toContain("close");
+  expect(open).not.toContain("open plan");
+  expect(open).toMatch(/Run · .*working.*Ctrl\+C to interrupt/);
+
+  press(t, "x", { ctrl: true });
+  await t.renderOnce();
+  const pending = t.captureCharFrame();
+  expect(pending.match(/Ctrl\+X active/g)?.length).toBe(1);
+  expect(pending).toMatch(/Ctrl\+X active.*close/);
+  expect(pending).not.toContain("open plan");
+  t.renderer.destroy();
 });

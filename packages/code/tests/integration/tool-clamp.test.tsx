@@ -34,6 +34,39 @@ async function frame(node: TranscriptNode): Promise<string> {
   return out;
 }
 
+test("a collapsed error breaks by cell and keeps its guidance", async () => {
+  const guidance =
+    "ambiguous target: src/a.ts matches 3 files; make the edit unique by passing the full path";
+  const node: FoldFixtureToolNode = {
+    key: "err",
+    kind: "tool_call",
+    status: "error",
+    text: "",
+    mcpName: "server",
+    toolName: "edit_file",
+    args: { path: "src/a.ts" },
+    result: "",
+    error: guidance,
+    collapsed: false,
+  };
+  const t = await openRender(() => <BlockView node={node} defaultFolded={() => true} />, {
+    width: 60,
+    height: 20,
+  });
+  await t.renderOnce();
+  const out = t.captureCharFrame();
+  // The diagnostic is not clipped at the edge and not abbreviated: the sentence
+  // that says how to fix the failure is on screen. It breaks by cell, so a long
+  // path would stay readable too, and the rows are contiguous.
+  const joined = out
+    .split("\n")
+    .map((line) => line.trim())
+    .join("");
+  expect(joined).toContain("make the edit unique by passing the full path");
+  expect(out).not.toContain("…");
+  t.renderer.destroy();
+});
+
 test("shell stdout over the cap shows 10 lines + a `… +N lines` footer", async () => {
   const stdout = Array.from({ length: 25 }, (_, i) => `L${i + 1}`).join("\n");
   const result = JSON.stringify({

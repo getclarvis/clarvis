@@ -16,6 +16,8 @@ export interface UiActionSpec {
   run(): void | Promise<void>;
   surfaces: readonly ActionSurface[];
   footerLabel?: string;
+  /** Shorter wording admitted before this action loses its footer seat. */
+  footerShortLabel?: string;
   hintPriority?: number;
   hintGroup?: ActionHintGroup;
   essential?: boolean;
@@ -51,6 +53,9 @@ export function registerUiActionFields(keymap: OpenTuiKeymap): () => void {
     footerLabel(value, ctx) {
       ctx.attr("footerLabel", expectString("footerLabel", value));
     },
+    footerShortLabel(value, ctx) {
+      ctx.attr("footerShortLabel", expectString("footerShortLabel", value));
+    },
     hintPriority(value, ctx) {
       if (typeof value !== "number" || !Number.isFinite(value))
         throw new Error("hintPriority must be a finite number");
@@ -79,6 +84,7 @@ export function uiCommand(spec: UiActionSpec): OpenTuiCommand {
     uiCategory: spec.category,
     uiSurfaces: [...spec.surfaces],
     ...(spec.footerLabel ? { footerLabel: spec.footerLabel } : {}),
+    ...(spec.footerShortLabel ? { footerShortLabel: spec.footerShortLabel } : {}),
     ...(spec.hintPriority === undefined ? {} : { hintPriority: spec.hintPriority }),
     ...(spec.hintGroup ? { hintGroup: spec.hintGroup } : {}),
     ...(spec.essential === undefined ? {} : { essential: spec.essential }),

@@ -253,6 +253,7 @@ const ACTION_PROJECTION: Readonly<Record<string, Record<string, unknown>>> = {
   "run.cancel": {
     uiSurfaces: ["footer", "full-help"],
     footerLabel: "cancel / quit",
+    footerShortLabel: "cancel",
     hintPriority: 90,
     hintGroup: "escape",
     essential: true,

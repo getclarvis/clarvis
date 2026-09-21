@@ -539,16 +539,29 @@ composer-adjacent activity line or the two typed delegation lifecycle markers.
 | `tail()` | last 5 lines of `liveOutput`, only while running | — |
 | `composing()` | `composingLabel(inputChars, inputComplete === true, inputStreamChars)` when `inputChars !== undefined`, else `""` | `packages/code/src/views/blocks.tsx` (`ToolLine`) |
 
-The header renders as one truncated, non-wrapping row so tool identity remains stable whatever the
-terminal width. A collapsed shell error or warning with an authoritative non-zero exit code appends
-`exit <code>` inline immediately before the guard verdict. Other collapsed errors add one separately
-truncated diagnostic row below the header instead of competing with its signature and metadata. Its header parts, in
+The header breaks by cell rather than being clipped, so tool identity survives a narrow terminal: a
+call's path is what a reader matches against the filesystem, and the previous single truncated row
+dropped its tail with no ellipsis and no way to recover it in that row. The identity's own
+**argument preview** keeps its explicit character bound (`VALUE_MAX` and `SIGNATURE_MAX` in
+`packages/code/src/views/tools/signature.ts`), which is a cost bound on the projected arguments and
+not a width overflow: the preview still truncates a long value with an ellipsis, preferring the
+basename of a path. A collapsed shell error or warning with an authoritative non-zero exit code
+appends `exit <code>` inline immediately before the guard verdict. Other collapsed errors add their
+own wrapped diagnostic row below the header instead of competing with its signature and metadata;
+the diagnostic breaks by cell and is not abbreviated, so the cause, the location and the sentence
+that says how to fix the failure all stay readable. Its header parts, in
 order: status glyph, `toolDisplayLabel` in accent, then **either** the composing label **or** the signature — never both,
 the signature preferring resident `node.signature` over live `formatToolCall`. Then
 elapsed time while running, or elapsed time when settled and
 `elapsedMs >= SLOW_TOOL_MS` (2000ms). A running interruptible shell places its compact `[X]`
-immediately after that elapsed time. Settled calls then show either the mutation chip
-or the hidden-line chip.
+immediately after that elapsed time, in a column that stays one row tall beside a wrapped identity.
+Settled calls then show either the mutation chip
+or the hidden-line chip. Production: `ToolLine` in `packages/code/src/views/blocks.tsx`,
+`formatToolCall` in `packages/code/src/views/tools/signature.ts`, and `renderErrorGeneric` in
+`packages/code/src/views/tools/registry.tsx`. Test:
+`packages/code/tests/integration/block-focus-render.test.tsx` (the wrapped identity keeps the
+interrupt column adjacent to the elapsed time) and
+`packages/code/tests/integration/tool-clamp.test.tsx` (a collapsed error keeps its guidance).
 
 Below the header, in order: the live tail, the hydration notice when expanded and
 dehydrated, the curated result/error body card on `tokens.bgElev`,

@@ -12,13 +12,12 @@ import {
   createFieldEditor,
   DetailLines,
   LevelHost,
-  SectionHeader,
   StatusRow,
 } from "./view-host.tsx";
 import type { CatalogPickerSpec } from "./CatalogPicker.tsx";
 import { modelPickerSpec } from "./pick-model.ts";
 import type { SettingPresentation } from "../../ui/presentation.ts";
-import { DetailSettingRow, SettingDetail } from "../../ui/patterns/detail-view.tsx";
+import { DetailColumn, DetailSettingRow, SettingDetail } from "../../ui/patterns/detail-view.tsx";
 
 /** Data and actions {@link MemoryConfigPanel} needs from its host. */
 export interface MemoryConfigDeps {
@@ -258,28 +257,35 @@ export function MemoryConfigPanel(host: ViewHost, deps: MemoryConfigDeps): JSX.E
       label: "Session memory",
       configured: deps.memoryMode.mode(),
       effective: deps.memoryMode.mode(),
-      source: "session",
+      source: "this client",
       applies: "now",
       mutation: "immediate",
     });
     return rows;
   }
 
+  /**
+   * The overview: the effective summary, then one row per control.
+   *
+   * @remarks No intermediate `settings (scope)` / `session (this client)`
+   *   headings: the rows already name their own scope, and the headings spent the
+   *   height the rows needed on a short terminal. The scope stays visible in the
+   *   frame title area, on the `Inherit`/`off`/`on` values and in each row's
+   *   `from <scope>` origin.
+   */
   function body(): JSX.Element {
     return (
-      <box flexDirection="column">
+      <DetailColumn fill>
         <StatusRow label="effective" text={statusLine().text} fg={statusLine().fg} />
-        <SectionHeader label={`settings (${host.scope()})`} />
         <DetailSettingRow setting={settingsRows()[0]!} selected={sel() === 0} />
         <Show when={draft() !== null}>
           <DetailSettingRow setting={settingsRows()[1]!} selected={sel() === 1} />
         </Show>
-        <SectionHeader label="session (this client)" />
         <DetailSettingRow
           setting={settingsRows()[sessionBase()]!}
           selected={sel() === sessionBase()}
         />
-      </box>
+      </DetailColumn>
     );
   }
 
@@ -313,8 +319,8 @@ export function MemoryConfigPanel(host: ViewHost, deps: MemoryConfigDeps): JSX.E
       editor={fe}
       picker={picker}
       levels={[
-        { title: "Memory settings", body },
-        { title: "Memory settings", body: detailBody },
+        { title: "Memory", body },
+        { title: "Memory", body: detailBody },
       ]}
     />
   );

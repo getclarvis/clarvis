@@ -1,5 +1,6 @@
 import type { Accessor, JSX } from "solid-js";
 import { For, Show } from "solid-js";
+import { useTerminalSize } from "./terminal-size.tsx";
 import { tokens } from "../../theme/tokens.ts";
 import { glyph } from "../../theme/glyphs.ts";
 import { tone } from "../../theme/tone.ts";
@@ -15,6 +16,9 @@ export interface ViewFrameStatus {
   glyph?: string;
   glyphFg?: string;
 }
+
+/** Cells {@link ViewFrame}'s own left padding spends before its content. */
+const FRAME_PADDING = 1;
 
 /**
  * Renders one level's chrome: title/breadcrumb/scope, body and keymap-derived navigation.
@@ -46,6 +50,13 @@ export function ViewFrame(props: {
   footerStatus?: () => ViewFrameStatus | undefined;
   children: JSX.Element;
 }): JSX.Element {
+  const dims = useTerminalSize();
+  /** Cells the pinned status owns on the band's own row; the band is admitted by what is left. */
+  const statusWidth = (): number => {
+    const status = props.footerStatus?.();
+    if (!status) return 0;
+    return Bun.stringWidth(`${status.glyph ? `${status.glyph} ` : ""}${status.text}`);
+  };
   return (
     <box
       flexGrow={1}
@@ -112,13 +123,14 @@ export function ViewFrame(props: {
             {(line) => <text fg={tokens.muted}>{"  " + line}</text>}
           </For>
         </Show>
-        <box height={1} flexDirection="row">
+        <box flexShrink={0} flexDirection="row">
           <box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
             <InteractionNavigationBar
               interaction={props.host.interaction}
               actionFilter={(action) =>
                 action.id !== "run.cancel" && (props.actionFilter?.(action) ?? true)
               }
+              usableWidth={() => dims().width - FRAME_PADDING - statusWidth()}
             />
           </box>
           <Show when={props.footerStatus?.()}>

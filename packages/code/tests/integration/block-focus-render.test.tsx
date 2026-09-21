@@ -125,15 +125,21 @@ test("narrow shell headers place the stable close target immediately after elaps
     expect(action.x + action.width).toBeLessThanOrEqual(52);
     const identity = texts(t.renderer.root).find((text) => text.plainText.includes("shell("))!;
     expect(identity.y).toBe(action.y);
-    expect(identity.height).toBe(1);
     expect(identity.x + identity.width).toBe(action.x);
     const lines = t.captureCharFrame().split("\n");
     const actionSpan = t
       .captureSpans()
       .lines[action.y]!.spans.find((span) => span.text.includes(label));
     expect(actionSpan?.text.endsWith(` ${label}`)).toBe(true);
-    expect(lines.filter((line) => line.trim().length > 0)).toHaveLength(1);
-    expect(lines[action.y]).not.toContain("before the action");
+    // The call's identity breaks by cells instead of being clipped at the panel
+    // edge: the command continues on the next row, while the argument preview
+    // keeps its own explicit character bound (the basename survives, the rest is
+    // summarised) and the action column still starts exactly where the identity
+    // ends, on the row the elapsed time and the `[X]` share.
+    expect(lines[action.y]).toContain("shell(echo a very long shell command");
+    expect(lines[action.y]).not.toContain("must");
+    expect(lines[action.y + 1]).toContain("must trun");
+    expect(lines[action.y + 1]).toContain("30s");
     await t.mockMouse.click(action.x + 2, action.y);
     await t.renderOnce();
   };

@@ -3,10 +3,13 @@ import type { ActiveKey } from "@opentui/keymap";
 import type { KeyEvent, Renderable } from "@opentui/core";
 import {
   actionSegment,
+  bandWidthFor,
+  footerSpans,
   footerText,
   footerLines,
   budgetFooterActions,
   projectActiveActions,
+  retainWinningActions,
   type ActiveAction,
 } from "../../src/ui/patterns/active-actions.ts";
 
@@ -219,4 +222,164 @@ test("responsive footer retains every action across rows with explicit modifier 
     }
   }
   expect(footerLines(actions, 48).length).toBeGreaterThan(1);
+});
+
+test("footer spans keep keys apart from labels and name the shared prefix once", () => {
+  const actions = [
+    action("send", 100, "primary", { keys: ["↵"] }),
+    action("isolation", 50, "navigation", { keys: ["Ctrl+X I"] }),
+    action("memory", 49, "navigation", { keys: ["Ctrl+X M"] }),
+  ];
+  expect(footerSpans(actions).map((span) => [span.tone, span.text])).toEqual([
+    ["key", "[↵]"],
+    ["label", " send"],
+    ["separator", "  │  "],
+    ["prefix", "Ctrl+X:"],
+    ["separator", " "],
+    ["key", "[I]"],
+    ["label", " isolation"],
+    ["separator", "  "],
+    ["key", "[M]"],
+    ["label", " memory"],
+  ]);
+  // The plain string remains the measurement and the tests' contract.
+  expect(footerText(actions)).toBe("[↵] send  │  Ctrl+X: [I] isolation  [M] memory");
+});
+
+test("a band admits the authored short wording before it drops a segment", () => {
+  const actions = [
+    action("send", 100, "primary", {
+      keys: ["↵"],
+      footerLabel: "send / steer",
+      shortLabel: "send",
+      essential: true,
+    }),
+    action("plan", 55, "navigation", {
+      keys: ["Ctrl+X P"],
+      footerLabel: "open plan",
+      shortLabel: "plan",
+    }),
+  ];
+  // The full row is 37 cells and the shortened row 25, so at a 30-column band only
+  // the shortened pair is admissible.
+  expect(budgetFooterActions(actions, 30).map(actionSegment)).toEqual([
+    "[↵] send",
+    "[Ctrl+X P] plan",
+  ]);
+  expect(
+    budgetFooterActions(
+      actions.map((entry) => ({ ...entry, shortLabel: undefined })),
+      30,
+    ).map((entry) => entry.id),
+  ).toEqual(["send"]);
+  // The projection itself is never mutated by a budget.
+  expect(actions[1]!.footerLabel).toBe("open plan");
+});
+
+test("the responsive band prefers short wording over a third row", () => {
+  const actions = [
+    action("workflow", 50, "navigation", {
+      keys: ["Ctrl+X W"],
+      footerLabel: "open workflow",
+      shortLabel: "workflow",
+    }),
+    action("plan", 55, "navigation", {
+      keys: ["Ctrl+X P"],
+      footerLabel: "open plan",
+      shortLabel: "plan",
+    }),
+    action("editor", 45, "navigation", {
+      keys: ["Ctrl+X E"],
+      footerLabel: "expand editor",
+      shortLabel: "editor",
+    }),
+  ];
+  const rows = footerLines(actions, 32);
+  expect(rows).toHaveLength(2);
+  expect(rows.map((row) => row.trim())).toEqual([
+    "Ctrl+X: [P] plan  [W] workflow",
+    "Ctrl+X: [E] editor",
+  ]);
+  expect(
+    footerLines(
+      actions.map((entry) => ({ ...entry, shortLabel: undefined })),
+      32,
+    ),
+  ).toHaveLength(3);
+});
+
+test("a command that lost its sequence keeps only the keys the keymap dispatches", () => {
+  const global = action("plan.open", 55, "navigation", {
+    keys: ["Ctrl+X P"],
+    sequences: [["<leader>", "p"]],
+  });
+  const level = action("ui.level.close", 100, "escape", {
+    keys: ["Ctrl+X P"],
+    sequences: [["<leader>", "p"]],
+    essential: true,
+  });
+  expect(
+    retainWinningActions([global, level], (sequence) =>
+      sequence[1] === "p" ? "ui.level.close" : undefined,
+    ).map((entry) => entry.id),
+  ).toEqual(["ui.level.close"]);
+
+  const custom = action("isolation.picker", 50, "navigation", {
+    keys: ["Ctrl+X I", "Alt+I"],
+    sequences: [
+      ["<leader>", "i"],
+      ["alt", "i"],
+    ],
+  });
+  // Every announced key taken: nothing truthful is left to print.
+  expect(retainWinningActions([custom], () => "something.else")).toEqual([]);
+  // One live alternative keeps the action and drops only the taken key.
+  const [kept] = retainWinningActions([custom], (sequence) =>
+    sequence[0] === "<leader>" ? "something.else" : undefined,
+  );
+  expect(kept!.keys).toEqual(["Alt+I"]);
+  // A key the keymap cannot resolve is kept: the band narrows what it knows.
+  expect(retainWinningActions([custom], () => undefined)[0]!.keys).toEqual(["Ctrl+X I", "Alt+I"]);
+});
+
+test("a nested surface converts its usable cells into a band width", () => {
+  expect(bandWidthFor(40)).toBe(42);
+  expect(bandWidthFor(0)).toBe(2);
+  expect(bandWidthFor(-5)).toBe(2);
+});
+
+test("a band narrower than one segment seats nothing rather than overflowing", () => {
+  // Contractual end of the adaptation sequence, recorded in `specs/known-issues.md`:
+  // with no wording left to shorten, a segment that does not fit is dropped — even an
+  // essential one — because the row must never paint past its container. Only a
+  // container with fewer cells than one whole segment reaches this; the shell's own
+  // 24-column floor is not one.
+  const essential = [
+    action("back", 40, "escape", { keys: ["Ctrl+X B"], footerLabel: "close", essential: true }),
+  ];
+  expect(budgetFooterActions(essential, bandWidthFor(12))).toEqual([]);
+  expect(budgetFooterActions(essential, bandWidthFor(20)).map((entry) => entry.id)).toEqual([
+    "back",
+  ]);
+});
+
+test("a card's row fits its own interior without losing the terminal's seat cap", () => {
+  // A 48-column terminal gives a card about 36 usable cells. The card must budget
+  // its row against its interior, but its seat cap belongs to the scope, not to the
+  // card: passing one width for both dropped the cap from 3 to 2 here and once cost
+  // a card its escape route outright (10 seats to 4).
+  const actions = [
+    action("open", 90, "primary", { keys: ["↵"], essential: true }),
+    action("move", 60, "navigation", { keys: ["↑/k"] }),
+    action("add", 55, "mutation", { keys: ["a"] }),
+    action("delete", 50, "mutation", { keys: ["d"] }),
+    action("back", 40, "escape", { keys: ["esc"], essential: true }),
+  ];
+  const card = budgetFooterActions(actions, bandWidthFor(36), { capWidth: 48 });
+  expect(card.map((entry) => entry.id)).toEqual(
+    budgetFooterActions(actions, 48).map((entry) => entry.id),
+  );
+  expect(Bun.stringWidth(footerText(card))).toBeLessThanOrEqual(36);
+  // The same card without the terminal's cap keeps one seat fewer.
+  expect(budgetFooterActions(actions, bandWidthFor(36)).map((entry) => entry.id)).toHaveLength(2);
 });

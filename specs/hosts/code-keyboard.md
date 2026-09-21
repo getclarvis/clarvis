@@ -442,7 +442,11 @@ default"`).
 (`packages/code/src/ui/patterns/active-actions.ts`, `actionSegment`) — e.g. `"[↵/super+o] list.open"`
 (`packages/code/tests/unit/active-actions.test.ts`, "active action projection deduplicates alternatives by command identity"). This is the *only* place a segment is assembled;
 key and label are never truncated independently, by the function's own doc comment
-(`packages/code/src/ui/patterns/active-actions.ts`).
+(`packages/code/src/ui/patterns/active-actions.ts`). `actionSegment` is the plain-text join of
+The segment's typed runs — `key`, `label`, `prefix`, `separator` — are what a band paints, so a
+band paints keys with more contrast than their descriptions without a second formatter
+(`packages/code/tests/unit/active-actions.test.ts`, "footer spans keep keys apart from labels and
+name the shared prefix once").
 
 Footer presentation groups two or more actions whose resolved alternatives all use
 Ctrl+X under one `Ctrl+X:` prefix. Other shortcuts appear first with their complete
@@ -451,11 +455,55 @@ Width admission measures this grouped text, including the prefix and separator, 
 each action whole when it fits a row. The application uses `footerLines` to preserve all
 footer actions across responsive rows, repeating the shared prefix per line; other panel
 footers retain their existing admission budget.
-Production: `packages/code/src/ui/patterns/active-actions.ts` (`footerText`,
-`budgetFooterActions`) and `packages/code/src/ui/patterns/navigation-bar.tsx` (`NavigationBar`).
-Test: `packages/code/tests/unit/active-actions.test.ts` ("shared footer modifiers preserve
-full help keys and budget the rendered text", "mixed custom alternatives stay explicit
-outside the modifier group").
+
+A band is admitted by the width it is given, which is the **band** width: the terminal band for the
+shell footer, or the cells a container really offers plus its two chrome columns
+(`bandWidthFor` in `packages/code/src/ui/patterns/active-actions.ts`). A nested
+surface passes computed geometry — `ViewFrame` subtracts its own padding and its pinned status
+(`packages/code/src/ui/patterns/view-frame.tsx`), `PageFrame` its padding
+(`packages/code/src/views/PageFrame.tsx`), and a card its border, padding and pinned footer text
+(`floatContentWidth` in `packages/code/src/views/overlays/FloatFrame.tsx`) — never the terminal width
+again. Subtracting the same padding twice is what once landed a panel a tier low.
+
+The row's two budgets stay separate (`FooterBudget`): the band width decides which segments fit,
+while the **seat cap** — the editorial count limit of `tierLimit` — is drawn from the caller's scope
+width, which for a nested surface is still its terminal. A card therefore fits its own interior
+without losing seats the terminal could afford; one width for both once dropped a card's cap from 10
+to 4 the moment the interior reached `fits`, costing that surface its escape route. Production:
+`budgetFooterActions` in `packages/code/src/ui/patterns/active-actions.ts` and `NavigationBar` in
+`packages/code/src/ui/patterns/navigation-bar.tsx`. Test:
+`packages/code/tests/unit/active-actions.test.ts` ("a card's row fits its own interior without losing
+the terminal's seat cap").
+
+Three presentation rules apply before a segment is dropped. An action may declare a
+`footerShortLabel`, and the admission shortens the least important seat's wording first
+(`open plan` → `plan`, `expand editor` → `editor`); a seat is dropped only when no authored wording
+fits. The responsive band prefers the authored short variants over a third row while keeping every
+action it was given. A confirmation whose two `essential` verbs do not fit one row wraps onto a
+second row instead of losing the refusal, and a band inside a frame whose row no longer fixes its
+height can paint it. Production: `budgetFooterActions`, `footerRows`, `fitRow` and
+`bandWidthFor` in `packages/code/src/ui/patterns/active-actions.ts`, and `NavigationBar` in
+`packages/code/src/ui/patterns/navigation-bar.tsx`. Test:
+`packages/code/tests/unit/active-actions.test.ts` ("a band admits the authored short wording before
+it drops a segment", "the responsive band prefers short wording over a third row") and
+`packages/code/tests/integration/navigation-bar-render.test.tsx` ("a narrow band keeps every action
+and repeats the shared prefix").
+
+A band announces only the keys the keymap really dispatches. Two commands can be *reachable* and
+still disagree about one sequence — the shell's `plan.open` and the Plan page's own close verb both
+claim `Ctrl+X P` — and `getCommandEntries` reports each command independently, so the band used to
+print both and a reader could not tell which effect the sequence had on that screen.
+`retainWinningActions` keeps each announced sequence only for the command the keymap's own layer
+graph puts first (`liveSequenceOwners` in `packages/code/src/keys/sequence-owner.ts`, resolving by
+layer precedence: priority descending, then later registration first, and skipping a binding whose
+command is disabled, inactive or unresolved). An action with an alternative key that is still live
+stays visible with that key; a key the graph cannot resolve is kept rather than hidden. Production:
+`retainWinningActions` and the `SequenceOwner` port in
+`packages/code/src/ui/patterns/active-actions.ts`, `liveSequenceOwners` in
+`packages/code/src/keys/sequence-owner.ts`. Tests:
+`packages/code/tests/unit/sequence-owner.test.ts` and
+`packages/code/tests/integration/app-shell-render.test.tsx` ("the open plan page names one owner per
+sequence and keeps the run identified").
 
 ### 3.7 `PANEL_VERBS` — the panel-wide verb key/label table
 
@@ -828,16 +876,23 @@ The composer owns one additional exclusivity rule for the row above it. `InputDo
 the active `run.cancel` binding (`Ctrl+C` by default) to interrupt. A hosted run with confirmed
 continuation displays `continues after exit` before the elapsed detail only when its local
 Host/Sandbox lifecycle can outlive the TUI; this is presentation of host policy, not a grant or
-another key binding. While the Ctrl+X prefix is pending, this same band shows
-`Ctrl+X active · choose a key`; during a run the prefix state follows the interrupt hint instead of
-adding a row to the footer. The canonical footer is deliberately stable across that lifecycle: it keeps
-Context plus cumulative Session token totals/cost before and after settlement and never repeats
-`Running`, elapsed time or iteration. Production: `packages/code/src/views/InputDock.tsx`
+another key binding. The band leads with the physical phase: the spinner keeps the accent tone, the
+phase word is painted at full contrast and the details after it stay muted, so the current state
+outranks elapsed time, iteration and `Goal …` in reading order. Time and iteration belong to this
+band and are never repeated in the canonical footer row. While a full-region page (`plan`, `diff`,
+`view`) owns the reading area, the same band prefixes `Run` — with the separator — so its facts are
+not read as the *page's* activity; the label is omitted while the transcript itself is the surface
+above. The band never carries the Ctrl+X prefix: that belongs to the navigation band (see the
+pending-prefix rule in this document). The canonical footer is deliberately stable across that
+lifecycle: it keeps Context plus cumulative Session token totals/cost before and after settlement
+and never repeats `Running`, elapsed time or iteration. Production: `packages/code/src/views/InputDock.tsx`
 (`onPopupOpenChange`), `packages/code/src/views/App.tsx` (`inputPopupOpen`, `leadActivityDetail`,
-`footerRunStrip`) and `packages/code/src/features/run/status-presenter.ts` (`runStripText`). Tests:
+`activityIdentity`, `footerRunStrip`) and `packages/code/src/features/run/status-presenter.ts`
+(`runStripText`). Tests:
 `packages/code/tests/integration/app-shell-render.test.tsx` ("autocomplete replaces the Lead activity
-row instead of stacking ready or working above it" and "an active run seats its live metadata beside
-working and keeps the session footer stable") and `packages/code/tests/unit/run-status.test.ts` ("the
+row instead of stacking ready or working above it", "an active run seats its live metadata beside
+working and keeps the session footer stable", and "the open plan page names one owner per sequence
+and keeps the run identified") and `packages/code/tests/unit/run-status.test.ts` ("the
 run strip keeps cumulative session tokens before and after a run settles").
 
 ### 4.16 `SelectableList`'s error/loading/empty precedence
@@ -1211,16 +1266,24 @@ navigation footer segment.
 The Ctrl+X prefix is registered with OpenTUI's timed-leader addon and bindings use its
 leader token rather than interpreting a simultaneous Ctrl+X+letter chord. A prefix alone
 executes no action. The application footer projects reachable complete command bindings,
-so actions remain discoverable before the prefix is pressed. The activity band immediately above
-the composer adds `Ctrl+X active · choose a key` while the keymap reports the prefix pending;
-when working or thinking it seats that state after the run details and interrupt hint. Escape and timeout clear
-the pending prefix. Shell interruption uses Ctrl+X then T; Diff uses Ctrl+X then D.
+so actions remain discoverable before the prefix is pressed. While the keymap reports the prefix
+pending, the **navigation band** takes over: it names the sequence the user actually holds — from
+the pending parts, so a custom leader is not reported as Ctrl+X — and lists the keys the keymap
+reports live while it is held (`getActiveKeys`), which are that prefix's continuations plus any
+action still dispatchable in the same state, filtered by the surface's own visibility rules and
+transformed by its local wording. It shows the continuation key each one adds after the prefix, so
+`Ctrl+X active ▸ [K] expand · [I] isolation` reads as one sequence and its options. The indicator
+appears once, on the surface that owns the projection, and the normal discovery rows return when the
+prefix clears. Escape and timeout clear
+the pending prefix; when a surface offers no continuation of its own, its ordinary rows stay and no
+prefix is claimed. Shell interruption uses Ctrl+X then T; Diff uses Ctrl+X then D.
 Production: `packages/code/src/keys/interaction.ts` (`createInteraction`,
 `DEFAULT_BINDING_CANDIDATES`), `packages/code/src/views/ElicitBlock.tsx` (`ElicitBlock`),
 `packages/code/src/ui/patterns/active-actions.ts` (`projectCommandActions`),
-`packages/code/src/views/Footer.tsx` (`LeadActivityLine`) and
-`packages/code/src/views/App.tsx` (`LeadActivityStatus`).
+`packages/code/src/ui/patterns/navigation-bar.tsx` (`NavigationBar`, `usePendingBand`) and
+`packages/code/src/keys/keyspec.ts` (`compactSequence`).
 Test: `packages/code/tests/integration/interaction.test.ts` ("leader picker sequences
 dispatch while Tab retains focus navigation", "Ctrl+X T interrupts the focused shell
-when that command is enabled") and `packages/code/tests/integration/app-shell-render.test.tsx`
-(picker open/close and editor sequences).
+when that command is enabled"), `packages/code/tests/integration/navigation-bar-render.test.tsx`
+and `packages/code/tests/integration/app-shell-render.test.tsx`
+(picker open/close, editor sequences, and the pending band's continuations).

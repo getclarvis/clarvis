@@ -168,8 +168,21 @@ four panels named above. Test: `packages/code/tests/integration/defaults-panel-r
 `packages/code/tests/integration/sandbox-config-render.test.tsx`, and
 `packages/code/tests/integration/run-controls-render.test.tsx`.
 
-`RunControlsPanel` is the sole Settings screen for Host, Sandbox, Docker or Podman placement. It
-writes through shared `applyIsolation`; native Sandbox fields remain under `sandbox.config`.
+`MemoryConfigPanel` adopts the same overview shape as `Sandbox`: the effective summary line, then
+one row per control, with no intermediate `settings (<scope>)` / `session (this client)` headings —
+the rows already name their own origin, and the headings spent the height a short terminal needed.
+Its presentation title is `Memory`. The session control keeps its client-local identity on its own
+row: its origin reads `this client` and it applies `now`, and changing the page's scope does not turn
+it into a persisted setting. `Memory` and `Extraction model` keep their `from <scope>` origin, their
+pending/dirty state and their conditional visibility exactly as before; the effective summary still
+carries the reason a disabled, unresolved or session-overridden state cannot learn. Production:
+`packages/code/src/views/config/MemoryConfigPanel.tsx` (`body`, `settingsRows`) and
+`DetailColumn`/`DetailSettingRow` in `packages/code/src/ui/patterns/detail-view.tsx`. Test:
+`packages/code/tests/integration/memory-config-render.test.tsx` ("the overview presents one list of
+rows without intermediate scope headings"), with
+`packages/code/tests/integration/sandbox-config-render.test.tsx` as the shared-primitive sentinel.
+
+`RunControlsPanel` is the sole Settings screen for Host, Sandbox, Docker or Podman placement. Itwrites through shared `applyIsolation`; native Sandbox fields remain under `sandbox.config`.
 Workspace settings cannot contribute a runtime. Docker/Podman copy states
 that the full native Kernel, including Plans, Memory, Workflows and Goals, runs in the Container;
 skills, MCP, hooks, plugins, Tasks, external capability providers and Guard remain

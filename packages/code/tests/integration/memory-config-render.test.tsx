@@ -77,6 +77,24 @@ test("the overview keeps the effective status and settings rows compact", async 
   t.renderer.destroy();
 });
 
+test("the overview presents one list of rows without intermediate scope headings", async () => {
+  const { host, deps } = mount();
+  const t = await openRender((() => MemoryConfigPanel(host, deps)) as never, {
+    width: 110,
+    height: 24,
+  });
+  await t.renderOnce();
+  const frame = t.captureCharFrame();
+  // The rows name their own scope; the headings that spent the height are gone.
+  expect(frame).not.toContain("settings (global)");
+  expect(frame).not.toContain("session (this client)");
+  expect(frame).toContain("Session memory");
+  // The session control keeps its immediate, client-local identity on its own row.
+  expect(frame).toContain("this client");
+  expect(frame).toContain("now");
+  t.renderer.destroy();
+});
+
 test("the session toggle labels its scope: 'memory: on (session)'", async () => {
   const { host, deps, notes, press } = mount({ cycleTo: "on" });
   const t = await openRender((() => MemoryConfigPanel(host, deps)) as never, {

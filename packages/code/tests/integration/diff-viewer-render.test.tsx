@@ -192,6 +192,85 @@ test("inventory identity is the structured path, not a Change N label", () => {
   ).toEqual(["gone.ts", "src/a.ts"]);
 });
 
+test("a deep name stays whole in the single-pane tree instead of being abbreviated", async () => {
+  const name = "a-very-long-file-name-that-must-not-be-abbreviated.test.ts";
+  const { interaction } = fakeInteraction();
+  const service = fakeChanges([
+    {
+      id: "deep",
+      new_path: `packages/kernel/tests/integration/${name}`,
+      operation: "modified",
+      stats: { additions: 67, deletions: 2 },
+    },
+  ]);
+  const t = await openRender(
+    (() => (
+      <DiffViewer interaction={interaction} service={() => service} onClose={() => undefined} />
+    )) as never,
+    // Narrower than the split threshold: the tree is the whole frame.
+    { width: 60, height: 30 },
+  );
+  await t.renderOnce();
+  const out = t.captureCharFrame();
+  const joined = out
+    .split("\n")
+    .map((line) => line.replace(/[^\x20-\x7e]/g, "").trim())
+    .join("");
+  expect(joined).toContain(name);
+  expect(out).not.toContain("…");
+  // The row is the only identity on screen, and the counts survive the wrap
+  // instead of taking the name's room.
+  expect(out).not.toContain("Selected");
+  expect(out).toContain("+67");
+  expect(out).toContain("-2");
+  t.renderer.destroy();
+});
+
+test("moving the tree cursor reads nothing and never reflows the tree", async () => {
+  const { keymap, press } = createFakeKeymap();
+  const interaction = { keymap } as unknown as Interaction;
+  const service = fakeChanges(
+    [
+      { id: "first", new_path: "src/first.ts", operation: "modified", stats: { additions: 2 } },
+      { id: "second", new_path: "src/second.ts", operation: "added", stats: { additions: 9 } },
+    ],
+    {
+      first: "--- src/first.ts\n+++ src/first.ts\n@@ -1 +1 @@\n-old first\n+new first",
+      second: "--- src/second.ts\n+++ src/second.ts\n@@ -1 +1 @@\n-old second\n+new second",
+    },
+  );
+  const t = await openRender(
+    (() => (
+      <DiffViewer interaction={interaction} service={() => service} onClose={() => undefined} />
+    )) as never,
+    { width: 100, height: 40 },
+  );
+  await settleSyntaxSurfaces(t);
+  const treeColumn = (frame: string): string =>
+    frame
+      .split("\n")
+      .map((line) => line.slice(0, 30).replace(/[^\x20-\x7e]/g, " "))
+      .join("\n");
+  // At rest the cursor is on the file the detail pane has open; the counts sit on
+  // the file's own row, with no identity block above the tree.
+  const atRest = t.captureCharFrame();
+  const rowsAtRest = treeColumn(atRest);
+  expect(rowsAtRest).toContain("first.ts +2");
+  expect(atRest).not.toContain("Selected");
+  press("down");
+  press("down");
+  await t.renderOnce();
+  const moved = t.captureCharFrame();
+  // Moving the cursor reads nothing: the open patch and its header are unchanged.
+  expect(moved).toContain("new first");
+  expect(moved).not.toContain("new second");
+  expect(moved).not.toContain("Selected");
+  // And the tree keeps the screen lines it had: no row grows or shrinks under the
+  // cursor, so nothing above or below it moves.
+  expect(treeColumn(moved)).toBe(rowsAtRest);
+  t.renderer.destroy();
+});
+
 test("a narrow terminal opens file detail as a separate step and Escape returns to the tree", async () => {
   const { keymap, press } = createFakeKeymap();
   const interaction = { keymap } as unknown as Interaction;

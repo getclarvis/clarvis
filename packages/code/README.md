@@ -415,6 +415,11 @@ Defaults, Memory, Sandbox and Run controls use the same stable overview/detail i
 Agents: the overview keeps one compact row per setting, Enter edits, and `i` opens configured,
 effective, source and application details without expanding the list in place. Sandbox host and
 toolchain diagnostics live with the Sandbox detail, where errors remain visible and refreshable.
+Settings > Memory presents its effective summary and rows as one list — the effective state, then
+`Memory`, `Extraction model` when a block exists, and `Session memory` — with no intermediate scope
+headings: each row names its own origin (`from <scope>`, `this client`) and its own timing
+(`next run`, `now`), and the session control stays client-local and immediate whatever scope page it
+is shown from.
 Editing a shipped agent in `/settings` → agents writes a **customization**, not a copy: only the
 fields you changed reach `agents/<name>.md`, and everything else keeps following the shipped
 default. Deleting that file is offered as a reset — the shipped agent comes back. A shipped agent
@@ -588,16 +593,24 @@ folder tree lists all changed files and can collapse or expand directories; sele
 all of its recorded diffs in chronological order. Narrow terminals show the tree and file detail as
 separate steps. Retained bodies are rehydrated before display instead of silently falling back to
 only the newest edit. Moving through the tree does not replace the open file until Enter confirms
-the selected row. Escape returns from file detail to the tree, then closes `/diff`; its footer omits
+the selected row. Each tree row names its file in full: the status letter, the whole basename and
+the entry's added and removed counts, which move to the row's own trailing line when a long name
+needs the width. A file is therefore recognisable before it is opened, and a row's height depends on
+the entry alone, so moving the cursor never reflows the rows around it. The file reader's header
+keeps the whole path too and names the open file's operation. Escape returns from file detail to the
+tree, then closes `/diff`; its footer omits
 the global Ctrl+C cancel/quit action like the Plan and Goal detail screens.
 
-Isolation and Guard have separate persisted controls; Memory's quick control is session-only.
+isolation and Guard have separate persisted controls; Memory's quick control is session-only.
 Application actions use Ctrl+X: I for Isolation, G for Guard, M for Memory, R for Run controls,
 P for Plan, O for Goal, W for Workflow, D for Diff, S for the activity Sidebar, K for block expansion, and E
 for the expanded editor. Ctrl+X Up/Down enter transcript-block focus; while a block is focused,
-plain Up/Down move between blocks and Tab returns to the composer. The activity line above the
-composer shows `Ctrl+X active · choose a key` while the prefix is pending. During a run it appears
-after the working/thinking details and interrupt hint. These defaults are identical
+plain Up/Down move between blocks and Tab returns to the composer. While a Ctrl+X prefix is pending,
+the navigation band names the sequence the user actually holds and lists the continuations the
+keymap would dispatch next (`Ctrl+X active ▸ [K] expand · [I] isolation …`), so the options appear
+next to the prefix they belong to and the activity line keeps reporting the run instead. A pending
+prefix is announced once, on the surface that owns the band, and each continuation reflects the
+binding that would really fire there. These defaults are identical
 on macOS, Windows and Linux: press Ctrl+X, release it, then press the second key.
 The prefix expires after two seconds; Escape clears it and retains normal back behavior. Manual overrides remain
 available in Keyboard settings. All shortcut labels spell out Ctrl and Shift instead of a caret.
@@ -608,12 +621,15 @@ instead of requesting all-key escape reports, preserving dead-key and IME compos
 `ß` remains ordinary text. The three run-control pickers are loaded on first use and retained after their first
 mount. `Ctrl+X S` is the sole keyboard route for toggling the responsive activity Sidebar; it opens
 the first available Agents, Parallel work or Plan section when closed and closes the surface when open.
-The first live Plan, first workflow state/leader and first typed delegation each own an independent,
+In every width below the split it opens that surface across the whole content region instead of a narrow
+drawer, and the
+summary strip names the same effective binding so the route stays discoverable while no panel is
+mounted. The first live Plan, first workflow state/leader and first typed delegation each own an independent,
 once-per-execution automatic reveal intent for the responsive Plan, Parallel work and Agents
 sections. Those reveals keep the Lead transcript selected and never open result detail. Closing the
-split or drawer dismisses the intent that opened it, so later updates of that kind do not reopen it
+split or whole-region panel dismisses the intent that opened it, so later updates of that kind do not reopen it
 automatically; the first event for another section may still reveal and orient the Sidebar. Escape
-does not close either presentation. Agent, workflow and Plan rosters remain in the Sidebar; the
+does not close any presentation. Agent, workflow and Plan rosters remain in the Sidebar; the
 canonical footer contains only run context/session usage and does not repeat their counts.
 
 Scrollable collections use shared ownership patterns rather than page-local windowing code.
@@ -1112,15 +1128,24 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   Sidebar-only. Ordinary Lead `thinking`/`working` state occupies one fixed activity line
   immediately above the composer, outside the transcript ScrollBox; child-owned tools/content remain
   available only in that child's selected transcript.
-- The combined activity Sidebar has one responsive owner: a wide split or compact drawer. It has
+- The combined activity Sidebar has one responsive owner: a wide split from 100 columns, or — below
+  that threshold (24 to 99 columns) — a whole-region panel opened on request. It has
   three independent, once-per-execution automatic reveal intents: the first live Plan reveals
   **Plan**, the first workflow state or leader reveals **Parallel work**, and the first delegation reveals
   **Agents** while Lead remains selected. Repeated updates of the same kind do not flap the layout;
   closing an automatically revealed section is sticky for that intent, while the first event for a
   different section may still reopen and reorient the Sidebar. Each section is one native ScrollBox
-  child, so a later section is scrolled fully into view even when a long Plan precedes it. With the
+  child, so a later section is scrolled fully into view even when a long Plan precedes it. **Below the
+  split no automatic reveal opens anything**: activity is stated as one summary line below the
+  transcript (`Goal Completed · Plan 1/2 · Agents 0/1`), the intent is spent once so widening cannot
+  replay it, and its section is preferred by the next explicit open. A width that stops supporting the
+  split collapses a surface only an automatic intent had opened; a surface the reader opened survives
+  at full width. The summary states canonical group facts only — never titles, paths, task lists or
+  token metrics — wraps whole facts into at most two rows (one on short terminals) and sheds settled
+  work before in-flight or attention facts. With the
   Sidebar closed, the aggregate transcript stays unobstructed. `Ctrl+X S` reopens the first available
-  Agents, Parallel work or Plan section and closes the surface when it is open. The footer never
+  Agents, Parallel work or Plan section and closes the surface when it is open, naming the same
+  effective binding the summary strip shows. The footer never
   duplicates agent, workflow or Plan status; `Ctrl+X S` and automatic reveal own access to the
   responsive surface. Plain Tab follows the active
   screen's focus order and, at shell level, returns transcript block focus to the composer without
@@ -1215,7 +1240,9 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   percentage and cost available before and after a run settles (token totals and cache percentage
   appear in the wide band). It does not repeat
   `Running`, elapsed time or iteration there; those live-run facts sit beside `thinking`/`working`
-  immediately above the composer. `/status` and Sessions expose the same session-level totals for
+  immediately above the composer, where the current phase leads and the details after it stay muted.
+  When a full-region page (Plan, Diff, a view) owns the reading area, that activity line prefixes
+  `Run` so its facts are not read as the page's. `/status` and Sessions expose the same session-level totals for
   explicit inspection.
 - **Every `In` token count on screen reports input the provider had to read** — the gross prompt less
   what its prefix cache served (`uncachedInput`, and the run strip's own subtraction from
@@ -1585,12 +1612,12 @@ Pass case names after `--` to run a subset; `OVERLAY_SOAK_{CYCLES,BATCH,WARMUP,S
 the measurement. A parent watchdog kills a child after 120 seconds or 1 GiB RSS. Production cases
 fail above 5 MiB PSS per 100 cycles on Linux (RSS elsewhere) or when live renderable, lifecycle-pass
 or key-layer counts do not balance; the corresponding limits are configurable through
-`OVERLAY_SOAK_{MAX_MIB_PER_100,WATCHDOG_MS,WATCHDOG_RSS_MB}`. The case set includes the production floating modals, pickers, activity drawer,
+`OVERLAY_SOAK_{MAX_MIB_PER_100,WATCHDOG_MS,WATCHDOG_RSS_MB}`. The case set includes the production floating modals, pickers, activity sidebar,
 elicitation, Splash, HintToast and an empty configuration page, not only primitive frames. The current
 lifecycle keeps the transcript shell mounted, paused and input-inert behind every full-region
 configuration, Workflow, Plan and Diff page. Diff and Plan are lazily retained after first use;
 configuration frames remain bounded by their stack and dispose when popped. Agent Profile Picker,
-Isolation Picker, Review Picker, Catalog Picker, the narrow drawer and a bounded ten-slot
+Isolation Picker, Review Picker, Catalog Picker and a bounded ten-slot
 autocomplete projection are also retained lazily.
 The autocomplete cases cover both visibility churn and a retained ten-row scrolling mutation; both
 must keep renderable, lifecycle-pass and key-layer ownership constant. Immediate RSS/PSS may rise
@@ -1628,4 +1655,10 @@ Agent Profile frontmatter uses the closed kernel schema. Unknown keys mark a doc
 
 The application header and action footer wrap with terminal width. Narrow layouts retain
 configuration fields and available footer actions on additional rows; shared Ctrl+X
-hints repeat their modifier prefix on each continuation row. Help shows full key combinations.
+hints repeat their modifier prefix on each continuation row, and an action with an authored shorter
+wording uses it before its segment is dropped. Every band is admitted by the cells its own container
+really offers — a detail frame subtracts its padding and pinned status, a picker card its border,
+padding and footer text — while the seat cap stays keyed to the terminal, and a card never paints
+wider than the screen. A tool call's identity, a changed file's name and an error's diagnostic
+break onto another row instead of being abbreviated away; the argument *preview* in a tool header
+keeps its own explicit character bound. Help shows full key combinations.

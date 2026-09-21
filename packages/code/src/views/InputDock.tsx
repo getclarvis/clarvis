@@ -409,6 +409,7 @@ export function InputDock(props: {
         ...(r.command === "prompt.send"
           ? {
               footerLabel: "send / steer",
+              footerShortLabel: "send",
               hintPriority: 100,
               hintGroup: "primary" as const,
               essential: true,
@@ -460,6 +461,7 @@ export function InputDock(props: {
             category: "editing",
             surfaces: ["footer", "full-help"],
             footerLabel: isExpanded ? "collapse editor" : "expand editor",
+            footerShortLabel: "editor",
             hintPriority: 45,
             hintGroup: "navigation",
             run: () => setEditorExpanded(!isExpanded),

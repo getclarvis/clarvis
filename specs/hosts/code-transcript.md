@@ -196,6 +196,8 @@ of native residence. No section grouping, status-based ordering or rendering-bat
 | `views/spinner.ts` | `SPINNER_FRAMES`, `SPINNER_ASCII`, `charForFrame`, `spinnerChar`, `thinkingDots`, `tickNow`, `formatElapsed` (re-export), `useSpinnerClock` | — |
 | `views/Prose.tsx` | `Prose`, `stripDocChrome` | — |
 | `views/Sidebar.tsx` | `PLAN_SIDEBAR_TASK_LIMIT`, `AGENT_SIDEBAR_ROW_LIMIT`, `WORKFLOW_SIDEBAR_ROW_LIMIT`, `planTaskWindow`, `contextMeter`, `rosterSummary`, `subagentProgress`, `workflowProgress`, `Sidebar` | source symbols |
+| `views/activity-summary.ts` | `ActivitySummarySection`, `ActivitySummaryTone`, `ActivitySummaryPriority`, `ActivitySummaryFact`, `ActivitySummaryInput`, `ACTIVITY_SUMMARY_MAX_ROWS`, `ACTIVITY_SUMMARY_SINGLE_ROW_MAX_HEIGHT`, `planDisplayLifecycle`, `activitySummaryFacts`, `activitySummaryRoute`, `activitySummaryRows`, `activitySummaryRowBudget`, `activitySummaryRowText` | source symbols |
+| `views/ActivitySummaryStrip.tsx` | `ACTIVITY_SUMMARY_PADDING`, `ActivitySummaryStrip` | source symbols |
 | `views/activity-detail.ts` | `ActivityDetail`, `activityPreview` | source symbols |
 | `views/overlays/ActivityDetail.tsx` | `ActivityDetail` | source symbol |
 | `core/marks.ts` | `MarkForms`, `MarkName`, `GLYPHS`/`GlyphForms`/`GlyphName` aliases, `applyAsciiMode`, `asciiMode`, `mark`, `glyph` (`@deprecated`), `borderChars` | — |
@@ -539,16 +541,29 @@ composer-adjacent activity line or the two typed delegation lifecycle markers.
 | `tail()` | last 5 lines of `liveOutput`, only while running | — |
 | `composing()` | `composingLabel(inputChars, inputComplete === true, inputStreamChars)` when `inputChars !== undefined`, else `""` | `packages/code/src/views/blocks.tsx` (`ToolLine`) |
 
-The header renders as one truncated, non-wrapping row so tool identity remains stable whatever the
-terminal width. A collapsed shell error or warning with an authoritative non-zero exit code appends
-`exit <code>` inline immediately before the guard verdict. Other collapsed errors add one separately
-truncated diagnostic row below the header instead of competing with its signature and metadata. Its header parts, in
+The header breaks by cell rather than being clipped, so tool identity survives a narrow terminal: a
+call's path is what a reader matches against the filesystem, and the previous single truncated row
+dropped its tail with no ellipsis and no way to recover it in that row. The identity's own
+**argument preview** keeps its explicit character bound (`VALUE_MAX` and `SIGNATURE_MAX` in
+`packages/code/src/views/tools/signature.ts`), which is a cost bound on the projected arguments and
+not a width overflow: the preview still truncates a long value with an ellipsis, preferring the
+basename of a path. A collapsed shell error or warning with an authoritative non-zero exit code
+appends `exit <code>` inline immediately before the guard verdict. Other collapsed errors add their
+own wrapped diagnostic row below the header instead of competing with its signature and metadata;
+the diagnostic breaks by cell and is not abbreviated, so the cause, the location and the sentence
+that says how to fix the failure all stay readable. Its header parts, in
 order: status glyph, `toolDisplayLabel` in accent, then **either** the composing label **or** the signature — never both,
 the signature preferring resident `node.signature` over live `formatToolCall`. Then
 elapsed time while running, or elapsed time when settled and
 `elapsedMs >= SLOW_TOOL_MS` (2000ms). A running interruptible shell places its compact `[X]`
-immediately after that elapsed time. Settled calls then show either the mutation chip
-or the hidden-line chip.
+immediately after that elapsed time, in a column that stays one row tall beside a wrapped identity.
+Settled calls then show either the mutation chip
+or the hidden-line chip. Production: `ToolLine` in `packages/code/src/views/blocks.tsx`,
+`formatToolCall` in `packages/code/src/views/tools/signature.ts`, and `renderErrorGeneric` in
+`packages/code/src/views/tools/registry.tsx`. Test:
+`packages/code/tests/integration/block-focus-render.test.tsx` (the wrapped identity keeps the
+interrupt column adjacent to the elapsed time) and
+`packages/code/tests/integration/tool-clamp.test.tsx` (a collapsed error keeps its guidance).
 
 Below the header, in order: the live tail, the hydration notice when expanded and
 dehydrated, the curated result/error body card on `tokens.bgElev`,
@@ -951,20 +966,38 @@ Its own TSDoc states the scope rule (`Sidebar` in `packages/code/src/views/Sideb
 transcript; workflow activity remains structure/status in the Sidebar and never
 becomes transcript content.
 
-**Two mounts, one component.** `TranscriptRegion` mounts `Sidebar` twice from identical props — as a
-split column when `layout.secondaryMode()` is `"split"`
-(`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`) and inside a scrim-backed
-absolute drawer when it is `"drawer"`. No `PlanStrip` or other live pane is mounted below history:
+**One mount, one component.** `TranscriptRegion` mounts `Sidebar` once as its inline presentation
+(`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`): a split column when
+`layout.secondaryMode()` is `"split"`, and the whole content region when it is `"full"`. `"full"` adds
+the fixed `Activity` header above it and mounts no scrim, no transcript column and no residual pane of
+conversation beside it; there is no narrower drawer presentation. No `PlanStrip` or other
+live pane is mounted below history:
 the Sidebar owns compact plan detail and `Ctrl+X P` owns the full plan. App owns three
 independent execution-scoped automatic intents: the first live Plan, first workflow state/leader and first
 typed delegation open the same combined Sidebar and reveal `Plan`, `Parallel work` or `Agents`.
 `Ctrl+X S` closes an open Sidebar or reopens the first available Agents, Parallel work or Plan
-section. `createLayoutController.secondaryMode` projects that explicit intent as split or drawer.
+section. `createLayoutController.secondaryMode` projects that intent as split or full.
 
-The effective secondary mode also owns roster placement. A split or drawer is the sole detailed
-roster surface. Each of the three first-event intents is consumed independently. Explicitly closing
+**Below the split, activity is summarised instead.** While `TranscriptRegion`'s `secondaryMode()` is
+`"closed"` and the width cannot seat the split, it mounts `ActivitySummaryStrip` as `#activity-summary`
+below the transcript instead of leaving the band empty: one row (two above
+`ACTIVITY_SUMMARY_SINGLE_ROW_MAX_HEIGHT`) of canonical
+Goal/Plan/Workflow/Agents facts with the effective `activity.toggle` binding last, wrapping whole facts
+and shedding settled ones first. The strip is the only owner of activity state there; when the panel
+or a full-region surface occupies the content it is not mounted, so nothing is stated twice. Its facts
+come from `activitySummaryFacts`, never from a formatted title or a second query, and it is the pointer
+route to the panel. The grammar, row budget and priority order are specified in
+[bootstrap](code-bootstrap.md#4101-the-activity-summary-below-the-split).
+
+The effective secondary mode also owns roster placement. A split or whole-region panel is the
+sole detailed roster surface; below the split a closed secondary surface mounts no roster, and the
+summary strip states the group facts instead. Each of the three first-event intents is consumed
+independently. Explicitly closing
 an automatic reveal is sticky for later updates of that same section/execution, but does not consume
-the first event for another section; the latter may reopen and reorient the Sidebar. The Agents
+the first event for another section; the latter may reopen and reorient the Sidebar. Below the split
+an automatic intent never opens a surface: it is spent once into the summary, and its section
+becomes the preference for the next explicit open (see
+[bootstrap section 4.10](code-bootstrap.md#410-layout-breakpoints)). The Agents
 intent does not change the Lead selection or open `ActivityDetail`. The outer Sidebar ScrollBox
 reveals the whole section owner with native `scrollChildIntoView`, so a long Plan cannot hide later
 workflow or Agents content below the viewport. When closed, the Lead transcript mounts no
@@ -1459,8 +1492,10 @@ curated shell renderer and the generic fallback, asserting useful output and sig
 JSON key/value presentation is absent.
 
 **INV-T48.** Detailed Plan, Parallel work and Agents state has exactly one responsive owner. In
-`split` and `drawer` modes it is the combined `Sidebar`; a closed secondary surface mounts no roster
-or Plan/workflow pane in the Lead transcript. The application footer retains canonical
+`split` and `full` modes it is the combined `Sidebar`; below the split a closed
+secondary surface mounts no roster or Plan/workflow pane in the Lead transcript and states the group
+facts in the one summary strip instead (`ActivitySummaryStrip`,
+`packages/code/src/views/ActivitySummaryStrip.tsx`). The application footer retains canonical
 Context/Session state without a second agent/workflow/Plan roster or a hidden pointer route. The
 Sidebar's own fixed footer names `Ctrl+X S` as the sole keyboard toggle. Escape does not close
 the Sidebar, and no `/activity` command exists. The first live Plan, first workflow state/leader and first delegation own independent
@@ -1469,14 +1504,16 @@ open/reveal their whole section. Closing one is sticky only for repeated events 
 first event for another section may reopen and reorient the Sidebar. The Agents intent keeps `Lead
 transcript` selected and opens no `ActivityDetail`. Repeated updates cannot flap the layout, and a
 long Plan cannot clip a later revealed section. An individually focused agent mounts only one compact
-context row. Tab remains the keyboard route through the roster in both split and drawer modes. Any
+context row. Tab remains the keyboard route through the roster in both split and whole-region modes. Any
 agent-row activation only selects that child's isolated transcript; it never opens `ActivityDetail`
 automatically. The Agents and Parallel work headers report settled/total and only add a running
 count while work is active; both bounded inner scrolls render each child as one plan-tone status
 glyph, handle and title without failure totals, lifecycle or execution-detail copy. Their visible
 order follows Plan status priority while their projected handles remain stable. Production:
-`packages/code/src/views/app/TranscriptRegion.tsx` (`secondaryMode`, focused-agent context and the two
-`Sidebar` mounts), `packages/code/src/views/Sidebar.tsx` (`SidebarRevealIntent`, `Sidebar` section
+`packages/code/src/views/app/TranscriptRegion.tsx` (`secondaryMode`, `summaryVisible`, `activityPanel`,
+`splashInset`, focused-agent context and the two
+`Sidebar` mounts), `packages/code/src/views/activity-summary.ts` (`activitySummaryFacts`) and
+`packages/code/src/views/Sidebar.tsx` (`SidebarRevealIntent`, `Sidebar` section
 owners and native reveal), and `packages/code/src/views/App.tsx` (`visiblePlanContext`,
 `visibleSubagentContext`, `requestAutomaticSidebar`, `closeActivitySidebar`,
 `openActivitySidebar`, the `activity.toggle` command and `footerRunStrip`). Tests:
@@ -1602,6 +1639,25 @@ the projection before constructing its observation. Production:
 and `packages/code/tests/integration/tool-live-tail-render.test.tsx` ("Prisma cursor controls stay
 inert and live output keeps its settled text column").
 
+**INV-T60.** The compact activity summary states canonical facts and nothing else. Each present group
+contributes at most its own progress or state fact plus its own unsuccessful-work counts, in Sidebar
+order, and `Agents` counts sub-agents only — the Lead is never part of that group, so no work is
+counted in two groups. Vocabulary is reused, not re-derived: Goal labels come from
+`goalStatusPresentation`, Plan progress from `planDisplayLifecycle` with the lifecycle word appended
+for a terminal outcome that is not completion, and a finished/total count is never presented as a
+success count on its own. No title, path, task list or token metric enters the strip, and no fact is
+abbreviated with an ellipsis. `activitySummaryRows` wraps whole facts into at most
+`activitySummaryRowBudget(height)` rows — one at or below `ACTIVITY_SUMMARY_SINGLE_ROW_MAX_HEIGHT`,
+two above it — and never splits a fact: when the budget cannot seat every fact it drops the least
+load-bearing one and re-wraps, so settled work leaves before in-flight work, attention outranks both,
+and the trailing `activity.toggle` affordance is dropped only when nothing else remains to drop.
+Production: `packages/code/src/views/activity-summary.ts` (`activitySummaryFacts`,
+`activitySummaryRows`, `activitySummaryRowBudget`, `activitySummaryRoute`, `planDisplayLifecycle`) and
+`packages/code/src/views/ActivitySummaryStrip.tsx` (`ActivitySummaryStrip`). Tests:
+`packages/code/tests/unit/activity-summary.test.ts` and
+`packages/code/tests/integration/app-shell-render.test.tsx` ("the compact band summarises run activity
+instead of covering the conversation").
+
 ---
 
 ## 6. Failure modes and degradation
@@ -1694,7 +1750,7 @@ document. Four concrete couplings matter here:
 | `views/config/McpBrowser.tsx` | `renderToolPreview` (`packages/code/src/views/tools/registry.tsx`, `renderToolPreview`) |
 | `packages/code/src/views/ElicitBlock.tsx` | `MEASURE_MAX_COLS` |
 | `views/Sidebar.tsx`, `views/overlays/PlanOverlay.tsx` | `taskTone` (`packages/code/src/views/blocks.tsx`) |
-| `packages/code/src/views/app/TranscriptRegion.tsx` | `Sidebar` (the split column and drawer mounts), the focused-agent identity row and the fixed physical reading runway |
+| `packages/code/src/views/app/TranscriptRegion.tsx` | `Sidebar` (the split column and whole-region panel mounts), the focused-agent identity row and the fixed physical reading runway |
 | `packages/code/src/views/App.tsx` | `LeadActivityLine` immediately above `InputDock`; the footer carries only bounded activity summaries |
 | `packages/code/src/runtime.tsx` (`describeToolCall`) | `formatToolCall` + `mutationStats` composed into `describeToolCall` |
 | `src/run-host.ts`, `src/cli-mode.ts`, `src/features/run/status-presenter.ts` | `core/run-status.ts`'s `plainStatusLine`/`memoryNoticeStatus`/`progressStatus`/`liveRunStatus` |

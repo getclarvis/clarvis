@@ -20,9 +20,9 @@ import {
 import { PageFrame } from "../PageFrame.tsx";
 import { EmptyHint, LoadingHint } from "../config/view-host.tsx";
 import { glyph } from "../../theme/glyphs.ts";
-import { scrollbarOptions } from "../../theme/surfaces.ts";
+import { scrollbarOptions, selectionBg } from "../../theme/surfaces.ts";
 import { tokens } from "../../theme/tokens.ts";
-import { SelectableRow } from "../../ui/primitives/selectable-row.tsx";
+import { wrapCells } from "../truncate.ts";
 import { StableDiff } from "../../ui/patterns/stable-syntax.tsx";
 import {
   createWorkspaceChangesController,
@@ -52,6 +52,11 @@ function entryPath(entry: WorkspaceChangeEntry): string {
   return entry.new_path ?? entry.old_path ?? entry.id;
 }
 
+/** One painted line of the changed-file tree. */
+interface DiffLine {
+  spans: { text: string; fg: string }[];
+}
+
 function statusLetter(operation: WorkspaceChangeOperation): string {
   if (operation === "added") return "A";
   if (operation === "modified") return "M";
@@ -63,13 +68,31 @@ function statusLetter(operation: WorkspaceChangeOperation): string {
   return "S";
 }
 
-function statsLabel(entry: WorkspaceChangeEntry): string {
-  const additions = entry.stats?.additions;
-  const deletions = entry.stats?.deletions;
-  if (additions === undefined && deletions === undefined) return "";
-  const added = additions === undefined ? "" : `+${String(additions)}`;
-  const removed = deletions === undefined ? "" : `-${String(deletions)}`;
-  return [added, removed].filter((part) => part.length > 0).join(" ");
+/** The operation's own word, for the identity block that explains the selection. */
+function operationLabel(operation: WorkspaceChangeOperation): string {
+  if (operation === "added") return "Added";
+  if (operation === "modified") return "Modified";
+  if (operation === "deleted") return "Deleted";
+  if (operation === "renamed") return "Renamed";
+  if (operation === "copied") return "Copied";
+  if (operation === "type_changed") return "Type changed";
+  if (operation === "conflict") return "Conflict";
+  return "Changed";
+}
+
+/**
+ * The entry's own counts, in reading order.
+ *
+ * @remarks Empty when the provider reported neither number, so a row never
+ *   claims a zero it did not receive.
+ */
+function statsSpans(entry: WorkspaceChangeEntry): { text: string; tone: "add" | "del" }[] {
+  const spans: { text: string; tone: "add" | "del" }[] = [];
+  if (entry.stats?.additions !== undefined)
+    spans.push({ text: `+${String(entry.stats.additions)}`, tone: "add" });
+  if (entry.stats?.deletions !== undefined)
+    spans.push({ text: `-${String(entry.stats.deletions)}`, tone: "del" });
+  return spans;
 }
 
 /** Groups provider inventory entries into a path-sorted file list. */
@@ -399,6 +422,70 @@ export function DiffViewer(props: {
   });
   const sidebarWidth = (): number =>
     Math.max(24, Math.min(38, Math.floor(dimensions().width * 0.3)));
+  /**
+   * Cells the tree's own text may occupy.
+   *
+   * @remarks The tree is not the terminal: in split mode it is a fixed sidebar,
+   *   and either way its padding and a scroll gutter are spent before the name.
+   *   Measuring against the screen width laid names out past the panel and
+   *   clipped them, which is exactly the case the narrow sidebar exists for.
+   */
+  const treeTextWidth = (): number =>
+    Math.max(8, (wide() ? sidebarWidth() : Math.max(0, dimensions().width - 1)) - 2);
+  /**
+   * One tree item's painted lines.
+   *
+   * @remarks A file keeps its whole name and its counts. A name wider than the
+   *   panel wraps onto continuation lines aligned to its own start, which carry
+   *   blanks in place of the chevron and the status letter — repeating a marker
+   *   there would cut the name with something that is not about it. Counts follow
+   *   the name on the same line while they fit and otherwise take the row's own
+   *   trailing line, so a row's height depends on the entry alone: moving the
+   *   cursor never reflows the rows around it. The item stays one logical row —
+   *   the selection band, the click and the scroll target cover every line of it,
+   *   and Up/Down move between items.
+   */
+  const treeLines = (row: DiffTreeRow, selected: boolean): DiffLine[] => {
+    const lead = `${selected ? `${glyph("chevronRight")} ` : "  "}${"  ".repeat(row.depth)}`;
+    const marker =
+      row.kind === "folder"
+        ? `${expanded().has(row.path) ? glyph("collapse") : glyph("expand")} `
+        : `${statusLetter(row.entry.operation)} `;
+    const markerFg = selected
+      ? tokens.accent
+      : row.kind === "folder"
+        ? tokens.accent
+        : tokens.muted;
+    const fg = row.kind === "folder" ? tokens.accent : tokens.fg;
+    const head = `${lead}${marker}`;
+    const width = treeTextWidth();
+    const first = (spans: DiffLine["spans"]): DiffLine => ({
+      spans: [{ text: head, fg: markerFg }, ...spans],
+    });
+    const continuation = (spans: DiffLine["spans"]): DiffLine => ({
+      spans: [
+        { text: `${" ".repeat(Bun.stringWidth(lead))}${" ".repeat(marker.length)}`, fg },
+        ...spans,
+      ],
+    });
+    const counts: DiffLine["spans"] = (row.kind === "file" ? statsSpans(row.entry) : []).map(
+      (part, index) => ({
+        text: index === 0 ? part.text : ` ${part.text}`,
+        fg: part.tone === "add" ? tokens.add : tokens.del,
+      }),
+    );
+    const inline = [
+      { text: row.name, fg },
+      ...(counts.length === 0 ? [] : [{ text: " ", fg: tokens.muted }, ...counts]),
+    ];
+    if (Bun.stringWidth(`${head}${inline.map((span) => span.text).join("")}`) <= width)
+      return [first(inline)];
+    const nameWidth = Math.max(1, width - Bun.stringWidth(head));
+    const chunks = wrapCells(row.name, nameWidth).map((chunk, index) =>
+      index === 0 ? first([{ text: chunk, fg }]) : continuation([{ text: chunk, fg }]),
+    );
+    return counts.length === 0 ? chunks : [...chunks, continuation(counts)];
+  };
   const tree = (): JSX.Element => (
     <box
       flexDirection="column"
@@ -421,6 +508,8 @@ export function DiffViewer(props: {
           {(row, index) => (
             <box
               id={`diff-tree-row-${index()}`}
+              flexDirection="column"
+              backgroundColor={treeIndex() === index() ? selectionBg(tokens.bg) : undefined}
               onMouseDown={() => {
                 setTreeIndex(index());
                 if (row.kind === "folder") toggleFolder(row.path);
@@ -430,14 +519,15 @@ export function DiffViewer(props: {
                 }
               }}
             >
-              <SelectableRow selected={treeIndex() === index()}>
-                <span>{"  ".repeat(row.depth)}</span>
-                <span style={{ fg: row.kind === "folder" ? tokens.accent : tokens.fg }}>
-                  {row.kind === "folder"
-                    ? `${expanded().has(row.path) ? glyph("collapse") : glyph("expand")} ${row.name}`
-                    : `${statusLetter(row.entry.operation)} ${row.name}${statsLabel(row.entry) ? ` ${statsLabel(row.entry)}` : ""}`}
-                </span>
-              </SelectableRow>
+              <For each={treeLines(row, treeIndex() === index())}>
+                {(line) => (
+                  <text wrapMode="none">
+                    <For each={line.spans}>
+                      {(span) => <span style={{ fg: span.fg }}>{span.text}</span>}
+                    </For>
+                  </text>
+                )}
+              </For>
             </box>
           )}
         </For>
@@ -462,16 +552,10 @@ export function DiffViewer(props: {
             <>
               <Show when={entry()}>
                 {(current: Accessor<WorkspaceChangeEntry>) => (
-                  <text
-                    fg={tokens.accent}
-                    flexShrink={0}
-                    paddingBottom={1}
-                    wrapMode="none"
-                    truncate
-                  >
+                  <text fg={tokens.accent} flexShrink={0} paddingBottom={1} wrapMode="char">
                     <b>{entryPath(current())}</b>
                     <span style={{ fg: tokens.muted }}>
-                      {`  ${glyph("separator")} ${statusLetter(current().operation)}${current().old_path !== undefined && current().new_path !== undefined && current().old_path !== current().new_path ? ` ${current().old_path} -> ${current().new_path}` : ""}`}
+                      {`  ${glyph("separator")} ${operationLabel(current().operation)}${current().old_path !== undefined && current().new_path !== undefined && current().old_path !== current().new_path ? ` ${glyph("arrowRight")} ${current().old_path} ${glyph("arrowRight")} ${current().new_path}` : ""}`}
                     </span>
                   </text>
                 )}

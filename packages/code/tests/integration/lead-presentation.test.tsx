@@ -5,6 +5,7 @@ import type { RunEvent } from "@clarvis/protocol";
 import { createTranscriptStore, type TranscriptNode } from "../../src/adapters/store.ts";
 import { applyRunEvent, runEvent } from "../helpers/run-events.ts";
 import { BlockView } from "../../src/views/blocks.tsx";
+import { LeadActivityLine, type LeadActivityPhase } from "../../src/views/Footer.tsx";
 
 const ev = runEvent;
 
@@ -92,4 +93,45 @@ test("lead nodes are stamped with the lead model captured from run_started", () 
     }),
   ]);
   expect(nodes.find((n) => n.kind === "reasoning")?.model).toBe("glm-5.2");
+});
+
+async function activityLine(props: {
+  phase: () => LeadActivityPhase;
+  detail?: () => string;
+  identity?: () => string;
+}): Promise<string> {
+  const t = await openRender(() => <LeadActivityLine {...props} />, { width: 90, height: 3 });
+  await t.renderOnce();
+  const line =
+    t
+      .captureCharFrame()
+      .split("\n")
+      .find((row) => row.trim().length > 0) ?? "";
+  t.renderer.destroy();
+  return line.trimEnd();
+}
+
+test("the activity band separates its segments exactly once", async () => {
+  // A page's band: the identity opens it and the detail follows once. It read
+  // `Run . . Goal complete` while both the identity and the detail contributed a
+  // separator of their own.
+  expect(
+    await activityLine({
+      phase: () => "ready",
+      detail: () => "Goal complete",
+      identity: () => "Run",
+    }),
+  ).toBe(" Run \u00b7 Goal complete");
+  // The transcript's own band has no identity to open it.
+  expect(await activityLine({ phase: () => "ready", detail: () => "Completed \u00b7 12s" })).toBe(
+    " Completed \u00b7 12s",
+  );
+  // While working the phase sits between them and owns the separator before the detail.
+  expect(
+    await activityLine({
+      phase: () => "working",
+      detail: () => "Goal active \u00b7 12s",
+      identity: () => "Run",
+    }),
+  ).toMatch(/^ Run \u00b7 \S+ working \u00b7 Goal active \u00b7 12s$/);
 });

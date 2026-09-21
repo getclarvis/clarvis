@@ -19,6 +19,35 @@ async function frame(ui: () => unknown, width = 100, height = 24): Promise<strin
   return out.split("\n");
 }
 
+test("a card never paints past a narrow viewport", async () => {
+  // The unconditional 40-cell floor made a card wider than a 24-39 column
+  // terminal, which the layout then clipped on both sides. The floor is capped by
+  // the viewport, so the card always fits the screen it is drawn on.
+  for (const width of [24, 30, 39, 40]) {
+    const rows = await frame(
+      () => (
+        <box width={width} height={12}>
+          <FloatFrame title="Narrow" footer="Esc closes">
+            <text>row content</text>
+          </FloatFrame>
+        </box>
+      ),
+      width,
+      12,
+    );
+    const top = rows.find((row) => row.includes("╭"));
+    expect(top, `width ${width}`).toBeDefined();
+    const left = top!.indexOf("╭");
+    const right = top!.lastIndexOf("╮");
+    expect(left, `width ${width}`).toBeGreaterThanOrEqual(0);
+    expect(right + 1, `width ${width}`).toBeLessThanOrEqual(width);
+    expect(
+      rows.some((row) => row.includes("row content")),
+      `width ${width}`,
+    ).toBe(true);
+  }
+});
+
 test("FloatFrame renders a centered bordered panel over a backdrop scrim", async () => {
   const rows = await frame(() => (
     <box width={100} height={24}>

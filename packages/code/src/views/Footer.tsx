@@ -59,15 +59,49 @@ export function HintToast(props: { hint: () => { text: string; tone: HintTone } 
   );
 }
 
-/** Keeps transient Lead activity out of the scrollable transcript. */
+/**
+ * Keeps transient Lead activity out of the scrollable transcript.
+ *
+ * @param props.phase - the physical activity state; the one fact this band leads with.
+ * @param props.detail - conversation or run detail, retained while idle, beside the phase.
+ * @param props.identity - scope label for a band that outlives the surface above it.
+ * @remarks The Ctrl+X prefix is deliberately **not** printed here. While a
+ *   prefix is pending, the navigation band names the sequence and every
+ *   continuation it offers, which is the band that can act on it; repeating
+ *   `Ctrl+X active · choose a key` above the composer announced a wait without
+ *   its options and duplicated the keymap's own state in two places.
+ */
 export function LeadActivityLine(props: {
   phase: () => LeadActivityPhase;
   /** Conversation or run detail, retained while idle, beside the physical activity state. */
   detail?: () => string;
-  /** Timed command prefix state, seated after live activity details in this same status band. */
-  commandPrefixActive?: () => boolean;
+  /**
+   * Scope label shown before the phase when this band belongs to something
+   * other than the surface above it.
+   *
+   * @remarks A full-region page (Plan, Diff, a view) replaces the transcript but
+   *   not this band, so an unlabelled `thinking` under an open Plan reads as the
+   *   Plan thinking. The label names the run instead; it is omitted while the
+   *   transcript itself is the surface above.
+   */
+  identity?: () => string;
 }): JSX.Element {
   const running = createMemo(() => tone("running", spinnerChar()));
+  const detail = (): string => props.detail?.() ?? "";
+  const identity = (): string => props.identity?.() ?? "";
+  /** Whether any fact below the identity exists; an identity alone identifies nothing. */
+  const hasFacts = (): boolean => props.phase() !== "ready" || detail().length > 0;
+  /** The scope label and its separator, present only when facts follow it. */
+  const lead = (): string =>
+    identity().length === 0 || !hasFacts() ? "" : `${identity()} ${glyph("separator")} `;
+  /**
+   * The separator before the detail.
+   *
+   * @remarks Only the phase opens the detail's own sentence; when nothing is
+   *   running, the identity's separator has already opened the band, so an idle
+   *   page read `Run · · Goal complete`.
+   */
+  const detailLead = (): string => (props.phase() === "ready" ? "" : ` ${glyph("separator")} `);
   return (
     <box
       id="lead-activity-line"
@@ -78,15 +112,20 @@ export function LeadActivityLine(props: {
       paddingRight={1}
       backgroundColor={tokens.bg}
     >
+      <Show when={lead().length > 0}>
+        <text fg={tokens.muted} flexShrink={0} wrapMode="word" selectable={false}>
+          {lead()}
+        </text>
+      </Show>
       <Show when={props.phase() !== "ready"}>
         <text fg={running().fg} flexShrink={0} wrapMode="word" selectable={false}>
           {running().glyph + " "}
         </text>
-        <text fg={tokens.muted} flexShrink={0} wrapMode="word" selectable={false}>
+        <text fg={tokens.fg} flexShrink={0} wrapMode="word" selectable={false}>
           {activityLabel(props.phase())}
         </text>
       </Show>
-      <Show when={(props.detail?.() ?? "").length > 0}>
+      <Show when={detail().length > 0}>
         <text
           fg={tokens.muted}
           flexShrink={1}
@@ -95,21 +134,7 @@ export function LeadActivityLine(props: {
           truncate
           selectable={false}
         >
-          {`${props.phase() === "ready" ? "" : ` ${glyph("separator")} `}${props.detail?.() ?? ""}`}
-        </text>
-      </Show>
-      <Show when={props.commandPrefixActive?.() === true}>
-        <text
-          fg={tokens.accent}
-          flexShrink={0}
-          marginLeft={props.phase() === "ready" && (props.detail?.() ?? "").length === 0 ? 0 : 2}
-          wrapMode="none"
-          selectable={false}
-        >
-          Ctrl+X active
-        </text>
-        <text fg={tokens.muted} flexShrink={0} wrapMode="none" selectable={false}>
-          {` ${glyph("separator")} choose a key`}
+          {`${detailLead()}${detail()}`}
         </text>
       </Show>
     </box>

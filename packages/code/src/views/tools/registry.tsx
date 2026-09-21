@@ -782,16 +782,13 @@ export function hiddenBodyLines(mcpName: string, toolName: string, result: strin
 const ERROR_AWARE = new Set<string>(["shell", "monitor_start", "monitor_poll", "monitor_stop"]);
 
 function renderErrorGeneric(call: ToolCallView): JSX.Element {
-  // An error is exactly the text a reader needs whole; clamping it to ten lines
-  // with no way to lift the clamp truncates the stack trace that explains the
-  // failure.
+  // An error is exactly the text a reader needs whole: it carries the cause, the
+  // location and — often only at the end — what to do about it. It is clamped to
+  // ten lines with a chip, never clipped at the right edge, so a long unbroken
+  // token (a path, a minified payload) breaks onto the next row instead of losing
+  // the sentence that explains the failure.
   return (
-    <ClampedText
-      content={trimTrailing(call.error ?? "")}
-      fg={tokens.del}
-      full={call.full}
-      wrap={call.wrap}
-    />
+    <ClampedText content={trimTrailing(call.error ?? "")} fg={tokens.del} full={call.full} wrap />
   );
 }
 

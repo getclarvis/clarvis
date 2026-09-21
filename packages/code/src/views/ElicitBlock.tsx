@@ -297,6 +297,7 @@ export function ElicitBlock(props: {
                 category: "navigation",
                 surfaces: ["footer"],
                 footerLabel: "open plan",
+                footerShortLabel: "plan",
                 hintPriority: 70,
                 hintGroup: "navigation",
                 run: props.onOpenPlan,

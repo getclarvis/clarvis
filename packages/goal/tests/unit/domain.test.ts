@@ -832,13 +832,12 @@ describe("goal physical settlement, usage and continuation", () => {
       outcome: "failed",
       disposition: "final",
       cause: "stagnation",
-      progress_observed: true,
-      activity_fingerprint: "c".repeat(64),
+      activity: ["c".repeat(64)],
     });
     expect(productive.current).toMatchObject({ status: "active", no_progress_stages: 0 });
     expect(productive.current!.runs.at(-1)).toMatchObject({
       progress_observed: true,
-      activity_fingerprint: "c".repeat(64),
+      activity: ["c".repeat(64)],
       decision: "continue",
     });
     let state = create();
@@ -859,6 +858,44 @@ describe("goal physical settlement, usage and continuation", () => {
       no_progress_stages: 3,
     });
     expect(state.current!.runs.at(-1)!.decision).toBe("closed");
+  });
+
+  it("does not count receipts an earlier stage already presented as fresh progress", () => {
+    const a = "a".repeat(64);
+    const b = "b".repeat(64);
+    const c = "c".repeat(64);
+    let state = settle(run(create()), "run-1", measured, {
+      outcome: "failed",
+      disposition: "final",
+      cause: "stagnation",
+      activity: [a],
+    });
+    expect(state.current).toMatchObject({ status: "active", no_progress_stages: 0 });
+    state = settle(run(state, "run-2", true), "run-2", measured, {
+      outcome: "failed",
+      disposition: "final",
+      cause: "stagnation",
+      activity: [b],
+    });
+    expect(state.current).toMatchObject({ status: "active", no_progress_stages: 0 });
+    /** A stage that only recombines receipts the Goal already recorded advanced nothing. */
+    state = settle(run(state, "run-3", true), "run-3", measured, {
+      outcome: "failed",
+      disposition: "final",
+      cause: "stagnation",
+      activity: [a, b],
+    });
+    expect(state.current).toMatchObject({ status: "active", no_progress_stages: 1 });
+    expect(state.current!.runs.at(-1)).toMatchObject({ progress_observed: false, activity: [] });
+    /** The history accumulates per receipt, so a later stage contributes only what is new. */
+    state = settle(run(state, "run-4", true), "run-4", measured, {
+      outcome: "failed",
+      disposition: "final",
+      cause: "stagnation",
+      activity: [a, b, c],
+    });
+    expect(state.current).toMatchObject({ status: "active", no_progress_stages: 0 });
+    expect(state.current!.runs.at(-1)).toMatchObject({ progress_observed: true, activity: [c] });
   });
 
   it("blocks on a declared impediment once without spending the Goal's own authority", () => {
@@ -925,7 +962,7 @@ describe("goal physical settlement, usage and continuation", () => {
       outcome: "failed",
       disposition: "final",
       cause: "context_overflow",
-      progress_observed: true,
+      activity: ["d".repeat(64)],
     });
     expect(progressing.current!.status).toBe("active");
     expect(progressing.current!.runs.at(-1)!.decision).toBe("continue");

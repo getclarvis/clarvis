@@ -135,6 +135,8 @@ own closed decision and admission — so the registry no longer requires the pre
 successful checkpoint, and a run with no policy stays inert. A proposal may carry the earliest
 instant a successor may start; the wait happens abortably outside the short preparation deadline and
 the policy is asked again, so only a fresh proposal starts and a retired authority abandons the wait.
+That instant is pending only until it elapses: an elapsed one — including the instant a zero backoff
+lands on — starts its successor, and admission never refuses a proposal merely for carrying it.
 Its reservation is single-use, preserves the session,
 and loses to admitted human work. Disconnect, conversation close, takeover and background handoff
 revoke future authority. Preparation and failure notification are bounded, and a failed continuation

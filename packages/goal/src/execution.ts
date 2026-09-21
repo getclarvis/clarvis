@@ -6,6 +6,7 @@ import {
   goalCheckpointSchema,
   goalProgressSchema,
   goalUsageSchema,
+  GOAL_STAGE_ACTIVITY_MAX,
   type GoalCandidate,
   type GoalCheckpoint,
   type GoalProgress,
@@ -395,6 +396,14 @@ function failureReason(outcome: "failed" | "cancelled", cause: GoalRunCause): st
   return outcome === "cancelled" ? "Goal run was cancelled" : FAILURE_REASONS[cause];
 }
 
+/**
+ * A stage's activity as the Goal recorded it so far, so a successor can be compared with the
+ * whole history rather than with its predecessor alone.
+ */
+function recordedActivity(goal: GoalRecord): Set<string> {
+  return new Set(goal.runs.flatMap((item) => item.activity ?? []));
+}
+
 function reconcileUsage(goal: GoalRecord): void {
   const totals: GoalRecord["consumption"] = {
     input: 0,
@@ -475,8 +484,15 @@ export function settleGoalRun(
     usage: GoalUsage;
     completion_validated: boolean;
     cause?: GoalRunCause;
-    progress_observed?: boolean;
-    activity_fingerprint?: string;
+    /**
+     * The stage's own observed activity receipts, as the host collected them.
+     *
+     * @remarks Receipts, not a verdict: the domain compares each one with the Goal's whole
+     *   recorded history and decides both what this stage contributed and whether it advanced
+     *   the work. A stage that observed nothing, or only receipts an earlier stage already
+     *   presented, contributes nothing — recombining old receipts is not new progress.
+     */
+    activity?: readonly string[];
     not_before?: number;
     now: number;
   },
@@ -518,6 +534,14 @@ export function settleGoalRun(
    * completion has no failure cause to record.
    */
   const concluded = input.outcome === "completed" && input.disposition === "final";
+  /**
+   * What this stage contributes is decided per receipt against the Goal's whole history, not
+   * by digesting the stage's activity set: a stage that only recombines receipts an earlier
+   * stage already presented advanced nothing, however different the combined set looks.
+   */
+  const seen = recordedActivity(goal);
+  const contributed = [...new Set(input.activity ?? [])].filter((item) => !seen.has(item)).sort();
+  run.activity = contributed.slice(0, GOAL_STAGE_ACTIVITY_MAX);
   const unaccountable =
     run.steward_reviews.at(-1)?.interruption_cause === "usage_unknown" && !concluded;
   const cause: GoalRunCause =
@@ -528,11 +552,15 @@ export function settleGoalRun(
         : (input.cause ?? "unclassified");
   if (concluded) delete run.cause;
   else run.cause = cause;
-  const progressObserved =
-    input.progress_observed === true || run.checkpoint?.progress_accepted === true;
+  /**
+   * The classified instant is a durable fact about the stage, recorded whether or not this
+   * settlement ends up admitting a successor: a Goal that blocks on unknown consumption must
+   * still honour the provider's own backoff when the operator resolves it and work resumes.
+   */
+  if (concluded || input.not_before === undefined) delete run.not_before;
+  else run.not_before = input.not_before;
+  const progressObserved = contributed.length > 0 || run.checkpoint?.progress_accepted === true;
   run.progress_observed = progressObserved;
-  if (input.activity_fingerprint !== undefined)
-    run.activity_fingerprint = input.activity_fingerprint;
   reconcileUsage(goal);
   const closed = (decision: GoalStageDecision): GoalState => {
     run.decision = decision;
@@ -579,7 +607,6 @@ export function settleGoalRun(
     }
     if (spendStage()) return closed("closed");
     goal.reason = CONTINUATION_REASONS[cause];
-    if (input.not_before !== undefined) run.not_before = input.not_before;
     return closed("continue");
   }
   if (input.disposition === "final") {

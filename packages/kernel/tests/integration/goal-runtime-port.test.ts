@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BuiltinTraceEvent } from "@clarvis/capability";
 import {
@@ -286,11 +286,16 @@ describe("durable host goal runtime port", () => {
       await snapshot.verify(ref, { id: "q", kind: "qualitative", description: "q" }),
     ).toMatchObject({ valid: false });
     expect(await port.validateCompletion()).toMatchObject({ valid: false });
-    /** The artifact moved, so its identifier is no longer usable: corrigible, not fatal. */
     expect(await port.candidate(candidate("artifact", "host", [ref.id]))).toMatchObject({
       kind: "invalid",
     });
     expect((await port.read()).evidence[0]!.id).not.toBe(ref.id);
+    /** An artifact that vanished cannot support completion at all, and it stays corrigible. */
+    await rm(join(f.workspaceRoot, "result.txt"));
+    expect(
+      await snapshot.verify(ref, { id: "q", kind: "qualitative", description: "q" }),
+    ).toMatchObject({ valid: false, reason: "Current artifact digest is unavailable" });
+    expect((await port.read()).evidence).toEqual([]);
   });
 
   it("refuses outside workspace artifacts, including directory links, and unavailable bytes", async () => {
@@ -612,17 +617,19 @@ describe("durable host goal runtime port", () => {
     expect(option.digest).toMatch(/^[0-9a-f]{64}$/u);
   });
 
-  it("reports only the bound stage's own activity, never what it merely cited", async () => {
+  it("reports only the bound stage's own successful receipts, never what it merely cited", async () => {
     const f = await fixture({ criteria: [toolCriterion] });
     const { port, evidence } = await f.runtime();
-    expect((await evidence.snapshot((await port.read()).goal)).stageActivity()).toBeUndefined();
+    expect((await evidence.snapshot((await port.read()).goal)).stageActivity()).toEqual([]);
+    /** A command that failed is not a receipt: it must not read as this stage's progress. */
+    evidence.observe(tool({ call_id: "failed-check", result: JSON.stringify({ exit_code: 1 }) }));
+    expect((await evidence.snapshot((await port.read()).goal)).stageActivity()).toEqual([]);
     evidence.observe(tool());
-    const goal = (await port.read()).goal;
-    const snapshot = await evidence.snapshot(goal);
-    expect(snapshot.stageActivity()).toBeDefined();
-    /** The digest is order-independent, so the same activity in another order is still the same stage. */
+    const snapshot = await evidence.snapshot((await port.read()).goal);
+    expect(snapshot.stageActivity()).toHaveLength(1);
+    /** Receipts are a set: the same check repeated under another call id adds nothing. */
     evidence.observe(tool({ call_id: "another", arguments: { command: "bun run verify" } }));
-    expect((await evidence.snapshot((await port.read()).goal)).stageActivity()).toBe(
+    expect((await evidence.snapshot((await port.read()).goal)).stageActivity()).toEqual(
       snapshot.stageActivity(),
     );
   });

@@ -7,6 +7,15 @@ export const GOAL_ARCHIVE_MAX = 8;
 export const GOAL_RUNS_MAX = 256;
 export const GOAL_RECEIPTS_MAX = 64;
 
+/**
+ * Receipts one closed stage may record as its own contribution to the Goal's history.
+ *
+ * @remarks The history is the union of every stage's contribution, so the per-stage bound is
+ *   what keeps a long objective from growing the record without limit while still comparing
+ *   individual receipts rather than one digest of a set.
+ */
+export const GOAL_STAGE_ACTIVITY_MAX = 32;
+
 const id = z
   .string()
   .min(1)
@@ -274,7 +283,15 @@ export const goalRunSchema = z
     decision: goalStageDecisionSchema.optional(),
     cause: goalRunCauseSchema.optional(),
     progress_observed: z.boolean().optional(),
-    activity_fingerprint: digest.optional(),
+    /**
+     * The receipts this stage contributed that the Goal had not already recorded.
+     *
+     * @remarks Individual receipts, not a digest of the stage's whole activity set: a later
+     *   stage that recombines receipts an earlier stage already presented contributes nothing,
+     *   however different the combined set looks. The Goal's history is the union of these
+     *   lists across its runs.
+     */
+    activity: z.array(digest).max(GOAL_STAGE_ACTIVITY_MAX).optional(),
     not_before: counter.optional(),
     impediment: z.object({ reason: text, declared_at: counter }).strict().optional(),
     usage: goalUsageSchema.optional(),

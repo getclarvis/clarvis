@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { admitGoalRun, advanceGoalRun, applyGoalControl, type GoalRunCause } from "@clarvis/goal";
 import type { RunResult, Session } from "@clarvis/protocol";
-import { goalStageOutcome, settleGoalSession } from "../../src/goals/settlement.ts";
+import { goalStageOutcome, pendingInstant, settleGoalSession } from "../../src/goals/settlement.ts";
 import { goalStateToDto } from "../../src/goals/session-state.ts";
 
 /**
@@ -211,6 +211,14 @@ describe("goal stage settlement cause", () => {
       expect(session.goal_state!.current!.reason).toContain("provider refused");
       expect(stage(session).decision).toBe("attention");
     }
+  });
+
+  test("treats a recorded instant as a pending wait rather than a permanent condition", () => {
+    expect(pendingInstant(undefined, 100)).toBeUndefined();
+    expect(pendingInstant(150, 100)).toBe(150);
+    /** The boundary a zero backoff lands on: an instant that has arrived is not a wait. */
+    expect(pendingInstant(100, 100)).toBeUndefined();
+    expect(pendingInstant(50, 100)).toBeUndefined();
   });
 
   test("resumes a transient provider fault once its backoff has been recorded", () => {

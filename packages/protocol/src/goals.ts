@@ -131,7 +131,8 @@ export interface GoalRun {
   decision?: "complete" | "continue" | "attention" | "closed";
   cause?: GoalRunCause;
   progress_observed?: boolean;
-  activity_fingerprint?: string;
+  /** Receipts this stage contributed that the Goal had not already recorded. */
+  activity?: string[];
   not_before?: number;
   /** A model-declared blocker: evidence the stage reported, never an operator control. */
   impediment?: { reason: string; declared_at: number };

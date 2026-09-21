@@ -10,15 +10,14 @@ export interface GoalSettlementDecision {
   disposition: "final" | "checkpoint";
   completion_validated: boolean;
   /**
-   * Whether this stage showed activity the host had not already seen from this Goal.
+   * The stage's own successful activity receipts, as the host collected them.
    *
-   * @remarks Observed here rather than taken from the model's own citation: a stage
-   *   that changed the workspace advanced the work whether or not it named an
-   *   evidence ID, and a stage that repeated an earlier stage's activity did not.
+   * @remarks Receipts rather than a verdict: the domain compares each one with the Goal's whole
+   *   recorded history, so a stage that only recombined receipts an earlier stage already
+   *   presented contributes nothing, and a stage that observed nothing is unproductive without
+   *   the host having to rule on its semantic value.
    */
-  progress_observed?: boolean;
-  /** Digest of this stage's observed activity set, retained as history for later stages. */
-  activity_fingerprint?: string;
+  activity?: readonly string[];
   /** When supplied, measured at the host provider port rather than inferred from loop totals. */
   usage?: GoalUsage;
 }
@@ -28,6 +27,18 @@ export interface GoalStageOutcome {
   cause: GoalRunCause;
   /** Earliest instant the host may admit a successor; a provider-requested backoff. */
   not_before?: number;
+}
+
+/**
+ * The durable instant a successor must still wait for, or nothing once it has passed.
+ *
+ * @remarks A recorded backoff is a *pending* wait, not a permanent condition. Handing an
+ *   elapsed instant to admission refuses the successor for a delay that no longer exists —
+ *   which is how a bounded, or zero, provider backoff left a Goal with no successor at all.
+ *   The wait is honoured while it remains and dropped once it has elapsed.
+ */
+export function pendingInstant(notBefore: number | undefined, now: number): number | undefined {
+  return notBefore === undefined || notBefore <= now ? undefined : notBefore;
 }
 
 /**
@@ -139,12 +150,7 @@ export function settleGoalSession(
     completion_validated: decision.completion_validated,
     cause: stage.cause,
     ...(stage.not_before === undefined ? {} : { not_before: stage.not_before }),
-    ...(decision.progress_observed === undefined
-      ? {}
-      : { progress_observed: decision.progress_observed }),
-    ...(decision.activity_fingerprint === undefined
-      ? {}
-      : { activity_fingerprint: decision.activity_fingerprint }),
+    ...(decision.activity === undefined ? {} : { activity: decision.activity }),
     usage,
     now,
   });

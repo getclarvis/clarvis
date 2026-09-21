@@ -27,7 +27,15 @@ export interface GoalFixtureRequest {
 }
 
 export type GoalFixtureResponse = (
-  { text: string } | { name: string; arguments: Record<string, unknown> }
+  | { text: string }
+  | { name: string; arguments: Record<string, unknown> }
+  /**
+   * The controlled provider answers with a failure status instead of a completion.
+   *
+   * @remarks The status is what the provider layer classifies, so this is how a journey
+   *   reproduces an authenticated transient fault (5xx) rather than a transport success.
+   */
+  | { status: number; message: string; retry_after_ms?: number }
 ) & { usage?: "missing" | "no_cache"; commentary?: string };
 
 /**
@@ -168,6 +176,20 @@ export async function createGoalFileHostFixture(
                           },
                   };
           const usage = { input: 1000 + index * 10, output: 10, cached: 500 };
+          if ("status" in result)
+            return Response.json(
+              { error: { message: result.message } },
+              {
+                status: result.status,
+                ...(result.retry_after_ms === undefined
+                  ? {}
+                  : {
+                      headers: {
+                        "retry-after": String(Math.ceil(result.retry_after_ms / 1000)),
+                      },
+                    }),
+              },
+            );
           if (result.usage !== "missing") (steward ? stewardUsages : usages).push(usage);
           const chunk = {
             id: `response-${index}`,

@@ -329,9 +329,50 @@ describe("goal through the real file host and SDK HTTP", () => {
       decision: "continue",
       progress_observed: true,
     });
-    expect(goal.runs[0]!.activity_fingerprint).toBeDefined();
+    expect(goal.runs[0]!.activity?.length).toBeGreaterThan(0);
     expect(goal.no_progress_stages).toBe(0);
     expect(goal).toMatchObject({ status: "blocked", auto_continuations: 1 });
+  });
+
+  it("records a transient ending with its durable instant and blocks on unmeasured consumption", async () => {
+    const f = await createGoalFileHostFixture();
+    cleanups.push(f.close);
+    f.setResponder(async () => {
+      /** The provider fails once, transiently and without a Retry-After. */
+      if (f.requests.length === 1) return { status: 503, message: "Synthetic provider outage" };
+      return {
+        name: "update_goal",
+        arguments: { update: { action: "blocked", reason: "The provider recovered" } },
+      };
+    });
+    await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "create",
+      action: {
+        kind: "create",
+        objective: "Survive a transient provider failure",
+        limits: { max_net_tokens: 100_000 },
+      },
+    });
+    await f.until(() => f.host.stats().runs === 0);
+    const goal = (await f.client.goals.get("conversation")).state.current!;
+    /**
+     * A call that failed reports no usage, so the recovered charge is unknown and unmeasured
+     * consumption blocks the Goal before any recovery rule is asked — the pending instant a
+     * bounded backoff records is still stored, and admission is what must not keep refusing an
+     * instant that has already passed.
+     */
+    expect(goal.runs[0]).toMatchObject({
+      outcome: "failed",
+      cause: "transient",
+      decision: "attention",
+      progress_observed: false,
+    });
+    expect(goal.runs[0]!.not_before).toBeDefined();
+    expect(goal).toMatchObject({ status: "blocked", auto_continuations: 0 });
+    expect(goal.reason).toContain("Usage is unknown");
+    expect(goal.runs).toHaveLength(1);
   });
 
   it("starts a successor when the guided creation stage itself checkpointed", async () => {

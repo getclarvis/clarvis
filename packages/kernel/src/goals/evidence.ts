@@ -279,15 +279,16 @@ export interface GoalEvidenceSnapshot extends GoalEvidenceVerifier {
     ids: readonly string[],
   ): Pick<GoalCheckpoint, "activity_fingerprint" | "progress_accepted" | "reason">;
   /**
-   * Digest of the activity this stage itself observed, or `undefined` when it observed none.
+   * The receipts this stage itself observed, or an empty list when it observed none.
    *
-   * @remarks Deliberately restricted to the bound execution's own observations. A
-   *   reference recovered from an earlier stage may still support completion, but it
-   *   must not be counted again as this stage's progress. The caller compares the
-   *   digest with the Goal's whole recorded history, so repeating an earlier stage's
-   *   activity — even in a different order or with different wording — is not progress.
+   * @remarks Deliberately restricted to the bound execution's own *successful* observations,
+   *   under the same rule that admits an entry to the catalog: a command that failed, a call
+   *   that was denied and a reference recovered from an earlier stage are not activity this
+   *   stage contributed. The caller compares each receipt with the receipts the Goal already
+   *   recorded, so repeating an earlier stage's checks — alone or recombined with others — is
+   *   not progress.
    */
-  stageActivity(): string | undefined;
+  stageActivity(): string[];
 }
 
 export interface GoalEvidenceSource {
@@ -446,9 +447,11 @@ export function createGoalEvidenceSource(options: {
        *
        * @remarks A fingerprint omits call ids, execution ids and output wording, so
        *   repeating the same check — with different prose around it — cannot look like
-       *   progress. Artifacts contribute their current path and digest; an observed
-       *   workspace change or a criterion's declared verification contributes the tool
-       *   and argument digest. Polling and Goal controls never reach this list.
+       *   progress. Only a successful observation counts, exactly as it must to enter the
+       *   catalog: a failed command or a denied call contributes nothing. Artifacts contribute
+       *   their current path and digest; an observed workspace change or a criterion's declared
+       *   verification contributes the tool and argument digest. Polling and Goal controls never
+       *   reach this list.
        */
       const activityOf = (ids: readonly string[]): string[] => {
         const changes: string[] = [];
@@ -459,7 +462,7 @@ export function createGoalEvidenceSource(options: {
             continue;
           }
           const item = all.get(id);
-          if (item === undefined) continue;
+          if (item === undefined || !item.successful) continue;
           const relevantCheck = goal.criteria.some(
             (criterion) =>
               criterion.verification?.kind === "tool_success" &&
@@ -560,8 +563,8 @@ export function createGoalEvidenceSource(options: {
                   "Entry attributed observed workspace change or declared verification to the goal; semantic usefulness is not independently verified",
               };
         },
-        /** This stage's own activity, never what it merely cited from an earlier stage. */
-        stageActivity: () => fingerprintOf(activityOf([...live.keys()])),
+        /** This stage's own successful receipts, never what it merely cited from an earlier stage. */
+        stageActivity: () => [...new Set(activityOf([...live.keys()]))].sort(),
       };
     },
   };

@@ -45,7 +45,7 @@ import type { GoalEvidenceSource } from "./evidence.ts";
 import { createGoalRuntimePort } from "./runtime-port.ts";
 import { createGoalCreationPort } from "./creation-port.ts";
 import { goalStateFromSession, goalStateToDto } from "./session-state.ts";
-import { settleGoalSession } from "./settlement.ts";
+import { pendingInstant, settleGoalSession } from "./settlement.ts";
 import { createGoalUsageTracker, measureGoalRunUsage } from "./usage.ts";
 import { projectStewardOrigin } from "./steward-input.ts";
 import {
@@ -200,8 +200,26 @@ const CONTINUATION_PREVIEWS: Record<GoalRunCause, string> = {
  *   whole recorded history: repeating an earlier stage's checks is not progress. An
  *   observation that cannot be taken leaves the stage counted as unproductive, because
  *   absence of evidence is not evidence of work — it only spends the bounded recovery
- *   allowance.
+ *   allowance. Both turns take that observation through the same helper, so an unreadable
+ *   trace cannot mean one thing in the creation stage and another in a later one.
  */
+async function observeStageActivity(
+  evidence: GoalEvidenceSource,
+  goal: GoalRecord,
+  executionId: string,
+  logger: { warn(fields: Record<string, unknown>, message: string): void } | undefined,
+): Promise<string[]> {
+  try {
+    return (await evidence.snapshot(goal)).stageActivity();
+  } catch {
+    logger?.warn(
+      { event: "goal.stage.activity_unavailable", execution_id: executionId },
+      "Goal stage activity could not be observed; the stage is counted as unproductive",
+    );
+    return [];
+  }
+}
+
 function createGoalStageSettlement(scope: {
   repository: GoalRepository;
   sessionId: string;
@@ -217,8 +235,8 @@ function createGoalStageSettlement(scope: {
   validateDefinitionSources?: (
     sources: readonly { path: string; digest: string }[],
   ) => Promise<boolean>;
-  /** Host-observed activity digest for this stage, when the host can take one. */
-  observeActivity?: (goal: GoalRecord) => Promise<string | undefined>;
+  /** The stage's own successful activity receipts, when the host can collect them. */
+  observeActivity?: (goal: GoalRecord) => Promise<string[]>;
   priceFor?: (model: string) => ModelCost | undefined;
 }): (result: RunResult) => Promise<(session: Session) => boolean> {
   return async (result) => {
@@ -226,22 +244,9 @@ function createGoalStageSettlement(scope: {
     const goal = current?.current;
     const run = goal?.runs.find((item) => item.execution_id === scope.executionId);
     let validated: number | undefined;
-    let progress: { progress_observed: boolean; activity_fingerprint?: string } = {
-      progress_observed: false,
-    };
+    let activity: string[] = [];
     if (goal !== undefined && run !== undefined && run.phase !== "closed") {
-      if (scope.observeActivity !== undefined) {
-        const fingerprint = await scope.observeActivity(goal);
-        if (fingerprint !== undefined)
-          progress = {
-            progress_observed: !goal.runs.some(
-              (item) =>
-                item.execution_id !== scope.executionId &&
-                item.activity_fingerprint === fingerprint,
-            ),
-            activity_fingerprint: fingerprint,
-          };
-      }
+      if (scope.observeActivity !== undefined) activity = await scope.observeActivity(goal);
       if (run.phase !== "settling")
         await scope.repository.transact(scope.sessionId, (state) => ({
           state: advanceGoalRun(state!, {
@@ -294,7 +299,7 @@ function createGoalStageSettlement(scope: {
           usage: scope.usageTracker.measure(),
           completion_validated:
             validated !== undefined && session.goal_state?.revision === validated,
-          ...progress,
+          ...(activity.length === 0 ? {} : { activity }),
         },
         scope.now(),
         scope.priceFor,
@@ -348,6 +353,8 @@ function createGoalContinuation(scope: {
       )
         return undefined;
       const cause = predecessor.cause ?? "unclassified";
+      /** A recorded backoff is pending only until it elapses; after that a successor may start. */
+      const pending = pendingInstant(predecessor.not_before, scope.now());
       return {
         input: {
           session_id: scope.sessionId,
@@ -361,7 +368,7 @@ function createGoalContinuation(scope: {
             messages: [{ role: "user", content: CONTINUATION_TURNS[cause] }],
           },
         },
-        ...(predecessor.not_before === undefined ? {} : { not_before: predecessor.not_before }),
+        ...(pending === undefined ? {} : { not_before: pending }),
       };
     },
     stopped: (reason) => scope.stopped(reason),
@@ -622,17 +629,8 @@ export async function prepareHostedGoalTurn(options: {
             validateDefinitionSources: (sources: readonly { path: string; digest: string }[]) =>
               options.validateDefinitionSources!(sources),
           }),
-      observeActivity: async (current) => {
-        try {
-          return (await options.evidence.snapshot(current)).stageActivity();
-        } catch {
-          options.logger?.warn(
-            { event: "goal.stage.activity_unavailable", execution_id: executionId },
-            "Goal stage activity could not be observed; the stage is counted as unproductive",
-          );
-          return undefined;
-        }
-      },
+      observeActivity: (current) =>
+        observeStageActivity(options.evidence, current, executionId, options.logger),
       priceFor: (model) => options.priceFor?.(model),
     }),
     continuation: createGoalContinuation({
@@ -830,17 +828,8 @@ export async function prepareHostedGoalCreationTurn(options: {
       runtime: () => runtime,
       stewardCompletion: async (result) =>
         steward === undefined || (await steward.completionCurrent(result)),
-      observeActivity: async (current) => {
-        try {
-          return (await options.evidence.snapshot(current)).stageActivity();
-        } catch {
-          options.logger?.warn(
-            { event: "goal.stage.activity_unavailable", execution_id: executionId },
-            "Goal stage activity could not be observed; the stage is counted as unproductive",
-          );
-          return undefined;
-        }
-      },
+      observeActivity: (current) =>
+        observeStageActivity(options.evidence, current, executionId, options.logger),
       priceFor: (model) => options.priceFor?.(model),
     }),
     continuation: createGoalContinuation({

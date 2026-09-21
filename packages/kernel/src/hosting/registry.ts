@@ -672,7 +672,13 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
           await revoked();
           return;
         }
-        if (refreshed === undefined || refreshed.not_before !== undefined) return;
+        if (refreshed === undefined) return;
+        /**
+         * A refreshed proposal is refused only while it still asks the host to wait: an
+         * instant that has already passed — a bounded or zero backoff that elapsed during the
+         * wait — must start its successor rather than leave the Goal with none.
+         */
+        if (refreshed.not_before !== undefined && refreshed.not_before > now()) return;
         input = refreshed.input;
       }
       if (

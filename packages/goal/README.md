@@ -28,7 +28,11 @@ automatic continuation, a TUI journey, a container or an installed artifact.
   without a model checkpoint; the stage allowance, goal budget, deadline and continuation ceiling are
   what stop it. A cause the host cannot name is never presumed recoverable, and a durable fact the run
   code does not carry outranks that classification: a declared impediment and a completion review
-  whose consumption could not be determined both settle as blocked rather than continuing.
+  whose consumption could not be determined both settle as blocked rather than continuing. Progress is
+  decided per receipt against the goal's whole recorded history, so recombining or repeating receipts
+  an earlier stage already presented is not new progress, and only a successful observation
+  contributes one. A provider's backoff is stored as a durable instant on the stage and is a pending
+  wait only until it elapses.
 - `recordGoalCheckpoint`, `recordGoalCandidate` and `validateGoalCandidate` retain scoped evidence,
   explicitly labeled qualitative judgments and recorded human acceptance. Validation returns the
   exact goal revision it inspected so a host can fence the later completion commit.

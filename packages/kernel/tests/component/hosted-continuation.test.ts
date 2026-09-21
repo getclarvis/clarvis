@@ -337,13 +337,13 @@ describe("host-owned continuation admission", () => {
     }
   });
 
-  it("starts nothing when the re-asked proposal still asks to wait", async () => {
+  it("starts the successor when the re-asked proposal's instant has already passed", async () => {
     let proposals = 0;
     const f = fixture({
       continuation: () => ({
         async prepare() {
           proposals++;
-          /** Every proposal carries an elapsed instant, so the host keeps re-asking and never starts. */
+          /** A policy that keeps an elapsed instant must not stop its own successor. */
           return { ...next("run-1", "run-2"), not_before: Date.now() - 1 };
         },
         async stopped() {},
@@ -354,8 +354,36 @@ describe("host-owned continuation admission", () => {
       const first = await peer.service.start(input());
       f.finish("run-1", checkpoint);
       await first.handle.closed;
-      await until(() => proposals >= 2);
-      /** A proposal that still schedules its own start is revalidated, not started. */
+      await until(() => f.starts() === 2);
+      expect(proposals).toBeGreaterThanOrEqual(2);
+      f.finish("run-2");
+    } finally {
+      await f.registry.close();
+    }
+  });
+
+  it("defers while the refreshed proposal still asks for a future instant", async () => {
+    let proposals = 0;
+    let asked!: () => void;
+    const policyAsked = new Promise<void>((resolve) => (asked = resolve));
+    const f = fixture({
+      continuation: () => ({
+        async prepare() {
+          proposals++;
+          asked();
+          /** A far-future instant: the host waits, and nothing may start while it does. */
+          return { ...next("run-1", "run-2"), not_before: Date.now() + 30_000 };
+        },
+        async stopped() {},
+      }),
+    });
+    try {
+      const peer = f.registry.connect("operator");
+      const first = await peer.service.start(input());
+      f.finish("run-1", checkpoint);
+      await first.handle.closed;
+      await policyAsked;
+      expect(proposals).toBe(1);
       expect(f.starts()).toBe(1);
     } finally {
       await f.registry.close();

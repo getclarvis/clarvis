@@ -154,6 +154,32 @@ test("the pending continuation wraps inside its band instead of clipping", async
   test.cleanup();
 });
 
+test("a bracket key stays readable inside the segment wrapper", async () => {
+  const test = createTestKeymap({ defaultKeys: true });
+  registerUiActionFields(test.keymap as never);
+  test.keymap.registerLayer({
+    commands: [
+      uiCommand({
+        id: "diff.comparison.next",
+        title: "Next comparison",
+        description: "Cycle the workspace comparison",
+        category: "navigate",
+        surfaces: ["footer"],
+        footerLabel: "view",
+        run: () => {},
+      }),
+    ],
+    bindings: [{ key: "[", cmd: "diff.comparison.next" }],
+  });
+  const t = await openBand(() => 100, test.keymap as unknown as Keymap<Renderable, KeyEvent>);
+  await t.renderOnce();
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("[ [ ] view");
+  expect(frame).not.toContain("[[]");
+  t.renderer.destroy();
+  test.cleanup();
+});
+
 test("a narrow band keeps every action and repeats the shared prefix", async () => {
   const test = createTestKeymap({ defaultKeys: true });
   registerUiActionFields(test.keymap as never);

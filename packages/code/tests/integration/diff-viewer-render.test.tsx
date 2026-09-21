@@ -207,25 +207,26 @@ test("a deep name stays whole in the single-pane tree instead of being abbreviat
     (() => (
       <DiffViewer interaction={interaction} service={() => service} onClose={() => undefined} />
     )) as never,
-    // Narrower than the split threshold: the tree is the whole frame, so the
-    // selection's identity block is the only place the file is named.
+    // Narrower than the split threshold: the tree is the whole frame.
     { width: 60, height: 30 },
   );
   await t.renderOnce();
   const out = t.captureCharFrame();
   const joined = out
     .split("\n")
-    .map((line) => line.trim())
+    .map((line) => line.replace(/[^\x20-\x7e]/g, "").trim())
     .join("");
   expect(joined).toContain(name);
-  expect(out).toContain("packages/kernel/tests/integration/");
-  expect(out).toContain("Modified");
-  expect(out).toContain("+67");
   expect(out).not.toContain("…");
+  // The row is the only identity on screen, and the counts survive the wrap
+  // instead of taking the name's room.
+  expect(out).not.toContain("Selected");
+  expect(out).toContain("+67");
+  expect(out).toContain("-2");
   t.renderer.destroy();
 });
 
-test("moving the tree selection identifies it without loading its patch", async () => {
+test("moving the tree cursor reads nothing and never reflows the tree", async () => {
   const { keymap, press } = createFakeKeymap();
   const interaction = { keymap } as unknown as Interaction;
   const service = fakeChanges(
@@ -245,23 +246,28 @@ test("moving the tree selection identifies it without loading its patch", async 
     { width: 100, height: 40 },
   );
   await settleSyntaxSurfaces(t);
-  // At rest the cursor is on the file the detail pane has open, so the pane header
-  // names it and the tree does not repeat the identity.
+  const treeColumn = (frame: string): string =>
+    frame
+      .split("\n")
+      .map((line) => line.slice(0, 30).replace(/[^\x20-\x7e]/g, " "))
+      .join("\n");
+  // At rest the cursor is on the file the detail pane has open; the counts sit on
+  // the file's own row, with no identity block above the tree.
   const atRest = t.captureCharFrame();
-  expect(atRest).toContain("src/first.ts");
+  const rowsAtRest = treeColumn(atRest);
+  expect(rowsAtRest).toContain("first.ts +2");
   expect(atRest).not.toContain("Selected");
   press("down");
   press("down");
   await t.renderOnce();
   const moved = t.captureCharFrame();
-  // The cursor's file is identified as a selection while the open patch keeps its
-  // own header: moving the cursor reads nothing.
-  expect(moved).toContain("Selected");
-  expect(moved).toContain("second.ts");
-  expect(moved).toContain("Added");
-  expect(moved).toContain("+9");
+  // Moving the cursor reads nothing: the open patch and its header are unchanged.
   expect(moved).toContain("new first");
   expect(moved).not.toContain("new second");
+  expect(moved).not.toContain("Selected");
+  // And the tree keeps the screen lines it had: no row grows or shrinks under the
+  // cursor, so nothing above or below it moves.
+  expect(treeColumn(moved)).toBe(rowsAtRest);
   t.renderer.destroy();
 });
 

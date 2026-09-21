@@ -363,6 +363,19 @@ test("a band narrower than one segment seats nothing rather than overflowing", (
   ]);
 });
 
+test("a key that is itself a wrapper bracket stays readable in its segment", () => {
+  // The segment wraps keys in `[]`, so the comparison-cycle binding on `[` used to
+  // print `[[] view`, which reads as an unclosed bracket rather than as the key.
+  const cycle = action("diff.comparison.next", 40, "navigation", {
+    keys: ["["],
+    footerLabel: "view",
+  });
+  expect(actionSegment(cycle)).toBe("[ [ ] view");
+  expect(actionSegment({ ...cycle, keys: ["]"], footerLabel: "view" })).toBe("[ ] ] view");
+  // An ordinary key keeps the wrapper's own shape.
+  expect(actionSegment({ ...cycle, keys: ["r"], footerLabel: "refresh" })).toBe("[r] refresh");
+});
+
 test("a card's row fits its own interior without losing the terminal's seat cap", () => {
   // A 48-column terminal gives a card about 36 usable cells. The card must budget
   // its row against its interior, but its seat cap belongs to the scope, not to the

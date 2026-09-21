@@ -593,12 +593,12 @@ folder tree lists all changed files and can collapse or expand directories; sele
 all of its recorded diffs in chronological order. Narrow terminals show the tree and file detail as
 separate steps. Retained bodies are rehydrated before display instead of silently falling back to
 only the newest edit. Moving through the tree does not replace the open file until Enter confirms
-the selected row. Above the tree, a compact block identifies the cursor's file by its whole relative
-path, operation and counts, so a file is recognisable before it is opened; in the split layout it
-stands down while the cursor is on the file the reader already names, and says `Selected` when the
-cursor and the open patch differ. Tree rows keep the whole basename — the counts leave the row first
-and a long name wraps instead of being abbreviated — and the file reader's header keeps the whole
-path too. Escape returns from file detail to the tree, then closes `/diff`; its footer omits
+the selected row. Each tree row names its file in full: the status letter, the whole basename and
+the entry's added and removed counts, which move to the row's own trailing line when a long name
+needs the width. A file is therefore recognisable before it is opened, and a row's height depends on
+the entry alone, so moving the cursor never reflows the rows around it. The file reader's header
+keeps the whole path too and names the open file's operation. Escape returns from file detail to the
+tree, then closes `/diff`; its footer omits
 the global Ctrl+C cancel/quit action like the Plan and Goal detail screens.
 
 isolation and Guard have separate persisted controls; Memory's quick control is session-only.

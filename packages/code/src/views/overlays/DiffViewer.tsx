@@ -52,7 +52,7 @@ function entryPath(entry: WorkspaceChangeEntry): string {
   return entry.new_path ?? entry.old_path ?? entry.id;
 }
 
-/** One painted line of the changed-file tree or of the selection's identity block. */
+/** One painted line of the changed-file tree. */
 interface DiffLine {
   spans: { text: string; fg: string }[];
 }
@@ -80,13 +80,19 @@ function operationLabel(operation: WorkspaceChangeOperation): string {
   return "Changed";
 }
 
-function statsLabel(entry: WorkspaceChangeEntry): string {
-  const additions = entry.stats?.additions;
-  const deletions = entry.stats?.deletions;
-  if (additions === undefined && deletions === undefined) return "";
-  const added = additions === undefined ? "" : `+${String(additions)}`;
-  const removed = deletions === undefined ? "" : `-${String(deletions)}`;
-  return [added, removed].filter((part) => part.length > 0).join(" ");
+/**
+ * The entry's own counts, in reading order.
+ *
+ * @remarks Empty when the provider reported neither number, so a row never
+ *   claims a zero it did not receive.
+ */
+function statsSpans(entry: WorkspaceChangeEntry): { text: string; tone: "add" | "del" }[] {
+  const spans: { text: string; tone: "add" | "del" }[] = [];
+  if (entry.stats?.additions !== undefined)
+    spans.push({ text: `+${String(entry.stats.additions)}`, tone: "add" });
+  if (entry.stats?.deletions !== undefined)
+    spans.push({ text: `-${String(entry.stats.deletions)}`, tone: "del" });
+  return spans;
 }
 
 /** Groups provider inventory entries into a path-sorted file list. */
@@ -426,17 +432,18 @@ export function DiffViewer(props: {
    */
   const treeTextWidth = (): number =>
     Math.max(8, (wide() ? sidebarWidth() : Math.max(0, dimensions().width - 1)) - 2);
-  /** The tree row the cursor is on; null leaves no identity behind. */
-  const selectedTreeRow = (): DiffTreeRow | null => rows()[treeIndex()] ?? null;
   /**
    * One tree item's painted lines.
    *
-   * @remarks A file keeps its whole name. Counts leave the line before the name
-   *   does, and a name wider than the panel wraps onto continuation lines aligned
-   *   to its own start — repeating the chevron, the status letter or an expander
-   *   on those lines would indent it by a marker that is not about it. The item
-   *   stays one logical row: the selection band, the click and the scroll target
-   *   all cover every line of it, and Up/Down move between items.
+   * @remarks A file keeps its whole name and its counts. A name wider than the
+   *   panel wraps onto continuation lines aligned to its own start, which carry
+   *   blanks in place of the chevron and the status letter — repeating a marker
+   *   there would cut the name with something that is not about it. Counts follow
+   *   the name on the same line while they fit and otherwise take the row's own
+   *   trailing line, so a row's height depends on the entry alone: moving the
+   *   cursor never reflows the rows around it. The item stays one logical row —
+   *   the selection band, the click and the scroll target cover every line of it,
+   *   and Up/Down move between items.
    */
   const treeLines = (row: DiffTreeRow, selected: boolean): DiffLine[] => {
     const lead = `${selected ? `${glyph("chevronRight")} ` : "  "}${"  ".repeat(row.depth)}`;
@@ -450,71 +457,34 @@ export function DiffViewer(props: {
         ? tokens.accent
         : tokens.muted;
     const fg = row.kind === "folder" ? tokens.accent : tokens.fg;
-    const first = (text: string): DiffLine => ({
+    const head = `${lead}${marker}`;
+    const width = treeTextWidth();
+    const first = (spans: DiffLine["spans"]): DiffLine => ({
+      spans: [{ text: head, fg: markerFg }, ...spans],
+    });
+    const continuation = (spans: DiffLine["spans"]): DiffLine => ({
       spans: [
-        { text: `${lead}${marker}`, fg: markerFg },
-        { text, fg },
+        { text: `${" ".repeat(Bun.stringWidth(lead))}${" ".repeat(marker.length)}`, fg },
+        ...spans,
       ],
     });
-    const continuation = (text: string): DiffLine => ({
-      spans: [{ text: `${lead}${" ".repeat(marker.length)}${text}`, fg }],
-    });
-    const stats = row.kind === "file" ? statsLabel(row.entry) : "";
-    const width = treeTextWidth();
-    const withStats = stats.length > 0 ? `${row.name} ${stats}` : row.name;
-    if (Bun.stringWidth(`${lead}${marker}${withStats}`) <= width) return [first(withStats)];
-    if (Bun.stringWidth(`${lead}${marker}${row.name}`) <= width) return [first(row.name)];
-    const nameWidth = Math.max(1, width - Bun.stringWidth(`${lead}${marker}`));
-    return wrapCells(row.name, nameWidth).map((chunk, index) =>
-      index === 0 ? first(chunk) : continuation(chunk),
+    const counts: DiffLine["spans"] = (row.kind === "file" ? statsSpans(row.entry) : []).map(
+      (part, index) => ({
+        text: index === 0 ? part.text : ` ${part.text}`,
+        fg: part.tone === "add" ? tokens.add : tokens.del,
+      }),
     );
-  };
-  /**
-   * The identity of the tree's current selection, printed above the tree.
-   *
-   * @remarks Moving the cursor identifies a file before it is opened, so this
-   *   block follows the selection and never reads what the detail pane loaded. In
-   *   split mode it stands down only when the pane already names the very same
-   *   file; otherwise — a different file, a folder, or the single-pane tree where
-   *   it is the only identity on screen — it is the record of the selection. A
-   *   folder never inherits the last file's counts, and an empty list leaves
-   *   nothing behind.
-   */
-  const selectionLines = (): DiffLine[] => {
-    const row = selectedTreeRow();
-    if (row === null) return [];
-    const differs = row.kind === "file" && row.entry.id !== controller.selectedId();
-    if (wide() && !differs) return [];
-    const width = treeTextWidth();
-    const lines: DiffLine[] = [];
-    const wrap = (text: string, fg: string): void => {
-      if (text.length === 0) return;
-      for (const chunk of wrapCells(text, width)) lines.push({ spans: [{ text: chunk, fg }] });
-    };
-    if (differs) lines.push({ spans: [{ text: "Selected", fg: tokens.muted }] });
-    if (row.kind === "folder") {
-      wrap(`${row.path}/`, tokens.fg);
-      return lines;
-    }
-    const path = entryPath(row.entry);
-    const boundary = path.lastIndexOf("/");
-    wrap(path.slice(0, boundary + 1), tokens.muted);
-    wrap(path.slice(boundary + 1), tokens.fg);
-    const stats = row.entry.stats;
-    const summary: { text: string; fg: string }[] = [
-      { text: operationLabel(row.entry.operation), fg: tokens.muted },
+    const inline = [
+      { text: row.name, fg },
+      ...(counts.length === 0 ? [] : [{ text: " ", fg: tokens.muted }, ...counts]),
     ];
-    const counts: { text: string; fg: string }[] = [];
-    if (stats?.additions !== undefined)
-      counts.push({ text: `+${String(stats.additions)}`, fg: tokens.add });
-    if (stats?.deletions !== undefined)
-      counts.push({ text: `${glyph("minus")}${String(stats.deletions)}`, fg: tokens.del });
-    for (const count of counts)
-      summary.push({ text: ` ${glyph("separator")} `, fg: tokens.muted }, count);
-    lines.push({ spans: summary });
-    const oldPath = row.entry.old_path;
-    if (oldPath !== undefined && oldPath !== path) wrap(`from ${oldPath}`, tokens.muted);
-    return lines;
+    if (Bun.stringWidth(`${head}${inline.map((span) => span.text).join("")}`) <= width)
+      return [first(inline)];
+    const nameWidth = Math.max(1, width - Bun.stringWidth(head));
+    const chunks = wrapCells(row.name, nameWidth).map((chunk, index) =>
+      index === 0 ? first([{ text: chunk, fg }]) : continuation([{ text: chunk, fg }]),
+    );
+    return counts.length === 0 ? chunks : [...chunks, continuation(counts)];
   };
   const tree = (): JSX.Element => (
     <box
@@ -528,17 +498,6 @@ export function DiffViewer(props: {
       <text fg={tokens.accent} flexShrink={0} paddingBottom={1}>
         <b>Changed files</b>
       </text>
-      <box flexDirection="column" flexShrink={0}>
-        <For each={selectionLines()}>
-          {(line) => (
-            <text wrapMode="none">
-              <For each={line.spans}>
-                {(span) => <span style={{ fg: span.fg }}>{span.text}</span>}
-              </For>
-            </text>
-          )}
-        </For>
-      </box>
       <scrollbox
         ref={(element: ScrollBoxRenderable) => (treeScroll = element)}
         flexGrow={1}

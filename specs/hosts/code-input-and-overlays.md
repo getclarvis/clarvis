@@ -734,25 +734,23 @@ hint, matching the Plan and Goal detail-screen pattern. Ready text patches rende
 `StableDiff`; binary, conflict, truncated, stale and empty states render as hints. The TUI does not
 branch on provider id.
 
-**File identity before the patch.** `Changed files` is followed by a compact identity block for the
-cursor's row, so a file is identifiable without opening it: the relative path (wrapped by
-`wrapCells`), then the operation word and the added/removed counts when the entry has them. The
-block follows the *selection* and never reads what the detail pane loaded. In split mode it stands
-down while the cursor is on the file that pane already names; a different file, a folder, or the
-single-pane tree keeps it, and a selection that differs is labelled `Selected` so it cannot be
-mistaken for the open patch's header. A folder never inherits the last file's counts, and an empty
-inventory leaves no identity behind. Tree rows give the basename the room: the counts leave the row
-before the name does, and a name wider than the sidebar wraps onto continuation lines aligned to its
-own start — no ellipsis, and no repeated chevron, status letter or expander on those lines. Each
-file stays one logical item whose selection band, click target and scroll anchor cover every line,
-while Up/Down move between items. The detail header keeps the whole relative path and wraps it,
-and names the open file's operation and rename endpoints rather than a transient selection.
-Production: `treeLines`, `selectionLines` and `treeTextWidth` in
+**File identity lives in the tree.** `Changed files` is followed by the changed-file tree itself:
+each file row carries its operation letter, its whole name and the entry's added/removed counts, so
+a file is identifiable without opening it. Nothing above the tree repeats the cursor's row, and a
+row's height depends on the entry alone — its own name and counts — so moving the cursor never
+reflows the rows around it. Counts follow the name on the same line while they fit and otherwise
+take the row's own trailing line; a name wider than the panel wraps onto continuation lines aligned
+to its own start. Neither case abbreviates: no ellipsis, and no repeated chevron, status letter or
+expander on the continuation lines. Each file stays one logical item whose selection band, click
+target and scroll anchor cover every line, while Up/Down move between items. The detail header
+follows the *opened* file rather than the cursor: it keeps the whole relative path and wraps it, and
+names that file's operation and rename endpoints.
+Production: `treeLines`, `statsSpans` and `treeTextWidth` in
 `packages/code/src/views/overlays/DiffViewer.tsx`, with `wrapCells` in
 `packages/code/src/views/truncate.ts`. Pinned:
 [diff-viewer-render.test.tsx](../../packages/code/tests/integration/diff-viewer-render.test.tsx)
 ("a deep name stays whole in the single-pane tree instead of being abbreviated", "moving the tree
-selection identifies it without loading its patch") and
+cursor reads nothing and never reflows the tree") and
 [app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx).
 The kernel contract is [workspace-changes.md](workspace-changes.md).
 

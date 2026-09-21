@@ -94,9 +94,14 @@ export function LeadActivityLine(props: {
   /** The scope label and its separator, present only when facts follow it. */
   const lead = (): string =>
     identity().length === 0 || !hasFacts() ? "" : `${identity()} ${glyph("separator")} `;
-  /** The separator before the detail, present only when something precedes it. */
-  const detailLead = (): string =>
-    props.phase() === "ready" && identity().length === 0 ? "" : ` ${glyph("separator")} `;
+  /**
+   * The separator before the detail.
+   *
+   * @remarks Only the phase opens the detail's own sentence; when nothing is
+   *   running, the identity's separator has already opened the band, so an idle
+   *   page read `Run · · Goal complete`.
+   */
+  const detailLead = (): string => (props.phase() === "ready" ? "" : ` ${glyph("separator")} `);
   return (
     <box
       id="lead-activity-line"

@@ -442,11 +442,19 @@ default"`).
 (`packages/code/src/ui/patterns/active-actions.ts`, `actionSegment`) — e.g. `"[↵/super+o] list.open"`
 (`packages/code/tests/unit/active-actions.test.ts`, "active action projection deduplicates alternatives by command identity"). This is the *only* place a segment is assembled;
 key and label are never truncated independently, by the function's own doc comment
-(`packages/code/src/ui/patterns/active-actions.ts`). `actionSegment` is the plain-text join of
-The segment's typed runs — `key`, `label`, `prefix`, `separator` — are what a band paints, so a
-band paints keys with more contrast than their descriptions without a second formatter
+(`packages/code/src/ui/patterns/active-actions.ts`). `actionSpans` is that same segment as typed
+runs — `key`, `label`, `prefix`, `separator` — so a band paints keys with more contrast than their
+descriptions without a second formatter
 (`packages/code/tests/unit/active-actions.test.ts`, "footer spans keep keys apart from labels and
 name the shared prefix once").
+
+A key that is itself a wrapper bracket is padded inside it, because the wrapper and the key would
+otherwise read as one malformed bracket: the Diff page's comparison-cycle binding on `[` printed
+`[[] view` and now prints `[ [ ] view`. The binding is unchanged; only its presentation separates the
+chrome from the key. Production: `wrappedKey` in `packages/code/src/ui/patterns/active-actions.ts`.
+Tests: `packages/code/tests/unit/active-actions.test.ts` ("a key that is itself a wrapper bracket stays
+readable in its segment") and `packages/code/tests/integration/navigation-bar-render.test.tsx` ("a
+bracket key stays readable inside the segment wrapper").
 
 Footer presentation groups two or more actions whose resolved alternatives all use
 Ctrl+X under one `Ctrl+X:` prefix. Other shortcuts appear first with their complete
@@ -882,7 +890,10 @@ outranks elapsed time, iteration and `Goal …` in reading order. Time and itera
 band and are never repeated in the canonical footer row. While a full-region page (`plan`, `diff`,
 `view`) owns the reading area, the same band prefixes `Run` — with the separator — so its facts are
 not read as the *page's* activity; the label is omitted while the transcript itself is the surface
-above. The band never carries the Ctrl+X prefix: that belongs to the navigation band (see the
+above. Segment separators belong to whichever segment opens the run that follows: the identity's own
+separator opens the band when nothing is running, and only the phase contributes the one before the
+detail — an idle page read `Run · · Goal complete` while both contributed one. The band never carries
+the Ctrl+X prefix: that belongs to the navigation band (see the
 pending-prefix rule in this document). The canonical footer is deliberately stable across that
 lifecycle: it keeps Context plus cumulative Session token totals/cost before and after settlement
 and never repeats `Running`, elapsed time or iteration. Production: `packages/code/src/views/InputDock.tsx`
@@ -892,7 +903,9 @@ and never repeats `Running`, elapsed time or iteration. Production: `packages/co
 `packages/code/tests/integration/app-shell-render.test.tsx` ("autocomplete replaces the Lead activity
 row instead of stacking ready or working above it", "an active run seats its live metadata beside
 working and keeps the session footer stable", and "the open plan page names one owner per sequence
-and keeps the run identified") and `packages/code/tests/unit/run-status.test.ts` ("the
+and keeps the run identified"), `packages/code/tests/integration/lead-presentation.test.tsx` ("the
+activity band separates its segments exactly once") and `packages/code/tests/unit/run-status.test.ts`
+("the
 run strip keeps cumulative session tokens before and after a run settles").
 
 ### 4.16 `SelectableList`'s error/loading/empty precedence

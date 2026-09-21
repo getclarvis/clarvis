@@ -161,10 +161,25 @@ export function projectActiveActions(
   );
 }
 
+/**
+ * One key as it is printed inside the segment's wrapper.
+ *
+ * @param key - the resolved key label.
+ * @returns the label, padded when the key is itself a wrapper bracket.
+ * @remarks The segment wraps keys in `[]`, so the comparison-cycle binding on
+ *   `[` printed `[[] view` — which reads as an unclosed bracket rather than as
+ *   the key `[`. Padding keeps the chrome distinguishable from the key without
+ *   changing the binding or the wrapper's own convention.
+ */
+function wrappedKey(key: string): string {
+  return /^[[\]]$/.test(key) ? ` ${key} ` : key;
+}
+
 /** One complete footer unit as styled runs; key and label are never truncated independently. */
 function actionSpans(action: ActiveAction): FooterSpan[] {
   const keys =
-    action.keyGroups?.map((group) => group.join("/")).join(" / ") ?? action.keys.join("/");
+    action.keyGroups?.map((group) => group.map(wrappedKey).join("/")).join(" / ") ??
+    action.keys.map(wrappedKey).join("/");
   return [
     { text: `[${keys}]`, tone: "key" },
     { text: ` ${action.footerLabel.toLowerCase()}`, tone: "label" },

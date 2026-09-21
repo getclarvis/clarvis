@@ -137,7 +137,10 @@ later operator corrections, the work agent's explanatory report and any prior St
 the work agent's answer. That decision assesses declared evidence; it is not an independent audit of
 artifacts. During completion, `needs_work` returns a
 concrete correction while `needs_evidence` asks one specific question that the main run answers with
-its normal tools. Technical interruption is persisted with a typed cause rather than left pending.
+its normal tools. Technical interruption is persisted with a typed cause rather than left pending —
+including `usage_unknown`, which is not a transport fault: the evaluation answered, possibly with a
+valid `achieved`, but its consumption could not be determined and a Goal cannot be concluded on a
+review the host cannot charge.
 The host checks semantic targets
 before accepting output and allows one bounded schema-correction nudge inside the same evaluation.
 One nonempty invalid final receives a recovery nudge; a repeated invalid final or the first empty

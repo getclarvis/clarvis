@@ -7,7 +7,6 @@
  * is last-def-wins), so the fold throws on duplicates. The core appends the
  * submit handler and the MCP catch-all after the fold.
  */
-import type { ToolChoice } from "./llm-port.ts";
 import { CapabilityUnavailableError } from "./errors.ts";
 import type { NamespacedTool } from "./run.ts";
 import type { CompactionAnchor } from "./compaction-anchor.ts";
@@ -30,7 +29,7 @@ import type {
 /**
  * The single flattened bundle {@link foldContributions} produces from a list of
  * {@link AgentLoopContribution}s: the union of tools/handlers/gates plus the at-
- * most-one anchor and forcedChoice and the fan-out-merged hooks the loop drives.
+ * most-one anchor and the fan-out-merged hooks the loop drives.
  */
 export interface FoldedContributions {
   tools: NamespacedTool[];
@@ -44,7 +43,6 @@ export interface FoldedContributions {
    */
   dispatchPolicy?: DispatchPolicy;
   anchor?: () => CompactionAnchor | undefined;
-  forcedChoice?: () => ToolChoice | undefined;
   /** The agent's hard output-token ceiling, when a capability supplies one. */
   outputBudget?: OutputTokenBudget;
   hooks: OrchestrationHooks;
@@ -110,7 +108,7 @@ export function activationForScope(
  * @returns the merged bundle; unadvertised contributions' tools are omitted from
  *   `advertisedTools`.
  * @throws Error on a duplicate tool wire name across contributions, or when more
- *   than one contribution provides an `anchor` or a `forcedChoice`.
+ *   than one contribution provides an `anchor`.
  */
 export function foldContributions(
   contributions: readonly AgentLoopContribution[],
@@ -122,7 +120,6 @@ export function foldContributions(
   const policies: DispatchPolicy[] = [];
   const seenWireNames = new Set<string>();
   let anchor: FoldedContributions["anchor"];
-  let forcedChoice: FoldedContributions["forcedChoice"];
   let outputBudget: OutputTokenBudget | undefined;
 
   for (const c of contributions) {
@@ -146,12 +143,6 @@ export function foldContributions(
         throw new Error("foldContributions: more than one contribution provides an anchor");
       }
       anchor = c.anchor;
-    }
-    if (c.forcedChoice !== undefined) {
-      if (forcedChoice !== undefined) {
-        throw new Error("foldContributions: more than one contribution provides a forcedChoice");
-      }
-      forcedChoice = c.forcedChoice;
     }
     if (c.outputBudget !== undefined) {
       if (outputBudget !== undefined) {
@@ -180,7 +171,6 @@ export function foldContributions(
         }
       : {}),
     ...(anchor !== undefined ? { anchor } : {}),
-    ...(forcedChoice !== undefined ? { forcedChoice } : {}),
     ...(outputBudget !== undefined ? { outputBudget } : {}),
     hooks: foldHooks(contributions.map((c) => c.hooks).filter((h) => h !== undefined)),
   };

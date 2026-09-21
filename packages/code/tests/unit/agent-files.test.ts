@@ -200,7 +200,7 @@ test("agentReadiness: engine-shared rules — malformed model, orchestration", (
   const malformed = agentReadiness(mk("m", { model: "claude-sonnet" }), [], settings, env);
   expect(malformed.issues.map((i) => i.code)).toEqual(["invalid_model"]);
 
-  const soloOrch = mk("s", { orchestration: { force_tool_on_nudge: true } });
+  const soloOrch = mk("s", { orchestration: {} });
   expect(
     agentReadiness(soloOrch, [soloOrch], settings, env).issues.some(
       (i) => i.code === "orchestration_needs_can_spawn",

@@ -125,7 +125,14 @@ export interface GoalStewardReview {
     speaker: "operator" | "work_agent" | "steward";
     kind: "request" | "correction" | "report" | "question" | "answer";
   }>;
-  interruption_cause?: "timeout" | "transport" | "invalid_output" | "cancelled";
+  /**
+   * Why a technical interruption stopped the review.
+   *
+   * @remarks `usage_unknown` means the evaluation answered but its consumption
+   *   could not be determined, so the Goal cannot be concluded on it; it used to
+   *   be reported as `transport`, which named the wrong cause.
+   */
+  interruption_cause?: "timeout" | "transport" | "invalid_output" | "cancelled" | "usage_unknown";
   usage: GoalUsage;
   reviewed_at: number;
 }

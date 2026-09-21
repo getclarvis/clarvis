@@ -11,7 +11,7 @@
  *               └─ attach(bc) → AgentLoopContribution    loop-time contribution
  */
 import type { EnvConfig } from "./env.ts";
-import type { LLMProvider, ToolChoice } from "./llm-port.ts";
+import type { LLMProvider } from "./llm-port.ts";
 import type { Logger } from "./ports.ts";
 import type { LifecycleHook, RunRequest } from "./api.ts";
 import type { NamespacedTool } from "./run.ts";
@@ -335,8 +335,6 @@ export interface AgentLoopContribution {
   dispatchPolicy?: DispatchPolicy;
   /** At most one contribution per agent may provide an anchor. */
   anchor?: () => CompactionAnchor | undefined;
-  /** At most one contribution per agent may provide a forced choice. */
-  forcedChoice?: () => ToolChoice | undefined;
   hooks?: OrchestrationHooks;
   /**
    * Hard output-token ceiling shared with every agent that receives this

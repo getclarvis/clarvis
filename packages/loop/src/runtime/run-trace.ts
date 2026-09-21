@@ -4,7 +4,7 @@ import type { RunEndedDetail, RunStartedDetail, TraceEntry } from "@clarvis/capa
 import type { TraceEvent } from "@clarvis/capability";
 import type { Capability, PersistedTraceProjectorRegistry } from "@clarvis/capability";
 import { composePersistedTraceProjectors } from "@clarvis/capability";
-import { mapEntry } from "@clarvis/trace";
+import { mapEntry, truncate } from "@clarvis/trace";
 import { sanitizeErrorMessage } from "@clarvis/capability";
 import type { ClockHolder } from "@clarvis/capability";
 import type { RunShape } from "./run-shape.ts";
@@ -32,6 +32,16 @@ const GUARD_TRIP_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
   "all_tools_unavailable",
   "empty_response",
 ]);
+
+/**
+ * Ceiling for the failure message carried on `run_ended`.
+ *
+ * @remarks The message is the run's own explanation, not a payload dump; a
+ *   provider string is sanitized first and clipped here so a failed run cannot
+ *   write an unbounded string into every trace that records it. The client
+ *   renders it in a transcript line, so a long message is unreadable anyway.
+ */
+const RUN_ENDED_MESSAGE_MAX = 2000;
 
 /** Compose the immutable host/run projector snapshot used by every trace sink. */
 export function createRunTraceProjectors(
@@ -86,9 +96,13 @@ export function deriveRunStartedDetail(
  * @returns a detail whose `reason` is the non-error status verbatim; for an
  *   error response, `"timeout"`, `"guard_trip"` (when the code is in
  *   {@link GUARD_TRIP_CODES}), or `"error"` otherwise, each carrying the
- *   originating error `code`.
+ *   originating error `code` and its sanitized, clipped `message`.
  * @remarks Only a completed run carries its accepted finalization disposition;
  *   cancellation, budget termination and failures never advertise a saved checkpoint.
+ *   The message is recorded for **every** error response, not only the guard
+ *   trips: it is the run's own reason, and the client's live path reads it from
+ *   the run envelope, so persisting it is what keeps a replayed transcript
+ *   saying the same thing as the live one.
  */
 export function deriveRunEndedDetail(
   response: RunResponse,
@@ -103,10 +117,12 @@ export function deriveRunEndedDetail(
     };
   }
   const code = response.error.code;
-  if (code === "timeout") return { reason: "timeout", code };
+  const message = truncate(sanitizeErrorMessage(response.error.message), RUN_ENDED_MESSAGE_MAX);
+  const detail = { message };
+  if (code === "timeout") return { reason: "timeout", code, ...detail };
   if (GUARD_TRIP_CODES.has(code) || capabilityGuardTripCodes?.has(code) === true)
-    return { reason: "guard_trip", code };
-  return { reason: "error", code };
+    return { reason: "guard_trip", code, ...detail };
+  return { reason: "error", code, ...detail };
 }
 
 /**

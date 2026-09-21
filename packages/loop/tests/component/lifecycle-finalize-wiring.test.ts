@@ -6,7 +6,11 @@ import type {
   PreFinalizeContext,
 } from "@clarvis/capability";
 import { createTrace } from "@clarvis/trace";
-import { createTokenLedger, createIterationCounter } from "../../src/runtime/budget/index.ts";
+import {
+  createTokenLedger,
+  createIterationCounter,
+  type IterationCounter,
+} from "../../src/runtime/budget/index.ts";
 import { DISABLED_COMPACTION } from "../../src/runtime/context/index.ts";
 import { runAgent, type RunAgentInput } from "../../src/runtime/loop/run-agent.ts";
 import { buildRegistry } from "../../src/runtime/tools/mcp-registry.ts";
@@ -39,9 +43,10 @@ function input(
   options: {
     hooks?: LifecycleHook[];
     contribution?: AgentLoopContribution;
-    forceToolOnNudge?: boolean;
     contract?: boolean;
     noProgressLimit?: number;
+    /** Supplied by a case that needs to compare the counted iterations with the calls made. */
+    counter?: IterationCounter;
   } = {},
 ): RunAgentInput {
   const capability: AgentCapability | undefined =
@@ -63,7 +68,7 @@ function input(
     },
     budget: {
       ledger: createTokenLedger(1_000_000),
-      counter: createIterationCounter(50),
+      counter: options.counter ?? createIterationCounter(50),
       usage: { input: 0, output: 0, cached: 0, cache_write: 0 },
     },
     runtime: { trace: createTrace() },
@@ -76,9 +81,6 @@ function input(
     noProgressMessage: (streak) => `no progress for ${streak}.`,
     emptyResponseAgent: "LLM",
     ...(capability !== undefined ? { agentCapabilities: [capability] } : {}),
-    ...(options.forceToolOnNudge !== undefined
-      ? { forceToolOnNudge: options.forceToolOnNudge }
-      : {}),
   };
 }
 
@@ -213,8 +215,24 @@ describe("pre_finalize hook wiring", () => {
   });
 });
 
-describe("force_tool_on_nudge wiring", () => {
-  function nudgeFirst(count: number): AgentLoopContribution {
+/**
+ * A finalize gate's nudge is answered with feedback, never with a forced tool.
+ *
+ * @remarks The loop used to put `toolChoice: "required"` on the iteration after
+ * any nudge, for every gate in every persona. Two things were wrong with that.
+ * A provider that refuses a forced choice — a thinking model, for one — answered
+ * the nudge with an HTTP 400 that ended the run, so the recovery the nudge exists
+ * to trigger became the failure. And where it was accepted it answered a
+ * wrong-*tool* problem with a *different* wrong tool, because "you must call
+ * something" says nothing about which call was missing; the gate's own note is
+ * what says that. So every case here asserts on the calls the provider actually
+ * received: the note is present, `toolChoice` is absent, and a gate that keeps
+ * refusing still terminates through the pre-existing no-progress policy.
+ */
+describe("a finalize-gate nudge never forces a tool call", () => {
+  const NUDGE_NOTE = "[runtime: do the thing]";
+
+  function nudgeFirst(count: number, unbounded = false): AgentLoopContribution {
     let attempts = 0;
     return {
       gates: [
@@ -223,7 +241,7 @@ describe("force_tool_on_nudge wiring", () => {
           check: async () => {
             attempts += 1;
             return attempts <= count
-              ? { kind: "nudge", note: "[runtime: do the thing]" }
+              ? { kind: "nudge", note: NUDGE_NOTE, unbounded }
               : { kind: "pass" };
           },
         },
@@ -231,94 +249,69 @@ describe("force_tool_on_nudge wiring", () => {
     };
   }
 
-  it.each([
-    ["enabled", true, "required"],
-    ["disabled", false, undefined],
-  ] as const)("leaves the next model call %s", async (_label, enabled, expected) => {
+  it("continues a refused text finish with the gate's note, unforced", async () => {
+    const llm = new MockLLM({ script: [{ text: "not yet" }, { text: "done" }] });
+
+    const result = await runAgent(input(llm, { contribution: nudgeFirst(1), contract: false }));
+
+    expect(result.status).toBe("completed");
+    expect(llm.calls.map((call) => call.toolChoice)).toEqual([undefined, undefined]);
+    const followed = JSON.stringify(llm.calls[1]!.messages);
+    expect(followed).toContain(NUDGE_NOTE);
+    expect(JSON.stringify(llm.calls[0]!.messages)).not.toContain(NUDGE_NOTE);
+  });
+
+  it("continues a refused submit through the tool envelope, unforced", async () => {
     const llm = new MockLLM({ script: [submit, submit] });
 
-    await runAgent(input(llm, { contribution: nudgeFirst(1), forceToolOnNudge: enabled }));
+    const result = await runAgent(input(llm, { contribution: nudgeFirst(1) }));
 
-    expect(llm.calls[0]!.toolChoice).toBeUndefined();
-    expect(llm.calls[1]!.toolChoice).toBe(expected);
+    expect(result.status).toBe("completed");
+    expect(llm.calls.map((call) => call.toolChoice)).toEqual([undefined, undefined]);
+    const denial = llm.calls[1]!.messages.find((message) => message.role === "tool");
+    expect(JSON.stringify(denial)).toContain(NUDGE_NOTE);
   });
 
-  it("forces each iteration immediately following a nudge", async () => {
-    const llm = new MockLLM({ script: [submit, submit, submit] });
-
-    await runAgent(input(llm, { contribution: nudgeFirst(2), forceToolOnNudge: true }));
-
-    expect(llm.calls.map((entry) => entry.toolChoice)).toEqual([undefined, "required", "required"]);
-  });
-});
-
-/**
- * A forced tool choice is consumed exactly once.
- *
- * @remarks The wiring tests above show every iteration *following a nudge* is
- * forced, which is the flag being set. What none of them shows is the flag being
- * cleared: their scripts end on the forced call, so a `takeForcedChoice` that
- * forgot to reset `forceToolNextIteration` would keep them all green while every
- * later iteration in a real run was silently forced to call a tool. That is not
- * a cosmetic difference — an agent permanently denied the option of answering
- * cannot finish, and the run dies on the iteration cap instead.
- *
- * The third iteration is reached by having the forced call name a tool the
- * registry does not carry: the dispatch reports an error, no finalize is
- * attempted, and the loop comes round again with the flag already spent.
- */
-describe("the forced choice after a nudge is one-shot", () => {
-  const unknownTool = { toolCalls: [{ name: "not_a_tool", arguments: {} }] };
-
-  function nudgeOnce(): AgentLoopContribution {
-    let attempts = 0;
-    return {
-      gates: [
-        {
-          fastAcceptOk: () => attempts >= 1,
-          check: async () => {
-            attempts += 1;
-            return attempts <= 1
-              ? { kind: "nudge", note: "[runtime: keep going]" }
-              : { kind: "pass" };
-          },
-        },
-      ],
-    };
-  }
-
-  it("releases the force on the iteration after the forced one", async () => {
-    const llm = new MockLLM({ script: [submit, unknownTool, submit] });
-
-    await runAgent(input(llm, { contribution: nudgeOnce(), forceToolOnNudge: true }));
-
-    expect(llm.calls.map((entry) => entry.toolChoice)).toEqual([undefined, "required", undefined]);
-  });
-
-  it("forces again only when a second nudge asks for it", async () => {
+  it("keeps every later call unforced across nudges in both modes", async () => {
     let attempts = 0;
     const contribution: AgentLoopContribution = {
       gates: [
         {
-          fastAcceptOk: () => attempts >= 2,
           check: async () => {
             attempts += 1;
-            return attempts <= 2 ? { kind: "nudge", note: "[runtime: again]" } : { kind: "pass" };
+            return attempts <= 2 ? { kind: "nudge", note: NUDGE_NOTE } : { kind: "pass" };
           },
         },
       ],
     };
-    const llm = new MockLLM({ script: [submit, unknownTool, submit, unknownTool, submit] });
+    const llm = new MockLLM({
+      script: [submit, { text: "prose" }, submit],
+    });
 
-    await runAgent(input(llm, { contribution, forceToolOnNudge: true }));
+    const result = await runAgent(input(llm, { contribution }));
 
-    expect(llm.calls.map((entry) => entry.toolChoice)).toEqual([
-      undefined,
-      "required",
-      undefined,
-      "required",
-      undefined,
-    ]);
+    expect(result.status).toBe("completed");
+    expect(llm.calls.map((call) => call.toolChoice)).toEqual([undefined, undefined, undefined]);
+  });
+
+  it("lets the no-progress policy bound an unbounded nudge, counting each iteration once", async () => {
+    const counter = createIterationCounter(50);
+    const llm = new MockLLM({
+      script: Array.from({ length: 6 }, () => ({ text: "still not submitted" })),
+    });
+
+    const result = await runAgent(
+      input(llm, {
+        contribution: nudgeFirst(Number.POSITIVE_INFINITY, true),
+        contract: false,
+        noProgressLimit: 2,
+        counter,
+      }),
+    );
+
+    expect(result).toMatchObject({ status: "error", error: { code: "no_progress" } });
+    expect(counter.count()).toBe(llm.calls.length);
+    expect(llm.calls.every((call) => call.toolChoice === undefined)).toBe(true);
   });
 });
 

@@ -24,6 +24,21 @@ import { createStewardInput, stewardDefinitionDigest, stewardDigest } from "./st
 import { buildStewardConversationFrame, StewardProjectionError } from "./steward-projection.ts";
 import { stewardBound } from "./steward-state.ts";
 
+/**
+ * Raised when an evaluation produced a decision the host cannot account for.
+ *
+ * @remarks Kept distinct from a transport fault on purpose. The evaluation did
+ *   answer — possibly with a valid `achieved` — but its consumption could not be
+ *   determined, and a Goal cannot be concluded on a review the host cannot
+ *   charge. Classifying both as `transport` named the wrong cause in the
+ *   operator's record and made the two indistinguishable there.
+ */
+class StewardUsageUnknownError extends Error {
+  constructor() {
+    super("Goal Steward usage is unknown");
+  }
+}
+
 export interface StewardExecutionRuntime {
   fingerprint: string;
   budget: GoalStewardRunInput["budget"];
@@ -237,7 +252,7 @@ export function createGoalStewardCoordinator(
       usage = outcome.usage;
       accounting = outcome.accounting;
       signal.throwIfAborted();
-      if (usage.kind === "unknown") throw new Error("Goal Steward usage is unknown");
+      if (usage.kind === "unknown") throw new StewardUsageUnknownError();
       continued = true;
       const result = await validate(outcome.result);
       review = {
@@ -277,15 +292,17 @@ export function createGoalStewardCoordinator(
       const cause =
         options.signal.aborted || operationSignal?.aborted
           ? ("cancelled" as const)
-          : error instanceof GoalStewardRunFailure &&
-              (error.code === "timeout" || error.code.includes("timeout"))
-            ? ("timeout" as const)
-            : error instanceof GoalStewardRunFailure && error.code === "cancelled"
-              ? ("cancelled" as const)
-              : error instanceof GoalStewardRunFailure &&
-                  (error.code === "invalid_request" || error.code.includes("invalid"))
-                ? ("invalid_output" as const)
-                : ("transport" as const);
+          : error instanceof StewardUsageUnknownError
+            ? ("usage_unknown" as const)
+            : error instanceof GoalStewardRunFailure &&
+                (error.code === "timeout" || error.code.includes("timeout"))
+              ? ("timeout" as const)
+              : error instanceof GoalStewardRunFailure && error.code === "cancelled"
+                ? ("cancelled" as const)
+                : error instanceof GoalStewardRunFailure &&
+                    (error.code === "invalid_request" || error.code.includes("invalid"))
+                  ? ("invalid_output" as const)
+                  : ("transport" as const);
       review = {
         steward_execution_id: executionId,
         mode,

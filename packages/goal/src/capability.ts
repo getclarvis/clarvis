@@ -19,6 +19,7 @@ import { CREATE_GOAL, GET_GOAL, UPDATE_GOAL, buildGoalTools, getGoalInputSchema 
 import { absentReviewContext, checkGoalSnapshot } from "./runtime-validation.ts";
 import { createGoalCreationRunCapability } from "./creation-capability.ts";
 import { GOAL_CAPABILITY_NAME } from "./constants.ts";
+import { stewardInterruptionOutcome } from "./agent/steward-types.ts";
 
 export { GOAL_CAPABILITY_NAME } from "./constants.ts";
 const runtimePorts = new WeakMap<Capability, GoalRuntimePort>();
@@ -306,14 +307,10 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                                 kind: "nudge",
                                 note: `[goal steward ${decision.kind === "needs_evidence" ? "clarification" : "correction"}] ${decision.next_step}`,
                               };
+                            const outcome = stewardInterruptionOutcome(decision);
                             return {
                               kind: "terminal",
-                              result: failed(
-                                decision.reason === "goal_steward_failed"
-                                  ? "goal_steward_failed"
-                                  : "goal_steward_inconclusive",
-                                decision.reason,
-                              ),
+                              result: failed(outcome.code, outcome.reason),
                             };
                           } catch {
                             return {

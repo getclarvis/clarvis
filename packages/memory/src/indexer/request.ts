@@ -212,8 +212,8 @@ export interface IndexerRequestArgs {
  *   `budget.on_exceed` is `"stop"`, which the request schema only accepts
  *   alongside a `total_token_limit` — both are set. `orchestration` is
  *   deliberately absent: it is lead-only (valid only for a profile with a
- *   non-empty `can_spawn`), and the finalize gate's nudge still forces a tool on
- *   the next iteration because `CLARVIS_DEFAULT_FORCE_TOOL_ON_NUDGE` defaults on.
+ *   non-empty `can_spawn`), and the finalize gate's nudge reaches the model as an
+ *   appended note with the catalog exposed, never as a forced tool call.
  *   Transport retries are disabled on this profile because the durable index
  *   job already owns retry, backoff and give-up; nesting both policies would
  *   multiply one provider outage into repeated calls inside every job attempt.

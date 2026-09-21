@@ -172,11 +172,11 @@ describe("parity with validateBody", () => {
     },
     {
       code: "orchestration_needs_can_spawn",
-      body: requestWith({ orchestration: { force_tool_on_nudge: true } }),
+      body: requestWith({ orchestration: { capability_owned: "ignored" } }),
       ctx: readyCtx({
         profile: {
           model: "anthropic/claude-sonnet-4-5",
-          orchestration: { force_tool_on_nudge: true },
+          orchestration: {},
         },
       }),
     },

@@ -372,17 +372,22 @@ export interface RetryConfigInput {
 /**
  * Per-agent orchestration knobs.
  *
- * @remarks `force_tool_on_nudge` forces a tool call on the iteration after any
- * finalize gate nudges this agent — a property of the agent's own loop, applied
- * by the loop rather than by whichever capability raised the nudge.
+ * @remarks The engine used to own one key here, `force_tool_on_nudge`, and no
+ * longer owns any: the loop answers a finalize gate's nudge by iterating with
+ * the gate's own note appended and the tool catalog exposed, never by choosing
+ * the model's tool for it.
  *
- * A capability's own nudge budget is that capability's settings block to own,
- * not an agent profile's: a profile must not decide how long a run tolerates
- * work a capability is tracking.
+ * The block stays in the vocabulary as an **open, empty** bag — `Record<string,
+ * never>`, which is exactly what the request schema's open object parses to —
+ * because this is the shape of a hand-written agent file's `orchestration`
+ * section. A profile that still names a retired key therefore keeps parsing and
+ * stays inert, instead of failing its run on an unrecognized key, while no type
+ * in this codebase can name a policy field the engine would ignore. A
+ * capability's own nudge budget is that capability's settings block to own, not
+ * an agent profile's: a profile must not decide how long a run tolerates work a
+ * capability is tracking.
  */
-export interface OrchestrationConfigInput {
-  force_tool_on_nudge?: boolean;
-}
+export type OrchestrationConfigInput = Record<string, never>;
 
 /**
  * The full definition of one agent the loop can run.

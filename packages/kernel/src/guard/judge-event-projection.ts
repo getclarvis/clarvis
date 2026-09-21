@@ -154,6 +154,7 @@ export function createJudgeEventProjection(): (event: TraceEvent) => TraceEvent 
         reason: z.enum(BUILTIN_RUN_ENDED_REASONS),
         code: z.enum([...BUILTIN_ERROR_CODES, "judge_invalid_response"]).optional(),
         disposition: z.enum(["final", "checkpoint"]).optional(),
+        message: discard,
       } satisfies Fields<"run_ended">)
       .strict(),
     model_call_error: z

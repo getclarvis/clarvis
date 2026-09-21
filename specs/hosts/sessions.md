@@ -738,11 +738,14 @@ persisted trace", `packages/kernel/src/runs/map-events.ts`). Concretely, in this
   for the end-of-run replay," and the code keeps whatever plan state the live stream already
   delivered rather than clearing it on replay (`packages/code/src/adapters/activity-store.ts`).
 - **`appendRunFailure` (the live path's inline error node) never reaches a rehydrated run** — a
-  restored run instead gets whatever the persisted `run_ended` event's `code` field carries, via
-  `engineEventToProto`'s mapping of `run_ended` (`packages/kernel/src/runs/map-events.ts`); `packages/code/src/adapters/store.ts`
-  states this directly ("`appendRunFailure` ... is a runtime append that never reaches
-  [rehydration]. The trace does carry the failure's code, so a restored run says why it ended
-  rather than only that it did.").
+  restored run instead gets whatever the persisted `run_ended` event carries: its `code` and its
+  `message`, via `engineEventToProto`'s mapping of `run_ended`
+  (`packages/kernel/src/runs/map-events.ts`). The message is what keeps the two paths saying the
+  same thing: `reason` is the *category* — every capability-declared guard code collapses into
+  `guard_trip` — so a restored run that fell back to it explained itself with a word that says
+  nothing about this failure, while the live path had the real message from the envelope. A trace
+  written before the field existed falls back to the code, which is at least specific, and no
+  compatibility reader reads it back (`packages/code/src/adapters/store.ts`).
 - Any event a mapper does not recognize is dropped with a rate-limited `debug` log
   (`reportUnmapped`, `packages/kernel/src/runs/map-events.ts`) rather than surfaced to the client at all — the doc
   comment on `reportUnmapped` names this "the documented rehydration hazard made visible": a format skew

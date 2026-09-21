@@ -175,10 +175,12 @@ One agent profile (`agentProfileSchema`,
 `iteration_limit?`, `stagnation_threshold?`, `call_timeout_ms?`, `reasoning_summary?`,
 `reasoning_effort?`, `retry?` (`max_retries`, `max_retry_after_ms`), `compaction?` (`enabled`,
 `context_fraction`, `target_fraction`, `max_result_chars`, `preserve_recent_tokens`, `prompt`,
-`prompt_mode`), `orchestration?` (an **open** object, only `force_tool_on_nudge` is named —
-`packages/loop/src/validation/request/profile-schemas.ts`, proven open by
-`packages/loop/tests/unit/request-profile-validation.test.ts` accepting an extra
-`capability_owned` key). `compactionSchema` carries a `superRefine`
+`prompt_mode`), `orchestration?` (an **open** object that names no key at all —
+`packages/loop/src/validation/request/profile-schemas.ts`; an unknown key is accepted and dropped,
+and the block's only remaining meaning is the lead-only marker the semantic rules read. Proven by
+`packages/loop/tests/unit/request-profile-validation.test.ts`, which accepts a profile still
+carrying the retired `force_tool_on_nudge` alongside an extra `capability_owned` key and asserts
+the parsed block is empty — so nothing a hand-written file names there can re-arm a policy). `compactionSchema` carries a `superRefine`
 (`packages/loop/src/validation/request/profile-schemas.ts`) enforcing two cross-field rules
 not implied by any single field's own type: (a) `compaction.target_fraction` must be `<=
 compaction.context_fraction` (the low-water mark cannot sit above the high-water mark); (b)

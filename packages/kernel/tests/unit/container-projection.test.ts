@@ -242,6 +242,22 @@ describe("Container configuration projection", () => {
         profiles: [{ ...valid.profiles[0], frontmatter: { orchestration: { external: true } } }],
       },
       {
+        // The engine no longer owns any key in this block, so the Container
+        // refuses a profile that still names the retired one instead of
+        // projecting it away — a container configuration is closed and canonical,
+        // and a silently dropped key would change meaning without saying so.
+        ...valid,
+        profiles: [
+          ...valid.profiles,
+          {
+            name: "legacy",
+            frontmatter: { orchestration: { force_tool_on_nudge: true } },
+            prompt: "",
+            origin: "global" as const,
+          },
+        ],
+      },
+      {
         ...valid,
         profiles: Array.from({ length: 1025 }, (_, i) => ({
           name: `p${i}`,

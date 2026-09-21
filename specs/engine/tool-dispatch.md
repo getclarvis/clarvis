@@ -228,6 +228,15 @@ properties"`). This is a **fifth** fail-open path, distinct from the four in §3
 accepted with **no** `tool.args_validation_failed_open` log line at all, unlike every other fail-open
 branch, which always emits one.
 
+The validator is exported from the engine's curated entry (`@clarvis/loop`, `packages/loop/src/lib.ts`)
+for the one host routine that rules on a tool call outside the loop: `@clarvis/kernel`'s
+`generateWorkflowTitle` checks a provider's whole `set_title` argument object against the schema it
+advertised — `additionalProperties: false` included — instead of reading only the field it wants and
+accepting the rest. Production: `createToolArgValidator` in
+`packages/loop/src/runtime/tools/tool-arg-validator.ts`. Test:
+`packages/kernel/tests/unit/workflow-title.test.ts` ("corrects an undeclared extra argument once, then
+accepts the valid call").
+
 ### 3.5 Argument-validation fail-open reasons (`FailOpenReason`, `packages/loop/src/runtime/tools/tool-arg-validator.ts`)
 
 | Reason | Trigger | Log shape | Test |

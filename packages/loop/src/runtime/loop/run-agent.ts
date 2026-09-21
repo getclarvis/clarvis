@@ -38,7 +38,7 @@ import {
 } from "./loop-contract.ts";
 import { buildMcpHandler } from "./mcp-handler.ts";
 import { createSteerInbox } from "./steer-inbox.ts";
-import type { AgentCapability, AgentLoopContribution, ToolChoice } from "@clarvis/capability";
+import type { AgentCapability, AgentLoopContribution } from "@clarvis/capability";
 import { foldContributions } from "@clarvis/capability";
 import { type AgentResult, emptyResponseError, partialStructOf } from "./loop-shared.ts";
 import { withOutputTokenBudget } from "./output-budget.ts";
@@ -86,15 +86,6 @@ export interface RunAgentInput extends LoopCore {
   agentCapabilities?: readonly AgentCapability[];
   /** Builds an optional `beforeCheckpoint` hook bound to the agent build context. */
   buildBeforeCheckpoint?: (bc: LoopAgentBuildContext) => () => void;
-  /**
-   * Whether a finalize gate's nudge forces a tool call on the next iteration.
-   *
-   * @remarks Resolved from the agent profile's `orchestration.force_tool_on_nudge`
-   * and `CLARVIS_DEFAULT_FORCE_TOOL_ON_NUDGE`. A loop-level property, so it
-   * applies to every gate's nudge rather than only to the one capability that
-   * happened to implement it.
-   */
-  forceToolOnNudge?: boolean;
   /** A fixed compaction anchor used when no capability contributes one. */
   staticAnchor?: CompactionAnchor;
   /** The no-progress streak limit before the run ends in error. */
@@ -456,28 +447,25 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
   ];
 
   /**
-   * Set when a finalize gate has just nudged and this agent forces a tool after
-   * a nudge; consumed once by {@link takeForcedChoice}.
+   * Counts the finalize gates that refused a finish and nudged instead, and logs
+   * each one.
    *
-   * @remarks A nudge is precisely the moment forcing earns its keep: the model
-   * has just answered with prose where an action was required, and the note
-   * asking it to act is itself prose. It lives here rather than in whichever
-   * capability owned the gate because it is a property of the *agent's* loop —
-   * every gate's nudge deserves it, not only one capability's — and because leaving it
-   * to a capability meant only one capability ever got it.
-   *
-   * One-shot on purpose: leaving the choice forced would stop the model from
-   * ever finishing, since `submit_result` is a tool but a closing summary is not.
+   * @remarks A nudge is prose asking the model to act where an action was
+   *   required; the loop answers it by iterating with that note appended, and by
+   *   nothing else. It deliberately does not change the next call's tool choice:
+   *   forcing a call tells the model *that* it must call something, not *what*, so
+   *   it answers a wrong-tool problem with a different wrong tool or a malformed
+   *   argument the provider then rejects — and a provider that refuses a forced
+   *   choice outright (a thinking model, for one) turns the nudge into an HTTP
+   *   400 that ends the run. Exposing the catalog and letting the model choose is
+   *   what the gate's own note already asks for.
    */
-  let forceToolNextIteration = false;
   let nudgeCount = 0;
   const noteGateNudged = (gate: number, mode: FinalizeAttempt["mode"]): void => {
-    const forceToolNext = input.forceToolOnNudge === true;
-    if (forceToolNext) forceToolNextIteration = true;
     nudgeCount += 1;
     if (!levelEnabled(logger, "debug")) return;
     logger.debug(
-      { event: "gate.nudged", gate, mode, force_tool_next: forceToolNext, nudge_count: nudgeCount },
+      { event: "gate.nudged", gate, mode, nudge_count: nudgeCount },
       "a finalize gate refused the finish and nudged instead; the agent iterates again",
     );
   };
@@ -552,19 +540,6 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
     ...(guardAsk !== undefined && guardMaxEscalations > 0 ? { onGuardTrip } : {}),
     ...(folded.hooks.onTeardown ? { onTeardown: folded.hooks.onTeardown } : {}),
     ...(computeProgress ? { computeProgress } : {}),
-    takeForcedChoice: (): ToolChoice | undefined => {
-      if (forceToolNextIteration) {
-        forceToolNextIteration = false;
-        if (levelEnabled(logger, "debug")) {
-          logger.debug(
-            { event: "gate.force_tool_applied", nudge_count: nudgeCount },
-            "the iteration after a nudge is forced to call a tool; the choice is consumed once",
-          );
-        }
-        return "required";
-      }
-      return folded.forcedChoice?.();
-    },
     ...(beforeCheckpoint ? { beforeCheckpoint } : {}),
     ...(drainSteer ? { drainSteer } : {}),
     onAssistantText: (t) => {

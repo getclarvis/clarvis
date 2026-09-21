@@ -59,11 +59,9 @@ describe("foldContributions", () => {
     );
   });
 
-  it("rejects two contributions providing an anchor (or a forcedChoice)", () => {
+  it("rejects two contributions providing an anchor", () => {
     const anchor = (): undefined => undefined;
     expect(() => foldContributions([{ anchor }, { anchor }])).toThrow(/anchor/);
-    const forcedChoice = (): undefined => undefined;
-    expect(() => foldContributions([{ forcedChoice }, { forcedChoice }])).toThrow(/forcedChoice/);
     const single = foldContributions([{ anchor }, {}]);
     expect(single.anchor).toBe(anchor);
   });

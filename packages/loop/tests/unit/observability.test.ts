@@ -361,7 +361,6 @@ function agentInput(
     logger?: RecordingLogger;
     compaction?: CompactionConfig;
     agentCapabilities?: AgentCapability[];
-    forceToolOnNudge?: boolean;
   } = {},
 ): RunAgentInput {
   return {
@@ -384,7 +383,6 @@ function agentInput(
     emptyResponseAgent: "LLM",
     ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
     ...(opts.agentCapabilities !== undefined ? { agentCapabilities: opts.agentCapabilities } : {}),
-    ...(opts.forceToolOnNudge !== undefined ? { forceToolOnNudge: opts.forceToolOnNudge } : {}),
   };
 }
 
@@ -473,18 +471,14 @@ describe("gate.nudged", () => {
     }),
   });
 
-  it("names the gate, the mode, the count and whether a tool is forced next", async () => {
+  it("names the gate, the mode and the running nudge count", async () => {
     const logger = recordingLogger();
     await runAgent(
       agentInput(
         new MockLLM({
           script: [{ text: "one" }, { text: "two" }, { text: "three" }, { text: "four" }],
         }),
-        {
-          logger,
-          agentCapabilities: [nudgingCapability()],
-          forceToolOnNudge: true,
-        },
+        { logger, agentCapabilities: [nudgingCapability()] },
       ),
     );
 
@@ -494,29 +488,20 @@ describe("gate.nudged", () => {
     expect(nudges[0]?.fields).toMatchObject({
       gate: 0,
       mode: "text",
-      force_tool_next: true,
       nudge_count: 1,
       agent: "subagent",
     });
-    expect(logger.of("gate.force_tool_applied").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("reports force_tool_next false when the agent does not force after a nudge", async () => {
+  it("announces no tool-choice decision, because a nudge makes none", async () => {
     const logger = recordingLogger();
-    await runAgent(
-      agentInput(
-        new MockLLM({
-          script: [{ text: "one" }, { text: "two" }, { text: "three" }, { text: "four" }],
-        }),
-        {
-          logger,
-          agentCapabilities: [nudgingCapability()],
-        },
-      ),
-    );
+    const llm = new MockLLM({
+      script: [{ text: "one" }, { text: "two" }, { text: "three" }, { text: "four" }],
+    });
+    await runAgent(agentInput(llm, { logger, agentCapabilities: [nudgingCapability()] }));
 
-    expect(logger.of("gate.nudged")[0]?.fields.force_tool_next).toBe(false);
-    expect(logger.of("gate.force_tool_applied")).toHaveLength(0);
+    for (const line of logger.records) expect(line.fields).not.toHaveProperty("force_tool_next");
+    expect(llm.calls.every((call) => call.toolChoice === undefined)).toBe(true);
   });
 
   it("allocates no bindings when the level discards them, and none at all with no logger", async () => {
@@ -526,25 +511,17 @@ describe("gate.nudged", () => {
         new MockLLM({
           script: [{ text: "one" }, { text: "two" }, { text: "three" }, { text: "four" }],
         }),
-        {
-          logger: quiet,
-          agentCapabilities: [nudgingCapability()],
-          forceToolOnNudge: true,
-        },
+        { logger: quiet, agentCapabilities: [nudgingCapability()] },
       ),
     );
     expect(quiet.of("gate.nudged")).toHaveLength(0);
-    expect(quiet.of("gate.force_tool_applied")).toHaveLength(0);
 
     const res = await runAgent(
       agentInput(
         new MockLLM({
           script: [{ text: "one" }, { text: "two" }, { text: "three" }, { text: "four" }],
         }),
-        {
-          agentCapabilities: [nudgingCapability()],
-          forceToolOnNudge: true,
-        },
+        { agentCapabilities: [nudgingCapability()] },
       ),
     );
     expect(res.status).toBeDefined();

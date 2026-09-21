@@ -112,6 +112,8 @@ export { createMCPClientFactory } from "@clarvis/mcp-client";
 export type { MCPClientFactory, RuntimeEnvironment } from "@clarvis/mcp-client";
 export { isMcpRequestTimeout } from "@clarvis/mcp-client";
 export { ElicitTimeoutError } from "./runtime/tools/ask-user-tool.ts";
+export { createToolArgValidator } from "./runtime/tools/tool-arg-validator.ts";
+export type { ToolArgValidator } from "./runtime/tools/tool-arg-validator.ts";
 export type {
   Elicit,
   ElicitNoResponseReason,

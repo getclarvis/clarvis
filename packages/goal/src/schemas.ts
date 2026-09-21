@@ -180,7 +180,9 @@ export const goalStewardReviewSchema = z
       )
       .max(32)
       .default([]),
-    interruption_cause: z.enum(["timeout", "transport", "invalid_output", "cancelled"]).optional(),
+    interruption_cause: z
+      .enum(["timeout", "transport", "invalid_output", "cancelled", "usage_unknown"])
+      .optional(),
     usage: goalUsageSchema,
     reviewed_at: counter,
   })

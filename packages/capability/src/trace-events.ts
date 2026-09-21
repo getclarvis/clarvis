@@ -279,6 +279,7 @@ export type BuiltinTraceEvent =
       reason: RunEndedReason;
       code?: ErrorCode;
       disposition?: FinalizationDisposition;
+      message?: string;
     }
   | {
       type: "delegation_started";

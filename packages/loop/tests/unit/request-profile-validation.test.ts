@@ -31,9 +31,17 @@ describe("request profile schema", () => {
           prompt_mode: "summarize",
           prompt: "summarize",
         },
-        orchestration: { force_tool_on_nudge: true, capability_owned: "preserved" },
+        orchestration: { capability_owned: "preserved" },
       }).success,
     ).toBe(true);
+  });
+
+  it("parses a profile that still names the retired orchestration key, and drops the key", () => {
+    const parsed = agentProfileSchema.parse({
+      ...VALID_REQUEST.profiles[0]!,
+      orchestration: { force_tool_on_nudge: true, capability_owned: "preserved" },
+    });
+    expect(parsed.orchestration).toEqual({});
   });
 
   it("accepts a provider-native tagged model id", () => {
@@ -97,7 +105,7 @@ describe("request per-profile semantic rules", () => {
           ...VALID_REQUEST.profiles[0]!,
           model: "openai/model",
           can_spawn: ["worker"],
-          orchestration: { force_tool_on_nudge: true },
+          orchestration: {},
           reasoning_summary: "auto",
           call_timeout_ms: 10,
           retry: { max_retries: 2, max_retry_after_ms: 20 },
@@ -109,7 +117,7 @@ describe("request per-profile semantic rules", () => {
   });
 
   const semanticFailures: Array<[string, Partial<AgentProfile>]> = [
-    ["orchestration", { orchestration: { force_tool_on_nudge: true } }],
+    ["orchestration", { orchestration: {} }],
     ["reasoning provider", { reasoning_summary: "detailed" }],
     ["call timeout", { call_timeout_ms: 11 }],
     ["retry count", { retry: { max_retries: 3 } }],

@@ -13,7 +13,7 @@ import type {
 import type { DispatchPolicy, HandlerResult, HandlerVerdict } from "./loop-contract.ts";
 import type { Logger } from "@clarvis/capability";
 import type { NamespacedTool } from "@clarvis/capability";
-import type { LLMCallParams, LLMToolCall, ToolChoice } from "@clarvis/capability";
+import type { LLMCallParams, LLMToolCall } from "@clarvis/capability";
 import { reasoningOutputFloor } from "@clarvis/capability";
 import type { ConvergenceGuards, GuardTrip } from "../guards/convergence-guards.ts";
 import type {
@@ -165,8 +165,8 @@ export interface LoopCore {
  *
  * @remarks The `beforeIteration`/`afterDispatch`/`beforeCheckpoint`/`onTeardown`
  *   hooks fire at fixed points in {@link runAgentLoop}; `computeProgress`,
- *   `takeForcedChoice`, `drainSteer` and `onAssistantText` let a capability
- *   influence a single iteration.
+ *   `drainSteer` and `onAssistantText` let a capability influence a single
+ *   iteration.
  */
 export interface LoopDerived {
   ctx: LiveContext;
@@ -212,8 +212,6 @@ export interface LoopDerived {
    * — a capability may hold background work that must wind down before the run's
    * trace and accounting close over it. */
   onTeardown?: () => void | Promise<void>;
-  /** Yields a one-shot forced {@link ToolChoice} for the next model call, if a capability set one. */
-  takeForcedChoice?: () => ToolChoice | undefined;
   /** Notified of the assistant's latest text (used to track partial output). */
   onAssistantText?: (text: string) => void;
   /**
@@ -1065,13 +1063,11 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
       };
       const baseCall = buildModelCall(core, d, retryCtx);
       const streamingCall = withStreaming(baseCall);
-      const forcedChoice = d.takeForcedChoice?.();
       let modelOutcome;
       try {
         modelOutcome = await callModelWithRecovery({
           llm: target.llm,
           baseCall: streamingCall,
-          ...(forcedChoice !== undefined ? { forcedChoice } : {}),
           evict: () => {
             reachWatch.observeOverflow(ctx.estimateTokens());
             return ctx.forceEvictOldest();

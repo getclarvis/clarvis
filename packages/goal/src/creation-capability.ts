@@ -32,6 +32,7 @@ import {
 } from "./tools.ts";
 import { absentReviewContext, checkGoalSnapshot } from "./runtime-validation.ts";
 import { GOAL_CAPABILITY_NAME } from "./constants.ts";
+import { stewardInterruptionOutcome } from "./agent/steward-types.ts";
 
 const guardTripCodes = [
   "goal_blocked",
@@ -284,10 +285,8 @@ function createCreationGate(
               kind: "nudge",
               note: `[goal steward ${decision.kind === "needs_evidence" ? "clarification" : "correction"}] ${decision.next_step}`,
             };
-          return {
-            kind: "terminal",
-            result: errorResult(bc, decision.reason, "Goal Steward could not verify completion"),
-          };
+          const outcome = stewardInterruptionOutcome(decision);
+          return { kind: "terminal", result: errorResult(bc, outcome.code, outcome.reason) };
         }
         if (
           !state.finalNudged &&

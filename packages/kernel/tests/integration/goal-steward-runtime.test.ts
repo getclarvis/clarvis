@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createGoalFileHostFixture } from "../helpers/goal-file-host.ts";
+import { createGoalFileHostFixture, imposesToolChoice } from "../helpers/goal-file-host.ts";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -472,6 +472,316 @@ it("keeps raw command receipts out of the conversational Steward frame", async (
     );
     await f.until(() => f.host.stats().runs === 0);
     expect(f.errors).toEqual([]);
+  } finally {
+    await f.close();
+  }
+});
+
+/**
+ * The Steward review is a normal run of the real loop, and its result gate may
+ * refuse a submission and nudge it. That nudge used to be answered by forcing a
+ * tool choice on the very next iteration — the recovery the gate exists for then
+ * became an HTTP 400 on any provider that refuses a forced choice, which is what
+ * a thinking model does. Every request these fixtures receive is checked for an
+ * imposed choice, and the fixture itself answers one with that 400, so this file
+ * is also the canary against reintroducing the imposition.
+ */
+/**
+ * Whether every request left the tool choice to the model.
+ *
+ * @remarks The catalog itself makes the provider layer send `"auto"`, so this is
+ *   stated as "nothing was imposed": `"required"` or a named function would both
+ *   fail the check, exactly as the fixture's own provider refuses them.
+ */
+function requestsImposeNothing(f: {
+  requests: Array<{ tool_choice?: unknown }>;
+  stewardRequests: Array<{ tool_choice?: unknown }>;
+}): boolean {
+  return [...f.requests, ...f.stewardRequests].every(
+    ({ tool_choice: choice }) => choice === undefined || choice === "auto" || choice === "none",
+  );
+}
+
+describe("Goal Steward review protocol recovery", () => {
+  const definition = {
+    scope: "definition",
+    verdict: "satisfied",
+    rationale: "Definition is current",
+    evidence_ids: [],
+  };
+  const objective = {
+    scope: "objective",
+    verdict: "satisfied",
+    rationale: "Answer observed",
+    evidence_ids: [],
+  };
+
+  it("completes after the host rejects a reserved target and the Steward corrects", async () => {
+    const f = await createGoalFileHostFixture({ plansMode: "off" });
+    try {
+      await writeFile(join(f.workspaceRoot, "answer.txt"), "The answer is 42.\n");
+      f.setResponder(async () => {
+        if (f.requests.length === 1)
+          return {
+            name: "read_file",
+            arguments: { path: "answer.txt" },
+            commentary: "Inspecting the answer",
+          };
+        if (f.requests.length === 2)
+          return {
+            name: "update_goal",
+            arguments: {
+              update: {
+                action: "candidate",
+                summary: "Answer ready",
+                assessments: [
+                  {
+                    criterion_id: "objective",
+                    kind: "qualitative",
+                    justification: "Answer inspected",
+                    evidence_ids: [],
+                  },
+                ],
+              },
+            },
+          };
+        return { text: "The answer is 42." };
+      });
+      f.setStewardResponder(async () => {
+        if (f.stewardRequests.length === 1)
+          return {
+            name: "submit_result",
+            arguments: {
+              decision: "completion",
+              verdict: "achieved",
+              summary: "Claimed",
+              assessments: [
+                definition,
+                objective,
+                {
+                  scope: "criterion",
+                  criterion_id: "a-host-reserved-target",
+                  verdict: "satisfied",
+                  rationale: "Judged a target the host never supplied",
+                  evidence_ids: [],
+                },
+              ],
+            },
+          };
+        return {
+          name: "submit_result",
+          arguments: {
+            decision: "completion",
+            verdict: "achieved",
+            summary: "Verified against the supplied targets",
+            assessments: [definition, objective],
+          },
+        };
+      });
+      await f.client.goals.control({
+        session_id: "conversation",
+        expected_revision: 0,
+        operation_id: "create",
+        action: {
+          kind: "create",
+          objective: "Provide the answer",
+          limits: { max_net_tokens: 10000 },
+        },
+      });
+      await f.until(
+        async () => (await f.client.goals.get("conversation")).state.current?.status === "complete",
+      );
+      await f.until(() => f.host.stats().runs === 0);
+
+      expect(f.errors).toEqual([]);
+      expect(requestsImposeNothing(f)).toBe(true);
+      // Every request that carried tools also carries the provider layer's own
+      // `"auto"`, so the check above observes something real rather than a field
+      // nobody sends; an imposed `"required"` or a named function lands here.
+      expect([
+        ...new Set(
+          [...f.requests, ...f.stewardRequests]
+            .map((request) => request.tool_choice)
+            .filter((choice) => choice !== undefined),
+        ),
+      ]).toEqual(["auto"]);
+      expect(f.stewardRequests).toHaveLength(2);
+      const correction = JSON.stringify(f.stewardRequests[1]!.messages);
+      expect(correction).toContain("Review rejected");
+      const goal = (await f.client.goals.get("conversation")).state.current!;
+      expect(goal.runs[0]!.steward_reviews!.map((review) => review.decision)).toEqual(["achieved"]);
+      expect(goal.steward!.status).toBe("verified");
+      expect(goal.steward!.consumption.usage_unknown ?? false).toBe(false);
+      expect(goal.steward!.consumption.net_tokens).toBeGreaterThan(0);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("blocks completion when the provider never reports the review's consumption", async () => {
+    const f = await createGoalFileHostFixture({ plansMode: "off" });
+    try {
+      await writeFile(join(f.workspaceRoot, "answer.txt"), "The answer is 42.\n");
+      f.setResponder(async () => {
+        if (f.requests.length === 1)
+          return { name: "read_file", arguments: { path: "answer.txt" } };
+        if (f.requests.length === 2)
+          return {
+            name: "update_goal",
+            arguments: {
+              update: {
+                action: "candidate",
+                summary: "Answer ready",
+                assessments: [
+                  {
+                    criterion_id: "objective",
+                    kind: "qualitative",
+                    justification: "Answer inspected",
+                    evidence_ids: [],
+                  },
+                ],
+              },
+            },
+          };
+        return { text: "The answer is 42." };
+      });
+      f.setStewardResponder(async () => ({
+        name: "submit_result",
+        arguments: {
+          decision: "completion",
+          verdict: "achieved",
+          summary: "Verified, but billed by nobody",
+          assessments: [definition, objective],
+        },
+        usage: "missing",
+      }));
+      await f.client.goals.control({
+        session_id: "conversation",
+        expected_revision: 0,
+        operation_id: "create",
+        action: {
+          kind: "create",
+          objective: "Provide the answer",
+          limits: { max_net_tokens: 10000 },
+        },
+      });
+      await f.until(() => f.host.stats().runs === 0);
+
+      const goal = (await f.client.goals.get("conversation")).state.current!;
+      // An `achieved` review the host cannot charge still cannot conclude the Goal,
+      // and the record says why: unknown consumption, not a transport fault.
+      expect(goal.status).not.toBe("complete");
+      expect(goal.runs.at(-1)!.steward_reviews!.at(-1)).toMatchObject({
+        decision: "interrupted",
+        interruption_cause: "usage_unknown",
+      });
+      expect(goal.steward!.consumption.usage_unknown).toBe(true);
+      expect(requestsImposeNothing(f)).toBe(true);
+      // The same cause reaches the client, live and on replay, instead of the run
+      // category it was filed under.
+      const ended = f.host.kernel
+        .readRunTrace(goal.runs.at(-1)!.execution_id)
+        ?.findLast((event) => event.type === "run_ended");
+      expect(ended).toMatchObject({
+        type: "run_ended",
+        reason: "guard_trip",
+        code: "goal_steward_failed",
+        message: "the Steward review's token consumption could not be determined",
+      });
+    } finally {
+      await f.close();
+    }
+  });
+});
+
+it("the fixture's provider refuses exactly an imposed tool choice", () => {
+  const base = { messages: [], prompt_cache_key: "conversation_goal-steward" };
+  expect(imposesToolChoice(base)).toBe(false);
+  expect(imposesToolChoice({ ...base, tool_choice: "auto" })).toBe(false);
+  expect(imposesToolChoice({ ...base, tool_choice: "none" })).toBe(false);
+  expect(imposesToolChoice({ ...base, tool_choice: "required" })).toBe(true);
+  expect(
+    imposesToolChoice({
+      ...base,
+      tool_choice: { type: "function", function: { name: "set_title" } },
+    }),
+  ).toBe(true);
+});
+
+it("gives the review exactly one correction before the Goal is left unresolved", async () => {
+  const f = await createGoalFileHostFixture({ plansMode: "off" });
+  try {
+    await writeFile(join(f.workspaceRoot, "answer.txt"), "The answer is 42.\n");
+    f.setResponder(async () => {
+      if (f.requests.length === 1) return { name: "read_file", arguments: { path: "answer.txt" } };
+      if (f.requests.length === 2)
+        return {
+          name: "update_goal",
+          arguments: {
+            update: {
+              action: "candidate",
+              summary: "Answer ready",
+              assessments: [
+                {
+                  criterion_id: "objective",
+                  kind: "qualitative",
+                  justification: "Answer inspected",
+                  evidence_ids: [],
+                },
+              ],
+            },
+          },
+        };
+      return { text: "The answer is 42." };
+    });
+    // The reserved target is never a valid assessment, so the one correction the
+    // gate grants cannot rescue the review and its second refusal is terminal.
+    f.setStewardResponder(async () => ({
+      name: "submit_result",
+      arguments: {
+        decision: "completion",
+        verdict: "achieved",
+        summary: "Judged a target the host supplies no way to verify",
+        assessments: [
+          {
+            scope: "definition",
+            verdict: "satisfied",
+            rationale: "Definition is current",
+            evidence_ids: [],
+          },
+          {
+            scope: "objective",
+            verdict: "satisfied",
+            rationale: "Answer observed",
+            evidence_ids: [],
+          },
+          {
+            scope: "criterion",
+            criterion_id: "a-host-reserved-target",
+            verdict: "satisfied",
+            rationale: "Judged a target outside the supplied set",
+            evidence_ids: [],
+          },
+        ],
+      },
+    }));
+    await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "create",
+      action: {
+        kind: "create",
+        objective: "Provide the answer",
+        limits: { max_net_tokens: 10000 },
+      },
+    });
+    await f.until(() => f.host.stats().runs === 0);
+
+    const goal = (await f.client.goals.get("conversation")).state.current!;
+    expect(goal.status).not.toBe("complete");
+    expect(f.stewardRequests).toHaveLength(2);
+    expect(requestsImposeNothing(f)).toBe(true);
+    expect(goal.runs.at(-1)!.steward_reviews!.at(-1)!.decision).toBe("interrupted");
   } finally {
     await f.close();
   }

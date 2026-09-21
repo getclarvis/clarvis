@@ -269,9 +269,6 @@ export function createEntryInput(p: EntryInputParams): EntryInputBuilder {
       spillToolResult,
       registry,
       stagnationThreshold: entryResolved.stagnationThreshold,
-      forceToolOnNudge:
-        entryProfile.orchestration?.force_tool_on_nudge ??
-        deps.env.CLARVIS_DEFAULT_FORCE_TOOL_ON_NUDGE,
       stagnationSoftThreshold: deps.env.CLARVIS_DEFAULT_STAGNATION_SOFT_THRESHOLD,
       ...(request.guard_escalation === true && deps.elicit !== undefined
         ? {

@@ -429,6 +429,18 @@ export type RunEvent =
       /** Successful stage disposition, preserved by live and restored transcripts. */
       disposition?: "final" | "checkpoint";
       /**
+       * The failure's own message, when the run ended on one.
+       *
+       * @remarks Persisted beside `code` for the same reason, and with the same
+       *   history: the transcript's explanation of a failed run came from the run
+       *   envelope on the live path and was therefore absent when a session was
+       *   rebuilt from its trace. Replay fell back to `reason`, which is the
+       *   *category* — every capability-declared guard code collapses into
+       *   `guard_trip` — so the restored run explained itself with a word that
+       *   says nothing about this failure. Sanitized and bounded before recording.
+       */
+      message?: string;
+      /**
        * The failure's code, when the run ended on one.
        *
        * @remarks Already recorded on the engine's own `run_ended` entry and, until

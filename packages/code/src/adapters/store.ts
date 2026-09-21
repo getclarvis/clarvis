@@ -929,7 +929,9 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
       }));
       return;
     }
-    const bounded = boundTranscriptText(`${error.code}: ${error.message}`);
+    const bounded = boundTranscriptText(
+      error.message === error.code ? error.code : `${error.code}: ${error.message}`,
+    );
     if (
       state.nodes.some(
         (n) => n.kind === "error" && n.key.startsWith(prefix) && n.text === bounded.text,
@@ -1797,10 +1799,17 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
           // A rehydrated session is rebuilt from the persisted trace alone, and
           // `appendRunFailure` — the live path's error node — is a runtime
           // append that never reaches it. The trace does carry the failure's
-          // code, so a restored run says why it ended rather than only that it
-          // did.
+          // code and its message, so a restored run says why it ended rather
+          // than only that it did — and says what the live path said, instead
+          // of falling back to `reason`, which is the *category*: every
+          // capability-declared guard code collapses into `guard_trip`, and a
+          // category is not a cause. A trace written without the message falls
+          // back to the code, which is at least specific.
           if (!ok && event.code !== undefined && event.code !== "goal_blocked")
-            appendRunFailure(execId, { code: event.code, message: event.reason ?? "run failed" });
+            appendRunFailure(execId, {
+              code: event.code,
+              message: event.message ?? event.code,
+            });
           settleRun(execId, ok);
           const index = upsert(ns("run"), () => ({
             kind: "run",

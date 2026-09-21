@@ -16,11 +16,31 @@ export interface GoalFixtureRequest {
   tools?: Array<{ function: { name: string } }>;
   prompt_cache_key: string;
   stream?: boolean;
+  /**
+   * The provider's tool-choice parameter, exactly as it arrived on the wire.
+   *
+   * @remarks Recorded rather than merely tolerated: the product must never
+   *   impose a tool, and asserting on the request the provider actually received
+   *   is the only place that can be established.
+   */
+  tool_choice?: unknown;
 }
 
 export type GoalFixtureResponse = (
   { text: string } | { name: string; arguments: Record<string, unknown> }
 ) & { usage?: "missing" | "no_cache"; commentary?: string };
+
+/**
+ * Whether a request imposed a tool choice rather than leaving it automatic.
+ *
+ * @remarks `"auto"` and `"none"` are the model's ordinary options and are not
+ *   an imposition; anything else — `"required"`, or a named function — tells the
+ *   model *that* it must call something, which is what this fixture refuses.
+ */
+export function imposesToolChoice(body: GoalFixtureRequest): boolean {
+  const choice = body.tool_choice;
+  return choice !== undefined && choice !== "auto" && choice !== "none";
+}
 
 /** Real file host, IPC, provider HTTP and SDK; only the provider's responses are controlled. */
 export async function createGoalFileHostFixture(
@@ -78,6 +98,18 @@ export async function createGoalFileHostFixture(
           const body = (await request.json()) as GoalFixtureRequest;
           const steward = body.prompt_cache_key?.endsWith("_goal-steward") === true;
           (steward ? stewardRequests : requests).push(body);
+          // The controlled provider behaves like a thinking model: it refuses a
+          // forced tool choice outright, with the same HTTP 400 such a provider
+          // answered the Steward's post-nudge iteration with. Nothing in the
+          // product may impose a choice, so this reproduces that failure and
+          // makes every journey through this fixture a canary for its return.
+          if (imposesToolChoice(body)) {
+            errors.push(`forced tool choice rejected: ${JSON.stringify(body.tool_choice)}`);
+            return Response.json(
+              { error: { message: "Thinking mode does not support this tool_choice" } },
+              { status: 400 },
+            );
+          }
           if (
             requests.length + stewardRequests.length > 40 ||
             performance.now() - started > timeoutMs

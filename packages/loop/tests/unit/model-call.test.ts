@@ -9,7 +9,6 @@ import {
 import { createTrace } from "@clarvis/trace";
 import { contentToText } from "@clarvis/capability";
 import { runAgent, type RunAgentInput } from "../../src/runtime/loop/run-agent.ts";
-import type { AgentResult } from "../../src/runtime/loop/loop-shared.ts";
 import { createTokenLedger, createIterationCounter } from "../../src/runtime/budget/index.ts";
 import { buildRegistry } from "../../src/runtime/tools/mcp-registry.ts";
 import { compileResultContract } from "../../src/runtime/tools/index.ts";
@@ -36,16 +35,6 @@ const baseCall: LLMCallParams = {
   tools: [],
   provider: "anthropic",
 };
-
-const okResult: LLMCallResult = {
-  text: "done",
-  usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
-};
-
-const clientError = (): ProviderError =>
-  new ProviderError("invalid tool choice", { kind: "client", status: 400 });
-
-const CANCELLED: AgentResult = { status: "cancelled", partialText: "" };
 
 const SCHEMA = {
   type: "object",
@@ -99,72 +88,6 @@ const overflow = (): ProviderError =>
 
 const invalidSubmit = (age: number) => ({
   toolCalls: [{ name: "submit_result", arguments: { age } }],
-});
-
-describe("callModelWithRecovery forced-choice client-error retry", () => {
-  it("retries with the bare base call and records the original forced-choice error", async () => {
-    const forcedError = clientError();
-    const llm = new FakeLLM([{ throw: forcedError }, { return: okResult }]);
-    const recordError = vi.fn();
-    const outcome = await callModelWithRecovery({
-      llm,
-      baseCall,
-      forcedChoice: "required",
-      evict: () => undefined,
-      trace: createTrace(),
-      maybeCancelled: () => null,
-      recordError,
-    });
-    expect(outcome).toEqual({ ok: true, result: okResult });
-    expect(llm.calls).toHaveLength(2);
-    expect(llm.calls[0]!.toolChoice).toBe("required");
-    expect(llm.calls[1]!.toolChoice).toBeUndefined();
-    expect(recordError).toHaveBeenCalledTimes(1);
-    expect(recordError).toHaveBeenCalledWith(forcedError);
-  });
-
-  it("records both errors and rethrows when the forced-error retry also throws", async () => {
-    const forcedError = clientError();
-    const retryError = clientError();
-    const llm = new FakeLLM([{ throw: forcedError }, { throw: retryError }]);
-    const recordError = vi.fn();
-    await expect(
-      callModelWithRecovery({
-        llm,
-        baseCall,
-        forcedChoice: "required",
-        evict: () => undefined,
-        trace: createTrace(),
-        maybeCancelled: () => null,
-        recordError,
-      }),
-    ).rejects.toBe(retryError);
-    expect(llm.calls).toHaveLength(2);
-    expect(recordError).toHaveBeenCalledTimes(2);
-    expect(recordError).toHaveBeenNthCalledWith(1, forcedError);
-    expect(recordError).toHaveBeenNthCalledWith(2, retryError);
-  });
-
-  it("returns cancelled when cancellation is observed after the retry throws", async () => {
-    const llm = new FakeLLM([{ throw: clientError() }, { throw: clientError() }]);
-    const recordError = vi.fn();
-    let observed = 0;
-    const maybeCancelled = (): AgentResult | null => {
-      observed += 1;
-      return observed >= 2 ? CANCELLED : null;
-    };
-    const outcome = await callModelWithRecovery({
-      llm,
-      baseCall,
-      forcedChoice: "required",
-      evict: () => undefined,
-      trace: createTrace(),
-      maybeCancelled,
-      recordError,
-    });
-    expect(outcome).toEqual({ ok: false, cancelled: CANCELLED });
-    expect(recordError).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe("context_overflow recovery", () => {

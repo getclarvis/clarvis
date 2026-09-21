@@ -117,6 +117,7 @@ const RUN_EVENT_SCHEMAS = {
       status: runStatus,
       reason: text.optional(),
       code: text.optional(),
+      message: text.optional(),
       disposition: z.enum(["final", "checkpoint"]).optional(),
     })
     .strict()

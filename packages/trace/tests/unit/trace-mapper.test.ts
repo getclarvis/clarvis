@@ -714,16 +714,26 @@ describe("trace-mapper — lifecycle events", () => {
     expect(ev.occurred_at).toBe(ANCHOR + 3);
   });
 
-  it("carries run_ended reason, with code only for the non-clean reasons", () => {
+  it("carries run_ended reason, with code and message only for the non-clean reasons", () => {
     const entries: TraceEntry[] = [
       { at: 1, kind: "run_ended", detail: { reason: "completed" } },
-      { at: 2, kind: "run_ended", detail: { reason: "guard_trip", code: "tool_failure_loop" } },
+      {
+        at: 2,
+        kind: "run_ended",
+        detail: {
+          reason: "guard_trip",
+          code: "tool_failure_loop",
+          message: "the review failed in transit",
+        },
+      },
     ];
     const [clean, guard] = byType(mapTrace(entries, ANCHOR).events, "run_ended");
     expect(clean!.reason).toBe("completed");
     expect("code" in clean!).toBe(false);
+    expect("message" in clean!).toBe(false);
     expect(guard!.reason).toBe("guard_trip");
     expect(guard!.code).toBe("tool_failure_loop");
+    expect(guard!.message).toBe("the review failed in transit");
     expect(guard!.occurred_at).toBe(ANCHOR + 2);
   });
 

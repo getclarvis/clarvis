@@ -960,12 +960,24 @@ it("routes Steward completion decisions and respects pending operator steering",
     kind: "nudge",
     note: "[goal steward correction] Run tests",
   });
+  // The reason code names the domain failure; only the cause says why it
+  // happened. The terminal message carries the cause, so a transcript explains
+  // the run instead of restating the category the engine filed it under.
+  const causes = [
+    ["timeout", "the Steward review did not finish in time"],
+    ["transport", "the Steward review failed in transit"],
+    ["cancelled", "the Steward review was cancelled"],
+    ["invalid_output", "the Steward review returned an unusable result"],
+    ["usage_unknown", "the Steward review's token consumption could not be determined"],
+  ] as const;
   for (const reason of ["goal_steward_failed", "goal_steward_inconclusive"]) {
-    decision = { kind: "interrupted", review_id: "review", reason, cause: "transport" };
-    expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({
-      kind: "terminal",
-      result: { error: { code: reason } },
-    });
+    for (const [cause, message] of causes) {
+      decision = { kind: "interrupted", review_id: "review", reason, cause };
+      expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({
+        kind: "terminal",
+        result: { error: { code: reason, message } },
+      });
+    }
   }
   throws = true;
   expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({

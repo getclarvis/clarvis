@@ -226,7 +226,7 @@ fifth is a local module:
 | `collectCapabilityToolMetadata` | `packages/loop/src/runtime/capability-tool-metadata.ts` | folds every **registered** `Capability`'s `reservedWireNames`/`toolEffects` (last-wins on effects) regardless of whether it activates this run |
 | `projected` (re-export) | `packages/loop/src/runtime/capability-event.ts` | re-exports `@clarvis/capability`'s `projected` under one stable engine-side import path |
 | `BUILTIN_CAPABILITY_NAMES` | `packages/loop/src/runtime/orchestrator.ts` | `{ tools: "tools", skills: "skills", hooks: HOOKS_CAPABILITY_NAME }` — a hand-duplicated literal (see §5, INV-068) |
-| `foldContributions` | `packages/capability/src/compose.ts` | merges per-agent `AgentLoopContribution[]` into tools/handlers/gates/anchor/forcedChoice/outputBudget/hooks — owned by `@clarvis/capability`, delegated to [capability-contract-and-vocabulary](../foundations/capability.md) |
+| `foldContributions` | `packages/capability/src/compose.ts` | merges per-agent `AgentLoopContribution[]` into tools/handlers/gates/anchor/outputBudget/hooks — owned by `@clarvis/capability`, delegated to [capability-contract-and-vocabulary](../foundations/capability.md) |
 
 `collectCapabilityToolMetadata`'s last-wins effect merge is a deliberate contrast, not an
 inconsistency, with the first-match handler-dispatch order the rest of this document describes: its
@@ -530,7 +530,7 @@ Test: iteration-boundary timeout/cancellation in
 `awaits iteration preparation and honors` in
 [run-agent.test.ts](../../packages/loop/tests/unit/run-agent.test.ts).
 
-### 4.4 Finalize gates and `force_tool_on_nudge`
+### 4.4 Finalize gates
 
 `runGates` (`packages/loop/src/runtime/loop/loop-contract.ts`) runs the ordered `gates`
 array, short-circuiting on the first non-`pass` `GateOutcome`, returning the gate's ordinal (its
@@ -538,19 +538,20 @@ only identity — `FinalizeGate` carries no name, `packages/loop/src/runtime/loo
 
 - `runGates(gates, {mode:"submit"...})` is called on a structured-submit attempt and
   `runGates(gates, {mode:"text", text})` on a text-only attempt (`packages/loop/src/runtime/loop/run-agent.ts`).
-- A `"nudge"` outcome calls `noteGateNudged(gate, mode)` (`packages/loop/src/runtime/loop/run-agent.ts`), which — **if**
-  `input.forceToolOnNudge === true` — sets a one-shot `forceToolNextIteration` flag, consumed once
-  by `takeForcedChoice` on a later iteration (`packages/loop/src/runtime/loop/run-agent.ts`, doc comment).
-- `forceToolOnNudge` is resolved as `entryProfile.orchestration?.force_tool_on_nudge ??
-  deps.env.CLARVIS_DEFAULT_FORCE_TOOL_ON_NUDGE` (`packages/loop/src/runtime/entry-inputs.ts`);
-  the field itself is `OrchestrationConfigInput.force_tool_on_nudge`
-  (`packages/capability/src/api.ts`, whose own doc comment states the same loop-not-capability
-  rationale: "a property of the agent's own loop, applied by the loop rather than by whichever
-  capability raised the nudge"); the env default is `boolFromEnv(true)`
-  (`packages/capability/src/env.ts`). It is a **loop-level** property applied to every gate's
-  nudge, not a capability-specific one — the doc comment states this is deliberately not owned by
-  "whichever capability owned the gate... because leaving it to a capability meant only one
-  capability ever got it" (`packages/loop/src/runtime/loop/run-agent.ts`).
+- A `"nudge"` outcome calls `noteGateNudged(gate, mode)` (`packages/loop/src/runtime/loop/run-agent.ts`),
+  which counts it and logs `gate.nudged` with the gate ordinal, the attempt mode and the running
+  count. A nudge **never** changes the next model call's tool choice. The loop answers it by
+  iterating with the gate's own note appended — `ctx.appendNote` on a text attempt, the failed
+  tool envelope on a submit — and the catalog exposed, so the model decides which call was
+  missing; the note says what was wrong, and only the model can say which tool fixes it. Forcing
+  the choice answered a wrong-*tool* problem with a *different* wrong tool, and against a provider
+  that refuses a forced choice outright (a thinking model, for one) it turned the nudge into an
+  HTTP 400 that ended the run instead of recovering it. There is no profile field and no
+  environment default that can re-arm it: `OrchestrationConfigInput` owns no key
+  (`packages/capability/src/api.ts`). Production: `noteGateNudged` in
+  [run-agent.ts](../../packages/loop/src/runtime/loop/run-agent.ts). Test: "a finalize-gate nudge
+  never forces a tool call" in
+  [lifecycle-finalize-wiring.test.ts](../../packages/loop/tests/component/lifecycle-finalize-wiring.test.ts).
 - `fastAcceptSubmit` (only when a structured `contract` is present) skips the whole gate sweep for a
   lone `submit_result` call when **every** gate's `fastAcceptOk?.() ?? true` holds
   (`packages/loop/src/runtime/loop/run-agent.ts`) — a gate that declares no `fastAcceptOk` is treated as trivially passable, so
@@ -727,7 +728,7 @@ their own:**
 | A capability's extension-admitted lifecycle method, `onRunEnd`, or `finalizeRun` hits a saturated host gate | The `ExtensionCallUnavailableError` propagates to the owning caller; this wrapper supplies no fallback | `packages/loop/src/runtime/extension-admission.ts` |
 | A capability's `finalizeRun` throws or exceeds `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` | Its state slot is omitted from the run record; the run itself is unaffected | `packages/loop/src/runtime/execute-run.ts` |
 | Two contributions declare the same tool wire name | `foldContributions` **throws** synchronously | `packages/capability/src/compose.ts` |
-| More than one contribution supplies `anchor` or `forcedChoice` | `foldContributions` throws (per its own doc comment, `packages/capability/src/compose.ts`) | `packages/capability/src/compose.ts` |
+| More than one contribution supplies `anchor` or `outputBudget` | `foldContributions` throws (per its own doc comment, `packages/capability/src/compose.ts`) | `packages/capability/src/compose.ts` |
 | A registered `CapabilitySettingsSpec.key` collides with a built-in block | `settingsSchemaFor` throws at schema-build time | `packages/loop/src/settings/capability-settings.ts` |
 | A registered spec declares plugin-manifest surface | `settingsSchemaFor` throws at registration | `packages/loop/src/settings/capability-settings.ts` |
 

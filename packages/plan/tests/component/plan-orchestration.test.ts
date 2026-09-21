@@ -7,9 +7,8 @@
  * `tests/unit/delegation-handler.test.ts`, driving the planning half of
  * `buildDelegationOrchestration` directly. They move here with the rest of
  * file-backed planning; the delegation-only half of that file (background
- * spawn, the `TaskTrackingPort` seam, `force_tool_on_nudge`) stayed in the
- * loop, since none of it is this package's concern — `force_tool_on_nudge` in
- * particular is the loop's own finalize-gate behaviour, not a capability's.
+ * spawn, the `TaskTrackingPort` seam) stayed in the
+ * loop, since none of it is this package's concern.
  *
  * `@clarvis/plan` must never import `@clarvis/loop`, so where the deleted
  * suite drove a call through `delegate_task`'s own handler, these drive the

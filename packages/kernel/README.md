@@ -226,7 +226,8 @@ work agent's explanatory report and any pending question/answer. It does not inc
 results, files, evidence catalogs, plan dumps or repository instructions. The Steward assesses
 declared evidence; it is not an independent artifact audit. `needs_evidence` returns a specific
 question to the same work run through the existing gate. Technical interruption is persisted with a
-typed cause rather than left pending.
+typed cause rather than left pending, and unknown consumption is its own cause (`usage_unknown`)
+rather than a transport fault.
 Session accounting and
 Goal Steward state settle atomically, separately from the unchanged pursuit allowance. Compatible
 evaluations continue their private persisted prefix; observation failure degrades monitoring while

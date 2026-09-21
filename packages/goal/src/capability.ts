@@ -19,6 +19,24 @@ import { CREATE_GOAL, GET_GOAL, UPDATE_GOAL, buildGoalTools, getGoalInputSchema 
 import { absentReviewContext, checkGoalSnapshot } from "./runtime-validation.ts";
 import { createGoalCreationRunCapability } from "./creation-capability.ts";
 import { GOAL_CAPABILITY_NAME } from "./constants.ts";
+import type { GoalStewardInterruptionCause } from "./agent/steward-types.ts";
+
+/**
+ * Operator-facing text for each technical interruption cause.
+ *
+ * @remarks Fixed engine prose rather than a provider string, so the transcript
+ *   can name the cause without publishing a payload, a reasoning trace or a raw
+ *   provider error — and without the reason code standing in for an explanation
+ *   it does not carry. `goal_steward_failed` covers a timeout, a transport fault
+ *   and an unaccountable review alike; only this text tells them apart.
+ */
+const STEWARD_INTERRUPTION_TEXT: Record<GoalStewardInterruptionCause, string> = {
+  timeout: "the Steward review did not finish in time",
+  transport: "the Steward review failed in transit",
+  cancelled: "the Steward review was cancelled",
+  invalid_output: "the Steward review returned an unusable result",
+  usage_unknown: "the Steward review's token consumption could not be determined",
+};
 
 export { GOAL_CAPABILITY_NAME } from "./constants.ts";
 const runtimePorts = new WeakMap<Capability, GoalRuntimePort>();
@@ -312,7 +330,7 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                                 decision.reason === "goal_steward_failed"
                                   ? "goal_steward_failed"
                                   : "goal_steward_inconclusive",
-                                decision.reason,
+                                STEWARD_INTERRUPTION_TEXT[decision.cause],
                               ),
                             };
                           } catch {

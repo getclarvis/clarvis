@@ -103,7 +103,6 @@ const baseEnvSchema = z.object({
   CLARVIS_DEFAULT_COMPACTION_TARGET_FRACTION: z.coerce.number().gt(0).max(1).default(0.5),
   CLARVIS_DEFAULT_COMPACTION_MAX_RESULT_CHARS: positiveInt.optional(),
   CLARVIS_DEFAULT_COMPACTION_PRESERVE_RECENT_TOKENS: nonnegativeInt.optional(),
-  CLARVIS_DEFAULT_FORCE_TOOL_ON_NUDGE: boolFromEnv(true),
   CLARVIS_DEFAULT_PENDING_TASK_NUDGES: nonnegativeInt.default(DEFAULT_PENDING_TASK_NUDGES),
   CLARVIS_STREAM: boolFromEnv(true),
 

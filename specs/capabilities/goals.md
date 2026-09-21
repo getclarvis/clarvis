@@ -395,8 +395,11 @@ satisfied on that report; `needs_work` returns an actionable correction to the s
 through the existing finalize-gate nudge so the work agent can verify or correct with its normal
 tools. Human-acceptance criteria still require actual human acceptance. Malformed, failed,
 unknown-usage or stale evaluations cannot complete the Goal. Technical interruption is persisted as
-`interrupted` with a typed cause (`timeout`, `transport`, `invalid_output`, `cancelled`) and is
-not `needs_work` or a still-pending review. Final failures retain the domain codes
+`interrupted` with a typed cause (`timeout`, `transport`, `invalid_output`, `cancelled`,
+`usage_unknown`) and is not `needs_work` or a still-pending review. `usage_unknown` is its own
+cause, not a transport fault: the evaluation did answer — possibly with a valid `achieved` — but
+its consumption could not be determined, and the Goal cannot be concluded on a review the host
+cannot charge. Final failures retain the domain codes
 `goal_steward_failed` or `goal_steward_inconclusive`. Cancellation during result validation remains
 cancellation.
 

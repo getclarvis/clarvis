@@ -539,19 +539,19 @@ free to change. Three correlation scopes are bound with `bind()`: the run
 `subagent_instance_id`) in `runAgent`, and `iteration` as a plain field — a child logger per
 iteration would allocate per iteration for nothing.
 
-| Level   | `event`                                   | Fields                                                                                            |
-| ------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `warn`  | `context.prefix_break`                    | `index`, `entries`, `char_offset`, `chars_recharged`, `cause`                                     |
-| `warn`  | `compaction.summarizer_failed`            | `mode`, `reason`, `fell_back`, `cause`                                                            |
-| `warn`  | `compaction.unreachable`                  | `declared_window_tokens`, `high_water_tokens`, `observed_tokens`                                  |
-| `warn`  | `tool.args_validation_failed_open`        | `tool`, `reason`                                                                                  |
-| `warn`  | `iteration.cache` (escalated)             | `iteration`, `input_tokens`, `cached_tokens`, `ratio`                                             |
-| `info`  | `run.composed`                            | `capabilities`, `builtins`, `tools`, `mcp_servers`, `entry_agent`, `model`, `mode`, `seed_blocks` |
-| `debug` | `capability.activated`                    | `capability`, `duration_ms`, `tools`, `has_seed_block`                                            |
-| `debug` | `gate.nudged` / `gate.force_tool_applied` | `gate`, `mode`, `force_tool_next`, `nudge_count`                                                  |
-| `debug` | `iteration.cache`                         | as above                                                                                          |
-| `debug` | `optional_package`                        | `package`, `feature`, `outcome`                                                                   |
-| `debug` | `skills.roots_unavailable`                | `cause`                                                                                           |
+| Level   | `event`                            | Fields                                                                                            |
+| ------- | ---------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `warn`  | `context.prefix_break`             | `index`, `entries`, `char_offset`, `chars_recharged`, `cause`                                     |
+| `warn`  | `compaction.summarizer_failed`     | `mode`, `reason`, `fell_back`, `cause`                                                            |
+| `warn`  | `compaction.unreachable`           | `declared_window_tokens`, `high_water_tokens`, `observed_tokens`                                  |
+| `warn`  | `tool.args_validation_failed_open` | `tool`, `reason`                                                                                  |
+| `warn`  | `iteration.cache` (escalated)      | `iteration`, `input_tokens`, `cached_tokens`, `ratio`                                             |
+| `info`  | `run.composed`                     | `capabilities`, `builtins`, `tools`, `mcp_servers`, `entry_agent`, `model`, `mode`, `seed_blocks` |
+| `debug` | `capability.activated`             | `capability`, `duration_ms`, `tools`, `has_seed_block`                                            |
+| `debug` | `gate.nudged`                      | `gate`, `mode`, `nudge_count`                                                                     |
+| `debug` | `iteration.cache`                  | as above                                                                                          |
+| `debug` | `optional_package`                 | `package`, `feature`, `outcome`                                                                   |
+| `debug` | `skills.roots_unavailable`         | `cause`                                                                                           |
 
 Plus the degradation warnings the engine already emitted, now named:
 `mcp.connect.failed`, `vision.capability_missing`, `vision.call_failed`, `trace.ingest_failed`,

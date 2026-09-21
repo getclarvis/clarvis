@@ -712,9 +712,11 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
     lighter accounting-only path that never calls `reserveOutput`. Production: `packages/loop/src/runtime/loop/output-budget.ts`.
     Test: `packages/loop/tests/unit/output-budget.test.ts` pins successful accounting, measured
     failed output, and preservation of an unmeasured failure against an unbounded budget.
-30. **At most one `AgentLoopContribution` per agent may supply `outputBudget`** (also true of `anchor`
-    and `forcedChoice`); `foldContributions` throws on a second. Production: `packages/capability/src/compose.ts`. Test:
-    `packages/capability/tests/unit/compose.test.ts`.
+30. **At most one `AgentLoopContribution` per agent may supply `outputBudget`** (as for `anchor`);
+    `foldContributions` throws on a second. Production: `packages/capability/src/compose.ts`. Test:
+    `packages/capability/tests/unit/compose.test.ts`. Nothing else in a contribution may be
+    singularly owned: a capability cannot force the model's tool choice, because the loop never
+    chooses it.
 31. **A run's pre-loop budget gate is a single combined check**: `checkLimits(...).terminal ||
     (folded.outputBudget?.remaining() ?? 1) < 1` — a capability-contributed output-token ceiling that
     is already exhausted stops the agent before its first model call, exactly like an exhausted hard

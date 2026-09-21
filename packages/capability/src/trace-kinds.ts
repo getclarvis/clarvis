@@ -522,13 +522,25 @@ export interface RunStartedDetail {
 
 /**
  * The run's terminating condition: the {@link RunEndedReason} and, when it ended
- * in error, the machine-readable {@link ErrorCode}.
+ * in error, the machine-readable {@link ErrorCode} and the failure's own message.
  */
 export interface RunEndedDetail {
   reason: RunEndedReason;
   code?: ErrorCode;
   /** Successful stage disposition; absent means an ordinary final result. */
   disposition?: FinalizationDisposition;
+  /**
+   * The failure's message, on a run that ended in error.
+   *
+   * @remarks Persisted so a replayed transcript can say *why* a run failed rather
+   *   than restating which category the engine filed it under. `reason` collapses
+   *   every capability-declared guard code into `guard_trip`, and the live client
+   *   reads its message from the run envelope — which is never persisted — so
+   *   without this the same failure read differently live and on replay, and the
+   *   replay named the category as if it were the cause. Sanitized and
+   *   length-bounded by the loop before it is recorded.
+   */
+  message?: string;
 }
 
 /**

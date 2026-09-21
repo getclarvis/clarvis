@@ -58,6 +58,18 @@ export const goalStewardResultSchema = z.discriminatedUnion("decision", [
 ]);
 
 export type GoalStewardResult = z.infer<typeof goalStewardResultSchema>;
+
+/**
+ * Why a completed evaluation could not be settled.
+ *
+ * @remarks `usage_unknown` is not a transport fault: the evaluation answered —
+ *   possibly with a valid `achieved` — but its consumption could not be
+ *   determined, and a Goal cannot be concluded on an unaccountable review. It
+ *   was reported as `transport` until the two were separated, which named the
+ *   wrong cause in the operator's record.
+ */
+export type GoalStewardInterruptionCause =
+  "timeout" | "transport" | "invalid_output" | "cancelled" | "usage_unknown";
 export type GoalStewardRuntime = GoalAgentRuntime & {
   reasoning_effort?: AgentProfile["reasoning_effort"];
 };
@@ -71,7 +83,7 @@ export type GoalStewardCompletionDecision =
       kind: "interrupted";
       review_id: string;
       reason: string;
-      cause: "timeout" | "transport" | "invalid_output" | "cancelled";
+      cause: GoalStewardInterruptionCause;
     };
 export interface GoalStewardRunInput {
   execution_id: string;

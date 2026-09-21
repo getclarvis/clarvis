@@ -266,7 +266,7 @@ describe("Goal Steward coordinator", () => {
     expect(f.state().current!.steward.status).toBe("attention");
     expect(f.state().current!.runs[0]!.steward_reviews.at(-1)).toMatchObject({
       decision: "interrupted",
-      interruption_cause: "transport",
+      interruption_cause: "usage_unknown",
     });
     expect(f.state().current!.steward.last_steward_execution_id).toBeUndefined();
     await f.coordinator.closeCoordinator();

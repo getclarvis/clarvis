@@ -418,6 +418,7 @@ function mapEntryRaw(
         reason: d.reason,
       };
       if (d.code !== undefined) event.code = d.code;
+      if (d.message !== undefined) event.message = d.message;
       if (d.reason === "completed" && d.disposition !== undefined)
         event.disposition = d.disposition;
       return event;

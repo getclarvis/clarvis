@@ -139,7 +139,6 @@ run's hard `ResolvedConfig`: `max_tokens`, bounded only when
 | `contract?` | enables `submit_result` finalization with structured validation |
 | `agentCapabilities?` | per-agent capability activations, already grant-gated upstream |
 | `buildBeforeCheckpoint?` | builds an optional `beforeCheckpoint` hook bound to the agent build context |
-| `forceToolOnNudge?` | whether a finalize gate's nudge forces a tool call on the next iteration |
 | `staticAnchor?` | a fixed compaction anchor used when no capability contributes one |
 | `noProgressLimit` | the no-progress streak limit before the run ends in error |
 | `noProgressMessage` | builds the error message for a plain no-progress termination |
@@ -159,7 +158,6 @@ run's hard `ResolvedConfig`: `max_tokens`, bounded only when
 | `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` | `5000`, capped at `60_000` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/orchestrator.ts` |
 | `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` | `2000` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/execute-run.ts` (`executeRun`, `raceWithBudget`); `packages/loop/src/runtime/orchestrator.ts` (`wrap`) |
 | `CLARVIS_RUN_ABORT_SETTLE_MS` | `2000` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/orchestrator.ts` |
-| `CLARVIS_DEFAULT_FORCE_TOOL_ON_NUDGE` | `true` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/entry-inputs.ts` |
 | `CLARVIS_GUARD_MAX_ESCALATIONS` | `2` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/entry-inputs.ts` |
 | `CLARVIS_MAX_PARALLEL_SUBAGENTS` | — | `packages/loop/src/runtime/orchestrator.ts` |
 | `CLARVIS_MAX_CONCURRENT_EXTENSION_CALLS` (+`_RUN_END_CALLS`, `_CALLS_PER_OPERATION`) | — | `packages/loop/src/runtime/extension-admission.ts` |
@@ -249,12 +247,12 @@ from the agent profile in the orchestrator.
 
 `deriveRunEndedDetail` (`packages/loop/src/runtime/run-trace.ts`):
 
-| response | `reason` | `code` |
-| --- | --- | --- |
-| non-`error` | the status verbatim | absent |
-| `error`, code `timeout` | `timeout` | `timeout` |
-| `error`, code in `GUARD_TRIP_CODES` or in the capability set | `guard_trip` | the code |
-| `error`, otherwise | `error` | the code |
+| response | `reason` | `code` | `message` |
+| --- | --- | --- | --- |
+| non-`error` | the status verbatim | absent | absent |
+| `error`, code `timeout` | `timeout` | `timeout` | the sanitized, clipped error message |
+| `error`, code in `GUARD_TRIP_CODES` or in the capability set | `guard_trip` | the code | the sanitized, clipped error message |
+| `error`, otherwise | `error` | the code | the sanitized, clipped error message |
 
 `GUARD_TRIP_CODES` = `no_progress`, `tool_failure_loop`, `stagnation_detected`, `agents_unfinished`,
 `background_children_failing`, `all_tools_unavailable`, `empty_response`
@@ -265,10 +263,20 @@ to `guard_trip` **only** when the capability supplied it.
 For a completed response, `deriveRunEndedDetail` additionally carries its accepted `disposition`
 when present. Other statuses omit it, even if interrupted work had proposed a checkpoint. The
 persisted trace and client event therefore identify stage closure without inventing final success.
+
+Every error response also carries the failure's own `message`, sanitized with
+`sanitizeErrorMessage` and clipped to a bounded length before it is recorded. It is there because
+`reason` is only the *category* — a capability-declared guard code collapses into `guard_trip` —
+while the client's live path reads the explanation from the run envelope, which is never persisted.
+Without the message a session rebuilt from its trace explained the failure with the category, so
+the same run read one way live and another on replay. A trace written before this field existed
+falls back to the code, which is at least specific; no compatibility reader reads it back.
 Production: `deriveRunEndedDetail` in [run-trace.ts](../../packages/loop/src/runtime/run-trace.ts).
-Test: `records accepted checkpoint disposition without relabeling an unsuccessful run` in
-[run-trace.test.ts](../../packages/loop/tests/unit/run-trace.test.ts), with live/reopened kernel
-projection in [checkpoint-composition.test.ts](../../packages/kernel/tests/integration/checkpoint-composition.test.ts).
+Test: `records accepted checkpoint disposition without relabeling an unsuccessful run`,
+`carries the failure's own message, sanitized and clipped` and `records no message on a clean
+terminal status` in [run-trace.test.ts](../../packages/loop/tests/unit/run-trace.test.ts), with the
+restored-transcript rendering in
+[restored-run-failure.test.ts](../../packages/code/tests/unit/restored-run-failure.test.ts).
 
 ### 3.6 Per-iteration trace events
 
@@ -538,7 +546,7 @@ fallback by construction.
 | 1 | await `runBeforeIteration` before the preamble; bounded ordered preparation | `packages/loop/src/runtime/loop/loop.ts`, `packages/loop/src/runtime/loop/lifecycle-hooks.ts` | interruption result; successful completion/checkpoint refused; timeout/rejection fails the stage; cancellation remains cancelled |
 | 2 | `runIterationPreamble` — abort probe, `allToolsUnavailable` probe, compaction thunk, counter+`*_iteration_started` | `packages/loop/src/runtime/loop/loop.ts` (`runAgentLoop`, `runIterationPreamble` call); `packages/loop/src/runtime/loop/loop-iteration.ts` (`runIterationPreamble`) | `cancelled` → `maybeCancelled()!`; `all_tools_unavailable` → `results.allToolsUnavailable()` (`runAgentLoop`, non-proceed branch) |
 | 3 | `drainSteer?.(iteration)` | `packages/loop/src/runtime/loop/loop.ts` | — |
-| 4 | build the call: `buildModelCall`, `withStreaming`, `takeForcedChoice` | `packages/loop/src/runtime/loop/loop.ts` | — |
+| 4 | build the call: `buildModelCall`, `withStreaming` | `packages/loop/src/runtime/loop/loop.ts` | — |
 | 5 | `callModelWithRecovery` | `packages/loop/src/runtime/loop/loop.ts` | `OutputBudgetExhaustedError` → `results.budgetExhausted()`; `!ok` → the cancelled result |
 | 6 | `ctx.observeUsage(input_tokens)` and `recordIterationMetrics` | `packages/loop/src/runtime/loop/loop.ts` | — |
 | 7 | `classifyResponse` | `packages/loop/src/runtime/loop/classify-response.ts` | — |
@@ -775,11 +783,15 @@ another attempt and traverses the earlier Goal gate again. Production: `createGo
 [loop-contract.ts](../../packages/loop/src/runtime/loop/loop-contract.ts). Test:
 [goal-capability-composition.test.ts](../../packages/kernel/tests/integration/goal-capability-composition.test.ts).
 
-**Forced tool after a nudge**: `noteGateNudged` sets `forceToolNextIteration` when
-`input.forceToolOnNudge === true` (`packages/loop/src/runtime/loop/run-agent.ts`), and
-`takeForcedChoice` consumes it exactly once, returning `"required"`. The one-shot
-property is documented in-source : leaving the choice forced would stop the model from
-ever finishing, since `submit_result` is a tool but a closing summary is not.
+**A nudge never forces a tool.** `noteGateNudged`
+(`packages/loop/src/runtime/loop/run-agent.ts`) counts the nudge and logs `gate.nudged` with the
+gate ordinal, the attempt mode and the running count; it changes nothing about the next call's
+tool choice. The recovery is the ordinary continuation: the gate's own note is appended (`ctx.appendNote`
+on a text attempt, the failed tool envelope on a submit) and the loop iterates with the catalog
+exposed. Production: `noteGateNudged` in
+[run-agent.ts](../../packages/loop/src/runtime/loop/run-agent.ts). Test: "a finalize-gate nudge
+never forces a tool call" in
+[lifecycle-finalize-wiring.test.ts](../../packages/loop/tests/component/lifecycle-finalize-wiring.test.ts).
 
 ### 4.14 Lifecycle-hook sweep machinery
 
@@ -1013,13 +1025,15 @@ Every way a run reaches its terminal `RunResponse`:
     multi-call batch, a non-`submit_result` call, an invalid payload, any `beforeToolUse` hook, or any
     gate that does not opt in. — `packages/loop/src/runtime/loop/run-agent.ts`. Tests:
     `packages/loop/tests/integration/fast-accept-submit.test.ts`.
-30. **A forced tool choice after a nudge is consumed exactly once.** —
-    `packages/loop/src/runtime/loop/run-agent.ts`; reason stated.
-    ~~**Unpinned.**~~ **Pinned**: `packages/loop/tests/component/lifecycle-finalize-wiring.test.ts`.
-    The existing `force_tool_on_nudge` tests showed the flag being *set*; their scripts ended on the
-    forced call, so a `takeForcedChoice` that never cleared it kept them green while every later
-    iteration was silently forced. The third iteration is reached by having the forced call name a
-    tool the registry does not carry.
+30. **A finalize-gate nudge never forces a tool call.** — The gate's note is appended and the loop
+    is left unforced, so no `toolChoice` is ever set by the engine: a provider that refuses a forced
+    choice (a thinking model, for one) would otherwise fail the run with an HTTP 400 exactly when the
+    nudge was supposed to recover it, and where accepted it answered a wrong-tool problem with a
+    different wrong tool. Production: `noteGateNudged` in
+    `packages/loop/src/runtime/loop/run-agent.ts`. Test:
+    `packages/loop/tests/component/lifecycle-finalize-wiring.test.ts` ("a finalize-gate nudge never
+    forces a tool call": text and submit nudges, repeated nudges, and an unbounded nudge bounded by
+    the no-progress policy with each iteration counted once).
 31. **A rewritten tool call is a new object; the assistant message already in context is never
     mutated.** — `packages/loop/src/runtime/loop/loop.ts`. **Unpinned by a direct loop test** (the
     hook-dialect side is owned by [hooks-execution](../execution/hooks.md)).

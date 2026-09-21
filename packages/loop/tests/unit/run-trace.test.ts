@@ -13,8 +13,8 @@ import { mapTrace } from "@clarvis/trace";
 const usage: Usage = { iterations_used: 1, elapsed_ms: 1, by_agent: [] };
 const clean = (status: "completed" | "budget_exhausted" | "cancelled" | "soft_limit_declined") =>
   ({ status, result: "x", usage }) as RunResponse;
-const err = (code: string): RunResponse =>
-  ({ status: "error", error: { code: code as never, message: "m" }, usage }) as RunResponse;
+const err = (code: string, message = "m"): RunResponse =>
+  ({ status: "error", error: { code: code as never, message }, usage }) as RunResponse;
 
 describe("deriveRunEndedDetail", () => {
   it("records accepted checkpoint disposition without relabeling an unsuccessful run", () => {
@@ -41,7 +41,7 @@ describe("deriveRunEndedDetail", () => {
     }
     expect(
       deriveRunEndedDetail({ ...err("provider_error"), disposition: "checkpoint", checkpoint }),
-    ).toEqual({ reason: "error", code: "provider_error" });
+    ).toEqual({ reason: "error", code: "provider_error", message: "m" });
   });
 
   it("maps the clean terminal statuses 1:1 with no code", () => {
@@ -56,7 +56,29 @@ describe("deriveRunEndedDetail", () => {
   });
 
   it("lifts a timeout out of the generic error reason", () => {
-    expect(deriveRunEndedDetail(err("timeout"))).toEqual({ reason: "timeout", code: "timeout" });
+    expect(deriveRunEndedDetail(err("timeout"))).toEqual({
+      reason: "timeout",
+      code: "timeout",
+      message: "m",
+    });
+  });
+
+  it("carries the failure's own message, sanitized and clipped", () => {
+    // The message is what a replayed transcript explains the failure with; the
+    // reason alone is a category. It is sanitized before it is recorded, so a
+    // provider message that happens to carry a credential does not persist one,
+    // and clipped so a failed run cannot write an unbounded string into a trace.
+    const secret = "s".repeat(60);
+    expect(deriveRunEndedDetail(err("provider_error", `auth failed: ${secret}`)).message).toBe(
+      "auth failed: [redacted]",
+    );
+    const clipped = deriveRunEndedDetail(err("provider_error", "z ".repeat(2000))).message!;
+    expect(clipped.length).toBeLessThan(4000);
+    expect(clipped.endsWith("[truncated]")).toBe(true);
+  });
+
+  it("records no message on a clean terminal status", () => {
+    expect(deriveRunEndedDetail(clean("completed"))).toEqual({ reason: "completed" });
   });
 
   it("maps convergence/integrity guard codes to guard_trip, carrying the code", () => {
@@ -68,7 +90,11 @@ describe("deriveRunEndedDetail", () => {
       "empty_response",
     ] as const;
     for (const code of guards) {
-      expect(deriveRunEndedDetail(err(code))).toEqual({ reason: "guard_trip", code });
+      expect(deriveRunEndedDetail(err(code))).toEqual({
+        reason: "guard_trip",
+        code,
+        message: "m",
+      });
     }
   });
 
@@ -89,8 +115,9 @@ describe("deriveRunEndedDetail", () => {
       expect(deriveRunEndedDetail(err(code), capabilityGuardTripCodes)).toEqual({
         reason: "guard_trip",
         code,
+        message: "m",
       });
-      expect(deriveRunEndedDetail(err(code))).toEqual({ reason: "error", code });
+      expect(deriveRunEndedDetail(err(code))).toEqual({ reason: "error", code, message: "m" });
     }
   });
 
@@ -101,7 +128,7 @@ describe("deriveRunEndedDetail", () => {
       "internal_error",
       "mcp_unavailable",
     ] as const) {
-      expect(deriveRunEndedDetail(err(code))).toEqual({ reason: "error", code });
+      expect(deriveRunEndedDetail(err(code))).toEqual({ reason: "error", code, message: "m" });
     }
   });
 });

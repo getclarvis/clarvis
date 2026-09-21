@@ -88,26 +88,26 @@ const compactionSchema = z
 /**
  * The agent's own loop-behaviour knobs.
  *
- * @remarks `pending_task_nudges` used to live here too and no longer does. The
- * open-task nudge budget is a capability's own policy and belongs to that
- * capability's settings block, not to an agent profile. `force_tool_on_nudge`
- * stays because it is genuinely about how *this agent's loop* answers any
- * gate's nudge, whichever capability raised it.
+ * @remarks `pending_task_nudges` used to live here, and `force_tool_on_nudge`
+ * after it; both moved out. The open-task nudge budget is a capability's own
+ * policy and belongs to that capability's settings block, and forcing a tool
+ * call after any gate's nudge is no longer something the loop does at all — it
+ * answers a model that produced prose where an action was required by iterating
+ * with the gate's own note appended and the catalog exposed, never by choosing
+ * the model's tool for it.
  *
- * @remarks Unlike its siblings this block is **open**, and that is the price of
- * the move above. An agent definition is a file a person wrote by hand, and this
- * object reaches the schema verbatim from its frontmatter; `.strict()` here
- * meant that the moment a knob moved into a capability's own settings, every run
- * using an agent that still named it died at submission with an
- * unrecognized-key error rather than falling back. The engine validates the keys
- * it owns and lets a key it does not own pass — which is also what leaves room
- * for the next capability to want one here.
+ * @remarks This block is **open**, and stays open even though the engine now
+ * owns no key in it. An agent definition is a file a person wrote by hand, and
+ * this object reaches the schema verbatim from its frontmatter; `.strict()` here
+ * meant that the moment a knob moved into a capability's own settings — or, as
+ * now, out of the vocabulary entirely — every run using an agent that still
+ * named it died at submission with an unrecognized-key error rather than
+ * falling back. The engine validates the keys it owns and lets a key it does not
+ * own pass, which is also what leaves room for the next capability to want one
+ * here. A stale `force_tool_on_nudge` in an existing file therefore parses and
+ * is inert; see `packages/loop/tests/unit/request-profile-validation.test.ts`.
  */
-const orchestrationSchema = z.object({
-  force_tool_on_nudge: z
-    .boolean({ error: "orchestration.force_tool_on_nudge must be a boolean" })
-    .optional(),
-});
+const orchestrationSchema = z.object({});
 
 /**
  * The syntactic schema for an agent grant.

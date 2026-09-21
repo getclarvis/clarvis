@@ -116,7 +116,7 @@ actually stores (§4.3).
 `finalizeRun?({status, disposition?, preserveState?})`, `preserveStateOnInterruption?: boolean`,
 `guardTripCodes?: readonly string[]`.
 
-`AgentLoopContribution` members: `tools?`, `handlers?`, `gates?`, `dispatchPolicy?`, `anchor?`, `forcedChoice?`,
+`AgentLoopContribution` members: `tools?`, `handlers?`, `gates?`, `dispatchPolicy?`, `anchor?`,
 `hooks?`, `outputBudget?`, `advertised?` (`packages/capability/src/contract.ts`). `advertised` defaults to `true`
 and `false` marks a prompt-driven tool that should not count toward `availableWireNames`
 (`packages/capability/src/contract.ts`). `dispatchPolicy` is the generic per-call admissibility
@@ -266,10 +266,11 @@ this union". `ReasoningSummary`
  and `ReasoningEffort` are the two reasoning-tuning enums.
 
 **Per-agent overrides and `AgentProfile`.** `CompactionConfigInput`, `RetryConfigInput`
- and `OrchestrationConfigInput` (its doc-comment calls
-`force_tool_on_nudge` "a property of the agent's own loop, applied by the loop rather than by
-whichever capability raised the nudge") are the
-three per-agent override blocks. `AgentProfile` is the full agent definition: `name`,
+ and `OrchestrationConfigInput` are the
+three per-agent override blocks. The last is now an **open, empty** bag (`Record<string, never>`,
+`packages/capability/src/api.ts`): the engine owns no key in it, and a hand-written agent file that
+still names a retired key keeps parsing while the request schema drops the key, so nothing can
+re-arm a policy from there. `AgentProfile` is the full agent definition: `name`,
 `description?`, `model`, `base_prompt?`, `tools`, `grants?`, `can_spawn?`/`default_spawn?` (delegation),
 `iteration_limit?`/`stagnation_threshold?`/`call_timeout_ms?`, and the three override blocks above.
 
@@ -754,9 +755,8 @@ and the disposition/preservation matrix in
 | 2 | `packages/capability/src/compose.ts` | push tools; also push into `advertisedTools` unless `advertised === false` |
 | 3 | `packages/capability/src/compose.ts` | concatenate `handlers` and `gates` |
 | 4 | `packages/capability/src/compose.ts` | `anchor`: second provider throws `more than one contribution provides an anchor` |
-| 5 | `packages/capability/src/compose.ts` | `forcedChoice`: same rule |
-| 6 | `packages/capability/src/compose.ts` | `outputBudget`: same rule |
-| 7 | `packages/capability/src/compose.ts` | fold hooks by fan-out |
+| 5 | `packages/capability/src/compose.ts` | `outputBudget`: same rule |
+| 6 | `packages/capability/src/compose.ts` | fold hooks by fan-out |
 
 The duplicate-tool rule is justified in the module docstring: dispatch is first-match while the
 provider tool set is last-def-wins, so a collision would make the advertised schema and the
@@ -1019,7 +1019,7 @@ package's own integration test does import itself by published name
 claim it twice. Production: `packages/capability/src/compose.ts`. Test:
 `packages/capability/tests/unit/compose.test.ts` (both cases).
 
-**INV-C3.** At most one contribution per agent may provide an `anchor`, a `forcedChoice`, or an
+**INV-C3.** At most one contribution per agent may provide an `anchor` or an
 `outputBudget`; a second throws. Production: `packages/capability/src/compose.ts`. Test:
 `packages/capability/tests/unit/compose.test.ts`.
 
@@ -1242,7 +1242,7 @@ Production (engine): `packages/loop/src/runtime/loop/loop.ts`. Test:
 | Situation | Behaviour | Cite |
 | --- | --- | --- |
 | Two contributions claim one tool wire name | `foldContributions` **throws** — hard failure at fold time | `packages/capability/src/compose.ts` |
-| Two contributions provide anchor / forcedChoice / outputBudget | **throws** | `packages/capability/src/compose.ts` |
+| Two contributions provide anchor / outputBudget | **throws** | `packages/capability/src/compose.ts` |
 | Duplicate settings key registered | **throws** at registration | `packages/capability/src/registry.ts` |
 | Grant re-declared with a different `entryCanSpawn` | **throws**; an identical repeat is tolerated silently | `packages/capability/src/registry.ts` |
 | Blank grant name | **throws** | `packages/capability/src/registry.ts` |

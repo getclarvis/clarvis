@@ -4,7 +4,6 @@ import {
   type LLMCallParams,
   type LLMCallResult,
   type LLMProvider,
-  type ToolChoice,
 } from "@clarvis/capability";
 import type { CompactionEvent } from "../context/context-compaction.ts";
 import { MAX_OVERFLOW_RECOVERIES } from "./loop-iteration.ts";
@@ -21,18 +20,16 @@ export type ModelCallOutcome =
 /**
  * Inputs to {@link callModelWithRecovery}.
  *
- * @remarks `forcedChoice`, when set, overrides the base call's tool choice for
- *   the first attempt. `evict` frees context on overflow (returning the
- *   compaction event, or `undefined` when nothing more can be evicted).
- *   `rebuild` re-derives the call after an eviction — see below. `trace`
- *   records compaction events, `maybeCancelled` probes for abort after a throw,
- *   `recordError` traces each provider error, and `overflowDiagnostic` renders
- *   the terminal message when overflow can no longer be recovered.
+ * @remarks `evict` frees context on overflow (returning the compaction event, or
+ *   `undefined` when nothing more can be evicted). `rebuild` re-derives the call
+ *   after an eviction — see below. `trace` records compaction events,
+ *   `maybeCancelled` probes for abort after a throw, `recordError` traces each
+ *   provider error, and `overflowDiagnostic` renders the terminal message when
+ *   overflow can no longer be recovered.
  */
 export interface ModelCallArgs {
   llm: LLMProvider;
   baseCall: LLMCallParams;
-  forcedChoice?: ToolChoice;
   /**
    * Free context after the provider refused the prompt for length.
    *
@@ -67,8 +64,7 @@ export interface ModelCallArgs {
 }
 
 /**
- * Call the model, transparently recovering from context overflow and from a
- * forced-tool-choice rejection.
+ * Call the model, transparently recovering from context overflow.
  *
  * @param args - the call parameters and recovery hooks; see {@link ModelCallArgs}.
  * @returns the successful {@link ModelCallOutcome}, or a cancelled outcome when an
@@ -77,15 +73,12 @@ export interface ModelCallArgs {
  *   an `overflowDiagnostic`, a synthesized) error, after recording it.
  * @remarks On `context_overflow` it calls `evict` and retries up to
  *   {@link MAX_OVERFLOW_RECOVERIES} times; when nothing can be evicted it throws
- *   the diagnostic overflow error (if a renderer was given). When a forced tool
- *   choice yields a `client` error, it records that error and retries once with
- *   the unforced base call before giving up.
+ *   the diagnostic overflow error (if a renderer was given). No provider error is
+ *   interpreted as a tool-choice problem: the only choice this call ever sends is
+ *   the one the caller put in `baseCall`.
  */
 export async function callModelWithRecovery(args: ModelCallArgs): Promise<ModelCallOutcome> {
-  const forced = args.forcedChoice !== undefined;
-  const withChoice = (call: LLMCallParams): LLMCallParams =>
-    forced ? { ...call, toolChoice: args.forcedChoice } : call;
-  let activeCall = withChoice(args.baseCall);
+  let activeCall = args.baseCall;
   let overflowRecoveries = 0;
   for (;;) {
     try {
@@ -102,7 +95,7 @@ export async function callModelWithRecovery(args: ModelCallArgs): Promise<ModelC
         if (ev) {
           args.trace.record("compaction", ev);
           overflowRecoveries += 1;
-          if (args.rebuild) activeCall = withChoice(args.rebuild());
+          if (args.rebuild) activeCall = args.rebuild();
           continue;
         }
         if (args.overflowDiagnostic) {
@@ -112,17 +105,6 @@ export async function callModelWithRecovery(args: ModelCallArgs): Promise<ModelC
           });
           await args.recordError(diag);
           throw diag;
-        }
-      }
-      if (forced && err instanceof ProviderError && err.kind === "client") {
-        await args.recordError(err);
-        try {
-          return { ok: true, result: await args.llm.call(args.baseCall) };
-        } catch (retryErr) {
-          const cRetry = args.maybeCancelled();
-          if (cRetry) return { ok: false, cancelled: cRetry };
-          if (retryErr instanceof ProviderError) await args.recordError(retryErr);
-          throw retryErr;
         }
       }
       if (err instanceof ProviderError) await args.recordError(err);

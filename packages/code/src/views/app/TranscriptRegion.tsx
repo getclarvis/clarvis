@@ -155,17 +155,24 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
   const childTitle = createMemo((): string | undefined => {
     const selected = projectionId();
     if (selected === null) return undefined;
+    const load = props.store.childLoadStatus?.();
+    const loadText =
+      load === "loading"
+        ? " · loading history"
+        : load === "unavailable"
+          ? " · history unavailable; reselect to retry"
+          : "";
     const agent = props.activity.subagents.find(
       (candidate: ActivityStore["subagents"][number]) => candidate.id === selected,
     );
     if (agent !== undefined)
       return secondaryMode() === "closed"
-        ? `Viewing A${agent.order + 1} ${agentTitle(agent)} · Back to Lead`
+        ? `Viewing A${agent.order + 1} ${agentTitle(agent)}${loadText} · Back to Lead`
         : undefined;
     const marker = props.store.nodes.find((node) => node.delegationTarget === selected);
     const title =
       marker?.kind === "annotation" ? marker.text.replace(/^Spawned sub-agent /, "") : selected;
-    return `Viewing ${title} · Back to Lead`;
+    return `Viewing ${title}${loadText} · Back to Lead`;
   });
   const summaryFacts = createMemo(() => {
     const formulating = props.goals?.formulating() === true;

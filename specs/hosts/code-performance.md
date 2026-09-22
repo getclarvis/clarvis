@@ -105,6 +105,8 @@ or other process trees (`packages/code/README.md`).
 | hydrated tool bodies | 200 nodes and 64 MiB estimated | `packages/code/src/adapters/store.ts` |
 | pressure release of reconstructible tools | drop completed persisted bodies only; local/`!` results and in-flight tools keep their only copy | `packages/code/src/adapters/store.ts` (`releaseReconstructible`) |
 | one hydrated tool body | 32 MiB estimated | `packages/code/src/adapters/store.ts` |
+| hidden child live tails | 96 events and 128 KiB per child, 1 MiB aggregate; events above 16 KiB are omitted from the tail | `packages/code/src/adapters/child-transcript-store.ts` (`remember`) |
+| detailed child transcript stores | one selected child; none retained after leaving that projection | `packages/code/src/adapters/child-transcript-store.ts` (`selectSubagent`) |
 | visual transcript turns | 20 semantic turns | `packages/code/src/run-host.ts` |
 | session resume chain | 10,000 messages and 16,000,000 payload characters | `SESSION_RESUME_MAX_MESSAGES`, `SESSION_RESUME_MAX_PAYLOAD_CHARS`, and `resumeSession` in `packages/code/src/adapters/session.ts` |
 | complete session documents in the client cache | 8, excluding live write lanes from demotion | `MAX_RESIDENT_FULL_SESSIONS` and `demoteOldFullSessions` in `packages/code/src/adapters/session-store.ts` |
@@ -441,6 +443,13 @@ maintenance is silent; the footer shows `Restoring the interface…` only while 
 4. **PERF-4: transcript prose is bounded per node and across settled resident nodes.**
    Production: `packages/code/src/adapters/store.ts`.
    Test: `packages/code/tests/unit/streaming-delta.test.ts`.
+
+   Hidden sub-agent detail has a separate bounded event tail and does not enter the Lead node
+   collection. Only a selected child may own a detailed store, and leaving it releases that store.
+   The diagnostic ledger samples tail bytes, selected-child nodes and hydration counts without
+   traversing every child. Production: `packages/code/src/adapters/child-transcript-store.ts`
+   (`createChildTranscriptStore`, `memory`). Test:
+   `packages/code/tests/unit/child-transcript-store.test.ts` (16 hidden children and terminal release).
 
 5. **PERF-5: settled hydrated tool bodies obey both count and aggregate-byte limits.**
    Production: `packages/code/src/adapters/store.ts`.

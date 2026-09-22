@@ -566,6 +566,8 @@ export function App(props: AppProps): JSX.Element {
     },
   });
 
+  createEffect(() => props.store.selectSubagent?.(ts.selectedSubagent()));
+
   useSpinnerClock(
     () =>
       props.run.active() ||

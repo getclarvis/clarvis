@@ -18,6 +18,20 @@ entry says what a source read could and could not settle.
 
 ---
 
+## Hidden sub-agent transcript pressure needs PTY qualification
+
+The incident trace identified substantially more child than Lead transcript events and nodes.
+Interactive Code now routes hidden child detail into bounded tails and mounts only the selected
+child store. The deterministic regression in
+`packages/code/tests/unit/child-transcript-store.test.ts` verifies isolation and bounded retention
+with 16 interleaved children and 32,801 synthetic child events, matching the incident's child-event
+count without retaining operator content;
+`packages/code/tests/component/run-host-export.test.ts` verifies persisted export. These tests do
+not measure input latency, frame time or RSS in OpenTUI. An isolated PTY run with an equivalent
+workload remains necessary before claiming the TUI performance incident resolved end to end.
+
+---
+
 ## Smoke qualification remains environment-dependent
 
 **Status: implementation is isolated; several qualification surfaces remain unverified in the

@@ -110,6 +110,7 @@ import {
 } from "./app/workspace-runtime.ts";
 import { createKernelCapabilitiesClient } from "./adapters/kernel-capabilities-client.ts";
 import { applyEvent, createTranscriptStore, type TranscriptStore } from "./adapters/store.ts";
+import { createChildTranscriptStore } from "./adapters/child-transcript-store.ts";
 import { createActivityStore, type UsageActivity } from "./adapters/activity-store.ts";
 import type { BackendProbe } from "./onboarding/doctor.ts";
 import {
@@ -688,7 +689,7 @@ async function runApp(
   const [workspaceRef] = createSignal(activeWorkspace);
 
   const runDetailFetcher: { current?: (executionId: string) => Promise<RunDetail | null> } = {};
-  const store = createTranscriptStore({
+  const store = createChildTranscriptStore({
     describeToolCall,
     fetchRun: (executionId) => runDetailFetcher.current?.(executionId) ?? Promise.resolve(null),
   });

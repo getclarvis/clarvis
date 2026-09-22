@@ -8,11 +8,13 @@ import {
   type RunHostDeps,
 } from "../../src/run-host.ts";
 import {
+  applyEvent,
   createTranscriptStore,
   TRANSCRIPT_PROSE_RELEASED_NOTICE,
   type TranscriptNode,
   type TranscriptStore,
 } from "../../src/adapters/store.ts";
+import { createChildTranscriptStore } from "../../src/adapters/child-transcript-store.ts";
 import { createActivityStore } from "../../src/adapters/activity-store.ts";
 import { createElicitSlot } from "../../src/adapters/elicit-slot.ts";
 import type { SessionMeta, SessionStore } from "../../src/adapters/session-store.ts";
@@ -82,6 +84,7 @@ function mount(
   opts: {
     proseTotalLimitBytes?: number;
     startRun?: RunHostDeps["client"]["startRun"];
+    isolateChildren?: boolean;
   } = {},
 ): {
   host: RunHost;
@@ -91,11 +94,14 @@ function mount(
   let host!: RunHost;
   let store!: TranscriptStore;
   const dispose = createRoot((d) => {
-    store = createTranscriptStore({
+    const transcriptDeps = {
       ...(opts.proseTotalLimitBytes === undefined
         ? {}
         : { proseTotalLimitBytes: opts.proseTotalLimitBytes }),
-    });
+    };
+    store = opts.isolateChildren
+      ? createChildTranscriptStore({ ...transcriptDeps, fetchRun: getRun })
+      : createTranscriptStore(transcriptDeps);
     host = createRunHost({
       store,
       activity: createActivityStore(),
@@ -156,6 +162,116 @@ async function exportNodes(host: RunHost): Promise<TranscriptNode[]> {
 }
 
 describe("exportNodeBatches", () => {
+  test("resuming a session keeps child markers while replaying detail outside Lead nodes", async () => {
+    const detail = {
+      ...detailFor("exec_0"),
+      events: [
+        ev({ type: "run_started", at: 0 }),
+        ev({
+          type: "delegation_created",
+          at: 1,
+          delegation_id: "child-a",
+          title: "Child A",
+          task: "Investigate",
+        }),
+        ev({
+          type: "iteration_started",
+          at: 2,
+          agent: "subagent",
+          subagent_id: "child-a",
+          iteration: 1,
+        }),
+        ev({
+          type: "text_delta",
+          at: 3,
+          agent: "subagent",
+          subagent_id: "child-a",
+          iteration: 1,
+          channel: "text",
+          text: "child-only answer",
+          reset: true,
+        }),
+      ],
+    } as RunDetail;
+    const { host, store, dispose } = mount(async () => detail, { isolateChildren: true });
+    await host.loadSessionMeta(metaWith(1));
+    expect(store.nodes.some((node) => node.kind === "subagent")).toBe(true);
+    expect(store.nodes.some((node) => node.text === "child-only answer")).toBe(false);
+    store.selectSubagent?.("child-a");
+    await Promise.resolve();
+    expect(store.nodes.some((node) => node.text === "child-only answer")).toBe(true);
+    dispose();
+  });
+
+  test("isolated hidden children remain present in the persisted export", async () => {
+    const detail = {
+      ...detailFor("exec_0"),
+      events: [
+        ev({ type: "run_started", at: 0 }),
+        ev({
+          type: "delegation_created",
+          at: 1,
+          delegation_id: "child-a",
+          title: "Child A",
+          task: "Investigate",
+        }),
+        ev({
+          type: "iteration_started",
+          at: 2,
+          agent: "subagent",
+          subagent_id: "child-a",
+          iteration: 1,
+        }),
+        ev({
+          type: "text_delta",
+          at: 3,
+          agent: "subagent",
+          subagent_id: "child-a",
+          iteration: 1,
+          channel: "text",
+          text: "child-only answer",
+          reset: true,
+        }),
+      ],
+    } as RunDetail;
+    const { host, store, dispose } = mount(async () => detail, { isolateChildren: true });
+    store.appendUserMessage("question 0", undefined, "exec_0");
+    const sink = store.openRun("exec_0");
+    for (const event of detail.events) applyEvent(sink, event, "replay");
+    sink.complete();
+    expect(store.nodes.some((node) => node.text === "child-only answer")).toBe(false);
+    expect(renderTranscriptMarkdown(await exportNodes(host))).toContain("child-only answer");
+    dispose();
+  });
+
+  test("an unavailable isolated child record marks the resident export incomplete", async () => {
+    const detail = {
+      ...detailFor("exec_0"),
+      events: [
+        ev({ type: "run_started", at: 0 }),
+        ev({
+          type: "delegation_created",
+          at: 1,
+          delegation_id: "child-a",
+          title: "Child A",
+          task: "Investigate",
+        }),
+      ],
+    } as RunDetail;
+    let retained = true;
+    const { host, store, dispose } = mount(async () => (retained ? detail : null), {
+      isolateChildren: true,
+    });
+    store.appendUserMessage("question 0", undefined, "exec_0");
+    const sink = store.openRun("exec_0");
+    for (const event of detail.events) applyEvent(sink, event, "replay");
+    sink.complete();
+    expect(store.nodes.some((node) => node.kind === "subagent")).toBe(true);
+    retained = false;
+    expect(renderTranscriptMarkdown(await exportNodes(host))).toContain("EXPORT INCOMPLETE");
+    dispose();
+  });
+
   test("a session with no folded turns exports exactly the live transcript", async () => {
     const { host, store, dispose } = mount((id) => Promise.resolve(detailFor(id)));
     await host.loadSessionMeta(metaWith(3));

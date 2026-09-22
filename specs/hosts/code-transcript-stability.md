@@ -35,9 +35,11 @@ by [code-performance.md](code-performance.md). No persisted pixel, fold or windo
   [ToolRow.tsx](../../packages/code/src/views/transcript/ToolRow.tsx) and
   [ExplorationRow.tsx](../../packages/code/src/views/transcript/ExplorationRow.tsx):
   resident owners reusing the existing individual block and tool registry.
+- [child-transcript-store.ts](../../packages/code/src/adapters/child-transcript-store.ts):
+  routes hidden child events into bounded tails and mounts one selected child store.
 
 There is no live/history handoff, rendering publication batch, head/member painting role,
-hidden per-child transcript or public migration flag.
+hidden detailed per-child transcript or public migration flag.
 
 ## 3. Data and formats
 
@@ -124,11 +126,20 @@ requires clearing selection and is reported instead of silently discarding selec
 
 ### Lead and child navigation
 
-Lead and children use the same row store and viewport. Only the selected projection has a native
-tree. Lead retains navigable creation and terminal delegation markers; continuing child activity
-belongs in the existing Agents surface. An orchestration call returning a handle does not complete
-the child scope. Unknown attribution is isolated with an explicit provenance notice, never
-relabelled as Lead content.
+Lead and children use the same row and viewport rules, but `createChildTranscriptStore` routes
+child event detail before it can mutate the Lead store. Only the selected child has a detailed
+reactive store or native tree; hidden children retain bounded live tails. Changing selection
+releases the previous child store. Selecting a child reloads its persisted events, keeps concurrent
+live events after removing the ordered overlap with the persisted snapshot, and rejects a late
+reload after selection changes. An oversized hidden event clears the tail so a later replay never
+mistakes a gapped sequence for a contiguous cursor. A failed reload affects only that
+child and the header reports its state; reselecting retries. Lead retains navigable creation and
+terminal delegation markers; continuing child activity belongs in the existing Agents surface.
+An orchestration call returning a handle does not complete the child scope. Unknown attribution is
+isolated with an explicit provenance notice, never relabelled as Lead content. Production:
+`packages/code/src/adapters/child-transcript-store.ts` (`createChildTranscriptStore`),
+`packages/code/src/views/app/TranscriptRegion.tsx` (`childTitle`). Test:
+`packages/code/tests/unit/child-transcript-store.test.ts` (hidden-child, selection and reload cases).
 
 First visits start at the tail. Returning restores that projection's semantic reader. Child
 navigation remains available after restart even if the latest run's activity roster is empty:

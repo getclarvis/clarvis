@@ -1267,6 +1267,13 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 - The activity sidebar does not retain a second copy of each full delegated brief. It keeps at most
   64 terminal summaries of 512 characters; complete child task and result detail remains in that
   child's explicitly selected isolated transcript and in the persisted run.
+- Hidden sub-agent event detail bypasses the Lead transcript store. The TUI keeps a bounded live
+  event tail and only one selected child transcript; switching away releases that projection.
+  Selecting the child reloads its full persisted history, while a failed reload stays local and can
+  be retried by reselecting. Session export reloads hidden child detail from the persisted run and
+  marks an unavailable record as incomplete. See
+  [transcript stability](../../specs/hosts/code-transcript-stability.md) and
+  [run host](../../specs/hosts/code-run-host.md).
 - Tool-call, diff, reasoning, plan and budget views.
 - A tool appears as soon as its name is known. While the provider composes a large argument payload,
   its one mutable row says `waiting for arguments` until the first argument byte arrives, then shows

@@ -13,7 +13,7 @@ export const CODER: BuiltinAgent = {
   frontmatter: {
     description: "Implementation Sub-agent for one bounded change.",
     grants: ["edit_workspace", "run_commands", "use_skills"],
-    iteration_limit: 64,
+    iteration_limit: 512,
   },
   body: `You are \`coder\`, Clarvis's implementation Sub-agent. Complete one bounded change and return the
 outcome to your Lead. Work like a capable colleague: read before editing, match the surrounding design,

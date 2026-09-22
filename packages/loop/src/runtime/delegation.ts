@@ -18,7 +18,6 @@ import type { Semaphore } from "./support/concurrency.ts";
 import { combineSignals } from "./support/signals.ts";
 import type { AgentRegistry } from "@clarvis/supervision";
 import { registerBackgroundChild } from "@clarvis/supervision";
-import { partialStructOf, type AgentResult } from "./loop/loop-shared.ts";
 import type { AgentBuildContext } from "./loop/run-agent.ts";
 import type { HandlerVerdict, ToolHandler } from "./loop/loop-contract.ts";
 import {
@@ -30,8 +29,10 @@ import {
 import {
   prepareSpawn,
   runPreparedSubagent,
+  settlementStatusOf,
   type PrepareSpawnResult,
   type DelegateTaskContext,
+  type SpawnResult,
   type SubagentAggregate,
 } from "./subagents/delegate-task.ts";
 import {
@@ -60,25 +61,29 @@ function wantsBackground(args: unknown): boolean {
 }
 
 /**
- * The terminal a lead hits when its background children keep failing.
+ * The refusal a lead gets while its children keep failing technically.
  *
- * @remarks A background spawn credits progress the moment it returns a handle —
- * which is honest, the model did learn something — but that alone would let a
- * lead spawn a doomed child forever without ever tripping the no-progress guard.
- * This is the bound: consecutive failures with no success between them.
+ * @param toolName - the child-spawn tool that was called.
+ * @param failures - the consecutive technical failures seen so far.
+ * @returns a plain refusal that credits no progress.
+ * @remarks A refusal, not a terminal verdict. A streak of child failures is a
+ *   fact about children, and the smallest scope that contains it is the child
+ *   admission it closes — ending the run there, which is what used to happen, also
+ *   cancelled every healthy sibling and every running inference in the tree. The
+ *   lead keeps its own iteration to inspect a child with `agent_poll`, take the
+ *   work over locally, or finish with what it has. What still bounds a lead that
+ *   only repeats the call is the progress tracker: a refusal credits no progress,
+ *   so the `no_progress` guard ends the run with the model's own repetition as the
+ *   evidence. Asking again does not reset the streak either — only a child that
+ *   finishes successfully does.
  */
-function backgroundChildrenFailingTerminal(bc: AgentBuildContext): AgentResult {
-  bc.trace.record("terminate", { reason: "background_children_failing" });
+function spawnRefusedByStreak(toolName: string, failures: number): HandlerVerdict {
   return {
-    status: "error",
-    partialText: bc.state.lastAssistantText,
-    error: {
-      code: "background_children_failing",
-      message:
-        "Every recent background Sub-agent failed. Stopping rather than spawning another; " +
-        "read one with agent_poll to see why, and finish with what you have.",
-    },
-    ...partialStructOf(bc.state.lastSubmitAttempt),
+    kind: "result",
+    text:
+      `Tool '${toolName}' result: not spawned — the last ${String(failures)} Sub-agents failed. ` +
+      "Read one with agent_poll, do the work here, or finish with what you have.",
+    progress: false,
   };
 }
 
@@ -138,7 +143,7 @@ function spawnInBackground(
         ...(region !== undefined ? { computeRegion: region } : {}),
       });
       handle.settled({
-        status: outcome.failed ? "failed" : "completed",
+        status: settlementStatusOf(outcome.outcome),
         result: outcome.text,
       });
     } catch (err) {
@@ -287,6 +292,10 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
         };
       }
 
+      if (deps.agents !== undefined && deps.agents.failingStreakExceeded()) {
+        return spawnRefusedByStreak(toolName, deps.agents.consecutiveFailures());
+      }
+
       let prep: PrepareSpawnResult;
       const callCtx: DelegateTaskContext = {
         ...spawnCtx,
@@ -314,9 +323,6 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
       if (prepared.taskId !== undefined) deps.tasks?.noteSpawned(prepared.taskId);
 
       if (wantsBackground(rawArgs) && deps.agents !== undefined) {
-        if (deps.agents.failingStreakExceeded()) {
-          return { kind: "terminal", result: backgroundChildrenFailingTerminal(bc) };
-        }
         return spawnInBackground(toolName, deps.agents, prepared, callCtx, deps, bc);
       }
 
@@ -331,11 +337,11 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
             permitHeld = true;
             deps.clock?.enter();
             entered = true;
-            const r = await runPreparedSubagent(
+            const r: SpawnResult = await runPreparedSubagent(
               prepared,
               effective !== undefined ? { ...callCtx, signal: effective } : callCtx,
             );
-            if (!r.failed) iter.subagentSpawned = true;
+            if (r.outcome === "completed") iter.subagentSpawned = true;
             return {
               text: `Tool '${toolName}' result: ${r.text}`,
               progress: false,

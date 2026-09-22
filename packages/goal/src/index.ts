@@ -23,3 +23,8 @@ export * from "./agent/steward-prompt.ts";
 export * from "./agent/steward-request.ts";
 export * from "./agent/steward-run.ts";
 export * from "./steward-state.ts";
+
+export { createGoalAttachmentCapability } from "./capability.ts";
+export type { GoalAttachmentPort, GoalActivationPort } from "./ports.ts";
+
+export { retryGoalResume } from "./control.ts";

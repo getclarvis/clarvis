@@ -92,7 +92,7 @@ async function settle(f: Awaited<ReturnType<typeof fixture>>) {
       outcome: "completed",
       disposition: "checkpoint",
       completion_validated: false,
-      usage: { kind: "measured", input: 100, cached: 80, output: 5 },
+      usage: { kind: "complete", input: 100, cached: 80, output: 5 },
       now: 500,
     }),
     result: undefined,

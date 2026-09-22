@@ -3,8 +3,10 @@ import type { HostedRegistryOptions, PreparedHostedTurn } from "./registry.ts";
 import { kernelError } from "../core/errors.ts";
 import type { FileSessionService, HostSessionStore } from "../sessions/session-service.ts";
 import { addRunUsage } from "../sessions/usage.ts";
-import { buildSkillRunDigest } from "../runs/recovered-context.ts";
-import { randomUUID } from "node:crypto";
+import { buildSkillRunDigest, buildRecoveredContext } from "../runs/recovered-context.ts";
+import { pauseGoalForPolicy } from "@clarvis/goal";
+import { goalStateFromSession, goalStateToDto } from "../goals/session-state.ts";
+import { createHash, randomUUID } from "node:crypto";
 import type { HostedConversationAuthority } from "./admission.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 
@@ -63,6 +65,30 @@ function revision(session: Session | null): number {
   return value;
 }
 
+/** Compare preparation inputs independently of newly accepted, still pending operator messages. */
+function preparationIdentity(session: Session | null): string {
+  if (session === null) return "null";
+  const {
+    operator_intents: _intents,
+    operator_sequence: _sequence,
+    revision: _revision,
+    updated_at: _updated,
+    ...identity
+  } = session;
+  return JSON.stringify(identity);
+}
+
+/** Compare execution policy without conflating message content or reserved identity. */
+function operatorPolicy(params: StartRunParams): string {
+  const {
+    messages: _messages,
+    execution_id: _execution,
+    continue_from: _previous,
+    ...policy
+  } = params;
+  return JSON.stringify(policy);
+}
+
 /** Synchronous host mutation, committed with the canonical conversation under one short lock. */
 export interface HostedSessionTransactions {
   transact<T>(
@@ -85,8 +111,13 @@ export function createHostedSessionCoordinator(
   saveDuringActivity(value: Session, ownsActivity: () => boolean): Promise<void>;
   prepare: HostedRegistryOptions["prepare"];
   archiveRecovery: NonNullable<HostedRegistryOptions["archiveRecovery"]>;
+  acceptOperator: NonNullable<HostedRegistryOptions["acceptOperator"]>;
+  prepareOperator: NonNullable<HostedRegistryOptions["prepareOperator"]>;
+  deliverOperator: NonNullable<HostedRegistryOptions["deliverOperator"]>;
 } {
   const active = new Set<string>();
+  const mutations = new Map<string, Promise<void>>();
+  let queuedMutations = 0;
   const preparing = new Set<string>();
   const now = options.now ?? Date.now;
   const goalChanged = (session: Session): void => {
@@ -107,14 +138,21 @@ export function createHostedSessionCoordinator(
   const locked = async <T>(id: string, action: () => Promise<T>): Promise<T> => {
     if (typeof id !== "string" || id.length === 0 || id.length > 256)
       throw kernelError("invalid_request", "invalid conversation identity");
-    if (active.has(id)) throw kernelError("conflict", "conversation mutation already in progress");
-    if (active.size >= 4)
-      throw kernelError("resource_exhausted", "hosted conversation mutation limit reached");
+    if (queuedMutations >= 64)
+      throw kernelError("resource_exhausted", "hosted conversation mutation queue is full");
+    queuedMutations++;
+    const previous = mutations.get(id) ?? Promise.resolve();
+    const settled = Promise.withResolvers<void>();
+    mutations.set(id, settled.promise);
+    await previous;
     active.add(id);
     try {
       return await action();
     } finally {
+      queuedMutations--;
       active.delete(id);
+      if (mutations.get(id) === settled.promise) mutations.delete(id);
+      settled.resolve();
     }
   };
   const get = async (id: string): Promise<Session | null> => {
@@ -141,7 +179,11 @@ export function createHostedSessionCoordinator(
         (current.agent_instance_id !== input.agent_instance_id ||
           JSON.stringify(current.turns) !== JSON.stringify(input.turns) ||
           JSON.stringify(current.totals) !== JSON.stringify(input.totals) ||
-          JSON.stringify(current.goal_state) !== JSON.stringify(input.goal_state))
+          JSON.stringify(current.goal_state) !== JSON.stringify(input.goal_state) ||
+          (input.operator_intents !== undefined &&
+            JSON.stringify(current.operator_intents) !== JSON.stringify(input.operator_intents)) ||
+          (input.operator_sequence !== undefined &&
+            current.operator_sequence !== input.operator_sequence))
       )
         throw kernelError("conflict", "hosted turn history and totals are owned by the host");
       if (
@@ -149,10 +191,21 @@ export function createHostedSessionCoordinator(
         (input.turns.length !== 0 ||
           input.totals.input !== 0 ||
           input.totals.output !== 0 ||
-          input.goal_state !== undefined)
+          input.goal_state !== undefined ||
+          input.operator_intents !== undefined ||
+          input.operator_sequence !== undefined)
       )
         throw kernelError("invalid_request", "new hosted conversations must have empty history");
-      await options.sessions.save({ ...input, revision: revision(current) + 1 });
+      await options.sessions.save({
+        ...input,
+        ...(current?.operator_intents === undefined
+          ? {}
+          : {
+              operator_intents: current.operator_intents,
+              operator_sequence: current.operator_sequence,
+            }),
+        revision: revision(current) + 1,
+      });
     });
   };
   const sessions: FileSessionService = {
@@ -184,12 +237,27 @@ export function createHostedSessionCoordinator(
       authority.signal.throwIfAborted();
       const current = await locked(input.session_id, () => get(input.session_id));
       if (current === null) throw kernelError("not_found", "hosted conversation does not exist");
-      if (current.turns.some((turn) => turn.recovery_resolution !== undefined))
+      /**
+       * An archived recovery parks the conversation; a `continue` one reopens it.
+       *
+       * @remarks The operator's attestation is the same in both cases — nothing is still running —
+       *   and what differs is only whether the line of work resumes here. Recording the resolution
+       *   alone therefore cannot decide this: a conversation resolved with `continue` has to accept
+       *   the successor the operator asked for, and the interrupted turn stays in its history as
+       *   the base that successor continues from.
+       */
+      if (
+        current.turns.some(
+          (turn) =>
+            turn.recovery_resolution !== undefined &&
+            turn.recovery_resolution.disposition !== "continue",
+        )
+      )
         throw kernelError(
           "conflict",
           "conversation was archived after an unknown outcome; start a new conversation",
         );
-      if (revision(current) !== input.session_revision)
+      if (input.params.intent !== "operator" && revision(current) !== input.session_revision)
         throw kernelError("conflict", "conversation changed before hosted turn admission");
       if (current.turns.some((turn) => turn.execution_id === input.params.execution_id))
         throw kernelError("conflict", "execution already belongs to this conversation");
@@ -205,6 +273,51 @@ export function createHostedSessionCoordinator(
           "continuation does not name this conversation's latest model turn",
         );
       const params = structuredClone(input.params);
+      const batch =
+        params.intent === "operator" &&
+        params.skill === undefined &&
+        params.goal_intent === undefined
+          ? (current.operator_intents ?? []).filter(
+              (receipt) =>
+                !receipt.admitted &&
+                (receipt.execution_id === params.execution_id ||
+                  !receipt.execution_id.startsWith("steer_")) &&
+                receipt.input.kind === input.kind &&
+                operatorPolicy(receipt.input.params) === operatorPolicy(params) &&
+                receipt.input.params.skill === undefined &&
+                receipt.input.params.goal_intent === undefined,
+            )
+          : [];
+      if (batch.length > 0)
+        params.messages = batch.flatMap((receipt) =>
+          structuredClone(receipt.input.params.messages),
+        );
+      if (previous?.recovery_resolution?.disposition === "continue") {
+        const history: StartRunParams["messages"] = [];
+        for (const turn of current.turns) {
+          if (turn.kind !== "conversation" || turn.execution_id === undefined) continue;
+          const detail = await options.readRun?.(turn.execution_id);
+          if (detail !== null && detail !== undefined) {
+            history.push(...detail.messages);
+            if (typeof detail.result?.result === "string" && detail.result.result.trim())
+              history.push({ role: "assistant", content: detail.result.result });
+            const recovered = buildRecoveredContext(detail.events, detail.plan_ref);
+            if (recovered !== null) history.push({ role: "assistant", content: recovered });
+          }
+        }
+        history.push({
+          role: "user",
+          content:
+            "The previous execution was physically closed through explicit recovery. Its outcome may be incomplete. Verify uncertain effects before repeating actions; no successful outcome is implied.",
+        });
+        if (Buffer.byteLength(JSON.stringify(history)) > 512 * 1024)
+          throw kernelError(
+            "resource_exhausted",
+            "Recovered conversation exceeds its context bound",
+          );
+        params.messages = [...history, ...params.messages];
+        delete params.continue_from;
+      }
       const agentInstanceId = current.agent_instance_id ?? randomUUID();
       params.session_id = current.id;
       params.agent_instance_id = input.kind === "conversation" ? agentInstanceId : randomUUID();
@@ -225,7 +338,7 @@ export function createHostedSessionCoordinator(
       });
       authority.signal.throwIfAborted();
       const latest = await get(input.session_id);
-      if (JSON.stringify(current) !== JSON.stringify(latest))
+      if (preparationIdentity(current) !== preparationIdentity(latest))
         throw kernelError("conflict", "conversation changed while execution was being prepared");
       const stamp = now();
       const intent: Session = {
@@ -258,9 +371,29 @@ export function createHostedSessionCoordinator(
           return locked(input.session_id, async () => {
             authority.signal.throwIfAborted();
             if (committed) throw kernelError("conflict", "hosted turn intent already committed");
-            if (JSON.stringify(await get(input.session_id)) !== JSON.stringify(current))
+            const latest = await get(input.session_id);
+            if (latest === null || preparationIdentity(latest) !== preparationIdentity(current))
               throw kernelError("conflict", "conversation changed before intent commit");
+            intent.operator_intents = latest.operator_intents;
+            intent.operator_sequence = latest.operator_sequence;
+            intent.revision = revision(latest) + 1;
             binding.commitSessionIntent?.(intent);
+            const receipt = intent.operator_intents?.find(
+              (value) => value.execution_id === params.execution_id,
+            );
+            if (receipt !== undefined) {
+              receipt.admitted = true;
+              receipt.delivered_to = params.execution_id;
+            }
+            for (const accepted of batch) {
+              const member = intent.operator_intents?.find(
+                (value) => value.execution_id === accepted.execution_id,
+              );
+              if (member !== undefined) {
+                member.admitted = true;
+                member.delivered_to = params.execution_id;
+              }
+            }
             await options.sessions.saveHost(intent);
             goalChanged(intent);
             committed = true;
@@ -386,5 +519,109 @@ export function createHostedSessionCoordinator(
       goalChanged(session);
       return result;
     });
-  return { sessions, saveDuringActivity: save, prepare, archiveRecovery, transact };
+  const acceptOperator: NonNullable<HostedRegistryOptions["acceptOperator"]> = (input) =>
+    transact(input.session_id, (session) => {
+      const canonical = structuredClone(input);
+      canonical.session_revision = 0;
+      delete canonical.params.continue_from;
+      const fingerprint = createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+      const known = session.operator_intents?.find(
+        (value) => value.execution_id === input.params.execution_id,
+      );
+      if (known !== undefined) {
+        if (known.fingerprint !== fingerprint)
+          throw kernelError("conflict", "Submission identity was reused for different input");
+        return { session, result: known.admitted ? ("delivered" as const) : ("pending" as const) };
+      }
+      const intents = session.operator_intents ?? [];
+      if (intents.filter((value) => !value.admitted).length >= 16)
+        throw kernelError("resource_exhausted", "Too many pending operator submissions");
+      const goalState = goalStateFromSession(session);
+      if (goalState !== undefined)
+        session.goal_state = goalStateToDto(
+          pauseGoalForPolicy(
+            goalState,
+            "New operator input suspended automatic continuation",
+            now(),
+          ),
+        );
+      session.operator_sequence = (session.operator_sequence ?? 0) + 1;
+      session.operator_intents = [
+        ...intents.filter(
+          (value) => !value.admitted || intents.indexOf(value) >= intents.length - 48,
+        ),
+        {
+          execution_id: input.params.execution_id,
+          sequence: session.operator_sequence,
+          fingerprint,
+          input: structuredClone(input),
+          accepted_at: now(),
+        },
+      ];
+      return { session, result: "pending" as const };
+    });
+  const deliverOperator: NonNullable<HostedRegistryOptions["deliverOperator"]> = (
+    sessionId,
+    executionId,
+    deliveredTo,
+  ) =>
+    transact(sessionId, (session) => {
+      const receipt = session.operator_intents?.find((value) => value.execution_id === executionId);
+      if (receipt === undefined) throw kernelError("conflict", "Steering receipt disappeared");
+      if (receipt.delivered_to !== undefined && receipt.delivered_to !== deliveredTo)
+        throw kernelError("conflict", "Steering already consumed by another execution");
+      receipt.admitted = true;
+      receipt.delivered_to = deliveredTo;
+      return { session, result: undefined };
+    });
+  const prepareOperator: NonNullable<HostedRegistryOptions["prepareOperator"]> = async (
+    sessionId,
+    executionId,
+  ) => {
+    const session = await get(sessionId);
+    const receipt = session?.operator_intents?.find((value) => value.execution_id === executionId);
+    if (session === null || receipt === undefined)
+      throw kernelError("not_found", "Operator submission is not durably accepted");
+    if (!receipt.admitted && executionId.startsWith("steer_") && options.readRun !== undefined) {
+      for (const turn of session.turns.slice(-16).reverse()) {
+        if (turn.execution_id === undefined) continue;
+        const detail = await options.readRun(turn.execution_id);
+        if (
+          detail?.events.some(
+            (event) => event.type === "steering_applied" && event.id === executionId,
+          )
+        ) {
+          await deliverOperator(sessionId, executionId, turn.execution_id);
+          throw kernelError("conflict", "Submission consumption recovered from canonical history", {
+            submission: "admitted",
+            execution_id: turn.execution_id,
+          });
+        }
+      }
+    }
+    if (receipt.admitted)
+      throw kernelError(
+        "conflict",
+        "Submission already admitted; recover its canonical execution",
+        { submission: "admitted", execution_id: receipt.delivered_to ?? executionId },
+      );
+    const input = structuredClone(receipt.input);
+    input.session_revision = revision(session);
+    const previous = session.turns.findLast(
+      (turn) => turn.kind === "conversation" && turn.execution_id !== undefined,
+    );
+    if (previous?.execution_id !== undefined && input.params.skill === undefined)
+      input.params.continue_from = previous.execution_id;
+    return input;
+  };
+  return {
+    sessions,
+    saveDuringActivity: save,
+    prepare,
+    archiveRecovery,
+    transact,
+    acceptOperator,
+    prepareOperator,
+    deliverOperator,
+  };
 }

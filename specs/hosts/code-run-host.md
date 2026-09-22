@@ -1627,3 +1627,30 @@ application lifecycle work (`tooling/checks/coverage.ts`, `NO_COUNTER_ALLOWLIST.
   bounds. Only `ACTIVITY_SUBAGENT_SUMMARIES_MAX` carries a stated reason —
   `"Mirrors the supervision registry's maximum retained settled-child roster"`
   (`packages/code/src/adapters/activity-store.ts`) — which is unverified against `@clarvis/supervision`.
+
+## Hosted submission before admission
+
+`Session.beginTurn` keeps hosted input in a local submission map without appending a canonical
+turn, semantic message or continuation base. `acceptHosted` adopts it once by execution identity.
+The adapter's `RunHandle.admitted` resolves on the host attachment; its terminal `done` remains the
+later physical/publication barrier. Pending host input stays pending after observation failure.
+A start rejection does not fabricate the diagnostic for a failed settlement of an admitted run.
+Resume commands remain available on complete, cancelled and healthy running Goals; explicit receipt
+recovery retains the original operation identity. New pause/cancel/replacement may supersede it.
+Production: `createSession` in [session.ts](../../packages/code/src/adapters/session.ts),
+`driveHandle` in [kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts), and
+`createRunHost` in [run-host.ts](../../packages/code/src/run-host.ts).
+Test: [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts),
+[session-store.test.ts](../../packages/code/tests/component/session-store.test.ts), and
+[goal-commands.test.tsx](../../packages/code/tests/integration/goal-commands.test.tsx).
+
+Goal synchronization compares ordered canonical turn identities. On divergence it retains the
+shared resident prefix and replaces only the suffix; divergence before the folded window reloads
+the canonical window. A subsequent refresh is idempotent. Physical recovery is available from the
+Goal's receipt action, with explicit confirmation that old physical work stopped before retrying
+the retained resume. Saving a limit edit links it to a pending limit-constrained resume.
+Production: `synchronizeGoal`, `TranscriptStore.truncateFrom` in
+[store.ts](../../packages/code/src/adapters/store.ts), and `GoalView` in
+[view.tsx](../../packages/code/src/features/goal/view.tsx).
+Test: canonical suffix replacement in
+[store-status.test.ts](../../packages/code/tests/unit/store-status.test.ts).

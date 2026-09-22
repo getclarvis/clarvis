@@ -218,7 +218,7 @@ describe("Steward settlement", () => {
     const input = {
       binding,
       executionId: "review",
-      usage: { kind: "measured" as const, input: 100, output: 10, cached: 60 },
+      usage: { kind: "complete" as const, input: 100, output: 10, cached: 60 },
       sequence: 3,
       fingerprint: "fingerprint",
       now: 4,
@@ -273,7 +273,7 @@ describe("Steward settlement", () => {
     state.current!.steward.pending_execution_id = "review";
     state = settleStewardEvaluation(state, {
       ...input,
-      usage: { kind: "measured", input: 10, output: 2 },
+      usage: { kind: "complete", input: 10, output: 2 },
     }).state;
     expect(state.current!.steward.consumption.cached).toBeUndefined();
   });
@@ -341,7 +341,7 @@ describe("Steward settlement", () => {
       };
       if (status === "completed")
         expect((await runGoalSteward(runtime, input)).usage).toEqual({
-          kind: "measured",
+          kind: "complete",
           input: 100,
           output: 10,
           cached: 60,

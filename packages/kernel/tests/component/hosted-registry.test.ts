@@ -3,6 +3,198 @@ import type { StartHostedTurnParams } from "@clarvis/protocol";
 import { decodeHostedRegistryState } from "../../src/hosting/state.ts";
 import { fixture, input, until } from "../helpers/hosted-registry.ts";
 
+/** One automatic successor proposal that still names its predecessor. */
+function continuationProposal(previous: string, id: string) {
+  const value = input(id, "session-1");
+  value.params.continue_from = previous;
+  return { input: value };
+}
+
+it("retains an operator submission while a previous execution settles, bounded by its wait", async () => {
+  const f = fixture({
+    continuationTimeoutMs: 5,
+    registryOptions: {
+      async acceptOperator() {
+        return "pending" as const;
+      },
+      async prepareOperator(sessionId, executionId) {
+        const value = input(executionId, sessionId);
+        value.params.intent = "operator";
+        return value;
+      },
+      async deliverOperator() {},
+    },
+  });
+  const peer = f.registry.connect("operator");
+  try {
+    const first = await peer.service.start(input("run-1"));
+    expect(first.run.execution_id).toBe("run-1");
+    // The person's message waits for the run occupying the conversation, and the wait is bounded
+    // rather than holding the submission open indefinitely.
+    await expect(peer.service.start(input("run-2"))).rejects.toMatchObject({
+      code: "unavailable",
+      details: { submission: "recovering" },
+    });
+    f.finish("run-1");
+    await first.handle.closed;
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("rejects an invalid hosted identity and contains a failing execution observer", async () => {
+  const f = fixture({
+    registryOptions: {
+      executionChanged: () => {
+        throw new Error("observer failed");
+      },
+    },
+  });
+  const peer = f.registry.connect("operator");
+  try {
+    // The identity is refused before any admission, lease or reservation is taken.
+    await expect(peer.service.start(input("bad identity"))).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    // A host observer that fails is logged, never raised into the caller's admission.
+    const view = await peer.service.start(input("run-1"));
+    expect(view.run.execution_id).toBe("run-1");
+    f.finish("run-1");
+    await view.handle.closed;
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("reports whether a connected peer still controls a conversation", async () => {
+  const f = fixture();
+  const peer = f.registry.connect("operator");
+  try {
+    const view = await peer.service.start(input());
+    expect(f.registry.controlsConversation(peer.peer.id, "session-1")).toBe(true);
+    expect(f.registry.controlsConversation("another-peer", "session-1")).toBe(false);
+    f.finish("run-1");
+    await view.handle.closed;
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("closes a connection whose cancelled run does not acknowledge, without raising", async () => {
+  const f = fixture({
+    handle: (handle) => ({
+      ...handle,
+      async cancel() {
+        throw new Error("no acknowledgement from the run");
+      },
+    }),
+  });
+  const peer = f.registry.connect("operator");
+  const view = await peer.service.start(input());
+  expect(view.run.execution_state).toBe("running");
+  // The disconnect cancels its run; a run that never confirms is reported, not propagated.
+  await peer.close();
+  expect(f.registry.stats().retained).toBeGreaterThan(0);
+  // The registry's own close refuses to pretend the run acknowledged its cancellation.
+  await expect(f.registry.close()).rejects.toThrow("no acknowledgement from the run");
+});
+
+it("restores an acknowledge that could not be persisted", async () => {
+  let failCommit = false;
+  const f = fixture({
+    commit: async () => {
+      if (failCommit) throw new Error("index write failed");
+    },
+  });
+  const peer = f.registry.connect("operator");
+  try {
+    const view = await peer.service.start(input());
+    f.finish("run-1");
+    await view.handle.closed;
+    failCommit = true;
+    await expect(peer.service.acknowledge("run-1")).rejects.toThrow("index write failed");
+    failCommit = false;
+    await peer.service.acknowledge("run-1");
+    expect(await peer.service.list()).toEqual([]);
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("retires a conversation's pending continuation when the person submits their own turn", async () => {
+  const f = fixture({
+    continuationTimeoutMs: 5,
+    continuation: () => ({
+      async prepare() {
+        return continuationProposal("run-1", "automatic");
+      },
+      async stopped() {},
+    }),
+    registryOptions: {
+      async acceptOperator() {
+        return "pending" as const;
+      },
+      async prepareOperator(sessionId, executionId) {
+        const value = input(executionId, sessionId);
+        value.params.intent = "operator";
+        return value;
+      },
+      async deliverOperator() {},
+    },
+  });
+  const peer = f.registry.connect("operator");
+  try {
+    await peer.service.start(input("run-1"));
+    expect(f.registry.hasPendingContinuation()).toBe(true);
+    // The person's own turn takes the conversation: the automatic continuation stops being pending,
+    // and the submission waits for the busy run under its own bounded wait.
+    await expect(peer.service.start(input("run-2"))).rejects.toMatchObject({
+      details: { submission: "recovering" },
+    });
+    expect(f.registry.hasPendingContinuation()).toBe(false);
+    f.finish("run-1");
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("refuses a run that reports another execution identity instead of registering it", async () => {
+  const f = fixture({
+    handle: (handle) => ({ ...handle, execution_id: "another-run" }),
+    reconcile: async () => {
+      throw new Error("reconcile failed");
+    },
+  });
+  const peer = f.registry.connect("operator");
+  try {
+    await expect(peer.service.start(input("run-1"))).rejects.toMatchObject({ code: "internal" });
+    // The run stays visible under its own identity so physical closure can be verified, but it is
+    // never reported as running and never answers as the foreign identity.
+    const [row] = await peer.service.list();
+    expect(row).toMatchObject({ execution_id: "run-1" });
+    expect(row!.execution_state).not.toBe("running");
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("forwards steering to a run when the host wires no operator submission service", async () => {
+  const f = fixture();
+  const peer = f.registry.connect("operator");
+  try {
+    const view = await peer.service.start(input());
+    // Without acceptOperator/deliverOperator the message is handed straight to the execution.
+    const steering = view.handle.steer("More context").catch(() => undefined);
+    await until(() => true);
+    expect(f.starts()).toBe(1);
+    f.finish("run-1");
+    await steering;
+    await view.handle.closed;
+  } finally {
+    await f.registry.close();
+  }
+});
+
 it("persists a plain sanitized preparation error without poisoning later admissions", async () => {
   let attempts = 0;
   const f = fixture({

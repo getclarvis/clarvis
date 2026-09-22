@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { GoalError } from "./errors.ts";
-import { goalAdmission, goalHasPhysicalRun, resolveGoalLimits } from "./policy.ts";
+import {
+  goalAdmission,
+  goalHasPhysicalRun,
+  resolveGoalLimits,
+  unacceptedUsageRuns,
+  usageGapIdentity,
+} from "./policy.ts";
 import {
   GOAL_ARCHIVE_MAX,
   GOAL_CONTROL_MAX_BYTES,
@@ -60,6 +66,7 @@ export const goalControlSchema = z
       z
         .object({
           kind: z.literal("edit"),
+          resume_operation_id: id.optional(),
           objective: objective.optional(),
           criteria: criteria.optional(),
           constraints: semanticItems.optional(),
@@ -94,6 +101,11 @@ export interface GoalControlContext {
   entry_token_limit?: number;
   now: number;
   physically_busy: boolean;
+  /** Existing healthy bound execution attested by the host; resume reattaches without spawning. */
+  live_execution_id?: string;
+  /** Physical recovery keeps explicit resume durable without granting start. */
+  resume_pending?: boolean;
+  resume_condition?: "physical" | "token_limit" | "deadline";
   /** Host-owned idempotency fingerprint for a semantic formulation operation. */
   fingerprint?: string;
 }
@@ -258,6 +270,8 @@ export function applyGoalControl(
         usage_unknown: false,
         cache_estimated: false,
         overrun_tokens: 0,
+        gaps: [],
+        usage_accepted_runs: [],
       },
       auto_continuations: 0,
       no_progress_stages: 0,
@@ -274,9 +288,36 @@ export function applyGoalControl(
     delete state.creation_intent;
   } else {
     const goal = requireCurrent(state);
-    if (action.kind !== "clear") requireNonterminal(goal);
+    /**
+     * A terminal goal is replaced — except by an explicit resume, which reopens it.
+     *
+     * @remarks The operator asking to continue a finished or cancelled objective is asking for a
+     *   new attempt at it, and the domain would otherwise have no transition for that: the only
+     *   remaining route was `replace`, which discards the objective, its criteria and its audit.
+     *   Reopening preserves all three and invalidates the parts that belonged to the closed
+     *   attempt — see the `resume` branch below.
+     */
+    if (
+      action.kind !== "clear" &&
+      action.kind !== "resume" &&
+      !(action.kind === "edit" && action.resume_operation_id !== undefined)
+    )
+      requireNonterminal(goal);
     if (action.kind === "edit") {
       requireInactive(goal, context);
+      if (action.resume_operation_id !== undefined) {
+        const pending = state.receipts.find(
+          (receipt) => receipt.operation_id === action.resume_operation_id,
+        );
+        if (
+          pending?.resume_pending !== true ||
+          pending.goal_id !== goal.goal_id ||
+          pending.revision !== goal.control_revision ||
+          action.limits === undefined
+        )
+          throw new GoalError("conflict", "Limit edit does not match the pending resume");
+        pending.revision = nextRevision;
+      }
       if (
         action.objective === undefined &&
         action.criteria === undefined &&
@@ -321,17 +362,60 @@ export function applyGoalControl(
       goal.reason = action.kind === "pause" ? "Paused by the user" : "Cancelled by the user";
       if (action.kind === "cancel" || action.running)
         cancel_execution_id = goal.runs.find((run) => run.phase !== "closed")?.execution_id;
+    } else if (action.kind === "resume" && context.resume_pending === true) {
+      start = false;
+    } else if (action.kind === "resume" && context.live_execution_id !== undefined) {
+      const live = goal.runs.find(
+        (run) => run.execution_id === context.live_execution_id && run.phase !== "closed",
+      );
+      if (live === undefined)
+        throw new GoalError("conflict", "Live execution does not belong to this Goal");
+      goal.status = "active";
+      live.control_revision = nextRevision;
+      delete goal.reason;
     } else if (action.kind === "resume") {
       requireInactive(goal, context);
       const candidate = { ...goal, status: "active" as const, no_progress_stages: 0 };
-      const decision = goalAdmission(candidate, context.now, true);
+      const decision = goalAdmission(candidate, context.now, false);
       if (!decision.allowed)
         throw new GoalError(
           decision.status === "paused" ? "blocked" : decision.status,
           decision.reason,
         );
+      /**
+       * Reopening keeps the objective, its criteria, its consumption and its audit, and retires
+       * what belonged to the attempt that ended.
+       *
+       * @remarks A completion candidate validated against the closed attempt cannot answer for the
+       *   new one, and neither can the Steward's review of it, so both are dropped rather than
+       *   carried forward as an answered question. Everything the operator authored — objective,
+       *   criteria, constraints, sources, limits, human acceptances and the closed run's record —
+       *   stays exactly as it was, and the consumption is never reset: reopening a goal does not
+       *   refund the tokens it already spent.
+       */
+      delete goal.candidate;
+      delete goal.steward.last_steward_execution_id;
+      delete goal.steward.pending_execution_id;
+      delete goal.steward.pending_question;
+      delete goal.steward.trajectory_digest;
+      goal.steward.status = "idle";
       goal.status = "active";
       goal.no_progress_stages = 0;
+      /**
+       * An explicit resume is where a gap in the consumption record is accepted.
+       *
+       * @remarks The acceptance is recorded per execution and the measurement itself is never
+       *   rewritten: the operator accepts that those stages are not fully measured, which is a
+       *   different fact from the tokens already charged for them. A stage that closes later with
+       *   its own gap is a new execution and is unaccepted again.
+       */
+      goal.consumption.usage_accepted_runs = [
+        ...new Set([...goal.consumption.usage_accepted_runs, ...unacceptedUsageRuns(goal)]),
+      ];
+      for (const run of goal.runs) {
+        if (goal.consumption.usage_accepted_runs.includes(run.execution_id))
+          run.accepted_usage_gaps = usageGapIdentity(run.usage);
+      }
       delete goal.reason;
       start = true;
     } else {
@@ -361,9 +445,18 @@ export function applyGoalControl(
     operation_id: control.operation_id,
     fingerprint,
     revision: nextRevision,
-    ...(start && context.new_execution_id !== undefined
-      ? { execution_id: context.new_execution_id }
+    ...(context.resume_pending === true && action.kind === "resume"
+      ? {
+          resume_pending: true,
+          outcome: "needs_input" as const,
+          resume_condition: context.resume_condition ?? ("physical" as const),
+        }
       : {}),
+    ...(action.kind === "resume" && context.live_execution_id !== undefined
+      ? { execution_id: context.live_execution_id }
+      : (start || context.resume_pending === true) && context.new_execution_id !== undefined
+        ? { execution_id: context.new_execution_id }
+        : {}),
     ...(state.current === undefined
       ? {}
       : { goal_id: state.current.goal_id, status: state.current.status }),
@@ -445,4 +538,27 @@ export function recordGoalFormulationReceipt(
   state.receipts = [...state.receipts, receipt].slice(-GOAL_RECEIPTS_MAX);
   const bounded = boundedGoalState(state);
   return { state: bounded, receipt: bounded.receipts.at(-1)!, replayed: false, start: false };
+}
+
+/** Continue one recorded resume after physical recovery, retaining its reserved identity and fingerprint. */
+export function retryGoalResume(
+  previous: GoalState,
+  operationId: string,
+  context: GoalControlContext,
+): GoalControlResult {
+  const state = boundedGoalState(previous, true);
+  const receipt = state.receipts.find((value) => value.operation_id === operationId);
+  if (receipt === undefined || receipt.resume_pending !== true)
+    throw new GoalError("conflict", "No pending resume exists for this operation");
+  if (
+    state.current?.goal_id !== receipt.goal_id ||
+    state.current?.control_revision !== receipt.revision
+  )
+    return { state, receipt: { ...receipt, outcome: "superseded" }, replayed: true, start: false };
+  state.receipts = state.receipts.filter((value) => value !== receipt);
+  return applyGoalControl(
+    state,
+    { operation_id: operationId, expected_revision: state.revision, action: { kind: "resume" } },
+    { ...context, new_execution_id: receipt.execution_id, fingerprint: receipt.fingerprint },
+  );
 }

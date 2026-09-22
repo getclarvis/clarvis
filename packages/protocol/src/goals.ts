@@ -77,9 +77,43 @@ export interface GoalProgress {
   evidence: GoalEvidenceRef[];
 }
 
-/** Missing cache is a conservative estimate; unknown total is not a measured zero. */
+/**
+ * Why one call's consumption stayed unresolved, in the host's closed vocabulary.
+ *
+ * @remarks A provider that would not report it, a call still in flight when the stage closed,
+ *   telemetry that arrived unusable, or a rejection that carried none. No member identifies a
+ *   prompt, response or credential.
+ */
+export type GoalUsageGapCause =
+  "no_usage" | "provider_unknown" | "pending_call" | "invalid_measure";
+
+/** One bounded, attributable gap in a partial measurement. */
+export interface GoalUsageGap {
+  cause: GoalUsageGapCause;
+  calls: number;
+  call_ids?: string[];
+  fingerprint?: string;
+}
+
+/**
+ * One scope's confirmed consumption.
+ *
+ * @remarks `complete` and `partial` both carry the tokens actually observed and differ only in
+ *   whether every call is accounted for; `partial` names what stayed unresolved and why. Missing
+ *   cache is a conservative estimate in either case, while an absent subtotal is not a measured
+ *   zero — that is what `unknown` is for.
+ */
 export type GoalUsage =
-  { kind: "unknown" } | { kind: "measured"; input: number; output: number; cached?: number };
+  | { kind: "unknown" }
+  | { kind: "complete"; revision?: number; input: number; output: number; cached?: number }
+  | {
+      kind: "partial";
+      revision?: number;
+      input: number;
+      output: number;
+      cached?: number;
+      gaps: GoalUsageGap[];
+    };
 
 /**
  * Why a stage ended, in the host's closed vocabulary.
@@ -118,6 +152,7 @@ export interface GoalRun {
   disposition?: "final" | "checkpoint";
   outcome?: "completed" | "failed" | "cancelled";
   usage?: GoalUsage;
+  accepted_usage_gaps?: string;
   usage_estimate?: { sequence: number; usage: GoalUsage };
   /**
    * What the closed stage leaves for the host's automatic path.
@@ -226,6 +261,10 @@ export interface GoalRecord {
     usage_unknown: boolean;
     cache_estimated: boolean;
     overrun_tokens: number;
+    /** Bounded aggregate of what the charged subtotal does not cover, by cause. */
+    gaps: GoalUsageGap[];
+    /** Closed executions whose incomplete measurement the operator accepted. */
+    usage_accepted_runs: string[];
   };
   auto_continuations: number;
   no_progress_stages: number;
@@ -242,6 +281,9 @@ export interface GoalRecord {
 
 /** Idempotent result retained independently of whatever newer goal state is now visible. */
 export interface GoalReceipt {
+  resume_pending?: true;
+  resume_condition?: "physical" | "token_limit" | "deadline";
+  outcome?: "running" | "recovering" | "needs_input" | "superseded" | "unavailable";
   operation_id: string;
   fingerprint: string;
   revision: number;
@@ -296,6 +338,7 @@ export type GoalControlAction =
     }
   | {
       kind: "edit";
+      resume_operation_id?: string;
       objective?: string;
       criteria?: GoalCriterion[];
       constraints?: string[];

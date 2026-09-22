@@ -154,7 +154,7 @@ function workflowFacts(workflow: WorkflowActivity | null): ActivitySummaryFact[]
 function agentFacts(subagents: ActivitySummaryInput["subagents"]): ActivitySummaryFact[] {
   if (subagents.length === 0) return [];
   const settled = subagents.filter(
-    (agent) => agent.status === "done" || agent.status === "error",
+    (agent) => agent.status !== "running" && agent.status !== "spawned",
   ).length;
   const failed = subagents.filter((agent) => agent.status === "error").length;
   const running = subagents.length - settled;

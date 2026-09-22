@@ -387,7 +387,9 @@ describe("file kernel behind the hosted RPC", () => {
     await until(() => f.host.stats().runs === 0);
     expect((await f.client.goals.get("conversation")).state.current?.status).toBe("paused");
     expect(f.entered).toHaveLength(1);
-    await expect(f.client.hosting!.start(await f.input("ordinary"))).rejects.toMatchObject({
+    const automatic = await f.input("ordinary");
+    automatic.params.intent = "automatic";
+    await expect(f.client.hosting!.start(automatic)).rejects.toMatchObject({
       code: "conflict",
     });
     expect(f.entered).toHaveLength(1);
@@ -570,6 +572,283 @@ describe("file kernel behind the hosted RPC", () => {
     await client.localHost!.requestRestart();
     expect(recovered.stats().restartRequested).toBe(true);
     expect(f.entered).toEqual(["interrupted"]);
+  });
+
+  test("releases the Goal stage of a physically unknown run when the operator asks to continue", async () => {
+    const f = await fixture();
+    await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "create-goal",
+      action: {
+        kind: "create",
+        objective: "Survive a host restart",
+        limits: { max_net_tokens: 10000 },
+      },
+    });
+    // The stage is physically running and is never released, so the restart finds it unknown.
+    await until(() => f.entered.length === 1);
+    const stage = f.entered[0]!;
+    const crashIndex = decodeHostedRegistryState(
+      JSON.parse(await readFile(f.paths.registryFile, "utf8")),
+    );
+    const crashSession = (await f.client.sessions.get("conversation"))!;
+    expect(crashSession.goal_state!.current!.runs.at(-1)).toMatchObject({
+      execution_id: stage,
+      phase: "running",
+    });
+    await f.client.close();
+    await f.listener.close();
+    await f.host.close();
+    const recovered = await createFileRunHost({
+      ...f.hostOptions,
+      hostGeneration: "recovered",
+      storage: {
+        ...f.hostOptions.storage,
+        initialState: crashIndex,
+        // A new generation owns its own projections: its snapshot cursor names it.
+        projection: (id) =>
+          openHostedProjection(f.paths.projectionFile("recovered", id), {
+            host_generation: "recovered",
+            execution_id: id,
+          }),
+        removeProjection: async (id, generation) => {
+          await rm(f.paths.projectionFile(generation, id), { force: true });
+        },
+      },
+    });
+    cleanups.push(() => recovered.close());
+    const listener = await listenLocalKernel(recovered.server, f.paths.endpoint);
+    cleanups.push(() => listener.close());
+    const transport = await connectLocalKernelTransport(f.paths.endpoint);
+    cleanups.push(() => transport.close());
+    const client = await connectKernelClient(transport, { auth: "operator-token" });
+    const row = (await client.hosting!.list()).find((value) => value.execution_id === stage)!;
+    expect(row.execution_state).toBe("unknown");
+
+    // While that closure is unresolved, a resume is refused as needing the operator's attestation.
+    const unresolved = await client.goals.get("conversation");
+    expect(
+      await client.goals.control({
+        session_id: "conversation",
+        operation_id: "resume-unresolved",
+        expected_revision: unresolved.state.revision,
+        action: { kind: "resume" },
+      }),
+    ).toMatchObject({
+      resume_pending: true,
+      outcome: "needs_input",
+      resume_condition: "physical",
+    });
+
+    // A new submission is retained, not admitted, while the conversation holds unknown work.
+    const pending = (await client.sessions.get("conversation"))!;
+    await expect(
+      client.hosting!.start({
+        session_id: "conversation",
+        session_revision: pending.revision!,
+        kind: "conversation",
+        user_preview: "Start something else",
+        params: {
+          execution_id: "started-too-early",
+          agent: "solo",
+          messages: [{ role: "user", content: "Start something else" }],
+        },
+      }),
+    ).rejects.toMatchObject({ details: { submission: "recovering" } });
+
+    // Claiming the unknown execution itself is refused: its physical state needs the attestation.
+    await expect(
+      client.hosting!.start({
+        session_id: "conversation",
+        session_revision: pending.revision!,
+        kind: "conversation",
+        user_preview: "Reuse the interrupted identity",
+        params: {
+          execution_id: stage,
+          agent: "solo",
+          messages: [{ role: "user", content: "Reuse the interrupted identity" }],
+        },
+      }),
+    ).rejects.toMatchObject({ code: "unavailable" });
+
+    const resolved = await client.hosting!.resolveRecovery({
+      execution_id: row.execution_id,
+      host_generation: row.host_generation,
+      revision: row.revision,
+      physical_work_stopped: true,
+      disposition: "continue",
+    });
+    // The attestation releases the stage without inventing the outcome it never established.
+    expect(resolved.outcome).toBeUndefined();
+    expect(resolved.recovery_resolution).toMatchObject({ disposition: "continue" });
+    const released = (await client.sessions.get("conversation"))!;
+    const stageRun = released.goal_state!.current!.runs.find((run) => run.execution_id === stage)!;
+    expect(stageRun).toMatchObject({ phase: "closed" });
+    await client.hosting!.acknowledge(row.execution_id);
+    expect(await client.hosting!.list()).toEqual([]);
+
+    // Replaying the resume after the resolution is refused: the closure moved the Goal's control.
+    await expect(
+      client.goals.control({
+        session_id: "conversation",
+        operation_id: "resume-unresolved",
+        expected_revision: (await client.goals.get("conversation")).state.revision,
+        action: { kind: "resume" },
+      }),
+    ).rejects.toMatchObject({ code: "conflict" });
+
+    // `continue` releases the conversation for a successor instead of parking it as an archive.
+    f.released.resolve();
+    const settledSession = (await client.sessions.get("conversation"))!;
+    expect(settledSession.turns).toHaveLength(1);
+    expect(settledSession.turns[0]).toMatchObject({
+      execution_id: stage,
+      recovery_resolution: {
+        kind: "operator_verified_physical_closure",
+        disposition: "continue",
+        previous_host_generation: "generation",
+        resolving_host_generation: "recovered",
+      },
+    });
+    const admitted = await client.hosting!.start({
+      session_id: "conversation",
+      session_revision: settledSession.revision!,
+      kind: "conversation",
+      user_preview: "Continue the work",
+      params: {
+        execution_id: "after-recovery",
+        agent: "solo",
+        messages: [{ role: "user", content: "Continue the work" }],
+      },
+    });
+    expect(admitted.run.execution_id).toBe("after-recovery");
+    await admitted.handle.closed;
+  });
+
+  test("refuses an operator submission whose shape the host cannot carry", async () => {
+    const f = await fixture();
+    const session = (await f.client.sessions.get("conversation"))!;
+    await expect(
+      f.client.hosting!.start({
+        session_id: "conversation",
+        session_revision: session.revision!,
+        kind: "conversation",
+        user_preview: "x".repeat(4097),
+        params: {
+          execution_id: "oversized-preview",
+          agent: "solo",
+          messages: [{ role: "user", content: "A submission" }],
+        },
+      }),
+    ).rejects.toMatchObject({ details: { submission: "refused" } });
+    expect(f.entered).toEqual([]);
+    expect(await f.client.hosting!.list()).toEqual([]);
+  });
+
+  test("replays a resume whose reserved execution the new host never saw, over the real RPC", async () => {
+    const f = await fixture(undefined, [
+      {
+        toolCalls: [
+          {
+            name: "update_goal",
+            arguments: { update: { action: "blocked", reason: "Stage stopped by the operator" } },
+          },
+        ],
+      },
+    ]);
+    await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "create-goal",
+      action: {
+        kind: "create",
+        objective: "Keep the reserved identity",
+        limits: { max_net_tokens: 10000 },
+      },
+    });
+    await until(() => f.entered.length === 1);
+    // The operator stops the running stage and resumes it, reserving the stage's own identity.
+    let view = await f.client.goals.get("conversation");
+    await f.client.goals.control({
+      session_id: "conversation",
+      operation_id: "pause-stage",
+      expected_revision: view.state.revision,
+      action: { kind: "pause", running: true },
+    });
+    view = await f.client.goals.get("conversation");
+    const resumed = await f.client.goals.control({
+      session_id: "conversation",
+      operation_id: "resume-stage",
+      expected_revision: view.state.revision,
+      action: { kind: "resume" },
+    });
+    expect(resumed.outcome).toBe("running");
+    const reserved = resumed.execution_id!;
+    await until(() => f.entered.includes(reserved));
+
+    // The host dies while that stage is running, so the next generation never saw it.
+    const crashIndex = decodeHostedRegistryState(
+      JSON.parse(await readFile(f.paths.registryFile, "utf8")),
+    );
+    const crashSession = (await f.client.sessions.get("conversation"))!;
+    expect(
+      crashSession.goal_state!.current!.runs.some(
+        (run) => run.execution_id === reserved && run.phase !== "closed",
+      ),
+    ).toBe(true);
+    await f.client.close();
+    await f.listener.close();
+    await f.host.close();
+    const recovered = await createFileRunHost({
+      ...f.hostOptions,
+      hostGeneration: "recovered",
+      storage: {
+        ...f.hostOptions.storage,
+        initialState: crashIndex,
+        projection: (id) =>
+          openHostedProjection(f.paths.projectionFile("recovered", id), {
+            host_generation: "recovered",
+            execution_id: id,
+          }),
+        removeProjection: async (id, generation) => {
+          await rm(f.paths.projectionFile(generation, id), { force: true });
+        },
+      },
+    });
+    cleanups.push(() => recovered.close());
+    const listener = await listenLocalKernel(recovered.server, f.paths.endpoint);
+    cleanups.push(() => listener.close());
+    const transport = await connectLocalKernelTransport(f.paths.endpoint);
+    cleanups.push(() => transport.close());
+    const client = await connectKernelClient(transport, { auth: "operator-token" });
+    const row = (await client.hosting!.list()).find((value) => value.execution_id === reserved)!;
+    expect(row.execution_state).toBe("unknown");
+    const resolution = await client.hosting!.resolveRecovery({
+      execution_id: row.execution_id,
+      host_generation: row.host_generation,
+      revision: row.revision,
+      physical_work_stopped: true,
+      disposition: "continue",
+    });
+    expect(resolution.outcome).toBeUndefined();
+    await client.hosting!.acknowledge(row.execution_id);
+    expect((await client.hosting!.list()).some((value) => value.execution_id === reserved)).toBe(
+      false,
+    );
+    f.released.resolve();
+
+    // Replaying the resume is refused: the recovery moved the Goal's control, so the retained
+    // intent is never applied twice and no second stage is invented.
+    await expect(
+      client.goals.control({
+        session_id: "conversation",
+        operation_id: "resume-stage",
+        expected_revision: (await client.goals.get("conversation")).state.revision,
+        action: { kind: "resume" },
+      }),
+    ).rejects.toMatchObject({ code: "conflict" });
+    expect(recovered.stats().runs).toBe(0);
   });
 
   test("runtime preparation notices reach operator inspection as bounded sequenced data", async () => {

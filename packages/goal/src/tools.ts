@@ -58,3 +58,19 @@ export function buildGoalCreationTools(): NamespacedTool[] {
     ...buildGoalTools(),
   ];
 }
+
+/** Stable catalog for an ordinary operator turn that may continue an existing objective. */
+export function buildGoalAttachmentTools(): NamespacedTool[] {
+  return [
+    {
+      fullName: "attach_goal",
+      wireName: "attach_goal",
+      toolName: "attach_goal",
+      mcpName: "",
+      description:
+        "Bind this already running operator turn to the previous Goal when the current instruction asks to continue that work. Call before doing Goal work. Unrelated work remains independent. This preserves consumption and limits; it does not create another run or increase any allowance.",
+      inputSchema: z.toJSONSchema(getGoalInputSchema, { target: "draft-7", io: "input" }),
+    },
+    ...buildGoalTools(),
+  ];
+}

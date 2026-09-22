@@ -732,7 +732,11 @@ export function createSessionService(opts: {
       if (!jsonFits(session, SESSION_MAX_BYTES))
         throw kernelError("resource_exhausted", "session document exceeds 8 MiB");
       const current = readOne(fileFor(session.id));
-      if (JSON.stringify(current?.goal_state) !== JSON.stringify(session.goal_state))
+      if (
+        JSON.stringify(current?.goal_state) !== JSON.stringify(session.goal_state) ||
+        JSON.stringify(current?.operator_intents) !== JSON.stringify(session.operator_intents) ||
+        current?.operator_sequence !== session.operator_sequence
+      )
         throw kernelError("conflict", "goal state is owned by the host");
       await saveHost(session);
     },

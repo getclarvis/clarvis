@@ -27,7 +27,7 @@ it("retains model attribution and prices retries exactly once in auxiliary settl
   expect(tracker.accounting().map((row) => row.model)).toEqual(["fixture/model", "fixture/model"]);
 });
 
-it("does not turn unknown provider usage or cache into measured zero", async () => {
+it("keeps the provider's own figures and carries its uncertainty as a gap", async () => {
   for (const missing of ["usage", "cache"] as const) {
     const tracker = createGoalUsageTracker();
     const provider: LLMProvider = {
@@ -46,15 +46,33 @@ it("does not turn unknown provider usage or cache into measured zero", async () 
       .wrap(provider)
       .call({ provider: "fixture", model: "model", messages: [], tools: [] });
     expect(tracker.measure()).toEqual(
-      missing === "usage" ? { kind: "unknown" } : { kind: "measured", input: 100, output: 20 },
+      missing === "usage"
+        ? {
+            kind: "partial",
+            input: 100,
+            output: 20,
+            cached: 0,
+            gaps: [expect.objectContaining({ cause: "provider_unknown", calls: 1 })],
+          }
+        : { kind: "complete", input: 100, output: 20 },
     );
     const totals: SessionTotals = { input: 0, output: 0, cached: 0 };
     addGoalAuxiliaryUsage(totals, tracker.measure(), tracker.accounting(), () => ({
       input: 1,
       output: 2,
     }));
-    expect(totals.cost_usd).toBeUndefined();
-    if (missing === "cache") expect(totals.cached).toBeUndefined();
+    // A flagged usage still carries the provider's own figures, and a partial one is charged:
+    // the gap is what the operator has to accept, not a reason to discard the subtotal.
+    expect(totals.input).toBe(100);
+    expect(totals.output).toBe(20);
+    if (missing === "usage") {
+      // The subtotal was credited even though the provider flagged it, and pricing still worked
+      // because the cache split was known.
+      expect(totals.cost_usd).toBeDefined();
+    } else {
+      // An unknown cache split leaves the price uncomputable without inventing a cache miss.
+      expect(totals.cost_usd).toBeUndefined();
+    }
   }
 });
 
@@ -119,5 +137,8 @@ it("formulation uses provider uncertainty instead of zero-initialized loop total
       workspace_read_available: false,
     },
   });
+  // The provider never reported a figure, so there is no subtotal to keep: an all-zero flagged
+  // object is an absence, not a measurement, and the loop's zero-initialized totals are not used
+  // as a substitute for one.
   expect(result.usage).toEqual({ kind: "unknown" });
 });

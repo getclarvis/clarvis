@@ -1182,3 +1182,11 @@ operator evidence seed or controller binding. Production:
 [review-detail-schema.ts](../../packages/kernel/src/guard/review-detail-schema.ts).
 Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
 See [effect review](../execution/effect-review.md).
+
+Host-owned `Session.operator_intents` retains bounded accepted submissions separately from executed
+turns, and `operator_sequence` survives pruning of admitted receipts. Client saves cannot modify
+these fields. `GoalReceipt.resume_pending` denotes durable recovery work, not a successful launch.
+The owning lifecycle is [durable operator submissions](hosted-runs.md#durable-operator-submissions).
+Production: `Session` in [sessions.ts](../../packages/protocol/src/sessions.ts) and
+`createHostedSessionCoordinator` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts).
+Test: [goal-operator-recovery.test.ts](../../packages/kernel/tests/integration/goal-operator-recovery.test.ts).

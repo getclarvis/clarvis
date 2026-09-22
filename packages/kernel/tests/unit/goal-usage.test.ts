@@ -19,17 +19,17 @@ describe("host goal inference accounting", () => {
     });
     expect(await wrapped.call(callParams)).toBe(response);
     await Promise.all([wrapped.call(callParams), wrapped.call(callParams)]);
-    expect(tracker.measure()).toEqual({ kind: "measured", input: 600, output: 60, cached: 480 });
+    expect(tracker.measure()).toEqual({ kind: "complete", input: 600, output: 60, cached: 480 });
   });
 
-  test("holds pending or rejected calls unknown and accepts a provider's explicit measured zero", async () => {
+  test("keeps a pending call unknown, accepts a provider's explicit zero, and reports a rejection without telemetry as a gap", async () => {
     const tracker = createGoalUsageTracker();
     const result = Promise.withResolvers<LLMCallResult>();
     const pending = tracker.wrap({ call: () => result.promise }).call(callParams);
     expect(tracker.measure()).toEqual({ kind: "unknown" });
     result.resolve({ usage: { ...measured, input_tokens: 0, output_tokens: 0, cached_tokens: 0 } });
     await pending;
-    expect(tracker.measure()).toEqual({ kind: "measured", input: 0, output: 0, cached: 0 });
+    expect(tracker.measure()).toEqual({ kind: "complete", input: 0, output: 0, cached: 0 });
     const error = new Error("cancelled without provider telemetry");
     await expect(
       tracker
@@ -40,10 +40,48 @@ describe("host goal inference accounting", () => {
         })
         .call(callParams),
     ).rejects.toBe(error);
-    expect(tracker.measure()).toEqual({ kind: "unknown" });
+    // The zero the provider did report survives; the unmeasured call is what stays open.
+    expect(tracker.measure()).toEqual({
+      kind: "partial",
+      input: 0,
+      output: 0,
+      cached: 0,
+      gaps: [expect.objectContaining({ cause: "no_usage", calls: 1, call_ids: ["call_2"] })],
+    });
   });
 
-  test("keeps missing cache conservative and missing total usage unknown through success or failure", async () => {
+  test("reports a call still in flight as its own bounded pending gap", async () => {
+    const tracker = createGoalUsageTracker();
+    await tracker
+      .wrap({
+        async call() {
+          return { usage: measured };
+        },
+      })
+      .call(callParams);
+    const inFlight = Promise.withResolvers<LLMCallResult>();
+    const pending = tracker.wrap({ call: () => inFlight.promise }).call(callParams);
+    // The gap names exactly which calls were open, so a later report can be matched to it.
+    expect(tracker.measure()).toEqual({
+      kind: "partial",
+      input: 100,
+      output: 10,
+      cached: 80,
+      gaps: [
+        {
+          cause: "pending_call",
+          calls: 1,
+          call_ids: ["call_2"],
+          fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/u),
+        },
+      ],
+    });
+    inFlight.resolve({ usage: measured });
+    await pending;
+    expect(tracker.measure()).toEqual({ kind: "complete", input: 200, output: 20, cached: 160 });
+  });
+
+  test("keeps missing cache conservative and a flagged subtotal partial through success or failure", async () => {
     const tracker = createGoalUsageTracker();
     await tracker
       .wrap({
@@ -52,7 +90,7 @@ describe("host goal inference accounting", () => {
         },
       })
       .call(callParams);
-    expect(tracker.measure()).toEqual({ kind: "measured", input: 100, output: 10 });
+    expect(tracker.measure()).toEqual({ kind: "complete", input: 100, output: 10 });
     const error = new ProviderError("interrupted", { partialUsage: measured });
     error.accumulatedUsage = { ...measured, usage_unknown: true };
     await expect(
@@ -64,7 +102,12 @@ describe("host goal inference accounting", () => {
         })
         .call(callParams),
     ).rejects.toBe(error);
-    expect(tracker.measure()).toEqual({ kind: "unknown" });
+    expect(tracker.measure()).toEqual({
+      kind: "partial",
+      input: 200,
+      output: 20,
+      gaps: [expect.objectContaining({ cause: "provider_unknown", calls: 1 })],
+    });
     const success = createGoalUsageTracker();
     await success
       .wrap({
@@ -73,7 +116,13 @@ describe("host goal inference accounting", () => {
         },
       })
       .call(callParams);
-    expect(success.measure()).toEqual({ kind: "unknown" });
+    expect(success.measure()).toEqual({
+      kind: "partial",
+      input: 200,
+      output: 20,
+      cached: 160,
+      gaps: [expect.objectContaining({ cause: "provider_unknown", calls: 1 })],
+    });
   });
 });
 
@@ -109,14 +158,14 @@ describe("goal run usage normalization", () => {
       ],
     });
     const measured = measureGoalRunUsage(usage);
-    expect(measured).toEqual({ kind: "measured", input: 1600, output: 170, cached: 950 });
+    expect(measured).toEqual({ kind: "complete", input: 1600, output: 170, cached: 950 });
     expect(goalNetTokens(measured)).toBe(820);
     expect(measureGoalRunUsage({ ...usage, by_agent: undefined })).toEqual(measured);
   });
 
   test("preserves unknown cache detail as a conservative estimate", () => {
     const measured = measureGoalRunUsage(sample({ input_tokens: 1000, output_tokens: 100 }));
-    expect(measured).toEqual({ kind: "measured", input: 1000, output: 100 });
+    expect(measured).toEqual({ kind: "complete", input: 1000, output: 100 });
     expect(goalNetTokens(measured)).toBe(1100);
     const missing = {
       ...agent("subagent", 50, 5, 0),
@@ -124,12 +173,28 @@ describe("goal run usage normalization", () => {
     } as unknown as PerAgentUsage;
     expect(
       measureGoalRunUsage(sample({ by_agent: [agent("lead", 100, 10, 90), missing] })),
-    ).toEqual({ kind: "measured", input: 150, output: 15 });
+    ).toEqual({ kind: "complete", input: 150, output: 15 });
     expect(
       measureGoalRunUsage(
         sample({ by_agent: [{ ...missing, input_tokens: 0 }, agent("lead", 100, 10, 90)] }),
       ),
-    ).toEqual({ kind: "measured", input: 100, output: 15, cached: 90 });
+    ).toEqual({ kind: "complete", input: 100, output: 15, cached: 90 });
+  });
+
+  test("keeps the rows that did decode as a partial subtotal and names only the unreadable one", () => {
+    const unreadable = {
+      ...agent("subagent", 50, 5, 0),
+      input_tokens: 10.5,
+    } as unknown as PerAgentUsage;
+    expect(
+      measureGoalRunUsage(sample({ by_agent: [agent("lead", 100, 10, 90), unreadable] })),
+    ).toEqual({
+      kind: "partial",
+      input: 100,
+      output: 10,
+      cached: 90,
+      gaps: [{ cause: "invalid_measure", calls: 1 }],
+    });
   });
 
   test.each([
@@ -154,7 +219,7 @@ describe("goal run usage normalization", () => {
   test("accepts explicitly measured zero while keeping physical cancellation separate from accounting", () => {
     expect(
       measureGoalRunUsage(sample({ input_tokens: 0, output_tokens: 0, cached_tokens: 0 })),
-    ).toEqual({ kind: "measured", input: 0, output: 0, cached: 0 });
+    ).toEqual({ kind: "complete", input: 0, output: 0, cached: 0 });
     const cancelledUsage = sample({ input_tokens: 400, output_tokens: 12, cached_tokens: 200 });
     expect(goalNetTokens(measureGoalRunUsage(cancelledUsage))).toBe(212);
   });

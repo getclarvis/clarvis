@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { RunServiceConfig } from "../runs/run-service.ts";
 import { boundPromise } from "@clarvis/loop/host";
 import {
@@ -79,6 +80,11 @@ export interface HostedRegistryOptions {
   hostGeneration: string;
   /** Internal workspace-scoped run owner; the local process resolves it from the authenticated owner. */
   owner: string;
+  /** Persist authenticated input before waiting for the previous physical execution. */
+  acceptOperator?(input: StartHostedTurnParams): Promise<"pending" | "delivered">;
+  deliverOperator?(sessionId: string, executionId: string, deliveredTo: string): Promise<void>;
+  /** Re-read a pending submission and the canonical history under the existing session authority. */
+  prepareOperator?(sessionId: string, executionId: string): Promise<StartHostedTurnParams>;
   prepare(
     input: StartHostedTurnParams,
     authority: {
@@ -97,6 +103,16 @@ export interface HostedRegistryOptions {
     run: HostedRunRef,
     resolution: HostedRecoveryResolution,
   ): Promise<HostedRecoveryResolution>;
+  /**
+   * Release the resolved conversation's own physical uncertainty after the durable audit.
+   *
+   * @param run - the resolved execution's discovery row.
+   * @remarks Called only for a `continue` resolution, after {@link archiveRecovery} committed the
+   *   attestation. The registry owns the execution; the conversation's own bookkeeping — a Goal
+   *   stage that never reported an ending, for instance — belongs to whoever owns that record, so
+   *   the release is their transaction rather than something the registry infers.
+   */
+  continueRecovery?(run: HostedRunRef): Promise<void>;
   /** Prior process index. Only discovery metadata returns; no execution or consent is restored. */
   initialState?: HostedRegistryState;
   limits?: Omit<HostedAdmissionOptions, "revokeInteractiveScope">;
@@ -139,6 +155,9 @@ export interface HostedRegistry {
   ): Promise<HostedRunRef>;
   cancelControlled(authority: HostedConversationAuthority, executionId: string): Promise<void>;
   physicalRun(sessionId: string): HostedRunRef | undefined;
+  /** Reattach a healthy attempt or await its already requested closure before a successor. */
+  resumePhysical(authority: HostedConversationAuthority): Promise<HostedRunRef | undefined>;
+  execution(executionId: string): HostedRunRef | undefined;
   hasPendingContinuation(): boolean;
   /** Permit pending-observation saves only for the connection holding that local activity. */
   ownsActivity(peerId: string, sessionId: string): boolean;
@@ -159,6 +178,9 @@ export interface HostedRegistry {
 
 interface Entry {
   operatorInput?: boolean;
+  input?: StartHostedTurnParams;
+  steering?: Map<string, Promise<void>>;
+  steeringDelivery?: Map<string, { promise: Promise<void>; resolve(): void }>;
   ref: HostedRunRef;
   occupancy?: HostedOccupancy;
   prepared?: PreparedHostedTurn;
@@ -486,7 +508,74 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       attachment = await entry.execution.observe({
         async steer(message) {
           assertControl(connection, entry, observation.epoch);
-          await source.steer(message);
+          if (
+            options.acceptOperator === undefined ||
+            options.deliverOperator === undefined ||
+            entry.input === undefined
+          ) {
+            await source.steer(message);
+            return;
+          }
+          const id =
+            typeof message === "string" ? randomUUID() : (message.steering_id ?? randomUUID());
+          identifier(id, "steering identity");
+          const executionId = `steer_${id}`;
+          entry.steering ??= new Map();
+          const known = entry.steering.get(executionId);
+          if (known !== undefined) return known;
+          const operation = (async () => {
+            const input: StartHostedTurnParams = {
+              ...entry.input!,
+              user_preview:
+                typeof message === "string" ? message.slice(0, 4096) : "Operator follow-up",
+              params: {
+                ...entry.input!.params,
+                execution_id: executionId,
+                intent: "operator",
+                messages: [
+                  typeof message === "string" ? { role: "user", content: message } : message,
+                ],
+              },
+            };
+            delete input.params.goal_intent;
+            if ((await options.acceptOperator!(input)) === "delivered") return;
+            assertControl(connection, entry, observation.epoch);
+            if (entry.continuationAuthority !== undefined) {
+              admission.retireContinuation(entry.continuationAuthority);
+              delete entry.continuationAuthority;
+            }
+            const delivery = Promise.withResolvers<void>();
+            entry.steeringDelivery ??= new Map();
+            entry.steeringDelivery.set(executionId, delivery);
+            try {
+              await source.steer(
+                typeof message === "string"
+                  ? { role: "user", content: message, steering_id: executionId }
+                  : { ...message, steering_id: executionId },
+              );
+              await Promise.race([
+                delivery.promise,
+                entry.execution!.settled.then(() => {
+                  if (entry.steeringDelivery?.has(executionId) === true)
+                    throw kernelError(
+                      "unavailable",
+                      "Operator message is retained but consumption is unconfirmed",
+                    );
+                }),
+              ]);
+            } catch (error) {
+              if (toKernelError(error).code !== "not_found") throw error;
+              await startOperator(connection, input);
+            } finally {
+              entry.steeringDelivery?.delete(executionId);
+            }
+          })();
+          entry.steering.set(executionId, operation);
+          try {
+            await operation;
+          } finally {
+            entry.steering.delete(executionId);
+          }
         },
         async compact(request) {
           assertControl(connection, entry, observation.epoch);
@@ -754,6 +843,7 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       admission.claimConversation(peer, input.session_id);
     const entry: Entry = {
       operatorInput: continuation === undefined,
+      input: structuredClone(input),
       occupancy,
       preparation: new AbortController(),
       acknowledged: false,
@@ -829,6 +919,14 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
             throw kernelError("unavailable", entry.ref.recovery_error);
           }
         },
+        async delivered(event) {
+          if (event.type === "steering_applied" && event.id?.startsWith("steer_") === true) {
+            await options.deliverOperator?.(entry.ref.session_id, event.id, entry.ref.execution_id);
+            const delivery = entry.steeringDelivery?.get(event.id);
+            entry.steeringDelivery?.delete(event.id);
+            delivery?.resolve();
+          }
+        },
         changed: () => touch(entry),
       });
       touch(entry);
@@ -885,6 +983,111 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     }
   };
 
+  const operatorQueues = new Map<string, Promise<unknown>>();
+  const submissions = new Map<string, Promise<Entry>>();
+  const startOperator = async (
+    connection: ConnectionState,
+    input: StartHostedTurnParams,
+  ): Promise<Entry> => {
+    assertConnection(connection, true);
+    identifier(input.session_id, "session identity");
+    identifier(input.params.execution_id, "submission identity");
+    if (
+      typeof input.user_preview !== "string" ||
+      input.user_preview.length > 4096 ||
+      !["conversation", "transcript"].includes(input.kind) ||
+      Buffer.byteLength(JSON.stringify(input)) > 1024 * 1024
+    )
+      throw kernelError("invalid_request", "Invalid or oversized operator submission", {
+        submission: "refused",
+      });
+    const authority = admission.claimConversation(connection.peer, input.session_id);
+    const key = `${input.session_id}:${input.params.execution_id}`;
+    for (const entry of entries.values()) {
+      if (entry.ref.session_id !== input.session_id || entry.continuationAuthority === undefined)
+        continue;
+      admission.retireContinuation(entry.continuationAuthority);
+      delete entry.continuationAuthority;
+    }
+    await options.acceptOperator!(input);
+    admission.assertConversation(authority);
+    const known = submissions.get(key);
+    if (known !== undefined) return known;
+    const existing = entries.get(input.params.execution_id);
+    if (existing !== undefined) {
+      if (existing.ref.session_id !== input.session_id)
+        throw kernelError("conflict", "Foreign submission identity");
+      await existing.preparationSettled.promise;
+      if (existing.execution !== undefined) return existing;
+      if (existing.ref.execution_state !== "closed")
+        throw kernelError("unavailable", "Submission physical state requires recovery", {
+          submission: "recovering",
+        });
+      await options.prepareOperator!(input.session_id, input.params.execution_id);
+      entries.delete(input.params.execution_id);
+    }
+    const prior = operatorQueues.get(input.session_id) ?? Promise.resolve();
+    const operation = prior
+      .catch(() => undefined)
+      .then(async () => {
+        admission.assertConversation(authority);
+        const active = [...entries.values()].find(
+          (entry) => entry.ref.session_id === input.session_id && entry.occupancy !== undefined,
+        );
+        if (active !== undefined) {
+          if (active.continuationAuthority !== undefined) {
+            admission.retireContinuation(active.continuationAuthority);
+            delete active.continuationAuthority;
+          }
+          await boundPromise(
+            async () => {
+              await active.preparationSettled.promise;
+              if (active.execution !== undefined) await active.execution.settled;
+            },
+            {
+              signal: authority.signal,
+              timeoutMs: continuationTimeout,
+              onTimeout: () => {
+                throw kernelError(
+                  "unavailable",
+                  "Submission retained while previous execution settles",
+                  { submission: "recovering" },
+                );
+              },
+              onAbort: () => {
+                throw kernelError("conflict", "Submission authority changed", {
+                  submission: "pending",
+                });
+              },
+            },
+          );
+        }
+        admission.assertConversation(authority);
+        if (unresolvedSessions.has(input.session_id))
+          throw kernelError(
+            "conflict",
+            "Submission retained; verify physical closure to continue",
+            { submission: "recovering", execution_id: input.params.execution_id },
+          );
+        const prepared = await options.prepareOperator!(
+          input.session_id,
+          input.params.execution_id,
+        );
+        admission.assertConversation(authority);
+        return startEntry(connection, prepared);
+      });
+    submissions.set(key, operation);
+    operatorQueues.set(input.session_id, operation);
+    void operation
+      .finally(() => {
+        submissions.delete(key);
+        if (operatorQueues.get(input.session_id) === operation)
+          operatorQueues.delete(input.session_id);
+      })
+      .catch(() => undefined);
+    return operation;
+  };
+
   const connect = (role: HostingPeer["role"]): HostedRegistryConnection => {
     if (closing) throw kernelError("unavailable", "host is closing");
     const peer = admission.connect(role);
@@ -904,8 +1107,25 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
           .map((entry) => view(entry, peer));
       },
       async start(input) {
-        const entry = await startEntry(connection, input);
-        return observe(connection, entry, "acquire");
+        if (input.params.intent === undefined)
+          input = { ...input, params: { ...input.params, intent: "operator" } };
+        try {
+          const entry =
+            input.params.intent === "operator" &&
+            options.acceptOperator !== undefined &&
+            options.prepareOperator !== undefined
+              ? await startOperator(connection, input)
+              : await startEntry(connection, input);
+          return observe(connection, entry, "acquire");
+        } catch (error) {
+          const failure = toKernelError(error);
+          throw kernelError(failure.code, failure.message, {
+            execution_id: input.params.execution_id,
+            ...(typeof failure.details === "object" && failure.details !== null
+              ? failure.details
+              : {}),
+          });
+        }
       },
       async attach(input) {
         identifier(input.host_generation, "host generation");
@@ -1060,15 +1280,22 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
           input === null ||
           Object.keys(input).some(
             (key) =>
-              !["execution_id", "host_generation", "revision", "physical_work_stopped"].includes(
-                key,
-              ),
+              ![
+                "execution_id",
+                "host_generation",
+                "revision",
+                "physical_work_stopped",
+                "disposition",
+              ].includes(key),
           ) ||
           typeof input.execution_id !== "string" ||
           typeof input.host_generation !== "string" ||
           !Number.isSafeInteger(input.revision) ||
           input.revision < 0 ||
-          input.physical_work_stopped !== true
+          input.physical_work_stopped !== true ||
+          (input.disposition !== undefined &&
+            input.disposition !== "archive" &&
+            input.disposition !== "continue")
         )
           throw kernelError(
             "invalid_request",
@@ -1095,13 +1322,24 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
         if (archive === undefined)
           throw kernelError("unavailable", "durable recovery archive is unavailable");
         const recovery = (async (): Promise<HostedRunRef> => {
+          const disposition = input.disposition ?? "archive";
           const resolution = await archive(structuredClone(entry.ref), {
             kind: "operator_verified_physical_closure",
+            disposition,
             previous_host_generation: entry.ref.host_generation,
             resolving_host_generation: options.hostGeneration,
             operator_connection_id: peer.id,
             resolved_at: now(),
           });
+          /**
+           * The conversation's own uncertainty is released only after the attestation is durable.
+           *
+           * @remarks A `continue` resolution lets a successor be admitted, so the record that was
+           *   waiting on this execution has to stop treating it as occupied. Doing that before the
+           *   commit would let a crash leave the release without its evidence; doing it for an
+           *   `archive` would resume a line of work the operator asked to park.
+           */
+          if (disposition === "continue") await options.continueRecovery?.(entry.ref);
           const proposed: HostedRunRef = {
             ...entry.ref,
             execution_state: "closed",
@@ -1206,6 +1444,47 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       entry.stopRequested = true;
       if (entry.source === undefined) entry.preparation.abort();
       else await entry.source.cancel();
+    },
+    execution(executionId) {
+      const entry = entries.get(executionId);
+      return entry === undefined ? undefined : view(entry);
+    },
+    async resumePhysical(authority) {
+      admission.assertConversation(authority);
+      const entry = [...entries.values()].find(
+        (value) =>
+          value.ref.session_id === authority.sessionId &&
+          (value.occupancy !== undefined || value.ref.execution_state === "unknown"),
+      );
+      if (entry === undefined) return undefined;
+      if (entry.ref.execution_state === "unknown")
+        throw kernelError("conflict", "Physical closure must be resolved before resuming", {
+          goal_outcome: "needs_input",
+          action: "resolve_physical_closure",
+          execution_id: entry.ref.execution_id,
+        });
+      if (!entry.stopRequested && entry.ref.execution_state === "running") return view(entry);
+      await boundPromise(
+        async () => {
+          await entry.preparationSettled.promise;
+          await entry.execution?.settled;
+        },
+        {
+          signal: authority.signal,
+          timeoutMs: continuationTimeout,
+          onTimeout: () => {
+            throw kernelError("unavailable", "Previous execution is still settling", {
+              goal_outcome: "recovering",
+              execution_id: entry.ref.execution_id,
+            });
+          },
+          onAbort: () => {
+            throw kernelError("conflict", "Resume superseded", { goal_outcome: "superseded" });
+          },
+        },
+      );
+      admission.assertConversation(authority);
+      return entry.occupancy === undefined ? undefined : view(entry);
     },
     physicalRun(sessionId) {
       const entry = [...entries.values()].find(

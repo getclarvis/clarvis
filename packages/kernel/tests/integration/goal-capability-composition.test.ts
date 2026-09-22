@@ -228,7 +228,7 @@ async function fixture(mode: "checkpoint" | "blocked" | "review") {
           physical_closed: true,
           outcome: "completed",
           disposition: "checkpoint",
-          usage: { kind: "measured", input: 2030, output: 20, cached: 0 },
+          usage: { kind: "complete", input: 2030, output: 20, cached: 0 },
           completion_validated: false,
           now: 500,
         }),

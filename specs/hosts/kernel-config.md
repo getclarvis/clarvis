@@ -259,20 +259,25 @@ by `packages/kernel/tests/integration/workspace-trust.test.ts` (covers every fie
 
 | Name | `grants` | `can_spawn` | `default_spawn` | `iteration_limit` | other |
 | --- | --- | --- | --- | --- | --- |
-| `marshall` | `edit_workspace, read_workspace, ask_user, run_commands, use_skills` (`MARSHALL.frontmatter` in `packages/kernel/src/config/builtin-agents/marshall.ts`) | `coder, explorer, planner` | `coder` | 256 | — |
-| `admiral` | `workflow, read_workspace, edit_workspace, run_commands, ask_user, use_skills` (`ADMIRAL.frontmatter` in `packages/kernel/src/config/builtin-agents/admiral.ts`) | `coder, explorer, planner, marshall` | `coder` | 256 | `reasoning_effort: "high"` |
-| `coder` | `edit_workspace, run_commands, use_skills` (`CODER.frontmatter` in `packages/kernel/src/config/builtin-agents/coder.ts`) | — | — | 64 | — |
-| `explorer` | `read_workspace, use_skills` (`EXPLORER.frontmatter` in `packages/kernel/src/config/builtin-agents/explorer.ts`) | — | — | 64 | — |
-| `planner` | `read_workspace, use_skills` (`PLANNER.frontmatter` in `packages/kernel/src/config/builtin-agents/planner.ts`) | — | — | 64 | — |
+| `marshall` | `edit_workspace, read_workspace, ask_user, run_commands, use_skills` (`MARSHALL.frontmatter` in `packages/kernel/src/config/builtin-agents/marshall.ts`) | `coder, explorer, planner` | `coder` | 512 | — |
+| `admiral` | `workflow, read_workspace, edit_workspace, run_commands, ask_user, use_skills` (`ADMIRAL.frontmatter` in `packages/kernel/src/config/builtin-agents/admiral.ts`) | `coder, explorer, planner, marshall` | `coder` | 512 | `reasoning_effort: "high"` |
+| `coder` | `edit_workspace, run_commands, use_skills` (`CODER.frontmatter` in `packages/kernel/src/config/builtin-agents/coder.ts`) | — | — | 512 | — |
+| `explorer` | `read_workspace, use_skills` (`EXPLORER.frontmatter` in `packages/kernel/src/config/builtin-agents/explorer.ts`) | — | — | 512 | — |
+| `planner` | `read_workspace, use_skills` (`PLANNER.frontmatter` in `packages/kernel/src/config/builtin-agents/planner.ts`) | — | — | 512 | — |
 
 None declares `model` — pinned by `packages/kernel/tests/component/builtin-agents.test.ts` ("declares
 no model, so the fleet inherits the workspace's default"). Every one carries a string `description`
 and a non-empty body ("carries a non-empty prompt and a valid frontmatter for every one").
 
-The two leaders' explicit 256-iteration values are pinned by
+All five profiles declare the same 512-iteration allowance, pinned by
 `packages/kernel/tests/component/builtin-agents.test.ts` ("uses the full lead-session soft iteration
-allowance"); the three child profiles use 64 iterations. All five values are powers of two, while
-the lead allowance remains larger than the delegated-run allowance.
+allowance" for the two leaders, and the same value asserted for the three leaves). The limit is per
+agent and per attempt: the lead's counter and each child's counter are separate, and an admitted
+retry starts a fresh one while the Goal's consumption and global limits keep accumulating
+([budgets-and-guards.md](../engine/budgets-and-guards.md)). 512 is also
+`CLARVIS_DEFAULT_ITERATION_LIMIT` and `CLARVIS_ITERATION_CEILING`, and the same test asserts every
+shipped value fits under the default ceiling — the Container image's own ceiling has to admit it too
+([build-and-ci.md](../cross-cutting/build-and-ci.md)).
 
 The bodies are deliberately limited to role, effective harness surface and runtime constraints. The
 same component test estimates their cost as `ceil(characters / 4)`, caps each profile, and caps all

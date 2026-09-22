@@ -41,6 +41,7 @@ export function fixture(
     continuation?: (executionId: string) => HostedTurnContinuation;
     continuationTimeoutMs?: number;
     handle?: (handle: RunHandle) => RunHandle;
+    registryOptions?: Partial<HostedRegistryOptions>;
   } = {},
 ) {
   const contexts = new Map<string, ManagedRunContext>();
@@ -128,6 +129,7 @@ export function fixture(
     async removeProjection(id) {
       removed.push(id);
     },
+    ...overrides.registryOptions,
   });
   const handoff = (view: HostedRunAttachment, operationId = "detach-1") => ({
     execution_id: view.run.execution_id,

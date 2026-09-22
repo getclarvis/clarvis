@@ -472,7 +472,12 @@ const RUN_EVENT_SCHEMAS = {
     })
     .strict(),
   steering_applied: z
-    .object({ type: z.literal("steering_applied"), ...attributed, message: text })
+    .object({
+      type: z.literal("steering_applied"),
+      ...attributed,
+      message: text,
+      id: text.optional(),
+    })
     .strict(),
   memory_ingest: z
     .object({ type: z.literal("memory_ingest"), at: finite, detail: memoryIngestDetail })

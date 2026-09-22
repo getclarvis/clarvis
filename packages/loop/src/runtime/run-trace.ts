@@ -28,7 +28,6 @@ const GUARD_TRIP_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
   "tool_failure_loop",
   "stagnation_detected",
   "agents_unfinished",
-  "background_children_failing",
   "all_tools_unavailable",
   "empty_response",
 ]);

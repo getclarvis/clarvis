@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "bun:test";
+import { loadEnv } from "@clarvis/capability";
 
 const root = fileURLToPath(new URL("../../../..", import.meta.url));
 const dockerfile = readFileSync(`${root}/packages/server/Dockerfile`, "utf8");
@@ -50,8 +51,10 @@ describe("server image build context", () => {
     expect(dockerfile).not.toContain("RUN bun run build\n");
   });
 
-  it("keeps the image ceiling aligned with the power-of-two iteration limit", () => {
+  it("keeps the image ceiling aligned with the product's own iteration ceiling", () => {
     expect(dockerfile).toContain("CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT=8000000");
-    expect(dockerfile).toContain("CLARVIS_ITERATION_CEILING=256");
+    expect(dockerfile).toContain(
+      `CLARVIS_ITERATION_CEILING=${String(loadEnv({}).CLARVIS_ITERATION_CEILING)}`,
+    );
   });
 });

@@ -58,7 +58,9 @@ ENV NODE_ENV=production \
     CLARVIS_DEFAULT_ELICIT_WAIT_MS=60000 \
     CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT=8000000 \
     CLARVIS_TOKEN_CEILING=10000000 \
-    CLARVIS_ITERATION_CEILING=256 \
+    # The built-in fleet asks for 512 iterations per attempt, so the image's
+    # ceiling has to admit at least that or the shipped profiles are refused.
+    CLARVIS_ITERATION_CEILING=512 \
     CLARVIS_TIMEOUT_CEILING_MS=600000
 
 COPY --from=build /app/node_modules      /app/node_modules

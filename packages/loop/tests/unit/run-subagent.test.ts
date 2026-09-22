@@ -166,7 +166,7 @@ describe("runSubagent wrapper", () => {
     expect(llm.calls[0]!.messages[1]).toEqual({ role: "user", content: "the task" });
   });
 
-  it("maps budget exhaustion to a budget_exhausted outcome", async () => {
+  it("maps the sub-agent's own iteration cap to an iteration_limit_reached outcome", async () => {
     const llm = new MockLLM({ script: [{ toolCalls: [{ name: "foo.bar", arguments: {} }] }] });
     const res = await runSubagent({
       ...common,
@@ -174,6 +174,29 @@ describe("runSubagent wrapper", () => {
       task: "go",
       llm,
       ledger: createTokenLedger(1_000_000),
+      trace: createTrace(),
+    });
+    expect(res.outcome.status).toBe("iteration_limit_reached");
+    if (res.outcome.status === "iteration_limit_reached") expect(res.outcome.iterations).toBe(1);
+  });
+
+  it("keeps a run-wide token cap as a budget_exhausted outcome", async () => {
+    const llm = new MockLLM({
+      script: [
+        {
+          text: "spending",
+          toolCalls: [{ name: "foo.bar", arguments: {} }],
+          usage: { input_tokens: 400, output_tokens: 200 },
+        },
+        { text: "more" },
+      ],
+    });
+    const res = await runSubagent({
+      ...common,
+      maxIterations: 64,
+      task: "go",
+      llm,
+      ledger: createTokenLedger(100),
       trace: createTrace(),
     });
     expect(res.outcome.status).toBe("budget_exhausted");

@@ -119,6 +119,7 @@ interface KernelOver {
   approveWorkspace?: KernelClient["config"]["approveWorkspace"];
   revokeWorkspace?: KernelClient["config"]["revokeWorkspace"];
   currentExtensionProfile?: KernelClient["extensionProfiles"]["current"];
+  sessions?: KernelClient["sessions"];
   hosting?: HostingService;
 }
 
@@ -172,6 +173,7 @@ function fakeKernel(over: KernelOver): KernelClient {
     } as KernelClient["extensionProfiles"],
     ...(over.tasks === undefined ? {} : { tasks: over.tasks }),
     ...(over.capabilities === undefined ? {} : { capabilities: over.capabilities }),
+    ...(over.sessions === undefined ? {} : { sessions: over.sessions }),
     ...(over.hosting === undefined ? {} : { hosting: over.hosting }),
     close: async () => {},
   } as unknown as KernelClient;
@@ -507,7 +509,9 @@ test("hosted controls use the attached handle and preserve the live compaction c
   await expect(
     c.compact({ executionId: "hosted-execution", mechanicalTargetTokens: 2000 }),
   ).rejects.toThrow("idle hosted run");
-  expect(f.ctrl.steered).toEqual(["continue here"]);
+  expect(f.ctrl.steered).toEqual([
+    { role: "user", content: "continue here", steering_id: expect.any(String) },
+  ]);
   expect(f.ctrl.compacted).toEqual(["keep decisions"]);
   f.ctrl.settle({ execution_id: "hosted-execution", status: "completed" });
   f.ctrl.close();
@@ -1494,4 +1498,20 @@ test("capabilities stays readable while reconnect is between kernels", async () 
 test("capabilities still refuses before the first connect", () => {
   const { c } = client({ capabilities: { tasks: true } });
   expect(() => c.capabilities).toThrow("kernel run client is not connected");
+});
+
+test("a durable operator submission is answered by identity, not by what the turn looks like", async () => {
+  const sessions = {
+    async get(id: string) {
+      if (id === "gone") return null;
+      if (id === "admitted") return { turns: [{ execution_id: "exec_admitted" }] };
+      return { turns: [], operator_intents: [{ execution_id: "exec_pending" }] };
+    },
+  } as unknown as KernelClient["sessions"];
+  const { c } = client({ sessions });
+  await c.connect();
+  expect(await c.submission!("admitted", "exec_admitted")).toBe("admitted");
+  expect(await c.submission!("pending", "exec_pending")).toBe("pending");
+  expect(await c.submission!("pending", "exec_absent")).toBe("absent");
+  await expect(c.submission!("gone", "exec_absent")).rejects.toThrow("Conversation unavailable");
 });

@@ -9,6 +9,7 @@ import type {
   GoalReceipt,
   GoalService,
   GoalView,
+  HostedRunRef,
 } from "@clarvis/protocol";
 import { detachObserved } from "../../core/tasks.ts";
 
@@ -36,6 +37,7 @@ export interface GoalController {
   ): Promise<GoalReceipt>;
   formulate(mode: "auto" | "guided", seed?: string): Promise<GoalFormulateResult>;
   recover(): Promise<GoalReceipt | null>;
+  resolvePhysicalRecovery(): Promise<GoalReceipt | null>;
   reset(): void;
   dispose(): void;
 }
@@ -60,6 +62,7 @@ export function createGoalController(deps: {
   service(): GoalService;
   updated?(binding: GoalBinding, view: GoalView): void;
   operationId?(): string;
+  recoverPhysical?(ref: HostedRunRef): Promise<void>;
 }): GoalController {
   const [view, setView] = createSignal<GoalView>();
   const [available, setAvailable] = createSignal(false);
@@ -178,11 +181,16 @@ export function createGoalController(deps: {
       if (!disposed && epoch === emptyRead) setLoading(false);
     }
   };
+  const unfinished = (receipt: GoalReceipt): boolean =>
+    receipt.resume_pending === true ||
+    receipt.outcome === "recovering" ||
+    receipt.outcome === "unavailable" ||
+    receipt.outcome === "needs_input";
   const lookup = async (entry: Observation): Promise<GoalReceipt | null> => {
     const request = pending.get(entry.binding.sessionId);
     if (request === undefined) return null;
     const receipt = await entry.service.receipt(request.session_id, request.operation_id);
-    if (receipt !== null && pending.get(request.session_id) === request) {
+    if (receipt !== null && !unfinished(receipt) && pending.get(request.session_id) === request) {
       pending.delete(request.session_id);
       if (current(entry)) setPendingOperation(undefined);
     }
@@ -234,10 +242,32 @@ export function createGoalController(deps: {
         if (disposed || binding === null || !same(binding, deps.binding()))
           throw new Error("The goal conversation changed.");
         entry = observe(binding);
-        if (pending.has(binding.sessionId))
-          throw new Error(
-            "The previous goal change is unconfirmed. Recover its receipt before another change.",
+        if (pending.has(binding.sessionId)) {
+          const previous = pending.get(binding.sessionId)!;
+          const receipt = view()?.state.receipts.find(
+            (value) => value.operation_id === previous.operation_id,
           );
+          if (
+            snapshot.kind === "edit" &&
+            snapshot.limits !== undefined &&
+            receipt?.resume_pending === true &&
+            receipt.resume_condition !== "physical"
+          ) {
+            snapshot.resume_operation_id = previous.operation_id;
+            pending.delete(binding.sessionId);
+            setPendingOperation(undefined);
+          } else if (
+            snapshot.kind === "pause" ||
+            snapshot.kind === "cancel" ||
+            snapshot.kind === "replace"
+          ) {
+            pending.delete(binding.sessionId);
+            setPendingOperation(undefined);
+          } else
+            throw new Error(
+              "The previous goal change is unconfirmed. Recover its receipt before another change.",
+            );
+        }
         if (pending.size >= 32)
           throw new Error(
             "Too many unconfirmed goal changes. Recover earlier conversations first.",
@@ -257,8 +287,10 @@ export function createGoalController(deps: {
         let receipt: GoalReceipt;
         try {
           receipt = await entry.service.control(request);
-          pending.delete(binding.sessionId);
-          if (current(entry)) setPendingOperation(undefined);
+          if (!unfinished(receipt)) {
+            pending.delete(binding.sessionId);
+            if (current(entry)) setPendingOperation(undefined);
+          }
         } catch (error) {
           let recovered: GoalReceipt | null;
           try {
@@ -350,6 +382,13 @@ export function createGoalController(deps: {
         setBusy(false);
       }
     },
+    async resolvePhysicalRecovery() {
+      const ref = view()?.physical_run;
+      if (ref?.execution_state !== "unknown" || deps.recoverPhysical === undefined)
+        throw new Error("Physical recovery is unavailable; refresh the Goal first.");
+      await deps.recoverPhysical(ref);
+      return this.recover();
+    },
     async recover() {
       if (disposed || busy())
         throw new Error("A goal operation is already running or the interface is closed.");
@@ -358,7 +397,20 @@ export function createGoalController(deps: {
       const entry = observe(binding);
       setBusy(true);
       try {
-        const receipt = await lookup(entry);
+        let receipt = await lookup(entry);
+        const request = pending.get(binding.sessionId);
+        if (
+          receipt !== null &&
+          unfinished(receipt) &&
+          request !== undefined &&
+          "action" in request
+        ) {
+          receipt = await entry.service.control(request);
+          if (!unfinished(receipt)) {
+            pending.delete(binding.sessionId);
+            if (current(entry)) setPendingOperation(undefined);
+          }
+        }
         if (current(entry)) {
           if (receipt === null) await refreshEntry(entry);
           else await refreshEntry(entry).catch(() => undefined);

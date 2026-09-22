@@ -63,37 +63,32 @@ describe("goal defaults through file configuration, IPC and the real SDK", () =>
     expect(f.requests).toHaveLength(1);
 
     const view = await f.client.goals.get("conversation");
-    await expect(
-      f.client.goals.control({
-        session_id: "conversation",
-        expected_revision: view.state.revision,
-        operation_id: "resume",
-        action: { kind: "resume" },
-      }),
-    ).rejects.toMatchObject({ code: "resource_exhausted" });
-    expect(f.requests).toHaveLength(1);
-    await f.client.goals.control({
-      session_id: "conversation",
-      expected_revision: view.state.revision,
-      operation_id: "edit",
-      action: { kind: "edit", limits: { max_auto_continuations: 1 } },
-    });
     f.setResponder(async () => ({
       name: "update_goal",
       arguments: { update: { action: "blocked", reason: "Explicit resume verified" } },
     }));
+    // A manual decision is not gated by the automatic continuation ceiling: the Goal reopens and a
+    // manual stage runs, while the allowance it never earned stays at zero.
     await f.client.goals.control({
       session_id: "conversation",
-      expected_revision: (await f.client.goals.get("conversation")).state.revision,
+      expected_revision: view.state.revision,
       operation_id: "resume",
       action: { kind: "resume" },
     });
     const resumed = await settle(f);
-    expect(resumed.limits).toEqual({ ...limits, max_auto_continuations: 1 });
+    expect(resumed.limits).toEqual(limits);
+    expect(resumed.status).toBe("blocked");
+    expect(resumed.reason).toContain("Explicit resume verified");
     expect(resumed.consumption.net_tokens).toBeGreaterThan(before.consumption.net_tokens);
     expect(resumed.auto_continuations).toBe(0);
     expect(f.requests).toHaveLength(2);
     expect(new Set(f.requests.map((request) => request.prompt_cache_key)).size).toBe(1);
+    await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: (await f.client.goals.get("conversation")).state.revision,
+      operation_id: "edit",
+      action: { kind: "edit", limits: { max_auto_continuations: 1 } },
+    });
     await f.client.goals.control({
       session_id: "conversation",
       expected_revision: (await f.client.goals.get("conversation")).state.revision,
@@ -116,7 +111,7 @@ describe("goal defaults through file configuration, IPC and the real SDK", () =>
     expect((await f.client.goals.get("conversation")).state.archive[0]).toMatchObject({
       goal_id: resumed.goal_id,
       consumption: resumed.consumption,
-      limits: resumed.limits,
+      limits: { ...limits, max_auto_continuations: 1 },
     });
     expect(f.requests).toHaveLength(3);
   });

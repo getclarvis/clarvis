@@ -234,7 +234,15 @@ elapsedMs? }` (`packages/code/src/core/transcript/types.ts`).
 | `annotation` | `text`, `tone?: "info"\|"warn"\|"accent"` | `packages/code/src/core/transcript/types.ts` |
 | `error` | `text`, `error?` | `packages/code/src/core/transcript/types.ts` |
 
-`NodeStatus = "running" | "ok" | "error" | "pending"` (`packages/code/src/core/transcript/types.ts`).
+`NodeStatus = "running" | "ok" | "limited" | "cancelled" | "error" | "pending"`
+(`packages/code/src/core/transcript/types.ts`). `limited` and `cancelled` are terminal and
+deliberately distinct from `error`: a stage that stopped at its own budget cap and a stage the run
+took down with it are facts a reader has to be able to tell apart from a stage that broke, and the
+delegation wire carries exactly that distinction in its terminal `status`
+(`subagentOutcomeKind` in `packages/code/src/adapters/run-reducers.ts`). The settled delegation
+marker renders the same four-way outcome — `completed`, `stopped at its limit`, `cancelled`,
+`failed` — and the roster row keeps a matching lifecycle
+(`packages/code/src/adapters/activity-store.ts`).
 
 Run separators retain the successful event's `disposition`. A checkpoint renders `Checkpoint saved`
 in live, reconciled and restored history; ordinary success renders `Completed`. Failure/cancellation

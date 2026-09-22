@@ -9,6 +9,7 @@ import {
   type TaskTrackingPort,
 } from "@clarvis/capability";
 import type { GateVerdict, ImagePart, LifecycleHook, SteerSource } from "@clarvis/capability";
+import type { SettledStatus } from "@clarvis/capability";
 import type { Logger } from "@clarvis/capability";
 import { LIFECYCLE_GATE_HOOK_TIMEOUT_MS, runVerdictHooks } from "../loop/lifecycle-hooks.ts";
 import type { SubagentAggregate } from "@clarvis/capability";
@@ -261,15 +262,46 @@ export interface DelegateTaskContext {
 }
 
 /**
+ * How one child-spawn attempt ended, as its caller must treat it: the child
+ * finished on its own terms, a budget cap ended it and left a partial, the run
+ * cancelled it, or it failed technically.
+ *
+ * @remarks These four are the whole vocabulary on purpose. The facts the proposal
+ *   keeps separate — which counter was capped, and whose accounting it belongs to —
+ *   live on the attempt's own {@link SubagentOutcome} and in the trace; a caller
+ *   deciding how to settle a child only needs to know that a cap is not a failure.
+ */
+export type SpawnAttemptOutcome = "completed" | "limited" | "cancelled" | "failed";
+
+/**
+ * Map an attempt outcome onto the status the supervision registry settles it with.
+ *
+ * @param outcome - how the attempt ended.
+ * @returns the {@link SettledStatus} a producer reports for it.
+ * @remarks Every non-completing, non-cancelled attempt settles as `limited` or
+ *   `failed` and nothing else, because those are the two facts the registry's
+ *   consecutive-failure circuit reads: only `failed` counts, so a child that hit a
+ *   cap can never be read as a child that broke.
+ */
+export function settlementStatusOf(outcome: SpawnAttemptOutcome): SettledStatus {
+  return outcome === "limited" ? "limited" : outcome;
+}
+
+/**
  * The lead-facing result of a child-spawn call: the `text` to return to the
  * lead, whether a sub-agent was actually `spawned`, the tracked `taskId` it was
- * tracked against (if any), and whether it `failed`.
+ * tracked against (if any), and the attempt's own {@link SpawnAttemptOutcome}.
+ *
+ * @remarks `outcome` is reported rather than inferred downstream from `text`,
+ *   which is prose written for the model. Treating a rendered partial as a
+ *   failure is what made a child stopped at its own iteration limit count toward
+ *   the run's consecutive-failure circuit.
  */
 export interface SpawnResult {
   text: string;
   spawned: boolean;
   taskId?: string;
-  failed?: boolean;
+  outcome: SpawnAttemptOutcome;
 }
 
 /**
@@ -562,8 +594,10 @@ export function buildRunSubagentInput(
  * @remarks Accumulates the sub-agent's usage by model on both the success and
  *   throw paths (a throw draws from the pre-seeded `usageSink`). When a tracked task
  *   is attached and the run was not cancelled, an `error` or `budget_exhausted`
- *   outcome — or a thrown error — marks the task failed; a cancellation never
- *   touches the tracker. Emits `delegation_started` before the run and
+ *   outcome — or a thrown error — marks the task failed; a child stopped at its own
+ *   iteration limit hands its partial back as `returned`, leaving the task
+ *   incomplete and respawnable, and a cancellation never touches the tracker. Emits
+ *   `delegation_started` before the run and
  *   `delegation_completed`/`delegation_failed` after, mirroring the trace.
  *
  *   **Every delegation event is published on both channels, and that is
@@ -699,7 +733,7 @@ export async function runPreparedSubagent(
       text: withAdvise(text),
       spawned: true,
       ...(taskId !== undefined ? { taskId } : {}),
-      ...(aborted ? {} : { failed: true }),
+      outcome: aborted ? "cancelled" : "failed",
     };
   }
 
@@ -720,8 +754,13 @@ export async function runPreparedSubagent(
   );
 
   const aborted = ctx.signal?.aborted === true;
-  const outcomeFailed =
-    !aborted && (outcome.status === "error" || outcome.status === "budget_exhausted");
+  const attemptOutcome: SpawnAttemptOutcome = aborted
+    ? "cancelled"
+    : outcome.status === "completed"
+      ? "completed"
+      : outcome.status === "error"
+        ? "failed"
+        : "limited";
   if (ctx.tasks && taskId !== undefined && !aborted) {
     const incompleteReason =
       outcome.status === "error"
@@ -742,21 +781,21 @@ export async function runPreparedSubagent(
           },
         }),
       );
-      return { text: withAdvise(resultText), spawned: true, taskId, failed: true };
+      return { text: withAdvise(resultText), spawned: true, taskId, outcome: attemptOutcome };
     }
-    // A completed child has handed work back but nothing has judged it yet.
-    // Recording that hand-back is the tracker's job; closing the task is not —
-    // only the parent may close it, through its own transition tool. Without
-    // this the task went straight from `in_progress` to whatever the parent
-    // decided next, and the documented intermediate state was never written.
-    if (outcome.status === "completed") await ctx.tasks.markReturned?.(taskId, resultText);
+    // A child that hands its work back — having finished, or having stopped at its
+    // own iteration limit with a partial — leaves the task open for the parent to
+    // judge or respawn. Recording that hand-back is the tracker's job; closing the
+    // task is not, because only the parent may close it through its own transition
+    // tool. Without this the task went straight from `in_progress` to whatever the
+    // parent decided next, and the documented intermediate state was never written.
+    await ctx.tasks.markReturned?.(taskId, resultText);
   }
 
   ctx.emitCapabilityEvent?.(
     projected({
       capability: "delegation",
-      kind:
-        outcome.status === "completed" && !aborted ? "delegation_completed" : "delegation_failed",
+      kind: attemptOutcome === "completed" ? "delegation_completed" : "delegation_failed",
       detail: {
         delegation_id: subagentInstanceId,
         ...(taskId === undefined ? {} : { task_id: taskId }),
@@ -769,7 +808,7 @@ export async function runPreparedSubagent(
     text: withAdvise(resultText),
     spawned: true,
     ...(taskId !== undefined ? { taskId } : {}),
-    ...(outcomeFailed ? { failed: true } : {}),
+    outcome: attemptOutcome,
   };
 }
 
@@ -777,11 +816,17 @@ export async function runPreparedSubagent(
  * Renders a {@link SubagentOutcome} into the text returned to the lead — the
  * completed result verbatim, or a labelled partial/error summary for the
  * non-completed statuses.
+ *
+ * @remarks A local iteration limit is named as what it is — the child's own cap,
+ *   with the iteration it reached and its partial — so the lead can reduce scope,
+ *   take the work over or retry instead of reading it as the child breaking.
  */
 function mapOutcomeToText(outcome: SubagentOutcome): string {
   switch (outcome.status) {
     case "completed":
       return outcome.text;
+    case "iteration_limit_reached":
+      return `Sub-agent stopped at its own iteration limit after ${String(outcome.iterations)} iterations. Partial result: ${outcome.partialText}`;
     case "budget_exhausted":
       return `Sub-agent stopped early (budget_exhausted). Partial result: ${outcome.partialText}`;
     case "cancelled":

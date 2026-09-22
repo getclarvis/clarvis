@@ -220,7 +220,6 @@ The background result text is asserted against `/started ag_[0-9a-f]{8} in the b
 | `agent_stopped` | `agent_id`, `reason`, `already_settled` | `packages/loop/src/runtime/capabilities/agents.ts` |
 | `agent_steered` | `agent_id`, `message`, `delivered` | `packages/loop/src/runtime/capabilities/agents.ts` |
 | `agent_finish_nudge` | `outcome` (`"nudged"`/`"terminated"`), `live_agent_ids`, `nudge_index`, `progressed` | `packages/loop/src/runtime/capabilities/agents.ts` |
-| `terminate` | `{ reason: "background_children_failing" }` | `packages/loop/src/runtime/delegation.ts` |
 | `terminate` | `{ reason: AGENTS_UNFINISHED_CODE }` | `packages/loop/src/runtime/capabilities/agents.ts` |
 
 The wire shapes for the four `delegation_*` kinds are in `packages/capability/src/trace-events.ts`. The four `agent_*` kinds map to `null` in the trace mapper — they never reach
@@ -370,11 +369,20 @@ other capability's.
 | --- | --- | --- |
 | 1 | Classify the call by wire name. Only `delegate_task` reads `task_id`; `spawn_subagent` discards it as surplus input. | `packages/loop/src/runtime/delegation.ts` (`spawnHandler.handle`) |
 | 2 | `tasks?.beforeSpawn(callTaskId)` — the tracked id for `delegate_task`, `undefined` for `spawn_subagent`; `terminal` ends the agent and `refuse` returns a plain result. | `packages/loop/src/runtime/delegation.ts` (`spawnHandler.handle`) |
-| 3 | Call `prepareSpawn` with the actual `toolName` and `requireTaskId` mode; a throw becomes `Tool '<name>' result: <name> error: <msg>`. | `packages/loop/src/runtime/delegation.ts` (`spawnHandler.handle`) |
-| 4 | A rejection (`!prep.ok`) becomes `Tool '<name>' result: <text>`, `progress: false`. | `packages/loop/src/runtime/delegation.ts` (`spawnHandler.handle`) |
-| 5 | `tasks?.noteSpawned(taskId)` when a task id survived validation | `packages/loop/src/runtime/delegation.ts` |
-| 6 | If `background: true` **and** a registry exists: check `failingStreakExceeded()` (⇒ terminal), else `spawnInBackground` | `packages/loop/src/runtime/delegation.ts` |
-| 7 | Otherwise return a `deferred` verdict | `packages/loop/src/runtime/delegation.ts` |
+| 3 | With a registry present, `failingStreakExceeded()` closes child admission: a plain `progress: false` refusal that names the streak and tells the lead to `agent_poll`, do the work itself, or finish. Nothing is published for this call — no `delegation_created`, no `markSpawned`. | `packages/loop/src/runtime/delegation.ts` (`spawnHandler.handle`) |
+| 4 | Call `prepareSpawn` with the actual `toolName` and `requireTaskId` mode; a throw becomes `Tool '<name>' result: <name> error: <msg>`. | `packages/loop/src/runtime/delegation.ts` (`spawnHandler.handle`) |
+| 5 | A rejection (`!prep.ok`) becomes `Tool '<name>' result: <text>`, `progress: false`. | `packages/loop/src/runtime/delegation.ts` (`spawnHandler.handle`) |
+| 6 | `tasks?.noteSpawned(taskId)` when a task id survived validation | `packages/loop/src/runtime/delegation.ts` |
+| 7 | If `background: true` **and** a registry exists: `spawnInBackground` | `packages/loop/src/runtime/delegation.ts` |
+| 8 | Otherwise return a `deferred` verdict | `packages/loop/src/runtime/delegation.ts` |
+
+The streak is checked *before* preparation on purpose: a refused call must not leave behind the
+artefacts of an admitted child — a published `delegation_created`, a task moved to `in_progress`, or
+an intermediate reservation the producer never released. Only a global restriction or the run's own
+cancellation may stop the whole tree; a streak of local child outcomes closes new child admission
+and nothing else, and what still bounds a lead that only repeats the refused call is the
+no-progress guard, since a refusal credits no progress
+(`packages/loop/tests/unit/delegation-handler.test.ts`).
 
 `prepareSpawn` (`packages/loop/src/runtime/subagents/delegate-task.ts`), in order:
 
@@ -407,16 +415,30 @@ other capability's.
 4. **Throw path** : accumulate usage from the pre-seeded sink; if `ctx.signal.aborted`
    the text is `"Sub-agent cancelled."` and the tracker is **not** touched, otherwise
    `markFailed(taskId, "Sub-agent error: …")`; fire `onSubagentComplete`; emit `delegation_failed`;
-   return `{ spawned: true, failed: true }` unless aborted.
+   return `{ spawned: true, outcome: "cancelled" | "failed" }`.
 5. **Normal path**: accumulate usage, render text via `mapOutcomeToText`, record
    `delegation_completed`/`delegation_failed` on the trace, fire `onSubagentComplete`.
 6. Tracker reconciliation : `error` ⇒ `markFailed` + `delegation_failed` event + early
-   return with `failed: true`; `budget_exhausted` ⇒ same; `completed` ⇒ `markReturned?.(taskId,
-   resultText)`. A cancelled run never touches the tracker (`aborted` short-circuits; the throw path has the same guard). The
-   in-source comment states the rule: "A completed child has handed work back but
-   nothing has judged it yet. Recording that hand-back is the tracker's job; closing the task is not
-   — only the parent may close it, through its own transition tool."
-7. Emit the terminal capability event and return.
+   return, and `budget_exhausted` ⇒ the same; `completed` **and** `iteration_limit_reached` ⇒
+   `markReturned?.(taskId, resultText)`. A cancelled run never touches the tracker (`aborted`
+   short-circuits; the throw path has the same guard). The in-source comment states the rule: "A
+   child that hands its work back — having finished, or having stopped at its own iteration limit
+   with a partial — leaves the task open for the parent to judge or respawn." Tracking a hand-back is
+   the tracker's job; closing the task is not — only the parent may close it, through its own
+   transition tool.
+7. Map the attempt onto a `SpawnAttemptOutcome` and emit the terminal capability event. Only
+   `completed` counts as one; `limited`, `cancelled` and `failed` are kept apart because the caller
+   settles the supervision registry from them (§4.3, §4.4) and only `failed` advances the streak.
+
+`runSubagent`'s own outcome vocabulary (`packages/loop/src/runtime/subagents/run-subagent.ts`) is
+`completed`, `iteration_limit_reached`, `budget_exhausted`, `cancelled` and `error`. The local limit
+is derived from an `AgentResult.limit` whose `scope` is `"agent"` and `dimension` is `"iterations"`
+(§3.14 of [capability.md](../foundations/capability.md)); every other `budget_exhausted` — a shared
+token ledger, a declined soft-limit continuation, an output-token ceiling — stays
+`budget_exhausted`. The distinction reaches the lead's text, where a local limit reads as
+"Sub-agent stopped at its own iteration limit after N iterations. Partial result: …". Pinned at
+`packages/loop/tests/unit/run-subagent.test.ts` (both scopes) and
+`packages/loop/tests/integration/iteration-limit-512.test.ts` (the real cap).
 
 ### 4.3 Inline (deferred) spawn
 
@@ -425,7 +447,9 @@ other capability's.
 1. `effective = signal ?? bc.signal`.
 2. `await deps.semaphore.acquire(effective)` — the fan-out bound.
 3. `deps.clock?.enter()` — a foreground compute region.
-4. `runPreparedSubagent`. On success and `!r.failed`, set `iter.subagentSpawned = true`.
+4. `runPreparedSubagent`. Only `r.outcome === "completed"` sets `iter.subagentSpawned = true`; a
+   limit, a cancellation and a technical failure all leave the iteration without progress, so a lead
+   that keeps spawning children that stop at their own cap still trips the no-progress guard.
 5. Result text is `Tool '<name>' result: <r.text>`, always with `progress: false`; the
    taskId rides along when present.
 6. A throw becomes `Tool '<name>' result: Sub-agent cancelled.` when
@@ -461,9 +485,13 @@ An **inline sub-agent has no steer channel**: `spawnCtx` (`packages/loop/src/run
      `enter()` (contract at `packages/capability/src/compute-clock.ts`).
    - `runPreparedSubagent(prepared, {...spawnCtx, signal: combined, steer: steerQueue,
      computeRegion: region })`.
-   - `handle.settled({ status: outcome.failed ? "failed" : "completed", result: outcome.text })`.
+   - `handle.settled({ status: settlementStatusOf(outcome.outcome), result: outcome.text })` — a
+     `completed` attempt settles as `"completed"`, a `limited` one as `"limited"`, and the other two
+     map 1:1. Only `"failed"` reports a technical failure of the child, which is what the registry's
+     streak counts ([supervision.md](../foundations/supervision.md) §4.8).
    - A throw settles as `"stopped"` with `"cancelled before it finished"` when `combined.aborted`,
-     else `"failed"` with the message.
+     else `"failed"` with the message. A child the parent stopped through `agent_stop` was already
+     settled as `"stopped"` by the registry, and the first settle wins.
    - `finally`: `region?.leave()`, release the permit if held, `steerQueue.close()`.
 4. `agents.adopt(handle.id, task)`.
 5. Return the immediate handle result with `progress: true`.
@@ -742,18 +770,26 @@ The invariants below are derived directly from this document's own source and it
     Test: `packages/loop/tests/integration/lead-subagent-usage.test.ts` ("a Subagent that errors after
     consuming tokens still contributes to by_agent").
 
-20. **A sub-agent's iteration counter is its own; its token ledger is the run's.**
-    `createIterationCounter(input.maxIterations)` versus the passed-through `input.ledger`.
+20. **A sub-agent's iteration counter is its own; its token ledger is the run's**, and the shared
+    `AgentResult.limit` says which of the two ended it (`scope: "agent"` versus `scope: "run"`).
+    `createIterationCounter(input.maxIterations)` versus the passed-through `input.ledger`;
+    `limitOf` derives the scope at the cap (`packages/loop/src/runtime/budget/budget.ts`).
     Production: `packages/loop/src/runtime/subagents/run-subagent.ts`. Test:
-    `packages/loop/tests/unit/run-subagent.test.ts` (`maxIterations: 1` ⇒ `budget_exhausted`).
+    `packages/loop/tests/unit/run-subagent.test.ts` (`maxIterations: 1` ⇒
+    `iteration_limit_reached` with `iterations: 1`; a spent ledger ⇒ `budget_exhausted`).
 
 21. **A sub-agent's iteration cap is a hard stop regardless of the run's `on_exceed` policy —
-    `escalate` never reaches it.** The independent counter from invariant 20
-    (`packages/loop/src/runtime/subagents/run-subagent.ts`) exhausts into `budget_exhausted` unconditionally; there is no path from
+    `escalate` never reaches it — and reaching it returns a recoverable partial rather than a
+    failure.** The independent counter from invariant 20
+    (`packages/loop/src/runtime/subagents/run-subagent.ts`) ends the attempt unconditionally; there is no path from
     a sub-agent's own iteration limit to the run-level human-elicit escalation a lead's own budget
-    boundary can trigger. Test: `packages/loop/tests/integration/subagent-iteration-hard-cap-escalate.test.ts`
+    boundary can trigger, and no path from it to a technical failure: the attempt renders its own
+    limit, the tracker keeps the task open, the registry settles the child as `"limited"`, and the
+    lead keeps its run. Test: `packages/loop/tests/integration/subagent-iteration-hard-cap-escalate.test.ts`
     (`on_exceed: "escalate"` on the run, and `elicitCalls` stays `0` when the spawned sub-agent
-    exhausts its own `iteration_limit`).
+    exhausts its own `iteration_limit`), and
+    `packages/loop/tests/integration/iteration-limit-512.test.ts` (the shipped 512 boundary: the
+    child's partial reaches the lead inside a `completed` run).
 
 22. **The `profile` enum is the `can_spawn` subset, not every declared profile.**
     `shape.spawnableRegistry` is built by filtering `request.profiles` through `entry.can_spawn`.
@@ -829,11 +865,13 @@ The invariants below are derived directly from this document's own source and it
 | Tracker `beforeSpawn` ⇒ `terminal` | the agent ends with the tracker's own `AgentResult` | `packages/loop/src/runtime/delegation.ts`; test `packages/loop/tests/unit/delegation-handler.test.ts` |
 | Registry sealed or at `maxLiveChildren` | background spawn refused as a plain `result` telling the model to `await_agents` or `agent_stop` | `packages/loop/src/runtime/delegation.ts` |
 | `agent_registered` trace publication throws after background registry acceptance | the shared helper aborts, settles and closes the accepted child, then rethrows; the tool fails without leaking a live unadopted child | `registerBackgroundChild` in `packages/supervision/src/spawn-child.ts`; `packages/supervision/tests/component/spawn-child.test.ts` (`commits producer accounting before trace publication and abandons the child if it throws`) |
-| `maxConsecutiveFailedChildren` reached | `terminal`, `error.code = "background_children_failing"`, message tells the model to `agent_poll` one and finish with what it has | `packages/loop/src/runtime/delegation.ts` |
+| `maxConsecutiveFailedChildren` reached | plain `result`, `progress: false`: child admission is closed, and the refusal names the streak and tells the model to `agent_poll` one, do the work itself, or finish. Nothing is published for the refused call. The run keeps going; a child that finishes successfully reopens admission | `packages/loop/src/runtime/delegation.ts`; test `packages/loop/tests/unit/delegation-handler.test.ts` |
 | `background: true` with no registry | degrades silently to the inline `deferred` path | `packages/loop/src/runtime/delegation.ts`; test |
-| Sub-agent run throws, parent not aborted | `Sub-agent error: <msg>`; tracker `markFailed`; `delegation_failed`; `failed: true` | `packages/loop/src/runtime/subagents/delegate-task.ts` |
-| Sub-agent run throws, parent aborted | `Sub-agent cancelled.`; tracker untouched; `failed` omitted | `packages/loop/src/runtime/subagents/delegate-task.ts` |
-| Sub-agent outcome `error` / `budget_exhausted` | rendered with its code/partial text; tracker `markFailed`; `failed: true` | `packages/loop/src/runtime/subagents/delegate-task.ts` |
+| Sub-agent run throws, parent not aborted | `Sub-agent error: <msg>`; tracker `markFailed`; `delegation_failed`; `outcome: "failed"` | `packages/loop/src/runtime/subagents/delegate-task.ts` |
+| Sub-agent run throws, parent aborted | `Sub-agent cancelled.`; tracker untouched; `outcome: "cancelled"` | `packages/loop/src/runtime/subagents/delegate-task.ts` |
+| Sub-agent outcome `error` / `budget_exhausted` | rendered with its code/partial text; tracker `markFailed`; `outcome: "failed"` / `"limited"` | `packages/loop/src/runtime/subagents/delegate-task.ts` |
+| Sub-agent outcome `iteration_limit_reached` | rendered as its own cap, the iteration it reached and its partial; tracker `markReturned` leaves the task incomplete and respawnable; `outcome: "limited"` — never `"failed"` | `packages/loop/src/runtime/subagents/delegate-task.ts`; test `packages/loop/tests/integration/iteration-limit-512.test.ts` |
+| Sub-agent outcome `cancelled` | partial text; tracker untouched; `outcome: "cancelled"` | `packages/loop/src/runtime/subagents/delegate-task.ts` |
 | Background child throws or is stopped | `handle.settled({ status: "stopped" \| "failed", … })`; the parent learns of it through a notice at its next `beforeIteration`, or `agent_poll` | `packages/loop/src/runtime/delegation.ts`; `packages/loop/src/runtime/capabilities/agents.ts` |
 | `agent_poll` with an invalid `match` regex | `Tool 'agent_poll' result (error): invalid 'match' regex: <why>` | `packages/loop/src/runtime/capabilities/agents.ts` |
 | Any `agent_*` with an id the caller does not own | `Tool '<name>' result (error): unknown agent_id "<id>"; call agent_list for the ones you own.` | `packages/loop/src/runtime/capabilities/agents.ts` |

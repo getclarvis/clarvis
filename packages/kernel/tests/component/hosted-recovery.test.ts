@@ -44,6 +44,7 @@ function fixture(initialState = state()) {
   const commits: HostedRegistryState[] = [];
   const removed: Array<[string, string]> = [];
   const audits: HostedRecoveryResolution[] = [];
+  const continues: string[] = [];
   let rejectCommit = false;
   let archiveGate: Promise<void> | undefined;
   const registry = createHostedRegistry({
@@ -67,6 +68,9 @@ function fixture(initialState = state()) {
       await archiveGate;
       return structuredClone(resolution);
     },
+    async continueRecovery(run) {
+      continues.push(run.execution_id);
+    },
     async removeProjection(id, generation) {
       removed.push([id, generation]);
     },
@@ -79,6 +83,7 @@ function fixture(initialState = state()) {
     commits,
     removed,
     audits,
+    continues,
     failCommit: (value: boolean) => {
       rejectCommit = value;
     },
@@ -124,6 +129,38 @@ describe("host generation recovery", () => {
     }
   });
 
+  test("releases the resolved conversation only for an explicit continue disposition", async () => {
+    const f = fixture();
+    try {
+      const peer = f.registry.connect("operator");
+      const row = (await peer.service.list()).find(
+        (value) => value.execution_id === "interrupted",
+      )!;
+      const input = {
+        execution_id: row.execution_id,
+        host_generation: row.host_generation,
+        revision: row.revision,
+        physical_work_stopped: true as const,
+        disposition: "continue" as const,
+      };
+      await expect(
+        peer.service.resolveRecovery({ ...input, disposition: "park" as never }),
+      ).rejects.toMatchObject({ code: "invalid_request" });
+      expect(f.audits).toEqual([]);
+      expect(f.continues).toEqual([]);
+
+      const resolved = await peer.service.resolveRecovery(input);
+      expect(resolved.recovery_resolution).toMatchObject({ disposition: "continue" });
+      // The durable attestation comes first, then the conversation's own release.
+      expect(f.audits).toHaveLength(1);
+      expect(f.continues).toEqual([row.execution_id]);
+      expect(resolved.execution_state).toBe("closed");
+      expect(resolved.outcome).toBeUndefined();
+    } finally {
+      await f.registry.close();
+    }
+  });
+
   test("requires operator confirmation and an exact revision before releasing unknown physical work", async () => {
     const f = fixture();
     try {
@@ -154,6 +191,9 @@ describe("host generation recovery", () => {
       const resolved = await peer.service.resolveRecovery(input);
       expect(resolved.execution_state).toBe("closed");
       expect(resolved.outcome).toBeUndefined();
+      // The default disposition parks the work; only an explicit continue resumes the conversation.
+      expect(resolved.recovery_resolution).toMatchObject({ disposition: "archive" });
+      expect(f.continues).toEqual([]);
       expect(resolved.recovery_resolution).toMatchObject({
         previous_host_generation: "previous",
         resolving_host_generation: "current",

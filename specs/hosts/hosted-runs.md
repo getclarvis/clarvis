@@ -34,14 +34,21 @@ ownership and broker channels remain owned by [isolated agent runtime](isolated-
 ## Code integration
 
 Host-started goal stages use `RunHost.synchronizeGoal` in the already selected conversation.
-This path must not call session-switch teardown or retire controller authority. Its painted-turn
-cursor is independent of canonical metadata, which may already contain a following stage. Closed
-stages are reconstructed from persisted history; live stages attach through normal hosted
-observation. Delayed reads revalidate the conversation generation before painting or attaching.
+Ordinary synchronization preserves the selected conversation and controller authority. Its cursor
+stores ordered canonical turn identities. `adoptCanonicalTurn` accepts only executions confirmed by
+the store; a refused submission cannot advance it. A divergent resident suffix is truncated and
+reconstructed while the shared prefix keeps its node identities. Divergence before the folded
+window reloads that canonical window. Closed stages replay persisted history; live stages attach
+through normal hosted observation. Delayed reads revalidate the conversation generation.
+
+A rejected submission is resolved against canonical turns and durable operator receipts. An accepted
+pending message remains retained by the host; an absent submission returns its text to the composer
+without overwriting newer typing. Provisional input never becomes a canonical turn or continuation
+base. No branch parses an error string to decide whether the host admitted the input.
 Production: `goalBinding`, `prepareGoalConversation` and `synchronizeGoal` in
 [run-host.ts](../../packages/code/src/run-host.ts), connected by
 [runtime.tsx](../../packages/code/src/runtime.tsx).
-Test: automatic-stage and delayed-goal-read cases in
+Test: automatic-stage, delayed-goal-read, diverging-canonical-history and refused-submission cases in
 [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
 
 The host also seeds command-review authority separately from the synthetic Goal work prompt. Guided
@@ -576,24 +583,31 @@ prove process closure or remote side effects. Current-generation executions, liv
 confirmation and stale revisions are refused. Guest capabilities do not expose this operation.
 
 `archiveRecovery` first commits a `HostedRecoveryResolution` on the canonical session turn. The
-receipt names the old and resolving generations, the authenticated connection and the verification
-time. An unfinished turn becomes `interrupted`; known terminal status and usage remain intact, and
-no execution end time or run result is invented. If intent never reached the session, a transcript
-audit turn records its identity. That conversation is archived: later model admission requires a
-new conversation, preserving history without replaying uncertain actions. Metadata reads, export
-and explicit deletion retain their ordinary contracts.
+receipt names the old and resolving generations, the authenticated connection, the verification
+time and its **disposition**: `archive`, the default, parks the interrupted work, while `continue`
+lets the same conversation host a successor. An unfinished turn becomes `interrupted` in both
+cases; known terminal status and usage remain intact, and no execution end time or run result is
+invented. If intent never reached the session, a transcript audit turn records its identity. Only
+an `archive` resolution closes the conversation to later model admission — a resolved conversation
+is reopened when every recorded resolution asked to continue, with the interrupted turn kept as the
+base its successor continues from. Neither disposition replays uncertain actions. Metadata reads,
+export and explicit deletion retain their ordinary contracts.
 
 Only after the session audit is durable does the registry commit the discovery row as physically
 `closed`, retaining any already known outcome and recovery error. It then releases unresolved
-physical occupancy. If either write fails, the row remains unresolved; a retry reuses a previously
-committed session audit. Concurrent confirmations share one operation. Host shutdown awaits that
-operation. Ordinary acknowledgement may now remove the discovery row and private observation
-projection while the session audit remains. These archived records therefore do not exhaust the
-retained-run index. Maintenance still requires every live run/activity and remaining unknown
-physical execution to be absent.
+physical occupancy and, for `continue` only, hands the resolved run to the conversation's own owner
+so the record that was waiting on that execution — a Goal stage that never reported an ending —
+stops treating it as occupied. Doing that after the commit, and only for `continue`, is what keeps
+a crash from releasing occupancy without its evidence and keeps `archive` from resuming a line of
+work the operator asked to park. If either write fails, the row remains unresolved; a retry reuses a
+previously committed session audit. Concurrent confirmations share one operation. Host shutdown
+awaits that operation. Ordinary acknowledgement may now remove the discovery row and private
+observation projection while the session audit remains. These archived records therefore do not
+exhaust the retained-run index. Maintenance still requires every live run/activity and remaining
+unknown physical execution to be absent.
 
 Production: `resolveRecovery` in [registry.ts](../../packages/kernel/src/hosting/registry.ts),
-`archiveRecovery` and archived-conversation admission in
+`archiveRecovery`, `continueRecovery` and archived/resolved-conversation admission in
 [sessions.ts](../../packages/kernel/src/hosting/sessions.ts), and the coordinator composition in
 [file-host.ts](../../packages/kernel/src/hosting/file-host.ts). Test:
 [hosted-recovery.test.ts](../../packages/kernel/tests/component/hosted-recovery.test.ts),
@@ -611,6 +625,14 @@ requires refreshing discovery before another action. Production: `BackgroundView
 [controller.ts](../../packages/code/src/features/background/controller.ts). Test:
 [background-controller.test.ts](../../packages/code/tests/unit/background-controller.test.ts) and
 [background-list-controller.test.ts](../../packages/code/tests/unit/background-list-controller.test.ts).
+
+`continue recovery` is the second action on the same selected unknown run, and the operator's
+verification statement is the same one: what differs is that the copy names the consequence — this
+conversation stays open and can start a successor, with the interrupted turn kept as its base — and
+the confirmed disposition reaches the wire (`background-controller.test.ts`, "sends the continue
+disposition only when the operator asked to resume"). The action layer carries the disposition; the
+list layer is what asks the operator first, so a declined confirmation publishes nothing for either
+action.
 
 ## File kernel composition
 
@@ -930,3 +952,36 @@ the same generation. CI on Windows retains named-pipe coverage; the process fall
 and the ordinary run event policy; it does not import Code or the TUI. The canonical terminal run
 and conversation histories remain governed by [kernel runs](kernel-runs.md) and
 [sessions](sessions.md). Adding a service implementation must preserve those ownership contracts.
+
+## Durable operator submissions
+
+Public hosted submission defaults to operator intent after authentication; host-created successors
+explicitly carry automatic intent and their continuation authority. `startOperator` persists authenticated input using `acceptOperator` before awaiting prior physical
+closure. The private session owns at most sixteen pending submissions and a bounded admitted audit,
+with a monotonic `operator_sequence`; accepted messages are not executed turns. Same-identity
+replays validate the fingerprint and reattach. Preparation reads the current conversation revision
+and predecessor, while automatic requests retain their revision checks. New operator input retires
+pending continuation authority and suspends active Goal automation. A foreign controller still
+requires explicit takeover. Session mutations use one bounded serialized lane per conversation.
+
+Steering carries a correlation identity independent of its text. `createHostedExecution` records
+`steering_applied` before `deliverOperator` durably acknowledges consumption. Concurrent delivery of
+one identity shares its operation. A refusal before the source consumes steering retains the input
+and starts a successor only after the predecessor's physical and publication barriers. Unknown old
+physical work retains pending input and requires the existing generation-fenced recovery operation.
+
+Production: `startOperator` and the observation controls in
+[registry.ts](../../packages/kernel/src/hosting/registry.ts), `acceptOperator`, `prepareOperator` and
+`deliverOperator` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts), and the source
+pump in [execution.ts](../../packages/kernel/src/hosting/execution.ts).
+Test: priority, stale revision, duplicate replay and steering cases in
+[goal-operator-recovery.test.ts](../../packages/kernel/tests/integration/goal-operator-recovery.test.ts).
+
+Compatible pending ordinary messages are combined in acceptance order during preparation. Each
+retains its own receipt with `delivered_to` naming the single admitted execution. A replay of a grouped
+member identifies that execution in its admitted-submission receipt. The physical/publication wait is bounded; timeout retains input and
+returns actionable recovery rather than silently dropping it. Steering completion waits for its
+durable consumption acknowledgement, not merely the source queue acknowledgement.
+Production: `createHostedSessionCoordinator` and `startOperator` in the sources above.
+Test: the queued-input integration case in
+[goal-operator-recovery.test.ts](../../packages/kernel/tests/integration/goal-operator-recovery.test.ts).

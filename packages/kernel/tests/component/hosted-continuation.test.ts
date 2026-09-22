@@ -236,6 +236,40 @@ describe("host-owned continuation admission", () => {
     }
   });
 
+  it("releases a revoked continuation whose attention could not be persisted", async () => {
+    let stopped: string | undefined;
+    const f = fixture({
+      continuation: () => ({
+        async prepare() {
+          return next("run-1", "automatic");
+        },
+        async stopped(reason) {
+          stopped = reason;
+          throw new Error("attention store unavailable");
+        },
+      }),
+    });
+    const first = f.registry.connect("operator");
+    try {
+      const view = await first.service.start(input());
+      const second = f.registry.connect("operator");
+      await second.service.attach({
+        execution_id: "run-1",
+        host_generation: "host-generation",
+        control: "takeover",
+      });
+      f.finish("run-1", checkpoint);
+      await view.handle.closed;
+      // The stop is confirmed even when the policy cannot record its own attention.
+      await until(() => stopped !== undefined);
+      expect(stopped).toBe("revoked");
+      expect(f.starts()).toBe(1);
+      expect(f.results).toHaveLength(1);
+    } finally {
+      await f.registry.close();
+    }
+  });
+
   it.each(["session", "predecessor", "kind"] as const)(
     "refuses a continuation that changes its %s",
     async (field) => {

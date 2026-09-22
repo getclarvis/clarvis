@@ -1246,6 +1246,20 @@ async function runApp(
     binding: () => runHost.goalBinding(),
     prepare: () => runHost.prepareGoalConversation(),
     service: () => runClient.goals,
+    recoverPhysical: async (ref) => {
+      const hosting = runClient.hosting;
+      if (hosting === undefined) throw new Error("Hosted recovery is unavailable.");
+      const resolved = await hosting.resolveRecovery({
+        execution_id: ref.execution_id,
+        host_generation: ref.host_generation,
+        revision: ref.revision,
+        physical_work_stopped: true,
+        disposition: "continue",
+      });
+      if (resolved.execution_state !== "closed" || resolved.recovery_resolution === undefined)
+        throw new Error("Physical recovery has not been confirmed.");
+      await hosting.acknowledge(resolved.execution_id);
+    },
     updated: (binding, view) => {
       if (view.state.current === undefined && view.state.archive.length === 0) return;
       pendingGoalView = { binding, view };

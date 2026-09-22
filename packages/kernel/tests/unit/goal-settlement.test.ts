@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { admitGoalRun, advanceGoalRun, applyGoalControl, type GoalRunCause } from "@clarvis/goal";
+import {
+  admitGoalRun,
+  advanceGoalRun,
+  applyGoalControl,
+  type GoalRunCause,
+  type GoalUsage,
+} from "@clarvis/goal";
 import type { RunResult, Session } from "@clarvis/protocol";
 import { goalStageOutcome, pendingInstant, settleGoalSession } from "../../src/goals/settlement.ts";
 import { goalStateToDto } from "../../src/goals/session-state.ts";
@@ -270,4 +276,105 @@ describe("goal stage settlement cause", () => {
     expect(session.goal_state!.current).toMatchObject({ status: "active", no_progress_stages: 1 });
     expect(stage(session)).toMatchObject({ decision: "continue", cause: "local_limit" });
   });
+});
+
+/**
+ * The consumption side of one settlement: what gets charged, and what a late measurement does.
+ *
+ * @remarks The Goal charges a confirmed subtotal even when the stage's measurement is incomplete,
+ *   and a later revision of that same execution adds only what it newly learned. A repeated
+ *   revision is a no-op, a smaller one is refused before any accounting happens, and a correction
+ *   still finds the execution after the Goal it belonged to was replaced.
+ */
+describe("goal usage credit", () => {
+  const partial = (input: number, output: number) => ({
+    kind: "partial" as const,
+    input,
+    output,
+    gaps: [{ cause: "no_usage" as const, calls: 1 }],
+  });
+
+  function credit(session: Session, usage: GoalUsage, now = 40): boolean {
+    return settleGoalSession(
+      session,
+      {
+        execution_id: "run-1",
+        status: "completed",
+        disposition: "checkpoint",
+        checkpoint: { summary: "Stage ended", next_step: "Continue" },
+        usage: USAGE,
+      },
+      { disposition: "checkpoint", completion_validated: false, usage },
+      now,
+    );
+  }
+
+  test("charges a partial subtotal once and only the difference of a later revision", () => {
+    const session = sessionWithRunningStage();
+    expect(credit(session, partial(100, 10))).toBe(true);
+    expect(session.totals).toMatchObject({ input: 100, output: 10 });
+
+    expect(credit(session, partial(160, 12), 41)).toBe(true);
+    expect(session.totals).toMatchObject({ input: 160, output: 12 });
+
+    expect(credit(session, partial(160, 12), 42)).toBe(true);
+    expect(session.totals).toMatchObject({ input: 160, output: 12 });
+  });
+
+  test("refuses a smaller revision without charging anything", () => {
+    const session = sessionWithRunningStage();
+    credit(session, partial(160, 12));
+    expect(() => credit(session, partial(10, 1), 41)).toThrow("cannot be rewritten");
+    expect(session.totals).toMatchObject({ input: 160, output: 12 });
+  });
+
+  test("still charges an unresolved stage after its Goal was replaced", () => {
+    const session = sessionWithRunningStage();
+    credit(session, { kind: "unknown" });
+    expect(session.totals.input).toBe(0);
+
+    const replaced = applyGoalControl(
+      session.goal_state as never,
+      {
+        expected_revision: session.goal_state!.revision,
+        operation_id: "replace-op",
+        action: { kind: "replace", objective: "Next scope", limits: { max_net_tokens: 10000 } },
+      },
+      { session_id: "conversation", new_goal_id: "goal-2", now: 50, physically_busy: false },
+    ).state;
+    session.goal_state = goalStateToDto(replaced);
+    expect(session.goal_state.current!.goal_id).toBe("goal-2");
+
+    // The late measurement belongs to the archived execution, and is charged there.
+    expect(credit(session, { kind: "complete", input: 100, output: 10 }, 60)).toBe(true);
+    expect(session.totals).toMatchObject({ input: 100, output: 10 });
+    expect(session.goal_state.archive[0]!.consumption).toMatchObject({
+      input: 100,
+      output: 10,
+      usage_unknown: false,
+    });
+  });
+});
+
+test("versioned corrections update session and Goal by signed delta and reject conflicting revisions", () => {
+  const session = sessionWithRunningStage();
+  const result = failedResult("internal_error");
+  const apply = (usage: GoalUsage) =>
+    settleGoalSession(
+      session,
+      result,
+      { disposition: "final", completion_validated: false, usage },
+      40,
+    );
+  apply({ kind: "complete", revision: 1, input: 100, output: 10, cached: 20 });
+  apply({ kind: "complete", revision: 2, input: 90, output: 8, cached: 40 });
+  expect(session.totals).toMatchObject({ input: 90, output: 8, cached: 40 });
+  expect(session.goal_state!.current!.consumption.net_tokens).toBe(58);
+  const snapshot = structuredClone(session);
+  apply({ kind: "complete", revision: 1, input: 100, output: 10, cached: 20 });
+  expect(session).toEqual(snapshot);
+  expect(() => apply({ kind: "complete", revision: 2, input: 95, output: 8, cached: 40 })).toThrow(
+    "Conflicting measurements",
+  );
+  expect(session).toEqual(snapshot);
 });

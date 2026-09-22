@@ -87,6 +87,18 @@ if (spawned !== null) {
 }
 ```
 
+### Settle with the outcome that actually happened
+
+`AgentStatus` has seven members, and the five terminal ones are not interchangeable: `completed` and
+`failed` are the child's own outcome, `limited` is a budget cap that ended it with a partial it can be
+resumed from, `stopped` is the parent's `agent_stop`, and `cancelled` is the run going down. Only
+`failed` reports a technical failure of the child, which is the only thing the consecutive-failure
+circuit counts: `limited`, `stopped` and `cancelled` leave it exactly where it was, and only a
+`completed` child clears it. Settle a child that hit its own iteration cap as
+`{ status: "limited", result: partialText }` — reporting it as `failed` would advance a circuit that
+exists to detect doomed spawning and would tell a parent its child broke when it simply ran out of
+its own allowance.
+
 ## Activity-buffer budget
 
 `buffer_bytes` is the requested ceiling for one child, while

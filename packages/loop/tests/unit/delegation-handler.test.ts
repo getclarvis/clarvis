@@ -202,7 +202,7 @@ describe("child-spawn handler resilience (finding 4)", () => {
     }
   });
 
-  it("terminates the run once background children keep failing consecutively", async () => {
+  it("closes child admission with a plain refusal once children keep failing consecutively", async () => {
     const registry = createAgentRegistry({
       limits: { ...AGENTS_TEST_LIMITS, maxConsecutiveFailedChildren: 1 },
     });
@@ -221,20 +221,95 @@ describe("child-spawn handler resilience (finding 4)", () => {
 
     const verdict = await handler.handle(call, 0);
 
-    expect(verdict.kind).toBe("terminal");
-    if (verdict.kind === "terminal") {
-      expect(verdict.result.status).toBe("error");
-      expect(verdict.result.error?.code).toBe("background_children_failing");
+    expect(verdict.kind).toBe("result");
+    if (verdict.kind === "result") {
+      expect(verdict.text).toContain("not spawned");
+      expect(verdict.text).toContain("agent_poll");
+      expect(verdict.progress).toBe(false);
     }
-    expect(
-      deps.bc.trace
-        .entries()
-        .some(
-          (e) =>
-            e.kind === "terminate" &&
-            (e.detail as { reason?: string }).reason === "background_children_failing",
-        ),
-    ).toBe(true);
+  });
+
+  it("never publishes a creation, a start or a task claim for a refused spawn", async () => {
+    const registry = createAgentRegistry({
+      limits: { ...AGENTS_TEST_LIMITS, maxConsecutiveFailedChildren: 1 },
+    });
+    registry
+      .register({
+        kind: "subagent",
+        nativeId: "seed",
+        title: "seed",
+        control: AGENT_STOP_CONTROL,
+      })!
+      .settled({ status: "failed", result: "boom" });
+    const spawned: string[] = [];
+    const tasks = fakeTracker({
+      openTasks: () => [{ id: "t1", status: "pending" }],
+      getTask: (id) => (id === "t1" ? { id: "t1", title: "T", status: "pending" } : undefined),
+      markSpawned: (id) => {
+        spawned.push(id);
+        return true;
+      },
+    });
+    const deps = makeDeps({ agents: registry, tasks });
+    const contribution = buildDelegationContribution(deps);
+    const call = delegateCall("refused-task", { task_id: "t1" });
+    const handler = contribution.handlers!.find((h) => h.matches(call))!;
+
+    const verdict = await handler.handle(call, 0);
+
+    expect(verdict.kind).toBe("result");
+    expect(spawned).toEqual([]);
+    expect(deps.bc.trace.entries().some((e) => e.kind === "delegation_created")).toBe(false);
+    expect(deps.bc.trace.entries().some((e) => e.kind === "terminate")).toBe(false);
+  });
+
+  it("resets the circuit when an admitted child finishes successfully", async () => {
+    const registry = createAgentRegistry({
+      limits: { ...AGENTS_TEST_LIMITS, maxConsecutiveFailedChildren: 2 },
+    });
+    const settle = (nativeId: string, status: "failed" | "completed"): void => {
+      registry
+        .register({
+          kind: "subagent",
+          nativeId,
+          title: nativeId,
+          control: AGENT_STOP_CONTROL,
+        })!
+        .settled({ status });
+    };
+    settle("a", "failed");
+    settle("b", "failed");
+    expect(registry.failingStreakExceeded()).toBe(true);
+
+    settle("c", "completed");
+    expect(registry.failingStreakExceeded()).toBe(false);
+
+    const deps = makeDeps({ agents: registry });
+    const contribution = buildDelegationContribution(deps);
+    const call = spawnCall("bg-after-success", { background: true });
+    const handler = contribution.handlers!.find((h) => h.matches(call))!;
+    const verdict = await handler.handle(call, 0);
+
+    expect(verdict.kind).toBe("result");
+    if (verdict.kind === "result") expect(verdict.text).toContain("started");
+  });
+
+  it("leaves the streak untouched for a child that was cancelled or stopped at a limit", async () => {
+    const registry = createAgentRegistry({
+      limits: { ...AGENTS_TEST_LIMITS, maxConsecutiveFailedChildren: 1 },
+    });
+    for (const status of ["limited", "cancelled", "stopped"] as const) {
+      registry
+        .register({
+          kind: "subagent",
+          nativeId: status,
+          title: status,
+          control: AGENT_STOP_CONTROL,
+        })!
+        .settled({ status });
+    }
+    expect(registry.consecutiveFailures()).toBe(0);
+    expect(registry.failingStreakExceeded()).toBe(false);
   });
 
   it("a background spawn queued behind a saturated semaphore settles as stopped when its combined signal was already aborted", async () => {

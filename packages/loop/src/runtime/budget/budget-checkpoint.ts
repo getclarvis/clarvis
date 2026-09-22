@@ -5,11 +5,14 @@ import type { AgentRole, TracePort } from "@clarvis/capability";
 /**
  * The verdict of one per-iteration budget checkpoint: `continue` to keep
  * looping, `declined` when the user answered a soft-limit prompt by stopping (or
- * escalations are exhausted), `exhausted` when a hard limit is reached, and
- * `cancelled` when the run was aborted mid-prompt.
+ * escalations are exhausted), `exhausted` when a hard limit is reached naming the
+ * dimension that was hit, and `cancelled` when the run was aborted mid-prompt.
  */
 export type CheckpointOutcome =
-  { kind: "continue" } | { kind: "declined" } | { kind: "exhausted" } | { kind: "cancelled" };
+  | { kind: "continue" }
+  | { kind: "declined" }
+  | { kind: "exhausted"; dimension: "iterations" | "tokens" }
+  | { kind: "cancelled" };
 
 /**
  * Evaluate the run's budget at one loop iteration and decide whether to proceed.
@@ -24,10 +27,14 @@ export type CheckpointOutcome =
  * @param args.signal - abort signal distinguishing cancellation from decline.
  * @param args.trace - handle used to record `soft_limit_check` / `budget_check`.
  * @returns a {@link CheckpointOutcome}. With a soft budget configured the result
- *   mirrors {@link evaluateSoftBudget}; otherwise it is `exhausted` when
- *   {@link checkLimits} reports a hard limit and `continue` otherwise.
- * @remarks A soft budget short-circuits the hard-limit path: only one of the two
- *   checks runs per call.
+ *   mirrors {@link evaluateSoftBudget}; otherwise it is `exhausted`, naming the
+ *   dimension {@link checkLimits} reported, when a hard limit is reached and
+ *   `continue` otherwise. A soft budget short-circuits the hard-limit path: only
+ *   one of the two checks runs per call, so a soft budget's decline is never
+ *   reported as a hard limit.
+ * @remarks The dimension is carried out of this function rather than collapsed:
+ *   an iteration cap is the agent's own attempt budget, while the token ledger is
+ *   shared by the whole tree, and the two deserve different recoveries.
  */
 export async function runBudgetCheckpoint(args: {
   softBudget?: SoftBudget;
@@ -58,5 +65,5 @@ export async function runBudgetCheckpoint(args: {
     tokens_used: ledger.consumed(),
     tokens_remaining: Math.max(0, ledger.remaining()),
   });
-  return check.terminal ? { kind: "exhausted" } : { kind: "continue" };
+  return check.terminal ? { kind: "exhausted", dimension: check.reason } : { kind: "continue" };
 }

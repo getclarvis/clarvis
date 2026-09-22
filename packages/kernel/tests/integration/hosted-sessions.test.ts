@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
+  RunDetail,
   RunResult,
   Session,
   StartHostedTurnParams,
@@ -126,6 +127,7 @@ describe("host-owned conversation transactions", () => {
       };
       const resolution: HostedRecoveryResolution = {
         kind: "operator_verified_physical_closure",
+        disposition: "archive",
         previous_host_generation: "old",
         resolving_host_generation: "new",
         operator_connection_id: "operator",
@@ -163,6 +165,204 @@ describe("host-owned conversation transactions", () => {
       expect((await f.base.get("conversation"))!.turns[0]!.recovery_resolution).toEqual(resolution);
     },
   );
+
+  test("reopens a resolved conversation for a successor only when the operator asked to continue", async () => {
+    const f = await fixture();
+    const prepared = await f.prepareTurn();
+    await prepared.commitIntent();
+    const row: HostedRunRef = {
+      execution_id: "run-1",
+      session_id: "conversation",
+      workspace_id: "workspace",
+      host_generation: "old",
+      title: "Unknown turn",
+      config: { agent: "solo" },
+      created_at: 1,
+      updated_at: 10,
+      revision: 1,
+      control_epoch: 0,
+      control: "available",
+      execution_state: "unknown",
+      attention: "none",
+      disconnect_policy: "continue",
+    };
+    await f.archiveRecovery(row, {
+      kind: "operator_verified_physical_closure",
+      disposition: "continue",
+      previous_host_generation: "old",
+      resolving_host_generation: "new",
+      operator_connection_id: "operator",
+      resolved_at: 20,
+    });
+    const stored = (await f.base.get("conversation"))!;
+    // The interrupted turn stays as the base the successor continues from.
+    expect(stored.turns[0]).toMatchObject({ status: "interrupted" });
+
+    await f.prepareTurn(input(stored.revision!, "later"));
+
+    expect(f.params()!.session_id).toBe("conversation");
+    expect(f.params()!.execution_id).not.toBe("run-1");
+  });
+
+  test("rebuilds the released conversation's context from the recovered turn", async () => {
+    const f = await fixture({
+      readRun: async (executionId) =>
+        executionId === "run-1"
+          ? ({
+              messages: [{ role: "user", content: "Earlier work" }],
+              result: { result: "Earlier answer" },
+              events: [],
+            } as unknown as RunDetail)
+          : null,
+    });
+    const prepared = await f.prepareTurn();
+    await prepared.commitIntent();
+    const row: HostedRunRef = {
+      execution_id: "run-1",
+      session_id: "conversation",
+      workspace_id: "workspace",
+      host_generation: "old",
+      title: "Unknown turn",
+      config: { agent: "solo" },
+      created_at: 1,
+      updated_at: 10,
+      revision: 1,
+      control_epoch: 0,
+      control: "available",
+      execution_state: "unknown",
+      attention: "none",
+      disconnect_policy: "continue",
+    };
+    await f.archiveRecovery(row, {
+      kind: "operator_verified_physical_closure",
+      disposition: "continue",
+      previous_host_generation: "old",
+      resolving_host_generation: "new",
+      operator_connection_id: "operator",
+      resolved_at: 20,
+    });
+    const stored = (await f.base.get("conversation"))!;
+    await f.prepareTurn(input(stored.revision!, "successor"));
+
+    const messages = f.params()!.messages!;
+    // The canonical history is restored, and the successor is told the outcome may be incomplete.
+    expect(messages.some((message) => message.content === "Earlier answer")).toBe(true);
+    expect(
+      messages.some(
+        (message) =>
+          typeof message.content === "string" && message.content.includes("physically closed"),
+      ),
+    ).toBe(true);
+    // Continuing from the recovered execution is refused: the successor starts from the history.
+    expect(f.params()!.continue_from).toBeUndefined();
+  });
+
+  test("refuses a recovered conversation whose history exceeds its context bound", async () => {
+    const f = await fixture({
+      readRun: async (executionId) =>
+        executionId === "run-1"
+          ? ({
+              messages: [{ role: "user", content: "x".repeat(600 * 1024) }],
+              result: {},
+              events: [],
+            } as unknown as RunDetail)
+          : null,
+    });
+    const prepared = await f.prepareTurn();
+    await prepared.commitIntent();
+    const row: HostedRunRef = {
+      execution_id: "run-1",
+      session_id: "conversation",
+      workspace_id: "workspace",
+      host_generation: "old",
+      title: "Unknown turn",
+      config: { agent: "solo" },
+      created_at: 1,
+      updated_at: 10,
+      revision: 1,
+      control_epoch: 0,
+      control: "available",
+      execution_state: "unknown",
+      attention: "none",
+      disconnect_policy: "continue",
+    };
+    await f.archiveRecovery(row, {
+      kind: "operator_verified_physical_closure",
+      disposition: "continue",
+      previous_host_generation: "old",
+      resolving_host_generation: "new",
+      operator_connection_id: "operator",
+      resolved_at: 20,
+    });
+    const stored = (await f.base.get("conversation"))!;
+    await expect(f.prepareTurn(input(stored.revision!, "oversized"))).rejects.toMatchObject({
+      code: "resource_exhausted",
+      message: "Recovered conversation exceeds its context bound",
+    });
+  });
+
+  test("recovers a steer's consumption from the canonical history instead of replaying it", async () => {
+    const f = await fixture({
+      readRun: async (executionId) =>
+        executionId === "run-1"
+          ? ({
+              events: [
+                {
+                  type: "steering_applied",
+                  at: 5,
+                  agent: "lead",
+                  message: "Use it",
+                  id: "steer_lost",
+                },
+              ],
+            } as unknown as RunDetail)
+          : null,
+    });
+    const prepared = await f.prepareTurn(input(1, "run-1"));
+    await prepared.commitIntent();
+    // The submission was durably accepted, and the run applied it without the receipt being confirmed.
+    expect(await f.acceptOperator(input(1, "steer_lost"))).toBe("pending");
+    await expect(f.prepareOperator("conversation", "steer_lost")).rejects.toMatchObject({
+      code: "conflict",
+      message: "Submission consumption recovered from canonical history",
+      details: { submission: "admitted", execution_id: "run-1" },
+    });
+    const stored = (await f.base.get("conversation"))!;
+    expect(
+      stored.operator_intents?.find((value) => value.execution_id === "steer_lost"),
+    ).toMatchObject({ admitted: true, delivered_to: "run-1" });
+  });
+
+  test("preserves accepted operator submissions across a coordinated save", async () => {
+    const f = await fixture();
+    expect(await f.acceptOperator(input(1, "operator-1"))).toBe("pending");
+    const stored = (await f.base.get("conversation"))!;
+    // A caller's copy is written without the submissions it never held; the durable ones stay.
+    await f.saveDuringActivity(
+      {
+        ...stored,
+        operator_intents: undefined,
+        operator_sequence: undefined,
+      },
+      () => false,
+    );
+    const after = (await f.base.get("conversation"))!;
+    expect(after.operator_intents?.map((value) => value.execution_id)).toEqual(["operator-1"]);
+    expect(after.operator_sequence).toBe(1);
+  });
+
+  test("prepares an unconfirmed steer as its own turn when the history is silent about it", async () => {
+    const f = await fixture({ readRun: async () => null });
+    const prepared = await f.prepareTurn(input(1, "run-1"));
+    await prepared.commitIntent();
+    expect(await f.acceptOperator(input(1, "steer_quiet"))).toBe("pending");
+    // Nothing in the canonical history claims this message, so it is prepared as its own turn.
+    const preparedInput = await f.prepareOperator("conversation", "steer_quiet");
+    expect(preparedInput).toMatchObject({
+      session_id: "conversation",
+      params: { execution_id: "steer_quiet", continue_from: "run-1" },
+    });
+  });
 
   test("inserts pending observations after historical context and before the fresh prompt", async () => {
     const f = await fixture();

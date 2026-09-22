@@ -102,6 +102,9 @@ explicit instruction from an applicable loaded skill or agent-instruction file (
 or `CLARVIS.md`) before spawning children, delegating tasks, or starting workflow leaders. Otherwise
 the agent works directly; available tools and efficiency gains do not authorize delegation. Profile
 and grant limits still apply. Supervision distinguishes handles, first-child wakeups and completed work.
+It also keeps a child that stopped at its own iteration cap apart from one that failed: the cap is a
+recoverable partial the lead can reduce scope around, retry or take over, and a streak of technically
+failed children closes new child admission without ending the lead's run.
 `submit_result` ends a run only when both validation and runtime gates accept it. Compaction retains
 authorization and unfinished work without treating transcript content as new instructions; bounded
 MCP instruction sections explicitly mark truncation.

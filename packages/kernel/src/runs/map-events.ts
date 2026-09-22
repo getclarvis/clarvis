@@ -699,6 +699,7 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
     case "user_steering":
       return {
         type: "steering_applied",
+        ...(ev.id === undefined ? {} : { id: ev.id }),
         at: ev.occurred_at,
         agent: ev.agent,
         ...sub(ev.subagent_instance_id),

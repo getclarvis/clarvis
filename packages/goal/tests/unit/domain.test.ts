@@ -4,7 +4,9 @@ import {
   admitGoalRun,
   advanceGoalRun,
   applyGoalControl,
+  retryGoalResume,
   boundedGoalState,
+  closeGoalRunByRecovery,
   declareGoalImpediment,
   emptyGoalState,
   goalAdmission,
@@ -27,7 +29,7 @@ import {
 
 const context = { session_id: "session", new_goal_id: "goal-1", now: 100, physically_busy: false };
 const limits = { max_net_tokens: 1000, max_auto_continuations: 8, max_no_progress_stages: 3 };
-const measured: GoalUsage = { kind: "measured", input: 100, cached: 80, output: 10 };
+const measured: GoalUsage = { kind: "complete", input: 100, cached: 80, output: 10 };
 
 describe("guided creation intent", () => {
   it("persists a formulating intent without creating a Goal and is idempotent", () => {
@@ -555,10 +557,14 @@ describe("goal user controls", () => {
     expect(() => control(paused.state, { kind: "resume" })).toThrow("physical execution");
   });
 
-  it("replaces atomically, retains audit and never reopens terminal goals", () => {
+  it("replaces atomically, retains audit, and reopens a terminal goal only through resume", () => {
     let state = control(create(), { kind: "cancel" });
-    expect(() => control(state, { kind: "resume" })).toThrow("Terminal");
+    // Editing a terminal goal is still refused: an explicit resume is the one transition that
+    // reopens it, and it does so without touching the definition.
     expect(() => control(state, { kind: "edit", objective: "Other" })).toThrow("Terminal");
+    const reopened = control(state, { kind: "resume" });
+    expect(reopened.current).toMatchObject({ status: "active", goal_id: "goal-1" });
+    state = control(reopened, { kind: "cancel" });
     const replaced = applyGoalControl(
       state,
       {
@@ -692,26 +698,93 @@ describe("goal physical settlement, usage and continuation", () => {
     ).toEqual(settled);
   });
 
-  it("blocks missing usage, conservatively charges missing cache, and permits explicit late reconciliation", () => {
+  it("charges what it can, suspends only automatic work, and accepts the gap on explicit resume", () => {
     expect(goalNetTokens({ kind: "unknown" })).toBeUndefined();
-    expect(goalNetTokens({ kind: "measured", input: 100, output: 10 })).toBe(110);
-    expect(() => goalNetTokens({ kind: "measured", input: 1, output: 0, cached: 2 })).toThrow();
+    expect(goalNetTokens({ kind: "complete", input: 100, output: 10 })).toBe(110);
+    expect(() => goalNetTokens({ kind: "complete", input: 1, output: 0, cached: 2 })).toThrow();
+    expect(
+      goalNetTokens({
+        kind: "partial",
+        input: 100,
+        output: 10,
+        gaps: [{ cause: "no_usage", calls: 1 }],
+      }),
+    ).toBe(110);
     let state = settle(checkpoint(run(create())), "run-1", { kind: "unknown" });
     expect(state.current).toMatchObject({
       status: "blocked",
       consumption: { usage_unknown: true },
     });
-    expect(() => control(state, { kind: "resume" })).toThrow("Usage must be reconciled");
-    state = settle(state, "run-1", { kind: "measured", input: 100, output: 10 });
+    expect(goalAdmission(state.current!, 100, true)).toMatchObject({ allowed: false });
+    state = control(state, { kind: "resume" });
+    expect(state.current).toMatchObject({ status: "active", consumption: { usage_unknown: true } });
+    expect(state.current!.consumption.usage_accepted_runs).toEqual(["run-1"]);
+    expect(goalAdmission(state.current!, 100, true).allowed).toBe(true);
+    state = settle(state, "run-1", { kind: "complete", input: 100, output: 10 });
     expect(state.current!.consumption).toMatchObject({
       usage_unknown: false,
       cache_estimated: true,
       net_tokens: 110,
+      usage_accepted_runs: [],
     });
     expect(state.current!.consumption.cached).toBeUndefined();
+    // The late measurement closes the gap, so the Goal it had asked about is no longer waiting.
+    expect(state.current!.status).toBe("active");
+    // A late cache report adds information: the gross figures stay, the net charge goes down.
+    state = settle(state, "run-1", measured);
+    expect(state.current!.consumption).toMatchObject({
+      input: 100,
+      output: 10,
+      cached: 80,
+      net_tokens: 30,
+      cache_estimated: false,
+    });
+    // A smaller revision is a conflict, not an update, and never overwrites the measurement.
+    expect(() =>
+      settle(state, "run-1", { kind: "complete", input: 10, output: 1, cached: 0 }),
+    ).toThrow("cannot be rewritten");
+    expect(control(state, { kind: "resume" }).current!.consumption.net_tokens).toBe(30);
+  });
+
+  it("keeps the confirmed subtotal of a partial stage and accepts only its own gap", () => {
+    const partial: GoalUsage = {
+      kind: "partial",
+      input: 100,
+      output: 10,
+      cached: 20,
+      gaps: [
+        { cause: "no_usage", calls: 2 },
+        { cause: "pending_call", calls: 1 },
+      ],
+    };
+    let state = settle(checkpoint(run(create())), "run-1", partial);
+    expect(state.current!.consumption).toMatchObject({
+      input: 100,
+      output: 10,
+      net_tokens: 90,
+      usage_unknown: false,
+      gaps: [
+        { cause: "no_usage", calls: 2 },
+        { cause: "pending_call", calls: 1 },
+      ],
+      usage_accepted_runs: [],
+    });
     expect(state.current!.status).toBe("blocked");
-    expect(() => settle(state, "run-1", measured)).toThrow("cannot be rewritten");
-    expect(control(state, { kind: "resume" }).current!.consumption.net_tokens).toBe(110);
+    expect(state.current!.reason).toContain("resume");
+    state = control(state, { kind: "resume" });
+    expect(state.current!.consumption.usage_accepted_runs).toEqual(["run-1"]);
+    expect(state.current!.consumption.gaps).toHaveLength(2);
+
+    // A later stage's own gap is a new execution and is unaccepted again.
+    state = settle(checkpoint(run(state, "run-2"), "run-2"), "run-2", {
+      kind: "partial",
+      input: 10,
+      output: 1,
+      gaps: [{ cause: "provider_unknown", calls: 1 }],
+    });
+    expect(state.current!.consumption.usage_accepted_runs).toEqual(["run-1"]);
+    expect(state.current!.consumption.net_tokens).toBe(101);
+    expect(state.current!.status).toBe("blocked");
   });
 
   it("assigns late reconciliation to an archived goal instead of the replacement", () => {
@@ -732,7 +805,7 @@ describe("goal physical settlement, usage and continuation", () => {
 
   it("records overrun and resume never grants new budget or continuation allowance", () => {
     let state = settle(checkpoint(run(create())), "run-1", {
-      kind: "measured",
+      kind: "complete",
       input: 1100,
       output: 100,
       cached: 0,
@@ -749,7 +822,14 @@ describe("goal physical settlement, usage and continuation", () => {
       remaining_tokens: 800,
     });
     state.current!.auto_continuations = 8;
-    expect(() => control(state, { kind: "resume" })).toThrow("continuation limit");
+    // The automatic ceiling gates automation, never a manual decision — and resuming does not
+    // reset it either, so the next automatic stage still stops at the same bound.
+    expect(goalAdmission(state.current!, 100, true)).toMatchObject({
+      allowed: false,
+      status: "usage_limited",
+    });
+    const resumed = control(state, { kind: "resume" });
+    expect(resumed.current).toMatchObject({ status: "active", auto_continuations: 8 });
     state.current!.limits.deadline_at = 50;
     expect(() => control(state, { kind: "resume" })).toThrow("deadline");
   });
@@ -1039,7 +1119,7 @@ describe("goal physical settlement, usage and continuation", () => {
   it.each(["failed", "cancelled"] as const)(
     "reports exhausted measured budget on a %s stage without hiding its physical outcome",
     (outcome) => {
-      const usage: GoalUsage = { kind: "measured", input: 1100, output: 100, cached: 0 };
+      const usage: GoalUsage = { kind: "complete", input: 1100, output: 100, cached: 0 };
       const state = settle(run(create()), "run-1", usage, { outcome });
       expect(state.current).toMatchObject({
         status: "budget_limited",
@@ -1083,6 +1163,135 @@ describe("goal criteria and completion", () => {
       completion_validated: validation.valid,
     });
     expect(state.current!.status).toBe("complete");
+  });
+
+  it("reopens a completed or cancelled goal for a new attempt without rewriting its audit", async () => {
+    let completed = run(create());
+    const proposed = candidate(completed);
+    const validation = await validateGoalCandidate(completed.current!, proposed, {
+      verify: async () => ({ valid: false }),
+    });
+    completed = recordGoalCandidate(completed, {
+      goal_id: "goal-1",
+      execution_id: "run-1",
+      candidate: proposed,
+      now: 210,
+    });
+    completed = settle(completed, "run-1", measured, {
+      disposition: "final",
+      completion_validated: validation.valid,
+    });
+    expect(completed.current!.status).toBe("complete");
+    const cancelled = control(settle(run(create()), "run-1", measured), { kind: "cancel" });
+
+    for (const closed of [completed, cancelled]) {
+      const before = structuredClone(closed.current!);
+      const reopened = control(closed, { kind: "resume" });
+
+      // The objective, its limits, its spend and its audit survive; the closed attempt's own
+      // validation does not, and the new attempt gets a fresh progress sequence.
+      expect(reopened.current).toMatchObject({
+        status: "active",
+        goal_id: before.goal_id,
+        objective: before.objective,
+        limits: before.limits,
+        consumption: before.consumption,
+        no_progress_stages: 0,
+      });
+      expect(reopened.current!.candidate).toBeUndefined();
+      expect(reopened.current!.control_revision).toBeGreaterThan(before.control_revision);
+      expect(reopened.current!.objective_revision).toBe(before.objective_revision);
+      expect(reopened.current!.runs.map((item) => item.execution_id)).toEqual(
+        before.runs.map((item) => item.execution_id),
+      );
+    }
+  });
+
+  it("releases a physically unknown stage without inventing its outcome", () => {
+    let state = advanceGoalRun(run(create()), {
+      goal_id: "goal-1",
+      execution_id: "run-1",
+      phase: "unknown",
+      now: 215,
+    });
+    expect(state.current).toMatchObject({ status: "blocked" });
+    expect(state.current!.reason).toContain("host recovery");
+    expect(goalAdmission(state.current!, 300, false)).toMatchObject({ allowed: false });
+
+    const recovered = closeGoalRunByRecovery(state, {
+      goal_id: "goal-1",
+      execution_id: "run-1",
+      recovered_at: 220,
+    });
+    const stage = recovered.current!.runs[0]!;
+    // The attestation is recorded; the outcome it never established is not invented.
+    expect(stage).toMatchObject({ phase: "closed", recovered_at: 220 });
+    expect(stage.outcome).toBeUndefined();
+    expect(stage.disposition).toBeUndefined();
+    expect(stage.decision).toBeUndefined();
+    expect(stage.ended_at).toBeUndefined();
+    // The stage was never measured either, so the release asks for the gap to be accepted instead
+    // of letting the next attempt start against an unknown baseline.
+    expect(recovered.current!.consumption.usage_unknown).toBe(true);
+    expect(recovered.current!.status).toBe("blocked");
+    expect(recovered.current!.reason).toContain("resume the goal to accept the gap");
+
+    state = control(recovered, { kind: "resume" });
+    expect(state.current).toMatchObject({
+      status: "active",
+      consumption: { usage_accepted_runs: ["run-1"] },
+    });
+    const admitted = admitGoalRun(state, {
+      goal_id: "goal-1",
+      execution_id: "run-2",
+      admission_id: "admission-run-2",
+      automatic: false,
+      expected_revision: state.revision,
+      control_revision: state.current!.control_revision,
+      now: 230,
+    });
+    expect(admitted.current!.runs.map((item) => item.execution_id)).toEqual(["run-1", "run-2"]);
+    // A second resolution for the same execution changes nothing.
+    expect(
+      closeGoalRunByRecovery(recovered, {
+        goal_id: "goal-1",
+        execution_id: "run-1",
+        recovered_at: 240,
+      }),
+    ).toEqual(recovered);
+  });
+
+  it("suspends only automatic admission while a measured gap stays unaccepted", () => {
+    const partial = (calls: number): GoalUsage => ({
+      kind: "partial",
+      input: 100,
+      output: 10,
+      gaps: [{ cause: "no_usage", calls }],
+    });
+    let state = settle(checkpoint(run(create())), "run-1", partial(1));
+    expect(state.current!.status).toBe("blocked");
+    state = control(state, { kind: "resume" });
+    expect(state.current).toMatchObject({
+      status: "active",
+      consumption: { usage_accepted_runs: ["run-1"] },
+    });
+    expect(goalAdmission(state.current!, 100, true).allowed).toBe(true);
+
+    // A late revision that widens the same stage's gap stops matching the acceptance, so the
+    // gap is unaccepted again while the Goal itself stays active.
+    state = settle(state, "run-1", partial(2));
+    expect(state.current!.status).toBe("active");
+    const automatic = goalAdmission(state.current!, 200, true);
+    expect(automatic).toMatchObject({ allowed: false, status: "blocked" });
+    if (automatic.allowed) throw new Error("the automatic admission must be refused");
+    expect(automatic.reason).toContain("Consumption is not fully measured for 1 closed stage(s)");
+    expect(automatic.reason).toContain("run-1");
+    expect(automatic.reason).toContain("resume the goal to accept that gap");
+    // The operator's own decision is what accepts it, and it is not a standing bypass.
+    expect(goalAdmission(state.current!, 200, false).allowed).toBe(true);
+    expect(control(state, { kind: "resume" }).current!.consumption.usage_accepted_runs).toEqual([
+      "run-1",
+    ]);
   });
 
   it("requires explicit host assertions and recorded human decisions", async () => {
@@ -1230,5 +1439,71 @@ describe("goal criteria and completion", () => {
       goal_id: `old-${index}`,
     }));
     expect(() => boundedGoalState(state)).toThrow("capacity reached");
+  });
+});
+
+describe("pending explicit resume", () => {
+  it("retains the reserved identity through physical recovery and fences later cancellation", () => {
+    const initial = applyGoalControl(
+      undefined,
+      {
+        expected_revision: 0,
+        operation_id: "create-pending",
+        action: { kind: "create", objective: "Recover work", limits },
+      },
+      context,
+    ).state;
+    const admitted = admitGoalRun(initial, {
+      goal_id: "goal-1",
+      execution_id: "old",
+      admission_id: "old",
+      expected_revision: initial.revision,
+      control_revision: initial.current!.control_revision,
+      automatic: false,
+      now: 101,
+    });
+    const unknown = advanceGoalRun(admitted, {
+      goal_id: "goal-1",
+      execution_id: "old",
+      phase: "unknown",
+      now: 102,
+    });
+    const pending = applyGoalControl(
+      unknown,
+      {
+        operation_id: "resume-pending",
+        expected_revision: unknown.revision,
+        action: { kind: "resume" },
+      },
+      { ...context, physically_busy: true, resume_pending: true, new_execution_id: "successor" },
+    );
+    expect(pending.start).toBe(false);
+    expect(pending.receipt).toMatchObject({
+      execution_id: "successor",
+      resume_pending: true,
+      outcome: "needs_input",
+    });
+    const closed = closeGoalRunByRecovery(pending.state, {
+      goal_id: "goal-1",
+      execution_id: "old",
+      recovered_at: 103,
+    });
+    const resumed = retryGoalResume(closed, "resume-pending", context);
+    expect(resumed.start).toBe(true);
+    expect(resumed.receipt.execution_id).toBe("successor");
+    expect(resumed.receipt.fingerprint).toBe(pending.receipt.fingerprint);
+    const cancelled = applyGoalControl(
+      closed,
+      {
+        operation_id: "cancel-new",
+        expected_revision: closed.revision,
+        action: { kind: "cancel" },
+      },
+      context,
+    );
+    expect(retryGoalResume(cancelled.state, "resume-pending", context)).toMatchObject({
+      start: false,
+      receipt: { outcome: "superseded" },
+    });
   });
 });

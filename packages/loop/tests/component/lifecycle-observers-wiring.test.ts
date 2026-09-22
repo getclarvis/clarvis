@@ -251,7 +251,7 @@ describe("subagent_complete observer", () => {
     expect(prep.ok).toBe(true);
     if (prep.ok) {
       const r = await runPreparedSubagent(prep.prepared, ctx);
-      expect(r.failed).toBe(true);
+      expect(r.outcome).toBe("failed");
       expect(seen).toHaveLength(1);
       expect(seen[0]).toMatchObject({ status: "error" });
       expect(seen[0]!.result).toContain("llm exploded");

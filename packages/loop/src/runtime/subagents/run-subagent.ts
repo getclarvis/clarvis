@@ -28,15 +28,24 @@ import type { ComputeClock, ComputeRegion } from "@clarvis/capability";
 import type { ToolInterruptRegistry } from "../tools/tool-interrupt.ts";
 
 /**
- * The terminal outcome of a sub-agent run: a `completed` result text, a
- * `budget_exhausted` or `cancelled` partial, or an `error` with a code and
+ * The terminal outcome of a sub-agent run: a `completed` result text, an
+ * `iteration_limit_reached` partial that stopped at the child's own iteration cap,
+ * a `budget_exhausted` partial that stopped on a run-wide cap or a declined
+ * soft-limit continuation, a `cancelled` partial, or an `error` with a code and
  * message.
  *
- * @remarks Derived from the loop's `AgentResult` by {@link toSubagentOutcome} and
+ * @remarks `iteration_limit_reached` is deliberately not folded into
+ *   `budget_exhausted`: the child's iteration cap is its own attempt budget, so
+ *   the partial it returns is work the lead can inspect, reduce or retry, while a
+ *   `budget_exhausted` child stopped on a cap the whole tree shares. Reporting
+ *   both as one status is what let a local limit read as a failure of the child.
+ *
+ *   Derived from the loop's `AgentResult` by {@link toSubagentOutcome} and
  *   later rendered to lead-facing text by the delegation runtime.
  */
 export type SubagentOutcome =
   | { status: "completed"; text: string }
+  | { status: "iteration_limit_reached"; iterations: number; partialText: string }
   | { status: "budget_exhausted"; partialText: string }
   | { status: "cancelled"; partialText: string }
   | { status: "error"; code: string; message: string };
@@ -213,7 +222,7 @@ export async function runSubagent(input: RunSubagentInput): Promise<RunSubagentR
       }),
     });
 
-    const outcome = toSubagentOutcome(result);
+    const outcome = toSubagentOutcome(result, counter.count());
     return { outcome, usage: { ...usage, iterations: counter.count() } };
   } finally {
     if (input.usageSink) {
@@ -230,17 +239,22 @@ export async function runSubagent(input: RunSubagentInput): Promise<RunSubagentR
  * Maps a loop `AgentResult` onto the narrower {@link SubagentOutcome}.
  *
  * @param result - the loop's terminal result for the sub-agent.
+ * @param iterations - how many iterations the sub-agent actually ran, reported on
+ *   the local-limit arm so the lead knows how far the partial got.
  * @returns the corresponding outcome. A `completed` result prefers its `text`,
- *   falling back to `partialText`; `soft_limit_declined` collapses into
- *   `budget_exhausted`; an `error` fills in `"empty_response"` / a default
- *   message when the loop left them unset.
+ *   falling back to `partialText`; a hard cap on the sub-agent's *own* iteration
+ *   counter becomes `iteration_limit_reached`; `soft_limit_declined` and any other
+ *   `budget_exhausted` collapse into `budget_exhausted`; an `error` fills in
+ *   `"empty_response"` / a default message when the loop left them unset.
  */
-export function toSubagentOutcome(result: AgentResult): SubagentOutcome {
+export function toSubagentOutcome(result: AgentResult, iterations = 0): SubagentOutcome {
   switch (result.status) {
     case "completed":
       return { status: "completed", text: result.text ?? result.partialText };
     case "budget_exhausted":
-      return { status: "budget_exhausted", partialText: result.partialText };
+      return result.limit?.scope === "agent" && result.limit.dimension === "iterations"
+        ? { status: "iteration_limit_reached", iterations, partialText: result.partialText }
+        : { status: "budget_exhausted", partialText: result.partialText };
     case "soft_limit_declined":
       return { status: "budget_exhausted", partialText: result.partialText };
     case "cancelled":

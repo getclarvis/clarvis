@@ -13,7 +13,6 @@ export const BUILTIN_AGENT_ERROR_CODES = [
   "stagnation_detected",
   "no_progress",
   "agents_unfinished",
-  "background_children_failing",
 ] as const;
 
 /** A self-termination code the engine itself declares. */
@@ -42,16 +41,36 @@ const _agentCodesAreErrorCodes: [Exclude<BuiltinAgentErrorCode, BuiltinErrorCode
 void _agentCodesAreErrorCodes;
 
 /**
+ * Which hard limit ended an attempt, and whose accounting that limit belongs to.
+ *
+ * @remarks The dimension and the scope are separate facts on purpose: an
+ *   iteration cap is *this* agent's own attempt budget, while the token ledger is
+ *   shared by the whole tree, so a child stopped by tokens is the run hitting its
+ *   ceiling and a child stopped by iterations is a local, resumable partial.
+ *   Collapsing both into `budget_exhausted` is what once let a local limit read as
+ *   a failure of the child and, through it, of the run.
+ */
+export interface AgentLimitExhausted {
+  /** The counter that reached its cap. */
+  dimension: "iterations" | "tokens";
+  /** `agent` when the exhausted counter belongs to this attempt, `run` when it is
+   *  the tree's shared ledger. */
+  scope: "agent" | "run";
+}
+
+/**
  * The terminal outcome of one agent's loop: its `status`, the final `text` (when
  * completed) or the always-present `partialText` accumulated so far, the
- * {@link AgentErrorCode} `error` on failure, and — for structured personas — the
- * completed `structuredResult` or the best-effort `partialStructured` value.
+ * {@link AgentErrorCode} `error` on failure, the {@link AgentLimitExhausted}
+ * `limit` when a hard cap ended it, and — for structured personas — the completed
+ * `structuredResult` or the best-effort `partialStructured` value.
  */
 export type AgentResult = RunFinalization & {
   status: "completed" | "budget_exhausted" | "error" | "cancelled" | "soft_limit_declined";
   text?: string;
   partialText: string;
   error?: { code: AgentErrorCode; message: string };
+  limit?: AgentLimitExhausted;
   structuredResult?: { value: unknown };
   partialStructured?: { value: unknown };
 };

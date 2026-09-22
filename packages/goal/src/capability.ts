@@ -12,7 +12,7 @@ import {
 } from "@clarvis/capability";
 import { GOAL_BLOCK_KIND, goalContextBlock, goalModelView } from "./context.ts";
 import { GoalError } from "./errors.ts";
-import type { GoalCreationPort, GoalRuntimePort } from "./ports.ts";
+import type { GoalCreationPort, GoalAttachmentPort, GoalRuntimePort } from "./ports.ts";
 import { goalModelToolInputSchema } from "./model-input.ts";
 import { goalCheckpointSchema } from "./schemas.ts";
 import { CREATE_GOAL, GET_GOAL, UPDATE_GOAL, buildGoalTools, getGoalInputSchema } from "./tools.ts";
@@ -402,5 +402,16 @@ export function createGoalCreationCapability(port: GoalCreationPort): Capability
     forRun(runContext) {
       return createGoalCreationRunCapability(port, runContext);
     },
+  };
+}
+
+/** Existing Goal context and activation offered only to a host-authenticated operator turn. */
+export function createGoalAttachmentCapability(port: GoalAttachmentPort): Capability {
+  return {
+    name: GOAL_CAPABILITY_NAME,
+    required: true,
+    reservedWireNames: ["attach_goal", GET_GOAL, UPDATE_GOAL],
+    toolEffects: { attach_goal: "control", [GET_GOAL]: "control", [UPDATE_GOAL]: "control" },
+    forRun: (context) => createGoalCreationRunCapability(port, context),
   };
 }

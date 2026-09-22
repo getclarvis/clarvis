@@ -338,7 +338,7 @@ test.each([
       expect(parent.total_input_tokens).toBe(4);
       expect(parent.total_output_tokens).toBe(2);
       expect(goalUsage.measure()).toEqual({
-        kind: "measured",
+        kind: "complete",
         input: 4 + 10 * billedCalls,
         output: 2 + 3 * billedCalls,
         cached: 5 * billedCalls,

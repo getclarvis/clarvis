@@ -15,7 +15,7 @@ import {
   type LiveContext,
   type LiveSeedEntry,
 } from "../context/context-compaction.ts";
-import { checkLimits } from "../budget/budget.ts";
+import { checkLimits, limitOf } from "../budget/budget.ts";
 import { checkCancelled } from "./cancellation.ts";
 import { createConvergenceGuards, type GuardTrip } from "../guards/convergence-guards.ts";
 import { escalateGuardTrip, type GuardEscalationAsk } from "../guards/guard-escalation.ts";
@@ -39,6 +39,7 @@ import {
 import { buildMcpHandler } from "./mcp-handler.ts";
 import { createSteerInbox } from "./steer-inbox.ts";
 import type { AgentCapability, AgentLoopContribution } from "@clarvis/capability";
+import type { AgentLimitExhausted } from "@clarvis/capability";
 import { foldContributions } from "@clarvis/capability";
 import { type AgentResult, emptyResponseError, partialStructOf } from "./loop-shared.ts";
 import { withOutputTokenBudget } from "./output-budget.ts";
@@ -111,8 +112,9 @@ export interface RunAgentInput extends LoopCore {
  *
  * @param input - the run input; see {@link RunAgentInput}.
  * @returns the agent's terminal result. Returns early with a cancelled result if
- *   the signal is already aborted, or a `budget_exhausted` result if the
- *   pre-run limit check is already terminal.
+ *   the signal is already aborted, or a `budget_exhausted` result — carrying the
+ *   {@link AgentLimitExhausted} `limit` that ended it — if the pre-run limit check
+ *   is already terminal.
  * @remarks Capabilities are attached against a shared {@link AgentBuildContext}
  *   and folded (in registration order) into gates, tools, handlers, an anchor
  *   and lifecycle hooks. When `contract` is set, a `submit_result` handler runs
@@ -196,7 +198,10 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
     if (c) return c;
   }
 
-  const budgetStop = async (kind: "declined" | "exhausted"): Promise<AgentResult> => {
+  const budgetStop = async (
+    kind: "declined" | "exhausted",
+    limit?: AgentLimitExhausted,
+  ): Promise<AgentResult> => {
     await fireObservers(
       input.hooks,
       "onBudgetExhausted",
@@ -212,6 +217,7 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
     return {
       status: kind === "declined" ? "soft_limit_declined" : "budget_exhausted",
       partialText: state.lastAssistantText,
+      ...(kind === "exhausted" && limit !== undefined ? { limit } : {}),
       ...partialStruct(),
     };
   };
@@ -270,7 +276,9 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
     });
     if (oc.kind === "cancelled") return maybeCancelled();
     if (oc.kind === "continue") return null;
-    return budgetStop(oc.kind);
+    return oc.kind === "declined"
+      ? budgetStop("declined")
+      : budgetStop("exhausted", limitOf(oc.dimension));
   };
 
   const steerInbox = input.steer ? createSteerInbox(input.steer, input.logger) : undefined;
@@ -337,15 +345,13 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
   });
 
   const checkStartBudget = (): Promise<AgentResult> | undefined => {
-    if (
-      checkLimits(budget.counter, budget.ledger).terminal ||
-      (folded.outputBudget?.remaining() ?? 1) < 1
-    ) {
+    const limits = checkLimits(budget.counter, budget.ledger);
+    if (limits.terminal || (folded.outputBudget?.remaining() ?? 1) < 1) {
       trace.record("budget_check", {
         tokens_used: budget.ledger.consumed(),
         tokens_remaining: Math.max(0, budget.ledger.remaining()),
       });
-      return budgetStop("exhausted");
+      return budgetStop("exhausted", limitOf(limits.terminal ? limits.reason : "tokens"));
     }
     return undefined;
   };
@@ -563,7 +569,7 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
         },
         ...partialStruct(),
       }),
-      budgetExhausted: () => budgetStop("exhausted"),
+      budgetExhausted: () => budgetStop("exhausted", limitOf("tokens")),
       emptyResponse: () => {
         trace.record("terminate", { reason: "empty_response" });
         return {

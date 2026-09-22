@@ -11,12 +11,14 @@ import {
   admitGoalRun,
   advanceGoalRun,
   applyGoalControl,
+  createGoalAttachmentCapability,
   createGoalCapability,
   createGoalCreationCapability,
   goalRuntimePortOf,
   recordGoalCandidate,
   recordGoalCheckpoint,
   recordGoalProgress,
+  type GoalAttachmentPort,
   type GoalRuntimePort,
   type GoalCreationPort,
   type GoalStewardCompletionDecision,
@@ -1307,4 +1309,69 @@ it("routes Steward completion decisions and respects pending operator steering",
   });
   pending = true;
   expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({ kind: "nudge" });
+});
+
+describe("host-bound goal attachment capability", () => {
+  function attachmentPort(f: ReturnType<typeof fixture>, attach: GoalAttachmentPort["attach"]) {
+    const port: GoalAttachmentPort = {
+      session_id: "session",
+      agent_instance_id: "entry",
+      execution_id: "run",
+      goal: f.state().current!,
+      attach,
+    };
+    return port;
+  }
+
+  it("offers attach_goal instead of create_goal and binds the previous Goal", async () => {
+    const f = fixture();
+    const port = attachmentPort(f, async () => f.port);
+    const capability = createGoalAttachmentCapability(port);
+    const run = (await capability.forRun(f.runContext))!;
+    const contribution = run.forAgent({ agent: "lead", entry: true, grants: [] })!.attach(f.bc);
+    expect(contribution.tools!.map((tool) => tool.wireName)).toEqual([
+      "attach_goal",
+      "get_goal",
+      "update_goal",
+    ]);
+
+    /**
+     * The formulation block carries the operator-precedence instruction and the
+     * previous Goal, so the turn knows continuation is a choice it must name.
+     */
+    await contribution.hooks!.beforeIteration!();
+    const formulation = f.blocks.find((block) => block.kind === "goal_formulation")!;
+    expect(formulation.content).toContain("attach_goal");
+    expect(formulation.content).toContain('"goal_id":"goal"');
+    expect(formulation.content).toContain('"objective":"Verify the synthetic feature"');
+
+    expect(
+      await contribution.handlers![0]!.handle(
+        { id: "attach", name: "attach_goal", arguments: {} },
+        1,
+      ),
+    ).toMatchObject({ kind: "result", progress: false });
+    expect(f.calls).toEqual([]);
+    expect(
+      await contribution.handlers![0]!.handle({ id: "get", name: "get_goal", arguments: {} }, 2),
+    ).toMatchObject({ kind: "result" });
+  });
+
+  it("answers a refused attachment as a corrigible result instead of ending the turn", async () => {
+    const f = fixture();
+    const port = attachmentPort(f, async () => {
+      throw new Error("Attachment refused by the host");
+    });
+    const capability = createGoalAttachmentCapability(port);
+    const run = (await capability.forRun(f.runContext))!;
+    const contribution = run.forAgent({ agent: "lead", entry: true, grants: [] })!.attach(f.bc);
+    const outcome = await contribution.handlers![0]!.handle(
+      { id: "attach", name: "attach_goal", arguments: {} },
+      1,
+    );
+    expect(outcome).toMatchObject({ kind: "result", progress: false });
+    expect(JSON.stringify(outcome)).toContain("Attachment refused by the host");
+    expect(f.blocks).toEqual([]);
+    expect(f.calls).toEqual([]);
+  });
 });

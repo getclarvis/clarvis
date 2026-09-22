@@ -44,6 +44,7 @@ const run: z.ZodType<HostedRunRef> = z.strictObject({
   recovery_resolution: z
     .strictObject({
       kind: z.literal("operator_verified_physical_closure"),
+      disposition: z.enum(["archive", "continue"]),
       previous_host_generation: identifier,
       resolving_host_generation: identifier,
       operator_connection_id: identifier,

@@ -5,6 +5,7 @@ import type {
   HostedRunAttachment,
   HostedRunFrame,
   RunHandle,
+  RunEvent,
   RunResult,
 } from "@clarvis/protocol";
 import { createEventStream, type EventStream } from "../core/event-stream.ts";
@@ -64,6 +65,8 @@ export interface HostedExecutionOptions {
   /** Commit the terminal registry state and release admission before observers become ready. */
   commitTerminal?: () => Promise<void>;
   changed?: () => void;
+  /** Commit consumption acknowledgements only after the observation record is durable. */
+  delivered?(event: RunEvent): Promise<void>;
   logger?: Logger;
   maxSubscribers?: number;
   maxBuffered?: number;
@@ -180,6 +183,8 @@ export function createHostedExecution(options: HostedExecutionOptions): HostedEx
         if (recoveryError !== undefined) continue;
         try {
           const cursor = await projection.append(event);
+          if (event.type === "steering_applied") await projection.sync();
+          await options.delivered?.(event);
           for (const subscriber of subscribers.values()) {
             subscriber.stream.push({
               first_sequence: cursor.sequence,

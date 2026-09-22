@@ -98,6 +98,7 @@ to end by `packages/supervision/tests/unit/agent-registry-port.test.ts`.
 | `ingestTraceEntry(entry)` | `(TraceEntry) => void` | `packages/supervision/src/registry.ts` |
 | `takeNotices()` | `() => AgentNotice[]` | `packages/supervision/src/registry.ts` |
 | `failingStreakExceeded()` | `() => boolean` | `packages/supervision/src/registry.ts` |
+| `consecutiveFailures()` | `() => number` | `packages/supervision/src/registry.ts` |
 | `seal()` / `sealed()` | `() => void` / `() => boolean` | `packages/supervision/src/registry.ts` |
 | `teardown(graceMs)` | `(number) => Promise<AgentTeardownReport>` | `packages/supervision/src/registry.ts` |
 
@@ -152,10 +153,12 @@ own id — a `subagent_instance_id` or a `run_id`), `title`, optional `profile`,
 `tokens`, `result` (`string | null`), its own `AgentBuffer`, a `ProjectionState`, its producer's
 `AgentControl`, and an optional adopted `task` promise.
 
-`AgentStatus` is `"running" | "waiting" | "completed" | "failed" | "stopped" | "cancelled"`
+`AgentStatus` is `"running" | "waiting" | "completed" | "limited" | "failed" | "stopped" | "cancelled"`
 (`packages/capability/src/agents-port.ts`), and `SettledStatus` is the terminal subset
 excluding `"running" | "waiting"` (`packages/capability/src/agents-port.ts`). `WaitingOn` is `"elicitation" | null`
-(`packages/capability/src/agents-port.ts`).
+(`packages/capability/src/agents-port.ts`). `"limited"` is a budget cap that ended the child with
+a partial it can be resumed from, and `"failed"` is the only member that reports a technical failure
+of the child itself — a distinction §4.8 and the roster projections both depend on.
 
 ### 3.3 `AGENTS_DEFAULTS` (`packages/supervision/src/settings.ts`)
 
@@ -274,7 +277,7 @@ land on the leader's own trace and would otherwise never reach it (pinned at
 | `waiting(on)` while live, `on !== null` | `status = "waiting"`, `waitingOn = on`, `touch(r)` |
 | `waiting(null)` while live | `status = "running"`, `waitingOn = null`, clears `projection.waitingSince`, `touch(r)` |
 | `waiting(...)` once settled | no-op (`isLive` guard; pinned `packages/supervision/tests/component/registry.test.ts`) |
-| `settled(s)` while live | `status = s.status`, `waitingOn = null`, `result = s.result ?? null`, folds `iterations`/`tokens` if given, resets/increments `consecutiveFailures`, pushes a notice, wakes every matching `waitAny` waiter, calls `evictRetained()` |
+| `settled(s)` while live | `status = s.status`, `waitingOn = null`, `result = s.result ?? null`, folds `iterations`/`tokens` if given, applies the streak rule of §4.8 (`"completed"` resets it, `"failed"` advances it, every other terminal status leaves it), pushes a notice, wakes every matching `waitAny` waiter, calls `evictRetained()` |
 | `settled(...)` once already settled | no-op, idempotent (`isLive` guard) |
 
 The notice text is `` `[agents] ${id} (${kind} "${title}") ${status}${": " + result.slice(0,400) if given}` ``
@@ -338,12 +341,20 @@ the shown slice is truncated and a synthetic trailing notice
 
 ### 4.8 Failing-streak (`failingStreakExceeded`, `packages/supervision/src/registry.ts`)
 
-`consecutiveFailures` increments on a `"failed"` settle and resets to `0` on a `"completed"` one. `failingStreakExceeded()` is true once `maxConsecutiveFailedChildren > 0` **and**
+`consecutiveFailures` counts **technical failures only**: it increments on a `"failed"` settle and
+resets to `0` on a `"completed"` one, while `"limited"`, `"stopped"` and `"cancelled"` leave it
+untouched. A child that stopped at a budget cap, or that its parent or the run stopped, is evidence
+about a limit and not about that child, so it must not advance a circuit that exists to detect
+doomed spawning. `failingStreakExceeded()` is true once `maxConsecutiveFailedChildren > 0` **and**
 `consecutiveFailures >= maxConsecutiveFailedChildren` — a `0` limit disables the check
 entirely rather than tripping on the first failure (pinned by the schema admitting `0` at
 `packages/supervision/tests/unit/settings.test.ts`, and behaviourally at
-`packages/supervision/tests/component/registry.test.ts`, which walks 2 failures → not exceeded, a 3rd → exceeded, then a success →
-reset).
+`packages/supervision/tests/component/registry.test.ts`, which walks 2 failures → not exceeded, a
+3rd → exceeded, then a success → reset). `consecutiveFailures()` exposes the same counter for a
+caller that reports the streak; the registry itself attaches no consequence to either read, because
+what a caller does with the streak belongs to that caller
+(`packages/loop/tests/unit/delegation-handler.test.ts` pins that a non-`"failed"` settle — `limited`,
+`cancelled` or `stopped` — never advances the counter).
 
 ### 4.9 `waitAny` (`packages/supervision/src/registry.ts`)
 
@@ -487,9 +498,10 @@ The invariants below are derived directly from this package's own code and tests
 10. **A forwarded iteration counter can only advance, never rewind, even when events arrive
     out of order.** Production: `packages/supervision/src/registry.ts` (`Math.max(r.iterations, …)`). Test:
     `packages/supervision/tests/component/registry.test.ts` (a later-arriving lower iteration number is ignored).
-11. **A `progress` notice requires a `"completed"` settle; a `"failed"` settle or a still-waiting
-    report never counts as progress**, so a run whose children only ever fail cannot be kept alive by
-    its own notices. Production: `packages/supervision/src/registry.ts` (`progress: s.status === "completed"`). Test:
+11. **A `progress` notice requires a `"completed"` settle; a `"failed"`, `"limited"`, `"stopped"` or
+    `"cancelled"` settle and a still-waiting report never count as progress**, so a run whose children
+    only ever fail — or only ever hit their own caps — cannot be kept alive by its own notices.
+    Production: `packages/supervision/src/registry.ts` (`progress: s.status === "completed"`). Test:
     `packages/supervision/tests/component/registry.test.ts`.
 12. **A `settings.json`/request `agents` block rejects any key outside the schema rather than
     silently ignoring a typo, and every numeric bound is capped at its named ceiling constant**

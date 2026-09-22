@@ -9,6 +9,10 @@ import {
 } from "@clarvis/capability";
 import {
   admitGoalCreationIntent,
+  applyGoalControl,
+  pauseGoalForPolicy,
+  goalNetTokens,
+  createGoalAttachmentCapability,
   admitGoalRun,
   advanceGoalRun,
   createGoalCapability,
@@ -23,6 +27,7 @@ import {
   type GoalRunCause,
   type GoalRuntimePort,
   type GoalCreationPort,
+  type GoalAttachmentPort,
   type GoalStewardFinalizeAttempt,
   type GoalStewardPort,
   type GoalUsage,
@@ -363,6 +368,7 @@ function createGoalContinuation(scope: {
           user_preview: `Continue the persistent goal (previous stage: ${CONTINUATION_PREVIEWS[cause]})`,
           params: {
             ...scope.params,
+            intent: "automatic",
             execution_id: generateExecutionId(),
             continue_from: scope.executionId,
             messages: [{ role: "user", content: CONTINUATION_TURNS[cause] }],
@@ -436,7 +442,19 @@ export async function prepareHostedGoalTurn(options: {
   )
     throw kernelError("conflict", "Goal continuation does not follow its settled stage");
   const admission = goalAdmission(goal, now(), automatic);
-  if (admission.allowed === false) throw kernelError("conflict", admission.reason);
+  /**
+   * A refusal names what the operator has to do, in the host's closed vocabulary.
+   *
+   * @remarks Every admission refusal is the Goal asking for a decision — accept a gap, resume,
+   *   change a limit, wait for a deadline — so the client gets a typed outcome next to the reason
+   *   instead of having to read the sentence to learn what happened. The reason stays the domain's
+   *   own bounded text; nothing here invents an outcome for a refusal that is not admission's.
+   */
+  if (admission.allowed === false)
+    throw kernelError("conflict", admission.reason, {
+      goal_outcome: "needs_input",
+      goal_status: admission.status,
+    });
   const binding = {
     session_id: sessionId,
     agent_instance_id: params.agent_instance_id,
@@ -659,6 +677,8 @@ export async function prepareHostedGoalCreationTurn(options: {
   sessions: Pick<SessionService, "get">;
   evidence: GoalEvidenceSource;
   seed: string;
+  /** Existing objective offered as subordinate context to an ordinary authenticated turn. */
+  operatorGoal?: GoalRecord;
   entryTokenLimit?: number;
   defaultLimits?: Partial<GoalLimits>;
   prepareExecution(policy: GoalCreationExecutionPolicy): Promise<HostedExecutionBinding>;
@@ -687,7 +707,12 @@ export async function prepareHostedGoalCreationTurn(options: {
   )
     throw kernelError("unsupported", "Goal creation requires a bound ordinary conversation turn");
   const existing = goalStateFromSession(session)?.current;
-  if (existing !== undefined && existing.status !== "complete" && existing.status !== "cancelled")
+  if (
+    options.operatorGoal === undefined &&
+    existing !== undefined &&
+    existing.status !== "complete" &&
+    existing.status !== "cancelled"
+  )
     throw kernelError("conflict", "A Goal already exists for this conversation");
   const now = options.now ?? Date.now;
   const usageTracker = createGoalUsageTracker();
@@ -710,10 +735,12 @@ export async function prepareHostedGoalCreationTurn(options: {
   let steward:
     | (GoalStewardPort & {
         completionCurrent(result: unknown): Promise<boolean>;
+        observe(event: TraceEvent): void;
       })
     | undefined;
   let stewardRuntime: StewardExecutionRuntime | undefined;
   let reviewContextProvider: OperatorReviewContextProvider | undefined;
+  let operatorRevision: number | undefined;
   const basePort = createGoalCreationPort({
     repository: options.repository,
     session,
@@ -731,6 +758,60 @@ export async function prepareHostedGoalCreationTurn(options: {
     input: GoalCreationInput,
     signal?: AbortSignal,
   ): Promise<GoalRuntimePort> => {
+    if (runtime === undefined && options.operatorGoal !== undefined) {
+      options.context.signal.throwIfAborted();
+      signal?.throwIfAborted();
+      options.context.conversation?.signal.throwIfAborted();
+      const goal = await options.repository.transact(sessionId, (state) => {
+        options.context.signal.throwIfAborted();
+        signal?.throwIfAborted();
+        options.context.conversation?.signal.throwIfAborted();
+        if (
+          state?.current?.goal_id !== options.operatorGoal!.goal_id ||
+          state.current.control_revision !== operatorRevision
+        )
+          throw kernelError("conflict", "A newer control superseded this Goal attachment");
+        const resumed = applyGoalControl(
+          state,
+          {
+            operation_id: `goal-attach:${executionId}`,
+            expected_revision: state.revision,
+            action: { kind: "resume" },
+          },
+          { session_id: sessionId, now: now(), physically_busy: false },
+        );
+        const goal = resumed.state.current!;
+        const admitted = admitGoalRun(resumed.state, {
+          goal_id: goal.goal_id,
+          expected_revision: resumed.state.revision,
+          control_revision: goal.control_revision,
+          execution_id: executionId,
+          admission_id: `goal-attach:${executionId}`,
+          automatic: false,
+          now: now(),
+        });
+        const running = advanceGoalRun(admitted, {
+          goal_id: goal.goal_id,
+          execution_id: executionId,
+          phase: "running",
+          now: now(),
+        });
+        return { state: running, result: running.current! };
+      });
+      runtime = createGoalRuntimePort({
+        repository: options.repository,
+        binding: {
+          session_id: sessionId,
+          execution_id: executionId,
+          agent_instance_id: params.agent_instance_id!,
+          goal_id: goal.goal_id,
+          objective_revision: goal.objective_revision,
+        },
+        evidence: options.evidence,
+        signal: options.context.signal,
+        now,
+      });
+    }
     runtime ??= await basePort.create(input, signal);
     if (created === undefined) {
       const current = await options.repository.read(sessionId);
@@ -795,10 +876,56 @@ export async function prepareHostedGoalCreationTurn(options: {
         cause: "transport" as const,
       }),
   };
+  const attachmentPort: GoalAttachmentPort | undefined =
+    options.operatorGoal === undefined
+      ? undefined
+      : {
+          session_id: sessionId,
+          execution_id: executionId,
+          agent_instance_id: params.agent_instance_id,
+          goal: options.operatorGoal,
+          attach: (signal) =>
+            create(
+              {
+                objective: options.operatorGoal!.objective,
+                criteria: options.operatorGoal!.criteria,
+                constraints: [],
+                exclusions: [],
+                assumptions: [],
+              },
+              signal,
+            ),
+          bindReviewContext: (provider) => creationPort.bindReviewContext?.(provider),
+          reviewCompletion: (attempt, signal) => creationPort.reviewCompletion!(attempt, signal),
+        };
   const policy: GoalCreationExecutionPolicy = {
-    capability: createGoalCreationCapability(creationPort),
-    observe: (event) => options.evidence.observe(event),
-    trackModel: (provider) => usageTracker.wrap(provider),
+    capability:
+      attachmentPort === undefined
+        ? createGoalCreationCapability(creationPort)
+        : createGoalAttachmentCapability(attachmentPort),
+    observe: (event) => {
+      options.evidence.observe(event);
+      steward?.observe(event);
+    },
+    trackModel(provider) {
+      const tracked = usageTracker.wrap(provider);
+      return {
+        async call(call) {
+          if (runtime !== undefined) {
+            const current = (await options.repository.read(sessionId))?.current;
+            if (current === undefined || current.goal_id !== runtime.binding.goal_id)
+              throw new ProviderError("Goal binding changed", { kind: "client" });
+            const deadline = goalDeadlineLimit(current, now());
+            if (deadline !== undefined)
+              throw new ProviderError(deadline.reason, { kind: "client" });
+            const spent = goalNetTokens(usageTracker.measure()) ?? 0;
+            if (current.consumption.net_tokens + spent >= current.limits.max_net_tokens)
+              throw new ProviderError("Goal token budget exhausted", { kind: "client" });
+          }
+          return tracked.call(call);
+        },
+      };
+    },
   };
   const execution = await options.prepareExecution(policy);
   if (execution.commitSessionIntent !== undefined)
@@ -807,6 +934,18 @@ export async function prepareHostedGoalCreationTurn(options: {
     ...execution,
     commitSessionIntent(target) {
       const current = goalStateFromSession(target);
+      if (options.operatorGoal !== undefined) {
+        if (current?.current?.goal_id !== options.operatorGoal.goal_id)
+          throw kernelError("conflict", "Goal changed before operator admission");
+        const paused = pauseGoalForPolicy(
+          current,
+          "An operator turn was accepted; automatic continuation stopped",
+          now(),
+        );
+        target.goal_state = goalStateToDto(paused);
+        operatorRevision = paused.current!.control_revision;
+        return;
+      }
       target.goal_state = goalStateToDto(
         admitGoalCreationIntent(current, {
           session_id: sessionId,

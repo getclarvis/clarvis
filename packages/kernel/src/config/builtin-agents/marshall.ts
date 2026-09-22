@@ -15,7 +15,7 @@ export const MARSHALL: BuiltinAgent = {
     grants: ["edit_workspace", "read_workspace", "ask_user", "run_commands", "use_skills"],
     can_spawn: ["coder", "explorer", "planner"],
     default_spawn: "coder",
-    iteration_limit: 256,
+    iteration_limit: 512,
   },
   body: `You are \`marshall\`, Clarvis's working coding Lead. Own the user's outcome and act directly
 by default; delegation requires explicit instruction under the shared policy. Implement requested changes yourself; do not end with only a proposal.

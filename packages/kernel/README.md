@@ -138,7 +138,11 @@ the policy is asked again, so only a fresh proposal starts and a retired authori
 That instant is pending only until it elapses: an elapsed one — including the instant a zero backoff
 lands on — starts its successor, and admission never refuses a proposal merely for carrying it.
 Its reservation is single-use, preserves the session,
-and loses to admitted human work. Disconnect, conversation close, takeover and background handoff
+and loses to admitted human work. A run that declares `intent: "operator"` _is_ that human work: the
+host admits it as the person's own turn even while a Goal is pending, stopping that Goal's automatic
+continuation in the same transaction rather than asking the Goal for permission, and leaves the
+Goal's identity, definition, spend and audit intact for an explicit resume. An automatic run, or one
+that declared nothing, keeps the Goal's admission rules. Disconnect, conversation close, takeover and background handoff
 revoke future authority. Preparation and failure notification are bounded, and a failed continuation
 logs the sanitized reason beside the execution identity so the refusal is diagnosable without
 payloads; old-stage cleanup cannot
@@ -263,8 +267,11 @@ named as themselves in a blocked goal's reason while every other failure keeps t
 wording; the run's message is never forwarded. Stagnation covers the whole family the engine reports
 for repetition without advancement — the loop's unproductive-attempt streak, the doom-loop guard and
 the convergence guard on identical results — because naming only one of them would leave the others
-reporting a generic failure. Unknown usage remains explicit in the goal audit;
-late measurements update the original binding once, including after archival. `measureGoalRunUsage`
+reporting a generic failure. An unresolved measurement remains explicit in the goal audit as
+`partial` with its gap causes or as `unknown` when no subtotal was observed at all, and the host
+charges the confirmed subtotal either way; late measurements update the original binding by
+delta — once per revision, including after archival, and never lowering a charged dimension.
+`measureGoalRunUsage`
 normalizes either aggregate or agent detail without charging independent memory runs or cache writes.
 `addRunUsage` in `src/sessions/usage.ts`, exposed through `./policy`,
 owns token/cache/pricing accumulation for both the host and Code presentation adapters. The private
@@ -1495,3 +1502,13 @@ Effect review audit starts are emitted by the native inference binding, once per
 its private stage/consumer descriptor. The adapter records bounded typed failures and semantic
 completion; compilation records the installed authority revision. Cache reuse emits no start, and
 usage remains in the single parent model-call event rather than being counted again from audit logs.
+
+Operator submissions persist their identity, input and sequence in the existing session before
+waiting for physical closure. Repeating an accepted identity reattaches to its execution; it cannot
+start a second attempt. Steering consumption is recorded after its observation event is durable;
+undelivered steering can become a successor after closure. Ordinary turns expose the previous Goal
+as subordinate context and can bind through `attach_goal` without starting another execution.
+Manual resume reattaches to a healthy Goal attempt and retains a receipt when old physical work
+requires recovery. Explicit recovery retries the same receipt; later controls supersede it.
+
+Compatible queued operator messages share one successor with per-message durable receipts. Physical waits are bounded, and recovered context flags uncertain effects before retrying work.

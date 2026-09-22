@@ -1147,3 +1147,53 @@ test("dropComposing still removes a nameless composing placeholder", () => {
   ]);
   expect(nodes.some((node) => node.key === "exec_1::anon")).toBe(false);
 });
+
+test("a cancelled or limit-stopped child never reads as a failed one", () => {
+  const cases = [
+    { status: "cancelled", node: "cancelled", label: "cancelled" },
+    { status: "iteration_limit_reached", node: "limited", label: "stopped at its limit" },
+    { status: "budget_exhausted", node: "limited", label: "stopped at its limit" },
+    { status: "error", node: "error", label: "failed" },
+  ] as const;
+  for (const { status, node, label } of cases) {
+    const nodes = replay([
+      ev({ type: "run_started", at: 0 }),
+      ev({
+        type: "delegation_created",
+        delegation_id: "worker",
+        at: 1,
+        title: "Explorer",
+        task: "look",
+        tools: [],
+      }),
+      ev({ type: "delegation_failed", delegation_id: "worker", at: 2, status, summary: "partial" }),
+    ]);
+    expect(nodes.find((n) => n.kind === "subagent")?.status).toBe(node);
+    const marker = nodes.find((n) => n.kind === "annotation" && n.text.startsWith("Sub-agent A1"))!;
+    expect(marker.text).toContain(label);
+    expect(marker.status).toBe(node);
+  }
+});
+
+test("canonical suffix replacement retains prefix identity and removes sealed divergent content", () => {
+  createRoot((dispose) => {
+    try {
+      const store = createTranscriptStore();
+      const first = store.appendUserMessage("confirmed", undefined, "exec_confirmed");
+      store.appendNotice("confirmed answer");
+      const prefix = [...store.nodes];
+      const stale = store.appendUserMessage("divergent", undefined, "exec_stale");
+      store.appendNotice("stale answer");
+      expect(store.truncateFrom(stale)).toBe(true);
+      expect(store.nodes).toEqual(prefix);
+      expect(store.nodes[0]!.key).toBe(first);
+      expect(store.committedNodes().some((node) => node.key === stale)).toBe(false);
+      expect(store.truncateFrom("absent")).toBe(false);
+      store.appendUserMessage("replacement", undefined, "exec_replacement");
+      expect(store.nodes[0]!.key).toBe(first);
+      expect(store.nodes.some((node) => node.key === stale)).toBe(false);
+    } finally {
+      dispose();
+    }
+  });
+});

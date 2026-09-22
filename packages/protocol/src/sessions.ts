@@ -14,7 +14,7 @@
 import type { CursorPage, CursorPagination, Timestamp } from "./common.ts";
 import type { Message } from "./runs.ts";
 import type { ExtensionProfileRunRef } from "./extension-profiles.ts";
-import type { HostedRecoveryResolution } from "./hosting.ts";
+import type { HostedRecoveryResolution, StartHostedTurnParams } from "./hosting.ts";
 import type { GoalState } from "./goals.ts";
 
 /** Lifecycle status of one turn in a session. */
@@ -77,6 +77,18 @@ export interface Session {
   revision?: number;
   /** Private host-owned goal state; client saves cannot create, remove or rewrite it. */
   goal_state?: GoalState;
+  /** Host-owned accepted operator submissions, retained independently of admitted model turns. */
+  operator_intents?: Array<{
+    execution_id: string;
+    sequence: number;
+    fingerprint: string;
+    input: StartHostedTurnParams;
+    accepted_at: number;
+    admitted?: boolean;
+    delivered_to?: string;
+  }>;
+  /** Monotonic operator intent fence; retained when bounded receipts are pruned. */
+  operator_sequence?: number;
   title: string;
   /** Project this conversation belongs to. */
   project_id: string;

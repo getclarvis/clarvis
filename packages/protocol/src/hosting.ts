@@ -42,21 +42,32 @@ export interface HostedExecutionConfig {
   runtime?: RuntimeStatus;
 }
 
-/** Durable operator attestation; physical closure does not establish an execution outcome. */
+/**
+ * What the operator attested, and what should follow from it.
+ *
+ * @remarks Physical closure still does not establish an execution outcome — nothing here invents
+ *   one. `archive` parks the interrupted work as an audit record; `continue` records the same
+ *   attestation and lets the conversation host a successor, which is the whole difference between
+ *   ending a line of work and resuming it after the operator has established that nothing is still
+ *   running.
+ */
 export interface HostedRecoveryResolution {
   kind: "operator_verified_physical_closure";
+  disposition: "archive" | "continue";
   previous_host_generation: string;
   resolving_host_generation: string;
   operator_connection_id: string;
   resolved_at: number;
 }
 
-/** Explicitly archive old unknown work after the operator verifies every physical process ended. */
+/** Resolve old unknown work after the operator verifies every physical process ended. */
 export interface ResolveHostedRecoveryParams {
   execution_id: string;
   host_generation: string;
   revision: number;
   physical_work_stopped: true;
+  /** Defaults to `archive`; `continue` resumes the conversation instead of parking the work. */
+  disposition?: "archive" | "continue";
 }
 
 /** Bounded discovery row. Physical lifecycle and outcome are deliberately distinct. */

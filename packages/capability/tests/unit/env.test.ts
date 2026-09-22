@@ -6,7 +6,7 @@ describe("env loader", () => {
     const env = loadEnv({});
     expect(env.CLARVIS_TIMEOUT_CEILING_MS).toBe(600000);
     expect(env.CLARVIS_DEFAULT_TIMEOUT_MS).toBe(300000);
-    expect(env.CLARVIS_ITERATION_CEILING).toBe(256);
+    expect(env.CLARVIS_ITERATION_CEILING).toBe(512);
     expect(env.CLARVIS_TOKEN_CEILING).toBe(200_000_000);
     expect(env.CLARVIS_MCP_CONNECT_TIMEOUT_MS).toBe(10000);
     expect(env.CLARVIS_LOG_LEVEL).toBe("info");
@@ -46,7 +46,7 @@ describe("env loader", () => {
   it("uses a power-of-two default soft iteration allowance", () => {
     const env = loadEnv({});
     expect(env.CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT).toBe(160_000_000);
-    expect(env.CLARVIS_DEFAULT_ITERATION_LIMIT).toBe(256);
+    expect(env.CLARVIS_DEFAULT_ITERATION_LIMIT).toBe(512);
     expect(env.CLARVIS_DEFAULT_ON_EXCEED).toBe("escalate");
     expect(loadEnv({ CLARVIS_DEFAULT_ON_EXCEED: "stop" }).CLARVIS_DEFAULT_ON_EXCEED).toBe("stop");
     expect(() => loadEnv({ CLARVIS_DEFAULT_ON_EXCEED: "ask" })).toThrow(

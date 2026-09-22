@@ -58,11 +58,21 @@ export interface StartRunInput {
   skill?: { name: string; task?: string };
   /** Ask the host to expose Goal creation to this ordinary main-agent turn. */
   goalIntent?: { kind: "create"; seed: string };
+  /**
+   * Who asked for this run: a person typing, or the host continuing its own work.
+   *
+   * @remarks The host routes on it, so a Goal that is blocked, paused or out of automatic
+   *   allowance cannot stop the operator's next turn — and a scheduled turn cannot slip past the
+   *   Goal's admission rules by looking like one. Omitted, the host treats the run as automatic.
+   */
+  intent?: "operator" | "automatic";
 }
 
 /** A handle to an in-flight run: its result and the later end of its event-stream lifecycle. */
 export interface RunHandle {
   executionId: string;
+  /** Resolves only when the host confirms admission; rejection leaves semantic history unchanged. */
+  admitted?: Promise<void>;
   cancel(): Promise<void>;
   /** Interrupt one live tool invocation without cancelling the run. */
   interruptTool?(toolExecutionId: string): Promise<ToolInterruptReceipt>;

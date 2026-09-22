@@ -419,13 +419,15 @@ own right: `NODE_ENV=production`, `CLARVIS_SERVER_HOST=0.0.0.0`,
 `CLARVIS_HOME=/config`, `CLARVIS_LOG_LEVEL=info`, `CLARVIS_TRACE_TTL_DAYS=30`,
 `CLARVIS_DEFAULT_ON_EXCEED=stop`, `CLARVIS_DEFAULT_ELICIT_WAIT_MS=60000`,
 `CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT=8000000`, `CLARVIS_TOKEN_CEILING=10000000`,
-`CLARVIS_ITERATION_CEILING=256`, `CLARVIS_TIMEOUT_CEILING_MS=600000`. The session-token budget is
-four times its prior value, while the iteration ceiling is the power-of-two limit used by the built-in
-workflow leaders. Three values carry an
+`CLARVIS_ITERATION_CEILING=512`, `CLARVIS_TIMEOUT_CEILING_MS=600000`. The session-token budget is
+four times its prior value, while the iteration ceiling is the power-of-two limit the built-in fleet
+asks for per attempt — every shipped profile declares exactly this value, so a lower image ceiling
+would refuse the product's own profiles inside the Container. Four values carry an
 inline rationale comment: `CLARVIS_SERVER_ALLOW_PUBLIC_BIND=1` — "the isolation boundary here is the
 container network, not the bind address"; `CLARVIS_TRACE_TTL_DAYS=30` matches the local
 product default while keeping the deployment policy explicit; and
-`CLARVIS_DEFAULT_ON_EXCEED=stop` — "Headless: never park a run on an elicitation nobody will answer".
+`CLARVIS_DEFAULT_ON_EXCEED=stop` — "Headless: never park a run on an elicitation nobody will answer";
+and `CLARVIS_ITERATION_CEILING=512` — the built-in fleet's own per-attempt allowance.
 
 `.dockerignore` starts with `**` and re-includes only the root build manifests, package tree,
 isolated-runtime guest entry and required license files. Its final rules re-exclude generated

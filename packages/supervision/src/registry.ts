@@ -63,7 +63,8 @@ export interface AgentsLimits {
   maxRetainedChildren: number;
   /** Cap on inbox notices delivered in one iteration. */
   maxNoticesPerIteration: number;
-  /** Consecutive failed children before the run is terminated for it. */
+  /** Consecutive *technical* failures of a child — the only outcome that counts —
+   *  before new child admission closes. */
   maxConsecutiveFailedChildren: number;
   /** How many times finishing with live children is nudged before terminating. */
   finishNudges: number;
@@ -170,6 +171,8 @@ export interface AgentRegistry extends AgentRegistryPort {
   takeNotices(): AgentNotice[];
   /** True once a child failed `maxConsecutiveFailedChildren` times in a row. */
   failingStreakExceeded(): boolean;
+  /** How many consecutive technical failures stand in that streak right now. */
+  consecutiveFailures(): number;
   /** Refuse further registrations; the run is finishing. */
   seal(): void;
   sealed(): boolean;
@@ -342,6 +345,19 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
   const noticeLabel = (r: ChildRecord): string =>
     `${r.id} (${r.kind} ${JSON.stringify(r.title.slice(0, 60))})`;
 
+  /**
+   * Record a child's terminal outcome and wake whoever waited on it.
+   *
+   * @param r - the child's record.
+   * @param s - the producer's settlement.
+   * @remarks The consecutive-failure circuit counts one thing only: a settle that
+   *   reports `failed`, which is a technical failure of the child. `cancelled`,
+   *   `stopped` and `limited` leave the streak untouched — a child that hit a
+   *   budget cap, or that the run took down with it, is evidence about a limit and
+   *   not about the child — and only a `completed` child clears it. A notice
+   *   credits progress on success alone, for the same reason: a run kept alive by
+   *   reported failures would never trip the no-progress guard.
+   */
   const settle = (r: ChildRecord, s: AgentSettlement): void => {
     if (!isLive(r)) return;
     r.status = s.status;
@@ -353,7 +369,6 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
 
     if (s.status === "completed") consecutiveFailures = 0;
     else if (s.status === "failed") consecutiveFailures += 1;
-
     const outcome = s.result === undefined ? "" : `: ${s.result.slice(0, 400)}`;
     notices.push({
       text: `[agents] ${noticeLabel(r)} ${s.status}${outcome}`,
@@ -618,6 +633,8 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
     failingStreakExceeded: () =>
       limits.maxConsecutiveFailedChildren > 0 &&
       consecutiveFailures >= limits.maxConsecutiveFailedChildren,
+
+    consecutiveFailures: () => consecutiveFailures,
 
     seal(): void {
       isSealed = true;

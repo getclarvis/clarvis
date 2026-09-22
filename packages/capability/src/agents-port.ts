@@ -18,12 +18,16 @@ export type AgentKind = "subagent" | "leader";
  * A child's lifecycle state as a parent sees it.
  *
  * @remarks `waiting` is still live — the child is parked on a question and is
- * distinguished from `running` precisely so a parent can tell a stalled child
- * from a working one. The four terminal states differ by *who* ended it:
- * `completed`/`failed` are the child's own outcome, `stopped` is an
- * `agent_stop` from its parent, and `cancelled` is the run going down.
+ *   distinguished from `running` precisely so a parent can tell a stalled child
+ *   from a working one. The five terminal states differ by *what* ended the child
+ *   and are not interchangeable: `completed`/`failed` are the child's own
+ *   outcome, `limited` is a budget cap ending it with a partial result it can be
+ *   resumed from, `stopped` is an `agent_stop` from its parent, and `cancelled` is
+ *   the run going down. Only `failed` is a technical failure of the child, which
+ *   is what the consecutive-failure circuit counts.
  */
-export type AgentStatus = "running" | "waiting" | "completed" | "failed" | "stopped" | "cancelled";
+export type AgentStatus =
+  "running" | "waiting" | "completed" | "limited" | "failed" | "stopped" | "cancelled";
 
 /** The terminal subset of {@link AgentStatus}. */
 export type SettledStatus = Exclude<AgentStatus, "running" | "waiting">;

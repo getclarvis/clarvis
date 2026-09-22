@@ -787,6 +787,13 @@ are not a passive DTO: they are the mechanism that produces the persisted record
   scans backward for the newest conversation turn, skipping transcript turns. Pinned by
   `packages/code/tests/component/session.test.ts` ("beginTurn returns the previous turn's executionId
   as the continuation base").
+- **`discardTurn(executionId)`** is the counterpart a hosted submission needs when the host refuses
+  it before admission: it removes that provisional conversation turn from the local projection,
+  restores the continuation base `beginTurn` displaced — remembered per execution, not recomputed
+  from the surviving turns — and drops the user message it pushed. It reports `false` for an
+  execution it does not hold, so a settled turn is never discarded by a late refusal. Pinned by
+  `packages/code/tests/component/run-host.test.ts` ("a hosted submission the store never adopted
+  returns its text to the composer").
 - **`beginTranscriptTurn(display, executionId)`** appends a running `kind: "transcript"` turn for a
   separately invoked run without pushing its internal prompt into history or changing
   `continuationBase`; **`endTranscriptTurn`** settles that exact kind without appending its assistant
@@ -1196,3 +1203,11 @@ continuation base.
   of the same character/message budget as everything else (`resumeSession` in
   `packages/code/src/adapters/session.ts`). Whether this is deliberate or simply
   undifferentiated is not stated anywhere in the code.
+
+Host-owned `Session.operator_intents` retains bounded accepted submissions separately from executed
+turns, and `operator_sequence` survives pruning of admitted receipts. Client saves cannot modify
+these fields. `GoalReceipt.resume_pending` denotes durable recovery work, not a successful launch.
+The owning lifecycle is [durable operator submissions](hosted-runs.md#durable-operator-submissions).
+Production: `Session` in [sessions.ts](../../packages/protocol/src/sessions.ts) and
+`createHostedSessionCoordinator` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts).
+Test: [goal-operator-recovery.test.ts](../../packages/kernel/tests/integration/goal-operator-recovery.test.ts).

@@ -94,6 +94,15 @@ export interface GoalCreationPort {
   ): Promise<GoalStewardCompletionDecision>;
 }
 
+/** Host-bound activation of an existing Goal by the authenticated operator's current run. */
+export interface GoalAttachmentPort extends Omit<GoalCreationPort, "create"> {
+  readonly goal: GoalRecord;
+  attach(signal?: AbortSignal): Promise<GoalRuntimePort>;
+}
+
+/** Shared runtime activation; only creation restricts work before activation. */
+export type GoalActivationPort = GoalCreationPort | GoalAttachmentPort;
+
 /** Host attestation only; the Goal capability owns notes and finalization gate policy. */
 export interface GoalStewardPort {
   bindReviewContext(provider: OperatorReviewContextProvider): void;

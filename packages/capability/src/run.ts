@@ -183,7 +183,6 @@ export const BUILTIN_ERROR_CODES = [
   "tool_failure_loop",
   "stagnation_detected",
   "agents_unfinished",
-  "background_children_failing",
   "mcp_connection_failed",
   "mcp_unavailable",
   "required_capability_unavailable",

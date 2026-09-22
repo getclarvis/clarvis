@@ -127,8 +127,7 @@ The host bounds subscriptions and releases them when the connection closes.
 snapshot pages, execution metadata, control epochs, handoff receipts and `HostingService`.
 `HostingService.resolveRecovery` is an operator-only confirmation of physical closure for old unknown
 work, fenced by generation and revision. Its `HostedRecoveryResolution` is retained on both the
-discovery reference and canonical session turn. The affected conversation is archived; no result or
-execution replay is implied. The durable audit precedes release of physical uncertainty and survives
+discovery reference and canonical session turn. The `archive` disposition parks the conversation; `continue` permits a successor after the same physical attestation. Neither invents a result or replays the interrupted execution. The durable audit precedes release of physical uncertainty and survives
 discovery acknowledgement.
 Handoff errors may carry `HostedHandoffFailureDetails`, binding an operation ID to `refused`
 or `uncertain` admission. Only an explicit refusal permits a new handoff identity; an absent
@@ -149,7 +148,7 @@ opening an authorization URL does not approve authorization. Its availability re
 and the local operator role.
 
 Hosted conversation reads include `Session.revision`; the hosted coordinator requires that
-observed revision for saves and turn admission. The ordinary file-store contract does not itself
+observed revision for saves and automatic turn admission. An authenticated operator submission is serialized against current state instead of rejected for a stale display revision. The ordinary file-store contract does not itself
 enforce turn/totals ownership. Its optional `Session.goal_state` is host-owned even on ordinary
 file-store saves: clients cannot insert, remove or revert it. `goals.ts` defines the independent
 goal DTOs, user controls and service contract; defining those types alone does not advertise the
@@ -367,3 +366,10 @@ guidance; `guidance` is its replacement. `ElicitationCommandDetail` optionally c
 analysis, effect, authority and reviewer receipts; old details remain accepted. Shell review rows
 may retain effect, relation and failure kind. No evidence seed, controller epoch or authority ledger
 is part of public run input. See [effect review](../../specs/execution/effect-review.md).
+
+`Session.operator_intents` and `operator_sequence` are bounded host-owned submission receipts and
+the conversation's monotonic acceptance sequence. They are separate from admitted `turns`.
+`Message.steering_id` correlates steering with the optional `steering_applied.id`; it is not model
+message content. Goal receipts distinguish a recorded pending recovery from admitted work.
+
+`GoalControlAction.edit.resume_operation_id` explicitly links a limit correction to a retained resume. Usage gaps optionally carry bounded `call_ids` and a sequence fingerprint.

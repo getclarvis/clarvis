@@ -37,6 +37,8 @@ export function goalView(overrides: Partial<GoalRecord> = {}, physical?: HostedR
           usage_unknown: false,
           cache_estimated: false,
           overrun_tokens: 0,
+          gaps: [],
+          usage_accepted_runs: [],
         },
         auto_continuations: 0,
         no_progress_stages: 0,

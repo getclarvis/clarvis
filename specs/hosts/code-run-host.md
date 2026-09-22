@@ -706,9 +706,10 @@ Creates a **scratch** `TranscriptStore` in its own `createRoot`, with every rete
 
 | Case | Behavior | File |
 | --- | --- | --- |
-| no folded turns and no released prose | yields `store.nodes` itself (identity), then done | `packages/code/src/run-host.ts` |
+| no folded turns and no released prose, plain store | yields `store.nodes` itself (identity), then done | `packages/code/src/run-host.ts` |
+| isolated child store | reloads resident runs one at a time and joins hidden child detail to Lead nodes; unavailable child records produce `EXPORT INCOMPLETE` | `packages/code/src/run-host.ts` (`exportResidentWithChildren`) |
 | no folded turns but released prose present | yields through `exportResidentNodes` | `packages/code/src/run-host.ts` |
-| folded turns present | lazily index `session.meta().turns[0..foldedTurnCount)`, rebuild and yield one canonical turn at a time, then stream the live window from `store.nodes.slice(foldedPrefix)` | `packages/code/src/run-host.ts` (`exportNodeBatches`) |
+| folded turns present | lazily index `session.meta().turns[0..foldedTurnCount)`, rebuild and yield one canonical turn at a time, then export the resident window | `packages/code/src/run-host.ts` (`exportNodeBatches`) |
 
 The host deliberately retains only `foldedTurnCount`, not a parallel `foldedTurns[]`. When export
 begins, `canonicalTurns = session?.meta()?.turns` supplies each folded turn's preview, kind and trace
@@ -720,6 +721,12 @@ than substituting the skill's internal persisted prompt. Production: `packages/c
 reads the canonical turn index one item at a time", "transcript-only skill runs use the same bounded
 canonical export index", and "folded turns are yielded one at a time before the bounded live
 window").
+
+The interactive store keeps hidden child detail outside Lead nodes. For resident turns,
+`exportResidentWithChildren` replays one persisted run at a time into the existing scratch store;
+an unavailable child record produces an explicit incomplete marker. Production:
+`packages/code/src/run-host.ts` (`exportResidentWithChildren`). Test:
+`packages/code/tests/component/run-host-export.test.ts` (isolated child export and unavailable record).
 
 `exportResidentNodes` walks nodes, and for each released-prose node
 (`isReleasedProse`) resolves the source execution id (`sourceExecutionId` — the
@@ -1247,10 +1254,10 @@ The following are derived directly from this document's own source and its tests
     export reads the canonical turn index one item at a time" and "folded turns are yielded one at a
     time before the bounded live window").
 
-22. **A session that still fits the resident window exports `store.nodes` itself, refetching nothing.**
-    `packages/code/src/run-host.ts`. Pinned by object identity at
-    `packages/code/tests/component/run-host-export.test.ts` and by the read count
-    (exactly 5 reads for 5 folded turns).
+22. **A plain transcript store that still fits the resident window exports `store.nodes` itself;
+    the interactive isolated-child store refetches each resident run to include hidden child detail.**
+    `packages/code/src/run-host.ts` (`exportNodeBatches`, `exportResidentWithChildren`). Pinned by
+    object identity and isolated-child cases in `packages/code/tests/component/run-host-export.test.ts`.
 
 23. **A released user block is never exported using a persisted prompt that does not match what was
     displayed.** The `sourceTextFingerprint` comparison at `packages/code/src/run-host.ts`.

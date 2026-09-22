@@ -814,8 +814,8 @@ exactly such a root-cwd run (and shows the root bunfig's lack of `coveragePathIg
 CI itself makes root-cwd runs in the Windows and macOS platform-policy jobs
 (`.github/workflows/ci.yml`, jobs `windows` and `sandbox-macos`).
 
-Seventeen of the eighteen packages repeat the preload in their own `bunfig.toml`; only the
-type-only `protocol` package omits it.
+Every package but the type-only `protocol` one repeats the shared preload in its own `bunfig.toml`;
+`protocol`'s own `bunfig.toml` covers the coverage options only.
 
 `@clarvis/code`'s bunfig is the only one with a four-entry preload list and an ordering rule stated
 inline: `@opentui/solid/preload` must stay first because it registers the Solid JSX transform, and

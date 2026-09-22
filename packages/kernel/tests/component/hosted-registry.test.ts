@@ -418,6 +418,30 @@ it("closes a connection whose cancelled run does not acknowledge, without raisin
   await expect(f.registry.close()).rejects.toThrow("no acknowledgement from the run");
 });
 
+it("keeps durably admitted Goal work alive when its controller disconnects", async () => {
+  let stopped: string | undefined;
+  const f = fixture({
+    continuation: () => ({
+      async prepare() {
+        return undefined;
+      },
+      async stopped(reason) {
+        stopped = reason;
+      },
+    }),
+  });
+  const peer = f.registry.connect("operator");
+  const view = await peer.service.start(input());
+  expect(view.run.disconnect_policy).toBe("continue");
+  await peer.close();
+  expect(f.contexts.get("run-1")!.signal.aborted).toBe(false);
+  expect(stopped).toBe("revoked");
+  f.finish();
+  await until(() => !f.registry.occupied("session-1"));
+  await f.registry.close();
+  expect(f.results).toEqual([{ execution_id: "run-1", status: "completed", result: "done" }]);
+});
+
 it("restores an acknowledge that could not be persisted", async () => {
   let failCommit = false;
   const f = fixture({

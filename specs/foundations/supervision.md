@@ -435,7 +435,7 @@ the child if it throws`).
 drop does not `splice` the array on every eviction:
 
 1. `append(line)` strips a trailing newline, computes `originalStart = tail`, and advances `tail` by
-   `textBytes + 1` **before** any truncation happens — the newline is charged to the absolute offset
+   `originalTextBytes + 1` **before** any truncation happens — the newline is charged to the absolute offset
    space even though a read never shows it.
 2. If the buffer's own configured `maxBytes` is `0`, the whole ring is dropped immediately and `head`
    jumps to `tail` — a per-child hard "no capture" mode.

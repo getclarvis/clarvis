@@ -220,6 +220,10 @@ instant a successor may start; the wait happens abortably outside the short prep
 the policy is asked again, so only a fresh proposal starts and a retired authority abandons the wait.
 That instant is pending only until it elapses: an elapsed one — including the instant a zero backoff
 lands on — starts its successor, and admission never refuses a proposal merely for carrying it.
+Once the turn's intent is durable, providing this policy also promotes the current physical run to
+`disconnect_policy: "continue"`. Losing the interactive controller pauses future Goal admission but
+does not cancel useful work already executing; its ordinary settlement remains responsible for the
+result and usage.
 Its reservation is single-use, preserves the session,
 and loses to admitted human work. A run that declares `intent: "operator"` _is_ that human work: the
 host admits it as the person's own turn even while a Goal is pending, stopping that Goal's automatic

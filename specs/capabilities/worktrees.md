@@ -11,7 +11,7 @@ The operator surface is `clarvis --worktree [name]`. Without the flag, Clarvis o
 checkout from which it was launched. With the flag, bootstrap completes before the kernel, session
 catalog, or TUI starts.
 
-Production: `packages/code/src/cli-args.ts` (`FlagSpec.optionalValue`, `parseCli`);
+Production: `packages/code/src/cli-args.ts` (`FlagSpec.optionalValue`, `parseMode`);
 `packages/code/src/index.tsx` (`main`);
 `packages/code/src/runtime.tsx` (`runApp`, `runHeadlessMode`).
 
@@ -91,7 +91,7 @@ Git-derived identity replaces the deleted registry: project identity hashes the 
 directory and workspace identity hashes the per-worktree Git directory. Outside Git, both identities
 fall back to the canonical workspace path.
 
-Production: `packages/code/src/runtime.tsx` (`runApp`, `createWorkspaceRuntime`);
+Production: `packages/code/src/runtime.tsx` (`runApp`, `connectWorkspaceManager`);
 `packages/code/src/adapters/workspace-client-manager.ts` (`WorkspaceClientManager.create`);
 `packages/kernel/src/git-workspace.ts` (`discoverGitWorkspace`);
 `packages/kernel/src/file-kernel.ts` (`createFileKernel`).

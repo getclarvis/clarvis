@@ -445,7 +445,7 @@ The wire is newline-delimited JSON. Four frame types (`packages/kernel/src/trans
 
 `hosting.resolveRecovery` is an ordinary write operation carrying a closed `{input}` envelope;
 the registry validates the nested generation, revision and physical-closure confirmation and permits
-only an authenticated operator. Production: `SERVICE_OPERATIONS` in
+only an authenticated operator. Production: `OPERATIONS` in
 [operations.ts](../../packages/kernel/src/transport/operations.ts). Test:
 `operator recovery preserves the session audit and unlocks maintenance over local IPC` in
 [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
@@ -739,7 +739,7 @@ local listener **first**, fire the subscribe request detached, and return a disp
 idempotent (`disposed` flag), deletes the local listener immediately, then — detached — awaits the
 original subscribe promise, returns silently if it rejected, returns if the client is closed, and
 otherwise issues the unsubscribe. Production: `packages/kernel/src/transport/client.ts`
-(`subscribeConfig`). Test: `packages/kernel/tests/integration/transport.test.ts` (immediate
+(`config.subscribe`). Test: `packages/kernel/tests/integration/transport.test.ts` (immediate
 unsubscribe after delayed authorization).
 
 Server-side config subscriptions share one `subs` map keyed by id. A duplicate id is `conflict`;
@@ -1024,7 +1024,7 @@ Interrupt receipt statuses describe registry outcomes, not transport health. A t
 rejects the handle's request as sanitized `unavailable`; expiry before delivery to a subscriber
 returns `not_running`. Container uses this same public run-control contract over channel 1 rather
 than translating it through a private execution protocol. The bounded channel contract is owned by
-[kernel runs](kernel-runs.md). Production: `createKernelClient` in
+[kernel runs](kernel-runs.md). Production: `connectKernelClient` in
 `packages/kernel/src/transport/client.ts` and `createContainerChannel` in
 `packages/kernel/src/hosting/container-channel.ts`. Test:
 `packages/kernel/tests/contract/transport-codecs.test.ts` and

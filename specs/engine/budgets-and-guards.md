@@ -370,7 +370,7 @@ error.
 
 ### 4.2 `runAgent` setup (`packages/loop/src/runtime/loop/run-agent.ts`)
 
-`runAgent` (`packages/loop/src/runtime/loop/run-agent.ts-...`) builds, once per agent run:
+`runAgent` (`packages/loop/src/runtime/loop/run-agent.ts`) builds, once per agent run:
 
 - `guards = createConvergenceGuards({stagnationThreshold, stagnationSoftThreshold})`
   (`packages/loop/src/runtime/loop/run-agent.ts`), from the per-profile `stagnation_threshold` request field and the env

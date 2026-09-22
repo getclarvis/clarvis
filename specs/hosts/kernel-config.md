@@ -483,7 +483,7 @@ sorts to `["marshall","coder","planner","alpha","zulu"]`
 `ConfigService.listAgents` applies it
 (`packages/kernel/src/config/config-service.ts`).
 
-`resolveAgentsByName` (`packages/kernel/src/config/agent-resolution.ts`) collapses duplicates by `scopeRank`: workspace 3 >
+`resolveAgentsByName` (`packages/kernel/src/config/agent-resolution.ts`) collapses duplicates by `SCOPE_RANK`: workspace 3 >
 global 2 > plugin 1 > builtin 0, `>=` so a later entry of equal rank wins, and the
 output keeps first-occurrence order.
 
@@ -1030,7 +1030,7 @@ type-only import plus an injected `opts.plugins` object.
 
 6. **`resolveAgentsByName` and `parseAgentFrontmatter` have no kernel test.**
    `resolveAgentsByName` is tested only transitively via `packages/code/tests/integration/doctor.test.ts`;
-   `parseAgentFrontmatter`'s only caller is `packages/kernel/src/plugins/plugin-service.ts`. `scopeRank`'s `"builtin"`
+   `parseAgentFrontmatter`'s only caller is `packages/kernel/src/plugins/plugin-service.ts`. `SCOPE_RANK`'s `"builtin"`
    arm is documented as unreachable in practice ("In practice `builtin` never has to lose this
    comparison", `packages/kernel/src/config/agent-resolution.ts`) and nothing tests it.
 

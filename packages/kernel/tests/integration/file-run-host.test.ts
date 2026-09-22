@@ -317,6 +317,10 @@ describe("file kernel behind the hosted RPC", () => {
     expect((await observer.goals.get("conversation")).state.current).toBeUndefined();
     const receipt = await f.client.goals.control(request);
     expect(receipt.execution_id).toBeDefined();
+    expect(
+      (await f.client.hosting!.list()).find((run) => run.execution_id === receipt.execution_id)
+        ?.disconnect_policy,
+    ).toBe("continue");
     expect(f.entered).toEqual([receipt.execution_id!]);
     expect(await f.client.goals.control(request)).toEqual(receipt);
     expect(await observer.goals.receipt("conversation", "create-goal")).toEqual(receipt);

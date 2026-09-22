@@ -108,7 +108,7 @@ marked incompatible when they require Tasks, skills, plugins, MCP or another ext
 selection then fails before inference. Tool enable receives the projected enabled/confinement policy and
 `allowHostEscalation` remains false.
 
-Production: `projectContainerProfiles` in
+Production: `projectContainerConfiguration` in
 [`container-projection.ts`](../../packages/kernel/src/config/container-projection.ts) and
 `createContainerNativeKernel` in
 [`container-native.ts`](../../packages/kernel/src/hosting/container-native.ts). Test:

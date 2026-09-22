@@ -363,7 +363,7 @@ non-matching text, so an unbounded scan of a large tree would freeze the
 single-threaded host for hours with nothing able to interrupt it (an
 `AbortSignal` cannot preempt synchronous regex work already in flight).
 
-`regexScanBudgetMs` (default 5000, `REGEX_SCAN_BUDGET_MS`, min 1) caps how much
+`regexScanBudgetMs` (default 5000, `DEFAULT_REGEX_SCAN_BUDGET_MS`, min 1) caps how much
 _regular-expression_ time one call may spend. Disk reads and the directory walk
 are never charged; unrelated delay between regex applications does not consume
 the budget, while scheduler time during an in-flight application is part of its

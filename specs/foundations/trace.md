@@ -935,7 +935,7 @@ malformed or oversized individual session records are ignored, while the 10,000-
 aggregate bounds and filesystem failures return `complete: false`.
 The product default is 30 days (`CLARVIS_TRACE_TTL_DAYS` in
 `packages/capability/src/env.ts`); `0` remains a complete opt-out. Production:
-`TraceCleanup.runOnce`, `JsonTraceStore.cleanup`, `referencedSessionExecutionIds` in
+`TraceCleanup.runOnce`, `TraceStore.cleanup`, `referencedSessionExecutionIds` in
 `packages/kernel/src/sessions/session-service.ts`, and the `TraceCleanup` composition in
 `packages/kernel/src/file-kernel.ts`. Test: the protected-record case in
 `packages/trace/tests/component/cleanup.test.ts` (including incomplete-scan refusal), the cleanup cases in

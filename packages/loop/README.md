@@ -404,7 +404,7 @@ A host supplies or builds:
 - optional event, steering, explicit-compaction, elicitation and cancellation channels;
 - any additional capabilities.
 
-A host may also supply `HostRunDeps.hostMetadata`, an opaque snapshot evaluated once per run and
+A host may also supply `ExecuteRunDeps.hostMetadata`, an opaque snapshot evaluated once per run and
 carried into its journal and final execution record. The loop does not inspect the value. The file
 kernel uses it for Extension Profile identity and supplies only already-resolved skill roots, so
 Extension Profile discovery and trust remain host policy. See

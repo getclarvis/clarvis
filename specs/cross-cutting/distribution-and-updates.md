@@ -565,7 +565,7 @@ version ownership remains in [Package architecture](package-architecture.md).
    [`specs/known-issues.md`](../known-issues.md) and the launch record, not in this durable contract.
 3. The portable Linux assets target GNU/glibc; Alpine and other musl-only distributions are not
    configured targets for this beta. Production: `packages/code/tooling/release/package.ts`
-   (`NATIVE_PACKAGES`) and `.github/workflows/release.yml` (Ubuntu Linux runners).
+   (`nativePackages`) and `.github/workflows/release.yml` (Ubuntu Linux runners).
 4. The portable Linux x64 beta is roughly 46 MiB compressed after all source maps are removed. Most
    remaining bytes are the included Bun runtime and OpenTUI native library. Further reduction needs
    a measured alternative runtime/link strategy that preserves split loading and package-owned

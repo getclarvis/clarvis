@@ -19,7 +19,7 @@ owns the **implementation**:
 |                                 |                                                                                        |
 | ------------------------------- | -------------------------------------------------------------------------------------- |
 | `TraceHandle`, `RecordingTrace` | the in-run recorder; satisfies `TracePort` structurally                                |
-| `JsonTraceStore`                | the on-disk format sessions are rehydrated from                                        |
+| `createJsonTraceStore`          | the on-disk format sessions are rehydrated from                                        |
 | `RunJournal`, journal recovery  | what makes a run that died mid-flight recoverable                                      |
 | `mapEntry` / `mapEntryRaw`      | trace entry → persisted `TraceEvent`, consulting a capability projector registry first |
 | `capDetail` and the caps        | the display bounds, shared with the mapper                                             |
@@ -216,7 +216,7 @@ of execution status. Its metadata is separate from the final result value. Reope
 preserve that distinction; orphan recovery still reports `interrupted` and does not invent an accepted
 checkpoint from an unfinished journal.
 
-`JsonTraceStore` writes what `@clarvis/kernel` reads back to restore a session.
+The journaling store `createJsonTraceStore` returns writes what `@clarvis/kernel` reads back to restore a session.
 Changing what it writes changes what every already-recorded run means, so a
 change there is a deliberate format decision, never a side effect of a
 refactor. Owner deletion is ordered against concurrent inserts by a durable

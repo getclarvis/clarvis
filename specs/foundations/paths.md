@@ -291,8 +291,6 @@ record (`packages/paths/src/workspace-state.ts`) rooted at `<global>/state/works
 | `promptHistoryFile` | `<root>/local/prompt-history` | `packages/paths/src/workspace-state.ts` |
 | `codeConfigFile` | `<root>/local/code.json` | `packages/paths/src/workspace-state.ts` |
 | `extensionProfileSelectionFile` | `<root>/local/extension-profile.json` | `packages/paths/src/workspace-state.ts` |
-| `runtimesDir` | `<root>/runtimes` | `WorkspaceStatePaths.runtimesDir`, `workspaceStatePaths` |
-| `runtimeDir(runtimeId)` | `<root>/runtimes/<ownerSegment(runtimeId)>` | `WorkspaceStatePaths.runtimeDir`, `workspaceStatePaths` |
 | `memoryMachineryRootForOwner(owner)` | `<root>/owners/<seg>/memory` | `packages/paths/src/workspace-state.ts` |
 | `plansLockDirForOwner(owner)` | `<root>/owners/<seg>/plans` | `packages/paths/src/workspace-state.ts` |
 | `monitorSidecar(id)` | `<localDir>/monitor-<id>.json` | `packages/paths/src/workspace-state.ts` |

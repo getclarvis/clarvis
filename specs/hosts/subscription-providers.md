@@ -37,7 +37,8 @@ remote transport is constructed with `createUnavailableProviderAuthService` and 
 device flow.
 
 Production: `packages/protocol/src/provider-auth.ts`, `KernelClient.providerAuth`,
-`OPERATIONS.providerAuth`, `OPERATIONS.models.getEntitled`, and `createKernelTransportServer`.
+`OPERATIONS.providerAuth`, `OPERATIONS.models.getEntitled`, and `createKernelServer` in
+`packages/kernel/src/transport/server.ts`.
 
 Test: the public contract fixture in `packages/protocol/tests/contract/public-contract.fixture.ts`
 and the transport compile-time exhaustiveness checks in `packages/kernel/src/transport/operations.ts`.
@@ -53,7 +54,8 @@ or shadow a global subscription provider name with another kind. Such entries ar
 removed before merge and reported as `providers.subscription` in the existing workspace-trust
 surface; approval does not grant credential or redirect authority.
 
-Production: `validateProviderRules`, `stripWorkspaceRiskFields`,
+Production: `rejectProviderConfigIssues` in `packages/loop/src/validation/request/provider-rules.ts`,
+`stripWorkspaceRiskFields`,
 `stripWorkspaceSubscriptionProviders`, and `operatorLayers` in the file config store.
 
 Test: `packages/loop/tests/unit/request-provider-validation.test.ts` and “workspace subscription

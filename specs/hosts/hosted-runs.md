@@ -421,7 +421,11 @@ nothing; the instant is durable on the closed stage, so a host restart cannot ex
 
 Disconnect, conversation close, takeover and background handoff revoke future control without
 granting physical release. Revocation notifies the host policy immediately, even while the current
-stage is running. A new human reservation supersedes pending automatic work; it is distinguished
+stage is running. After `commitIntent` succeeds, the presence of that internal policy durably selects
+`disconnect_policy: "continue"` for the current run: controller loss pauses the policy's future Goal
+stages while the admitted physical stage continues through settlement. A turn with no continuation
+policy retains the ordinary cancel-on-disconnect default, and explicit cancellation remains physical.
+A new human reservation supersedes pending automatic work; it is distinguished
 from controller retirement so the old policy does not pause the newly admitted human stage.
 Stop notifications are delivered once and bounded failures are logged without payloads. Cleanup
 of an old authority cannot revoke a successor. Retention keeps pending continuation ownership until
@@ -435,7 +439,10 @@ identity forgery, single-use reservation, controller retirement and independent 
 [hosted-continuation.test.ts](../../packages/kernel/tests/component/hosted-continuation.test.ts)
 holds physical closure, the terminal index commit and durable barriers separately and covers two
 automatic successors, human/disconnect/takeover races, foreign proposals, the typed minimum instant
-with its re-ask, the abandonment of a pending instant and bounded late preparation.
+with its re-ask, the abandonment of a pending instant and bounded policy calls;
+[hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts)
+checks that a durably admitted Goal stage survives controller disconnect while its future authority
+retires.
 
 ### Physical execution and observation
 

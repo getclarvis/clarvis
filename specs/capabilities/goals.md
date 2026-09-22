@@ -600,6 +600,13 @@ Admission records one execution/admission identity and the current objective/con
 An exact repeated intent is idempotent; conflicting identity reuse fails. A stale start after pause
 fails even if preparation already returned. Closed callbacks cannot reopen physical work. Policy
 pause on disconnect/restart retains run bindings and usage and requires explicit user resume.
+Once the stage intent is durable, its host continuation policy makes the already admitted physical
+run survive controller disconnect. Retirement still pauses future automatic stages; physical
+settlement records the surviving stage's actual result and usage before an explicit resume can admit
+more work. Production: `startEntry` in
+[registry.ts](../../packages/kernel/src/hosting/registry.ts). Test: `keeps durably admitted Goal work
+alive when its controller disconnects` in
+[hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts).
 
 Settlement is a separate host operation requiring physical closure, including children. It charges
 usage against the original execution and goal independently of pause, cancellation or later archival.
@@ -751,7 +758,7 @@ provider fault once its backoff has been recorded` there.
 ### Whose turn it is
 
 A Goal's status describes what *the Goal* may do next; it never decides whether the person typing
-is allowed to. `RunStartParams.intent` makes that explicit, and the host routes on it rather than on
+is allowed to. `StartRunParams.intent` makes that explicit, and the host routes on it rather than on
 the Goal: an `operator` run is accepted as the person's own intent — with the ordinary profile and
 budget, not the Goal's — while an `automatic` run, or one that declared nothing, stays subject to
 the Goal's admission rules. Accepting the operator's turn stops the Goal's automatic continuation in

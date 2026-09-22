@@ -1030,7 +1030,7 @@ point on the manager run span. Its runtime codec admits only the six statuses an
 shape; revision/pass/count fields are non-negative integers, the lifetime limit is positive, and
 the started count cannot exceed it. It cannot enter the generic capability envelope or silently
 disappear under backpressure.
-Production: `RUN_EVENT_POLICY`, `RUN_EVENT_SCHEMAS`, and `runEventSpan`.
+Production: `RUN_EVENT_POLICY`, `RUN_EVENT_SCHEMAS`, and `deriveRunEventSpan`.
 Test: `packages/kernel/tests/unit/event-policy.test.ts`,
 `packages/kernel/tests/unit/run-event-span.test.ts`, and
 `packages/kernel/tests/contract/transport-codecs.test.ts` (`preserves the workflow round checkpoint

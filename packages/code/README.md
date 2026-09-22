@@ -50,6 +50,9 @@ After attachment through a local Host/Sandbox connection, the activity line says
 exit` for a promoted run. `/quit` closes that TUI without asking about losing the run or cancelling
 it; a new turn defaults to ordinary exit policy. Container and SSH attachments never show that
 promise. Unsaved settings still require confirmation, and Ctrl+C still requests run cancellation.
+A Goal turn whose intent has committed also carries the host's continuation policy immediately.
+Connection loss pauses its future automatic stages but preserves the current physical work and its
+eventual settlement; it does not depend on the TUI completing a separate `/background` handoff.
 
 For local connections, `/reconnect` restores the connection to the existing host without restarting
 it or replaying work. `/reconnect reload` applies saved configuration through an explicit host
@@ -1665,7 +1668,7 @@ wording uses it before its segment is dropped. Every band is admitted by the cel
 really offers — a detail frame subtracts its padding and pinned status, a picker card its border,
 padding and footer text — while the seat cap stays keyed to the terminal, and a card never paints
 wider than the screen. A tool call's identity, a changed file's name and an error's diagnostic
-break onto another row instead of being abbreviated away; the argument *preview* in a tool header
+break onto another row instead of being abbreviated away; the argument _preview_ in a tool header
 keeps its own explicit character bound. Help shows full key combinations.
 
 Hosted submissions remain local until admission is confirmed. `beginTurn` does not advance hosted

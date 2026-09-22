@@ -1296,7 +1296,7 @@ capability can live in its own package (`packages/capability/src/index.ts`).
 
 ### 7.2 What depends on this package
 
-Fourteen of the other eighteen packages carry a static value edge to `@clarvis/capability` from their
+Fifteen of the other nineteen packages carry a static value edge to `@clarvis/capability` from their
 own `src/`; the four that do not are
 `@clarvis/paths` and `@clarvis/protocol` (both leaves), `@clarvis/tools` (which reaches only
 `@clarvis/paths`) and `@clarvis/code` (which reaches only `@clarvis/kernel`, `@clarvis/paths` and

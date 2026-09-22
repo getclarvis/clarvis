@@ -1150,6 +1150,8 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
         entry.retireContinuationListener = () => signal.removeEventListener("abort", revoked);
       }
       await entry.prepared.commitIntent();
+      /** A durable continuation policy owns recovery after the interactive controller retires. */
+      if (entry.prepared.continuation !== undefined) entry.ref.disconnect_policy = "continue";
       assertControl(connection, entry, control.epoch);
       await persist();
       assertControl(connection, entry, control.epoch);

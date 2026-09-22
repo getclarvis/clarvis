@@ -919,7 +919,7 @@ direct client under its own id).
 | `code` invoked headlessly (`--prompt`, no interactive UI) | `handle.onElicit` registered in `packages/code/src/runtime.tsx` (`runPrintMode`) | every question is logged to stderr and auto-declined via `handle.respond({id, action:"decline"})` |
 | Elicitation disabled or no `elicit` supplied at all (`shape.userInputEnabled === false`) | `buildElicitRelay`'s `relayEnabled` guard (`packages/loop/src/runtime/elicit-relay.ts`) | `relay` is `undefined`; `serializedElicit` falls back to the raw (possibly `undefined`) `elicit` — callers that need one and find it absent are a capability-construction concern outside this document |
 | A run needs a human (`shape.userInputEnabled === true`) but no `elicit` callback was supplied at all | `packages/loop/src/runtime/execute-run.ts`, checked immediately after `deriveRunShape` | the run never starts: throws `ValidationError("elicitation_not_supported", ...)` — the only elicitation failure resolved at request validation rather than per-question (§4.10) |
-| `elicit_wait_ms` request param fails validation | `zodIssueToRequestErrorCode` (`packages/loop/src/validation/request/parsing.ts`) | `invalid_elicit_wait` request error code |
+| `elicit_wait_ms` request param fails validation | `classifyIssue` (`packages/loop/src/validation/request/parsing.ts`) | `invalid_elicit_wait` request error code |
 | A pooled (stdio + `shared`) MCP connection is acquired with a `relay` | `ConnectionManager`'s `openFresh(o, signal, pooled=true)` (`packages/mcp-client/src/connection-manager.ts`) | the `relay` is dropped — opened `...(o.relay && !pooled ? { relay: o.relay } : {})` — so the connection advertises no `elicitation` capability at all; `warnRelayDropped` logs `mcp.pool.relay_dropped` once per server name, not once per acquire |
 
 ## 7. Coupling
@@ -929,7 +929,7 @@ approval and Goal controls travel stay inside the complete Kernel and reach the 
 public run/service protocol as SSH hosting. They are not Command Review and cannot select placement
 or invoke host execution. Production: `createContainerNativeKernel` in
 [`container-native.ts`](../../packages/kernel/src/hosting/container-native.ts) and
-`createKernelTransportServer` in
+`createKernelServer` in
 [`server.ts`](../../packages/kernel/src/transport/server.ts). Test:
 [`container-kernel-host.test.ts`](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
 and [`transport-codecs.test.ts`](../../packages/kernel/tests/contract/transport-codecs.test.ts). The

@@ -279,7 +279,7 @@ Test: `packages/code/tests/integration/container-client.test.ts` and
 | Module | Exports | File |
 | --- | --- | --- |
 | `adapters/run-types.ts` | `ProfileInfo`, `StartRunInput`, `RunHandle`, `SteerResult`, `CompactResult`; re-exports `MemoryIngestNotice`, `RunProgress` from `core/run-types.ts` | — |
-| `adapters/run-reducers.ts` | `subagentCompletedOk`, `iterationTokens`, `SubagentRegistry`, `createSubagentRegistry`; re-exports `PlanTaskActivity` | — |
+| `adapters/run-reducers.ts` | `subagentOutcomeKind`, `subagentSettledStatus`, `iterationTokens`, `SubagentRegistry`, `createSubagentRegistry`; re-exports `PlanTaskActivity` | — |
 | `adapters/activity-store.ts` | `ActivityStore`, `createActivityStore`, `UsageActivity`, `ContextActivity`, `SubagentStatus`, `ACTIVITY_SUBAGENT_SUMMARY_MAX_CHARS` (512), `ACTIVITY_SUBAGENT_SUMMARIES_MAX` (64) | — |
 | `adapters/session.ts` | `Session`, `SessionDeps`, `SessionInit`, `createSession`, `isContinuationUnavailable`, `buildSkillRunDigest`, `buildRecoveredContext`, `ResumedSession`, `ResumeDeps`, `ResumeOptions`, `resumeSession`, `deleteSession`, `SESSION_RESUME_MAX_PAYLOAD_CHARS` | — |
 | `adapters/session-store.ts` | `SessionId`, `NodeStatus`, `SessionTotals`, `TurnRef`, `SessionMeta`, `runStatusToNode`, `uuidv7`, `redactPreview`, `TURN_ERROR_MAX_CHARS` (2000), `redactTurnError`, `addUsageToTotals`, `uncachedInput`, `formatCostUsd`, `SessionStore`, `MAX_RESIDENT_FULL_SESSIONS` (8), `listSessionsForWorkspace`, `metaToSession`, `sessionToMeta`, `sessionSummaryToMeta`, `sessionTurnCount`, `loadSessions`, `createSessionStore` | `packages/code/src/adapters/session-store.ts` |
@@ -609,8 +609,8 @@ relabelling a completed run — `packages/code/tests/component/run-host.test.ts`
 `teardownRuns` is the hard form: it bumps `runOwnershipEpoch`, aborts bash, cancels the
 handle with `cancelRequested = true`, clears `currentSink`/`currentHandle`/`workflowRunId`/
 `currentStatusExecId`/`heldIngest`, sets `runActive(false)` and resets the terminal title.
-It is what `runtime.tsx` supplies as the memory fuse's `forceStopRun`
-(`packages/code/src/runtime.tsx`, `runControls.forceStop`, consumed by
+It is what `runtime.tsx` supplies as the run API's `forceStop`
+(`packages/code/src/runtime.tsx`, `runControls.forceStop`, declared in
 `packages/code/src/views/App.tsx`).
 
 Unlike `runManaged`'s `finally`, `teardownRuns` does **not** await the handle's `closed` or `done`: the
@@ -933,7 +933,7 @@ deletes the optional field until that run is reset.
 | `subagent` / `delegation_started` | status `running`, model, `startedAt` | `packages/code/src/adapters/activity-store.ts` |
 | `event` / any `plan_*` | fold through `reducePlanProjection`; note that a plan event appeared during a reconcile | `packages/code/src/adapters/activity-store.ts` |
 | `run` / `run_ended` | every still-`running`/`spawned` subagent becomes `done` or `error` by `reason === "completed"` | `packages/code/src/adapters/activity-store.ts` |
-| `subagent` / `delegation_completed\|failed` | status from `subagentCompletedOk`, `endedAt`, `retainSummary` | `packages/code/src/adapters/activity-store.ts` |
+| `subagent` / `delegation_completed\|failed` | status from `subagentOutcomeKind` and `subagentSettledStatus`, `endedAt`, `retainSummary` | `packages/code/src/adapters/activity-store.ts` |
 | `iteration` / `iteration_completed` | accumulate gross tokens and cache-detail completeness; update `currentUsage` only for its live owner; `agent === "lead"` sets gross context, otherwise credit the subagent | `packages/code/src/adapters/activity-store.ts` (`openRun`) |
 | `beginReconcile` | snapshot the plan, wipe subagents/plan, reset usage | `packages/code/src/adapters/activity-store.ts` |
 | `endReconcile` | **restore the pre-reconcile plan** unless the replay produced a plan event of its own | `packages/code/src/adapters/activity-store.ts` |

@@ -362,10 +362,7 @@ producer of named diagnostic events/counters:
   screenMode: "alternate-screen",
   exitOnCtrlC: false,
   exitSignals: [],
-  useKittyKeyboard: directMacIterm
-    ? { allKeysAsEscapes: true, reportText: true }
-    : {},
-  ...(directMacIterm ? { prependInputHandlers: [consumeItermModifierStateReport] } : {}),
+  useKittyKeyboard: {},
   useMouse: true,
   autoFocus: true,
   clearOnShutdown: true,
@@ -376,11 +373,11 @@ producer of named diagnostic events/counters:
 }
 ```
 
-`directMacIterm` requires a local, non-tmux iTerm session. Full reporting lets the renderer retain
-the physical Option key and its associated text at once. iTerm also emits standalone modifier-state
-packets in this mode; the prepended handler consumes only those packets before OpenTUI can parse
-their numeric state as a control character. SSH, tmux and every other terminal retain OpenTUI's
-conservative disambiguation-plus-alternate-key defaults.
+The config carries no terminal-specific branch: `useKittyKeyboard` stays empty and no input handler
+is prepended, including for a direct, non-tmux iTerm session on macOS, so every terminal keeps
+OpenTUI's own key disambiguation. Pinned by
+`packages/code/tests/integration/platform-lifecycle.test.ts` ("direct macOS iTerm preserves native
+text composition").
 
 `exitOnCtrlC: false` and `exitSignals: []` pair with the manual `SIGINT`/`SIGTERM`/`SIGHUP` handlers in
 §4.6 — OpenTUI is told to leave process-exit entirely to `platform.ts`'s own `shutdown()`. `maxFps` is

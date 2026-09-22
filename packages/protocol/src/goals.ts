@@ -138,6 +138,7 @@ export type GoalRunCause =
   | "provider_refused"
   | "tools_unavailable"
   | "control_failure"
+  | "finalization_conflict"
   | "unclassified";
 
 export interface GoalRun {
@@ -154,6 +155,14 @@ export interface GoalRun {
   usage?: GoalUsage;
   accepted_usage_gaps?: string;
   usage_estimate?: { sequence: number; usage: GoalUsage };
+  /** Host-prepared non-final settlement; physical proof is still required and this grants no completion. */
+  settlement_preparation?: {
+    outcome: "completed" | "failed" | "cancelled";
+    disposition: "final" | "checkpoint";
+    usage: GoalUsage;
+    activity?: string[];
+    activity_unavailable?: boolean;
+  };
   /**
    * What the closed stage leaves for the host's automatic path.
    *
@@ -166,6 +175,8 @@ export interface GoalRun {
   decision?: "complete" | "continue" | "attention" | "closed";
   cause?: GoalRunCause;
   progress_observed?: boolean;
+  /** Activity could not be measured; absence of receipts does not establish stagnation. */
+  activity_unavailable?: boolean;
   /** Receipts this stage contributed that the Goal had not already recorded. */
   activity?: string[];
   not_before?: number;

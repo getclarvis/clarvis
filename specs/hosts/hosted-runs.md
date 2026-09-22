@@ -267,6 +267,38 @@ pages UTF-8 without altering a frozen prefix`, `keeps attribution, reset, plans 
 their original order` and `flushes a long token stream in bounded chunks instead of retaining all
 deltas` in [hosted-projection.test.ts](../../packages/kernel/tests/unit/hosted-projection.test.ts).
 
+File storage splits the logical byte stream into private 64 MiB segments. Only the current writer
+remains open; a page read opens at most one historical segment at a time. Rotation synchronizes the
+previous segment and directory before continuing. Snapshot offsets and sequence numbers do not reset
+at segment boundaries, including boundaries inside UTF-8 or JSON records. The default no longer
+imposes a lifetime history quota. Acknowledgement removes the exact segment namespace; unrelated
+siblings remain. Segmentation bounds files and read buffers, not total disk retention.
+
+Production: `openProjectionStorage` and `removeProjectionStorage` in
+[projection-storage.ts](../../packages/kernel/src/hosting/projection-storage.ts), used by
+`openHostedProjection`, local host and Container storage. Test: `streams beyond the former lifetime
+quota with bounded segments and immutable cuts` in
+[hosted-projection-file.test.ts](../../packages/kernel/tests/component/hosted-projection-file.test.ts)
+streams more than 64 MiB through the real snapshot decoder and preserves an earlier cut.
+
+The positional file writer owns transient syscall recovery. `EINTR`, `EAGAIN`, `EBUSY`, `ETIMEDOUT`
+and `EIO` receive at most three attempts with bounded exponential backoff and jitter. A write retries
+identical bytes at the same offset, including when the prior syscall wrote them but its acknowledgement
+was lost. Only successful acknowledged byte counts advance the local write cursor; the projection
+advances an event sequence once. Synchronization retries are idempotent. Neither creation nor close
+is retried, and capacity, permissions, identity conflicts and unclassified failures remain failures.
+There is no second event pump or replay of model/tool effects. Exhaustion still poisons the projection;
+this local syscall recovery does not establish crash resumption or projection reconstruction.
+
+Production: `recoverProjectionIO` in
+[projection-io.ts](../../packages/kernel/src/hosting/projection-io.ts), called by `openProjectionStorage`;
+local and Container hosts supply their Logger. Test: `recovers positional writes and rotation sync
+without duplicating frames or changing a snapshot` in
+[hosted-projection-file.test.ts](../../packages/kernel/tests/component/hosted-projection-file.test.ts)
+uses real segmented files with faults before/after individual IO operations. `positional IO recovery
+has a finite allowance and never retries capacity or identity errors` in
+[projection-io.test.ts](../../packages/kernel/tests/unit/projection-io.test.ts) covers refusal and exhaustion.
+
 ## Limits and failures
 
 Preparation failures are projected to plain `{code, message}` DTOs before entering the index;
@@ -279,7 +311,7 @@ Test: `persists a plain sanitized preparation error without poisoning later admi
 
 Clients use `readHostedSnapshot` to consume the immutable prefix without retaining another complete
 history. The decoder uses the live RPC event codec, handles split UTF-8/records, bounds each page to
-1 MiB and total bytes to 64 MiB, and checks offsets, canonical base64, contiguous sequence intervals
+1 MiB and each decoded record to 64 MiB, and checks offsets, canonical base64, contiguous sequence intervals
 and the final cursor. Corruption is explicit and never echoes the invalid payload. Completion or
 early iterator return releases the snapshot; a failed release is observed separately.
 
@@ -291,21 +323,29 @@ Unicode, coalesced intervals, abandoned readers, malformed records/pages, limits
 
 | Resource | Default | Failure |
 | --- | --- | --- |
-| Encoded observation history | 64 MiB per projection | Recovery becomes unavailable; further appends and snapshots fail |
+| Physical observation segment | 64 MiB | Rotate to another private segment; logical offsets remain continuous |
+| Explicit encoded history quota | Disabled by default | If configured, exhaustion refuses further appends and snapshots |
 | Outstanding snapshots | 4 per projection | A new snapshot is refused without evicting an existing reader |
 | Snapshot lifetime | 120 seconds | Expired ids return `not_found`; a caller must obtain another snapshot |
-| Queued storage operations | 32 | Refused before another queued operation is allocated |
-| Queued input/read bytes | 16 MiB | Refused before another payload is retained by the queue |
+| Queued storage operations | 32 per source/observation class | Refused before another queued operation is allocated |
+| Queued input/read bytes | 16 MiB per source/observation class | Refused before another payload is retained by the queue |
 
-All configurable bounds are positive safe integers. A storage or quota failure is sticky: it cannot
+Source append/sync and observation snapshot/read requests have independent queue allowances.
+A saturated reader cannot refuse admission of the next source event. Both classes share the same
+ordered storage chain, preserving snapshot cuts and bounded retention; slow storage may still delay
+that chain. Closing drains both classes.
+
+All configurable bounds are positive safe integers. After the file writer exhausts its classified transient
+IO recovery, an append/sync or explicit quota failure is sticky: it cannot
 become a successful handoff by trying another append. Existing complete prefixes remain readable
-after an append failure. A short read is corruption and also prevents new snapshots. Structural
+after an append failure. A failed or short snapshot read rejects that reader without poisoning
+append authority or future snapshots; the consumer can reconnect and retry. Structural
 history is never silently dropped to satisfy a quota. Closing drains accepted work and closes the
 file without deleting historical bytes; new operations after close fail with `unavailable`.
 
 Production: `createHostedProjection` and its `enqueue`, `flush` and `assertHealthy` boundaries in
 [projection.ts](../../packages/kernel/src/hosting/projection.ts). Test: the snapshot expiry, storage
-failure, quota, queue saturation and truncated-read cases in
+failure, quota, queue saturation, `observation saturation by %s preserves source admission and immutable cuts`, and truncated-read cases in
 [hosted-projection.test.ts](../../packages/kernel/tests/unit/hosted-projection.test.ts).
 
 `openHostedProjection` creates a new file exclusively, with the shared private file/directory modes.
@@ -452,8 +492,12 @@ Semantic `done`, source event end, physical `closed` and host reconciliation are
 execution's `settled` promise also awaits its owner's `commitTerminal` transaction. Successful
 subscriber `closed` and `terminalCommitted` mean reconciliation, durable terminal discovery and
 admission release have finished. Until then the reference remains `finishing`; neither semantic
-`done` nor physical exit alone permits reuse. A reconciliation or terminal commit failure rejects
-subscriber closure and reports unknown/recovery state while keeping the conversation occupied. Closing an observation is not physical completion. A storage failure retires observers,
+`done` nor physical exit alone permits reuse. A reconciliation or terminal commit failure enters the registry-owned settlement recovery chain.
+Known transient storage failures receive at most three attempts with bounded exponential backoff
+and jitter; semantic conflicts and unclassified failures do not retry. Each phase is checkpointed
+in the existing private index before execution. A terminal commit retry never reruns reconciliation.
+Exhaustion rejects subscriber closure and retains explicit pending-phase state and occupancy.
+No failure of this physically closed settlement sends cancellation to the source. Closing an observation is not physical completion. A storage failure retires observers,
 requests run cancellation and keeps draining until the real source closes. It prevents further
 recoverable attaches; existing run/session stores remain the authority for any reconciled outcome.
 
@@ -558,7 +602,8 @@ file index writes are exercised separately by the process integration tests belo
 Duplicate execution/operation ids, unsupported schemas, foreign workspaces and an index identifying
 the new generation are rejected. No prompt, execution handle, executable checkpoint or consent is
 restored. Terminal references retain their original generation and canonical result; other references
-become `unknown` with `recovery_error`. The affected conversation remains occupied for mutation and
+become `unknown` with `recovery_error`, except a durable physically closed and reconciled settlement
+checkpoint permits terminal discovery recovery as described below. An unresolved conversation remains occupied for mutation and
 cannot start another run or local activity. An independent conversation may still admit work.
 
 Old-generation references cannot acquire control or attach through the new host. Receipt lookup
@@ -572,6 +617,150 @@ the `initialState`, `sync` and `acknowledge` boundaries in
 [hosted-recovery.test.ts](../../packages/kernel/tests/component/hosted-recovery.test.ts) covers
 old-generation controls, unknown occupancy, terminal acknowledgement, corrupt/oversized indexes and
 expired receipts. This is recovery of discovery metadata, not resumption after a process crash.
+
+### Durable steering receipt recovery
+
+A synced `steering_applied` record with a host submission identity proves consumption independently
+of the canonical session acknowledgement. The registry checkpoints a private delivery record before
+calling `deliverOperator`. The record carries the intent identity, controller epoch, attempt count,
+state, classified cause and next eligible time. Its enclosing run supplies execution and generation.
+It contains neither message content nor credentials. At most 16 unconfirmed receipts are retained
+per execution, matching the session's pending submission bound.
+
+Known transient canonical receipt failures receive at most three attempts with exponential backoff
+and jitter. A lost acknowledgement repeats only the idempotent receipt transaction, never steering,
+model inference or tools. Callback exhaustion or a permanent callback failure retains
+`waiting_external` without cancelling the live source. Recovery checkpoints independently receive at most three attempts for classified transient storage
+failures, including registration and durable removal. Repeating a checkpoint never repeats consumption.
+Exhausted checkpoint failures still propagate as authoritative persistence failures; they are not
+converted into successful delivery.
+
+Registry synchronization resumes persisted ready/recovering receipts across generations without
+restoring controller authority. It preserves the attempt allowance, including an uncertain last
+attempt, which becomes `receipt_unconfirmed` rather than silently repeating. An exhausted or
+permanent wait is not rearmed by polling. A matching canonical `admitted`/`delivered_to` receipt
+can settle even an exhausted acknowledgement without another write. Typed transient lookup failure
+is unknown, not absence proof; the bounded idempotent receipt path remains available. Terminal reconciliation and retention cleanup cannot discard
+pending receipts. Removing a receipt is itself persisted before resolving the caller's consumption
+acknowledgement. Physical uncertainty about the old process remains separate from receipt recovery.
+
+Production: `recoverHostedDelivery` in
+[delivery-recovery.ts](../../packages/kernel/src/hosting/delivery-recovery.ts), `reconcileDeliveries`
+in [registry.ts](../../packages/kernel/src/hosting/registry.ts), and the closed index decoder in
+[state.ts](../../packages/kernel/src/hosting/state.ts). Test: lost acknowledgement, persisted attempt
+allowance and checkpoint failure in
+[hosted-delivery-recovery.test.ts](../../packages/kernel/tests/unit/hosted-delivery-recovery.test.ts);
+`a failed canonical steering receipt preserves the live source and reconciles without re-steering`
+and `recovers each receipt checkpoint acknowledgement without repeating consumption`
+in [hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts); `restart
+reconciles durable consumption receipts without starting or restoring authority` in
+[hosted-recovery.test.ts](../../packages/kernel/tests/component/hosted-recovery.test.ts), including
+`canonical consumption proof repairs an exhausted receipt without another write` and the duplicate
+identity and capacity checks.
+
+A permanent canonical consumption-proof lookup failure persists `waiting_external` with
+`operation_failed` on that delivery, without attempting the receipt write or stopping another
+session's recovery. A later matching canonical proof can remove the wait without rearming writes.
+Failure to persist this classification remains an authoritative index failure.
+Production: `reconcileDeliveries` in [registry.ts](../../packages/kernel/src/hosting/registry.ts).
+Test: `a permanent delivery proof failure waits locally without rewriting consumption` in
+[hosted-recovery.test.ts](../../packages/kernel/tests/component/hosted-recovery.test.ts).
+
+### Durable settlement recovery
+
+The private index can retain a `settlement` checkpoint alongside a run: operation (`reconcile` or
+`commit_terminal`), readiness/recovery/external-wait state, attempt, controller epoch, typed cause,
+next eligible instant and physical-closure proof. The existing execution settlement chain owns these
+operations; no additional scheduler, tool retry or provider retry is introduced. Checkpoint writes
+also retry classified transient storage failures, without rerunning a completed earlier phase.
+A record requires a terminal outcome and a non-running discovery state.
+
+After a host generation ends, `commit_terminal` proves that the source physically closed and the
+canonical session reconciled. Startup can finish the discovery transition to `closed` without
+operator physical attestation or re-executing effects. The normal startup index sync must succeed
+before publication. A new durably accepted operator turn may reattempt an exhausted transient settlement in the same
+host before physical admission. Concurrent attempts coalesce; completed reconciliation is skipped,
+and source/physical failures are not retried. The submission retains its identity and supersedes
+automatic continuation before waiting. Test: `a new accepted operator turn repairs exhausted
+terminal storage before physical admission` in
+[hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts).
+
+A pending `reconcile` after host restart first queries the canonical session's terminal turn receipt.
+With persisted physical closure and a matching ended turn, startup publishes terminal discovery
+before releasing uncertainty; a lost session-write acknowledgement does not repeat effects. A
+missing receipt can be repaired by the owning session coordinator for an ordinary conversation turn,
+using the persisted terminal outcome and physical-closure checkpoint. That repair commits status and
+usage atomically under the session lock; an already-ended turn makes a lost acknowledgement idempotent.
+Non-final Goal runs can instead replay their durable domain-owned `settlement_preparation` through
+`recoverGoalSettlementSession`; it must match the physical result's outcome and disposition. The
+Goal reducer consumes that preparation and accounts for its measured usage atomically with the turn,
+including partial gaps. Final completion, guided creation without a bound Goal, transcript digests,
+operator recovery resolutions and custom settlement callbacks are not replayed through this path. Without the required domain
+settlement proof, they remain pending. Failure to publish the index retains occupancy. Test:
+`reconciles a lost session acknowledgement before releasing old-generation occupancy` in
+[hosted-recovery.test.ts](../../packages/kernel/tests/component/hosted-recovery.test.ts).
+A pending reconciliation without a matching receipt or successful canonical repair does not prove
+settlement; it cannot be promoted using a cancellation acknowledgement or an outcome alone.
+Concurrent index synchronization coalesces into one recovery pass, and host close awaits that pass.
+A persisted future `next_attempt_at` leaves its operation pending instead of sleeping inside startup
+synchronization. The registry schedules one cancellable wakeup for the earliest pending instant and
+calls the same coalesced sync operation. A manual sync replaces that wakeup; host close cancels it,
+and an already-delivered callback cannot revive a closed host. The comparison retains the beginning
+of the sync pass so an instant that becomes due while another session is processed still gets a
+wakeup. Waiting-external records are excluded, and failure to persist a scheduled pass is logged
+without creating an unbounded retry loop. No controller authority or successor is reconstructed.
+Production: `schedulePendingRecovery` and `sync` in
+[registry.ts](../../packages/kernel/src/hosting/registry.ts), and `recoverHostedDelivery` in
+[delivery-recovery.ts](../../packages/kernel/src/hosting/delivery-recovery.ts).
+Test: `future backoff releases sync and wakes its owner, crossing eligibility during sync: %s` and
+`closing cancels a future delivery wake and prevents late recovery` in
+[hosted-recovery.test.ts](../../packages/kernel/tests/component/hosted-recovery.test.ts), plus
+`a future delivery retry neither sleeps nor consumes an attempt before eligibility` in
+[hosted-delivery-recovery.test.ts](../../packages/kernel/tests/unit/hosted-delivery-recovery.test.ts).
+
+Canonical proof-lookup and repair failures stay scoped to their session: classified transient failures consume the
+persisted three-attempt allowance with backoff; permanent failures wait immediately. Exhaustion
+persists `waiting_external` and does not become terminal success or fail the whole synchronization.
+Later synchronization can still recognize a canonical receipt, but does not rearm an exhausted repair
+merely because it was polled. A failed proof lookup in `waiting_external` is logged and contained;
+it does not reset the persisted allowance or prevent another session from reconciling. Each later
+synchronization may check once for fresh canonical proof, without retrying the exhausted write.
+Failure to persist the recovery index itself remains authoritative.
+Test: `contains %s proof lookup failure without preventing another session from recovering` in
+[hosted-recovery.test.ts](../../packages/kernel/tests/component/hosted-recovery.test.ts) covers both
+transient and permanent lookup failures, independent recovery, unchanged exhausted checkpoints and
+later proof-only completion.
+Test: `restart repair failures remain scoped and exhaust their persisted allowance` in
+[hosted-recovery.test.ts](../../packages/kernel/tests/component/hosted-recovery.test.ts). Neither recovery
+restores controller authority nor automatically creates a successor under obsolete authority.
+
+Production: `recoverHostedSettlement` in
+[settlement-recovery.ts](../../packages/kernel/src/hosting/settlement-recovery.ts), composed by
+`createHostedRegistry` in [registry.ts](../../packages/kernel/src/hosting/registry.ts), with index
+validation in [state.ts](../../packages/kernel/src/hosting/state.ts).
+Test: [hosted-settlement-recovery.test.ts](../../packages/kernel/tests/unit/hosted-settlement-recovery.test.ts),
+`recovers terminal storage without repeating reconciliation or cancelling the closed source` in
+[hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts), and
+`recovers only a durable physically closed and reconciled settlement without operator attestation`
+in [hosted-recovery.test.ts](../../packages/kernel/tests/component/hosted-recovery.test.ts).
+The component tests recreate a registry from persisted state. The separate physical-process canary
+`hosted-settlement-crash.test.ts` kills an isolated Bun host after the reconciliation checkpoint,
+after canonical session publication, and after terminal index publication. Two restarts preserve one
+turn and one charge, release proven occupancy and perform no additional execution. This qualifies
+those three settlement milestones on the platform actually running the test, not every write/rename boundary.
+The `steering_evidence` case kills the process after persisting target-bound acceptance and a
+canonical consumption fixture, before a delivery checkpoint exists. Two restarts recover the
+consumed receipt without another execution, charge, terminal outcome or physical-closure claim.
+Its canonical trace port is synthetic; process death and private file persistence are real.
+
+Production: `recoverSettlement` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts) and
+`sync` in [registry.ts](../../packages/kernel/src/hosting/registry.ts), wired by `createFileRunHost`.
+Test: `repairs a physically closed ordinary turn after restart without another execution or charge`
+in [hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts),
+`repairs missing canonical settlement before releasing occupancy and coalesces restart synchronization`
+in [hosted-recovery.test.ts](../../packages/kernel/tests/component/hosted-recovery.test.ts), and
+[hosted-settlement-crash.test.ts](../../packages/kernel/tests/integration/hosted-settlement-crash.test.ts)
+with [its process fixture](../../packages/kernel/tests/fixtures/hosted-settlement-crash.ts).
 
 ### Explicit operator recovery
 
@@ -953,7 +1142,29 @@ and the ordinary run event policy; it does not import Code or the TUI. The canon
 and conversation histories remain governed by [kernel runs](kernel-runs.md) and
 [sessions](sessions.md). Adding a service implementation must preserve those ownership contracts.
 
+A Goal stage with a persistent completion snapshot race closes with `goal_finalization_conflict`.
+The host persists `finalization_conflict` and uses its existing successor admission after physical
+settlement. Current authority and limits remain mandatory; no old completion verdict is reused.
+Production: `goalStageOutcome` in [settlement.ts](../../packages/kernel/src/goals/settlement.ts) and
+`prepareHostedGoalTurn` in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts).
+Test: `settles a concurrent completion conflict and verifies a fresh candidate in one successor`
+in [goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts).
+
 ## Durable operator submissions
+
+A response deadline does not retire a pending admission. While its original authenticated controller
+remains valid, the registry retains the same per-session operation after returning
+`submission: recovering`; physical settlement of the predecessor wakes that operation automatically.
+Repeated submissions of the same identity share it and cannot admit another successor. Authority is
+rechecked before preparation and admission; disconnect or takeover abandons that in-memory operation
+without removing its durable receipt. This wakeup does not restore permissions or dispatch accepted
+inputs after a host restart.
+
+Production: `startOperator` and its `awaitSubmission` boundary in
+[registry.ts](../../packages/kernel/src/hosting/registry.ts).
+Test: `retains an operator submission while a previous execution settles, bounded by its wait` and
+`retiring the controller fences a submission retained beyond its response deadline` in
+[hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts).
 
 Public hosted submission defaults to operator intent after authentication; host-created successors
 explicitly carry automatic intent and their continuation authority. `startOperator` persists authenticated input using `acceptOperator` before awaiting prior physical
@@ -969,6 +1180,36 @@ Steering carries a correlation identity independent of its text. `createHostedEx
 one identity shares its operation. A refusal before the source consumes steering retains the input
 and starts a successor only after the predecessor's physical and publication barriers. Unknown old
 physical work retains pending input and requires the existing generation-fenced recovery operation.
+During startup synchronization, the host also discovers target-bound accepted receipts with a
+matching canonical `steering_applied` event, including when the prior pump never published its
+delivery checkpoint. Discovery persists a ready record before invoking the existing bounded
+receipt recovery. A lookup failure stays scoped to that execution; no trace, absent event or missing
+reader proves consumption. Canonical input remains retained. No steering/model/tool call is replayed,
+and discovery does not release physical uncertainty. This is receipt recovery, not admission of
+unconsumed input under a recreated controller.
+
+Production: `discoverDeliveries` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts)
+and `createHostedRegistry` in [registry.ts](../../packages/kernel/src/hosting/registry.ts), wired by
+`createFileRunHost` in [file-host.ts](../../packages/kernel/src/hosting/file-host.ts).
+Test: `discovers a lost steering checkpoint after restart and reconciles without replay` in
+[hosted-recovery.test.ts](../../packages/kernel/tests/component/hosted-recovery.test.ts).
+
+New steering receipts persist the host-selected `steering_target` before sending to the source.
+Reconciliation reads only that destination; unavailable unrelated history cannot block it. An
+acknowledgement naming another execution is refused, and reusing the submission identity cannot
+change its target. No client argument selects this field. Receipts without a bound destination use
+the conservative unbound search: `prepareOperator` searches every recorded execution, newest first,
+retaining only one trace at a time. A matching `steering_applied` proves consumption even if another
+trace is unavailable. Absence proves non-consumption only after every inspected trace is intact and
+terminal. Missing readers/records, live executions and salvaged records keep the steering pending
+with `submission: recovering`; independent ordinary input is not included in that wait. Another
+lookup may recover when the dependency becomes available, without repeating the original effect.
+Production: `prepareOperator` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts).
+Test: `restart scopes steering reconciliation to its persisted destination, consumed: %s`,
+`retains steering when canonical history is %s and retries only the lookup` and
+`finds steering consumption older than sixteen turns despite a missing newer trace` in
+[hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).
+
 
 Production: `startOperator` and the observation controls in
 [registry.ts](../../packages/kernel/src/hosting/registry.ts), `acceptOperator`, `prepareOperator` and
@@ -985,3 +1226,38 @@ durable consumption acknowledgement, not merely the source queue acknowledgement
 Production: `createHostedSessionCoordinator` and `startOperator` in the sources above.
 Test: the queued-input integration case in
 [goal-operator-recovery.test.ts](../../packages/kernel/tests/integration/goal-operator-recovery.test.ts).
+
+`HostingService.resumePending(sessionId)` asks the host to read its canonical unconsumed operator
+receipts and requeue them under the current authenticated operator connection. It accepts no message
+body or receipt list from the client. Repeated calls use the existing idempotent per-session admission
+queue; consumption, physical closure, current policy and controller ownership are revalidated.
+Observers cannot invoke it, and it neither takes over another controller nor restores old consent.
+It returns an admitted run or null when no input is pending; unavailable dependencies leave receipts
+retained. Headless restart without a new authenticated controller still waits for that authority.
+
+Production: `pendingOperators` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts),
+`resumePending` in [registry.ts](../../packages/kernel/src/hosting/registry.ts),
+`OPERATIONS.hosting.resumePending` in [operations.ts](../../packages/kernel/src/transport/operations.ts).
+Test: `requeues canonical pending input on a fresh operator connection without duplicate admission`
+in [hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts), and
+`restart scopes steering reconciliation to its persisted destination, consumed: %s` in
+[hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).
+
+Non-final Goal preparation is recorded after physical closure and before turn publication. Missing
+preparation leaves recovery pending rather than inferring complete usage from the loop's aggregate.
+A lost session-write acknowledgement is resolved by the committed turn, without charging again.
+Production: `prepareGoalSettlement` in [execution.ts](../../packages/goal/src/execution.ts),
+`createGoalStageSettlement` in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts), and
+`recoverSettlement` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts).
+Test: `recovers prepared Goal settlement after a lost write acknowledgement without losing usage gaps`
+in [hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).
+
+Process-loss qualification includes the boundary after non-final Goal settlement preparation is
+persisted. Two fresh host generations consume that preparation without another execution, retain
+partial-usage gaps and unknown activity, and publish one closed turn without a completion verdict.
+Production: `recoverSettlement` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts)
+and `recoverGoalSettlementSession` in [settlement.ts](../../packages/kernel/src/goals/settlement.ts).
+Test: `physical process loss after goal_prepared recovers canonical bookkeeping` in
+[hosted-settlement-crash.test.ts](../../packages/kernel/tests/integration/hosted-settlement-crash.test.ts),
+using the subprocess fixture in
+[hosted-settlement-crash.ts](../../packages/kernel/tests/fixtures/hosted-settlement-crash.ts).

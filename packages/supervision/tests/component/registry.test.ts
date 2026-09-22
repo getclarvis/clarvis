@@ -389,6 +389,33 @@ describe("agents registry — notices", () => {
     settleWith("d", "completed");
     expect(registry.failingStreakExceeded()).toBe(false);
   });
+
+  it("permits one cooled recovery probe, preserving siblings and requiring success to rearm", () => {
+    let now = 0;
+    const registry = createAgentRegistry({
+      limits: { ...LIMITS, maxConsecutiveFailedChildren: 1 },
+      now: () => now,
+    });
+    const healthy = child("healthy");
+    const sibling = registry.register(healthy.registration)!;
+    registry.register(child("failed").registration)!.settled({ status: "failed" });
+    expect(registry.claimFailureProbe()).toBe(false);
+    now = 30_000;
+    expect(registry.claimFailureProbe()).toBe(true);
+    expect(registry.claimFailureProbe()).toBe(false);
+    registry.register(child("probe").registration)!.settled({ status: "failed" });
+    now = 300_000;
+    expect(registry.claimFailureProbe()).toBe(false);
+    expect(healthy.stops).toEqual([]);
+    expect(registry.liveIds()).toEqual([sibling.id]);
+    sibling.settled({ status: "completed" });
+    expect(registry.failingStreakExceeded()).toBe(false);
+    registry.register(child("new-failure").registration)!.settled({ status: "failed" });
+    now += 30_000;
+    expect(registry.claimFailureProbe()).toBe(true);
+    registry.seal();
+    expect(registry.claimFailureProbe()).toBe(false);
+  });
 });
 
 describe("agents registry — retention and teardown", () => {

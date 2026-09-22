@@ -289,7 +289,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
               evidence: createGoalEvidenceSource({
                 executionId: params.execution_id!,
                 workspaceRoot: options.kernel.workspaceRoot,
-                readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
+                readTrace: (executionId) => kernel.readRunEvidenceTrace(executionId, owner),
               }),
               readRun: async (executionId) => {
                 try {
@@ -338,7 +338,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           evidence: createGoalEvidenceSource({
             executionId: params.execution_id!,
             workspaceRoot: options.kernel.workspaceRoot,
-            readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
+            readTrace: (executionId) => kernel.readRunEvidenceTrace(executionId, owner),
           }),
           async validateDefinitionSources(sources) {
             for (const source of sources) {
@@ -375,9 +375,31 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
       owner: workspaceScopeKey(owner, kernel.project.id, kernel.workspace.id),
       prepare: sessions.prepare,
       acceptOperator: sessions.acceptOperator,
+      pendingOperators: sessions.pendingOperators,
       deliverOperator: sessions.deliverOperator,
+      discoverDeliveries: sessions.discoverDeliveries,
+      async deliveryReconciled(sessionId, intentId, deliveredTo) {
+        const session = await sessions.sessions.get(sessionId);
+        return (
+          session?.operator_intents?.some(
+            (intent) =>
+              intent.execution_id === intentId &&
+              intent.admitted === true &&
+              intent.delivered_to === deliveredTo,
+          ) === true
+        );
+      },
       prepareOperator: sessions.prepareOperator,
       archiveRecovery: sessions.archiveRecovery,
+      recoverSettlement: sessions.recoverSettlement,
+      async settlementReconciled(run) {
+        const session = await sessions.sessions.get(run.session_id);
+        return (
+          session?.turns.some(
+            (turn) => turn.execution_id === run.execution_id && turn.ended_at !== undefined,
+          ) === true
+        );
+      },
       /**
        * A `continue` resolution releases the Goal stage the resolved execution was occupying.
        *

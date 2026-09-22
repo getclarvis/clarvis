@@ -5,12 +5,13 @@ import { join } from "node:path";
 import type { BuiltinTraceEvent } from "@clarvis/capability";
 import {
   advanceGoalRun,
+  GoalError,
   settleGoalRun,
   type GoalCriterion,
   type GoalOperationOutcome,
   type GoalRepository,
 } from "@clarvis/goal";
-import { mapEntry } from "@clarvis/trace";
+import { createJsonTraceStore, mapEntry } from "@clarvis/trace";
 import { createGoalEvidenceSource, goalEvidenceDigest } from "../../src/goals/evidence.ts";
 import { createGoalRuntimePort } from "../../src/goals/runtime-port.ts";
 import { goalHostFixture } from "../helpers/goal-host.ts";
@@ -100,6 +101,49 @@ async function settle(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("durable host goal runtime port", () => {
+  it("acknowledges a durable impediment when its change notification closes the run", async () => {
+    const f = await fixture();
+    const controller = new AbortController();
+    const { port } = await f.runtime("first", {
+      signal: controller.signal,
+      onChange: () => controller.abort(),
+    });
+
+    await expect(port.blocked("Synthetic external boundary")).resolves.toBeUndefined();
+    expect((await f.repository.read("session"))!.current!.runs.at(-1)!.impediment).toMatchObject({
+      reason: "Synthetic external boundary",
+    });
+  });
+
+  it("recovers a temporarily unavailable catalog on the next read without masking revoked authority", async () => {
+    const f = await fixture();
+    const { port, evidence } = await f.runtime();
+    evidence.observe(tool());
+    const snapshot = evidence.snapshot.bind(evidence);
+    evidence.snapshot = async () => {
+      throw new GoalError("conflict", "Synthetic concurrent observation");
+    };
+    expect(await port.read()).toMatchObject({ evidence: [], evidence_unavailable: "conflict" });
+    evidence.snapshot = snapshot;
+    const recovered = await port.read();
+    expect(recovered.evidence).toHaveLength(1);
+    expect(recovered.evidence_unavailable).toBeUndefined();
+    evidence.snapshot = async () => {
+      await f.control({ kind: "cancel" });
+      throw new GoalError("resource_exhausted", "Synthetic unavailable catalog");
+    };
+    await expect(port.read()).rejects.toMatchObject({ code: "conflict" });
+  });
+
+  it("does not classify an unexpected evidence exception as recoverable", async () => {
+    const f = await fixture();
+    const { port, evidence } = await f.runtime();
+    evidence.snapshot = async () => {
+      throw new Error("Unexpected private failure");
+    };
+    await expect(port.read()).rejects.toMatchObject({ code: "internal" });
+  });
+
   it("refuses completion without a candidate and accepts a valid current candidate", async () => {
     const f = await fixture();
     const { port } = await f.runtime();
@@ -563,10 +607,10 @@ describe("durable host goal runtime port", () => {
       ),
     ).toMatchObject({ progress_accepted: false });
     events.push(tool({ result: JSON.stringify({ exit_code: 1 }) }));
-    await expect(second.port.read()).rejects.toMatchObject({ code: "conflict" });
+    expect(await second.port.read()).toMatchObject({ evidence: [newRef] });
   });
 
-  it("fails closed on ambiguous or overflowing live observations and excludes polling", async () => {
+  it("preserves control while ambiguous evidence still refuses completion", async () => {
     const f = await fixture();
     const { port, evidence } = await f.runtime();
     evidence.observe(tool({ mcp_name: "get_goal" }));
@@ -579,10 +623,152 @@ describe("durable host goal runtime port", () => {
     evidence.observe(tool({ call_id: "other" }));
     expect(await snapshot.verify(ref, toolCriterion)).toMatchObject({ valid: false });
     evidence.observe(tool({ result: "different" }));
-    await expect(port.read()).rejects.toMatchObject({ code: "resource_exhausted" });
-    const overflow = await f.runtime();
-    for (let i = 0; i <= 512; i++) overflow.evidence.observe(tool({ call_id: `call-${i}` }));
-    await expect(overflow.port.read()).rejects.toMatchObject({ code: "resource_exhausted" });
+    expect(await port.read()).toMatchObject({ evidence: [] });
+    expect(await port.validateCompletion()).toMatchObject({ valid: false });
+    evidence.observe(tool({ call_id: "independent", arguments: { command: "independent" } }));
+    const recovered = await port.read();
+    expect(recovered.evidence).toHaveLength(1);
+    expect(recovered.evidence_unavailable).toBeUndefined();
+    const recoveredEvidence = await evidence.snapshot(recovered.goal);
+    expect(() => recoveredEvidence.stageActivity()).toThrow("unavailable observation");
+  });
+
+  it("isolates oversized arguments and delegation results from independent evidence", async () => {
+    const f = await fixture({ criteria: [toolCriterion] });
+    const { port, evidence } = await f.runtime();
+    evidence.observe(
+      tool({ call_id: "oversized-arguments", arguments: { command: "x".repeat(1024 * 1024 + 1) } }),
+    );
+    evidence.observe(delegation({ result: "x".repeat(1024 * 1024 + 1) }));
+    evidence.observe(
+      tool({ call_id: "oversized-encoded-result", result: "\u0000".repeat(200_000) }),
+    );
+    evidence.observe(tool({ call_id: "oversized-diff", diff: "x".repeat(1024 * 1024 + 1) }));
+    let nested: Record<string, unknown> = {};
+    for (let depth = 0; depth < 34; depth++) nested = { child: nested };
+    evidence.observe(tool({ call_id: "nested-arguments", arguments: nested }));
+    evidence.observe(tool());
+    const read = await port.read();
+    expect(read.evidence_unavailable).toBeUndefined();
+    expect(read.evidence).toHaveLength(1);
+    const snapshot = await evidence.snapshot(read.goal);
+    expect(snapshot.delegations).toEqual([]);
+    expect(() => snapshot.stageActivity()).toThrow("unavailable observation");
+    expect(
+      await snapshot.verify(snapshot.resolve([read.evidence[0]!.id])[0]!, toolCriterion),
+    ).toMatchObject({ valid: true });
+    expect(
+      accepted(await port.candidate(candidate("check", "host", [read.evidence[0]!.id]))),
+    ).toBeDefined();
+    expect(await port.validateCompletion()).toMatchObject({ valid: true });
+  });
+
+  it("retains a pinned candidate across thousands of child observations and source reopen", async () => {
+    const f = await fixture({
+      criteria: [toolCriterion],
+      readTrace: (id) => store.readEvents?.("fixture", id),
+    });
+    const store: ReturnType<typeof createJsonTraceStore> = createJsonTraceStore({
+      dir: join(f.workspaceRoot, "traces"),
+    });
+    const journal = store.openJournal({
+      header: {
+        id: "first",
+        owner_key_name: "fixture",
+        started_at: 1,
+        visibility: "public",
+        request: {
+          messages: [],
+          entry: "solo",
+          profiles: [{ name: "solo", model: "test/model", tools: [], iteration_limit: 512 }],
+          servers: [],
+          providers: [],
+          budget: { on_exceed: "stop", total_token_limit: 10000 },
+        },
+      },
+    });
+    cleanup.push(async () => journal.close());
+    const { port, evidence } = await f.runtime();
+    const observe = (event: ToolEvent) => {
+      journal.append(event);
+      evidence.observe(event);
+    };
+    observe(tool());
+    const original = (await port.read()).evidence[0]!;
+    expect(accepted(await port.candidate(candidate("check", "host", [original.id]))).valid).toBe(
+      true,
+    );
+    for (let i = 0; i < 2048; i++)
+      observe(
+        tool({
+          call_id: `call-${i % 512}`,
+          subagent_instance_id: `child-${Math.floor(i / 512)}`,
+          mcp_name: "grep",
+          arguments: { pattern: `synthetic-${i}` },
+          result: "synthetic match",
+        }),
+      );
+    expect((await port.read()).evidence_unavailable).toBeUndefined();
+    expect((await port.read()).evidence.length).toBeLessThanOrEqual(32);
+    expect((await port.validateCompletion()).valid).toBe(true);
+    const reopened = await f.runtime();
+    expect((await reopened.port.validateCompletion()).valid).toBe(true);
+    const failure = tool({ call_id: "later-failure", result: JSON.stringify({ exit_code: 1 }) });
+    journal.append(failure);
+    reopened.evidence.observe(failure);
+    const duplicate = tool();
+    journal.append(duplicate);
+    reopened.evidence.observe(duplicate);
+    expect((await reopened.port.validateCompletion()).valid).toBe(false);
+  });
+
+  it("keeps a conflicting candidate invalid through window rotation and source reopen", async () => {
+    const events: ToolEvent[] = [];
+    const f = await fixture({ criteria: [toolCriterion], readTrace: () => events });
+    const { port, evidence } = await f.runtime();
+    const observe = (event: ToolEvent) => {
+      events.push(event);
+      evidence.observe(event);
+    };
+    observe(tool());
+    const original = (await port.read()).evidence[0]!;
+    expect(accepted(await port.candidate(candidate("check", "host", [original.id]))).valid).toBe(
+      true,
+    );
+    observe(tool({ result: JSON.stringify({ exit_code: 1 }) }));
+    expect((await port.validateCompletion()).valid).toBe(false);
+    for (let i = 0; i < 513; i++)
+      observe(tool({ call_id: `independent-${i}`, arguments: { command: `independent-${i}` } }));
+    for (const runtime of [{ port, evidence }, await f.runtime()]) {
+      const snapshot = await runtime.port.read();
+      expect(snapshot.evidence_unavailable).toBeUndefined();
+      expect(snapshot.evidence.length).toBeGreaterThan(0);
+      expect(snapshot.evidence.some((ref) => ref.id === original.id)).toBe(false);
+      expect((await runtime.port.validateCompletion()).valid).toBe(false);
+      const source = await runtime.evidence.snapshot(snapshot.goal);
+      expect(() => source.stageActivity()).toThrow("unavailable observation");
+    }
+  });
+
+  it("waits for the existing journal after the live evidence window rotates", async () => {
+    const events: ToolEvent[] = [];
+    let available = false;
+    const f = await fixture({
+      readTrace: (id) => (available && id === "first" ? events : undefined),
+    });
+    const { port, evidence } = await f.runtime();
+    for (let i = 0; i < 513; i++) {
+      const event = tool({ call_id: `event-${i}` });
+      events.push(event);
+      evidence.observe(event);
+    }
+    expect(await port.read()).toMatchObject({
+      evidence: [],
+      evidence_unavailable: "resource_exhausted",
+    });
+    available = true;
+    expect((await port.read()).evidence_unavailable).toBeUndefined();
+    expect((await port.read()).evidence).toHaveLength(1);
   });
 
   it("does not let replayed duplicate trace events revive an older success", async () => {
@@ -640,7 +826,12 @@ describe("durable host goal runtime port", () => {
     const forged = { summary: "Foreign authority", evidence_ids: [], goal_id: "foreign" };
     await expect(port.progress(forged)).rejects.toMatchObject({ code: "invalid_request" });
     evidence.observe(tool({ result: "x".repeat(1024 * 1024 + 1) }));
-    await expect(port.read()).rejects.toMatchObject({ code: "resource_exhausted" });
+    expect(await port.read()).toMatchObject({
+      evidence: [],
+    });
+    expect((await port.read()).evidence_unavailable).toBeUndefined();
+    evidence.observe(tool({ call_id: "usable", arguments: { command: "independent" } }));
+    expect((await port.read()).evidence).toHaveLength(1);
     expect((await f.repository.read("session"))!.current!.runs[0]!.progress).toBeUndefined();
     expect(f.changes).toEqual([]);
   });

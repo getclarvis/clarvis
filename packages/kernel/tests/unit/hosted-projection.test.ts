@@ -224,6 +224,55 @@ describe("hosted observation projection", () => {
     expect(projection.close()).toBe(closing);
   });
 
+  test.each(["operations", "bytes"] as const)(
+    "observation saturation by %s preserves source admission and immutable cuts",
+    async (bound) => {
+      const memory = memoryStorage();
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const projection = createHostedProjection(
+        {
+          ...memory.storage,
+          async read(offset, length) {
+            entered.resolve();
+            await release.promise;
+            return memory.storage.read(offset, length);
+          },
+        },
+        identity,
+        {
+          maxPendingOperations: bound === "operations" ? 1 : 8,
+          maxPendingBytes: 1024,
+          pageBytes: 1024,
+        },
+      );
+      await projection.append({ type: "run_started", at: 1 });
+      const before = await projection.snapshot();
+      const reading = projection.readPage(before.snapshot_id, 0);
+      await entered.promise;
+      const writing = projection.append(delta("preserved"));
+      try {
+        await expect(projection.readPage(before.snapshot_id, 0)).rejects.toMatchObject({
+          code: "conflict",
+        });
+      } finally {
+        release.resolve();
+      }
+      const [page, cursor] = await Promise.all([reading, writing]);
+      expect(cursor.sequence).toBe(2);
+      expect(Buffer.from(page.data_base64, "base64").toString("utf8")).not.toContain("preserved");
+      expect(before.cursor.sequence).toBe(1);
+      expect(projection.failure()).toBeUndefined();
+      await projection.sync();
+      const after = await projection.snapshot();
+      const frames = await readFrames(projection, after.snapshot_id);
+      expect(frames.map((frame) => frame.event.type)).toEqual(["run_started", "text_delta"]);
+      expect(frames[1].event).toMatchObject({ text: "preserved" });
+      expect((await readFrames(projection, before.snapshot_id)).length).toBe(1);
+      await projection.close();
+    },
+  );
+
   test("validates configured bounds and detects truncated snapshot reads", async () => {
     const memory = memoryStorage();
     expect(() => createHostedProjection(memory.storage, identity, { maxBytes: 0 })).toThrow(
@@ -244,7 +293,9 @@ describe("hosted observation projection", () => {
     await expect(projection.readPage(snapshot.snapshot_id, 0)).rejects.toMatchObject({
       code: "unavailable",
     });
-    await expect(projection.snapshot()).rejects.toThrow("incomplete");
+    expect(projection.failure()).toBeUndefined();
+    await projection.append({ type: "run_ended", at: 2, status: "completed" });
+    expect((await projection.snapshot()).cursor.sequence).toBe(2);
     await projection.close();
   });
 });

@@ -356,6 +356,17 @@ what a caller does with the streak belongs to that caller
 (`packages/loop/tests/unit/delegation-handler.test.ts` pins that a non-`"failed"` settle — `limited`,
 `cancelled` or `stopped` — never advances the counter).
 
+`claimFailureProbe` is a synchronous, single-use admission exception after 30 seconds without a
+technical failure. It never resets the failure counter or credits progress. Once claimed, time
+alone cannot rearm it; a successfully completed child does. Sealing refuses a probe. The registry
+still owns no retry scheduler and does not start any child by itself; the engine may claim the
+probe when it receives a background spawn request.
+
+Production: `claimFailureProbe` and `settle` in
+[registry.ts](../../packages/supervision/src/registry.ts).
+Test: `permits one cooled recovery probe, preserving siblings and requiring success to rearm` in
+[registry.test.ts](../../packages/supervision/tests/component/registry.test.ts).
+
 ### 4.9 `waitAny` (`packages/supervision/src/registry.ts`)
 
 1. If `ids` is given, first reject with `UnknownAgentError` **immediately** if any named id is not

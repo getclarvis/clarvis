@@ -2187,9 +2187,23 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const previous = session?.meta()?.id;
     if (previous) deps.onSessionInvalidated?.(previous, "switch");
     let meta: SessionMeta | null;
+    let recoveryNotice: string | undefined;
     try {
       if (client.hosting !== undefined) {
-        const ref = (await client.hosting.list())
+        let retained = await client.hosting.list();
+        if (requestEpoch !== loadEpoch) return;
+        if (
+          !retained.some((entry) => entry.session_id === id && entry.execution_state !== "closed")
+        ) {
+          try {
+            await client.hosting.resumePending(id);
+          } catch (error) {
+            recoveryNotice = `pending input retained: ${errorText(error)}`;
+          }
+          if (requestEpoch !== loadEpoch) return;
+          retained = await client.hosting.list();
+        }
+        const ref = retained
           .filter((entry) => entry.session_id === id)
           .sort(
             (a, b) =>
@@ -2225,7 +2239,10 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       setStatus(["session not found"]);
       return;
     }
-    await loadSessionMeta(meta).catch((e) => setStatus([`resume failed: ${errorText(e)}`]));
+    const loading = loadSessionMeta(meta);
+    const restoredEpoch = loadEpoch;
+    await loading.catch((e) => setStatus([`resume failed: ${errorText(e)}`]));
+    if (restoredEpoch === loadEpoch && recoveryNotice !== undefined) setStatus([recoveryNotice]);
   }
 
   async function synchronizeGoal(binding: GoalBinding, view: GoalView): Promise<void> {

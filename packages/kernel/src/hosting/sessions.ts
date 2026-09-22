@@ -5,6 +5,7 @@ import type { FileSessionService, HostSessionStore } from "../sessions/session-s
 import { addRunUsage } from "../sessions/usage.ts";
 import { buildSkillRunDigest, buildRecoveredContext } from "../runs/recovered-context.ts";
 import { pauseGoalForPolicy } from "@clarvis/goal";
+import { recoverGoalSettlementSession } from "../goals/settlement.ts";
 import { goalStateFromSession, goalStateToDto } from "../goals/session-state.ts";
 import { createHash, randomUUID } from "node:crypto";
 import type { HostedConversationAuthority } from "./admission.ts";
@@ -44,7 +45,10 @@ export interface HostedSessionOptions {
   ): Promise<HostedExecutionBinding>;
   redact(text: string): string;
   priceFor?(model: string): ModelCost | undefined;
-  /** Canonical result/trace used for a separately invoked skill's pending conversation digest. */
+  /**
+   * Canonical result/trace for skill digests and steering-consumption reconciliation.
+   * Missing, live or salvaged history cannot prove a steering message was not consumed.
+   */
   readRun?(executionId: string): Promise<RunDetail | null>;
   /**
    * Settle a bound objective in the same durable write as its turn. Invoked only after the host's
@@ -113,7 +117,11 @@ export function createHostedSessionCoordinator(
   archiveRecovery: NonNullable<HostedRegistryOptions["archiveRecovery"]>;
   acceptOperator: NonNullable<HostedRegistryOptions["acceptOperator"]>;
   prepareOperator: NonNullable<HostedRegistryOptions["prepareOperator"]>;
+  pendingOperators: NonNullable<HostedRegistryOptions["pendingOperators"]>;
   deliverOperator: NonNullable<HostedRegistryOptions["deliverOperator"]>;
+  discoverDeliveries: NonNullable<HostedRegistryOptions["discoverDeliveries"]>;
+  /** Repair turn bookkeeping from physical proof and any durable domain-owned preparation. */
+  recoverSettlement: NonNullable<HostedRegistryOptions["recoverSettlement"]>;
 } {
   const active = new Set<string>();
   const mutations = new Map<string, Promise<void>>();
@@ -470,6 +478,75 @@ export function createHostedSessionCoordinator(
       preparing.delete(input.session_id);
     }
   };
+  const recoverSettlement: NonNullable<HostedRegistryOptions["recoverSettlement"]> = (
+    run,
+    checkpoint,
+  ) =>
+    locked(run.session_id, async () => {
+      if (
+        checkpoint.physical_closed !== true ||
+        checkpoint.operation !== "reconcile" ||
+        run.outcome === undefined ||
+        run.outcome.status === "running"
+      )
+        throw kernelError(
+          "invalid_request",
+          "recovery requires a durable terminal physical checkpoint",
+        );
+      if (run.workspace_id !== options.workspaceId)
+        throw kernelError("conflict", "recovery belongs to another workspace");
+      const stored = await get(run.session_id);
+      if (stored === null) return false;
+      const turn = stored.turns.find((item) => item.execution_id === run.execution_id);
+      if (turn === undefined) return false;
+      if (turn.ended_at !== undefined) return true;
+      const goals = [
+        ...(stored.goal_state?.archive ?? []),
+        ...(stored.goal_state?.current === undefined ? [] : [stored.goal_state.current]),
+      ];
+      if (
+        turn.kind !== "conversation" ||
+        turn.recovery_resolution !== undefined ||
+        options.settleSession !== undefined ||
+        stored.goal_state?.creation_intent?.execution_id === run.execution_id
+      )
+        return false;
+      const result: RunResult = { execution_id: run.execution_id, ...run.outcome };
+      const boundGoal = goals.some((goal) =>
+        goal.runs.some((item) => item.execution_id === run.execution_id),
+      );
+      const settledGoal =
+        boundGoal &&
+        recoverGoalSettlementSession(stored, result, now(), (model) => options.priceFor?.(model));
+      if (boundGoal && !settledGoal) return false;
+      turn.status =
+        result.status === "completed"
+          ? "done"
+          : result.status === "cancelled" || result.ended_reason === "soft_limit_declined"
+            ? "cancelled"
+            : "error";
+      turn.ended_at = now();
+      stored.updated_at = turn.ended_at;
+      stored.revision = revision(stored) + 1;
+      if (!settledGoal)
+        addRunUsage(stored.totals, result.usage, (model) => options.priceFor?.(model));
+      await options.sessions.saveHost(stored);
+      (options.logger ?? NOOP_LOGGER).info(
+        {
+          event: "hosting.settlement.canonical_recovered",
+          execution_id: run.execution_id,
+          host_generation: run.host_generation,
+          operation: "reconcile",
+          scope: "session",
+          attempt: checkpoint.attempt,
+          transition: "reconciled",
+        },
+        "physically closed session settlement recovered",
+      );
+      goalChanged(stored);
+      return true;
+    });
+
   const archiveRecovery: NonNullable<HostedRegistryOptions["archiveRecovery"]> = (
     run,
     resolution,
@@ -519,7 +596,10 @@ export function createHostedSessionCoordinator(
       goalChanged(session);
       return result;
     });
-  const acceptOperator: NonNullable<HostedRegistryOptions["acceptOperator"]> = (input) =>
+  const acceptOperator: NonNullable<HostedRegistryOptions["acceptOperator"]> = (
+    input,
+    steeringTarget,
+  ) =>
     transact(input.session_id, (session) => {
       const canonical = structuredClone(input);
       canonical.session_revision = 0;
@@ -529,10 +609,25 @@ export function createHostedSessionCoordinator(
         (value) => value.execution_id === input.params.execution_id,
       );
       if (known !== undefined) {
-        if (known.fingerprint !== fingerprint)
-          throw kernelError("conflict", "Submission identity was reused for different input");
+        if (
+          known.fingerprint !== fingerprint ||
+          (steeringTarget !== undefined && known.steering_target !== steeringTarget)
+        )
+          throw kernelError(
+            "conflict",
+            "Submission identity was reused for different input or target",
+          );
         return { session, result: known.admitted ? ("delivered" as const) : ("pending" as const) };
       }
+      if (
+        steeringTarget !== undefined &&
+        (!input.params.execution_id.startsWith("steer_") ||
+          !session.turns.some((turn) => turn.execution_id === steeringTarget))
+      )
+        throw kernelError(
+          "conflict",
+          "Steering destination is not a recorded conversation execution",
+        );
       const intents = session.operator_intents ?? [];
       if (intents.filter((value) => !value.admitted).length >= 16)
         throw kernelError("resource_exhausted", "Too many pending operator submissions");
@@ -556,6 +651,7 @@ export function createHostedSessionCoordinator(
           fingerprint,
           input: structuredClone(input),
           accepted_at: now(),
+          ...(steeringTarget === undefined ? {} : { steering_target: steeringTarget }),
         },
       ];
       return { session, result: "pending" as const };
@@ -568,12 +664,37 @@ export function createHostedSessionCoordinator(
     transact(sessionId, (session) => {
       const receipt = session.operator_intents?.find((value) => value.execution_id === executionId);
       if (receipt === undefined) throw kernelError("conflict", "Steering receipt disappeared");
+      if (receipt.steering_target !== undefined && receipt.steering_target !== deliveredTo)
+        throw kernelError(
+          "conflict",
+          "Steering consumption does not match its accepted destination",
+        );
       if (receipt.delivered_to !== undefined && receipt.delivered_to !== deliveredTo)
         throw kernelError("conflict", "Steering already consumed by another execution");
       receipt.admitted = true;
       receipt.delivered_to = deliveredTo;
       return { session, result: undefined };
     });
+  const discoverDeliveries: NonNullable<HostedRegistryOptions["discoverDeliveries"]> = async (
+    run,
+  ) => {
+    if (run.workspace_id !== options.workspaceId)
+      throw kernelError("conflict", "steering recovery belongs to another workspace");
+    const session = await get(run.session_id);
+    const pending =
+      session?.operator_intents?.filter(
+        (receipt) => !receipt.admitted && receipt.steering_target === run.execution_id,
+      ) ?? [];
+    if (pending.length === 0) return [];
+    const detail = await options.readRun?.(run.execution_id);
+    return pending
+      .filter((receipt) =>
+        detail?.events.some(
+          (event) => event.type === "steering_applied" && event.id === receipt.execution_id,
+        ),
+      )
+      .map((receipt) => receipt.execution_id);
+  };
   const prepareOperator: NonNullable<HostedRegistryOptions["prepareOperator"]> = async (
     sessionId,
     executionId,
@@ -582,22 +703,38 @@ export function createHostedSessionCoordinator(
     const receipt = session?.operator_intents?.find((value) => value.execution_id === executionId);
     if (session === null || receipt === undefined)
       throw kernelError("not_found", "Operator submission is not durably accepted");
-    if (!receipt.admitted && executionId.startsWith("steer_") && options.readRun !== undefined) {
-      for (const turn of session.turns.slice(-16).reverse()) {
-        if (turn.execution_id === undefined) continue;
-        const detail = await options.readRun(turn.execution_id);
+    if (!receipt.admitted && executionId.startsWith("steer_")) {
+      let incomplete = false;
+      const executions =
+        receipt.steering_target === undefined
+          ? session.turns.map((turn) => turn.execution_id).reverse()
+          : [receipt.steering_target];
+      for (const target of executions) {
+        if (target === undefined) continue;
+        const detail = await options.readRun?.(target);
         if (
           detail?.events.some(
             (event) => event.type === "steering_applied" && event.id === executionId,
           )
         ) {
-          await deliverOperator(sessionId, executionId, turn.execution_id);
+          await deliverOperator(sessionId, executionId, target);
           throw kernelError("conflict", "Submission consumption recovered from canonical history", {
             submission: "admitted",
-            execution_id: turn.execution_id,
+            execution_id: target,
           });
         }
+        if (
+          detail == null ||
+          detail.recovery !== undefined ||
+          !["completed", "failed", "cancelled"].includes(detail.status)
+        )
+          incomplete = true;
       }
+      if (incomplete)
+        throw kernelError("unavailable", "Steering consumption awaits complete canonical history", {
+          submission: "recovering",
+          execution_id: executionId,
+        });
     }
     if (receipt.admitted)
       throw kernelError(
@@ -621,7 +758,16 @@ export function createHostedSessionCoordinator(
     archiveRecovery,
     transact,
     acceptOperator,
+    async pendingOperators(sessionId) {
+      const session = await get(sessionId);
+      return (session?.operator_intents ?? [])
+        .filter((receipt) => !receipt.admitted)
+        .sort((left, right) => left.sequence - right.sequence)
+        .map((receipt) => structuredClone(receipt.input));
+    },
     prepareOperator,
     deliverOperator,
+    discoverDeliveries,
+    recoverSettlement,
   };
 }

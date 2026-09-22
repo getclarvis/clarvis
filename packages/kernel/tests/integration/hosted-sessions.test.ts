@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +16,8 @@ import {
   createHostedSessionCoordinator,
   type HostedSessionOptions,
 } from "../../src/hosting/sessions.ts";
+import { applyGoalControl, admitGoalRun, prepareGoalSettlement } from "@clarvis/goal";
+import { goalStateToDto } from "../../src/goals/session-state.ts";
 import { createManagedRun } from "../../src/runs/managed-run.ts";
 
 const cleanup: string[] = [];
@@ -88,6 +90,7 @@ async function fixture(overrides: Partial<HostedSessionOptions> = {}) {
   });
   await coordinator.sessions.save(document());
   return {
+    root,
     base,
     ...coordinator,
     starts: () => starts,
@@ -100,7 +103,197 @@ async function fixture(overrides: Partial<HostedSessionOptions> = {}) {
   };
 }
 
+const recoveryRow = (): HostedRunRef => ({
+  execution_id: "run-1",
+  session_id: "conversation",
+  workspace_id: "workspace",
+  host_generation: "previous",
+  title: "Recovered turn",
+  config: { agent: "solo" },
+  created_at: 1,
+  updated_at: 2,
+  revision: 2,
+  control_epoch: 1,
+  control: "available",
+  disconnect_policy: "continue",
+  execution_state: "unknown",
+  attention: "none",
+  outcome: {
+    status: "completed",
+    usage: { iterations: 1, elapsed_ms: 10, input_tokens: 17, output_tokens: 3, cached_tokens: 2 },
+  },
+});
+const recoveryCheckpoint = {
+  operation: "reconcile" as const,
+  state: "ready" as const,
+  attempt: 1,
+  physical_closed: true as const,
+  controller_epoch: 1,
+};
+
 describe("host-owned conversation transactions", () => {
+  test("repairs a physically closed ordinary turn after restart without another execution or charge", async () => {
+    const f = await fixture();
+    await (await f.prepareTurn()).commitIntent();
+    const restarted = createHostedSessionCoordinator({
+      sessions: f.base,
+      projectId: "project",
+      workspaceId: "workspace",
+      occupied: () => false,
+      redact: (text) => text,
+      now: () => 30,
+      async prepareExecution() {
+        throw new Error("recovery must not execute");
+      },
+    });
+    const save = f.base.saveHost.bind(f.base);
+    let lost = false;
+    const write = spyOn(f.base, "saveHost").mockImplementation(async (value) => {
+      await save(value);
+      if (!lost) {
+        lost = true;
+        throw new Error("acknowledgement lost after session commit");
+      }
+    });
+    try {
+      await expect(restarted.recoverSettlement(recoveryRow(), recoveryCheckpoint)).rejects.toThrow(
+        "acknowledgement lost",
+      );
+      expect(await restarted.recoverSettlement(recoveryRow(), recoveryCheckpoint)).toBe(true);
+      const stored = (await f.base.get("conversation"))!;
+      expect(stored.turns[0]).toMatchObject({ status: "done", ended_at: 30 });
+      expect(stored.totals).toMatchObject({ input: 17, output: 3, cached: 2 });
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(f.starts()).toBe(0);
+    } finally {
+      write.mockRestore();
+    }
+  });
+
+  test("recovers prepared Goal settlement after a lost write acknowledgement without losing usage gaps", async () => {
+    const f = await fixture();
+    await (await f.prepareTurn()).commitIntent();
+    const session = (await f.base.get("conversation"))!;
+    const created = applyGoalControl(
+      undefined,
+      {
+        expected_revision: 0,
+        operation_id: "create",
+        action: {
+          kind: "create",
+          objective: "Preserve work",
+          criteria: [],
+          limits: { max_net_tokens: 10000 },
+        },
+      },
+      { session_id: session.id, new_goal_id: "goal", now: 1, physically_busy: false },
+    ).state;
+    const admitted = admitGoalRun(created, {
+      goal_id: "goal",
+      execution_id: "run-1",
+      admission_id: "run-1",
+      automatic: false,
+      expected_revision: created.revision,
+      control_revision: created.current!.control_revision,
+      now: 2,
+    });
+    const preparation = {
+      outcome: "failed" as const,
+      disposition: "final" as const,
+      usage: {
+        kind: "partial" as const,
+        input: 23,
+        output: 5,
+        gaps: [{ cause: "no_usage" as const, calls: 1, call_ids: ["missing-call"] }],
+      },
+      activity_unavailable: true,
+    };
+    session.goal_state = goalStateToDto(
+      prepareGoalSettlement(admitted, {
+        goal_id: "goal",
+        execution_id: "run-1",
+        preparation,
+        now: 3,
+      }),
+    );
+    await f.base.saveHost(session);
+    const restarted = createHostedSessionCoordinator({
+      sessions: f.base,
+      projectId: "project",
+      workspaceId: "workspace",
+      occupied: () => false,
+      redact: (text) => text,
+      now: () => 30,
+      async prepareExecution() {
+        throw new Error("recovery must not execute");
+      },
+    });
+    const row = recoveryRow();
+    row.outcome = {
+      ...row.outcome!,
+      status: "failed",
+      error: { code: "provider_error", message: "temporary", kind: "transient" },
+    };
+    const save = f.base.saveHost.bind(f.base);
+    const write = spyOn(f.base, "saveHost").mockImplementation(async (value) => {
+      await save(value);
+      throw new Error("acknowledgement lost");
+    });
+    try {
+      await expect(restarted.recoverSettlement(row, recoveryCheckpoint)).rejects.toThrow(
+        "acknowledgement lost",
+      );
+      expect(await restarted.recoverSettlement(row, recoveryCheckpoint)).toBe(true);
+      const stored = (await f.base.get(session.id))!;
+      expect(stored.turns[0]).toMatchObject({ status: "error", ended_at: 30 });
+      expect(stored.totals).toMatchObject({ input: 23, output: 5 });
+      expect(stored.goal_state!.current!.runs[0]).toMatchObject({
+        phase: "closed",
+        usage: preparation.usage,
+        activity_unavailable: true,
+      });
+      expect(stored.goal_state!.current!.runs[0]!.settlement_preparation).toBeUndefined();
+      expect(stored.goal_state!.current!.status).not.toBe("complete");
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(f.starts()).toBe(0);
+    } finally {
+      write.mockRestore();
+    }
+  });
+
+  test("recovery refuses a missing physical result and leaves guided creation or transcript semantics pending", async () => {
+    for (const kind of ["conversation", "transcript"] as const) {
+      const f = await fixture();
+      await (await f.prepareTurn({ ...input(), kind })).commitIntent();
+      if (kind === "conversation") {
+        const session = (await f.base.get("conversation"))!;
+        session.goal_state = {
+          version: 1,
+          revision: 1,
+          archive: [],
+          receipts: [],
+          creation_intent: {
+            seed: "A goal",
+            execution_id: "run-1",
+            operation_id: "create",
+            phase: "formulating",
+            admitted_at: 1,
+          },
+        };
+        await f.base.saveHost(session);
+      }
+      const before = await f.base.get("conversation");
+      expect(await f.recoverSettlement(recoveryRow(), recoveryCheckpoint)).toBe(false);
+      const missing = recoveryRow();
+      delete missing.outcome;
+      await expect(f.recoverSettlement(missing, recoveryCheckpoint)).rejects.toThrow(
+        "physical checkpoint",
+      );
+      expect(await f.base.get("conversation")).toEqual(before);
+      expect(f.starts()).toBe(0);
+    }
+  });
+
   test.each(["persisted", "missing"])(
     "durably archives unknown turns with %s intent without inventing outcomes or replay",
     async (intent) => {
@@ -333,6 +526,92 @@ describe("host-owned conversation transactions", () => {
     ).toMatchObject({ admitted: true, delivered_to: "run-1" });
   });
 
+  test.each([false, true])(
+    "restart scopes steering reconciliation to its persisted destination, consumed: %s",
+    async (consumed) => {
+      const f = await fixture();
+      const prepared = await f.prepareTurn(input());
+      await prepared.commitIntent();
+      await f.acceptOperator(input(1, "steer_targeted"), "run-1");
+      const stored = (await f.base.get("conversation"))!;
+      stored.turns.unshift({
+        kind: "conversation",
+        execution_id: "unrelated-missing-trace",
+        user_preview: "older work",
+        status: "error",
+      });
+      await f.base.saveHost(stored);
+      const base = createSessionService({
+        dir: f.root,
+        owner: "owner",
+        projectId: "project",
+        workspaceId: "workspace",
+      });
+      let available = false;
+      const reads: string[] = [];
+      const recovered = createHostedSessionCoordinator({
+        sessions: base,
+        projectId: "project",
+        workspaceId: "workspace",
+        occupied: () => false,
+        redact: (text) => text,
+        async prepareExecution() {
+          throw new Error("receipt recovery must not execute work");
+        },
+        async readRun(id) {
+          reads.push(id);
+          if (!available) return null;
+          return {
+            status: "completed",
+            events: consumed ? [{ type: "steering_applied", id: "steer_targeted" }] : [],
+          } as unknown as RunDetail;
+        },
+      });
+      expect((await base.get("conversation"))!.operator_intents![0]!.steering_target).toBe("run-1");
+      expect(
+        (await recovered.pendingOperators("conversation")).map(
+          (value) => value.params.execution_id,
+        ),
+      ).toEqual(["steer_targeted"]);
+      await expect(
+        recovered.prepareOperator("conversation", "steer_targeted"),
+      ).rejects.toMatchObject({
+        code: "unavailable",
+        details: { submission: "recovering" },
+      });
+      await expect(
+        recovered.deliverOperator("conversation", "steer_targeted", "foreign-run"),
+      ).rejects.toMatchObject({ code: "conflict" });
+      await expect(
+        recovered.acceptOperator(input(1, "steer_targeted"), "foreign-run"),
+      ).rejects.toMatchObject({ code: "conflict" });
+      expect(await recovered.discoverDeliveries(recoveryRow())).toEqual([]);
+      available = true;
+      expect(await recovered.discoverDeliveries(recoveryRow())).toEqual(
+        consumed ? ["steer_targeted"] : [],
+      );
+      if (consumed) {
+        await expect(
+          recovered.prepareOperator("conversation", "steer_targeted"),
+        ).rejects.toMatchObject({
+          details: { submission: "admitted", execution_id: "run-1" },
+        });
+        expect((await base.get("conversation"))!.operator_intents![0]).toMatchObject({
+          admitted: true,
+          delivered_to: "run-1",
+          steering_target: "run-1",
+        });
+      } else {
+        expect(
+          (await recovered.prepareOperator("conversation", "steer_targeted")).params.execution_id,
+        ).toBe("steer_targeted");
+      }
+      expect((await recovered.pendingOperators("conversation")).length).toBe(consumed ? 0 : 1);
+      expect(reads).toEqual(["run-1", "run-1", "run-1", "run-1"]);
+      expect(f.starts()).toBe(0);
+    },
+  );
+
   test("preserves accepted operator submissions across a coordinated save", async () => {
     const f = await fixture();
     expect(await f.acceptOperator(input(1, "operator-1"))).toBe("pending");
@@ -352,7 +631,9 @@ describe("host-owned conversation transactions", () => {
   });
 
   test("prepares an unconfirmed steer as its own turn when the history is silent about it", async () => {
-    const f = await fixture({ readRun: async () => null });
+    const f = await fixture({
+      readRun: async () => ({ status: "completed", events: [] }) as unknown as RunDetail,
+    });
     const prepared = await f.prepareTurn(input(1, "run-1"));
     await prepared.commitIntent();
     expect(await f.acceptOperator(input(1, "steer_quiet"))).toBe("pending");
@@ -362,6 +643,89 @@ describe("host-owned conversation transactions", () => {
       session_id: "conversation",
       params: { execution_id: "steer_quiet", continue_from: "run-1" },
     });
+  });
+
+  test.each(["missing", "running", "damaged", "reader_absent"] as const)(
+    "retains steering when canonical history is %s and retries only the lookup",
+    async (condition) => {
+      let restored = false;
+      const f = await fixture({
+        readRun:
+          condition === "reader_absent"
+            ? undefined
+            : async () => {
+                if (!restored && condition === "missing") return null;
+                return {
+                  status: !restored && condition === "running" ? "running" : "completed",
+                  events: [],
+                  ...(!restored && condition === "damaged"
+                    ? { recovery: { skipped_lines: 1, synthesized_tool_calls: 0 } }
+                    : {}),
+                } as unknown as RunDetail;
+              },
+      });
+      const prepared = await f.prepareTurn(input());
+      await prepared.commitIntent();
+      await f.acceptOperator(input(1, "steer_uncertain"));
+      await expect(f.prepareOperator("conversation", "steer_uncertain")).rejects.toMatchObject({
+        code: "unavailable",
+        details: { submission: "recovering", execution_id: "steer_uncertain" },
+      });
+      const stored = (await f.base.get("conversation"))!;
+      expect(stored.operator_intents?.[0]?.admitted).not.toBe(true);
+      expect(f.starts()).toBe(0);
+      await f.acceptOperator(input(1, "independent-operator"));
+      expect(
+        (await f.prepareOperator("conversation", "independent-operator")).params.execution_id,
+      ).toBe("independent-operator");
+      expect(
+        (await f.base.get("conversation"))!.operator_intents?.find(
+          (intent) => intent.execution_id === "steer_uncertain",
+        )?.admitted,
+      ).not.toBe(true);
+      restored = true;
+      if (condition !== "reader_absent")
+        expect(
+          (await f.prepareOperator("conversation", "steer_uncertain")).params.execution_id,
+        ).toBe("steer_uncertain");
+    },
+  );
+
+  test("finds steering consumption older than sixteen turns despite a missing newer trace", async () => {
+    const f = await fixture({
+      readRun: async (id) =>
+        id === "run-1"
+          ? ({
+              status: "completed",
+              events: [
+                {
+                  type: "steering_applied",
+                  id: "steer_old",
+                  at: 5,
+                  agent: "lead",
+                  message: "Synthetic",
+                },
+              ],
+            } as unknown as RunDetail)
+          : null,
+    });
+    const prepared = await f.prepareTurn(input());
+    await prepared.commitIntent();
+    await f.acceptOperator(input(1, "steer_old"));
+    const stored = (await f.base.get("conversation"))!;
+    const first = stored.turns[0]!;
+    for (let index = 0; index < 20; index++)
+      stored.turns.push({ ...first, execution_id: `later-${index}` });
+    await f.base.saveHost(stored);
+    await expect(f.prepareOperator("conversation", "steer_old")).rejects.toMatchObject({
+      code: "conflict",
+      details: { submission: "admitted", execution_id: "run-1" },
+    });
+    expect((await f.base.get("conversation"))!.operator_intents?.[0]).toMatchObject({
+      admitted: true,
+      delivered_to: "run-1",
+    });
+    expect(f.starts()).toBe(0);
   });
 
   test("inserts pending observations after historical context and before the fresh prompt", async () => {

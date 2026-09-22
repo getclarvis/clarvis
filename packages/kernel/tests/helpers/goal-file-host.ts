@@ -61,6 +61,8 @@ export async function createGoalFileHostFixture(
     preserveRecentTokens?: number;
     budgetTokenLimit?: number;
     formulationTokenLimit?: number;
+    childIterationLimit?: number;
+    maxProviderCalls?: number;
   } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "clarvis-goal-file-host-"));
@@ -119,7 +121,7 @@ export async function createGoalFileHostFixture(
             );
           }
           if (
-            requests.length + stewardRequests.length > 40 ||
+            requests.length + stewardRequests.length > (options.maxProviderCalls ?? 40) ||
             performance.now() - started > timeoutMs
           )
             throw new Error("Goal fixture physical-call or duration limit exceeded");
@@ -291,7 +293,7 @@ export async function createGoalFileHostFixture(
           "---",
           "tools: []",
           "grants: [read_workspace, edit_workspace, run_commands]",
-          "iteration_limit: 12",
+          `iteration_limit: ${String(profile === "helper" ? (options.childIterationLimit ?? 12) : 12)}`,
           "retry: {max_retries: 0}",
           ...(profile === "solo" ? ["can_spawn: [helper]"] : []),
           "---",

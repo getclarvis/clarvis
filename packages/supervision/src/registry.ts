@@ -154,6 +154,8 @@ export interface AgentRegistryOptions {
   onActivity?: () => void;
   /** Internal deterministic-test seam; production uses an unref'ed host timer. */
   scheduleTimeout?: (callback: () => void, delayMs: number) => () => void;
+  /** Clock used by the bounded failure-circuit probe; production uses wall time. */
+  now?: () => number;
 }
 
 /** The full registry: the producer port plus everything the tools read. */
@@ -173,6 +175,8 @@ export interface AgentRegistry extends AgentRegistryPort {
   failingStreakExceeded(): boolean;
   /** How many consecutive technical failures stand in that streak right now. */
   consecutiveFailures(): number;
+  /** Claim the single recovery probe after a closed circuit has cooled down; success rearms it. */
+  claimFailureProbe(): boolean;
   /** Refuse further registrations; the run is finishing. */
   seal(): void;
   sealed(): boolean;
@@ -237,6 +241,8 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
   const waiters = new Set<(info: AgentSettledInfo) => void>();
   let notices: AgentNotice[] = [];
   let consecutiveFailures = 0;
+  let failureProbeAt = 0;
+  let failureProbeUsed = false;
   let isSealed = false;
 
   const scheduleTimeout =
@@ -367,8 +373,13 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
     if (s.tokens !== undefined) r.tokens = s.tokens;
     r.lastActivityAt = Date.now();
 
-    if (s.status === "completed") consecutiveFailures = 0;
-    else if (s.status === "failed") consecutiveFailures += 1;
+    if (s.status === "completed") {
+      consecutiveFailures = 0;
+      failureProbeUsed = false;
+    } else if (s.status === "failed") {
+      consecutiveFailures += 1;
+      failureProbeAt = (opts.now ?? Date.now)() + 30_000;
+    }
     const outcome = s.result === undefined ? "" : `: ${s.result.slice(0, 400)}`;
     notices.push({
       text: `[agents] ${noticeLabel(r)} ${s.status}${outcome}`,
@@ -635,6 +646,18 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
       consecutiveFailures >= limits.maxConsecutiveFailedChildren,
 
     consecutiveFailures: () => consecutiveFailures,
+    claimFailureProbe() {
+      if (
+        isSealed ||
+        failureProbeUsed ||
+        limits.maxConsecutiveFailedChildren <= 0 ||
+        consecutiveFailures < limits.maxConsecutiveFailedChildren ||
+        (opts.now ?? Date.now)() < failureProbeAt
+      )
+        return false;
+      failureProbeUsed = true;
+      return true;
+    },
 
     seal(): void {
       isSealed = true;

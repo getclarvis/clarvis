@@ -9,6 +9,7 @@ import {
   suppressSecondaryRejection,
   levelEnabled,
   NOOP_LOGGER,
+  PersistenceError,
   type AgentProfile,
   type ProviderConfig,
   type Logger,
@@ -208,6 +209,8 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
   ): PreparedKernelRun;
   /** Canonical evidence for host-owned capabilities; raw trace authority is never a protocol service. */
   readRunTrace(executionId: string, owner?: string): readonly TraceEvent[] | undefined;
+  /** Evidence replay includes the active owner-scoped journal without loading its full history. */
+  readRunEvidenceTrace(executionId: string, owner?: string): Iterable<TraceEvent> | undefined;
   /** Build the host-owned isolated Goal formulation runtime for one authenticated owner. */
   goalAgentRuntime(owner?: string): {
     workspaceReadAvailable: boolean;
@@ -1056,6 +1059,18 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       residentOwner(owner, false).prepareRun(params, goal, goalCreation),
     readRunTrace: (executionId, owner = defaultOwner) =>
       runDeps.traceStore.getById(residentOwner(owner, false).stateOwner, executionId)?.trace.events,
+    readRunEvidenceTrace(executionId, owner = defaultOwner) {
+      const stateOwner = residentOwner(owner, false).stateOwner;
+      if (runDeps.traceStore.readEvents !== undefined)
+        return runDeps.traceStore.readEvents(stateOwner, executionId);
+      const record = runDeps.traceStore.getById(stateOwner, executionId);
+      if (
+        record?.recovery !== undefined &&
+        (record.recovery.skipped_lines > 0 || record.recovery.synthesized_tool_calls > 0)
+      )
+        throw new PersistenceError("Incomplete recovered trace cannot supply complete evidence");
+      return record?.trace.events;
+    },
     goalStewardRuntime(workTokenLimit, ttl, owner = defaultOwner) {
       const merged = structuredClone(opts.configStore.readSettings().merged) as Record<
         string,

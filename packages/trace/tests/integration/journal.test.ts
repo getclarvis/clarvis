@@ -15,6 +15,7 @@ import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createJsonTraceStore,
+  createTraceVisibilityView,
   MAX_TRACE_RECOVERY_JOURNAL_BYTES,
   MAX_TRACE_RECOVERY_SCAN_ENTRIES,
   type JournalingTraceStore,
@@ -58,6 +59,61 @@ function makeStale(path: string): void {
 }
 
 describe("createRunJournal", () => {
+  it("replays a stable active journal prefix through the existing visibility boundary", () => {
+    const journal = store.openJournal({ header: header("live-read") });
+    try {
+      const first = leadIteration(1, 10, 2);
+      journal.append(first);
+      const publicView = createTraceVisibilityView(store, "public");
+      const prefix = publicView.readEvents!(OWNER, "live-read")!;
+      journal.append(leadIteration(2, 20, 3));
+      expect([...prefix]).toEqual([first]);
+      expect([...prefix]).toEqual([first]);
+      expect([...publicView.readEvents!(OWNER, "live-read")!]).toHaveLength(2);
+      expect(
+        createTraceVisibilityView(store, "internal").readEvents!(OWNER, "live-read"),
+      ).toBeUndefined();
+      expect(publicView.readEvents!("another-owner", "live-read")).toBeUndefined();
+    } finally {
+      journal.close();
+    }
+  });
+
+  it("refuses a partial journal tail for evidence instead of silently salvaging it", () => {
+    const journal = store.openJournal({ header: header("partial-read") });
+    try {
+      journal.append(leadIteration(1, 10, 2));
+      writeFileSync(journalPath("partial-read"), '{"type":', { flag: "a" });
+      expect(() => [...store.readEvents!(OWNER, "partial-read")!]).toThrow("incomplete");
+    } finally {
+      journal.close();
+    }
+  });
+
+  it("bounds each evidence replay line without imposing a total event limit", () => {
+    const journal = store.openJournal({ header: header("bounded-read") });
+    try {
+      for (let i = 0; i < 1024; i++) journal.append(leadIteration(i, 10, 2));
+      expect([...store.readEvents!(OWNER, "bounded-read")!]).toHaveLength(1024);
+      journal.append({ type: "large_contributed", payload: "x".repeat(8 * 1024 * 1024) });
+      expect(() => [...store.readEvents!(OWNER, "bounded-read")!]).toThrow("bound");
+    } finally {
+      journal.close();
+    }
+  });
+
+  it("refuses damaged recovered traces as complete evidence", async () => {
+    await store.insert(
+      makeExecutionRecord({
+        id: "damaged-evidence",
+        owner_key_name: OWNER,
+        recovery: { skipped_lines: 1, synthesized_tool_calls: 0 },
+      }),
+    );
+    expect(() => store.readEvents!(OWNER, "damaged-evidence")).toThrow(
+      "Incomplete recovered trace",
+    );
+  });
   it("writes a versioned header line and one line per appended event", () => {
     const path = join(dir, "solo.jsonl");
     const journal = createRunJournal({ path, header: header("exec-1") });

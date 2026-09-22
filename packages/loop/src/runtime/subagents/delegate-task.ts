@@ -312,6 +312,9 @@ export interface SpawnResult {
  * selected images, and any advisor messages to append to the result.
  */
 export interface PreparedSpawn {
+  /** Original validated brief for publication only after execution admission. */
+  title: string;
+  task: string;
   selectedProfile: ResolvedSubagentProfile;
   subagentInstanceId: string;
   registry: NamespacedRegistry;
@@ -334,7 +337,7 @@ export type PrepareSpawnResult =
 
 /**
  * Phase one of a delegation: validates the arguments, runs the pre-delegate
- * hooks, claims the tracked task, and assembles everything needed to run the
+ * hooks and assembles everything needed to run the
  * sub-agent — without yet running it.
  *
  * @param rawArgs - the model-supplied child-spawn arguments.
@@ -344,9 +347,8 @@ export type PrepareSpawnResult =
  * @remarks Reconciles the tracker first so `task_id` validation sees external edits.
  *   A `preDelegateTask` hook that throws fails closed (spawn denied); advisory
  *   hook messages are carried through to be appended to the sub-agent's result.
- *   On success it marks the tracked task spawned, records `delegation_created` on
- *   both the trace and the capability channel, scopes the tool registry to the
- *   profile, activates the profile's capabilities, and appends the tracked task's
+ *   On success it reserves an identity without publishing creation or claiming a task,
+ *   scopes the tool registry to the profile, activates the profile's capabilities, and appends the tracked task's
  *   exit condition to the task text when present.
  *
  *   **A spawn's brief is not rewritable here, and a hook that tries is refused
@@ -432,33 +434,7 @@ export async function prepareSpawn(
   const adviseMessages = sweep.advise;
 
   const selectedProfile = ctx.profiles.get(validated.profile)!;
-  if (ctx.tasks && taskId !== undefined) {
-    await ctx.tasks.markSpawned(taskId);
-  }
-
   const subagentInstanceId = randomUUID();
-  ctx.trace.record("delegation_created", {
-    delegation_id: subagentInstanceId,
-    title: validated.title,
-    task: validated.task,
-    tools: selectedProfile.tools,
-    ...(taskId !== undefined ? { task_id: taskId } : {}),
-    profile: validated.profile,
-  });
-  ctx.emitCapabilityEvent?.(
-    projected({
-      capability: "delegation",
-      kind: "delegation_created",
-      detail: {
-        delegation_id: subagentInstanceId,
-        ...(taskId === undefined ? {} : { task_id: taskId }),
-        title: validated.title,
-        task: validated.task,
-        profile: validated.profile,
-        tools: selectedProfile.tools,
-      },
-    }),
-  );
 
   const registry = buildRegistry(
     selectTools(ctx.opened, selectedProfile.tools),
@@ -474,6 +450,8 @@ export async function prepareSpawn(
   return {
     ok: true,
     prepared: {
+      title: validated.title,
+      task: validated.task,
       selectedProfile,
       subagentInstanceId,
       registry,
@@ -633,6 +611,24 @@ export async function runPreparedSubagent(
     taskId,
     images,
   } = prepared;
+  ctx.signal?.throwIfAborted();
+  if (ctx.tasks && taskId !== undefined) {
+    if (!(await ctx.tasks.markSpawned(taskId)))
+      throw new Error("Tracked task is no longer available for this delegation");
+    ctx.tasks.noteSpawned(taskId);
+  }
+  const creation = {
+    delegation_id: subagentInstanceId,
+    title: prepared.title,
+    task: prepared.task,
+    tools: selectedProfile.tools,
+    ...(taskId === undefined ? {} : { task_id: taskId }),
+    profile: selectedProfile.name,
+  };
+  ctx.trace.record("delegation_created", creation);
+  ctx.emitCapabilityEvent?.(
+    projected({ capability: "delegation", kind: "delegation_created", detail: creation }),
+  );
   const effectiveModelRef = selectedProfile.modelRef;
   const effectiveMaxIterations = resolveIterationCap(selectedProfile, ctx.iterationLimitDefault);
   const withAdvise = (text: string): string => {
@@ -753,7 +749,7 @@ export async function runPreparedSubagent(
     ctx.logger,
   );
 
-  const aborted = ctx.signal?.aborted === true;
+  const aborted = ctx.signal?.aborted === true || outcome.status === "cancelled";
   const attemptOutcome: SpawnAttemptOutcome = aborted
     ? "cancelled"
     : outcome.status === "completed"
@@ -832,6 +828,11 @@ function mapOutcomeToText(outcome: SubagentOutcome): string {
     case "cancelled":
       return `Sub-agent cancelled. Partial result: ${outcome.partialText}`;
     case "error":
-      return `Sub-agent error: code=${outcome.code}, message=${outcome.message}`;
+      return (
+        `Sub-agent error: code=${outcome.code}, message=${outcome.message}` +
+        (outcome.partialText.length === 0
+          ? ""
+          : `\nUnverified partial result: ${outcome.partialText}`)
+      );
   }
 }

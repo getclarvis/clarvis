@@ -12,7 +12,11 @@ Workspace writes, shell, external effects, skills, workflows, tasks, and work-ex
 </goal_formulation>`;
 
 /** Model-facing projection excludes the session audit and private operation receipts. */
-export function goalModelView({ goal, evidence }: GoalRuntimeSnapshot): Record<string, unknown> {
+export function goalModelView({
+  goal,
+  evidence,
+  evidence_unavailable,
+}: GoalRuntimeSnapshot): Record<string, unknown> {
   const run = goal.runs.at(-1);
   return {
     goal_id: goal.goal_id,
@@ -36,6 +40,7 @@ export function goalModelView({ goal, evidence }: GoalRuntimeSnapshot): Record<s
     progress: run?.progress,
     checkpoint: run?.checkpoint,
     evidence,
+    ...(evidence_unavailable === undefined ? {} : { evidence_unavailable }),
     accepted_human_criteria: goal.human_acceptances
       .filter((acceptance) => acceptance.objective_revision === goal.objective_revision)
       .map((acceptance) => acceptance.criterion_id),
@@ -43,7 +48,7 @@ export function goalModelView({ goal, evidence }: GoalRuntimeSnapshot): Record<s
 }
 
 /** Compact current reminder for a named stable block; old publications remain historical. */
-export function goalContextBlock({ goal }: GoalRuntimeSnapshot): string {
+export function goalContextBlock({ goal, evidence_unavailable }: GoalRuntimeSnapshot): string {
   const criteria = goal.criteria.map((criterion) => ({
     id: criterion.id,
     kind: criterion.kind,
@@ -63,6 +68,7 @@ export function goalContextBlock({ goal }: GoalRuntimeSnapshot): string {
       assumptions: goal.assumptions.map((item) => item.slice(0, 192)),
       normative_sources: goal.sources,
       status: goal.status,
+      ...(evidence_unavailable === undefined ? {} : { evidence_unavailable }),
     }),
     "Pass one update object to update_goal: progress to record work, checkpoint with summary and next_step to request " +
       "a stage ending, or candidate with every criterion before the normal final answer. " +

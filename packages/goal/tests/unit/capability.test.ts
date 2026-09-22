@@ -530,7 +530,7 @@ describe("host-bound goal capability", () => {
       await contribution.gates![0]!.check({ mode: "text", text: "A premature answer" }),
     ).toMatchObject({
       kind: "terminal",
-      result: { status: "error", error: { code: "goal_control_failed" } },
+      result: { status: "error", error: { code: "goal_finalization_conflict" } },
     });
     expect(f.traceEntries.filter((entry) => entry.kind === "goal_finalization_recovery")).toEqual(
       [],
@@ -853,6 +853,26 @@ describe("host-bound goal capability", () => {
     expect(f.blocks).toHaveLength(1);
   });
 
+  it("keeps the iteration active when only the evidence catalog is unavailable", async () => {
+    const f = fixture();
+    const contribution = await f.attach();
+    const read = f.port.read.bind(f.port);
+    f.port.read = async () => ({ ...(await read()), evidence_unavailable: "resource_exhausted" });
+    expect(await contribution.hooks!.beforeIteration!()).toBeUndefined();
+    expect(f.blocks.at(-1)!.content).toContain('"evidence_unavailable":"resource_exhausted"');
+    const result = await contribution.handlers![0]!.handle(
+      { id: "read", name: "get_goal", arguments: {} },
+      1,
+    );
+    expect(result).toMatchObject({
+      kind: "result",
+      text: expect.stringContaining("evidence_unavailable"),
+    });
+    f.port.read = read;
+    expect(await contribution.hooks!.beforeIteration!()).toBeUndefined();
+    expect(f.blocks.at(-1)!.content).not.toContain("evidence_unavailable");
+  });
+
   it("does not publish a delayed snapshot after iteration cancellation", async () => {
     const f = fixture();
     const contribution = await f.attach();
@@ -1126,7 +1146,7 @@ describe("host-bound goal capability", () => {
     expect(f.traceEntries).toEqual([]);
   });
 
-  it("never recovers a state conflict that survives the re-read", async () => {
+  it("ends a persistent snapshot conflict with a distinct recoverable stage cause", async () => {
     const f = fixture({
       validateCompletion: async () => ({
         valid: false,
@@ -1140,11 +1160,11 @@ describe("host-bound goal capability", () => {
     const gate = contribution.gates![0]!;
 
     // A conflict says nothing about the candidate, so it is not answered with a
-    // candidate-deficiency orientation: stopping with host attention is the honest
+    // candidate-deficiency orientation: stopping with a distinct stage cause is the honest
     // outcome, and nothing is recorded as a recovery.
     expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({
       kind: "terminal",
-      result: { status: "error", error: { code: "goal_control_failed" } },
+      result: { status: "error", error: { code: "goal_finalization_conflict" } },
     });
     expect(f.traceEntries).toEqual([]);
   });
@@ -1355,6 +1375,20 @@ describe("host-bound goal attachment capability", () => {
     expect(
       await contribution.handlers![0]!.handle({ id: "get", name: "get_goal", arguments: {} }, 2),
     ).toMatchObject({ kind: "result" });
+    expect(
+      await contribution.handlers![0]!.handle(
+        {
+          id: "blocked",
+          name: "update_goal",
+          arguments: { update: { action: "blocked", reason: "Synthetic external boundary" } },
+        },
+        3,
+      ),
+    ).toMatchObject({ kind: "terminal", result: { error: { code: "goal_blocked" } } });
+    expect(f.traceEntries.at(-1)).toMatchObject({
+      kind: "tool_call",
+      detail: { call_id: "blocked", name: "update_goal", error: null },
+    });
   });
 
   it("answers a refused attachment as a corrigible result instead of ending the turn", async () => {

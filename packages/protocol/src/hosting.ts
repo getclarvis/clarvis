@@ -167,6 +167,8 @@ export interface HostedActivityLease {
  */
 export interface HostingService {
   list(): Promise<HostedRunRef[]>;
+  /** Requeue durably accepted input under this authenticated controller, without replaying admitted runs. */
+  resumePending(sessionId: string): Promise<HostedRunRef | null>;
   start(input: StartHostedTurnParams): Promise<HostedRunAttachment>;
   attach(input: AttachHostedRunParams): Promise<HostedRunAttachment>;
   /** Acquire authority for an existing owned observation without replacing its snapshot or stream. */

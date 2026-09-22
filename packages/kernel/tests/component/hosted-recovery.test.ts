@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { HostedRunRef, HostedRecoveryResolution } from "@clarvis/protocol";
-import { createHostedRegistry, type HostedRegistryState } from "../../src/hosting/registry.ts";
+import {
+  createHostedRegistry,
+  type HostedRegistryState,
+  type HostedRegistryOptions,
+} from "../../src/hosting/registry.ts";
+import { kernelError } from "../../src/core/errors.ts";
 import { decodeHostedRegistryState } from "../../src/hosting/state.ts";
 
 function ref(id: string, state: HostedRunRef["execution_state"]): HostedRunRef {
@@ -40,7 +45,16 @@ function state(): HostedRegistryState {
   };
 }
 
-function fixture(initialState = state()) {
+function fixture(
+  initialState = state(),
+  settlementReconciled?: (run: HostedRunRef) => Promise<boolean>,
+  deliverOperator?: (session: string, intent: string, execution: string) => Promise<void>,
+  deliveryReconciled?: (session: string, intent: string, execution: string) => Promise<boolean>,
+  recoverSettlement?: HostedRegistryOptions["recoverSettlement"],
+  clock: () => number = () => 20,
+  scheduleRecovery?: HostedRegistryOptions["scheduleRecovery"],
+  discoverDeliveries?: HostedRegistryOptions["discoverDeliveries"],
+) {
   const commits: HostedRegistryState[] = [];
   const removed: Array<[string, string]> = [];
   const audits: HostedRecoveryResolution[] = [];
@@ -52,7 +66,14 @@ function fixture(initialState = state()) {
     hostGeneration: "current",
     owner: "owner",
     initialState,
-    now: () => 20,
+    settlementReconciled,
+    recoverSettlement,
+    deliverOperator,
+    deliveryReconciled,
+    discoverDeliveries,
+    async recoveryWait() {},
+    now: clock,
+    scheduleRecovery,
     async prepare() {
       throw new Error("recovery must never prepare execution");
     },
@@ -91,6 +112,489 @@ function fixture(initialState = state()) {
 }
 
 describe("host generation recovery", () => {
+  test("discovers a lost steering checkpoint after restart and reconciles without replay", async () => {
+    let consumed = false;
+    let writes = 0;
+    const f = fixture(
+      state(),
+      undefined,
+      async (_session, intent, execution) => {
+        expect(intent).toBe("steer_recovered");
+        expect(execution).toBe("complete");
+        expect(f.commits.at(-1)!.runs[0]!.deliveries![0]).toMatchObject({
+          intent_id: intent,
+          state: "ready",
+          attempt: 1,
+        });
+        writes++;
+        consumed = true;
+      },
+      async () => consumed,
+      undefined,
+      undefined,
+      undefined,
+      async (run) => {
+        if (run.execution_id === "interrupted") throw kernelError("unavailable", "missing index");
+        return consumed ? [] : ["steer_recovered"];
+      },
+    );
+    try {
+      await f.registry.sync();
+      await f.registry.sync();
+      expect(writes).toBe(1);
+      expect(f.commits.at(-1)!.runs[0]!.deliveries).toBeUndefined();
+      expect(f.registry.occupied("session-interrupted")).toBe(true);
+      expect(f.registry.occupied("session-complete")).toBe(false);
+    } finally {
+      await f.registry.close();
+    }
+  });
+
+  test.each([false, true])(
+    "future backoff releases sync and wakes its owner, crossing eligibility during sync: %s",
+    async (crossesDeadline) => {
+      let now = 20;
+      const timers: Array<{ delay: number; wake(): void; cancelled: boolean }> = [];
+      const repaired: string[] = [];
+      const initial = state();
+      initial.runs = ["future", "ready"].map((id) => ({
+        run: { ...ref(id, "finishing"), outcome: { status: "completed" as const } },
+        acknowledged: false,
+        settlement: {
+          operation: "reconcile",
+          state: "recovering",
+          attempt: 1,
+          physical_closed: true,
+          controller_epoch: 2,
+          ...(id === "future" ? { next_attempt_at: 200 } : {}),
+        },
+      }));
+      const f = fixture(
+        initial,
+        async () => false,
+        undefined,
+        undefined,
+        async (run) => {
+          repaired.push(run.execution_id);
+          if (crossesDeadline && run.execution_id === "ready") now = 200;
+          return true;
+        },
+        () => now,
+        (delay, wake) => {
+          const timer = { delay, wake, cancelled: false };
+          timers.push(timer);
+          return () => {
+            timer.cancelled = true;
+          };
+        },
+      );
+      try {
+        await f.registry.sync();
+        expect(repaired).toEqual(["ready"]);
+        expect(f.registry.occupied("session-ready")).toBe(false);
+        expect(f.registry.occupied("session-future")).toBe(true);
+        expect(timers).toHaveLength(1);
+        expect(timers[0]!.delay).toBe(crossesDeadline ? 0 : 180);
+        if (!crossesDeadline) {
+          await f.registry.sync();
+          expect(timers[0]!.cancelled).toBe(true);
+          expect(repaired).toEqual(["ready"]);
+        }
+        now = 200;
+        timers.at(-1)!.wake();
+        await f.registry.sync();
+        expect(repaired).toEqual(["ready", "future"]);
+        expect(f.registry.occupied("session-future")).toBe(false);
+      } finally {
+        await f.registry.close();
+      }
+    },
+  );
+
+  test("closing cancels a future delivery wake and prevents late recovery", async () => {
+    let wake: (() => void) | undefined;
+    let cancelled = false;
+    let deliveries = 0;
+    const initial = state();
+    initial.runs[0]!.deliveries = [
+      {
+        intent_id: "steer_future",
+        controller_epoch: 2,
+        state: "recovering",
+        attempt: 1,
+        next_attempt_at: 200,
+      },
+    ];
+    const f = fixture(
+      initial,
+      undefined,
+      async () => {
+        deliveries++;
+      },
+      async () => false,
+      undefined,
+      () => 20,
+      (_delay, callback) => {
+        wake = callback;
+        return () => {
+          cancelled = true;
+        };
+      },
+    );
+    try {
+      await f.registry.sync();
+      expect(deliveries).toBe(0);
+      expect(wake).toBeDefined();
+      await f.registry.close();
+      expect(cancelled).toBe(true);
+      const commits = f.commits.length;
+      wake!();
+      await f.registry.sync();
+      expect(f.commits).toHaveLength(commits);
+      expect(deliveries).toBe(0);
+    } finally {
+      await f.registry.close();
+    }
+  });
+
+  test("restart reconciles durable consumption receipts without starting or restoring authority", async () => {
+    const initial = state();
+    initial.runs[1]!.deliveries = [
+      { intent_id: "steer_pending", controller_epoch: 2, state: "recovering", attempt: 1 },
+    ];
+    const delivered: string[] = [];
+    const f = fixture(
+      decodeHostedRegistryState(initial),
+      undefined,
+      async (session, intent, execution) => {
+        delivered.push(`${session}:${intent}:${execution}`);
+      },
+    );
+    try {
+      await f.registry.sync();
+      expect(delivered).toEqual(["session-interrupted:steer_pending:interrupted"]);
+      expect(f.commits.at(-1)!.runs[1]!.deliveries).toBeUndefined();
+      expect(f.registry.occupied("session-interrupted")).toBe(true);
+      await f.registry.sync();
+      expect(delivered).toHaveLength(1);
+    } finally {
+      await f.registry.close();
+    }
+  });
+
+  test("canonical consumption proof repairs an exhausted receipt without another write", async () => {
+    const initial = state();
+    initial.runs[0]!.deliveries = [
+      {
+        intent_id: "steer_pending",
+        controller_epoch: 2,
+        state: "waiting_external",
+        attempt: 3,
+        cause: "receipt_unconfirmed",
+      },
+    ];
+    let checks = 0;
+    const f = fixture(
+      initial,
+      undefined,
+      async () => {
+        throw new Error("must not repeat receipt write");
+      },
+      async (_session, intent, execution) => {
+        checks++;
+        expect(intent).toBe("steer_pending");
+        expect(execution).toBe("complete");
+        return true;
+      },
+    );
+    try {
+      f.failCommit(true);
+      await expect(f.registry.sync()).rejects.toThrow("index write failed");
+      f.failCommit(false);
+      await f.registry.sync();
+      expect(checks).toBe(2);
+      expect(f.commits.at(-1)!.runs[0]!.deliveries).toBeUndefined();
+    } finally {
+      await f.registry.close();
+    }
+  });
+
+  test("a permanent delivery proof failure waits locally without rewriting consumption", async () => {
+    const initial = state();
+    for (const entry of initial.runs)
+      entry.deliveries = [
+        {
+          intent_id: `steer_${entry.run.execution_id}`,
+          controller_epoch: 2,
+          state: "ready",
+          attempt: 0,
+        },
+      ];
+    let restored = false;
+    let writes = 0;
+    const f = fixture(
+      initial,
+      undefined,
+      async () => {
+        writes++;
+      },
+      async (_session, _intent, execution) => {
+        if (execution === "complete" && !restored)
+          throw kernelError("conflict", "injected receipt lookup failure");
+        return true;
+      },
+    );
+    try {
+      await f.registry.sync();
+      expect(f.commits.at(-1)!.runs[0]!.deliveries?.[0]).toMatchObject({
+        state: "waiting_external",
+        cause: "operation_failed",
+        attempt: 0,
+      });
+      expect(f.commits.at(-1)!.runs[1]!.deliveries).toBeUndefined();
+      await f.registry.sync();
+      expect(writes).toBe(0);
+      restored = true;
+      await f.registry.sync();
+      expect(f.commits.at(-1)!.runs[0]!.deliveries).toBeUndefined();
+      expect(writes).toBe(0);
+    } finally {
+      await f.registry.close();
+    }
+  });
+
+  test("pending receipt identities are bounded and cannot repeat within a run", () => {
+    const initial = state();
+    const receipt = {
+      intent_id: "steer_pending",
+      controller_epoch: 2,
+      state: "ready" as const,
+      attempt: 0,
+    };
+    initial.runs[0]!.deliveries = [receipt, receipt];
+    expect(() => decodeHostedRegistryState(initial)).toThrow("duplicate identities");
+    initial.runs[0]!.deliveries = Array.from({ length: 17 }, (_, index) => ({
+      ...receipt,
+      intent_id: `steer_${index}`,
+    }));
+    expect(() => decodeHostedRegistryState(initial)).toThrow("invalid");
+  });
+
+  test("repairs missing canonical settlement before releasing occupancy and coalesces restart synchronization", async () => {
+    const initial = state();
+    initial.runs[1]!.run.execution_state = "finishing";
+    initial.runs[1]!.run.outcome = { status: "completed" };
+    initial.runs[1]!.settlement = {
+      operation: "reconcile",
+      state: "ready",
+      attempt: 1,
+      physical_closed: true,
+      controller_epoch: 2,
+    };
+    let canonical = false;
+    let repairs = 0;
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const f = fixture(
+      initial,
+      async () => canonical,
+      undefined,
+      undefined,
+      async (run, checkpoint) => {
+        repairs++;
+        expect(run.execution_id).toBe("interrupted");
+        expect(checkpoint.physical_closed).toBe(true);
+        entered.resolve();
+        await release.promise;
+        canonical = true;
+        return true;
+      },
+    );
+    try {
+      f.failCommit(true);
+      const first = f.registry.sync();
+      const second = f.registry.sync();
+      const results = Promise.allSettled([first, second]);
+      await entered.promise;
+      expect(f.registry.occupied("session-interrupted")).toBe(true);
+      release.resolve();
+      expect((await results).map((result) => result.status)).toEqual(["rejected", "rejected"]);
+      expect(repairs).toBe(1);
+      expect(f.registry.occupied("session-interrupted")).toBe(true);
+      f.failCommit(false);
+      await f.registry.sync();
+      expect(repairs).toBe(1);
+      expect(f.registry.occupied("session-interrupted")).toBe(false);
+      expect(f.commits.at(-1)!.runs[1]!.run.execution_state).toBe("closed");
+    } finally {
+      release.resolve();
+      await f.registry.close();
+    }
+  });
+
+  test("restart repair failures remain scoped and exhaust their persisted allowance", async () => {
+    for (const code of ["unavailable", "conflict"] as const) {
+      const initial = state();
+      initial.runs[1]!.run.execution_state = "finishing";
+      initial.runs[1]!.run.outcome = { status: "completed" };
+      initial.runs[1]!.settlement = {
+        operation: "reconcile",
+        state: "ready",
+        attempt: 1,
+        physical_closed: true,
+        controller_epoch: 2,
+      };
+      let attempts = 0;
+      const f = fixture(
+        initial,
+        async () => false,
+        undefined,
+        undefined,
+        async () => {
+          attempts++;
+          throw kernelError(code, "injected canonical failure");
+        },
+      );
+      try {
+        await f.registry.sync();
+        await f.registry.sync();
+        expect(attempts).toBe(code === "unavailable" ? 3 : 1);
+        expect(f.registry.occupied("session-interrupted")).toBe(true);
+        expect(f.registry.occupied("session-complete")).toBe(false);
+        expect(f.commits.at(-1)!.runs[1]!.settlement).toMatchObject({
+          state: "waiting_external",
+          cause: code === "unavailable" ? "storage_unavailable" : "operation_failed",
+        });
+      } finally {
+        await f.registry.close();
+      }
+    }
+  });
+
+  test.each(["unavailable", "conflict"] as const)(
+    "contains %s proof lookup failure without preventing another session from recovering",
+    async (code) => {
+      const initial = state();
+      initial.runs = ["unreadable", "healthy"].map((id) => ({
+        run: { ...ref(id, "finishing"), outcome: { status: "completed" as const } },
+        acknowledged: false,
+        settlement: {
+          operation: "reconcile",
+          state: "ready",
+          attempt: 1,
+          physical_closed: true,
+          controller_epoch: 2,
+        },
+      }));
+      let repaired = false;
+      let lookups = 0;
+      let writes = 0;
+      const f = fixture(
+        initial,
+        async (run) => {
+          if (run.execution_id === "healthy" || repaired) return true;
+          lookups++;
+          throw kernelError(code, "injected proof read failure");
+        },
+        undefined,
+        undefined,
+        async () => {
+          writes++;
+          return true;
+        },
+      );
+      try {
+        await f.registry.sync();
+        expect(lookups).toBe(code === "unavailable" ? 3 : 1);
+        expect(writes).toBe(0);
+        expect(f.registry.occupied("session-unreadable")).toBe(true);
+        expect(f.registry.occupied("session-healthy")).toBe(false);
+        const exhausted = f.commits
+          .at(-1)!
+          .runs.find((entry) => entry.run.execution_id === "unreadable")!.settlement;
+        expect(exhausted).toMatchObject({
+          state: "waiting_external",
+          cause: code === "unavailable" ? "storage_unavailable" : "operation_failed",
+        });
+        await f.registry.sync();
+        expect(lookups).toBe(code === "unavailable" ? 4 : 2);
+        expect(
+          f.commits.at(-1)!.runs.find((entry) => entry.run.execution_id === "unreadable")!
+            .settlement,
+        ).toEqual(exhausted);
+        repaired = true;
+        await f.registry.sync();
+        expect(f.registry.occupied("session-unreadable")).toBe(false);
+        expect(writes).toBe(0);
+      } finally {
+        await f.registry.close();
+      }
+    },
+  );
+
+  test("reconciles a lost session acknowledgement before releasing old-generation occupancy", async () => {
+    const initial = state();
+    initial.runs[1]!.run.execution_state = "finishing";
+    initial.runs[1]!.run.outcome = { status: "completed" };
+    initial.runs[1]!.settlement = {
+      operation: "reconcile",
+      state: "ready",
+      attempt: 1,
+      physical_closed: true,
+      controller_epoch: 2,
+    };
+    const inspected: string[] = [];
+    const f = fixture(initial, async (run) => {
+      inspected.push(run.execution_id);
+      return true;
+    });
+    try {
+      f.failCommit(true);
+      await expect(f.registry.sync()).rejects.toThrow("index write failed");
+      expect(f.registry.occupied("session-interrupted")).toBe(true);
+      f.failCommit(false);
+      await f.registry.sync();
+      expect(inspected).toEqual(["interrupted", "interrupted"]);
+      expect(f.registry.occupied("session-interrupted")).toBe(false);
+      expect(f.audits).toEqual([]);
+      expect(f.commits.at(-1)!.runs[1]!.settlement?.operation).toBe("commit_terminal");
+    } finally {
+      await f.registry.close();
+    }
+  });
+
+  test("recovers only a durable physically closed and reconciled settlement without operator attestation", async () => {
+    for (const operation of ["reconcile", "commit_terminal"] as const) {
+      const initial = state();
+      initial.runs[1]!.run.execution_state = "finishing";
+      initial.runs[1]!.run.outcome = { status: "completed" };
+      initial.runs[1]!.settlement = {
+        operation,
+        state: "ready",
+        attempt: 1,
+        physical_closed: true,
+        controller_epoch: 2,
+      };
+      const f = fixture(initial);
+      try {
+        await f.registry.sync();
+        const peer = f.registry.connect("operator");
+        const row = (await peer.service.list()).find(
+          (item) => item.execution_id === "interrupted",
+        )!;
+        expect(row.execution_state).toBe(operation === "commit_terminal" ? "closed" : "unknown");
+        expect(f.registry.occupied(row.session_id)).toBe(operation === "reconcile");
+        expect(f.audits).toEqual([]);
+        expect(
+          f.commits.at(-1)!.runs.find((item) => item.run.execution_id === row.execution_id)!.run
+            .execution_state,
+        ).toBe(row.execution_state);
+      } finally {
+        await f.registry.close();
+      }
+    }
+  });
+
   test("coalesces confirmations and awaits the durable session audit during shutdown", async () => {
     const f = fixture();
     const gate = Promise.withResolvers<void>();

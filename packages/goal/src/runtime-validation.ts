@@ -9,6 +9,7 @@ const snapshotSchema = z
   .object({
     goal: goalRecordSchema,
     evidence: z.array(goalEvidenceRefSchema.extend({ description: z.string().max(512) })).max(32),
+    evidence_unavailable: z.enum(["resource_exhausted", "conflict"]).optional(),
   })
   .strict();
 

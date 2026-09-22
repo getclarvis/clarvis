@@ -300,11 +300,17 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                          * A validation fenced out by a concurrent change says nothing
                          * about the candidate, so it is never answered as a candidate
                          * deficiency: a conflict that survives the one re-read stops the
-                         * stage with host attention instead of consuming the run's
-                         * unproductive allowance.
+                         * stage for host continuation instead of consuming the run's
+                         * unproductive allowance. Authority and budgets are checked again at settlement.
                          */
                         if (ruling.kind === "conflict")
-                          return { kind: "terminal", result: unavailable() };
+                          return {
+                            kind: "terminal",
+                            result: failed(
+                              "goal_finalization_conflict",
+                              "Completion state changed concurrently; the host must re-evaluate current proof",
+                            ),
+                          };
                         if (ruling.kind === "recover") {
                           if (attempt.mode === "text" && (attempt.text?.trim().length ?? 0) === 0)
                             return {

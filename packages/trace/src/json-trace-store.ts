@@ -1,4 +1,5 @@
 import { assertExecutionVisibility } from "./visibility.ts";
+import { readJournalEvents } from "./journal-reader.ts";
 import {
   createReadStream,
   mkdirSync,
@@ -951,6 +952,7 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
   };
 
   const liveJournals = new Set<string>();
+  const journalSources = new Map<string, { path: string; visibility: ExecutionVisibility }>();
 
   /**
    * Yield one value per examined directory entry, carrying a deletion candidate
@@ -1045,6 +1047,7 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
       const path = join(dir, `${header.started_at}.${seg}${JOURNAL_SUFFIX}`);
       const key = `${ownerSegment(header.owner_key_name)}/${seg}`;
       liveJournals.add(key);
+      journalSources.set(key, { path, visibility: header.visibility });
       const inner = createRunJournal({
         path,
         header,
@@ -1055,6 +1058,7 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
         if (released) return;
         released = true;
         liveJournals.delete(key);
+        journalSources.delete(key);
       };
       return {
         append: (event) => {
@@ -1069,6 +1073,22 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
           release();
         },
       };
+    },
+
+    readEvents(owner, id, visibility) {
+      if (readGenerationState(ownerSegment(owner)).state !== "active") return undefined;
+      const source = journalSources.get(`${ownerSegment(owner)}/${ownerSegment(id)}`);
+      if (source !== undefined) {
+        if (visibility !== undefined && source.visibility !== visibility) return undefined;
+        return readJournalEvents(source.path, { owner, id, visibility: source.visibility });
+      }
+      const record = store.getById(owner, id, visibility);
+      if (
+        record?.recovery !== undefined &&
+        (record.recovery.skipped_lines > 0 || record.recovery.synthesized_tool_calls > 0)
+      )
+        throw new PersistenceError("Incomplete recovered trace cannot supply complete evidence");
+      return record?.trace.events;
     },
 
     async recoverOrphans(): Promise<TraceRecoveryReport> {

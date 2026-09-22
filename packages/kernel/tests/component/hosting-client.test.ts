@@ -2,11 +2,29 @@ import { describe, expect, test } from "bun:test";
 import { NOOP_LOGGER } from "@clarvis/capability";
 import type { ElicitationRequest, KernelTransport, RunEvent } from "@clarvis/protocol";
 import { createHostingClient } from "../../src/transport/hosting-client.ts";
+import { decodeHostedNote } from "../../src/transport/hosting-codec.ts";
 import type {
   HostedAttachmentReply,
   HostedObservationNote,
 } from "../../src/transport/hosting-codec.ts";
 import { M, N } from "../../src/transport/wire.ts";
+
+test("hosted error notes require one bounded message field", () => {
+  expect(
+    decodeHostedNote({ subscription_id: "subscription", kind: "error", message: "retry later" }),
+  ).toEqual({ subscription_id: "subscription", kind: "error", message: "retry later" });
+  expect(
+    decodeHostedNote({ subscription_id: "subscription", kind: "error", message: 42 }),
+  ).toBeNull();
+  expect(
+    decodeHostedNote({
+      subscription_id: "subscription",
+      kind: "error",
+      message: "retry later",
+      extra: true,
+    }),
+  ).toBeNull();
+});
 
 function fixture() {
   let notify: ((value: unknown) => void) | undefined;

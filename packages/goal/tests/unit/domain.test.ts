@@ -13,6 +13,7 @@ import {
   goalNetTokens,
   goalRecordSchema,
   pauseGoalForPolicy,
+  prepareGoalSettlement,
   recordGoalCandidate,
   recordGoalCheckpoint,
   recordGoalProgress,
@@ -97,6 +98,81 @@ describe("guided creation intent", () => {
 });
 
 describe("host continuation retirement", () => {
+  it("persists a bounded settlement preparation and rejects ambiguous activity", () => {
+    const state = run(create());
+    const input = {
+      goal_id: "goal-1",
+      execution_id: "run-1",
+      now: 102,
+      preparation: {
+        outcome: "failed" as const,
+        disposition: "final" as const,
+        usage: measured,
+        activity: ["b".repeat(64), "a".repeat(64), "b".repeat(64)],
+      },
+    };
+    const prepared = prepareGoalSettlement(state, input);
+    expect(prepared.current!.runs[0]!.settlement_preparation).toMatchObject({
+      outcome: "failed",
+      activity: ["a".repeat(64), "b".repeat(64)],
+    });
+    expect(
+      prepareGoalSettlement(prepared, {
+        ...input,
+        preparation: prepared.current!.runs[0]!.settlement_preparation!,
+      }),
+    ).toEqual(prepared);
+    expect(() =>
+      prepareGoalSettlement(state, {
+        ...input,
+        preparation: { ...input.preparation, activity_unavailable: true },
+      }),
+    ).toThrow("Unavailable activity");
+    expect(() =>
+      prepareGoalSettlement(state, {
+        ...input,
+        preparation: { ...input.preparation, outcome: "completed" },
+      }),
+    ).toThrow("fresh validation");
+  });
+
+  it("preserves the semantic progress allowance when stage activity is unavailable", () => {
+    const state = run(create());
+    state.current!.no_progress_stages = 2;
+    const next = settle(state, "run-1", measured, {
+      outcome: "failed",
+      cause: "local_limit",
+      activity_unavailable: true,
+    });
+    expect(next.current).toMatchObject({
+      status: "active",
+      no_progress_stages: 2,
+      consumption: { net_tokens: 30 },
+    });
+    expect(next.current!.runs[0]).toMatchObject({
+      phase: "closed",
+      activity_unavailable: true,
+      decision: "continue",
+    });
+    expect(next.current!.runs[0]!.progress_observed).toBeUndefined();
+    expect(next.current!.runs[0]!.activity).toBeUndefined();
+    expect(
+      settle(next, "run-1", measured, {
+        outcome: "failed",
+        cause: "local_limit",
+        activity_unavailable: true,
+      }),
+    ).toEqual(next);
+    const exhausted = run(create());
+    exhausted.current!.auto_continuations = exhausted.current!.limits.max_auto_continuations;
+    expect(
+      settle(exhausted, "run-1", measured, {
+        outcome: "failed",
+        cause: "local_limit",
+        activity_unavailable: true,
+      }).current!.status,
+    ).toBe("usage_limited");
+  });
   it.each(["completed", "cancelled", "failed"] as const)(
     "settles an expired %s stage as usage_limited and retains its measured cost",
     (outcome) => {
@@ -1185,6 +1261,7 @@ describe("goal criteria and completion", () => {
     const cancelled = control(settle(run(create()), "run-1", measured), { kind: "cancel" });
 
     for (const closed of [completed, cancelled]) {
+      closed.current!.auto_continuations = closed.current!.limits.max_auto_continuations;
       const before = structuredClone(closed.current!);
       const reopened = control(closed, { kind: "resume" });
 
@@ -1196,6 +1273,7 @@ describe("goal criteria and completion", () => {
         objective: before.objective,
         limits: before.limits,
         consumption: before.consumption,
+        auto_continuations: before.limits.max_auto_continuations,
         no_progress_stages: 0,
       });
       expect(reopened.current!.candidate).toBeUndefined();

@@ -369,12 +369,25 @@ other capability's.
 | --- | --- | --- |
 | 1 | Classify the call by wire name. Only `delegate_task` reads `task_id`; `spawn_subagent` discards it as surplus input. | `packages/loop/src/runtime/delegation.ts` (`spawnHandler.handle`) |
 | 2 | `tasks?.beforeSpawn(callTaskId)` — the tracked id for `delegate_task`, `undefined` for `spawn_subagent`; `terminal` ends the agent and `refuse` returns a plain result. | `packages/loop/src/runtime/delegation.ts` (`spawnHandler.handle`) |
-| 3 | With a registry present, `failingStreakExceeded()` closes child admission: a plain `progress: false` refusal that names the streak and tells the lead to `agent_poll`, do the work itself, or finish. Nothing is published for this call — no `delegation_created`, no `markSpawned`. | `packages/loop/src/runtime/delegation.ts` (`spawnHandler.handle`) |
+| 3 | With a registry present, `failingStreakExceeded()` closes child admission unless the single eligible background probe is claimed: a plain `progress: false` refusal that names the streak and tells the lead to `agent_poll`, do the work itself, or finish. Nothing is published for this call — no `delegation_created`, no `markSpawned`. | `packages/loop/src/runtime/delegation.ts` (`spawnHandler.handle`) |
 | 4 | Call `prepareSpawn` with the actual `toolName` and `requireTaskId` mode; a throw becomes `Tool '<name>' result: <name> error: <msg>`. | `packages/loop/src/runtime/delegation.ts` (`spawnHandler.handle`) |
 | 5 | A rejection (`!prep.ok`) becomes `Tool '<name>' result: <text>`, `progress: false`. | `packages/loop/src/runtime/delegation.ts` (`spawnHandler.handle`) |
-| 6 | `tasks?.noteSpawned(taskId)` when a task id survived validation | `packages/loop/src/runtime/delegation.ts` |
+| 6 | Return the prepared identity without task or creation publication; physical execution admission owns those effects. | `packages/loop/src/runtime/delegation.ts` |
 | 7 | If `background: true` **and** a registry exists: `spawnInBackground` | `packages/loop/src/runtime/delegation.ts` |
 | 8 | Otherwise return a `deferred` verdict | `packages/loop/src/runtime/delegation.ts` |
+
+A closed streak permits one background recovery probe after 30 seconds without another technical
+failure. The registry claims that probe synchronously, so concurrent calls cannot multiply it.
+Claiming it does not reset the streak or credit semantic progress. A failed, limited or cancelled
+probe remains consumed until a child successfully completes; merely waiting longer does not mint
+another probe. Ordinary local iteration/token budgets and spawn capacity still apply. Inline calls
+cannot consume this probe because their outcome is not owned by the background registry.
+
+Production: `spawnHandler.handle` in
+[delegation.ts](../../packages/loop/src/runtime/delegation.ts) and `claimFailureProbe` in
+[registry.ts](../../packages/supervision/src/registry.ts).
+Test: `admits at most one background recovery probe while the failed circuit remains closed` in
+[delegation-handler.test.ts](../../packages/loop/tests/unit/delegation-handler.test.ts).
 
 The streak is checked *before* preparation on purpose: a refused call must not leave behind the
 artefacts of an admitted child — a published `delegation_created`, a task moved to `in_progress`, or
@@ -395,8 +408,8 @@ no-progress guard, since a refusal credits no progress
 4. `runVerdictHooks` over every hook's `preDelegateTask`, with `onThrow: "deny"` and
    `timeoutMs = LIFECYCLE_GATE_HOOK_TIMEOUT_MS` (30 000 ms, `packages/loop/src/runtime/loop/lifecycle-hooks.ts`). A denial is prefixed with the actual child-spawn tool name.
    `advise` messages are carried on `PreparedSpawn.adviseMessages`.
-5. `tasks.markSpawned(taskId)`.
-6. Mint `subagentInstanceId`, record `delegation_created` on the trace and on the capability channel.
+5. Preserve the validated title and task for later publication.
+6. Mint `subagentInstanceId` without marking a task or recording `delegation_created`.
 7. `buildRegistry(selectTools(ctx.opened, selectedProfile.tools), ctx.capabilityReserved ?? [])` —
    the child's MCP registry is the intersection of the open pool with the profile's `tools`
    (`selectTools` at `packages/mcp-client/src/registry.ts`).
@@ -408,7 +421,10 @@ no-progress guard, since a refusal credits no progress
 
 `runPreparedSubagent` (`packages/loop/src/runtime/subagents/delegate-task.ts`):
 
-1. Resolve the iteration cap and build a `withAdvise` suffixer that appends
+1. After semaphore admission, reject an already-aborted signal before publication. Claim the task
+   with `markSpawned` (a false result refuses execution), call `noteSpawned`, then publish
+   `delegation_created` on trace and capability channels. Resolve the iteration cap and build a
+   `withAdvise` suffixer that appends
    `"\n\n[advisor] <m>"` per advise message.
 2. Pre-seed a zeroed `usageSink`, emit `delegation_started` on the capability channel, and fire `onSubagentStart`.
 3. `runSubagent(buildRunSubagentInput(profile, {...}))`.
@@ -439,6 +455,20 @@ token ledger, a declined soft-limit continuation, an output-token ceiling — st
 "Sub-agent stopped at its own iteration limit after N iterations. Partial result: …". Pinned at
 `packages/loop/tests/unit/run-subagent.test.ts` (both scopes) and
 `packages/loop/tests/integration/iteration-limit-512.test.ts` (the real cap).
+
+Error outcomes preserve `AgentResult.partialText` alongside the typed error code and message.
+The lead-facing error text appends a labelled unverified partial only when that text is nonempty;
+the same result reaches `delegation_failed`, lifecycle observers and background settlement. Error
+status, failed task tracking and technical-failure accounting remain unchanged. Partial text is
+work to inspect, not proof of completed effects or permission to retry them. An exception before a
+terminal `AgentResult` exists does not invent a partial checkpoint.
+Production: `toSubagentOutcome` in
+[run-subagent.ts](../../packages/loop/src/runtime/subagents/run-subagent.ts) and `mapOutcomeToText`
+in [delegate-task.ts](../../packages/loop/src/runtime/subagents/delegate-task.ts).
+Test: `maps error to the carried code/message, defaulting to empty_response` in
+[run-subagent.test.ts](../../packages/loop/tests/unit/run-subagent.test.ts) and
+`preserves a failed child's partial work in the lead result and failure trace` in
+[subagent-error-to-lead.test.ts](../../packages/loop/tests/integration/subagent-error-to-lead.test.ts).
 
 ### 4.3 Inline (deferred) spawn
 
@@ -727,8 +757,9 @@ The invariants below are derived directly from this document's own source and it
     `packages/loop/src/runtime/capabilities/agents.ts`; `packages/loop/src/runtime/loop/loop.ts`. Tests:
     `packages/loop/tests/unit/agents-capability.test.ts`.
 
-13. **Consecutive background-child failures terminate the run rather than letting the lead spawn
-    forever.** Checked before every background spawn. Production: `packages/loop/src/runtime/delegation.ts`; the streak itself at `packages/supervision/src/registry.ts`. Test:
+13. **Consecutive background-child failures close child admission without terminating the lead
+    or siblings.** One background recovery probe may be claimed after the circuit cooldown;
+    a failed probe cannot be repeated until a child succeeds. Checked before spawn preparation. Production: `packages/loop/src/runtime/delegation.ts`; the streak itself at `packages/supervision/src/registry.ts`. Test:
     `packages/loop/tests/unit/delegation-handler.test.ts`.
 
 14. **A capacity refusal and an already-settled steer are plain results, not errors; a malformed
@@ -865,7 +896,7 @@ The invariants below are derived directly from this document's own source and it
 | Tracker `beforeSpawn` ⇒ `terminal` | the agent ends with the tracker's own `AgentResult` | `packages/loop/src/runtime/delegation.ts`; test `packages/loop/tests/unit/delegation-handler.test.ts` |
 | Registry sealed or at `maxLiveChildren` | background spawn refused as a plain `result` telling the model to `await_agents` or `agent_stop` | `packages/loop/src/runtime/delegation.ts` |
 | `agent_registered` trace publication throws after background registry acceptance | the shared helper aborts, settles and closes the accepted child, then rethrows; the tool fails without leaking a live unadopted child | `registerBackgroundChild` in `packages/supervision/src/spawn-child.ts`; `packages/supervision/tests/component/spawn-child.test.ts` (`commits producer accounting before trace publication and abandons the child if it throws`) |
-| `maxConsecutiveFailedChildren` reached | plain `result`, `progress: false`: child admission is closed, and the refusal names the streak and tells the model to `agent_poll` one, do the work itself, or finish. Nothing is published for the refused call. The run keeps going; a child that finishes successfully reopens admission | `packages/loop/src/runtime/delegation.ts`; test `packages/loop/tests/unit/delegation-handler.test.ts` |
+| `maxConsecutiveFailedChildren` reached | plain `result`, `progress: false`: child admission is closed, and the refusal names the streak and tells the model to `agent_poll` one, do the work itself, or finish. Nothing is published for the refused call. The run keeps going; one eligible background probe may be claimed, and a child that finishes successfully reopens admission | `packages/loop/src/runtime/delegation.ts`; test `packages/loop/tests/unit/delegation-handler.test.ts` |
 | `background: true` with no registry | degrades silently to the inline `deferred` path | `packages/loop/src/runtime/delegation.ts`; test |
 | Sub-agent run throws, parent not aborted | `Sub-agent error: <msg>`; tracker `markFailed`; `delegation_failed`; `outcome: "failed"` | `packages/loop/src/runtime/subagents/delegate-task.ts` |
 | Sub-agent run throws, parent aborted | `Sub-agent cancelled.`; tracker untouched; `outcome: "cancelled"` | `packages/loop/src/runtime/subagents/delegate-task.ts` |
@@ -913,9 +944,9 @@ See [generic execution ports](capability-composition.md).
   `deps.services?.get(TASK_TRACKING_PORT)?.forAgent(bc)` at *attach* time
   (`packages/loop/src/runtime/capabilities/delegation.ts`), and every use is `ctx.tasks?.…`. Its absence means no
   `task_id` property, no augmented description and no pre-spawn gate
-  (`packages/loop/src/runtime/delegation.ts` TSDoc). `prepareSpawn`'s own `tasks.markSpawned(taskId)`
-  (`packages/loop/src/runtime/subagents/delegate-task.ts`) and the handler's subsequent `deps.tasks?.noteSpawned(prepared.taskId)`
-  (`packages/loop/src/runtime/delegation.ts`) are two separate calls into the port for the same spawn, not one call under
+  (`packages/loop/src/runtime/delegation.ts` TSDoc). `runPreparedSubagent`'s `tasks.markSpawned(taskId)`
+  and subsequent `tasks.noteSpawned(taskId)`
+  (`packages/loop/src/runtime/subagents/delegate-task.ts`) are two separate calls into the port for the same spawn, not one call under
   two names — a tracker implementation must handle both without assuming one implies the other was
   skipped. The port itself is declared once, owner-neutrally,
   at `packages/capability/src/task-tracking-port.ts`. Pinned with a hand-rolled fake at
@@ -1051,3 +1082,31 @@ See [generic execution ports](capability-composition.md).
    same symbols is the shape `@clarvis/loop` already removed once — its general internal barrel is
    gone and, by the repository's own rule, must not return. The five test files now import by direct
    path like everything else.
+
+A child may return cancellation while its parent's signal remains live. `runPreparedSubagent`
+classifies that attempt as `cancelled`, preserves its partial text, and does not call either
+`markReturned` or `markFailed`. The outcome alone does not revoke parent authority.
+Production: `runPreparedSubagent` in
+[delegate-task.ts](../../packages/loop/src/runtime/subagents/delegate-task.ts).
+Test: `preserves child-local cancellation while the parent remains authorized` in
+[lifecycle-delegation-wiring.test.ts](../../packages/loop/tests/component/lifecycle-delegation-wiring.test.ts).
+
+Capacity refusal and cancellation while queued do not claim a task or publish child creation.
+The supervision reservation can exist while awaiting a semaphore, but only the admitted execution
+publishes `delegation_created` and `delegation_started`.
+Production: `spawnInBackground` and the inline deferred handler in
+[delegation.ts](../../packages/loop/src/runtime/delegation.ts), and `runPreparedSubagent` in
+[delegate-task.ts](../../packages/loop/src/runtime/subagents/delegate-task.ts).
+Test: technical/capacity refusal cases in
+[delegation-handler.test.ts](../../packages/loop/tests/unit/delegation-handler.test.ts) and the
+pre-aborted admission case in
+[lifecycle-delegation-wiring.test.ts](../../packages/loop/tests/component/lifecycle-delegation-wiring.test.ts).
+
+The real subagent loop is also exercised with three concurrent children reaching their individual
+64- and 512-iteration caps while a fourth child remains in flight. Each limited child retains its
+partial output, makes no call beyond its cap, and leaves the parent's signal intact. The fourth
+child completes after release; their shared token ledger retains the sum of all measured calls.
+Production: `runSubagent` and `toSubagentOutcome` in
+[run-subagent.ts](../../packages/loop/src/runtime/subagents/run-subagent.ts).
+Test: `contains three children at their own %i iteration limit while a sibling stays live` in
+[run-subagent.test.ts](../../packages/loop/tests/unit/run-subagent.test.ts).

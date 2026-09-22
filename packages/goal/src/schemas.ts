@@ -295,7 +295,8 @@ export const goalStageDecisionSchema = z.enum(["complete", "continue", "attentio
  *   `checkpoint` and `local_limit` are ordinary endings; `stagnation`,
  *   `empty_response`, `impediment`, `transient`, `steward_interrupted` and a
  *   progressing `context_overflow` may be re-evaluated by a successor under the
- *   stage allowance; `declined`, `cancelled`, `provider_refused`,
+ *   stage allowance. `finalization_conflict` permits bounded re-evaluation without
+ *   spending semantic no-progress tolerance; `declined`, `cancelled`, `provider_refused`,
  *   `tools_unavailable`, `control_failure` and `unclassified` are not presumed
  *   recoverable.
  */
@@ -314,6 +315,7 @@ export const goalRunCauseSchema = z.enum([
   "provider_refused",
   "tools_unavailable",
   "control_failure",
+  "finalization_conflict",
   "unclassified",
 ]);
 
@@ -332,6 +334,7 @@ export const goalRunSchema = z
     decision: goalStageDecisionSchema.optional(),
     cause: goalRunCauseSchema.optional(),
     progress_observed: z.boolean().optional(),
+    activity_unavailable: z.boolean().optional(),
     /**
      * The receipts this stage contributed that the Goal had not already recorded.
      *
@@ -346,6 +349,16 @@ export const goalRunSchema = z
     usage: goalUsageSchema.optional(),
     accepted_usage_gaps: z.string().max(4096).optional(),
     usage_estimate: z.object({ sequence: counter, usage: goalUsageSchema }).strict().optional(),
+    settlement_preparation: z
+      .object({
+        outcome: z.enum(["completed", "failed", "cancelled"]),
+        disposition: z.enum(["final", "checkpoint"]),
+        usage: goalUsageSchema,
+        activity: z.array(digest).max(GOAL_STAGE_ACTIVITY_MAX).optional(),
+        activity_unavailable: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
     checkpoint: goalCheckpointSchema.optional(),
     progress: goalProgressSchema.optional(),
     candidate: goalCandidateSchema.optional(),

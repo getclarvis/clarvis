@@ -4,6 +4,7 @@ import type {
   ExecutionVisibility,
   ExecutionStatus,
   TokenAccumulator,
+  TraceEvent,
 } from "@clarvis/capability";
 import type { OpenJournalOptions, RunJournal } from "./journal.ts";
 import { PersistenceError } from "@clarvis/capability";
@@ -106,6 +107,12 @@ export interface TraceStore {
    * or it does not match the selected visibility.
    */
   getById(owner: string, id: string, visibility?: ExecutionVisibility): StoredExecution | null;
+  /** Replay the active journal or settled trace under the same owner and visibility boundary. */
+  readEvents?(
+    owner: string,
+    id: string,
+    visibility?: ExecutionVisibility,
+  ): Iterable<TraceEvent> | undefined;
   /** Atomically replace one settled run's continuation snapshot and charge summarizer usage. */
   replaceFinalContext(
     owner: string,

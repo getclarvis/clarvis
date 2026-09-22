@@ -292,7 +292,11 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
         };
       }
 
-      if (deps.agents !== undefined && deps.agents.failingStreakExceeded()) {
+      if (
+        deps.agents !== undefined &&
+        deps.agents.failingStreakExceeded() &&
+        (!wantsBackground(rawArgs) || !deps.agents.claimFailureProbe())
+      ) {
         return spawnRefusedByStreak(toolName, deps.agents.consecutiveFailures());
       }
 
@@ -320,7 +324,6 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
         };
       }
       const prepared = prep.prepared;
-      if (prepared.taskId !== undefined) deps.tasks?.noteSpawned(prepared.taskId);
 
       if (wantsBackground(rawArgs) && deps.agents !== undefined) {
         return spawnInBackground(toolName, deps.agents, prepared, callCtx, deps, bc);

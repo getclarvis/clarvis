@@ -1024,6 +1024,30 @@
       "package_owner": "tooling",
       "classification": "boundary-canary",
       "reason": "physical boundary canary required by the test"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/kernel/tests/integration/hosted-settlement-crash.test.ts",
+      "identity": "subprocess|test|Bun.spawn([globalThis.process.execPath, fixture, root, mode, phase], { cwd: root, env: { PATH: globalThis.process.env.PATH, SystemRoot: globalThis.process.env.SystemRoot, HOME: root, TMPDIR: root, TEMP: root, TMP: root, }, stdin: \"pipe\", stdout: \"pipe\", stderr: \"pipe\", signal: AbortSignal.timeout(15_000), })|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "Kills a real isolated host after a durable settlement milestone and restarts it twice to verify canonical accounting and physical admission recovery without another execution."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/kernel/tests/integration/hosted-settlement-crash.test.ts",
+      "identity": "subprocess|test|spawn(\"initial\")|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "Kills a real isolated host after a durable settlement milestone and restarts it twice to verify canonical accounting and physical admission recovery without another execution."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/kernel/tests/integration/hosted-settlement-crash.test.ts",
+      "identity": "subprocess|test|spawn(\"recover\")|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "Kills a real isolated host after a durable settlement milestone and restarts it twice to verify canonical accounting and physical admission recovery without another execution."
     }
   ]
 }

@@ -14,6 +14,10 @@ The registry and limits are specified in
 built over that registry are specified separately in
 [`engine/delegation-and-subagents.md`](../../specs/engine/delegation-and-subagents.md).
 
+The failure circuit exposes one synchronously claimed recovery probe after 30 seconds without a
+technical failure. Waiting longer does not grant another probe after failure; a successfully
+completed child rearms it. The registry never spawns, retries or cancels siblings on that basis.
+
 ## Why it is its own package
 
 Two producers register into the same id space — `@clarvis/loop`'s `delegate_task` (a sub-agent) and

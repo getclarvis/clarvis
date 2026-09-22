@@ -814,6 +814,7 @@ function mountHosted(
     throw new Error("unexpected hosting call");
   };
   const hosting: HostingService = {
+    resumePending: async () => null,
     controlObservation: unexpected,
     resolveRecovery: unexpected,
     list: async () => [ref],
@@ -976,6 +977,38 @@ test("does not follow a delayed goal read into another conversation", async () =
   expect(f.calls.attaches).toBe(0);
   expect(f.host.sessionMeta()).toBeNull();
   expect(f.store.nodes).toHaveLength(0);
+  f.run.resolve(completed(f.ref.execution_id));
+});
+
+test("reopening an idle conversation asks the host to restore accepted input before attaching", async () => {
+  const f = mountHosted();
+  let requested = false;
+  f.hosting.list = async () => (requested ? [f.ref] : []);
+  f.hosting.resumePending = async (id) => {
+    expect(id).toBe(f.meta.id);
+    requested = true;
+    return f.ref;
+  };
+  const resumed = f.host.resumeSessionById(f.meta.id);
+  await flush();
+  expect(requested).toBe(true);
+  expect(f.calls.attaches).toBe(1);
+  f.run.resolve(completed(f.ref.execution_id));
+  await resumed;
+});
+
+test("pending recovery failure leaves the saved conversation readable", async () => {
+  const f = mountHosted();
+  f.meta.turns = [];
+  f.hosting.list = async () => [];
+  f.hosting.resumePending = async () => {
+    throw new Error("receipt dependency unavailable");
+  };
+  await f.host.resumeSessionById(f.meta.id);
+  expect(f.host.sessionMeta()?.id).toBe(f.meta.id);
+  expect(f.host.runStatus()).toContain("pending input retained");
+  expect(f.host.scheduledBusy()).toBe(false);
+  expect(f.calls.attaches).toBe(0);
   f.run.resolve(completed(f.ref.execution_id));
 });
 

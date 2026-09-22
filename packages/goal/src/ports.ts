@@ -33,6 +33,8 @@ export interface GoalRuntimeBinding {
 export interface GoalRuntimeSnapshot {
   goal: GoalRecord;
   evidence: GoalEvidenceOption[];
+  /** Catalog readiness is independent of authority; unavailable proof cannot validate completion. */
+  evidence_unavailable?: "resource_exhausted" | "conflict";
 }
 
 /** A discoverable reference with a short host-authored label; descriptions are not proof. */

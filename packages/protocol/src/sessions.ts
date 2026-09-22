@@ -84,6 +84,8 @@ export interface Session {
     fingerprint: string;
     input: StartHostedTurnParams;
     accepted_at: number;
+    /** Host-selected steering destination; uncertainty is reconciled against this execution only. */
+    steering_target?: string;
     admitted?: boolean;
     delivered_to?: string;
   }>;

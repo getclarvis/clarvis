@@ -28,6 +28,92 @@ const flakyFactory: MCPClientFactory = async (): Promise<MCPClientHandle> => {
 };
 
 describe("terminal Subagent error returned as a tool result; the run continues", () => {
+  it("preserves a failed child's partial work in the lead result and failure trace", async () => {
+    const partial =
+      "Inspected module A; module B still needs verification. Do not repeat the confirmed edit.";
+    const failures: string[] = [];
+    const llm = new MockLLM({
+      script: [
+        {
+          toolCalls: [
+            {
+              name: "spawn_subagent",
+              arguments: { title: "inspect", task: "Inspect the scoped modules" },
+            },
+          ],
+        },
+        { text: partial },
+        { text: "Continue from the inspected module and verify the remainder." },
+      ],
+    });
+    harness = await makeHarness({
+      llm,
+      mcpFactory: flakyFactory,
+      onEvent(event) {
+        if (
+          event.type === "delegation_failed" &&
+          "result" in event &&
+          typeof event.result === "string"
+        )
+          failures.push(event.result);
+      },
+      capabilities: [
+        {
+          name: "fixture-child-failure",
+          forRun: () => ({
+            name: "fixture-child-failure",
+            forAgent: (scope) =>
+              scope.agent !== "subagent"
+                ? null
+                : {
+                    attach: (context) => ({
+                      gates: [
+                        {
+                          check: async () => ({
+                            kind: "terminal",
+                            result: {
+                              status: "error",
+                              partialText: context.state.lastAssistantText,
+                              error: {
+                                code: "fixture_infrastructure_failure",
+                                message: "Synthetic dependency unavailable",
+                              },
+                            },
+                          }),
+                        },
+                      ],
+                    }),
+                  },
+          }),
+        },
+      ],
+    });
+    const result = await harness.run({
+      messages: [{ role: "user", content: "Inspect modules" }],
+      servers: [],
+      entry: "lead",
+      profiles: [
+        {
+          name: "lead",
+          model: "anthropic/claude-opus-4-5",
+          tools: [],
+          can_spawn: ["worker"],
+          iteration_limit: 10,
+        },
+        { name: "worker", model: "anthropic/claude-haiku-4-5", tools: [], iteration_limit: 5 },
+      ],
+      budget: { on_exceed: "stop", total_token_limit: 50000 },
+    });
+    expect(result.status).toBe("completed");
+    const messages = JSON.stringify(
+      llm.calls.filter((call) => call.model === "claude-opus-4-5").at(-1)!.messages,
+    );
+    expect(messages).toContain("Sub-agent error: code=fixture_infrastructure_failure");
+    expect(messages).toContain(`Unverified partial result: ${partial}`);
+    expect(failures.some((text) => text.includes(partial))).toBe(true);
+    expect(llm.calls.filter((call) => call.model === "claude-haiku-4-5")).toHaveLength(1);
+  });
+
   it("surfaces the Subagent error to the Lead and completes the run", async () => {
     const llm = new MockLLM({
       script: [

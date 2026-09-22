@@ -187,6 +187,45 @@ describe("child-spawn handler resilience (finding 4)", () => {
     expect(registry.list()).toHaveLength(1);
   });
 
+  it("cancels a queued child without claiming its task or publishing creation", async () => {
+    const semaphore = createSemaphore(1);
+    await semaphore.acquire();
+    const registry = createAgentRegistry({ limits: AGENTS_TEST_LIMITS });
+    const claims: string[] = [];
+    const tasks = fakeTracker({
+      openTasks: () => [{ id: "t1", status: "pending" }],
+      getTask: () => ({ id: "t1", title: "Queued task", status: "pending" }),
+      markSpawned: (id) => {
+        claims.push(id);
+        return true;
+      },
+      noteSpawned: (id) => {
+        claims.push(id);
+      },
+    });
+    const deps = makeDeps({ tasks, agents: registry, semaphore });
+    const contribution = buildDelegationContribution(deps);
+    const call = delegateCall("queued", { task_id: "t1", background: true });
+    try {
+      const verdict = await contribution
+        .handlers!.find((handler) => handler.matches(call))!
+        .handle(call, 0);
+      expect(verdict.kind).toBe("result");
+      expect(registry.list()).toHaveLength(1);
+      await registry.teardown(0);
+      expect(claims).toEqual([]);
+      expect(
+        deps.bc.trace
+          .entries()
+          .some(
+            (event) => event.kind === "delegation_created" || event.kind === "delegation_started",
+          ),
+      ).toBe(false);
+    } finally {
+      semaphore.release();
+    }
+  });
+
   it("spawn_subagent with an unknown profile is a plain rejection, not an unhandled error", async () => {
     const deps = makeDeps();
     const contribution = buildDelegationContribution(deps);
@@ -229,39 +268,42 @@ describe("child-spawn handler resilience (finding 4)", () => {
     }
   });
 
-  it("never publishes a creation, a start or a task claim for a refused spawn", async () => {
-    const registry = createAgentRegistry({
-      limits: { ...AGENTS_TEST_LIMITS, maxConsecutiveFailedChildren: 1 },
-    });
-    registry
-      .register({
+  it.each(["technical", "capacity"] as const)(
+    "never publishes a creation, a start or a task claim for a %s refusal",
+    async (cause) => {
+      const registry = createAgentRegistry({
+        limits: { ...AGENTS_TEST_LIMITS, maxConsecutiveFailedChildren: 1, maxLiveChildren: 1 },
+      });
+      const seed = registry.register({
         kind: "subagent",
         nativeId: "seed",
         title: "seed",
         control: AGENT_STOP_CONTROL,
-      })!
-      .settled({ status: "failed", result: "boom" });
-    const spawned: string[] = [];
-    const tasks = fakeTracker({
-      openTasks: () => [{ id: "t1", status: "pending" }],
-      getTask: (id) => (id === "t1" ? { id: "t1", title: "T", status: "pending" } : undefined),
-      markSpawned: (id) => {
-        spawned.push(id);
-        return true;
-      },
-    });
-    const deps = makeDeps({ agents: registry, tasks });
-    const contribution = buildDelegationContribution(deps);
-    const call = delegateCall("refused-task", { task_id: "t1" });
-    const handler = contribution.handlers!.find((h) => h.matches(call))!;
+      })!;
+      if (cause === "technical") seed.settled({ status: "failed", result: "boom" });
+      const spawned: string[] = [];
+      const tasks = fakeTracker({
+        openTasks: () => [{ id: "t1", status: "pending" }],
+        getTask: (id) => (id === "t1" ? { id: "t1", title: "T", status: "pending" } : undefined),
+        markSpawned: (id) => {
+          spawned.push(id);
+          return true;
+        },
+      });
+      const deps = makeDeps({ agents: registry, tasks });
+      const contribution = buildDelegationContribution(deps);
+      const call = delegateCall("refused-task", { task_id: "t1", background: true });
+      const handler = contribution.handlers!.find((h) => h.matches(call))!;
 
-    const verdict = await handler.handle(call, 0);
+      const verdict = await handler.handle(call, 0);
 
-    expect(verdict.kind).toBe("result");
-    expect(spawned).toEqual([]);
-    expect(deps.bc.trace.entries().some((e) => e.kind === "delegation_created")).toBe(false);
-    expect(deps.bc.trace.entries().some((e) => e.kind === "terminate")).toBe(false);
-  });
+      expect(verdict.kind).toBe("result");
+      expect(spawned).toEqual([]);
+      expect(deps.bc.trace.entries().some((e) => e.kind === "delegation_created")).toBe(false);
+      expect(deps.bc.trace.entries().some((e) => e.kind === "terminate")).toBe(false);
+      seed.settled({ status: "completed" });
+    },
+  );
 
   it("resets the circuit when an admitted child finishes successfully", async () => {
     const registry = createAgentRegistry({
@@ -292,6 +334,37 @@ describe("child-spawn handler resilience (finding 4)", () => {
 
     expect(verdict.kind).toBe("result");
     if (verdict.kind === "result") expect(verdict.text).toContain("started");
+  });
+
+  it("admits at most one background recovery probe while the failed circuit remains closed", async () => {
+    let now = 0;
+    const registry = createAgentRegistry({
+      limits: { ...AGENTS_TEST_LIMITS, maxConsecutiveFailedChildren: 1 },
+      now: () => now,
+    });
+    registry
+      .register({
+        kind: "subagent",
+        nativeId: "failed",
+        title: "failed",
+        control: AGENT_STOP_CONTROL,
+      })!
+      .settled({ status: "failed" });
+    const deps = makeDeps({ agents: registry });
+    const contribution = buildDelegationContribution(deps);
+    const call = spawnCall("probe", { background: true });
+    const handler = contribution.handlers!.find((item) => item.matches(call))!;
+    now = 30_000;
+    const [one, two] = await Promise.all([
+      handler.handle(call, 0),
+      handler.handle(spawnCall("second", { background: true }), 0),
+    ]);
+    expect(one.kind).toBe("result");
+    expect(two.kind).toBe("result");
+    if (one.kind === "result") expect(one.text).toContain("started");
+    if (two.kind === "result") expect(two.text).toContain("not spawned");
+    expect(deps.bc.trace.entries().some((entry) => entry.kind === "terminate")).toBe(false);
+    await registry.teardown(0);
   });
 
   it("leaves the streak untouched for a child that was cancelled or stopped at a limit", async () => {
@@ -488,6 +561,8 @@ describe("delegate_task handler — the TaskTrackingPort seam", () => {
     const verdict = await handler.handle(call, 0);
 
     expect(verdict.kind).toBe("deferred");
+    expect(noted).toEqual([]);
+    if (verdict.kind === "deferred") await verdict.run();
     expect(noted).toEqual(["t1"]);
   });
 

@@ -38,6 +38,22 @@ in [steward-run.ts](../../packages/goal/src/agent/steward-run.ts). Test:
 
 ## 2. Surface
 
+`TraceStore.readEvents` optionally exposes an owner-scoped evidence replay. The JSON store reads
+the existing active journal in 64 KiB blocks under an immutable byte cut, with an 8 MiB per-line
+bound and no aggregate event-count limit. Its iterable is repeatable and checks the journal header's
+owner, execution and disclosure class before yielding. A partial/malformed line or damaged recovered
+record refuses replay instead of silently omitting events. Settled intact records use the existing
+bounded record reader. Visibility views fix the disclosure class before lookup; write-projection
+views preserve read semantics. This is an observation API, not another journal or execution authority.
+Production: `readJournalEvents` in [journal-reader.ts](../../packages/trace/src/journal-reader.ts),
+`createJsonTraceStore` in [json-trace-store.ts](../../packages/trace/src/json-trace-store.ts), and
+`createTraceVisibilityView` in [visibility-view.ts](../../packages/trace/src/visibility-view.ts).
+Test: `replays a stable active journal prefix through the existing visibility boundary`,
+`refuses a partial journal tail for evidence instead of silently salvaging it`,
+`bounds each evidence replay line without imposing a total event limit` and
+`refuses damaged recovered traces as complete evidence` in
+[journal.test.ts](../../packages/trace/tests/integration/journal.test.ts).
+
 ### 2a. `@clarvis/capability` — vocabulary (entrypoints `.` and `./trace`)
 
 `packages/capability/src/trace.ts` re-exports `trace-kinds.ts` and `trace-projectors.ts` wholesale

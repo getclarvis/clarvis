@@ -382,6 +382,8 @@ const FAILURE_REASONS: Record<GoalRunCause, string> = {
   provider_refused: "The provider refused the request; the goal requires operator action",
   tools_unavailable: "Every configured tool became unavailable",
   control_failure: "Goal control was unavailable; the goal requires host attention",
+  finalization_conflict:
+    "Completion state changed concurrently; another stage must re-evaluate current proof",
   unclassified: "Goal run failed",
 };
 
@@ -407,6 +409,8 @@ const CONTINUATION_REASONS: Record<GoalRunCause, string> = {
   provider_refused: "The provider refused the request; the goal requires operator action",
   tools_unavailable: "Every configured tool became unavailable",
   control_failure: "Goal control was unavailable; the goal requires host attention",
+  finalization_conflict:
+    "Completion state changed concurrently; another stage must re-evaluate current proof",
   unclassified: "Goal run failed",
 };
 
@@ -415,7 +419,7 @@ const CONTINUATION_REASONS: Record<GoalRunCause, string> = {
  *
  * @remarks Membership is what makes an ending recoverable, and every member still
  *   spends one stage of the Goal's progress allowance when the stage did not advance
- *   the work — so repetition of the same failure cannot restart indefinitely and no
+ *   the work, except a finalization snapshot conflict, which retains that allowance — so repetition of the same failure cannot restart indefinitely and no
  *   recovery invents authorization, budget or evidence. `context_overflow` is not a
  *   member: continuing it is only safe when the stage also observed progress, because
  *   otherwise the successor would replay the payload that did not fit. Everything
@@ -438,6 +442,7 @@ const RECOVERABLE_CAUSES: ReadonlySet<GoalRunCause> = new Set<GoalRunCause>([
   "empty_response",
   "transient",
   "steward_interrupted",
+  "finalization_conflict",
 ]);
 
 /** Whether the closed stage may be continued automatically by one successor stage. */
@@ -532,6 +537,49 @@ function reconcileUsage(goal: GoalRecord): void {
   goal.consumption = totals;
 }
 
+/**
+ * Preserve a physically closed non-final stage's measured settlement inputs before publication.
+ * Completion proofs are deliberately excluded: a final verdict requires fresh host validation.
+ * Replays must carry identical inputs; operator control revisions are never changed here.
+ */
+export function prepareGoalSettlement(
+  previous: GoalState,
+  input: {
+    goal_id: string;
+    execution_id: string;
+    preparation: NonNullable<GoalRun["settlement_preparation"]>;
+    now: number;
+  },
+): GoalState {
+  const state = boundedGoalState(previous, true);
+  const goal = currentGoal(state, input.goal_id);
+  const run = boundRun(goal, input.execution_id);
+  if (run.phase === "closed") return state;
+  if (input.preparation.outcome === "completed" && input.preparation.disposition !== "checkpoint")
+    throw new GoalError("invalid_request", "Final completion requires fresh validation");
+  if (input.preparation.activity_unavailable && (input.preparation.activity?.length ?? 0) > 0)
+    throw new GoalError("invalid_request", "Unavailable activity cannot carry observed receipts");
+  const seen = recordedActivity(goal);
+  const preparation = {
+    ...input.preparation,
+    ...(input.preparation.activity === undefined
+      ? {}
+      : {
+          activity: [...new Set(input.preparation.activity)]
+            .filter((receipt) => !seen.has(receipt))
+            .sort()
+            .slice(0, GOAL_STAGE_ACTIVITY_MAX),
+        }),
+  };
+  if (run.settlement_preparation !== undefined) {
+    if (JSON.stringify(run.settlement_preparation) !== JSON.stringify(preparation))
+      throw new GoalError("conflict", "Settlement preparation cannot be rewritten");
+    return state;
+  }
+  run.settlement_preparation = structuredClone(preparation);
+  return changed(state, goal, input.now);
+}
+
 /** Run-scoped live snapshots are estimates; only durable settlement charges confirmed totals. */
 export function recordGoalUsageEstimate(
   previous: GoalState,
@@ -567,7 +615,8 @@ export function recordGoalUsageEstimate(
  *   which is what lets the Kernel keep responsibility for a pending Goal without a
  *   model-generated checkpoint: the host admits the successor from this durable record rather
  *   than from the run's physical shape. A stage that advanced the work clears the no-progress
- *   sequence, one that did not spends a stage of it, and an exhausted allowance blocks the
+ *   sequence; a stage with unknown activity or a finalization race preserves it. Other
+ *   stages without progress spend a stage of it, and an exhausted allowance blocks the
  *   Goal through the ordinary admission path instead of looping. Everything the host could not
  *   classify is `attention`, and a successor is never automatic for it.
  *   `progress_observed` is the host's own observation of the stage's activity — an accepted
@@ -593,12 +642,16 @@ export function settleGoalRun(
      *   presented, contributes nothing — recombining old receipts is not new progress.
      */
     activity?: readonly string[];
+    /** An observation failure does not spend the semantic no-progress allowance. */
+    activity_unavailable?: boolean;
     not_before?: number;
     now: number;
   },
 ): GoalState {
   if (input.physical_closed !== true)
     throw new GoalError("blocked", "Goal settlement requires physical closure");
+  if (input.activity_unavailable === true && (input.activity?.length ?? 0) > 0)
+    throw new GoalError("invalid_request", "Unavailable activity cannot carry observed receipts");
   const state = boundedGoalState(previous, true);
   const goal =
     state.current?.goal_id === input.goal_id
@@ -630,6 +683,7 @@ export function settleGoalRun(
   run.outcome = input.outcome;
   run.disposition = input.disposition;
   run.usage = usage;
+  delete run.settlement_preparation;
   /**
    * The run's own durable record outranks the host's classification in two cases, because
    * the host only ever sees the code the loop reported.
@@ -650,7 +704,8 @@ export function settleGoalRun(
    */
   const seen = recordedActivity(goal);
   const contributed = [...new Set(input.activity ?? [])].filter((item) => !seen.has(item)).sort();
-  run.activity = contributed.slice(0, GOAL_STAGE_ACTIVITY_MAX);
+  if (input.activity_unavailable === true) run.activity_unavailable = true;
+  else run.activity = contributed.slice(0, GOAL_STAGE_ACTIVITY_MAX);
   const unaccountable =
     run.steward_reviews.at(-1)?.interruption_cause === "usage_unknown" && !concluded;
   const cause: GoalRunCause =
@@ -669,7 +724,8 @@ export function settleGoalRun(
   if (concluded || input.not_before === undefined) delete run.not_before;
   else run.not_before = input.not_before;
   const progressObserved = contributed.length > 0 || run.checkpoint?.progress_accepted === true;
-  run.progress_observed = progressObserved;
+  if (progressObserved || input.activity_unavailable !== true)
+    run.progress_observed = progressObserved;
   reconcileUsage(goal);
   const closed = (decision: GoalStageDecision): GoalState => {
     run.decision = decision;
@@ -677,7 +733,9 @@ export function settleGoalRun(
   };
   /** Spend one stage of the progress allowance; true when admission refused a successor. */
   const spendStage = (): boolean => {
-    goal.no_progress_stages = progressObserved ? 0 : goal.no_progress_stages + 1;
+    if (progressObserved) goal.no_progress_stages = 0;
+    else if (input.activity_unavailable !== true && cause !== "finalization_conflict")
+      goal.no_progress_stages += 1;
     const admission = goalAdmission(goal, input.now, true);
     if (admission.allowed) return false;
     goal.status = admission.status;

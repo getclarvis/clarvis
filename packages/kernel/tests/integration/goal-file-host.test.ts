@@ -233,6 +233,29 @@ describe("goal through the real file host and SDK HTTP", () => {
       status: "failed",
       ended_reason: "budget_exhausted",
     });
+    f.setResponder(async () => ({ text: "Independent answer after Goal budget exhaustion" }));
+    const session = (await f.client.sessions.get("conversation"))!;
+    const independent = await f.client.hosting!.start({
+      session_id: "conversation",
+      session_revision: session.revision!,
+      kind: "conversation",
+      user_preview: "Answer independently",
+      params: {
+        execution_id: "after-budget-limited",
+        agent: "solo",
+        intent: "operator",
+        messages: [{ role: "user", content: "Answer independently" }],
+      },
+    });
+    expect(await independent.handle.done).toMatchObject({ status: "completed" });
+    await independent.handle.closed;
+    const after = (await f.client.goals.get("conversation")).state.current!;
+    expect(after).toEqual(goal);
+    expect((await f.client.sessions.get("conversation"))!.turns.at(-1)).toMatchObject({
+      execution_id: "after-budget-limited",
+      status: "done",
+    });
+    expect(f.requests).toHaveLength(2);
   });
 
   it("continues a stalled stage in a successor and stops at the stage progress limit", async () => {

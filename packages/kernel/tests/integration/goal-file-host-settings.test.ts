@@ -55,12 +55,29 @@ describe("goal defaults through file configuration, IPC and the real SDK", () =>
     expect(before.limits).toEqual(limits);
     expect(before).toMatchObject({ status: "usage_limited", auto_continuations: 0 });
     expect(f.requests).toHaveLength(1);
+    f.setResponder(async () => ({ text: "Independent answer after usage limit" }));
+    const session = (await f.client.sessions.get("conversation"))!;
+    const independent = await f.client.hosting!.start({
+      session_id: "conversation",
+      session_revision: session.revision!,
+      kind: "conversation",
+      user_preview: "Answer independently",
+      params: {
+        execution_id: "after-usage-limited",
+        agent: "solo",
+        intent: "operator",
+        messages: [{ role: "user", content: "Answer independently" }],
+      },
+    });
+    expect(await independent.handle.done).toMatchObject({ status: "completed" });
+    await independent.handle.closed;
+    expect((await f.client.goals.get("conversation")).state.current).toEqual(before);
     await configure(f, "global", {
       goals: { max_net_tokens: 9000, max_auto_continuations: 7, max_no_progress_stages: 9 },
     });
     expect(await f.client.goals.control(request)).toEqual(receipt);
     expect((await f.client.goals.get("conversation")).state.current).toEqual(before);
-    expect(f.requests).toHaveLength(1);
+    expect(f.requests).toHaveLength(2);
 
     const view = await f.client.goals.get("conversation");
     f.setResponder(async () => ({
@@ -81,7 +98,7 @@ describe("goal defaults through file configuration, IPC and the real SDK", () =>
     expect(resumed.reason).toContain("Explicit resume verified");
     expect(resumed.consumption.net_tokens).toBeGreaterThan(before.consumption.net_tokens);
     expect(resumed.auto_continuations).toBe(0);
-    expect(f.requests).toHaveLength(2);
+    expect(f.requests).toHaveLength(3);
     expect(new Set(f.requests.map((request) => request.prompt_cache_key)).size).toBe(1);
     await f.client.goals.control({
       session_id: "conversation",
@@ -113,7 +130,7 @@ describe("goal defaults through file configuration, IPC and the real SDK", () =>
       consumption: resumed.consumption,
       limits: { ...limits, max_auto_continuations: 1 },
     });
-    expect(f.requests).toHaveLength(3);
+    expect(f.requests).toHaveLength(4);
   });
 
   it("applies explicit creation overrides before configured defaults", async () => {

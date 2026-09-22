@@ -22,6 +22,22 @@ the kernel and are specified separately in
 
 ## The client contract
 
+`GoalRun.settlement_preparation` carries host-owned non-final settlement inputs for restart recovery.
+It preserves measured usage and activity uncertainty, not completion authority. Client session saves
+cannot alter it because it belongs to the protected Goal state.
+
+Host-owned `Session.operator_intents` may carry `steering_target`, the execution selected by the host
+before delivery. It scopes consumption recovery after restart; client saves cannot rewrite it and
+it grants no authority to replay work or approve effects.
+
+Goal stage causes include `finalization_conflict` for a completion snapshot race. This is distinct
+from `control_failure`; only the host may decide continuation after physical closure, current
+authority checks and budget reconciliation. The DTO alone grants no execution authority.
+
+Goal run records may carry `activity_unavailable`. It distinguishes an unavailable host observation
+from a measured absence of progress; clients must not infer `progress_observed: false` from it.
+The field grants no continuation, completion or budget authority.
+
 `RunResult` distinguishes a stage checkpoint with `disposition: "checkpoint"` and a bounded
 `checkpoint: { summary, next_step }`. It is separate from both run status and a validated final
 `result`. Missing disposition retains the ordinary final path; this DTO grants no continuation
@@ -373,3 +389,9 @@ the conversation's monotonic acceptance sequence. They are separate from admitte
 message content. Goal receipts distinguish a recorded pending recovery from admitted work.
 
 `GoalControlAction.edit.resume_operation_id` explicitly links a limit correction to a retained resume. Usage gaps optionally carry bounded `call_ids` and a sequence fingerprint.
+
+Accepted pending input can be resumed through `HostingService.resumePending(sessionId)` using the
+current authenticated operator connection. The Kernel reads canonical receipts and uses its existing
+idempotent admission queue; it restores no old consent or physical-closure claim. Code requests this
+when reopening an idle conversation and attaches to the admitted run. Recovery failure leaves the
+saved history readable. A restart without a new controller still waits for authority.

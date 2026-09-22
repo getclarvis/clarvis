@@ -3,7 +3,7 @@ import type { HostedRunFrame, HostedRunSnapshot, HostingService } from "@clarvis
 import { kernelError } from "../core/errors.ts";
 import { decodeHostedFrame, wireId } from "./hosting-codec.ts";
 
-const MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024;
+const MAX_RECORD_BYTES = 64 * 1024 * 1024;
 const MAX_PAGE_BYTES = 1024 * 1024;
 
 function corrupt(): Error {
@@ -27,7 +27,6 @@ export async function* readHostedSnapshot(
     !wireId(snapshot.cursor.host_generation) ||
     !Number.isSafeInteger(snapshot.bytes) ||
     snapshot.bytes < 0 ||
-    snapshot.bytes > MAX_SNAPSHOT_BYTES ||
     !Number.isSafeInteger(snapshot.cursor.sequence) ||
     snapshot.cursor.sequence < 0
   )
@@ -35,6 +34,7 @@ export async function* readHostedSnapshot(
   let offset = 0;
   let sequence = 0;
   let fragments: string[] = [];
+  let fragmentBytes = 0;
   const decoder = new TextDecoder("utf-8", { fatal: true });
   try {
     while (offset < snapshot.bytes) {
@@ -64,7 +64,10 @@ export async function* readHostedSnapshot(
       }
       let start = 0;
       for (let end = text.indexOf("\n"); end !== -1; end = text.indexOf("\n", start)) {
-        fragments.push(text.slice(start, end));
+        const fragment = text.slice(start, end);
+        fragmentBytes += Buffer.byteLength(fragment);
+        if (fragmentBytes > MAX_RECORD_BYTES) throw corrupt();
+        fragments.push(fragment);
         let frame: HostedRunFrame | null;
         try {
           frame = decodeHostedFrame(JSON.parse(fragments.join("")) as unknown);
@@ -72,6 +75,7 @@ export async function* readHostedSnapshot(
           throw corrupt();
         }
         fragments = [];
+        fragmentBytes = 0;
         if (
           frame === null ||
           frame.first_sequence !== sequence + 1 ||
@@ -82,7 +86,12 @@ export async function* readHostedSnapshot(
         yield frame;
         start = end + 1;
       }
-      if (start < text.length) fragments.push(text.slice(start));
+      if (start < text.length) {
+        const fragment = text.slice(start);
+        fragmentBytes += Buffer.byteLength(fragment);
+        if (fragmentBytes > MAX_RECORD_BYTES) throw corrupt();
+        fragments.push(fragment);
+      }
     }
     if (fragments.length !== 0 || sequence !== snapshot.cursor.sequence) throw corrupt();
   } finally {

@@ -43,6 +43,7 @@ export function projectTraceStoreWrites(
   projection: TraceWriteProjection,
 ): TraceStore {
   const openJournal = store.openJournal?.bind(store);
+  const readEvents = store.readEvents?.bind(store);
   const listAcrossOwners = store.listAcrossOwners?.bind(store);
   const recoverOrphans = store.recoverOrphans?.bind(store);
   return {
@@ -54,6 +55,7 @@ export function projectTraceStoreWrites(
       await store.insert(projected);
     },
     getById: (owner, id, visibility) => store.getById(owner, id, visibility),
+    ...(readEvents === undefined ? {} : { readEvents }),
     async replaceFinalContext(owner, id, context, usage, visibility) {
       const projected = project(() => projection.context(context));
       return await store.replaceFinalContext(owner, id, projected, usage, visibility);

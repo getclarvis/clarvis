@@ -1675,3 +1675,9 @@ Resume remains available for terminal Goals and healthy running attempts. A pend
 its operation identity; the explicit recovery action retries that operation after recovery.
 
 The Goal panel offers physical recovery for a pending resume and links a required limit edit to that same request. Transcript synchronization compares ordered turn identities and preserves the matching resident prefix.
+
+Accepted pending input can be resumed through `HostingService.resumePending(sessionId)` using the
+current authenticated operator connection. The Kernel reads canonical receipts and uses its existing
+idempotent admission queue; it restores no old consent or physical-closure claim. Code requests this
+when reopening an idle conversation and attaches to the admitted run. Recovery failure leaves the
+saved history readable. A restart without a new controller still waits for authority.

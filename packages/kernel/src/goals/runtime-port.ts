@@ -91,11 +91,15 @@ export function createGoalRuntimePort(options: {
     }
     return { state, goal };
   };
-  const guard = async <T>(action: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
+  const guard = async <T>(
+    action: () => Promise<T>,
+    signal?: AbortSignal,
+    recheckAfter = true,
+  ): Promise<T> => {
     try {
       alive(signal);
       const result = await action();
-      alive(signal);
+      if (recheckAfter) alive(signal);
       return result;
     } catch (error) {
       const mapped = toGoalKernelError(error);
@@ -207,8 +211,37 @@ export function createGoalRuntimePort(options: {
     logger,
     read: (signal) =>
       guard(async () => {
-        const { goal, evidence } = await snapshot("read", signal);
-        return { goal, evidence: evidence.catalog };
+        const { goal } = bound(await options.repository.read(binding.session_id), "read", signal);
+        let evidence: GoalEvidenceSnapshot | undefined;
+        let evidence_unavailable: "resource_exhausted" | "conflict" | undefined;
+        try {
+          evidence = await options.evidence.snapshot(goal);
+        } catch (error) {
+          if (
+            !(error instanceof GoalError) ||
+            (error.code !== "resource_exhausted" && error.code !== "conflict")
+          )
+            throw error;
+          evidence_unavailable = error.code;
+          logger.warn(
+            {
+              event: "goal.evidence.unavailable",
+              execution_id: binding.execution_id,
+              code: error.code,
+            },
+            "Goal evidence catalog is unavailable",
+          );
+        }
+        const current = bound(
+          await options.repository.read(binding.session_id),
+          "read",
+          signal,
+        ).goal;
+        return {
+          goal: current,
+          evidence: evidence?.catalog ?? [],
+          ...(evidence_unavailable === undefined ? {} : { evidence_unavailable }),
+        };
       }, signal),
     progress: (input, signal) =>
       guard(async () => {
@@ -282,16 +315,20 @@ export function createGoalRuntimePort(options: {
       }, signal),
     validateCompletion,
     blocked: (reason, signal) =>
-      guard(async () => {
-        await mutate(
-          "blocked",
-          undefined,
-          (state) => ({
-            state: declareGoalImpediment(state, { ...binding, reason, now: now() }),
-            result: undefined,
-          }),
-          signal,
-        );
-      }, signal),
+      guard(
+        async () => {
+          await mutate(
+            "blocked",
+            undefined,
+            (state) => ({
+              state: declareGoalImpediment(state, { ...binding, reason, now: now() }),
+              result: undefined,
+            }),
+            signal,
+          );
+        },
+        signal,
+        false,
+      ),
   };
 }

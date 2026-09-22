@@ -1,7 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import type { HostedRunAttachment, HostedRunFrame, RunEvent, RunResult } from "@clarvis/protocol";
 import { createHostedExecution, type HostedExecutionOptions } from "../../src/hosting/execution.ts";
-import { createHostedProjection, type ProjectionStorage } from "../../src/hosting/projection.ts";
+import {
+  createHostedProjection,
+  type ProjectionStorage,
+  type HostedProjectionOptions,
+} from "../../src/hosting/projection.ts";
 import { createManagedRun, type ManagedRunContext } from "../../src/runs/managed-run.ts";
 
 const completed: RunResult = {
@@ -36,17 +40,19 @@ async function until(condition: () => boolean): Promise<void> {
 
 async function fixture(
   overrides: Partial<Pick<HostedExecutionOptions, "maxBuffered" | "reconcile">> = {},
-  options: { withoutPresent?: boolean } = {},
+  options: { withoutPresent?: boolean; projection?: HostedProjectionOptions } = {},
 ) {
   let data = Buffer.alloc(0);
   let fault = false;
   let sync: (() => Promise<void>) | undefined;
+  let reading: (() => Promise<void>) | undefined;
   const storage: ProjectionStorage = {
     async write(bytes, offset) {
       if (fault) throw new Error("disk full");
       data = Buffer.concat([data.subarray(0, offset), bytes]);
     },
     async read(offset, bytes) {
+      await reading?.();
       return data.subarray(offset, offset + bytes);
     },
     async sync() {
@@ -54,10 +60,14 @@ async function fixture(
     },
     async close() {},
   };
-  const projection = createHostedProjection(storage, {
-    execution_id: completed.execution_id,
-    host_generation: "host-one",
-  });
+  const projection = createHostedProjection(
+    storage,
+    {
+      execution_id: completed.execution_id,
+      host_generation: "host-one",
+    },
+    options.projection,
+  );
   const entered = Promise.withResolvers<ManagedRunContext>();
   const finish = Promise.withResolvers<RunResult>();
   const source = createManagedRun({
@@ -105,6 +115,9 @@ async function fixture(
     read,
     reconciled,
     finish: () => finish.resolve(completed),
+    setRead: (callback: () => Promise<void>) => {
+      reading = callback;
+    },
     setFault: () => {
       fault = true;
     },
@@ -115,6 +128,43 @@ async function fixture(
 }
 
 describe("hosted execution observation", () => {
+  it("saturated snapshot readers do not cancel the source or prevent settlement", async () => {
+    const f = await fixture({}, { projection: { maxPendingOperations: 1 } });
+    f.context.emit(structural(1));
+    await until(() => f.projection.stats().sequence === 1);
+    const view = await f.observe();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    f.setRead(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    const page = f.projection.readPage(view.snapshot.snapshot_id, 0);
+    await entered.promise;
+    f.context.emit(structural(2));
+    try {
+      await expect(f.projection.readPage(view.snapshot.snapshot_id, 0)).rejects.toMatchObject({
+        code: "conflict",
+      });
+    } finally {
+      release.resolve();
+    }
+    await page;
+    f.finish();
+    const tail = await Array.fromAsync(view.handle.events);
+    await f.execution.settled;
+    expect(tail.map((frame) => frame.last_sequence)).toEqual([2]);
+    expect(f.context.signal.aborted).toBe(false);
+    expect(f.execution.state()).toMatchObject({
+      physicalClosed: true,
+      reconciled: true,
+      terminalCommitted: true,
+      recoveryError: undefined,
+    });
+    expect(f.reconciled).toEqual([completed]);
+    await f.execution.dispose();
+  });
+
   it("a bounded observer coalesces adjacent deltas without losing text or crossing the snapshot", async () => {
     const f = await fixture({ maxBuffered: 1 });
     const view = await f.observe();

@@ -48,7 +48,7 @@ export type SubagentOutcome =
   | { status: "iteration_limit_reached"; iterations: number; partialText: string }
   | { status: "budget_exhausted"; partialText: string }
   | { status: "cancelled"; partialText: string }
-  | { status: "error"; code: string; message: string };
+  | { status: "error"; code: string; message: string; partialText: string };
 
 /** Token counts for a sub-agent run plus the number of iterations it took. */
 export type SubagentUsageSnapshot = TokenCounts & { iterations: number };
@@ -245,7 +245,8 @@ export async function runSubagent(input: RunSubagentInput): Promise<RunSubagentR
  *   falling back to `partialText`; a hard cap on the sub-agent's *own* iteration
  *   counter becomes `iteration_limit_reached`; `soft_limit_declined` and any other
  *   `budget_exhausted` collapse into `budget_exhausted`; an `error` fills in
- *   `"empty_response"` / a default message when the loop left them unset.
+ *   `"empty_response"` / a default message when the loop left them unset, preserving
+ *   the last partial text as unverified work rather than silently discarding it.
  */
 export function toSubagentOutcome(result: AgentResult, iterations = 0): SubagentOutcome {
   switch (result.status) {
@@ -264,6 +265,7 @@ export function toSubagentOutcome(result: AgentResult, iterations = 0): Subagent
         status: "error",
         code: result.error?.code ?? "empty_response",
         message: result.error?.message ?? "Sub-agent terminated with no result.",
+        partialText: result.partialText,
       };
   }
 }

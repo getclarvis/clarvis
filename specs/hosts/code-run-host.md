@@ -1654,3 +1654,16 @@ Production: `synchronizeGoal`, `TranscriptStore.truncateFrom` in
 [view.tsx](../../packages/code/src/features/goal/view.tsx).
 Test: canonical suffix replacement in
 [store-status.test.ts](../../packages/code/tests/unit/store-status.test.ts).
+
+### Reopening accepted pending input
+
+When reopening an idle hosted conversation, `resumeSessionById` calls `hosting.resumePending` before
+choosing its attachment. The Kernel chooses canonical pending input and owns admission. Existing
+active, foreign-controlled or physically unknown runs retain their ordinary attachment/recovery path.
+Failure to recover pending input does not prevent loading the saved conversation; the retained-input
+notice reports the dependency. A stale session-loading epoch cannot attach to the returned run.
+
+Production: `resumeSessionById` in [run-host.ts](../../packages/code/src/run-host.ts).
+Test: `reopening an idle conversation asks the host to restore accepted input before attaching` and
+`pending recovery failure leaves the saved conversation readable` in
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).

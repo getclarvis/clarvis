@@ -25,6 +25,7 @@ export function createTraceVisibilityView(
       throw new PersistenceError("Execution visibility does not match its store view.");
   };
   const openJournal = store.openJournal?.bind(store);
+  const readEvents = store.readEvents?.bind(store);
   const recoverOrphans = store.recoverOrphans?.bind(store);
   const listAcrossOwners = store.listAcrossOwners?.bind(store);
   return {
@@ -36,6 +37,9 @@ export function createTraceVisibilityView(
       await store.insert(record);
     },
     getById: (owner, id) => store.getById(owner, id, visibility),
+    ...(readEvents === undefined
+      ? {}
+      : { readEvents: (owner: string, id: string) => readEvents(owner, id, visibility) }),
     replaceFinalContext: (owner, id, context, usage) =>
       store.replaceFinalContext(owner, id, context, usage, visibility),
     list: (owner, limit, offset) => store.list(owner, limit, offset, visibility),

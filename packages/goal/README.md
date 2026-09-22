@@ -10,6 +10,19 @@ The owning contract is [goals](../../specs/capabilities/goals.md). Hosting, plan
 prompt-cache behavior retain their owning package contracts; domain tests alone do not qualify
 automatic continuation, a TUI journey, a container or an installed artifact.
 
+Runtime snapshots expose classified catalog failures through `evidence_unavailable`, separately
+from validated Goal authority. Iteration refresh and `get_goal` preserve this distinction in their
+model-facing state. Evidence-dependent operations still require valid proof; availability is not
+completion or observed progress.
+Settlement records `activity_unavailable` when the host cannot measure activity. It preserves the
+semantic no-progress allowance without resetting it or increasing token, time or continuation limits.
+
+The host can persist non-final settlement inputs with `prepareGoalSettlement` after physical closure.
+Its immutable run-scoped preparation preserves usage gaps and unavailable activity across restart;
+activity is deduplicated, excludes receipts already credited, and retains at most 32 new receipts.
+`settleGoalRun` consumes it in the same transaction that charges the stage. It grants no final
+completion proof or execution authority.
+
 ## Domain surface
 
 - `applyGoalControl` validates user controls, CAS and idempotent operation receipts on a clone.
@@ -184,7 +197,10 @@ clears that sequence, so an earlier refusal never condemns a later attempt, and 
 stage ends with `no_progress` rather than a blocked Goal. A verdict fenced out because the goal or
 its evidence moved is a state conflict, not a deficiency: it is re-read once so a non-revoking human
 acceptance inside the window can still settle the attempt, and a conflict that survives stops the
-stage with `goal_control_failed` and host attention rather than consuming the recovery bound. The
+stage with `goal_finalization_conflict`. Settlement records `finalization_conflict` and may
+admit one successor through the existing continuation path, preserving the semantic no-progress
+allowance. Authority, consumption, deadline and continuation limits are still revalidated; the new
+stage must submit a fresh candidate and pass every completion gate. The
 orientation never requires a fabricated candidate before continuing and never names the Steward; the
 typed cause and the host's own verdicts are recorded as bounded trace evidence without model or
 objective text. Only recoverable verdicts recover: a failed read, foreign binding or obsolete

@@ -18,6 +18,8 @@ export interface GoalSettlementDecision {
    *   the host having to rule on its semantic value.
    */
   activity?: readonly string[];
+  /** Missing observation is uncertainty, not an empty successful measurement. */
+  activity_unavailable?: boolean;
   /** When supplied, measured at the host provider port rather than inferred from loop totals. */
   usage?: GoalUsage;
 }
@@ -101,6 +103,7 @@ export function goalStageOutcome(result: RunResult, now: number): GoalStageOutco
   if (error.code === "all_tools_unavailable") return { cause: "tools_unavailable" };
   if (error.code === "context_overflow") return { cause: "context_overflow" };
   if (error.code === "goal_control_failed") return { cause: "control_failure" };
+  if (error.code === "goal_finalization_conflict") return { cause: "finalization_conflict" };
   if (error.code === "goal_steward_failed" || error.code === "goal_steward_inconclusive")
     return { cause: "steward_interrupted" };
   if (REFUSAL_CODES.has(error.code)) return { cause: "provider_refused" };
@@ -189,6 +192,7 @@ export function settleGoalSession(
     cause: stage.cause,
     ...(stage.not_before === undefined ? {} : { not_before: stage.not_before }),
     ...(decision.activity === undefined ? {} : { activity: decision.activity }),
+    ...(decision.activity_unavailable === true ? { activity_unavailable: true } : {}),
     usage,
     now,
   });
@@ -233,4 +237,35 @@ export function settleGoalSession(
     );
   }
   return true;
+}
+
+/** Replay only host-prepared non-final inputs after the registry proves physical closure. */
+export function recoverGoalSettlementSession(
+  session: Session,
+  result: RunResult,
+  now: number,
+  priceFor?: (model: string) => ModelCost | undefined,
+): boolean {
+  const goals = [
+    ...(session.goal_state?.archive ?? []),
+    ...(session.goal_state?.current === undefined ? [] : [session.goal_state.current]),
+  ];
+  const run = goals
+    .flatMap((goal) => goal.runs)
+    .find((stage) => stage.execution_id === result.execution_id);
+  const preparation = run?.settlement_preparation;
+  if (
+    preparation === undefined ||
+    preparation.outcome !== result.status ||
+    preparation.disposition !== (result.disposition ?? "final") ||
+    (result.status === "completed" && preparation.disposition !== "checkpoint")
+  )
+    return false;
+  return settleGoalSession(
+    session,
+    result,
+    { ...preparation, completion_validated: false },
+    now,
+    priceFor,
+  );
 }

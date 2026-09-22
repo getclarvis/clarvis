@@ -37,6 +37,12 @@ No external dependencies — `node:fs`, `node:os`, `node:path` and `node:crypto`
 only, over `@clarvis/capability` and `@clarvis/paths`. `@clarvis/loop` depends on
 this package; nothing here may depend on the engine.
 
+The optional `TraceStore.readEvents` reads an active journal through a repeatable immutable byte
+prefix, using bounded blocks and line limits. It checks owner, execution and visibility before
+yielding events. Partial or malformed lines refuse evidence replay; crash salvage remains separate.
+After settlement it uses the existing record reader and refuses damaged recovery records. The
+visibility and write-projection wrappers preserve this boundary. No additional storage is created.
+
 `TraceHandle` satisfies `TracePort` **structurally** — no adapter, no cast — so
 the engine passes the handle straight through, exactly as `LiveContext` satisfies
 `ContextPort`.

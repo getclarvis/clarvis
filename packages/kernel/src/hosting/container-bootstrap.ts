@@ -1,5 +1,5 @@
 import { dirname } from "node:path";
-import { rmdir, unlink } from "node:fs/promises";
+import { rmdir } from "node:fs/promises";
 import type { Readable, Writable } from "node:stream";
 import {
   DIR_MODE,
@@ -29,6 +29,7 @@ import {
 } from "./container-contract.ts";
 import { createFileRunHost, type FileRunHost } from "./file-host.ts";
 import { openHostedProjection } from "./projection.ts";
+import { removeProjectionStorage } from "./projection-storage.ts";
 import { decodeHostedRegistryState, MAX_HOST_INDEX_BYTES } from "./state.ts";
 import { preparePrivateHostDirectory, readPrivateHostJson } from "./private-files.ts";
 
@@ -61,9 +62,7 @@ async function readArtifactManifest(): Promise<RuntimeArtifactManifest> {
 
 /** Remove one completed hosted projection and prune its generation directory when it is empty. */
 export async function removeContainerProjection(path: string): Promise<void> {
-  await unlink(path).catch((error: NodeJS.ErrnoException) => {
-    if (error.code !== "ENOENT") throw error;
-  });
+  await removeProjectionStorage(path);
   await rmdir(dirname(path)).catch((error: NodeJS.ErrnoException) => {
     if (error.code !== "ENOENT" && error.code !== "ENOTEMPTY") throw error;
   });
@@ -72,6 +71,7 @@ export async function removeContainerProjection(path: string): Promise<void> {
 async function hostedStorage(
   input: ContainerInitialize,
   globalDir: string,
+  logger: Logger,
 ): Promise<Parameters<typeof createFileRunHost>[0]["storage"]> {
   const paths = containerKernelStatePaths(input.workspaceIdentity.namespace, globalDir);
   await preparePrivateHostDirectory(paths.root);
@@ -81,10 +81,14 @@ async function hostedStorage(
     async projection(executionId) {
       const path = paths.projectionFile(input.generation, executionId);
       await preparePrivateHostDirectory(dirname(path));
-      return openHostedProjection(path, {
-        host_generation: input.generation,
-        execution_id: executionId,
-      });
+      return openHostedProjection(
+        path,
+        {
+          host_generation: input.generation,
+          execution_id: executionId,
+        },
+        { recovery: { logger } },
+      );
     },
     async removeProjection(executionId, generation) {
       await removeContainerProjection(paths.projectionFile(generation, executionId));
@@ -214,7 +218,7 @@ export function serveContainerKernel(
                 logger,
               },
               hostGeneration: admitted.generation,
-              storage: await hostedStorage(admitted, globalDir),
+              storage: await hostedStorage(admitted, globalDir, logger),
               authenticate: () => "operator",
               exposeLocalControls: false,
               exposeDefaultOwner: true,

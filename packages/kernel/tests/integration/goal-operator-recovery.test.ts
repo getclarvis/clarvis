@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { afterEach, expect, it } from "bun:test";
 import { createGoalFileHostFixture } from "../helpers/goal-file-host.ts";
 
@@ -513,4 +515,501 @@ it("keeps a retained resume pending when its bound limit edit still cannot cover
   });
   expect(adapted).toMatchObject({ outcome: "needs_input", status: "blocked" });
   expect(f.requests).toHaveLength(1);
+});
+
+it("preserves partial accounting through an independent turn and an idempotent attached follow-up", async () => {
+  const f = await createGoalFileHostFixture();
+  cleanup.push(f.close);
+  let step = 0;
+  f.setResponder(async () => {
+    step++;
+    if (step === 1) return { name: "get_goal", arguments: {} };
+    if (step === 2)
+      return {
+        name: "update_goal",
+        arguments: {
+          update: {
+            action: "checkpoint",
+            summary: "Useful work retained",
+            next_step: "Finish remaining work",
+          },
+        },
+        usage: "missing",
+      };
+    if (step === 3) return { text: "Independent answer delivered" };
+    if (step === 4) return { name: "attach_goal", arguments: {} };
+    if (step === 5)
+      return {
+        name: "update_goal",
+        arguments: { update: { action: "blocked", reason: "External artifact still required" } },
+      };
+    throw new Error("Unexpected replay or automatic inference");
+  });
+  await f.client.goals.control({
+    session_id: "conversation",
+    expected_revision: 0,
+    operation_id: "create-partial",
+    action: {
+      kind: "create",
+      objective: "Deliver the remaining artifact",
+      limits: { max_net_tokens: 1000000 },
+    },
+  });
+  await f.until(() => f.host.stats().runs === 0);
+  const before = (await f.client.goals.get("conversation")).state.current!;
+  expect(before.status).toBe("blocked");
+  expect(before.runs[0]!.usage?.kind).toBe("partial");
+  expect(before.consumption.input).toBeGreaterThan(0);
+  const start = (execution_id: string, text: string) => ({
+    session_id: "conversation",
+    session_revision: 0,
+    kind: "conversation" as const,
+    user_preview: text,
+    params: {
+      execution_id,
+      agent: "solo",
+      intent: "operator" as const,
+      messages: [{ role: "user" as const, content: text }],
+    },
+  });
+  const independent = await f.client.hosting!.start(
+    start("independent-partial", "Answer a different question"),
+  );
+  expect(await independent.handle.done).toMatchObject({ status: "completed" });
+  await independent.handle.closed;
+  const unchanged = (await f.client.goals.get("conversation")).state.current!;
+  expect(unchanged.runs).toEqual(before.runs);
+  expect(unchanged.consumption).toEqual(before.consumption);
+  const input = start("attached-partial", "continue seu trabalho");
+  const attached = await f.client.hosting!.start(input);
+  await attached.handle.closed;
+  const after = (await f.client.goals.get("conversation")).state.current!;
+  expect(after.runs).toHaveLength(2);
+  expect(after.runs[0]!.usage).toEqual(before.runs[0]!.usage);
+  expect(after.runs[1]!.execution_id).toBe("attached-partial");
+  expect(after.consumption.usage_accepted_runs).toContain(before.runs[0]!.execution_id);
+  expect(after.limits).toEqual(before.limits);
+  const stored = (await f.client.sessions.get("conversation"))!;
+  const replay = await f.client.hosting!.start(input);
+  await replay.handle.closed;
+  expect(step).toBe(5);
+  const measured = [...f.usages, ...f.stewardUsages];
+  expect(stored.totals.input).toBe(measured.reduce((sum, usage) => sum + usage.input, 0));
+  expect(stored.totals.output).toBe(measured.reduce((sum, usage) => sum + usage.output, 0));
+  expect(JSON.stringify(f.requests.at(-1)?.messages)).toContain("Useful work retained");
+  expect((await f.client.sessions.get("conversation"))!.totals).toEqual(stored.totals);
+  expect(stored.turns.map((turn) => turn.execution_id)).toEqual([
+    before.runs[0]!.execution_id,
+    "independent-partial",
+    "attached-partial",
+  ]);
+  expect(f.errors).toEqual([]);
+});
+
+it("continues useful work after three locally limited children and partial Goal consumption", async () => {
+  const f = await createGoalFileHostFixture({
+    childIterationLimit: 64,
+    maxProviderCalls: 220,
+    timeoutMs: 60000,
+    budgetTokenLimit: 1000000,
+  });
+  cleanup.push(f.close);
+  let leadStep = 0;
+  let childCalls = 0;
+  f.setResponder(async (request) => {
+    const leader = request.tools?.some((tool) =>
+      ["get_goal", "attach_goal"].includes(tool.function.name),
+    );
+    if (!leader) {
+      childCalls++;
+      return {
+        name: "write_file",
+        arguments: { path: "partial.txt", content: `Retained record ${String(childCalls)}` },
+        commentary: `Partial record ${String(childCalls)}`,
+      };
+    }
+    leadStep++;
+    if (leadStep <= 3)
+      return {
+        name: "spawn_subagent",
+        arguments: {
+          title: `part ${String(leadStep)}`,
+          task: "Inspect successive records and retain partial output",
+          profile: "helper",
+        },
+      };
+    if (leadStep === 4) {
+      expect(childCalls).toBe(192);
+      expect(
+        JSON.stringify(request.messages).includes("own iteration limit after 64 iterations"),
+      ).toBe(true);
+      return {
+        name: "update_goal",
+        arguments: {
+          update: {
+            action: "checkpoint",
+            summary: "Three partial inspections retained",
+            next_step: "Consolidate retained records",
+          },
+        },
+        usage: "missing",
+      };
+    }
+    if (leadStep === 5) return { name: "attach_goal", arguments: {} };
+    if (leadStep === 6)
+      return {
+        name: "write_file",
+        arguments: {
+          path: "consolidated.txt",
+          content: await readFile(join(f.workspaceRoot, "partial.txt"), "utf8"),
+        },
+      };
+    if (leadStep === 7)
+      return {
+        name: "update_goal",
+        arguments: {
+          update: {
+            action: "blocked",
+            reason: "Await external acceptance of the consolidated artifact",
+          },
+        },
+      };
+    throw new Error("Unexpected duplicate continuation");
+  });
+  await f.client.goals.control({
+    session_id: "conversation",
+    expected_revision: 0,
+    operation_id: "combined-create",
+    action: {
+      kind: "create",
+      objective: "Consolidate inspected records",
+      limits: { max_net_tokens: 1000000 },
+    },
+  });
+  await f.until(() => f.host.stats().runs === 0);
+  const before = (await f.client.goals.get("conversation")).state.current!;
+  expect(leadStep).toBe(4);
+  expect(before.runs[0]!.usage?.kind).toBe("partial");
+  expect(before.runs[0]!.cause).not.toBe("unclassified");
+  const input = {
+    session_id: "conversation",
+    session_revision: 0,
+    kind: "conversation" as const,
+    user_preview: "continue seu trabalho",
+    params: {
+      execution_id: "combined-followup",
+      agent: "solo",
+      intent: "operator" as const,
+      messages: [{ role: "user" as const, content: "continue seu trabalho" }],
+    },
+  };
+  const run = await f.client.hosting!.start(input);
+  await run.handle.closed;
+  expect(await readFile(join(f.workspaceRoot, "consolidated.txt"), "utf8")).toBe(
+    "Retained record 192",
+  );
+  const after = (await f.client.goals.get("conversation")).state.current!;
+  expect(after.runs).toHaveLength(2);
+  expect(after.runs[0]!.usage).toEqual(before.runs[0]!.usage);
+  expect(after.limits).toEqual(before.limits);
+  const replay = await f.client.hosting!.start(input);
+  await replay.handle.closed;
+  expect(leadStep).toBe(7);
+  expect(childCalls).toBe(192);
+  expect(f.errors).toEqual([]);
+});
+
+it.each(["pause", "cancel", "replace"] as const)(
+  "%s supersedes pending resume and rejects a late linked limit edit",
+  async (kind) => {
+    const f = await createGoalFileHostFixture();
+    cleanup.push(f.close);
+    f.setResponder(async () => ({
+      name: "update_goal",
+      arguments: { update: { action: "blocked", reason: "Controlled boundary" } },
+    }));
+    await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "fenced-create",
+      action: {
+        kind: "create",
+        objective: "Preserve operator precedence",
+        limits: { max_net_tokens: 1000000 },
+      },
+    });
+    await f.until(() => f.host.stats().runs === 0);
+    let view = await f.client.goals.get("conversation");
+    await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: view.state.revision,
+      operation_id: "fenced-lower",
+      action: { kind: "edit", limits: { max_net_tokens: 1 } },
+    });
+    view = await f.client.goals.get("conversation");
+    const request = {
+      session_id: "conversation",
+      expected_revision: view.state.revision,
+      operation_id: "fenced-resume",
+      action: { kind: "resume" as const },
+    };
+    const pending = await f.client.goals.control(request);
+    expect(pending.outcome).toBe("needs_input");
+    view = await f.client.goals.get("conversation");
+    await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: view.state.revision,
+      operation_id: "supersede",
+      action:
+        kind === "replace"
+          ? {
+              kind,
+              objective: "Replacement objective owns later work",
+              limits: { max_net_tokens: 1000000 },
+            }
+          : { kind },
+    });
+    if (kind === "replace") await f.until(() => f.host.stats().runs === 0);
+    const stopped = await f.client.goals.get("conversation");
+    expect((await f.client.goals.control(request)).outcome).toBe("superseded");
+    await expect(
+      f.client.goals.control({
+        session_id: "conversation",
+        expected_revision: stopped.state.revision,
+        operation_id: "late-edit",
+        action: {
+          kind: "edit",
+          resume_operation_id: pending.operation_id,
+          limits: { max_net_tokens: 2000000 },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "conflict" });
+    expect((await f.client.goals.get("conversation")).state).toEqual(stopped.state);
+    f.setResponder(async () => ({ text: "Independent work remains available" }));
+    const run = await f.client.hosting!.start({
+      session_id: "conversation",
+      session_revision: 0,
+      kind: "conversation",
+      user_preview: "Do another task",
+      params: {
+        execution_id: "fenced-independent",
+        agent: "solo",
+        intent: "operator",
+        messages: [{ role: "user", content: "Do another task" }],
+      },
+    });
+    expect(await run.handle.done).toMatchObject({ status: "completed" });
+    await run.handle.closed;
+    expect(f.requests).toHaveLength(kind === "replace" ? 3 : 2);
+    expect((await f.client.goals.get("conversation")).state.current!.runs).toHaveLength(1);
+  },
+);
+
+it.each(["complete", "cancelled"] as const)(
+  "reopens a %s Goal through explicit host control without replacing its audit",
+  async (terminal) => {
+    const f = await createGoalFileHostFixture();
+    cleanup.push(f.close);
+    let step = 0;
+    let independentMode = false;
+    f.setResponder(async () => {
+      step++;
+      if (independentMode) return { text: "Independent turn after terminal Goal" };
+      if (terminal === "complete" && step === 1)
+        return {
+          name: "update_goal",
+          arguments: {
+            update: {
+              action: "candidate",
+              summary: "Initial result complete",
+              assessments: [
+                {
+                  criterion_id: "objective",
+                  kind: "qualitative",
+                  justification: "Controlled provider produced the initial result",
+                },
+              ],
+            },
+          },
+        };
+      if (terminal === "complete" && step === 2) return { text: "Initial result complete" };
+      return {
+        name: "update_goal",
+        arguments: { update: { action: "blocked", reason: "Resumed attempt retained" } },
+      };
+    });
+    await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: `terminal-create-${terminal}`,
+      action: {
+        kind: "create",
+        objective: "Preserve the original objective and audit",
+        limits: { max_net_tokens: 1000000 },
+      },
+    });
+    await f.until(() => f.host.stats().runs === 0);
+    let view = await f.client.goals.get("conversation");
+    if (terminal === "complete") {
+      expect(view.state.current!.status).toBe("complete");
+    } else {
+      await f.client.goals.control({
+        session_id: "conversation",
+        expected_revision: view.state.revision,
+        operation_id: "terminal-cancel",
+        action: { kind: "cancel" },
+      });
+      view = await f.client.goals.get("conversation");
+      expect(view.state.current!.status).toBe("cancelled");
+    }
+    const before = structuredClone(view.state.current!);
+    independentMode = true;
+    const independent = await f.client.hosting!.start({
+      session_id: "conversation",
+      session_revision: 0,
+      kind: "conversation",
+      user_preview: "Answer independently after terminal Goal",
+      params: {
+        execution_id: `terminal-independent-${terminal}`,
+        agent: "solo",
+        intent: "operator",
+        messages: [{ role: "user", content: "Answer independently after terminal Goal" }],
+      },
+    });
+    expect(await independent.handle.done).toMatchObject({ status: "completed" });
+    await independent.handle.closed;
+    expect((await f.client.goals.get("conversation")).state.current).toEqual(before);
+    independentMode = false;
+    const receipt = await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: view.state.revision,
+      operation_id: `terminal-resume-${terminal}`,
+      action: { kind: "resume" },
+    });
+    expect(receipt.execution_id).toBeString();
+    await f.until(() => f.host.stats().runs === 0);
+    const after = (await f.client.goals.get("conversation")).state.current!;
+    expect(after.goal_id).toBe(before.goal_id);
+    expect(after.objective).toBe(before.objective);
+    expect(after.criteria).toEqual(before.criteria);
+    expect(after.runs.slice(0, before.runs.length)).toEqual(before.runs);
+    expect(after.runs).toHaveLength(before.runs.length + 1);
+    expect(after.runs.at(-1)).toMatchObject({
+      execution_id: receipt.execution_id,
+      phase: "closed",
+    });
+  },
+);
+
+it("contains cancellation during delegated Goal work and keeps later operator work available", async () => {
+  const f = await createGoalFileHostFixture();
+  cleanup.push(f.close);
+  const childEntered = Promise.withResolvers<void>();
+  const releaseChild = Promise.withResolvers<void>();
+  cleanup.push(async () => releaseChild.resolve());
+  let independent = false;
+  f.setResponder(async (request) => {
+    const leader = request.tools?.some((tool) => tool.function.name === "get_goal");
+    if (independent) return { text: "Independent task completed after cancellation" };
+    if (leader)
+      return {
+        name: "spawn_subagent",
+        arguments: {
+          title: "Interrupted child",
+          task: "Inspect the controlled artifact until the parent stops",
+          profile: "helper",
+        },
+      };
+    childEntered.resolve();
+    await releaseChild.promise;
+    return {
+      name: "write_file",
+      arguments: { path: "must-not-exist.txt", content: "late child effect" },
+    };
+  });
+  await f.client.goals.control({
+    session_id: "conversation",
+    expected_revision: 0,
+    operation_id: "delegated-cancel-create",
+    action: {
+      kind: "create",
+      objective: "Contain cancellation of delegated work",
+      limits: { max_net_tokens: 1000000 },
+    },
+  });
+  await childEntered.promise;
+  const running = await f.client.goals.get("conversation");
+  await f.client.goals.control({
+    session_id: "conversation",
+    expected_revision: running.state.revision,
+    operation_id: "delegated-cancel",
+    action: { kind: "cancel" },
+  });
+  releaseChild.resolve();
+  await f.until(() => f.host.stats().runs === 0);
+  const cancelled = (await f.client.goals.get("conversation")).state.current!;
+  expect(cancelled.status).toBe("cancelled");
+  expect(cancelled.runs).toHaveLength(1);
+  expect(cancelled.runs[0]).toMatchObject({ phase: "closed", outcome: "cancelled" });
+  expect(cancelled.runs[0]!.checkpoint).toBeUndefined();
+  await expect(readFile(join(f.workspaceRoot, "must-not-exist.txt"), "utf8")).rejects.toMatchObject(
+    {
+      code: "ENOENT",
+    },
+  );
+  independent = true;
+  const run = await f.client.hosting!.start({
+    session_id: "conversation",
+    session_revision: 0,
+    kind: "conversation",
+    user_preview: "Do independent work",
+    params: {
+      execution_id: "after-delegated-cancel",
+      agent: "solo",
+      intent: "operator",
+      messages: [{ role: "user", content: "Do independent work" }],
+    },
+  });
+  expect(await run.handle.done).toMatchObject({ status: "completed" });
+  await run.handle.closed;
+  expect((await f.client.goals.get("conversation")).state.current!.runs).toHaveLength(1);
+});
+
+it("single-flights concurrent manual resumes into one successor execution", async () => {
+  const f = await createGoalFileHostFixture();
+  cleanup.push(f.close);
+  f.setResponder(async () => ({
+    name: "update_goal",
+    arguments: { update: { action: "blocked", reason: "Controlled boundary" } },
+  }));
+  await f.client.goals.control({
+    session_id: "conversation",
+    expected_revision: 0,
+    operation_id: "concurrent-create",
+    action: {
+      kind: "create",
+      objective: "Admit exactly one resumed attempt",
+      limits: { max_net_tokens: 1000000 },
+    },
+  });
+  await f.until(() => f.host.stats().runs === 0);
+  const view = await f.client.goals.get("conversation");
+  const request = {
+    session_id: "conversation",
+    expected_revision: view.state.revision,
+    operation_id: "concurrent-resume",
+    action: { kind: "resume" as const },
+  };
+  const receipts = await Promise.all(
+    Array.from({ length: 4 }, () => f.client.goals.control(request)),
+  );
+  const executionId = receipts[0]?.execution_id;
+  if (executionId === undefined) throw new Error("Concurrent resume did not reserve an execution");
+  expect(new Set(receipts.map((receipt) => receipt.execution_id)).size).toBe(1);
+  expect(receipts.every((receipt) => receipt.operation_id === request.operation_id)).toBe(true);
+  await f.until(() => f.host.stats().runs === 0);
+  expect(f.requests).toHaveLength(2);
+  const after = (await f.client.goals.get("conversation")).state.current!;
+  expect(after.runs).toHaveLength(2);
+  expect(after.runs[1]!.execution_id).toBe(executionId);
 });

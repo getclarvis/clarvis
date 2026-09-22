@@ -246,6 +246,7 @@ function hostedFixture() {
     throw new Error("unexpected hosted control");
   };
   const service: HostingService = {
+    resumePending: async () => null,
     controlObservation: unexpected,
     resolveRecovery: unexpected,
     list: async () => [attachment.run],

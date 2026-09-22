@@ -231,8 +231,11 @@ function createCreationHandler(
               progress: false,
             };
           }
-          case "blocked":
+          case "blocked": {
             await state.runtime.blocked(action.reason, bc.signal);
+            envelope.ok(
+              "Impediment recorded; this stage ends and the host re-evaluates it under the goal's remaining limits",
+            );
             return {
               kind: "terminal",
               result: errorResult(
@@ -241,6 +244,7 @@ function createCreationHandler(
                 "Impediment recorded; the host re-evaluates it under the goal's remaining limits",
               ),
             };
+          }
         }
       } catch (error) {
         if ("attach" in port && state.runtime === undefined) {
@@ -314,8 +318,8 @@ function createCreationGate(
             kind: "terminal",
             result: errorResult(
               bc,
-              "goal_control_failed",
-              "Goal control is unavailable; execution stopped",
+              "goal_finalization_conflict",
+              "Completion state changed concurrently; the host must re-evaluate current proof",
             ),
           };
         if (ruling.kind === "recover") {

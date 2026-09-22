@@ -267,6 +267,12 @@ export interface TranscriptMemoryRelease {
 /** The reactive transcript the UI renders, and the reducers that populate it from runs and local commands. */
 export interface TranscriptStore {
   nodes: TranscriptNode[];
+  /** Selects a reconstructible child projection when this store supports one. */
+  selectSubagent?(id: string | null): void;
+  /** Status of the explicitly selected child's persisted-history reload. */
+  childLoadStatus?(): "idle" | "loading" | "ready" | "unavailable";
+  /** Lead-owned nodes used when exporting a session while a child is selected. */
+  exportLeadNodes?(): readonly TranscriptNode[];
   /** Mutable execution records whose content has not been sealed. */
   frontierNodes(): readonly TranscriptNode[];
   /** Bounded terminal content, keyed independently of row residence and projection. */

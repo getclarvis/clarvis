@@ -52,6 +52,14 @@ answers are, respectively, prefix-stable segmentation
 (`packages/code/src/core/transcript/tool-display.ts`), and the native ScrollBox index slice
 owned by [code-transcript-stability.md](code-transcript-stability.md).
 
+Interactive Code routes hidden child event detail outside the Lead's reactive node array.
+`createChildTranscriptStore` retains bounded live tails and creates a detailed store only for the
+selected child, loading complete history from the persisted run. `createTranscriptProjection`
+therefore sees only the selected store; a hidden child delta does not rebuild Lead rows. Production:
+`packages/code/src/adapters/child-transcript-store.ts` (`createChildTranscriptStore`),
+`packages/code/src/runtime.tsx` (`runApp`). Test:
+`packages/code/tests/unit/child-transcript-store.test.ts` (hidden children leave Lead nodes stable).
+
 ---
 
 ## 2. Surface
@@ -1532,7 +1540,7 @@ owners and native reveal), and `packages/code/src/views/App.tsx` (`visiblePlanCo
 auto-reveal contract, per-intent sticky close, `Ctrl+X S` toggling, long-Plan reveal and
 completed-agent selection).
 
-**INV-T49.** Lead has exactly two navigable immutable delegation markers; the selected child uses the same row store and viewport. No child section is automatically folded or reordered by status.
+**INV-T49.** Lead has exactly two navigable immutable delegation markers; the selected child uses the same row rules and viewport from an isolated store. No child section is automatically folded or reordered by status.
 Production: `TranscriptRows`, `TranscriptViewport`, `TranscriptContent` and the individual presenters,
 listed in [code-transcript-stability.md](code-transcript-stability.md).
 Test: [transcript-records.test.ts](../../packages/code/tests/unit/transcript-records.test.ts),
@@ -1698,8 +1706,8 @@ instead of covering the conversation").
 | Retention deletes a completed `discard` plan | projected history stays completed and muted; the UI confirms configured cleanup rather than requesting recovery | `packages/code/src/adapters/plan-projection.ts`; `PlanSummary` in `packages/code/src/views/Sidebar.tsx` |
 | A workflow terminal event arrives before any leader seeded the tree | `run_ended` returns `current` unchanged; `workflow_title_updated` returns `null` | the matching branches of `reduceWorkflowProjection` |
 | A workflow progress/terminal event names an unknown leader | a minimal leader node is synthesized in place | the matching branches of `reduceWorkflowProjection` |
-| A selected child has body records but no delegation card | retained body rows remain individually accessible; no synthesized section or guessed status | `packages/code/src/adapters/transcript-projection.ts` |
-| A run produced only delegated work | Lead keeps immutable creation and settlement markers; selection opens only that child's retained rows | `packages/code/src/adapters/store.ts`, `packages/code/src/views/transcript/TranscriptViewport.tsx` |
+| A selected child has body records but no delegation card | reconstructed body rows remain individually accessible; no synthesized section or guessed status | `packages/code/src/adapters/transcript-projection.ts` |
+| A run produced only delegated work | Lead keeps immutable creation and settlement markers; selection reloads only that child's rows | `packages/code/src/adapters/child-transcript-store.ts`, `packages/code/src/views/transcript/TranscriptViewport.tsx` |
 | The terminal reports no capabilities (headless / test renderer) | every attention cue no-ops; `away()` returns `true` so the terminal decides | `packages/code/src/core/attention.ts` |
 | A `RunEvent` type is added without a span mapping | compile-time exhaustiveness error, not a runtime path | the exhaustive default in `deriveRunEventSpan` |
 

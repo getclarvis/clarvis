@@ -258,9 +258,9 @@ export interface RunHost {
    *   A folded turn whose trace can no longer be fetched keeps the same notice
    *   it already shows on screen; an export is never failed by one missing
    *   trace. Each folded turn is yielded before the next one is rebuilt, so an
-   *   export never retains a second copy of the whole session. Nothing is
-   *   refetched while the session still fits in the resident window; there the
-   *   sole batch is exactly `store.nodes`.
+   *   export never retains a second copy of the whole session. A plain store
+   *   yields resident nodes directly; an isolated child store reloads each
+   *   resident run so hidden child detail remains in the export.
    */
   exportNodeBatches(): AsyncIterable<readonly TranscriptNode[]>;
   sessionMeta(): SessionMeta | null;
@@ -2000,13 +2000,77 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       if (outputBatch.length > 0) yield outputBatch;
     }
 
+    async function* exportResidentWithChildren(
+      nodes: readonly TranscriptNode[],
+    ): AsyncGenerator<readonly TranscriptNode[]> {
+      const segments: TranscriptNode[][] = [];
+      let segment: TranscriptNode[] = [];
+      for (const node of nodes) {
+        if (node.kind === "user" && segment.length > 0) {
+          segments.push(segment);
+          segment = [];
+        }
+        segment.push(node);
+      }
+      if (segment.length > 0) segments.push(segment);
+
+      for (const current of segments) {
+        const user = current.find((node) => node.kind === "user");
+        const executionId = user?.kind === "user" ? user.sourceExecutionId : undefined;
+        if (executionId === undefined) {
+          yield* exportResidentNodes(current);
+          continue;
+        }
+        let detail: RunDetail | null = null;
+        try {
+          detail = await client.getRun(executionId);
+        } catch {
+          detail = null;
+        }
+        if (detail === null) {
+          if (current.some((node) => node.kind === "subagent")) {
+            yield* exportResidentNodes([
+              ...current,
+              {
+                key: `export:missing-children:${executionId}`,
+                kind: "assistant",
+                status: "error",
+                text: `EXPORT INCOMPLETE — run ${executionId} child transcripts could not be reloaded.`,
+              },
+            ]);
+          } else yield* exportResidentNodes(current);
+          continue;
+        }
+        scratch.clear();
+        const sink = scratch.openRun(executionId);
+        batch(() => {
+          sink.beginReconcile();
+          for (const event of detail.events) applyEvent(sink, event, "replay");
+          sink.endReconcile();
+          sink.complete();
+        });
+        const replayed = [...scratch.nodes];
+        const replayedKeys = new Set(replayed.map((node) => node.key));
+        const insertion = current.findIndex((node) => node.key.startsWith(`${executionId}::`));
+        const at = insertion < 0 ? 1 : insertion;
+        const before = current.slice(0, at).filter((node) => !replayedKeys.has(node.key));
+        const after = current.slice(at).filter((node) => !replayedKeys.has(node.key));
+        yield* exportResidentNodes([...before, ...replayed, ...after]);
+      }
+    }
+
     try {
+      const residentNodes = store.exportLeadNodes?.() ?? store.nodes;
       if (foldedTurnCount === 0) {
-        if (!store.nodes.some(isReleasedProse)) {
-          yield store.nodes;
+        if (store.exportLeadNodes !== undefined) {
+          yield* exportResidentWithChildren(residentNodes);
           return;
         }
-        yield* exportResidentNodes(store.nodes);
+        if (!residentNodes.some(isReleasedProse)) {
+          yield residentNodes;
+          return;
+        }
+        yield* exportResidentNodes(residentNodes);
         return;
       }
 
@@ -2062,7 +2126,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         }
         yield [...scratch.nodes];
       }
-      yield* exportResidentNodes(store.nodes.slice(foldedPrefix));
+      if (store.exportLeadNodes !== undefined)
+        yield* exportResidentWithChildren(residentNodes.slice(foldedPrefix));
+      else yield* exportResidentNodes(residentNodes.slice(foldedPrefix));
     } finally {
       dispose();
     }

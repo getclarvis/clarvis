@@ -63,7 +63,8 @@ export interface AgentsLimits {
   maxRetainedChildren: number;
   /** Cap on inbox notices delivered in one iteration. */
   maxNoticesPerIteration: number;
-  /** Consecutive failed children before the run is terminated for it. */
+  /** Consecutive *technical* failures of a child — the only outcome that counts —
+   *  before new child admission closes. */
   maxConsecutiveFailedChildren: number;
   /** How many times finishing with live children is nudged before terminating. */
   finishNudges: number;
@@ -153,6 +154,8 @@ export interface AgentRegistryOptions {
   onActivity?: () => void;
   /** Internal deterministic-test seam; production uses an unref'ed host timer. */
   scheduleTimeout?: (callback: () => void, delayMs: number) => () => void;
+  /** Clock used by the bounded failure-circuit probe; production uses wall time. */
+  now?: () => number;
 }
 
 /** The full registry: the producer port plus everything the tools read. */
@@ -170,6 +173,10 @@ export interface AgentRegistry extends AgentRegistryPort {
   takeNotices(): AgentNotice[];
   /** True once a child failed `maxConsecutiveFailedChildren` times in a row. */
   failingStreakExceeded(): boolean;
+  /** How many consecutive technical failures stand in that streak right now. */
+  consecutiveFailures(): number;
+  /** Claim the single recovery probe after a closed circuit has cooled down; success rearms it. */
+  claimFailureProbe(): boolean;
   /** Refuse further registrations; the run is finishing. */
   seal(): void;
   sealed(): boolean;
@@ -234,6 +241,8 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
   const waiters = new Set<(info: AgentSettledInfo) => void>();
   let notices: AgentNotice[] = [];
   let consecutiveFailures = 0;
+  let failureProbeAt = 0;
+  let failureProbeUsed = false;
   let isSealed = false;
 
   const scheduleTimeout =
@@ -342,6 +351,19 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
   const noticeLabel = (r: ChildRecord): string =>
     `${r.id} (${r.kind} ${JSON.stringify(r.title.slice(0, 60))})`;
 
+  /**
+   * Record a child's terminal outcome and wake whoever waited on it.
+   *
+   * @param r - the child's record.
+   * @param s - the producer's settlement.
+   * @remarks The consecutive-failure circuit counts one thing only: a settle that
+   *   reports `failed`, which is a technical failure of the child. `cancelled`,
+   *   `stopped` and `limited` leave the streak untouched — a child that hit a
+   *   budget cap, or that the run took down with it, is evidence about a limit and
+   *   not about the child — and only a `completed` child clears it. A notice
+   *   credits progress on success alone, for the same reason: a run kept alive by
+   *   reported failures would never trip the no-progress guard.
+   */
   const settle = (r: ChildRecord, s: AgentSettlement): void => {
     if (!isLive(r)) return;
     r.status = s.status;
@@ -351,9 +373,13 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
     if (s.tokens !== undefined) r.tokens = s.tokens;
     r.lastActivityAt = Date.now();
 
-    if (s.status === "completed") consecutiveFailures = 0;
-    else if (s.status === "failed") consecutiveFailures += 1;
-
+    if (s.status === "completed") {
+      consecutiveFailures = 0;
+      failureProbeUsed = false;
+    } else if (s.status === "failed") {
+      consecutiveFailures += 1;
+      failureProbeAt = (opts.now ?? Date.now)() + 30_000;
+    }
     const outcome = s.result === undefined ? "" : `: ${s.result.slice(0, 400)}`;
     notices.push({
       text: `[agents] ${noticeLabel(r)} ${s.status}${outcome}`,
@@ -618,6 +644,20 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
     failingStreakExceeded: () =>
       limits.maxConsecutiveFailedChildren > 0 &&
       consecutiveFailures >= limits.maxConsecutiveFailedChildren,
+
+    consecutiveFailures: () => consecutiveFailures,
+    claimFailureProbe() {
+      if (
+        isSealed ||
+        failureProbeUsed ||
+        limits.maxConsecutiveFailedChildren <= 0 ||
+        consecutiveFailures < limits.maxConsecutiveFailedChildren ||
+        (opts.now ?? Date.now)() < failureProbeAt
+      )
+        return false;
+      failureProbeUsed = true;
+      return true;
+    },
 
     seal(): void {
       isSealed = true;

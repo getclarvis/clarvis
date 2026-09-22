@@ -419,13 +419,15 @@ own right: `NODE_ENV=production`, `CLARVIS_SERVER_HOST=0.0.0.0`,
 `CLARVIS_HOME=/config`, `CLARVIS_LOG_LEVEL=info`, `CLARVIS_TRACE_TTL_DAYS=30`,
 `CLARVIS_DEFAULT_ON_EXCEED=stop`, `CLARVIS_DEFAULT_ELICIT_WAIT_MS=60000`,
 `CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT=8000000`, `CLARVIS_TOKEN_CEILING=10000000`,
-`CLARVIS_ITERATION_CEILING=256`, `CLARVIS_TIMEOUT_CEILING_MS=600000`. The session-token budget is
-four times its prior value, while the iteration ceiling is the power-of-two limit used by the built-in
-workflow leaders. Three values carry an
+`CLARVIS_ITERATION_CEILING=512`, `CLARVIS_TIMEOUT_CEILING_MS=600000`. The session-token budget is
+four times its prior value, while the iteration ceiling is the power-of-two limit the built-in fleet
+asks for per attempt — every shipped profile declares exactly this value, so a lower image ceiling
+would refuse the product's own profiles inside the Container. Four values carry an
 inline rationale comment: `CLARVIS_SERVER_ALLOW_PUBLIC_BIND=1` — "the isolation boundary here is the
 container network, not the bind address"; `CLARVIS_TRACE_TTL_DAYS=30` matches the local
 product default while keeping the deployment policy explicit; and
-`CLARVIS_DEFAULT_ON_EXCEED=stop` — "Headless: never park a run on an elicitation nobody will answer".
+`CLARVIS_DEFAULT_ON_EXCEED=stop` — "Headless: never park a run on an elicitation nobody will answer";
+and `CLARVIS_ITERATION_CEILING=512` — the built-in fleet's own per-attempt allowance.
 
 `.dockerignore` starts with `**` and re-includes only the root build manifests, package tree,
 isolated-runtime guest entry and required license files. Its final rules re-exclude generated
@@ -1265,7 +1267,7 @@ no publish, registry, release-manifest or running-container commit path. Product
 | A missing entry in `specs/package-coupling-analysis.md` | `checkDocument` reports `"document is missing package row X"`; `process.exitCode = 1` | `tooling/lib/package-graph.ts`, `tooling/checks/package-graph.ts` |
 | Root version is invalid, a workspace or lock entry declares `version`, a workspace is not private, or an unapproved module imports the root manifest | `check:graph` reports the exact manifest, lock path, or source-policy violation | `tooling/lib/package-architecture.ts` (product-version policy helpers) |
 | A Bun version surface drifts | `check:bun-version` reports every offending file and observed value, then sets exit 1 | `tooling/checks/bun-version.ts` |
-| Runtime production input is mutable or from another repository | `runtimeImageBuildArgs` throws before invoking Docker/Podman | `tooling/runtime/build-image.ts` (`assertReleasedArtifact`) |
+| A released runtime artifact comes from an unapproved repository or tag, or was built dirty | `"invalid host release coordinates"`, then `"published artifacts must have dirty:false"` before cache publication and again on cache reuse | `packages/kernel/src/runtime/runtime-artifact.ts`; `packages/kernel/tests/unit/runtime-artifact.test.ts` |
 | Runtime mise archive has the wrong architecture or bytes | the download stage rejects unsupported `dpkg` architecture or `sha256sum -c -` fails before the binary crosses into the final stage | `Containerfile.runtime` (`mise` stage) |
 | Runtime build exits nonzero or produces no exact local image ID | the helper preserves the engine exit or throws; it never reports a usable runtime identity | `tooling/runtime/build-image.ts` (`run`) |
 | Model catalog file exceeds 8 MiB, or the user cache is corrupt | `readCatalogFile` throws `"model catalog exceeds byte limit"`; a bad cache is silently ignored and the bundled snapshot returned | `packages/kernel/src/models/model-catalog.ts` |

@@ -1359,7 +1359,7 @@ Production: `packages/code/src/views/config/MarketplaceBrowser.tsx` (`uninstall`
 
 **INV-P37.** A marketplace listing this host cannot fetch from is never installed, whether by the
 `activate` verb or otherwise.
-Production: `packages/code/src/views/config/MarketplaceBrowser.tsx` (`runPrimary`). Test:
+Production: `packages/code/src/views/config/MarketplaceBrowser.tsx` (`openPrimary`). Test:
 `packages/code/tests/integration/marketplace-browser-render.test.tsx` (unavailable local entry).
 
 **INV-P38.** `SETTINGS_ITEMS` is the single source for the Settings menu, deep-link router and inline

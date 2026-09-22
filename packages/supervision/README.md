@@ -14,6 +14,10 @@ The registry and limits are specified in
 built over that registry are specified separately in
 [`engine/delegation-and-subagents.md`](../../specs/engine/delegation-and-subagents.md).
 
+The failure circuit exposes one synchronously claimed recovery probe after 30 seconds without a
+technical failure. Waiting longer does not grant another probe after failure; a successfully
+completed child rearms it. The registry never spawns, retries or cancels siblings on that basis.
+
 ## Why it is its own package
 
 Two producers register into the same id space — `@clarvis/loop`'s `delegate_task` (a sub-agent) and
@@ -86,6 +90,18 @@ if (spawned !== null) {
   agents.adopt(handle.id, task);
 }
 ```
+
+### Settle with the outcome that actually happened
+
+`AgentStatus` has seven members, and the five terminal ones are not interchangeable: `completed` and
+`failed` are the child's own outcome, `limited` is a budget cap that ended it with a partial it can be
+resumed from, `stopped` is the parent's `agent_stop`, and `cancelled` is the run going down. Only
+`failed` reports a technical failure of the child, which is the only thing the consecutive-failure
+circuit counts: `limited`, `stopped` and `cancelled` leave it exactly where it was, and only a
+`completed` child clears it. Settle a child that hit its own iteration cap as
+`{ status: "limited", result: partialText }` — reporting it as `failed` would advance a circuit that
+exists to detect doomed spawning and would tell a parent its child broke when it simply ran out of
+its own allowance.
 
 ## Activity-buffer budget
 

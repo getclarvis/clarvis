@@ -1,7 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open } from "node:fs/promises";
-import { dirname } from "node:path";
-import { DIR_MODE, FILE_MODE, fsyncDir } from "@clarvis/paths";
 import type {
   HostedRunCursor,
   HostedRunFrame,
@@ -16,6 +13,8 @@ import {
   sizeOfRunEvent,
 } from "../runs/coalesce-events.ts";
 import { RUN_EVENT_POLICY } from "../runs/event-policy.ts";
+import { openProjectionStorage } from "./projection-storage.ts";
+import type { ProjectionRecoveryOptions } from "./projection-io.ts";
 
 /** File port owned exclusively by one hosted run's observation pump. */
 export interface ProjectionStorage {
@@ -29,15 +28,21 @@ export interface ProjectionStorage {
 
 /** Finite observation budgets, independent of the provider's run budgets. */
 export interface HostedProjectionOptions {
-  /** Total encoded projection bytes; exhaustion is an explicit recovery failure. */
+  /** Only the file writer owns transient positional IO retries. */
+  recovery?: ProjectionRecoveryOptions;
+  /** Explicit storage quota; omitted means no lifetime history quota. */
   maxBytes?: number;
+  /** Physical segment size; independent of logical snapshot offsets and run budgets. */
+  segmentBytes?: number;
   /** Flush adjacent deltas at this size, instead of writing each provider token. */
   chunkBytes?: number;
   /** Raw bytes per page, before base64 encoding. */
   pageBytes?: number;
   maxSnapshots?: number;
   snapshotLifetimeMs?: number;
+  /** Independent queue allowance for source writes and observation requests. */
   maxPendingOperations?: number;
+  /** Independent retained-byte allowance for each queue class. */
   maxPendingBytes?: number;
   now?: () => number;
 }
@@ -86,7 +91,7 @@ export function createHostedProjection(
   identity: Omit<HostedRunCursor, "sequence">,
   options: HostedProjectionOptions = {},
 ): HostedProjection {
-  const maxBytes = positive(options.maxBytes ?? 64 * 1024 * 1024, "maxBytes");
+  const maxBytes = positive(options.maxBytes ?? Number.MAX_SAFE_INTEGER, "maxBytes");
   const chunkBytes = positive(options.chunkBytes ?? 64 * 1024, "chunkBytes");
   const pageBytes = positive(options.pageBytes ?? 256 * 1024, "pageBytes");
   const maxSnapshots = positive(options.maxSnapshots ?? 4, "maxSnapshots");
@@ -99,8 +104,10 @@ export function createHostedProjection(
   let sequence = 0;
   let writtenBytes = 0;
   let pending: { frame: HostedRunFrame; bytes: number } | undefined;
-  let queuedOperations = 0;
-  let queuedBytes = 0;
+  const queues = {
+    source: { operations: 0, bytes: 0 },
+    observation: { operations: 0, bytes: 0 },
+  };
   let tail: Promise<void> = Promise.resolve();
   let failure: Error | undefined;
   let closing: Promise<void> | undefined;
@@ -114,17 +121,22 @@ export function createHostedProjection(
     }
   };
 
-  const enqueue = <T>(operation: () => Promise<T>, bytes = 0): Promise<T> => {
+  const enqueue = <T>(
+    owner: keyof typeof queues,
+    operation: () => Promise<T>,
+    bytes = 0,
+  ): Promise<T> => {
+    const queue = queues[owner];
     if (closing !== undefined)
       return Promise.reject(kernelError("unavailable", "projection is closed"));
-    if (queuedOperations >= maxPendingOperations || queuedBytes + bytes > maxPendingBytes) {
+    if (queue.operations >= maxPendingOperations || queue.bytes + bytes > maxPendingBytes) {
       return Promise.reject(kernelError("conflict", "projection request budget is exhausted"));
     }
-    queuedOperations += 1;
-    queuedBytes += bytes;
+    queue.operations += 1;
+    queue.bytes += bytes;
     const result = tail.then(operation).finally(() => {
-      queuedOperations -= 1;
-      queuedBytes -= bytes;
+      queue.operations -= 1;
+      queue.bytes -= bytes;
     });
     tail = result.then(
       () => undefined,
@@ -152,53 +164,57 @@ export function createHostedProjection(
     failure: () => failure,
     append(event) {
       const bytes = sizeOfRunEvent(event);
-      return enqueue(async () => {
-        assertHealthy();
-        try {
-          if (writtenBytes + (pending?.bytes ?? 0) + bytes + 128 > maxBytes) {
-            throw kernelError("unavailable", "hosted observation history reached its byte quota");
-          }
-          if (!Number.isSafeInteger(sequence + 1)) {
-            throw kernelError("unavailable", "hosted observation sequence is exhausted");
-          }
-          const nextSequence = sequence + 1;
-          const previous = pending;
-          const merged =
-            previous === undefined ? undefined : coalesceRunEvents(previous.frame.event, event);
-          if (previous !== undefined && merged !== undefined) {
-            pending = {
-              frame: { ...previous.frame, last_sequence: nextSequence, event: merged },
-              bytes: sizeOfCoalescedRunEvent(
-                previous.frame.event,
-                event,
-                merged,
-                previous.bytes,
+      return enqueue(
+        "source",
+        async () => {
+          assertHealthy();
+          try {
+            if (writtenBytes + (pending?.bytes ?? 0) + bytes + 128 > maxBytes) {
+              throw kernelError("unavailable", "hosted observation history reached its byte quota");
+            }
+            if (!Number.isSafeInteger(sequence + 1)) {
+              throw kernelError("unavailable", "hosted observation sequence is exhausted");
+            }
+            const nextSequence = sequence + 1;
+            const previous = pending;
+            const merged =
+              previous === undefined ? undefined : coalesceRunEvents(previous.frame.event, event);
+            if (previous !== undefined && merged !== undefined) {
+              pending = {
+                frame: { ...previous.frame, last_sequence: nextSequence, event: merged },
+                bytes: sizeOfCoalescedRunEvent(
+                  previous.frame.event,
+                  event,
+                  merged,
+                  previous.bytes,
+                  bytes,
+                ),
+              };
+            } else {
+              await flush();
+              pending = {
+                frame: {
+                  first_sequence: nextSequence,
+                  last_sequence: nextSequence,
+                  event: { ...event },
+                },
                 bytes,
-              ),
-            };
-          } else {
-            await flush();
-            pending = {
-              frame: {
-                first_sequence: nextSequence,
-                last_sequence: nextSequence,
-                event: { ...event },
-              },
-              bytes,
-            };
+              };
+            }
+            sequence = nextSequence;
+            if (pending.bytes >= chunkBytes || RUN_EVENT_POLICY[event.type].coalesce === false)
+              await flush();
+            return cursor();
+          } catch (error) {
+            failure = storageFailure(error);
+            throw failure;
           }
-          sequence = nextSequence;
-          if (pending.bytes >= chunkBytes || RUN_EVENT_POLICY[event.type].coalesce === false)
-            await flush();
-          return cursor();
-        } catch (error) {
-          failure = storageFailure(error);
-          throw failure;
-        }
-      }, bytes);
+        },
+        bytes,
+      );
     },
     snapshot() {
-      return enqueue(async () => {
+      return enqueue("observation", async () => {
         assertHealthy();
         expireSnapshots();
         if (snapshots.size >= maxSnapshots) {
@@ -221,7 +237,7 @@ export function createHostedProjection(
       });
     },
     sync() {
-      return enqueue(async () => {
+      return enqueue("source", async () => {
         assertHealthy();
         try {
           await flush();
@@ -234,31 +250,34 @@ export function createHostedProjection(
       });
     },
     readPage(snapshotId, offset) {
-      return enqueue(async () => {
-        expireSnapshots();
-        const snapshot = snapshots.get(snapshotId)?.ref;
-        if (snapshot === undefined)
-          throw kernelError("not_found", "observation snapshot expired or unknown");
-        if (!Number.isSafeInteger(offset) || offset < 0 || offset > snapshot.bytes) {
-          throw kernelError("invalid_request", "snapshot offset is outside its immutable prefix");
-        }
-        const length = Math.min(pageBytes, snapshot.bytes - offset);
-        let bytes: Uint8Array;
-        try {
-          bytes = await storage.read(offset, length);
-          if (bytes.length !== length)
-            throw kernelError("unavailable", "observation snapshot is incomplete");
-        } catch (error) {
-          failure = storageFailure(error);
-          throw failure;
-        }
-        return {
-          snapshot_id: snapshotId,
-          offset,
-          data_base64: Buffer.from(bytes).toString("base64"),
-          ...(offset + length < snapshot.bytes ? { next_offset: offset + length } : {}),
-        };
-      }, pageBytes);
+      return enqueue(
+        "observation",
+        async () => {
+          expireSnapshots();
+          const snapshot = snapshots.get(snapshotId)?.ref;
+          if (snapshot === undefined)
+            throw kernelError("not_found", "observation snapshot expired or unknown");
+          if (!Number.isSafeInteger(offset) || offset < 0 || offset > snapshot.bytes) {
+            throw kernelError("invalid_request", "snapshot offset is outside its immutable prefix");
+          }
+          const length = Math.min(pageBytes, snapshot.bytes - offset);
+          let bytes: Uint8Array;
+          try {
+            bytes = await storage.read(offset, length);
+            if (bytes.length !== length)
+              throw kernelError("unavailable", "observation snapshot is incomplete");
+          } catch (error) {
+            throw storageFailure(error);
+          }
+          return {
+            snapshot_id: snapshotId,
+            offset,
+            data_base64: Buffer.from(bytes).toString("base64"),
+            ...(offset + length < snapshot.bytes ? { next_offset: offset + length } : {}),
+          };
+        },
+        pageBytes,
+      );
     },
     releaseSnapshot(snapshotId) {
       snapshots.delete(snapshotId);
@@ -292,45 +311,15 @@ export async function openHostedProjection(
   identity: Omit<HostedRunCursor, "sequence">,
   options?: HostedProjectionOptions,
 ): Promise<HostedProjection> {
-  await mkdir(dirname(file), { recursive: true, mode: DIR_MODE });
-  const handle = await open(file, "wx+", FILE_MODE);
-  await fsyncDir(dirname(file));
+  const storage = await openProjectionStorage(file, options?.segmentBytes ?? 64 * 1024 * 1024, {
+    ...options?.recovery,
+    executionId: identity.execution_id,
+    hostGeneration: identity.host_generation,
+  });
   try {
-    return createHostedProjection(
-      {
-        async write(bytes, offset) {
-          let written = 0;
-          while (written < bytes.length) {
-            const result = await handle.write(
-              bytes,
-              written,
-              bytes.length - written,
-              offset + written,
-            );
-            if (result.bytesWritten === 0)
-              throw kernelError("unavailable", "observation write made no progress");
-            written += result.bytesWritten;
-          }
-        },
-        async read(offset, length) {
-          const bytes = Buffer.alloc(length);
-          let received = 0;
-          while (received < length) {
-            const result = await handle.read(bytes, received, length - received, offset + received);
-            if (result.bytesRead === 0)
-              throw kernelError("unavailable", "observation file ended inside a snapshot");
-            received += result.bytesRead;
-          }
-          return bytes;
-        },
-        sync: () => handle.sync(),
-        close: () => handle.close(),
-      },
-      identity,
-      options,
-    );
+    return createHostedProjection(storage, identity, options);
   } catch (error) {
-    await handle.close();
+    await storage.close();
     throw error;
   }
 }

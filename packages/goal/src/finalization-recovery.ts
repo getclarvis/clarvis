@@ -133,7 +133,8 @@ function goalRecoveryCause(validation: GoalCompletionValidation): GoalRecoveryCa
  * @remarks `valid` lets the caller continue to the Steward and the remaining
  *   gates, `recover` carries the orientation to append, and `conflict` means the
  *   attempt cannot be ruled on at all: the caller stops the stage with
- *   `goal_control_failed` and host attention.
+ *   `goal_finalization_conflict`. The host may continue only after physical settlement
+ *   under current authority, evidence and financial limits.
  */
 export type GoalFinalizationRuling =
   { kind: "valid" } | { kind: "recover"; outcome: GateOutcome } | { kind: "conflict" };
@@ -157,7 +158,9 @@ export type GoalFinalizationRuling =
  *   completable, so a non-revoking human acceptance landing inside the window
  *   must still be able to settle the attempt, and the host revalidates before the
  *   durable commit for the same reason. Only a conflict that survives the re-read
- *   ends the stage.
+ *   ends the stage with a distinct recoverable cause, never an approval. The existing
+ *   host continuation path re-evaluates proof in a fresh stage; no model or tool call
+ *   is retried here, and obsolete authority still refuses continuation.
  */
 export async function ruleGoalFinalization(p: {
   validation: GoalCompletionValidation;

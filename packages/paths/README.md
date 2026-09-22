@@ -179,10 +179,7 @@ wiki's `.history`/`.journal`/`.state`/`.lock`, plan lockfiles and workspace-scop
 already use, so one workspace's generated data all lands under one name.
 The workspace's active Extension Profile selection is also local machinery under that `local/`
 tree, so switching Extension Profiles never dirties the repository.
-The sibling `runtimes/` tree owns only host-accepted per-run checkpoints beneath each encoded
-isolated-runtime generation. Runtime and run IDs pass through `ownerSegment`; no workspace copy,
-baseline, apply journal, transaction staging, registry or lifecycle record is stored there. The
-container mounts the already-selected workspace directly, so that checkout remains outside runtime
+The container mounts the already-selected workspace directly, so that checkout remains outside runtime
 state and outside runtime cleanup.
 
 `~/.clarvis` keeps the **operator's own files at the root** — `settings.json`, `agents/`,

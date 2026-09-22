@@ -18,6 +18,8 @@ export interface GoalSettlementDecision {
    *   the host having to rule on its semantic value.
    */
   activity?: readonly string[];
+  /** Missing observation is uncertainty, not an empty successful measurement. */
+  activity_unavailable?: boolean;
   /** When supplied, measured at the host provider port rather than inferred from loop totals. */
   usage?: GoalUsage;
 }
@@ -101,6 +103,7 @@ export function goalStageOutcome(result: RunResult, now: number): GoalStageOutco
   if (error.code === "all_tools_unavailable") return { cause: "tools_unavailable" };
   if (error.code === "context_overflow") return { cause: "context_overflow" };
   if (error.code === "goal_control_failed") return { cause: "control_failure" };
+  if (error.code === "goal_finalization_conflict") return { cause: "finalization_conflict" };
   if (error.code === "goal_steward_failed" || error.code === "goal_steward_inconclusive")
     return { cause: "steward_interrupted" };
   if (REFUSAL_CODES.has(error.code)) return { cause: "provider_refused" };
@@ -117,10 +120,48 @@ export function goalStageOutcome(result: RunResult, now: number): GoalStageOutco
 }
 
 /**
+ * The part of a measurement this settlement still has to charge.
+ *
+ * @param previous - the measurement the stage's settlement already wrote, when it had one.
+ * @param usage - the measurement now being settled.
+ * @returns the amounts to add to the session totals, or `undefined` when this measurement carries
+ *   no usable subtotal.
+ * @remarks A settlement that finds a stage already measured charges only the **difference**, so a
+ *   late correction adds what it newly learned instead of charging the stage twice. A stage whose
+ *   earlier measurement was unknown never charged anything, so the whole confirmed subtotal is
+ *   still owed. A correction that would take consumption back never reaches this function: the
+ *   domain refuses it as a conflict first, and the clamp here is only a guard against an accounting
+ *   figure that must never be negative.
+ */
+function usageCredit(
+  previous: GoalUsage | undefined,
+  usage: GoalUsage,
+): { input: number; output: number; cached?: number } | undefined {
+  if (usage.kind === "unknown") return undefined;
+  if (previous === undefined || previous.kind === "unknown")
+    return {
+      input: usage.input,
+      output: usage.output,
+      ...(usage.cached === undefined ? {} : { cached: usage.cached }),
+    };
+  const cached =
+    usage.cached === undefined && previous.cached === undefined
+      ? undefined
+      : (usage.cached ?? 0) - (previous.cached ?? 0);
+  return {
+    input: usage.input - previous.input,
+    output: usage.output - previous.output,
+    ...(cached === undefined ? {} : { cached: cached }),
+  };
+}
+
+/**
  * Apply goal settlement and its confirmed session usage within the caller's canonical transaction.
- * Returns false for an unrelated run, leaving ordinary accounting to the host. An unknown measure
- * charges nothing until reconciled and remains explicitly unknown in the goal audit. Repeated
- * callbacks or late usage after replacement always resolve the original binding.
+ * Returns false for an unrelated run, leaving ordinary accounting to the host. A measurement with
+ * no usable subtotal charges nothing until it is reconciled and remains explicitly unknown in the
+ * goal audit, while a partial one credits the subtotal it did confirm. Repeated callbacks or late
+ * usage after replacement always resolve the original binding, and a late revision is charged as a
+ * delta rather than a second full charge.
  */
 export function settleGoalSession(
   session: Session,
@@ -138,7 +179,7 @@ export function settleGoalSession(
   if (result.status === "running")
     throw kernelError("invalid_request", "goal settlement requires a terminal run result");
   const run = goal.runs.find((run) => run.execution_id === result.execution_id)!;
-  const alreadyCharged = run.phase === "closed" && run.usage?.kind === "measured";
+  const creditedBefore = run.phase === "closed" ? run.usage : undefined;
   const usage = decision.usage ?? measureGoalRunUsage(result.usage);
   const stage = goalStageOutcome(result, now);
   const next = settleGoalRun(state, {
@@ -151,15 +192,28 @@ export function settleGoalSession(
     cause: stage.cause,
     ...(stage.not_before === undefined ? {} : { not_before: stage.not_before }),
     ...(decision.activity === undefined ? {} : { activity: decision.activity }),
+    ...(decision.activity_unavailable === true ? { activity_unavailable: true } : {}),
     usage,
     now,
   });
+  if (JSON.stringify(next) === JSON.stringify(state)) return true;
   session.goal_state = goalStateToDto(next);
-  if (!alreadyCharged && usage.kind === "measured") {
+  const credit = usageCredit(creditedBefore, usage);
+  if (credit !== undefined) {
+    /**
+     * Per-agent detail belongs to the stage's first credit.
+     *
+     * @remarks `addRunUsage` charges an attributed breakdown instead of the aggregate figures, so
+     *   attaching detail to a delta would charge the whole execution again rather than the
+     *   difference. A late correction therefore moves the aggregate totals only, which is what the
+     *   Goal's own per-stage accounting reads.
+     */
+    const firstCredit = creditedBefore === undefined || creditedBefore.kind === "unknown";
     const detail = result.usage?.by_agent;
     const reported = measureGoalRunUsage(result.usage);
     const detailMatches =
-      reported.kind === "measured" &&
+      reported.kind !== "unknown" &&
+      usage.kind !== "unknown" &&
       reported.input === usage.input &&
       reported.output === usage.output &&
       reported.cached === usage.cached;
@@ -168,10 +222,11 @@ export function settleGoalSession(
       {
         iterations: result.usage?.iterations ?? 0,
         elapsed_ms: result.usage?.elapsed_ms ?? 0,
-        input_tokens: usage.input,
-        output_tokens: usage.output,
-        ...(usage.cached === undefined ? {} : { cached_tokens: usage.cached }),
-        ...(detail === undefined ||
+        input_tokens: credit.input,
+        output_tokens: credit.output,
+        ...(credit.cached === undefined ? {} : { cached_tokens: credit.cached }),
+        ...(!firstCredit ||
+        detail === undefined ||
         !detailMatches ||
         usage.cached === undefined ||
         detail.some((agent) => agent.cached_tokens === undefined)
@@ -182,4 +237,35 @@ export function settleGoalSession(
     );
   }
   return true;
+}
+
+/** Replay only host-prepared non-final inputs after the registry proves physical closure. */
+export function recoverGoalSettlementSession(
+  session: Session,
+  result: RunResult,
+  now: number,
+  priceFor?: (model: string) => ModelCost | undefined,
+): boolean {
+  const goals = [
+    ...(session.goal_state?.archive ?? []),
+    ...(session.goal_state?.current === undefined ? [] : [session.goal_state.current]),
+  ];
+  const run = goals
+    .flatMap((goal) => goal.runs)
+    .find((stage) => stage.execution_id === result.execution_id);
+  const preparation = run?.settlement_preparation;
+  if (
+    preparation === undefined ||
+    preparation.outcome !== result.status ||
+    preparation.disposition !== (result.disposition ?? "final") ||
+    (result.status === "completed" && preparation.disposition !== "checkpoint")
+  )
+    return false;
+  return settleGoalSession(
+    session,
+    result,
+    { ...preparation, completion_validated: false },
+    now,
+    priceFor,
+  );
 }

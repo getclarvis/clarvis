@@ -140,6 +140,36 @@ export function BackgroundView(
             },
           },
           {
+            key: "c",
+            label: "continue recovery",
+            when: () => !busy() && selected()?.execution_state === "unknown",
+            run: () => {
+              const ref = selected();
+              if (ref === undefined) return;
+              detachObserved(
+                "background.recovery.continue",
+                async () => {
+                  await list.resolveRecovery(
+                    ref,
+                    () =>
+                      host.confirm({
+                        message: "Confirm all physical work has stopped?",
+                        confirmLabel: "verify and continue",
+                        detail: [
+                          "Verify that every process and container from this old host has stopped before confirming.",
+                          `Host: ${ref.host_generation} | run: ${ref.execution_id}`,
+                          "The recorded outcome is preserved. This conversation stays open and can start a successor.",
+                          "The interrupted turn is kept as the base that successor continues from. No action is repeated.",
+                        ],
+                      }),
+                    "continue",
+                  );
+                },
+                report,
+              );
+            },
+          },
+          {
             key: "t",
             label: "take control",
             run: () => attach(true),

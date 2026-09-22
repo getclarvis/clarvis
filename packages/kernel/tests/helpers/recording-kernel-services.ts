@@ -35,6 +35,7 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
     },
     hosting: {
       list: record("hosting.list"),
+      resumePending: record("hosting.resumePending"),
       start: record("hosting.start"),
       attach: record("hosting.attach"),
       controlObservation: record("hosting.controlObservation"),

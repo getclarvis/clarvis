@@ -20,7 +20,7 @@ import {
 } from "./context.ts";
 import { createFormulationDispatchPolicy } from "./formulation-policy.ts";
 import { GoalError } from "./errors.ts";
-import type { GoalCreationPort, GoalRuntimePort, GoalRuntimeSnapshot } from "./ports.ts";
+import type { GoalActivationPort, GoalRuntimePort, GoalRuntimeSnapshot } from "./ports.ts";
 import { goalCreationInputSchema, goalModelToolInputSchema } from "./model-input.ts";
 import { goalCheckpointSchema } from "./schemas.ts";
 import {
@@ -28,6 +28,7 @@ import {
   GET_GOAL,
   UPDATE_GOAL,
   buildGoalCreationTools,
+  buildGoalAttachmentTools,
   getGoalInputSchema,
 } from "./tools.ts";
 import { absentReviewContext, checkGoalSnapshot } from "./runtime-validation.ts";
@@ -59,6 +60,7 @@ function createCreationState(): CreationState {
 function createCreationHooks(
   state: CreationState,
   bc: AgentBuildContext,
+  port: GoalActivationPort,
 ): AgentLoopContribution["hooks"] {
   const publish = (): void => {
     if (state.snapshot !== undefined)
@@ -72,7 +74,20 @@ function createCreationHooks(
     async beforeIteration(signal) {
       const cancelled = bc.maybeCancelled();
       if (cancelled !== null) return cancelled;
-      bc.ctx.setStableBlock(GOAL_FORMULATION_BLOCK_KIND, GOAL_FORMULATION_INSTRUCTION);
+      bc.ctx.setStableBlock(
+        GOAL_FORMULATION_BLOCK_KIND,
+        "attach" in port
+          ? "The current operator instruction takes precedence. The previous Goal is context, not a requirement to continue it. If asked to continue its work, call attach_goal before doing that work; otherwise answer or perform the independent request with this turn's budget. Previous Goal: " +
+              JSON.stringify({
+                goal_id: port.goal.goal_id,
+                objective: port.goal.objective,
+                criteria: port.goal.criteria,
+                status: port.goal.status,
+                limits: port.goal.limits,
+                consumption: port.goal.consumption,
+              })
+          : GOAL_FORMULATION_INSTRUCTION,
+      );
       try {
         await refresh(signal);
         publish();
@@ -90,7 +105,7 @@ function createCreationHooks(
 
 function createCreationHandler(
   state: CreationState,
-  port: GoalCreationPort,
+  port: GoalActivationPort,
   bc: AgentBuildContext,
   tools: ReturnType<typeof buildGoalCreationTools>,
 ): ToolHandler {
@@ -102,7 +117,9 @@ function createCreationHandler(
     errorResult(bc, "goal_control_failed", "Goal control is unavailable; execution stopped");
   return {
     matches: (call) =>
-      call.name === CREATE_GOAL || call.name === GET_GOAL || call.name === UPDATE_GOAL,
+      ("attach" in port ? call.name === "attach_goal" : call.name === CREATE_GOAL) ||
+      call.name === GET_GOAL ||
+      call.name === UPDATE_GOAL,
     async handle(call, iteration): Promise<HandlerVerdict> {
       const cancelled = bc.maybeCancelled();
       if (cancelled !== null) return { kind: "terminal", result: cancelled };
@@ -120,7 +137,7 @@ function createCreationHandler(
       const parsed =
         call.name === CREATE_GOAL
           ? goalCreationInputSchema.safeParse(call.arguments)
-          : call.name === GET_GOAL
+          : call.name === GET_GOAL || call.name === "attach_goal"
             ? getGoalInputSchema.safeParse(call.arguments)
             : goalModelToolInputSchema.safeParse(call.arguments);
       if (envelope.invalid !== null || !parsed.success)
@@ -131,13 +148,13 @@ function createCreationHandler(
         };
       envelope.start();
       try {
-        if (call.name === CREATE_GOAL) {
+        if (call.name === CREATE_GOAL || call.name === "attach_goal") {
           if (state.runtime !== undefined)
             return { kind: "result", text: envelope.ok("Goal already exists"), progress: false };
-          state.runtime = await port.create(
-            goalCreationInputSchema.parse(call.arguments),
-            bc.signal,
-          );
+          state.runtime =
+            "attach" in port
+              ? await port.attach(bc.signal)
+              : await port.create(goalCreationInputSchema.parse(call.arguments), bc.signal);
           state.snapshot = checkGoalSnapshot(
             await state.runtime.read(bc.signal),
             state.runtime.binding,
@@ -214,8 +231,11 @@ function createCreationHandler(
               progress: false,
             };
           }
-          case "blocked":
+          case "blocked": {
             await state.runtime.blocked(action.reason, bc.signal);
+            envelope.ok(
+              "Impediment recorded; this stage ends and the host re-evaluates it under the goal's remaining limits",
+            );
             return {
               kind: "terminal",
               result: errorResult(
@@ -224,8 +244,18 @@ function createCreationHandler(
                 "Impediment recorded; the host re-evaluates it under the goal's remaining limits",
               ),
             };
+          }
         }
-      } catch {
+      } catch (error) {
+        if ("attach" in port && state.runtime === undefined) {
+          return {
+            kind: "result",
+            text: envelope.fail(
+              error instanceof Error ? error.message : "Goal attachment unavailable",
+            ),
+            progress: false,
+          };
+        }
         envelope.fail("Goal control failed; execution stopped");
         return { kind: "terminal", result: unavailable() };
       }
@@ -235,7 +265,7 @@ function createCreationHandler(
 
 function createCreationGate(
   state: CreationState,
-  port: GoalCreationPort,
+  port: GoalActivationPort,
   bc: AgentBuildContext,
 ): NonNullable<AgentLoopContribution["gates"]>[number] {
   return {
@@ -249,6 +279,7 @@ function createCreationGate(
        * recoverable condition is that the Goal does not exist yet, which is its own
        * typed cause rather than a missing candidate.
        */
+      if (runtime === undefined && "attach" in port) return { kind: "pass" };
       if (runtime === undefined)
         return recoverGoalFinalization({
           trace: bc.trace,
@@ -287,8 +318,8 @@ function createCreationGate(
             kind: "terminal",
             result: errorResult(
               bc,
-              "goal_control_failed",
-              "Goal control is unavailable; execution stopped",
+              "goal_finalization_conflict",
+              "Completion state changed concurrently; the host must re-evaluate current proof",
             ),
           };
         if (ruling.kind === "recover") {
@@ -342,7 +373,7 @@ function createCreationGate(
 
 /** Build the stable-catalog entry capability; creation changes handlers and state, never tools. */
 export function createGoalCreationRunCapability(
-  port: GoalCreationPort,
+  port: GoalActivationPort,
   runContext: RunCapabilityContext,
 ): RunCapability {
   if (
@@ -365,19 +396,23 @@ export function createGoalCreationRunCapability(
           port.bindReviewContext?.(
             runContext.services.get(PLANS_REVIEW_CONTEXT_PORT) ?? absentReviewContext,
           );
-          const tools = buildGoalCreationTools();
+          const tools = "attach" in port ? buildGoalAttachmentTools() : buildGoalCreationTools();
           const toolEffect = runContext.services.get(TOOL_EFFECT_PORT) ?? {
             effect: () => "unknown" as const,
           };
           const contribution: AgentLoopContribution = {
             tools,
-            hooks: createCreationHooks(state, bc),
+            hooks: createCreationHooks(state, bc, port),
             handlers: [createCreationHandler(state, port, bc, tools)],
             gates: [createCreationGate(state, port, bc)],
-            dispatchPolicy: createFormulationDispatchPolicy(
-              () => state.runtime !== undefined,
-              toolEffect,
-            ),
+            ...("attach" in port
+              ? {}
+              : {
+                  dispatchPolicy: createFormulationDispatchPolicy(
+                    () => state.runtime !== undefined,
+                    toolEffect,
+                  ),
+                }),
           };
           return contribution;
         },

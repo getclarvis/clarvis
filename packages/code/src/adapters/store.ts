@@ -4,7 +4,14 @@ import { createHash } from "node:crypto";
 import type { MessageContent, RunDetail, RunEvent } from "@clarvis/protocol";
 import { reduceToolLifecycle } from "../core/transcript/tool-lifecycle.ts";
 import { deriveEventSpan, type EventSpan, type EventSource } from "./event-span.ts";
-import { createSubagentRegistry, iterationTokens, subagentCompletedOk } from "./run-reducers.ts";
+import {
+  createSubagentRegistry,
+  iterationTokens,
+  subagentNodeStatus,
+  subagentOutcomeKind,
+  subagentOutcomeLabel,
+  subagentSettledStatus,
+} from "./run-reducers.ts";
 import {
   isExpectedPlanDiscard,
   reducePlanProjection,
@@ -290,6 +297,8 @@ export interface TranscriptStore {
    *   once per removal and turn a long-session fold into quadratic work.
    */
   foldPrefixBefore(beforeKey: string, notice: string): boolean;
+  /** Drop a divergent suffix while retaining prefix nodes, keys and folds. */
+  truncateFrom(key: string): boolean;
   /**
    * Append a client-side annotation raised by the shell rather than by a run
    * event (e.g. a plan warning or immediate steer acknowledgement).
@@ -1648,19 +1657,19 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             ...attrOf(event.delegation_id),
           }));
           dropComposing((order) => order === subagent.order);
+          const outcome = subagentOutcomeKind(event.status);
           patchKind(index, "subagent", (n) => {
-            n.status = subagentCompletedOk(event.status) ? "ok" : "error";
+            n.status = subagentNodeStatus(subagentSettledStatus(outcome));
             foldDefaults.set(n.key, n.status === "ok");
           });
-          const succeeded = subagentCompletedOk(event.status);
           const marker = boundTranscriptText(
-            `Sub-agent A${subagent.order + 1} ${succeeded ? "completed" : "failed"} · ${subagent.title}`,
+            `Sub-agent A${subagent.order + 1} ${subagentOutcomeLabel(outcome)} · ${subagent.title}`,
           );
           upsert(ns(delegationLeadMarkerKey(event.delegation_id, "settled")), () => ({
             kind: "annotation",
             delegationTarget: event.delegation_id,
-            status: succeeded ? "ok" : "error",
-            tone: succeeded ? "info" : "warn",
+            status: subagentNodeStatus(subagentSettledStatus(outcome)),
+            tone: outcome === "completed" || outcome === "cancelled" ? "info" : "warn",
             text: marker.text,
           }));
         } else if (span.kind === "iteration") {
@@ -1979,6 +1988,30 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
     };
   }
 
+  function truncateFrom(key: string): boolean {
+    const boundary = indexOfKey.get(key);
+    if (boundary === undefined) return false;
+    const removed = new Set(state.nodes.slice(boundary).map((node) => node.key));
+    batch(() => {
+      setState("nodes", state.nodes.slice(0, boundary));
+      setSealedRecords((current) => new Map([...current].filter(([id]) => !removed.has(id))));
+    });
+    terminalContent.forgetDiscarded(removed);
+    for (const id of removed) {
+      foldDefaults.delete(id);
+      forgetHydrated(id);
+    }
+    hydrationEpoch += 1;
+    for (const queued of rehydrateQueue.splice(0)) {
+      rehydrating.delete(queued.key);
+      queued.cancel();
+    }
+    rehydrating.clear();
+    reindex();
+    rebuildProseAccounting();
+    return true;
+  }
+
   function clear(): void {
     setState("nodes", []);
     setSealedRecords(new Map());
@@ -2010,6 +2043,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
     defaultFolded: (key) => foldDefaults.get(key) ?? false,
     appendUserMessage,
     foldPrefixBefore,
+    truncateFrom,
     appendNotice,
     appendRunFailure,
     beginLocalBash,

@@ -234,7 +234,15 @@ elapsedMs? }` (`packages/code/src/core/transcript/types.ts`).
 | `annotation` | `text`, `tone?: "info"\|"warn"\|"accent"` | `packages/code/src/core/transcript/types.ts` |
 | `error` | `text`, `error?` | `packages/code/src/core/transcript/types.ts` |
 
-`NodeStatus = "running" | "ok" | "error" | "pending"` (`packages/code/src/core/transcript/types.ts`).
+`NodeStatus = "running" | "ok" | "limited" | "cancelled" | "error" | "pending"`
+(`packages/code/src/core/transcript/types.ts`). `limited` and `cancelled` are terminal and
+deliberately distinct from `error`: a stage that stopped at its own budget cap and a stage the run
+took down with it are facts a reader has to be able to tell apart from a stage that broke, and the
+delegation wire carries exactly that distinction in its terminal `status`
+(`subagentOutcomeKind` in `packages/code/src/adapters/run-reducers.ts`). The settled delegation
+marker renders the same four-way outcome — `completed`, `stopped at its limit`, `cancelled`,
+`failed` — and the roster row keeps a matching lifecycle
+(`packages/code/src/adapters/activity-store.ts`).
 
 Run separators retain the successful event's `disposition`. A checkpoint renders `Checkpoint saved`
 in live, reconciled and restored history; ordinary success renders `Completed`. Failure/cancellation
@@ -259,7 +267,7 @@ Keys are strings with meaning encoded as prefixes. Three consumers parse them:
 | --- | --- | --- |
 | `<execId>::<span_id>` | a node belonging to run `execId` | `packages/code/src/views/transcript-state.ts`, `packages/code/src/core/transcript/rows.ts` |
 | `<execId>::run` | that run's terminal marker | `packages/code/src/views/transcript-state.ts` |
-| `user:<n>` | a locally sequenced user message | produced by `packages/code/src/adapters/store.ts` (`addUser`) |
+| `user:<n>` | a locally sequenced user message | produced by `packages/code/src/adapters/store.ts` (`appendUserMessage`) |
 | `local:<n>` | a locally-appended `!bash` node | `packages/code/src/core/transcript/rows.ts`, produced at `packages/code/src/adapters/store.ts` |
 
 The `<span_id>` half comes from `deriveRunEventSpan` in the kernel, re-exported through
@@ -1326,8 +1334,8 @@ bounded display projection or collapsed behind the chip. A lead mutation always 
 branch regardless of its line count; delegated mutations keep the ordinary gate, and an explicit
 user fold still hides either one. Production: `isLeadMutation` in
 `packages/code/src/views/tools/mutation-gate.ts`, `BlockView` in
-`packages/code/src/views/blocks.tsx`, `toggleOverride` in
-`packages/code/src/views/block-focus.ts`, and the mutation renderers pass their diff straight to `<diff>`
+`packages/code/src/views/blocks.tsx`, `toggleAt` in
+`packages/code/src/views/transcript-state.ts`, and the mutation renderers pass their diff straight to `<diff>`
 (`packages/code/src/views/tools/registry.tsx`) and never through `ClampedText`/`ClampedCode`. Test
 `packages/code/tests/integration/tool-clamp.test.tsx`, whose title states the reason: "clamping
 breaks the unified-diff parser", plus the lead/delegated/manual-fold matrix in

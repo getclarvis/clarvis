@@ -561,7 +561,7 @@ advertised array (`packages/memory/src/capability.ts`).
 
 For an external provider, writes are wrapped so the queue fence spans the remote call: the wrapper
 takes `store.exclusive`, checks `fence.before`, executes, checks `fence.after`, and returns
-`LOST_INDEX_CLAIM` as an error result if either check fails (`packages/memory/src/capability.ts`). The test
+`LOST_INDEX_CLAIM` as an error result if either check fails (`packages/memory/src/indexer/capability.ts`). The test
 pins the exact call order `["fence:before", "provider:write_memory", "fence:after"]`
 (`packages/memory/tests/component/indexing-pass-capability.test.ts`).
 
@@ -1166,10 +1166,10 @@ Log events this subsystem emits, with level: `memory.job.blocked` (info, `packag
 
 | Consumer | Edge | Source |
 | --- | --- | --- |
-| `@clarvis/kernel` (`file-kernel`) | constructs the factory, supplies `runDeps`/`passRunDeps`/`loadPolicy`/`storeFor`/`serverPort`/`pluginPort`/`executablePort` | `packages/kernel/src/file-kernel.ts` |
+| `@clarvis/kernel` (`file-kernel`) | supplies the memory options `loadPolicy`/`storeFor`/`serverPort`/`pluginPort`/`executablePort` into its composition | `packages/kernel/src/file-kernel.ts` |
 | `@clarvis/kernel` (`kernel.ts`) | registers `memoryFactory.stop()` on the kernel lifecycle | `packages/kernel/src/kernel.ts` |
 | `@clarvis/kernel` (`memory-service`) | exposes `health`/`jobs`/`retryJob` over the protocol | `packages/kernel/src/memory/memory-service.ts` |
-| `@clarvis/kernel` (`native-kernel`, Container projection) | keeps Memory and its indexer native inside the Container while rejecting external providers before their startup | `createNativeKernel` in `packages/kernel/src/native-kernel.ts`, `projectContainerConfiguration` in `packages/kernel/src/config/container-projection.ts` |
+| `@clarvis/kernel` (`native-kernel`, Container projection) | constructs the factory through `createMemoryFactory` with `llm`/`runDeps`/`passRunDeps`, keeps Memory and its indexer native inside the Container while rejecting external providers before their startup | `createNativeKernel` in `packages/kernel/src/native-kernel.ts`, `projectContainerConfiguration` in `packages/kernel/src/config/container-projection.ts` |
 | `@clarvis/kernel` (`managed-run`, `run-service`, `workflows-service`) | uses `ingestPendingAfter` / `DEFAULT_INGEST_CLOSE_GRACE_MS` to decide whether a run's stream may close | `packages/kernel/src/runs/managed-run.ts`, `packages/kernel/src/runs/run-service.ts`, `packages/kernel/src/workflows/workflows-service.ts` |
 | `@clarvis/code` | reads `memory_ingest` phases through the kernel's policy export | `packages/kernel/src/policy.ts`, adapted at `packages/code/src/adapters/event-span.ts` and consumed at `packages/code/src/run-host.ts` |
 | memory's own run capability | calls `enqueueFinishedRun`, `factory.subscribeToRun`, `factory.poke` in `onRunEnd` | `createMemoryRunCapability` in `packages/memory/src/capability.ts` |
@@ -1190,7 +1190,7 @@ preserves source planning modes, including the absent catalog under `off` and re
 Historical headers and blocks retain their persisted positions under the
 [prompt-history contract](../cross-cutting/prompt-cache.md).
 Production: `packages/kernel/src/memory/pass-deps.ts` (`composeIndexPassDeps`) and
-`packages/kernel/src/file-kernel.ts` (`passDepsRef.current`),
+`packages/kernel/src/native-kernel.ts` (`deferred.passDeps`, read through `passRunDeps`),
 `packages/kernel/src/config/capability-registry.ts` (`composeKernelCapabilityRegistry`),
 `packages/plan/src/capability/catalog.ts` (`createPlanCatalogRun`) and
 `packages/memory/src/indexer/request.ts` (`buildIndexerContinuationRequest`). Test:

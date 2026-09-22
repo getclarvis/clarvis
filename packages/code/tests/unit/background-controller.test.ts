@@ -34,6 +34,7 @@ test("archives only the observed unknown generation and acknowledges after durab
   const calls: string[] = [];
   const resolution = {
     kind: "operator_verified_physical_closure" as const,
+    disposition: "archive" as const,
     previous_host_generation: ref.host_generation,
     resolving_host_generation: "current",
     operator_connection_id: "operator",
@@ -66,6 +67,49 @@ test("archives only the observed unknown generation and acknowledges after durab
     recovery_resolution: resolution,
   });
   expect(calls).toEqual(["resolve", "acknowledge", "acknowledge"]);
+});
+
+test("sends the continue disposition only when the operator asked to resume", async () => {
+  const f = fixture();
+  const ref = hostedRef({ execution_state: "unknown" });
+  const inputs: unknown[] = [];
+  f.service.resolveRecovery = async (input) => {
+    inputs.push(input);
+    return {
+      ...ref,
+      execution_state: "closed",
+      revision: ref.revision + 1,
+      recovery_resolution: {
+        kind: "operator_verified_physical_closure",
+        disposition: input.disposition ?? "archive",
+        previous_host_generation: ref.host_generation,
+        resolving_host_generation: "current",
+        operator_connection_id: "operator",
+        resolved_at: 20,
+      },
+    };
+  };
+  f.service.acknowledge = async () => undefined;
+
+  // The action layer carries the disposition; the list layer is what asks the operator first.
+  await f.controller.resolveRecovery(ref);
+  await f.controller.resolveRecovery(ref, "continue");
+
+  expect(inputs).toEqual([
+    {
+      execution_id: ref.execution_id,
+      host_generation: ref.host_generation,
+      revision: ref.revision,
+      physical_work_stopped: true,
+    },
+    {
+      execution_id: ref.execution_id,
+      host_generation: ref.host_generation,
+      revision: ref.revision,
+      physical_work_stopped: true,
+      disposition: "continue",
+    },
+  ]);
 });
 
 test("coalesces handoff and exits only after its confirmed receipt", async () => {

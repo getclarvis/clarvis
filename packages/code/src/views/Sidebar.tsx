@@ -34,6 +34,7 @@ function activityStatusPriority(status: string): number {
     case "pending":
     case "returned":
     case "spawned":
+    case "limited":
       return 1;
     case "done":
     case "ok":
@@ -128,7 +129,7 @@ export function subagentProgress(
 ): { total: number; settled: number; running: number; label: string } {
   const total = agents.length;
   const settled = agents.filter(
-    (agent) => agent.status === "done" || agent.status === "error",
+    (agent) => agent.status !== "running" && agent.status !== "spawned",
   ).length;
   const running = agents.filter((agent) => agent.status === "running").length;
   const suffix = running > 0 ? ` ${glyph("separator")} ${running} running` : "";
@@ -143,6 +144,10 @@ function subagentTone(
       return taskTone("in_progress");
     case "done":
       return taskTone("done");
+    case "limited":
+      return taskTone("returned");
+    case "cancelled":
+      return taskTone("abandoned");
     case "error":
       return taskTone("failed");
     case "spawned":

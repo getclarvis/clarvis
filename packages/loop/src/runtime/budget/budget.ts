@@ -1,5 +1,6 @@
 import type { LLMUsage } from "@clarvis/capability";
 import type { TokenCounts } from "@clarvis/capability";
+import type { AgentLimitExhausted } from "@clarvis/capability";
 
 /**
  * Outcome of a hard-limit check: non-terminal, or terminal with the dimension
@@ -115,4 +116,19 @@ export function checkLimits(counter: IterationCounter, ledger: TokenLedger): Bud
     return { terminal: true, reason: "tokens" };
   }
   return { terminal: false };
+}
+
+/**
+ * Describe a hard cap that ended an attempt as an {@link AgentLimitExhausted} fact.
+ *
+ * @param dimension - the counter that reached its cap.
+ * @returns the limit fact, with the accounting scope the dimension implies.
+ * @remarks The scope is derived rather than passed because it is not a caller's
+ *   choice: an iteration counter is per attempt, while the token ledger is shared
+ *   by every agent in the tree, so a token cap is the run's ceiling and an
+ *   iteration cap is that agent's own. Deriving it here keeps every producer of a
+ *   budget result from re-deciding — and disagreeing about — that mapping.
+ */
+export function limitOf(dimension: "iterations" | "tokens"): AgentLimitExhausted {
+  return { dimension, scope: dimension === "tokens" ? "run" : "agent" };
 }

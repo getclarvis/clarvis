@@ -2,13 +2,28 @@ import { createStore, produce } from "solid-js/store";
 import type { RunEvent } from "@clarvis/protocol";
 import type { EventSpan } from "./event-span.ts";
 import type { RunSink } from "./store.ts";
-import { createSubagentRegistry, iterationTokens, subagentCompletedOk } from "./run-reducers.ts";
+import {
+  createSubagentRegistry,
+  iterationTokens,
+  subagentNodeStatus,
+  subagentOutcomeKind,
+  subagentSettledStatus,
+  type SubagentSettledStatus,
+} from "./run-reducers.ts";
 import { reducePlanProjection, type PlanActivity } from "./plan-projection.ts";
 
 export type { PlanActivity, PlanTaskActivity } from "./plan-projection.ts";
+export { subagentNodeStatus };
 
-/** Lifecycle of one tracked subagent, as reflected in the activity panel. */
-export type SubagentStatus = "spawned" | "running" | "done" | "error";
+/**
+ * Lifecycle of one tracked subagent, as reflected in the activity panel.
+ *
+ * @remarks `limited` and `cancelled` are separate from `error` because the
+ *   delegation event already distinguishes them and the panel used to flatten
+ *   every non-success into `error`. A child stopped at its own budget cap and a
+ *   child the run took down with it are not failures of that child.
+ */
+export type SubagentStatus = "spawned" | "running" | SubagentSettledStatus;
 
 /** One selected sidebar result is informative at this size without retaining a tool-sized body. */
 export const ACTIVITY_SUBAGENT_SUMMARY_MAX_CHARS = 512;
@@ -258,7 +273,7 @@ export function createActivityStore(): ActivityStore {
           state.subagents.forEach((w, i) => {
             if (w.status === "running" || w.status === "spawned")
               patchSubagent(i, (m) => {
-                m.status = ok ? "done" : "error";
+                m.status = ok ? "done" : "cancelled";
               });
           });
           return;
@@ -274,7 +289,7 @@ export function createActivityStore(): ActivityStore {
             output: 0,
           }));
           patchSubagent(i, (w) => {
-            w.status = subagentCompletedOk(event.status) ? "done" : "error";
+            w.status = subagentSettledStatus(subagentOutcomeKind(event.status));
             w.endedAt = event.at;
           });
           retainSummary(i, event.summary);

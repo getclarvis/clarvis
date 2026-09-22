@@ -223,7 +223,7 @@ cross-run/tree ceiling is contributed separately through `AgentLoopContribution.
 
 `TracePort` keeps the **generic** signature rather than the loose `record(kind: string, detail:
 unknown)` it could have had, and that is a decision, not an accident. The engine's own loop writes
-through this port, so a loose signature would silently drop type-checking on all 37 built-in kinds
+through this port, so a loose signature would silently drop type-checking on every built-in kind
 at once. Generic over `TraceKind`, a built-in kind still has its detail shape checked at the call
 site while a kind a downstream capability invents is accepted with a detail of `unknown`. `signal`
 is the live-only twin — it reaches a watching UI and is never persisted — and `now()` is the

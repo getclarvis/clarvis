@@ -15,7 +15,11 @@ export interface BackgroundListController {
     options?: { confirmTakeover?(): Promise<boolean>; started(): void },
   ): Promise<void>;
   cancel(id: string): Promise<void>;
-  resolveRecovery(ref: HostedRunRef, confirm: () => Promise<boolean>): Promise<void>;
+  resolveRecovery(
+    ref: HostedRunRef,
+    confirm: () => Promise<boolean>,
+    disposition?: "archive" | "continue",
+  ): Promise<void>;
   dispose: () => void;
 }
 
@@ -106,12 +110,12 @@ export function createBackgroundListController(deps: {
         if (!guard.isDisposed()) setBusy(false);
       }
     },
-    async resolveRecovery(ref, confirm) {
+    async resolveRecovery(ref, confirm, disposition) {
       if (guard.isDisposed() || loading() || busy()) return;
       setBusy(true);
       try {
         if (!(await confirm()) || guard.isDisposed()) return;
-        await deps.backgrounds.resolveRecovery(ref);
+        await deps.backgrounds.resolveRecovery(ref, disposition);
         await refresh();
       } finally {
         if (!guard.isDisposed()) setBusy(false);
@@ -142,7 +146,7 @@ export interface BackgroundController {
   background(canExit?: () => boolean): Promise<void>;
   attach(id: string, control?: "observe" | "acquire" | "takeover"): Promise<void>;
   cancel(id: string): Promise<void>;
-  resolveRecovery(ref: HostedRunRef): Promise<void>;
+  resolveRecovery(ref: HostedRunRef, disposition?: "archive" | "continue"): Promise<void>;
   newConversation(): void;
 }
 
@@ -190,7 +194,7 @@ export function createBackgroundController(deps: {
       const ref = await find(id);
       await deps.attach(ref, control ?? (ref.control === "other" ? "observe" : "acquire"));
     },
-    async resolveRecovery(ref) {
+    async resolveRecovery(ref, disposition) {
       if (
         ref.workspace_id === deps.workspaceId &&
         ref.execution_state === "closed" &&
@@ -200,13 +204,14 @@ export function createBackgroundController(deps: {
         return;
       }
       if (ref.workspace_id !== deps.workspaceId || ref.execution_state !== "unknown")
-        throw new Error("Only an unknown run in this workspace can be archived.");
+        throw new Error("Only an unknown run in this workspace can be resolved.");
       const hosting = deps.hosting();
       const resolved = await hosting.resolveRecovery({
         execution_id: ref.execution_id,
         host_generation: ref.host_generation,
         revision: ref.revision,
         physical_work_stopped: true,
+        ...(disposition === undefined ? {} : { disposition }),
       });
       if (
         resolved.execution_id !== ref.execution_id ||

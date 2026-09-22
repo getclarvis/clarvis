@@ -63,6 +63,13 @@ export interface Session {
   restoreHistory(messages: readonly Message[]): void;
   beginTurn(content: MessageContent, executionId: string): string | undefined;
   endTurn(envelope: RunResult | undefined): void;
+  /**
+   * Discard a provisional hosted turn the canonical store never adopted.
+   *
+   * @param executionId - the execution the provisional turn was opened under.
+   * @returns true when a provisional turn was discarded.
+   */
+  discardTurn(executionId: string): boolean;
   /** Record a separately-invoked run without adding its prompt or result to continuation history. */
   beginTranscriptTurn(display: string, executionId: string): void;
   /** Settle the newest matching transcript-only turn without appending an assistant message. */
@@ -120,6 +127,16 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
   const counted = new Set<string>();
   const redact = init.redactPreviews !== false;
   let continuationBase: string | undefined;
+  /**
+   * The continuation base each provisional turn replaced, keyed by execution id.
+   *
+   * @remarks A hosted submission publishes its turn before the host decides, so the entry it moved
+   *   has to be remembered to be put back: {@link discardTurn} restores exactly what
+   *   {@link beginTurn} displaced rather than recomputing it from whatever turns survive, which
+   *   would silently continue from an older execution when an in-between turn is also discarded.
+   */
+  const provisionalBases = new Map<string, string | undefined>();
+  const submissions = new Map<string, Message>();
   if (meta) {
     for (let index = meta.turns.length - 1; index >= 0; index -= 1) {
       const turn = meta.turns[index];
@@ -163,6 +180,10 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
     const ts = now();
     const base = continuationBase;
     const current = ensureMeta(contentToText(content), ts);
+    if (deps.hosted) {
+      submissions.set(executionId, { role: "user", content });
+      return base;
+    }
     history.push({ role: "user", content });
     const extensionProfile = deps.extensionProfile?.();
     current.turns.push({
@@ -174,6 +195,7 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
       startedAt: ts,
     });
     continuationBase = executionId;
+    provisionalBases.set(executionId, base);
     if (extensionProfile !== undefined) current.lastExtensionProfile = extensionProfile;
     current.updatedAt = ts;
     if (!deps.hosted) deps.store.save(current);
@@ -183,6 +205,7 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
   function beginTranscriptTurn(display: string, executionId: string): void {
     const ts = now();
     const current = ensureMeta(display, ts);
+    if (deps.hosted) return;
     const extensionProfile = deps.extensionProfile?.();
     current.turns.push({
       kind: "transcript",
@@ -235,6 +258,35 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
 
   function endTurn(envelope: RunResult | undefined): void {
     finishTurn("conversation", envelope, true);
+  }
+
+  /**
+   * Discard a provisional hosted turn the canonical store never adopted.
+   *
+   * @param executionId - the execution the provisional turn was opened under.
+   * @returns true when a provisional turn was discarded.
+   * @remarks A hosted submission is published optimistically before the host decides: `beginTurn`
+   *   appends the turn to the local projection, moves the continuation base to it, and appends the
+   *   user message to the semantic history. When the host refuses before admission, none of those
+   *   three facts is true in the canonical conversation — and leaving them made the *next* turn
+   *   continue from an execution that never ran. A settled turn is past this point: the canonical
+   *   store holds it and the caller has already reported its result.
+   */
+  function discardTurn(executionId: string): boolean {
+    if (deps.hosted) return submissions.delete(executionId);
+    if (!meta) return false;
+    const at = meta.turns.findIndex(
+      (turn) => turn.kind === "conversation" && turn.executionId === executionId,
+    );
+    if (at === -1) return false;
+    if (continuationBase === executionId) continuationBase = provisionalBases.get(executionId);
+    provisionalBases.delete(executionId);
+    meta.turns.splice(at, 1);
+    const last = history.at(-1);
+    if (last?.role === "user") history.pop();
+    meta.updatedAt = now();
+    if (!deps.hosted) deps.store.save(meta);
+    return true;
   }
 
   function endTranscriptTurn(envelope: RunResult | undefined): void {
@@ -310,6 +362,14 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
     acceptHosted: (canonical) => {
       if (!deps.hosted || (meta !== null && canonical.id !== meta.id))
         throw new Error("canonical conversation does not belong to this hosted session");
+      for (const turn of canonical.turns) {
+        const submitted =
+          turn.executionId === undefined ? undefined : submissions.get(turn.executionId);
+        if (submitted !== undefined) {
+          history.push(submitted);
+          submissions.delete(turn.executionId!);
+        }
+      }
       meta = canonical;
       pending.splice(0, pending.length, ...(canonical.pending ?? []));
       continuationBase = canonical.turns.findLast(
@@ -341,6 +401,7 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
     restoreHistory,
     beginTurn,
     endTurn,
+    discardTurn,
     beginTranscriptTurn,
     endTranscriptTurn,
     reconcile,

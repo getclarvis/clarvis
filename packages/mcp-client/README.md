@@ -15,7 +15,7 @@ specified in [`engine/tool-dispatch.md`](../../specs/engine/tool-dispatch.md).
 | `openConnection`                                | one self-healing connection: reconnect, health ping, consecutive-timeout streak |
 | `createConnectionManager`                       | the pool over connections, with idle TTL and owner scoping                      |
 | `buildRegistry`, `selectTools`, `poolToolNames` | collision-safe tool registry with dotted canonical identities                   |
-| `interpolateEnv`                                | `${VAR}` expansion in a server's `env` and `headers` when enabled               |
+| `resolveStringMap` (`@clarvis/capability`)      | `${VAR}` expansion in a server's `env` and `headers` when enabled               |
 | `createMCPAuthorizationCoordinator`             | browser OAuth, loopback callback, PKCE and per-resource serialization           |
 | `createMcpOAuthCredentialStore`                 | bounded, private persistence for registrations and tokens                       |
 | `MCPAuthorizationWait`, pending/deferred errors | blocking/embedder and non-blocking run authorization/admission policy           |

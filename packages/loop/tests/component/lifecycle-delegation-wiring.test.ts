@@ -225,6 +225,42 @@ describe("a cancelled sub-agent never mutates the tracker", () => {
   const exhaustingLlm = (): MockLLM =>
     new MockLLM({ script: Array.from({ length: 6 }, () => ({ text: "" })) });
 
+  it("preserves child-local cancellation while the parent remains authorized", async () => {
+    const { tasks, failed } = recordingTracker();
+    const returned: string[] = [];
+    tasks.markReturned = (id) => {
+      returned.push(id);
+      return true;
+    };
+    const parent = new AbortController();
+    const ctx = context(new MockLLM({ script: [] }), []);
+    ctx.tasks = tasks;
+    ctx.signal = parent.signal;
+    const prepared = await prepareSpawn({ ...SPAWN_ARGS, task_id: "t1" }, ctx);
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) return;
+    prepared.prepared.agentCapabilities = [
+      {
+        attach: () => ({
+          hooks: {
+            beforeIteration: () => ({
+              status: "cancelled",
+              partialText: "Verified files remain available",
+            }),
+          },
+        }),
+      },
+    ];
+    const result = await runPreparedSubagent(prepared.prepared, ctx);
+    expect(result.outcome).toBe("cancelled");
+    expect(result.text).toContain("Verified files remain available");
+    expect(parent.signal.aborted).toBe(false);
+    expect(failed).toEqual([]);
+    expect(returned).toEqual([]);
+    const entry = ctx.trace.entries().find((event) => event.kind === "delegation_failed");
+    expect(entry?.detail).toMatchObject({ status: "cancelled" });
+  });
+
   it("leaves the tracker untouched when the model call rejects under an aborted signal", async () => {
     const { tasks, failed } = recordingTracker();
     const ctx = context(new MockLLM({ script: [] }), []);
@@ -237,12 +273,17 @@ describe("a cancelled sub-agent never mutates the tracker", () => {
     if (!prepared.ok) return;
 
     controller.abort();
-    const result = await runPreparedSubagent(prepared.prepared, ctx);
-
-    expect(result.text).toContain("Sub-agent cancelled.");
+    await expect(runPreparedSubagent(prepared.prepared, ctx)).rejects.toMatchObject({
+      name: "AbortError",
+    });
     expect(failed).toEqual([]);
-    const entry = ctx.trace.entries().find((e) => e.kind === "delegation_failed");
-    expect((entry?.detail as { status: string }).status).toBe("cancelled");
+    expect(
+      ctx.trace
+        .entries()
+        .some(
+          (entry) => entry.kind === "delegation_created" || entry.kind === "delegation_started",
+        ),
+    ).toBe(false);
   });
 
   it("marks the same throw path failed when nothing aborted, so the guard is what spares it", async () => {

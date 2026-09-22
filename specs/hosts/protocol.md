@@ -47,6 +47,13 @@ and [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-hos
 
 ### 2.1 Module list
 
+Goal run DTOs carry optional `activity_unavailable` for a host observation that could not be taken.
+It is distinct from a measured `progress_observed: false` and grants no execution or budget authority.
+Production: `GoalRun` in [goals.ts](../../packages/protocol/src/goals.ts) and `settleGoalSession` in
+[settlement.ts](../../packages/kernel/src/goals/settlement.ts).
+Test: `persists unavailable activity without manufacturing a negative progress observation` in
+[goal-settlement.test.ts](../../packages/kernel/tests/unit/goal-settlement.test.ts).
+
 Source ownership:
 
 | File | Owns |
@@ -1182,3 +1189,51 @@ operator evidence seed or controller binding. Production:
 [review-detail-schema.ts](../../packages/kernel/src/guard/review-detail-schema.ts).
 Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
 See [effect review](../execution/effect-review.md).
+
+Host-owned `Session.operator_intents` retains bounded accepted submissions separately from executed
+turns, and `operator_sequence` survives pruning of admitted receipts. Client saves cannot modify
+these fields. `GoalReceipt.resume_pending` denotes durable recovery work, not a successful launch.
+The owning lifecycle is [durable operator submissions](hosted-runs.md#durable-operator-submissions).
+A steering receipt may bind `steering_target`, assigned only by the host before dispatch. Restart
+reconciliation consults that execution, retains unavailable evidence as uncertainty, and refuses a
+consumption acknowledgement for a different destination. The field grants no execution authority.
+Production: `Session.operator_intents` in [sessions.ts](../../packages/protocol/src/sessions.ts),
+`acceptOperator`, `prepareOperator` and `deliverOperator` in
+[sessions.ts](../../packages/kernel/src/hosting/sessions.ts).
+Test: `restart scopes steering reconciliation to its persisted destination, consumed: %s` in
+[hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).
+
+Production: `Session` in [sessions.ts](../../packages/protocol/src/sessions.ts) and
+`createHostedSessionCoordinator` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts).
+Test: [goal-operator-recovery.test.ts](../../packages/kernel/tests/integration/goal-operator-recovery.test.ts).
+
+`HostingService.resumePending(sessionId)` asks the host to read its canonical unconsumed operator
+receipts and requeue them under the current authenticated operator connection. It accepts no message
+body or receipt list from the client. Repeated calls use the existing idempotent per-session admission
+queue; consumption, physical closure, current policy and controller ownership are revalidated.
+Observers cannot invoke it, and it neither takes over another controller nor restores old consent.
+It returns an admitted run or null when no input is pending; unavailable dependencies leave receipts
+retained. Headless restart without a new authenticated controller still waits for that authority.
+
+Production: `pendingOperators` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts),
+`resumePending` in [registry.ts](../../packages/kernel/src/hosting/registry.ts),
+`OPERATIONS.hosting.resumePending` in [operations.ts](../../packages/kernel/src/transport/operations.ts).
+Test: `requeues canonical pending input on a fresh operator connection without duplicate admission`
+in [hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts), and
+`restart scopes steering reconciliation to its persisted destination, consumed: %s` in
+[hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).
+
+### Prepared non-final Goal settlement
+
+Host-owned `GoalRun.settlement_preparation` retains the terminal outcome, disposition, measured
+usage and activity receipts or uncertainty before the canonical turn is settled. Repeating identical
+preparation is idempotent; conflicting preparation is rejected. It does not change the operator's
+control revision, authorize effects, or validate final completion. Physical closure remains a host
+prerequisite, and normal Goal settlement consumes the preparation in the accounting transaction.
+Production: `prepareGoalSettlement` and `settleGoalRun` in
+[execution.ts](../../packages/goal/src/execution.ts), and `recoverGoalSettlementSession` in
+[settlement.ts](../../packages/kernel/src/goals/settlement.ts).
+Test: preparation and recovery cases in
+[goal-settlement.test.ts](../../packages/kernel/tests/unit/goal-settlement.test.ts), and lost-write
+acknowledgement recovery in
+[hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).

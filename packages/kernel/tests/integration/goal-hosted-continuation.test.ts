@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -383,6 +383,67 @@ describe("goals through real hosted continuation, loop and SDK", () => {
       origin: "literal",
     });
     expect(evidence![0]!.text).not.toContain("Start the bounded goal");
+  });
+
+  it("settles a concurrent completion conflict and verifies a fresh candidate in one successor", async () => {
+    let readsAfterEvidence = 0;
+    const f = await fixture({
+      script: [candidate, { text: "First stage result" }, candidate, { text: "Verified result" }],
+      async beforeEvidence() {
+        readsAfterEvidence = 0;
+      },
+    });
+    const read = f.repository.read.bind(f.repository);
+    const concurrent = spyOn(f.repository, "read").mockImplementation(async (id) => {
+      const state = await read(id);
+      readsAfterEvidence++;
+      if (
+        readsAfterEvidence === 2 &&
+        state?.current?.runs.at(-1)?.execution_id === "first" &&
+        state.current.candidate !== undefined
+      ) {
+        await f.repository.transact(id, (value) => {
+          const next = structuredClone(value!);
+          next.revision++;
+          next.current!.revision++;
+          return { state: next, result: undefined };
+        });
+        return read(id);
+      }
+      return state;
+    });
+    try {
+      const first = await f.start();
+      expect(await first.handle.done).toMatchObject({
+        status: "failed",
+        error: { code: "goal_finalization_conflict" },
+      });
+      await first.handle.closed;
+      const second = await f.started[1]!.promise;
+      expect(await second.done).toMatchObject({ status: "completed" });
+      const settled = await f.peer.service.attach({
+        execution_id: second.execution_id,
+        host_generation: "generation",
+        control: "observe",
+      });
+      await settled.handle.closed;
+      expect(f.starts).toHaveLength(2);
+      const goal = (await f.state())!.current!;
+      expect(goal).toMatchObject({
+        status: "complete",
+        auto_continuations: 1,
+        no_progress_stages: 0,
+      });
+      expect(goal.runs[0]).toMatchObject({ decision: "continue", cause: "finalization_conflict" });
+      expect(goal.runs[1]).toMatchObject({ decision: "complete" });
+      expect(f.bounded[1]!.continue_from).toBe("first");
+      expect(JSON.stringify(f.wire.at(-1)!.messages)).toContain("First stage result");
+      expect(f.bounded[1]!.budget.total_token_limit).toBeLessThan(
+        f.bounded[0]!.budget.total_token_limit!,
+      );
+    } finally {
+      concurrent.mockRestore();
+    }
   });
 
   it("seeds guided command review from the exact user seed, not inferred Goal semantics", async () => {

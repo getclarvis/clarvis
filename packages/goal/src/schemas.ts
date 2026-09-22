@@ -126,19 +126,68 @@ export const goalCheckpointSchema = z
 /** Latest progress annotation; it neither ends a stage nor proves useful activity. */
 export const goalProgressSchema = goalCheckpointSchema.pick({ summary: true, evidence: true });
 
+/**
+ * Why one call's usage could not be resolved.
+ *
+ * @remarks Attributable on purpose: an operator deciding whether to accept a gap has to know
+ *   whether the missing figure is a provider that would not report it, a call that was still in
+ *   flight when the stage closed, or telemetry that arrived unusable. None of these carries
+ *   prompt, response or credential content.
+ */
+export const goalUsageGapCauseSchema = z.enum([
+  "no_usage",
+  "provider_unknown",
+  "pending_call",
+  "invalid_measure",
+]);
+
+/** One bounded, attributable gap in a partial measurement. */
+export const goalUsageGapSchema = z
+  .object({
+    cause: goalUsageGapCauseSchema,
+    calls: counter,
+    call_ids: z.array(id).max(16).optional(),
+    fingerprint: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/u)
+      .optional(),
+  })
+  .strict();
+
+const usageTotals = {
+  revision: counter.optional(),
+  input: counter,
+  output: counter,
+  cached: counter.optional(),
+};
+
+const cachedWithinInput = <T extends { input: number; cached?: number | undefined }>(
+  value: T,
+): boolean => value.cached === undefined || value.cached <= value.input;
+
+/**
+ * The confirmation state of one scope's consumption.
+ *
+ * @remarks `complete` and `partial` both carry a confirmed subtotal — the tokens actually
+ *   observed — and differ only in whether every call in the scope is accounted for. `partial`
+ *   adds bounded references to what stayed unresolved and why, so an operator can accept that
+ *   specific gap rather than being asked to accept an unqualified "unknown". `unknown` is
+ *   reserved for a scope with no usable subtotal at all: absence of consumption is not zero.
+ */
 export const goalUsageSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("unknown") }).strict(),
   z
+    .object({ kind: z.literal("complete"), ...usageTotals })
+    .strict()
+    .refine(cachedWithinInput, { message: "cached tokens cannot exceed input tokens" }),
+  z
     .object({
-      kind: z.literal("measured"),
-      input: counter,
-      output: counter,
-      cached: counter.optional(),
+      kind: z.literal("partial"),
+      ...usageTotals,
+      gaps: z.array(goalUsageGapSchema).min(1).max(8),
     })
     .strict()
-    .refine((value) => value.cached === undefined || value.cached <= value.input, {
-      message: "cached tokens cannot exceed input tokens",
-    }),
+    .refine(cachedWithinInput, { message: "cached tokens cannot exceed input tokens" }),
 ]);
 
 const goalFormulationOriginSchema = z.object({
@@ -246,7 +295,8 @@ export const goalStageDecisionSchema = z.enum(["complete", "continue", "attentio
  *   `checkpoint` and `local_limit` are ordinary endings; `stagnation`,
  *   `empty_response`, `impediment`, `transient`, `steward_interrupted` and a
  *   progressing `context_overflow` may be re-evaluated by a successor under the
- *   stage allowance; `declined`, `cancelled`, `provider_refused`,
+ *   stage allowance. `finalization_conflict` permits bounded re-evaluation without
+ *   spending semantic no-progress tolerance; `declined`, `cancelled`, `provider_refused`,
  *   `tools_unavailable`, `control_failure` and `unclassified` are not presumed
  *   recoverable.
  */
@@ -265,6 +315,7 @@ export const goalRunCauseSchema = z.enum([
   "provider_refused",
   "tools_unavailable",
   "control_failure",
+  "finalization_conflict",
   "unclassified",
 ]);
 
@@ -283,6 +334,7 @@ export const goalRunSchema = z
     decision: goalStageDecisionSchema.optional(),
     cause: goalRunCauseSchema.optional(),
     progress_observed: z.boolean().optional(),
+    activity_unavailable: z.boolean().optional(),
     /**
      * The receipts this stage contributed that the Goal had not already recorded.
      *
@@ -295,12 +347,32 @@ export const goalRunSchema = z
     not_before: counter.optional(),
     impediment: z.object({ reason: text, declared_at: counter }).strict().optional(),
     usage: goalUsageSchema.optional(),
+    accepted_usage_gaps: z.string().max(4096).optional(),
     usage_estimate: z.object({ sequence: counter, usage: goalUsageSchema }).strict().optional(),
+    settlement_preparation: z
+      .object({
+        outcome: z.enum(["completed", "failed", "cancelled"]),
+        disposition: z.enum(["final", "checkpoint"]),
+        usage: goalUsageSchema,
+        activity: z.array(digest).max(GOAL_STAGE_ACTIVITY_MAX).optional(),
+        activity_unavailable: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
     checkpoint: goalCheckpointSchema.optional(),
     progress: goalProgressSchema.optional(),
     candidate: goalCandidateSchema.optional(),
     steward_reviews: z.array(goalStewardReviewSchema).max(8).default([]),
     steward_review_count: counter.default(0),
+    /**
+     * When a host attestation closed a stage whose own ending was never observed.
+     *
+     * @remarks A resolution, not an outcome: the stage stops occupying the conversation because
+     *   the operator established that nothing is still running, while `outcome` stays absent
+     *   because the run's result genuinely was never established. Read together with the durable
+     *   recovery audit, which belongs to the session record rather than to the Goal.
+     */
+    recovered_at: counter.optional(),
   })
   .strict();
 
@@ -340,6 +412,21 @@ export const goalRecordSchema = z
         usage_unknown: z.boolean(),
         cache_estimated: z.boolean(),
         overrun_tokens: counter,
+        /**
+         * Bounded aggregate of what the charged subtotal does not cover, by cause.
+         *
+         * @remarks Informational: it answers "what is missing" without claiming a figure. The
+         *   per-execution detail stays on each run's own `usage`.
+         */
+        gaps: z.array(goalUsageGapSchema).max(8).default([]),
+        /**
+         * Closed executions whose incomplete or unknown measurement the operator accepted.
+         *
+         * @remarks Acceptance is per execution, so an old gap keeps its acceptance while a new
+         *   stage's gap — a new execution id — is unaccepted and suspends automatic admission
+         *   until the next explicit decision. Acceptance never rewrites the measurement.
+         */
+        usage_accepted_runs: z.array(id).max(GOAL_RUNS_MAX).default([]),
       })
       .strict(),
     auto_continuations: counter,
@@ -379,6 +466,11 @@ export const goalRecordSchema = z
 
 export const goalReceiptSchema = z
   .object({
+    resume_pending: z.literal(true).optional(),
+    resume_condition: z.enum(["physical", "token_limit", "deadline"]).optional(),
+    outcome: z
+      .enum(["running", "recovering", "needs_input", "superseded", "unavailable"])
+      .optional(),
     operation_id: id,
     fingerprint: digest,
     revision: counter,
@@ -452,6 +544,8 @@ export type GoalCandidate = z.infer<typeof goalCandidateSchema>;
 export type GoalCheckpoint = z.infer<typeof goalCheckpointSchema>;
 export type GoalProgress = z.infer<typeof goalProgressSchema>;
 export type GoalUsage = z.infer<typeof goalUsageSchema>;
+export type GoalUsageGapCause = z.infer<typeof goalUsageGapCauseSchema>;
+export type GoalUsageGap = z.infer<typeof goalUsageGapSchema>;
 export type GoalRun = z.infer<typeof goalRunSchema>;
 export type GoalRunCause = z.infer<typeof goalRunCauseSchema>;
 export type GoalStageDecision = z.infer<typeof goalStageDecisionSchema>;

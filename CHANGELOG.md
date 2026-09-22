@@ -28,9 +28,9 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 - `/diff` and `Ctrl+X D` show the current Git working tree, including staged, unstaged and untracked
   files, instead of grouping transcript tool calls. The overlay opens on an empty conversation.
-- Isolation and command review are independent controls. `Ctrl+S` selects Host, native Sandbox,
-  Docker or Podman, while `Ctrl+G` selects Off, Approval or Auto review for native placements.
-  Settings > Isolation and Run Controls expose the same choices; runtime placement remains
+- Isolation and command review are independent controls. `Ctrl+X I` selects Host, native Sandbox,
+  Docker or Podman, while `Ctrl+X G` selects Off, Approval or Auto review for native placements.
+  Settings > Run controls and `Ctrl+X I` expose the same choices; runtime placement remains
   global-only.
 - `/background`, `/background list`, `/attach` and scoped cancellation let a local Host/Sandbox run
   continue after its TUI closes and return to the same execution later. Container and SSH retain

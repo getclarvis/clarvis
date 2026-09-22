@@ -33,6 +33,8 @@ export interface GoalRuntimeBinding {
 export interface GoalRuntimeSnapshot {
   goal: GoalRecord;
   evidence: GoalEvidenceOption[];
+  /** Catalog readiness is independent of authority; unavailable proof cannot validate completion. */
+  evidence_unavailable?: "resource_exhausted" | "conflict";
 }
 
 /** A discoverable reference with a short host-authored label; descriptions are not proof. */
@@ -93,6 +95,15 @@ export interface GoalCreationPort {
     signal?: AbortSignal,
   ): Promise<GoalStewardCompletionDecision>;
 }
+
+/** Host-bound activation of an existing Goal by the authenticated operator's current run. */
+export interface GoalAttachmentPort extends Omit<GoalCreationPort, "create"> {
+  readonly goal: GoalRecord;
+  attach(signal?: AbortSignal): Promise<GoalRuntimePort>;
+}
+
+/** Shared runtime activation; only creation restricts work before activation. */
+export type GoalActivationPort = GoalCreationPort | GoalAttachmentPort;
 
 /** Host attestation only; the Goal capability owns notes and finalization gate policy. */
 export interface GoalStewardPort {

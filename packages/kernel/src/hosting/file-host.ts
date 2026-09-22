@@ -2,7 +2,7 @@ import { addGoalAuxiliaryUsage } from "../goals/usage.ts";
 import { createHash } from "node:crypto";
 import { bestEffort, NOOP_LOGGER, sanitizeText } from "@clarvis/capability";
 import { resolveGoalsSettings } from "@clarvis/goal/settings";
-import { validateGoalStewardResult } from "@clarvis/goal";
+import { closeGoalRunByRecovery, validateGoalStewardResult } from "@clarvis/goal";
 import { generateExecutionId } from "@clarvis/trace";
 import { ownerFromWorkspace, workspaceScopeKey } from "@clarvis/paths";
 import type {
@@ -239,15 +239,26 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           };
         };
         const goal = context.session.goal_state?.current;
-        if (goal === undefined || goal.status === "complete" || goal.status === "cancelled") {
-          if (goal === undefined && params.goal_intent?.kind === "create") {
+        if (
+          goal === undefined ||
+          goal.status === "complete" ||
+          goal.status === "cancelled" ||
+          params.intent === "operator"
+        ) {
+          if (
+            (goal === undefined && params.goal_intent?.kind === "create") ||
+            (goal !== undefined && params.intent === "operator" && params.skill === undefined)
+          ) {
             const settings = resolveGoalsSettings((await kernel.config.getSettings()).merged.goals);
             return prepareHostedGoalCreationTurn({
               params,
               context,
               repository,
               sessions: sessions.sessions,
-              seed: params.goal_intent.seed,
+              seed: params.goal_intent?.seed ?? "Follow the current operator instruction",
+              ...(goal === undefined
+                ? {}
+                : { operatorGoal: goalStateFromSession(context.session)!.current! }),
               entryTokenLimit: kernel.prepareRun(params, owner).tokenLimit,
               defaultLimits: {
                 max_auto_continuations: settings.max_auto_continuations,
@@ -278,7 +289,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
               evidence: createGoalEvidenceSource({
                 executionId: params.execution_id!,
                 workspaceRoot: options.kernel.workspaceRoot,
-                readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
+                readTrace: (executionId) => kernel.readRunEvidenceTrace(executionId, owner),
               }),
               readRun: async (executionId) => {
                 try {
@@ -300,6 +311,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           throw kernelError(
             "conflict",
             "Goal requires explicit resume by a live conversation controller",
+            { goal_outcome: "superseded" },
           );
         registry!.assertController(context.conversation);
         return prepareHostedGoalTurn({
@@ -326,7 +338,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           evidence: createGoalEvidenceSource({
             executionId: params.execution_id!,
             workspaceRoot: options.kernel.workspaceRoot,
-            readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
+            readTrace: (executionId) => kernel.readRunEvidenceTrace(executionId, owner),
           }),
           async validateDefinitionSources(sources) {
             for (const source of sources) {
@@ -362,7 +374,62 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
       workspaceId: kernel.workspace.id,
       owner: workspaceScopeKey(owner, kernel.project.id, kernel.workspace.id),
       prepare: sessions.prepare,
+      acceptOperator: sessions.acceptOperator,
+      pendingOperators: sessions.pendingOperators,
+      deliverOperator: sessions.deliverOperator,
+      discoverDeliveries: sessions.discoverDeliveries,
+      async deliveryReconciled(sessionId, intentId, deliveredTo) {
+        const session = await sessions.sessions.get(sessionId);
+        return (
+          session?.operator_intents?.some(
+            (intent) =>
+              intent.execution_id === intentId &&
+              intent.admitted === true &&
+              intent.delivered_to === deliveredTo,
+          ) === true
+        );
+      },
+      prepareOperator: sessions.prepareOperator,
       archiveRecovery: sessions.archiveRecovery,
+      recoverSettlement: sessions.recoverSettlement,
+      async settlementReconciled(run) {
+        const session = await sessions.sessions.get(run.session_id);
+        return (
+          session?.turns.some(
+            (turn) => turn.execution_id === run.execution_id && turn.ended_at !== undefined,
+          ) === true
+        );
+      },
+      /**
+       * A `continue` resolution releases the Goal stage the resolved execution was occupying.
+       *
+       * @remarks This runs after the registry has committed the attestation, and inside the
+       *   conversation's own transaction, because the record that is waiting on that execution —
+       *   the Goal's run — belongs to the session document rather than to the hosting registry.
+       *   Releasing it here is what turns an operator's confirmation that nothing is still running
+       *   into a conversation that can accept a successor.
+       */
+      async continueRecovery(run) {
+        await sessions.transact(run.session_id, (session) => {
+          const state = goalStateFromSession(session);
+          if (state === undefined) return { session, result: undefined };
+          const goal = state.current;
+          if (
+            goal === undefined ||
+            !goal.runs.some((item) => item.execution_id === run.execution_id)
+          )
+            return { session, result: undefined };
+          session.goal_state = goalStateToDto(
+            closeGoalRunByRecovery(state, {
+              goal_id: goal.goal_id,
+              execution_id: run.execution_id,
+              recovered_at: Date.now(),
+            }),
+          );
+          return { session, result: undefined };
+        });
+        goalChanges.notify(run.session_id);
+      },
       logger,
       assertStartAllowed: assertWritable,
       executionChanged: (sessionId) => goalChanges.notify(sessionId),

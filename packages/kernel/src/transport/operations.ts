@@ -233,6 +233,12 @@ export const OPERATIONS = {
     },
   }),
   hosting: serviceOperations<HostingService, "start" | "attach">({
+    resumePending: {
+      method: "hosting.resumePending",
+      metadata: write(),
+      encode: (sessionId) => ({ session_id: sessionId }),
+      invoke: (services, p) => requireHosting(services).resumePending(p.session_id as string),
+    },
     resolveRecovery: {
       method: "hosting.resolveRecovery",
       metadata: write(),

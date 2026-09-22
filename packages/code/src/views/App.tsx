@@ -69,7 +69,11 @@ import type {
 import type { PromptMessage } from "../adapters/mcp-capabilities.ts";
 import type { PlansMode } from "@clarvis/protocol";
 import type { TranscriptStore } from "../adapters/store.ts";
-import type { ActivityStore, UsageActivity } from "../adapters/activity-store.ts";
+import {
+  subagentNodeStatus,
+  type ActivityStore,
+  type UsageActivity,
+} from "../adapters/activity-store.ts";
 import type { SessionId, SessionMeta } from "../adapters/session-store.ts";
 import type { PromptHistory } from "../core/prompt-history.ts";
 import type { McpStartupNotice, RunHost } from "../run-host.ts";
@@ -543,7 +547,7 @@ export function App(props: AppProps): JSX.Element {
         id: w.id,
         order: w.order,
         title: capitalize(w.title),
-        status: w.status === "done" ? "ok" : w.status === "error" ? "error" : "running",
+        status: subagentNodeStatus(w.status),
       })),
     notify,
     defaultFolded: (key) => props.store.defaultFolded(key),

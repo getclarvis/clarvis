@@ -5,6 +5,8 @@ import { z } from "zod";
 import { isBuiltinTraceEvent, NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import {
   applyGoalControl,
+  GoalError,
+  retryGoalResume,
   applyGoalFormulation,
   emptyGoalState,
   formulationCriteria,
@@ -24,10 +26,12 @@ import {
   GoalStewardRunFailure,
   goalNetTokens,
   type GoalDefinitionSource,
+  type GoalUsageGapCause,
 } from "@clarvis/goal";
 import type { TraceEvent } from "@clarvis/capability";
 import type {
   GoalFormulateResult,
+  GoalReceipt,
   GoalFormulationActivity,
   GoalService,
   RunDetail,
@@ -58,18 +62,55 @@ interface GoalDefinitionSourceContext extends GoalDefinitionSource {
   truncated: boolean;
 }
 
+/**
+ * Add two goal-agent measurements, keeping every subtotal either side did confirm.
+ *
+ * @param left - the measurement accumulated so far.
+ * @param right - the measurement to add.
+ * @returns a `complete` sum when both sides are complete, a `partial` one when a subtotal exists
+ *   alongside unresolved work, or `unknown` when neither side produced a figure at all.
+ * @remarks An unknown side is not a zero: it becomes a bounded gap, so the half that *was*
+ *   measured still counts. Collapsing the sum to `unknown` on either side is what let one
+ *   unmeasured agent call discard the accounting of every other call in the same formulation.
+ */
 function appendUsage(
   left: GoalAgentRunResult["usage"],
   right: GoalAgentRunResult["usage"],
 ): GoalAgentRunResult["usage"] {
-  if (left.kind !== "measured" || right.kind !== "measured") return { kind: "unknown" };
+  if (left.kind === "unknown" && right.kind === "unknown") return { kind: "unknown" };
+  const gaps = [
+    ...(left.kind === "unknown"
+      ? [{ cause: "invalid_measure" as const, calls: 1 }]
+      : left.kind === "partial"
+        ? left.gaps
+        : []),
+    ...(right.kind === "unknown"
+      ? [{ cause: "invalid_measure" as const, calls: 1 }]
+      : right.kind === "partial"
+        ? right.gaps
+        : []),
+  ];
+  const merged = new Map<GoalUsageGapCause, number>();
+  for (const gap of gaps) merged.set(gap.cause, (merged.get(gap.cause) ?? 0) + gap.calls);
+  const totals = {
+    input:
+      (left.kind === "unknown" ? 0 : left.input) + (right.kind === "unknown" ? 0 : right.input),
+    output:
+      (left.kind === "unknown" ? 0 : left.output) + (right.kind === "unknown" ? 0 : right.output),
+    ...(left.kind !== "unknown" &&
+    right.kind !== "unknown" &&
+    left.cached !== undefined &&
+    right.cached !== undefined
+      ? { cached: left.cached + right.cached }
+      : {}),
+  };
+  if (merged.size === 0) return { kind: "complete", ...totals };
   return {
-    kind: "measured",
-    input: left.input + right.input,
-    output: left.output + right.output,
-    ...(left.cached === undefined || right.cached === undefined
-      ? {}
-      : { cached: left.cached + right.cached }),
+    kind: "partial",
+    ...totals,
+    gaps: [...merged.entries()]
+      .map(([cause, calls]) => ({ cause, calls }))
+      .sort((first, second) => first.cause.localeCompare(second.cause)),
   };
 }
 
@@ -221,12 +262,26 @@ export function createGoalService(options: {
       },
     ],
   });
+  const receiptView = (receipt: GoalReceipt): GoalReceipt => {
+    if (receipt.execution_id === undefined || receipt.resume_pending === true) return receipt;
+    const execution = options.registry.execution(receipt.execution_id);
+    return {
+      ...receipt,
+      outcome:
+        execution === undefined ||
+        execution.execution_state === "starting" ||
+        execution.execution_state === "unknown"
+          ? "recovering"
+          : "running",
+    };
+  };
   const startReserved = async (
     authority: HostedConversationAuthority,
     sessionId: string,
     bound: GoalRecord,
     executionId: string,
     params: StartRunParams & { execution_id: string },
+    recoverable = false,
   ): Promise<void> => {
     try {
       await options.assertAuthority();
@@ -248,6 +303,7 @@ export function createGoalService(options: {
         params: { ...params, ...(previous === undefined ? {} : { continue_from: previous }) },
       });
     } catch (error) {
+      if (recoverable) throw error;
       await options.repository.transact(sessionId, (state) => ({
         state: stopGoalContinuation(state!, {
           goal_id: bound.goal_id,
@@ -344,13 +400,13 @@ export function createGoalService(options: {
             mode: request.mode,
             outcome: committed.formulation.outcome,
             usage_kind: usage?.kind ?? "none",
-            ...(usage?.kind === "measured"
-              ? {
+            ...(usage === undefined || usage.kind === "unknown"
+              ? {}
+              : {
                   input_tokens: usage.input,
                   output_tokens: usage.output,
                   cached_tokens: usage.cached ?? 0,
-                }
-              : {}),
+                }),
           },
           "Goal formulation completed",
         );
@@ -639,13 +695,13 @@ export function createGoalService(options: {
           outcome: receipt.formulation?.outcome ?? "created",
           duration_ms: analyzed.elapsed_ms,
           usage_kind: analyzed.usage.kind,
-          ...(analyzed.usage.kind === "measured"
-            ? {
+          ...(analyzed.usage.kind === "unknown"
+            ? {}
+            : {
                 input_tokens: analyzed.usage.input,
                 output_tokens: analyzed.usage.output,
                 cached_tokens: analyzed.usage.cached ?? 0,
-              }
-            : {}),
+              }),
         },
         "Goal formulation completed",
       );
@@ -700,11 +756,10 @@ export function createGoalService(options: {
       async receipt(sessionId, operationId) {
         try {
           identifier.parse(operationId);
-          return (
-            (await readSession(sessionId)).goal_state?.receipts.find(
-              (receipt) => receipt.operation_id === operationId,
-            ) ?? null
+          const receipt = (await readSession(sessionId)).goal_state?.receipts.find(
+            (receipt) => receipt.operation_id === operationId,
           );
+          return receipt === undefined ? null : receiptView(receipt);
         } catch (error) {
           throw toGoalKernelError(error);
         }
@@ -736,14 +791,100 @@ export function createGoalService(options: {
             )
           ) {
             options.assertWritable();
-            return applyGoalControl(goalStateFromSession(session), control, {
+            const receipt = applyGoalControl(goalStateFromSession(session), control, {
               session_id: sessionId,
               now: Date.now(),
               physically_busy: options.registry.occupied(sessionId),
             }).receipt;
+            if (control.action.kind === "resume" && receipt.resume_pending === true) {
+              const authority = options.registry.claimController(options.peerId, sessionId);
+              let physical;
+              try {
+                physical = await options.registry.resumePhysical(authority);
+              } catch {
+                return receipt;
+              }
+              const resumed = await options.repository
+                .transact(sessionId, (state) => {
+                  assert(authority);
+                  const result = retryGoalResume(state!, control.operation_id, {
+                    session_id: sessionId,
+                    now: Date.now(),
+                    physically_busy: options.registry.occupied(sessionId),
+                    ...(physical === undefined ? {} : { live_execution_id: physical.execution_id }),
+                  });
+                  return { state: result.state, result };
+                })
+                .catch((error: unknown) => {
+                  if (
+                    error instanceof GoalError &&
+                    ["budget_limited", "usage_limited"].includes(error.code)
+                  )
+                    return undefined;
+                  throw error;
+                });
+              if (resumed === undefined) return receipt;
+              if (resumed.start && resumed.receipt.execution_id !== undefined) {
+                try {
+                  await startReserved(
+                    authority,
+                    sessionId,
+                    resumed.state.current!,
+                    resumed.receipt.execution_id,
+                    paramsFor(session, resumed.receipt.execution_id),
+                    true,
+                  );
+                } catch {
+                  return { ...resumed.receipt, outcome: "unavailable" };
+                }
+              }
+              return receiptView(resumed.receipt);
+            }
+            if (
+              control.action.kind === "resume" &&
+              receipt.execution_id !== undefined &&
+              options.registry.execution(receipt.execution_id) === undefined
+            ) {
+              const bound = goalStateFromSession(session)?.current;
+              if (
+                bound === undefined ||
+                bound.goal_id !== receipt.goal_id ||
+                bound.control_revision !== receipt.revision
+              )
+                return { ...receipt, outcome: "superseded" };
+              const authority = options.registry.claimController(options.peerId, sessionId);
+              try {
+                await startReserved(
+                  authority,
+                  sessionId,
+                  bound,
+                  receipt.execution_id,
+                  paramsFor(session, receipt.execution_id),
+                  true,
+                );
+              } catch {
+                return { ...receipt, outcome: "unavailable" };
+              }
+            }
+            return receiptView(receipt);
           }
           const authority = options.registry.claimController(options.peerId, sessionId);
           assert(authority);
+          let resumePending = false;
+          const physical =
+            control.action.kind === "resume"
+              ? await options.registry.resumePhysical(authority).catch((error: unknown) => {
+                  const details = toKernelError(error).details as
+                    { goal_outcome?: string } | undefined;
+                  if (
+                    details?.goal_outcome !== "needs_input" &&
+                    details?.goal_outcome !== "recovering"
+                  )
+                    throw error;
+                  resumePending = true;
+                  return undefined;
+                })
+              : undefined;
           const executionId = generateExecutionId();
           const params = paramsFor(session, executionId);
           const action = control.action;
@@ -759,7 +900,22 @@ export function createGoalService(options: {
           assert(authority);
           const result = await options.repository.transact(sessionId, (state) => {
             assert(authority);
-            const result = applyGoalControl(state, control, {
+            const rebaseResume =
+              control.action.kind === "resume" &&
+              session.goal_state?.revision === control.expected_revision &&
+              state?.current?.goal_id === session.goal_state.current?.goal_id &&
+              state?.current?.control_revision === session.goal_state.current?.control_revision;
+            const effectiveControl = rebaseResume
+              ? { ...control, expected_revision: state!.revision }
+              : control;
+            const context = {
+              ...(rebaseResume
+                ? {
+                    fingerprint: createHash("sha256")
+                      .update(JSON.stringify({ session_id: sessionId, control }))
+                      .digest("hex"),
+                  }
+                : {}),
               session_id: sessionId,
               new_goal_id: randomUUID(),
               new_execution_id: executionId,
@@ -767,9 +923,64 @@ export function createGoalService(options: {
               entry_token_limit: tokenLimit,
               now: Date.now(),
               physically_busy: options.registry.occupied(sessionId),
-            });
+              ...(physical === undefined ? {} : { live_execution_id: physical.execution_id }),
+              ...(resumePending ? { resume_pending: true } : {}),
+            };
+            let result;
+            try {
+              result = applyGoalControl(state, effectiveControl, context);
+            } catch (error) {
+              if (
+                control.action.kind !== "resume" ||
+                !(error instanceof GoalError) ||
+                !["budget_limited", "usage_limited"].includes(error.code)
+              )
+                throw error;
+              result = applyGoalControl(state, effectiveControl, {
+                ...context,
+                resume_pending: true,
+                resume_condition: error.code === "budget_limited" ? "token_limit" : "deadline",
+              });
+            }
+
             return { state: result.state, result };
           });
+          if (action.kind === "edit" && action.resume_operation_id !== undefined) {
+            const resumed = await options.repository.transact(sessionId, (state) => {
+              assert(authority);
+              try {
+                const next = retryGoalResume(state!, action.resume_operation_id!, {
+                  session_id: sessionId,
+                  now: Date.now(),
+                  physically_busy: options.registry.occupied(sessionId),
+                });
+                return { state: next.state, result: next };
+              } catch (error) {
+                if (
+                  !(error instanceof GoalError) ||
+                  !["budget_limited", "usage_limited"].includes(error.code)
+                )
+                  throw error;
+                return { state: state!, result: undefined };
+              }
+            });
+            if (resumed?.start && resumed.receipt.execution_id !== undefined) {
+              await startReserved(
+                authority,
+                sessionId,
+                resumed.state.current!,
+                resumed.receipt.execution_id,
+                paramsFor(session, resumed.receipt.execution_id),
+                true,
+              );
+              return {
+                ...result.receipt,
+                execution_id: resumed.receipt.execution_id,
+                outcome: "running",
+              };
+            }
+            return { ...result.receipt, outcome: "needs_input" };
+          }
           watch(authority, result.state.current);
           if (result.replayed) return result.receipt;
           if (result.cancel_execution_id !== undefined) {
@@ -779,9 +990,21 @@ export function createGoalService(options: {
           }
           if (result.start) {
             const bound = result.state.current!;
-            await startReserved(authority, sessionId, bound, executionId, params);
+            try {
+              await startReserved(
+                authority,
+                sessionId,
+                bound,
+                executionId,
+                params,
+                action.kind === "resume",
+              );
+            } catch (error) {
+              if (action.kind !== "resume") throw error;
+              return { ...result.receipt, outcome: "unavailable" };
+            }
           }
-          return result.receipt;
+          return receiptView(result.receipt);
         } catch (error) {
           throw toGoalKernelError(error);
         } finally {

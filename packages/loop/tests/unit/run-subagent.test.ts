@@ -166,7 +166,7 @@ describe("runSubagent wrapper", () => {
     expect(llm.calls[0]!.messages[1]).toEqual({ role: "user", content: "the task" });
   });
 
-  it("maps budget exhaustion to a budget_exhausted outcome", async () => {
+  it("maps the sub-agent's own iteration cap to an iteration_limit_reached outcome", async () => {
     const llm = new MockLLM({ script: [{ toolCalls: [{ name: "foo.bar", arguments: {} }] }] });
     const res = await runSubagent({
       ...common,
@@ -174,6 +174,128 @@ describe("runSubagent wrapper", () => {
       task: "go",
       llm,
       ledger: createTokenLedger(1_000_000),
+      trace: createTrace(),
+    });
+    expect(res.outcome.status).toBe("iteration_limit_reached");
+    if (res.outcome.status === "iteration_limit_reached") expect(res.outcome.iterations).toBe(1);
+  });
+
+  it.each([64, 512])(
+    "contains three children at their own %i iteration limit while a sibling stays live",
+    async (limit) => {
+      const ledger = createTokenLedger(1_000_000);
+      const parent = new AbortController();
+      const arrived = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      let siblingFinished = false;
+      const sibling = runSubagent({
+        ...common,
+        subagentInstanceId: "live-sibling",
+        task: "Independent remaining work",
+        signal: parent.signal,
+        ledger,
+        trace: createTrace(),
+        llm: {
+          call: async () => {
+            arrived.resolve();
+            await release.promise;
+            return {
+              text: "Sibling completed",
+              usage: {
+                input_tokens: 10,
+                output_tokens: 5,
+                cached_tokens: 0,
+                cache_write_tokens: 0,
+              },
+            };
+          },
+        },
+      }).then((result) => {
+        siblingFinished = true;
+        return result;
+      });
+      await arrived.promise;
+      try {
+        const children = await Promise.all(
+          Array.from({ length: 3 }, async (_, child) => {
+            const llm = new ScriptedLLM(
+              Array.from({ length: limit + 1 }, (_, step) => ({
+                text: `child ${String(child)} retained step ${String(step + 1)}`,
+                toolCalls: [{ name: "inspect_step", arguments: { step } }],
+              })),
+            );
+            const result = await runSubagent({
+              ...common,
+              subagentInstanceId: `limited-${String(child)}`,
+              maxIterations: limit,
+              task: "Inspect successive records",
+              signal: parent.signal,
+              ledger,
+              trace: createTrace(),
+              llm,
+              agentCapabilities: [
+                {
+                  attach: () => ({
+                    tools: [
+                      {
+                        fullName: "inspect_step",
+                        wireName: "inspect_step",
+                        mcpName: "",
+                        toolName: "inspect_step",
+                        inputSchema: { type: "object", properties: { step: { type: "number" } } },
+                      },
+                    ],
+                    handlers: [
+                      {
+                        matches: (call) => call.name === "inspect_step",
+                        handle: async (call) => ({
+                          kind: "result",
+                          text: JSON.stringify(call.arguments),
+                          progress: true,
+                        }),
+                      },
+                    ],
+                  }),
+                },
+              ],
+            });
+            expect(llm.calls).toHaveLength(limit);
+            expect(result.outcome).toMatchObject({
+              status: "iteration_limit_reached",
+              iterations: limit,
+              partialText: `child ${String(child)} retained step ${String(limit)}`,
+            });
+            return result;
+          }),
+        );
+        expect(children.every((child) => child.usage.iterations === limit)).toBe(true);
+        expect(siblingFinished).toBe(false);
+        expect(parent.signal.aborted).toBe(false);
+      } finally {
+        release.resolve();
+      }
+      expect((await sibling).outcome).toEqual({ status: "completed", text: "Sibling completed" });
+      expect(ledger.consumed()).toBe(15 * (3 * limit + 1));
+    },
+  );
+
+  it("keeps a run-wide token cap as a budget_exhausted outcome", async () => {
+    const llm = new MockLLM({
+      script: [
+        {
+          text: "spending",
+          toolCalls: [{ name: "foo.bar", arguments: {} }],
+          usage: { input_tokens: 400, output_tokens: 200 },
+        },
+        { text: "more" },
+      ],
+    });
+    const res = await runSubagent({
+      ...common,
+      maxIterations: 64,
+      task: "go",
+      llm,
+      ledger: createTokenLedger(100),
       trace: createTrace(),
     });
     expect(res.outcome.status).toBe("budget_exhausted");
@@ -206,6 +328,7 @@ describe("runSubagent wrapper", () => {
       status: "error",
       code: "empty_response",
       message: "LLM returned neither text nor tool calls in consecutive completions.",
+      partialText: "",
     });
   });
 });
@@ -244,14 +367,20 @@ describe("toSubagentOutcome", () => {
     expect(
       toSubagentOutcome({
         status: "error",
-        partialText: "",
+        partialText: "Confirmed file inspection; remaining verification unfinished.",
         error: { code: "no_progress", message: "stuck" },
       }),
-    ).toEqual({ status: "error", code: "no_progress", message: "stuck" });
+    ).toEqual({
+      status: "error",
+      code: "no_progress",
+      message: "stuck",
+      partialText: "Confirmed file inspection; remaining verification unfinished.",
+    });
     expect(toSubagentOutcome({ status: "error", partialText: "" })).toEqual({
       status: "error",
       code: "empty_response",
       message: "Sub-agent terminated with no result.",
+      partialText: "",
     });
   });
 });

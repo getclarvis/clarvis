@@ -450,7 +450,7 @@ Every mutating tool then runs through `fencedMutation(tx, args.mutationFence, mu
 it checks `fence.before(tx)` immediately before the mutation and `fence.after(tx)` immediately
 after, both on the same `MemoryUnitOfWork`; a `false` from either yields
 `fail(LOST_INDEX_CLAIM)` ("The memory index claim is no longer current; stale mutation refused.",
-packages/memory/src/tools.ts/371/399). On a thrown error mid-mutation, `fence.after` still runs before
+packages/memory/src/tools.ts). On a thrown error mid-mutation, `fence.after` still runs before
 re-throwing — "a backend fault must not leave the worker believing its fence stayed current merely
 because its write also failed" (packages/memory/src/tools.ts). Ordinary run/control-plane calls omit the fence
 entirely, so this path is a no-op for them.
@@ -663,10 +663,10 @@ constructs a provider whose tool descriptors differ from canonical and asserts t
 | A write/edit/delete tool's argument schema rejects | `fail("Invalid arguments: <path>: <message>")`, first zod issue only | packages/memory/src/tools.ts |
 | A tool body throws | `fail("Tool failed: <message>")` | packages/memory/src/tools.ts |
 | `grep_memories` regex too complex (backreference, lookaround, a quantifier applied to a group, or a pattern carrying more than three of `* + ? { \|`) | Not honoured — falls back to a keyword search rather than failing | packages/memory/src/tool-contract.ts |
-| `checkWrite` refuses | `fail("<path>: <reason>")`, a stable `code` on the `PolicyDecision` for programmatic dispatch | packages/memory/src/tools.ts/364/392, packages/memory/src/policy.ts |
+| `checkWrite` refuses | `fail("<path>: <reason>")`, a stable `code` on the `PolicyDecision` for programmatic dispatch | packages/memory/src/tools.ts, packages/memory/src/policy.ts |
 | `edit_memory`'s `old_string` occurs 0 times | `fail("old_string not found in <path>")` | packages/memory/src/tools.ts |
 | `edit_memory`'s `old_string` occurs >1 times | `fail("old_string occurs N× in <path> — make it unique")` | packages/memory/src/tools.ts |
-| A `mutationFence.before`/`.after` check fails | `fail(LOST_INDEX_CLAIM)` — "the memory index claim is no longer current" | packages/memory/src/tools.ts/371/399 |
+| A `mutationFence.before`/`.after` check fails | `fail(LOST_INDEX_CLAIM)` — "the memory index claim is no longer current" | packages/memory/src/tools.ts |
 | A fenced mutation throws mid-batch | `fence.after` still runs (to keep the worker's view of its own fence current) before the error is re-thrown | packages/memory/src/tools.ts |
 | Read-tool call budget exhausted | Handler refuses softly: `fail("Memory tool budget for this run is exhausted (<n> calls). Proceed with what the memory block and prior results already gave you, or inspect the workspace directly.")`, tool never invoked | packages/memory/src/handler.ts |
 | Unknown tool name reaches `dispatch` | `{ isError: true, text: "unknown memory tool '<name>'" }` | packages/memory/src/toolset.ts |

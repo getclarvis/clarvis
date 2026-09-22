@@ -81,13 +81,37 @@ export function registerGoalCommands(
           return;
         }
         try {
-          await deps.goals.control(
-            command.kind === "create" || command.kind === "pause"
-              ? command
-              : { kind: command.kind },
-            undefined,
-            binding,
-          );
+          const receipt =
+            command.kind === "resume" && deps.goals.pendingOperation() !== undefined
+              ? await deps.goals.recover()
+              : await deps.goals.control(
+                  command.kind === "create" || command.kind === "pause"
+                    ? command
+                    : { kind: command.kind },
+                  undefined,
+                  binding,
+                );
+          if (
+            receipt?.outcome === "needs_input" ||
+            receipt?.outcome === "recovering" ||
+            receipt?.outcome === "unavailable"
+          ) {
+            if (
+              receipt.resume_condition === "token_limit" ||
+              receipt.resume_condition === "deadline"
+            ) {
+              deps.notify(
+                "Resume retained. Review the limit; saving adjusted limits resumes this request.",
+                "warn",
+              );
+              openEditor(createGoalDraft(deps.goals.view(), binding));
+            } else
+              deps.notify(
+                "Resume retained. Inspect the Goal and resolve the reported recovery condition.",
+                "warn",
+              );
+            return;
+          }
         } catch (error) {
           if (
             command.kind === "create" &&
@@ -139,11 +163,7 @@ export function registerGoalCommands(
       },
       {
         name: "resume",
-        visible: () =>
-          ready() &&
-          current() !== undefined &&
-          !["active", "complete", "cancelled"].includes(current()!.status) &&
-          !physicallyBusy(),
+        visible: () => ready() && current() !== undefined,
         desc: "Revalidate and resume within the remaining limits",
       },
       {

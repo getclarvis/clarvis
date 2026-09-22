@@ -5,6 +5,7 @@ import type {
   HostedRunAttachment,
   HostedRunFrame,
   RunHandle,
+  RunEvent,
   RunResult,
 } from "@clarvis/protocol";
 import { createEventStream, type EventStream } from "../core/event-stream.ts";
@@ -15,6 +16,7 @@ import {
   sizeOfRunEvent,
 } from "../runs/coalesce-events.ts";
 import type { HostedProjection } from "./projection.ts";
+import { isRecoverableSettlementFailure } from "./settlement-recovery.ts";
 
 type Observation = Omit<HostedRunAttachment, "run">;
 type Controls = Pick<
@@ -40,6 +42,8 @@ export interface HostedExecution {
   readonly executionId: string;
   /** Settles after physical closure, reconciliation and the owning host's terminal transaction. */
   readonly settled: Promise<void>;
+  /** A new operator request may retry a known storage failure after physical closure. */
+  retrySettlement(): Promise<void>;
   observe(controls: Controls): Promise<Observation>;
   releaseObservation(id: string): void;
   /** Stable terminal projection remains readable until the registry evicts this execution. */
@@ -63,7 +67,15 @@ export interface HostedExecutionOptions {
   reconcile(result: RunResult): Promise<void>;
   /** Commit the terminal registry state and release admission before observers become ready. */
   commitTerminal?: () => Promise<void>;
+  /** Registry-owned durable recovery of the two idempotent settlement phases. */
+  settle?(operations: {
+    reconciled: boolean;
+    reconcile(): Promise<void>;
+    commitTerminal(): Promise<void>;
+  }): Promise<void>;
   changed?: () => void;
+  /** Commit consumption acknowledgements only after the observation record is durable. */
+  delivered?(event: RunEvent): Promise<void>;
   logger?: Logger;
   maxSubscribers?: number;
   maxBuffered?: number;
@@ -104,6 +116,8 @@ export function createHostedExecution(options: HostedExecutionOptions): HostedEx
   let disposed = false;
   let result: RunResult | undefined;
   let recoveryError: Error | undefined;
+  let settlementRetryable = false;
+  let retrying: Promise<void> | undefined;
 
   const changed = (): void => {
     try {
@@ -135,12 +149,13 @@ export function createHostedExecution(options: HostedExecutionOptions): HostedEx
     if (recoveryError !== undefined) return;
     recoveryError = toKernelError(error);
     for (const subscriber of subscribers.values()) retire(subscriber, recoveryError);
-    void handle.cancel().catch(() => {
-      logger.warn(
-        { event: "hosting.execution.cancel_failed", execution_id: handle.execution_id },
-        "hosted recovery failure could not cancel execution",
-      );
-    });
+    if (!physicalClosed)
+      void handle.cancel().catch(() => {
+        logger.warn(
+          { event: "hosting.execution.cancel_failed", execution_id: handle.execution_id },
+          "hosted recovery failure could not cancel execution",
+        );
+      });
     changed();
   };
 
@@ -180,6 +195,8 @@ export function createHostedExecution(options: HostedExecutionOptions): HostedEx
         if (recoveryError !== undefined) continue;
         try {
           const cursor = await projection.append(event);
+          if (event.type === "steering_applied") await projection.sync();
+          await options.delivered?.(event);
           for (const subscriber of subscribers.values()) {
             subscriber.stream.push({
               first_sequence: cursor.sequence,
@@ -202,22 +219,30 @@ export function createHostedExecution(options: HostedExecutionOptions): HostedEx
   const physical = handle.closed.then(() => {
     physicalClosed = true;
   }, failRecovery);
-  const settled = Promise.all([outcome, pump, physical]).then(async () => {
-    if (typeof unsubscribeQuestions === "function") unsubscribeQuestions();
-    unsubscribeSettled();
-    for (const id of questions.keys()) {
-      for (const subscriber of subscribers.values()) deliver(subscriber.settlements, id);
-    }
-    questions.clear();
+  const settle = async (): Promise<void> => {
     if (result !== undefined && physicalClosed) {
+      const sourceHealthy = recoveryError === undefined;
       try {
-        await options.reconcile(result);
-        reconciled = true;
-        if (recoveryError === undefined) {
-          await options.commitTerminal?.();
-          settlementComplete = true;
+        const terminalResult = result;
+        const operations = {
+          reconciled,
+          async reconcile() {
+            await options.reconcile(terminalResult);
+            reconciled = true;
+          },
+          async commitTerminal() {
+            if (recoveryError !== undefined) throw recoveryError;
+            await options.commitTerminal?.();
+            settlementComplete = true;
+          },
+        };
+        if (options.settle !== undefined) await options.settle(operations);
+        else {
+          await operations.reconcile();
+          if (recoveryError === undefined) await operations.commitTerminal();
         }
       } catch (error) {
+        settlementRetryable = sourceHealthy && isRecoverableSettlementFailure(error);
         for (const subscriber of subscribers.values())
           subscriber.closed.reject(toKernelError(error));
         failRecovery(error);
@@ -225,11 +250,34 @@ export function createHostedExecution(options: HostedExecutionOptions): HostedEx
     }
     for (const subscriber of subscribers.values()) subscriber.closed.resolve();
     changed();
+  };
+  const settled = Promise.all([outcome, pump, physical]).then(async () => {
+    if (typeof unsubscribeQuestions === "function") unsubscribeQuestions();
+    unsubscribeSettled();
+    for (const id of questions.keys()) {
+      for (const subscriber of subscribers.values()) deliver(subscriber.settlements, id);
+    }
+    questions.clear();
+    await settle();
   });
 
   return {
     executionId: handle.execution_id,
     settled,
+    async retrySettlement() {
+      await settled;
+      if (retrying !== undefined) return retrying;
+      if (disposed || !settlementRetryable || settlementComplete) return;
+      settlementRetryable = false;
+      recoveryError = undefined;
+      const attempt = settle();
+      retrying = attempt;
+      try {
+        await attempt;
+      } finally {
+        retrying = undefined;
+      }
+    },
     async observe(controls) {
       if (disposed || recoveryError !== undefined)
         throw recoveryError ?? kernelError("not_found", "hosted observation was retired");
@@ -379,6 +427,7 @@ export function createHostedExecution(options: HostedExecutionOptions): HostedEx
       if (!physicalClosed)
         throw kernelError("conflict", "cannot dispose a physically active hosted execution");
       await settled;
+      await retrying;
       disposed = true;
       for (const subscriber of subscribers.values()) retire(subscriber);
       await projection.close();

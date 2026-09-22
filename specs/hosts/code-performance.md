@@ -157,7 +157,7 @@ Interactive `--debug` writes versioned, redacted JSONL. Performance-relevant eve
 | `memory.phase` | previous phase, next phase, RSS and limit | `packages/code/src/adapters/memory-pressure.ts` |
 | `memory.efficiency` | advisory transition, RSS, baseline and recent slope | `packages/code/src/adapters/memory-pressure.ts` (`publish`) |
 | `memory.ledger` | bounded transcript/session/renderer/run/event-queue counters, including frame listeners; debug only | `packages/code/src/views/App.tsx` (`ledger`), `packages/code/src/adapters/memory-pressure.ts` (`publish`) |
-| `memory.gc.completed | failed | skipped` | recovery collection outcome and whether physical work prevented it | `packages/code/src/adapters/memory-pressure.ts` (`finishRecovery`) |
+| `memory.gc.completed | failed | skipped` | recovery collection outcome and whether physical work prevented it | `packages/code/src/adapters/memory-pressure.ts` (`collectOnce`) |
 
 Repeated diagnostic counters are sampled rather than written on every occurrence, so the debug log
 cannot itself become an unbounded amplifier (`packages/code/src/adapters/diagnostic-session.ts`).
@@ -213,7 +213,7 @@ runtime readiness has not been inspected is a passing deferred state, with detai
 check deferred`; ordinary boot seeding and local settings writes only invalidate the local gate
 revision. Doctor's explicit recheck and catalog-dependent provider/model actions perform the remote
 inspection (`packages/code/src/app/commands.tsx`, `recheck`, `inspectReadiness`;
-`packages/code/src/onboarding/doctor.ts`, `credentialGate`). Escaping a nested configuration page
+`packages/code/src/onboarding/doctor.ts`, the `credentials` gate in `GATES`). Escaping a nested configuration page
 does not start that inspection (`packages/code/src/views/overlay-host.ts`, `popView`). Tests pin
 the cold route and the explicit recheck boundary in
 `packages/code/tests/integration/app-commands.test.tsx`, and the Escape boundary in
@@ -375,7 +375,7 @@ onto these families without measurement:
 - guided Extensions pending-operation motion has a separate production-policy case. It enters a
   deliberately unresolved plugin install, then measures 100 animated frames while requiring stable
   renderable, lifecycle-pass, live-key-layer, and key-layer-registration ownership
-  (`packages/code/src/views/config/ExtensionsHub.tsx`, `operationProgress`;
+  (`packages/code/src/views/config/ExtensionsHub.tsx`, `operationPending`;
   `packages/code/tooling/benchmarks/overlays.tsx`, `extensions-setup-pending-install`).
 - the focused Plugins browser keeps 196 marketplace listings in the same bounded row pool while a
   right/left collection round trip replaces All with Installed, an exact source, Workspace, or Add
@@ -473,7 +473,7 @@ maintenance is silent; the footer shows `Restoring the interface…` only while 
 
 10. **PERF-10: connected subscription readiness is deferred and passing at boot; only an explicit
     Doctor recheck or subscription-dependent surface performs the remote inspection.**
-    Production: `packages/code/src/onboarding/doctor.ts` (`credentialGate`),
+    Production: `packages/code/src/onboarding/doctor.ts` (`GATES`, the `credentials` gate),
     `packages/code/src/app/commands.tsx` (`inspectReadiness`), and
     `packages/code/src/views/overlay-host.ts` (`popView`).
     Test: `packages/code/tests/integration/doctor.test.ts`,
@@ -589,7 +589,7 @@ maintenance is silent; the footer shows `Restoring the interface…` only while 
     registration churn.** The process-shared spinner clock runs only while the retained view is
     active and an operation is pending; busy state gates the existing level through its reactive
     matcher. Production: `packages/code/src/views/config/ExtensionsHub.tsx` (`useSpinnerClock`,
-    `operationProgress`, `bindLevelKeys`). Test:
+    `operationPending`, `bindLevelKeys`). Test:
     `packages/code/tests/integration/extensions-hub-render.test.tsx` (pending install and Apply)
     and `packages/code/tooling/benchmarks/overlays.tsx`
     (`extensions-setup-pending-install`, `stableRegistrations`).
@@ -653,7 +653,7 @@ tree.
 | final Markdown or diff syntax work is still pending | keep the previous Markdown tree visible or the new diff transparent until `waitForSyntaxFrame` completes; reveal OpenTUI's fallback if readiness rejects, and do not pause the renderer | `packages/code/src/ui/patterns/stable-syntax.tsx` (`StableMarkdown`, `StableDiff`, `waitForSyntaxFrame`) |
 | on-demand catalog load fails | keep the live catalog empty and emit `catalog.unavailable`; the already-painted shell remains usable | `packages/code/src/runtime.tsx` (`ensureModelsCatalog`) |
 | an OAuth-backed MCP has no token and its browser is ignored | keep authorization background, omit that server from the current run, and continue other tools/model work | `packages/mcp-client/src/oauth.ts` (`MCPAuthorizationPendingError`), `packages/loop/src/runtime/open-tool-pool.ts` |
-| subscription readiness has not been inspected | keep the local gate passing with `subscription check deferred`; explicit Doctor inspection can later report a real warning | `packages/code/src/onboarding/doctor.ts` (`credentialGate`) |
+| subscription readiness has not been inspected | keep the local gate passing with `subscription check deferred`; explicit Doctor inspection can later report a real warning | `packages/code/src/onboarding/doctor.ts` (`GATES`, the `credentials` gate) |
 | one transcript prose value is oversized | truncate before it enters reactive state | `packages/code/src/adapters/store.ts` |
 | aggregate prose is full | release older settled prose, preserve newest | `packages/code/src/adapters/store.ts` |
 | hydrated tool budget is full | dehydrate older bodies; explicit expand can re-fetch within queue limits | `packages/code/src/adapters/store.ts` |

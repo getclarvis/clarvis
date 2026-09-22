@@ -37,8 +37,8 @@ it does not instruct the caller to obtain a human prompt that was not emitted. T
 instead name the failure category and explain that repeated operator authorization does not repair
 the failure; their message omits the static trigger. Structured guard metadata retains the trigger
 for diagnostics.
-Production: `createAgentTools` in [core.ts](../../packages/tools/src/core.ts) and `GuardReview`
-in [types.ts](../../packages/tools/src/guard/types.ts).
+Production: `applyGuard` and `reviewDenialMessage` in [core.ts](../../packages/tools/src/core.ts) and
+`GuardReview` in [types.ts](../../packages/tools/src/guard/types.ts).
 Test: [guard-dispatch.test.ts](../../packages/tools/tests/integration/guard-dispatch.test.ts).
 
 The guard surface exports `ShellAnalysisIssue`, `ShellAnalysisIssueKind`, `ShellAnalysisImpact`

@@ -814,6 +814,7 @@ function mountHosted(
     throw new Error("unexpected hosting call");
   };
   const hosting: HostingService = {
+    resumePending: async () => null,
     controlObservation: unexpected,
     resolveRecovery: unexpected,
     list: async () => [ref],
@@ -861,7 +862,7 @@ function mountHosted(
       },
     },
   });
-  return { ...mounted, calls, ref, meta, sessions, run, hosting };
+  return { ...mounted, calls, ref, meta, sessions, run, hosting, runs: fake.runs };
 }
 
 test("observes an automatic goal stage without retiring the conversation or replaying painted history", async () => {
@@ -893,6 +894,48 @@ test("observes an automatic goal stage without retiring the conversation or repl
   await f.host.synchronizeGoal(binding, state);
   expect(f.store.nodes).toHaveLength(count);
   expect(f.calls.attaches).toBe(1);
+});
+
+test("a hosted submission the store never adopted returns its text to the composer", async () => {
+  const f = mountHosted();
+  await f.host.loadSessionMeta(f.meta);
+  const restored: string[] = [];
+  f.host.registerDraftRestore((text) => {
+    restored.push(text);
+  });
+
+  // The kernel refuses the follow-up before admission, so the persisted conversation never gains
+  // a turn for it — the same shape a blocked Goal produces.
+  const submitted = f.host.submitTurn("Refused follow-up", "Refused follow-up");
+  await flush();
+  f.runs.at(-1)!.reject(new Error("Goal execution requires intervention"));
+  await submitted;
+
+  expect(restored).toEqual(["Refused follow-up"]);
+  // The refused turn left neither a canonical nor a local turn behind, so the next submission
+  // cannot continue from an execution that never ran.
+  expect(f.host.sessionMeta()?.turns.map((turn) => turn.executionId)).toEqual([f.ref.execution_id]);
+  expect(f.host.runActive()).toBe(false);
+});
+
+test("a shorter canonical history replaces the divergent suffix idempotently", async () => {
+  const f = mountHosted();
+  // Adopt the canonical turn first, then let the host report a history without it: this is the
+  // shape a refused submission left behind, and the projection has to follow the record.
+  await f.host.loadSessionMeta(f.meta);
+  const binding = f.host.goalBinding()!;
+  const state = goalView({ runs: [] });
+  f.sessions.load = async () => ({ ...f.meta, turns: [] });
+
+  await f.host.synchronizeGoal(binding, state);
+  await f.host.synchronizeGoal(binding, state);
+
+  const warnings = f.store.nodes.filter(
+    (node) => node.kind === "annotation" && node.text.includes("not admitted"),
+  );
+  expect(warnings).toHaveLength(0);
+  expect(f.store.nodes).toHaveLength(0);
+  expect(f.calls.attaches).toBe(0);
 });
 
 test("hydrates a goal stage that finished before attachment without replacing the painted prefix", async () => {
@@ -937,6 +980,38 @@ test("does not follow a delayed goal read into another conversation", async () =
   f.run.resolve(completed(f.ref.execution_id));
 });
 
+test("reopening an idle conversation asks the host to restore accepted input before attaching", async () => {
+  const f = mountHosted();
+  let requested = false;
+  f.hosting.list = async () => (requested ? [f.ref] : []);
+  f.hosting.resumePending = async (id) => {
+    expect(id).toBe(f.meta.id);
+    requested = true;
+    return f.ref;
+  };
+  const resumed = f.host.resumeSessionById(f.meta.id);
+  await flush();
+  expect(requested).toBe(true);
+  expect(f.calls.attaches).toBe(1);
+  f.run.resolve(completed(f.ref.execution_id));
+  await resumed;
+});
+
+test("pending recovery failure leaves the saved conversation readable", async () => {
+  const f = mountHosted();
+  f.meta.turns = [];
+  f.hosting.list = async () => [];
+  f.hosting.resumePending = async () => {
+    throw new Error("receipt dependency unavailable");
+  };
+  await f.host.resumeSessionById(f.meta.id);
+  expect(f.host.sessionMeta()?.id).toBe(f.meta.id);
+  expect(f.host.runStatus()).toContain("pending input retained");
+  expect(f.host.scheduledBusy()).toBe(false);
+  expect(f.calls.attaches).toBe(0);
+  f.run.resolve(completed(f.ref.execution_id));
+});
+
 test("resume refuses an unknown hosted outcome without treating its trace as an ordinary continuation", async () => {
   const f = mountHosted();
   f.ref.execution_state = "unknown";
@@ -954,6 +1029,7 @@ test("an acknowledged recovery archive cannot resume inference through its saved
   f.hosting.list = async () => [];
   f.meta.turns[0]!.recoveryResolution = {
     kind: "operator_verified_physical_closure",
+    disposition: "archive",
     previous_host_generation: "old",
     resolving_host_generation: "new",
     operator_connection_id: "operator",
@@ -3455,4 +3531,35 @@ test("a late interrupt failure cannot add a notice after run ownership changes",
   expect(store.nodes.some((node) => node.text.includes("Could not interrupt the shell"))).toBe(
     false,
   );
+});
+
+test("canonical synchronization replaces a changed identity even when the turn count is unchanged", async () => {
+  const f = mountHosted();
+  f.ref.execution_state = "closed";
+  await f.host.loadSessionMeta(f.meta);
+  const binding = f.host.goalBinding()!;
+  const replacement: SessionMeta = {
+    ...f.meta,
+    turns: [
+      {
+        ...f.meta.turns[0]!,
+        executionId: "replacement",
+        userPreview: "Replacement prompt",
+        status: "done",
+      },
+    ],
+  };
+  f.sessions.load = async () => replacement;
+  const state = goalView({ runs: [] });
+  await f.host.synchronizeGoal(binding, state);
+  const users = () => f.store.nodes.filter((node) => node.kind === "user");
+  expect(users()).toHaveLength(1);
+  expect(users()[0]).toMatchObject({
+    sourceExecutionId: "replacement",
+    text: "Replacement prompt",
+  });
+  const key = users()[0]!.key;
+  await f.host.synchronizeGoal(binding, state);
+  expect(users()).toHaveLength(1);
+  expect(users()[0]!.key).toBe(key);
 });

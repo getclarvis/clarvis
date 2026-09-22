@@ -4,6 +4,7 @@ import {
   isBuiltinTraceEvent,
   sanitizeDeep,
   sanitizeText,
+  PersistenceError,
   type TraceEvent,
 } from "@clarvis/capability";
 import {
@@ -14,8 +15,10 @@ import {
   type GoalEvidenceVerifier,
   type GoalRecord,
 } from "@clarvis/goal";
+import { goalEvidenceDigest } from "./evidence-digest.ts";
+import { selectGoalEvidence } from "./evidence-window.ts";
 
-const MAX_OBSERVATIONS = 512;
+const EVIDENCE_WINDOW_SIZE = 512;
 const MAX_PAYLOAD_BYTES = 1024 * 1024;
 const MAX_ARTIFACT_BYTES = 16 * 1024 * 1024;
 const CONTROL_TOOLS = new Set([
@@ -28,24 +31,7 @@ const CONTROL_TOOLS = new Set([
   "monitor_status",
 ]);
 
-/** Canonical JSON for evidence digests; arrays retain order and object keys sort lexically. */
-export function goalEvidenceDigest(value: unknown): string {
-  const canonical = (item: unknown, depth: number): unknown => {
-    if (depth > 32) throw new GoalError("resource_exhausted", "Evidence nesting exceeds its bound");
-    if (Array.isArray(item)) return item.map((child) => canonical(child, depth + 1));
-    if (typeof item === "object" && item !== null)
-      return Object.fromEntries(
-        Object.entries(item)
-          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-          .map(([key, child]) => [key, canonical(child, depth + 1)]),
-      );
-    return item;
-  };
-  const encoded = JSON.stringify(canonical(value, 0));
-  if (encoded === undefined || Buffer.byteLength(encoded) > MAX_PAYLOAD_BYTES)
-    throw new GoalError("resource_exhausted", "Evidence payload exceeds its bound");
-  return createHash("sha256").update(encoded).digest("hex");
-}
+export { goalEvidenceDigest } from "./evidence-digest.ts";
 
 /** Bounded host-observed command receipt; content is evidence, never execution authority. */
 export interface GoalCommandEvidence {
@@ -85,7 +71,7 @@ export interface GoalEvidenceDetail {
   };
 }
 
-interface Observation {
+export interface Observation {
   id: string;
   executionId: string;
   tool: string;
@@ -97,6 +83,7 @@ interface Observation {
   commandEvidence?: Omit<GoalCommandEvidence, "id">;
   delegationEvidence?: Omit<GoalDelegationEvidence, "id">;
   detail?: Omit<GoalEvidenceDetail, "id">;
+  unavailable?: "payload_overflow";
 }
 
 /**
@@ -158,7 +145,8 @@ function goalEvidenceLabel(tool: string, args: unknown): string {
 function observation(executionId: string, event: TraceEvent): Observation | undefined {
   if (!isBuiltinTraceEvent(event)) return undefined;
   if (event.type === "delegation_completed") {
-    const result = sanitizeText(event.result);
+    const overflow = Buffer.byteLength(JSON.stringify(event.result)) > MAX_PAYLOAD_BYTES;
+    const result = overflow ? "" : sanitizeText(event.result);
     return {
       id: `tool-${goalEvidenceDigest([executionId, "delegate_task", event.delegation_id])}`,
       executionId,
@@ -167,25 +155,64 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
         delegation_id: event.delegation_id,
         ...(event.task_id === undefined ? {} : { task_id: event.task_id }),
       }),
-      resultDigest: event.result_digest ?? goalEvidenceDigest(event.result),
-      successful: event.status === "completed",
+      resultDigest:
+        event.result_digest ??
+        (overflow
+          ? createHash("sha256").update(event.result).digest("hex")
+          : goalEvidenceDigest(event.result)),
+      successful: !overflow && event.status === "completed",
+      ...(overflow ? { unavailable: "payload_overflow" as const } : {}),
       description: `delegate_task completed; delegation ${event.delegation_id}`.slice(0, 512),
       delegationEvidence: {
         tool: "delegate_task",
         status: "completed",
         result_excerpt: result.slice(0, 4096),
-        truncated: result.length > 4096,
+        truncated: overflow || result.length > 4096,
       },
     };
   }
   if (event.type !== "tool_call" || !event.call_id) return undefined;
   const tool = event.tool_name ? `${event.mcp_name}.${event.tool_name}` : event.mcp_name;
   if (CONTROL_TOOLS.has(tool)) return undefined;
+  const encodedArguments = JSON.stringify(event.arguments);
+  let argumentsDigest: string;
+  let argumentsUnavailable = Buffer.byteLength(encodedArguments) > MAX_PAYLOAD_BYTES;
+  if (argumentsUnavailable) {
+    argumentsDigest = createHash("sha256").update(encodedArguments).digest("hex");
+  } else {
+    try {
+      argumentsDigest = goalEvidenceDigest(event.arguments);
+    } catch (error) {
+      if (!(error instanceof GoalError) || error.code !== "resource_exhausted") throw error;
+      argumentsUnavailable = true;
+      argumentsDigest = createHash("sha256").update(encodedArguments).digest("hex");
+    }
+  }
   if (
-    Buffer.byteLength(event.result) > MAX_PAYLOAD_BYTES ||
-    Buffer.byteLength(JSON.stringify(event.arguments)) > MAX_PAYLOAD_BYTES
-  )
-    throw new GoalError("resource_exhausted", "Tool evidence exceeds its payload bound");
+    argumentsUnavailable ||
+    Buffer.byteLength(JSON.stringify(event.result)) > MAX_PAYLOAD_BYTES ||
+    (event.diff !== undefined && Buffer.byteLength(JSON.stringify(event.diff)) > MAX_PAYLOAD_BYTES)
+  ) {
+    const digest = event.result_digest ?? createHash("sha256").update(event.result).digest("hex");
+    return {
+      id: `tool-${goalEvidenceDigest([executionId, event.subagent_instance_id ?? "entry", event.call_id])}`,
+      executionId,
+      tool,
+      argumentsDigest,
+      resultDigest: digest,
+      successful: false,
+      unavailable: "payload_overflow",
+      description: argumentsUnavailable ? tool : goalEvidenceLabel(tool, event.arguments),
+      detail: {
+        kind: "content",
+        status: "incomplete",
+        digest,
+        total_chars: event.result.length,
+        excerpt: "",
+        truncated: true,
+      },
+    };
+  }
   let commandEvidence: Observation["commandEvidence"];
   let successful = event.error === null && event.guard?.outcome !== "denied";
   const receipt = event.tool_evidence;
@@ -237,7 +264,7 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
     id: `tool-${goalEvidenceDigest([executionId, event.subagent_instance_id ?? "entry", event.call_id])}`,
     executionId,
     tool,
-    argumentsDigest: goalEvidenceDigest(event.arguments),
+    argumentsDigest,
     resultDigest: event.result_digest ?? goalEvidenceDigest(event.result),
     successful,
     ...(event.diff?.trim() ? { changeDigest: goalEvidenceDigest(event.diff) } : {}),
@@ -251,15 +278,15 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
             status: receipt.status,
             digest: event.result_digest ?? goalEvidenceDigest(event.result),
             total_chars: receipt.total_chars,
-            excerpt: sanitizeText(receipt.excerpt),
-            truncated: receipt.truncated,
+            excerpt: sanitizeText(receipt.excerpt).slice(0, 4096),
+            truncated: receipt.truncated || receipt.excerpt.length > 4096,
             ...(receipt.command === undefined
               ? {}
               : {
                   command: {
                     ...receipt.command,
-                    stdout_excerpt: sanitizeText(receipt.command.stdout_excerpt),
-                    stderr_excerpt: sanitizeText(receipt.command.stderr_excerpt),
+                    stdout_excerpt: sanitizeText(receipt.command.stdout_excerpt).slice(0, 3072),
+                    stderr_excerpt: sanitizeText(receipt.command.stderr_excerpt).slice(0, 1024),
                   },
                 }),
           },
@@ -286,7 +313,8 @@ export interface GoalEvidenceSnapshot extends GoalEvidenceVerifier {
    *   that was denied and a reference recovered from an earlier stage are not activity this
    *   stage contributed. The caller compares each receipt with the receipts the Goal already
    *   recorded, so repeating an earlier stage's checks — alone or recombined with others — is
-   *   not progress.
+   *   not progress. Unavailable payloads or ambiguous selected identities throw a typed
+   *   availability error rather than reporting an empty activity set.
    */
   stageActivity(): string[];
 }
@@ -299,21 +327,26 @@ export interface GoalEvidenceSource {
 }
 
 /**
- * Derive evidence from existing trace results and confined file snapshots. The live index retains
- * only bounded digests, metadata and sanitized receipts/details; it is not another authoritative
- * store. Older stage data comes from the caller's owner-scoped trace reader. Missing/evicted proof is
- * never treated as success.
+ * Derive evidence from the existing owner-scoped trace journal and confined file snapshots.
+ * Live receipts form a bounded window. Once it rotates, journal replay must attest the observed
+ * prefix before any proof is usable; missing history never becomes success.
  */
 export function createGoalEvidenceSource(options: {
   executionId: string;
   workspaceRoot: string;
-  readTrace(executionId: string): readonly TraceEvent[] | undefined;
+  /** Each call supplies a fresh owner-scoped replay, including the active journal when available. */
+  readTrace(executionId: string): Iterable<TraceEvent> | undefined;
   /** Injectable descriptor reader for deterministic mutation races; production uses the shared confined reader. */
   readArtifact?: (path: string) => Promise<Uint8Array>;
 }): GoalEvidenceSource {
   const live = new Map<string, Observation>();
   let generation = 0;
-  let incomplete = false;
+  let incomplete: "conflict" | "resource_exhausted" | undefined;
+  let rotated = false;
+  let observedCount = 0;
+  let observedDigest = "";
+  const chain = (previous: string, item: Observation): string =>
+    createHash("sha256").update(previous).update(goalEvidenceDigest(item)).digest("hex");
   const readArtifact =
     options.readArtifact ??
     (async (path: string): Promise<Uint8Array> => {
@@ -339,49 +372,122 @@ export function createGoalEvidenceSource(options: {
       return generation;
     },
     observe(event) {
+      let item: Observation | undefined;
       try {
-        const item = observation(options.executionId, event);
-        if (item === undefined) return;
-        const previous = live.get(item.id);
-        if (previous !== undefined && goalEvidenceDigest(previous) === goalEvidenceDigest(item))
-          return;
-        generation++;
-        if (previous !== undefined || live.size >= MAX_OBSERVATIONS) {
-          incomplete = true;
-          return;
-        }
-        live.set(item.id, item);
+        item = observation(options.executionId, event);
       } catch {
-        incomplete = true;
+        incomplete = "resource_exhausted";
         generation++;
+        return;
+      }
+      if (item === undefined) return;
+      observedCount++;
+      observedDigest = chain(observedDigest, item);
+      const previous = live.get(item.id);
+      const digest = goalEvidenceDigest(item);
+      if (previous !== undefined && goalEvidenceDigest(previous) === digest) return;
+      const key = previous === undefined ? item.id : JSON.stringify([item.id, digest]);
+      if (live.has(key)) return;
+      generation++;
+      live.set(key, item);
+      if (live.size > EVIDENCE_WINDOW_SIZE) {
+        live.delete(live.keys().next().value!);
+        rotated = true;
       }
     },
     async snapshot(goal) {
-      if (incomplete)
-        throw new GoalError("resource_exhausted", "Goal evidence observation is incomplete");
+      if (incomplete !== undefined)
+        throw new GoalError(incomplete, "Goal evidence observation is ambiguous or incomplete");
       const capturedGeneration = generation;
       const eligible = goal.runs.filter(
         (run) => run.objective_revision === goal.objective_revision,
       );
       if (!eligible.some((run) => run.execution_id === options.executionId))
         throw new GoalError("conflict", "Evidence source does not belong to this objective");
-      const observations: Observation[] = [];
-      for (const run of [...eligible].reverse()) {
-        const entries =
-          run.execution_id === options.executionId
-            ? [...live.values()]
-            : (options.readTrace(run.execution_id) ?? [])
-                .filter(
-                  (event) =>
-                    isBuiltinTraceEvent(event) &&
-                    (event.type === "tool_call" || event.type === "delegation_completed"),
-                )
-                .slice(-MAX_OBSERVATIONS)
-                .map((event) => observation(run.execution_id, event))
-                .filter((item): item is Observation => item !== undefined);
-        observations.unshift(...entries.slice(-(MAX_OBSERVATIONS - observations.length)));
-        if (observations.length >= MAX_OBSERVATIONS) break;
-      }
+      const replay = function* () {
+        try {
+          for (const run of eligible) {
+            if (run.execution_id === options.executionId && !rotated && live.size > 0) {
+              yield* live.values();
+              continue;
+            }
+            const trace = options.readTrace(run.execution_id);
+            if (run.execution_id === options.executionId && !rotated && trace === undefined) {
+              yield* live.values();
+              continue;
+            }
+            if (run.execution_id === options.executionId && rotated && trace === undefined)
+              throw new GoalError("resource_exhausted", "Goal evidence journal is unavailable");
+            let count = 0;
+            let digest = "";
+            for (const event of trace ?? []) {
+              const item = observation(run.execution_id, event);
+              if (item === undefined) continue;
+              if (run.execution_id === options.executionId) {
+                digest = chain(digest, item);
+                count++;
+                if (observedCount > 0 && count === observedCount && digest !== observedDigest)
+                  throw new GoalError(
+                    "conflict",
+                    "Goal evidence journal does not match its observed prefix",
+                  );
+              }
+              yield item;
+            }
+            if (run.execution_id === options.executionId && count < observedCount)
+              throw new GoalError("resource_exhausted", "Goal evidence journal has not caught up");
+            if (run.execution_id === options.executionId && observedCount === 0) {
+              observedCount = count;
+              observedDigest = digest;
+              if (count > 0) rotated = true;
+            }
+          }
+        } catch (error) {
+          if (error instanceof PersistenceError)
+            throw new GoalError("resource_exhausted", "Goal evidence journal is unavailable");
+          throw error;
+        }
+      };
+      const currentRun = goal.runs.find((run) => run.execution_id === options.executionId);
+      const pinned = [
+        ...(goal.candidate?.assessments.flatMap((assessment) => assessment.evidence) ?? []),
+        ...(currentRun?.checkpoint?.evidence ?? []),
+        ...(currentRun?.progress?.evidence ?? []),
+      ].map((ref) => ref.id);
+      const activityFingerprint = (item: Observation): string | undefined => {
+        if (!item.successful) return undefined;
+        const relevant =
+          item.changeDigest !== undefined ||
+          goal.criteria.some(
+            (criterion) =>
+              criterion.verification?.kind === "tool_success" &&
+              criterion.verification.tool_name === item.tool &&
+              (criterion.verification.arguments_digest === undefined ||
+                criterion.verification.arguments_digest === item.argumentsDigest),
+          );
+        return relevant
+          ? goalEvidenceDigest([item.tool, item.argumentsDigest, item.changeDigest ?? null])
+          : undefined;
+      };
+      const priorActivity = new Set(
+        goal.runs
+          .filter((run) => run.execution_id !== options.executionId)
+          .flatMap((run) => run.activity ?? []),
+      );
+      const { observations, activityUnavailable, activityConflict } = selectGoalEvidence({
+        replay,
+        pinned,
+        limit: EVIDENCE_WINDOW_SIZE,
+        activity: {
+          execution: options.executionId,
+          fingerprint: (item) => {
+            const fingerprint = activityFingerprint(item);
+            return fingerprint !== undefined && !priorActivity.has(fingerprint)
+              ? fingerprint
+              : undefined;
+          },
+        },
+      });
       const all = new Map<string, Observation>();
       for (const item of observations) {
         const previous = all.get(item.id);
@@ -462,18 +568,9 @@ export function createGoalEvidenceSource(options: {
             continue;
           }
           const item = all.get(id);
-          if (item === undefined || !item.successful) continue;
-          const relevantCheck = goal.criteria.some(
-            (criterion) =>
-              criterion.verification?.kind === "tool_success" &&
-              criterion.verification.tool_name === item.tool &&
-              (criterion.verification.arguments_digest === undefined ||
-                criterion.verification.arguments_digest === item.argumentsDigest),
-          );
-          if (item.changeDigest !== undefined || relevantCheck)
-            changes.push(
-              goalEvidenceDigest([item.tool, item.argumentsDigest, item.changeDigest ?? null]),
-            );
+          if (item === undefined) continue;
+          const fingerprint = activityFingerprint(item);
+          if (fingerprint !== undefined) changes.push(fingerprint);
         }
         return changes;
       };
@@ -564,7 +661,22 @@ export function createGoalEvidenceSource(options: {
               };
         },
         /** This stage's own successful receipts, never what it merely cited from an earlier stage. */
-        stageActivity: () => [...new Set(activityOf([...live.keys()]))].sort(),
+        stageActivity: () => {
+          if (activityUnavailable)
+            throw new GoalError(
+              activityConflict ? "conflict" : "resource_exhausted",
+              "Goal stage activity has an unavailable observation",
+            );
+          return [
+            ...new Set(
+              activityOf(
+                [...all.values()]
+                  .filter((item) => item.executionId === options.executionId)
+                  .map((item) => item.id),
+              ),
+            ),
+          ].sort();
+        },
       };
     },
   };

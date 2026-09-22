@@ -480,7 +480,7 @@ predicate:
 | --- | --- | --- | --- |
 | `BuiltinRunEndedReason` | `completed`, `budget_exhausted`, `cancelled`, `soft_limit_declined`, `interrupted`, `timeout`, `guard_trip`, `error` | `packages/capability/src/run.ts` | `packages/capability/src/run.ts` |
 | `BuiltinErrorCode` | 42 codes across request-validation, loop-termination, MCP, provider, execution-id and continuation families | `packages/capability/src/run.ts` | `packages/capability/src/run.ts` |
-| `BuiltinAgentErrorCode` | `empty_response`, `all_tools_unavailable`, `tool_failure_loop`, `stagnation_detected`, `no_progress`, `agents_unfinished`, `background_children_failing` | `packages/capability/src/agent-result.ts` | (none of its own; subset-checked against `isBuiltinErrorCode`) |
+| `BuiltinAgentErrorCode` | `empty_response`, `all_tools_unavailable`, `tool_failure_loop`, `stagnation_detected`, `no_progress`, `agents_unfinished` | `packages/capability/src/agent-result.ts` | (none of its own; subset-checked against `isBuiltinErrorCode`) |
 | `ExecutionStatus` | `completed`, `budget_exhausted`, `error`, `cancelled`, `soft_limit_declined`, `interrupted` | `packages/capability/src/execution-status.ts` | (closed union, no predicate) |
 
 `ExecutionStatus` is closed, and `interrupted` is documented as never produced by a live run — only
@@ -586,12 +586,14 @@ one sub-agent profile) and `instances` (how many instances ran).
 manager) programs against; its doc-comment states it is kept free of implementation imports so these
 types cross a package boundary while the registry itself does not (`packages/capability/src/agents-port.ts`).
 
-`AgentKind` is `subagent | leader`. `AgentStatus` is six states — `running`, `waiting`,
-`completed`, `failed`, `stopped`, `cancelled` — whose doc-comment explains the split: `waiting` is still
-live, distinguished from `running` so a parent can tell a stalled child from a working one, and the four
-terminal states differ by *who* ended the child (`completed`/`failed` are the child's own outcome,
+`AgentKind` is `subagent | leader`. `AgentStatus` is seven states — `running`, `waiting`,
+`completed`, `limited`, `failed`, `stopped`, `cancelled` — whose doc-comment explains the split:
+`waiting` is still live, distinguished from `running` so a parent can tell a stalled child from a
+working one, and the five terminal states differ by *what* ended the child (`completed`/`failed` are
+the child's own outcome, `limited` is a budget cap ending it with a partial it can be resumed from,
 `stopped` is a parent's `agent_stop`, `cancelled` is the run going down). `SettledStatus`
- is the terminal subset. `WaitingOn` is `"elicitation" | null`.
+is the terminal subset, and `failed` is the only member a consumer may read as a technical failure.
+`WaitingOn` is `"elicitation" | null`.
 
 `AgentControl` is the two-method handle a producer supplies: `stop(reason)` and
 `steer(message): boolean` — the doc-comment states a steer to a finished child is "a plain refusal,
@@ -720,8 +722,20 @@ and `SpawnGate`'s `terminal` variant (§3.12):
 | `text?` | `string` | set only on a clean completion |
 | `partialText` | `string` | always present — accumulated so far regardless of how the agent ended |
 | `error?` | `{ code: AgentErrorCode; message: string }` | on failure |
+| `limit?` | `AgentLimitExhausted` = `{ dimension: "iterations" \| "tokens"; scope: "agent" \| "run" }` | the hard cap that ended the attempt |
 | `structuredResult?` | `{ value: unknown }` | a completed structured submit |
 | `partialStructured?` | `{ value: unknown }` | a best-effort partial, built by `partialStructOf` (§2.4) |
+
+`limit` is present only on a `budget_exhausted` result the engine produced, and it names both the
+counter that reached its cap and whose accounting that counter is. An iteration cap belongs to the
+one attempt (`scope: "agent"`), while the token ledger is shared by every agent in the tree
+(`scope: "run"`), so a child stopped by its own iterations produced a resumable partial and a child
+stopped by tokens is the run hitting its ceiling. Consumers distinguish them by this field rather
+than by the prose in `partialText`; `limitOf` in
+[budget.ts](../../packages/loop/src/runtime/budget/budget.ts) is the one place that derives the scope.
+Production: `packages/capability/src/agent-result.ts`. Test:
+[run-subagent.test.ts](../../packages/loop/tests/unit/run-subagent.test.ts) (both scopes),
+[iteration-limit-512.test.ts](../../packages/loop/tests/integration/iteration-limit-512.test.ts).
 
 `RunFinalization` adds either ordinary final disposition (also the meaning of omission) or
 `disposition: "checkpoint"` paired with `checkpoint: { summary, next_step }`. Both strings are
@@ -1282,7 +1296,7 @@ capability can live in its own package (`packages/capability/src/index.ts`).
 
 ### 7.2 What depends on this package
 
-Fourteen of the other eighteen packages carry a static value edge to `@clarvis/capability` from their
+Fifteen of the other nineteen packages carry a static value edge to `@clarvis/capability` from their
 own `src/`; the four that do not are
 `@clarvis/paths` and `@clarvis/protocol` (both leaves), `@clarvis/tools` (which reaches only
 `@clarvis/paths`) and `@clarvis/code` (which reaches only `@clarvis/kernel`, `@clarvis/paths` and

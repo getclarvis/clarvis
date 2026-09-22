@@ -101,7 +101,7 @@ describe("hosted snapshot reader", () => {
     const f = fixture();
     await expect(
       Array.fromAsync(
-        readHostedSnapshot(f.service, { ...f.snapshot, bytes: 64 * 1024 * 1024 + 1 }),
+        readHostedSnapshot(f.service, { ...f.snapshot, bytes: Number.MAX_SAFE_INTEGER + 1 }),
       ),
     ).rejects.toThrow();
     expect(f.reads).toEqual([]);

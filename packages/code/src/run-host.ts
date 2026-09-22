@@ -91,7 +91,12 @@ export interface RunHostDeps {
   sessionStore: SessionStore;
   history: PromptHistory;
   client: Pick<KernelRunClient, "startRun" | "steer" | "compact" | "getRun" | "files"> &
-    Partial<Pick<KernelRunClient, "context" | "currentExtensionProfile" | "hosting" | "attachRun">>;
+    Partial<
+      Pick<
+        KernelRunClient,
+        "submission" | "context" | "currentExtensionProfile" | "hosting" | "attachRun"
+      >
+    >;
   elicit: Pick<ElicitSlot, "cancelPending">;
   owner: string;
   project: string;
@@ -1078,6 +1083,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     setStatus(opts.initialStatus);
     attention?.setTitle("running");
     let publicationCompleted = false;
+    let admitted = !hosted;
     let releaseSettlement!: () => void;
     const settlement = {
       promise: new Promise<void>((resolve) => {
@@ -1107,6 +1113,18 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     try {
       const envelope = await opts.run((h) => {
         currentHandle = h;
+        if (h.admitted !== undefined) {
+          void h.admitted
+            .then(async () => {
+              admitted = true;
+              const id = sess.meta()?.id;
+              if (id === undefined) return;
+              const canonical = await sessionStore.load(id, { refresh: true });
+              if (canonical !== null && session === sess && ownershipEpoch === runOwnershipEpoch)
+                sess.acceptHosted(canonical);
+            })
+            .catch(() => undefined);
+        }
         physicalHandles.add(h);
         setPhysicalRunCount((count) => count + 1);
         void h.closed.then(
@@ -1156,7 +1174,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       if (session === sess && ownershipEpoch === runOwnershipEpoch) {
         opts.onError(e);
         store.settleRun(executionId);
-        if (!publicationCompleted) {
+        if (!publicationCompleted && admitted) {
           transcript.complete({
             degraded:
               "Run settlement ended before authoritative stored reconciliation; committed history uses the available terminal events.",
@@ -1316,7 +1334,10 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       const currentMeta = sess.meta();
       if (currentMeta === null) throw new Error("cannot rebuild a detached session's full history");
       const historical = await resumeSession(
-        { ...currentMeta, turns: currentMeta.turns.slice(0, -1) },
+        {
+          ...currentMeta,
+          turns: hostedSession === undefined ? currentMeta.turns.slice(0, -1) : currentMeta.turns,
+        },
         {
           getRun: (id) => client.getRun(id),
           currentPlanProviderKey: deps.planProviderKey,
@@ -1344,6 +1365,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const startFull = (messages?: readonly Message[]): RunHandle => {
       assertPreparation();
       return client.startRun({
+        intent: automatic === undefined ? "operator" : "automatic",
         ...(hostedSession === undefined
           ? {}
           : { session: { ...hostedSession, kind: "conversation", user_preview: draftText } }),
@@ -1390,6 +1412,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         const handle =
           continueFrom && !isManager
             ? client.startRun({
+                /** A scheduled turn is the host continuing work it already owns. */
+                intent: automatic === undefined ? "operator" : "automatic",
                 ...(hostedSession === undefined
                   ? {}
                   : {
@@ -1458,6 +1482,23 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       },
       onError: (e) => {
         sess.endTurn(undefined);
+        /**
+         * A hosted submission the store never adopted was refused before admission.
+         *
+         * @remarks The message had already been published optimistically, so the operator's text is
+         *   the thing at risk: putting it back in the composer is what makes the refusal
+         *   recoverable, and the restore refuses to overwrite anything typed since. Identity decides
+         *   this — the persisted conversation either carries the execution's turn or it does not —
+         *   so no error string is parsed to reach the decision.
+         */
+        if (hostedSession !== undefined && !cancelRequested)
+          reportUnadopted(hostedSession.session_id, executionId, () => {
+            if (session !== sess) return;
+            // Neither fact the optimistic publication created is true in the canonical
+            // conversation: no turn, and no new continuation base.
+            sess.discardTurn(executionId);
+            draftRestore?.(draftText, typeof content === "string" ? undefined : content);
+          });
         setStatus([cancelRequested ? "cancelled" : `run error: ${errorText(e)}`]);
         completion = {
           status: cancelRequested || automatic?.cancelled ? "cancelled" : "unknown",
@@ -1466,6 +1507,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         };
       },
     });
+    adoptCanonicalTurn(executionId);
     return completion;
   }
 
@@ -1553,6 +1595,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         setStatus([`/${name} failed: ${errorText(e)}`]);
       },
     });
+    adoptCanonicalTurn(executionId);
   }
 
   async function workOnTask(ref: TaskRefDto, profile: string): Promise<void> {
@@ -1623,6 +1666,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         setStatus([`task run failed: ${errorText(error)}`]);
       },
     });
+    adoptCanonicalTurn(executionId);
   }
 
   function runBangCommand(cmd: string): boolean {
@@ -1729,8 +1773,10 @@ export function createRunHost(deps: RunHostDeps): RunHost {
 
   /** Complete turns still represented by semantic nodes in the live store. */
   let residentTurns: ResidentTurnRef[] = [];
-  /** Canonical turn cursor stays independent of transcript folding and later metadata refreshes. */
-  let paintedTurnCount = 0;
+  /** Ordered canonical identities already represented in the transcript. */
+  let canonicalTurnIds: string[] = [];
+  const turnIdentity = (turn: SessionMeta["turns"][number]): string =>
+    JSON.stringify([turn.executionId, turn.kind, turn.userPreview]);
 
   /**
    * How many nodes at the head of the transcript form the folded-prefix notice,
@@ -1748,8 +1794,55 @@ export function createRunHost(deps: RunHostDeps): RunHost {
    * single write/reindex. The live host retains only a scalar count; the
    * canonical persisted session turn index supplies `/export` metadata lazily.
    */
+  /**
+   * Adopt a turn the canonical store confirms, by identity.
+   *
+   * @param executionId - the execution the turn was submitted under.
+   * @remarks The question "is this turn canonical?" is answered by the store, not by the fact that
+   *   a message was painted: the store either has a turn for that execution or it does not. A
+   *   hosted refusal therefore leaves the cursor exactly where it was, instead of advancing it past
+   *   a turn that never existed.
+   */
+  function adoptCanonicalTurn(executionId: string): void {
+    const turns = session?.meta()?.turns ?? [];
+    const at = turns.findIndex((turn) => turn.executionId === executionId);
+    if (at === -1) return;
+    const identity = turnIdentity(turns[at]!);
+    if (!canonicalTurnIds.includes(identity)) canonicalTurnIds.push(identity);
+  }
+
+  /**
+   * Report whether the *canonical* store adopted a submission, once it answers.
+   *
+   * @param sessionId - the hosted conversation the submission belonged to.
+   * @param executionId - the execution a submission was made under.
+   * @param onRefused - called when the store has no turn for that execution.
+   * @remarks Identity is what decides this, and the identity that counts is the durable one: a
+   *   hosted session's local metadata is a projection that already carries the optimistically
+   *   published turn, so asking it would always answer "adopted". No error string is parsed, and a
+   *   store that cannot be read leaves the projection alone rather than guessing.
+   */
+  function reportUnadopted(sessionId: string, executionId: string, onRefused: () => void): void {
+    void sessionStore
+      .load(sessionId, { refresh: true })
+      .then((canonical) => {
+        if (canonical === null) return;
+        if (canonical.turns.some((turn) => turn.executionId === executionId)) return;
+        if (client.submission !== undefined) {
+          return client.submission(sessionId, executionId).then((status) => {
+            if (status === "pending") {
+              setStatus(["message retained by host; recovery pending"]);
+              return;
+            }
+            if (status === "absent") onRefused();
+          });
+        }
+        onRefused();
+      })
+      .catch(() => undefined);
+  }
+
   function rememberResidentTurn(turn: ResidentTurnRef): void {
-    paintedTurnCount++;
     residentTurns.push(turn);
     if (residentTurns.length <= RESIDENT_TRANSCRIPT_TURN_LIMIT) return;
 
@@ -1784,7 +1877,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     activity.clear();
     foldedTurnCount = 0;
     residentTurns = [];
-    paintedTurnCount = 0;
+    canonicalTurnIds = [];
     foldedPrefix = 0;
     setStatus(["idle"]);
   }
@@ -1986,7 +2079,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     activity.clear();
     foldedTurnCount = 0;
     residentTurns = [];
-    paintedTurnCount = 0;
+    canonicalTurnIds = [];
     foldedPrefix = 0;
     const windowStart = Math.max(0, meta.turns.length - RESIDENT_TRANSCRIPT_TURN_LIMIT);
     if (windowStart > 0) {
@@ -2046,7 +2139,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     }
     if (epoch !== loadEpoch) return;
     sessionTask = resumed.activeTask;
-    paintedTurnCount = meta.turns.length;
+    canonicalTurnIds = meta.turns.map(turnIdentity);
     session = createSession(boundSessionDeps, {
       meta,
       messages: resumed.messages,
@@ -2094,9 +2187,23 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const previous = session?.meta()?.id;
     if (previous) deps.onSessionInvalidated?.(previous, "switch");
     let meta: SessionMeta | null;
+    let recoveryNotice: string | undefined;
     try {
       if (client.hosting !== undefined) {
-        const ref = (await client.hosting.list())
+        let retained = await client.hosting.list();
+        if (requestEpoch !== loadEpoch) return;
+        if (
+          !retained.some((entry) => entry.session_id === id && entry.execution_state !== "closed")
+        ) {
+          try {
+            await client.hosting.resumePending(id);
+          } catch (error) {
+            recoveryNotice = `pending input retained: ${errorText(error)}`;
+          }
+          if (requestEpoch !== loadEpoch) return;
+          retained = await client.hosting.list();
+        }
+        const ref = retained
           .filter((entry) => entry.session_id === id)
           .sort(
             (a, b) =>
@@ -2132,7 +2239,10 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       setStatus(["session not found"]);
       return;
     }
-    await loadSessionMeta(meta).catch((e) => setStatus([`resume failed: ${errorText(e)}`]));
+    const loading = loadSessionMeta(meta);
+    const restoredEpoch = loadEpoch;
+    await loading.catch((e) => setStatus([`resume failed: ${errorText(e)}`]));
+    if (restoredEpoch === loadEpoch && recoveryNotice !== undefined) setStatus([recoveryNotice]);
   }
 
   async function synchronizeGoal(binding: GoalBinding, view: GoalView): Promise<void> {
@@ -2153,16 +2263,36 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     if (!valid() || scheduledBusy()) return;
     const meta = await sessionStore.load(binding.sessionId, { refresh: true });
     if (!valid() || meta === null || scheduledBusy()) return;
-    if (meta.turns.length < paintedTurnCount)
-      throw new Error("Canonical goal history is shorter than the displayed conversation.");
+    let shared = 0;
+    while (
+      shared < canonicalTurnIds.length &&
+      shared < meta.turns.length &&
+      canonicalTurnIds[shared] === turnIdentity(meta.turns[shared]!)
+    )
+      shared++;
+    if (shared < canonicalTurnIds.length) {
+      const boundary = residentTurns[shared - foldedTurnCount];
+      if (
+        shared < foldedTurnCount ||
+        boundary === undefined ||
+        !store.truncateFrom(boundary.userKey)
+      ) {
+        await loadSessionMeta(meta);
+        return;
+      }
+      residentTurns = residentTurns.slice(0, shared - foldedTurnCount);
+      canonicalTurnIds = canonicalTurnIds.slice(0, shared);
+      sess!.acceptHosted(meta);
+    }
     const runIds = new Set(
       [
         ...view.state.archive,
         ...(view.state.current === undefined ? [] : [view.state.current]),
       ].flatMap((goal) => goal.runs.map((run) => run.execution_id)),
     );
-    while (paintedTurnCount < meta.turns.length && valid()) {
-      const turn = meta.turns[paintedTurnCount]!;
+    while (canonicalTurnIds.length < meta.turns.length && valid()) {
+      const at = canonicalTurnIds.length;
+      const turn = meta.turns[at]!;
       const ref = (await client.hosting.list()).find(
         (run) => run.execution_id === turn.executionId,
       );
@@ -2183,6 +2313,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         sess!.acceptHosted(meta);
         const userKey = store.appendUserMessage(turn.userPreview, undefined, ref.execution_id);
         rememberResidentTurn({ userKey });
+        canonicalTurnIds = meta.turns.slice(0, at + 1).map(turnIdentity);
         workflowRunId = ref.execution_id;
         await runManaged({
           sess: sess!,
@@ -2214,6 +2345,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
               if (!valid()) return;
               const userKey = store.appendUserMessage(userContent, undefined, executionId);
               rememberResidentTurn({ userKey });
+              canonicalTurnIds = meta.turns.slice(0, at + 1).map(turnIdentity);
               if (executionId !== undefined && events !== undefined) {
                 const transcript = store.openRun(executionId);
                 const sink = teeSink(transcript, activity.openRun());
@@ -2234,6 +2366,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       if (valid() && canonical !== null) {
         sess!.acceptHosted(canonical);
         sess!.releaseHistory();
+        canonicalTurnIds = meta.turns.map(turnIdentity);
       }
     }
   }
@@ -2293,6 +2426,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     sess.acceptHosted(meta);
     const userKey = store.appendUserMessage(turn.userPreview, undefined, ref.execution_id);
     rememberResidentTurn({ userKey });
+    adoptCanonicalTurn(ref.execution_id);
     workflowRunId = ref.execution_id;
     await runManaged({
       sess,

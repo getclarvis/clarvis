@@ -161,12 +161,11 @@ export function GoalView(
           {
             key: "r",
             label: "resume",
-            when: () =>
-              goal() !== undefined &&
-              !["active", "complete", "cancelled"].includes(goal()!.status) &&
-              !physicallyBusy() &&
-              !goals.busy(),
-            run: () => act({ kind: "resume" }),
+            when: () => goal() !== undefined && !goals.busy(),
+            run: () =>
+              goals.pendingOperation() === undefined
+                ? act({ kind: "resume" })
+                : detachObserved("goal.recover", () => goals.recover(), report),
           },
           {
             key: "c",
@@ -206,7 +205,29 @@ export function GoalView(
             key: "u",
             label: "recover receipt",
             when: () => goals.pendingOperation() !== undefined && !goals.busy(),
-            run: () => detachObserved("goal.recover", () => goals.recover(), report),
+            run: () =>
+              detachObserved(
+                "goal.recover",
+                async () => {
+                  const ref = goals.view()?.physical_run;
+                  if (ref?.execution_state === "unknown") {
+                    if (
+                      !(await host.confirm({
+                        message: "Confirm all physical work has stopped?",
+                        confirmLabel: "verify and resume",
+                        detail: [
+                          "Verify that every process and container from this old host has stopped before confirming.",
+                          `Host: ${ref.host_generation} | run: ${ref.execution_id}`,
+                          "Saved history and uncertain outcomes are retained. The pending resume starts only after physical closure.",
+                        ],
+                      }))
+                    )
+                      return;
+                    await goals.resolvePhysicalRecovery();
+                  } else await goals.recover();
+                },
+                report,
+              ),
           },
         ],
       }),

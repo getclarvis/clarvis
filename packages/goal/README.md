@@ -10,6 +10,19 @@ The owning contract is [goals](../../specs/capabilities/goals.md). Hosting, plan
 prompt-cache behavior retain their owning package contracts; domain tests alone do not qualify
 automatic continuation, a TUI journey, a container or an installed artifact.
 
+Runtime snapshots expose classified catalog failures through `evidence_unavailable`, separately
+from validated Goal authority. Iteration refresh and `get_goal` preserve this distinction in their
+model-facing state. Evidence-dependent operations still require valid proof; availability is not
+completion or observed progress.
+Settlement records `activity_unavailable` when the host cannot measure activity. It preserves the
+semantic no-progress allowance without resetting it or increasing token, time or continuation limits.
+
+The host can persist non-final settlement inputs with `prepareGoalSettlement` after physical closure.
+Its immutable run-scoped preparation preserves usage gaps and unavailable activity across restart;
+activity is deduplicated, excludes receipts already credited, and retains at most 32 new receipts.
+`settleGoalRun` consumes it in the same transaction that charges the stage. It grants no final
+completion proof or execution authority.
+
 ## Domain surface
 
 - `applyGoalControl` validates user controls, CAS and idempotent operation receipts on a clone.
@@ -53,7 +66,7 @@ automatic continuation, a TUI journey, a container or an installed artifact.
 
 There is one current goal plus a bounded audit archive in the existing private session document.
 No public request may choose another owner. A paused or blocked goal requires explicit resume;
-resume preserves costs and continuation counts. A terminal goal requires replacement. Clear and
+resume preserves costs and continuation counts. Explicit resume can reopen a terminal goal while preserving its audit. Clear and
 replacement never delete audit records silently and require physical closure.
 
 Goal, run and receipt identities are unique within that audit, and nested revisions cannot outrun
@@ -61,8 +74,11 @@ their owning state. The kernel repository maps this domain into the private sess
 the protocol remains independent of domain runtime code.
 
 After measured budget exhaustion, an unsuccessful stage leaves the goal `budget_limited` and
-retains its own failed/cancelled outcome and any overrun. Missing usage still blocks accounting;
-a later user pause or cancellation remains authoritative. Resume alone does not grant more tokens.
+retains its own failed/cancelled outcome and any overrun. Consumption is `complete`, `partial` (a
+confirmed subtotal beside named gaps) or `unknown`, and only the last is charged nothing: a partial
+subtotal is charged and its gap suspends automatic continuation until an explicit resume accepts
+that execution's gap, which never rewrites the measurement. A later user pause or cancellation
+remains authoritative. Resume alone does not grant more tokens.
 
 ## Main-agent Goal creation
 
@@ -121,7 +137,7 @@ control-plane API. Main-agent Goal creation uses the ordinary run's resolved bud
 session, execution and persisted entry-agent instance. It contributes `get_goal` and `update_goal`
 only to the entry agent. The model can record progress, request a gated checkpoint, submit a
 completion candidate or report blocking. Evidence arguments contain host-issued IDs; the host
-resolves their scope and verifies them. User controls and limit changes are absent from these tools.
+resolves their scope and verifies them. User controls and limit changes are absent from these tools. An authenticated ordinary operator turn may separately expose `attach_goal` to bind that already admitted execution to the previous objective.
 The catalog adds short host-authored descriptions for discovery; persisted evidence contains only
 the scoped reference and digest. Descriptions do not establish proof.
 
@@ -181,7 +197,10 @@ clears that sequence, so an earlier refusal never condemns a later attempt, and 
 stage ends with `no_progress` rather than a blocked Goal. A verdict fenced out because the goal or
 its evidence moved is a state conflict, not a deficiency: it is re-read once so a non-revoking human
 acceptance inside the window can still settle the attempt, and a conflict that survives stops the
-stage with `goal_control_failed` and host attention rather than consuming the recovery bound. The
+stage with `goal_finalization_conflict`. Settlement records `finalization_conflict` and may
+admit one successor through the existing continuation path, preserving the semantic no-progress
+allowance. Authority, consumption, deadline and continuation limits are still revalidated; the new
+stage must submit a fresh candidate and pass every completion gate. The
 orientation never requires a fabricated candidate before continuing and never names the Steward; the
 typed cause and the host's own verdicts are recorded as bounded trace evidence without model or
 objective text. Only recoverable verdicts recover: a failed read, foreign binding or obsolete
@@ -221,3 +240,12 @@ available. Synthetic trials therefore do not imply provider, PTY or installed-ar
 
 Auxiliary execution results can carry host-only per-model accounting alongside domain usage;
 unknown formulation telemetry remains unknown rather than being inferred from empty loop totals.
+
+Existing-objective activation uses `GoalAttachmentPort` and `createGoalAttachmentCapability`.
+Before attachment the previous objective is subordinate context and does not gate independent work.
+After attachment the same progress, completion and Steward gates apply. Gap acceptance is bound to
+its recorded gap identity; a changed subtotal alone does not accept newly discovered gaps.
+Explicitly versioned usage corrections accept signed deltas, ignore older revisions and reject
+conflicting values at the same revision. Unversioned measurements must still add information.
+
+Pending resumes can link a limits edit through `resume_operation_id`; a plain edit never starts work. Partial usage gaps preserve bounded call provenance.

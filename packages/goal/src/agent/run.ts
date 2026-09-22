@@ -8,7 +8,7 @@ function measuredUsage(usage: Usage): GoalAgentRunResult["usage"] {
   const input = usage.by_agent.reduce((sum, row) => sum + row.input_tokens, 0);
   const output = usage.by_agent.reduce((sum, row) => sum + row.output_tokens, 0);
   const cached = usage.by_agent.reduce((sum, row) => sum + row.cached_tokens, 0);
-  return { kind: "measured", input, output, cached };
+  return { kind: "complete", input, output, cached };
 }
 
 /** A terminal formulation failure that retains only host accounting, never model payloads. */

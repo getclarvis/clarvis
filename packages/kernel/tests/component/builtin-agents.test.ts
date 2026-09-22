@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { loadEnv } from "@clarvis/capability";
 import { agentFrontmatterSchema } from "../../src/config.ts";
 import {
   BUILTIN_AGENTS,
@@ -24,6 +25,15 @@ describe("the agent fleet Clarvis ships", () => {
       const parsed = agentFrontmatterSchema.safeParse(agent.frontmatter);
       expect(`${agent.name}: ${parsed.error?.message ?? "ok"}`).toBe(`${agent.name}: ok`);
       expect(agent.frontmatter.description).toBeTypeOf("string");
+    }
+  });
+
+  test("asks for an iteration allowance the default ceiling admits, so the shipped request validates", () => {
+    const ceiling = loadEnv({}).CLARVIS_ITERATION_CEILING;
+    for (const agent of BUILTIN_AGENTS) {
+      expect(`${agent.name}: ${String(agent.frontmatter.iteration_limit)}`).toBe(
+        `${agent.name}: ${String(ceiling)}`,
+      );
     }
   });
 
@@ -113,7 +123,7 @@ describe("the agent fleet Clarvis ships", () => {
 
 describe("the shipped admiral agent", () => {
   test("uses the full lead-session soft iteration allowance", () => {
-    expect(ADMIRAL.frontmatter.iteration_limit).toBe(256);
+    expect(ADMIRAL.frontmatter.iteration_limit).toBe(512);
   });
 
   test("carries the workflow grant, which is the only thing that routes a run as a workflow", () => {
@@ -156,7 +166,7 @@ describe("the shipped admiral agent", () => {
 
 describe("the shipped marshall agent", () => {
   test("uses the full lead-session soft iteration allowance", () => {
-    expect(MARSHALL.frontmatter.iteration_limit).toBe(256);
+    expect(MARSHALL.frontmatter.iteration_limit).toBe(512);
   });
 
   test("uses separate tools for independent spawning and tracked delegation", () => {
@@ -179,7 +189,7 @@ describe("the shipped Sub-agent leaves", () => {
     for (const name of ["coder", "explorer", "planner"] as const) {
       const agent = readBuiltinAgent(name)!;
       const prompt = agent.body.replace(/\s+/g, " ");
-      expect(agent.frontmatter.iteration_limit).toBe(64);
+      expect(agent.frontmatter.iteration_limit).toBe(512);
       expect(agent.frontmatter.can_spawn).toBeUndefined();
       expect(prompt).toContain(`You are \`${name}\``);
       expect(prompt).toContain("When delegated");

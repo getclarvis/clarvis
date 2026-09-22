@@ -100,6 +100,8 @@ export interface KernelRunClient {
    * routes it as a workflow (manager fanning out leader runs) transparently,
    * returning the same {@link RunHandle} the run host drives. */
   startRun(input: StartRunInput): RunHandle;
+  /** Read-only recovery of an operator submission; never starts model work. */
+  submission?(sessionId: string, executionId: string): Promise<"pending" | "admitted" | "absent">;
   /** Observe an existing hosted execution without sending another start or prompt. */
   attachRun(input: AttachHostedRunParams): RunHandle;
   /** Present only when the connected host advertises independent execution ownership. */
@@ -213,6 +215,7 @@ function toStartParams(
     ...(!container && input.task ? { task: input.task } : {}),
     ...(!container && input.skill ? { skill: input.skill } : {}),
     ...(input.goalIntent ? { goal_intent: input.goalIntent } : {}),
+    ...(input.intent ? { intent: input.intent } : {}),
     elicit_policy: { ask_user_window_ms: ASK_USER_WINDOW_MS },
   };
 }
@@ -518,8 +521,11 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
       });
     if (hosted) detachObserved("hosting.observation.closed", () => closed);
 
+    const admitted = handleP.then(() => undefined);
+    void admitted.catch(() => undefined);
     return {
       executionId,
+      ...(hosted ? { admitted } : {}),
       cancel: () => handleP.then((handle) => handle.cancel()),
       interruptTool: (toolExecutionId) =>
         handleP.then((handle) => handle.interruptTool(toolExecutionId)),
@@ -632,7 +638,11 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     if (!handleP) return { status: "unknown", execution_id: input.executionId };
     const handle = await handleP;
     const message: string | ProtoMessage =
-      typeof input.message === "string" ? input.message : { role: "user", content: input.message };
+      requireKernel().hosting !== undefined
+        ? { role: "user", content: input.message, steering_id: crypto.randomUUID() }
+        : typeof input.message === "string"
+          ? input.message
+          : { role: "user", content: input.message };
     await handle.steer(message);
     return { status: "steered", execution_id: input.executionId, accepted: 1 };
   }
@@ -812,6 +822,14 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     reconnect,
     listProfiles,
     startRun,
+    async submission(sessionId, executionId) {
+      const session = await requireKernel().sessions.get(sessionId);
+      if (session === null) throw new Error("Conversation unavailable");
+      if (session.turns.some((turn) => turn.execution_id === executionId)) return "admitted";
+      return session.operator_intents?.some((intent) => intent.execution_id === executionId)
+        ? "pending"
+        : "absent";
+    },
     attachRun,
     get hosting() {
       return kernel?.hosting;

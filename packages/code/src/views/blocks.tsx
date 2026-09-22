@@ -238,6 +238,10 @@ function statusTone(status: NodeStatus): ToneStyle {
       return tone("ok");
     case "error":
       return tone("error");
+    case "limited":
+      return tone("warn");
+    case "cancelled":
+      return { glyph: glyph("skipped"), fg: tone("muted").fg };
     case "running":
       return tone("running", spinnerChar());
     default:

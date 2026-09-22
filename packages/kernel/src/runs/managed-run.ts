@@ -344,7 +344,15 @@ export function createManagedRunWithRuntime(
     execution_id: spec.executionId,
     events: stream.iterable,
     async steer(message) {
-      if (await steer.push({ content: protoSteerToEngineContent(message) })) return;
+      if (
+        await steer.push({
+          content: protoSteerToEngineContent(message),
+          ...(typeof message === "string" || message.steering_id === undefined
+            ? {}
+            : { id: message.steering_id }),
+        })
+      )
+        return;
       throw kernelError("not_found", `run '${spec.executionId}' is no longer accepting steering`);
     },
     async compact(request) {

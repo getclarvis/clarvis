@@ -324,9 +324,9 @@ the job retry budget from multiplying an inner transport retry budget.
   the result names the budget that made it incomplete. The filesystem adapter
   walks directory handles instead of materializing whole directory listings and
   streams `version()` hashing.
-- **Revisions** — every automatic overwrite is reversible. `history`,
-  `readRevision` and `restore` read and roll back superseded bodies, retained by
-  count, age and an absolute floor.
+- **Revisions** — every automatic overwrite is reversible. `revisions.list` and
+  `revisions.read` read superseded bodies, retained by count, age and an absolute
+  floor.
 - **Health** — `health()` is deterministic, model-free and read-only: totals plus
   findings ordered by severity, each naming the action that resolves it.
 

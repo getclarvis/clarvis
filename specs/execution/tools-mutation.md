@@ -102,7 +102,7 @@ every handler above consumes them directly.
 | --- | --- | --- | --- |
 | `maxFileBytes` | `20_000_000` (`DEFAULT_MAX_FILE_BYTES`, `packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | packages/tools/src/tools/edit-file.ts, apply-patch.ts (`readEditableFile`), packages/tools/src/tools/replace.ts |
 | `maxMutationBytes` | `64 * 1024 * 1024` (`DEFAULT_MAX_MUTATION_BYTES`, `packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | packages/tools/src/tools/replace.ts |
-| `maxDiffInputBytes` | `8 * 1024 * 1024` (`DEFAULT_MAX_DIFF_INPUT_BYTES`, `packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | packages/tools/src/tools/write-file.ts, packages/tools/src/tools/edit-file.ts, packages/tools/src/tools/replace.ts/263 |
+| `maxDiffInputBytes` | `8 * 1024 * 1024` (`DEFAULT_MAX_DIFF_INPUT_BYTES`, `packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | packages/tools/src/tools/write-file.ts, packages/tools/src/tools/edit-file.ts, packages/tools/src/tools/replace.ts |
 | `maxTraversalEntries` | `50_000` (`DEFAULT_MAX_TRAVERSAL_ENTRIES`, `packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | packages/tools/src/tools/replace.ts (`scopeFiles`) |
 | `regexScanBudgetMs` | `5000` (`DEFAULT_REGEX_SCAN_BUDGET_MS`, `packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | packages/tools/src/tools/replace.ts (`createScanBudget`) |
 | `confineToWorkspace` | `true` default (`packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | every `resolvePath` call in every handler above |

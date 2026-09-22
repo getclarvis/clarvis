@@ -153,3 +153,45 @@ Test: `packages/paths/tests/integration/housekeeping.test.ts`,
    stability is unaffected.
 8. Filesystem inventory and cleanup never claim visibility or authority over Docker-managed recipe
    images or mise volumes.
+
+## Hosted observation segments
+
+Hosted observation files remain private host state, outside generic cache/temporary cleanup.
+The hosted registry reclaims their exact segment namespace only after acknowledgement; it never
+removes active snapshots or unrelated sibling files through generic storage cleanup. Segmentation
+preserves logical byte offsets without imposing the former lifetime projection quota.
+
+Production: `removeProjectionStorage` in
+[projection-storage.ts](../../packages/kernel/src/hosting/projection-storage.ts), called by
+[local-state.ts](../../packages/kernel/src/hosting/local-state.ts) and
+[container-bootstrap.ts](../../packages/kernel/src/hosting/container-bootstrap.ts).
+Test: `streams beyond the former lifetime quota with bounded segments and immutable cuts` in
+[hosted-projection-file.test.ts](../../packages/kernel/tests/component/hosted-projection-file.test.ts).
+
+### Pending hosted consumption receipts
+
+The existing private hosted index also retains bounded `deliveries` records after projection sync
+and before canonical steering acknowledgement. Only identities, controller epoch, retry state,
+attempt count, cause and eligibility time are stored. Index decoding rejects duplicate intent ids
+within a run and more than 16 pending records. These records remain until canonical reconciliation
+and durable index removal; acknowledging a closed observation cannot evict a pending receipt.
+
+Production: `decodeHostedRegistryState` in
+[state.ts](../../packages/kernel/src/hosting/state.ts), `reconcileDeliveries` and `prune` in
+[registry.ts](../../packages/kernel/src/hosting/registry.ts). Test: persisted generation recovery in
+[hosted-recovery.test.ts](../../packages/kernel/tests/component/hosted-recovery.test.ts) and retry
+allowance in [hosted-delivery-recovery.test.ts](../../packages/kernel/tests/unit/hosted-delivery-recovery.test.ts).
+
+### Positional projection IO recovery
+
+The file writer repeats only identical positional writes and idempotent file/directory synchronization
+for classified transient IO errors, with three attempts per syscall. It does not retry exclusive file
+creation, close, capacity errors or unknown failures. Logical offsets and immutable snapshot bytes
+remain stable through an acknowledgement lost after a successful write. Exhaustion remains a visible
+storage failure rather than permission to drop events or repeat the whole append.
+
+Production: `recoverProjectionIO` in
+[projection-io.ts](../../packages/kernel/src/hosting/projection-io.ts) and `openProjectionStorage` in
+[projection-storage.ts](../../packages/kernel/src/hosting/projection-storage.ts).
+Test: `recovers positional writes and rotation sync without duplicating frames or changing a snapshot`
+in [hosted-projection-file.test.ts](../../packages/kernel/tests/component/hosted-projection-file.test.ts).

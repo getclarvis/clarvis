@@ -1,6 +1,13 @@
 import { GoalError } from "./errors.ts";
 import { boundedGoalState, emptyGoalState } from "./control.ts";
-import { goalAdmission, goalDeadlineLimit, goalHasPhysicalRun, goalNetTokens } from "./policy.ts";
+import {
+  describeExecutions,
+  goalAdmission,
+  goalDeadlineLimit,
+  goalHasPhysicalRun,
+  goalNetTokens,
+  unacceptedUsageRuns,
+} from "./policy.ts";
 import {
   goalCandidateSchema,
   goalCheckpointSchema,
@@ -13,6 +20,7 @@ import {
   type GoalRecord,
   type GoalRun,
   type GoalRunCause,
+  type GoalUsageGapCause,
   type GoalStageDecision,
   type GoalState,
   type GoalUsage,
@@ -164,9 +172,55 @@ export function advanceGoalRun(
   run.phase = input.phase;
   if (input.phase === "unknown" && goal.status === "active") {
     goal.status = "blocked";
-    goal.reason = "Physical execution outcome is unknown; host recovery is required";
+    goal.reason = PHYSICAL_UNKNOWN_REASON;
   }
   return changed(state, goal, input.now);
+}
+
+/**
+ * The reason a Goal is blocked on an execution whose physical ending was never observed.
+ *
+ * @remarks Named so {@link closeGoalRunByRecovery} can recognize exactly the block it resolves and
+ *   leave every other one alone: a Goal blocked for any other reason must not be reopened by a
+ *   recovery that had nothing to do with it.
+ */
+const PHYSICAL_UNKNOWN_REASON = "Physical execution outcome is unknown; host recovery is required";
+
+/**
+ * Release the conversation from a stage whose physical ending the host could not observe.
+ *
+ * @param previous - the Goal state to transition.
+ * @param input - the Goal, the execution the host resolved, and the attestation instant.
+ * @returns the state with that run closed, its occupancy released and its audit intact.
+ * @remarks The operator has established that no process of that execution is still running; nobody
+ *   has established what it produced, and this transition does not pretend otherwise. The run
+ *   therefore closes with `recovered_at` recorded and **no** outcome, disposition, decision or
+ *   terminal cause, so nothing downstream can read a result that was never observed, and the stage
+ *   is not counted as an unproductive one because it is uncountable rather than unproductive.
+ *   Releasing the physical block re-runs the Goal's consumption reconciliation: a recovered stage
+ *   whose consumption was never measured leaves a gap, which asks for an explicit acceptance
+ *   instead of silently letting the next attempt start against an unknown baseline. A second
+ *   resolution for the same execution is a no-op.
+ */
+export function closeGoalRunByRecovery(
+  previous: GoalState,
+  input: { goal_id: string; execution_id: string; recovered_at: number },
+): GoalState {
+  const state = boundedGoalState(previous, true);
+  const goal = currentGoal(state, input.goal_id);
+  const run = boundRun(goal, input.execution_id);
+  if (run.phase === "closed") return state;
+  run.phase = "closed";
+  run.recovered_at = input.recovered_at;
+  reconcileUsage(goal);
+  if (goal.status === "blocked" && goal.reason === PHYSICAL_UNKNOWN_REASON) {
+    const unaccepted = unacceptedUsageRuns(goal);
+    goal.status = unaccepted.length === 0 ? "active" : "blocked";
+    if (unaccepted.length === 0) delete goal.reason;
+    else
+      goal.reason = `Consumption is unknown for ${String(unaccepted.length)} recovered stage(s) (${describeExecutions(unaccepted)}); resume the goal to accept the gap`;
+  }
+  return changed(state, goal, input.recovered_at);
 }
 
 /** Accept bounded host-evaluated checkpoint data; repeated activity cannot reset stagnation. */
@@ -328,6 +382,8 @@ const FAILURE_REASONS: Record<GoalRunCause, string> = {
   provider_refused: "The provider refused the request; the goal requires operator action",
   tools_unavailable: "Every configured tool became unavailable",
   control_failure: "Goal control was unavailable; the goal requires host attention",
+  finalization_conflict:
+    "Completion state changed concurrently; another stage must re-evaluate current proof",
   unclassified: "Goal run failed",
 };
 
@@ -353,6 +409,8 @@ const CONTINUATION_REASONS: Record<GoalRunCause, string> = {
   provider_refused: "The provider refused the request; the goal requires operator action",
   tools_unavailable: "Every configured tool became unavailable",
   control_failure: "Goal control was unavailable; the goal requires host attention",
+  finalization_conflict:
+    "Completion state changed concurrently; another stage must re-evaluate current proof",
   unclassified: "Goal run failed",
 };
 
@@ -361,7 +419,7 @@ const CONTINUATION_REASONS: Record<GoalRunCause, string> = {
  *
  * @remarks Membership is what makes an ending recoverable, and every member still
  *   spends one stage of the Goal's progress allowance when the stage did not advance
- *   the work — so repetition of the same failure cannot restart indefinitely and no
+ *   the work, except a finalization snapshot conflict, which retains that allowance — so repetition of the same failure cannot restart indefinitely and no
  *   recovery invents authorization, budget or evidence. `context_overflow` is not a
  *   member: continuing it is only safe when the stage also observed progress, because
  *   otherwise the successor would replay the payload that did not fit. Everything
@@ -384,6 +442,7 @@ const RECOVERABLE_CAUSES: ReadonlySet<GoalRunCause> = new Set<GoalRunCause>([
   "empty_response",
   "transient",
   "steward_interrupted",
+  "finalization_conflict",
 ]);
 
 /** Whether the closed stage may be continued automatically by one successor stage. */
@@ -404,7 +463,34 @@ function recordedActivity(goal: GoalRecord): Set<string> {
   return new Set(goal.runs.flatMap((item) => item.activity ?? []));
 }
 
+/**
+ * Whether a late measurement of an already-settled stage only adds information.
+ *
+ * @param previous - the measurement already recorded and charged for that execution.
+ * @param next - the measurement a later reconciliation produced.
+ * @returns true when `next` resolves a scope that had no subtotal, or is at least as large in
+ *   every charged dimension; false when it would take measured consumption back.
+ * @remarks Late telemetry arrives as a correction that *adds*: a provider that finally reports
+ *   cache reuse raises `cached` — which lowers the net charge without lowering the gross figures
+ *   it is computed from — and input and output can only stay or grow. A revision that would lower
+ *   a charged dimension is a conflict rather than an update, and refusing it is what keeps a
+ *   measurement from being overwritten by a smaller one that would silently return budget the
+ *   Goal already spent. An identical revision never reaches this test: it is a no-op by identity.
+ */
+function isInformationGaining(previous: GoalUsage | undefined, next: GoalUsage): boolean {
+  if (previous === undefined || previous.kind === "unknown") return next.kind !== "unknown";
+  if (next.kind === "unknown") return false;
+  return (
+    next.input >= previous.input &&
+    next.output >= previous.output &&
+    (next.cached ?? 0) >= (previous.cached ?? 0)
+  );
+}
+
 function reconcileUsage(goal: GoalRecord): void {
+  const accepted = new Set(goal.consumption.usage_accepted_runs);
+  const gapCalls = new Map<GoalUsageGapCause, number>();
+  const stillIncomplete: string[] = [];
   const totals: GoalRecord["consumption"] = {
     input: 0,
     output: 0,
@@ -413,11 +499,14 @@ function reconcileUsage(goal: GoalRecord): void {
     usage_unknown: false,
     cache_estimated: false,
     overrun_tokens: 0,
+    gaps: [],
+    usage_accepted_runs: [],
   };
   for (const run of goal.runs) {
     if (run.phase !== "closed") continue;
     if (run.usage === undefined || run.usage.kind === "unknown") {
       totals.usage_unknown = true;
+      if (accepted.has(run.execution_id)) stillIncomplete.push(run.execution_id);
       continue;
     }
     totals.input += run.usage.input;
@@ -427,9 +516,68 @@ function reconcileUsage(goal: GoalRecord): void {
       delete totals.cached;
       totals.cache_estimated = true;
     } else if (totals.cached !== undefined) totals.cached += run.usage.cached ?? 0;
+    if (run.usage.kind === "partial") {
+      for (const gap of run.usage.gaps)
+        gapCalls.set(gap.cause, (gapCalls.get(gap.cause) ?? 0) + gap.calls);
+      if (accepted.has(run.execution_id)) stillIncomplete.push(run.execution_id);
+    }
   }
   totals.overrun_tokens = Math.max(0, totals.net_tokens - goal.limits.max_net_tokens);
+  totals.gaps = [...gapCalls.entries()]
+    .map(([cause, calls]) => ({ cause, calls }))
+    .sort((left, right) => left.cause.localeCompare(right.cause));
+  /**
+   * Acceptance survives re-reconciliation, because charging is not a decision.
+   *
+   * @remarks An acceptance is per execution and is carried forward only while that execution is
+   *   *still* not fully measured: a late measurement that completes it drops the acceptance with
+   *   the gap it belonged to, and an execution absent from the audit cannot keep one.
+   */
+  totals.usage_accepted_runs = [...new Set(stillIncomplete)];
   goal.consumption = totals;
+}
+
+/**
+ * Preserve a physically closed non-final stage's measured settlement inputs before publication.
+ * Completion proofs are deliberately excluded: a final verdict requires fresh host validation.
+ * Replays must carry identical inputs; operator control revisions are never changed here.
+ */
+export function prepareGoalSettlement(
+  previous: GoalState,
+  input: {
+    goal_id: string;
+    execution_id: string;
+    preparation: NonNullable<GoalRun["settlement_preparation"]>;
+    now: number;
+  },
+): GoalState {
+  const state = boundedGoalState(previous, true);
+  const goal = currentGoal(state, input.goal_id);
+  const run = boundRun(goal, input.execution_id);
+  if (run.phase === "closed") return state;
+  if (input.preparation.outcome === "completed" && input.preparation.disposition !== "checkpoint")
+    throw new GoalError("invalid_request", "Final completion requires fresh validation");
+  if (input.preparation.activity_unavailable && (input.preparation.activity?.length ?? 0) > 0)
+    throw new GoalError("invalid_request", "Unavailable activity cannot carry observed receipts");
+  const seen = recordedActivity(goal);
+  const preparation = {
+    ...input.preparation,
+    ...(input.preparation.activity === undefined
+      ? {}
+      : {
+          activity: [...new Set(input.preparation.activity)]
+            .filter((receipt) => !seen.has(receipt))
+            .sort()
+            .slice(0, GOAL_STAGE_ACTIVITY_MAX),
+        }),
+  };
+  if (run.settlement_preparation !== undefined) {
+    if (JSON.stringify(run.settlement_preparation) !== JSON.stringify(preparation))
+      throw new GoalError("conflict", "Settlement preparation cannot be rewritten");
+    return state;
+  }
+  run.settlement_preparation = structuredClone(preparation);
+  return changed(state, goal, input.now);
 }
 
 /** Run-scoped live snapshots are estimates; only durable settlement charges confirmed totals. */
@@ -467,7 +615,8 @@ export function recordGoalUsageEstimate(
  *   which is what lets the Kernel keep responsibility for a pending Goal without a
  *   model-generated checkpoint: the host admits the successor from this durable record rather
  *   than from the run's physical shape. A stage that advanced the work clears the no-progress
- *   sequence, one that did not spends a stage of it, and an exhausted allowance blocks the
+ *   sequence; a stage with unknown activity or a finalization race preserves it. Other
+ *   stages without progress spend a stage of it, and an exhausted allowance blocks the
  *   Goal through the ordinary admission path instead of looping. Everything the host could not
  *   classify is `attention`, and a successor is never automatic for it.
  *   `progress_observed` is the host's own observation of the stage's activity — an accepted
@@ -493,12 +642,16 @@ export function settleGoalRun(
      *   presented, contributes nothing — recombining old receipts is not new progress.
      */
     activity?: readonly string[];
+    /** An observation failure does not spend the semantic no-progress allowance. */
+    activity_unavailable?: boolean;
     not_before?: number;
     now: number;
   },
 ): GoalState {
   if (input.physical_closed !== true)
     throw new GoalError("blocked", "Goal settlement requires physical closure");
+  if (input.activity_unavailable === true && (input.activity?.length ?? 0) > 0)
+    throw new GoalError("invalid_request", "Unavailable activity cannot carry observed receipts");
   const state = boundedGoalState(previous, true);
   const goal =
     state.current?.goal_id === input.goal_id
@@ -510,7 +663,16 @@ export function settleGoalRun(
   const usage = goalUsageSchema.parse(input.usage);
   if (run.phase === "closed") {
     if (JSON.stringify(run.usage) === JSON.stringify(usage)) return state;
-    if (run.usage?.kind !== "unknown" || usage.kind !== "measured")
+    const beforeRevision = run.usage?.kind === "unknown" ? undefined : run.usage?.revision;
+    const nextRevision = usage.kind === "unknown" ? undefined : usage.revision;
+    if (beforeRevision !== undefined && nextRevision !== undefined && nextRevision < beforeRevision)
+      return state;
+    if (beforeRevision !== undefined && nextRevision === beforeRevision)
+      throw new GoalError("conflict", "Conflicting measurements at the same revision");
+    if (
+      !(nextRevision !== undefined && nextRevision > (beforeRevision ?? -1)) &&
+      !isInformationGaining(run.usage, usage)
+    )
       throw new GoalError("conflict", "Settled goal usage cannot be rewritten");
     run.usage = usage;
     reconcileUsage(goal);
@@ -521,6 +683,7 @@ export function settleGoalRun(
   run.outcome = input.outcome;
   run.disposition = input.disposition;
   run.usage = usage;
+  delete run.settlement_preparation;
   /**
    * The run's own durable record outranks the host's classification in two cases, because
    * the host only ever sees the code the loop reported.
@@ -541,7 +704,8 @@ export function settleGoalRun(
    */
   const seen = recordedActivity(goal);
   const contributed = [...new Set(input.activity ?? [])].filter((item) => !seen.has(item)).sort();
-  run.activity = contributed.slice(0, GOAL_STAGE_ACTIVITY_MAX);
+  if (input.activity_unavailable === true) run.activity_unavailable = true;
+  else run.activity = contributed.slice(0, GOAL_STAGE_ACTIVITY_MAX);
   const unaccountable =
     run.steward_reviews.at(-1)?.interruption_cause === "usage_unknown" && !concluded;
   const cause: GoalRunCause =
@@ -560,7 +724,8 @@ export function settleGoalRun(
   if (concluded || input.not_before === undefined) delete run.not_before;
   else run.not_before = input.not_before;
   const progressObserved = contributed.length > 0 || run.checkpoint?.progress_accepted === true;
-  run.progress_observed = progressObserved;
+  if (progressObserved || input.activity_unavailable !== true)
+    run.progress_observed = progressObserved;
   reconcileUsage(goal);
   const closed = (decision: GoalStageDecision): GoalState => {
     run.decision = decision;
@@ -568,7 +733,9 @@ export function settleGoalRun(
   };
   /** Spend one stage of the progress allowance; true when admission refused a successor. */
   const spendStage = (): boolean => {
-    goal.no_progress_stages = progressObserved ? 0 : goal.no_progress_stages + 1;
+    if (progressObserved) goal.no_progress_stages = 0;
+    else if (input.activity_unavailable !== true && cause !== "finalization_conflict")
+      goal.no_progress_stages += 1;
     const admission = goalAdmission(goal, input.now, true);
     if (admission.allowed) return false;
     goal.status = admission.status;
@@ -582,9 +749,12 @@ export function settleGoalRun(
     run.objective_revision !== goal.objective_revision
   )
     return closed("closed");
-  if (goal.consumption.usage_unknown) {
+  const unacceptedUsage = unacceptedUsageRuns(goal);
+  if (unacceptedUsage.length > 0) {
     goal.status = "blocked";
-    goal.reason = "Usage is unknown; reconcile it before resuming";
+    goal.reason = goal.consumption.usage_unknown
+      ? `Consumption is unknown for ${String(unacceptedUsage.length)} closed stage(s) (${describeExecutions(unacceptedUsage)}); resume the goal to accept the gap`
+      : `Consumption is partially unmeasured for ${String(unacceptedUsage.length)} closed stage(s) (${describeExecutions(unacceptedUsage)}); resume the goal to accept the gap`;
     return closed("attention");
   }
   if (deadline !== undefined) {

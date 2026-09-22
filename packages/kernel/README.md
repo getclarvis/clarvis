@@ -46,6 +46,79 @@ public symbol has one thematic owner; the root is not a compatibility barrel for
 
 ## Contract
 
+Steering acceptance persists the host-selected destination in its receipt before source delivery.
+After restart, consumption reconciliation reads that destination instead of depending on unrelated
+historical traces. Missing destination evidence remains uncertain; mismatched acknowledgements or
+attempts to rebind the identity are refused. Startup discovers proven consumption even when the
+previous pump lost its delivery checkpoint, then uses the existing persisted receipt recovery.
+Discovery failure stays local and never replays steering or releases uncertain physical work.
+
+Accepted operator submissions continue waiting in the existing per-session admission operation after
+the response deadline. Once the predecessor physically settles, the same live controller can admit
+the pending turn automatically; duplicate requests share that operation. Disconnect or takeover
+revokes its authority while preserving the durable input for reconciliation. This does not restore
+interactive grants or dispatch pending inputs across host generations.
+
+After restart, a persisted physical-closure checkpoint and terminal outcome can repair a missing
+ordinary conversation settlement. The session transaction records status and usage once, then the
+registry commits terminal discovery before releasing occupancy. It never starts inference or restores
+a previous controller. Non-final Goal stages additionally require the domain's persisted
+`settlement_preparation`, written after physical closure with the host's usage and activity
+measurement. Recovery uses the Goal reducer and charges its usage once, preserving gaps. Final Goal
+completion, unfinished guided creation, transcript digests and custom settlement callbacks retain
+their validation owner; restart alone cannot approve those outcomes.
+Persisted future recovery instants do not hold startup synchronization open. The registry keeps one
+cancellable wakeup into the same coalesced sync operation; eligible records resume without another
+operator message. Independent records recover immediately, and closing the host cancels future work.
+External waits are not polled automatically or given a fresh attempt allowance.
+
+The projection file writer retries classified transient positional writes and file/directory syncs
+at most three times. Repeating identical bytes at the same offset preserves event sequences and
+immutable snapshots. Creation, closure, capacity failures and unclassified errors are not retried;
+exhaustion remains an explicit projection failure. Recovery-index checkpoint retries likewise repeat
+only persistence, including steering receipt registration/removal, never the operation being recorded.
+
+Synced steering consumption has a private recovery receipt in the existing host index before the
+canonical session acknowledgement is attempted. Classified transient acknowledgement failures retry
+up to three times without re-steering or cancelling the live source. Restart retains the attempt
+count and only reconciles that receipt; it does not restore execution authority. Exhaustion retains
+an explicit wait and prevents terminal settlement and retention cleanup until reconciliation.
+A matching canonical receipt can resolve a lost acknowledgement even after retry exhaustion.
+An unavailable recovery checkpoint remains an authoritative persistence failure.
+A permanent steering-proof lookup failure also persists a local wait without attempting a receipt
+write or interrupting other sessions. Matching canonical proof can later resolve that wait.
+Canonical settlement-proof reads share the persisted repair attempt allowance. A failing session
+cannot stop recovery of unrelated sessions. Once exhausted, each synchronization may inspect fresh
+proof once without rearming writes; a recovered terminal receipt can finish reconciliation.
+
+Pending steering reconciliation inspects every recorded conversation execution, one trace at a
+time. A matching host receipt confirms consumption even when another trace is missing. Missing,
+live or salvaged history cannot establish non-consumption: the affected intent stays pending with
+`submission: recovering`, while independent operator input remains available. A later lookup can
+recover without replaying the steering message or starting another execution.
+
+A persistent completion snapshot race is classified as `finalization_conflict`, separately from
+unreadable or revoked Goal control. Physical settlement can admit one bounded successor under current
+authority and remaining limits, preserving semantic progress tolerance. The successor retains prior
+context and must verify current proof with a new candidate; no completion or tool retry is inferred.
+
+Goal catalog reads isolate classified evidence capacity/conflict failures from authority reads.
+The host revalidates the binding after the catalog attempt and reports `evidence_unavailable`;
+the next read retries the catalog. Completion and evidence-dependent writes remain fail-closed.
+Conflicting Goal evidence identities invalidate only the ambiguous proof and fence every affected
+subject against older successes. Independent receipts remain queryable. Activity affected by an
+identity conflict is unknown, with a typed conflict cause; identical replay remains idempotent.
+The bounded window retains conflicting variants until journal replay takes over.
+
+Evidence uses a 512-entry live window backed by the existing trace journal. Before replay can
+replace the window, it must attest the observed prefix. Candidate references remain pinned through
+rotation; later failures invalidate earlier successes. There is no separate evidence database.
+Oversized tool arguments, results, diffs and delegated output become unavailable individual receipts;
+independent evidence remains usable and truncated payloads never become complete proof.
+Unreadable activity is persisted as unknown instead of consuming the semantic no-progress allowance.
+This does not replace hosted recovery or relax completion and consumption gates.
+See the [Goal contract](../../specs/capabilities/goals.md).
+
 Construction, configuration, runs, and transport are specified in the four kernel specs under the
 [`hosts` map](../../specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade). The
 kernel also owns host-side composition described by
@@ -119,12 +192,22 @@ decisions. Configuration mutations consume the same host-owned authority reader 
 signal as command review. `createFileKernel` installs the restricted writer into admitted editable
 Host/Sandbox runs; the ordinary agent and placement remain in use.
 `src/hosting/projection.ts` provides bounded append-only observation storage with immutable,
-byte-paginated snapshots. It uses the existing run event coalescer and keeps structural events;
-storage/quota failures prevent new snapshots. `src/hosting/execution.ts` keeps the sole managed-run
+byte-paginated snapshots over private 64 MiB segments, without a default lifetime history quota.
+It uses the existing run event coalescer and keeps structural events; append/sync failures prevent
+new snapshots, while a snapshot read failure affects only that reader. Logical offsets survive
+segment rotation and acknowledgement reclaims the exact segment namespace. `src/hosting/execution.ts` keeps the sole managed-run
 consumer alive without subscribers, cuts snapshot/tail observations and waits for physical closure
 plus host reconciliation, terminal index commit and admission release before successful observer
 closure. Failure of this terminal transaction rejects closure and retains conservative occupancy.
-A slow observer loses only its own bounded stream.
+A slow observer loses only its own bounded stream. Projection source writes and observation requests
+have independent finite queue allowances, so saturated snapshot readers cannot reject source events;
+the shared storage chain retains event and snapshot ordering.
+The registry checkpoints settlement phases in its existing private index. Classified transient
+storage failures retry at most three times with backoff and jitter; a terminal commit retry does
+not rerun reconciliation or cancel an already closed source. Startup can settle terminal discovery
+from persisted physical-closure and reconciliation proof, without restoring old control authority.
+A pending reconciliation still retains uncertainty. See the
+[hosted recovery contract](../../specs/hosts/hosted-runs.md#durable-settlement-recovery).
 The root entry's `readHostedSnapshot` incrementally decodes those pages with the live event codec,
 checks byte/sequence continuity through the immutable cut and releases the snapshot on abandonment.
 `src/hosting/registry.ts` provides shared admission, controller epochs and connection-independent
@@ -137,8 +220,16 @@ instant a successor may start; the wait happens abortably outside the short prep
 the policy is asked again, so only a fresh proposal starts and a retired authority abandons the wait.
 That instant is pending only until it elapses: an elapsed one — including the instant a zero backoff
 lands on — starts its successor, and admission never refuses a proposal merely for carrying it.
+Once the turn's intent is durable, providing this policy also promotes the current physical run to
+`disconnect_policy: "continue"`. Losing the interactive controller pauses future Goal admission but
+does not cancel useful work already executing; its ordinary settlement remains responsible for the
+result and usage.
 Its reservation is single-use, preserves the session,
-and loses to admitted human work. Disconnect, conversation close, takeover and background handoff
+and loses to admitted human work. A run that declares `intent: "operator"` _is_ that human work: the
+host admits it as the person's own turn even while a Goal is pending, stopping that Goal's automatic
+continuation in the same transaction rather than asking the Goal for permission, and leaves the
+Goal's identity, definition, spend and audit intact for an explicit resume. An automatic run, or one
+that declared nothing, keeps the Goal's admission rules. Disconnect, conversation close, takeover and background handoff
 revoke future authority. Preparation and failure notification are bounded, and a failed continuation
 logs the sanitized reason beside the execution identity so the refusal is diagnosable without
 payloads; old-stage cleanup cannot
@@ -263,8 +354,11 @@ named as themselves in a blocked goal's reason while every other failure keeps t
 wording; the run's message is never forwarded. Stagnation covers the whole family the engine reports
 for repetition without advancement — the loop's unproductive-attempt streak, the doom-loop guard and
 the convergence guard on identical results — because naming only one of them would leave the others
-reporting a generic failure. Unknown usage remains explicit in the goal audit;
-late measurements update the original binding once, including after archival. `measureGoalRunUsage`
+reporting a generic failure. An unresolved measurement remains explicit in the goal audit as
+`partial` with its gap causes or as `unknown` when no subtotal was observed at all, and the host
+charges the confirmed subtotal either way; late measurements update the original binding by
+delta — once per revision, including after archival, and never lowering a charged dimension.
+`measureGoalRunUsage`
 normalizes either aggregate or agent detail without charging independent memory runs or cache writes.
 `addRunUsage` in `src/sessions/usage.ts`, exposed through `./policy`,
 owns token/cache/pricing accumulation for both the host and Code presentation adapters. The private
@@ -462,7 +556,7 @@ registry ID after its namespace, generation and Clarvis labels are confirmed. Th
 a graceful stop, uses its bounded kill fallback and waits for the owning launcher to confirm removal
 and release its host lease before another generation can start. Ambiguous registry or engine
 evidence remains a conflict.
-Completed hosted projections unlink their file and prune only an empty generation directory; sibling
+Completed hosted projections unlink their files/segments and prune only an empty generation directory; sibling
 projections keep that directory alive and cleanup never treats a directory as a regular file.
 
 As part of that bootstrap, the kernel constructs one provider-aware planning runtime. The plans
@@ -1495,3 +1589,19 @@ Effect review audit starts are emitted by the native inference binding, once per
 its private stage/consumer descriptor. The adapter records bounded typed failures and semantic
 completion; compilation records the installed authority revision. Cache reuse emits no start, and
 usage remains in the single parent model-call event rather than being counted again from audit logs.
+
+Operator submissions persist their identity, input and sequence in the existing session before
+waiting for physical closure. Repeating an accepted identity reattaches to its execution; it cannot
+start a second attempt. Steering consumption is recorded after its observation event is durable;
+undelivered steering can become a successor after closure. Ordinary turns expose the previous Goal
+as subordinate context and can bind through `attach_goal` without starting another execution.
+Manual resume reattaches to a healthy Goal attempt and retains a receipt when old physical work
+requires recovery. Explicit recovery retries the same receipt; later controls supersede it.
+
+Compatible queued operator messages share one successor with per-message durable receipts. Physical waits are bounded, and recovered context flags uncertain effects before retrying work.
+
+Accepted pending input can be resumed through `HostingService.resumePending(sessionId)` using the
+current authenticated operator connection. The Kernel reads canonical receipts and uses its existing
+idempotent admission queue; it restores no old consent or physical-closure claim. Code requests this
+when reopening an idle conversation and attaches to the admitted run. Recovery failure leaves the
+saved history readable. A restart without a new controller still waits for authority.

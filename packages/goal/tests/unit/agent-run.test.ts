@@ -330,7 +330,7 @@ describe("Goal semantic agent", () => {
     expect(result).toMatchObject({
       execution_id: "formulation-1",
       result: { status: "ready" },
-      usage: { kind: "measured", input: 100, output: 20, cached: 60 },
+      usage: { kind: "complete", input: 100, output: 20, cached: 60 },
     });
   });
 
@@ -370,7 +370,7 @@ describe("Goal semantic agent", () => {
     } satisfies GoalAgentRuntime;
     await expect(runGoalAgent(runtime, input)).rejects.toMatchObject({
       name: "GoalAgentRunFailure",
-      usage: { kind: "measured", input: 70, output: 5, cached: 20 },
+      usage: { kind: "complete", input: 70, output: 5, cached: 20 },
     });
   });
 

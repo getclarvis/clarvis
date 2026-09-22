@@ -19,6 +19,15 @@ const natural = z
   .max(Number.MAX_SAFE_INTEGER - 1);
 const text = z.string().max(MAX_HOST_INDEX_BYTES);
 const runtime = runtimeStatusSchema({ identifier, text });
+const settlement = z.strictObject({
+  operation: z.enum(["reconcile", "commit_terminal"]),
+  state: z.enum(["ready", "recovering", "waiting_external"]),
+  attempt: z.number().int().min(1).max(3),
+  physical_closed: z.literal(true),
+  controller_epoch: natural,
+  cause: z.enum(["storage_unavailable", "operation_failed"]).optional(),
+  next_attempt_at: natural.optional(),
+});
 const run: z.ZodType<HostedRunRef> = z.strictObject({
   execution_id: identifier,
   session_id: identifier,
@@ -44,6 +53,7 @@ const run: z.ZodType<HostedRunRef> = z.strictObject({
   recovery_resolution: z
     .strictObject({
       kind: z.literal("operator_verified_physical_closure"),
+      disposition: z.enum(["archive", "continue"]),
       previous_host_generation: identifier,
       resolving_host_generation: identifier,
       operator_connection_id: identifier,
@@ -122,7 +132,30 @@ export function decodeHostedRegistryState(
     .strictObject({
       schema_version: z.literal(1),
       host_generation: identifier,
-      runs: z.array(z.strictObject({ run, acknowledged: z.boolean() })).max(limits.runs),
+      runs: z
+        .array(
+          z.strictObject({
+            run,
+            acknowledged: z.boolean(),
+            settlement: settlement.optional(),
+            deliveries: z
+              .array(
+                z.strictObject({
+                  intent_id: identifier,
+                  controller_epoch: natural,
+                  state: z.enum(["ready", "recovering", "waiting_external"]),
+                  attempt: z.number().int().min(0).max(3),
+                  cause: z
+                    .enum(["storage_unavailable", "operation_failed", "receipt_unconfirmed"])
+                    .optional(),
+                  next_attempt_at: natural.optional(),
+                }),
+              )
+              .max(16)
+              .optional(),
+          }),
+        )
+        .max(limits.runs),
       receipts: z
         .array(
           z.strictObject({
@@ -136,6 +169,22 @@ export function decodeHostedRegistryState(
   if (!parsed.success) throw kernelError("invalid_request", "host state index is invalid");
   const result = parsed.data;
   if (
+    result.runs.some(
+      (item) =>
+        item.settlement !== undefined &&
+        (item.run.execution_state === "starting" ||
+          item.run.execution_state === "running" ||
+          item.run.outcome === undefined ||
+          item.run.outcome.status === "running"),
+    )
+  )
+    throw kernelError("invalid_request", "host settlement lacks a terminal physical checkpoint");
+  if (
+    result.runs.some(
+      (item) =>
+        new Set(item.deliveries?.map((record) => record.intent_id)).size !==
+        (item.deliveries?.length ?? 0),
+    ) ||
     new Set(result.runs.map((item) => item.run.execution_id)).size !== result.runs.length ||
     new Set(result.receipts.map((item) => item.receipt.operation_id)).size !==
       result.receipts.length

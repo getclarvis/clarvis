@@ -200,7 +200,7 @@ their owned sources.
 `{ ...getDefaultEnvironment(), ...forwardedEnv, ...customEnv }` — the SDK's fixed safe base, only
 the host keys explicitly named by `env_vars`, and the server's own conditionally interpolated `env`
 block. The caller's remaining environment is used for `${VAR}` lookup only, never handed wholesale
-to the child. Production: `resolveForwardedEnvironment` and `buildTransport` in
+to the child. Production: `buildTransport` in
 `packages/mcp-client/src/client.ts`. Test: the environment-forwarding cases in
 `packages/mcp-client/tests/unit/mcp-transport-env.test.ts`.
 

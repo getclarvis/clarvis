@@ -27,7 +27,7 @@ cases in `packages/kernel/tests/integration/extension-profile-manager.test.ts`.)
 The kernel owns discovery, resolution, trust, and snapshot identity. `@clarvis/skills` receives only
 resolved roots and exact `include` lists, while the loop sees roots plus opaque host metadata rather
 than an Extension Profile domain object. (`skillRoots` in
-`packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `HostRunDeps.hostMetadata` in
+`packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `ExecuteRunDeps.hostMetadata` in
 `packages/loop/src/runtime/execute-run.ts`.)
 
 Extension Profile selection remains persisted and effective for Host/Sandbox, but all of its Plugin
@@ -36,8 +36,8 @@ and standalone-Skill contributions are inactive in Container. The guest exposes 
 selection for Host/Sandbox. Container projects builtin/global/workspace agent data without plugin
 origins and marks profiles with external grants nonselectable.
 
-Production: `ConfigSnapshot.operator_merged` in `packages/kernel/src/config/config-store.ts`,
-`runtimeSelection` in `packages/kernel/src/file-kernel.ts`, and
+Production: `SettingsSnapshot.operator_merged` in `packages/kernel/src/config/config-store.ts`,
+`configuredRuntime` in `packages/kernel/src/file-kernel.ts`, and
 `createContainerExtensionProfileService` in
 `packages/kernel/src/config/container-extension-profile.ts`. Test:
 `packages/kernel/tests/unit/container-extension-profile.test.ts` and
@@ -188,7 +188,7 @@ is invalid, it remains the selected invalid definition and does not fall through
 
 Resolution inventories all four plugin roots — global/workspace crossed with
 `.agents/plugins`/`.clarvis/plugins` — and matches every Extension Profile reference exactly
-(`pluginInventory` and the `installedByRef` lookup in
+(`pluginInventory` and the `getInstalledPlugin` lookup in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`). No scope or source shadows, falls back
 to, or substitutes for another. Selecting two distinct installations with the same runtime name is
 invalid because their agents and MCP namespaces would collide. Missing or invalid references remain
@@ -416,7 +416,7 @@ only the installed inventory. Plugin lifecycle remains on `PluginService`.
 The builtin activation list does not leak into a custom Extension Profile, and no `{ scope, source, name }`
 reference silently means another scope or source.
 
-- **Production:** custom branches and exact `installedByRef` lookup in `resolved` in
+- **Production:** custom branches and the exact `contributionByRef` / `unresolvedInstalled` lookups in `resolved` in
   `packages/kernel/src/extension-profiles/extension-profile-manager.ts`.
 - **Test:** `packages/kernel/tests/integration/extension-profile-manager.test.ts` proves exact global
   `.agents`/`.clarvis` selection despite same-named alternatives and proves unselected installs are
@@ -523,7 +523,7 @@ durable host metadata is sanitized.
 The loop accepts opaque host metadata and resolved roots; the skills package only applies exact
 root filters. Neither imports the kernel Extension Profile manager or protocol service.
 
-- **Production:** `HostRunDeps.hostMetadata` in `packages/loop/src/runtime/execute-run.ts` and
+- **Production:** `ExecuteRunDeps.hostMetadata` in `packages/loop/src/runtime/execute-run.ts` and
   `SkillRootInput.include` in `packages/skills/src/types.ts`.
 - **Test:** `packages/loop/tests/component/execute-run.test.ts`,
   `packages/skills/tests/integration/discovery.test.ts`, and the existing optional-package

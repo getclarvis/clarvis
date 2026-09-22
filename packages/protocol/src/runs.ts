@@ -38,6 +38,8 @@ export type MessageContent = string | ContentPart[];
 
 /** One chat message exchanged with a run. */
 export interface Message {
+  /** Host/client correlation for authenticated steering; never provider message content. */
+  steering_id?: string;
   role: Role;
   content: MessageContent;
 }
@@ -144,6 +146,20 @@ export interface StartRunParams {
   output_schema?: JsonSchema;
   /** Host-authenticated intent for a normal run to create its conversation Goal. */
   goal_intent?: { kind: "create"; seed: string };
+  /**
+   * Who asked for this run.
+   *
+   * @remarks The host owns one conversation, and what that conversation is doing for a Goal
+   *   depends on whose turn it is rather than on what state the Goal happens to be in. An
+   *   `operator` run is a person typing: it is their own intent, with the ordinary profile and
+   *   budget, and accepting it stops the Goal's automatic continuation instead of asking the Goal
+   *   for permission to proceed — a Goal that is blocked, waiting on a gap, paused or out of
+   *   automatic allowance is a state of *the Goal*, not a veto on the person. An `automatic` run is
+   *   the host continuing work it already owns, and stays subject to the Goal's admission rules.
+   *   Public hosted submission defaults to operator intent after authentication. Internal Goal
+   *   reservations and continuations carry their authority through host-only entry points.
+   */
+  intent?: "operator" | "automatic";
   /**
    * Host policy for an interactive question window; see {@link ElicitWindowPolicy}.
    *
@@ -801,7 +817,7 @@ export type RunEvent =
        */
       no_response?: "window_elapsed" | "wait_bound_elapsed";
     }
-  | (Attributed & { type: "steering_applied"; message: string })
+  | (Attributed & { type: "steering_applied"; message: string; id?: string })
   | { type: "memory_ingest"; at: Timestamp; detail: MemoryIngestDetail }
   /**
    * Sanitized, bounded projection emitted by a capability whose event vocabulary

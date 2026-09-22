@@ -121,7 +121,7 @@ function fixture(options: { usage?: GoalUsage; honorAbort?: boolean; maxReviews?
                 }),
               ])
             : settle.promise),
-          usage: options.usage ?? { kind: "measured", input: 100, output: 10, cached: 50 },
+          usage: options.usage ?? { kind: "complete", input: 100, output: 10, cached: 50 },
           elapsed_ms: 1,
         };
       },

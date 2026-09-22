@@ -13,8 +13,14 @@ export interface TranscriptPlanTask {
   reason?: string;
 }
 
-/** Runtime status shared by semantic transcript variants. */
-export type NodeStatus = "running" | "ok" | "error" | "pending";
+/**
+ * Runtime status shared by semantic transcript variants.
+ *
+ * @remarks `limited` and `cancelled` are terminal and deliberately not `error`:
+ *   a stage that stopped at its own budget cap and a stage the run took down with
+ *   it are facts a reader has to be able to tell apart from a stage that broke.
+ */
+export type NodeStatus = "running" | "ok" | "limited" | "cancelled" | "error" | "pending";
 
 /** Tool lifecycle is distinct from a run result and from an approval interaction. */
 export type ToolPhase =

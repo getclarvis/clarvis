@@ -576,6 +576,28 @@ that a failed intent cannot release its registry reservation before reconciliati
 be unlinked) — the sidecar's own outcome is not reported. Pinned by "get returns null for a missing
 id; delete reports found/not-found" in `packages/kernel/tests/integration/session-service.test.ts`.
 
+### Restart reconciliation of ordinary hosted turns
+
+The coordinator can repair an ordinary conversation turn whose session settlement was interrupted
+when the host index already proves physical closure and retains a terminal result. `recoverSettlement`
+uses the same per-conversation lock as normal publication: it reads the current document, records
+terminal status/end time and confirmed usage together, and returns only after `saveHost` succeeds.
+An existing ended-turn receipt is a no-op, including after a write succeeded but its acknowledgement
+was lost. The registry still owns the subsequent terminal index commit and occupancy release.
+
+This repair never prepares execution or repeats external effects. It refuses missing physical/result
+proof and foreign workspace identity. Goal-bound runs, guided creation, transcript/skill digests,
+operator recovery dispositions and host-specific settlement callbacks remain with their domain owner;
+the ordinary bookkeeping path cannot supply their missing semantic decision.
+
+Production: `recoverSettlement` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts),
+composed by [file-host.ts](../../packages/kernel/src/hosting/file-host.ts).
+Test: `repairs a physically closed ordinary turn after restart without another execution or charge`
+and `recovery refuses a missing physical result and leaves guided creation or transcript semantics
+pending` in [hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).
+The physical crash milestones are tested in
+[hosted-settlement-crash.test.ts](../../packages/kernel/tests/integration/hosted-settlement-crash.test.ts).
+
 ### 4.8 Size preflight without full serialization
 
 `jsonFits`/`jsonStringBytes` in `packages/kernel/src/sessions/session-service.ts` walk a value and sum its *would-be* JSON
@@ -787,6 +809,13 @@ are not a passive DTO: they are the mechanism that produces the persisted record
   scans backward for the newest conversation turn, skipping transcript turns. Pinned by
   `packages/code/tests/component/session.test.ts` ("beginTurn returns the previous turn's executionId
   as the continuation base").
+- **`discardTurn(executionId)`** is the counterpart a hosted submission needs when the host refuses
+  it before admission: it removes that provisional conversation turn from the local projection,
+  restores the continuation base `beginTurn` displaced — remembered per execution, not recomputed
+  from the surviving turns — and drops the user message it pushed. It reports `false` for an
+  execution it does not hold, so a settled turn is never discarded by a late refusal. Pinned by
+  `packages/code/tests/component/run-host.test.ts` ("a hosted submission the store never adopted
+  returns its text to the composer").
 - **`beginTranscriptTurn(display, executionId)`** appends a running `kind: "transcript"` turn for a
   separately invoked run without pushing its internal prompt into history or changing
   `continuationBase`; **`endTranscriptTurn`** settles that exact kind without appending its assistant
@@ -1196,3 +1225,50 @@ continuation base.
   of the same character/message budget as everything else (`resumeSession` in
   `packages/code/src/adapters/session.ts`). Whether this is deliberate or simply
   undifferentiated is not stated anywhere in the code.
+
+Host-owned `Session.operator_intents` retains bounded accepted submissions separately from executed
+turns, and `operator_sequence` survives pruning of admitted receipts. Client saves cannot modify
+these fields. `GoalReceipt.resume_pending` denotes durable recovery work, not a successful launch.
+The owning lifecycle is [durable operator submissions](hosted-runs.md#durable-operator-submissions).
+A steering receipt may bind `steering_target`, assigned only by the host before dispatch. Restart
+reconciliation consults that execution, retains unavailable evidence as uncertainty, and refuses a
+consumption acknowledgement for a different destination. The field grants no execution authority.
+Production: `Session.operator_intents` in [sessions.ts](../../packages/protocol/src/sessions.ts),
+`acceptOperator`, `prepareOperator` and `deliverOperator` in
+[sessions.ts](../../packages/kernel/src/hosting/sessions.ts).
+Test: `restart scopes steering reconciliation to its persisted destination, consumed: %s` in
+[hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).
+
+Pending steering is not converted into a fresh turn merely because its consumption trace is missing.
+The coordinator searches the recorded executions without a last-turn cutoff; only intact terminal
+history can establish absence. Unknown consumption preserves the pending receipt and leaves
+independent ordinary submissions available.
+Production: `prepareOperator` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts).
+Test: steering-history recovery cases in
+[hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).
+
+Production: `Session` in [sessions.ts](../../packages/protocol/src/sessions.ts) and
+`createHostedSessionCoordinator` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts).
+Test: [goal-operator-recovery.test.ts](../../packages/kernel/tests/integration/goal-operator-recovery.test.ts).
+
+`pendingOperators` reads only unadmitted canonical receipts in acceptance order and returns copies.
+The current authenticated host can use `HostingService.resumePending` to requeue those receipts;
+reopening a session does not let the client supply replacement input or restore prior consent.
+Production: `pendingOperators` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts).
+Test: `restart scopes steering reconciliation to its persisted destination, consumed: %s` in
+[hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).
+
+### Prepared non-final Goal settlement
+
+Host-owned `GoalRun.settlement_preparation` retains the terminal outcome, disposition, measured
+usage and activity receipts or uncertainty before the canonical turn is settled. Repeating identical
+preparation is idempotent; conflicting preparation is rejected. It does not change the operator's
+control revision, authorize effects, or validate final completion. Physical closure remains a host
+prerequisite, and normal Goal settlement consumes the preparation in the accounting transaction.
+Production: `prepareGoalSettlement` and `settleGoalRun` in
+[execution.ts](../../packages/goal/src/execution.ts), and `recoverGoalSettlementSession` in
+[settlement.ts](../../packages/kernel/src/goals/settlement.ts).
+Test: preparation and recovery cases in
+[goal-settlement.test.ts](../../packages/kernel/tests/unit/goal-settlement.test.ts), and lost-write
+acknowledgement recovery in
+[hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).

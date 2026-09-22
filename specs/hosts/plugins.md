@@ -438,7 +438,7 @@ scan roots without widening the declared contribution surface.
 
 ### 3.4 `install-record.json`
 
-Three optional string fields, `source` / `revision` / `subdir` (`INSTALL_RECORD_SCHEMA` in
+Three optional string fields, `source` / `revision` / `subdir` (`PluginInstallRecord` in
 `packages/kernel/src/plugins/plugin-install-record.ts`), written pretty-printed with a trailing
 newline at mode `0o600` (`recordInstall` in
 `packages/kernel/src/adapters/filesystem/plugin-repository.ts`).
@@ -546,7 +546,7 @@ Steps 3–9 mutate the parsed document **in place** before step 13 validates it.
 load-bearing: it lets a translated hook target the exact `<plugin>:<server>.<tool>` identity that
 the runtime dispatches, using the install identity supplied by the host rather than display data.
 
-### 4.3 Path confinement — `companionPath` / `pluginDirs`
+### 4.3 Path confinement — `companionPath` / `pluginDirsFor`
 
 `companionPath` (`packages/kernel/src/plugins/plugin-manifest.ts`) resolves a declared path
 against `dirs.base` first — but only if the result both stays inside `dirs.root` **and already

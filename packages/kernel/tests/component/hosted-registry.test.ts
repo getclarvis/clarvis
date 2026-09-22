@@ -1,7 +1,542 @@
 import { describe, expect, it } from "bun:test";
 import type { StartHostedTurnParams } from "@clarvis/protocol";
 import { decodeHostedRegistryState } from "../../src/hosting/state.ts";
+import { kernelError } from "../../src/core/errors.ts";
 import { fixture, input, until } from "../helpers/hosted-registry.ts";
+
+/** One automatic successor proposal that still names its predecessor. */
+function continuationProposal(previous: string, id: string) {
+  const value = input(id, "session-1");
+  value.params.continue_from = previous;
+  return { input: value };
+}
+
+it("rejects a cyclic host index before registry validation", () => {
+  const cyclic: Record<string, unknown> = {};
+  cyclic.self = cyclic;
+  expect(() => decodeHostedRegistryState(cyclic)).toThrow("not a JSON document");
+});
+
+it("a failed canonical steering receipt preserves the live source and reconciles without re-steering", async () => {
+  let receipts = 0;
+  let cancellations = 0;
+  const f = fixture({
+    handle: (handle) => ({
+      ...handle,
+      async cancel() {
+        cancellations++;
+        await handle.cancel();
+      },
+    }),
+    registryOptions: {
+      async recoveryWait() {},
+      async deliverOperator(_session, intent, execution) {
+        expect(intent).toBe("steer_consumed");
+        expect(execution).toBe("run-1");
+        if (++receipts === 1) throw kernelError("unavailable", "lost receipt acknowledgement");
+      },
+    },
+  });
+  try {
+    const peer = f.registry.connect("operator");
+    const view = await peer.service.start(input());
+    f.contexts.get("run-1")!.emit({
+      type: "steering_applied",
+      at: 1,
+      agent: "lead",
+      id: "steer_consumed",
+      message: "continue",
+    });
+    await until(() => receipts === 2);
+    expect(cancellations).toBe(0);
+    expect(f.starts()).toBe(1);
+    f.finish();
+    await view.handle.closed;
+    expect(
+      f.commits.some((value) =>
+        value.runs.some((item) => item.deliveries?.some((record) => record.state === "recovering")),
+      ),
+    ).toBe(true);
+    expect(f.commits.at(-1)!.runs[0]!.deliveries).toBeUndefined();
+    expect(f.results).toHaveLength(1);
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("exhausted steering acknowledgement preserves work and gates only its settlement", async () => {
+  let receipts = 0;
+  let cancellations = 0;
+  const f = fixture({
+    handle: (handle) => ({
+      ...handle,
+      async cancel() {
+        cancellations++;
+        await handle.cancel();
+      },
+    }),
+    registryOptions: {
+      async recoveryWait() {},
+      async deliverOperator() {
+        receipts++;
+        throw kernelError("unavailable", "receipt store unavailable");
+      },
+    },
+  });
+  try {
+    const peer = f.registry.connect("operator");
+    const view = await peer.service.start(input());
+    f.contexts.get("run-1")!.emit({
+      type: "steering_applied",
+      at: 1,
+      agent: "lead",
+      id: "steer_pending",
+      message: "continue",
+    });
+    await until(() =>
+      f.commits.some((value) =>
+        value.runs.some((item) =>
+          item.deliveries?.some((record) => record.state === "waiting_external"),
+        ),
+      ),
+    );
+    expect(receipts).toBe(3);
+    expect(cancellations).toBe(0);
+    f.finish();
+    await expect(view.handle.closed).rejects.toThrow("receipts await reconciliation");
+    expect(receipts).toBe(3);
+    expect(cancellations).toBe(0);
+    expect(f.results).toHaveLength(0);
+    const independent = await peer.service.start(input("run-2", "session-2"));
+    f.finish("run-2");
+    await independent.handle.closed;
+    expect(f.results).toHaveLength(1);
+    expect(f.registry.occupied("session-1")).toBe(true);
+    expect(f.registry.occupied("session-2")).toBe(false);
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("recovers each receipt checkpoint acknowledgement without repeating consumption", async () => {
+  for (const phase of ["registered", "attempt", "removed"] as const) {
+    let consumed = 0;
+    let injected = false;
+    let registered = false;
+    let cancellations = 0;
+    const f = fixture({
+      handle: (handle) => ({
+        ...handle,
+        async cancel() {
+          cancellations++;
+          await handle.cancel();
+        },
+      }),
+      registryOptions: {
+        async recoveryWait() {},
+        async deliverOperator() {
+          consumed++;
+        },
+      },
+      async commit(state) {
+        const record = state.runs[0]?.deliveries?.[0];
+        registered ||= record !== undefined;
+        if (
+          !injected &&
+          ((phase === "registered" && record?.attempt === 0) ||
+            (phase === "attempt" && record?.attempt === 1) ||
+            (phase === "removed" && registered && record === undefined))
+        ) {
+          injected = true;
+          throw kernelError("unavailable", "lost index acknowledgement");
+        }
+      },
+    });
+    try {
+      const peer = f.registry.connect("operator");
+      const view = await peer.service.start(input());
+      f.contexts.get("run-1")!.emit({
+        type: "steering_applied",
+        at: 1,
+        agent: "lead",
+        id: "steer_pending",
+        message: "continue",
+      });
+      await until(() => consumed === 1);
+      f.finish();
+      await view.handle.closed;
+      expect(injected).toBe(true);
+      expect(consumed).toBe(1);
+      expect(cancellations).toBe(0);
+      expect(f.commits.at(-1)!.runs[0]!.deliveries).toBeUndefined();
+    } finally {
+      await f.registry.close();
+    }
+  }
+});
+
+it("recovers terminal storage without repeating reconciliation or cancelling the closed source", async () => {
+  let terminalAttempts = 0;
+  let cancellations = 0;
+  const f = fixture({
+    registryOptions: { async recoveryWait() {} },
+    handle: (handle) => ({
+      ...handle,
+      async cancel() {
+        cancellations++;
+        await handle.cancel();
+      },
+    }),
+    async commit(state) {
+      if (state.runs.some((item) => item.run.execution_state === "closed")) {
+        terminalAttempts++;
+        if (terminalAttempts === 1) throw kernelError("unavailable", "injected terminal failure");
+      }
+    },
+  });
+  try {
+    const peer = f.registry.connect("operator");
+    const view = await peer.service.start(input());
+    f.finish();
+    await view.handle.closed;
+    expect(terminalAttempts).toBe(2);
+    expect(f.results).toHaveLength(1);
+    expect(cancellations).toBe(0);
+    expect(f.registry.occupied("session-1")).toBe(false);
+    expect(
+      f.commits.some((state) => state.runs.some((item) => item.settlement?.state === "recovering")),
+    ).toBe(true);
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("a new accepted operator turn repairs exhausted terminal storage before physical admission", async () => {
+  let unavailable = true;
+  const accepted: string[] = [];
+  const f = fixture({
+    registryOptions: {
+      async recoveryWait() {},
+      async acceptOperator(value) {
+        accepted.push(value.params.execution_id);
+        return "pending";
+      },
+      async prepareOperator(sessionId, id) {
+        return input(id, sessionId);
+      },
+    },
+    async commit(state) {
+      if (unavailable && state.runs.some((item) => item.run.execution_state === "closed"))
+        throw kernelError("unavailable", "storage temporarily unavailable");
+    },
+  });
+  try {
+    const peer = f.registry.connect("operator");
+    const first = await peer.service.start(input());
+    f.finish();
+    await expect(first.handle.closed).rejects.toThrow("storage temporarily unavailable");
+    expect(f.registry.occupied("session-1")).toBe(true);
+    unavailable = false;
+    const next = await peer.service.start(input("run-2"));
+    expect(accepted).toEqual(["run-1", "run-2"]);
+    expect(f.results).toHaveLength(1);
+    expect(f.starts()).toBe(2);
+    f.finish("run-2");
+    await next.handle.closed;
+  } finally {
+    unavailable = false;
+    await f.registry.close();
+  }
+});
+
+it("retains an operator submission while a previous execution settles, bounded by its wait", async () => {
+  const f = fixture({
+    continuationTimeoutMs: 5,
+    registryOptions: {
+      async acceptOperator() {
+        return "pending" as const;
+      },
+      async prepareOperator(sessionId, executionId) {
+        const value = input(executionId, sessionId);
+        value.params.intent = "operator";
+        return value;
+      },
+      async deliverOperator() {},
+    },
+  });
+  const peer = f.registry.connect("operator");
+  try {
+    const first = await peer.service.start(input("run-1"));
+    expect(first.run.execution_id).toBe("run-1");
+    await expect(peer.service.start(input("run-2"))).rejects.toMatchObject({
+      code: "unavailable",
+      details: { submission: "recovering" },
+    });
+    await expect(peer.service.start(input("run-2"))).rejects.toMatchObject({
+      code: "unavailable",
+      details: { submission: "recovering" },
+    });
+    expect(f.starts()).toBe(1);
+    f.finish("run-1");
+    await first.handle.closed;
+    await until(() => f.starts() === 2);
+    const runs = await peer.service.list();
+    const resumed = runs.find((run) => run.execution_id === "run-2")!;
+    const view = await peer.service.attach({
+      execution_id: resumed.execution_id,
+      host_generation: resumed.host_generation,
+      control: "acquire",
+    });
+    f.finish("run-2");
+    await view.handle.closed;
+    expect(f.starts()).toBe(2);
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("retiring the controller fences a submission retained beyond its response deadline", async () => {
+  const f = fixture({
+    continuationTimeoutMs: 5,
+    registryOptions: {
+      async acceptOperator() {
+        return "pending" as const;
+      },
+      async prepareOperator(sessionId, executionId) {
+        return input(executionId, sessionId);
+      },
+    },
+  });
+  const peer = f.registry.connect("operator");
+  try {
+    await peer.service.start(input("run-1"));
+    await expect(peer.service.start(input("run-2"))).rejects.toMatchObject({
+      details: { submission: "recovering" },
+    });
+    await peer.close();
+    await f.registry.close();
+    expect(f.starts()).toBe(1);
+    expect(f.contexts.has("run-2")).toBe(false);
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("requeues canonical pending input on a fresh operator connection without duplicate admission", async () => {
+  const f = fixture({
+    registryOptions: {
+      async pendingOperators(sessionId) {
+        return [input("restored", sessionId)];
+      },
+      async acceptOperator() {
+        return "pending";
+      },
+      async prepareOperator(sessionId, executionId) {
+        return input(executionId, sessionId);
+      },
+    },
+  });
+  const operator = f.registry.connect("operator");
+  const observer = f.registry.connect("observer");
+  try {
+    await expect(observer.service.resumePending("session-1")).rejects.toMatchObject({
+      code: "unauthorized",
+    });
+    const [first, repeated] = await Promise.all([
+      operator.service.resumePending("session-1"),
+      operator.service.resumePending("session-1"),
+    ]);
+    expect(first!.execution_id).toBe("restored");
+    expect(repeated!.execution_id).toBe("restored");
+    expect(f.starts()).toBe(1);
+    const view = await operator.service.attach({
+      execution_id: first!.execution_id,
+      host_generation: first!.host_generation,
+      control: "acquire",
+    });
+    f.finish("restored");
+    await view.handle.closed;
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("rejects an invalid hosted identity and contains a failing execution observer", async () => {
+  const f = fixture({
+    registryOptions: {
+      executionChanged: () => {
+        throw new Error("observer failed");
+      },
+    },
+  });
+  const peer = f.registry.connect("operator");
+  try {
+    // The identity is refused before any admission, lease or reservation is taken.
+    await expect(peer.service.start(input("bad identity"))).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    // A host observer that fails is logged, never raised into the caller's admission.
+    const view = await peer.service.start(input("run-1"));
+    expect(view.run.execution_id).toBe("run-1");
+    f.finish("run-1");
+    await view.handle.closed;
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("reports whether a connected peer still controls a conversation", async () => {
+  const f = fixture();
+  const peer = f.registry.connect("operator");
+  try {
+    const view = await peer.service.start(input());
+    expect(f.registry.controlsConversation(peer.peer.id, "session-1")).toBe(true);
+    expect(f.registry.controlsConversation("another-peer", "session-1")).toBe(false);
+    f.finish("run-1");
+    await view.handle.closed;
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("closes a connection whose cancelled run does not acknowledge, without raising", async () => {
+  const f = fixture({
+    handle: (handle) => ({
+      ...handle,
+      async cancel() {
+        throw new Error("no acknowledgement from the run");
+      },
+    }),
+  });
+  const peer = f.registry.connect("operator");
+  const view = await peer.service.start(input());
+  expect(view.run.execution_state).toBe("running");
+  // The disconnect cancels its run; a run that never confirms is reported, not propagated.
+  await peer.close();
+  expect(f.registry.stats().retained).toBeGreaterThan(0);
+  // The registry's own close refuses to pretend the run acknowledged its cancellation.
+  await expect(f.registry.close()).rejects.toThrow("no acknowledgement from the run");
+});
+
+it("keeps durably admitted Goal work alive when its controller disconnects", async () => {
+  let stopped: string | undefined;
+  const f = fixture({
+    continuation: () => ({
+      async prepare() {
+        return undefined;
+      },
+      async stopped(reason) {
+        stopped = reason;
+      },
+    }),
+  });
+  const peer = f.registry.connect("operator");
+  const view = await peer.service.start(input());
+  expect(view.run.disconnect_policy).toBe("continue");
+  await peer.close();
+  expect(f.contexts.get("run-1")!.signal.aborted).toBe(false);
+  expect(stopped).toBe("revoked");
+  f.finish();
+  await until(() => !f.registry.occupied("session-1"));
+  await f.registry.close();
+  expect(f.results).toEqual([{ execution_id: "run-1", status: "completed", result: "done" }]);
+});
+
+it("restores an acknowledge that could not be persisted", async () => {
+  let failCommit = false;
+  const f = fixture({
+    commit: async () => {
+      if (failCommit) throw new Error("index write failed");
+    },
+  });
+  const peer = f.registry.connect("operator");
+  try {
+    const view = await peer.service.start(input());
+    f.finish("run-1");
+    await view.handle.closed;
+    failCommit = true;
+    await expect(peer.service.acknowledge("run-1")).rejects.toThrow("index write failed");
+    failCommit = false;
+    await peer.service.acknowledge("run-1");
+    expect(await peer.service.list()).toEqual([]);
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("retires a conversation's pending continuation when the person submits their own turn", async () => {
+  const f = fixture({
+    continuationTimeoutMs: 5,
+    continuation: () => ({
+      async prepare() {
+        return continuationProposal("run-1", "automatic");
+      },
+      async stopped() {},
+    }),
+    registryOptions: {
+      async acceptOperator() {
+        return "pending" as const;
+      },
+      async prepareOperator(sessionId, executionId) {
+        const value = input(executionId, sessionId);
+        value.params.intent = "operator";
+        return value;
+      },
+      async deliverOperator() {},
+    },
+  });
+  const peer = f.registry.connect("operator");
+  try {
+    await peer.service.start(input("run-1"));
+    expect(f.registry.hasPendingContinuation()).toBe(true);
+    // The person's own turn takes the conversation: the automatic continuation stops being pending,
+    // and the submission waits for the busy run under its own bounded wait.
+    await expect(peer.service.start(input("run-2"))).rejects.toMatchObject({
+      details: { submission: "recovering" },
+    });
+    expect(f.registry.hasPendingContinuation()).toBe(false);
+    f.finish("run-1");
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("refuses a run that reports another execution identity instead of registering it", async () => {
+  const f = fixture({
+    handle: (handle) => ({ ...handle, execution_id: "another-run" }),
+    reconcile: async () => {
+      throw new Error("reconcile failed");
+    },
+  });
+  const peer = f.registry.connect("operator");
+  try {
+    await expect(peer.service.start(input("run-1"))).rejects.toMatchObject({ code: "internal" });
+    // The run stays visible under its own identity so physical closure can be verified, but it is
+    // never reported as running and never answers as the foreign identity.
+    const [row] = await peer.service.list();
+    expect(row).toMatchObject({ execution_id: "run-1" });
+    expect(row!.execution_state).not.toBe("running");
+  } finally {
+    await f.registry.close();
+  }
+});
+
+it("forwards steering to a run when the host wires no operator submission service", async () => {
+  const f = fixture();
+  const peer = f.registry.connect("operator");
+  try {
+    const view = await peer.service.start(input());
+    // Without acceptOperator/deliverOperator the message is handed straight to the execution.
+    const steering = view.handle.steer("More context").catch(() => undefined);
+    await until(() => true);
+    expect(f.starts()).toBe(1);
+    f.finish("run-1");
+    await steering;
+    await view.handle.closed;
+  } finally {
+    await f.registry.close();
+  }
+});
 
 it("persists a plain sanitized preparation error without poisoning later admissions", async () => {
   let attempts = 0;
@@ -216,7 +751,7 @@ describe("hosted registry", () => {
     await writing.promise;
     f.finish();
     await view.handle.done;
-    await until(() => f.results.length === 1);
+    expect(f.results).toEqual([]);
     release.resolve();
     const receipt = await moving;
     expect(receipt.run.outcome?.status).toBe("completed");

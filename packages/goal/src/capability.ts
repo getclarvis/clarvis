@@ -12,7 +12,7 @@ import {
 } from "@clarvis/capability";
 import { GOAL_BLOCK_KIND, goalContextBlock, goalModelView } from "./context.ts";
 import { GoalError } from "./errors.ts";
-import type { GoalCreationPort, GoalRuntimePort } from "./ports.ts";
+import type { GoalCreationPort, GoalAttachmentPort, GoalRuntimePort } from "./ports.ts";
 import { goalModelToolInputSchema } from "./model-input.ts";
 import { goalCheckpointSchema } from "./schemas.ts";
 import { CREATE_GOAL, GET_GOAL, UPDATE_GOAL, buildGoalTools, getGoalInputSchema } from "./tools.ts";
@@ -300,11 +300,17 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                          * A validation fenced out by a concurrent change says nothing
                          * about the candidate, so it is never answered as a candidate
                          * deficiency: a conflict that survives the one re-read stops the
-                         * stage with host attention instead of consuming the run's
-                         * unproductive allowance.
+                         * stage for host continuation instead of consuming the run's
+                         * unproductive allowance. Authority and budgets are checked again at settlement.
                          */
                         if (ruling.kind === "conflict")
-                          return { kind: "terminal", result: unavailable() };
+                          return {
+                            kind: "terminal",
+                            result: failed(
+                              "goal_finalization_conflict",
+                              "Completion state changed concurrently; the host must re-evaluate current proof",
+                            ),
+                          };
                         if (ruling.kind === "recover") {
                           if (attempt.mode === "text" && (attempt.text?.trim().length ?? 0) === 0)
                             return {
@@ -402,5 +408,16 @@ export function createGoalCreationCapability(port: GoalCreationPort): Capability
     forRun(runContext) {
       return createGoalCreationRunCapability(port, runContext);
     },
+  };
+}
+
+/** Existing Goal context and activation offered only to a host-authenticated operator turn. */
+export function createGoalAttachmentCapability(port: GoalAttachmentPort): Capability {
+  return {
+    name: GOAL_CAPABILITY_NAME,
+    required: true,
+    reservedWireNames: ["attach_goal", GET_GOAL, UPDATE_GOAL],
+    toolEffects: { attach_goal: "control", [GET_GOAL]: "control", [UPDATE_GOAL]: "control" },
+    forRun: (context) => createGoalCreationRunCapability(port, context),
   };
 }

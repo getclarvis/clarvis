@@ -98,4 +98,19 @@ describe("request budget rules", () => {
     });
     expect(validationCode(() => enforceEnvCeilings(parsedRequest(request), env))).toBe(code);
   });
+
+  it("accepts the shipped 512 iteration limit under the default ceiling and refuses one above it", () => {
+    const env = loadEnv({});
+    expect(env.CLARVIS_ITERATION_CEILING).toBe(512);
+    const atCeiling = parsedRequest({
+      profiles: [{ ...VALID_REQUEST.profiles[0]!, iteration_limit: 512 }],
+    });
+    expect(validationCode(() => enforceEnvCeilings(atCeiling, env))).toBe("no_error");
+    const aboveCeiling = parsedRequest({
+      profiles: [{ ...VALID_REQUEST.profiles[0]!, iteration_limit: 513 }],
+    });
+    expect(validationCode(() => enforceEnvCeilings(aboveCeiling, env))).toBe(
+      "invalid_iteration_limit",
+    );
+  });
 });

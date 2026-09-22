@@ -11,12 +11,14 @@ import {
   admitGoalRun,
   advanceGoalRun,
   applyGoalControl,
+  createGoalAttachmentCapability,
   createGoalCapability,
   createGoalCreationCapability,
   goalRuntimePortOf,
   recordGoalCandidate,
   recordGoalCheckpoint,
   recordGoalProgress,
+  type GoalAttachmentPort,
   type GoalRuntimePort,
   type GoalCreationPort,
   type GoalStewardCompletionDecision,
@@ -528,7 +530,7 @@ describe("host-bound goal capability", () => {
       await contribution.gates![0]!.check({ mode: "text", text: "A premature answer" }),
     ).toMatchObject({
       kind: "terminal",
-      result: { status: "error", error: { code: "goal_control_failed" } },
+      result: { status: "error", error: { code: "goal_finalization_conflict" } },
     });
     expect(f.traceEntries.filter((entry) => entry.kind === "goal_finalization_recovery")).toEqual(
       [],
@@ -851,6 +853,26 @@ describe("host-bound goal capability", () => {
     expect(f.blocks).toHaveLength(1);
   });
 
+  it("keeps the iteration active when only the evidence catalog is unavailable", async () => {
+    const f = fixture();
+    const contribution = await f.attach();
+    const read = f.port.read.bind(f.port);
+    f.port.read = async () => ({ ...(await read()), evidence_unavailable: "resource_exhausted" });
+    expect(await contribution.hooks!.beforeIteration!()).toBeUndefined();
+    expect(f.blocks.at(-1)!.content).toContain('"evidence_unavailable":"resource_exhausted"');
+    const result = await contribution.handlers![0]!.handle(
+      { id: "read", name: "get_goal", arguments: {} },
+      1,
+    );
+    expect(result).toMatchObject({
+      kind: "result",
+      text: expect.stringContaining("evidence_unavailable"),
+    });
+    f.port.read = read;
+    expect(await contribution.hooks!.beforeIteration!()).toBeUndefined();
+    expect(f.blocks.at(-1)!.content).not.toContain("evidence_unavailable");
+  });
+
   it("does not publish a delayed snapshot after iteration cancellation", async () => {
     const f = fixture();
     const contribution = await f.attach();
@@ -1124,7 +1146,7 @@ describe("host-bound goal capability", () => {
     expect(f.traceEntries).toEqual([]);
   });
 
-  it("never recovers a state conflict that survives the re-read", async () => {
+  it("ends a persistent snapshot conflict with a distinct recoverable stage cause", async () => {
     const f = fixture({
       validateCompletion: async () => ({
         valid: false,
@@ -1138,11 +1160,11 @@ describe("host-bound goal capability", () => {
     const gate = contribution.gates![0]!;
 
     // A conflict says nothing about the candidate, so it is not answered with a
-    // candidate-deficiency orientation: stopping with host attention is the honest
+    // candidate-deficiency orientation: stopping with a distinct stage cause is the honest
     // outcome, and nothing is recorded as a recovery.
     expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({
       kind: "terminal",
-      result: { status: "error", error: { code: "goal_control_failed" } },
+      result: { status: "error", error: { code: "goal_finalization_conflict" } },
     });
     expect(f.traceEntries).toEqual([]);
   });
@@ -1307,4 +1329,83 @@ it("routes Steward completion decisions and respects pending operator steering",
   });
   pending = true;
   expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({ kind: "nudge" });
+});
+
+describe("host-bound goal attachment capability", () => {
+  function attachmentPort(f: ReturnType<typeof fixture>, attach: GoalAttachmentPort["attach"]) {
+    const port: GoalAttachmentPort = {
+      session_id: "session",
+      agent_instance_id: "entry",
+      execution_id: "run",
+      goal: f.state().current!,
+      attach,
+    };
+    return port;
+  }
+
+  it("offers attach_goal instead of create_goal and binds the previous Goal", async () => {
+    const f = fixture();
+    const port = attachmentPort(f, async () => f.port);
+    const capability = createGoalAttachmentCapability(port);
+    const run = (await capability.forRun(f.runContext))!;
+    const contribution = run.forAgent({ agent: "lead", entry: true, grants: [] })!.attach(f.bc);
+    expect(contribution.tools!.map((tool) => tool.wireName)).toEqual([
+      "attach_goal",
+      "get_goal",
+      "update_goal",
+    ]);
+
+    /**
+     * The formulation block carries the operator-precedence instruction and the
+     * previous Goal, so the turn knows continuation is a choice it must name.
+     */
+    await contribution.hooks!.beforeIteration!();
+    const formulation = f.blocks.find((block) => block.kind === "goal_formulation")!;
+    expect(formulation.content).toContain("attach_goal");
+    expect(formulation.content).toContain('"goal_id":"goal"');
+    expect(formulation.content).toContain('"objective":"Verify the synthetic feature"');
+
+    expect(
+      await contribution.handlers![0]!.handle(
+        { id: "attach", name: "attach_goal", arguments: {} },
+        1,
+      ),
+    ).toMatchObject({ kind: "result", progress: false });
+    expect(f.calls).toEqual([]);
+    expect(
+      await contribution.handlers![0]!.handle({ id: "get", name: "get_goal", arguments: {} }, 2),
+    ).toMatchObject({ kind: "result" });
+    expect(
+      await contribution.handlers![0]!.handle(
+        {
+          id: "blocked",
+          name: "update_goal",
+          arguments: { update: { action: "blocked", reason: "Synthetic external boundary" } },
+        },
+        3,
+      ),
+    ).toMatchObject({ kind: "terminal", result: { error: { code: "goal_blocked" } } });
+    expect(f.traceEntries.at(-1)).toMatchObject({
+      kind: "tool_call",
+      detail: { call_id: "blocked", name: "update_goal", error: null },
+    });
+  });
+
+  it("answers a refused attachment as a corrigible result instead of ending the turn", async () => {
+    const f = fixture();
+    const port = attachmentPort(f, async () => {
+      throw new Error("Attachment refused by the host");
+    });
+    const capability = createGoalAttachmentCapability(port);
+    const run = (await capability.forRun(f.runContext))!;
+    const contribution = run.forAgent({ agent: "lead", entry: true, grants: [] })!.attach(f.bc);
+    const outcome = await contribution.handlers![0]!.handle(
+      { id: "attach", name: "attach_goal", arguments: {} },
+      1,
+    );
+    expect(outcome).toMatchObject({ kind: "result", progress: false });
+    expect(JSON.stringify(outcome)).toContain("Attachment refused by the host");
+    expect(f.blocks).toEqual([]);
+    expect(f.calls).toEqual([]);
+  });
 });

@@ -50,6 +50,9 @@ After attachment through a local Host/Sandbox connection, the activity line says
 exit` for a promoted run. `/quit` closes that TUI without asking about losing the run or cancelling
 it; a new turn defaults to ordinary exit policy. Container and SSH attachments never show that
 promise. Unsaved settings still require confirmation, and Ctrl+C still requests run cancellation.
+A Goal turn whose intent has committed also carries the host's continuation policy immediately.
+Connection loss pauses its future automatic stages but preserves the current physical work and its
+eventual settlement; it does not depend on the TUI completing a separate `/background` handoff.
 
 For local connections, `/reconnect` restores the connection to the existing host without restarting
 it or replaying work. `/reconnect reload` applies saved configuration through an explicit host
@@ -1154,7 +1157,12 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   Agent progress reports only settled/total and the running count while work is active; failures
   stay encoded in each row's status glyph instead of adding header or result copy. Workflow progress
   never contributes a row to the Lead transcript. Agent and workflow rosters use the Plan's status
-  priority—running, pending, done, then failed—without changing their stable handles. Workflow leaders use run-local `L<n>` handles and sub-agents use the
+  priority—running, pending, done, then failed—without changing their stable handles. A sub-agent
+  row keeps the cause the delegation wire carried: `done`, `limited` (a budget cap ended it with a
+  partial), `cancelled` (the run took it down) and `error` (a technical failure), with `limited`
+  sorted as unfinished work and `cancelled` sharing the settled bucket. A child stopped at its own
+  iteration limit is therefore a different row from a child that broke, and neither the roster nor
+  the settled marker calls the first one a failure. Workflow leaders use run-local `L<n>` handles and sub-agents use the
   separate `A<spawn order + 1>` namespace; both derive from the current projection and retain no
   native-id allocation ledger across runs.
   Opening the Sidebar never replaces the shortcuts or run strip below the composer. A fixed
@@ -1660,5 +1668,19 @@ wording uses it before its segment is dropped. Every band is admitted by the cel
 really offers — a detail frame subtracts its padding and pinned status, a picker card its border,
 padding and footer text — while the seat cap stays keyed to the terminal, and a card never paints
 wider than the screen. A tool call's identity, a changed file's name and an error's diagnostic
-break onto another row instead of being abbreviated away; the argument *preview* in a tool header
+break onto another row instead of being abbreviated away; the argument _preview_ in a tool header
 keeps its own explicit character bound. Help shows full key combinations.
+
+Hosted submissions remain local until admission is confirmed. `beginTurn` does not advance hosted
+semantic history or its continuation base; canonical adoption does. Pending host recovery retains
+the message, and an admission failure is not presented as settlement of an executed turn.
+Resume remains available for terminal Goals and healthy running attempts. A pending resume retains
+its operation identity; the explicit recovery action retries that operation after recovery.
+
+The Goal panel offers physical recovery for a pending resume and links a required limit edit to that same request. Transcript synchronization compares ordered turn identities and preserves the matching resident prefix.
+
+Accepted pending input can be resumed through `HostingService.resumePending(sessionId)` using the
+current authenticated operator connection. The Kernel reads canonical receipts and uses its existing
+idempotent admission queue; it restores no old consent or physical-closure claim. Code requests this
+when reopening an idle conversation and attaches to the admitted run. Recovery failure leaves the
+saved history readable. A restart without a new controller still waits for authority.

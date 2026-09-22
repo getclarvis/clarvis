@@ -17,6 +17,15 @@ an explicit unconfirmed-termination error, never a falsely confirmed operator te
 is published after successful shell spawn, not while command review is pending; late callbacks
 cannot reopen a settled tool. See [tool dispatch](../../specs/engine/tool-dispatch.md).
 
+Spawn preparation does not claim tasks or publish child creation. Those effects follow semaphore
+admission, so capacity refusal or cancellation while queued leaves the task available.
+Child failure streaks refuse new spawns locally. A closed circuit can admit one background recovery
+probe after its cooldown; failure does not grant further probes without a successful child.
+A child-local cancellation remains cancelled even when the parent signal is live; it preserves
+partial output without marking the task returned or failed.
+The leader and siblings keep their own execution and iteration budgets. See
+[delegation](../../specs/engine/delegation-and-subagents.md).
+
 The embeddable Clarvis agent-loop engine. It runs model-backed agents and
 sub-agents in process, with tool use, budgets, context compaction, persistence,
 steering and structured results.
@@ -102,6 +111,14 @@ explicit instruction from an applicable loaded skill or agent-instruction file (
 or `CLARVIS.md`) before spawning children, delegating tasks, or starting workflow leaders. Otherwise
 the agent works directly; available tools and efficiency gains do not authorize delegation. Profile
 and grant limits still apply. Supervision distinguishes handles, first-child wakeups and completed work.
+It also keeps a child that stopped at its own iteration cap apart from one that failed: the cap is a
+recoverable partial the lead can reduce scope around, retry or take over, and a streak of technically
+failed children closes new child admission without ending the lead's run.
+An error outcome also retains the child's last partial text. Delegation labels it unverified in the
+leader-facing result and failure trace, while preserving the failed status and technical-failure
+accounting. The parent can inspect the remaining work; partial prose neither proves a successful
+effect nor authorizes retry.
+
 `submit_result` ends a run only when both validation and runtime gates accept it. Compaction retains
 authorization and unfinished work without treating transcript content as new instructions; bounded
 MCP instruction sections explicitly mark truncation.
@@ -387,7 +404,7 @@ A host supplies or builds:
 - optional event, steering, explicit-compaction, elicitation and cancellation channels;
 - any additional capabilities.
 
-A host may also supply `HostRunDeps.hostMetadata`, an opaque snapshot evaluated once per run and
+A host may also supply `ExecuteRunDeps.hostMetadata`, an opaque snapshot evaluated once per run and
 carried into its journal and final execution record. The loop does not inspect the value. The file
 kernel uses it for Extension Profile identity and supplies only already-resolved skill roots, so
 Extension Profile discovery and trust remain host policy. See

@@ -35,7 +35,7 @@ export async function runGoalSteward(
   });
   const rows = outcome.response.usage.by_agent;
   const usage: GoalStewardRunResult["usage"] = {
-    kind: "measured",
+    kind: "complete",
     input: rows.reduce((sum, row) => sum + row.input_tokens, 0),
     output: rows.reduce((sum, row) => sum + row.output_tokens, 0),
     cached: rows.reduce((sum, row) => sum + row.cached_tokens, 0),

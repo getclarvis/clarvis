@@ -174,7 +174,6 @@ export function validHostedAttachment(
     typeof run.config.agent === "string" &&
     wireId(snapshot.snapshot_id) &&
     natural(snapshot.bytes) &&
-    snapshot.bytes <= 64 * 1024 * 1024 &&
     natural(cursor.sequence) &&
     cursor.host_generation === expected.generation &&
     cursor.execution_id === expected.executionId &&

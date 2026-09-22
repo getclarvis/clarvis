@@ -20,7 +20,7 @@ import { recordingLogger } from "./logger.ts";
 export async function goalHostFixture(
   options: {
     criteria?: GoalCriterion[];
-    readTrace?: (executionId: string) => readonly TraceEvent[] | undefined;
+    readTrace?: (executionId: string) => Iterable<TraceEvent> | undefined;
   } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "clarvis-goal-host-"));

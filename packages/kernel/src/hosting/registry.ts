@@ -1,7 +1,11 @@
+import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
+import { recoverHostedDelivery, type HostedDeliveryRecovery } from "./delivery-recovery.ts";
 import type { RunServiceConfig } from "../runs/run-service.ts";
 import { boundPromise } from "@clarvis/loop/host";
 import {
   bestEffort,
+  detachObserved,
   NOOP_LOGGER,
   sanitizeErrorMessage,
   suppressSecondaryRejection,
@@ -32,6 +36,12 @@ import {
 import { createHostedExecution, type HostedExecution } from "./execution.ts";
 import type { HostedProjection } from "./projection.ts";
 import { decodeHostedRegistryState, MAX_HOST_INDEX_BYTES } from "./state.ts";
+import {
+  isRecoverableSettlementFailure,
+  recoverHostedSettlement,
+  persistHostedRecoveryCheckpoint,
+  type HostedSettlementRecovery,
+} from "./settlement-recovery.ts";
 
 /** Prepared configuration and a commit boundary retained even when writing the turn intent fails. */
 export interface PreparedHostedTurn {
@@ -69,7 +79,12 @@ export interface HostedTurnContinuation {
 export interface HostedRegistryState {
   schema_version: 1;
   host_generation: string;
-  runs: Array<{ run: HostedRunRef; acknowledged: boolean }>;
+  runs: Array<{
+    run: HostedRunRef;
+    acknowledged: boolean;
+    settlement?: HostedSettlementRecovery;
+    deliveries?: HostedDeliveryRecovery[];
+  }>;
   receipts: Array<{ receipt: HostedRunReceipt; expires_at: number }>;
 }
 
@@ -79,6 +94,20 @@ export interface HostedRegistryOptions {
   hostGeneration: string;
   /** Internal workspace-scoped run owner; the local process resolves it from the authenticated owner. */
   owner: string;
+  /** Persist authenticated input before waiting for the previous physical execution. */
+  acceptOperator?(
+    input: StartHostedTurnParams,
+    steeringTarget?: string,
+  ): Promise<"pending" | "delivered">;
+  deliverOperator?(sessionId: string, executionId: string, deliveredTo: string): Promise<void>;
+  /** Canonical proof can settle an uncertain acknowledgement without another receipt write. */
+  deliveryReconciled?(sessionId: string, intentId: string, deliveredTo: string): Promise<boolean>;
+  /** Discover consumed, target-bound receipts from canonical traces after losing the live pump. */
+  discoverDeliveries?(run: HostedRunRef): Promise<readonly string[]>;
+  /** Canonical accepted input only; the client never chooses which receipts are pending. */
+  pendingOperators?(sessionId: string): Promise<readonly StartHostedTurnParams[]>;
+  /** Re-read a pending submission and the canonical history under the existing session authority. */
+  prepareOperator?(sessionId: string, executionId: string): Promise<StartHostedTurnParams>;
   prepare(
     input: StartHostedTurnParams,
     authority: {
@@ -97,6 +126,20 @@ export interface HostedRegistryOptions {
     run: HostedRunRef,
     resolution: HostedRecoveryResolution,
   ): Promise<HostedRecoveryResolution>;
+  /**
+   * Release the resolved conversation's own physical uncertainty after the durable audit.
+   *
+   * @param run - the resolved execution's discovery row.
+   * @remarks Called only for a `continue` resolution, after {@link archiveRecovery} committed the
+   *   attestation. The registry owns the execution; the conversation's own bookkeeping — a Goal
+   *   stage that never reported an ending, for instance — belongs to whoever owns that record, so
+   *   the release is their transaction rather than something the registry infers.
+   */
+  continueRecovery?(run: HostedRunRef): Promise<void>;
+  /** Verify a previously ambiguous reconciliation against the canonical session receipt. */
+  settlementReconciled?(run: HostedRunRef): Promise<boolean>;
+  /** Repair canonical bookkeeping only from a durable physical-closure checkpoint; never replay execution. */
+  recoverSettlement?(run: HostedRunRef, checkpoint: HostedSettlementRecovery): Promise<boolean>;
   /** Prior process index. Only discovery metadata returns; no execution or consent is restored. */
   initialState?: HostedRegistryState;
   limits?: Omit<HostedAdmissionOptions, "revokeInteractiveScope">;
@@ -106,6 +149,10 @@ export interface HostedRegistryOptions {
   /** Bound read-only continuation preparation and its failure notification; defaults to five seconds. */
   continuationTimeoutMs?: number;
   now?: () => number;
+  /** Injectable wait for the existing settlement chain, not an independent scheduler. */
+  recoveryWait?: (ms: number) => Promise<void>;
+  /** One cancellable wakeup into the existing sync operation, never a second recovery executor. */
+  scheduleRecovery?: (delayMs: number, wake: () => void) => () => void;
   logger?: Logger;
   /** Process-owned maintenance/lease admission also applies to internal automatic starts. */
   assertStartAllowed?(): void;
@@ -139,6 +186,9 @@ export interface HostedRegistry {
   ): Promise<HostedRunRef>;
   cancelControlled(authority: HostedConversationAuthority, executionId: string): Promise<void>;
   physicalRun(sessionId: string): HostedRunRef | undefined;
+  /** Reattach a healthy attempt or await its already requested closure before a successor. */
+  resumePhysical(authority: HostedConversationAuthority): Promise<HostedRunRef | undefined>;
+  execution(executionId: string): HostedRunRef | undefined;
   hasPendingContinuation(): boolean;
   /** Permit pending-observation saves only for the connection holding that local activity. */
   ownsActivity(peerId: string, sessionId: string): boolean;
@@ -158,7 +208,13 @@ export interface HostedRegistry {
 }
 
 interface Entry {
+  deliveries?: HostedDeliveryRecovery[];
+  delivering?: Promise<boolean>;
+  settlement?: HostedSettlementRecovery;
   operatorInput?: boolean;
+  input?: StartHostedTurnParams;
+  steering?: Map<string, Promise<void>>;
+  steeringDelivery?: Map<string, { promise: Promise<void>; resolve(): void }>;
   ref: HostedRunRef;
   occupancy?: HostedOccupancy;
   prepared?: PreparedHostedTurn;
@@ -253,6 +309,7 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     },
   });
   let closing = false;
+  let syncing: Promise<void> | undefined;
   let writes = 0;
   let commitTail: Promise<void> = Promise.resolve();
   const unresolvedSessions = new Set<string>();
@@ -282,6 +339,10 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     };
     for (const item of initial.runs) {
       const ref = recover(item.run);
+      if (item.settlement?.operation === "commit_terminal") {
+        ref.execution_state = "closed";
+        delete ref.recovery_error;
+      }
       const preparationSettled = Promise.withResolvers<void>();
       preparationSettled.resolve();
       entries.set(ref.execution_id, {
@@ -290,6 +351,8 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
         preparation: new AbortController(),
         preparationSettled,
         stopRequested: true,
+        ...(item.settlement === undefined ? {} : { settlement: item.settlement }),
+        ...(item.deliveries === undefined ? {} : { deliveries: structuredClone(item.deliveries) }),
       });
       if (ref.execution_state === "unknown") unresolvedSessions.add(ref.session_id);
     }
@@ -314,7 +377,7 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     if (state.recoveryError !== undefined) {
       entry.ref.recovery_error = "Hosted observation or conversation reconciliation failed.";
       entry.ref.execution_state = "unknown";
-    }
+    } else delete entry.ref.recovery_error;
     if (state.result !== undefined) {
       const { status, ended_reason, error, usage } = state.result;
       entry.ref.outcome = { status, ended_reason, error, usage };
@@ -372,6 +435,10 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
                 recovery_error: current.recovery_error,
               },
               acknowledged: entry.acknowledged,
+              ...(entry.settlement === undefined ? {} : { settlement: entry.settlement }),
+              ...(entry.deliveries?.length
+                ? { deliveries: structuredClone(entry.deliveries) }
+                : {}),
             };
           }),
           receipts: [...receipts.values()]
@@ -430,10 +497,220 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     await entry.source?.cancel();
   };
 
+  const persistDeliveries = (entry: Entry): Promise<void> =>
+    persistHostedRecoveryCheckpoint({
+      executionId: entry.ref.execution_id,
+      operation: "reconcile_receipt",
+      persist: () => persist(),
+      logger,
+      wait: options.recoveryWait,
+    });
+
+  const reconcileDeliveries = (entry: Entry): Promise<boolean> => {
+    if (entry.delivering !== undefined) return entry.delivering;
+    const operation = (async () => {
+      for (const record of [...(entry.deliveries ?? [])]) {
+        const confirmed = async (): Promise<boolean | undefined> => {
+          try {
+            return (
+              (await options.deliveryReconciled?.(
+                entry.ref.session_id,
+                record.intent_id,
+                entry.ref.execution_id,
+              )) === true
+            );
+          } catch (error) {
+            const transient = isRecoverableSettlementFailure(error);
+            if (!transient) {
+              const records = entry.deliveries!;
+              const index = records.findIndex((item) => item.intent_id === record.intent_id);
+              const current = records[index];
+              if (current === undefined) return undefined;
+              if (current.state !== "waiting_external" || current.cause !== "operation_failed") {
+                const waiting: HostedDeliveryRecovery = {
+                  ...current,
+                  state: "waiting_external",
+                  cause: "operation_failed",
+                };
+                delete waiting.next_attempt_at;
+                records[index] = waiting;
+                await persistDeliveries(entry);
+              }
+            }
+            logger.warn(
+              {
+                event: "hosting.delivery.lookup_unavailable",
+                execution_id: entry.ref.execution_id,
+                intent_id: record.intent_id,
+                cause: transient ? "storage_unavailable" : "operation_failed",
+              },
+              "canonical consumption receipt is unavailable",
+            );
+            return transient ? false : undefined;
+          }
+        };
+        const proof = await confirmed();
+        if (proof === undefined) continue;
+        const complete =
+          proof === true ||
+          (await recoverHostedDelivery({
+            executionId: entry.ref.execution_id,
+            record,
+            logger,
+            now,
+            wait: options.recoveryWait,
+            async checkpoint(next) {
+              const records = entry.deliveries!;
+              records[records.findIndex((item) => item.intent_id === record.intent_id)] = next;
+              await persistDeliveries(entry);
+            },
+            async deliver() {
+              if (options.deliverOperator === undefined)
+                throw kernelError("unavailable", "operator receipt storage is unavailable");
+              await options.deliverOperator(
+                entry.ref.session_id,
+                record.intent_id,
+                entry.ref.execution_id,
+              );
+            },
+          }));
+        if (!complete && (await confirmed()) !== true) continue;
+        const previous = entry.deliveries;
+        entry.deliveries = previous!.filter((item) => item.intent_id !== record.intent_id);
+        try {
+          await persistDeliveries(entry);
+        } catch (error) {
+          entry.deliveries = previous;
+          throw error;
+        }
+        entry.steeringDelivery?.get(record.intent_id)?.resolve();
+        entry.steeringDelivery?.delete(record.intent_id);
+      }
+      return (entry.deliveries?.length ?? 0) === 0;
+    })();
+    entry.delivering = operation;
+    return operation.finally(() => {
+      delete entry.delivering;
+    });
+  };
+
+  const discoverDeliveries = async (entry: Entry): Promise<void> => {
+    if (options.discoverDeliveries === undefined) return;
+    let discovered: readonly string[];
+    try {
+      discovered = await options.discoverDeliveries(view(entry));
+    } catch (error) {
+      logger.warn(
+        {
+          event: "hosting.delivery.discovery_unavailable",
+          execution_id: entry.ref.execution_id,
+          host_generation: entry.ref.host_generation,
+          operation: "discover_receipts",
+          cause: isRecoverableSettlementFailure(error) ? "storage_unavailable" : "operation_failed",
+        },
+        "canonical steering evidence remains unavailable",
+      );
+      return;
+    }
+    const previous = entry.deliveries;
+    const additions = [...new Set(discovered)].filter(
+      (id) => !previous?.some((record) => record.intent_id === id),
+    );
+    if (additions.length === 0) return;
+    if ((previous?.length ?? 0) + additions.length > 16)
+      throw kernelError("resource_exhausted", "pending operator receipt limit reached");
+    for (const id of additions) identifier(id, "steering receipt identity");
+    entry.deliveries = [
+      ...(previous ?? []),
+      ...additions.map((id): HostedDeliveryRecovery => ({
+        intent_id: id,
+        controller_epoch: entry.ref.control_epoch,
+        state: "ready",
+        attempt: 0,
+      })),
+    ];
+    try {
+      await persistDeliveries(entry);
+    } catch (error) {
+      entry.deliveries = previous;
+      throw error;
+    }
+  };
+
+  const repairSettlement = async (entry: Entry): Promise<boolean> => {
+    if (entry.settlement === undefined) return false;
+    if (entry.settlement.next_attempt_at !== undefined && entry.settlement.next_attempt_at > now())
+      return false;
+    for (;;) {
+      try {
+        if ((await options.settlementReconciled?.(view(entry))) === true) return true;
+        if (entry.settlement.state === "waiting_external") return false;
+        return (
+          (await options.recoverSettlement?.(view(entry), structuredClone(entry.settlement))) ===
+          true
+        );
+      } catch (error) {
+        if (entry.settlement.state === "waiting_external") {
+          logger.warn(
+            {
+              event: "hosting.settlement.proof_unavailable",
+              execution_id: entry.ref.execution_id,
+              host_generation: entry.ref.host_generation,
+              operation: "reconcile",
+              attempt: entry.settlement.attempt,
+              state: entry.settlement.state,
+              cause: isRecoverableSettlementFailure(error)
+                ? "storage_unavailable"
+                : "operation_failed",
+            },
+            "canonical settlement proof remains unavailable",
+          );
+          return false;
+        }
+        const retry: boolean =
+          isRecoverableSettlementFailure(error) && entry.settlement.attempt < 3;
+        const pause = Math.round(
+          100 * 2 ** (entry.settlement.attempt - 1) * (0.75 + Math.random() * 0.5),
+        );
+        entry.settlement = {
+          ...entry.settlement,
+          state: retry ? "recovering" : "waiting_external",
+          cause: isRecoverableSettlementFailure(error) ? "storage_unavailable" : "operation_failed",
+          ...(retry ? { next_attempt_at: now() + pause } : {}),
+        };
+        if (!retry) delete entry.settlement.next_attempt_at;
+        await persist();
+        logger.warn(
+          {
+            event: "hosting.settlement.restart_recovery",
+            execution_id: entry.ref.execution_id,
+            host_generation: entry.ref.host_generation,
+            operation: "reconcile",
+            attempt: entry.settlement.attempt,
+            state: entry.settlement.state,
+            cause: entry.settlement.cause,
+          },
+          "canonical settlement remains pending after restart",
+        );
+        if (!retry) return false;
+        await (options.recoveryWait ?? delay)(pause);
+        entry.settlement = {
+          ...entry.settlement,
+          state: "ready",
+          attempt: entry.settlement.attempt + 1,
+        };
+        delete entry.settlement.next_attempt_at;
+        delete entry.settlement.cause;
+        await persist();
+      }
+    }
+  };
+
   const prune = async (entry: Entry): Promise<void> => {
     if (entry.pruning !== undefined) return entry.pruning;
     if (
       !entry.acknowledged ||
+      (entry.deliveries?.length ?? 0) > 0 ||
       entry.occupancy !== undefined ||
       entry.continuationAuthority !== undefined ||
       entry.ref.execution_state !== "closed"
@@ -486,7 +763,75 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       attachment = await entry.execution.observe({
         async steer(message) {
           assertControl(connection, entry, observation.epoch);
-          await source.steer(message);
+          if (
+            options.acceptOperator === undefined ||
+            options.deliverOperator === undefined ||
+            entry.input === undefined
+          ) {
+            await source.steer(message);
+            return;
+          }
+          const id =
+            typeof message === "string" ? randomUUID() : (message.steering_id ?? randomUUID());
+          identifier(id, "steering identity");
+          const executionId = `steer_${id}`;
+          entry.steering ??= new Map();
+          const known = entry.steering.get(executionId);
+          if (known !== undefined) return known;
+          const operation = (async () => {
+            const input: StartHostedTurnParams = {
+              ...entry.input!,
+              user_preview:
+                typeof message === "string" ? message.slice(0, 4096) : "Operator follow-up",
+              params: {
+                ...entry.input!.params,
+                execution_id: executionId,
+                intent: "operator",
+                messages: [
+                  typeof message === "string" ? { role: "user", content: message } : message,
+                ],
+              },
+            };
+            delete input.params.goal_intent;
+            if ((await options.acceptOperator!(input, entry.ref.execution_id)) === "delivered")
+              return;
+            assertControl(connection, entry, observation.epoch);
+            if (entry.continuationAuthority !== undefined) {
+              admission.retireContinuation(entry.continuationAuthority);
+              delete entry.continuationAuthority;
+            }
+            const delivery = Promise.withResolvers<void>();
+            entry.steeringDelivery ??= new Map();
+            entry.steeringDelivery.set(executionId, delivery);
+            try {
+              await source.steer(
+                typeof message === "string"
+                  ? { role: "user", content: message, steering_id: executionId }
+                  : { ...message, steering_id: executionId },
+              );
+              await Promise.race([
+                delivery.promise,
+                entry.execution!.settled.then(() => {
+                  if (entry.steeringDelivery?.has(executionId) === true)
+                    throw kernelError(
+                      "unavailable",
+                      "Operator message is retained but consumption is unconfirmed",
+                    );
+                }),
+              ]);
+            } catch (error) {
+              if (toKernelError(error).code !== "not_found") throw error;
+              await startOperator(connection, input);
+            } finally {
+              entry.steeringDelivery?.delete(executionId);
+            }
+          })();
+          entry.steering.set(executionId, operation);
+          try {
+            await operation;
+          } finally {
+            entry.steering.delete(executionId);
+          }
         },
         async compact(request) {
           assertControl(connection, entry, observation.epoch);
@@ -754,6 +1099,7 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       admission.claimConversation(peer, input.session_id);
     const entry: Entry = {
       operatorInput: continuation === undefined,
+      input: structuredClone(input),
       occupancy,
       preparation: new AbortController(),
       acknowledged: false,
@@ -804,6 +1150,8 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
         entry.retireContinuationListener = () => signal.removeEventListener("abort", revoked);
       }
       await entry.prepared.commitIntent();
+      /** A durable continuation policy owns recovery after the interactive controller retires. */
+      if (entry.prepared.continuation !== undefined) entry.ref.disconnect_policy = "continue";
       assertControl(connection, entry, control.epoch);
       await persist();
       assertControl(connection, entry, control.epoch);
@@ -815,18 +1163,48 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
         handle: entry.source,
         projection: entry.projection,
         logger,
-        reconcile: (result) => entry.prepared!.reconcile(result),
+        reconcile: async (result) => {
+          if (!(await reconcileDeliveries(entry)))
+            throw kernelError("unavailable", "operator consumption receipts await reconciliation");
+          await entry.prepared!.reconcile(result);
+        },
+        settle: (operations) =>
+          recoverHostedSettlement({
+            executionId: entry.ref.execution_id,
+            controllerEpoch: control.epoch,
+            ...operations,
+            logger,
+            now,
+            wait: options.recoveryWait,
+            async checkpoint(record) {
+              entry.settlement = record;
+              await persist();
+            },
+          }),
         async commitTerminal() {
-          try {
-            await persist({ terminalExecutionId: entry.ref.execution_id });
-            entry.ref.control_epoch = admission.control(occupancy).epoch;
-            admission.release(occupancy);
-            delete entry.occupancy;
-            executionChanged(entry.ref.session_id);
-          } catch {
-            entry.ref.execution_state = "unknown";
-            entry.ref.recovery_error = "Host could not commit the terminal run index.";
-            throw kernelError("unavailable", entry.ref.recovery_error);
+          await persist({ terminalExecutionId: entry.ref.execution_id });
+          entry.ref.execution_state = "closed";
+          entry.ref.control_epoch = admission.control(occupancy).epoch;
+          admission.release(occupancy);
+          delete entry.occupancy;
+          executionChanged(entry.ref.session_id);
+        },
+        async delivered(event) {
+          if (event.type === "steering_applied" && event.id?.startsWith("steer_") === true) {
+            await entry.delivering;
+            entry.deliveries ??= [];
+            if (!entry.deliveries.some((record) => record.intent_id === event.id)) {
+              if (entry.deliveries.length >= 16)
+                throw kernelError("resource_exhausted", "pending operator receipt limit reached");
+              entry.deliveries.push({
+                intent_id: event.id,
+                controller_epoch: control.epoch,
+                state: "ready",
+                attempt: 0,
+              });
+              await persistDeliveries(entry);
+            }
+            await reconcileDeliveries(entry);
           }
         },
         changed: () => touch(entry),
@@ -885,6 +1263,126 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     }
   };
 
+  const operatorQueues = new Map<string, Promise<unknown>>();
+  const submissions = new Map<string, Promise<Entry>>();
+  const startOperator = async (
+    connection: ConnectionState,
+    input: StartHostedTurnParams,
+  ): Promise<Entry> => {
+    assertConnection(connection, true);
+    identifier(input.session_id, "session identity");
+    identifier(input.params.execution_id, "submission identity");
+    if (
+      typeof input.user_preview !== "string" ||
+      input.user_preview.length > 4096 ||
+      !["conversation", "transcript"].includes(input.kind) ||
+      Buffer.byteLength(JSON.stringify(input)) > 1024 * 1024
+    )
+      throw kernelError("invalid_request", "Invalid or oversized operator submission", {
+        submission: "refused",
+      });
+    const authority = admission.claimConversation(connection.peer, input.session_id);
+    const key = `${input.session_id}:${input.params.execution_id}`;
+    const awaitSubmission = (operation: Promise<Entry>): Promise<Entry> =>
+      boundPromise(() => operation, {
+        signal: authority.signal,
+        timeoutMs: continuationTimeout,
+        onTimeout: () => {
+          throw kernelError("unavailable", "Submission retained while previous execution settles", {
+            submission: "recovering",
+          });
+        },
+        onAbort: () => {
+          throw kernelError("conflict", "Submission authority changed", { submission: "pending" });
+        },
+      });
+    for (const entry of entries.values()) {
+      if (entry.ref.session_id !== input.session_id || entry.continuationAuthority === undefined)
+        continue;
+      admission.retireContinuation(entry.continuationAuthority);
+      delete entry.continuationAuthority;
+    }
+    await options.acceptOperator!(input);
+    admission.assertConversation(authority);
+    const known = submissions.get(key);
+    if (known !== undefined) return awaitSubmission(known);
+    const existing = entries.get(input.params.execution_id);
+    if (existing !== undefined) {
+      if (existing.ref.session_id !== input.session_id)
+        throw kernelError("conflict", "Foreign submission identity");
+      await existing.preparationSettled.promise;
+      if (existing.execution !== undefined) return existing;
+      if (existing.ref.execution_state !== "closed")
+        throw kernelError("unavailable", "Submission physical state requires recovery", {
+          submission: "recovering",
+        });
+      await options.prepareOperator!(input.session_id, input.params.execution_id);
+      entries.delete(input.params.execution_id);
+    }
+    const prior = operatorQueues.get(input.session_id) ?? Promise.resolve();
+    const operation = prior
+      .catch(() => undefined)
+      .then(async () => {
+        admission.assertConversation(authority);
+        const active = [...entries.values()].find(
+          (entry) => entry.ref.session_id === input.session_id && entry.occupancy !== undefined,
+        );
+        if (active !== undefined) {
+          if (active.continuationAuthority !== undefined) {
+            admission.retireContinuation(active.continuationAuthority);
+            delete active.continuationAuthority;
+          }
+          await boundPromise(
+            async () => {
+              await active.preparationSettled.promise;
+              if (active.execution !== undefined) {
+                await active.execution.settled;
+                await active.execution.retrySettlement();
+              }
+            },
+            {
+              signal: authority.signal,
+              onTimeout: () => {
+                throw kernelError(
+                  "unavailable",
+                  "Submission retained while previous execution settles",
+                  { submission: "recovering" },
+                );
+              },
+              onAbort: () => {
+                throw kernelError("conflict", "Submission authority changed", {
+                  submission: "pending",
+                });
+              },
+            },
+          );
+        }
+        admission.assertConversation(authority);
+        if (unresolvedSessions.has(input.session_id))
+          throw kernelError(
+            "conflict",
+            "Submission retained; verify physical closure to continue",
+            { submission: "recovering", execution_id: input.params.execution_id },
+          );
+        const prepared = await options.prepareOperator!(
+          input.session_id,
+          input.params.execution_id,
+        );
+        admission.assertConversation(authority);
+        return startEntry(connection, prepared);
+      });
+    submissions.set(key, operation);
+    operatorQueues.set(input.session_id, operation);
+    void operation
+      .finally(() => {
+        submissions.delete(key);
+        if (operatorQueues.get(input.session_id) === operation)
+          operatorQueues.delete(input.session_id);
+      })
+      .catch(() => undefined);
+    return awaitSubmission(operation);
+  };
+
   const connect = (role: HostingPeer["role"]): HostedRegistryConnection => {
     if (closing) throw kernelError("unavailable", "host is closing");
     const peer = admission.connect(role);
@@ -897,6 +1395,22 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     };
     connections.set(peer.id, connection);
     const service: HostingService = {
+      async resumePending(sessionId) {
+        assertConnection(connection, true);
+        identifier(sessionId, "session identity");
+        const pending = (await options.pendingOperators?.(sessionId)) ?? [];
+        assertConnection(connection, true);
+        if (pending.length === 0) return null;
+        if (pending.length > 16 || pending.some((input) => input.session_id !== sessionId))
+          throw kernelError("invalid_request", "Invalid pending operator receipts");
+        const attempts = pending.map((input) => startOperator(connection, input));
+        try {
+          return view(await Promise.any(attempts), peer);
+        } catch (error) {
+          if (error instanceof AggregateError) throw toKernelError(error.errors[0]);
+          throw error;
+        }
+      },
       async list() {
         assertConnection(connection);
         return [...entries.values()]
@@ -904,8 +1418,25 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
           .map((entry) => view(entry, peer));
       },
       async start(input) {
-        const entry = await startEntry(connection, input);
-        return observe(connection, entry, "acquire");
+        if (input.params.intent === undefined)
+          input = { ...input, params: { ...input.params, intent: "operator" } };
+        try {
+          const entry =
+            input.params.intent === "operator" &&
+            options.acceptOperator !== undefined &&
+            options.prepareOperator !== undefined
+              ? await startOperator(connection, input)
+              : await startEntry(connection, input);
+          return observe(connection, entry, "acquire");
+        } catch (error) {
+          const failure = toKernelError(error);
+          throw kernelError(failure.code, failure.message, {
+            execution_id: input.params.execution_id,
+            ...(typeof failure.details === "object" && failure.details !== null
+              ? failure.details
+              : {}),
+          });
+        }
       },
       async attach(input) {
         identifier(input.host_generation, "host generation");
@@ -1060,15 +1591,22 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
           input === null ||
           Object.keys(input).some(
             (key) =>
-              !["execution_id", "host_generation", "revision", "physical_work_stopped"].includes(
-                key,
-              ),
+              ![
+                "execution_id",
+                "host_generation",
+                "revision",
+                "physical_work_stopped",
+                "disposition",
+              ].includes(key),
           ) ||
           typeof input.execution_id !== "string" ||
           typeof input.host_generation !== "string" ||
           !Number.isSafeInteger(input.revision) ||
           input.revision < 0 ||
-          input.physical_work_stopped !== true
+          input.physical_work_stopped !== true ||
+          (input.disposition !== undefined &&
+            input.disposition !== "archive" &&
+            input.disposition !== "continue")
         )
           throw kernelError(
             "invalid_request",
@@ -1095,13 +1633,24 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
         if (archive === undefined)
           throw kernelError("unavailable", "durable recovery archive is unavailable");
         const recovery = (async (): Promise<HostedRunRef> => {
+          const disposition = input.disposition ?? "archive";
           const resolution = await archive(structuredClone(entry.ref), {
             kind: "operator_verified_physical_closure",
+            disposition,
             previous_host_generation: entry.ref.host_generation,
             resolving_host_generation: options.hostGeneration,
             operator_connection_id: peer.id,
             resolved_at: now(),
           });
+          /**
+           * The conversation's own uncertainty is released only after the attestation is durable.
+           *
+           * @remarks A `continue` resolution lets a successor be admitted, so the record that was
+           *   waiting on this execution has to stop treating it as occupied. Doing that before the
+           *   commit would let a crash leave the release without its evidence; doing it for an
+           *   `archive` would resume a line of work the operator asked to park.
+           */
+          if (disposition === "continue") await options.continueRecovery?.(entry.ref);
           const proposed: HostedRunRef = {
             ...entry.ref,
             execution_state: "closed",
@@ -1169,6 +1718,93 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     return { peer, service, close: () => closeConnection(connection) };
   };
 
+  let cancelRecoveryWake: (() => void) | undefined;
+  /** Keep one wakeup, including a deadline that became due while this sync was processing peers. */
+  const schedulePendingRecovery = (observedAt: number): void => {
+    if (closing) return;
+    const instants = [...entries.values()]
+      .flatMap((entry) => [
+        ...(entry.deliveries ?? [])
+          .filter((record) => record.state !== "waiting_external")
+          .map((record) => record.next_attempt_at),
+        ...(entry.ref.host_generation !== options.hostGeneration &&
+        entry.ref.execution_state === "unknown" &&
+        entry.settlement?.operation === "reconcile" &&
+        entry.settlement.state !== "waiting_external"
+          ? [entry.settlement.next_attempt_at]
+          : []),
+      ])
+      .filter((instant): instant is number => instant !== undefined && instant > observedAt);
+    if (instants.length === 0) return;
+    const milliseconds = Math.min(2_147_483_647, Math.max(0, Math.min(...instants) - now()));
+    const wake = (): void => {
+      cancelRecoveryWake = undefined;
+      if (closing) return;
+      detachObserved(sync, { operation: "hosting.recovery.scheduled", logger });
+    };
+    if (options.scheduleRecovery !== undefined)
+      cancelRecoveryWake = options.scheduleRecovery(milliseconds, wake);
+    else {
+      const timer = setTimeout(wake, milliseconds);
+      timer.unref();
+      cancelRecoveryWake = () => clearTimeout(timer);
+    }
+  };
+  const sync = async (): Promise<void> => {
+    if (closing) return;
+    if (syncing !== undefined) return syncing;
+    cancelRecoveryWake?.();
+    cancelRecoveryWake = undefined;
+    const observedAt = now();
+    const pending = (async () => {
+      for (const entry of entries.values()) {
+        if (entry.ref.host_generation !== options.hostGeneration) await discoverDeliveries(entry);
+        if (!(await reconcileDeliveries(entry))) continue;
+        if (
+          entry.ref.host_generation === options.hostGeneration ||
+          entry.ref.execution_state !== "unknown" ||
+          entry.settlement?.operation !== "reconcile"
+        )
+          continue;
+        if ((await repairSettlement(entry)) !== true) continue;
+        const previous = entry.settlement;
+        entry.settlement = {
+          operation: "commit_terminal",
+          state: "ready",
+          attempt: 1,
+          physical_closed: true,
+          controller_epoch: previous.controller_epoch,
+        };
+        try {
+          await persist({ terminalExecutionId: entry.ref.execution_id });
+        } catch (error) {
+          entry.settlement = previous;
+          throw error;
+        }
+        entry.ref.execution_state = "closed";
+        delete entry.ref.recovery_error;
+        if (
+          ![...entries.values()].some(
+            (other) =>
+              other.ref.session_id === entry.ref.session_id &&
+              other.ref.execution_state === "unknown",
+          )
+        )
+          unresolvedSessions.delete(entry.ref.session_id);
+      }
+      await persist();
+    })();
+    syncing = pending;
+    let recovered = false;
+    try {
+      await pending;
+      recovered = true;
+    } finally {
+      syncing = undefined;
+      if (recovered) schedulePendingRecovery(observedAt);
+    }
+  };
+
   return {
     connect,
     assertOperator(peerId) {
@@ -1207,6 +1843,47 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       if (entry.source === undefined) entry.preparation.abort();
       else await entry.source.cancel();
     },
+    execution(executionId) {
+      const entry = entries.get(executionId);
+      return entry === undefined ? undefined : view(entry);
+    },
+    async resumePhysical(authority) {
+      admission.assertConversation(authority);
+      const entry = [...entries.values()].find(
+        (value) =>
+          value.ref.session_id === authority.sessionId &&
+          (value.occupancy !== undefined || value.ref.execution_state === "unknown"),
+      );
+      if (entry === undefined) return undefined;
+      if (entry.ref.execution_state === "unknown")
+        throw kernelError("conflict", "Physical closure must be resolved before resuming", {
+          goal_outcome: "needs_input",
+          action: "resolve_physical_closure",
+          execution_id: entry.ref.execution_id,
+        });
+      if (!entry.stopRequested && entry.ref.execution_state === "running") return view(entry);
+      await boundPromise(
+        async () => {
+          await entry.preparationSettled.promise;
+          await entry.execution?.settled;
+        },
+        {
+          signal: authority.signal,
+          timeoutMs: continuationTimeout,
+          onTimeout: () => {
+            throw kernelError("unavailable", "Previous execution is still settling", {
+              goal_outcome: "recovering",
+              execution_id: entry.ref.execution_id,
+            });
+          },
+          onAbort: () => {
+            throw kernelError("conflict", "Resume superseded", { goal_outcome: "superseded" });
+          },
+        },
+      );
+      admission.assertConversation(authority);
+      return entry.occupancy === undefined ? undefined : view(entry);
+    },
     physicalRun(sessionId) {
       const entry = [...entries.values()].find(
         (entry) =>
@@ -1217,7 +1894,7 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     },
     hasPendingContinuation: () =>
       [...entries.values()].some((entry) => entry.continuationAuthority !== undefined),
-    sync: () => persist(),
+    sync,
     guardAllowlistFor({ owner, executionId }) {
       const entry = entries.get(executionId);
       if (owner !== options.owner || entry?.occupancy === undefined) return undefined;
@@ -1272,6 +1949,9 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     }),
     async close() {
       closing = true;
+      cancelRecoveryWake?.();
+      cancelRecoveryWake = undefined;
+      await bestEffort(() => syncing, { operation: "hosting.recovery.sync", logger });
       await Promise.all([...connections.values()].map(closeConnection));
       await Promise.all(
         [...entries.values()].map(async (entry) => {

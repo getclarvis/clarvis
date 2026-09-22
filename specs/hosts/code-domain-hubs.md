@@ -609,7 +609,7 @@ Run Controls and the `Ctrl+X M` Memory picker both write only `MemoryModeStore`;
 settings. All application shortcuts use the shared Ctrl+X family.
 
 `applyGuard` degrades `auto` to `on` when `guardAutoResolves(settings)` is false, writes the
-degraded value and says why. It uses the same `guardPolicyForWrite` preservation path.
+degraded value and says why. It uses the same `scopedGuardPolicy` preservation path.
 
 The Guard row's `Source` value comes from `guardSource()` : it reads as the
 scope that actually supplied the persisted value (`settingSource("guard")`, itself
@@ -972,7 +972,7 @@ specific to these files.
 | Workflow result cannot be stringified | `packages/code/src/views/config/WorkflowsHub.tsx` | "(unserializable result)". Pinned at `packages/code/tests/integration/workflows-hub-render.test.tsx` |
 | Leader node has no `task` (legacy record) | `packages/code/src/views/config/WorkflowsHub.tsx` | "Task unavailable for this legacy workflow"; `[t]` is unbound |
 | `settings.inspectSandbox()` rejects | `packages/code/src/views/config/RunControlsPanel.tsx` (`onMount`) | availability stays `null`; the row reads "Checking native sandbox on the kernel host…" indefinitely |
-| Any Run-controls settings write throws | `packages/code/src/views/config/RunControlsPanel.tsx` (`applyPreset`, `applyGuard`, `applyPlanRetention`) | `notify(errorText(error))`; the session store is not updated |
+| Any Run-controls settings write throws | `packages/code/src/views/config/RunControlsPanel.tsx` (`applyIsolationChoice`, `applyGuard`, `applyPlanRetention`) | `notify(errorText(error))`; the session store is not updated |
 | Session-memory toggle activated with no configured memory block | `packages/code/src/views/config/MemoryConfigPanel.tsx` | refuses to cycle; notifies "memory is not configured in settings — save a block first". Pinned at `packages/code/tests/integration/memory-config-render.test.tsx` |
 | Any detached async operation rejects unobserved | `packages/code/src/core/tasks.ts` | a `task.failed` diagnostic event is emitted with the operation name; nothing is thrown into the render tree |
 
@@ -1071,7 +1071,7 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
 
 6. **`AgentsStore.reload`'s epoch guard (invariant 16) is unpinned.** No test in
    `packages/code/tests` interleaves two reloads. Likewise unpinned: the custom-sandbox confirmation
-   branch in `RunControlsPanel.applyPreset` (invariant 50), and the `start`-intent exclusion
+   branch in `RunControlsPanel.applyIsolationChoice` (invariant 50), and the `start`-intent exclusion
    (invariant 26) as a direct assertion.
 
 7. **`GrantId` is a closed union in `packages/code/src/adapters/agents.ts`, but the panel writes it through

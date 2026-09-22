@@ -199,6 +199,65 @@ test("guided creation uses one ordinary main-agent turn while literal escape sta
   expect(f.formulations).toHaveLength(0);
 });
 
+test("a retained resume that is waiting on a limit opens the editor and says why", async () => {
+  const f = fixture();
+  const control = f.service.control.bind(f.service);
+  f.service.control = async (request) => ({
+    ...(await control(request)),
+    outcome: "needs_input",
+    resume_condition: "token_limit",
+  });
+  cleanup.push(
+    createRoot((dispose) => {
+      const commands = createCommands(
+        f.interaction,
+        { clearSession: () => {}, status: () => {}, exportSession: () => {} },
+        f.ui,
+      );
+      registerGoalCommands(commands.scope(), f);
+      commands.route("goal.open", "resume");
+      return () => {
+        commands.dispose();
+        dispose();
+      };
+    }),
+  );
+  await settled();
+  expect(f.notices).toContain(
+    "Resume retained. Review the limit; saving adjusted limits resumes this request.",
+  );
+  expect(f.opened).toEqual(["goal.open"]);
+});
+
+test("a retained resume with another recovery condition is reported without an editor", async () => {
+  const f = fixture();
+  const control = f.service.control.bind(f.service);
+  f.service.control = async (request) => ({
+    ...(await control(request)),
+    outcome: "recovering",
+  });
+  cleanup.push(
+    createRoot((dispose) => {
+      const commands = createCommands(
+        f.interaction,
+        { clearSession: () => {}, status: () => {}, exportSession: () => {} },
+        f.ui,
+      );
+      registerGoalCommands(commands.scope(), f);
+      commands.route("goal.open", "resume");
+      return () => {
+        commands.dispose();
+        dispose();
+      };
+    }),
+  );
+  await settled();
+  expect(f.notices).toContain(
+    "Resume retained. Inspect the Goal and resolve the reported recovery condition.",
+  );
+  expect(f.opened).toEqual([]);
+});
+
 test("guided creation does not call the compatibility formulation service", async () => {
   const f = fixture({ state: { version: 1, revision: 0, archive: [], receipts: [] } });
   cleanup.push(
@@ -434,6 +493,8 @@ test("goal detail keeps actionable review state compact and accepts a pending hu
       usage_unknown: true,
       cache_estimated: true,
       overrun_tokens: 5,
+      gaps: [{ cause: "no_usage", calls: 1 }],
+      usage_accepted_runs: [],
     },
     auto_continuations: 2,
     no_progress_stages: 1,
@@ -614,7 +675,7 @@ test("Goal view exposes bounded Steward state without technical identifiers", as
       decision: "needs_work",
       summary: "Result still needs verification",
       next_step: "Verify the final artifact",
-      usage: { kind: "measured", input: 10, output: 5, cached: 0 },
+      usage: { kind: "complete", input: 10, output: 5, cached: 0 },
       reviewed_at: 1,
     },
   ];
@@ -660,7 +721,7 @@ test("Goal view presents a Steward question as main-agent work, not operator act
       decision: "needs_evidence",
       summary: "Need a browser check",
       question: "Did addition work in the browser?",
-      usage: { kind: "measured", input: 10, output: 5, cached: 0 },
+      usage: { kind: "complete", input: 10, output: 5, cached: 0 },
       reviewed_at: 1,
     },
   ];
@@ -707,7 +768,13 @@ test("goal completion follows current state without rebuilding the command catal
   f.setState(goalView());
   await f.goals.refresh();
   expect(commands.entries()).toBe(catalog);
-  expect(await labels()).toEqual(["/goal", "/goal/edit", "/goal/pause", "/goal/cancel"]);
+  expect(await labels()).toEqual([
+    "/goal",
+    "/goal/edit",
+    "/goal/pause",
+    "/goal/resume",
+    "/goal/cancel",
+  ]);
   f.setState(goalView({ status: "paused" }));
   await f.goals.refresh();
   expect(await labels()).toEqual([
@@ -719,10 +786,10 @@ test("goal completion follows current state without rebuilding the command catal
   ]);
   f.setState(goalView({ status: "cancelled" }));
   await f.goals.refresh();
-  expect(await labels()).toEqual(["/goal", "/goal/edit", "/goal/clear"]);
+  expect(await labels()).toEqual(["/goal", "/goal/edit", "/goal/resume", "/goal/clear"]);
   f.setState(goalView({ runs: [goalRun("physical")] }));
   await f.goals.refresh();
-  expect(await labels()).toEqual(["/goal", "/goal/pause", "/goal/cancel"]);
+  expect(await labels()).toEqual(["/goal", "/goal/pause", "/goal/resume", "/goal/cancel"]);
   f.setState(empty);
   await f.goals.refresh();
   expect(await labels()).toEqual(["/goal"]);

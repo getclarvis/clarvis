@@ -103,7 +103,12 @@ export type { CallEnvelopeArgs, CallEnvelope } from "./call-envelope.ts";
 export { memoizeByOwner, sharedFallback } from "./per-owner.ts";
 
 export type { CompactionAnchor } from "./compaction-anchor.ts";
-export type { AgentResult, AgentErrorCode, BuiltinAgentErrorCode } from "./agent-result.ts";
+export type {
+  AgentResult,
+  AgentErrorCode,
+  BuiltinAgentErrorCode,
+  AgentLimitExhausted,
+} from "./agent-result.ts";
 export { BUILTIN_AGENT_ERROR_CODES, partialStructOf } from "./agent-result.ts";
 export { checkpointMetadataSchema } from "./finalization.ts";
 export type {

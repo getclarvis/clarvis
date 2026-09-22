@@ -97,6 +97,7 @@ test("operator recovery audits survive session projection and metadata saves", (
       status: "interrupted",
       recovery_resolution: {
         kind: "operator_verified_physical_closure",
+        disposition: "archive",
         previous_host_generation: "old",
         resolving_host_generation: "new",
         operator_connection_id: "operator",

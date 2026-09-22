@@ -19,7 +19,7 @@ owns the **implementation**:
 |                                 |                                                                                        |
 | ------------------------------- | -------------------------------------------------------------------------------------- |
 | `TraceHandle`, `RecordingTrace` | the in-run recorder; satisfies `TracePort` structurally                                |
-| `JsonTraceStore`                | the on-disk format sessions are rehydrated from                                        |
+| `createJsonTraceStore`          | the on-disk format sessions are rehydrated from                                        |
 | `RunJournal`, journal recovery  | what makes a run that died mid-flight recoverable                                      |
 | `mapEntry` / `mapEntryRaw`      | trace entry → persisted `TraceEvent`, consulting a capability projector registry first |
 | `capDetail` and the caps        | the display bounds, shared with the mapper                                             |
@@ -36,6 +36,12 @@ Container coordinate through one selectively mounted workspace lock root.
 No external dependencies — `node:fs`, `node:os`, `node:path` and `node:crypto`
 only, over `@clarvis/capability` and `@clarvis/paths`. `@clarvis/loop` depends on
 this package; nothing here may depend on the engine.
+
+The optional `TraceStore.readEvents` reads an active journal through a repeatable immutable byte
+prefix, using bounded blocks and line limits. It checks owner, execution and visibility before
+yielding events. Partial or malformed lines refuse evidence replay; crash salvage remains separate.
+After settlement it uses the existing record reader and refuses damaged recovery records. The
+visibility and write-projection wrappers preserve this boundary. No additional storage is created.
 
 `TraceHandle` satisfies `TracePort` **structurally** — no adapter, no cast — so
 the engine passes the handle straight through, exactly as `LiveContext` satisfies
@@ -210,7 +216,7 @@ of execution status. Its metadata is separate from the final result value. Reope
 preserve that distinction; orphan recovery still reports `interrupted` and does not invent an accepted
 checkpoint from an unfinished journal.
 
-`JsonTraceStore` writes what `@clarvis/kernel` reads back to restore a session.
+The journaling store `createJsonTraceStore` returns writes what `@clarvis/kernel` reads back to restore a session.
 Changing what it writes changes what every already-recorded run means, so a
 change there is a deliberate format decision, never a side effect of a
 refactor. Owner deletion is ordered against concurrent inserts by a durable

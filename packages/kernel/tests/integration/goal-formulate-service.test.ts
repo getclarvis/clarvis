@@ -235,7 +235,7 @@ describe("Goal formulation through the real file host", () => {
         kind: "guided",
         seed: "implemente request.md sem publicar",
         formulation_execution_id: receipt.formulation.formulation_execution_id,
-        formulation_usage: { kind: "measured", input: 3050, output: 30, cached: 1500 },
+        formulation_usage: { kind: "complete", input: 3050, output: 30, cached: 1500 },
       },
     });
     expect(view.state.current!.runs).toHaveLength(1);

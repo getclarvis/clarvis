@@ -301,8 +301,9 @@ bun --filter @clarvis/code start
   settling; use explicit `fs.utimes` for mtime fixtures. Restore every spy in `finally`. A positive
   timeout may remain only as a labelled fuse around a physical boundary, never as the event awaited.
 - Every workspace `tsconfig.json` includes its tests.
-- Every package test command keeps `--timeout 60000`. Package `bunfig.toml` files keep the shared
-  preload and `coveragePathIgnorePatterns = ["../**"]`. `bun run check:harness` enforces this.
+- Every package `bun test` command keeps `--timeout 60000`; the type-only `protocol` package runs no
+  `bun test` and is exempt. Package `bunfig.toml` files keep the shared preload and
+  `coveragePathIgnorePatterns = ["../**"]`. `bun run check:harness` enforces both.
 - Bun is pinned exactly by `mise.toml`; `bun run check:bun-version` enforces the same runtime across
   CI, the crash canary, Docker, all manifests, `@types/bun`, and the lockfile.
 - Coverage authority is `tooling/checks/coverage.ts` over LCOV counters, including source-file

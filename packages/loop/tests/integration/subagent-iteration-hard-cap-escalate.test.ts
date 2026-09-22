@@ -10,7 +10,7 @@ afterEach(async () => {
 });
 
 describe("spawned Subagent iteration_limit is a hard cap even under on_exceed='escalate' (finding 12)", () => {
-  it("the Subagent stops at its iteration_limit with budget_exhausted and no human is prompted", async () => {
+  it("the Subagent stops at its own iteration_limit with a recoverable partial and no human is prompted", async () => {
     let elicitCalls = 0;
     const elicit: Elicit = async () => {
       elicitCalls += 1;
@@ -79,13 +79,13 @@ describe("spawned Subagent iteration_limit is a hard cap even under on_exceed='e
     const seen = JSON.stringify(
       llm.calls.filter((c) => c.model === "claude-opus-4-5").at(-1)!.messages,
     );
-    expect(seen).toContain("budget_exhausted");
+    expect(seen).toContain("stopped at its own iteration limit");
     expect(seen).toContain("still searching, partial: name=Jane");
   });
 });
 
 describe("spawned Subagent iteration_limit is a hard cap under on_exceed='stop' too", () => {
-  it("the Subagent stops at its iteration_limit with budget_exhausted and its partial output reaches the Lead", async () => {
+  it("the Subagent stops at its own iteration_limit and its partial output reaches the Lead", async () => {
     const llm = new MockLLM({
       script: [
         {
@@ -146,7 +146,8 @@ describe("spawned Subagent iteration_limit is a hard cap under on_exceed='stop' 
     const seen = JSON.stringify(
       llm.calls.filter((c) => c.model === "claude-opus-4-5").at(-1)!.messages,
     );
-    expect(seen).toContain("budget_exhausted");
+    expect(seen).toContain("stopped at its own iteration limit");
+    expect(seen).toContain("2 iterations");
     expect(seen).toContain("still searching, partial: name=Jane");
   });
 });

@@ -18,6 +18,7 @@ import {
 import { kernelError } from "../core/errors.ts";
 import { CLARVIS_WIRE_VERSION } from "../transport/wire.ts";
 import { openHostedProjection } from "./projection.ts";
+import { removeProjectionStorage } from "./projection-storage.ts";
 import { decodeHostedRegistryState, MAX_HOST_INDEX_BYTES } from "./state.ts";
 import {
   assertPrivateHostDirectory,
@@ -199,10 +200,14 @@ export async function acquireLocalHostState(
       async projection(executionId) {
         await preparePrivateHostDirectory(dirname(paths.projectionFile(generation, executionId)));
         await lease.assertOwned();
-        return openHostedProjection(paths.projectionFile(generation, executionId), {
-          host_generation: generation,
-          execution_id: executionId,
-        });
+        return openHostedProjection(
+          paths.projectionFile(generation, executionId),
+          {
+            host_generation: generation,
+            execution_id: executionId,
+          },
+          { recovery: { logger } },
+        );
       },
       async removeProjection(executionId, runGeneration) {
         await lease.assertOwned();
@@ -210,9 +215,7 @@ export async function acquireLocalHostState(
         await assertPrivateHostDirectory(dirname(file)).catch((error: NodeJS.ErrnoException) => {
           if (error.code !== "ENOENT") throw error;
         });
-        await unlink(file).catch((error: NodeJS.ErrnoException) => {
-          if (error.code !== "ENOENT") throw error;
-        });
+        await removeProjectionStorage(file);
       },
       async commit(state) {
         await assertPrivateHostDirectory(paths.root);

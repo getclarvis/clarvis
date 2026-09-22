@@ -107,7 +107,7 @@ The contributed settings block is strict and not plugin-contributable:
 | `toolchains.extra_paths` / `excluded_paths` | bounded lists | Add or suppress read-only host roots |
 
 Production: `packages/loop/src/runtime/capabilities/tools-settings.ts` (`sandboxSchema`,
-`SANDBOX_SETTINGS_CONTRIBUTION`). Test: `packages/loop/tests/unit/settings-schema.test.ts`
+`sandboxSettingsSpec`). Test: `packages/loop/tests/unit/settings-schema.test.ts`
 (`accepts an opt-in native sandbox`) and `packages/loop/tests/unit/settings-merge.test.ts`.
 
 Scalar fields and `toolchains.include` use the last defined scope value. `pass_env`,
@@ -116,7 +116,7 @@ Scalar fields and `toolchains.include` use the last defined scope value. `pass_e
 an omitted `include` discovers the fixed catalog, and an explicit empty `include` discovers nothing.
 Plugins cannot contribute this block, and `enabled: false` is interpreted by the loop before the
 tools mechanism is built. Production: `packages/loop/src/runtime/capabilities/tools-settings.ts`
-(`sandboxSettingsSpec`, `SANDBOX_SETTINGS_CONTRIBUTION`) and
+(`sandboxSchema`, `sandboxSettingsSpec`) and
 `packages/loop/src/runtime/capabilities/tools.ts` (`createAgentToolsCapability`). Tests:
 `packages/loop/tests/unit/settings-merge.test.ts`, `settings-schema.test.ts`, and
 `packages/loop/tests/integration/sandbox-host-policy.test.ts`.
@@ -573,7 +573,7 @@ list fields union and de-duplicate; `excluded_paths` subtracts from the merged e
 plugin cannot contribute sandbox policy.
 
 - Production: `packages/loop/src/runtime/capabilities/tools-settings.ts` (`sandboxSettingsSpec`,
-  `SANDBOX_SETTINGS_CONTRIBUTION`).
+  `sandboxSchema`).
 - Test: `packages/loop/tests/unit/settings-merge.test.ts` and `settings-schema.test.ts`.
 
 **INV-S10 — Discovery cache identity is complete and refreshable.** Kernel toolchain discovery is

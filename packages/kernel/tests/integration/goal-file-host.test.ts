@@ -233,6 +233,29 @@ describe("goal through the real file host and SDK HTTP", () => {
       status: "failed",
       ended_reason: "budget_exhausted",
     });
+    f.setResponder(async () => ({ text: "Independent answer after Goal budget exhaustion" }));
+    const session = (await f.client.sessions.get("conversation"))!;
+    const independent = await f.client.hosting!.start({
+      session_id: "conversation",
+      session_revision: session.revision!,
+      kind: "conversation",
+      user_preview: "Answer independently",
+      params: {
+        execution_id: "after-budget-limited",
+        agent: "solo",
+        intent: "operator",
+        messages: [{ role: "user", content: "Answer independently" }],
+      },
+    });
+    expect(await independent.handle.done).toMatchObject({ status: "completed" });
+    await independent.handle.closed;
+    const after = (await f.client.goals.get("conversation")).state.current!;
+    expect(after).toEqual(goal);
+    expect((await f.client.sessions.get("conversation"))!.turns.at(-1)).toMatchObject({
+      execution_id: "after-budget-limited",
+      status: "done",
+    });
+    expect(f.requests).toHaveLength(2);
   });
 
   it("continues a stalled stage in a successor and stops at the stage progress limit", async () => {
@@ -371,7 +394,8 @@ describe("goal through the real file host and SDK HTTP", () => {
     });
     expect(goal.runs[0]!.not_before).toBeDefined();
     expect(goal).toMatchObject({ status: "blocked", auto_continuations: 0 });
-    expect(goal.reason).toContain("Usage is unknown");
+    expect(goal.reason).toContain("Consumption is unknown");
+    expect(goal.reason).toContain("resume the goal to accept the gap");
     expect(goal.runs).toHaveLength(1);
   });
 
@@ -513,6 +537,74 @@ describe("goal through the real file host and SDK HTTP", () => {
     expect(f.requests).toHaveLength(3);
   });
 
+  it("admits the operator's own turn while the Goal is paused and starts no Goal stage", async () => {
+    const f = await createGoalFileHostFixture();
+    cleanups.push(f.close);
+    f.setResponder(async () => ({ text: "Nothing to continue yet." }));
+    await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "create",
+      action: {
+        kind: "create",
+        objective: "Keep working while the operator types",
+        limits: { max_net_tokens: 10000 },
+      },
+    });
+    await f.until(() => f.host.stats().runs === 0);
+    const settled = await f.client.goals.get("conversation");
+    const stages = settled.state.current!.runs.length;
+    const goalId = settled.state.current!.goal_id;
+    const requestsBefore = f.requests.length;
+
+    // The operator's turn is admitted as its own intent: the Goal's state cannot veto it, and it
+    // does not become a Goal stage.
+    const session = (await f.client.sessions.get("conversation"))!;
+    const started = await f.client.hosting!.start({
+      session_id: "conversation",
+      session_revision: session.revision!,
+      kind: "conversation",
+      user_preview: "do something else entirely",
+      params: {
+        execution_id: "operator-turn",
+        agent: "solo",
+        messages: [{ role: "user", content: "do something else entirely" }],
+        intent: "operator",
+      },
+    });
+    expect(await started.handle.done).toMatchObject({ status: "completed" });
+    await f.until(() => f.requests.length > requestsBefore);
+
+    const after = await f.client.goals.get("conversation");
+    expect(after.state.current).toMatchObject({
+      goal_id: goalId,
+      objective: settled.state.current!.objective,
+    });
+    // No stage was admitted for the operator's turn, and the Goal's own pending work is stopped.
+    expect(after.state.current!.status).not.toBe("active");
+    expect(after.state.current!.runs).toHaveLength(stages);
+
+    // An automatic turn over the same Goal is still refused, and the refusal is typed: the client
+    // learns that the Goal needs a decision instead of having to read the reason.
+    await expect(
+      f.client.hosting!.start({
+        session_id: "conversation",
+        session_revision: (await f.client.sessions.get("conversation"))!.revision!,
+        kind: "conversation",
+        user_preview: "continue the stage",
+        params: {
+          execution_id: "automatic-turn",
+          agent: "solo",
+          messages: [{ role: "user", content: "continue the stage" }],
+          intent: "automatic",
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "conflict",
+      details: { goal_outcome: "needs_input" },
+    });
+  });
+
   it("blocks an otherwise valid checkpoint when the actual SDK response omitted usage", async () => {
     const f = await createGoalFileHostFixture();
     cleanups.push(f.close);
@@ -547,15 +639,23 @@ describe("goal through the real file host and SDK HTTP", () => {
     });
     expect(f.requests).toHaveLength(1);
     expect(f.errors).toEqual([]);
-    await expect(
-      f.client.goals.control({
-        session_id: "conversation",
-        expected_revision: view.state.revision,
-        operation_id: "resume",
-        action: { kind: "resume" },
-      }),
-    ).rejects.toMatchObject({ code: "conflict" });
-    expect(f.requests).toHaveLength(1);
+    // An explicit resume is what accepts the gap: the stage's consumption was never reported, so
+    // there is nothing left to reconcile and the operator is not asked to repair a record the host
+    // could not have written either.
+    await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: view.state.revision,
+      operation_id: "resume",
+      action: { kind: "resume" },
+    });
+    const after = await f.client.goals.get("conversation");
+    expect(after.state.current).toMatchObject({
+      status: "active",
+      consumption: { usage_unknown: true },
+    });
+    expect(after.state.current!.consumption.usage_accepted_runs).toEqual([
+      after.state.current!.runs[0]!.execution_id,
+    ]);
   });
 
   it("pauses future work during inference and resumes only through explicit IPC control", async () => {
@@ -640,9 +740,10 @@ describe("goal through the real file host and SDK HTTP", () => {
         session_id: "conversation",
         session_revision: session.revision!,
         kind: "conversation",
-        user_preview: "Ordinary input cannot resume a paused goal",
+        user_preview: "Automation cannot resume a paused goal",
         params: {
           execution_id: "ordinary",
+          intent: "automatic",
           agent: "solo",
           messages: [{ role: "user", content: "Continue" }],
         },

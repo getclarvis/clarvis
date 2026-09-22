@@ -175,10 +175,14 @@ bun run release:smoke
 bun run release:install-smoke
 ```
 
-On a qualified Docker/Colima host, also run
-`bun run runtime:build:dev -- clarvis-runtime:release-canary`, resolve the printed local image ID,
-and execute the gated Docker runtime canary against it. This is current-source evidence only; it does
-not publish or emulate a registry attestation.
+On a qualified Docker/Colima host, also build a local base with
+`bun run runtime:base:build --engine docker --target linux-x64 --tag clarvis-base:release-canary`,
+compile the matching Kernel archive with
+`bun run runtime:artifact:build --engine docker --target linux-x64 --out <directory>`, and execute
+the gated Docker runtime canary against that explicit pair through
+`bun run runtime:qualify --engine docker --base <image> --artifact <archive> --report <file>`, or
+through its strict wrapper `tooling/ci/qualify-runtime.sh`. This is current-source evidence only; it
+does not publish or emulate a registry attestation.
 
 Run the manual `workflow_dispatch` path to exercise every native runner without publishing. Download
 the six workflow artifacts and confirm:

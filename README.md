@@ -105,8 +105,8 @@ Essential controls:
 Other shortcuts depend on the terminal keyboard profile and appear in the footer and `/help`; the
 README does not duplicate a keymap that the application generates dynamically.
 
-Settings > Isolation, Run Controls, and `Ctrl+X I` share the same global
-Host/Sandbox/Docker/Podman writer. Docker or Podman connects before a Kernel is created; the simple
+Settings > Run controls exposes the same Isolation choice as `Ctrl+X I`; both write the one global
+Host/Sandbox/Docker/Podman selection. Docker or Podman connects before a Kernel is created; the simple
 TUI choice uses product-owned limits and ordinary outbound networking. Container runs the complete
 native Kernel with Plans, Memory, Workflows and Goals. Command Review, plugins, skills, hooks, generic
 MCP and external capability providers remain unavailable; Tasks is unavailable because its current

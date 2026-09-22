@@ -1,4 +1,11 @@
-import type { ModelCost, RunDetail, RunResult, Session, StartRunParams } from "@clarvis/protocol";
+import type {
+  ModelCost,
+  RunDetail,
+  RunResult,
+  Session,
+  SessionTotals,
+  StartRunParams,
+} from "@clarvis/protocol";
 import type { HostedRegistryOptions, PreparedHostedTurn } from "./registry.ts";
 import { kernelError } from "../core/errors.ts";
 import type { FileSessionService, HostSessionStore } from "../sessions/session-service.ts";
@@ -45,6 +52,13 @@ export interface HostedSessionOptions {
   ): Promise<HostedExecutionBinding>;
   redact(text: string): string;
   priceFor?(model: string): ModelCost | undefined;
+  /** Private Guard calls omitted from the ordinary run's per-agent breakdown. */
+  guardUsageFor?(executionId: string):
+    | {
+        usage: NonNullable<RunResult["usage"]>;
+        cacheUnknown: boolean;
+      }
+    | undefined;
   /**
    * Canonical result/trace for skill digests and steering-consumption reconciliation.
    * Missing, live or salvaged history cannot prove a steering message was not consumed.
@@ -60,6 +74,23 @@ export interface HostedSessionOptions {
   logger?: Logger;
   /** Best-effort display invalidation after canonical publication, never part of mutation authority. */
   goalChanged?(sessionId: string): void;
+}
+
+/** Fold private Guard calls into the ordinary run's canonical Session totals. */
+function addGuardUsage(
+  totals: SessionTotals,
+  guard: NonNullable<ReturnType<NonNullable<HostedSessionOptions["guardUsageFor"]>>>,
+  priceFor: HostedSessionOptions["priceFor"],
+): void {
+  const usage = guard.cacheUnknown
+    ? {
+        iterations: 0,
+        elapsed_ms: 0,
+        input_tokens: guard.usage.by_agent?.reduce((sum, row) => sum + row.input_tokens, 0),
+        output_tokens: guard.usage.by_agent?.reduce((sum, row) => sum + row.output_tokens, 0),
+      }
+    : guard.usage;
+  addRunUsage(totals, usage, priceFor);
 }
 
 function revision(session: Session | null): number {
@@ -423,6 +454,7 @@ export function createHostedSessionCoordinator(
           if (result.execution_id !== params.execution_id)
             throw kernelError("conflict", "result does not belong to this hosted turn");
           const decision = await binding.prepareSettlement?.(result);
+          const guardUsage = options.guardUsageFor?.(result.execution_id);
           const settle = (session: Session): boolean =>
             decision?.(session) === true || options.settleSession?.(session, result) === true;
           return locked(input.session_id, async () => {
@@ -467,8 +499,11 @@ export function createHostedSessionCoordinator(
             stored.updated_at = turn.ended_at;
             stored.revision = revision(stored) + 1;
             const settled = settle(stored);
-            if (!settled)
+            if (!settled) {
               addRunUsage(stored.totals, result.usage, (model) => options.priceFor?.(model));
+              if (guardUsage !== undefined)
+                addGuardUsage(stored.totals, guardUsage, (model) => options.priceFor?.(model));
+            }
             await options.sessions.saveHost(stored);
             goalChanged(stored);
           });
@@ -528,8 +563,12 @@ export function createHostedSessionCoordinator(
       turn.ended_at = now();
       stored.updated_at = turn.ended_at;
       stored.revision = revision(stored) + 1;
-      if (!settledGoal)
+      if (!settledGoal) {
         addRunUsage(stored.totals, result.usage, (model) => options.priceFor?.(model));
+        const guardUsage = options.guardUsageFor?.(run.execution_id);
+        if (guardUsage !== undefined)
+          addGuardUsage(stored.totals, guardUsage, (model) => options.priceFor?.(model));
+      }
       await options.sessions.saveHost(stored);
       (options.logger ?? NOOP_LOGGER).info(
         {

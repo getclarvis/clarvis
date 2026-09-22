@@ -235,7 +235,7 @@ function createGoalStageSettlement(scope: {
   executionId: string;
   signal: AbortSignal;
   now: () => number;
-  usageTracker: { measure(): GoalUsage };
+  usageTracker: { measure(priceFor?: (model: string) => ModelCost | undefined): GoalUsage };
   /** The bound runtime, once the Goal exists. */
   runtime: () => GoalRuntimePort | undefined;
   /** Whether the Steward's completion decision still covers this attempt. */
@@ -315,7 +315,7 @@ function createGoalStageSettlement(scope: {
         }
       }
     }
-    const usage = scope.usageTracker.measure();
+    const usage = scope.usageTracker.measure(scope.priceFor);
     if (
       goal !== undefined &&
       run !== undefined &&

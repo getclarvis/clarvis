@@ -159,6 +159,7 @@ const usageTotals = {
   input: counter,
   output: counter,
   cached: counter.optional(),
+  cost_usd: z.number().finite().nonnegative().optional(),
 };
 
 const cachedWithinInput = <T extends { input: number; cached?: number | undefined }>(

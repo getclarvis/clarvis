@@ -15,6 +15,7 @@ import {
   recoverGoalSettlementSession,
 } from "../../src/goals/settlement.ts";
 import { goalStateFromSession, goalStateToDto } from "../../src/goals/session-state.ts";
+import { createGoalUsageTracker } from "../../src/goals/usage.ts";
 
 /**
  * The terminal cause a physically closed goal stage leaves in durable state.
@@ -166,7 +167,7 @@ describe("goal stage classification", () => {
           preparation: {
             outcome: status,
             disposition,
-            usage: { kind: "complete", input: 19, output: 7 },
+            usage: { kind: "complete", input: 19, output: 7, cost_usd: 0.00003 },
             activity_unavailable: true,
           },
         }),
@@ -184,6 +185,7 @@ describe("goal stage classification", () => {
       expect(stage(session).decision).not.toBe("complete");
       expect(session.totals.input).toBe(19);
       expect(session.totals.output).toBe(7);
+      expect(session.totals.cost_usd).toBeCloseTo(0.00003, 10);
       expect(recoverGoalSettlementSession(session, result, 10)).toBe(false);
       expect(session.totals.input).toBe(19);
     },
@@ -446,6 +448,63 @@ describe("goal stage settlement cause", () => {
  *   still finds the execution after the Goal it belonged to was replaced.
  */
 describe("goal usage credit", () => {
+  test("prices Goal work and Guard calls once when run agent detail omits Guard", async () => {
+    const session = sessionWithRunningStage();
+    session.totals.cost_usd = 0.01;
+    const tracker = createGoalUsageTracker();
+    const provider = tracker.wrap({
+      call: async (params) => ({
+        text: "done",
+        usage: {
+          input_tokens: params.model === "guard" ? 200 : 100,
+          output_tokens: params.model === "guard" ? 20 : 10,
+          cached_tokens: params.model === "guard" ? 150 : 50,
+          cache_write_tokens: 0,
+        },
+      }),
+    });
+    for (const model of ["work", "guard"])
+      await provider.call({ provider: "fixture", model, messages: [], tools: [] });
+    const usage = tracker.measure(() => ({ input: 1, output: 2, cache_read: 0.1 }));
+    expect(usage).toMatchObject({ input: 300, output: 30, cached: 200 });
+    expect(usage.kind === "unknown" ? undefined : usage.cost_usd).toBeCloseTo(0.00018, 10);
+    const result: RunResult = {
+      execution_id: "run-1",
+      status: "completed",
+      disposition: "checkpoint",
+      checkpoint: { summary: "Stage ended", next_step: "Continue" },
+      usage: {
+        iterations: 1,
+        elapsed_ms: 1,
+        by_agent: [
+          {
+            role: "lead",
+            model: "fixture/work",
+            input_tokens: 100,
+            output_tokens: 10,
+            cached_tokens: 50,
+            cache_write_tokens: 0,
+            iterations: 1,
+          },
+        ],
+      },
+    };
+    const settle = () =>
+      settleGoalSession(
+        session,
+        result,
+        { disposition: "checkpoint", completion_validated: false, usage },
+        40,
+        () => ({ input: 1, output: 2, cache_read: 0.1 }),
+      );
+    expect(settle()).toBe(true);
+    expect(session.totals).toMatchObject({ input: 300, output: 30, cached: 200 });
+    expect(session.totals.cost_usd).toBeCloseTo(0.01018, 10);
+    expect(settle()).toBe(true);
+    expect(session.totals).toMatchObject({ input: 300, output: 30, cached: 200 });
+    expect(session.totals.cost_usd).toBeCloseTo(0.01018, 10);
+  });
+
   const partial = (input: number, output: number) => ({
     kind: "partial" as const,
     input,
@@ -525,15 +584,15 @@ test("versioned corrections update session and Goal by signed delta and reject c
       { disposition: "final", completion_validated: false, usage },
       40,
     );
-  apply({ kind: "complete", revision: 1, input: 100, output: 10, cached: 20 });
-  apply({ kind: "complete", revision: 2, input: 90, output: 8, cached: 40 });
-  expect(session.totals).toMatchObject({ input: 90, output: 8, cached: 40 });
+  apply({ kind: "complete", revision: 1, input: 100, output: 10, cached: 20, cost_usd: 0.01 });
+  apply({ kind: "complete", revision: 2, input: 90, output: 8, cached: 40, cost_usd: 0.015 });
+  expect(session.totals).toMatchObject({ input: 90, output: 8, cached: 40, cost_usd: 0.015 });
   expect(session.goal_state!.current!.consumption.net_tokens).toBe(58);
   const snapshot = structuredClone(session);
-  apply({ kind: "complete", revision: 1, input: 100, output: 10, cached: 20 });
+  apply({ kind: "complete", revision: 1, input: 100, output: 10, cached: 20, cost_usd: 0.01 });
   expect(session).toEqual(snapshot);
-  expect(() => apply({ kind: "complete", revision: 2, input: 95, output: 8, cached: 40 })).toThrow(
-    "Conflicting measurements",
-  );
+  expect(() =>
+    apply({ kind: "complete", revision: 2, input: 95, output: 8, cached: 40, cost_usd: 0.015 }),
+  ).toThrow("Conflicting measurements");
   expect(session).toEqual(snapshot);
 });

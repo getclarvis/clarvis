@@ -25,6 +25,9 @@ the kernel and are specified separately in
 `GoalRun.settlement_preparation` carries host-owned non-final settlement inputs for restart recovery.
 It preserves measured usage and activity uncertainty, not completion authority. Client session saves
 cannot alter it because it belongs to the protected Goal state.
+`GoalUsage.cost_usd`, when present, is the host-priced subtotal of observed calls. The host credits
+it with the stage's tokens to the same Session cost total used for ordinary runs; an absent price
+does not mean zero cost.
 
 Host-owned `Session.operator_intents` may carry `steering_target`, the execution selected by the host
 before delivery. It scopes consumption recovery after restart; client saves cannot rewrite it and

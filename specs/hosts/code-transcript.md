@@ -905,6 +905,8 @@ the `thinking`/`working` phase in `LeadActivityLine`. `runStripText` separately 
 plus cumulative `Session` input/output, prompt-cache hit percentage and cost before and after
 settlement, prefixing a terminal outcome only after settlement; it never adds `Running`, elapsed
 time or iteration. Wide terminals show the Session token totals and cache percentage. `In`
+and cost are cumulative across ordinary runs, Goal stages, Guard reviews and Goal auxiliary work
+after their host settlements. `In`
 subtracts the reported cache hit, while
 `Cache hit` divides cached tokens by gross input before that subtraction; the same projection helper
 uses one run's values when its owner is `Run` and cumulative values when its owner is `Session`.

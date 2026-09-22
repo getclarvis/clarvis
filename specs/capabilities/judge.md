@@ -341,6 +341,8 @@ Each actual inference emits one parent `guard_reviewer_model_call` with private
 The parent execution ledger excludes the child's usage; private records retain their own accounting.
 An effective host Goal usage wrapper still observes parent and child calls exactly once; isolating
 the child's execution ledger does not remove that host wrapper.
+For an ordinary hosted run, the Session settlement adds the measured parent Guard call events
+once to cumulative tokens and cost, without changing the parent execution ledger.
 Consumer/effect observation metadata does not change semantic cache identity. Cancellation of the
 coordinator is classified separately from the per-stage timeout signal.
 

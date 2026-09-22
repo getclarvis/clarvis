@@ -274,8 +274,10 @@ distinguishes `call_local` from `effect_review`, `command_guard` from `configure
 `compile` from `decide`; it totals the successful attempt with `retriedUsage`, uses
 `ProviderError.accumulatedUsage` on failure, and leaves `cache_read_ratio` absent whenever cache
 accounting is incomplete. Cancellation wins once even when the provider settles later. An internal
-verdict or receipt cache hit produces no event because it made no provider call. Production:
-`callReviewerWithTrace` and `guardReviewerModelCallProjector` in
+verdict or receipt cache hit produces no event because it made no provider call. The host uses these
+measured events to add Guard cost to an ordinary hosted Session once; Goal stages account for the
+same calls through their provider usage tracker. Production: `callReviewerWithTrace`,
+`guardReviewerModelCallProjector` and `guardReviewerUsage` in
 [reviewer-trace.ts](../../packages/kernel/src/guard/reviewer-trace.ts), plus `createCommandReview` and
 `createHostEffectReview`. Test:
 [reviewer-trace.test.ts](../../packages/kernel/tests/unit/reviewer-trace.test.ts),

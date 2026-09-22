@@ -136,13 +136,14 @@ export function goalStageOutcome(result: RunResult, now: number): GoalStageOutco
 function usageCredit(
   previous: GoalUsage | undefined,
   usage: GoalUsage,
-): { input: number; output: number; cached?: number } | undefined {
+): { input: number; output: number; cached?: number; cost_usd?: number } | undefined {
   if (usage.kind === "unknown") return undefined;
   if (previous === undefined || previous.kind === "unknown")
     return {
       input: usage.input,
       output: usage.output,
       ...(usage.cached === undefined ? {} : { cached: usage.cached }),
+      ...(usage.cost_usd === undefined ? {} : { cost_usd: usage.cost_usd }),
     };
   const cached =
     usage.cached === undefined && previous.cached === undefined
@@ -152,6 +153,9 @@ function usageCredit(
     input: usage.input - previous.input,
     output: usage.output - previous.output,
     ...(cached === undefined ? {} : { cached: cached }),
+    ...(usage.cost_usd === undefined
+      ? {}
+      : { cost_usd: usage.cost_usd - (previous.cost_usd ?? 0) }),
   };
 }
 
@@ -225,7 +229,8 @@ export function settleGoalSession(
         input_tokens: credit.input,
         output_tokens: credit.output,
         ...(credit.cached === undefined ? {} : { cached_tokens: credit.cached }),
-        ...(!firstCredit ||
+        ...(credit.cost_usd !== undefined ||
+        !firstCredit ||
         detail === undefined ||
         !detailMatches ||
         usage.cached === undefined ||
@@ -235,6 +240,8 @@ export function settleGoalSession(
       },
       priceFor,
     );
+    if (credit.cost_usd !== undefined)
+      session.totals.cost_usd = (session.totals.cost_usd ?? 0) + credit.cost_usd;
   }
   return true;
 }

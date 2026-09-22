@@ -105,6 +105,15 @@ Test: [goal-repository.test.ts](../../packages/kernel/tests/integration/goal-rep
 verifies persisted projection, public-save refusal and foreign archived state. Progress, pause and
 checkpoint separation are exercised in [domain.test.ts](../../packages/goal/tests/unit/domain.test.ts).
 
+`GoalUsage.cost_usd` optionally carries the host-priced subtotal for measured Goal calls. Its
+absence means pricing was unavailable, not that those calls were free. The host adds a priced stage
+subtotal to the same `SessionTotals.cost_usd` used by ordinary runs, including Guard calls that are
+outside the run's per-agent detail. Production: `GoalUsage` in
+[goals.ts](../../packages/protocol/src/goals.ts) and `settleGoalSession` in
+[settlement.ts](../../packages/kernel/src/goals/settlement.ts). Test: `prices Goal work and Guard
+calls once when run agent detail omits Guard` in
+[goal-settlement.test.ts](../../packages/kernel/tests/unit/goal-settlement.test.ts).
+
 `GoalService.subscribe(sessionId, listener)` asynchronously installs a live display subscription
 and returns its disposer. Await installation before reading state to cover concurrent publication.
 `GoalChange` contains only the session ID; clients reread `GoalView` rather than deriving control or

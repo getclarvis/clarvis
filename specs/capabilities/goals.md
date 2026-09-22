@@ -838,7 +838,8 @@ no-op and a late correction adds what it newly learned. Without an explicit meas
 information — resolving an unknown scope, or a larger figure in every charged dimension, which is
 how a late cache report lowers the net charge — and is refused as a conflict when it would lower one,
 so a smaller revision never overwrites a measurement and never returns budget the goal already
-spent. Per-agent attribution and the stage's iteration counts move only with the first credit,
+spent. A later revision credits only the difference in the priced subtotal. Per-agent attribution
+and the stage's iteration counts move only with the first credit,
 because they describe the whole execution rather than a measurement of it. A late measurement still
 finds its execution after the goal it belonged to was replaced or archived.
 Production: [usage.ts](../../packages/kernel/src/goals/usage.ts),
@@ -848,7 +849,7 @@ Test: [goal-usage.test.ts](../../packages/kernel/tests/unit/goal-usage.test.ts) 
 partial (gaps per cause, and a subtotal kept next to an unreadable row), unknown, invalid and
 redundant measures; `goal usage credit` in
 [goal-settlement.test.ts](../../packages/kernel/tests/unit/goal-settlement.test.ts) covers the
-per-revision credit, the refused smaller revision and the late correction after replacement;
+per-revision credit, Guard-inclusive cost, the refused smaller revision and the late correction after replacement;
 `charges what it can, suspends only automatic work, and accepts the gap on explicit resume` and
 `keeps the confirmed subtotal of a partial stage and accepts only its own gap` in
 [domain.test.ts](../../packages/goal/tests/unit/domain.test.ts) cover acceptance per execution; the
@@ -1291,8 +1292,11 @@ measurement moment and a provider-flagged figure each add one gap of their own c
 measurement is `partial` whenever a subtotal exists next to them and only `unknown` when no call
 produced a usable figure — a provider-flagged all-zero object is an absence, not an observation, and
 zero-initialized loop totals never stand in for one. Missing cache detail alone counts input
-conservatively. Settlement uses that host observation and retains the per-agent breakdown only when
-its totals agree; otherwise it uses the observed aggregate. An unresolved measurement suspends
+conservatively. Settlement uses that host observation and prices the same calls when their model
+prices and cache splits are known. Guard reviews can appear in the host observation but not in the
+loop's per-agent run detail, so the priced subtotal travels with Goal usage through preparation and
+recovery. The Session credits that cost once beside ordinary run costs. The per-agent breakdown is
+retained only when its totals agree; otherwise settlement uses the observed aggregate. An unresolved measurement suspends
 automatic continuation until the operator accepts that specific gap by resuming.
 Production: `createGoalUsageTracker` in [usage.ts](../../packages/kernel/src/goals/usage.ts),
 `prepareHostedGoalTurn` in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts),

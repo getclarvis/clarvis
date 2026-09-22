@@ -8,7 +8,9 @@ import {
   type LLMUsage,
   type PersistedTraceProjector,
   type TracePort,
+  type TraceEvent,
 } from "@clarvis/capability";
+import type { RunUsage } from "@clarvis/protocol";
 
 export const GUARD_REVIEWER_MODEL_CALL = "guard_reviewer_model_call";
 
@@ -72,6 +74,34 @@ export type GuardReviewerModelCallEvent = Omit<
   started_at: number;
   ended_at: number;
 };
+
+/** Recover measured Guard calls from the private persisted trace for session accounting. */
+export function guardReviewerUsage(
+  events: Iterable<TraceEvent> | undefined,
+): { usage: RunUsage; cacheUnknown: boolean } | undefined {
+  if (events === undefined) return undefined;
+  const rows: NonNullable<RunUsage["by_agent"]> = [];
+  let cacheUnknown = false;
+  for (const event of events) {
+    if (event.type !== GUARD_REVIEWER_MODEL_CALL) continue;
+    const { type: _type, ...detail } = event;
+    const parsed = detailSchema.safeParse(detail);
+    if (!parsed.success) continue;
+    const call = parsed.data;
+    cacheUnknown ||= call.cache_unknown === true || call.usage_unknown === true;
+    rows.push({
+      role: "subagent",
+      model: `${call.provider}/${call.model}`,
+      input_tokens: call.input_tokens,
+      output_tokens: call.output_tokens,
+      cached_tokens: call.cached_tokens,
+      cache_write_tokens: call.cache_write_tokens,
+    });
+  }
+  return rows.length === 0
+    ? undefined
+    : { usage: { iterations: 0, elapsed_ms: 0, by_agent: rows }, cacheUnknown };
+}
 
 /** Validate and flatten the kernel-owned contributed trace event for persistence. */
 export const guardReviewerModelCallProjector: PersistedTraceProjector = {

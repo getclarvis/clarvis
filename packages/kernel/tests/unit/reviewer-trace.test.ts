@@ -4,11 +4,13 @@ import {
   ModelCallInactivityError,
   type LLMCallParams,
   type LLMCallResult,
+  type TraceEvent,
 } from "@clarvis/capability";
 import { createTrace, mapTrace } from "@clarvis/trace";
 import {
   callReviewerWithTrace,
   guardReviewerModelCallProjector,
+  guardReviewerUsage,
   reviewerFailureKind,
 } from "../../src/guard/reviewer-trace.ts";
 import { createPersistedTraceProjectorRegistry } from "@clarvis/capability";
@@ -90,6 +92,19 @@ describe("guard reviewer model-call trace", () => {
       cache_read_ratio: 0.5,
       billing_source: "subscription",
     });
+    expect(guardReviewerUsage([event(trace) as unknown as TraceEvent])).toMatchObject({
+      cacheUnknown: false,
+      usage: {
+        by_agent: [
+          {
+            model: "anthropic/review-model",
+            input_tokens: 14,
+            output_tokens: 3,
+            cached_tokens: 7,
+          },
+        ],
+      },
+    });
   });
 
   it("keeps cache completeness unknown instead of presenting zero percent", async () => {
@@ -101,6 +116,7 @@ describe("guard reviewer model-call trace", () => {
     );
     expect(event(trace)).toMatchObject({ cache_unknown: true });
     expect(event(trace)).not.toHaveProperty("cache_read_ratio");
+    expect(guardReviewerUsage([event(trace) as unknown as TraceEvent])?.cacheUnknown).toBe(true);
   });
 
   it("uses accumulated provider usage on failure and rethrows the original error", async () => {

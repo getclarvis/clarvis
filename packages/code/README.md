@@ -1246,7 +1246,8 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   so the previous run cannot briefly appear twice while `run_started` is still in flight.
 - The canonical footer keeps gross Context plus cumulative `Session` input/output, prompt-cache hit
   percentage and cost available before and after a run settles (token totals and cache percentage
-  appear in the wide band). It does not repeat
+  appear in the wide band). Goal stage cost includes Guard reviews after host settlement, while
+  ordinary runs and Goal auxiliary work accumulate in the same Session cost field. It does not repeat
   `Running`, elapsed time or iteration there; those live-run facts sit beside `thinking`/`working`
   immediately above the composer, where the current phase leads and the details after it stay muted.
   When a full-region page (Plan, Diff, a view) owns the reading area, that activity line prefixes

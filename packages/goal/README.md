@@ -20,6 +20,8 @@ semantic no-progress allowance without resetting it or increasing token, time or
 The host can persist non-final settlement inputs with `prepareGoalSettlement` after physical closure.
 Its immutable run-scoped preparation preserves usage gaps and unavailable activity across restart;
 activity is deduplicated, excludes receipts already credited, and retains at most 32 new receipts.
+Measured usage may carry the host's priced subtotal so recovery credits the Goal stage cost to the
+Session once without relying on the loop's narrower per-agent detail.
 `settleGoalRun` consumes it in the same transaction that charges the stage. It grants no final
 completion proof or execution authority.
 

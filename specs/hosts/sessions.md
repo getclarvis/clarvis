@@ -887,10 +887,22 @@ belong here rather than only in §3:
   cache-write tokens at its `cache_write` rate (falling back to `input`) — so a cached token is never
   billed at both the input and cache-read rate. `uncachedInput(totals)` is the display-side
   counterpart: it subtracts only a complete numeric cached total; otherwise it returns gross input.
+  For an ordinary hosted run, `guardReviewerUsage` validates private persisted Guard call events;
+  the coordinator folds those tokens and their model prices into the same Session totals once at
+  reconciliation or physical recovery. An unknown cache split adds only confirmed tokens and
+  leaves pricing absent. A Goal stage already includes those calls in its host measurement and is
+  never charged again through this ordinary-run path. The file host loads model prices before
+  recovery and refreshes them before each new execution, so a recovered ordinary run can price
+  its Guard calls.
   Production: [usage.ts](../../packages/kernel/src/sessions/usage.ts) (`addRunUsage`),
+  [reviewer-trace.ts](../../packages/kernel/src/guard/reviewer-trace.ts) (`guardReviewerUsage`),
+  [sessions.ts](../../packages/kernel/src/hosting/sessions.ts) (`addGuardUsage`),
+  [file-host.ts](../../packages/kernel/src/hosting/file-host.ts) (`refreshPrices`),
   `packages/code/src/adapters/session-store.ts` (`addUsageToTotals`, `uncachedInput`) and
   `packages/code/src/adapters/session.ts` (`finishTurn`, `reconcile`). Tests:
   [session-usage.test.ts](../../packages/kernel/tests/unit/session-usage.test.ts) and
+  [reviewer-trace.test.ts](../../packages/kernel/tests/unit/reviewer-trace.test.ts) and
+  [hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts) (ordinary settlement and recovery) and
   `packages/code/tests/component/session-store.test.ts` (per-agent sums, flat unknown split, net/gross
   display and cost cases) and `packages/code/tests/component/session.test.ts` (missing split at live
   settlement and stored reconciliation).

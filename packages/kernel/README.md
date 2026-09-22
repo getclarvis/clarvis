@@ -1544,6 +1544,13 @@ Goal formulation and Steward executions capture provider usage, including retrie
 same usage tracker. Once-only auxiliary settlement applies model prices to session cost totals
 when usage and cache measurements are known. Partial observation reads do not attest complete
 artifacts; completion still requires complete current reads for every cited artifact.
+Goal stage settlement prices the host-observed calls, including Guard reviews absent from the
+run's per-agent detail. It persists that priced subtotal with the stage measurement and credits
+the Session cost total once, beside ordinary run and auxiliary costs. A later measurement revision
+credits only the difference.
+Ordinary hosted runs also add measured Guard review calls from their private trace to the same
+Session totals once; Goal stages already include those calls in their host measurement. The file
+host loads model prices before recovery and refreshes them before new runs.
 
 The Kernel composes a public trace view for ordinary execution and run services. Internal records
 are absent from run lookup, listing, context, compaction, continuation and deletion by ID. Their IDs

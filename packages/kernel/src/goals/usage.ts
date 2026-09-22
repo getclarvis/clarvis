@@ -16,7 +16,7 @@ import type { SessionTotals, ModelCost, RunUsage } from "@clarvis/protocol";
  */
 export function createGoalUsageTracker(): {
   wrap(provider: LLMProvider): LLMProvider;
-  measure(): GoalUsage;
+  measure(priceFor?: (model: string) => ModelCost | undefined): GoalUsage;
   accounting(): PerAgentUsage[];
 } {
   const rows: PerAgentUsage[] = [];
@@ -110,7 +110,7 @@ export function createGoalUsageTracker(): {
      *   its own — the stage closed while it was running, so its tokens were never observed — and it
      *   is reported per call rather than as one flag.
      */
-    measure() {
+    measure(priceFor) {
       if (observedCalls === 0) return { kind: "unknown" };
       const resolved = new Map(gaps);
       if (pending.size > 0)
@@ -126,12 +126,25 @@ export function createGoalUsageTracker(): {
         output,
         ...(cacheUnknown ? {} : { cached }),
       };
+      const priced: SessionTotals = { input: 0, output: 0 };
+      if (!cacheUnknown && priceFor !== undefined && rows.every((row) => priceFor(row.model)))
+        addRunUsage(
+          priced,
+          {
+            iterations: 0,
+            elapsed_ms: 0,
+            by_agent: rows.map((row) => ({ ...row, role: row.type })),
+          },
+          priceFor,
+        );
+      const cost = priced.cost_usd === undefined ? {} : { cost_usd: priced.cost_usd };
       const result =
         resolved.size === 0
-          ? goalUsageSchema.safeParse({ kind: "complete", ...totals })
+          ? goalUsageSchema.safeParse({ kind: "complete", ...totals, ...cost })
           : goalUsageSchema.safeParse({
               kind: "partial",
               ...totals,
+              ...cost,
               gaps: [...resolved.entries()]
                 .map(([cause, gap]) => ({ cause, ...gap }))
                 .sort((left, right) => left.cause.localeCompare(right.cause)),

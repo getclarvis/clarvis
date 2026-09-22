@@ -1,4 +1,5 @@
 import { addGoalAuxiliaryUsage } from "../goals/usage.ts";
+import { guardReviewerUsage } from "../guard/reviewer-trace.ts";
 import { createHash } from "node:crypto";
 import { bestEffort, NOOP_LOGGER, sanitizeText } from "@clarvis/capability";
 import { resolveGoalsSettings } from "@clarvis/goal/settings";
@@ -172,6 +173,13 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
     });
   })();
   const prices = new Map<string, ModelCost>();
+  const refreshPrices = async (): Promise<void> => {
+    const catalog = await kernel.models.get();
+    prices.clear();
+    for (const provider of catalog.providers)
+      for (const model of provider.models)
+        if (model.cost !== undefined) prices.set(`${provider.id}/${model.id}`, model.cost);
+  };
   const disconnections = new Set<Promise<void>>();
   const roles = new Map<string, HostingPeer["role"]>();
   let maintenance = false;
@@ -183,6 +191,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
       throw kernelError("conflict", "host maintenance or shutdown is in progress");
   };
   try {
+    await refreshPrices();
     const sessions = createHostedSessionCoordinator({
       logger,
       goalChanged: (sessionId) => goalChanges.notify(sessionId),
@@ -192,6 +201,8 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
       occupied: (sessionId) => maintenance || registry!.occupied(sessionId),
       redact: sanitizeText,
       priceFor: (model) => prices.get(model),
+      guardUsageFor: (executionId) =>
+        guardReviewerUsage(kernel.readRunEvidenceTrace(executionId, owner)),
       async readRun(id) {
         try {
           return await kernel.runs.get(id);
@@ -203,11 +214,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
       async prepareExecution(params, context) {
         await options.assertAuthority?.();
         assertWritable();
-        const catalog = await kernel.models.get();
-        prices.clear();
-        for (const provider of catalog.providers)
-          for (const model of provider.models)
-            if (model.cost !== undefined) prices.set(`${provider.id}/${model.id}`, model.cost);
+        await refreshPrices();
         const extension = await kernel.extensionProfiles.current();
         const prepareExecution = async (
           policy?: GoalExecutionPolicy | GoalCreationExecutionPolicy,

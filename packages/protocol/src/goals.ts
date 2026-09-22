@@ -105,13 +105,21 @@ export interface GoalUsageGap {
  */
 export type GoalUsage =
   | { kind: "unknown" }
-  | { kind: "complete"; revision?: number; input: number; output: number; cached?: number }
+  | {
+      kind: "complete";
+      revision?: number;
+      input: number;
+      output: number;
+      cached?: number;
+      cost_usd?: number;
+    }
   | {
       kind: "partial";
       revision?: number;
       input: number;
       output: number;
       cached?: number;
+      cost_usd?: number;
       gaps: GoalUsageGap[];
     };
 

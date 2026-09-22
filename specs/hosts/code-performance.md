@@ -80,7 +80,7 @@ Production: `packages/code/src/views/StartupComposer.tsx` (`StartupComposer`). T
 
 | Surface | Current value or behavior | Source |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `CLARVIS_TUI_RSS_LIMIT_MB` | limit in MiB; `0` disables the interactive fuse | `packages/code/src/adapters/memory-pressure.ts` |
+| `CLARVIS_TUI_RSS_LIMIT_MB` | limit in MiB; `0` disables the interactive fuse | `packages/code/src/views/App.tsx` (`process.env.CLARVIS_TUI_RSS_LIMIT_MB`), `packages/code/src/adapters/memory-pressure.ts` (`tuiRssLimitBytes`) |
 | default RSS limit | 2 GiB | `packages/code/src/adapters/memory-pressure.ts` (`DEFAULT_TUI_RSS_LIMIT_BYTES`) |
 | positive custom-limit floor | 512 MiB | `packages/code/src/adapters/memory-pressure.ts` (`MIN_TUI_RSS_LIMIT_BYTES`, `tuiRssLimitBytes`) |
 | sampling interval | 500 ms | `packages/code/src/adapters/memory-pressure.ts` |
@@ -384,7 +384,7 @@ onto these families without measurement:
   Marketplace. After finite warm-up, 100 round trips must retain identical renderable, lifecycle,
   live-key-layer, and key-registration ownership
   (`packages/code/src/views/config/MarketplaceBrowser.tsx`, `collections`, `changeCollection`, and
-  `StableWindowedList`; `packages/code/tooling/benchmarks/overlays.tsx`,
+  `StableWindowedList` (`packages/code/src/ui/patterns/windowed-list.tsx`); `packages/code/tooling/benchmarks/overlays.tsx`,
   `marketplace-collections-retained-196-listings`).
 - the activity panel replaces the transcript column in place — no scrim, no residual strip — while
   editor expansion merely
@@ -682,7 +682,7 @@ tree.
   `<App>`, but kernel bootstrap enters through the exact dynamic factory boundary and may run in
   parallel with the complete runtime import (`packages/code/src/startup-foundation.ts`,
   `prepareStartupFoundation`; `packages/code/src/adapters/workspace-client-manager.ts`,
-  `loadFileKernelFactory`).
+  `connectLocalKernel`).
 - **`code` -> model/subscription services:** the boot foundation does not cross either expensive
   service. Catalog-bearing routes call the models service through `ensureModelsCatalog`; Doctor's
   explicit recheck and subscription-dependent actions call entitlement over the protocol surface

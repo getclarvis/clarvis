@@ -273,7 +273,7 @@ resource-path allow-list. An idle trust recomposition is the only event that pub
 root set to that provider. Run admission then acquires only its in-memory lease: it performs no skill
 discovery, filesystem traversal, or hashing.
 
-After the registry is captured, `ExtensionProfileManager.observeSkillCatalog` arms `watchFile` polling on
+After the registry is captured, the extension-profile manager's `observeSkillCatalog` arms `watchFile` polling on
 every admitted identity file: manifest, selected sidecar, and resources. Before the capture becomes
 visible, `verifySkillCatalog` re-reads the bounded identities and compares them with the pinned
 digests. A mismatch in that interval uses the same memory latch and `onSkillDrift` notice as a later
@@ -314,7 +314,7 @@ hook-approval state is excluded from Extension Profile identity. Selection mutat
 `reconnect_required`; definition writes leave the current snapshot pinned and require the host to
 reconnect when the active definition changed. They never alter an in-flight or later run on the
 existing kernel. Code reconnects after selection and after a lifecycle mutation touches a selected
-plugin (`ExtensionProfileBrowser.apply` and `recomposeSelectedPlugin` in `packages/code/src`).
+plugin (`ExtensionProfileBrowser.applyPending` and `recomposeSelectedPlugin` in `packages/code/src`).
 
 Installing a plugin never selects it. Updating or uninstalling a selected plugin is refused while a
 run is active by the kernel service boundary, not only by the TUI; the boundary also prevents a new
@@ -332,7 +332,7 @@ Before an interactive selection or local-selection clear, Code asks the kernel f
 of plugins, standalone and plugin skills, MCP servers, and hook counts, then requires explicit
 confirmation
 (`deltaOf` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`;
-`ExtensionProfileBrowser.apply`, `packages/code/src/views/config/ExtensionProfileBrowser.tsx`). A preview
+`ExtensionProfileBrowser.applyPending`, `packages/code/src/views/config/ExtensionProfileBrowser.tsx`). A preview
 token is single-use, expires after five minutes, and binds the mutation kind, selected reference,
 persisted selection scope, both exact selection-document revisions, and resolved target fingerprint.
 Both `preview` and `previewClear` resolve normal precedence without changing state: a global write
@@ -385,7 +385,7 @@ idle. The same transition returns
 or retains executable contributions under a different verdict
 (`assertWorkspaceTrustTransitionAllowed` and the trust-transition branch of `resolveActive`).
 `approveWorkspace` requests a fresh surface and the production file-kernel adapter forwards that
-request to `ExtensionProfileManager.workspaceTrustSurface`, so consent cannot record a previously cached
+request to the extension-profile manager's `workspaceTrustSurface`, so consent cannot record a previously cached
 plugin digest.
 Code then reads `ExtensionProfileService.current()` and replaces its process snapshot cache before the
 trust operation resolves to the caller (`mutateTrust` in
@@ -464,9 +464,8 @@ Test: [direct-configuration.test.ts](../../packages/kernel/tests/integration/dir
 
 - **Production:** `PluginContributions.pin`, `pinnedSkillRoots`,
   `PLUGIN_SKILL_RESOURCE_LIMITS`, `skillSurface`, `hashBoundedFile`, `snapshotPluginExecutables`,
-  `standaloneCatalog`, `ExtensionProfileManager.observeSkillCatalog`,
-  `ExtensionProfileManager.verifySkillCatalog`, `ExtensionProfileManager.skillAvailable`,
-  `ExtensionProfileManager.onSkillRootsChanged`, `PluginContributions.verifyPinnedSkillCatalog`,
+  `standaloneCatalog`, `createExtensionProfileManager` (its `observeSkillCatalog`, `verifySkillCatalog`,
+  `skillAvailable` and `onSkillRootsChanged`), `PluginContributions.verifyPinnedSkillCatalog`,
   `SkillRootSnapshotProvider`, `snapshotSkills`, `withRunLease`,
   the memory factory's host executor, pinned `resolveActive`, revision CAS,
   and preview fingerprint comparison in `packages/kernel/src`; `hashBoundedFile` and the two

@@ -273,7 +273,7 @@ Keys are strings with meaning encoded as prefixes. Three consumers parse them:
 
 | Pattern | Meaning | Read at |
 | --- | --- | --- |
-| `<execId>::<span_id>` | a node belonging to run `execId` | `packages/code/src/views/transcript-state.ts`, `packages/code/src/core/transcript/rows.ts` |
+| `<execId>::<span_id>` | a node belonging to run `execId` | `packages/code/src/adapters/transcript-projection.ts`, `packages/code/src/adapters/store.ts` |
 | `<execId>::run` | that run's terminal marker | `packages/code/src/views/transcript-state.ts` |
 | `user:<n>` | a locally sequenced user message | produced by `packages/code/src/adapters/store.ts` (`appendUserMessage`) |
 | `local:<n>` | a locally-appended `!bash` node | `packages/code/src/core/transcript/rows.ts`, produced at `packages/code/src/adapters/store.ts` |

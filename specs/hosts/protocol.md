@@ -1121,8 +1121,9 @@ Every consumer reaches it **only as a type import**, verified directly (§5, inv
 | `@clarvis/server` | 0 | 15 source/test files currently import the public barrel, all with `import type` | `packages/server/tests/architecture/dependency-boundary.test.ts` fixture-tests that the type import is an allowed boundary |
 | `@clarvis/code` | 0 | 110 source/test files currently import the public barrel, all with `import type` | `packages/code/tests/architecture/dependency-boundary.test.ts` pins `code`'s Clarvis-namespaced manifest dependencies to `@clarvis/kernel`, `@clarvis/paths`, and `@clarvis/protocol` |
 
-Both `code`'s and `server`'s dependency-boundary tests explicitly *permit* `@clarvis/protocol` (it is
-absent from both files' `FORBIDDEN` arrays — `packages/code/tests/architecture/dependency-boundary.test.ts`,
+Both `code`'s and `server`'s dependency-boundary tests explicitly *permit* `@clarvis/protocol` (both
+derive an allowlist from `allowedInternalDependenciesFor` in `tooling/lib/package-architecture.ts` and
+compare it to their manifest — `packages/code/tests/architecture/dependency-boundary.test.ts`,
 `packages/server/tests/architecture/dependency-boundary.test.ts`) while forbidding `@clarvis/loop`
 and every engine-layer package — i.e. the test suite encodes "may depend on protocol, may not depend
 on the engine" as one design, not two.

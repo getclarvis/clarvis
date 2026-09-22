@@ -991,9 +991,9 @@ See [generic execution ports](capability-composition.md).
 
 1. **The short `title` never reaches the supervision panel.** The `title` property's description
    says it is "shown to the operator on the sub-agent panel"
-   (`packages/loop/src/runtime/subagents/lead-tools.ts`), but `PreparedSpawn` carries no `title`
-   (`packages/loop/src/runtime/subagents/delegate-task.ts`) and `spawnInBackground` registers the child with
-   `title: prepared.subagentTask` — the full brief, possibly with the exit condition appended
+   (`packages/loop/src/runtime/subagents/lead-tools.ts`), but `spawnInBackground` registers the child with
+   `title: prepared.subagentTask` rather than the validated `PreparedSpawn.title`
+   (`packages/loop/src/runtime/subagents/delegate-task.ts`) — the full brief, possibly with the exit condition appended
    (`packages/loop/src/runtime/delegation.ts`). `AgentListEntry.title` is that value verbatim
    (`packages/supervision/src/registry.ts`), truncated to 60 chars only in the registry's own
    log line (`packages/supervision/src/registry.ts`). Whether this is intended is not stated

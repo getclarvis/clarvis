@@ -937,7 +937,7 @@ The product default is 30 days (`CLARVIS_TRACE_TTL_DAYS` in
 `packages/capability/src/env.ts`); `0` remains a complete opt-out. Production:
 `TraceCleanup.runOnce`, `TraceStore.cleanup`, `referencedSessionExecutionIds` in
 `packages/kernel/src/sessions/session-service.ts`, and the `TraceCleanup` composition in
-`packages/kernel/src/file-kernel.ts`. Test: the protected-record case in
+`packages/kernel/src/native-kernel.ts`. Test: the protected-record case in
 `packages/trace/tests/component/cleanup.test.ts` (including incomplete-scan refusal), the cleanup cases in
 `packages/trace/tests/integration/json-trace-store.test.ts`, and the cross-owner scan case in
 `packages/kernel/tests/integration/session-service.test.ts`.
@@ -1292,7 +1292,7 @@ Two degradations are worth naming as *policy* rather than mechanics, because the
 
 | Edge | Kind | Forced by |
 | --- | --- | --- |
-| `@clarvis/capability` — types (`TraceEntry`, `TraceEvent`, `ExecutionRecord`, `RunRequest`, `Logger`, …) | type-only, static | `packages/trace/src/trace-store.ts` |
+| `@clarvis/capability` — types (`TraceEntry`, `TraceEvent`, `ExecutionRecord`, `RunRequest`, `Logger`, …) | type-only, static | `packages/trace/src/trace-store.ts`, `packages/trace/src/trace-mapper.ts` (`TraceEntry`), `packages/trace/src/record-builder.ts` (`RunRequest`), `packages/trace/src/json-trace-store.ts` (`Logger`) |
 | `@clarvis/capability` — values (`sanitizeDeep`, `isBuiltinTraceKind`, `PersistenceError`, `ConflictError`, `executionIdConflict`, `levelEnabled`, `NOOP_LOGGER`, `unref`, `DELEGATE_TASK_MAX_CHARS`) | runtime, static | `packages/trace/src/json-trace-store.ts`, `packages/trace/src/cap-detail.ts`, `packages/trace/src/cleanup.ts`, `packages/trace/src/testing.ts` |
 | `@clarvis/capability` — values (`isBuiltinTraceEntry`, `isBuiltinTraceEvent`) | runtime, static | `packages/trace/src/trace-mapper.ts` (`isBuiltinTraceEntry`), `packages/trace/src/event-span.ts` (`isBuiltinTraceEvent`) |
 | `@clarvis/paths` — `ownerSegment`, `writeFileDurable(Sync)`, `acquireLocalLease(Sync)`, `reclaimLocalLeaseSync`, `isTmpFile`, `globalPaths` | runtime, static | `packages/trace/src/json-trace-store.ts`, `packages/trace/src/trace-store-factory.ts` |
@@ -1313,7 +1313,7 @@ Only two packages declare it: `@clarvis/loop` and `@clarvis/kernel` (their packa
 | `loop` | `generateExecutionId`, `mapTrace`, `buildRecord`, `TraceStore`, `RunJournal` in `executeRun` | `packages/loop/src/runtime/execute-run.ts` |
 | `loop` | `resolveTraceStore` in `buildExecuteRunDeps` | `packages/loop/src/runtime/build-run-deps.ts` |
 | `loop` | re-exports `TraceStore`, `TraceCleanup`, `generateExecutionId`, `ResolvedTraceStore` from `lib.ts`, and `deriveEventSpan`/`EventSpan` from `host.ts` | `packages/loop/src/lib.ts`; `packages/loop/src/host.ts` |
-| `kernel` | `TraceCleanup` + `TraceStore` in file-kernel composition | `packages/kernel/src/file-kernel.ts` |
+| `kernel` | `TraceCleanup` + `TraceStore` in the native-kernel composition | `packages/kernel/src/native-kernel.ts` |
 | `kernel` | `MAX_TRACE_LIST_LIMIT` / `MAX_TRACE_LIST_OFFSET` for run pagination | `packages/kernel/src/runs/pagination.ts` |
 
 ### What forces the direction
@@ -1376,13 +1376,11 @@ Only two packages declare it: `@clarvis/loop` and `@clarvis/kernel` (their packa
   `from "@clarvis/…"` inside a string is indistinguishable from the real thing to a line matcher.
   Adding the suite also exposed that `packages/trace/package.json` enumerated its test directories and
   would never have run a new `tests/architecture` level — caught by **knip**, not by the suite.
-- **`MAX_CLEANUP_PASSES` is referenced but does not exist.** The TSDoc at
-  `packages/trace/src/cleanup.ts` says "Caps at {@link MAX_CLEANUP_PASSES} batches per call", but no
-  such symbol is defined; the real bound is the local `maxPasses`. A stale doc link, not a
-  behavioural defect.
-- **`JournalHeader.v` accepts any number `<= JOURNAL_VERSION`.** `packages/trace/src/journal-recovery.ts`
-  rejects only a *newer* version. There is no reader for a hypothetical `v: 0`, and the code does not
-  say what an older version's line shape would be.
+- **`JournalHeader.v` accepts any number, but every reader rejects any mismatch.** The field type is a
+  plain `number` (`packages/trace/src/journal.ts`), yet `parseHeader` in
+  `packages/trace/src/journal-recovery.ts` and the reader in `packages/trace/src/journal-reader.ts`
+  both refuse any `v !== JOURNAL_VERSION`, so a hypothetical `v: 0` has no reader and the code does
+  not say what an older version's line shape would be.
 - **`writeGenerationState` is not itself under the delete lease on the `ensureActiveGeneration` path's
   first read.** `packages/trace/src/json-trace-store.ts` reads state before acquiring the
   lease, and the correctness argument is stated in prose rather than checked. Whether the

@@ -968,7 +968,7 @@ ceiling, the three failure kinds, and the `missing` flag.
 
 | Consumer | What it takes | Anchor |
 | --- | --- | --- |
-| `kernel.ts` | `createConfigService`, `ConfigStore` type, `kernelCapabilityRegistry` | `packages/kernel/src/kernel.ts` |
+| `kernel.ts` | `createConfigService`, `ConfigStore` type, `composeKernelCapabilityRegistry` | `packages/kernel/src/kernel.ts` |
 | `file-kernel.ts` | `createFileConfigStore`, `DEFAULT_ENTRY_AGENT`, `SettingsSnapshot` | `packages/kernel/src/file-kernel.ts` |
 | `runs/settings-assembler.ts` | `AgentRecord`, `ConfigStore`, `readEffectiveAgent` | `packages/kernel/src/runs/settings-assembler.ts` |
 | `application/workflow-policy.ts` | `resolveAgentsByName`, `ConfigStore` | `packages/kernel/src/application/workflow-policy.ts` |

@@ -28,7 +28,7 @@ body and one unterminated SSE event before an SDK parser can retain them. (e) A 
 
 The package has no `zod` dependency and defines no settings schema
 (`packages/llm/package.json`); it is configured entirely through function arguments handed to
-it by `@clarvis/loop`'s `buildRunDeps` (`packages/loop/src/runtime/build-run-deps.ts`).
+it by `@clarvis/loop`'s `buildExecuteRunDeps` (`packages/loop/src/runtime/build-run-deps.ts`).
 
 ---
 

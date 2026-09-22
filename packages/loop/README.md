@@ -504,7 +504,7 @@ The list below is the whole of `package.json`'s `exports` map:
   without importing the full execution entry.
 - `@clarvis/loop/workflows` — the engine-owned elicitation serializer a workflow
   implementation needs; shared contracts come directly from `@clarvis/capability`.
-- `@clarvis/loop/testing` — engine-owned `MockLLM`/`MockMCP` doubles plus fresh MCP/trace
+- `@clarvis/loop/testing` — engine-owned `MockLLM` and `mockMCPFactory` doubles plus fresh MCP/trace
   infrastructure for downstream tests that execute a real loop without depending directly on the
   engine's execution-service implementations.
 

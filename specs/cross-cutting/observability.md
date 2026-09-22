@@ -664,7 +664,7 @@ LRU-by-insertion-order structure rather than merely a size-capped one.
   `console.*` and `process.stdout/stderr.write` as a second line of defense against dependencies this
   package does not control) belongs to the sibling [hosts/code-onboarding.md](../hosts/code-onboarding.md) document and is
   not re-described here.
-- **`@clarvis/kernel/src/serve.ts` depends on no pino import**, deliberately: it identifies a pino
+- **`packages/kernel/src/serve.ts` depends on no pino import**, deliberately: it identifies a pino
   stream by the *string value* of a well-known symbol description (`"Symbol(pino.stream)"`,
   `packages/kernel/src/serve.ts`) rather than importing pino's types, "so `@clarvis/kernel` does
   not depend on pino and should not start."

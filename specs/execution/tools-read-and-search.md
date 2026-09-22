@@ -459,8 +459,8 @@ selection:
 `--no-config --json --hidden -g !.git --max-filesize <maxFileBytes>`, plus `-i`, `--multiline
 --multiline-dotall`, `-B n`, `-A n` as requested, then `-- <pattern> <target>`. For a
 directory the child runs with `cwd = searchRoot` and searches `.` (so the caller's process cwd is
-irrelevant — pinned at `packages/tools/tests/contract/grep-parity.test.ts`, which `chdir`s to
-`tmpdir()` first). For a single file the target is `-` and the pre-read snapshot is handed to
+irrelevant — pinned at `packages/tools/tests/contract/grep-parity.test.ts`, whose glob cases assert
+agreement "regardless of process cwd"). For a single file the target is `-` and the pre-read snapshot is handed to
 `Bun.spawn` as a `Blob` stdin, so ripgrep never reopens the pathname. Both
 variants abort at `maxOutputBytes * 8` raw JSON bytes, `SIGKILL` the child and set `truncated`. Exit code `2` with zero parsed matches and no truncation becomes
 `invalid_input` carrying ripgrep's stderr; a spawn failure is `io_error`.

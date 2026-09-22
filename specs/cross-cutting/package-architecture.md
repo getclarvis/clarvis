@@ -415,7 +415,7 @@ policy enter presentation through `adapters/model-policy.ts`; plan and guard def
 `adapters/settings.ts` and `adapters/guard-mode.ts`; provider request constraints through
 `adapters/provider-request-policy.ts`; and shipped-agent identity through `adapters/agent-files.ts`.
 Local construction remains explicit behind `packages/code/src/adapters/workspace-client-manager.ts`
-(`loadFileKernelFactory`); `startup-foundation.ts` may begin it concurrently with the dynamically
+(`connectLocalKernel`); `startup-foundation.ts` may begin it concurrently with the dynamically
 loaded complete runtime.
 
 Moving every shared runtime value into Protocol is not the target: Protocol is currently a

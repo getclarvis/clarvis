@@ -580,7 +580,7 @@ lock-ordering deadlock between them.
 | Patch malformed / no applicable hunks / duplicate block / missing path | `invalid_input` | `packages/tools/src/tools/apply-patch.ts` | fails hard |
 | Rename source is directory | `not_a_file` | `packages/tools/src/lib/atomic.ts` | fails hard |
 | Rename destination already exists | `invalid_input` | `packages/tools/src/lib/atomic.ts` | fails hard |
-| File over `maxFileBytes` | `too_large` | delegated to `readTextFile`/`readEditableFile` (owned by [tools-read-and-search](tools-read-and-search.md)) | fails hard |
+| File over `maxFileBytes` | `too_large` | delegated to `readTextFile` (owned by [tools-read-and-search](tools-read-and-search.md)) and `readEditableFile` (`packages/tools/src/tools/apply-patch.ts`) | fails hard |
 | Native mutation targets a selected skill package | `path_escape` | `protectSkillPackages` in `packages/tools/src/core.ts` | fails before guard/handler; nothing is changed |
 | `replace` scope exceeds `maxTraversalEntries` | `too_large` | `packages/tools/src/tools/replace.ts` | fails hard, nothing written |
 | `replace` aggregate mutation exceeds `maxMutationBytes` | `too_large` | `packages/tools/src/tools/replace.ts` | fails hard, nothing written |

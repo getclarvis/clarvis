@@ -386,7 +386,7 @@ stack still preserves only its own inactive parents and disposes a popped frame 
 shell does not cache closed configuration frames. `popView` reactivates the parent and does not
 run Doctor/sandbox/subscription probes. Production:
 `packages/code/src/views/app/OverlayRegion.tsx` (`OverlayRegion`, `overlayFallbackActive`),
-`packages/code/src/views/app/TranscriptRegion.tsx` (`active`, `TranscriptProjection`),
+`packages/code/src/views/app/TranscriptRegion.tsx` (`active`), `packages/code/src/adapters/transcript-projection.ts` (`TranscriptProjection`),
 `packages/code/src/views/overlays/{DiffViewer,PlanOverlay}.tsx`, and
 `packages/code/src/views/overlay-host.ts` (`mountView`, `popView`). Test:
 `packages/code/tests/integration/overlay-region-render.test.tsx` and
@@ -1044,7 +1044,7 @@ settled turn's persisted continuation; an empty session reports that there is no
     same shell instance. Diff and Plan mount lazily, remain hidden after first use and cannot dispatch
     their retained key layers while inactive. Production:
     `packages/code/src/views/app/OverlayRegion.tsx` (`OverlayRegion`, `overlayFallbackActive`),
-    `packages/code/src/views/app/TranscriptRegion.tsx` (`active`, `TranscriptProjection`),
+    `packages/code/src/views/app/TranscriptRegion.tsx` (`active`), `packages/code/src/adapters/transcript-projection.ts` (`TranscriptProjection`),
     `packages/code/src/views/overlays/PlanOverlay.tsx` (`active`, `when`), and
     `packages/code/src/views/overlays/DiffViewer.tsx` (`active`, `registerScrollKeys`). Test:
     `packages/code/tests/integration/overlay-region-render.test.tsx` ("full-page overlays hide the
@@ -1056,7 +1056,7 @@ settled turn's persisted continuation; an empty session reports that there is no
     the root disposes the remaining configuration stack. Shell retention and Plan/Diff retention
     must not turn popped configuration frames into an application-lifetime cache. Production:
     `packages/code/src/views/app/OverlayRegion.tsx` (`OverlayRegion`) and
-    `packages/code/src/views/overlay-host.ts` (`mountView`, `popView`, `closeView`).
+    `packages/code/src/views/overlay-host.ts` (`mountView`, `popView`, `closeViewStack`).
     Test: `packages/code/tests/unit/overlay-host.test.ts` and
     `packages/code/tests/integration/overlay-region-render.test.tsx`.
 39. **High-churn picker trees mount lazily once, then hide without owning inactive
@@ -1191,7 +1191,7 @@ the picker only while the complete splash fits`).
   `selectionBg`/`scrimColor`/`ruleColor` — every overlay component reads these for color/border.
 - `keys/*`, `ui/patterns/*` ([hosts/code-keyboard.md](code-keyboard.md) document) — `Interaction`, `uiCommand`,
   `LAYER`/`registerLevel`, `clampListIndex`, `registerScrollKeys`, `followSelection`,
-  `InteractionNavigationBar`, `GROUP_ORDER`/`GROUP_LABEL`/`PARENT_LABEL`. `InputDock`,
+  `InteractionNavigationBar`, `GROUP_ORDER`/`GROUP_LABEL`. `InputDock`,
   `ListPicker`, `Help`, `PlanOverlay` all register key layers through
   this vocabulary; this document does not re-derive keybinding semantics.
 - `@clarvis/kernel/local` (`resolveShell`, `shellArgs`, `killTree`, `ownProcessGroup`) —

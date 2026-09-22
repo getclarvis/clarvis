@@ -12,7 +12,7 @@ semantic review rather than proving the command unauthorized. The final Guard ou
 optional `reviewer_decision` separately from its static trigger and any later Approval answer.
 Production: `JUDGE_POLICY` in [prompt.ts](../../packages/judge/src/prompt.ts), `createCommandReview`
 in [command-review.ts](../../packages/kernel/src/guard/command-review.ts), and `createAgentTools`
-in [core.ts](../../packages/tools/src/core.ts).
+in [index.ts](../../packages/tools/src/index.ts).
 Test: [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts) and
 [command-review.test.ts](../../packages/kernel/tests/unit/command-review.test.ts).
 
@@ -425,11 +425,11 @@ tool family, and an unrecognized tool yields no paths and no shell facts :
 | --- | --- | --- | --- |
 | command tools | `shell`, `monitor_start` | `analyzeShell(args.command)`, each path occurrence resolved with **shell semantics** (tilde expansion) against workspace, every configured temporary root (product run scratch plus system compatibility roots), and exact host-selected skill roots; an absolute command head beneath a platform system executable root or configured runtime root is admitted only for that segment occurrence and normalized to its basename for allow/deny matching, with Windows `PATHEXT` suffixes removed; duplicate absolute operands remain outside even when their string equals an admitted head; when a sandbox is configured, an existing verified spill is admitted as that exact read-only-mounted file; unsandboxed commands do not receive the spill exception; `args.cwd` is added with plain fs semantics against the same roots; `sandbox_permissions` and `justification` are copied onto the context | `packages/tools/src/guard/context.ts` (`commandPathOccurrences`, `externalExecutableHeads`, `normalizeExternalExecutables`), `packages/tools/src/lib/state-artifacts.ts`, `packages/tools/src/lib/system-executables.ts`, `packages/loop/src/runtime/capabilities/tools.ts` |
 | patch | `apply_patch` | `patchPaths(args.patch)` — raw unified `---`/`+++` plus model-envelope Update/Add/Delete/Move headers, `/dev/null` dropped, `a/`/`b/` prefixes stripped, deduped first-seen | `packages/tools/src/guard/context.ts`, `packages/tools/src/guard/paths.ts` |
-| src/dest | `move`, `copy` | `args.source`, `args.destination` | `packages/tools/src/guard/paths.ts` |
-| list | `read_files` | every string in `args.paths` | `packages/tools/src/guard/paths.ts` |
-| pair | `diff` | `args.from`, `args.to` | `packages/tools/src/guard/paths.ts` |
-| scoped | `replace` | `args.path` if a non-empty string, else `"."` | `packages/tools/src/guard/paths.ts` |
-| single path | `read_file`, `write_file`, `edit_file`, `multi_edit`, `read_image`, `list_dir`, `glob`, `grep`, `file_stat`, `tree`, `mkdir`, `remove` | `args.path` | `packages/tools/src/guard/paths.ts` |
+| src/dest | `move`, `copy` | `args.source`, `args.destination` | `packages/tools/src/guard/context.ts`, `packages/tools/src/guard/paths.ts` |
+| list | `read_files` | every string in `args.paths` | `packages/tools/src/guard/context.ts`, `packages/tools/src/guard/paths.ts` |
+| pair | `diff` | `args.from`, `args.to` | `packages/tools/src/guard/context.ts`, `packages/tools/src/guard/paths.ts` |
+| scoped | `replace` | `args.path` if a non-empty string, else `"."` | `packages/tools/src/guard/context.ts`, `packages/tools/src/guard/paths.ts` |
+| single path | `read_file`, `write_file`, `edit_file`, `multi_edit`, `read_image`, `list_dir`, `glob`, `grep`, `file_stat`, `tree`, `mkdir`, `remove` | `args.path` | `packages/tools/src/guard/context.ts`, `packages/tools/src/guard/paths.ts` |
 
 `resolveCandidate` (`packages/tools/src/guard/paths.ts`) resolves the token twice: once normally for
 `resolved`, once in confining mode inside a `try`, and a throw becomes `withinWorkspace: false`. Shell-semantics resolution first expands a leading `~`/`~/` (and `~\` on Windows) to
@@ -463,7 +463,7 @@ POSIX assignment values are classified as paths separately from their variable n
 [dialects](../../packages/tools/src/guard/dialects/index.ts). Test:
 [issue corpus](../../packages/tools/tests/unit/analysis-issues.test.ts).
 
-The `emptySegment` term is the one with a stated reason: the guard matches its deny list against
+The empty-segment case is the one with a stated reason: the guard matches its deny list against
 `normalized` **before** consulting `undecidable`, so a tokenizer that came up empty would produce a
 `normalized` no deny entry can match — "Degrading `allow` to `ask` is acceptable; degrading `deny`
 to `ask` is not" (`packages/tools/src/guard/analyze-shell.ts`). Pinned generically over a stub dialect and
@@ -1060,8 +1060,9 @@ broken.
 41. **A technical Judge failure is not memoized and never invokes human fallback, even with
     `on_unsure: "ask"`.** Invalid responses have up to three correction retries per stage inside
     the ordinary Loop before denial. The calling run receives a technical failure message rather
-    than the static review trigger as an explanation. Production: `createCommandReview`,
-    `createGuardResolver` and `applyGuard` in `packages/tools/src/core.ts`.
+    than the static review trigger as an explanation. Production: `createCommandReview` in
+    `packages/kernel/src/guard/command-review.ts`, `createGuardResolver` in
+    `packages/kernel/src/guard/resolver.ts` and `applyGuard` in `packages/tools/src/core.ts`.
     Test: `packages/kernel/tests/unit/command-review.test.ts`,
     `packages/kernel/tests/integration/judge-host.test.ts` and
     `packages/tools/tests/integration/guard-dispatch.test.ts`.
@@ -1138,7 +1139,7 @@ broken.
     distinction by spreading the settings key only when `!== undefined`
     (`packages/kernel/src/guard/resolver.ts`). Inside `createShellGuard`, every branch that
     reads `denied` guards on `denied !== undefined` only to avoid calling `.map()`/`.length` on
-    `undefined` — `commandDenied` (`packages/kernel/src/guard/shell-guard.ts`) and the
+    `undefined` — `deniedHit` (`packages/kernel/src/guard/shell-guard.ts`) and the
     `undecidable` branch's `denied.length > 0` check (invariant 21) both evaluate identically
     for `denied = []` and `denied = undefined`, so an operator's explicit `denied_commands: []` is
     truly indistinguishable, in every observable outcome, from never writing the key. `allowed`
@@ -1146,7 +1147,7 @@ broken.
     `allowed === undefined` directly, so `allowed_commands: []` produces `"command not
     in the allowed commands list"` where an omitted key produces `"no allowed commands list
     configured"` — same `ask` verdict, different sentence. That sentence is not merely internal: it
-    is written to the audit channel's `reason` field (`packages/kernel/src/guard/resolver.ts`) and
+    is carried on the ruling's `reason` field (`packages/kernel/src/guard/shell-guard.ts`) and
     is what a human sees in the confirmation prompt itself when the ask escalates
     (`req.reason ?? …` at `packages/kernel/src/guard/guard-elicit.ts`), so the distinction the
     resolver preserves is operator-visible for `allowed_commands` and a documented no-op for

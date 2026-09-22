@@ -1366,7 +1366,10 @@ highest.
 - The user-facing side of elicitation: who implements `ElicitationRelay.handle`, how a prompt reaches
   a human, and the timeout around it — [elicitation-and-user-interaction](../cross-cutting/elicitation.md).
 - How `McpServerConfig` values (including `shared`, `resources`, `env`, `headers`) are assembled from
-  `settings.json` and plugin manifests, and who chooses `poolSharing` — [kernel-config-and-agents](../hosts/kernel-config.md).
+  `settings.json` and plugin manifests — [kernel-config-and-agents](../hosts/kernel-config.md). The pool-sharing
+  mode is chosen by the `CLARVIS_MCP_POOL_SHARING` environment default
+  (`packages/capability/src/env.ts`), and its owner-scoping consequence is described in
+  [server-access-and-owner-scoping](../hosts/server-mcp.md).
 
 **Not investigated**
 

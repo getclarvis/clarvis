@@ -291,9 +291,10 @@ five plan events, `compaction_started`, `memory_ingest`, `capability_event`, and
 The latest workflow sequence state remains separately durable in the workflow store. The separate
 minimal `tool_call_announced` is persisted, non-droppable and non-coalescible. It restores named
 composition before start, using iteration/attempt identity; authoritative retry or scope termination
-closes that attempt, not a client disconnect. Production: `RUN_EVENT_POLICY`, `engineEventToProto`
-and `rehydrateEvents` in `packages/kernel/src/runs/event-policy.ts` and
-`packages/kernel/src/runs/map-events.ts`. Test: `packages/kernel/tests/unit/event-policy.test.ts`,
+closes that attempt, not a client disconnect. Production: `RUN_EVENT_POLICY` in
+`packages/kernel/src/runs/event-policy.ts`, `engineEventToProto` in
+`packages/kernel/src/runs/map-events.ts` and `rehydrateEvents` in `packages/kernel/src/runs/map-result.ts`.
+Test: `packages/kernel/tests/unit/event-policy.test.ts`,
 `packages/kernel/tests/unit/map-events.test.ts` and
 `packages/kernel/tests/contract/transport-codecs.test.ts`.
 

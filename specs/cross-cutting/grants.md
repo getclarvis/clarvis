@@ -406,7 +406,7 @@ The internal `forRun`/`forAgent` derivation below goes one level deeper than
 `delegate_task` sub-agent targets exactly as in §4.4 — it is unrelated to which
 profiles `run_leader`/`run_work_items`/`run_round` may launch as a leader.
 Those tools enumerate `LeaderProfileInfo[]` supplied by the kernel's
-`WorkflowPolicy.leaderProfiles()`
+`AgentWorkflowPolicy.leaderProfiles()`
 (`packages/kernel/src/application/workflow-policy.ts`,
 `packages/workflows/src/tool.ts`) — a separate list, constructed by
 kernel policy. This document only establishes that the two lists are
@@ -610,7 +610,7 @@ except for this one filtered field — carried `workflow`.
 ## 8. Open questions
 
 - **The exact runtime code path that computes `LeaderProfileInfo[]` inside
-  `WorkflowPolicy.leaderProfiles()`** (`packages/kernel/src/application/workflow-policy.ts`)
+  `AgentWorkflowPolicy.leaderProfiles()`** (`packages/kernel/src/application/workflow-policy.ts`)
   — i.e., which profiles are eligible to be launched as a leader, and whether
   that set is related to `can_spawn`, `admiral`'s own grants, or something
   else entirely — was not traced beyond confirming it is a separate,

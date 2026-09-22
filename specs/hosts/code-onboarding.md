@@ -773,9 +773,9 @@ recovery screen with no further keypress — pinned by
 - `@clarvis/paths` — `CLARVIS_DIR`, `globalPaths`, `ensureWorkspaceLocalDir`, `workspaceStatePaths` — for
   settings-file location and the diagnostics directory (`packages/code/src/onboarding/doctor.ts`,
   `packages/code/src/adapters/diagnostic-session.ts`).
-- `@clarvis/kernel/policy` — `defaultGuardMode` (doctor's `run_safety` gate, `packages/code/src/onboarding/doctor.ts`) and
+- `@clarvis/kernel/policy` — `defaultGuardMode` (via `resolvedGuardMode`, doctor's `run_safety` gate, `packages/code/src/adapters/guard-mode.ts`) and
   `sanitizeErrorMessage` (diagnostic string scrubbing, `packages/code/src/adapters/diagnostic-session.ts`).
-- `@clarvis/kernel/config` — `PLANS_DEFAULTS` (`packages/code/src/onboarding/seed-plans.ts`).
+- `@clarvis/kernel/config` — `PLANS_DEFAULTS` (`packages/code/src/adapters/settings.ts`).
 - `@clarvis/kernel/local` — `POSIX_DEFAULT_ALLOWED_COMMANDS`/`WINDOWS_DEFAULT_ALLOWED_COMMANDS`
   (`packages/code/src/onboarding/seed-default-allowlist.ts`), `resolveShell`/`shellArgs` (Windows clipboard script construction,
   `packages/code/src/adapters/platform.ts`), `killTree`/`ownProcessGroup` (`packages/code/src/adapters/clipboard-process.ts`).

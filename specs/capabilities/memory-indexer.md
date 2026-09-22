@@ -689,7 +689,7 @@ retry it if it does not." (`packages/memory/src/health.ts`).
 
 ### 4.15 The kernel's stream-close grace
 
-`ManagedRun` reads each pushed event through `ingestPendingAfter`; `undefined` leaves the flag alone,
+The run object `createManagedRun` returns reads each pushed event through `ingestPendingAfter`; `undefined` leaves the flag alone,
 `true` renews the wait, `false` settles it (`packages/kernel/src/runs/managed-run.ts`).
 `closeStream` ends immediately when nothing is pending; otherwise it arms a sliding
 `min(ingestGraceMs, absoluteDeadline - now)` timer against an absolute deadline of

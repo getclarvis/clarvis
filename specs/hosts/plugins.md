@@ -1387,8 +1387,8 @@ All of the following are derived directly from this document's own source and te
     rejects a run. A plugin whose skill surface cannot be captured initially still withholds that
     whole surface. Production: `PluginContributions.pin`, `pinnedSkillRoots`,
     `observeRuntimeFiles`, `verifyPinnedSkillCatalog`, and `runtimeAvailable` in
-    `packages/kernel/src/plugins/plugin-contributions.ts`; `ExtensionProfileManager.observeSkillCatalog`
-    and `ExtensionProfileManager.verifySkillCatalog` in
+    `packages/kernel/src/plugins/plugin-contributions.ts`; `observeSkillCatalog`
+    and `verifySkillCatalog` in
     `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `acquireExtensionProfileRunLease` and
     `pluginSkillRoots` in `packages/kernel/src/file-kernel.ts`; and `snapshotSkills` in
     `packages/loop/src/runtime/build-run-deps.ts`. Test:

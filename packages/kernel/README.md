@@ -630,7 +630,7 @@ metadata and bodies are materialized then, and resource paths are restricted to 
 allow-list. Monitoring is armed for every identity file, including the selected sidecar, before a
 post-capture digest comparison. A mismatch flips the same in-memory availability latch, withholds the
 affected skill, and emits `onSkillDrift` for an informational host UI instead of failing dependency
-construction or delaying a run. `ExtensionProfileManager.observeSkillCatalog` then polls those paths
+construction or delaying a run. The extension-profile manager's `observeSkillCatalog` then polls those paths
 asynchronously. Standalone authorship queues a coalesced refresh after captured users settle;
 invalid replacements retain the last catalog and its monitors. Root watchers also detect new skills.
 Plugin drift retains its explicit trust boundary. Builtin and custom standalone roots carry exact

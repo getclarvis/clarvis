@@ -726,11 +726,12 @@ durable index job queue is out of scope here (delegated to [capabilities/memory-
   (`packages/kernel/src/config/capability-registry.ts`) from dragging in the whole memory package on every kernel boot,
   independent of `builtins.memory`.
 - `packages/memory/src/factory.ts` (sibling document) constructs `createMemoryCapability` nowhere
-  itself; the **host** does. `packages/kernel/src/file-kernel.ts` calls
+  itself; the **host** does. `packages/kernel/src/native-kernel.ts` calls
   `createMemoryCapability(memoryFactory)` unconditionally — even with `memoryFactory === undefined`
   — "because the engine collects `seedMarker` from every **registered** capability, active or not,
   which is what strips a stale `<memory>` block from a continuation whose run has memory switched
-  off" (packages/kernel/src/file-kernel.ts). `packages/kernel/src/memory/pass-deps.ts` builds a **second** instance with
+  off" (`packages/capability/src/contract.ts`, collected in
+  `packages/loop/src/runtime/orchestrator.ts`). `packages/kernel/src/memory/pass-deps.ts` builds a **second** instance with
   `{ enqueueOnRunEnd: false }` for the deps an indexing pass continues under, which is exactly the
   scenario INV-091/092 exist to protect.
 - `packages/kernel/src/kernel.ts` constructs `createMemoryService({ factory: opts.memoryFactory,
@@ -773,7 +774,7 @@ defines.
   `assertProviderVocabulary` is invoked before every `createMemoryRunCapability` call is unconfirmed
   (that wiring lives in `factory.ts`/`provider-registry.ts`, owned by sibling documents).
 - **`review.ts`'s `reviewDigest` is not part of any public export path this document's scope covers.**
-  It backs `Memory.review()` (`packages/protocol/src/memory.ts`, sibling document [capabilities/memory-store.md](memory-store.md)) but is not itself
+  It backs `Memory.review()` (`packages/memory/src/memory-contract.ts` and `packages/memory/src/memory.ts`, sibling document [capabilities/memory-store.md](memory-store.md)) but is not itself
   re-exported from `packages/memory/src/index.ts` or `./capability`. Whether any host actually calls
   `Memory.review()` is outside this document's scope.
   `MemoryToolResult`/`GrepHit`/most of `types.ts`'s persistence-facing interfaces (`MemoryTx`,

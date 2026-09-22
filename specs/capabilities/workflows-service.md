@@ -1184,9 +1184,10 @@ is signalled through `WorkflowCtx.onBudgetExhausted` by `runLeader`, `buildRunLe
   own reducer over those events, not the hub's rendering. `src/views/config/WorkflowsHub.tsx`'s
   layout and interaction model consumes that projection's output but is owned by [hosts/code-domain-hubs.md](../hosts/code-domain-hubs.md)
   and is only referenced here, not described.
-- `packages/kernel/src/workflows/workflows-service.ts` combines `BUILTIN_WORKFLOWS` with the global
-  and workspace documents returned by `loadWorkflows`, giving the effective precedence
-  `workspace > global > built-in`. `packages/code` has no workflow-installation call or copied
+- `packages/kernel/src/workflows/workflows-service.ts` passes the global and workspace documents
+  returned by `loadWorkflows` to `resolveWorkflowDefinitions`
+  (`packages/workflows/src/builtin-workflows/index.ts`), which starts from `BUILTIN_WORKFLOWS`; the
+  effective precedence is `workspace > global > built-in`. `packages/code` has no workflow-installation call or copied
   workflow asset; first-run behavior therefore cannot materialize the built-ins.
 
 **Type-only edges:** `WorkflowCtx`/`LeaderSpec`/`LeaderResult`/`WorkflowRunDeps` in

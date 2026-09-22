@@ -116,10 +116,10 @@ run's hard `ResolvedConfig`: `max_tokens`, bounded only when
 | Type | Purpose | Source |
 | --- | --- | --- |
 | `LoopCore` | what `runAgentLoop` reads directly — agent identity, `target`, `budget`, `runtime`, `compaction`, `hooks`, `clock`, `computeRegion`, `spillToolResult`, `allToolsUnavailable`, `onStart` | `packages/loop/src/runtime/loop/loop.ts` |
-| `LoopDerived` | what `runAgent` assembles on top — `ctx`, `tools`, `handlers`, `guards`, `progress`, `anchor?`, `maybeCancelled`, `checkpoint`, `results`, `finalize`, and nine optional hook slots | `packages/loop/src/runtime/loop/run-agent.ts` |
+| `LoopDerived` | what `runAgent` assembles on top — `ctx`, `tools`, `handlers`, `guards`, `progress`, `anchor?`, `maybeCancelled`, `checkpoint`, `results`, `finalize`, and nine optional hook slots | `packages/loop/src/runtime/loop/loop.ts` |
 | `RunAgentInput` | `LoopCore` + seed `messages` and persona knobs — see the field table below | `packages/loop/src/runtime/loop/run-agent.ts` |
 | `FinalizePolicy` | `fastAcceptSubmit?` and `onTextOnly` | `packages/loop/src/runtime/loop/loop.ts` |
-| `AgentLoopResults` | five terminal factories: `allToolsUnavailable`, `budgetExhausted`, `emptyResponse`, `noProgress`, `guardTrip` | `packages/loop/src/runtime/loop/run-agent.ts` |
+| `AgentLoopResults` | five terminal factories: `allToolsUnavailable`, `budgetExhausted`, `emptyResponse`, `noProgress`, `guardTrip` | `packages/loop/src/runtime/loop/loop.ts` |
 | `AgentResult` | the agent-layer terminal outcome (owned by `@clarvis/capability`) | `packages/capability/src/agent-result.ts` |
 | `ProgressTracker` | the no-progress streak tracker: `bump(true)` resets the streak to `0` and never trips; `bump(false)` increments it and trips (returns `true`) only once the streak reaches `limit`; `reset()` clears it | `packages/loop/src/runtime/loop/progress.ts`. Tests: `packages/loop/tests/unit/progress.test.ts` |
 | `LlmTarget` / `toLlmTarget` | a fully resolved model-call target (model/provider identity plus the optional per-call knobs); `toLlmTarget(llm, src)` copies only the knobs `src` defines, so an unset optional field is **omitted** from the built target rather than copied through as `undefined` | `packages/loop/src/runtime/loop/loop-shared.ts`. Test: `packages/loop/tests/unit/loop-shared.test.ts` (`"reasoningEffort" in withoutEffort === false`) |
@@ -644,12 +644,10 @@ the reasoning floor. Pinned by `packages/loop/tests/component/max-output-tokens-
 | any throw, run aborted | `{ ok: false, cancelled }` |
 | `context_overflow` and `overflowRecoveries < 3` and `evict()` returned an event | record `compaction`, increment, `rebuild()` the call, retry |
 | `context_overflow`, nothing evictable, `overflowDiagnostic` given | synthesize a new `ProviderError` with the diagnostic text, `recordError` it, throw it |
-| forced tool choice + `client` error | `recordError` the original, retry once with the **unforced** base call |
 | anything else | `recordError` if it is a `ProviderError`, rethrow |
 
-Pinned by `packages/loop/tests/unit/model-call.test.ts` (forced-choice retry, both errors
-recorded, cancellation after retry) (overflow: eviction retry, raw rethrow without a
-diagnostic, the diagnostic path, and the hard stop after `MAX_OVERFLOW_RECOVERIES` with
+Pinned by `packages/loop/tests/unit/model-call.test.ts` (overflow: eviction retry, raw rethrow
+without a diagnostic, the diagnostic path, and the hard stop after `MAX_OVERFLOW_RECOVERIES` with
 `llm.calls` of length 8).
 
 `rebuild` exists because `cacheBreakpoints` are *indices* captured before an eviction shifted the
@@ -1247,7 +1245,6 @@ names the streak (`packages/loop/src/runtime/run-trace.ts`).
 | All MCP servers unreachable at open | the pool's failure response is returned without running the agent | `packages/loop/src/runtime/orchestrator.ts` |
 | All tools become unavailable mid-run | `terminate{reason:"all_tools_unavailable"}` then `error`/`all_tools_unavailable` | `packages/loop/src/runtime/loop/loop-iteration.ts`, `packages/loop/src/runtime/loop/run-agent.ts` |
 | Provider `context_overflow` | evict-and-retry up to 3×; then a legible diagnostic `ProviderError` | `packages/loop/src/runtime/loop/model-call.ts` |
-| Forced tool choice rejected as `client` | one silent retry without the forcing | `packages/loop/src/runtime/loop/model-call.ts` |
 | Provider transient failure | retried by the provider layer; each retry recorded as `model_call_retry` and pokes the clock | `packages/loop/src/runtime/loop/loop.ts` |
 | Any provider error reaching the loop | `model_call_error` recorded with `kind`/`status`/`retry_after_ms`/`usage_attributed`, message sanitized; `onModelCallError` observers fired | `packages/loop/src/runtime/loop/iteration-metrics.ts`, `packages/loop/src/runtime/loop/loop.ts` |
 | Output budget exhausted before or during a call | `OutputBudgetExhaustedError` → `budget_exhausted` | `packages/loop/src/runtime/loop/output-budget.ts`; caught at `packages/loop/src/runtime/loop/loop.ts` |

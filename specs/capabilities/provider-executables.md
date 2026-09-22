@@ -48,7 +48,7 @@ for the subprocess case itself.
 
 ## 2. Surface
 
-### 2a. The protocol contract — `@clarvis/capability/src/capability-executables.ts`
+### 2a. The protocol contract — `packages/capability/src/capability-executables.ts`
 
 | Symbol | Kind | File | What it is |
 | --- | --- | --- | --- |
@@ -612,7 +612,7 @@ document's scope — see §8.
   resolution failure there is not traced further by this document's scope.
 
 **Not coupled, by design:**
-- `@clarvis/memory/src/mcp-provider.ts` names no MCP type and imports no MCP package — it declares its
+- `packages/memory/src/mcp-provider.ts` names no MCP type and imports no MCP package — it declares its
   own narrow `MemoryServerPort` (`packages/memory/src/mcp-provider.ts`), satisfied structurally by the kernel; full
   detail is in the [foundations/mcp-client.md](../foundations/mcp-client.md) document, not this one.
 - Neither `provider-registry.ts` nor `plan/src/provider.ts` imports `@clarvis/kernel` — the dependency

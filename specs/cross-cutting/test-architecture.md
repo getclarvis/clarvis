@@ -139,7 +139,7 @@ Five packages export a `./testing` entry (from each `package.json` `exports` map
 
 | Package | Target | Shape | Cross-package consumers |
 | --- | --- | --- | --- |
-| `@clarvis/loop` | `src/testing/index.ts` | `MockLLM`, `mockMCPFactory`, fresh real-loop MCP/trace infrastructure, and `validateBody` (`packages/loop/src/testing/index.ts`, exports) | `kernel`, `memory` |
+| `@clarvis/loop` | `src/testing/index.ts` | `MockLLM`, `mockMCPFactory`, fresh real-loop MCP/trace infrastructure, and `validateBody` (`packages/loop/src/testing/index.ts`, exports) | `kernel`, `memory`, `judge` |
 | `@clarvis/memory` | `src/testing.ts` | in-memory adapter + `memoryStoreConformance()` case table (`packages/memory/src/testing.ts`) | `kernel` |
 | `@clarvis/plan` | `src/testing.ts` | in-memory repository + `planRepositoryConformance()` / `planStoreConformance()` (`packages/plan/src/testing.ts`) | `kernel` |
 | `@clarvis/trace` | `src/testing.ts` | `createMemoryTraceStore()` only (`packages/trace/src/testing.ts`) | `kernel`, `loop` |
@@ -1268,7 +1268,7 @@ lets these four repository-tooling modules import it from the repository root.
   setting in each package's `bunfig.toml` is part of this contract.
 - **Five packages' `./testing` exports**, which are consumed across package boundaries and therefore
   ride the ordinary `exports`/dependency rules `package-graph.ts` enforces: `loop`, `memory`,
-  `plan`, `trace` and `tasks` each declare one (§2.5), and `kernel` and `memory` are the
+  `plan`, `trace` and `tasks` each declare one (§2.5), and `kernel`, `memory` and `judge` are the
   actual cross-package importers of `@clarvis/loop/testing`. `kernel` and `workflows` declare no
   `./testing` export of their own — neither appears in either package's `exports` map.
 

@@ -27,7 +27,7 @@ device, not a security boundary — the command guard is what enforces policy"
 
 The vocabulary a hook is validated and classified against — which events exist, which are gates,
 their default timeouts, hard configuration limits, and the Clarvis↔foreign-dialect name
-correspondence — lives in `@clarvis/capability/src/hooks-config.ts` rather than in this package,
+correspondence — lives in `packages/capability/src/hooks-config.ts` rather than in this package,
 because that vocabulary must be reachable on the engine's **eager** configuration path (settings /
 plugin / request schemas) even when the optional `@clarvis/hooks` package itself is never loaded
 (`packages/capability/src/hooks-config.ts`).
@@ -94,7 +94,7 @@ settings/plugin/request-schema path can reach executable code — which is what 
 `builtins.hooks = false` genuinely not load `@clarvis/hooks` at all
 (`packages/hooks/src/capability.ts`).
 
-### 2.3 Hook vocabulary — `@clarvis/capability/src/hooks-config.ts`
+### 2.3 Hook vocabulary — `packages/capability/src/hooks-config.ts`
 
 | Symbol | Value / shape |
 | --- | --- |
@@ -834,7 +834,7 @@ The following invariants govern the behaviour covered above.
     root and writable data directory become `PLUGIN_*`/`CODEX_PLUGIN_*`; the base environment still
     passes through per-run credential filtering. Production: `resolveHooks` in
     `packages/kernel/src/plugins/plugin-manifest.ts`, `filterHookEnv` in
-    `packages/hooks/src/capability.ts`, and `createHookRunner` in `packages/hooks/src/runner.ts`.
+    `packages/hooks/src/env.ts`, and `createHookRunner` in `packages/hooks/src/runner.ts`.
     Test: plugin environment cases in `packages/hooks/tests/component/runner.test.ts`.
 27. **Direct MCP hooks do not recursively trigger tool hooks and cannot fail closed.** They call the
     run-scoped connection façade, not model dispatch, and `hookSchema` rejects `on_failure` for
@@ -964,7 +964,8 @@ in [loop-run-lifecycle](../engine/loop-run-lifecycle.md), delegated per the docu
 - **The production values `HookRunnerDeps` composes into a `HookRunner`'s `killGraceMs` /
   `maxStdoutBytes` when a **host** other than `createWorkspaceHooksCapability` constructs one** are
   not fully explored here — `createHookRunner` is called with only `workspaceRoot`, `baseEnv`,
-  `logger`, `sessionId` in `packages/hooks/src/capability.ts`, leaving `killGraceMs`/`maxStdoutBytes`/
+  `logger`, `sessionId` and `callMcpTool` in `packages/hooks/src/capability.ts`,
+  leaving `killGraceMs`/`maxStdoutBytes`/
   `maxStderrBytes` at the subprocess-level defaults (`DEFAULT_KILL_GRACE_MS`,
   `DEFAULT_MAX_STDOUT_BYTES`, `DEFAULT_MAX_STDERR_BYTES`) for every workspace-hook run in
   production; whether any other host in the repository overrides them is outside this document's

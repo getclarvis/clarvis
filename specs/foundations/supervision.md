@@ -503,8 +503,8 @@ The invariants below are derived directly from this package's own code and tests
    multibyte line is never half-emitted", "always emits at least one line, truncating an oversized
    one at a code-point boundary", "retains only the UTF-8-safe tail of one oversized line").
 9. **Buffer offsets are absolute over the whole stream a child has ever produced, monotonic, and
-   never rewind on a head drop.** Production: `packages/supervision/src/buffer.ts` (doc comment), `head`/`tail` closures
-   (`registry` of `packages/supervision/src/buffer.ts`). Test: `buffer.test.ts` ("offsets are absolute over the whole
+   never rewind on a head drop.** Production: `packages/supervision/src/buffer.ts` (doc comment), `head`/`tail`/`read`
+   closures (`packages/supervision/src/buffer.ts`). Test: `buffer.test.ts` ("offsets are absolute over the whole
    stream…", "a head drop raises head and never rewinds tail…").
 10. **A forwarded iteration counter can only advance, never rewind, even when events arrive
     out of order.** Production: `packages/supervision/src/registry.ts` (`Math.max(r.iterations, …)`). Test:

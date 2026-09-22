@@ -144,7 +144,7 @@ Three distinct wire shapes carry an image through the system, distinguished by f
 
 | Shape | Fields | Used by |
 | --- | --- | --- |
-| Engine (`@clarvis/capability`) | `{ type: "image", image, mediaType? }` | `Message.content`, `LiveMessage`, `collectTurnImages`, the vision prepass call (`packages/capability/src/api.ts`) |
+| Engine (`@clarvis/capability`) | `{ type: "image", image, mediaType? }` | `Message.content`, `LiveMessage`, `collectTurnImages` (`packages/loop/src/runtime/subagents/build-subagent-input.ts`), the vision prepass call `runVisionPrepass` (`packages/loop/src/runtime/vision-prepass.ts`) |
 | Tool result (`@clarvis/tools`) | `{ type: "image", data, mimeType }` | `read_image`'s return value (`packages/tools/src/tools/content.ts`) |
 | Protocol / `code` | `{ type: "image", mime, data?, ref? }` | `code`'s composer, the kernel's wire DTOs (`packages/protocol/src/runs.ts`) |
 

@@ -990,8 +990,8 @@ request that has been superseded by a queued one (`packages/code/src/views/confi
 | --- | --- | --- |
 | `adapters/agent-files.ts` | `@clarvis/kernel/config` (`agentFrontmatterSchema`, `profileReadinessIssues`), `@clarvis/kernel/bootstrap` (`loadEnv`) | `packages/code/src/adapters/agent-files.ts` |
 | `adapters/agents-store.ts` | `@clarvis/kernel/config` (`compareAgentDisplayOrder`, `resolveAgentsByName`), `solid-js` | `packages/code/src/adapters/agents-store.ts` |
-| `features/agents/controller.ts` | `@clarvis/kernel/config` (`isBuiltinAgent`), `solid-js` | `packages/code/src/features/agents/controller.ts` |
-| `views/config/AgentsPanel.tsx` | `@clarvis/kernel/config` (`isBuiltinAgent`) | `packages/code/src/views/config/AgentsPanel.tsx` |
+| `features/agents/controller.ts` | `solid-js` | `packages/code/src/features/agents/controller.ts` |
+| `views/config/AgentsPanel.tsx` | `solid-js` | `packages/code/src/views/config/AgentsPanel.tsx` |
 | `adapters/guard-mode.ts` | `@clarvis/kernel/policy` (`defaultGuardMode`) | `packages/code/src/adapters/guard-mode.ts` (`defaultGuardMode` import) |
 | `adapters/agents.ts` | `@clarvis/paths` (types only) | `packages/code/src/adapters/agents.ts` |
 | `views/config/{TasksHub,WorkflowsHub}.tsx`, `features/tasks/controller.ts` | `@clarvis/protocol` — **type-only** | `packages/code/src/views/config/TasksHub.tsx`, `packages/code/src/views/config/WorkflowsHub.tsx`, `packages/code/src/features/tasks/controller.ts` |

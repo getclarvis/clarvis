@@ -51,7 +51,7 @@ advisory check a UI can run without executing anything
 | `createAjv` / `createStrictAjv` | `() => AjvInstance` | `packages/loop/src/validation/ajv.ts` |
 | `INPUT_LIMITS` | `Record<string, number>` ceiling table | `packages/loop/src/validation/input-limits.ts` |
 | `boundedRecord` | `<K,V>(value: Record<K,V>, maxEntries: number) => boolean` | `packages/loop/src/validation/input-limits.ts` |
-| `positiveIntField` / `nonnegativeIntField` | `(label: string) => ZodNumber` — the shared "must be a positive/non-negative integer" field, used by `budgetSchema`, `agentProfileSchema` (`retry`, `compaction`, `stagnation_threshold`, `call_timeout_ms`) and `providerConfigSchema`'s `models[].context_window_tokens`/`max_output_tokens` | `packages/loop/src/validation/request/numeric-schemas.ts` |
+| `positiveIntField` / `nonnegativeIntField` | `(label: string) => ZodNumber` — the shared "must be a positive/non-negative integer" field, used by `agentProfileSchema` (`retry`, `compaction`, `stagnation_threshold`, `call_timeout_ms`), `providerConfigSchema`'s `models[].context_window_tokens`/`max_output_tokens` and the request's own `elicit_wait_ms` | `packages/loop/src/validation/request/numeric-schemas.ts` |
 
 Barrel: `packages/loop/src/validation/index.ts` re-exports `ajv`, `profile-readiness` and
 `request-schema`. The barrel itself has no package-root export path, and

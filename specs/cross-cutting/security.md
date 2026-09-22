@@ -439,10 +439,14 @@ subtree holds no file or symlink. Choosing that root also applies the same priva
 enforces, so a foreign-owned scratch root is refused instead of accepted and then rejected by the
 component that publishes private state beneath it. Production:
 `allocateShortTemporaryRoot`, `ancestorTrust` and `UNIX_SOCKET_PATH_BUDGET_BYTES` in
-`packages/paths/src/short-temporaries.ts`, `createAgentToolsRunCapability`, `systemTemporaryRoots`, `RuntimeConfig.temporaryRoots`,
-`RuntimeConfig.registerTemporaryRoot`, `snapshotExplicitTemporaryDirectories`,
-`createdTemporaryDirectories`, `buildGuardContext`, `readFileOptions` and
-`assertPrivateHostDirectory` in `packages/kernel/src/hosting/private-files.ts`. Tests:
+`packages/paths/src/short-temporaries.ts`; `createAgentToolsRunCapability` in
+`packages/loop/src/runtime/capabilities/tools.ts`; `systemTemporaryRoots` in
+`packages/tools/src/sandbox.ts`; `RuntimeConfig.temporaryRoots` and
+`RuntimeConfig.registerTemporaryRoot` in `packages/tools/src/config.ts`;
+`snapshotExplicitTemporaryDirectories` and `createdTemporaryDirectories` in
+`packages/tools/src/lib/temporary-roots.ts`; `buildGuardContext` in
+`packages/tools/src/guard/context.ts`; `readFileOptions` in `packages/tools/src/lib/files.ts`;
+and `assertPrivateHostDirectory` in `packages/kernel/src/hosting/private-files.ts`. Tests:
 `packages/paths/tests/integration/short-temporaries.test.ts`,
 `packages/loop/tests/integration/command-guard-wiring.test.ts`,
 `packages/tools/tests/integration/api.test.ts`, and

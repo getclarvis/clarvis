@@ -1322,7 +1322,7 @@ Production: `packages/code/src/adapters/settings.ts`.
 Test: `packages/code/tests/integration/settings.test.ts`.
 
 **INV-P29.** No `body` key the suggestion tables offer is one the request assembles for itself.
-Production: `packages/code/src/features/providers/request-params.ts` against `FORBIDDEN_PROVIDER_BODY_KEYS`.
+Production: `bodyKeyProblem` in `packages/code/src/features/providers/request-params.ts` against `FORBIDDEN_PROVIDER_BODY_KEYS`, reached through `packages/code/src/adapters/provider-request-policy.ts`.
 Test: `packages/code/tests/unit/request-params.test.ts`.
 
 **INV-P30.** The credential header offered for a provider kind is the one that kind's SDK actually
@@ -1519,7 +1519,7 @@ cases).
 | --- | --- | --- | --- |
 | `model-level.tsx` | `@clarvis/kernel/config` (`cacheModeOf`, `derivePromptCacheMode`) | runtime, static | `packages/code/src/views/config/providers/model-level.tsx` |
 | `controller.ts` | `@clarvis/kernel/config` (`derivePromptCacheMode`) | runtime, static | `packages/code/src/features/providers/controller.ts` |
-| `request-params.ts` | `@clarvis/kernel/policy` (`envRefPattern`, `FORBIDDEN_PROVIDER_BODY_KEYS`) | runtime, static | `packages/code/src/features/providers/request-params.ts` |
+| `adapters/provider-request-policy.ts` | `@clarvis/kernel/policy` (`envRefPattern`, `FORBIDDEN_PROVIDER_BODY_KEYS`) | runtime, static | `packages/code/src/adapters/provider-request-policy.ts` |
 | `adapters/mcp-capabilities.ts` | `@clarvis/kernel/config` (`mcpServerSettingsSchema`), `@clarvis/kernel/policy` (`CONTROL_PLANE_TOOL_NAMES`) | runtime, static | `packages/code/src/adapters/mcp-capabilities.ts` |
 | `adapters/settings.ts` | `@clarvis/kernel/config` (`kernelSettingsSchema`, `mergeProviders`, `mergeSettings`, `parseModelRef`, `isWellFormedHttpUrl`, `PLANS_DEFAULTS`) | runtime, static | `packages/code/src/adapters/settings.ts` |
 | `adapters/settings.ts` | `@clarvis/protocol` (`ConfigService`, `SettingsData`, `SettingsRepairPlan`, `SandboxInspection`) | type-only | `packages/code/src/adapters/settings.ts` |

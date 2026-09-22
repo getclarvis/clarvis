@@ -233,9 +233,9 @@ Two accepted shapes (`packages/kernel/src/plugins/hook-dialects.ts`):
 { "PreToolUse": [ { "matcher": "Bash|Edit", "hooks": [ { "command": "..." } ] } ] }
 ```
 
-One matcher group is either `{ matcher?: string, hooks: HookEntry[] }` or a bare `HookEntry`, read as a
-group of one selecting everything (`packages/kernel/src/plugins/hook-dialects.ts`). One
-`HookEntry` is a loose object with optional `type`, `command`, `commandWindows`, `timeout`, `async`,
+One matcher group (`hookGroupSchema`) is either `{ matcher?: string, hooks: hookEntrySchema[] }` or a
+bare `hookEntrySchema` entry, read as a group of one selecting everything (`packages/kernel/src/plugins/hook-dialects.ts`). One
+`hookEntrySchema` entry is a loose object with optional `type`, `command`, `commandWindows`, `timeout`, `async`,
 `statusMessage`, `additionalContextLimit`, `server`, `tool`, and `input`. The fields needed by the
 selected type are enforced during conversion, while unrecognized keys remain tolerated
 (`packages/kernel/src/plugins/hook-dialects.ts`).
@@ -687,7 +687,7 @@ MCP entries (`packages/kernel/src/plugins/plugin-manifest.ts`).
   a runtime, coupling).
 - **`@clarvis/skills`'s `scan.ts` has no dependency on the concept of source ("agents" vs "clarvis")** —
   see §3.1 and §4.7. The `.agents`-vs-`.clarvis` precedence is entirely a property of what
-  `@clarvis/skills/preset.ts` and its caller in the kernel pass in as the ordered root list, not of any
+  `packages/skills/src/preset.ts` and its caller in the kernel pass in as the ordered root list, not of any
   branch inside the scanner itself. This is a design choice a reader of `scan.ts` alone would not see:
   it only becomes visible by also reading `preset.ts`.
 

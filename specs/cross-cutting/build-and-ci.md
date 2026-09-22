@@ -313,7 +313,7 @@ NOT add a `schedule:` or `push:` trigger".
 | `BENCH_N`, `BENCH_POLL_MS`, `BENCH_TIMEOUT_MS`, `BENCH_MAX_LOAD` | `packages/code/tooling/benchmarks/first-paint.ts` | benchmark sample size, poll, timeout, per-core load refusal (default `0.35`) |
 | `CI` | `packages/tools/tests/contract/grep-parity.test.ts` | when set, `rg` must be installed (TEST-01) |
 | `GITHUB_STEP_SUMMARY` | `tooling/checks/ci-coverage.ts`, `tooling/checks/ci-artifacts.ts` | package outcomes, retry notes and build-transfer measurements |
-| `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, `CI_BUILD_PRODUCER_ATTEMPT` | `tooling/checks/ci-artifacts.ts` | same-run artifact identity with distinct producer and consumer attempts |
+| `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, `CI_BUILD_PRODUCER_ATTEMPT` | `tooling/checks/ci-artifacts.ts`, and `requireBuildProducer` in `tooling/lib/ci-artifacts.ts` for `CI_BUILD_PRODUCER_ATTEMPT` | same-run artifact identity with distinct producer and consumer attempts |
 | `CI_BUILD_ARTIFACT_ID`, `CI_BUILD_ARTIFACT_DIGEST`, `CI_BUILD_TAR_DIGEST` | `tooling/lib/ci-artifacts.ts`, `requireBuildProducer` | complete immutable producer receipt required before download |
 | `CI_UPLOAD_STARTED_MS`, `CI_DOWNLOAD_STARTED_MS` | `tooling/checks/ci-artifacts.ts` | transfer durations including step-transition overhead |
 | `BUN_JSC_useConcurrentGC` / `BUN_JSC_numberOfGCMarkers` / `BUN_JSC_useConcurrentJIT` | `.github/workflows/segfault-canary.yml` (`jobs.canary.steps[name=measure].run`) | canary JSC arms |
@@ -1269,7 +1269,7 @@ no publish, registry, release-manifest or running-container commit path. Product
 | A Bun version surface drifts | `check:bun-version` reports every offending file and observed value, then sets exit 1 | `tooling/checks/bun-version.ts` |
 | A released runtime artifact comes from an unapproved repository or tag, or was built dirty | `"invalid host release coordinates"`, then `"published artifacts must have dirty:false"` before cache publication and again on cache reuse | `packages/kernel/src/runtime/runtime-artifact.ts`; `packages/kernel/tests/unit/runtime-artifact.test.ts` |
 | Runtime mise archive has the wrong architecture or bytes | the download stage rejects unsupported `dpkg` architecture or `sha256sum -c -` fails before the binary crosses into the final stage | `Containerfile.runtime` (`mise` stage) |
-| Runtime build exits nonzero or produces no exact local image ID | the helper preserves the engine exit or throws; it never reports a usable runtime identity | `tooling/runtime/build-image.ts` (`run`) |
+| Runtime build exits nonzero or produces no exact local image ID | the helper preserves the engine exit or throws; it never reports a usable runtime identity | `tooling/runtime/build-image.ts` (`main`) |
 | Model catalog file exceeds 8 MiB, or the user cache is corrupt | `readCatalogFile` throws `"model catalog exceeds byte limit"`; a bad cache is silently ignored and the bundled snapshot returned | `packages/kernel/src/models/model-catalog.ts` |
 | Neither models-dev.json candidate exists | `bundlePath()` returns the source-tree path anyway "so the ensuing read reports the location a developer expects" | `packages/kernel/src/models/model-catalog.ts` |
 | `code`'s temp-home cleanup races a live child | `rmSync` failure swallowed; comment: "a live child may still hold a handle; the OS reaps the temp dir" | `tooling/test-runtime/clarvis-home-preload.ts` |

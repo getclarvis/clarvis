@@ -131,7 +131,9 @@ and Judge authority behavior in
 
 ## Catalog and activation
 
-A new skill can join a custom Extension Profile in the same reviewed transaction as its file.
+A new skill joins a custom Extension Profile in the same reviewed transaction as its file; the
+builtin default discovers it at the next safe catalog refresh without a membership write or
+workspace approval for the standalone file alone.
 The manager validates the definition and selection revisions and rolls back both if application
 fails. Successful file writes request a coalesced catalog refresh; captured skill manifests and
 resources keep the current run's bytes. The next safe generation publishes the new skill without

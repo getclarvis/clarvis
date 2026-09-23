@@ -170,6 +170,14 @@ const RUN_EVENT_SCHEMAS = {
         .optional(),
     })
     .strict(),
+  tool_control_released: z
+    .object({
+      type: z.literal("tool_control_released"),
+      ...attributed,
+      call_id: text,
+      tool_execution_id: text,
+    })
+    .strict(),
   tool_call: z
     .object({
       type: z.literal("tool_call"),

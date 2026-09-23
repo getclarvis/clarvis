@@ -41,6 +41,7 @@ export interface ToolInterruptRegistry {
   retain(
     toolExecutionId: string,
     continuation: { stop(): Promise<boolean>; completed: Promise<unknown> },
+    onReleased: () => void,
   ): void;
   unregister(toolExecutionId: string): void;
   deliver(delivery: ToolInterruptDelivery): void;
@@ -59,13 +60,21 @@ export function createToolInterruptRegistry(): ToolInterruptRegistry {
       if (closed) return;
       entries.set(entry.toolExecutionId, { controller: entry.controller, requested: false });
     },
-    retain(toolExecutionId, continuation) {
+    retain(toolExecutionId, continuation, onReleased) {
       const entry = entries.get(toolExecutionId);
       if (entry !== undefined && !closed) {
         entry.stop = () => continuation.stop();
         void continuation.completed.then(
-          () => entries.delete(toolExecutionId),
-          () => entries.delete(toolExecutionId),
+          () => {
+            if (entries.get(toolExecutionId) !== entry) return;
+            entries.delete(toolExecutionId);
+            if (!closed) onReleased();
+          },
+          () => {
+            if (entries.get(toolExecutionId) !== entry) return;
+            entries.delete(toolExecutionId);
+            if (!closed) onReleased();
+          },
         );
       }
     },

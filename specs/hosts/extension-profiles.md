@@ -234,8 +234,18 @@ standalone or plugin skills empty of scanned extensions (`emptySkillsProvider` a
 `packages/loop/src/runtime/build-run-deps.ts`; test
 `packages/loop/tests/integration/execute-run-entrypoints.test.ts`).
 
-Reviewed configuration file tools use the ordinary run lease. Authoring changes queue
-an idle catalog refresh; the active run retains its bounded execution snapshot.
+Reviewed configuration file tools use a skill-catalog lease through physical `done`. Authoring
+changes queue a catalog refresh when the last skill-catalog consumer settles; the active run retains
+its bounded execution snapshot. The separate host lease lasts through `closed`, including the
+memory-ingest stream grace. That grace alone cannot hold a newly authored skill out of the slash
+catalog. Production: `createInProcessKernel` in
+[kernel.ts](../../packages/kernel/src/kernel.ts) and `acquireExtensionProfileRunLease` in
+[file-kernel.ts](../../packages/kernel/src/file-kernel.ts). Test:
+[run-lease.test.ts](../../packages/kernel/tests/unit/run-lease.test.ts) pins the `done`/`closed`
+ordering; the agent-authored skill fixture in
+[file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts)
+and the isolated PTY authoring journey cover discovery.
+
 The configuration document fixture demonstrates exact plugin versus standalone skill scopes with a
 nonempty definition. File authoring does not select that definition: activation still uses the
 preview-bound service and a new kernel snapshot. Workflow definitions themselves are independent
@@ -458,13 +468,22 @@ refreshes the trust surface through the file-kernel adapter before recording con
 settings reads reuse its cached process snapshot.
 
 New-skill creation through the writer prepares `prepareSkillInclusion` with the exact definition
-and selection revisions. A workspace custom profile gains only that skill; a global profile is
-copied to a workspace definition and selected locally. Its plugin references and existing skill
-exclusions are preserved. The file and membership share one review; a conflict prevents the skill
-write. The saved selection is effective in the next idle generation and survives reopening.
-Production: `prepareSkillInclusion` and `flushSkillRefresh` in
-[extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts).
-Test: [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts).
+and selection revisions when a custom profile is selected. A workspace custom profile gains only
+that skill; a global profile is copied to a workspace definition and selected locally. Its plugin
+references and existing skill exclusions are preserved. The file and membership share one review;
+a conflict prevents the skill write. With `builtin:default`, `prepareSkillInclusion` has no
+membership to author: the default standalone discovery includes the new skill at the next safe
+catalog refresh. A standalone skill by itself is absent from `workspaceTrustFingerprint` and does
+not require workspace approval. The saved selection or refreshed default catalog is effective in
+the next idle generation and survives reopening.
+Production: `prepareSkillInclusion`, `standaloneCatalog`, `defaultStandaloneSelection`, and
+`flushSkillRefresh` in
+[extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts),
+and `workspaceExecutableSurface` in
+[workspace-trust.ts](../../packages/kernel/src/config/workspace-trust.ts). Test:
+`makes an agent-authored standalone skill available on the next run without workspace approval`
+and the custom-profile inclusion cases in
+[file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts).
 
 - **Production:** `PluginContributions.pin`, `pinnedSkillRoots`,
   `PLUGIN_SKILL_RESOURCE_LIMITS`, `skillSurface`, `hashBoundedFile`, `snapshotPluginExecutables`,

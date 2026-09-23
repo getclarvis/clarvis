@@ -1,11 +1,20 @@
 import { projectTranscriptToolDisplay, transcriptDisplayText } from "./index.ts";
 import type { TranscriptNode, TranscriptToolNode } from "./types.ts";
 
-function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
-  if (value === null || typeof value !== "object" || seen.has(value)) return value;
-  seen.add(value);
-  for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child, seen);
-  return Object.freeze(value);
+function frozenCopy<T>(value: T, seen = new WeakMap<object, unknown>()): T {
+  if (value === null || typeof value !== "object") return value;
+  const existing = seen.get(value);
+  if (existing !== undefined) return existing as T;
+  if (Array.isArray(value)) {
+    const copy: unknown[] = [];
+    seen.set(value, copy);
+    for (const item of value) copy.push(frozenCopy(item, seen));
+    return Object.freeze(copy) as T;
+  }
+  const copy: Record<string, unknown> = {};
+  seen.set(value, copy);
+  for (const [key, item] of Object.entries(value)) copy[key] = frozenCopy(item, seen);
+  return Object.freeze(copy) as T;
 }
 
 /** Build the bounded, owned node snapshot that committed history is allowed to retain. */
@@ -27,7 +36,7 @@ export function snapshotTranscriptNode(
     delete base.inputComplete;
     delete base.dehydrated;
     delete base.hydrationNotice;
-    return deepFreeze({
+    return frozenCopy({
       ...base,
       text: transcriptDisplayText(node),
       ...(display.arguments === undefined ? {} : { args: display.arguments }),
@@ -42,11 +51,11 @@ export function snapshotTranscriptNode(
     } satisfies TranscriptToolNode);
   }
   if (node.kind === "plan") {
-    return deepFreeze({
+    return frozenCopy({
       ...node,
       text: transcriptDisplayText(node),
       tasks: node.tasks?.map((task) => ({ ...task })),
     });
   }
-  return deepFreeze({ ...node, text: transcriptDisplayText(node) });
+  return frozenCopy({ ...node, text: transcriptDisplayText(node) });
 }

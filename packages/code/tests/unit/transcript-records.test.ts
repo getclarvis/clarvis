@@ -6,6 +6,44 @@ import { TranscriptWindow } from "../../src/core/transcript/window.ts";
 import { transcriptToolEvents } from "../helpers/transcript-fixtures.ts";
 
 describe("transcript records and first admission", () => {
+  test("a yielded shell remains mutable after the next iteration seals its snapshot", () => {
+    const store = createTranscriptStore();
+    const sink = store.openRun("yielded");
+    const control = { tool_execution_id: "tok_shell", actions: ["interrupt"] as const };
+    const events: RunEvent[] = [
+      { type: "run_started", at: 1 },
+      {
+        type: "tool_call_started",
+        at: 2,
+        agent: "lead",
+        call_id: "shell-1",
+        server: "",
+        tool: "shell",
+        arguments: { command: "sleep 1", yield_time_ms: 10 },
+        control,
+      },
+      {
+        type: "tool_call",
+        at: 3,
+        agent: "lead",
+        call_id: "shell-1",
+        server: "",
+        tool: "shell",
+        arguments: { command: "sleep 1", yield_time_ms: 10 },
+        ok: true,
+        result: '{"running":true,"session_id":"ses_123","stdout":"","stderr":""}',
+        control,
+      },
+      { type: "iteration_started", at: 4, agent: "lead", iteration: 2, model: "test/model" },
+    ];
+    for (const event of events) applyEvent(sink, event, "replay");
+    expect(store.committedNodes().some((node) => node.kind === "tool_call")).toBe(true);
+    expect(store.setToolInterruptRequest("tok_shell", true)).toBe(true);
+    expect(store.nodes.find((node) => node.kind === "tool_call")).toMatchObject({
+      interruptRequest: "pending",
+    });
+  });
+
   test("two actors sharing a call ID have independent authoritative results", () => {
     const store = createTranscriptStore();
     const sink = store.openRun("same-call");

@@ -17,6 +17,9 @@ remain compatible with accumulators; they do not establish complete accounting f
 Provider adaptation, decorators, error classification, and the lazy entry split are specified in
 [`foundations/llm.md`](../../specs/foundations/llm.md). Prefix caching and session affinity are
 specified in [`cross-cutting/prompt-cache.md`](../../specs/cross-cutting/prompt-cache.md).
+The model-facing tool schema keeps an object root and field constraints. Root unions expose their
+combined fields and shared requirements to the model; conditional root keywords stay in the
+dispatch validator, which checks every call before execution.
 Kernel-owned ChatGPT/Grok subscription request authority is specified in
 [`hosts/subscription-providers.md`](../../specs/hosts/subscription-providers.md).
 
@@ -201,6 +204,9 @@ It dedupes on the state name, because `onStateChange` fires several times per mo
 ## Prompt-cache continuity
 
 `withPromptCacheDefaults` composes affinity from session and instance identity. Provider-issued function-call item IDs survive the final Responses serializer alongside `call_id`; no optional IDs are invented. Serialized prefix diagnostics compare bounded hashes of the actual request. Incomplete cache usage is marked unknown.
+The shared cache-key composer keeps short session/instance identities readable and hashes longer
+ones to a stable 64-character value before any provider adapter receives them. This keeps affinity
+stable across turns while fitting providers with a 64-character wire limit.
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.

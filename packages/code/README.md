@@ -1191,7 +1191,8 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 - End returns to the latest bounded transcript window and resumes follow; the off-tail reading
   indicator provides the same pointer action.
 - One transcript projection renders stable row IDs for composing, pending, running and terminal
-  records. Results are sealed into bounded immutable content, not moved between live/history owners.
+  records. Results are sealed into bounded immutable copies without freezing live reactive nodes,
+  then remain in the same row owner across later iterations and restored turns.
   Explicit exploration groups exist from their first allowlisted read/search call; shell, mutations
   and unknown MCP tools stay individual. Each open group mounts one page of 20 members.
 - One native ScrollBox owns sticky follow, culling and semantic row anchors. Short projections mount
@@ -1245,6 +1246,7 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   renders `Interrupted by operator`; scope closure or abandoned argument composition retains its
   actual diagnostic instead. See [transcript interruption](../../specs/hosts/code-transcript.md#47-provenance-and-interruption)
   and [run hosting](../../specs/hosts/code-run-host.md#selective-shell-interruption).
+  A yielded shell removes `[X]` when its physical session settles, even if the run continues.
 - Session persistence keeps one physical write and only the newest queued snapshot per session, so
   a slow filesystem cannot retain the quadratic sequence of every growing turn list. At most eight
   idle complete session documents stay cached; older entries demote to catalog summaries and reload

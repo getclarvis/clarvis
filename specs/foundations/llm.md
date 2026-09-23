@@ -151,6 +151,17 @@ gives the reason for the two keys: "spreading one object onto the SDK call would
 | `providerOptions?` | `Record<string, Record<string, JSONValue>>` | `buildCallTuning` |
 | `maxOutputTokens?` | `number` | `buildCallTuning` |
 
+`providerToolSchema` keeps provider-facing tool inputs rooted in an object and preserves field
+constraints. Root unions expose their combined properties and common required fields; root
+combinators and conditionals are omitted from the published schema because some provider APIs reject
+them before a call begins. The complete declared schema remains the authority for local dispatch
+validation before any handler executes. Production:
+`packages/llm/src/ai-sdk/request-options.ts` (`providerToolSchema`, `toAiSdkTools`) and
+`packages/tools/src/core.ts` (`dispatch`). Test:
+`packages/llm/tests/unit/ai-sdk-modules.test.ts` (`publishes object-root tool schemas while keeping
+nested field constraints`) and `packages/tools/tests/integration/shell-session.test.ts`
+(`validates action-specific arguments`).
+
 The adapter adds `model`, `abortSignal` (when a signal exists) and a hard `maxRetries: 0`
 (`packages/llm/src/ai-sdk-adapter.ts`) — the TSDoc says SDK retries are disabled "so
 {@link withTransportRetry} owns retry policy" (`packages/llm/src/ai-sdk-adapter.ts`).

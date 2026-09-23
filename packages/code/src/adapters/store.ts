@@ -1109,6 +1109,12 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             m.liveOutput = undefined;
             foldDefaults.set(m.key, true);
           });
+        } else if (n.kind === "tool_call" && n.control !== undefined) {
+          patchKind(i, "tool_call", (m) => {
+            m.control = undefined;
+            m.interruptRequest = undefined;
+            if (m.toolPhase === "running") m.toolPhase = "completed";
+          });
         } else if (n.kind === "assistant" && n.status === "running") {
           patch(i, (m) => {
             m.status = "ok";
@@ -1406,6 +1412,15 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
               n.status = "ok";
               foldDefaults.set(n.key, true);
             }
+          });
+        } else if (span.kind === "tool" && event.type === "tool_control_released") {
+          const index = indexOfKey.get(ns(span.span_id));
+          if (index === undefined) return;
+          patchKind(index, "tool_call", (n) => {
+            if (n.control?.tool_execution_id !== event.tool_execution_id) return;
+            n.control = undefined;
+            n.interruptRequest = undefined;
+            if (n.toolPhase === "running" && n.status !== "running") n.toolPhase = "completed";
           });
         } else if (span.kind === "tool" && event.type === "tool_output_delta") {
           const index = indexOfKey.get(ns(span.span_id));

@@ -739,7 +739,17 @@ function openToolInvocation(
       control: { toolExecutionId, actions: ["interrupt"] },
     },
     release(continuation) {
-      if (continuation !== undefined) registry.retain(toolExecutionId, continuation);
+      if (continuation !== undefined)
+        registry.retain(toolExecutionId, continuation, () => {
+          core.runtime.trace.signal("tool_control_released", {
+            agent: core.agent,
+            ...(core.subagentInstanceId !== undefined
+              ? { subagent_instance_id: core.subagentInstanceId }
+              : {}),
+            call_id: call.id,
+            tool_execution_id: toolExecutionId,
+          });
+        });
       else registry.unregister(toolExecutionId);
     },
   };

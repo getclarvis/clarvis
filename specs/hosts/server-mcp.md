@@ -396,10 +396,15 @@ label}`. Most resolve to `info` (`run_started`, `run_ended`,
 `workflow_run_completed`/`workflow_run_failed`, `plan_created`/`plan_updated`/
 `plan_removed`/`plan_review_resolved`, `elicitation_resolved`,
 `steering_applied`, `compaction_started`) or `debug` (`iteration_started`/`iteration_completed`,
-`tool_output_delta`, `tool_input_delta`, `text_delta`, `reasoning`,
+`tool_output_delta`, `tool_control_released`, `tool_input_delta`, `text_delta`, `reasoning`,
 `workflow_title_updated`, `workflow_run_progress`, `compaction`,
 `memory_ingest`, `capability_event`). The non-default mappings, which decide
 what a `logging/setLevel`-filtered client actually sees:
+
+`tool_control_released` is a debug tool notification when a yielded shell loses its physical stop
+control; it leaves the terminal tool result intact. Production:
+`packages/server/src/mcp/event-view.ts` (`viewOf`). Test:
+`packages/server/tests/unit/event-view.test.ts` (`viewOf`).
 
 | `RunEvent.type` | Level | Source |
 | --- | --- | --- |

@@ -102,6 +102,16 @@ describe("viewOf", () => {
     ],
     [
       {
+        type: "tool_control_released",
+        at: AT,
+        agent: "lead",
+        call_id: "c1",
+        tool_execution_id: "tool-1",
+      },
+      { level: "debug", logger: "clarvis.tool", label: "tool control released" },
+    ],
+    [
+      {
         type: "tool_input_delta",
         at: AT,
         agent: "lead",

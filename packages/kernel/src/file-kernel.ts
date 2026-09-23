@@ -965,7 +965,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
             environment: environment.values,
             taskProviderFactory,
             tasksEnabled,
-            acquireRunLease: acquireExtensionProfileRunLease,
+            acquireSkillCatalogLease: acquireExtensionProfileRunLease,
             executeRun: nativeExecuteRun,
             capabilities: {
               runtime: nativeRuntime(),

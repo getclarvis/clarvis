@@ -1,4 +1,5 @@
 import { createTraceVisibilityView } from "@clarvis/trace";
+import { releaseRunLeases } from "./runs/run-lease.ts";
 import type { RunServiceConfig } from "./runs/run-service.ts";
 import { type ExecuteRunDeps, type SkillsProvider } from "@clarvis/loop";
 import type { MemoryFactory } from "@clarvis/memory/capability";
@@ -332,6 +333,8 @@ export interface CreateKernelOptions {
   tasksEnabled?: boolean;
   /** Host lease acquired for each live run in this workspace. */
   acquireRunLease?: () => () => void;
+  /** Skill-catalog lease released when model execution and its tools settle. */
+  acquireSkillCatalogLease?: () => () => void;
   /** Placement-neutral loop executor shared by ordinary and workflow runs. */
   executeRun?: RunExecutor;
   /** Frozen host projection for native workflow execution without guest definition discovery. */
@@ -592,7 +595,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       ...(opts.executeRun === undefined ? {} : { executeRun: opts.executeRun }),
     });
     const runs =
-      opts.acquireRunLease === undefined
+      opts.acquireRunLease === undefined && opts.acquireSkillCatalogLease === undefined
         ? baseRuns
         : {
             ...baseRuns,
@@ -600,16 +603,20 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
               params: Parameters<typeof baseRuns.start>[0],
               prepared?: PreparedRunExecution,
             ) {
-              const release = opts.acquireRunLease!();
+              let releaseHost: (() => void) | undefined;
+              let releaseCatalog: (() => void) | undefined;
               try {
+                releaseHost = opts.acquireRunLease?.();
+                releaseCatalog = opts.acquireSkillCatalogLease?.();
                 const handle = await baseRuns.start(params, prepared);
-                // The workspace run lease covers late capability delivery too.
-                // Releasing it at `done` could evict the workspace kernel while
-                // the managed stream is still inside its bounded ingest grace.
-                void handle.closed.then(release, release);
+                releaseRunLeases(handle, {
+                  ...(releaseHost === undefined ? {} : { host: releaseHost }),
+                  ...(releaseCatalog === undefined ? {} : { skillCatalog: releaseCatalog }),
+                });
                 return handle;
               } catch (error) {
-                release();
+                releaseCatalog?.();
+                releaseHost?.();
                 throw error;
               }
             },

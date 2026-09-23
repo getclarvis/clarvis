@@ -174,6 +174,14 @@ after `done`, while retaining `closed` only as a physical-work lease for the eve
 memory notices. Production and test ownership live in
 [`code-run-host.md`](code-run-host.md#42-runmanaged--the-single-funnel).
 
+The in-process host retains its ordinary host lease through `closed`, but releases the separate
+skill-catalog lease at `done`, after model and tool execution settle. Memory-ingest stream grace may
+keep the event pump open without delaying a queued skill refresh. An independent background run still
+holds its own catalog lease while it can use skills. Production: `releaseRunLeases` in
+[run-lease.ts](../../packages/kernel/src/runs/run-lease.ts) and `createInProcessKernel` in
+[kernel.ts](../../packages/kernel/src/kernel.ts). Test:
+[run-lease.test.ts](../../packages/kernel/tests/unit/run-lease.test.ts).
+
 ## 3. Data and formats
 
 ### 3.1 Identifiers
@@ -252,6 +260,7 @@ Complete table, transcribed :
 | `tool_call_started` | engine_trace | persisted | engine | false | false |
 | `tool_call` | engine_trace | persisted | engine | false | false |
 | `tool_output_delta` | engine_trace | **live_only** | engine | `tool_output_delta` | **true** |
+| `tool_control_released` | engine_trace | **live_only** | engine | false | false |
 | `tool_input_delta` | engine_trace | **live_only** | engine | `tool_input_delta` | **true** |
 | `reasoning` | engine_trace | persisted | engine | false | false |
 | `text_delta` | engine_trace | **live_only** | engine | `text_delta` | **true** |

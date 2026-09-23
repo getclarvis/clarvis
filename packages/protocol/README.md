@@ -124,6 +124,8 @@ subscription authority. See [the catalog contract](../../specs/hosts/protocol.md
 
 All DTOs are protocol-owned projections. Engine-internal trace, memory and
 configuration types do not cross this boundary.
+The live-only `tool_control_released` run event identifies a yielded shell call and the exact
+control token to revoke when its process settles.
 `PlanDocumentDto` carries the provider's parsed controlled fields and ordered extra sections beside
 its canonical Markdown, so clients can present complete plan content without parsing the storage format.
 

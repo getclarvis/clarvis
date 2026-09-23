@@ -524,6 +524,14 @@
     {
       "mechanism": "positive-wait",
       "file": "packages/loop/tests/integration/selective-shell-interrupt.test.ts",
+      "identity": "positive-wait|it:releases a yielded control when the process exits without an interrupt|Bun.sleep(2000)|0",
+      "package_owner": "@clarvis/loop",
+      "classification": "boundary-canary",
+      "reason": "A bounded fuse for real shell exit; the awaited event is the physical tool control release."
+    },
+    {
+      "mechanism": "positive-wait",
+      "file": "packages/loop/tests/integration/selective-shell-interrupt.test.ts",
       "identity": "positive-wait|it:stops a yielded session through its original hosted interrupt token|Bun.sleep(10)|0",
       "package_owner": "@clarvis/loop",
       "classification": "boundary-canary",

@@ -7,6 +7,23 @@ import {
 } from "../../src/runs/map-events.ts";
 
 describe("engineEventToProto (TraceEvent → engine-independent RunEvent projection)", () => {
+  it("maps physical shell control release to its original call and token", () => {
+    expect(
+      engineEventToProto({
+        type: "tool_control_released",
+        agent: "lead",
+        call_id: "shell-1",
+        tool_execution_id: "tok_1",
+        occurred_at: 14,
+      }),
+    ).toEqual({
+      type: "tool_control_released",
+      agent: "lead",
+      call_id: "shell-1",
+      tool_execution_id: "tok_1",
+      at: 14,
+    });
+  });
   it("preserves durable announcement actor, call and physical attempt without arguments", () => {
     expect(
       engineEventToProto({

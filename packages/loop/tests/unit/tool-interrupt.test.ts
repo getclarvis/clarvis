@@ -90,14 +90,21 @@ describe("tool interrupt registry", () => {
       finish = resolve;
     });
     let stops = 0;
+    let released = 0;
     registry.register({ toolExecutionId: "tok_session", callId: "call", controller });
-    registry.retain("tok_session", {
-      completed,
-      async stop() {
-        stops++;
-        return true;
+    registry.retain(
+      "tok_session",
+      {
+        completed,
+        async stop() {
+          stops++;
+          return true;
+        },
       },
-    });
+      () => {
+        released++;
+      },
+    );
     let status: string | undefined;
     const delivery = {
       toolExecutionId: "tok_session",
@@ -115,6 +122,7 @@ describe("tool interrupt registry", () => {
     finish();
     await completed;
     await Promise.resolve();
+    expect(released).toBe(1);
     registry.deliver(delivery);
     expect(status).toBe("not_running");
   });

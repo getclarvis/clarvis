@@ -29,6 +29,9 @@ The five agents Clarvis ships (`marshall`, `admiral`, `coder`, `explorer`, `plan
 `clarvis_run` naming no agent enters `marshall`. What the config directory must supply is providers,
 a default model and credentials — not a fleet.
 
+The event stream projects a yielded shell's physical control release as a debug tool notification;
+clients can clear its stop action without changing the completed tool result.
+
 ```
    client application (MCP over HTTP)
               │  run / steer / cancel / respond

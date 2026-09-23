@@ -20,6 +20,7 @@ export const BUILTIN_TRACE_KINDS = [
   "tool_call_started",
   "tool_call_announced",
   "tool_output_delta",
+  "tool_control_released",
   "tool_input_delta",
   "budget_check",
   "terminate",
@@ -227,6 +228,14 @@ export interface ToolOutputDeltaDetail {
   subagent_instance_id?: string;
   call_id: string;
   chunk: string;
+}
+
+/** A yielded shell's physical process settled, revoking its live stop control. */
+export interface ToolControlReleasedDetail {
+  agent: AgentRole;
+  subagent_instance_id?: string;
+  call_id: string;
+  tool_execution_id: string;
 }
 
 /**
@@ -749,6 +758,7 @@ export interface TraceDetailMap {
   tool_call_started: ToolCallStartedDetail;
   tool_call_announced: ToolCallAnnouncedDetail;
   tool_output_delta: ToolOutputDeltaDetail;
+  tool_control_released: ToolControlReleasedDetail;
   tool_input_delta: ToolInputDeltaDetail;
   budget_check: BudgetCheckDetail;
   delegation_created: DelegationCreatedDetail;

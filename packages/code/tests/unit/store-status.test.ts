@@ -1086,6 +1086,69 @@ test("a yielded shell retains its original interrupt control after the tool call
   });
 });
 
+test("physical completion removes a yielded shell's stop control", () => {
+  const store = createRoot(() => createTranscriptStore());
+  const sink = store.openRun("exec_1");
+  for (const event of [
+    ev({ type: "run_started", at: 1 }),
+    ev({
+      type: "tool_call_started",
+      agent: "lead",
+      call_id: "sh-yield",
+      at: 2,
+      server: "",
+      tool: "shell",
+      arguments: { command: "sleep 1", yield_time_ms: 100 },
+      control: { tool_execution_id: "tok_yield", actions: ["interrupt"] },
+    }),
+    ev({
+      type: "tool_call",
+      agent: "lead",
+      call_id: "sh-yield",
+      at: 3,
+      server: "",
+      tool: "shell",
+      arguments: { command: "sleep 1", yield_time_ms: 100 },
+      ok: true,
+      result: '{"running":true,"session_id":"ses_123","stdout":"","stderr":""}',
+      control: { tool_execution_id: "tok_yield", actions: ["interrupt"] },
+    }),
+  ])
+    applyRunEvent(sink, event, "live");
+  const tool = () => store.nodes.find((node) => node.kind === "tool_call");
+  store.setToolInterruptRequest("tok_yield", true);
+  applyRunEvent(
+    sink,
+    ev({
+      type: "tool_control_released",
+      agent: "lead",
+      call_id: "sh-yield",
+      at: 4,
+      tool_execution_id: "other_token",
+    }),
+    "live",
+  );
+  const before = tool();
+  expect(before?.kind === "tool_call" ? before.control?.tool_execution_id : undefined).toBe(
+    "tok_yield",
+  );
+  applyRunEvent(
+    sink,
+    ev({
+      type: "tool_control_released",
+      agent: "lead",
+      call_id: "sh-yield",
+      at: 5,
+      tool_execution_id: "tok_yield",
+    }),
+    "live",
+  );
+  expect(tool()).toMatchObject({ status: "ok", toolPhase: "completed" });
+  const after = tool();
+  expect(after?.kind === "tool_call" ? after.control : undefined).toBeUndefined();
+  expect(after?.kind === "tool_call" ? after.interruptRequest : undefined).toBeUndefined();
+});
+
 test("setToolInterruptRequest marks only the matching live shell pending", () => {
   const store = replayStore([
     ev({ type: "run_started", at: 1 }),

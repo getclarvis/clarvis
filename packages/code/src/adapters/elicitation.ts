@@ -88,6 +88,11 @@ const GUARD_DECISION_LABELS: Record<string, string> = {
   allow: "allow once",
   allow_session: "allow for this session",
 };
+const CONFIGURATION_DECISION_LABELS: Record<string, string> = {
+  deny: "deny",
+  allow: "allow once",
+  allow_session: "allow these targets for this session",
+};
 
 /** The plan-review verdicts in the user's words rather than the wire's. */
 const PLAN_DECISION_LABELS: Record<string, string> = {
@@ -103,7 +108,7 @@ const WORKFLOW_DECISION_LABELS: Record<string, string> = {
 
 const DECISION_LABELS: Record<string, Record<string, string>> = {
   guard_confirm: GUARD_DECISION_LABELS,
-  configuration_review: GUARD_DECISION_LABELS,
+  configuration_review: CONFIGURATION_DECISION_LABELS,
   [PLAN_REVIEW_ELICIT_KIND]: PLAN_DECISION_LABELS,
   workflow_review: WORKFLOW_DECISION_LABELS,
 };

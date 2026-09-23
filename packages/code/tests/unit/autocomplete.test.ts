@@ -292,7 +292,6 @@ test("the $ skill provider fuzzy-filters by name and inserts the bare skill name
   const provider = createSkillMentionProvider({
     skills: () => [
       { name: "opentui", description: "Build terminal UIs", shortDescription: "OpenTUI" },
-      { name: "clarvis-configure", description: "Configure Clarvis itself" },
       { name: "tui-driver", description: "Drive a TUI from the shell" },
     ],
   });
@@ -300,12 +299,6 @@ test("the $ skill provider fuzzy-filters by name and inserts the bare skill name
   expect(provider.trigger).toBe("$");
   expect(provider.query("")).toEqual([
     { label: "opentui", detail: "OpenTUI", value: "opentui", insert: "opentui" },
-    {
-      label: "clarvis-configure",
-      detail: "Configure Clarvis itself",
-      value: "clarvis-configure",
-      insert: "clarvis-configure",
-    },
     {
       label: "tui-driver",
       detail: "Drive a TUI from the shell",

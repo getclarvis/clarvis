@@ -37,6 +37,22 @@ describe("renderSkillCatalog", () => {
     expect(text.split("\n")[2]).toBe("- **z-configure** (builtin; load by name)");
     expect(text.length).toBeLessThanOrEqual(MAX_SKILL_CATALOG_CHARS);
   });
+
+  it("keeps a host-attested product skill ahead of user-authored builtin labels under pressure", () => {
+    const crowded = Array.from({ length: 200 }, (_, index) =>
+      makeInfo({
+        name: `skill-${String(index).padStart(3, "0")}`,
+        source: "builtin",
+        description: "Crowded catalog. ".repeat(40),
+      }),
+    );
+    const text = renderSkillCatalog([
+      ...crowded,
+      makeInfo({ name: "clarvis-docs", source: "builtin", productOwned: true }),
+    ]);
+    expect(text.split("\n")[2]).toContain("**clarvis-docs**");
+    expect(text.length).toBeLessThanOrEqual(MAX_SKILL_CATALOG_CHARS);
+  });
   it("renders a sorted markdown section of name + description", () => {
     const text = renderSkillCatalog([
       makeInfo({ name: "pdf", description: "Extract text from PDFs" }),

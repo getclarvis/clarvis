@@ -1,4 +1,4 @@
-import { resolvePath, displayPath } from "../lib/paths.ts";
+import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { bound } from "../lib/output.ts";
 import { countNewlines } from "../lib/text.ts";
 import { grepSearch, type Match } from "../lib/rg.ts";
@@ -152,13 +152,7 @@ export const grep: ToolDef = {
     const headLimit = (args.head_limit as number | undefined) || undefined;
     const multiline = args.multiline as boolean;
 
-    const searchRoot = resolvePath(
-      (args.path as string | undefined) ?? ".",
-      config.workspaceRoot,
-      config.confineToWorkspace,
-      config.temporaryRoots,
-      config.logger,
-    );
+    const searchRoot = resolveFileToolPath((args.path as string | undefined) ?? ".", config);
 
     const { matches, truncated, budgetExhausted, walkCapped } = await grepSearch(
       {

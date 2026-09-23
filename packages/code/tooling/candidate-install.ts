@@ -8,6 +8,7 @@ import {
   type RuntimeCandidate,
 } from "../src/adapters/runtime-candidate.ts";
 import { installDevelopmentLauncher } from "./development-install.ts";
+import { publishSelectedSystemDocs } from "../src/bootstrap/system-docs-cli.ts";
 
 type CandidateFetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -117,6 +118,7 @@ export async function installCandidate(input: {
   binDirectory: string;
   bun: string;
   bunVersion: string;
+  globalDir?: string;
   fetcher?: CandidateFetcher;
   run?: (argv: readonly string[], cwd: string) => string;
 }): Promise<{
@@ -167,6 +169,12 @@ export async function installCandidate(input: {
     const version = run([input.bun, "packages/code/src/cli.ts", "--version"], checkout);
     if (version !== `clarvis ${manifest.version}`)
       throw new Error("candidate CLI version smoke failed");
+    await publishSelectedSystemDocs({
+      kind: "source",
+      root: checkout,
+      version: manifest.version,
+      ...(input.globalDir === undefined ? {} : { globalDir: input.globalDir }),
+    });
     const launcher = await installDevelopmentLauncher({
       repository: checkout,
       bun: input.bun,

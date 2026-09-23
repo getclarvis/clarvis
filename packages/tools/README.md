@@ -185,14 +185,18 @@ still reviews them, but this option is not a filesystem-immutability boundary an
 modify files its operating-system identity may write. Nothing here executes a helper merely because
 its skill was selected.
 
-Native file-mutation tools also protect the workspace-authored Clarvis roots resolved by
-`configurationRoots`. Reads remain available, including copying a configuration file to an
-ordinary workspace destination. Canonical authoring targets use the shared `configurationPathClass` vocabulary and require a
-complete reviewed authoring effect. Operational targets direct the agent to the restricted
-`configure_clarvis` writer in the same conversation. Loading guidance never grants access.
+Native file-mutation tools also protect the four Clarvis and shared Agent roots resolved by
+`configurationRoots`. Admitted authoring and operational targets use the shared
+`configurationPathClass` vocabulary and require a complete reviewed effect through the host
+`reviewMutation` port. Reads and copies of admitted configuration files remain available; explicit
+global `glob` and `grep` scopes use the same canonical classification. Their walks skip private
+directories and leaves before reading bytes, and grep uses descriptor-bound reads rather than a
+subprocess for configuration directories. Private paths such as `keys.json` are refused before
+direct content access and hidden by `list_dir`.
+Loading guidance never grants access.
 Project-wide `replace` excludes both roots while continuing over ordinary workspace files. Command
-tools retain the separate shell and sandbox posture above; the builtin configuration guide forbids
-using them as an alternate writer.
+tools retain the separate shell and sandbox posture above and cannot substitute for host-reviewed
+configuration file tools.
 
 A host may additionally pass existing `temporaryRoots`. Every native tool,
 guarded path analysis, and native sandbox admits every listed root; `shell` and
@@ -472,6 +476,9 @@ bun --filter @clarvis/tools format:check
   multi-file transaction and rollback; `@clarvis/paths` owns temp naming,
   rename retry, atomic-write cleanup, and directory fsync conformance, which
   this package consumes rather than retesting.
+  Reviewed configuration writes, copies and moves use private file and new directory modes;
+  reviewed copies and moves use the shared rollback transaction. The mediated routes are covered
+  in `tests/integration/api.test.ts`, `copy.test.ts` and `move.test.ts`.
 - `tests/architecture/` owns static source and public-message invariants; it
   does not claim runtime behavior coverage.
 
@@ -491,13 +498,14 @@ backend is a failed/unsupported boundary, not evidence that an unconfined comman
 The standalone guard DTO can carry host-attested effect facts and review receipts without importing
 capability. Those facts describe a configuration change, not a command: the command guard resolves
 one deterministic policy and sends every remaining Auto `ask` to the call-local reviewer without
-classifying an operation. Canonical agent, skill and workflow Markdown passes native mutation
-protection only through the host's `reviewMutation` port; operational configuration retains its
-restricted writer. Without that port — a Container guest, a ceiling other than `edit`/`exec`, or
-disabled builtin tools — the file tool refuses a canonical authoring target with the
-`configure_clarvis` message before the guard runs, and an absent/off guard never authorizes an
-authoring write. See [effect review](../../specs/execution/effect-review.md).
+classifying an operation. Admitted workspace authoring and operational configuration passes native
+mutation protection only through the host's `reviewMutation` port. Without that port — a Container
+guest, a ceiling other than `edit`/`exec`, or disabled builtin tools — the file tool refuses the
+protected target before the guard runs, and an absent/off guard never authorizes the write. The
+host passes global roots only to eligible entry-agent file handlers; shell commands do not gain
+writable roots, and unrelated file paths retain workspace confinement. See
+[effect review](../../specs/execution/effect-review.md).
 
-Host-bound file tools prepare complete atomic mutation batches before effect review. The entry agent receives the host `reviewMutation` callback; profiles cannot install it. Authoring batches reuse the configuration reviewer, validate all resulting documents and check captured revisions before staging. Copy uses captured UTF-8 bytes for authored destinations; rename/delete include their source effects. Mixed patches and recursive replacement review all prepared targets together. The callback carries exact workspace trust and notifies catalogs after success. Ordinary binary file operations retain their existing behavior.
+Host-bound file tools prepare complete atomic mutation batches before effect review. The entry agent receives the host `reviewMutation` callback; profiles cannot install it. Configuration batches reuse the configuration reviewer, validate recognized documents and check captured revisions before staging. Copy uses captured UTF-8 bytes for protected destinations; rename/delete include their source effects. Mixed patches and recursive replacement review all prepared targets together. The callback carries exact workspace trust and notifies catalogs after success. Ordinary binary file operations retain their existing behavior.
 
-An explicitly scoped recursive replacement inside configuration directories discovers bounded authoring leaves despite default configuration ignore rules. Operational/private files are filtered before content reads; generic workspace replacement retains its normal ignore behavior.
+An explicitly scoped recursive replacement inside configuration directories discovers bounded admitted leaves despite default configuration ignore rules. Private files are filtered before content reads; generic workspace replacement retains its normal ignore behavior.

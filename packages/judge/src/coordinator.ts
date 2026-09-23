@@ -20,7 +20,7 @@ export type JudgeEffectReceipt = Extract<JudgeTerminalReceipt, { action: "decide
 
 /** JSON-only case facts; the trusted snapshot and validators are separate host bindings. */
 export interface JudgeReviewCase {
-  consumer?: "command_guard" | "configure_clarvis";
+  consumer?: "command_guard" | "configuration_file";
   effectId?: string;
   currentCase: JudgeJson;
 }

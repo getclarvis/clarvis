@@ -20,6 +20,42 @@ import { connectKernelClient } from "../../src/transport/client.ts";
 import { modelCallInput } from "../../src/hosting/container-model-contract.ts";
 import { DISCOVERY_SCHEMA } from "@clarvis/workflows";
 
+test("Container does not inherit the Host documentation writer route", async () => {
+  let observed = false;
+  const fixture = await containerNativeFixture({
+    agents: [
+      {
+        name: "fixture",
+        scope: "global",
+        body: "Inspect the available tools.",
+        frontmatter: {
+          model: "logical/model",
+          grants: ["read_workspace", "edit_workspace"],
+        },
+      },
+    ],
+    llm: {
+      call: async (params) => {
+        observed = true;
+        expect(params.tools.map((tool) => tool.toolName)).not.toContain("load_skill");
+        expect(JSON.stringify(params.messages)).not.toContain("clarvis-docs");
+        return {
+          text: "No Host documentation route.",
+          usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
+        };
+      },
+    },
+  });
+  try {
+    const { attachment } = await fixture.start({ guard_mode: "off" });
+    expect(await attachment.handle.done).toMatchObject({ status: "completed" });
+    await attachment.handle.closed;
+    expect(observed).toBe(true);
+  } finally {
+    await fixture.close();
+  }
+});
+
 test("Container native graph yields and stops a run-owned shell session", async () => {
   let step = 0;
   let sessionId: string | undefined;

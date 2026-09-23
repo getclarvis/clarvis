@@ -47,6 +47,14 @@ that directly contains `SKILL.md`. Discovery stops at the first skill boundary,
 so files below that directory remain resources rather than becoming nested
 skills.
 
+The host may add one product-attested `clarvis-docs` provider to a run. Its reserved identity wins
+over a user or plugin skill with the same name, and the catalog keeps it under prompt-size pressure.
+`createSkillsCapability` serves that provider through the existing `load_skill` and
+`read_skill_resource` tools. Agents with `use_skills` see it in the normal catalog; an eligible entry
+agent without that grant can receive only this system skill, even when ordinary skills are disabled.
+Discovery marks any `.system` skill as non-invocable by the user regardless of its frontmatter.
+See [self-configuration](../../specs/hosts/self-configuration.md).
+
 ## Usage
 
 ```ts
@@ -99,7 +107,7 @@ and prepared with their relative directory structure in the writable workspace, 
 through the ordinary guarded shell. Remote locations are opaque locators.
 
 `validateSkillDocument` exposes the same bounded-frontmatter parser used by discovery, so the
-restricted configuration writer can validate a candidate before mutation.
+host's reviewed file-tool route can validate a candidate before mutation.
 
 `captureSkillExecution` materializes a bounded catalog revision for a host that needs stable helper
 paths and resource bytes while the source is edited. It copies only enumerated resources and manifests,
@@ -134,7 +142,7 @@ description. Host-embedded entries with `source: "builtin"` instead say to load 
 external entries, keeping product guidance discoverable when a large catalog is truncated.
 `load_skill` identifies them as embedded instructions rather than advertising an execution
 directory. Their `root`, `dir` and `path` are `builtin:` locators, not filesystem paths. The kernel
-owns the shipped `clarvis-configure` body and composition; this package does not import product
+does not currently compose an embedded configuration guide; this package does not import product
 configuration or create builtin files.
 
 The catalog never emits more than 8,000 characters. When a full catalog exceeds that bound, it first removes

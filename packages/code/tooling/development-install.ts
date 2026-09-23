@@ -604,6 +604,17 @@ async function main(): Promise<void> {
   }
   step += 1;
 
+  const product = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")) as {
+    version?: string;
+  };
+  if (typeof product.version !== "string") throw new Error("Clarvis product version is missing");
+  const { publishSelectedSystemDocs } = await import("../src/bootstrap/system-docs-cli.ts");
+  await publishSelectedSystemDocs({
+    kind: "source",
+    root: repositoryRoot,
+    version: product.version,
+  });
+
   console.log(`[${step}/${steps}] Installing the source launcher.`);
   const launcher = await installDevelopmentLauncher({
     repository: repositoryRoot,

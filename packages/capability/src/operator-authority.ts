@@ -56,6 +56,21 @@ export interface OperatorAuthorityBinding {
   outcome_id?: string;
 }
 
+/** Volatile, host-held configuration consent for one bound session and exact target set. */
+export interface OperatorConfigurationSessionGrant {
+  binding: OperatorAuthorityBinding;
+  authority_revision: number;
+  environment_digest: string;
+  effects: Array<{
+    root: string;
+    path: string;
+    effect_id: string;
+    effect_class: ReviewedEffectClass;
+    operation: "write" | "edit" | "delete";
+    field_class: string;
+  }>;
+}
+
 /** Host-attested execution objective supplied to reviewers as context, never as operator evidence. */
 export interface OperatorReviewContext {
   kind: "goal" | "plan";

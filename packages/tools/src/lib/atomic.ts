@@ -72,11 +72,18 @@ interface Staged {
   createdDir: string | undefined;
 }
 
-async function stage(target: string, content: string): Promise<Staged> {
+async function stage(
+  target: string,
+  content: string,
+  modes?: { mode: number; dirMode: number },
+): Promise<Staged> {
   const dir = path.dirname(target);
-  const createdDir = await fs.mkdir(dir, { recursive: true });
+  const createdDir = await fs.mkdir(dir, {
+    recursive: true,
+    ...(modes === undefined ? {} : { mode: modes.dirMode }),
+  });
   const tmp = tmpPathFor(target);
-  const fh = await fs.open(tmp, "wx");
+  const fh = await fs.open(tmp, "wx", modes?.mode);
   try {
     await fh.writeFile(content, "utf8");
     await fh.sync();
@@ -131,26 +138,34 @@ export async function assertNotSymlink(target: string): Promise<void> {
  * @throws {@link ToolError} with code `invalid_input` when `target` is a symlink.
  * @remarks Atomic staging, retry, cleanup, payload fsync, and directory fsync
  * are owned by `@clarvis/paths`. This wrapper preserves the behavior specific
- * to coding tools: refusing a symlink, retaining an existing file's mode, using
- * the host umask for a new file/directory, and removing a parent directory this
- * call created if the write fails.
+ * to coding tools: refusing a symlink, retaining an existing file's mode or
+ * applying explicit reviewed configuration modes, using the host umask for an
+ * ordinary new file/directory, and removing a parent directory this call
+ * created if the write fails.
  */
 export async function writeAtomic(
   target: string,
   content: string,
   review?: MutationReview,
+  intent: "write" | "edit" = "write",
+  modes?: { mode: number; dirMode: number },
 ): Promise<void> {
   if (review !== undefined)
-    return review([{ type: "modify", path: target, content }], () => writeAtomic(target, content));
+    return review([{ type: "modify", path: target, content, intent }], () =>
+      writeAtomic(target, content, undefined, intent, modes),
+    );
   await assertNotSymlink(target);
   const dir = path.dirname(target);
-  const createdDir = await fs.mkdir(dir, { recursive: true });
-  const mode = await captureMode(target);
+  const createdDir = await fs.mkdir(dir, {
+    recursive: true,
+    ...(modes === undefined ? {} : { mode: modes.dirMode }),
+  });
+  const mode = modes?.mode ?? (await captureMode(target));
   const umask = process.umask();
   try {
     await writeFileDurable(target, content, {
       mode: mode ?? 0o666 & ~umask,
-      dirMode: 0o777 & ~umask,
+      dirMode: modes?.dirMode ?? 0o777 & ~umask,
     });
   } catch (err) {
     await removeCreatedDirs([createdDir]);
@@ -175,6 +190,14 @@ export interface FileOp {
   from?: string;
   /** The new file body for `create`/`modify`, or an optional rewrite alongside a `rename`. */
   content?: string;
+  /** Host review distinguishes a file edit from a full replacement write. */
+  intent?: "write" | "edit";
+  /** Explicit permission bits for a reviewed configuration destination. */
+  mode?: number;
+  /** Directory mode for a newly created protected parent. */
+  dirMode?: number;
+  /** A rename may replace a destination only when its caller explicitly allowed it. */
+  overwrite?: boolean;
 }
 
 interface Committed {
@@ -197,16 +220,33 @@ async function stageAll(
   try {
     for (const op of ops) {
       if (op.type === "create" || op.type === "modify") {
-        const { tmp, createdDir } = await stage(op.path, op.content ?? "");
+        const { tmp, createdDir } = await stage(
+          op.path,
+          op.content ?? "",
+          op.mode === undefined || op.dirMode === undefined
+            ? undefined
+            : { mode: op.mode, dirMode: op.dirMode },
+        );
         staged.set(op.path, tmp);
         createdDirs.push(createdDir);
       } else if (op.type === "rename") {
         if (op.content !== undefined) {
-          const { tmp, createdDir } = await stage(op.path, op.content);
+          const { tmp, createdDir } = await stage(
+            op.path,
+            op.content,
+            op.mode === undefined || op.dirMode === undefined
+              ? undefined
+              : { mode: op.mode, dirMode: op.dirMode },
+          );
           staged.set(op.path, tmp);
           createdDirs.push(createdDir);
         } else {
-          createdDirs.push(await fs.mkdir(path.dirname(op.path), { recursive: true }));
+          createdDirs.push(
+            await fs.mkdir(path.dirname(op.path), {
+              recursive: true,
+              ...(op.dirMode === undefined ? {} : { mode: op.dirMode }),
+            }),
+          );
         }
       }
     }
@@ -252,12 +292,17 @@ async function validateTargets(ops: FileOp[]): Promise<Map<string, number | unde
       }
       let toExists = true;
       try {
-        await fs.stat(to);
+        const destination = await fs.stat(to);
+        if (destination.isDirectory())
+          throw new ToolError("not_a_file", `Rename destination is a directory: ${to}`, {
+            path: to,
+          });
       } catch (err) {
+        if (err instanceof ToolError) throw err;
         if ((err as NodeJS.ErrnoException).code === "ENOENT") toExists = false;
         else throw err;
       }
-      if (toExists) {
+      if (toExists && op.overwrite !== true) {
         throw new ToolError("invalid_input", `Rename destination already exists: ${to}`, {
           path: to,
         });
@@ -308,9 +353,16 @@ async function commitWithRollback(
       if (op.type === "rename") {
         const from = op.from!;
         const to = op.path;
-        const mode = modes.get(to);
+        const mode = op.mode ?? modes.get(to);
         const rec: Committed = { op, backup: undefined };
         committed.push(rec);
+        const toBackup = tmpPathFor(to);
+        try {
+          await renameForTools(to, toBackup);
+          rec.backup = toBackup;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
         const tmp = staged.get(to);
         if (tmp !== undefined) {
           const fromBkp = tmpPathFor(from);
@@ -324,7 +376,7 @@ async function commitWithRollback(
         }
         continue;
       }
-      const mode = modes.get(op.path);
+      const mode = op.mode ?? modes.get(op.path);
       let backup: string | undefined;
       const bkp = tmpPathFor(op.path);
       try {
@@ -343,45 +395,53 @@ async function commitWithRollback(
       }
     }
   } catch (err) {
-    const unrestored: string[] = [];
-    for (let i = committed.length - 1; i >= 0; i--) {
-      const rec = committed[i]!;
-      const { op, backup } = rec;
-      try {
-        if (op.type === "rename") {
-          const from = op.from!;
-          const to = op.path;
-          if (rec.fromBackup !== undefined) {
-            await fs.rm(to, { force: true, ...RM_RETRY });
-            await renameForTools(rec.fromBackup, from);
-          } else if (rec.renamed) {
-            await renameForTools(to, from);
-          }
-          continue;
-        }
-        if (op.type !== "delete") await fs.rm(op.path, { force: true, ...RM_RETRY });
-        if (backup !== undefined) await renameForTools(backup, op.path);
-      } catch {
-        if (op.type === "rename" && rec.renamed && rec.fromBackup === undefined) {
-          unrestored.push(`${op.from} (original content preserved at ${op.path})`);
-        } else {
-          unrestored.push(
-            `${op.type === "rename" ? op.from : op.path} ` +
-              `(original content preserved in an adjacent ${TMP_GLOB} backup)`,
-          );
-        }
-      }
-    }
-    await cleanupStaged(staged);
-    if (unrestored.length > 0) {
-      throw new ToolError(
-        "io_error",
-        `${(err as Error).message}; rollback could not restore ${unrestored.join(", ")}`,
-      );
-    }
-    throw err;
+    await rollbackCommitted(committed, staged, err);
   }
   return committed;
+}
+
+async function rollbackCommitted(
+  committed: Committed[],
+  staged: Map<string, string>,
+  error: unknown,
+): Promise<never> {
+  const unrestored: string[] = [];
+  for (let i = committed.length - 1; i >= 0; i--) {
+    const rec = committed[i]!;
+    const { op, backup } = rec;
+    try {
+      if (op.type === "rename") {
+        const from = op.from!;
+        const to = op.path;
+        if (rec.fromBackup !== undefined) {
+          await fs.rm(to, { force: true, ...RM_RETRY });
+          await renameForTools(rec.fromBackup, from);
+        } else if (rec.renamed) {
+          await renameForTools(to, from);
+        }
+        if (backup !== undefined) await renameForTools(backup, to);
+        continue;
+      }
+      if (op.type !== "delete") await fs.rm(op.path, { force: true, ...RM_RETRY });
+      if (backup !== undefined) await renameForTools(backup, op.path);
+    } catch {
+      if (op.type === "rename" && rec.renamed && rec.fromBackup === undefined) {
+        unrestored.push(`${op.from} (original content preserved at ${op.path})`);
+      } else {
+        unrestored.push(
+          `${op.type === "rename" ? op.from : op.path} ` +
+            `(original content preserved in an adjacent ${TMP_GLOB} backup)`,
+        );
+      }
+    }
+  }
+  await cleanupStaged(staged);
+  if (unrestored.length > 0)
+    throw new ToolError(
+      "io_error",
+      `${(error as Error).message}; rollback could not restore ${unrestored.join(", ")}`,
+    );
+  throw error;
 }
 
 /**
@@ -419,8 +479,10 @@ export async function applyOpsAtomic(ops: FileOp[], review?: MutationReview): Pr
       dirs.add(path.dirname(op.path));
       if (op.type === "rename" && op.from !== undefined) dirs.add(path.dirname(op.from));
     }
-    for (const dir of dirs) {
-      await fsyncDir(dir);
+    try {
+      for (const dir of dirs) await fsyncDir(dir);
+    } catch (error) {
+      await rollbackCommitted(committed, staged, error);
     }
 
     for (const { backup, fromBackup } of committed) {

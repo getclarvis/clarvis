@@ -3,8 +3,8 @@
 ## Scope
 
 This contract owns the transactional review of an operational configuration change. Its host
-descriptor vocabulary, authority envelope, compiler, ledger and refusals serve the restricted
-writers: `configure_clarvis`, native authoring routed through `reviewMutation`, and their operational
+descriptor vocabulary, authority envelope, compiler, ledger and refusals serve protected
+configuration file tools through `reviewMutation` and their operational
 content mutations. It does not intercept a shell command. Command authorization is one
 deterministic policy plus one Judge review path, owned by
 [command-guard.md](command-guard.md); a command compiles no envelope, consumes no grant and reads no
@@ -113,14 +113,14 @@ or workspace confinement. Environment prefixes, including assignment-only segmen
 a bare command's static allowlist entry. Deny matching still sees normalized bare commands. Those
 facts feed the policy and the command reviewer; they produce no effect fact and enter no envelope.
 
-An effect fact exists only for a configuration change. The restricted configuration writer produces
+An effect fact exists only for a configuration change. The host-reviewed file-tool route produces
 revision, next-revision, byte, operation, field and diff-digest constraints only after its path,
 content, schema and CAS validation; its existing explicit native consent remains a
 deterministic authorization route and does not become operator evidence. Native file tools do not
-manufacture a fact: a canonical authoring target requires the run's `reviewMutation` port, and without
+manufacture a fact: an admitted configuration target requires the run's `reviewMutation` port, and without
 it the tool refuses the target rather than turning a generic command approval into configuration
-approval. Operational settings, executable manifests, private state and credentials never inherit
-generic content-write authority.
+approval. Operational settings and executable manifests receive their own validated descriptors;
+private state and credentials remain inaccessible and never inherit generic content-write authority.
 
 The descriptor vocabulary is closed and small: `workspace.content.write`, `clarvis.authoring.write`,
 `clarvis.operational_config.write` and `destructive.delete`. Those four are the only ids the registry
@@ -135,8 +135,8 @@ Production: [analyze-shell.ts](../../packages/tools/src/guard/analyze-shell.ts),
 [files.ts](../../packages/kernel/src/configuration/files.ts).
 Test: [analysis-issues.test.ts](../../packages/tools/tests/unit/analysis-issues.test.ts),
 [configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts), and
-[api.test.ts](../../packages/tools/tests/integration/api.test.ts) ("refuses canonical authoring
-through a generic guard approval and admits it only through the restricted writer").
+[api.test.ts](../../packages/tools/tests/integration/api.test.ts) ("requires the host mutation
+reviewer even when generic guard approves").
 
 ## Compiler and decision
 
@@ -201,7 +201,7 @@ enforces freshness, binding and coverage.
 
 Guard and configuration adapters resolve one run-owned `JUDGE_PORT` lazily; no WeakMap service
 shares inference, configuration or caches. The host ledger shares installed envelopes and refusals,
-while Judge owns semantic receipt caches and in-flight inference. The restricted writer's explicit consent path needs no
+while Judge owns semantic receipt caches and in-flight inference. The reviewed file tool's explicit consent path needs no
 additional model decision.
 
 Production: `createHostEffectReview` and `validateAuthorityEnvelope`.
@@ -221,6 +221,13 @@ human fallback, even with `on_unsure: "ask"`. Auto never invokes human fallback,
 that are neither allow-listed nor dangerous.
 `guard_judge.guidance` is bounded additional context and cannot replace the
 fixed policy. Both command and effect review use Judge-owned `JUDGE_POLICY`. Code composes operator-global guidance first and appends workspace guidance within the single bounded payload; absent guidance does not disable Auto.
+For an effect grant, that policy requires the Judge to copy the covering host fact's complete
+constraints, target digest and current authority revision into its candidate. The host still rejects
+any incomplete or widened candidate. Production: `JUDGE_POLICY` in
+[prompt.ts](../../packages/judge/src/prompt.ts) and `validateAuthorityEnvelope` in
+[authority-validation.ts](../../packages/kernel/src/guard/authority-validation.ts). Test:
+[execution-boundaries.test.ts](../../packages/judge/tests/unit/execution-boundaries.test.ts) and
+[effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
 
 The explicit rollout stages are `shadow` and `local`, and they scope configuration review only. Shadow
 computes configuration review evidence
@@ -270,7 +277,7 @@ justification, operator evidence, reviewer prompt or probe output.
 
 Every logical provider call made by the call-local judge or the effect reviewer records exactly one
 kernel-owned contributed trace event named `guard_reviewer_model_call`. The flat persisted event
-distinguishes `call_local` from `effect_review`, `command_guard` from `configure_clarvis`, and
+distinguishes `call_local` from `effect_review`, `command_guard` from `configuration_file`, and
 `compile` from `decide`; it totals the successful attempt with `retriedUsage`, uses
 `ProviderError.accumulatedUsage` on failure, and leaves `cache_read_ratio` absent whenever cache
 accounting is incomplete. Cancellation wins once even when the provider settles later. An internal
@@ -359,7 +366,7 @@ still rejecting external changes before the write. Architecture errors propagate
 Production: `createHostEffectReview` and `createConfigurationReview`.
 Test: [effect-review.test.ts](../../packages/kernel/tests/unit/effect-review.test.ts) checks shared
 ledger/refusals, invalid grant/relation/revision/token, exclusions and missing composition;
-[direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts)
+[file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts)
 executes the real private protocol for authoring and pins operator-question counts.
 The old direct-provider characterization and canary helper are baseline-only; they do not qualify
 this private execution path. Real-provider/cache qualification remains outstanding.

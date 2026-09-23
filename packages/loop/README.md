@@ -89,6 +89,14 @@ The durable vocabulary and replay contract are owned by
 
 ## Contract
 
+`buildRunDeps` composes the host-attested `clarvis-docs` provider separately from ordinary skill
+roots. Agents with `use_skills` receive it in their normal catalog. An entry agent without that
+grant receives only the system guide when its immutable ceiling permits editing, the placement is
+Host or Sandbox, and the host configuration-review port is available. This does not change tool
+grants, approve a mutation, or grant the same view to children. See
+[self-configuration](../../specs/hosts/self-configuration.md) and
+[skills](../../specs/execution/skills.md).
+
 The loop contract is divided across the focused specs under the
 [`engine` map](../../specs/README.md#engine--the-loop-itself): lifecycle, request/settings,
 capability composition, tool dispatch, compaction, budgets/guards, delegation, vision routing,
@@ -198,8 +206,8 @@ try {
 without changing the filesystem scanner or the engine's optional dependency boundary. The callback
 runs once only when skills are enabled, and receives the discovered provider or `undefined` after
 a discovery failure. Its result backs both the skills capability and the returned owner-facing
-provider. The kernel uses this seam for its shipped configuration guide; the engine does not own
-the guide or its reserved name. Existing `use_skills` grants still control model access.
+provider. Existing `use_skills` grants still control model access; the kernel supplies no bundled
+configuration skill through this seam.
 
 `buildExecuteRunDeps({ mcpAuthorization })` optionally creates the shared remote-MCP OAuth
 coordinator. The host owns the private store path and may supply a browser opener; the builder wires

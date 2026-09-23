@@ -61,7 +61,7 @@ export function createHostEffectReview(deps: {
       if (unboundRefusals.size >= 32) throw new Error("Configuration refusal budget exhausted.");
       unboundRefusals.add(key);
     },
-    attest(fact: GuardEffectFact, consumer: "configure_clarvis"): void {
+    attest(fact: GuardEffectFact, consumer: "configuration_file"): void {
       audit.info(
         {
           event: "effect_review.effect.attested",
@@ -78,7 +78,7 @@ export function createHostEffectReview(deps: {
     async review(
       batch: GuardEffectBatch,
       call: unknown,
-      consumer: "configure_clarvis",
+      consumer: "configuration_file",
     ): Promise<EffectReviewReceipt> {
       const started = performance.now();
       const authority = deps.authority;

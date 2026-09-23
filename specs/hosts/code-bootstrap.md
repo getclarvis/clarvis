@@ -88,6 +88,16 @@ the checkpoint strip case in [run-status.test.ts](../../packages/code/tests/unit
 | source fallback modules          | `@opentui/solid/preload`, then `./index.tsx` | `packages/code/src/cli.ts`                      |
 | package `exports`                | absent (application package)                 | `packages/code/package.json` (no `exports` key) |
 
+The launcher also resolves the checkout or portable-release root from its own `src/cli.ts` path
+and passes it to the host as `CLARVIS_PRODUCT_ROOT`. `createCodeHostKernelOptions` forwards that
+root to `createFileKernel` for product-owned Markdown assets. This path is independent of whether
+`resolveEntry` chooses source or `dist`; the bundle is only the application executable. Production:
+`productRootForEntry` in `packages/code/src/cli-entry.ts`, the application entry in
+`packages/code/src/cli.ts`, and `createCodeHostKernelOptions` in
+`packages/code/src/adapters/host-kernel-options.ts`. Test:
+`packages/code/tests/unit/cli-entry.test.ts` and
+`packages/code/tests/unit/host-kernel-options.test.ts`.
+
 The manifest exposes no compatibility alias: the installed executable is `clarvis` only. The
 TypeScript setup requires the exact Bun version pinned by `mise.toml`, performs a frozen root install,
 selects `build:install` (whose artifact omits source maps), and removes the earlier executable only

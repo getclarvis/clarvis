@@ -1,10 +1,10 @@
 import { createHostJudge } from "./guard/judge-host.ts";
 import { createNativeKernel } from "./native-kernel.ts";
 import { createAuthoringMutationReview } from "./configuration/authoring-mutations.ts";
+import { reconcileSystemDocs, SYSTEM_DOCS_NAME } from "./skills/system-docs.ts";
+import { createSystemDocsProvider } from "./skills/system-docs-provider.ts";
 import type { RunServiceConfig } from "./runs/run-service.ts";
 import { extractEnvRefs, loadEnv, type EnvConfig } from "@clarvis/capability";
-import { withBuiltinSkills } from "./skills/builtin-skills.ts";
-import { createDirectConfigurationCapability } from "./configuration/direct-configuration.ts";
 import { configurationRoots } from "@clarvis/paths";
 import type { ConnectionEventSink } from "./connection-health.ts";
 import type { MemoryStore } from "@clarvis/memory";
@@ -128,6 +128,10 @@ export interface CreateFileKernelOptions {
   traceLocksDir?: string;
   /** Global Clarvis dir for config/secrets/models/sessions; defaults to the standard global root. */
   globalDir?: string;
+  /** Checkout or verified portable release that owns raw product skill assets. */
+  systemDocsSourceRoot?: string;
+  /** Host-selected home for the shared global Agent configuration root. */
+  configurationHome?: string;
   /** Process-local Extension Profile override (`scope:name`); never persisted. */
   extensionProfileSelector?: string;
   /** Default model id; falls back to `CLARVIS_DEFAULT_MODEL` in the environment. */
@@ -332,6 +336,24 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   );
   const auditLogger = createAuditLogger(logger, env.CLARVIS_LOG_AUDIT);
   const globalDir = opts.globalDir ?? globalRoot();
+  let systemDocs: ReturnType<typeof createSystemDocsProvider> | undefined;
+  try {
+    await reconcileSystemDocs(globalDir, opts.systemDocsSourceRoot);
+    systemDocs = createSystemDocsProvider(globalDir, logger);
+  } catch (error) {
+    logger.warn(
+      {
+        event: "kernel.system_docs_unavailable",
+        cause: error instanceof Error ? error.message : String(error),
+      },
+      "product configuration documentation is unavailable for this host",
+    );
+  }
+  const authoredRoots = configurationRoots({
+    workspaceRoot: opts.workspaceRoot,
+    globalDir,
+    ...(opts.configurationHome === undefined ? {} : { home: opts.configurationHome }),
+  });
   const bootStartedAt = Date.now();
   logger.info(
     {
@@ -747,7 +769,8 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       logger,
       workspaceRoot: opts.workspaceRoot,
       skillRoots: pluginSkillRoots,
-      composeSkills: withBuiltinSkills,
+      reservedSystemSkillName: SYSTEM_DOCS_NAME,
+      ...(systemDocs === undefined ? {} : { systemSkillProvider: systemDocs.provider }),
       skillBootstraps: pluginSkillBootstraps,
       resolveGuard: async (ctx) => {
         const resolution = await createGuardResolver({
@@ -767,8 +790,9 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
           return resolution;
         return {
           ...resolution,
+          configurationRoots: authoredRoots,
           reviewMutation: createAuthoringMutationReview(ctx, {
-            roots: configurationRoots({ workspaceRoot: opts.workspaceRoot, globalDir }),
+            roots: authoredRoots,
             store: configStore,
             audit: auditLogger,
             changed: () => extensionProfileManager.requestSkillRefresh(),
@@ -872,14 +896,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
             ...(base.capabilities ?? []).filter(
               (capability) => capability.name !== MEMORY_CAPABILITY_NAME,
             ),
-            createDirectConfigurationCapability({
-              roots: configurationRoots({ workspaceRoot: opts.workspaceRoot, globalDir }),
-              store: configStore,
-              enabled: opts.builtins?.tools !== false,
-              audit: auditLogger,
-              changed: () => extensionProfileManager.requestSkillRefresh(),
-              prepareSkillInclusion: (ref) => extensionProfileManager.prepareSkillInclusion(ref),
-            }),
             ...(base.capabilities ?? []).filter(
               (capability) => capability.name === MEMORY_CAPABILITY_NAME,
             ),
@@ -955,6 +971,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
               runtime: nativeRuntime(),
             },
             dispose: async (): Promise<void> => {
+              systemDocs?.close();
               extensionProfileManager.close();
               pluginContributions.close();
               try {
@@ -972,6 +989,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       };
     },
   }).catch(async (error: unknown) => {
+    systemDocs?.close();
     extensionProfileManager.close();
     pluginContributions.close();
     await Promise.allSettled([capabilityExecutables.close(), subscriptionManager?.close()]);

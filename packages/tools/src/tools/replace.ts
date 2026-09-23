@@ -1,11 +1,15 @@
-import { isAuthoringSearchScope, isCanonicalAuthoringPath } from "../guard/authoring-path.ts";
+import {
+  isAuthoringSearchScope,
+  isReviewedConfigurationPath,
+  reviewedConfigurationModes,
+} from "../guard/authoring-path.ts";
 import { promises as fs } from "node:fs";
 import { isAbsolute, relative, sep } from "node:path";
 import { configurationRoots } from "@clarvis/paths";
 import { ToolError, fsError } from "../errors.ts";
 import { applyOpsAtomic, withFileLocks, type FileOp } from "../lib/atomic.ts";
-import { listFiles, readFileOptions } from "../lib/files.ts";
-import { resolvePath, displayPath } from "../lib/paths.ts";
+import { listFiles, readFileOptionsForPath } from "../lib/files.ts";
+import { isAdmittedFileToolSearchPath, resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { reencode } from "../lib/text.ts";
 import { unifiedDiff } from "../lib/unified-diff.ts";
 import { readTextBuffer } from "../lib/textfile.ts";
@@ -63,13 +67,7 @@ async function scopeFiles(
   glob: string | undefined,
   config: RuntimeConfig,
 ): Promise<string[]> {
-  const root = resolvePath(
-    pathArg ?? ".",
-    config.workspaceRoot,
-    config.confineToWorkspace,
-    config.temporaryRoots,
-    config.logger,
-  );
+  const root = resolveFileToolPath(pathArg ?? ".", config);
   let stat;
   try {
     stat = await fs.stat(root);
@@ -82,9 +80,11 @@ async function scopeFiles(
   const listing = await listFiles(root, config.workspaceRoot, {
     pattern,
     respectGitignore: !(
-      config.reviewMutation !== undefined && isAuthoringSearchScope(root, config.workspaceRoot)
+      config.reviewMutation !== undefined &&
+      isAuthoringSearchScope(root, config.workspaceRoot, config.configurationRoots)
     ),
     maxEntries: config.maxTraversalEntries,
+    admit: (candidate) => isAdmittedFileToolSearchPath(candidate, config),
   });
   if (listing.truncated) {
     throw new ToolError(
@@ -94,11 +94,16 @@ async function scopeFiles(
     );
   }
   const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
-  const protectedRoots = [roots.workspace_clarvis, roots.workspace_agents];
+  const protectedRoots = Object.values(
+    config.configurationRoots ?? {
+      workspace_clarvis: roots.workspace_clarvis,
+      workspace_agents: roots.workspace_agents,
+    },
+  );
   const files = listing.files.filter(
     (file) =>
       (config.reviewMutation !== undefined &&
-        isCanonicalAuthoringPath(file, config.workspaceRoot)) ||
+        isReviewedConfigurationPath(file, config.workspaceRoot, config.configurationRoots)) ||
       protectedRoots.every((protectedRoot) => {
         const rel = relative(protectedRoot, file);
         return rel !== "" && (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel));
@@ -212,8 +217,6 @@ export const replace: ToolDef = {
     let mutationBytes = 0;
 
     const scanBudget = createScanBudget(config.regexScanBudgetMs);
-    const readOptions = readFileOptions(config);
-
     for (const file of files) {
       if (scanBudget.exhausted()) {
         throw new ToolError(
@@ -224,7 +227,11 @@ export const replace: ToolDef = {
           { pattern, scanned },
         );
       }
-      const decoded = await readTextBuffer(file, config.maxFileBytes, readOptions);
+      const decoded = await readTextBuffer(
+        file,
+        config.maxFileBytes,
+        readFileOptionsForPath(config, file),
+      );
       if (!decoded) continue;
       scanned++;
       const matches = scanBudget.charge(() => decoded.content.match(re));
@@ -241,7 +248,13 @@ export const replace: ToolDef = {
           { size: mutationBytes, limit: config.maxMutationBytes },
         );
       }
-      ops.push({ type: "modify", path: file, content: text });
+      ops.push({
+        type: "modify",
+        path: file,
+        content: text,
+        intent: "edit",
+        ...reviewedConfigurationModes(file, config),
+      });
       changed.push({ rel, count: matches.length, before: decoded.content, after, text });
       totalReplacements += matches.length;
     }

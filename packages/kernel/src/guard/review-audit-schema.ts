@@ -4,7 +4,7 @@ import { createGuardEffectRegistry } from "./effects/registry.ts";
 const registry = createGuardEffectRegistry();
 const effect = z.string().refine((id) => registry.get(id) !== undefined);
 const count = z.number().int().nonnegative();
-const consumer = z.literal("configure_clarvis");
+const consumer = z.literal("configuration_file");
 const stage = z.enum(["compile", "decide"]);
 const common = {
   consumer,

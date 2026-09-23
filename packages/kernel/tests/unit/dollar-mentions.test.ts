@@ -13,9 +13,7 @@ describe("extractDollarSkillMentions", () => {
       "beta",
       "alpha",
     ]);
-    expect(extractDollarSkillMentions("$PATH $HOME $clarvis-configure")).toEqual([
-      "clarvis-configure",
-    ]);
+    expect(extractDollarSkillMentions("$PATH $HOME $review-docs")).toEqual(["review-docs"]);
     expect(extractDollarSkillMentions("echo $USER in $TMPDIR")).toEqual([]);
   });
 
@@ -76,16 +74,9 @@ describe("dollarSkillSeeds", () => {
 
   it("renders a user-invocable skill without an agent and skips the rest", () => {
     const seeds = dollarSkillSeeds(
-      "$alpha $missing $PATH $clarvis-configure $hidden",
+      "$alpha $missing $PATH $hidden",
       provider([
         alpha,
-        {
-          name: "clarvis-configure",
-          description: "configure",
-          body: "CONFIG BODY",
-          userInvocable: true,
-          metadata: {},
-        },
         {
           name: "hidden",
           description: "internal",
@@ -99,7 +90,6 @@ describe("dollarSkillSeeds", () => {
     expect(seeds[0]).toContain("--- SKILL ---");
     expect(seeds[0]).toContain("ALPHA BODY");
     expect(seeds[0]).toContain('The user invoked the "alpha" skill.');
-    expect(seeds[0]).not.toContain("CONFIG BODY");
   });
 
   it("does not duplicate a skill already seeded by the start param", () => {

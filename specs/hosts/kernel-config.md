@@ -30,10 +30,11 @@ runs unchanged (`packages/kernel/src/config/agent-overlay.ts`).
 
 Agent-driven edits in the ordinary conversation use the
 [direct self-configuration contract](self-configuration.md): shared effect review, authored-file
-classification and revision-bound `write`, `edit` and `delete`. The restricted writer does not expose credential,
+classification and revision-bound file mutations. The host reviewer does not expose credential,
 trust or private-state stores, and does not replace the operator-facing config service below.
-Production: `configurationFileOperation` in
-[files.ts](../../packages/kernel/src/configuration/files.ts). Test:
+Production: `prepareConfigurationFileMutation` in
+[files.ts](../../packages/kernel/src/configuration/files.ts) and `createAuthoringMutationReview` in
+[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts). Test:
 [configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
 
 ### 2.1 Public exports (`packages/kernel/src/config.ts`, the `./config` entrypoint)
@@ -763,7 +764,7 @@ Each entry: **rule** — production anchor — test anchor.
     agent and Extension Profile input must match the pre-write snapshot, and the trust record uses
     the fingerprint from the verified post-write snapshot. Production:
     `packages/kernel/src/config/file-config-store.ts` and
-    `packages/kernel/src/configuration/direct-configuration.ts`. Pinned by the concurrent
+    `packages/kernel/src/configuration/authoring-mutations.ts`. Pinned by the concurrent
     executable-change case in `packages/kernel/tests/integration/workspace-trust.test.ts`.
 
 27. **Settings mutation is serialized by a local lease and derives its input from the bytes whose

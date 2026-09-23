@@ -74,7 +74,7 @@ adapter using the same RPC framing.
 
 ## Services
 
-Direct configuration uses ordinary runs and concrete `guard_confirm` elicitation when required.
+File-tool configuration uses ordinary runs and concrete `configuration_review` elicitation when required.
 Host-owned authority is separate from model-provided parameters and saved transcript content.
 `LocalHostStatus.skills_revision` notifies attached clients when the host publishes a skill catalog
 generation, allowing command listings to refresh without reconnecting. See

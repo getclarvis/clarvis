@@ -40,6 +40,11 @@
       "bun": "./src/logger.ts",
       "types": "./dist/logger.d.ts",
       "import": "./dist/logger.js"
+    },
+    "./system-docs": {
+      "bun": "./src/skills/system-docs.ts",
+      "types": "./dist/skills/system-docs.d.ts",
+      "import": "./dist/skills/system-docs.js"
     }
   },
   "bin": {

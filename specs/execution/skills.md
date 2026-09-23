@@ -24,6 +24,23 @@ adapt a scanned catalog into the protocol `SkillsService` for slash-commands
 (`packages/kernel/src/skills/skills-service.ts`) without either side knowing the other's
 internals.
 
+The file kernel may supply a host-attested, product-owned `clarvis-docs` provider outside ordinary
+Extension Profile selection. `createSkillsCapability` in `packages/skills/src/capability.ts`
+serves it through the existing load and resource tools. An agent with `use_skills` sees it in the
+normal catalog. The eligible entry agent without that grant receives only the product guide, even
+if ordinary skills are disabled; this exception does not propagate to child agents. The host
+determines eligibility from the selected placement, editing ceiling and configuration reviewer,
+as specified in [self-configuration](../hosts/self-configuration.md). `renderSkillCatalog` in
+`packages/skills/src/catalog/index.ts` prioritizes the host-attested `productOwned` marker, which
+untrusted frontmatter cannot set. `buildRegistry` in `packages/skills/src/registry.ts` makes every
+`.system` entry non-invocable by the user.
+
+Production: `createSkillsCapability` in `packages/skills/src/capability.ts`,
+`renderSkillCatalog` in `packages/skills/src/catalog/index.ts`, and `buildRegistry` in
+`packages/skills/src/registry.ts`. Test: `packages/skills/tests/component/capability.test.ts`,
+`packages/skills/tests/integration/discovery.test.ts`, and
+`packages/kernel/tests/integration/system-skill-invocation.test.ts`.
+
 Everything the reader does is bounded and degrading. Roots, per-root manifests, distinct skills,
 directory entries, nesting depth, file bytes, decoded characters, resource counts and sidecar size
 each carry a hard cap (`packages/skills/src/limits.ts`), and a manifest written in a dialect
@@ -704,9 +721,6 @@ validator. An invalid call is reported as a failed `tool_call`; it never records
    `handleLoadSkillCall` in `packages/skills/src/call.ts`. Test:
    `packages/skills/tests/unit/call.test.ts` (`shows the guarded helper hint only for a host-approved
    execution root`).
-   A host-embedded `source: "builtin"` result instead identifies instructions bundled in Clarvis,
-   without advertising a filesystem directory. Test:
-   `packages/kernel/tests/integration/builtin-skills.test.ts` (`the use_skills grant controls model access`).
    A remote result (`resourceAccess: "remote"`) advertises no mounted skill directory and suppresses
    execution-root hints. It requires complete resource-page reads and preparation of helpers with
    their relative directory structure in a writable workspace directory before guarded shell use.
@@ -780,45 +794,6 @@ merge and the bootstrap is then refused as `foreign_root` — the source states 
 - The capability is registered whenever `useSkills`, even with an undefined provider, so the grant,
   the reserved wire name and the tool effect stay stable.
 
-### 4.14a Shipped configuration guidance
-
-The file kernel composes `clarvis-configure` from TypeScript data with the scanned provider.
-It appears in a clean installation and in an empty custom Extension Profile without creating
-`SKILL.md`, skill directories or resource files. It is user-invocable in an ordinary skill turn and
-model-loadable only with the existing `use_skills` grant. Host or environment skill opt-out removes
-it with the rest of the skill surface. The name is reserved: installed content cannot replace
-these instructions, while other names retain their discovered provider and resource behavior.
-Metadata and body results are detached from the shipped data to prevent caller mutation.
-
-The guide covers configuration scope/precedence, agents and subagents, grants and capability gates,
-models and credentials, Extension Profiles, plugins, skills, MCP, hooks, memory, plans, tasks,
-workflows, runtime, TUI loops, background runs and reload/diagnosis. User-operated scheduling and
-background controls follow [loop scheduling](../hosts/loop-scheduling.md) and
-[hosted runs](../hosts/hosted-runs.md); loading the guide does not invoke those commands, persist a
-schedule or extend configuration consent. `CONFIGURATION_EXAMPLES` in
-[configuration-examples.ts](../../packages/kernel/src/skills/configuration-examples.ts) supplies the
-verbatim filenames and bytes rendered in the guide. Settings and agent schemas, plugin/skill
-discovery, Extension Profile resolution/selection and workflow loading/execution validate these
-examples in [configuration-guidance.test.ts](../../packages/kernel/tests/integration/configuration-guidance.test.ts).
-The on-demand body has a 32,768-character regression ceiling; the initial catalog still discloses
-only metadata. Loading instructions is informational and grants no write or credential access.
-The builtin has no agent override and does not change placement. The host-installed restricted
-writer uses the current effect review policy in the same conversation. Its admission and file
-operations are owned by
-[self-configuration.md](../hosts/self-configuration.md).
-
-Production: `withBuiltinSkills` in
-[`packages/kernel/src/skills/builtin-skills.ts`](../../packages/kernel/src/skills/builtin-skills.ts),
-`CLARVIS_CONFIGURE_SKILL` in
-[`packages/kernel/src/skills/clarvis-configure.ts`](../../packages/kernel/src/skills/clarvis-configure.ts),
-and `createFileKernel` in [`packages/kernel/src/file-kernel.ts`](../../packages/kernel/src/file-kernel.ts).
-Test: [`packages/kernel/tests/component/builtin-skills.test.ts`](../../packages/kernel/tests/component/builtin-skills.test.ts)
-and [`packages/kernel/tests/integration/builtin-skills.test.ts`](../../packages/kernel/tests/integration/builtin-skills.test.ts)
-cover reserved identity, detached data, external provider preservation, valid examples, empty
-installation/profile behavior, opt-out, grant gating and actual on-demand tool disclosure.
-[`packages/skills/tests/component/catalog.test.ts`](../../packages/skills/tests/component/catalog.test.ts)
-keeps builtin guidance discoverable within the catalog's size bound.
-
 ### 4.15 Kernel adaptation
 
 `createSkillsService` (`packages/kernel/src/skills/skills-service.ts`):
@@ -865,7 +840,7 @@ is a third path: `extractDollarSkillMentions` / `dollarSkillSeeds` in
 `packages/kernel/src/skills/dollar-mentions.ts` inject one `renderSkillPrompt` user message per
 expandable skill (exactly one user-invocable match, no `agent` field) after the current turn's
 messages, in appearance order, skipping a name already seeded by the `skill` start param. Agent-backed
-skills, the product-reserved `$clarvis-configure` guide, denylisted `$PATH`-style tokens, and unknown
+skills, denylisted `$PATH`-style tokens, and unknown
 names stay literal and never fork a run. The run-request side of `/name` remains
 `resolveSkillRun` in `packages/kernel/src/runs/settings-assembler.ts`; skill-driven agent
 routing itself belongs to [`specs/capabilities/workflows-service.md`](../capabilities/workflows-service.md).
@@ -1230,7 +1205,6 @@ alone.
 | `@clarvis/kernel` | `createAgentSkills` for the plugin panel's skill listing (`packages/kernel/src/plugins/plugin-service.ts`) | static value |
 | `@clarvis/kernel` | `MAX_SKILL_ROOTS`, `enumerateResources`, `hashBoundedFile`, and the public per-file/aggregate resource limits to bound and fingerprint plugin and Extension Profile skill surfaces (`packages/kernel/src/plugins/plugin-contributions.ts`, `packages/kernel/src/extension-profiles/extension-profile-manager.ts`) | static value |
 | `@clarvis/kernel` | `SkillsProvider` type via `@clarvis/loop` (`packages/kernel/src/skills/skills-service.ts`) | type-only |
-| `@clarvis/kernel` | `composeSkills: withBuiltinSkills` adds product TypeScript data after host-selected filesystem discovery (`packages/kernel/src/file-kernel.ts`, `packages/kernel/src/skills/builtin-skills.ts`) | host callback; no engine-to-kernel dependency |
 | `@clarvis/code` | reaches skills only through `KernelClient.skills` (`packages/code/src/adapters/kernel-run-client.ts`, `packages/code/src/adapters/kernel-capabilities-client.ts`) | protocol only |
 
 The direction is forced two ways. The **type-only / dynamic split** is what keeps `builtins.skills =
@@ -1314,4 +1288,4 @@ by `packages/loop/tests/architecture/builtin-capability-names.test.ts` and owned
 
 The host may observe directories visited by `listSkillDirs`, including empty candidates, to arm catalog monitors. Observation follows the existing discovery budgets and does not traverse resource subtrees as additional skills. Prospective manifests use `validateSkillDocument` with the owning root validation mode, preserving the distinction between Clarvis naming defaults and shared Agent Skills requirements.
 Production: `listSkillDirs` in [scan.ts](../../packages/skills/src/scan.ts), `validateSkillDocument` in [registry.ts](../../packages/skills/src/registry.ts), and `configurationSkillRef` in [files.ts](../../packages/kernel/src/configuration/files.ts).
-Test: delayed manifest discovery in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts), root validation in [execution-snapshot.test.ts](../../packages/skills/tests/unit/execution-snapshot.test.ts), and metadata-name membership in [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts).
+Test: delayed manifest discovery in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts), root validation in [execution-snapshot.test.ts](../../packages/skills/tests/unit/execution-snapshot.test.ts), and metadata-name membership in [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts).

@@ -15,7 +15,7 @@ import {
 import type { NamespacedTool } from "@clarvis/capability";
 import type { ToolResultImage } from "@clarvis/capability";
 import { EXEC_TOOL_NAMES } from "./names.ts";
-import type { WorkspaceStatePaths } from "@clarvis/paths";
+import type { ConfigurationRoot, WorkspaceStatePaths } from "@clarvis/paths";
 import { isOperatorInterruptedTool } from "../tool-interrupt.ts";
 
 /**
@@ -36,6 +36,7 @@ export interface AgentToolsetOptions {
   skillExecutionRoots?: readonly string[];
   guard?: Guard;
   reviewMutation?: MutationReview;
+  configurationRoots?: Readonly<Record<ConfigurationRoot, string>>;
   elicit?: Elicit;
   sandbox?: SandboxConfig;
   /** Isolated container guests set this to false so `require_escalated` fails closed. */
@@ -175,6 +176,9 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
         : {}),
       ...(opts.guard !== undefined ? { guard: opts.guard } : {}),
       ...(opts.reviewMutation !== undefined ? { reviewMutation: opts.reviewMutation } : {}),
+      ...(opts.configurationRoots !== undefined
+        ? { configurationRoots: opts.configurationRoots }
+        : {}),
       ...(opts.elicit !== undefined ? { elicit: opts.elicit } : {}),
       ...(opts.sandbox !== undefined ? { sandbox: opts.sandbox } : {}),
       ...(opts.allowHostEscalation !== undefined

@@ -29,22 +29,34 @@ Workspace dependencies: `@clarvis/protocol` (the contract it implements), `@clar
 `@clarvis/capability`, `@clarvis/goal`, `@clarvis/judge`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
 `@clarvis/tools`, `@clarvis/trace`, `@clarvis/tasks` and `@clarvis/workflows`. It injects
 host-owned capabilities into runs, so the engine never imports those product layers.
-Clients remain independent of the engine through six deliberately bounded public entrypoints. Each
+Clients remain independent of the engine through seven deliberately bounded public entrypoints. Each
 public symbol has one thematic owner; the root is not a compatibility barrel for lower packages.
 
-| Entry                       | Responsibility                                                                                                                |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `@clarvis/kernel`           | in-process kernel, kernel services/errors, client/server/transports and wire metadata                                         |
-| `@clarvis/kernel/bootstrap` | file-backed construction, authenticated local host/launcher, owner-scoped stores, stdio hosting, bootstrap logger/environment |
-| `@clarvis/kernel/config`    | config stores/schemas, agents, models, plugins, workflows and settings composition                                            |
-| `@clarvis/kernel/policy`    | guard, sanitization, tool identity, event mapping/policy/spans and ingest state                                               |
-| `@clarvis/kernel/local`     | shell/process/executable helpers and local filesystem/git adapters                                                            |
-| `@clarvis/kernel/logger`    | logger constructor and types without loading file-kernel bootstrap                                                            |
+| Entry                         | Responsibility                                                                                                                |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `@clarvis/kernel`             | in-process kernel, kernel services/errors, client/server/transports and wire metadata                                         |
+| `@clarvis/kernel/bootstrap`   | file-backed construction, authenticated local host/launcher, owner-scoped stores, stdio hosting, bootstrap logger/environment |
+| `@clarvis/kernel/config`      | config stores/schemas, agents, models, plugins, workflows and settings composition                                            |
+| `@clarvis/kernel/policy`      | guard, sanitization, tool identity, event mapping/policy/spans and ingest state                                               |
+| `@clarvis/kernel/local`       | shell/process/executable helpers and local filesystem/git adapters                                                            |
+| `@clarvis/kernel/logger`      | logger constructor and types without loading file-kernel bootstrap                                                            |
+| `@clarvis/kernel/system-docs` | verified publication of the product-owned Markdown skill for installers and source launchers                                  |
 
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
 > may change during the beta period.
 
 ## Contract
+
+`createFileKernel` reconciles the product-owned `clarvis-docs` Markdown tree in the resolved global
+Clarvis skills directory before capturing the skill catalog. `reconcileSystemDocs` verifies a
+portable release's listed Markdown hashes or reads the current source checkout, then publishes a
+complete revision only into the owned `.system/clarvis-docs` subtree. An unsafe or unowned target
+leaves user content untouched and makes this optional guide unavailable. The host supplies its
+active product root explicitly to bundled kernels; a package-local Kernel module derives its
+checkout from the package identity without naming an output directory.
+`createSystemDocsProvider` keeps body and resource bytes stable for an
+active host generation. See [self-configuration](../../specs/hosts/self-configuration.md) and
+[skills](../../specs/execution/skills.md).
 
 Steering acceptance persists the host-selected destination in its receipt before source delivery.
 After restart, consumption reconciliation reads that destination instead of depending on unrelated
@@ -189,7 +201,7 @@ Native Host/Sandbox guard decisions use the current interactive command allowlis
 receive no guard policy, approval bridge, reviewer or operator authority. Retired native scopes
 reject late answers, including one-time approval, and configuration review caches only host-validated final
 decisions. Configuration mutations consume the same host-owned authority reader and revocation
-signal as command review. `createFileKernel` installs the restricted writer into admitted editable
+signal as command review. `createFileKernel` binds the protected file-tool reviewer into admitted editable
 Host/Sandbox runs; the ordinary agent and placement remain in use.
 `src/hosting/projection.ts` provides bounded append-only observation storage with immutable,
 byte-paginated snapshots over private 64 MiB segments, without a default lifetime history quota.
@@ -636,7 +648,7 @@ construction or delaying a run. The extension-profile manager's `observeSkillCat
 asynchronously. Standalone authorship queues a coalesced refresh after captured users settle;
 invalid replacements retain the last catalog and its monitors. Root watchers also detect new skills.
 Plugin drift retains its explicit trust boundary. Builtin and custom standalone roots carry exact
-`include` lists for the captured generation. New skills authored through the restricted writer
+`include` lists for the captured generation. New skills authored through reviewed file tools
 include a reviewed membership delta: global profiles are copied and selected locally. If any
 packaged skill in a plugin cannot be captured within its bounds, that plugin's entire skill-root
 surface is withheld while its independently valid non-skill contributions remain.
@@ -956,8 +968,7 @@ session consent does not cover reaches `createCommandReview` with the complete c
 classification, operation rule or probe sits between the policy and the Judge. The
 [effect-review contract](../../specs/execution/effect-review.md)
 owns the host evidence ledger, effect registry and validated effect path, which now scope the
-restricted configuration writers (`configure_clarvis` and native authoring reviewed through
-`reviewMutation`). Hosted Goal runs supply their complete persisted definition, and
+protected file-tool configuration writes through `reviewMutation`. Hosted Goal runs supply their complete persisted definition, and
 the active Plans capability supplies only its stable substantive specification, as separate
 host-attested review context. The reviewer treats those definitions as the operator's semantic
 objective and implementation path, so a necessary bounded prerequisite such as installing declared
@@ -1092,66 +1103,32 @@ without a write. The scope remains configuration scope (`global` or
 `workspace`); it is shared operator configuration rather than owner-scoped run
 state. The lease is not a distributed-lock claim for NFS or multi-host storage.
 
-## Builtin configuration skill
+## File-tool configuration
 
-The file kernel installs `configure_clarvis` for an admitted editing entry agent in Host/Sandbox.
-The operator can request changes in the ordinary conversation; `/clarvis-configure` is optional
-embedded guidance with no agent override. Loading it does not grant authority. Each mutation uses
-the host-owned authority reader and the shared effect reviewer; human mode reviews the concrete
-operation, while automatic mode can reuse covered authorization. Container skill admission rejects
-this conversational route before inference and directs the operator to Host/Sandbox. Host-owned
-Settings and provider controls remain available to the Code facade while a Container is connected.
-
-The restricted writer provides `list`, `read`, `write`, `edit` and `delete` across the four authored
-roots. It validates settings, Agent Profiles, Skills, and Workflows, binds mutations to exact
-revisions, and excludes private state, credentials and links. An external edit during review causes
-conflict. Workspace trust carries only across the authorized target bytes when every other input is
-unchanged. An editing entry agent may also use ordinary atomic file tools for canonical workspace
-Agent Profile, `WORKFLOW.md`, or `SKILL.md` authoring when the run carries the host-owned
-`reviewMutation` port; without it — a Container guest, a ceiling other than `edit`/`exec`, or disabled
-builtin tools — the file tool refuses the target with the `configure_clarvis` message before the guard
-runs, and a generic command approval never becomes configuration approval.
-`createAuthoringMutationReview` prepares the
-complete batch, validates each canonical document, captures every target and exact revision, reviews
-it once through the same host authority, and commits all or none. Operational configuration, global
-roots, private targets, and selected skill packages do not enter that route.
+An editing entry agent uses ordinary file tools for admitted global and workspace
+authoring and operational configuration when the run carries the host-owned `reviewMutation` port;
+without it — a Container guest, a ceiling other than `edit`/`exec`, or disabled builtin tools — the
+file tool refuses the protected target before the guard runs, and a generic command approval never
+becomes configuration approval.
+`createAuthoringMutationReview` prepares the complete batch, validates each recognized document,
+captures every target and exact revision, reviews it once through the host-owned authority reader
+and shared Judge coordinator, and commits all or none. Private targets and selected skill execution
+snapshots do not enter that route. The global roots are passed only to entry-agent file handlers and
+do not widen shell mounts or unrelated workspace confinement.
+`createFileKernel` resolves the shared user root from the host home by default; its optional
+`configurationHome` input lets an isolated host use a separate home for that root.
+For a complete bounded batch, human review can grant the displayed operation and targets for the
+current session. The grant is recorded only after a successful commit, does not cover new targets or
+effect classes, and is invalidated by steer or run settlement. One-time approval creates no grant.
 Standalone skill changes request a coalesced refresh after captured users settle, without changing
 the host process. Skill snapshots keep resource and helper bytes together. See
 [self-configuration.md](../../specs/hosts/self-configuration.md).
 
-The `clarvis-configure` guide ships as TypeScript data in
-[`src/skills/clarvis-configure.ts`](src/skills/clarvis-configure.ts), requires no generated files,
-and remains available with an empty custom Extension Profile. Its `use_skills` and host/environment
-gates are the same as other skills. It directs protected operations to the available restricted
-writer or reviewed canonical workspace authoring path in the current conversation and prohibits
-shell as a fallback.
-
-The guide covers configuration scopes, Agent Profiles and subagents, grants and host ceilings,
-models, Extension Profiles, plugins, MCP, hooks, memory, plans, goals, tasks, workflows, runtime,
-Isolation, Review, remote SSH, `/loop` scheduling and background runs. Goal guidance distinguishes
-operator-only auto/guided/literal creation from settings, documents `goals.agent.formulation` and
-`goals.agent.steward`, and explains tool-free review, execution receipts, attention outcomes and
-separate auxiliary accounting. Provider guidance preserves the entitled Grok catalog's image
-capability rules instead of asking an agent to author subscription metadata. For remote connections it distinguishes the
-local TUI from the remote installation, delegates keys/host verification to OpenSSH, requires login
-preparation outside the TUI and records the disabled forwarding/machine-control boundaries. It
-distinguishes TUI-owned, in-memory schedules from runs
-that continue in the workspace host, and explains attachment, cancellation and consent lifetime.
-Its [TypeScript examples](src/skills/configuration-examples.ts) are rendered verbatim in the guide
-and exercised against the product loaders. They include a complete workflow with its brief and
-Admiral launcher, a nonempty Extension Profile with exact plugin/skill identities, and settings
-fragments for the configurable services, strict shared-agent frontmatter, and a valid Auto Review
-block. Workflow files are loaded on the next manager run;
-Extension Profile selection uses the operator's preview/confirmation and `/reconnect reload` flow
-when the host is idle. Plain `/reconnect` restores a connection to the same host without applying
-pinned configuration. Either reviewed authoring path includes new-skill membership in the same change.
-Other installation/selection, workspace trust, credentials, UI preferences, loop registration and
-background controls retain their operator interfaces. A working default model is needed.
-Loading it grants no configuration, filesystem or credential authority. Its reserved name cannot
-be replaced by an installed skill. A composer `$clarvis-configure` mention remains literal instead
-of loading the configuration guide implicitly; use `/clarvis-configure` or ask for configuration in
-the ordinary conversation. Discovery and resources for other skills retain their existing snapshot
-and confinement rules. See [the skills contract](../../specs/execution/skills.md).
+Configuration requests need no special skill, slash command or additional tool schema. Skill
+discovery, `$name` mentions and slash invocation retain their generic behavior for installed skills.
+Credentials, workspace trust, UI preferences, provider login, Extension Profile selection and
+background controls retain their operator interfaces. Workflow files are loaded on the next manager
+run; changes to pinned placement or providers need an explicit idle reconnect.
 
 ## The agent fleet ships as data
 
@@ -1532,12 +1509,12 @@ See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for r
 validation and separate deterministic, live-provider and installed-artifact qualification.
 
 `createAuthoringMutationReview` binds ordinary file-tool batches to the same
-`createConfigurationReview` and authority reader used by `configure_clarvis`. It validates each
-canonical document, captures every target, reviews one complete batch (including local skill
+`createConfigurationReview` and authority reader. It validates each
+recognized configuration document, captures every target, reviews one complete batch (including local skill
 membership), rechecks revisions, and carries trust only after the asynchronous transaction succeeds.
 Concurrent changes to other executable inputs withhold trust. Profile definition/selection leases
 remain held through async file mutation and rollback companion changes on failure. The port is the
-only route for file-tool authoring: without it the tool refuses a canonical authoring target before
+only route for file-tool configuration mutation: without it the tool refuses a protected target before
 the command guard is consulted.
 
 Concrete configuration refusals live in the shared authority ledger. Identical before/after bytes cannot trigger another prompt merely by switching edit and write; corrected bytes receive their own decision. The bounded ledger persists only under the validated authority binding and is invalidated by fresh admitted evidence. See [self-configuration](../../specs/hosts/self-configuration.md).
@@ -1589,8 +1566,8 @@ allowlist scope, using canonical full request identity. Settlement removes the p
 consent is not memoized. A replacement scope gets its own question, and late answers from the old
 scope remain denied.
 
-Configuration review applies the same pending-only rule across direct configuration and authoring
-consumers in one run. Its identity includes the complete prepared change and authority binding;
+Configuration review applies the same pending-only rule across file-tool authoring consumers in
+one run. Its identity includes the complete prepared change and authority binding;
 distinct proposals do not share a question, and settlement, channel failure or cancellation cannot
 leave reusable human consent.
 

@@ -51,12 +51,16 @@ describe("code host kernel options", () => {
         defaultOwner: "owner",
         extensionProfileSelector: "global:remote",
         logger,
-        environment: { CLARVIS_AGENT_TOOLS_MAX_GRANT: "read" },
+        environment: {
+          CLARVIS_AGENT_TOOLS_MAX_GRANT: "read",
+          CLARVIS_PRODUCT_ROOT: root,
+        },
         runtimeNotice: () => {},
       });
       expect(scoped).toMatchObject({
         defaultOwner: "owner",
         extensionProfileSelector: "global:remote",
+        systemDocsSourceRoot: root,
         environment: {
           values: { CLARVIS_AGENT_TOOLS_MAX_GRANT: "read" },
         },

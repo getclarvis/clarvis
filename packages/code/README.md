@@ -260,6 +260,14 @@ and calls, including minified `createRequire` bindings; relative, absolute,
 built-in, and module-internal `#` references retained by the generated artifact are not interpreted
 as package roots, while package subpaths resolve to their owning root.
 `release.json` declares the exact regular-file set checked by release smoke and self-update.
+Starting with the first documentation-skill release, the payload also includes the raw
+`clarvis-docs` Markdown tree and a bundled `runtime/system-docs.js` publisher. The source launcher
+passes its active product root to the host; the kernel never derives Markdown assets from `dist`.
+Managed installation and update verify the release tree, then publish the product-owned skill
+before activating the version. A checkout `dev-install.sh` or candidate install publishes from
+its selected source checkout. An owned older revision is retired when a pre-skill release becomes
+active; an unowned destination is never overwritten. See
+[self-configuration](../../specs/hosts/self-configuration.md).
 Each archive also carries Clarvis's license; the Bun, models.dev, and Vercel AI SDK notices/license
 texts; Bun's source and relinking route; a generated runtime-package inventory; and the
 package-owned license files.
@@ -299,9 +307,10 @@ another project, start the binary from that directory or use the installed
 
 ## Configuration
 
-Configuration requests use the normal conversation. The optional `/clarvis-configure <task>`
-loads embedded guidance without changing the agent or runtime. The host-admitted `configure_clarvis`
-writer reviews exact mutations through the current policy and excludes credentials/private state.
+Configuration requests use the normal conversation and file tools. The host reviews exact
+mutations through the current policy and excludes credentials and private state.
+An eligible entry agent can load the product-owned `clarvis-docs` skill and its focused references
+through the ordinary skill tools; this guide supplies information, not a file-edit grant.
 Automatic authorization does not require a second activation prompt. Human review concerns the
 concrete operation. Skill catalog notifications refresh command listings without reconnecting;
 active resource users retain their captured revision until safe application.
@@ -677,7 +686,8 @@ keys only move the highlighted choice and still require Enter. Number shortcuts 
 text or numeric field owns input. Enter on an untouched workflow prompt cannot launch a workflow by
 enum order. Command and configuration approvals always present the affirmative decision first:
 `[1] allow once`, `[2] deny`; when a session grant exists the order is `[1] allow once`, `[2] allow
-for this session`, `[3] deny`. Deny remains preselected, so untouched Enter stays fail-closed.
+for this session`, `[3] deny` for commands, and `[1] allow once`, `[2] allow these targets for this
+session`, `[3] deny` for configuration. Deny remains preselected, so untouched Enter stays fail-closed.
 
 Goal, Plan and Workflow detail screens share a 100-cell reading column, title/section styling,
 spacing and lifecycle colors. Their footers use the same lowercase action labels and group Escape

@@ -12,7 +12,7 @@ import {
   watchFile,
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { z } from "zod";
 import {
   acquireLocalLeaseSync,
@@ -35,6 +35,7 @@ import {
   type SkillRootInput,
 } from "@clarvis/skills";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import { SYSTEM_DOCS_NAME } from "../skills/system-docs.ts";
 import type {
   ExtensionProfileApplyResult,
   ExtensionProfileCompositionApplyResult,
@@ -74,9 +75,8 @@ import { pluginSkillScanRoots, resolvePluginManifest } from "../plugins/plugin-m
 import { pluginDataDir } from "../plugins/plugin-runtime.ts";
 
 import {
-  configurationFileMutationFacts,
-  configurationFileOperation,
-  type ConfigurationFileRequest,
+  prepareConfigurationFileMutation,
+  type ConfigurationMutationRequest,
 } from "../configuration/files.ts";
 import type { ConfigurationMutationFacts } from "../guard/effects/configuration.ts";
 
@@ -851,6 +851,8 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
           logger,
         });
         for (const info of skills.listSkills()) {
+          const parts = relative(root.path, info.dir).split(sep);
+          if (info.name === SYSTEM_DOCS_NAME || parts.includes(".system")) continue;
           const ref: ExtensionProfileSkillRef = {
             scope: root.scope ?? "workspace",
             source: root.source === "agents" ? "agents" : "clarvis",
@@ -2270,14 +2272,15 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
       globalDir: options.globalDir,
       home: options.home,
     });
-    const profileWrite: ConfigurationFileRequest = {
+    const profileWrite: ConfigurationMutationRequest = {
       operation: "write",
       root: "workspace_clarvis",
       path: `extension-profiles/${target.name}.json`,
       content: proposed.serialized,
       expected_revision: expected?.slice(7) ?? null,
     };
-    const profileFact = configurationFileMutationFacts(roots, profileWrite)!;
+    const preparedProfile = prepareConfigurationFileMutation(roots, profileWrite);
+    const profileFact = preparedProfile.facts;
     const facts: ConfigurationMutationFacts[] = [
       { ...profileFact, fieldClass: "extension_profile.skills" },
     ];
@@ -2315,7 +2318,7 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
             let definitionWritten = false;
             let selectionWritten = false;
             try {
-              configurationFileOperation(roots, profileWrite);
+              preparedProfile.commit();
               definitionWritten = true;
               if (!replacing) {
                 writeSelection(target, "workspace");

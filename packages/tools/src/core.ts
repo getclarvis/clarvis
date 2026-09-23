@@ -8,8 +8,7 @@ import { buildGuardContext } from "./guard/context.ts";
 import type { ElicitRequest, GuardReview } from "./guard/types.ts";
 import type { RuntimeConfig } from "./config.ts";
 import { assertOutsideRoots } from "./lib/paths.ts";
-import { configurationRoots } from "@clarvis/paths";
-import { isAuthoringSearchScope, isCanonicalAuthoringPath } from "./guard/authoring-path.ts";
+import { configurationRoots, configurationTarget } from "@clarvis/paths";
 
 const NATIVE_MUTATION_TOOLS = new Set([
   "write_file",
@@ -39,39 +38,56 @@ function protectSkillPackages(
 }
 
 /**
- * Admit canonical authoring only under the restricted configuration writer.
+ * Admit classified workspace configuration only under the host mutation reviewer.
  *
  * @param name - the dispatched tool name; non-mutating tools are unaffected.
  * @param args - validated arguments, read for the paths the call touches.
- * @param config - the resolved run config; its `reviewMutation` port *is* the restricted writer.
- * @param authoringWriter - whether this run has that writer. Without it a file tool has no way to
- *   review an authored change, so a canonical authoring target is refused outright instead of being
- *   approved by a generic command review. Operational configuration under the same roots is always
- *   refused here, writer or not.
+ * @param config - the resolved run config; its `reviewMutation` port mediates prepared effects.
+ * @param reviewed - whether the protected mutation is deferred to that host port.
  */
 function protectWorkspaceConfiguration(
   name: string,
   args: Record<string, unknown>,
   config: RuntimeConfig,
-  authoringWriter = false,
+  reviewed = false,
 ): void {
   if (!NATIVE_MUTATION_TOOLS.has(name)) return;
   const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
-  const protectedRoots = [roots.workspace_clarvis, roots.workspace_agents];
+  const selectedRoots = config.configurationRoots ?? {
+    workspace_clarvis: roots.workspace_clarvis,
+    workspace_agents: roots.workspace_agents,
+  };
+  const protectedRoots = Object.values(selectedRoots);
   const context = buildGuardContext(name, args, config);
   const targets = name === "copy" ? context.paths.slice(1) : context.paths;
   for (const fact of targets) {
-    if (
-      (name === "replace" &&
-        config.reviewMutation !== undefined &&
-        isAuthoringSearchScope(fact.resolved, config.workspaceRoot)) ||
-      (authoringWriter && isCanonicalAuthoringPath(fact.resolved, config.workspaceRoot))
-    )
-      continue;
+    const target = configurationTarget(selectedRoots, fact.resolved);
+    if (target !== undefined && target.kind !== "private" && reviewed) continue;
     assertOutsideRoots(fact.resolved, protectedRoots, fact.raw, {
       code: "denied",
-      message: `Use the restricted configure_clarvis writer in this conversation for this configuration change: ${fact.raw}.`,
+      message: `Configuration target requires host-mediated file review: ${fact.raw}.`,
     });
+  }
+}
+
+/** Reject private configuration leaves before any file handler can read them. */
+function protectPrivateConfiguration(
+  name: string,
+  args: Record<string, unknown>,
+  config: RuntimeConfig,
+): void {
+  if (name === "shell" || name === "shell_session") return;
+  const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
+  const selectedRoots = config.configurationRoots ?? {
+    workspace_clarvis: roots.workspace_clarvis,
+    workspace_agents: roots.workspace_agents,
+  };
+  for (const fact of buildGuardContext(name, args, config).paths) {
+    const target = configurationTarget(selectedRoots, fact.resolved);
+    if (target?.kind === "private")
+      throw new ToolError("denied", `Configuration target is private: ${fact.raw}.`, {
+        path: fact.raw,
+      });
   }
 }
 
@@ -176,8 +192,8 @@ export function listTools(config: RuntimeConfig): ToolInfo[] {
 interface GuardGate {
   denied?: DispatchResult;
   review?: GuardReview;
-  /** Set only when the call was handed to the restricted configuration writer instead of the guard. */
-  authoringReviewed?: boolean;
+  /** Set only when the call was handed to the host configuration reviewer instead of the guard. */
+  configurationReviewed?: boolean;
 }
 
 function reviewDenialMessage(review: GuardReview | undefined, reason: string): string {
@@ -297,31 +313,39 @@ export async function dispatch(
     return errorResult(new ToolError("invalid_input", detail || "invalid arguments"));
   }
 
-  const authoringWriter = config.reviewMutation !== undefined;
+  const configurationReviewer = config.reviewMutation !== undefined;
   try {
-    protectWorkspaceConfiguration(name, filled, config, authoringWriter);
+    protectPrivateConfiguration(name, filled, config);
+    protectWorkspaceConfiguration(name, filled, config, configurationReviewer);
     protectSkillPackages(name, filled, config);
   } catch (error) {
     return errorResult(error);
   }
 
-  const deferredAuthoring =
+  const deferredConfiguration =
     tool.atomicMutation === true &&
-    authoringWriter &&
-    buildGuardContext(name, filled, config).paths.some(
-      (fact) =>
-        isCanonicalAuthoringPath(fact.resolved, config.workspaceRoot) ||
-        (name === "replace" && isAuthoringSearchScope(fact.resolved, config.workspaceRoot)),
-    );
-  const gate: GuardGate = deferredAuthoring
-    ? { authoringReviewed: true }
+    configurationReviewer &&
+    buildGuardContext(name, filled, config).paths.some((fact) => {
+      const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
+      return (
+        configurationTarget(
+          config.configurationRoots ?? {
+            workspace_clarvis: roots.workspace_clarvis,
+            workspace_agents: roots.workspace_agents,
+          },
+          fact.resolved,
+        ) !== undefined
+      );
+    });
+  const gate: GuardGate = deferredConfiguration
+    ? { configurationReviewed: true }
     : name === "shell_session"
       ? {}
       : await applyGuard(name, filled, config);
   if (gate.denied) return { ...gate.denied, ...(gate.review ? { guard: gate.review } : {}) };
 
   try {
-    protectWorkspaceConfiguration(name, filled, config, gate.authoringReviewed);
+    protectWorkspaceConfiguration(name, filled, config, gate.configurationReviewed);
     const { content, meta } = normalizeOutput(await tool.handler(filled, config, signal, hooks));
     const parts = typeof content === "string" ? [textPart(content)] : content;
     return {

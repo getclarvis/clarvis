@@ -31,7 +31,7 @@ const result = (over: Partial<LLMCallResult> = {}): LLMCallResult => ({
 
 const identity = {
   path: "effect_review" as const,
-  consumer: "configure_clarvis" as const,
+  consumer: "configuration_file" as const,
   stage: "compile" as const,
   authority_revision: 3,
   effect_id: "clarvis.authoring.write",
@@ -47,6 +47,18 @@ function event(trace: ReturnType<typeof createTrace>) {
 }
 
 describe("guard reviewer model-call trace", () => {
+  it("counts historical configuration reviewer calls without advertising the retired tool", async () => {
+    const trace = createTrace(0);
+    await callReviewerWithTrace({ call: async () => result() }, params(), {
+      ...identity,
+      trace,
+    });
+    const historical = { ...event(trace), consumer: "configure_clarvis" } as unknown as TraceEvent;
+    expect(guardReviewerUsage([historical])?.usage.by_agent?.[0]).toMatchObject({
+      input_tokens: 10,
+      output_tokens: 2,
+    });
+  });
   it("classifies the shared inactivity error without a Judge-specific abort signal", () => {
     const error = new ModelCallInactivityError(180000, true);
     expect(reviewerFailureKind(error)).toBe("timeout");

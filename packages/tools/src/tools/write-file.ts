@@ -1,8 +1,9 @@
 import { promises as fs } from "node:fs";
 import { ToolError, fsError } from "../errors.ts";
-import { readFileOptions } from "../lib/files.ts";
-import { resolvePath, displayPath } from "../lib/paths.ts";
+import { readFileOptionsForPath } from "../lib/files.ts";
+import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { writeAtomic, withFileLock } from "../lib/atomic.ts";
+import { reviewedConfigurationModes } from "../guard/authoring-path.ts";
 import { readTextFile } from "../lib/textfile.ts";
 import { unifiedDiff } from "../lib/unified-diff.ts";
 import type { ToolDef } from "./types.ts";
@@ -50,13 +51,7 @@ export const writeFile: ToolDef = {
   },
   async handler(args, config) {
     const relPath = args.path as string;
-    const target = resolvePath(
-      relPath,
-      config.workspaceRoot,
-      config.confineToWorkspace,
-      config.temporaryRoots,
-      config.logger,
-    );
+    const target = resolveFileToolPath(relPath, config);
     const content = args.content as string;
 
     return withFileLock(target, async () => {
@@ -80,7 +75,7 @@ export const writeFile: ToolDef = {
             target,
             relPath,
             config.maxFileBytes,
-            readFileOptions(config),
+            readFileOptionsForPath(config, target),
           );
           if (prior.encoding === "utf8") before = prior.content;
         } catch (err) {
@@ -94,7 +89,13 @@ export const writeFile: ToolDef = {
       }
 
       try {
-        await writeAtomic(target, content, config.reviewMutation);
+        await writeAtomic(
+          target,
+          content,
+          config.reviewMutation,
+          "write",
+          reviewedConfigurationModes(target, config),
+        );
       } catch (err) {
         if (err instanceof ToolError) throw err;
         throw fsError(err as NodeJS.ErrnoException, relPath);

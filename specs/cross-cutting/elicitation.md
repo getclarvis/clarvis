@@ -44,14 +44,14 @@ approval.
 
 ## 2. Surface
 
-The restricted `configure_clarvis` writer uses the existing `configuration_review` bridge for a concrete
+The host-reviewed file-tool route uses the existing `configuration_review` bridge for a concrete
 mutation when policy requires human review. The prompt binds the target and expected revision to
 the proposed change. Denial is selected initially; approval covers that change only. Validation and
 catalog application do not request another activation approval. A host-admitted steer changes the
 authority revision immediately, invalidating an approval still in flight before mutation.
-Production: `createDirectConfigurationCapability` in
-[direct-configuration.ts](../../packages/kernel/src/configuration/direct-configuration.ts).
-Test: [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts)
+Production: `createConfigurationReview` in
+[review.ts](../../packages/kernel/src/configuration/review.ts).
+Test: [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts)
 and [elicitation.test.ts](../../packages/code/tests/unit/elicitation.test.ts).
 The complete authority contract is [self-configuration.md](../hosts/self-configuration.md).
 

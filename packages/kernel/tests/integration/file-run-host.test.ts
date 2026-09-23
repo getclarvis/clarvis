@@ -997,12 +997,9 @@ describe("file kernel behind the hosted RPC", () => {
         {
           toolCalls: [
             {
-              name: "configure_clarvis",
+              name: "write_file",
               arguments: {
-                operation: "write",
-                root: "workspace_clarvis",
-                path: "settings.json",
-                expected_revision: null,
+                path: ".clarvis/settings.json",
                 content: '{"budget":{"total_token_limit":200000}}',
               },
             },
@@ -1038,10 +1035,9 @@ describe("file kernel behind the hosted RPC", () => {
     });
   });
 
-  test("keeps configuration guidance in the ordinary agent and cancels it on connection loss", async () => {
+  test("cancels an ordinary agent run on connection loss", async () => {
     const f = await fixture();
     const input = await f.input("configuration-run");
-    input.params.skill = { name: "clarvis-configure", task: "Inspect the settings" };
     const started = await f.client.hosting!.start(input);
     const questions: ElicitationRequest[] = [];
     started.handle.onElicit((question) => {
@@ -1062,7 +1058,10 @@ describe("file kernel behind the hosted RPC", () => {
     });
     second.handle.onElicit((question) => questions.push(question));
     f.released.resolve();
-    expect((await second.handle.done).status).toBe("completed");
+    expect(await second.handle.done).toMatchObject({
+      status: "failed",
+      error: { code: "continuation_unavailable" },
+    });
     expect(questions).toEqual([]);
   });
 });

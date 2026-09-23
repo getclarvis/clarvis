@@ -86,12 +86,14 @@ explicitly). Its symbols, as consumed by the tools above:
 | `withFileLocks<T>(paths, fn)` | fn | `packages/tools/src/lib/atomic.ts` | apply_patch, replace, move, copy |
 | `assertNotSymlink(target)` | fn | `packages/tools/src/lib/atomic.ts` | write_file (via `writeAtomic`), edit_file (via `writeAtomic`), move, copy, apply_patch (via `validateTargets`), replace (via `applyOpsAtomic`'s `validateTargets`, on a non-dry-run commit), remove (via `applyOpsAtomic`) |
 | `writeAtomic(target, content)` | fn | `packages/tools/src/lib/atomic.ts` | write_file, edit_file/multi_edit (via `editFileLocked`) |
-| `FileOp` | interface | `packages/tools/src/lib/atomic.ts` | apply_patch, replace, remove |
-| `applyOpsAtomic(ops: FileOp[])` | fn | `packages/tools/src/lib/atomic.ts` | apply_patch, replace, remove |
+| `FileOp` | interface | `packages/tools/src/lib/atomic.ts` | apply_patch, replace, remove, reviewed copy and move |
+| `applyOpsAtomic(ops: FileOp[])` | fn | `packages/tools/src/lib/atomic.ts` | apply_patch, replace, remove, reviewed copy and move |
 
 `FileOp.type` is `"create" | "modify" | "delete" | "rename"` (`packages/tools/src/lib/atomic.ts`); `from` is the rename
-source (`packages/tools/src/lib/atomic.ts`); `content` is the new body for `create`/`modify` and an optional rewrite
-alongside a `rename` (`packages/tools/src/lib/atomic.ts`).
+source; `content` is the new body for `create`/`modify` and an optional rewrite alongside a
+`rename`. `intent` retains `write` versus `edit` for host effect review. Optional `mode` and
+`dirMode` set private file and new parent permissions for reviewed configuration, while a rename's
+`overwrite` records an explicitly permitted destination replacement.
 
 ### 2.4 `RuntimeConfig` fields this subsystem reads
 
@@ -210,7 +212,8 @@ expressed through it: `ToolError { code: ErrorCode, message, fields }`
 5. `writeAtomic(target, content)` (`packages/tools/src/lib/atomic.ts`): reject a symlink target
    (`assertNotSymlink`), `mkdir -p` the parent, capture the existing mode, then delegate to
    `@clarvis/paths`'s `writeFileDurable` with `mode: existingMode ?? 0o666 & ~umask` and
-   `dirMode: 0o777 & ~umask`; on any throw, remove a directory this call itself created
+   `dirMode: 0o777 & ~umask`. A reviewed configuration target instead uses the shared private
+   file and directory modes, including on overwrite. On any throw, remove a directory this call itself created
    (`removeCreatedDirs`) before rethrowing.
 6. Report bytes written and created/overwritten; attach `meta.diff` when step 4 captured a UTF-8
    "before".
@@ -327,21 +330,25 @@ modify").
    `fsError`.
 5. `fs.stat(absDst)`; existing directory destination → always `not_a_file`, even with
    `overwrite`; existing file destination without `overwrite` → `invalid_input`.
-6. `mkdir -p` the destination's parent, then a single `renameWithRetry(absSrc, absDst)`
-   (`@clarvis/paths`) — atomic because it is same-filesystem (doc remark `packages/tools/src/tools/move.ts`); wrap any
-   failure via `fsError`.
-7. `fsyncDir` both parent directories.
+6. An ordinary move creates the parent and calls `renameWithRetry(absSrc, absDst)`
+   (`@clarvis/paths`), then `fsyncDir` on both parents. A reviewed configuration endpoint
+   instead uses `applyOpsAtomic`, including rollback for an allowed overwrite. A configuration
+   destination stages bounded UTF-8 source content with private file and directory modes.
+7. Mutation errors follow the tool error mapping; no failed reviewed move leaves only one endpoint changed.
 8. Report the move, noting `(overwritten)` when the destination previously existed.
 
 ### 4.6 `copy` (`packages/tools/src/tools/copy.ts`)
 
 Steps 1-5 identical in shape to `move`, same error codes. Then, because `fs.rename`
 cannot duplicate a file:
-6. Copy into a `tmpPathFor(absDst)` sibling in the destination directory via `fs.copyFile`
+6. Without host configuration review, copy into a `tmpPathFor(absDst)` sibling in the destination directory via `fs.copyFile`
    (binary-safe), `chmod` the temp file to the source's mode (`& 0o777`), then
    `renameWithRetry(tmp, absDst)`; on any failure in this block, best-effort `fs.rm` the
    temp file before mapping the error through `fsError`.
-7. `fsyncDir` the destination directory only — unlike `move` (step 7 above), `copy` never
+7. With host configuration review, capture bounded UTF-8 source bytes through the confined
+   descriptor read and pass a create/modify `FileOp` with private file and directory modes to
+   `applyOpsAtomic`, so review and rollback use the same transaction as other prepared file batches.
+8. `fsyncDir` the destination directory only — unlike `move` (step 7 above), `copy` never
    fsyncs the source's parent directory, because nothing in that directory's entry changed; report,
    noting `(overwritten)`.
 
@@ -366,10 +373,10 @@ atomic apply is remapped through `fsError`.
 
 | Phase | Function | What happens | On failure |
 | --- | --- | --- | --- |
-| Stage | `stageAll` | For every `create`/`modify` (and a content-carrying `rename`), `mkdir -p` the target's directory and write the new body to a fresh `tmpPathFor` sibling via `stage()`: `open(tmp,"wx")` exclusive-create, write, `fh.sync()`, close | `cleanupStaged` removes every temp file staged so far, then rethrows |
-| Validate | `validateTargets` | For each op, reject a symlink target/source (`assertNotSymlink`); for `rename`, require the source exist and not be a directory (`not_found`/`not_a_file`) and the destination *not* exist (`invalid_input`); for others, capture the existing mode or `undefined`, rejecting an existing directory (`not_a_file`) | On throw here, `applyOpsAtomic` itself calls `cleanupStaged` before rethrowing |
-| Commit | `commitWithRollback` | In order: for a `rename`, move the *original* aside to a `tmpPathFor` backup (recording it), `chmod` the staged tmp to the captured mode, then rename it into place — or, for a no-content rename, rename the source straight to the destination; for `create`/`modify`/`delete`, move any existing original aside as backup (absence is fine), then for non-delete rename the staged tmp into place | On any throw, walk `committed` **in reverse**, undoing each: restore a from-backup or reverse a plain rename; for others, remove the new file and rename the backup back. An undo that itself fails is *not* fatal by itself — it is recorded in `unrestored`, naming a preserved backup; if `unrestored` is non-empty the whole batch fails with `io_error` naming which originals could not be restored, otherwise the *original* error propagates |
-| fsync | — | Every directory touched by any op (destination's, and a rename's source's) is `fsyncDir`ed | n/a |
+| Stage | `stageAll` | For every `create`/`modify` (and a content-carrying `rename`), `mkdir -p` the target's directory and write the new body to a fresh `tmpPathFor` sibling via `stage()`: `open(tmp,"wx")` exclusive-create, write, `fh.sync()`, close; reviewed configuration supplies private modes | `cleanupStaged` removes every temp file staged so far, then rethrows |
+| Validate | `validateTargets` | For each op, reject a symlink target/source (`assertNotSymlink`); for `rename`, require a regular source and refuse an existing destination unless `overwrite` is true; for others, capture the existing mode or `undefined`, rejecting an existing directory | On throw here, `applyOpsAtomic` itself calls `cleanupStaged` before rethrowing |
+| Commit | `commitWithRollback` | In order: for a `rename`, back up an existing destination, move the source aside for a content rewrite or rename it directly, and install the staged body when present; for `create`/`modify`/`delete`, back up any existing original, then install non-delete staged content | On any throw, walk `committed` in reverse, restoring both rename endpoints or a prior target from backup; an unrestorable original fails with `io_error` naming its preserved backup |
+| fsync | — | Every directory touched by any op (destination's, and a rename's source's) is `fsyncDir`ed | An unexpected failure rolls back committed entries before reporting it |
 | Cleanup | — | Every backup and from-backup created during commit is best-effort removed (`bestEffort("atomic_backup_cleanup"/"atomic_source_backup_cleanup", …)`) | best-effort — a cleanup failure does not fail the call |
 | Outer catch | `applyOpsAtomic` | Any directory this call created (from staging) is removed | `packages/tools/src/lib/atomic.ts` |
 
@@ -483,25 +490,21 @@ lock-ordering deadlock between them.
     `packages/tools/src/lib/paths.ts`. Test: `packages/tools/tests/integration/api.test.ts`.
 
     `protectWorkspaceConfiguration` separately classifies the workspace `.clarvis` and `.agents`
-    roots resolved through `configurationRoots`. Operational destinations are rejected before
-    mutation and direct the agent to `configure_clarvis`; private destinations remain denied.
-    In the generic `@clarvis/tools` API, canonical Agent Profile, `WORKFLOW.md`, and `SKILL.md`
-    destinations pass only when the guard returns an approved `ask` with a complete
-    `clarvis.authoring.write` effect. A partial, missing, or unapproved effect remains denied. The file
-    kernel instead gives an editing entry agent the host-owned `MutationReview`: atomic tools prepare
-    final bytes for the complete batch, the host validates each canonical document, captures every
-    target and exact revision, reviews all effects together, and commits all or none. `copy` may still
+    roots resolved through `configurationRoots`. Without the host mutation port, admitted authoring
+    and operational targets refuse mutation before the command guard, while private targets remain
+    denied. The file kernel gives an editing entry agent the host-owned `MutationReview`: atomic
+    tools prepare final bytes for the complete batch, the host validates recognized documents,
+    captures every target and exact revision, reviews all effects together, and commits all or none. `copy` may still
     read configuration into an ordinary destination.
-    Recursive `replace` discovers only bounded canonical authoring leaves inside an explicitly named
+    Recursive `replace` discovers only bounded admitted configuration leaves inside an explicitly named
     configuration scope and otherwise filters both roots. Command execution keeps the separate
     posture in [tools-shell-and-sessions.md](tools-shell-and-sessions.md) and is not an alternate writer.
     Production: `protectWorkspaceConfiguration` in `packages/tools/src/core.ts`,
     `isCanonicalAuthoringPath` in `packages/tools/src/guard/authoring-path.ts`, `MutationReview` in
     `packages/tools/src/lib/atomic.ts`, and `createAuthoringMutationReview` in
     `packages/kernel/src/configuration/authoring-mutations.ts`. Test:
-    `packages/tools/tests/integration/api.test.ts` ("requires complete authoring review and never
-    admits operational settings through it") and the prepared-batch cases in
-    `packages/kernel/tests/integration/direct-configuration.test.ts`.
+    `packages/tools/tests/integration/api.test.ts` ("requires the host mutation reviewer for protected configuration targets") and the prepared-batch cases in
+    `packages/kernel/tests/integration/file-tool-configuration.test.ts`.
 
 14. **`move`/`copy` refuse when either endpoint is a symlink**, checked before any stat or filesystem
     mutation; `replace` refuses the same way on a non-dry-run commit, through the shared
@@ -520,10 +523,11 @@ lock-ordering deadlock between them.
     Test: `packages/tools/tests/integration/move.test.ts`,
     `packages/tools/tests/integration/copy.test.ts`.
 
-16. **`copy` preserves the source's permission mode (low 9 bits) on the copy**, and is binary-safe
-    (byte-identical).
-    Production: `packages/tools/src/tools/copy.ts` (`chmod(tmp, srcStat.mode & 0o777)`).
-    Test: `packages/tools/tests/integration/copy.test.ts` (binary-safe) (mode preserved, `skipIf(!modeBitsEnforced)`).
+16. **An ordinary `copy` preserves the source's permission mode (low 9 bits)** and is binary-safe
+    (byte-identical). A reviewed configuration destination uses the shared private modes.
+    Production: `copy` in `packages/tools/src/tools/copy.ts` and `commitWithRollback` in
+    `packages/tools/src/lib/atomic.ts`. Test: `packages/tools/tests/integration/copy.test.ts`
+    (binary-safe, direct source mode and reviewed private mode, each under its platform mode probe).
 
 17. **`mkdir` is idempotent**: creating an already-existing directory succeeds and reports so, rather
     than erroring.

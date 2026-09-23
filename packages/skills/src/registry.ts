@@ -89,6 +89,11 @@ function fallbackSkillName(dir: string): string {
   return sanitized.length > 0 ? sanitized : FALLBACK_SKILL_NAME;
 }
 
+/** A skill beneath a `.system` directory is model-readable but never user-invocable. */
+function internalSkillDirectory(dir: string): boolean {
+  return path.resolve(dir).split(path.sep).includes(".system");
+}
+
 /**
  * Read the short description a manifest carries in its nested `metadata` bucket.
  *
@@ -515,7 +520,7 @@ function buildResolvedSkill(
     description,
     metadata: { ...frontmatter, description },
     ...(rawTools === undefined ? {} : { allowedTools }),
-    userInvocable: frontmatter["user-invocable"] ?? true,
+    userInvocable: !internalSkillDirectory(dir) && (frontmatter["user-invocable"] ?? true),
     ...(sidecar?.catalogSuppressed === true ? { catalogSuppressed: true } : {}),
     ...(sidecar?.dependencies === undefined ? {} : { dependencies: sidecar.dependencies }),
     ...(presentation === undefined ? {} : { presentation }),

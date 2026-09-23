@@ -161,7 +161,7 @@ export async function runEffectReviewCanary(options: {
                   surface: "operational",
                   canonical_path: ".clarvis/settings.json",
                 },
-                "configure_clarvis",
+                "configuration_file",
               )
               .then((value) => {
                 receipt = value;

@@ -1,5 +1,5 @@
 import { ToolError } from "../errors.ts";
-import { resolvePath } from "../lib/paths.ts";
+import { resolveFileToolPath } from "../lib/paths.ts";
 import { applyEdit, editFileLocked, type EditSpec } from "./edit-file.ts";
 import type { ToolDef } from "./types.ts";
 
@@ -66,13 +66,7 @@ export const multiEdit: ToolDef = {
     required: ["path", "edits"],
   },
   async handler(args, config) {
-    const target = resolvePath(
-      args.path as string,
-      config.workspaceRoot,
-      config.confineToWorkspace,
-      config.temporaryRoots,
-      config.logger,
-    );
+    const target = resolveFileToolPath(args.path as string, config);
     const edits = args.edits as EditSpec[];
     let fuzzyCount = 0;
 

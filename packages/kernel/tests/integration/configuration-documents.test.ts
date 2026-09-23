@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { contentToText, loadEnv, NOOP_LOGGER } from "@clarvis/capability";
-import { buildExecuteRunDeps, type AgentProfile } from "@clarvis/loop";
+import { executeRun, type AgentProfile } from "@clarvis/loop";
 import { parseSharedPromptDocument } from "@clarvis/loop/host";
 import { MockLLM } from "@clarvis/loop/testing";
 import { configurationRoots, globalPaths, type ConfigurationRoot } from "@clarvis/paths";
@@ -13,17 +13,15 @@ import { resolveWorkflowDefinitions } from "@clarvis/workflows";
 import { createAgentWorkflowPolicy } from "../../src/application/workflow-policy.ts";
 import { createFileConfigStore } from "../../src/config/file-config-store.ts";
 import {
-  configurationFileOperation,
-  type ConfigurationFileRequest,
+  prepareConfigurationFileMutation,
+  readConfigurationDocument,
+  type ConfigurationMutationRequest,
 } from "../../src/configuration/files.ts";
-import { createDirectConfigurationCapability } from "../../src/configuration/direct-configuration.ts";
 import { createExtensionProfileManager } from "../../src/extension-profiles/extension-profile-manager.ts";
-import { createInProcessKernel } from "../../src/kernel.ts";
+import { createFileKernel } from "../../src/bootstrap.ts";
 import { createPluginContributions } from "../../src/plugins/plugin-contributions.ts";
 import { createSettingsRunAssembler } from "../../src/runs/settings-assembler.ts";
-import { withBuiltinSkills } from "../../src/skills/builtin-skills.ts";
-import { CONFIGURATION_EXAMPLES as EXAMPLES } from "../../src/skills/configuration-examples.ts";
-import { kernelIdentity } from "../helpers/kernel-identity.ts";
+import { CONFIGURATION_FIXTURES as EXAMPLES } from "../fixtures/configuration-documents.ts";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -37,7 +35,8 @@ function fixture() {
   const globalDir = join(home, "global");
   mkdirSync(workspaceRoot);
   const roots = configurationRoots({ home, workspaceRoot, globalDir });
-  const call = (request: ConfigurationFileRequest) => configurationFileOperation(roots, request);
+  const call = (request: ConfigurationMutationRequest) =>
+    prepareConfigurationFileMutation(roots, request).commit();
   const write = (name: keyof typeof EXAMPLES, root: ConfigurationRoot = "global_clarvis") =>
     call({
       operation: "write",
@@ -62,7 +61,7 @@ function fixture() {
   return { home, workspaceRoot, globalDir, roots, call, write, store, manager };
 }
 
-describe("configuration guide against product loaders", () => {
+describe("configuration documents against product loaders", () => {
   it.each(["model", "extensions", "mcp", "hooks", "capabilities", "runtime"] as const)(
     "%s: saves the documented settings through the native file tool and reads the effective block",
     (name) => {
@@ -145,13 +144,13 @@ describe("configuration guide against product loaders", () => {
       id: "global:review",
       status: "ready",
     });
-    const skills = withBuiltinSkills(createAgentSkills({ roots: connected.skillRoots() }));
+    const skills = createAgentSkills({ roots: connected.skillRoots() });
     expect(
       skills
         .listSkills()
         .map((skill) => skill.name)
         .sort(),
-    ).toEqual(["clarvis-configure", "review-project"]);
+    ).toEqual(["review-project"]);
     expect(skills.loadSkill("review-project")?.metadata.agent).toBe("admiral");
     expect(
       createAgentWorkflowPolicy(f.store, skills).isManagerRun({
@@ -212,9 +211,7 @@ describe("configuration guide against product loaders", () => {
     f.write("workflowBrief", "workspace_clarvis");
     f.write("workflow", "workspace_clarvis");
     const path = EXAMPLES.workflowBrief.path;
-    const revision = (
-      f.call({ operation: "read", root: "workspace_clarvis", path }) as { revision: string }
-    ).revision;
+    const revision = readConfigurationDocument(f.roots, "workspace_clarvis", path)!.revision;
     f.call({
       operation: "edit",
       root: "workspace_clarvis",
@@ -231,9 +228,7 @@ describe("configuration guide against product loaders", () => {
         (workflow) => workflow.name === "review-project",
       )?.rounds[0]?.brief,
     ).toStartWith("Workspace review");
-    const updated = f.call({ operation: "read", root: "workspace_clarvis", path }) as {
-      revision: string;
-    };
+    const updated = readConfigurationDocument(f.roots, "workspace_clarvis", path)!;
     f.call({
       operation: "delete",
       root: "workspace_clarvis",
@@ -253,9 +248,9 @@ describe("configuration guide against product loaders", () => {
       script: [],
       routes: [
         {
-          name: "configure",
+          name: "author",
           when: (call) =>
-            call.tools.some((tool) => tool.wireName === "configure_clarvis") &&
+            call.tools.some((tool) => tool.wireName === "write_file") &&
             call.messages.some((message) =>
               contentToText(message.content).includes("Author the review-project"),
             ),
@@ -263,13 +258,10 @@ describe("configuration guide against product loaders", () => {
             ...(["workflowBrief", "workflow"] as const).map((name) => ({
               toolCalls: [
                 {
-                  name: "configure_clarvis",
+                  name: "write_file",
                   arguments: {
-                    operation: "write",
-                    root: "global_clarvis",
-                    path: EXAMPLES[name].path,
+                    path: join(f.roots.global_clarvis, EXAMPLES[name].path),
                     content: EXAMPLES[name].content,
-                    expected_revision: null,
                   },
                 },
               ],
@@ -316,37 +308,20 @@ describe("configuration guide against product loaders", () => {
         },
       ],
     });
-    const built = await buildExecuteRunDeps({
+    const kernel = await createFileKernel({
       workspaceRoot: f.workspaceRoot,
-      traceDir: join(f.home, "traces"),
+      globalDir: f.globalDir,
+      configurationHome: f.home,
+      logger: NOOP_LOGGER,
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
-      logger: NOOP_LOGGER,
-      builtins: { tools: false, hooks: false },
-      skillRoots: [],
-      composeSkills: withBuiltinSkills,
-    });
-    const deps = {
-      ...built.deps,
-      llm,
-      capabilities: [
-        ...(built.deps.capabilities ?? []),
-        createDirectConfigurationCapability({ roots: f.roots, store: f.store, enabled: true }),
-      ],
-    };
-    const kernel = createInProcessKernel({
-      workspaceRoot: f.workspaceRoot,
-      globalConfigDir: f.globalDir,
-      ...kernelIdentity(f.workspaceRoot),
-      configStore: f.store,
-      deps,
-      skillsProvider: built.skills,
-      logger: NOOP_LOGGER,
-      assemblerOptions: { defaultAgent: "marshall" },
+      subscriptions: false,
+      builtins: { hooks: false, tasks: false },
+      executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm } }),
     });
     try {
       const configure = await kernel.runs.start({
+        agent: "coder",
         messages: [{ role: "user", content: "Author the review-project workflow and its brief" }],
-        skill: { name: "clarvis-configure", task: "Author review-project" },
         guard_mode: "on",
       });
       let configurationReviews = 0;
@@ -394,7 +369,6 @@ describe("configuration guide against product loaders", () => {
       expect(configurationReviews).toBe(2);
     } finally {
       await kernel.close();
-      await built.dispose();
     }
   });
 });

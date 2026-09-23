@@ -1,6 +1,6 @@
 import { createTwoFilesPatch } from "diff";
-import { readFileOptions } from "../lib/files.ts";
-import { resolvePath, displayPath } from "../lib/paths.ts";
+import { readFileOptionsForPath } from "../lib/files.ts";
+import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { readTextFile } from "../lib/textfile.ts";
 import type { ToolDef } from "./types.ts";
 import { ToolError } from "../errors.ts";
@@ -44,24 +44,24 @@ export const diffTool: ToolDef = {
   async handler(args, config) {
     const fromRel = args.from as string;
     const toRel = args.to as string;
-    const fromTarget = resolvePath(
-      fromRel,
-      config.workspaceRoot,
-      config.confineToWorkspace,
-      config.temporaryRoots,
-      config.logger,
-    );
-    const toTarget = resolvePath(
-      toRel,
-      config.workspaceRoot,
-      config.confineToWorkspace,
-      config.temporaryRoots,
-      config.logger,
-    );
-    const options = readFileOptions(config);
-    const fromContent = (await readTextFile(fromTarget, fromRel, config.maxFileBytes, options))
-      .content;
-    const toContent = (await readTextFile(toTarget, toRel, config.maxFileBytes, options)).content;
+    const fromTarget = resolveFileToolPath(fromRel, config);
+    const toTarget = resolveFileToolPath(toRel, config);
+    const fromContent = (
+      await readTextFile(
+        fromTarget,
+        fromRel,
+        config.maxFileBytes,
+        readFileOptionsForPath(config, fromTarget),
+      )
+    ).content;
+    const toContent = (
+      await readTextFile(
+        toTarget,
+        toRel,
+        config.maxFileBytes,
+        readFileOptionsForPath(config, toTarget),
+      )
+    ).content;
 
     if (fromContent === toContent) return "(no differences)";
 

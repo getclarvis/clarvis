@@ -737,18 +737,14 @@ describe("settings run assembler — skill runs", () => {
     expect(() => validateBody(body, ENV())).not.toThrow();
   });
 
-  it("does not expand $clarvis-configure, $PATH, or an unknown name", async () => {
-    const assemble = await assembleWithSkills([
-      skill({ name: "clarvis-configure", metadata: {}, body: "GUIDE" }),
-    ]);
+  it("does not expand $PATH or an unknown skill name", async () => {
+    const assemble = await assembleWithSkills([]);
     const body = assemble({
       agent: "coder",
-      messages: [{ role: "user", content: "$clarvis-configure and $PATH and $nope" }],
+      messages: [{ role: "user", content: "$PATH and $nope" }],
       execution_id: "e",
     }) as RawBody;
-    expect(body.messages).toEqual([
-      { role: "user", content: "$clarvis-configure and $PATH and $nope" },
-    ]);
+    expect(body.messages).toEqual([{ role: "user", content: "$PATH and $nope" }]);
   });
 
   it("keeps a single seed when start already carries skill and the text repeats $name", async () => {

@@ -71,6 +71,10 @@ to a person. The host validates every allow. Do not output risk scores or a high
 compile_authority returns the smallest supported envelope and retains every exclusion. Preserve
 objective IDs while that outcome remains active; a changed outcome requires new IDs and current
 evidence and does not renew prior permissions. The host validates and installs your candidate.
+For each grant, copy its covering fact's complete constraints object exactly, including revision,
+byte count and diff digest; never omit, summarize or invent a constraint. Use that fact's target
+digest, a registered effect ID, current authority revision and attested evidence IDs. A missing
+constraint prevents coverage even when the operator authorized the outcome.
 The authoritative compile tool result supersedes the initial snapshot for the next iteration.
 Only decide_effects may follow compile; cite the exact revision and transition_token returned by
 the host. Cite one covering grant per fact in order. An already installed host transition allows

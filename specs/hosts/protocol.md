@@ -651,9 +651,9 @@ in parallel. Production: `RunEvent` in `packages/protocol/src/runs.ts`. Test:
 
 Configuration uses ordinary run parameters and tool events. The host owns authority bindings;
 clients do not supply a configuration consent nonce. Production: `StartRunParams` in
-[runs.ts](../../packages/protocol/src/runs.ts) and `createDirectConfigurationCapability` in
-[direct-configuration.ts](../../packages/kernel/src/configuration/direct-configuration.ts).
-Test: [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts)
+[runs.ts](../../packages/protocol/src/runs.ts) and `createAuthoringMutationReview` in
+[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts).
+Test: [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts)
 and [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
 See [self-configuration.md](self-configuration.md).
 

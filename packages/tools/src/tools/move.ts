@@ -1,9 +1,14 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fsyncDir, renameWithRetry } from "@clarvis/paths";
+import {
+  isReviewedConfigurationPath,
+  reviewedConfigurationModes,
+} from "../guard/authoring-path.ts";
 import { ToolError, fsError } from "../errors.ts";
-import { resolvePath, displayPath } from "../lib/paths.ts";
-import { withFileLocks, assertNotSymlink } from "../lib/atomic.ts";
+import { readFileOptionsForPath, readRawFile } from "../lib/files.ts";
+import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
+import { applyOpsAtomic, withFileLocks, assertNotSymlink } from "../lib/atomic.ts";
 import type { ToolDef } from "./types.ts";
 
 /**
@@ -20,6 +25,8 @@ import type { ToolDef } from "./types.ts";
  * atomic), and both source and destination directories are fsynced. Passing the
  * same path for source and destination fails with `invalid_input`. The handler
  * returns a human-readable summary noting when an existing file was overwritten.
+ * Reviewed configuration endpoints use the shared rollback transaction; a
+ * configuration destination is staged with private file and directory modes.
  */
 export const move: ToolDef = {
   atomicMutation: true,
@@ -53,20 +60,8 @@ export const move: ToolDef = {
     const srcRel = args.source as string;
     const dstRel = args.destination as string;
     const overwrite = args.overwrite as boolean;
-    const absSrc = resolvePath(
-      srcRel,
-      config.workspaceRoot,
-      config.confineToWorkspace,
-      config.temporaryRoots,
-      config.logger,
-    );
-    const absDst = resolvePath(
-      dstRel,
-      config.workspaceRoot,
-      config.confineToWorkspace,
-      config.temporaryRoots,
-      config.logger,
-    );
+    const absSrc = resolveFileToolPath(srcRel, config);
+    const absDst = resolveFileToolPath(dstRel, config);
 
     if (absSrc === absDst) {
       throw new ToolError("invalid_input", `Source and destination are the same: ${srcRel}`, {
@@ -122,7 +117,37 @@ export const move: ToolDef = {
         await fsyncDir(path.dirname(absSrc));
         await fsyncDir(path.dirname(absDst));
       };
-      if (config.reviewMutation !== undefined)
+      const protectedSource =
+        config.reviewMutation !== undefined &&
+        isReviewedConfigurationPath(absSrc, config.workspaceRoot, config.configurationRoots);
+      const modes = reviewedConfigurationModes(absDst, config);
+      if ((protectedSource || modes !== undefined) && config.reviewMutation !== undefined) {
+        const captured =
+          modes === undefined
+            ? undefined
+            : await readRawFile(
+                absSrc,
+                srcRel,
+                config.maxFileBytes,
+                undefined,
+                readFileOptionsForPath(config, absSrc),
+              );
+        if (captured !== undefined && !Buffer.from(captured.toString("utf8")).equals(captured))
+          throw new ToolError("invalid_input", "Configuration move requires UTF-8 text.");
+        await applyOpsAtomic(
+          [
+            {
+              type: "rename",
+              path: absDst,
+              from: absSrc,
+              overwrite,
+              ...(captured === undefined ? {} : { content: captured.toString("utf8") }),
+              ...modes,
+            },
+          ],
+          config.reviewMutation,
+        );
+      } else if (config.reviewMutation !== undefined)
         await config.reviewMutation([{ type: "rename", path: absDst, from: absSrc }], commit);
       else await commit();
 

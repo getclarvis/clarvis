@@ -3,12 +3,13 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { ToolError, fsError } from "../errors.ts";
 import { isBinary } from "../lib/binary.ts";
-import { listFiles, readFileOptions, readRawFile, type FileListing } from "../lib/files.ts";
+import { listFiles, readFileOptionsForPath, readRawFile, type FileListing } from "../lib/files.ts";
 import { decodeText, splitLines, type DecodedText } from "../lib/text.ts";
 import { readTextBuffer } from "../lib/textfile.ts";
 import { createScanBudget } from "../lib/scan-budget.ts";
 import type { RuntimeConfig } from "../config.ts";
-import { resolveCommand } from "@clarvis/paths";
+import { configurationTarget, resolveCommand } from "@clarvis/paths";
+import { isAdmittedFileToolSearchPath, resolveFileToolPath } from "./paths.ts";
 
 /** A single grep request over a file or directory tree. */
 export interface GrepParams {
@@ -150,7 +151,7 @@ export async function grepSearch(params: GrepParams, config: RuntimeConfig): Pro
         params.searchRoot,
         config.maxFileBytes,
         undefined,
-        readFileOptions(config),
+        readFileOptionsForPath(config, params.searchRoot),
       );
       if (isBinary(singleFile)) {
         return { matches: [], truncated: false, budgetExhausted: false, walkCapped: false };
@@ -161,7 +162,9 @@ export async function grepSearch(params: GrepParams, config: RuntimeConfig): Pro
     }
   }
 
-  const useRipgrep = config.ripgrepAvailable && (!isDir || !config.confineToWorkspace);
+  const useRipgrep =
+    config.ripgrepAvailable &&
+    (!isDir || (!config.confineToWorkspace && config.configurationRoots === undefined));
   config.logger.debug(
     {
       event: "tools.grep_path",
@@ -372,7 +375,6 @@ async function inProcessSearch(
   const matches: Match[] = [];
   const budget = config.maxOutputBytes;
   const scanBudget = createScanBudget(config.regexScanBudgetMs);
-  const readOptions = readFileOptions(config);
   let used = 0;
   let truncated = false;
   let budgetExhausted = false;
@@ -387,7 +389,7 @@ async function inProcessSearch(
     const decoded =
       singleFile !== undefined && !isDir
         ? singleFile
-        : await readTextBuffer(file, config.maxFileBytes, readOptions);
+        : await readTextBuffer(file, config.maxFileBytes, readFileOptionsForPath(config, file));
     if (!decoded) continue;
 
     const lines = splitLines(decoded.content);
@@ -532,6 +534,7 @@ function emitMultiline(
 }
 
 async function gatherFiles(params: GrepParams, config: RuntimeConfig): Promise<FileListing> {
+  resolveFileToolPath(params.searchRoot, config);
   const pattern = params.glob
     ? params.glob.includes("/")
       ? params.glob
@@ -539,8 +542,13 @@ async function gatherFiles(params: GrepParams, config: RuntimeConfig): Promise<F
     : "**/*";
   const listing = await listFiles(params.searchRoot, config.workspaceRoot, {
     pattern,
-    respectGitignore: true,
+    respectGitignore:
+      config.configurationRoots === undefined ||
+      configurationTarget(config.configurationRoots, params.searchRoot)?.root.startsWith(
+        "global_",
+      ) !== true,
     maxEntries: config.maxTraversalEntries,
+    admit: (candidate) => isAdmittedFileToolSearchPath(candidate, config),
   });
   listing.files.sort();
   return listing;

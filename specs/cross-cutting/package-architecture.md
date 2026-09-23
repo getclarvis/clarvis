@@ -45,7 +45,7 @@ additional direct application-owned edges
 This is deliberately not `code/server -> kernel -> every symbol`. The kernel is the local host
 implementation and composition root, not a generic barrel. Clients and the implementation both
 depend on the transport-neutral protocol; applications may also depend directly on a foundation
-when they own the corresponding concern. The kernel publishes six owned entrypoints today
+when they own the corresponding concern. The kernel publishes seven owned entrypoints today
 (`packages/kernel/package.json`, `exports`), and its architecture test prevents the root from
 becoming a barrel for lower packages
 (`packages/kernel/tests/architecture/public-surface.test.ts`, `kernel public surface`).
@@ -307,7 +307,7 @@ Production: `tooling/lib/package-architecture.ts` (`APPLICATION_FOUNDATIONS` and
 Test: `packages/server/tests/architecture/dependency-boundary.test.ts`
 (`server dependency boundary`).
 
-**INV-PA7. Kernel exposes only its six owned entrypoints and its root is not a generic re-export
+**INV-PA7. Kernel exposes only its seven owned entrypoints and its root is not a generic re-export
 barrel for lower packages. Protocol remains dependency-free.**
 
 Production: `packages/kernel/package.json` (`exports`); `packages/kernel/src/index.ts`;

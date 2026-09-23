@@ -29,7 +29,7 @@ export type JudgeExecutionServices = Pick<
 
 export interface JudgeCallObservation {
   path: "call_local" | "effect_review";
-  consumer: "command_guard" | "configure_clarvis";
+  consumer: "command_guard" | "configuration_file";
   effectId?: string;
 }
 

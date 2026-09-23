@@ -14,7 +14,11 @@ import {
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { releaseRuntimeExecutableName, type ReleaseTarget } from "../update-contract.ts";
-import { parseReleaseManifest, verifyReleaseTree } from "./release-manifest.ts";
+import {
+  parseReleaseManifest,
+  releaseRequiresClarvisDocs,
+  verifyReleaseTree,
+} from "./release-manifest.ts";
 
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_VERSION_OUTPUT_BYTES = 8 * 1024;
@@ -131,7 +135,16 @@ async function boundedOutput(stream: ReadableStream<Uint8Array> | null): Promise
 }
 
 function candidateEnvironment(installRoot: string): Record<string, string> {
-  const names = ["HOME", "USERPROFILE", "SYSTEMROOT", "PATH", "PATHEXT", "TEMP", "TMP"];
+  const names = [
+    "HOME",
+    "USERPROFILE",
+    "SYSTEMROOT",
+    "PATH",
+    "PATHEXT",
+    "TEMP",
+    "TMP",
+    "CLARVIS_HOME",
+  ];
   const environment: Record<string, string> = { CLARVIS_INSTALL_ROOT: installRoot };
   for (const name of names) {
     const value = process.env[name];
@@ -188,6 +201,55 @@ async function durableCurrent(root: string, tagName: string): Promise<void> {
   }
 }
 
+async function publishStagedSystemDocs(
+  installation: ManagedInstallation,
+  destination: string,
+  version: string,
+  target: ReleaseTarget,
+): Promise<void> {
+  const targetHelper = join(destination, "runtime", "system-docs.js");
+  const available = (await stat(targetHelper).catch(() => undefined))?.isFile() === true;
+  const helperRoot = available ? destination : join(installation.versions, installation.currentTag);
+  const helper = join(helperRoot, "runtime", "system-docs.js");
+  if ((await stat(helper).catch(() => undefined))?.isFile() !== true) {
+    if (
+      !releaseRequiresClarvisDocs(version) &&
+      !releaseRequiresClarvisDocs(installation.currentTag.slice(1))
+    )
+      return;
+    throw new Error("system documentation publisher is unavailable for this update");
+  }
+  const child = Bun.spawn(
+    [
+      runtimePath(helperRoot),
+      helper,
+      "--release-root",
+      destination,
+      "--version",
+      version,
+      "--target",
+      target,
+    ],
+    {
+      cwd: destination,
+      env: candidateEnvironment(installation.root),
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  const [stdout, stderr, exitCode] = await Promise.all([
+    boundedOutput(child.stdout),
+    boundedOutput(child.stderr),
+    child.exited,
+  ]);
+  if (exitCode !== 0 || !/^(?:published|unchanged|retired)\n$/.test(stdout) || stderr !== "") {
+    throw new Error(
+      `system documentation publication failed: ${stderr.trim() || String(exitCode)}`,
+    );
+  }
+}
+
 /** Promote a verified payload beside older versions, then atomically activate it last. */
 export async function activateStagedRelease(
   installation: ManagedInstallation,
@@ -209,6 +271,7 @@ export async function activateStagedRelease(
       installRoot: installation.root,
     });
   }
+  await publishStagedSystemDocs(installation, destination, version, target);
   await durableCurrent(installation.root, tagName);
 }
 

@@ -113,9 +113,8 @@ confirmed queued revision advancement, uncertainty without replay and canonical 
 
 Configuration requests use ordinary conversation submission, continuation and resume. The host
 owns authority independently of the transcript; Code supplies no configuration consent nonce.
-`configure_clarvis` operations use the ordinary tool publication path in live and stored views.
-Code derives the row label and scoped authored path from the safe operation/root/path projection;
-configuration content and CAS/edit material do not cross that presentation boundary.
+Reviewed file-tool operations use the ordinary tool publication path in live and stored views.
+Code shows the normal file-tool label and path while keeping mutation payloads out of the row header.
 Production: `createRunHost` in [run-host.ts](../../packages/code/src/run-host.ts),
 `toStartParams` in [kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts).
 Test: [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).

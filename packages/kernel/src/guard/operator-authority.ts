@@ -11,6 +11,7 @@ import {
   sanitizeText,
   type AuthorityEnvelopeV1,
   type OperatorAuthorityBinding,
+  type OperatorConfigurationSessionGrant,
   type OperatorAuthorityReader,
   type OperatorAuthoritySeed,
   type OperatorAuthorityState,
@@ -131,6 +132,62 @@ const compilers = new WeakMap<
 >();
 
 const refusals = new WeakMap<OperatorAuthorityReader, (revision: number, key: string) => boolean>();
+const configurationGrants = new WeakMap<
+  OperatorAuthorityReader,
+  OperatorConfigurationSessionGrant[]
+>();
+
+/** Keep human session consent volatile and bound to one authority reader. */
+export function grantConfigurationSession(
+  reader: OperatorAuthorityReader,
+  grant: OperatorConfigurationSessionGrant,
+): boolean {
+  const state = reader.snapshot();
+  if (
+    state.status !== "active" ||
+    state.revision !== grant.authority_revision ||
+    !sameBinding(state.binding, grant.binding) ||
+    !/^[a-f0-9]{64}$/.test(grant.environment_digest) ||
+    grant.effects.length === 0 ||
+    grant.effects.length > 128
+  )
+    return false;
+  const existing = configurationGrants.get(reader) ?? [];
+  if (existing.length >= 32) return false;
+  configurationGrants.set(reader, [...existing, structuredClone(grant)]);
+  return true;
+}
+
+/** A later batch is covered only by one complete grant under the unchanged binding. */
+export function configurationSessionCovers(
+  reader: OperatorAuthorityReader,
+  requested: OperatorConfigurationSessionGrant,
+): boolean {
+  const state = reader.snapshot();
+  if (
+    state.status !== "active" ||
+    state.revision !== requested.authority_revision ||
+    !sameBinding(state.binding, requested.binding)
+  )
+    return false;
+  return (configurationGrants.get(reader) ?? []).some(
+    (grant) =>
+      grant.authority_revision === state.revision &&
+      grant.environment_digest === requested.environment_digest &&
+      sameBinding(grant.binding, state.binding) &&
+      requested.effects.every((effect) =>
+        grant.effects.some(
+          (accepted) =>
+            accepted.root === effect.root &&
+            accepted.path === effect.path &&
+            accepted.effect_id === effect.effect_id &&
+            accepted.effect_class === effect.effect_class &&
+            accepted.operation === effect.operation &&
+            accepted.field_class === effect.field_class,
+        ),
+      ),
+  );
+}
 
 /** Retain an exact host-reviewed refusal under the current evidence revision. */
 export function denyAuthorityEffect(
@@ -195,8 +252,10 @@ export function createOperatorAuthorityRuntime(input: {
       ? {}
       : { ceiling: seed.ceiling, parent_run_id: seed.parent_run_id }),
   };
+  const readerRef: { current?: OperatorAuthorityReader } = {};
   const revoke = (): void => {
     if (state.status === "revoked") return;
+    if (readerRef.current !== undefined) configurationGrants.delete(readerRef.current);
     state = { ...state, status: "revoked", revision: state.revision + 1 };
     delete state.envelope;
     delete state.envelope_context_revision;
@@ -220,6 +279,7 @@ export function createOperatorAuthorityRuntime(input: {
       denied_effects: [],
       evidence: next.data.map((entry) => ({ ...entry, text: sanitizeText(entry.text) })),
     };
+    if (readerRef.current !== undefined) configurationGrants.delete(readerRef.current);
   };
   const prior = input.prior;
   if (
@@ -282,6 +342,7 @@ export function createOperatorAuthorityRuntime(input: {
       return structuredClone(state);
     },
   });
+  readerRef.current = reader;
   compilers.set(reader, (envelope, contextRevision) => {
     if (!compiledContextRevisionSchema.safeParse(contextRevision).success) return false;
     if (reader.snapshot().status !== "active" || envelope.revision !== state.revision) return false;
@@ -359,6 +420,7 @@ export function createOperatorAuthorityRuntime(input: {
       input.signal?.removeEventListener("abort", revoke);
       if (outcome.status !== "completed") revoke();
       else if (outcome.disposition !== "checkpoint" && state.status === "active") {
+        configurationGrants.delete(reader);
         state = { ...state, status: "settled", revision: state.revision + 1 };
         delete state.envelope;
         delete state.envelope_context_revision;

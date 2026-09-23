@@ -24,6 +24,15 @@ or filesystem convention is never substituted. (`defaultStandaloneSelection` and
 branches in `resolved`, `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; exact inventory
 cases in `packages/kernel/tests/integration/extension-profile-manager.test.ts`.)
 
+The reserved product skill `clarvis-docs` is outside Extension Profile selection. `standaloneCatalog`
+excludes `.system` directories and that reserved name from inventory, and `pinnedSkillRoots` cannot
+offer them as selected standalone roots. The host provides the verified system skill separately to
+the loop; ordinary user and plugin definitions cannot replace its identity. Production:
+`standaloneCatalog` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts` and
+`buildRunDeps` in `packages/loop/src/runtime/build-run-deps.ts`. Test:
+`packages/kernel/tests/integration/extension-profile-manager.test.ts` and
+`packages/kernel/tests/integration/configuration-surface.test.ts`.
+
 The kernel owns discovery, resolution, trust, and snapshot identity. `@clarvis/skills` receives only
 resolved roots and exact `include` lists, while the loop sees roots plus opaque host metadata rather
 than an Extension Profile domain object. (`skillRoots` in
@@ -225,22 +234,17 @@ standalone or plugin skills empty of scanned extensions (`emptySkillsProvider` a
 `packages/loop/src/runtime/build-run-deps.ts`; test
 `packages/loop/tests/integration/execute-run-entrypoints.test.ts`).
 
-The file kernel subsequently composes product-owned builtin guidance, including `clarvis-configure`,
-through `withBuiltinSkills`. It is independent of Extension Profile selection and remains available
-with an empty custom profile while skills are enabled. Production:
-[builtin-skills.ts](../../packages/kernel/src/skills/builtin-skills.ts). Test:
-[builtin-skills.test.ts](../../packages/kernel/tests/integration/builtin-skills.test.ts).
-[Direct configuration](self-configuration.md) uses the ordinary run lease. Authoring changes queue
+Reviewed configuration file tools use the ordinary run lease. Authoring changes queue
 an idle catalog refresh; the active run retains its bounded execution snapshot.
-The shipped guide demonstrates exact plugin versus standalone skill scopes with a nonempty
-definition. File authoring does not select that definition: activation still uses the
+The configuration document fixture demonstrates exact plugin versus standalone skill scopes with a
+nonempty definition. File authoring does not select that definition: activation still uses the
 preview-bound service and a new kernel snapshot. Workflow definitions themselves are independent
 of this selection; a standalone workflow launcher follows the normal skill allow-list.
-Production: `CONFIGURATION_EXAMPLES` in
-[configuration-examples.ts](../../packages/kernel/src/skills/configuration-examples.ts).
+Production: `prepareSkillInclusion` in
+[extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts).
 Test: `authors a nonempty Extension Profile, previews selection, and activates the launcher on
 reconnect` in
-[configuration-guidance.test.ts](../../packages/kernel/tests/integration/configuration-guidance.test.ts).
+[configuration-documents.test.ts](../../packages/kernel/tests/integration/configuration-documents.test.ts).
 
 ### 4.2 Status and snapshot
 
@@ -460,7 +464,7 @@ exclusions are preserved. The file and membership share one review; a conflict p
 write. The saved selection is effective in the next idle generation and survives reopening.
 Production: `prepareSkillInclusion` and `flushSkillRefresh` in
 [extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts).
-Test: [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts).
+Test: [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts).
 
 - **Production:** `PluginContributions.pin`, `pinnedSkillRoots`,
   `PLUGIN_SKILL_RESOURCE_LIMITS`, `skillSurface`, `hashBoundedFile`, `snapshotPluginExecutables`,

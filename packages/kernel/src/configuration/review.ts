@@ -1,4 +1,5 @@
 import { JUDGE_DEFAULTS, judgeRequestConfig } from "@clarvis/judge/settings";
+import { createHash } from "node:crypto";
 import {
   OPERATOR_AUTHORITY_PORT,
   PLANS_REVIEW_CONTEXT_PORT,
@@ -6,6 +7,7 @@ import {
   sanitizeDeep,
   sanitizeText,
   type Logger,
+  type OperatorConfigurationSessionGrant,
   type RunCapabilityContext,
 } from "@clarvis/capability";
 import type { ConfigStore } from "../config/config-store.ts";
@@ -17,6 +19,10 @@ import {
 } from "../guard/effects/configuration.ts";
 import { createGuardEffectRegistry } from "../guard/effects/registry.ts";
 import { resolveGuardMode } from "../guard/resolver.ts";
+import {
+  configurationSessionCovers,
+  grantConfigurationSession,
+} from "../guard/operator-authority.ts";
 
 type ConfigurationAnswer = Awaited<ReturnType<NonNullable<RunCapabilityContext["elicit"]>>>;
 const pendingQuestionsPort = portKey<Map<string, Promise<ConfigurationAnswer>>>(
@@ -53,12 +59,51 @@ export function createConfigurationReview(
     mutations: readonly ConfigurationMutationFacts[],
     context: unknown,
     prompt: string,
-  ): Promise<void> => {
+  ): Promise<(() => void) | undefined> => {
     ctx.signal?.throwIfAborted();
     const state = authority?.snapshot();
-    if (state?.status === "revoked") throw new Error("Configuration authority was revoked.");
-    const facts = mutations.map((mutation) => attestConfiguration(mutation, registry));
-    for (const fact of facts) reviewer.attest(fact, "configure_clarvis");
+    if (state !== undefined && state.status !== "active")
+      throw new Error("Configuration authority is no longer active.");
+    const attested = mutations.map((mutation) => ({
+      mutation,
+      fact: attestConfiguration(mutation, registry),
+    }));
+    const facts = attested.map(({ fact }) => fact);
+    const environmentDigest = createHash("sha256")
+      .update(
+        JSON.stringify({
+          workspace: ctx.workspaceRoot,
+          ceiling: ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT,
+          confined: ctx.env.CLARVIS_AGENT_TOOLS_CONFINE,
+          backend: settings.runtime?.backend,
+          sandbox: settings.sandbox,
+          mode,
+        }),
+      )
+      .digest("hex");
+    const grant: OperatorConfigurationSessionGrant | undefined =
+      state?.status === "active"
+        ? {
+            binding: state.binding,
+            authority_revision: state.revision,
+            environment_digest: environmentDigest,
+            effects: attested.map(({ fact, mutation }) => ({
+              root: mutation.root,
+              path: mutation.canonicalPath,
+              effect_id: fact.id,
+              effect_class: fact.class,
+              operation: mutation.operation,
+              field_class: mutation.fieldClass,
+            })),
+          }
+        : undefined;
+    const canOfferSession =
+      grant !== undefined &&
+      facts.length > 0 &&
+      facts.length <= 16 &&
+      facts.every((fact) => fact.attestation === "complete") &&
+      grant.effects.reduce((length, effect) => length + effect.path.length, 0) <= 4096;
+    for (const fact of facts) reviewer.attest(fact, "configuration_file");
     const batch = {
       facts,
       reviewability: facts.some((fact) => fact.reviewability === "human_only")
@@ -73,10 +118,16 @@ export function createConfigurationReview(
       mode === "on"
         ? "Human review is selected."
         : "This effect requires human review under the current policy.";
-    let allowed = false;
+    let allowed =
+      canOfferSession &&
+      authority !== undefined &&
+      grant !== undefined &&
+      configurationSessionCovers(authority, grant);
+    let saveSessionGrant = false;
     let expectedRevision = state?.revision;
-    if (mode !== "on" && settings.effect_review?.rollout !== "shadow") {
-      const receipt = await reviewer.review(batch, sanitizeDeep(context), "configure_clarvis");
+    let reviewedBinding = state?.binding;
+    if (!allowed && mode !== "on" && settings.effect_review?.rollout !== "shadow") {
+      const receipt = await reviewer.review(batch, sanitizeDeep(context), "configuration_file");
       if (receipt.failure_kind !== undefined)
         throw new Error(
           `Configuration not changed: automatic review failed (${receipt.failure_kind}). This is a technical review failure, not missing operator authorization. Do not request authorization again to resolve it.`,
@@ -90,6 +141,14 @@ export function createConfigurationReview(
       )
         throw new Error("Configuration effect was denied by authority review.");
       expectedRevision = state === undefined ? undefined : receipt.revision;
+      if (authority !== undefined) {
+        const reviewedState = authority.snapshot();
+        if (reviewedState.status !== "active" || reviewedState.revision !== expectedRevision)
+          throw new Error(
+            "Configuration authority changed during review. Prepare the change again.",
+          );
+        reviewedBinding = reviewedState.binding;
+      }
       allowed = receipt.decision === "allow";
       if (!allowed)
         reviewReason = "Automatic review could not establish authorization for this effect.";
@@ -101,7 +160,10 @@ export function createConfigurationReview(
         ...(ctx.signal === undefined ? [] : [ctx.signal]),
         AbortSignal.timeout(ctx.request.elicit_wait_ms ?? ctx.env.CLARVIS_DEFAULT_ELICIT_WAIT_MS),
       ]);
-      const message = sanitizeText(`${reviewReason}\n\n${prompt}`);
+      const sessionScope = canOfferSession
+        ? `\n\nSession approval, if selected, covers only these operations and targets under the current authority:\n${grant.effects.map((effect) => `${effect.operation} ${effect.effect_id} ${effect.root} ${effect.path}`).join("\n")}`
+        : "";
+      const message = sanitizeText(`${reviewReason}\n\n${prompt}${sessionScope}`);
       const key = canonicalJudgeJson(
         JSON.parse(
           JSON.stringify({
@@ -109,7 +171,7 @@ export function createConfigurationReview(
             context: sanitizeDeep(context),
             message,
             revision: expectedRevision,
-            binding: state?.binding,
+            binding: reviewedBinding,
           }),
         ) as JudgeJson,
       );
@@ -126,7 +188,12 @@ export function createConfigurationReview(
             message,
             requestedSchema: {
               type: "object",
-              properties: { decision: { type: "string", enum: ["deny", "allow"] } },
+              properties: {
+                decision: {
+                  type: "string",
+                  enum: canOfferSession ? ["deny", "allow", "allow_session"] : ["deny", "allow"],
+                },
+              },
               required: ["decision"],
             },
           },
@@ -142,16 +209,44 @@ export function createConfigurationReview(
       }
       const answer = await operation;
       signal.throwIfAborted();
-      if (answer.action !== "accept" || answer.content?.decision !== "allow") {
+      const decision = answer.content?.decision;
+      if (
+        answer.action !== "accept" ||
+        (decision !== "allow" && !(canOfferSession && decision === "allow_session"))
+      ) {
         reviewer.refuse(batch, expectedRevision ?? 0);
         throw new Error("Configuration change was not approved.");
       }
+      saveSessionGrant = decision === "allow_session";
     }
     ctx.signal?.throwIfAborted();
     if (reviewer.wasRefused(batch))
       throw new Error("This exact configuration change was refused during review.");
     const current = authority?.snapshot();
-    if (current?.status === "revoked" || current?.revision !== expectedRevision)
+    if (
+      (current !== undefined && current.status !== "active") ||
+      current?.revision !== expectedRevision
+    )
       throw new Error("Configuration authority changed during review. Prepare the change again.");
+    if (
+      current !== undefined &&
+      reviewedBinding !== undefined &&
+      (current.binding.owner_key_name !== reviewedBinding.owner_key_name ||
+        current.binding.session_id !== reviewedBinding.session_id ||
+        current.binding.controller_epoch !== reviewedBinding.controller_epoch ||
+        current.binding.outcome_id !== reviewedBinding.outcome_id)
+    )
+      throw new Error(
+        "Configuration authority binding changed during review. Prepare the change again.",
+      );
+    if (saveSessionGrant && grant !== undefined && authority !== undefined)
+      return () => {
+        if (!ctx.signal?.aborted)
+          grantConfigurationSession(authority, {
+            ...grant,
+            binding: reviewedBinding ?? grant.binding,
+            authority_revision: expectedRevision ?? grant.authority_revision,
+          });
+      };
   };
 }

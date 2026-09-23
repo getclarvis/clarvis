@@ -343,8 +343,7 @@ each command's declared `args`).
 (`createSkillMentionProvider` in `packages/code/src/views/input/skill-completion.ts`), then argument
 hints. The `$` provider fuzzy-filters `Commands.entries()` whose `namespace` is `"skills"` — the same
 `LivePrompt` rows `skillCommand` registered — and inserts the bare name. Accepting a row uses
-`acceptMention` and does **not** submit; `$clarvis-configure` is listed but never converted into a
-configure run. Expansion of `$name` in an already-open turn is owned by the kernel assembler
+`acceptMention` and does **not** submit. Expansion of `$name` in an already-open turn is owned by the kernel assembler
 ([kernel-runs.md](kernel-runs.md) INV-R34b). Production: `providerList` in
 `packages/code/src/views/App.tsx`. Test: `packages/code/tests/unit/autocomplete.test.ts` and
 `packages/code/tests/integration/input-dock-submit.test.tsx`.
@@ -830,10 +829,12 @@ projected remaining time down to its expired state).
 
 Guard and configuration decision fields project the wire values in affirmative-first order without
 changing those values: `allow, deny` normally and `allow, allow_session, deny` when the session grant
-exists. Their labels remain `allow once`, `allow for this session` and `deny`. The parser assigns
+exists. The command label is `allow for this session`; configuration says `allow these targets for
+this session`. The other labels remain `allow once` and `deny`. The parser assigns
 `deny` as the display default when the schema does not provide one, so Enter on an untouched guard
 still fails closed even though deny is the second or third numbered option. Production:
-`packages/code/src/adapters/elicitation.ts` (`parseElicitForm`, `GUARD_DECISION_LABELS`). Tests:
+`packages/code/src/adapters/elicitation.ts` (`parseElicitForm`, `GUARD_DECISION_LABELS`,
+`CONFIGURATION_DECISION_LABELS`). Tests:
 `packages/code/tests/unit/elicitation.test.ts` (projection order and safe default) and
 `packages/code/tests/integration/elicit-block-render.test.tsx` (number labels and submitted wire
 values).

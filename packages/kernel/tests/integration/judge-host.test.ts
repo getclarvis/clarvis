@@ -231,14 +231,14 @@ test.each([
                         };
                         const concurrent = await Promise.all(
                           Array.from({ length: 8 }, () =>
-                            review.review(batch, { command: secret }, "configure_clarvis"),
+                            review.review(batch, { command: secret }, "configuration_file"),
                           ),
                         );
                         expect(concurrent.map((receipt) => receipt.decision)).toEqual(
                           Array.from({ length: 8 }, () => "allow"),
                         );
                         expect(
-                          await review.review(batch, { command: secret }, "configure_clarvis"),
+                          await review.review(batch, { command: secret }, "configuration_file"),
                         ).toMatchObject({ decision: "allow", attempts: 0 });
                         return;
                       }
@@ -314,7 +314,7 @@ test.each([
       expect(events[0]).toMatchObject({
         judge_execution_id: childId,
         path: kind === "effects" ? "effect_review" : "call_local",
-        consumer: kind === "effects" ? "configure_clarvis" : "command_guard",
+        consumer: kind === "effects" ? "configuration_file" : "command_guard",
         stage: kind === "effects" ? "compile" : "decide",
         input_tokens: retries ? 20 : 10,
         output_tokens: retries ? 6 : 3,
@@ -364,7 +364,7 @@ test.each([
   },
 );
 
-test("eligibility includes configure_clarvis with guard off and excludes explicit human-only mode", () => {
+test("eligibility includes configuration_file with guard off and excludes explicit human-only mode", () => {
   const env = loadEnv({
     CLARVIS_AGENT_TOOLS_ENABLED: "true",
     CLARVIS_AGENT_TOOLS_MAX_GRANT: "edit",

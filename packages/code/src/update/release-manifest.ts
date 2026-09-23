@@ -2,10 +2,35 @@ import { createHash } from "node:crypto";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
-import { RELEASE_REPOSITORY, type ReleaseTarget } from "../update-contract.ts";
+import {
+  RELEASE_REPOSITORY,
+  compareProductVersions,
+  type ReleaseTarget,
+} from "../update-contract.ts";
 
 /** The first portable-release manifest format. */
 export const RELEASE_MANIFEST_SCHEMA = 1;
+
+/** The first stable release that must carry the product-owned configuration skill. */
+export const CLARVIS_DOCS_FIRST_VERSION = "0.2.0";
+
+/** Raw Markdown files required for a skill-bearing portable release. */
+export const CLARVIS_DOCS_RELEASE_FILES = [
+  "packages/kernel/assets/skills/.system/clarvis-docs/SKILL.md",
+  "packages/kernel/assets/skills/.system/clarvis-docs/references/authority.md",
+  "packages/kernel/assets/skills/.system/clarvis-docs/references/extensions.md",
+  "packages/kernel/assets/skills/.system/clarvis-docs/references/paths.md",
+  "packages/kernel/assets/skills/.system/clarvis-docs/references/settings.md",
+  "packages/kernel/assets/skills/.system/clarvis-docs/references/troubleshooting.md",
+] as const;
+
+/** Standalone verified publisher used by the POSIX installer and updater. */
+export const CLARVIS_DOCS_PUBLISHER_FILE = "runtime/system-docs.js";
+
+/** Older verified releases remain installable without the system documentation skill. */
+export function releaseRequiresClarvisDocs(version: string): boolean {
+  return compareProductVersions(version, CLARVIS_DOCS_FIRST_VERSION) >= 0;
+}
 
 /** A regular payload file covered by the release manifest. */
 export interface ReleaseManifestFile {
@@ -102,6 +127,14 @@ export function parseReleaseManifest(
     files.push({ path: file.path, size: Number(file.size), sha256: file.sha256 });
   }
   files.sort((left, right) => left.path.localeCompare(right.path));
+  if (releaseRequiresClarvisDocs(expected.version)) {
+    for (const path of [...CLARVIS_DOCS_RELEASE_FILES, CLARVIS_DOCS_PUBLISHER_FILE]) {
+      const entry = files.find((file) => file.path === path);
+      if (entry === undefined || entry.size === 0) {
+        throw new Error(`release manifest is missing required Clarvis documentation: ${path}`);
+      }
+    }
+  }
   return {
     schema: RELEASE_MANIFEST_SCHEMA,
     repository: RELEASE_REPOSITORY,

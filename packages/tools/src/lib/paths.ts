@@ -1,6 +1,8 @@
 import path from "node:path";
 import { lstatSync, realpathSync } from "node:fs";
 import { ToolError, type ErrorCode } from "../errors.ts";
+import { configurationTarget, type ConfigurationRoot } from "@clarvis/paths";
+import type { RuntimeConfig } from "../config.ts";
 import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./log.ts";
 
 /**
@@ -60,6 +62,91 @@ export function resolvePath(
   const abs = path.isAbsolute(input) ? path.normalize(input) : path.resolve(workspaceRoot, input);
   if (confine) assertWithinWorkspace(abs, workspaceRoot, input, undefined, alsoAllow, logger);
   return abs;
+}
+
+/** Resolve a file-tool path through the host's exact configuration roots when supplied. */
+export function resolveFileToolPath(
+  input: string,
+  config: Pick<
+    RuntimeConfig,
+    "workspaceRoot" | "confineToWorkspace" | "temporaryRoots" | "logger" | "configurationRoots"
+  >,
+): string {
+  const abs = path.isAbsolute(input)
+    ? path.normalize(input)
+    : path.resolve(config.workspaceRoot, input);
+  const roots = config.configurationRoots;
+  if (roots === undefined)
+    return resolvePath(
+      input,
+      config.workspaceRoot,
+      config.confineToWorkspace,
+      config.temporaryRoots,
+      config.logger,
+    );
+  const canonical = canonicalizeAllowingMissing(abs);
+  if (canonical === undefined)
+    throw new ToolError("path_escape", `Path could not be safely resolved: ${input}.`, {
+      path: input,
+    });
+  const canonicalRoots = {} as Record<ConfigurationRoot, string>;
+  for (const [root, directory] of Object.entries(roots)) {
+    const resolved = canonicalizeAllowingMissing(directory);
+    if (resolved === undefined)
+      throw new ToolError("path_escape", `Configuration root could not be resolved: ${root}.`);
+    canonicalRoots[root as ConfigurationRoot] = resolved;
+  }
+  const lexicalTarget = configurationTarget(roots, abs);
+  const actualTarget = configurationTarget(canonicalRoots, canonical);
+  if (lexicalTarget?.kind === "private" || actualTarget?.kind === "private")
+    throw new ToolError("denied", `Configuration target is private: ${input}.`, { path: input });
+  if (
+    (lexicalTarget === undefined) !== (actualTarget === undefined) ||
+    (lexicalTarget !== undefined &&
+      (lexicalTarget.root !== actualTarget?.root || lexicalTarget.path !== actualTarget.path))
+  )
+    throw new ToolError("path_escape", `Configuration path changed during resolution: ${input}.`, {
+      path: input,
+    });
+  if (lexicalTarget !== undefined) {
+    let current = roots[lexicalTarget.root];
+    for (const part of ["", ...lexicalTarget.path.split("/")]) {
+      if (part !== "") current = path.join(current, part);
+      try {
+        const stat = lstatSync(current);
+        if (stat.isSymbolicLink() || (current === abs && stat.isFile() && stat.nlink !== 1))
+          throw new ToolError("denied", `Configuration target contains a link: ${input}.`, {
+            path: input,
+          });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+  }
+  const allowed = lexicalTarget === undefined ? [] : [roots[lexicalTarget.root]];
+  return resolvePath(
+    input,
+    config.workspaceRoot,
+    config.confineToWorkspace,
+    [...config.temporaryRoots, ...allowed],
+    config.logger,
+  );
+}
+
+/** Skip private or redirected leaves before a recursive file tool observes them. */
+export function isAdmittedFileToolSearchPath(
+  candidate: string,
+  config: Pick<
+    RuntimeConfig,
+    "workspaceRoot" | "confineToWorkspace" | "temporaryRoots" | "logger" | "configurationRoots"
+  >,
+): boolean {
+  try {
+    resolveFileToolPath(candidate, config);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

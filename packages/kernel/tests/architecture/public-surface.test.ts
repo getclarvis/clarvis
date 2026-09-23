@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "bun:test";
 
 describe("kernel public surface", () => {
-  it("publishes only the six owned entrypoints", () => {
+  it("publishes only the seven owned entrypoints", () => {
     const manifest = JSON.parse(
       readFileSync(join(import.meta.dir, "..", "..", "package.json"), "utf8"),
     ) as { exports: Record<string, unknown> };
@@ -14,6 +14,7 @@ describe("kernel public surface", () => {
       "./local",
       "./logger",
       "./policy",
+      "./system-docs",
     ]);
     for (const target of Object.values(manifest.exports)) {
       expect(Object.keys(target as Record<string, string>)).toEqual(["bun", "types", "import"]);

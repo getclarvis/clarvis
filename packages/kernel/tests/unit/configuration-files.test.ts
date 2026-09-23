@@ -12,9 +12,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configurationRoots } from "@clarvis/paths";
 import {
-  configurationFileMutationFacts,
-  configurationFileOperation,
-  type ConfigurationFileRequest,
+  prepareConfigurationFileMutation,
+  readConfigurationDocument,
+  type ConfigurationMutationRequest,
 } from "../../src/configuration/files.ts";
 import { settingsDocumentRevision } from "../../src/config/config-store.ts";
 
@@ -29,8 +29,13 @@ function fixture() {
   const workspaceRoot = join(home, "workspace");
   mkdirSync(workspaceRoot);
   const roots = configurationRoots({ home, workspaceRoot, globalDir: join(home, "global") });
-  const call = (request: ConfigurationFileRequest) => configurationFileOperation(roots, request);
-  return { home, roots, call };
+  const call = (request: ConfigurationMutationRequest) =>
+    prepareConfigurationFileMutation(roots, request).commit();
+  const read = (root: keyof typeof roots, path: string) => {
+    const document = readConfigurationDocument(roots, root, path);
+    return { content: document?.content ?? null, revision: document?.revision ?? null };
+  };
+  return { home, roots, call, read };
 }
 
 describe("native configuration files", () => {
@@ -114,19 +119,21 @@ rounds:
 ---
 Synthesize the review.
 `;
-    const request: ConfigurationFileRequest = {
+    const request: ConfigurationMutationRequest = {
       operation: "write",
       root,
       path,
       content: invalid,
       expected_revision: null,
     };
-    expect(() => configurationFileMutationFacts(f.roots, request)).toThrow("is not a selector");
+    expect(() => prepareConfigurationFileMutation(f.roots, request).facts).toThrow(
+      "is not a selector",
+    );
     expect(() => f.call(request)).toThrow("is not a selector");
-    expect(f.call({ operation: "read", root, path })).toEqual({ content: null, revision: null });
+    expect(f.read(root, path)).toEqual({ content: null, revision: null });
 
     const content = invalid.replace("over: sometimes", "over: once");
-    expect(configurationFileMutationFacts(f.roots, { ...request, content })).toMatchObject({
+    expect(prepareConfigurationFileMutation(f.roots, { ...request, content }).facts).toMatchObject({
       root,
       expectedRevision: null,
       surface: "authoring",
@@ -137,23 +144,42 @@ Synthesize the review.
 
   it("previews a complete mutation fact without applying the write", () => {
     const f = fixture();
-    const request: ConfigurationFileRequest = {
+    const request: ConfigurationMutationRequest = {
       operation: "write",
       root: "workspace_clarvis",
       path: "agents/reviewer.md",
       content: "Review carefully.\n",
       expected_revision: null,
     };
-    expect(configurationFileMutationFacts(f.roots, request)).toMatchObject({
+    expect(prepareConfigurationFileMutation(f.roots, request).facts).toMatchObject({
       root: "workspace_clarvis",
       expectedRevision: null,
       bytes: 18,
       surface: "authoring",
     });
-    expect(f.call({ operation: "read", root: request.root, path: request.path })).toEqual({
+    expect(f.read(request.root, request.path)).toEqual({
       content: null,
       revision: null,
     });
+  });
+
+  it("binds a prepared mutation to the captured revision before commit", () => {
+    const f = fixture();
+    const request: ConfigurationMutationRequest = {
+      operation: "write",
+      root: "workspace_clarvis",
+      path: "agents/reviewer.md",
+      content: "Reviewed bytes.\n",
+      expected_revision: null,
+    };
+    const prepared = prepareConfigurationFileMutation(f.roots, request);
+    expect(prepared.before).toBeNull();
+    expect(prepared.facts.nextRevision).toBe(settingsDocumentRevision(request.content!));
+    const file = join(f.roots.workspace_clarvis, request.path);
+    mkdirSync(join(file, ".."), { recursive: true });
+    writeFileSync(file, "Concurrent bytes.\n");
+    expect(() => prepared.commit()).toThrow("revision conflict");
+    expect(readFileSync(file, "utf8")).toBe("Concurrent bytes.\n");
   });
 
   it("preserves a UTF-8 BOM and CRLF when editing an authored workflow brief", () => {
@@ -162,9 +188,14 @@ Synthesize the review.
     const path = "workflows/review/briefs/review.md";
     const content = "\uFEFFFirst line\r\nReview this\r\nLast line\r\n";
     f.call({ operation: "write", root, path, content, expected_revision: null });
-    expect(f.call({ operation: "read", root, path })).toEqual({
+    expect(f.read(root, path)).toEqual({
       content,
       revision: settingsDocumentRevision(content),
+    });
+    expect(readConfigurationDocument(f.roots, root, path)).toEqual({
+      content,
+      revision: settingsDocumentRevision(content),
+      bytes: Buffer.from(content),
     });
     f.call({
       operation: "edit",
@@ -184,7 +215,7 @@ Synthesize the review.
     (root) => {
       const f = fixture();
       const path = "skills/example/SKILL.md";
-      expect(f.call({ operation: "read", root, path })).toEqual({ content: null, revision: null });
+      expect(f.read(root, path)).toEqual({ content: null, revision: null });
       const content =
         "---\nname: example\ndescription: Example skill\n---\nFirst line\nChange me\nLast line\n";
       const revision = settingsDocumentRevision(content);
@@ -192,7 +223,7 @@ Synthesize the review.
         written: true,
         revision,
       });
-      expect(f.call({ operation: "read", root, path })).toEqual({ content, revision });
+      expect(f.read(root, path)).toEqual({ content, revision });
       expect(() =>
         f.call({
           operation: "edit",
@@ -214,17 +245,13 @@ Synthesize the review.
       const updated =
         "---\nname: example\ndescription: Example skill\n---\nFirst line\nChanged\nLast line\n";
       expect(readFileSync(join(f.roots[root], path), "utf8")).toBe(updated);
-      expect(f.call({ operation: "list", root, path: "skills/example" })).toEqual({
-        entries: [{ name: "SKILL.md", kind: "file" }],
-        truncated: false,
-      });
       f.call({
         operation: "delete",
         root,
         path,
         expected_revision: settingsDocumentRevision(updated),
       });
-      expect(f.call({ operation: "read", root, path })).toEqual({ content: null, revision: null });
+      expect(f.read(root, path)).toEqual({ content: null, revision: null });
     },
   );
 
@@ -309,21 +336,11 @@ Synthesize the review.
     "skills/COM1.md",
   ])("refuses private and escaping paths: %s", (path) => {
     const f = fixture();
-    for (const operation of ["list", "read", "write", "edit", "delete"] as const)
+    expect(() => f.read("global_clarvis", path)).toThrow();
+    for (const operation of ["write", "edit", "delete"] as const)
       expect(() =>
         f.call({ operation, root: "global_clarvis", path, content: "x", expected_revision: null }),
       ).toThrow();
-  });
-
-  it("excludes private root entries without returning their contents", () => {
-    const f = fixture();
-    mkdirSync(f.roots.global_clarvis);
-    writeFileSync(join(f.roots.global_clarvis, "keys.json"), "private-value");
-    writeFileSync(join(f.roots.global_clarvis, "settings.json"), "{}");
-    expect(f.call({ operation: "list", root: "global_clarvis", path: "" })).toEqual({
-      entries: [{ name: "settings.json", kind: "file" }],
-      truncated: false,
-    });
   });
 
   it("rejects linked directories, linked leaves and hardlinks to credentials", () => {
@@ -340,11 +357,13 @@ Synthesize the review.
       join(f.roots[root], "agents"),
       process.platform === "win32" ? "junction" : "dir",
     );
-    for (const path of ["skills/hardlink.md", "skills/link.md", "agents/outside.txt"])
-      for (const operation of ["read", "write", "edit", "delete"] as const)
+    for (const path of ["skills/hardlink.md", "skills/link.md", "agents/outside.txt"]) {
+      expect(() => f.read(root, path)).toThrow();
+      for (const operation of ["write", "edit", "delete"] as const)
         expect(() =>
           f.call({ operation, root, path, content: "overwrite", expected_revision: null }),
         ).toThrow();
+    }
     expect(readFileSync(secret, "utf8")).toBe("private-value");
   });
 
@@ -353,9 +372,7 @@ Synthesize the review.
     mkdirSync(join(f.roots.global_clarvis, "skills"), { recursive: true });
     for (const bytes of [Buffer.alloc(262145, 65), Buffer.from([0xff])]) {
       writeFileSync(join(f.roots.global_clarvis, "skills", "bad.txt"), bytes);
-      expect(() =>
-        f.call({ operation: "read", root: "global_clarvis", path: "skills/bad.txt" }),
-      ).toThrow();
+      expect(() => f.read("global_clarvis", "skills/bad.txt")).toThrow();
     }
   });
 });

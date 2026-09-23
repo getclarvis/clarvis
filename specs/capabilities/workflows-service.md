@@ -45,16 +45,15 @@ scheduling engine: `WorkflowCtx`, `LeaderSpec` and `LeaderResult` are what the s
 (out of scope here) consumes, and what this document's `WorkflowsService` constructs once per manager
 run (the `WorkflowCtx` construction in `createWorkflowsService`).
 
-The builtin configuration guide carries executable authoring examples for a workflow document,
-its brief and its separate Admiral skill launcher. The ordinary configuration writer creates authored
+The configuration document fixtures exercise a workflow document, its brief and its separate
+Admiral skill launcher. Ordinary reviewed file tools create authored
 files; an ordinary manager run reloads definitions and requires its own workflow preflight.
-Production: `CONFIGURATION_EXAMPLES` in
-[configuration-examples.ts](../../packages/kernel/src/skills/configuration-examples.ts), and
-`readWorkflowDefs` in
+Production: `createAuthoringMutationReview` in
+[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts), and `readWorkflowDefs` in
 [workflows-service.ts](../../packages/kernel/src/workflows/workflows-service.ts).
 Test: `creates a workflow in the ordinary conversation and runs it through Admiral with an independent preflight`
 and `loads the complete workflow, diagnoses broken briefs, and reloads workspace overrides` in
-[configuration-guidance.test.ts](../../packages/kernel/tests/integration/configuration-guidance.test.ts).
+[configuration-documents.test.ts](../../packages/kernel/tests/integration/configuration-documents.test.ts).
 See [self-configuration.md](../hosts/self-configuration.md) for the writer's authority and limitations.
 
 ## 2. Surface
@@ -410,10 +409,10 @@ The schema is enforced, not decorative: the same single-property schema the call
    (`packages/workflows/src/artifact.ts`).
 8. `repeat.rounds` may only name round ids that exist (`packages/workflows/src/artifact.ts`).
 
-The restricted configuration writer calls `validateWorkflowDocument` before it attests or mutates
+The reviewed configuration file route calls `validateWorkflowDocument` before it attests or mutates
 a canonical `workflows/<name>/WORKFLOW.md`. Because a workflow document resolves its brief files as
 part of compilation, those operational files must already exist. Production:
-`configurationFileOperation` in
+`prepareConfigurationFileMutation` in
 [files.ts](../../packages/kernel/src/configuration/files.ts). Test:
 `validates prospective workflow definitions before previewing or writing them` in
 [configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).

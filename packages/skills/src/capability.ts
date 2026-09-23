@@ -78,6 +78,11 @@ export interface SkillsCapabilityOptions {
    *   disabling a plugin takes effect without restarting the host.
    */
   bootstraps?: () => readonly PluginBootstrapSkill[];
+  /** Host-attested documentation available to an eligible entry agent without use_skills. */
+  systemOnly?: {
+    provider: SkillsProvider;
+    eligible(ctx: RunCapabilityContext): boolean | Promise<boolean>;
+  };
 }
 
 /**
@@ -101,9 +106,18 @@ export function createSkillsCapability(
     grants: [{ name: USE_SKILLS_GRANT }],
     reservedWireNames: SKILLS_TOOL_WIRE_NAMES,
     toolEffects: SKILLS_TOOL_EFFECTS,
-    forRun(ctx): RunCapability | null {
-      if (!ctx.env.CLARVIS_SKILLS_ENABLED || provider === undefined) return null;
-      return createSkillsRunCapability(provider, options, ctx);
+    forRun(ctx): RunCapability | null | Promise<RunCapability | null> {
+      const ordinary = ctx.env.CLARVIS_SKILLS_ENABLED ? provider : undefined;
+      if (options.systemOnly === undefined) {
+        return ordinary === undefined
+          ? null
+          : createSkillsRunCapability(ordinary, undefined, options, ctx);
+      }
+      return Promise.resolve(options.systemOnly.eligible(ctx)).then((eligible) => {
+        const systemOnly = eligible ? options.systemOnly?.provider : undefined;
+        if (ordinary === undefined && systemOnly === undefined) return null;
+        return createSkillsRunCapability(ordinary, systemOnly, options, ctx);
+      });
     },
   };
 }
@@ -116,7 +130,8 @@ export function createSkillsCapability(
  * nor the tool.
  */
 function createSkillsRunCapability(
-  provider: SkillsProvider,
+  provider: SkillsProvider | undefined,
+  systemOnly: SkillsProvider | undefined,
   options: SkillsCapabilityOptions,
   ctx: RunCapabilityContext,
 ): RunCapability {
@@ -133,10 +148,17 @@ function createSkillsRunCapability(
   };
   let catalog: SkillInfo[] | undefined;
   const listOnce = (): SkillInfo[] =>
-    (catalog ??= provider.listSkills().filter(dependenciesAvailable));
-  const catalogFor = (grants: readonly string[]): SkillInfo[] | undefined => {
-    if (!grants.includes(USE_SKILLS_GRANT)) return undefined;
-    const listed = listOnce();
+    (catalog ??= provider?.listSkills().filter(dependenciesAvailable) ?? []);
+  const catalogFor = (id: {
+    grants: readonly string[];
+    entry: boolean;
+  }): SkillInfo[] | undefined => {
+    const listed =
+      id.grants.includes(USE_SKILLS_GRANT) && provider !== undefined
+        ? listOnce()
+        : id.entry
+          ? (systemOnly?.listSkills() ?? [])
+          : [];
     return listed.length > 0 ? listed : undefined;
   };
 
@@ -166,7 +188,7 @@ function createSkillsRunCapability(
       }
       bootstraps = resolveBootstrapSkills({
         refs,
-        loadSkill: (name) => provider.loadSkill(name),
+        loadSkill: (name) => provider?.loadSkill(name),
         ...(ctx.logger !== undefined ? { logger: ctx.logger } : {}),
       });
     }
@@ -182,18 +204,24 @@ function createSkillsRunCapability(
      *   hides a skill from the listing, never from an explicit call.
      */
     systemSection(id): string | undefined {
-      const listed = catalogFor(id.grants);
+      const listed = catalogFor(id);
       if (listed === undefined) return undefined;
-      const section = renderSkillsSection(listed, bootstrapsOnce());
+      const section = renderSkillsSection(
+        listed,
+        id.grants.includes(USE_SKILLS_GRANT) && provider !== undefined ? bootstrapsOnce() : [],
+      );
       return section.length > 0 ? section : undefined;
     },
     forAgent(scope): AgentCapability | null {
-      if (catalogFor(scope.grants) === undefined) return null;
+      if (catalogFor(scope) === undefined) return null;
+      const selected =
+        scope.grants.includes(USE_SKILLS_GRANT) && provider !== undefined ? provider : systemOnly;
+      if (selected === undefined) return null;
       return {
         attach(bc) {
           return {
             tools: [loadSkillTool, readSkillResourceTool],
-            handlers: [buildSkillsHandler({ base: handlerBaseOf(bc), skills: provider })],
+            handlers: [buildSkillsHandler({ base: handlerBaseOf(bc), skills: selected })],
             advertised: false,
           };
         },

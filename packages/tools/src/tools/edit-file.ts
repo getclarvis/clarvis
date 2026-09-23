@@ -1,7 +1,8 @@
 import { ToolError } from "../errors.ts";
-import { readFileOptions } from "../lib/files.ts";
-import { resolvePath, displayPath } from "../lib/paths.ts";
+import { readFileOptionsForPath } from "../lib/files.ts";
+import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { writeAtomic, withFileLock } from "../lib/atomic.ts";
+import { reviewedConfigurationModes } from "../guard/authoring-path.ts";
 import { reencode } from "../lib/text.ts";
 import { readTextFile } from "../lib/textfile.ts";
 import { findCascadeMatch, scanLineBlocks, trimEnds } from "../lib/match-cascade.ts";
@@ -41,7 +42,7 @@ export async function editFileLocked(
       target,
       relPath,
       config.maxFileBytes,
-      readFileOptions(config),
+      readFileOptionsForPath(config, target),
     );
     if (decoded.encoding !== "utf8") {
       throw new ToolError(
@@ -52,7 +53,13 @@ export async function editFileLocked(
       );
     }
     const newText = transform(decoded.content);
-    await writeAtomic(target, reencode(newText, decoded), config.reviewMutation);
+    await writeAtomic(
+      target,
+      reencode(newText, decoded),
+      config.reviewMutation,
+      "edit",
+      reviewedConfigurationModes(target, config),
+    );
     const rel = displayPath(target, config.workspaceRoot);
     const content = message(rel);
     const diff = unifiedDiff(rel, decoded.content, newText, config.maxDiffInputBytes);
@@ -273,13 +280,7 @@ export const editFile: ToolDef = {
     required: ["path", "old_string", "new_string"],
   },
   async handler(args, config) {
-    const target = resolvePath(
-      args.path as string,
-      config.workspaceRoot,
-      config.confineToWorkspace,
-      config.temporaryRoots,
-      config.logger,
-    );
+    const target = resolveFileToolPath(args.path as string, config);
     let count = 0;
     let fuzzy = false;
     return editFileLocked(

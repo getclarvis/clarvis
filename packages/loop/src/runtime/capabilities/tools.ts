@@ -45,6 +45,7 @@ import {
   workspaceStatePaths,
   type ShortTemporaryRoot,
   type WorkspaceStatePaths,
+  type ConfigurationRoot,
 } from "@clarvis/paths";
 
 /** Registry name of the built-in coding-tools capability. */
@@ -55,6 +56,8 @@ export const AGENT_TOOLS_CAPABILITY_NAME = "tools";
 export interface GuardResolution {
   /** Host-owned prepared mutation reviewer, admitted only to the entry agent. */
   reviewMutation?: MutationReview;
+  /** Host-owned roots used only by entry-agent file handlers. */
+  configurationRoots?: Readonly<Record<ConfigurationRoot, string>>;
   guard?: Guard;
   elicit?: GuardElicit;
 }
@@ -250,6 +253,9 @@ function createAgentToolsRunCapability(
         workspaceRoot: ctx.workspaceRoot,
         ...(scope.entry && resolution?.reviewMutation !== undefined
           ? { reviewMutation: resolution.reviewMutation }
+          : {}),
+        ...(scope.entry && resolution?.configurationRoots !== undefined
+          ? { configurationRoots: resolution.configurationRoots }
           : {}),
         canMutate: caps.canMutate,
         canExec: caps.canExec,

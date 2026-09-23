@@ -61,7 +61,7 @@ Test: `replays a stable active journal prefix through the existing visibility bo
 
 | Symbol | Kind | File | What it is |
 | --- | --- | --- | --- |
-| `BUILTIN_TRACE_KINDS` | const tuple, 37 entries | `packages/capability/src/trace-kinds.ts` | the runtime source of truth for engine-declared kinds |
+| `BUILTIN_TRACE_KINDS` | const tuple, 39 entries | `packages/capability/src/trace-kinds.ts` | the runtime source of truth for engine-declared kinds |
 | `BuiltinTraceKind` | type | `packages/capability/src/trace-kinds.ts` | `(typeof BUILTIN_TRACE_KINDS)[number]` |
 | `TraceKind` | type | `packages/capability/src/trace-kinds.ts` | open union: builtin or `(string & {})` |
 | `TraceDetailMap` | interface | `packages/capability/src/trace-kinds.ts` | kind → detail type, one entry per builtin kind |
@@ -71,8 +71,8 @@ Test: `replays a stable active journal prefix through the existing visibility bo
 | `isBuiltinTraceEntry` | fn | `packages/capability/src/trace-kinds.ts` | narrows a `TraceEntry` against the kind set |
 | `isBuiltinTraceKind` | fn | `packages/capability/src/trace-kinds.ts` | narrows a bare string |
 | `RecordingTrace` | interface | `packages/capability/src/trace-kinds.ts` | `{ entries: TraceEntry[] }` |
-| `BuiltinTraceEvent` | type | `packages/capability/src/trace-events.ts` | closed union of 31 flat, absolute-time wire events |
-| `BUILTIN_TRACE_EVENT_TYPES` | const tuple, 31 entries | `packages/capability/src/trace-events.ts` | the runtime list for `isBuiltinTraceEvent` |
+| `BuiltinTraceEvent` | type | `packages/capability/src/trace-events.ts` | closed union of 33 flat, absolute-time wire events |
+| `BUILTIN_TRACE_EVENT_TYPES` | const tuple, 33 entries | `packages/capability/src/trace-events.ts` | the runtime list for `isBuiltinTraceEvent` |
 | `ContributedTraceEvent` | interface | `packages/capability/src/trace-events.ts` | `{ type: string; occurred_at: number; detail: unknown }` |
 | `PersistedContributedTraceEvent` | interface | `packages/capability/src/trace-events.ts` | `{ type: string; [field: string]: unknown }` |
 | `TraceEvent` | type | `packages/capability/src/trace-events.ts` | union of the three above |
@@ -130,6 +130,7 @@ once, in one place.
 | `tool_call` | `ToolCallDetail` | `packages/capability/src/trace-kinds.ts` |
 | `tool_call_started` | `ToolCallStartedDetail` | `packages/capability/src/trace-kinds.ts` |
 | `tool_output_delta` | `ToolOutputDeltaDetail` | `packages/capability/src/trace-kinds.ts` |
+| `tool_control_released` | `ToolControlReleasedDetail` | `packages/capability/src/trace-kinds.ts` |
 | `tool_input_delta` | `ToolInputDeltaDetail` | `packages/capability/src/trace-kinds.ts` |
 | `budget_check` | `BudgetCheckDetail` | `packages/capability/src/trace-kinds.ts` |
 | `terminate` | `unknown` | `packages/capability/src/trace-kinds.ts` |
@@ -183,6 +184,17 @@ an interim verdict. Production: `ToolCallDetail`/`CommandGuardReview` in
 `packages/capability/src/trace-kinds.ts` and the `tool_call` arm in
 `packages/trace/src/trace-mapper.ts`. Test: the tool projection case in
 `packages/trace/tests/unit/trace-mapper.test.ts`.
+
+`tool_control_released` is a live signal keyed by the original call and opaque stop token. It
+marks physical settlement of a yielded shell and is excluded from persisted traces; run settlement
+removes controls when a client restores historical events. Production: `ToolControlReleasedDetail`
+in [trace-kinds.ts](../../packages/capability/src/trace-kinds.ts), `mapEntry` in
+[trace-mapper.ts](../../packages/trace/src/trace-mapper.ts), and `createToolInterruptRegistry`
+in [tool-interrupt.ts](../../packages/loop/src/runtime/tools/tool-interrupt.ts). Test:
+`releases a yielded control when the process exits without an interrupt` in
+[selective-shell-interrupt.test.ts](../../packages/loop/tests/integration/selective-shell-interrupt.test.ts)
+and `physical completion removes a yielded shell's stop control` in
+[store-status.test.ts](../../packages/code/tests/unit/store-status.test.ts).
 
 `ToolCallDetail.result_digest` and the persisted `tool_call.result_digest` are the SHA-256 of the
 complete result before `RESULT_MAX` abbreviates its display copy. `createTrace` computes the digest
@@ -246,7 +258,7 @@ supervision kinds (which map to `null`, never becoming a wire event) corresponds
 builtin kind above, so the two vocabularies differ only by those unmapped kinds:
 
 `lead_iteration`, `delegation_created`, `subagent_iteration`, `tool_call`, `tool_call_started`,
-`tool_output_delta`, `tool_input_delta`, `subagent_iteration_started`, `lead_iteration_started`,
+`tool_output_delta`, `tool_control_released`, `tool_input_delta`, `subagent_iteration_started`, `lead_iteration_started`,
 `delegation_completed`, `delegation_failed`, `budget_check`, `compaction_started`, `compaction`, `compaction_skipped`,
 `vision_analysis`, `cancellation`, `user_question`, `user_steering`, `soft_limit_check`,
 `run_started`, `run_ended`, `delegation_started`, `model_call_error`, `guard_escalation`,
@@ -954,7 +966,7 @@ event gets `{ span_id: "run", phase: "point", kind: "event" }`. Then:
 | `subagent_iteration_started` / `subagent_iteration` | `<instanceId>:<n>` | start / end | `iteration` |
 | `delegation_created` / `_started` / `_completed` / `_failed` | `delegation:<id>` | start / point / end / end | `subagent` |
 | `tool_call_started` | `call_id` | start | `tool` |
-| `tool_output_delta` / `tool_input_delta` | `call_id` | point | `tool` |
+| `tool_output_delta` / `tool_control_released` / `tool_input_delta` | `call_id` | point | `tool` |
 | `tool_call` | `call_id ?? "<agent>:<iteration_ref>:tool"` | end | `tool` |
 | `model_reasoning` / `model_stream_delta` / `model_call_error` / `model_call_retry` | iteration span | point | `iteration` |
 | `user_question` / `user_steering` | iteration span from `iteration_ref` | point | `iteration` |

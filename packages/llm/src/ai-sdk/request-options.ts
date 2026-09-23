@@ -510,7 +510,8 @@ function splitSystemMessages(messages: ModelMessage[]): {
 
 /**
  * Builds the AI SDK {@link ToolSet} keyed by each tool's `wireName`, using its
- * `inputSchema` as the JSON-schema input and a synthesized description fallback;
+ * an object-root projection of `inputSchema` as the JSON-schema input and a
+ * synthesized description fallback;
  * returns `undefined` when there are no tools so the call omits the field.
  */
 function toAiSdkTools(tools: NamespacedTool[]): ToolSet | undefined {
@@ -519,10 +520,66 @@ function toAiSdkTools(tools: NamespacedTool[]): ToolSet | undefined {
   for (const t of tools) {
     set[t.wireName] = tool({
       description: t.description ?? `Tool ${t.fullName}`,
-      inputSchema: jsonSchema(t.inputSchema as JSONSchema7),
+      inputSchema: jsonSchema(providerToolSchema(t.inputSchema as JSONSchema7)),
     });
   }
   return set;
+}
+
+/** Keep the provider-facing root an object while local dispatch retains the full schema. */
+function providerToolSchema(schema: JSONSchema7): JSONSchema7 {
+  const {
+    allOf: _allOf,
+    anyOf: _anyOf,
+    oneOf: _oneOf,
+    not: _not,
+    if: _if,
+    then: _then,
+    else: _else,
+    enum: _enum,
+    const: _const,
+    ...objectSchema
+  } = schema;
+  const variants = (schema.oneOf ?? schema.anyOf ?? []).filter(
+    (entry): entry is JSONSchema7 => typeof entry === "object" && entry !== null,
+  );
+  if (variants.length === 0) return { ...objectSchema, type: "object" };
+  const properties: Record<string, JSONSchema7> = {
+    ...(objectSchema.properties as Record<string, JSONSchema7> | undefined),
+  };
+  for (const variant of variants) {
+    for (const [name, definition] of Object.entries(variant.properties ?? {})) {
+      if (typeof definition !== "object" || definition === null) continue;
+      const prior = properties[name];
+      if (prior === undefined) {
+        properties[name] = definition;
+      } else if (JSON.stringify(prior) !== JSON.stringify(definition)) {
+        if (prior.const !== undefined && definition.const !== undefined) {
+          properties[name] = { type: prior.type, enum: [prior.const, definition.const] };
+        } else if (Array.isArray(prior.enum) && definition.const !== undefined) {
+          properties[name] = { type: prior.type, enum: [...prior.enum, definition.const] };
+        } else {
+          properties[name] = prior.type === definition.type ? { type: prior.type } : {};
+        }
+      }
+    }
+  }
+  const commonRequired = variants.reduce<string[] | undefined>(
+    (common, variant) =>
+      common === undefined
+        ? [...(variant.required ?? [])]
+        : common.filter((name) => variant.required?.includes(name)),
+    undefined,
+  );
+  return {
+    ...objectSchema,
+    type: "object",
+    properties,
+    required: [...new Set([...(objectSchema.required ?? []), ...(commonRequired ?? [])])],
+    ...(variants.every((variant) => variant.additionalProperties === false)
+      ? { additionalProperties: false }
+      : {}),
+  };
 }
 
 /**

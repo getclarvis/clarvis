@@ -26,6 +26,8 @@ diagnostic port are cross-cutting contracts in
 The engine used to own the contract, which meant a capability shipped from outside it still had to
 edit `packages/loop` to register anything. This package is the half of the engine that a capability
 author needs: the request and settings vocabulary, the ports, the trace kinds, and `compose`.
+The builtin trace vocabulary includes live `tool_control_released`, keyed by call and opaque control
+identity, for physical settlement of yielded shell sessions.
 
 ## Exports
 
@@ -61,6 +63,8 @@ wrappers and consumers to recognize inactivity without private timers or error-t
 provider counters are not measured zero; retry totals preserve any unreported attempt alongside
 the known counters. The provider adapter owns their interpretation in the
 [LLM contract](../../specs/foundations/llm.md).
+`composePromptCacheKey` keeps short session/instance affinity keys readable and hashes longer
+bounded identities to a stable 64-character provider-neutral key before they reach an adapter.
 
 This package owns the complete unit matrices for its contracts and vocabulary: capability
 composition and registries, open trace/error vocabularies, secret redaction, tool-argument

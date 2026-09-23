@@ -88,6 +88,60 @@ function shellScript(command = "printf 'partial-out\\n'; printf 'partial-err\\n'
 }
 
 describe.skipIf(!posixShell)("selective interrupt through executeRun and the real shell", () => {
+  it("releases a yielded control when the process exits without an interrupt", async () => {
+    const control = channel();
+    let released!: (event: Extract<TraceEvent, { type: "tool_control_released" }>) => void;
+    const physicalExit = new Promise<Extract<TraceEvent, { type: "tool_control_released" }>>(
+      (resolve) => {
+        released = resolve;
+      },
+    );
+    const llm = new GateLLM((index) =>
+      index === 0
+        ? {
+            toolCalls: [
+              {
+                id: "natural-exit",
+                name: "shell",
+                arguments: {
+                  command: "printf ready; sleep 0.2",
+                  yield_time_ms: 10,
+                },
+              },
+            ],
+          }
+        : { text: "done", toolCalls: [] },
+    );
+    harness = await makeHarness({
+      llm,
+      mcpFactory: mockMCPFactory({}),
+      workspaceRoot: workspace(),
+      env: { CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" },
+      agentTools: true,
+      toolInterrupts: control.source,
+      onEvent(event) {
+        if (isBuiltinTraceEvent(event) && event.type === "tool_control_released") released(event);
+      },
+    });
+    const run = harness.run(body());
+    await llm.started(0);
+    llm.release(0);
+    await llm.started(1);
+    try {
+      const event = await Promise.race([
+        physicalExit,
+        Bun.sleep(2000).then(() => {
+          throw new Error("Physical shell completion fuse expired");
+        }),
+      ]);
+      expect(event.call_id).toBe("natural-exit");
+      expect(control.request(event.tool_execution_id)).toBe("not_running");
+    } finally {
+      llm.release(1);
+    }
+    expect((await run).status).toBe("completed");
+  });
+
   it("stops a yielded session through its original hosted interrupt token", async () => {
     const control = channel();
     const events: TraceEvent[] = [];
@@ -133,6 +187,13 @@ describe.skipIf(!posixShell)("selective interrupt through executeRun and the rea
       const deadline = Date.now() + 2000;
       while (control.request(token) !== "not_running" && Date.now() < deadline) await Bun.sleep(10);
       expect(control.request(token)).toBe("not_running");
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: "tool_control_released",
+          call_id: "yielded",
+          tool_execution_id: token,
+        }),
+      );
     } finally {
       llm.release(1);
     }

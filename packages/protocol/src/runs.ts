@@ -575,6 +575,12 @@ export type RunEvent =
       call_id: string;
       chunk: string;
     })
+  | (Attributed & {
+      /** Physical settlement of a yielded shell revokes its stop target. */
+      type: "tool_control_released";
+      call_id: string;
+      tool_execution_id: string;
+    })
   /**
    * A tool call the model is still composing: the provider has named the tool
    * and is streaming its arguments, but the call has not started (streamed only

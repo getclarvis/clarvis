@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 /** Persisted identities of one conversation and one agent instance within it. */
 export interface PromptCacheIdentity {
   readonly sessionId: string;
@@ -10,11 +12,14 @@ export function isPromptCacheIdentityComponent(value: unknown): value is string 
 }
 
 /**
- * Compose the session and persisted agent instance without truncation or collisions.
+ * Compose a stable session/instance affinity key within provider wire limits.
  *
  * @remarks Underscores within a component are escaped as `%5F`, leaving exactly one
- * separator. Percent signs are not admitted in raw components. The resulting ASCII
- * key is at most 512 characters. Profiles, iterations and physical retries do not
+ * separator. Percent signs are not admitted in raw components. A composed key
+ * longer than 64 characters is SHA-256 encoded as 64 lowercase hex characters;
+ * shorter keys retain their readable form. Raw composed keys always contain
+ * the separator, so they cannot equal a hashed key. Inputs remain bounded at
+ * 512 composed characters. Profiles, iterations and physical retries do not
  * participate in identity, and this function never creates an identifier.
  */
 export function composePromptCacheKey(identity: PromptCacheIdentity): string {
@@ -29,5 +34,5 @@ export function composePromptCacheKey(identity: PromptCacheIdentity): string {
   const key = `${identity.sessionId.replaceAll("_", "%5F")}_${identity.agentInstanceId.replaceAll("_", "%5F")}`;
   if (key.length > 512)
     throw new RangeError("Composed prompt-cache identity exceeds 512 characters");
-  return key;
+  return key.length <= 64 ? key : createHash("sha256").update(key).digest("hex");
 }

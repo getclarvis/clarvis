@@ -449,10 +449,15 @@ The shell's stop target is separate from header folding. A compact `[X]` appears
 the running elapsed time; while an interrupt request is pending it stays visible but muted and repeated
 clicks issue no further request. The action reserves its four columns, including a leading space, at
 narrow terminal widths; the identity truncates instead of clipping the action or adding a header row.
-Terminal settlement removes the control.
-Production: `ToolLine` and `BlockView` in [blocks.tsx](../../packages/code/src/views/blocks.tsx). Test:
+Terminal settlement removes the control. A yielded shell's tool result preserves it while the
+session is live; `tool_control_released` removes it on physical completion, even during a continuing
+run. The signal checks both call and control identity so a late release cannot affect another row.
+Production: `ToolLine` and `BlockView` in [blocks.tsx](../../packages/code/src/views/blocks.tsx),
+and `createTranscriptStore` in [store.ts](../../packages/code/src/adapters/store.ts). Test:
 `narrow shell headers place the stable close target immediately after elapsed time` in
-[block-focus-render.test.tsx](../../packages/code/tests/integration/block-focus-render.test.tsx).
+[block-focus-render.test.tsx](../../packages/code/tests/integration/block-focus-render.test.tsx)
+and `physical completion removes a yielded shell's stop control` in
+[store-status.test.ts](../../packages/code/tests/unit/store-status.test.ts).
 
 ### 4.8 Assistant Markdown segmentation
 

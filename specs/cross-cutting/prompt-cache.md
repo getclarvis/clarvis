@@ -171,9 +171,16 @@ Host/Sandbox assembly and the native Container Kernel retain this identity in th
 The typed `composePromptCacheKey(PromptCacheIdentity)` is the only composer. Raw components accept
 the existing ASCII execution-ID alphabet: letters, digits, `.`, `_`, `:`, `-`. Embedded underscores
 are encoded as `%5F`, leaving exactly one raw `_` separator. Percent signs are rejected in raw IDs.
-For example, session `exec_abc` and agent `child-1` produce `exec%5Fabc_child-1`. This encoding is
-bijective; the complete key must fit 512 characters and is never truncated. Switching from the old
-shared key produces an initial backend warmup; it does not justify later warmup exclusions.
+For example, session `exec_abc` and agent `child-1` produce `exec%5Fabc_child-1`. The raw
+composition remains bounded at 512 characters. Keys up to 64 characters retain that bijective,
+readable encoding; longer keys become the full 64-character lowercase SHA-256 hex digest of the
+encoded composition. Raw keys always contain `_` and therefore cannot equal a digest. This
+provider-neutral bound keeps persisted UUID-sized session/instance pairs acceptable as affinity
+fields without truncating or sharing a key across agents. A changed long key incurs an initial
+backend warmup, not a later warmup exclusion. Production: `composePromptCacheKey` in
+[prompt-cache-identity.ts](../../packages/capability/src/prompt-cache-identity.ts). Test:
+`keeps persisted UUID-sized identities stable and within provider wire limits` in
+[prompt-cache-identity.test.ts](../../packages/capability/tests/unit/prompt-cache-identity.test.ts).
 
 `withPromptCacheDefaults` composes from the session and the effective instance on every call. A
 caller cannot restore the old shared key through `LLMCallParams.promptCacheKey`. TTL remains a

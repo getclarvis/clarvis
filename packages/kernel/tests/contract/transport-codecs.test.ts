@@ -534,6 +534,15 @@ describe("remote run codec", () => {
   });
 
   it("preserves live shell interrupt control and rejects interruption with ok true", () => {
+    const released = {
+      type: "tool_control_released",
+      at: 14,
+      agent: "lead",
+      call_id: "c1",
+      tool_execution_id: "tok_1",
+    } as const;
+    expect(decodeRunEvent(released)).toEqual(released);
+    expect(decodeRunEvent({ ...released, tool_execution_id: 7 })).toBeNull();
     const started = {
       type: "tool_call_started",
       at: 12,

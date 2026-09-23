@@ -66,6 +66,8 @@ A run-scoped tool-interrupt registry listens for operator requests and aborts on
 child controller for an interruptible builtin `shell`. The loop then records an operator
 interruption, returns that fact to the model, and continues. Run cancellation still wins when both
 signals fire.
+For a yielded shell, physical completion revokes the retained stop token and emits a live
+`tool_control_released` signal so connected clients can remove its control before run end.
 
 The host-facing `ToolInterruptDelivery` carries both `settle(status)` and mandatory `fail(error)`;
 transport adapters use failure rather than inventing `not_running` on an unavailable channel. The

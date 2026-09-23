@@ -390,6 +390,83 @@ it("uses an accepted ask_user authorization in the following configuration revie
   }
 });
 
+it("makes an agent-authored standalone skill available on the next run without workspace approval", async () => {
+  const root = mkdtempSync(join(tmpdir(), "clarvis-inert-skill-refresh-"));
+  temporary.push(root);
+  const workspaceRoot = join(root, "workspace");
+  const globalDir = join(root, "global");
+  mkdirSync(workspaceRoot);
+  mkdirSync(globalDir);
+  writeFileSync(
+    globalPaths(globalDir).settingsFile,
+    JSON.stringify({
+      default_model: "anthropic/test",
+      providers: [{ name: "anthropic", kind: "anthropic" }],
+    }),
+  );
+  const target = join(workspacePaths(workspaceRoot).skillsDir, "local-check/SKILL.md");
+  const skill =
+    "---\nname: local-check\ndescription: Check local fixtures.\n---\nCheck fixtures.\n";
+  const agent = new MockLLM({
+    script: [
+      { toolCalls: [{ name: "write_file", arguments: { path: target, content: skill } }] },
+      { text: "Created." },
+      { toolCalls: [{ name: "load_skill", arguments: { name: "local-check" } }] },
+      { text: "Used." },
+    ],
+  });
+  const llm = withHostValidatedEffectReview(agent);
+  const kernel = await createFileKernel({
+    workspaceRoot,
+    globalDir,
+    logger: NOOP_LOGGER,
+    env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+    subscriptions: false,
+    builtins: { hooks: false, tasks: false },
+    executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm } }),
+  });
+  try {
+    expect((await kernel.extensionProfiles.current()).id).toBe("builtin:default");
+    expect((await kernel.config.getSettings()).workspace_trust?.state).toBe("inert");
+    let prompts = 0;
+    for (const message of ["Create the local skill.", "Use the local skill."]) {
+      const run = await kernel.runs.start({
+        agent: "coder",
+        messages: [{ role: "user", content: message }],
+        guard_mode: "auto",
+      });
+      run.onElicit((request) => {
+        prompts++;
+        void run.respond({ id: request.id, action: "accept", content: { decision: "allow" } });
+      });
+      const events = Array.fromAsync(run.events);
+      expect(await run.done).toMatchObject({ status: "completed" });
+      await events;
+      await run.closed;
+    }
+    expect(prompts).toBe(0);
+    expect(readFileSync(target, "utf8")).toBe(skill);
+    expect((await kernel.config.getSettings()).workspace_trust?.state).toBe("inert");
+    expect((await kernel.extensionProfiles.current()).standalone_skills).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ref: { scope: "workspace", source: "clarvis", name: "local-check" },
+          active: true,
+        }),
+      ]),
+    );
+    expect((await kernel.skills.list()).map((item) => item.name)).toContain("local-check");
+    expect(
+      agent.calls
+        .at(-1)
+        ?.messages.map((item) => contentToText(item.content))
+        .join("\n"),
+    ).toContain("Check fixtures.");
+  } finally {
+    await kernel.close();
+  }
+});
+
 it.each(["auto", "on", "off"] as const)(
   "creates, loads and edits through ordinary file tools under %s without activation prompts",
   async (mode) => {

@@ -52,6 +52,8 @@ attempt, never partial arguments or progress counters. All `tool_input_delta` re
 signals. Replay can therefore restore an announced call interrupted before execution without
 persisting every delta. A durable `model_call_retry` retains its bounded failure message and closes
 the prior attempt in clients; a client disconnect alone is not an execution outcome.
+The `tool_control_released` signal is live only: it reports physical settlement of a yielded shell
+to connected clients; restored runs clear remaining controls at run settlement.
 
 Free text is bounded as it enters the recording handle and bounded again in the mapper for legacy
 or direct entries that bypassed it. In particular, `delegation_created.task` shares

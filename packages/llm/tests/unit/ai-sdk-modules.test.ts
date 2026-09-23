@@ -36,6 +36,132 @@ function params(over: Partial<LLMCallParams> = {}): LLMCallParams {
 }
 
 describe("request options", () => {
+  it("publishes object-root tool schemas while keeping nested field constraints", () => {
+    const schema = {
+      type: "object",
+      properties: { action: { type: "string", enum: ["poll", "list"] } },
+      required: ["action"],
+      allOf: [{ if: { properties: { action: { const: "poll" } } }, then: { required: ["id"] } }],
+    };
+    const request = buildRequest(
+      params({
+        tools: [
+          {
+            fullName: "sessions",
+            wireName: "sessions",
+            mcpName: "local",
+            toolName: "sessions",
+            inputSchema: schema,
+          },
+        ],
+      }),
+      messages,
+    );
+    const published = (
+      request.tools?.sessions?.inputSchema as unknown as { jsonSchema: Record<string, unknown> }
+    ).jsonSchema;
+    expect(published).toEqual({
+      type: "object",
+      properties: schema.properties,
+      required: ["action"],
+    });
+    expect(schema.allOf).toHaveLength(1);
+    const alternative = buildRequest(
+      params({
+        tools: [
+          {
+            fullName: "choice",
+            wireName: "choice",
+            mcpName: "local",
+            toolName: "choice",
+            inputSchema: {
+              oneOf: [
+                {
+                  type: "object",
+                  properties: {
+                    action: { type: "string", const: "compile" },
+                    candidate: { type: "object" },
+                  },
+                  required: ["action", "candidate"],
+                  additionalProperties: false,
+                },
+                {
+                  type: "object",
+                  properties: {
+                    action: { type: "string", const: "decide" },
+                    decision: { type: "string" },
+                  },
+                  required: ["action", "decision"],
+                  additionalProperties: false,
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      messages,
+    );
+    expect(
+      (alternative.tools?.choice?.inputSchema as unknown as { jsonSchema: Record<string, unknown> })
+        .jsonSchema,
+    ).toEqual({
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["compile", "decide"] },
+        candidate: { type: "object" },
+        decision: { type: "string" },
+      },
+      required: ["action"],
+      additionalProperties: false,
+    });
+    const threeWay = buildRequest(
+      params({
+        tools: [
+          {
+            fullName: "three_way",
+            wireName: "three_way",
+            mcpName: "local",
+            toolName: "three_way",
+            inputSchema: {
+              oneOf: [
+                {
+                  properties: {
+                    action: { type: "string", const: "compile" },
+                    value: { type: "string" },
+                  },
+                },
+                {
+                  properties: {
+                    action: { type: "string", const: "decide" },
+                    value: { type: "string" },
+                  },
+                },
+                {
+                  properties: {
+                    action: { type: "string", const: "archive" },
+                    value: { type: "number" },
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      messages,
+    );
+    expect(
+      (threeWay.tools?.three_way?.inputSchema as unknown as { jsonSchema: Record<string, unknown> })
+        .jsonSchema,
+    ).toEqual({
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["compile", "decide", "archive"] },
+        value: {},
+      },
+      required: [],
+    });
+  });
+
   it("combines system splitting, provider tuning, tools and forced choice", () => {
     const request = buildRequest(
       params({

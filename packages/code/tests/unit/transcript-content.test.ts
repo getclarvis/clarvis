@@ -25,6 +25,28 @@ test("terminal records are bounded, frozen, and strip all incremental buffers", 
   expect(snapshot).not.toHaveProperty("inputComplete");
 });
 
+test("sealing copies nested control data without freezing the live source", () => {
+  const control = { tool_execution_id: "tok_shell", actions: ["interrupt"] as ["interrupt"] };
+  const node = {
+    key: "yielded",
+    kind: "tool_call",
+    status: "ok",
+    toolPhase: "running",
+    text: "",
+    toolName: "shell",
+    args: { command: "sleep 1" },
+    control,
+  } as const;
+  const snapshot = snapshotTranscriptNode(node);
+  if (snapshot.kind !== "tool_call") throw new Error("expected tool snapshot");
+  expect(snapshot).toMatchObject({ control });
+  expect(snapshot.control).not.toBe(control);
+  expect(Object.isFrozen(snapshot.control)).toBe(true);
+  expect(Object.isFrozen(snapshot.control?.actions)).toBe(true);
+  expect(Object.isFrozen(control)).toBe(false);
+  expect(Object.isFrozen(control.actions)).toBe(false);
+});
+
 for (const actor of [undefined, "child"]) {
   test(`terminal content seals immediately for ${actor ?? "Lead"} before body eviction`, () =>
     createRoot((dispose) => {

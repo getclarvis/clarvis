@@ -23,6 +23,18 @@ describe("persisted prompt-cache identity", () => {
     expect(composePromptCacheKey({ sessionId: "a", agentInstanceId: "b_c" })).toBe("a_b%5Fc");
   });
 
+  it("keeps persisted UUID-sized identities stable and within provider wire limits", () => {
+    const sessionId = "s".repeat(36);
+    const agentInstanceId = "a".repeat(36);
+    const key = composePromptCacheKey({ sessionId, agentInstanceId });
+    expect(key).toMatch(/^[0-9a-f]{64}$/);
+    expect(key).toBe(composePromptCacheKey({ sessionId, agentInstanceId }));
+    expect(key).not.toBe(composePromptCacheKey({ sessionId, agentInstanceId: "b".repeat(36) }));
+    expect(
+      composePromptCacheKey({ sessionId: "s".repeat(31), agentInstanceId: "a".repeat(32) }),
+    ).toHaveLength(64);
+  });
+
   it.each(["", " ", "../a", "a%5Fb", "á", "a\n"])(
     "rejects noncanonical component %j",
     (invalid) => {
@@ -35,10 +47,10 @@ describe("persisted prompt-cache identity", () => {
     },
   );
 
-  it("accepts exactly 512 composed characters and rejects overflow without truncating", () => {
+  it("hashes bounded long identities and rejects inputs beyond the raw bound", () => {
     expect(
       composePromptCacheKey({ sessionId: "s".repeat(255), agentInstanceId: "a".repeat(256) }),
-    ).toHaveLength(512);
+    ).toMatch(/^[0-9a-f]{64}$/);
     expect(() =>
       composePromptCacheKey({ sessionId: "s".repeat(256), agentInstanceId: "a".repeat(256) }),
     ).toThrow();

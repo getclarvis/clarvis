@@ -113,6 +113,7 @@ export function deriveEventSpan(event: TraceEvent): EventSpan {
     case "tool_call_started":
       return { span_id: event.call_id, phase: "start", kind: "tool" };
     case "tool_output_delta":
+    case "tool_control_released":
     case "tool_input_delta":
     case "tool_call_announced":
       return { span_id: event.call_id, phase: "point", kind: "tool" };

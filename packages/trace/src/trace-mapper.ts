@@ -198,6 +198,19 @@ function mapEntryRaw(
       if (d.subagent_instance_id !== undefined) event.subagent_instance_id = d.subagent_instance_id;
       return event;
     }
+    case "tool_control_released": {
+      const d = capDetail(entry.kind, entry.detail);
+      return {
+        type: "tool_control_released",
+        agent: d.agent,
+        ...(d.subagent_instance_id !== undefined
+          ? { subagent_instance_id: d.subagent_instance_id }
+          : {}),
+        call_id: d.call_id,
+        occurred_at: abs(entry.at),
+        tool_execution_id: d.tool_execution_id,
+      };
+    }
     case "tool_call_announced": {
       const d = capDetail(entry.kind, entry.detail);
       return {

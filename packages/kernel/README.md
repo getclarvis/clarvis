@@ -133,7 +133,8 @@ See the [Goal contract](../../specs/capabilities/goals.md).
 
 Construction, configuration, runs, and transport are specified in the four kernel specs under the
 [`hosts` map](../../specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade). The
-kernel also owns host-side composition described by
+run event mapper forwards live-only `tool_control_released` with no coalescing or dropping so a
+connected TUI can remove a settled shell's stop control. The kernel also owns host-side composition described by
 [`plugins.md`](../../specs/hosts/plugins.md),
 [`extension-profiles.md`](../../specs/hosts/extension-profiles.md),
 [`model-catalog.md`](../../specs/hosts/model-catalog.md), and
@@ -645,11 +646,16 @@ allow-list. Monitoring is armed for every identity file, including the selected 
 post-capture digest comparison. A mismatch flips the same in-memory availability latch, withholds the
 affected skill, and emits `onSkillDrift` for an informational host UI instead of failing dependency
 construction or delaying a run. The extension-profile manager's `observeSkillCatalog` then polls those paths
-asynchronously. Standalone authorship queues a coalesced refresh after captured users settle;
-invalid replacements retain the last catalog and its monitors. Root watchers also detect new skills.
+asynchronously. Standalone authorship queues a coalesced refresh when the authoring run's model and
+tools settle; the later memory-ingest stream grace does not delay the new slash catalog. Other
+physical runs still hold their own catalog leases. The host stream lease remains held through
+`closed`. Invalid replacements retain the last catalog and its monitors. Root watchers also detect
+new skills.
 Plugin drift retains its explicit trust boundary. Builtin and custom standalone roots carry exact
 `include` lists for the captured generation. New skills authored through reviewed file tools
-include a reviewed membership delta: global profiles are copied and selected locally. If any
+join custom profiles in a reviewed membership delta: global profiles are copied and selected
+locally. The builtin default discovers standalone skills at the next safe refresh, without a
+separate workspace-trust approval for the skill file alone. If any
 packaged skill in a plugin cannot be captured within its bounds, that plugin's entire skill-root
 surface is withheld while its independently valid non-skill contributions remain.
 `PluginContributions.observeRuntimeFiles` applies the same asynchronous latch to captured

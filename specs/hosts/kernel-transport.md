@@ -525,13 +525,13 @@ randomUUID()` (`packages/kernel/src/transport/client.ts`). Config subscription i
 
 ### 3.6 The run-event registry
 
-`RUN_EVENT_SCHEMAS` in `packages/kernel/src/transport/run-event-codec.ts` holds **39** entries, one per `RunEvent`
+`RUN_EVENT_SCHEMAS` in `packages/kernel/src/transport/run-event-codec.ts` holds **41** entries, one per `RunEvent`
 discriminator, closed by `satisfies Record<RunEvent["type"], z.ZodType>`. Shared fragments:
 `attributed` = `{ at, agent, subagent_id? }`, `planProjection`, `planTask`, `memoryIngestDetail` as a five-phase discriminated union. Every object schema
 is `.strict()`.
 
 The complete discriminator list: `run_started`, `run_ended`, `iteration_started`,
-`iteration_completed`, `tool_call_started`, `tool_call`, `tool_output_delta`, `tool_input_delta`,
+`iteration_completed`, `tool_call_started`, `tool_call`, `tool_output_delta`, `tool_control_released`, `tool_input_delta`,
 `reasoning`, `text_delta`, `model_error`, `model_retry`, `delegation_created`, `delegation_started`,
 `delegation_completed`, `delegation_failed`, `workflow_run_started`, `workflow_title_updated`,
 `workflow_sequence_state`, `workflow_run_progress`, `workflow_run_completed`, `workflow_run_failed`, `plan_created`,

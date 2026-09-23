@@ -124,6 +124,14 @@ export type BuiltinTraceEvent =
       chunk: string;
     }
   | {
+      type: "tool_control_released";
+      agent: AgentRole;
+      subagent_instance_id?: string;
+      call_id: string;
+      occurred_at: number;
+      tool_execution_id: string;
+    }
+  | {
       type: "tool_call_announced";
       agent: AgentRole;
       subagent_instance_id?: string;
@@ -426,6 +434,7 @@ export const BUILTIN_TRACE_EVENT_TYPES = [
   "tool_call_started",
   "tool_call_announced",
   "tool_output_delta",
+  "tool_control_released",
   "tool_input_delta",
   "subagent_iteration_started",
   "lead_iteration_started",

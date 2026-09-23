@@ -69,11 +69,20 @@ counts are not parsed as valid arguments. Terminal output replaces the increment
 Late deltas and duplicate starts do not reopen a terminal call. Cancellation and interruption
 remain distinguishable from an authoritative tool failure.
 
-Terminal inline content is bounded and frozen before mutable detail retention can discard a body.
+Terminal inline content is bounded and frozen in an owned copy before mutable detail retention can
+discard a body. Nested live Solid state, including a yielded shell's control action list, remains
+mutable so the next iteration can seal a prior result without aborting transcript restoration.
 Unrelated updates keep the same sealed object. An authoritative replay correction is staged and
 published at the reconciliation boundary with the same record ID. Detail hydration cannot silently
 mutate the inline snapshot. `TranscriptRunSink.complete` remains the host's post-reconciliation
 boundary for the run outcome; a received `run_ended` does not replace it.
+Production: `snapshotTranscriptNode` in
+[records.ts](../../packages/code/src/core/transcript/records.ts) and `TranscriptContent.observe` in
+[transcript-content.ts](../../packages/code/src/adapters/transcript-content.ts). Test:
+`sealing copies nested control data without freezing the live source` in
+[transcript-content.test.ts](../../packages/code/tests/unit/transcript-content.test.ts) and
+`a yielded shell remains mutable after the next iteration seals its snapshot` in
+[transcript-records.test.ts](../../packages/code/tests/unit/transcript-records.test.ts).
 
 ### Exploration
 

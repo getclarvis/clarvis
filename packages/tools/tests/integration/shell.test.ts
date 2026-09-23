@@ -337,8 +337,15 @@ describe("shell", () => {
     });
 
     it("drains a continuous producer until the timeout without treating truncation as failure", async () => {
+      const producer = path.join(root, "continuous.cjs");
+      writeFileSync(
+        producer,
+        "const { writeSync } = require('node:fs'); const chunk = Buffer.alloc(65_536, 88); while (true) writeSync(1, chunk);",
+      );
+      const invocation = `"${process.execPath}" "${producer}"`;
+      const command = process.platform === "win32" ? `& ${invocation}` : invocation;
       const start = Date.now();
-      const r = await callTool("shell", { command: "yes", timeout_ms: 300 }, config);
+      const r = await callTool("shell", { command, timeout_ms: 1000 }, config);
       const elapsed = Date.now() - start;
       expect(r.isError).toBe(true);
       expect(r.json.error).toBe("timeout");

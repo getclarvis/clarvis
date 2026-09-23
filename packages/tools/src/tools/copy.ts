@@ -1,10 +1,14 @@
-import { isCanonicalAuthoringPath } from "../guard/authoring-path.ts";
+import {
+  isReviewedConfigurationPath,
+  reviewedConfigurationModes,
+} from "../guard/authoring-path.ts";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fsyncDir, renameWithRetry, tmpPathFor } from "@clarvis/paths";
 import { ToolError, fsError } from "../errors.ts";
-import { resolvePath, displayPath } from "../lib/paths.ts";
-import { withFileLocks, assertNotSymlink, RM_RETRY } from "../lib/atomic.ts";
+import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
+import { applyOpsAtomic, withFileLocks, assertNotSymlink, RM_RETRY } from "../lib/atomic.ts";
+import { readFileOptionsForPath, readRawFile } from "../lib/files.ts";
 import type { ToolDef } from "./types.ts";
 
 /**
@@ -21,7 +25,9 @@ import type { ToolDef } from "./types.ts";
  * then `fs.rename`-ing it into place and fsyncing the directory; the temp file is
  * removed on any failure. Passing the same path for source and destination fails
  * with `invalid_input`. The handler returns a human-readable summary noting when
- * an existing file was overwritten.
+ * an existing file was overwritten. A protected configuration destination uses
+ * the host's prepared review and shared rollback transaction with the captured
+ * UTF-8 source bytes and private configuration modes.
  */
 export const copy: ToolDef = {
   atomicMutation: true,
@@ -55,20 +61,8 @@ export const copy: ToolDef = {
     const srcRel = args.source as string;
     const dstRel = args.destination as string;
     const overwrite = args.overwrite as boolean;
-    const absSrc = resolvePath(
-      srcRel,
-      config.workspaceRoot,
-      config.confineToWorkspace,
-      config.temporaryRoots,
-      config.logger,
-    );
-    const absDst = resolvePath(
-      dstRel,
-      config.workspaceRoot,
-      config.confineToWorkspace,
-      config.temporaryRoots,
-      config.logger,
-    );
+    const absSrc = resolveFileToolPath(srcRel, config);
+    const absDst = resolveFileToolPath(dstRel, config);
 
     if (absSrc === absDst) {
       throw new ToolError("invalid_input", `Source and destination are the same: ${srcRel}`, {
@@ -116,14 +110,20 @@ export const copy: ToolDef = {
 
       if (
         config.reviewMutation !== undefined &&
-        isCanonicalAuthoringPath(absDst, config.workspaceRoot) &&
+        isReviewedConfigurationPath(absDst, config.workspaceRoot, config.configurationRoots) &&
         srcStat.size > config.maxFileBytes
       )
         throw new ToolError("too_large", "Authoring copy source exceeds the file budget");
       const captured =
         config.reviewMutation !== undefined &&
-        isCanonicalAuthoringPath(absDst, config.workspaceRoot)
-          ? await fs.readFile(absSrc)
+        isReviewedConfigurationPath(absDst, config.workspaceRoot, config.configurationRoots)
+          ? await readRawFile(
+              absSrc,
+              srcRel,
+              config.maxFileBytes,
+              undefined,
+              readFileOptionsForPath(config, absSrc),
+            )
           : undefined;
       if (captured !== undefined && !Buffer.from(captured.toString("utf8")).equals(captured))
         throw new ToolError("invalid_input", "Authoring requires UTF-8 text");
@@ -143,15 +143,16 @@ export const copy: ToolDef = {
         await fsyncDir(dstDir);
       };
       if (captured !== undefined && config.reviewMutation !== undefined)
-        await config.reviewMutation(
+        await applyOpsAtomic(
           [
             {
               type: dstExists ? "modify" : "create",
               path: absDst,
               content: captured.toString("utf8"),
+              ...reviewedConfigurationModes(absDst, config),
             },
           ],
-          commit,
+          config.reviewMutation,
         );
       else await commit();
 

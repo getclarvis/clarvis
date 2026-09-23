@@ -260,7 +260,7 @@ test("concurrent command and effect executions retain independent observation cu
           currentCase: { kind },
           observation: {
             path: kind === "command" ? "call_local" : "effect_review",
-            consumer: kind === "command" ? "command_guard" : "configure_clarvis",
+            consumer: kind === "command" ? "command_guard" : "configuration_file",
           },
           binding:
             kind === "command"
@@ -295,8 +295,8 @@ test("concurrent command and effect executions retain independent observation cu
       { id: "command", stage: "decide", consumer: "command_guard" },
     ]);
     expect(observations.filter((item) => item.id === "effects")).toEqual([
-      { id: "effects", stage: "compile", consumer: "configure_clarvis" },
-      { id: "effects", stage: "decide", consumer: "configure_clarvis" },
+      { id: "effects", stage: "compile", consumer: "configuration_file" },
+      { id: "effects", stage: "decide", consumer: "configuration_file" },
     ]);
   } finally {
     await infrastructure.connections.closeAll();

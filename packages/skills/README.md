@@ -99,7 +99,7 @@ and prepared with their relative directory structure in the writable workspace, 
 through the ordinary guarded shell. Remote locations are opaque locators.
 
 `validateSkillDocument` exposes the same bounded-frontmatter parser used by discovery, so the
-restricted configuration writer can validate a candidate before mutation.
+host's reviewed file-tool route can validate a candidate before mutation.
 
 `captureSkillExecution` materializes a bounded catalog revision for a host that needs stable helper
 paths and resource bytes while the source is edited. It copies only enumerated resources and manifests,
@@ -134,7 +134,7 @@ description. Host-embedded entries with `source: "builtin"` instead say to load 
 external entries, keeping product guidance discoverable when a large catalog is truncated.
 `load_skill` identifies them as embedded instructions rather than advertising an execution
 directory. Their `root`, `dir` and `path` are `builtin:` locators, not filesystem paths. The kernel
-owns the shipped `clarvis-configure` body and composition; this package does not import product
+does not currently compose an embedded configuration guide; this package does not import product
 configuration or create builtin files.
 
 The catalog never emits more than 8,000 characters. When a full catalog exceeds that bound, it first removes

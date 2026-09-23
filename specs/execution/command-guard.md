@@ -1239,14 +1239,14 @@ broken.
     an allow-listed composite without consulting the Judge", "keeps a conservative denial for an
     opaque command with a non-empty deny list").
 
-65. **File-tool authoring requires the restricted writer.** A canonical authoring target is admitted
-    only when the run carries the `reviewMutation` port. Without it the file tool refuses the target
-    with the `configure_clarvis` message — before any guard or Judge call — and a generic command
-    approval never becomes configuration approval. Operational configuration under the same roots is
-    refused in both cases. Production: `protectWorkspaceConfiguration` and `dispatch` in
+65. **File-tool configuration mutation requires the restricted reviewer.** An admitted global or workspace
+    authoring or operational target is writable only when the run carries the `reviewMutation` port.
+    Without it the file tool refuses the protected target before any guard or Judge call, and a
+    generic command approval never becomes configuration approval. Private targets remain denied.
+    Production: `protectWorkspaceConfiguration` and `dispatch` in
     `packages/tools/src/core.ts`. Test: `packages/tools/tests/integration/api.test.ts` ("refuses
     canonical authoring through a generic guard approval and admits it only through the restricted
-    writer").
+    writer", "keeps private configuration unreadable and reviews operational copy targets").
 
 ---
 
@@ -1436,7 +1436,7 @@ segment count or effect classification. Nothing between the policy and the Judge
 ruling: `createGuardResolver` builds one `createShellGuard`, and `deny` never becomes `ask`.
 Operation names such as `git.push` or `github.pr.open_or_update` are not authorization rules, so a
 recognised operation cannot be refused before review, and an unclassified composition cannot enter a
-different route. The configuration writer, its authority envelope, exact grants and structured
+different route. The configuration file reviewer, its authority envelope, exact grants and structured
 failures are owned by [effect review](effect-review.md). Production: `createGuardResolver` in
 [resolver.ts](../../packages/kernel/src/guard/resolver.ts), `buildGuard` in
 [shell-guard.ts](../../packages/kernel/src/guard/shell-guard.ts) and `createCommandReview`.

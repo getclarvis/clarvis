@@ -26,12 +26,13 @@ export type ReviewerFailureKind =
   | "invalid_response"
   | "unknown";
 
+/** Persisted pre-removal reviewer calls still count toward historical session usage. */
 const detailSchema = z
   .object({
     reviewer: z.literal("judge"),
     judge_execution_id: z.string().min(1).max(256).optional(),
     path: z.enum(["call_local", "effect_review"]),
-    consumer: z.enum(["command_guard", "configure_clarvis"]),
+    consumer: z.enum(["command_guard", "configuration_file", "configure_clarvis"]),
     stage: z.enum(["compile", "decide"]),
     started_at: z.number().finite().nonnegative(),
     ended_at: z.number().finite().nonnegative(),
@@ -160,7 +161,7 @@ function usageFields(usage: LLMUsage, cacheUsageKnown = true) {
 export interface ReviewerTraceIdentity {
   judge_execution_id?: string;
   path: "call_local" | "effect_review";
-  consumer: "command_guard" | "configure_clarvis";
+  consumer: "command_guard" | "configuration_file";
   stage: "compile" | "decide";
   authority_revision?: number;
   effect_id?: string;

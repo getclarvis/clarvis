@@ -638,25 +638,25 @@ Transitions:
 | any | `approveWorkspace()` | `trusted` | `writeWorkspaceTrust(globalDir, key, fingerprint)` appends the entry if new (`packages/kernel/src/config/workspace-trust.ts`) |
 | any | `revokeWorkspace()` | `unapproved` | `delete workspaces[key]` |
 | `trusted` | the surface changes | `changed` | withheld again (`packages/kernel/tests/integration/workspace-trust.test.ts`) |
-| `trusted`/`inert` | operator write through `ConfigService`, `configure_clarvis`, or a reviewed native authoring batch | re-recorded over the new surface | `ConfigStore.withOperatorWrite` (`packages/kernel/src/config/config-store.ts`, `packages/kernel/src/config/file-config-store.ts`, `packages/kernel/src/configuration/direct-configuration.ts`, `packages/kernel/src/configuration/authoring-mutations.ts`) |
+| `trusted`/`inert` | operator write through `ConfigService` or a reviewed configuration file batch | re-recorded over the new surface | `ConfigStore.withOperatorWrite` (`packages/kernel/src/config/config-store.ts`, `packages/kernel/src/config/file-config-store.ts`, `packages/kernel/src/configuration/authoring-mutations.ts`) |
 | `unapproved`/`changed` | the same operator-authorized write surfaces | unchanged | `if (!carried) return out` |
 
-Within workspace configuration roots, the generic `@clarvis/tools` API admits ordinary native
-file-mutation tools only for canonical Agent Profile, `WORKFLOW.md`, and `SKILL.md` destinations when
-the run carries the restricted `MutationReview` writer. Without that port the file tool refuses the
-target with the `configure_clarvis` message, and a generic command approval is never treated as
+Within the four configuration roots, the generic `@clarvis/tools` API admits ordinary native
+file-mutation tools for classified authoring and operational destinations when the run carries the
+restricted `MutationReview` writer. Without that port the file tool refuses the protected target,
+and a generic command approval is never treated as
 configuration approval. The file kernel gives an editing entry agent that
-host-owned `MutationReview`: it prepares the complete atomic batch, validates each canonical
+host-owned `MutationReview`: it prepares the complete atomic batch, validates each recognized
 document, captures every target and exact revision, reviews all effects together, and calls
-`withOperatorWrite` only for an exact successful transaction. Operational destinations direct the
-agent to `configure_clarvis`; private destinations remain denied. Selected skill packages stay
+`withOperatorWrite` only for exact successful workspace target bytes. Private destinations remain denied;
+global paths are admitted only through the entry agent's file resolver. Selected skill packages stay
 immutable to native file tools, and command execution retains its separate shell/sandbox boundary
 rather than becoming an alternate writer. Production: `protectWorkspaceConfiguration` and `dispatch` in
-`packages/tools/src/core.ts`, `isCanonicalAuthoringPath` in
+`packages/tools/src/core.ts`, `isReviewedConfigurationPath` in
 `packages/tools/src/guard/authoring-path.ts`, and `createAuthoringMutationReview` in
 `packages/kernel/src/configuration/authoring-mutations.ts`. Test: the authoring review case in
 `packages/tools/tests/integration/api.test.ts` and the batch, drift, and trust cases in
-`packages/kernel/tests/integration/direct-configuration.test.ts` and
+`packages/kernel/tests/integration/file-tool-configuration.test.ts` and
 `packages/kernel/tests/integration/workspace-trust.test.ts`.
 
 An explicit approve/revoke is refused with `conflict` while any run is active, before the trust file
@@ -918,14 +918,12 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     the authorized file has its expected revision and every other executable input is unchanged.
     Concurrent drift or a different target revision leaves the resulting surface withheld. When
     the pre-write verdict is `unapproved` or `changed`, the write does not approve it. Both
-    `ConfigService` mutations, reviewed `configure_clarvis` workspace mutations, and reviewed native
-    authoring batches use this boundary. Production:
+    `ConfigService` mutations and reviewed native authoring batches use this boundary. Production:
     `packages/kernel/src/config/config-store.ts`, `packages/kernel/src/config/file-config-store.ts`
-    `packages/kernel/src/configuration/direct-configuration.ts`, and
     `packages/kernel/src/configuration/authoring-mutations.ts`; pinned by
     `packages/kernel/tests/integration/workspace-trust.test.ts` and
     `packages/kernel/tests/integration/native-configuration.test.ts` and
-    `packages/kernel/tests/integration/direct-configuration.test.ts`.
+    `packages/kernel/tests/integration/file-tool-configuration.test.ts`.
 42. **An agent name is one filename segment.** No separator, no drive/stream separator, no leading dot,
     no `..`, no `:`. Production `packages/kernel/src/config/config-service.ts`;
     pinned across all four name-taking methods at
@@ -1165,10 +1163,10 @@ writer within ordinary Host/Sandbox runs. Concrete effects consume shared author
 mutation. Private credential/state paths, stable symlinks and hardlinked leaves are excluded.
 Authority is never inferred from skill content or a client consent nonce. Parent-directory TOCTOU
 and secret literals embedded in otherwise allowed documents remain explicit limits.
-Production: `createDirectConfigurationCapability` and `configurationFileOperation` in
-[direct-configuration.ts](../../packages/kernel/src/configuration/direct-configuration.ts) and
+Production: `createAuthoringMutationReview` and `prepareConfigurationFileMutation` in
+[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts) and
 [files.ts](../../packages/kernel/src/configuration/files.ts). Test:
-[direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts),
+[file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts),
 [configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
 
 | Condition | Handler | Outcome |

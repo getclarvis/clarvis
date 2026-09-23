@@ -84,11 +84,11 @@ function fixture(change?: (receipt: JudgeEffectReceipt) => void) {
 
 test("configuration review and refusals share the host ledger across services", async () => {
   const f = fixture();
-  expect((await f.create().review(f.batch, {}, "configure_clarvis")).decision).toBe("allow");
-  expect((await f.create().review(f.batch, {}, "configure_clarvis")).decision).toBe("allow");
+  expect((await f.create().review(f.batch, {}, "configuration_file")).decision).toBe("allow");
+  expect((await f.create().review(f.batch, {}, "configuration_file")).decision).toBe("allow");
   expect(f.counts()).toEqual({ compiles: 1, decisions: 2 });
   f.create().refuse(f.batch, f.authority.reader.snapshot().revision);
-  expect((await f.create().review(f.batch, {}, "configure_clarvis")).decision).toBe("deny");
+  expect((await f.create().review(f.batch, {}, "configuration_file")).decision).toBe("deny");
   expect(f.counts()).toEqual({ compiles: 1, decisions: 2 });
 });
 
@@ -105,7 +105,7 @@ test("a reused receipt remains bound when equivalent call properties are reorder
         .review(
           f.batch,
           { surface: "operational", target: { path: ".clarvis/settings.json" } },
-          "configure_clarvis",
+          "configuration_file",
         )
     ).decision,
   ).toBe("allow");
@@ -116,7 +116,7 @@ test("a reused receipt remains bound when equivalent call properties are reorder
         .review(
           f.batch,
           { target: { path: ".clarvis/settings.json" }, surface: "operational" },
-          "configure_clarvis",
+          "configuration_file",
         )
     ).decision,
   ).toBe("allow");
@@ -132,7 +132,7 @@ test.each(["grant", "relation", "revision", "token"] as const)(
       if (field === "revision") receipt.revision++;
       if (field === "token") receipt.transition_token = "invented";
     });
-    expect(await f.create().review(f.batch, {}, "configure_clarvis")).toMatchObject({
+    expect(await f.create().review(f.batch, {}, "configuration_file")).toMatchObject({
       decision: "unsure",
       failure_kind: "invalid_response",
     });
@@ -142,7 +142,7 @@ test.each(["grant", "relation", "revision", "token"] as const)(
 test("an installed exclusion denies without a decide call or human fallback", async () => {
   const f = fixture();
   f.candidate.exclusions = [{ effect_id: "clarvis.operational_config.write" }];
-  expect((await f.create().review(f.batch, {}, "configure_clarvis")).decision).toBe("deny");
+  expect((await f.create().review(f.batch, {}, "configuration_file")).decision).toBe("deny");
   expect(f.counts()).toEqual({ compiles: 1, decisions: 0 });
   expect(f.authority.reader.snapshot().envelope?.exclusions).toEqual(f.candidate.exclusions);
 });
@@ -150,7 +150,7 @@ test("an installed exclusion denies without a decide call or human fallback", as
 test("missing composition throws instead of returning unsure", async () => {
   const f = fixture();
   const review = createHostEffectReview({ ...f.deps, judge: () => undefined });
-  await expect(review.review(f.batch, {}, "configure_clarvis")).rejects.toBeInstanceOf(
+  await expect(review.review(f.batch, {}, "configuration_file")).rejects.toBeInstanceOf(
     JudgeArchitectureError,
   );
 });
@@ -172,7 +172,7 @@ test.each(["compile", "decide"] as const)(
       });
     const review = createHostEffectReview({ ...f.deps, audit });
     expect(
-      (await review.review(f.batch, { secret: "PRIVATE_CASE" }, "configure_clarvis")).decision,
+      (await review.review(f.batch, { secret: "PRIVATE_CASE" }, "configuration_file")).decision,
     ).toBe("unsure");
     const events = audit.events("effect_review.reviewer.failed");
     expect(events).toHaveLength(1);
@@ -189,14 +189,14 @@ test.each(["compile", "decide"] as const)(
 test("human-only facts never enter semantic inference", async () => {
   const f = fixture();
   f.batch.reviewability = "human_only";
-  expect((await f.create().review(f.batch, {}, "configure_clarvis")).decision).toBe("unsure");
+  expect((await f.create().review(f.batch, {}, "configuration_file")).decision).toBe("unsure");
   expect(f.counts()).toEqual({ compiles: 0, decisions: 0 });
 });
 
 test("the audit schema admits a configuration attested event and rejects removed effects and the command consumer", () => {
   const f = fixture();
   const audit = recordingLogger();
-  createHostEffectReview({ ...f.deps, audit }).attest(f.batch.facts[0]!, "configure_clarvis");
+  createHostEffectReview({ ...f.deps, audit }).attest(f.batch.facts[0]!, "configuration_file");
   const [event] = audit.events("effect_review.effect.attested");
   expect(effectReviewAuditSchema.safeParse(event).success).toBe(true);
   expect(effectReviewAuditSchema.safeParse({ ...event, effect_id: "git.push" }).success).toBe(

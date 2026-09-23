@@ -1,10 +1,10 @@
 import { lstatSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, normalize, relative, resolve, sep } from "node:path";
-import { isSpillFile } from "@clarvis/paths";
+import { configurationTarget, isSpillFile } from "@clarvis/paths";
 import { ToolError } from "../errors.ts";
 import type { RuntimeConfig } from "../config.ts";
 import { readFileOptions, type ReadFileOptions } from "./files.ts";
-import { resolvePath } from "./paths.ts";
+import { resolveFileToolPath } from "./paths.ts";
 export interface ReadableStateArtifact {
   readonly path: string;
   readonly identity: { readonly dev: bigint; readonly ino: bigint };
@@ -92,17 +92,27 @@ export function resolveReadableTextPath(
       path: input,
     });
   }
-  const target = resolvePath(
-    input,
-    config.workspaceRoot,
-    config.confineToWorkspace,
-    [...config.temporaryRoots, ...(artifact === undefined ? [] : [artifact.path])],
-    config.logger,
-  );
+  const target =
+    artifact === undefined
+      ? resolveFileToolPath(input, config)
+      : resolveFileToolPath(input, {
+          ...config,
+          temporaryRoots: [...config.temporaryRoots, artifact.path],
+        });
+  const admitted =
+    config.configurationRoots === undefined
+      ? undefined
+      : configurationTarget(config.configurationRoots, target);
+  const configurationRoot =
+    admitted === undefined ? [] : [config.configurationRoots![admitted.root]];
   return {
     target,
     options: {
-      ...readFileOptions(config, artifact === undefined ? [] : [artifact.path]),
+      ...readFileOptions(config, [
+        ...configurationRoot,
+        ...(artifact === undefined ? [] : [artifact.path]),
+      ]),
+      ...(admitted === undefined ? {} : { noFollow: true, requireSingleLink: true }),
       ...(artifact === undefined
         ? {}
         : {

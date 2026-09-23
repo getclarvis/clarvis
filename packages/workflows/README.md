@@ -175,12 +175,11 @@ is diagnosed and contributes no override, leaving a same-named built-in availabl
 
 `validateWorkflowDocument(raw, { directory })` compiles prospective `WORKFLOW.md` bytes through the
 same bounds, schema, name, selector, acceptance, repetition and brief rules as the filesystem loader.
-The referenced briefs must already exist below `directory`. The restricted writer uses this entry
+The referenced briefs must already exist below `directory`. The reviewed file-tool route uses this entry
 before effect review or mutation, so a malformed workflow cannot replace valid bytes or reach a
 prepared authoring prompt.
 
-The kernel's builtin `/clarvis-configure` guide includes a complete authored workflow, its brief
-and a separate skill launcher targeting Admiral. The ordinary restricted writer can create those files;
+The ordinary reviewed file tools can create a workflow, its brief and a separate skill launcher;
 an ordinary manager turn loads and executes them under the workflow's own preflight. Workflows are
 independent of Extension Profile selection, while a standalone launcher must be selected by a custom
 profile. See [self-configuration.md](../../specs/hosts/self-configuration.md) for coverage and limits.

@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import { ToolError, fsError } from "../errors.ts";
-import { resolvePath, displayPath } from "../lib/paths.ts";
+import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { withFileLock, applyOpsAtomic } from "../lib/atomic.ts";
 import type { ToolDef } from "./types.ts";
 
@@ -35,13 +35,7 @@ export const remove: ToolDef = {
   },
   async handler(args, config) {
     const rel = args.path as string;
-    const target = resolvePath(
-      rel,
-      config.workspaceRoot,
-      config.confineToWorkspace,
-      config.temporaryRoots,
-      config.logger,
-    );
+    const target = resolveFileToolPath(rel, config);
 
     return withFileLock(target, async () => {
       let stat;

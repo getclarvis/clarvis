@@ -6,7 +6,12 @@ import path from "node:path";
 import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./lib/log.ts";
 import type { Guard, Elicit } from "./guard/types.ts";
 import { discoverLinkedGitMetadataPaths, type SandboxConfig } from "./sandbox.ts";
-import { resolveCommand, workspaceStatePaths, type WorkspaceStatePaths } from "@clarvis/paths";
+import {
+  resolveCommand,
+  workspaceStatePaths,
+  type ConfigurationRoot,
+  type WorkspaceStatePaths,
+} from "@clarvis/paths";
 
 /**
  * The fully resolved, validated runtime configuration threaded through every
@@ -118,8 +123,10 @@ export interface RuntimeConfig {
 
   /** Optional command-approval hook consulted before a gated tool runs. */
   guard?: Guard;
-  /** Host-only review of final authoring bytes, before the atomic mutation commits. */
+  /** Host-only review of final configuration bytes, before the atomic mutation commits. */
   reviewMutation?: MutationReview;
+  /** Entry-agent configuration roots for individually mediated file operations. */
+  configurationRoots?: Readonly<Record<ConfigurationRoot, string>>;
 
   /** Optional interactive prompt invoked when the {@link Guard} returns `ask`. */
   elicit?: Elicit;
@@ -313,8 +320,10 @@ export interface AgentToolsOptions {
 
   /** Command-approval hook passed through to {@link RuntimeConfig.guard}. */
   guard?: Guard;
-  /** Host-only review of final authoring bytes, before the atomic mutation commits. */
+  /** Host-only review of final configuration bytes, before the atomic mutation commits. */
   reviewMutation?: MutationReview;
+  /** Entry-agent configuration roots; does not widen command execution. */
+  configurationRoots?: Readonly<Record<ConfigurationRoot, string>>;
 
   /** Interactive approval prompt passed through to {@link RuntimeConfig.elicit}. */
   elicit?: Elicit;
@@ -508,6 +517,7 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
     gitMetadataPaths,
     guard: options.guard,
     reviewMutation: options.reviewMutation,
+    configurationRoots: options.configurationRoots,
     elicit: options.elicit,
     sandbox,
     allowHostEscalation: options.allowHostEscalation ?? true,

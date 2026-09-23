@@ -400,7 +400,7 @@ export function resolveEntryAgentProfile(
  * {@link renderSkillPrompt} seed per expandable skill (user-invocable, no
  * `agent` field) after those messages. This is the harness analog of
  * `load_skill` on an already-open turn: it does not fork a run, does not
- * expand agent-backed skills or the reserved `$clarvis-configure` guide, and
+ * expand agent-backed skills, and
  * skips a name already seeded by `params.skill`.
  */
 export function createSettingsRunAssembler(
@@ -436,15 +436,6 @@ export function createSettingsRunAssembler(
   };
   return (params) => {
     const settings = store.readSettings();
-    if (
-      params.skill?.name === "clarvis-configure" &&
-      (settings.merged.runtime?.backend === "docker" ||
-        settings.merged.runtime?.backend === "podman")
-    )
-      throw kernelError(
-        "unsupported",
-        "Direct self-configuration requires Isolation Sandbox or Host; containers cannot configure the host.",
-      );
     const merged = settings.merged as unknown as EngineSettings;
     requireCatalogModel(merged.default_vision_model, options.modelExecutionResolver);
     requireCatalogModel(params.guard_judge?.model, options.modelExecutionResolver);

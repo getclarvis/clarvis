@@ -18,7 +18,6 @@ export function toolIdentity(mcpName: string | undefined, toolName: string | und
  *
  * @param mcpName - the MCP server the call was routed through, if any.
  * @param toolName - the tool name, if the call named one.
- * @param args - safe displayed arguments used for operation-specific built-in labels.
  * @returns a product label for known built-ins, a `server:tool` label for MCP, or the lone identity.
  *
  * @remarks Both slots are guarded, not just `toolName`. A node can exist with a
@@ -44,14 +43,6 @@ const BUILTIN_TOOL_LABELS: Readonly<Record<string, string>> = {
   run_work_items: "Run work items",
   workflow_status: "Check workflow",
   workflow_decide: "Decide workflow",
-};
-
-const CONFIGURATION_TOOL_LABELS: Readonly<Record<string, string>> = {
-  list: "List configuration",
-  read: "Read configuration",
-  write: "Write configuration",
-  edit: "Edit configuration",
-  delete: "Delete configuration",
 };
 
 const TRANSCRIPT_EXTERNAL_ORCHESTRATION_TOOLS = new Set([
@@ -89,12 +80,9 @@ export function isTranscriptExternalOrchestrationTool(
 export function toolDisplayLabel(
   mcpName: string | undefined,
   toolName: string | undefined,
-  args?: Readonly<Record<string, unknown>>,
 ): string {
   if (mcpName && toolName) return `${mcpName}:${toolName}`;
   const identity = toolIdentity(mcpName, toolName);
-  if (identity === "configure_clarvis" && typeof args?.operation === "string")
-    return CONFIGURATION_TOOL_LABELS[args.operation] ?? identity;
   return BUILTIN_TOOL_LABELS[identity] ?? identity;
 }
 

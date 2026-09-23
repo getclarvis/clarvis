@@ -160,6 +160,54 @@ describe("applyOpsAtomic — rollback", () => {
     cleanup(root);
   });
 
+  it("restores both endpoints when an overwrite rename fails after destination backup", async () => {
+    write(root, "source.txt", "source");
+    write(root, "destination.txt", "destination");
+    const source = path.join(root, "source.txt");
+    const destination = path.join(root, "destination.txt");
+    const originalRename = fsp.rename.bind(fsp);
+    vi.spyOn(fsp, "rename").mockImplementation((from: PathLike, to: PathLike) => {
+      if (from === source) return Promise.reject(Object.assign(new Error("boom"), { code: "EIO" }));
+      return originalRename(from, to);
+    });
+    const error = (await catchErr(
+      applyOpsAtomic([{ type: "rename", from: source, path: destination, overwrite: true }]),
+    )) as Error;
+    expect(error.message).toBe("boom");
+    expect(read(root, "source.txt")).toBe("source");
+    expect(read(root, "destination.txt")).toBe("destination");
+    expect(tmpFiles(root)).toHaveLength(0);
+  });
+
+  it("restores an overwritten destination and source after a later batch failure", async () => {
+    write(root, "source.txt", "source");
+    write(root, "destination.txt", "destination");
+    write(root, "later.txt", "later");
+    const source = path.join(root, "source.txt");
+    const destination = path.join(root, "destination.txt");
+    const later = path.join(root, "later.txt");
+    const originalRename = fsp.rename.bind(fsp);
+    let failed = false;
+    vi.spyOn(fsp, "rename").mockImplementation((from: PathLike, to: PathLike) => {
+      if (to === later && !failed) {
+        failed = true;
+        return Promise.reject(Object.assign(new Error("boom"), { code: "EIO" }));
+      }
+      return originalRename(from, to);
+    });
+    const error = (await catchErr(
+      applyOpsAtomic([
+        { type: "rename", from: source, path: destination, content: "rewritten", overwrite: true },
+        { type: "modify", path: later, content: "changed" },
+      ]),
+    )) as Error;
+    expect(error.message).toBe("boom");
+    expect(read(root, "source.txt")).toBe("source");
+    expect(read(root, "destination.txt")).toBe("destination");
+    expect(read(root, "later.txt")).toBe("later");
+    expect(tmpFiles(root)).toHaveLength(0);
+  });
+
   it("undoes a committed pure rename when a later op fails", async () => {
     write(root, "A.txt", "A-content");
     write(root, "C.txt", "C-content");

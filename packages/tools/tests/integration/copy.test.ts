@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { workspacePaths } from "@clarvis/paths";
 import {
   makeWorkspace,
   cleanup,
@@ -57,6 +58,35 @@ describe("copy", () => {
       chmod(root, "s.sh", 0o755);
       await callTool("copy", { source: "s.sh", destination: "c.sh" }, config);
       expect(mode(root, "c.sh")).toBe(0o755);
+    });
+
+    it.skipIf(!modeBitsEnforced)("keeps reviewed configuration copies private", async () => {
+      write(root, "source.md", "Shared guidance.\n");
+      chmod(root, "source.md", 0o640);
+      const target = workspacePaths(root).sharedAgentPromptFile;
+      let reviews = 0;
+      const reviewed = makeConfig(root, {
+        reviewMutation: async (operations, commit) => {
+          reviews++;
+          expect(operations).toMatchObject([{ path: target, mode: 0o600, dirMode: 0o700 }]);
+          await commit();
+        },
+      });
+      const result = await callTool("copy", { source: "source.md", destination: target }, reviewed);
+      expect(result.isError).toBe(false);
+      expect(reviews).toBe(1);
+      expect(readFileSync(target, "utf8")).toBe("Shared guidance.\n");
+      expect(mode(root, path.relative(root, target))).toBe(0o600);
+      expect(mode(root, path.relative(root, workspacePaths(root).clarvisDir))).toBe(0o700);
+      chmod(root, "source.md", 0o600);
+      const replacement = await callTool(
+        "copy",
+        { source: "source.md", destination: target, overwrite: true },
+        reviewed,
+      );
+      expect(replacement.isError).toBe(false);
+      expect(reviews).toBe(2);
+      expect(mode(root, path.relative(root, target))).toBe(0o600);
     });
   });
 

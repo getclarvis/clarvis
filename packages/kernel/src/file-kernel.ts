@@ -3,8 +3,6 @@ import { createNativeKernel } from "./native-kernel.ts";
 import { createAuthoringMutationReview } from "./configuration/authoring-mutations.ts";
 import type { RunServiceConfig } from "./runs/run-service.ts";
 import { extractEnvRefs, loadEnv, type EnvConfig } from "@clarvis/capability";
-import { withBuiltinSkills } from "./skills/builtin-skills.ts";
-import { createDirectConfigurationCapability } from "./configuration/direct-configuration.ts";
 import { configurationRoots } from "@clarvis/paths";
 import type { ConnectionEventSink } from "./connection-health.ts";
 import type { MemoryStore } from "@clarvis/memory";
@@ -128,6 +126,8 @@ export interface CreateFileKernelOptions {
   traceLocksDir?: string;
   /** Global Clarvis dir for config/secrets/models/sessions; defaults to the standard global root. */
   globalDir?: string;
+  /** Host-selected home for the shared global Agent configuration root. */
+  configurationHome?: string;
   /** Process-local Extension Profile override (`scope:name`); never persisted. */
   extensionProfileSelector?: string;
   /** Default model id; falls back to `CLARVIS_DEFAULT_MODEL` in the environment. */
@@ -332,6 +332,11 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   );
   const auditLogger = createAuditLogger(logger, env.CLARVIS_LOG_AUDIT);
   const globalDir = opts.globalDir ?? globalRoot();
+  const authoredRoots = configurationRoots({
+    workspaceRoot: opts.workspaceRoot,
+    globalDir,
+    ...(opts.configurationHome === undefined ? {} : { home: opts.configurationHome }),
+  });
   const bootStartedAt = Date.now();
   logger.info(
     {
@@ -747,7 +752,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       logger,
       workspaceRoot: opts.workspaceRoot,
       skillRoots: pluginSkillRoots,
-      composeSkills: withBuiltinSkills,
       skillBootstraps: pluginSkillBootstraps,
       resolveGuard: async (ctx) => {
         const resolution = await createGuardResolver({
@@ -767,8 +771,9 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
           return resolution;
         return {
           ...resolution,
+          configurationRoots: authoredRoots,
           reviewMutation: createAuthoringMutationReview(ctx, {
-            roots: configurationRoots({ workspaceRoot: opts.workspaceRoot, globalDir }),
+            roots: authoredRoots,
             store: configStore,
             audit: auditLogger,
             changed: () => extensionProfileManager.requestSkillRefresh(),
@@ -872,14 +877,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
             ...(base.capabilities ?? []).filter(
               (capability) => capability.name !== MEMORY_CAPABILITY_NAME,
             ),
-            createDirectConfigurationCapability({
-              roots: configurationRoots({ workspaceRoot: opts.workspaceRoot, globalDir }),
-              store: configStore,
-              enabled: opts.builtins?.tools !== false,
-              audit: auditLogger,
-              changed: () => extensionProfileManager.requestSkillRefresh(),
-              prepareSkillInclusion: (ref) => extensionProfileManager.prepareSkillInclusion(ref),
-            }),
             ...(base.capabilities ?? []).filter(
               (capability) => capability.name === MEMORY_CAPABILITY_NAME,
             ),

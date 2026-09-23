@@ -299,9 +299,8 @@ another project, start the binary from that directory or use the installed
 
 ## Configuration
 
-Configuration requests use the normal conversation. The optional `/clarvis-configure <task>`
-loads embedded guidance without changing the agent or runtime. The host-admitted `configure_clarvis`
-writer reviews exact mutations through the current policy and excludes credentials/private state.
+Configuration requests use the normal conversation and file tools. The host reviews exact
+mutations through the current policy and excludes credentials and private state.
 Automatic authorization does not require a second activation prompt. Human review concerns the
 concrete operation. Skill catalog notifications refresh command listings without reconnecting;
 active resource users retain their captured revision until safe application.
@@ -677,7 +676,8 @@ keys only move the highlighted choice and still require Enter. Number shortcuts 
 text or numeric field owns input. Enter on an untouched workflow prompt cannot launch a workflow by
 enum order. Command and configuration approvals always present the affirmative decision first:
 `[1] allow once`, `[2] deny`; when a session grant exists the order is `[1] allow once`, `[2] allow
-for this session`, `[3] deny`. Deny remains preselected, so untouched Enter stays fail-closed.
+for this session`, `[3] deny` for commands, and `[1] allow once`, `[2] allow these targets for this
+session`, `[3] deny` for configuration. Deny remains preselected, so untouched Enter stays fail-closed.
 
 Goal, Plan and Workflow detail screens share a 100-cell reading column, title/section styling,
 spacing and lifecycle colors. Their footers use the same lowercase action labels and group Escape

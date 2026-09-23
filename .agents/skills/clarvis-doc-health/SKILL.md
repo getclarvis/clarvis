@@ -23,11 +23,9 @@ For a repository-wide audit, start with tracked and unignored Markdown from the 
 git ls-files --cached --others --exclude-standard -- '*.md' '*.mdx'
 ```
 
-Also inventory shipped agent guidance in TypeScript: the `CLARVIS_CONFIGURE_SKILL` metadata/body in
-[clarvis-configure.ts](../../../packages/kernel/src/skills/clarvis-configure.ts) and its executable
-[configuration examples](../../../packages/kernel/src/skills/configuration-examples.ts). These are
-product documentation even though a Markdown-only search omits them. Their ownership and limits
-live in the [Kernel README](../../../packages/kernel/README.md#builtin-configuration-skill) and
+Also inventory shipped agent guidance in TypeScript when present; a Markdown-only search can miss
+product instructions embedded in source. Reviewed file-tool configuration is owned by the
+[Kernel README](../../../packages/kernel/README.md#file-tool-configuration) and
 [self-configuration contract](../../../specs/hosts/self-configuration.md).
 
 Distinguish product documentation, repository skill instructions, proposals, and intentionally
@@ -66,11 +64,9 @@ regression check only when an executable rule caused the drift; wording changes 
 behavioral tests.
 
 For configuration, command, activation, grant/capability, session/runtime lifecycle or recovery
-claims, review the builtin `clarvis-configure` metadata, body and examples against the owning source
-and specs in the same iteration. Update affected builtin guidance alongside the README/specs so an
-installed agent receives the current instructions, including operator-only actions and consent
-boundaries. Preserve executable examples, on-demand disclosure and the existing body budget. Keep
-the builtin in TypeScript; do not replace it with a `SKILL.md` file or installation scaffolding.
+claims, review the owning source and specs in the same iteration. Update affected installed skill
+instructions only when that skill actually exists in the requested corpus; ordinary Clarvis
+configuration now uses reviewed file tools and has no bundled guide.
 Record its disposition explicitly: updated, or reviewed with a reason no change was needed.
 Unrelated wording changes do not require rewriting the builtin.
 

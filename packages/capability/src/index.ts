@@ -422,6 +422,7 @@ export type {
   OperatorInstructions,
   OperatorElicitationContext,
   OperatorAuthorityBinding,
+  OperatorConfigurationSessionGrant,
   OperatorReviewContext,
   OperatorReviewContextSnapshot,
   OperatorReviewContextProvider,

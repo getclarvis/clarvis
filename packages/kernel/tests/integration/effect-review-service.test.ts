@@ -112,12 +112,12 @@ describe("effect review through the production Judge runtime", () => {
           },
         },
       });
-    expect((await create().review(batch, {}, "configure_clarvis")).decision).toBe("allow");
+    expect((await create().review(batch, {}, "configuration_file")).decision).toBe("allow");
     expect(ledger.reader.snapshot().envelope_context_revision).toBe("plan-1");
-    expect((await create().review(batch, {}, "configure_clarvis")).decision).toBe("allow");
+    expect((await create().review(batch, {}, "configuration_file")).decision).toBe("allow");
     expect(stages).toEqual(["compile", "decide", "decide"]);
     live = false;
-    expect((await create().review(batch, {}, "configure_clarvis")).decision).toBe("allow");
+    expect((await create().review(batch, {}, "configuration_file")).decision).toBe("allow");
     expect(stages).toEqual(["compile", "decide", "decide", "compile", "decide"]);
     expect(ledger.reader.snapshot().envelope_context_revision).toBeUndefined();
   });
@@ -265,7 +265,7 @@ describe("effect review through the production Judge runtime", () => {
         },
       },
     });
-    expect(await service.review(batch, {}, "configure_clarvis")).toMatchObject({
+    expect(await service.review(batch, {}, "configuration_file")).toMatchObject({
       decision: "allow",
       relation: "bounded_prerequisite",
     });
@@ -297,7 +297,7 @@ describe("effect review through the production Judge runtime", () => {
         },
       },
     });
-    expect(await service.review(batch, {}, "configure_clarvis")).toMatchObject({
+    expect(await service.review(batch, {}, "configuration_file")).toMatchObject({
       decision: "allow",
     });
     expect(compilePayload?.operator_evidence).toEqual(ledger.reader.snapshot().evidence);
@@ -325,7 +325,7 @@ describe("effect review through the production Judge runtime", () => {
         llm: { call: () => Promise.reject(error) },
       });
       expect(
-        await service.review(batch, { command: "sensitive command" }, "configure_clarvis"),
+        await service.review(batch, { command: "sensitive command" }, "configuration_file"),
       ).toMatchObject({
         decision: "unsure",
         failure_kind: kind,
@@ -354,7 +354,7 @@ describe("effect review through the production Judge runtime", () => {
         defaultModel: "anthropic/test",
         llm: { call: () => Promise.resolve(compileResponse(output)) },
       });
-      expect((await service.review(batch, {}, "configure_clarvis")).failure_kind).toBe(
+      expect((await service.review(batch, {}, "configuration_file")).failure_kind).toBe(
         "invalid_response",
       );
       expect(audit.events("effect_review.reviewer.completed")).toHaveLength(0);
@@ -410,21 +410,21 @@ describe("effect review through the production Judge runtime", () => {
       ),
     });
     expect(
-      (await service.review(batch, { command: "untrusted" }, "configure_clarvis")).decision,
+      (await service.review(batch, { command: "untrusted" }, "configuration_file")).decision,
     ).toBe("allow");
     expect(
-      (await service.review(batch, { command: "untrusted" }, "configure_clarvis")).attempts,
+      (await service.review(batch, { command: "untrusted" }, "configuration_file")).attempts,
     ).toBe(0);
     expect(calls).toHaveLength(2);
     expect(trace.entries().map((entry) => entry.detail)).toEqual([
       expect.objectContaining({
         path: "effect_review",
-        consumer: "configure_clarvis",
+        consumer: "configuration_file",
         stage: "compile",
       }),
       expect.objectContaining({
         path: "effect_review",
-        consumer: "configure_clarvis",
+        consumer: "configuration_file",
         stage: "decide",
       }),
     ]);
@@ -474,11 +474,11 @@ describe("effect review through the production Judge runtime", () => {
         },
       },
     });
-    expect(await service.review(batch, {}, "configure_clarvis")).toMatchObject({
+    expect(await service.review(batch, {}, "configuration_file")).toMatchObject({
       decision: "unsure",
       failure_kind: "invalid_response",
     });
-    await service.review(batch, {}, "configure_clarvis");
+    await service.review(batch, {}, "configuration_file");
     expect(calls).toBe(9);
   });
   test("a concurrent steer invalidates the model's previous revision", async () => {
@@ -495,7 +495,7 @@ describe("effect review through the production Judge runtime", () => {
         },
       },
     });
-    expect((await service.review(batch, {}, "configure_clarvis")).decision).toBe("unsure");
+    expect((await service.review(batch, {}, "configuration_file")).decision).toBe("unsure");
     expect(ledger.reader.snapshot().envelope).toBeUndefined();
   });
   test("a concurrent Plan revision invalidates compilation before authority is installed", async () => {
@@ -527,7 +527,7 @@ describe("effect review through the production Judge runtime", () => {
         },
       },
     });
-    const decision = service.review(batch, {}, "configure_clarvis");
+    const decision = service.review(batch, {}, "configuration_file");
     await entered.promise;
     planRevision = "plan:2";
     release.resolve();
@@ -548,7 +548,7 @@ describe("effect review through the production Judge runtime", () => {
         },
       },
     });
-    expect(await service.review(batch, {}, "configure_clarvis")).toMatchObject({
+    expect(await service.review(batch, {}, "configuration_file")).toMatchObject({
       decision: "unsure",
       failure_kind: "timeout",
       attempts: 1,
@@ -590,7 +590,7 @@ test("a refused exact revision is shared across consumers but not across correct
     facts: [attestConfiguration({ ...mutation, operation: "write" }, registry)],
   };
   expect(service.wasRefused(equivalent)).toBe(true);
-  expect(await service.review(equivalent, {}, "configure_clarvis")).toMatchObject({
+  expect(await service.review(equivalent, {}, "configuration_file")).toMatchObject({
     decision: "deny",
     attempts: 0,
   });
@@ -646,5 +646,5 @@ test("a late automatic decision cannot override a concurrent refusal of the same
       },
     },
   });
-  expect(await service.review(batch, {}, "configure_clarvis")).toMatchObject({ decision: "deny" });
+  expect(await service.review(batch, {}, "configuration_file")).toMatchObject({ decision: "deny" });
 });

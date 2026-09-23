@@ -3,6 +3,8 @@ import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
 import picomatch from "picomatch";
 import { ToolError, fsError } from "../errors.ts";
+import { configurationTarget } from "@clarvis/paths";
+import type { RuntimeConfig } from "../config.ts";
 import { loadIgnore } from "./ignore.ts";
 import { assertWithinWorkspace } from "./paths.ts";
 
@@ -24,6 +26,8 @@ export interface ReadConfinement {
 export interface ReadFileOptions {
   /** Refuse a last-component symlink where the host exposes `O_NOFOLLOW`. */
   noFollow?: boolean;
+  /** Refuse aliases of a configuration document, including hardlinks. */
+  requireSingleLink?: boolean;
   /** Revalidate the opened object against these roots before reading bytes. */
   confinement?: ReadConfinement;
   /** Exact filesystem object admitted before opening a state artifact. */
@@ -57,6 +61,27 @@ export function readFileOptions(
         },
       }
     : {};
+}
+
+/** Read one admitted configuration leaf through its exact host root and descriptor checks. */
+export function readFileOptionsForPath(
+  config: Pick<
+    RuntimeConfig,
+    "confineToWorkspace" | "workspaceRoot" | "temporaryRoots" | "configurationRoots"
+  >,
+  target: string,
+): ReadFileOptions {
+  const classified =
+    config.configurationRoots === undefined
+      ? undefined
+      : configurationTarget(config.configurationRoots, target);
+  return {
+    ...readFileOptions(
+      config,
+      classified === undefined ? [] : [config.configurationRoots![classified.root]],
+    ),
+    ...(classified === undefined ? {} : { noFollow: true, requireSingleLink: true }),
+  };
 }
 
 /**
@@ -240,6 +265,10 @@ export async function readRawFile(
   try {
     const stat = await handle.stat();
     if (!stat.isFile()) throw notRegularFile(stat, relForError);
+    if (options.requireSingleLink && stat.nlink !== 1)
+      throw new ToolError("denied", `Configuration file has multiple links: ${relForError}.`, {
+        path: relForError,
+      });
     if (options.expectedIdentity !== undefined) {
       const opened = await handle.stat({ bigint: true });
       if (
@@ -359,6 +388,7 @@ export async function listFiles(
     respectGitignore: boolean;
     maxEntries?: number;
     signal?: AbortSignal;
+    admit?: (path: string, kind: "directory" | "file") => boolean;
   },
 ): Promise<FileListing> {
   const maxEntries = Math.max(1, opts.maxEntries ?? Number.MAX_SAFE_INTEGER);
@@ -391,10 +421,15 @@ export async function listFiles(
         const abs = path.join(dir, entry.name);
         const workspaceRel = path.relative(workspaceRoot, abs);
         if (entry.isDirectory()) {
-          if (ig?.ignores(`${workspaceRel}${path.sep}`) !== true) stack.push(abs);
+          if (
+            ig?.ignores(`${workspaceRel}${path.sep}`) !== true &&
+            opts.admit?.(abs, "directory") !== false
+          )
+            stack.push(abs);
           continue;
         }
         if (!entry.isFile() && !entry.isSymbolicLink()) continue;
+        if (opts.admit?.(abs, "file") === false) continue;
         const baseRel = path.relative(base, abs).split(path.sep).join("/");
         if (matches(baseRel) && ig?.ignores(workspaceRel) !== true) files.push(abs);
       }

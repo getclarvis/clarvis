@@ -422,7 +422,7 @@ Per call, in order:
    (`packages/kernel/src/skills/dollar-mentions.ts`) appends one `renderSkillPrompt` user message per
    `$name` mention that resolves to exactly one user-invocable skill with no `agent` field. This is
    the harness analog of `load_skill` on an already-open turn: it does not fork, does not expand
-   agent-backed names or the product-reserved `$clarvis-configure` guide, ignores denylisted
+   agent-backed names, ignores denylisted
    environment tokens and unknown names, and skips a name already seeded by `params.skill`. Start
    and continue share this path because both go through the assembler.
 4. `skillPlansMode` is consulted only when both a `skill` param and a resolved skill exist, and is passed the skill's root `source` for provenance.
@@ -948,9 +948,8 @@ Production `packages/kernel/src/runs/settings-assembler.ts`. Test
 
 **INV-R34b.** `$name` mentions in the current turn's user text inject a skill seed into that
 turn when the name is a unique user-invocable skill without `agent`; they never fork a run, never
-expand agent-backed, product-reserved or denylisted names, and never duplicate a `skill` start-param
-seed. `clarvis-configure` is the narrow product-reserved name and therefore remains literal despite
-having no agent override.
+expand agent-backed or denylisted names, and never duplicate a `skill` start-param
+seed. Unknown names remain literal.
 Production `packages/kernel/src/skills/dollar-mentions.ts` and
 `packages/kernel/src/runs/settings-assembler.ts`. Test
 `packages/kernel/tests/unit/dollar-mentions.test.ts` and

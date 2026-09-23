@@ -1,5 +1,5 @@
-/** Authored examples embedded verbatim in the builtin guide and exercised through real loaders. */
-export const CONFIGURATION_EXAMPLES = {
+/** Documents exercised through the real configuration loaders. */
+export const CONFIGURATION_FIXTURES = {
   model: {
     path: "settings.json",
     language: "json",
@@ -168,9 +168,3 @@ current session_id and revision with workflow_decide at any checkpoint. Report a
 }`,
   },
 } as const;
-
-/** Render the same filename and bytes validated by the configuration guidance regression suite. */
-export function configurationExample(name: keyof typeof CONFIGURATION_EXAMPLES): string {
-  const example = CONFIGURATION_EXAMPLES[name];
-  return `Example ${example.path}:\n\n\`\`\`${example.language}\n${example.content}\n\`\`\``;
-}

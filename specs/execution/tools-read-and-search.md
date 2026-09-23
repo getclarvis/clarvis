@@ -185,6 +185,17 @@ Truncation footer: `[search incomplete: traversal stopped at N entries]`
 
 ### 3.4 `grep`
 
+An entry agent with host configuration roots may point `glob` or `grep` at an admitted global
+configuration directory or file while workspace confinement remains enabled. Recursive walks apply
+canonical path admission before descending or reading, so private state and credential leaves are
+omitted. Configuration directory grep stays in process and opens admitted files through the
+descriptor-bound read path; it does not give a subprocess access to the global root. Production:
+`resolveFileToolPath` and `isAdmittedFileToolSearchPath` in
+[paths.ts](../../packages/tools/src/lib/paths.ts), `listFiles` and `readFileOptionsForPath` in
+[files.ts](../../packages/tools/src/lib/files.ts), and `grepSearch` in
+[rg.ts](../../packages/tools/src/lib/rg.ts). Test: global search and private exclusion in
+[api.test.ts](../../packages/tools/tests/integration/api.test.ts).
+
 Three renderings selected by `output_mode`:
 
 | Mode | Row shape | Unit for pagination | Source |

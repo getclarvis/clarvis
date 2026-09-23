@@ -8,7 +8,11 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { ConfigStore } from "../config/config-store.ts";
 import type { PreparedSkillInclusion } from "../extension-profiles/extension-profile-manager.ts";
 import type { ConfigurationMutationFacts } from "../guard/effects/configuration.ts";
-import { configurationFileMutationFacts, configurationSkillRef } from "./files.ts";
+import {
+  configurationSkillRef,
+  prepareConfigurationFileMutation,
+  readConfigurationDocument,
+} from "./files.ts";
 import { createConfigurationReview } from "./review.ts";
 
 /** Review complete file-tool batches through the same host authority as the restricted writer. */
@@ -29,15 +33,20 @@ export function createAuthoringMutationReview(
     createHash("sha256").update(content).digest("hex");
   const locate = (path: string) => configurationTarget(options.roots, path);
   const capture = (path: string): Buffer | null => {
+    const target = locate(resolve(path));
+    if (target !== undefined) {
+      const document = readConfigurationDocument(options.roots, target.root, target.path);
+      return document?.bytes ?? null;
+    }
     let parent = path;
     while (true) {
       try {
         const stat = lstatSync(parent);
-        if (stat.isSymbolicLink()) throw new Error("Authoring cannot traverse symbolic links.");
+        if (stat.isSymbolicLink()) throw new Error("Configuration cannot traverse symbolic links.");
         if (parent === path && (stat.nlink > 1 || stat.size > 262144))
-          throw new Error("Authoring requires a bounded, unaliased document.");
+          throw new Error("Configuration requires a bounded, unaliased document.");
         if (parent === path && !stat.isFile())
-          throw new Error("Authoring requires a regular file target.");
+          throw new Error("Configuration requires a regular file target.");
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
@@ -48,7 +57,7 @@ export function createAuthoringMutationReview(
     try {
       const bytes = readFileSync(path);
       if (bytes.length > 262144)
-        throw new Error("Authoring file exceeds the review payload limit.");
+        throw new Error("Configuration file exceeds the review payload limit.");
       return bytes;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
@@ -60,40 +69,59 @@ export function createAuthoringMutationReview(
       op.path,
       ...(op.from === undefined ? [] : [op.from]),
     ]);
-    if (
-      !paths.some((path) => {
-        const target = locate(resolve(path));
-        return target !== undefined && target.kind === "authoring";
-      })
-    )
-      return commit();
+    if (!paths.some((path) => locate(resolve(path)) !== undefined)) return commit();
     if (operations.length > 128 || new Set(paths).size !== paths.length)
-      throw new Error("Authoring batch is too large or changes a target more than once.");
+      throw new Error("Configuration batch is too large or changes a target more than once.");
     const facts: ConfigurationMutationFacts[] = [];
     const snapshots = new Map<string, string | null>();
+    const initial = new Map<string, Buffer | null>();
+    const captureInitial = (path: string): Buffer | null => {
+      const canonical = resolve(path);
+      if (initial.has(canonical)) return initial.get(canonical) ?? null;
+      const bytes = capture(canonical);
+      initial.set(canonical, bytes);
+      return bytes;
+    };
     const inclusions: ExtensionProfileSkillRef[] = [];
-    const prepared: { path: string; content: string | null }[] = [];
-    const add = (path: string, content: string | null): void => {
+    const prepared: {
+      path: string;
+      content: string | null;
+      operation: "write" | "edit" | "delete";
+    }[] = [];
+    const add = (
+      path: string,
+      content: string | null,
+      operation: "write" | "edit" | "delete" = content === null ? "delete" : "write",
+    ): void => {
       path = resolve(path);
       const local = relative(ctx.workspaceRoot, path);
-      if (isAbsolute(local) || local === ".." || local.startsWith(`..${sep}`))
-        throw new Error("File-tool authoring must remain inside the admitted workspace.");
-      const before = capture(path);
+      const inWorkspace = !isAbsolute(local) && local !== ".." && !local.startsWith(`..${sep}`);
+      const target = locate(path);
+      if (!inWorkspace && target === undefined)
+        throw new Error("File-tool batch target is outside the admitted roots.");
+      if (target?.kind === "private") throw new Error(`Configuration target is private: ${path}.`);
+      const before = captureInitial(path);
       const expected = before === null ? null : digest(before);
       snapshots.set(path, expected);
-      const target = locate(path);
       if (target !== undefined) {
-        if (target.kind !== "authoring")
-          throw new Error(
-            "Operational configuration requires configure_clarvis; private state cannot be authored.",
-          );
-        const fact = configurationFileMutationFacts(options.roots, {
-          ...target,
-          operation: content === null ? "delete" : "write",
-          ...(content === null ? {} : { content }),
-          expected_revision: expected,
-        });
-        if (fact === undefined) throw new Error("Missing prepared authoring effect.");
+        const validated = prepareConfigurationFileMutation(
+          options.roots,
+          {
+            ...target,
+            operation: content === null ? "delete" : "write",
+            ...(content === null ? {} : { content }),
+            expected_revision: expected,
+          },
+          {
+            root: options.roots[target.root],
+            parts: target.path.split("/"),
+            current:
+              before === null
+                ? null
+                : { content: before.toString("utf8"), revision: digest(before) },
+          },
+        ).facts;
+        const fact = { ...validated, operation };
         facts.push(fact);
         if (expected === null && content !== null) {
           const ref = configurationSkillRef(options.roots, target.root, target.path, content);
@@ -101,57 +129,69 @@ export function createAuthoringMutationReview(
         }
       } else {
         if (content !== null && Buffer.byteLength(content) > 262144)
-          throw new Error("Authoring batch file exceeds the review limit.");
+          throw new Error("Configuration batch file exceeds the review limit.");
         facts.push({
           canonicalPath: path,
           root: "workspace",
           expectedRevision: expected,
           nextRevision: content === null ? null : digest(content),
           bytes: content === null ? 0 : Buffer.byteLength(content),
-          operation: content === null ? "delete" : "write",
+          operation,
           fieldClass: "content",
           surface: content === null ? "delete" : "workspace",
         });
       }
-      prepared.push({ path, content });
+      prepared.push({ path, content, operation });
     };
     for (const op of operations) {
       if (op.type === "rename") {
         if (op.from === undefined) throw new Error("Rename requires its captured source.");
-        const source = capture(op.from);
+        const source = captureInitial(op.from);
         if (source === null) throw new Error("Rename source disappeared.");
         const content = op.content ?? source.toString("utf8");
         if (op.content === undefined && !Buffer.from(content).equals(source))
-          throw new Error("Authoring requires UTF-8 text.");
+          throw new Error("Configuration requires UTF-8 text.");
         add(op.from, null);
         add(op.path, content);
       } else {
         if (op.type !== "delete" && op.content === undefined)
-          throw new Error("Authoring requires prepared content.");
-        add(op.path, op.type === "delete" ? null : op.content!);
+          throw new Error("Configuration requires prepared content.");
+        add(
+          op.path,
+          op.type === "delete" ? null : op.content!,
+          op.type === "delete" ? "delete" : (op.intent ?? "write"),
+        );
       }
     }
     if (prepared.reduce((bytes, item) => bytes + Buffer.byteLength(item.content ?? ""), 0) > 262144)
-      throw new Error("Authoring batch exceeds the review payload limit.");
+      throw new Error("Configuration batch exceeds the review payload limit.");
     const inclusion =
       inclusions.length === 0 ? undefined : options.prepareSkillInclusion(inclusions);
-    await review(
+    const recordSessionGrant = await review(
       [...facts, ...(inclusion?.facts ?? [])],
       { operations: prepared, membership: inclusion?.review },
-      `Review authoring batch:\n${prepared.map((item) => `${item.content === null ? "Delete" : "Write"} ${item.path}\n${item.content ?? ""}`).join("\n\n")}\n${inclusion === undefined ? "" : JSON.stringify(inclusion.review, null, 2)}`,
+      `Review configuration batch:\n${prepared.map((item) => `${item.operation} ${item.path}\n${item.content ?? ""}`).join("\n\n")}\n${inclusion === undefined ? "" : JSON.stringify(inclusion.review, null, 2)}`,
     );
     for (const [path, expected] of snapshots) {
       const current = capture(path);
       if ((current === null ? null : digest(current)) !== expected)
-        throw new Error("Authoring revision conflict. Prepare the batch again.");
+        throw new Error("Configuration revision conflict. Prepare the batch again.");
     }
     ctx.signal?.throwIfAborted();
     const write = () => (inclusion === undefined ? commit() : inclusion.apply(commit));
-    if (options.store.withOperatorWrite !== undefined)
+    const workspaceFacts = facts.filter((fact) => {
+      const rel = relative(ctx.workspaceRoot, fact.canonicalPath);
+      return !isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`);
+    });
+    if (options.store.withOperatorWrite !== undefined && workspaceFacts.length > 0)
       await options.store.withOperatorWrite("workspace", write, () =>
-        facts.map((fact) => ({ path: fact.canonicalPath, expectedRevision: fact.nextRevision })),
+        workspaceFacts.map((fact) => ({
+          path: fact.canonicalPath,
+          expectedRevision: fact.nextRevision,
+        })),
       );
     else await write();
     for (const fact of facts) options.changed(fact.canonicalPath);
+    recordSessionGrant?.();
   };
 }

@@ -1,14 +1,14 @@
-import type { MutationReview } from "../lib/atomic.ts";
+import type { RuntimeConfig } from "../config.ts";
 import { promises as fs } from "node:fs";
 import { applyPatch, parsePatch, type StructuredPatch } from "diff";
 import { ToolError, fsError } from "../errors.ts";
-import { readFileOptions, type ReadFileOptions } from "../lib/files.ts";
-import { resolvePath, displayPath } from "../lib/paths.ts";
+import { reviewedConfigurationModes } from "../guard/authoring-path.ts";
+import { readFileOptionsForPath, type ReadFileOptions } from "../lib/files.ts";
+import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { applyOpsAtomic, withFileLocks, type FileOp } from "../lib/atomic.ts";
 import { encodeText, reencode, type Eol, type DecodedText } from "../lib/text.ts";
 import { readTextFile } from "../lib/textfile.ts";
 import type { ToolDef } from "./types.ts";
-import type { ToolsLogger } from "../lib/log.ts";
 
 interface ModelPatchHunk {
   anchor?: string;
@@ -370,16 +370,7 @@ export const applyPatchTool: ToolDef = {
     const lockTargets: string[] = [];
     for (const p of parsed) {
       for (const name of [cleanName(p.oldFileName), cleanName(p.newFileName)]) {
-        if (name && name !== "/dev/null")
-          lockTargets.push(
-            resolvePath(
-              name,
-              config.workspaceRoot,
-              config.confineToWorkspace,
-              config.temporaryRoots,
-              config.logger,
-            ),
-          );
+        if (name && name !== "/dev/null") lockTargets.push(resolveFileToolPath(name, config));
       }
     }
 
@@ -408,14 +399,16 @@ export const applyPatchTool: ToolDef = {
  */
 async function applyParsed(
   parsed: ParsedPatch[],
-  config: {
-    workspaceRoot: string;
-    maxFileBytes: number;
-    reviewMutation?: MutationReview;
-    confineToWorkspace: boolean;
-    temporaryRoots: readonly string[];
-    logger: ToolsLogger;
-  },
+  config: Pick<
+    RuntimeConfig,
+    | "workspaceRoot"
+    | "maxFileBytes"
+    | "reviewMutation"
+    | "confineToWorkspace"
+    | "temporaryRoots"
+    | "logger"
+    | "configurationRoots"
+  >,
 ): Promise<string> {
   const ops: FileOp[] = [];
   const summary: string[] = [];
@@ -440,20 +433,8 @@ async function applyParsed(
     const isRename = !isCreate && !isDelete && !!oldName && !!newName && oldName !== newName;
 
     if (isRename) {
-      const absFrom = resolvePath(
-        oldName,
-        config.workspaceRoot,
-        config.confineToWorkspace,
-        config.temporaryRoots,
-        config.logger,
-      );
-      const absTo = resolvePath(
-        newName,
-        config.workspaceRoot,
-        config.confineToWorkspace,
-        config.temporaryRoots,
-        config.logger,
-      );
+      const absFrom = resolveFileToolPath(oldName, config);
+      const absTo = resolveFileToolPath(newName, config);
       if (absFrom !== absTo) {
         const relFrom = displayPath(absFrom, config.workspaceRoot);
         const relTo = displayPath(absTo, config.workspaceRoot);
@@ -464,7 +445,7 @@ async function applyParsed(
           absFrom,
           relFrom,
           config.maxFileBytes,
-          readFileOptions(config),
+          readFileOptionsForPath(config, absFrom),
         );
         const applied = applyParsedPatch(decoded.content, p);
         if (applied.result === false) {
@@ -476,11 +457,15 @@ async function applyParsed(
         const result = applied.result;
 
         const { adds, dels } = countChanges(p);
-        if (
-          (p.hunks.length === 0 && (p.modelHunks?.length ?? 0) === 0) ||
-          result === decoded.content
-        ) {
-          ops.push({ type: "rename", path: absTo, from: absFrom });
+        const destinationModes = reviewedConfigurationModes(absTo, config);
+        const unchanged =
+          (p.hunks.length === 0 && (p.modelHunks?.length ?? 0) === 0) || result === decoded.content;
+        if (unchanged && destinationModes === undefined) {
+          ops.push({
+            type: "rename",
+            path: absTo,
+            from: absFrom,
+          });
           summary.push(`  R ${relFrom} -> ${relTo}`);
         } else {
           ops.push({
@@ -488,6 +473,7 @@ async function applyParsed(
             path: absTo,
             from: absFrom,
             content: reencode(result, decoded),
+            ...destinationModes,
           });
           summary.push(`  R ${relFrom} -> ${relTo} (+${adds} -${dels})`);
         }
@@ -499,13 +485,7 @@ async function applyParsed(
     if (!relTarget || relTarget === "/dev/null") {
       throw new ToolError("invalid_input", "Patch is missing a valid file path");
     }
-    const absTarget = resolvePath(
-      relTarget,
-      config.workspaceRoot,
-      config.confineToWorkspace,
-      config.temporaryRoots,
-      config.logger,
-    );
+    const absTarget = resolveFileToolPath(relTarget, config);
     const rel = displayPath(absTarget, config.workspaceRoot);
 
     claim(absTarget, rel);
@@ -519,7 +499,7 @@ async function applyParsed(
         absTarget,
         relTarget,
         config.maxFileBytes,
-        readFileOptions(config),
+        readFileOptionsForPath(config, absTarget),
       );
       source = decoded.content;
       eol = decoded.eol;
@@ -564,11 +544,22 @@ async function applyParsed(
           { path: rel },
         );
       }
-      ops.push({ type: "create", path: absTarget, content: encodeText(result, { eol, bom }) });
+      ops.push({
+        type: "create",
+        path: absTarget,
+        content: encodeText(result, { eol, bom }),
+        ...reviewedConfigurationModes(absTarget, config),
+      });
       summary.push(`  A ${rel} (+${adds} -${dels})`);
     } else {
       const content = decoded ? reencode(result, decoded) : encodeText(result, { eol, bom });
-      ops.push({ type: "modify", path: absTarget, content });
+      ops.push({
+        type: "modify",
+        path: absTarget,
+        content,
+        intent: "edit",
+        ...reviewedConfigurationModes(absTarget, config),
+      });
       summary.push(`  M ${rel} (+${adds} -${dels})`);
     }
   }

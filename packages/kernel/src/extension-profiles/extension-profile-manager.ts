@@ -74,9 +74,8 @@ import { pluginSkillScanRoots, resolvePluginManifest } from "../plugins/plugin-m
 import { pluginDataDir } from "../plugins/plugin-runtime.ts";
 
 import {
-  configurationFileMutationFacts,
-  configurationFileOperation,
-  type ConfigurationFileRequest,
+  prepareConfigurationFileMutation,
+  type ConfigurationMutationRequest,
 } from "../configuration/files.ts";
 import type { ConfigurationMutationFacts } from "../guard/effects/configuration.ts";
 
@@ -2270,14 +2269,15 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
       globalDir: options.globalDir,
       home: options.home,
     });
-    const profileWrite: ConfigurationFileRequest = {
+    const profileWrite: ConfigurationMutationRequest = {
       operation: "write",
       root: "workspace_clarvis",
       path: `extension-profiles/${target.name}.json`,
       content: proposed.serialized,
       expected_revision: expected?.slice(7) ?? null,
     };
-    const profileFact = configurationFileMutationFacts(roots, profileWrite)!;
+    const preparedProfile = prepareConfigurationFileMutation(roots, profileWrite);
+    const profileFact = preparedProfile.facts;
     const facts: ConfigurationMutationFacts[] = [
       { ...profileFact, fieldClass: "extension_profile.skills" },
     ];
@@ -2315,7 +2315,7 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
             let definitionWritten = false;
             let selectionWritten = false;
             try {
-              configurationFileOperation(roots, profileWrite);
+              preparedProfile.commit();
               definitionWritten = true;
               if (!replacing) {
                 writeSelection(target, "workspace");

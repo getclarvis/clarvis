@@ -6,7 +6,6 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
-  readdirSync,
   readSync,
   unlinkSync,
 } from "node:fs";
@@ -25,10 +24,9 @@ import { validateSkillDocument } from "@clarvis/skills";
 import { validateWorkflowDocument, WORKFLOW_FILE } from "@clarvis/workflows/artifact";
 
 const MAX_BYTES = 256 * 1024;
-const MAX_ENTRIES = 200;
-/** Restricted configuration operations; every mutation requires the revision returned by a read. */
-export type ConfigurationFileRequest = {
-  operation: "list" | "read" | "write" | "edit" | "delete";
+/** Revision-bound configuration mutation used by the host's file and profile writers. */
+export type ConfigurationMutationRequest = {
+  operation: "write" | "edit" | "delete";
   root: ConfigurationRoot;
   path: string;
   content?: string;
@@ -80,7 +78,7 @@ function directories(root: string, parts: readonly string[], create: boolean): b
 }
 
 /** Descriptor reads reject links, shared inodes, special files, oversized and non-UTF-8 data. */
-function readDocument(file: string): { content: string; revision: string } | null {
+function readDocument(file: string): { content: string; revision: string; bytes: Buffer } | null {
   let before;
   try {
     before = lstatSync(file);
@@ -111,52 +109,59 @@ function readDocument(file: string): { content: string; revision: string } | nul
     const content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
       bytes.subarray(0, size),
     );
-    return { content, revision: settingsDocumentRevision(bytes.subarray(0, size)) };
+    const readBytes = Buffer.from(bytes.subarray(0, size));
+    return { content, revision: settingsDocumentRevision(readBytes), bytes: readBytes };
   } finally {
     closeSync(fd);
   }
 }
 
-/**
- * Mediated host file access used after admission and review of the concrete mutation.
- * Rechecks reject stable link escapes; parent replacement by another process remains the
- * documented portable-filesystem TOCTOU limitation. This is not an OS sandbox.
- */
-export function configurationFileOperation(
+/** Read one classified document through the same directory and descriptor checks as the writer. */
+export function readConfigurationDocument(
   roots: Readonly<Record<ConfigurationRoot, string>>,
-  request: ConfigurationFileRequest,
-  onAttested?: (facts: ConfigurationMutationFacts) => void,
-): unknown {
+  rootName: ConfigurationRoot,
+  relativePath: string,
+): { content: string; revision: string; bytes: Buffer } | null {
+  if (!Object.hasOwn(roots, rootName)) throw new Error("Unknown configuration root.");
+  const parts = pathParts(relativePath);
+  if (parts.length === 0 || configurationPathClass(rootName, parts.join("/")) === "private")
+    throw new Error("This path is outside authored configuration access.");
+  const root = roots[rootName];
+  return directories(root, parts.slice(0, -1), false) ? readDocument(join(root, ...parts)) : null;
+}
+
+/** A validated, revision-bound configuration mutation. */
+export interface PreparedConfigurationFileMutation {
+  readonly facts: ConfigurationMutationFacts;
+  readonly before: { content: string; revision: string } | null;
+  commit(onAttested?: (facts: ConfigurationMutationFacts) => void): unknown;
+}
+
+/** Prepare through the real document loaders without changing the filesystem. */
+export function prepareConfigurationFileMutation(
+  roots: Readonly<Record<ConfigurationRoot, string>>,
+  request: ConfigurationMutationRequest,
+  captured?: {
+    root: string;
+    parts: string[];
+    current: { content: string; revision: string } | null;
+  },
+): PreparedConfigurationFileMutation {
   if (!Object.hasOwn(roots, request.root)) throw new Error("Unknown configuration root.");
-  const parts = pathParts(request.path);
+  const parts = captured?.parts ?? pathParts(request.path);
   if (configurationPathClass(request.root, parts.join("/")) === "private")
     throw new Error("This path is outside authored configuration access.");
-  const root = roots[request.root];
-  if (request.operation === "list") {
-    if (!directories(root, parts, false)) return { entries: [], missing: true };
-    const entries = readdirSync(join(root, ...parts), { withFileTypes: true })
-      .filter(
-        (entry) =>
-          configurationPathClass(request.root, [...parts, entry.name].join("/")) !== "private" &&
-          !entry.isSymbolicLink(),
-      )
-      .filter((entry) => entry.isFile() || entry.isDirectory())
-      .sort((a, b) => a.name.localeCompare(b.name));
-    return {
-      entries: entries.slice(0, MAX_ENTRIES).map((entry) => ({
-        name: entry.name,
-        kind: entry.isDirectory() ? "directory" : "file",
-      })),
-      truncated: entries.length > MAX_ENTRIES,
-    };
-  }
+  const root = captured?.root ?? roots[request.root];
+  const parents = parts.slice(0, -1);
+  const file = join(root, ...parts);
+  const current =
+    captured === undefined
+      ? directories(root, parents, false)
+        ? readDocument(file)
+        : null
+      : captured.current;
   const fieldClass = parts.at(0);
   if (fieldClass === undefined) throw new Error("Choose a configuration file, not its root.");
-  const parents = parts.slice(0, -1);
-  const parentExists = directories(root, parents, false);
-  const file = join(root, ...parts);
-  const current = parentExists ? readDocument(file) : null;
-  if (request.operation === "read") return current ?? { content: null, revision: null };
   if (
     request.operation !== "write" &&
     request.operation !== "edit" &&
@@ -170,7 +175,7 @@ export function configurationFileOperation(
     throw new Error("Configuration revision conflict. Read the file again before changing it.");
   if (request.operation === "delete") {
     if (current === null) throw new Error("Configuration file does not exist.");
-    onAttested?.({
+    const facts: ConfigurationMutationFacts = {
       canonicalPath: file,
       root: request.root,
       expectedRevision: current.revision,
@@ -179,10 +184,20 @@ export function configurationFileOperation(
       operation: "delete",
       fieldClass,
       surface: "delete",
-    });
-    directories(root, parents, false);
-    unlinkSync(file);
-    return { deleted: true };
+    };
+    return {
+      facts,
+      before: current,
+      commit(onAttested) {
+        if (!directories(root, parents, false) || readDocument(file)?.revision !== current.revision)
+          throw new Error(
+            "Configuration revision conflict. Read the file again before changing it.",
+          );
+        onAttested?.(facts);
+        unlinkSync(file);
+        return { deleted: true };
+      },
+    };
   }
   let content = request.content;
   if (request.operation === "edit") {
@@ -219,7 +234,7 @@ export function configurationFileOperation(
     }
   }
   const authoring = configurationPathClass(request.root, parts.join("/")) === "authoring";
-  onAttested?.({
+  const facts: ConfigurationMutationFacts = {
     canonicalPath: file,
     root: request.root,
     expectedRevision: current?.revision ?? null,
@@ -228,29 +243,22 @@ export function configurationFileOperation(
     operation: request.operation,
     fieldClass,
     surface: authoring ? "authoring" : "operational",
-  });
-  directories(root, parents, true);
-  writeFileAtomicSync(file, content);
-  return { written: true, revision: settingsDocumentRevision(content) };
-}
-
-const EFFECT_PREVIEW_COMPLETE = new Error("configuration effect preview complete");
-
-/** Validate a prospective mutation through the real writer without applying it. */
-export function configurationFileMutationFacts(
-  roots: Readonly<Record<ConfigurationRoot, string>>,
-  request: ConfigurationFileRequest,
-): ConfigurationMutationFacts | undefined {
-  let facts: ConfigurationMutationFacts | undefined;
-  try {
-    configurationFileOperation(roots, request, (input) => {
-      facts = input;
-      throw EFFECT_PREVIEW_COMPLETE;
-    });
-  } catch (error) {
-    if (error !== EFFECT_PREVIEW_COMPLETE) throw error;
-  }
-  return facts;
+  };
+  return {
+    facts,
+    before: current,
+    commit(onAttested) {
+      const currentRevision = directories(root, parents, false)
+        ? (readDocument(file)?.revision ?? null)
+        : null;
+      if (currentRevision !== facts.expectedRevision)
+        throw new Error("Configuration revision conflict. Read the file again before changing it.");
+      onAttested?.(facts);
+      directories(root, parents, true);
+      writeFileAtomicSync(file, content);
+      return { written: true, revision: facts.nextRevision };
+    },
+  };
 }
 
 /** Preserve the catalog identity of a newly authored skill, including permissive Clarvis names. */

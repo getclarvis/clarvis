@@ -117,6 +117,92 @@ test("configuration consumers share pending identical questions but never retain
   await later;
 });
 
+test("session consent covers the accepted operation and target only after commit", async () => {
+  const services = createCapabilityServices();
+  const ledger = createOperatorAuthorityRuntime({
+    owner: "owner",
+    executionId: "run",
+    seed: {
+      binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+      evidence: [{ id: "operator", source: "start", text: "Update settings", execution_id: "run" }],
+    },
+  });
+  services.provide(OPERATOR_AUTHORITY_PORT, ledger.reader);
+  const decisions = ["allow_session", "allow", "allow", "allow"];
+  const schemas: unknown[] = [];
+  const ctx = {
+    services,
+    workspaceRoot: "/fixture",
+    env: loadEnv({}),
+    request: { guard_mode: "on" },
+    requestParam: () => undefined,
+    elicit: async (question: { requestedSchema: unknown }) => {
+      schemas.push(question.requestedSchema);
+      return { action: "accept", content: { decision: decisions.shift() } };
+    },
+  } as unknown as RunCapabilityContext;
+  const store = { readSettings: () => ({ merged: {} }) } as ConfigStore;
+  const review = createConfigurationReview(ctx, { store });
+  const complete = { ...mutation, nextRevision: "a".repeat(64) };
+  const record = await review([complete], {}, "Apply settings?");
+  expect(schemas).toHaveLength(1);
+  expect(JSON.stringify(schemas[0])).toContain("allow_session");
+  expect(record).toBeFunction();
+  await review([{ ...complete, nextRevision: "b".repeat(64) }], {}, "Apply settings?");
+  expect(schemas).toHaveLength(2);
+  record?.();
+  await review([{ ...complete, nextRevision: "c".repeat(64) }], {}, "Apply settings?");
+  expect(schemas).toHaveLength(2);
+  await review(
+    [complete, { ...complete, canonicalPath: "/fixture/other.json" }],
+    {},
+    "Apply both?",
+  );
+  expect(schemas).toHaveLength(3);
+  ledger.onSteer({
+    id: "new-intent",
+    message: "Update something else",
+    agent: "lead",
+    iteration: 2,
+  });
+  await review([complete], {}, "Apply settings?");
+  expect(schemas).toHaveLength(4);
+  ledger.finalize({ status: "cancelled" });
+  await expect(review([complete], {}, "Apply settings?")).rejects.toThrow("no longer active");
+});
+
+test("unbounded configuration batches never offer session consent", async () => {
+  const services = createCapabilityServices();
+  const ledger = createOperatorAuthorityRuntime({
+    owner: "owner",
+    executionId: "run",
+    seed: {
+      binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+      evidence: [{ id: "operator", source: "start", text: "Update settings", execution_id: "run" }],
+    },
+  });
+  services.provide(OPERATOR_AUTHORITY_PORT, ledger.reader);
+  let schema: unknown;
+  const ctx = {
+    services,
+    env: loadEnv({}),
+    request: { guard_mode: "on" },
+    requestParam: () => undefined,
+    elicit: async (question: { requestedSchema: unknown }) => {
+      schema = question.requestedSchema;
+      return { action: "accept", content: { decision: "allow" } };
+    },
+  } as unknown as RunCapabilityContext;
+  const store = { readSettings: () => ({ merged: {} }) } as ConfigStore;
+  const batch = Array.from({ length: 17 }, (_, index) => ({
+    ...mutation,
+    canonicalPath: `/fixture/config-${index}.json`,
+  }));
+  await createConfigurationReview(ctx, { store })(batch, {}, "Apply batch?");
+  expect(JSON.stringify(schema)).toContain('"deny"');
+  expect(JSON.stringify(schema)).not.toContain("allow_session");
+});
+
 test("configuration question identity separates proposals and retires a failed channel", async () => {
   const services = createCapabilityServices();
   const ledger = createOperatorAuthorityRuntime({

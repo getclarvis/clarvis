@@ -6,14 +6,237 @@ import { contentToText, loadEnv, NOOP_LOGGER, OPERATOR_AUTHORITY_PORT } from "@c
 import { installAuthorityEnvelope } from "../../src/guard/operator-authority.ts";
 import { executeRun } from "@clarvis/loop";
 import { MockLLM } from "@clarvis/loop/testing";
-import { globalPaths, workspacePaths } from "@clarvis/paths";
+import { configurationRoots, globalPaths, workspacePaths } from "@clarvis/paths";
 import { createFileKernel } from "../../src/bootstrap.ts";
+import { tools as nativeFileTools } from "@clarvis/tools";
 import { effectReviewInput, withHostValidatedEffectReview } from "../helpers/effect-review-llm.ts";
-import { settingsDocumentRevision } from "../../src/config/config-store.ts";
 
 const temporary: string[] = [];
 afterEach(() => {
   for (const root of temporary.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+it("validates operational settings from write_file before one host review", async () => {
+  const root = mkdtempSync(join(tmpdir(), "clarvis-file-settings-"));
+  temporary.push(root);
+  const workspaceRoot = join(root, "workspace");
+  const globalDir = join(root, "global");
+  mkdirSync(workspaceRoot);
+  mkdirSync(globalDir);
+  writeFileSync(
+    globalPaths(globalDir).settingsFile,
+    JSON.stringify({
+      default_model: "anthropic/test",
+      providers: [{ name: "anthropic", kind: "anthropic" }],
+    }),
+  );
+  const target = workspacePaths(workspaceRoot).settingsFile;
+  const valid = JSON.stringify({ default_model: "anthropic/test" });
+  const agent = new MockLLM({
+    script: [
+      { toolCalls: [{ name: "write_file", arguments: { path: target, content: "{" } }] },
+      { toolCalls: [{ name: "write_file", arguments: { path: target, content: valid } }] },
+      { text: "Finished." },
+    ],
+  });
+  const kernel = await createFileKernel({
+    workspaceRoot,
+    globalDir,
+    logger: NOOP_LOGGER,
+    env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" }),
+    subscriptions: false,
+    builtins: { hooks: false, tasks: false },
+    executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm: agent } }),
+  });
+  try {
+    let prompts = 0;
+    const run = await kernel.runs.start({
+      agent: "marshall",
+      guard_mode: "on",
+      messages: [{ role: "user", content: "Write valid local settings." }],
+    });
+    run.onElicit((request) => {
+      prompts++;
+      expect(request.kind).toBe("configuration_review");
+      expect(request.prompt).toContain(target);
+      void run.respond({ id: request.id, action: "accept", content: { decision: "allow" } });
+    });
+    const events = Array.fromAsync(run.events);
+    expect(await run.done).toMatchObject({ status: "completed" });
+    await events;
+    await run.closed;
+    expect(prompts).toBe(1);
+    expect(readFileSync(target, "utf8")).toBe(valid);
+    expect(nativeFileTools).toHaveLength(20);
+    const offered = agent.calls[0]!.tools.map((tool) => tool.wireName);
+    expect(offered.filter((name) => nativeFileTools.some((tool) => tool.name === name))).toEqual(
+      nativeFileTools.map((tool) => tool.name),
+    );
+    expect(offered).not.toContain("configure_clarvis");
+    expect(
+      agent.calls[0]!.messages.map((message) => contentToText(message.content)).join("\n"),
+    ).not.toContain("Configuration roots:");
+  } finally {
+    await kernel.close();
+  }
+});
+
+it("writes and reads admitted global configuration through ordinary file tools", async () => {
+  const root = mkdtempSync(join(tmpdir(), "clarvis-global-file-tools-"));
+  temporary.push(root);
+  const workspaceRoot = join(root, "workspace");
+  const globalDir = join(root, "global");
+  const homeDir = join(root, "home");
+  mkdirSync(workspaceRoot);
+  mkdirSync(globalDir);
+  mkdirSync(homeDir);
+  writeFileSync(
+    globalPaths(globalDir).settingsFile,
+    JSON.stringify({
+      default_model: "anthropic/test",
+      providers: [{ name: "anthropic", kind: "anthropic" }],
+    }),
+  );
+  const target = join(globalDir, "shared-agent.md");
+  const sharedTarget = join(
+    configurationRoots({ workspaceRoot, globalDir, home: homeDir }).global_agents,
+    "plugins/example/README.md",
+  );
+  const agent = new MockLLM({
+    script: [
+      {
+        toolCalls: [
+          { name: "write_file", arguments: { path: target, content: "Global guide.\n" } },
+        ],
+      },
+      { toolCalls: [{ name: "read_file", arguments: { path: target } }] },
+      {
+        toolCalls: [
+          {
+            name: "edit_file",
+            arguments: { path: target, old_string: "Global guide.", new_string: "Global review." },
+          },
+        ],
+      },
+      { toolCalls: [{ name: "read_file", arguments: { path: target } }] },
+      {
+        toolCalls: [
+          {
+            name: "write_file",
+            arguments: { path: sharedTarget, content: "Shared plugin guide.\n" },
+          },
+        ],
+      },
+      { toolCalls: [{ name: "read_file", arguments: { path: sharedTarget } }] },
+      { text: "Finished." },
+    ],
+  });
+  const kernel = await createFileKernel({
+    workspaceRoot,
+    globalDir,
+    configurationHome: homeDir,
+    logger: NOOP_LOGGER,
+    env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+    subscriptions: false,
+    builtins: { hooks: false, tasks: false },
+    executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm: agent } }),
+  });
+  try {
+    let prompts = 0;
+    const reviewedPrompts: string[] = [];
+    const run = await kernel.runs.start({
+      agent: "coder",
+      guard_mode: "on",
+      messages: [{ role: "user", content: "Write and read a global guide." }],
+    });
+    run.onElicit((request) => {
+      prompts++;
+      expect(request.kind).toBe("configuration_review");
+      reviewedPrompts.push(request.prompt);
+      void run.respond({ id: request.id, action: "accept", content: { decision: "allow" } });
+    });
+    const events = Array.fromAsync(run.events);
+    expect(await run.done).toMatchObject({ status: "completed" });
+    await events;
+    await run.closed;
+    expect(prompts).toBe(3);
+    expect(reviewedPrompts[0]).toContain(`write ${target}`);
+    expect(reviewedPrompts[1]).toContain(`edit ${target}`);
+    expect(reviewedPrompts[2]).toContain(`write ${sharedTarget}`);
+    expect(readFileSync(target, "utf8")).toBe("Global review.\n");
+    expect(readFileSync(sharedTarget, "utf8")).toBe("Shared plugin guide.\n");
+    expect(
+      agent.calls
+        .at(-1)
+        ?.messages.some(
+          (message) =>
+            message.role === "tool" && contentToText(message.content).includes("Global review."),
+        ),
+    ).toBe(true);
+  } finally {
+    await kernel.close();
+  }
+});
+
+it("reuses session consent for the same file-tool effect and asks for a new target", async () => {
+  const root = mkdtempSync(join(tmpdir(), "clarvis-file-session-consent-"));
+  temporary.push(root);
+  const workspaceRoot = join(root, "workspace");
+  const globalDir = join(root, "global");
+  mkdirSync(workspaceRoot);
+  mkdirSync(globalDir);
+  writeFileSync(
+    globalPaths(globalDir).settingsFile,
+    JSON.stringify({
+      default_model: "anthropic/test",
+      providers: [{ name: "anthropic", kind: "anthropic" }],
+    }),
+  );
+  const first = join(workspacePaths(workspaceRoot).clarvisDir, "shared-agent.md");
+  const second = workspacePaths(workspaceRoot).guardJudgeFile;
+  const agent = new MockLLM({
+    script: [
+      { toolCalls: [{ name: "write_file", arguments: { path: first, content: "First.\n" } }] },
+      { toolCalls: [{ name: "write_file", arguments: { path: first, content: "Second.\n" } }] },
+      { toolCalls: [{ name: "write_file", arguments: { path: second, content: "Third.\n" } }] },
+      { text: "Finished." },
+    ],
+  });
+  const kernel = await createFileKernel({
+    workspaceRoot,
+    globalDir,
+    logger: NOOP_LOGGER,
+    env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+    subscriptions: false,
+    builtins: { hooks: false, tasks: false },
+    executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm: agent } }),
+  });
+  try {
+    let prompts = 0;
+    const run = await kernel.runs.start({
+      agent: "coder",
+      guard_mode: "on",
+      messages: [{ role: "user", content: "Update the local guidance and Judge guidance." }],
+    });
+    run.onElicit((request) => {
+      prompts++;
+      expect(request.kind).toBe("configuration_review");
+      void run.respond({
+        id: request.id,
+        action: "accept",
+        content: { decision: prompts === 1 ? "allow_session" : "allow" },
+      });
+    });
+    const events = Array.fromAsync(run.events);
+    expect(await run.done).toMatchObject({ status: "completed" });
+    await events;
+    await run.closed;
+    expect(prompts).toBe(2);
+    expect(readFileSync(first, "utf8")).toBe("Second.\n");
+    expect(readFileSync(second, "utf8")).toBe("Third.\n");
+  } finally {
+    await kernel.close();
+  }
 });
 
 it("uses an accepted ask_user authorization in the following configuration review", async () => {
@@ -57,14 +280,11 @@ it("uses an accepted ask_user authorization in the following configuration revie
       {
         toolCalls: [
           {
-            name: "configure_clarvis",
+            name: "edit_file",
             arguments: {
-              operation: "edit",
-              root: "workspace_agents",
-              path: "skills/review-docs/references/coverage-matrix.md",
-              expected_revision: settingsDocumentRevision(original),
-              old_text: original,
-              new_text: updated,
+              path: target,
+              old_string: original,
+              new_string: updated,
             },
           },
         ],
@@ -169,151 +389,6 @@ it("uses an accepted ask_user authorization in the following configuration revie
     await kernel.close();
   }
 });
-
-it.each(["auto", "on", "off"] as const)(
-  "creates an agent and skill in an ordinary %s conversation with only concrete policy reviews",
-  async (mode) => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-direct-configuration-"));
-    temporary.push(root);
-    const workspaceRoot = join(root, "workspace");
-    const globalDir = join(root, "global");
-    mkdirSync(workspaceRoot);
-    mkdirSync(globalDir);
-    writeFileSync(
-      globalPaths(globalDir).settingsFile,
-      JSON.stringify({
-        default_model: "anthropic/test",
-        providers: [{ name: "anthropic", kind: "anthropic" }],
-        guard: { type: "shell", mode: "auto" },
-      }),
-    );
-    const content = "---\ngrants: [read_workspace]\n---\nReview tests.\n";
-    const skill =
-      "---\nname: review-tests\ndescription: Review local tests.\n---\nCheck assertions and fixtures.\n";
-    const agent = new MockLLM({
-      script: [
-        {
-          toolCalls: [
-            {
-              name: "configure_clarvis",
-              arguments: {
-                operation: "write",
-                root: "workspace_clarvis",
-                path: "agents/reviewer.md",
-                content,
-                expected_revision: null,
-              },
-            },
-          ],
-        },
-        {
-          toolCalls: [
-            {
-              name: "configure_clarvis",
-              arguments: {
-                operation: "write",
-                root: "workspace_clarvis",
-                path: "skills/review-tests/SKILL.md",
-                content: skill,
-                expected_revision: null,
-              },
-            },
-          ],
-        },
-        { text: "Reviewer ready." },
-        { toolCalls: [{ name: "load_skill", arguments: { name: "review-tests" } }] },
-        { text: "Skill used." },
-        {
-          toolCalls: [
-            {
-              name: "configure_clarvis",
-              arguments: {
-                operation: "edit",
-                root: "workspace_clarvis",
-                path: "skills/review-tests/SKILL.md",
-                expected_revision: settingsDocumentRevision(skill),
-                old_text: "Check assertions and fixtures.",
-                new_text: "Check assertions, fixtures and cancellation.",
-              },
-            },
-          ],
-        },
-        { text: "Skill updated." },
-        { toolCalls: [{ name: "load_skill", arguments: { name: "review-tests" } }] },
-        { text: "Updated skill used." },
-      ],
-    });
-    const llm = withHostValidatedEffectReview(agent);
-    const kernel = await createFileKernel({
-      workspaceRoot,
-      globalDir,
-      logger: NOOP_LOGGER,
-      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
-      subscriptions: false,
-      builtins: { hooks: false, tasks: false },
-      executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm } }),
-    });
-    try {
-      const run = await kernel.runs.start({
-        agent: "coder",
-        messages: [
-          {
-            role: "user",
-            content: "Create a local read-only agent reviewer and a review-tests skill for tests.",
-          },
-        ],
-        guard_mode: mode,
-      });
-      let prompts = 0;
-      run.onElicit((request) => {
-        prompts++;
-        expect(request.kind).toBe("configuration_review");
-        void run.respond({ id: request.id, action: "accept", content: { decision: "allow" } });
-      });
-      const events = Array.fromAsync(run.events);
-      const result = await run.done;
-      await events;
-      await run.closed;
-      expect(result).toMatchObject({ status: "completed" });
-      expect(prompts).toBe(mode === "on" ? 2 : 0);
-      expect(
-        readFileSync(join(workspacePaths(workspaceRoot).agentsDir, "reviewer.md"), "utf8"),
-      ).toBe(content);
-      expect((await kernel.config.getSettings()).workspace_trust?.state).toBe("trusted");
-      expect((await kernel.skills.list()).map((item) => item.name)).toContain("review-tests");
-      expect(
-        agent.calls[2]!.messages.map((message) => contentToText(message.content)).join("\n"),
-      ).toContain("no activation approval or reload is required");
-      for (const content of [
-        "Use the review-tests skill.",
-        "Improve the review-tests skill to check cancellation too.",
-        "Use the updated review-tests skill.",
-      ]) {
-        const next = await kernel.runs.start({
-          agent: "coder",
-          messages: [{ role: "user", content }],
-          guard_mode: mode,
-        });
-        next.onElicit((request) => {
-          prompts++;
-          expect(request.kind).toBe("configuration_review");
-          void next.respond({ id: request.id, action: "accept", content: { decision: "allow" } });
-        });
-        const drained = Array.fromAsync(next.events);
-        expect(await next.done).toMatchObject({ status: "completed" });
-        await drained;
-        await next.closed;
-      }
-      const disclosed = (index: number) =>
-        agent.calls[index]!.messages.map((message) => contentToText(message.content)).join("\n");
-      expect(disclosed(4)).toContain("Check assertions and fixtures.");
-      expect(disclosed(8)).toContain("Check assertions, fixtures and cancellation.");
-      expect(prompts).toBe(mode === "on" ? 3 : 0);
-    } finally {
-      await kernel.close();
-    }
-  },
-);
 
 it.each(["auto", "on", "off"] as const)(
   "creates, loads and edits through ordinary file tools under %s without activation prompts",
@@ -475,12 +550,9 @@ it.each(["deny", "drift", "steer"] as const)(
         {
           toolCalls: [
             {
-              name: "configure_clarvis",
+              name: "write_file",
               arguments: {
-                operation: "write",
-                root: "workspace_clarvis",
-                path: "settings.json",
-                expected_revision: null,
+                path: target,
                 content: JSON.stringify({ default_model: "anthropic/requested" }),
               },
             },
@@ -548,16 +620,9 @@ it.each(["deny", "drift", "steer"] as const)(
   },
 );
 
-it.each([
-  ["auto", "configure_clarvis"],
-  ["on", "configure_clarvis"],
-  ["drift", "configure_clarvis"],
-  ["auto", "write_file"],
-  ["on", "write_file"],
-  ["drift", "write_file"],
-] as const)(
-  "includes a created skill in a local copy of the active global profile under %s review via %s",
-  async (mode, tool) => {
+it.each(["auto", "on", "drift"] as const)(
+  "includes a created skill in a local copy of the active global profile under %s review",
+  async (mode) => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-direct-membership-"));
     temporary.push(root);
     const workspaceRoot = join(root, "workspace");
@@ -586,23 +651,11 @@ it.each([
         {
           toolCalls: [
             {
-              name: tool,
-              arguments:
-                tool === "write_file"
-                  ? {
-                      path: join(
-                        workspacePaths(workspaceRoot).skillsDir,
-                        "new-review-package/SKILL.md",
-                      ),
-                      content,
-                    }
-                  : {
-                      operation: "write",
-                      root: "workspace_clarvis",
-                      path: "skills/new-review-package/SKILL.md",
-                      content,
-                      expected_revision: null,
-                    },
+              name: "write_file",
+              arguments: {
+                path: join(workspacePaths(workspaceRoot).skillsDir, "new-review-package/SKILL.md"),
+                content,
+              },
             },
           ],
         },
@@ -858,7 +911,9 @@ it("reviews copy, rename, recursive replacement and removal without activating a
         .map((message) => contentToText(message.content))
         .join("\n"),
     ).not.toMatch(/no matches|Failed|denied|Error/);
-    expect(readFileSync(paths.settingsFile, "utf8")).toBe(operational);
+    expect(readFileSync(paths.settingsFile, "utf8")).toBe(
+      operational.replace("assertions", "cancellation"),
+    );
     expect(prompts).toBe(5);
     expect(readFileSync(source, "utf8")).toBe("Review cancellation.\n");
     expect(existsSync(copied)).toBeFalse();
@@ -892,12 +947,9 @@ it("reviews a corrected document independently after a concrete human refusal", 
       ...[original, original, corrected].map((content) => ({
         toolCalls: [
           {
-            name: "configure_clarvis",
+            name: "write_file",
             arguments: {
-              operation: "write",
-              root: "workspace_clarvis",
-              path: "agents/reviewer.md",
-              expected_revision: null,
+              path: target,
               content,
             },
           },

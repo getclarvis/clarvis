@@ -129,6 +129,24 @@ test("configuration effects offer only the concrete allow or deny decision", () 
   expect(initialValues(form.fields)).toEqual({ decision: "deny" });
 });
 
+test("configuration session choice names the approved targets and defaults to deny", () => {
+  const form = parseElicitForm({
+    message: "Review configuration write: settings.json",
+    kind: "configuration_review",
+    requestedSchema: {
+      type: "object",
+      properties: { decision: { type: "string", enum: ["deny", "allow", "allow_session"] } },
+      required: ["decision"],
+    },
+  });
+  expect(form.fields[0]!.options).toEqual([
+    { value: "allow", label: "allow once" },
+    { value: "allow_session", label: "allow these targets for this session" },
+    { value: "deny", label: "deny" },
+  ]);
+  expect(initialValues(form.fields)).toEqual({ decision: "deny" });
+});
+
 test("parseElicitForm: the command detail rides the form; a blank command falls back to prose", () => {
   expect(parseElicitForm(guardSession).detail).toEqual({
     command: "rm -rf build",

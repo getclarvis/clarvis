@@ -1390,7 +1390,7 @@ Production: `SteerSource` in [api.ts](../../packages/capability/src/api.ts), `cr
 [steer-queue.ts](../../packages/kernel/src/runs/steer-queue.ts), and `executeRun` in
 [execute-run.ts](../../packages/loop/src/runtime/execute-run.ts).
 Test: [steer-queue.test.ts](../../packages/kernel/tests/unit/steer-queue.test.ts) and the open-review
-steer case in [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts).
+steer case in [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts).
 
 `OperatorAuthorityState.denied_effects` stores bounded exact refusal identities, never evidence or grants. It is a detached reader projection of kernel-owned state; it is not accepted in an authority seed. Production: `OperatorAuthorityState` in [operator-authority.ts](../../packages/capability/src/operator-authority.ts) and `createOperatorAuthorityRuntime` in [operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts). Test: bounded, revision-fenced refusal storage and forged seed rejection in [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).
 

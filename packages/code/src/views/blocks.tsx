@@ -365,7 +365,7 @@ function ToolLine(props: {
             <span style={{ fg: nodeTone(props.node).fg }}>{nodeTone(props.node).glyph + " "}</span>
             <Show when={!props.indent}>
               <span style={{ fg: tokens.accent }}>
-                {toolDisplayLabel(props.node.mcpName, props.node.toolName, display().arguments)}
+                {toolDisplayLabel(props.node.mcpName, props.node.toolName)}
               </span>
             </Show>
             <Show

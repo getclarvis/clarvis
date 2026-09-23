@@ -116,14 +116,6 @@ The `builtins` switchboard names `tools`, `skills`, `hooks`, and `tasks`. Memory
 their own explicit options. Worktrees are not a runtime builtin: Code selects a checkout before this
 function runs.
 
-The file host also composes the reserved `clarvis-configure` skill from TypeScript data through
-the loop's `composeSkills` seam. It ships with the runtime artifact and remains independent of
-filesystem Extension Profile selection while respecting the skills opt-out and per-agent grant.
-Production: `createFileKernel` in `packages/kernel/src/file-kernel.ts` and `withBuiltinSkills` in
-`packages/kernel/src/skills/builtin-skills.ts`. Test:
-`packages/kernel/tests/integration/builtin-skills.test.ts`. The disclosure and precedence contract
-is owned by [skills](../execution/skills.md#414a-shipped-configuration-guidance).
-
 `CreateFileKernelOptions.extensionProfileSelector` is the process-local Extension Profile selector. The manager
 resolves the installed inventory before the config store is constructed, then supplies the store's
 exact active-plugin selector and workspace executable trust surface. The resulting snapshot is
@@ -222,7 +214,7 @@ configuration and command review consume that same reader; no separate configura
 lifecycle exists. Production: `createFileKernel` in
 [file-kernel.ts](../../packages/kernel/src/file-kernel.ts) and `createHostedRegistry` in
 [registry.ts](../../packages/kernel/src/hosting/registry.ts).
-Test: [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts)
+Test: [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts)
 and the controller-lifetime cases in [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts).
 
 Workflow leaders are separate auxiliary runs. `auxiliaryWorkflowRunDeps` removes the memory
@@ -327,12 +319,12 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
    `packages/kernel/tests/unit/run-lease.test.ts` and
    `packages/memory/tests/component/factory.test.ts`.
 
-   Direct configuration participates in the same run lease and captured placement. Its writer queues
-   catalog refresh without waiting for its own run to close. Production:
-   `createDirectConfigurationCapability` in
-   [direct-configuration.ts](../../packages/kernel/src/configuration/direct-configuration.ts), wired
+   Reviewed file-tool configuration participates in the same run lease and captured placement.
+   Its host mutation port queues catalog refresh without waiting for its own run to close.
+   Production: `createAuthoringMutationReview` in
+   [authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts), wired
    by `createFileKernel`. Test:
-   [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts).
+   [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts).
 
 ## 8. Failure behavior
 

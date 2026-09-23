@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 import path from "node:path";
 import { isSpillFile, workspacePaths } from "@clarvis/paths";
@@ -349,7 +349,11 @@ describe("shell", () => {
     }, 60000);
 
     it("returns exit zero and honest truncation after a large burst", async () => {
-      const r = await callTool("shell", { command: "yes CLARVIS_FLOOD | head -c 9000000" }, config);
+      const producer = path.join(root, "burst.cjs");
+      writeFileSync(producer, "process.stdout.write(Buffer.alloc(9_000_000, 88));");
+      const invocation = `"${process.execPath}" "${producer}"`;
+      const command = process.platform === "win32" ? `& ${invocation}` : invocation;
+      const r = await callTool("shell", { command }, config);
       expect(r.isError).toBe(false);
       expect(r.json.exit_code).toBe(0);
       expect(r.json.stdout_truncated).toBe(true);

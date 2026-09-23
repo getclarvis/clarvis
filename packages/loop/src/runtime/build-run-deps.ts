@@ -43,9 +43,15 @@ import type { Logger, LLMProvider, ModelExecutionResolver } from "@clarvis/capab
 import type { ExecuteRunDeps } from "./execute-run.ts";
 import type { SkillsProvider } from "@clarvis/skills/capability";
 import type { Capability, RunCapabilityContext } from "@clarvis/capability";
-import type { GuardResolver, SandboxResolver, SecretNamesResolver } from "./capabilities/tools.ts";
+import type {
+  GuardResolution,
+  GuardResolver,
+  SandboxResolver,
+  SecretNamesResolver,
+} from "./capabilities/tools.ts";
 import type { PluginBootstrapSkill } from "./capabilities/skills-settings.ts";
 import { createAskUserCapability } from "./capabilities/ask-user.ts";
+import { agentToolCaps } from "./tools/builtin/grants.ts";
 
 /** Host-facing name for the shared physical model-call gate. */
 export type HostModelCallAdmission = ModelCallAdmissionController;
@@ -159,6 +165,10 @@ export interface BuildRunDepsOptions {
   /** Compose host-owned in-memory skills with the discovered provider, once at construction.
    * Not called when skills are disabled. The returned provider backs both runs and host listings. */
   composeSkills?: (discovered: SkillsProvider | undefined) => SkillsProvider;
+  /** Host-attested product skill, independent of ordinary skill roots and enablement. */
+  systemSkillProvider?: SkillsProvider;
+  /** Name reserved from all ordinary roots even if product publication failed. */
+  reservedSystemSkillName?: string;
   /** Plugin-declared bootstrap skills, in `enabledPlugins` order. Function-only
    * (unlike `extraSkillRoots`, which also accepts an array) because the set must
    * be re-read per run: an array form would pin the answer at deps-construction
@@ -227,6 +237,34 @@ function emptySkillsProvider(): SkillsSeam {
     },
     readResourceChunk: () => {
       throw new Error("skills are unavailable");
+    },
+  };
+}
+
+function mergeSystemSkills(
+  ordinary: SkillsProvider | undefined,
+  system: SkillsProvider | undefined,
+  reservedName: string | undefined,
+): SkillsProvider | undefined {
+  if (ordinary === undefined && system === undefined) return undefined;
+  const blocked = reservedName === undefined ? new Set<string>() : new Set([reservedName]);
+  const selected = (name: string): SkillsProvider | undefined =>
+    blocked.has(name) ? system : ordinary;
+  return {
+    listSkills: () => [
+      ...(system?.listSkills() ?? []),
+      ...(ordinary?.listSkills().filter((skill) => !blocked.has(skill.name)) ?? []),
+    ],
+    loadSkill: (name) => selected(name)?.loadSkill(name),
+    readResource: (name, rel) => {
+      const provider = selected(name);
+      if (provider === undefined) throw new Error("skill is unavailable");
+      return provider.readResource(name, rel);
+    },
+    readResourceChunk: (name, rel, offset, maxChars) => {
+      const provider = selected(name);
+      if (provider?.readResourceChunk === undefined) throw new Error("skill is unavailable");
+      return provider.readResourceChunk(name, rel, offset, maxChars);
     },
   };
 }
@@ -548,6 +586,8 @@ export async function buildExecuteRunDeps({
   skillRoots,
   extraSkillRoots,
   composeSkills,
+  systemSkillProvider,
+  reservedSystemSkillName,
   skillBootstraps,
   resolveGuard,
   resolveSandbox,
@@ -731,6 +771,23 @@ export async function buildExecuteRunDeps({
   if (useSkills && env.CLARVIS_SKILLS_ENABLED && composeSkills !== undefined) {
     skills = composeSkills(skills);
   }
+  skills = mergeSystemSkills(skills, systemSkillProvider, reservedSystemSkillName);
+
+  const guardResolutionCache = new WeakMap<
+    RunCapabilityContext,
+    Promise<GuardResolution | undefined>
+  >();
+  const sharedResolveGuard: GuardResolver | undefined =
+    resolveGuard === undefined
+      ? undefined
+      : (ctx) => {
+          let cached = guardResolutionCache.get(ctx);
+          if (cached === undefined) {
+            cached = Promise.resolve().then(() => resolveGuard(ctx));
+            guardResolutionCache.set(ctx, cached);
+          }
+          return cached;
+        };
 
   const capabilities: Capability[] = [];
   const capabilityRegistry = createCapabilityRegistry();
@@ -784,7 +841,7 @@ export async function buildExecuteRunDeps({
     capabilities.push(
       createAgentToolsCapability({
         ...(statePaths === undefined ? {} : { statePaths }),
-        ...(resolveGuard !== undefined ? { resolveGuard } : {}),
+        ...(sharedResolveGuard !== undefined ? { resolveGuard: sharedResolveGuard } : {}),
         ...(resolveSandbox !== undefined ? { resolveSandbox } : {}),
         ...(resolveSecretNames !== undefined ? { resolveSecretNames } : {}),
         ...(allowHostEscalation !== undefined ? { allowHostEscalation } : {}),
@@ -805,7 +862,7 @@ export async function buildExecuteRunDeps({
     );
   }
   capabilities.push(createAskUserCapability());
-  if (useSkills) {
+  if (useSkills || systemSkillProvider !== undefined) {
     const { createSkillsCapability } = await importOptional(
       "@clarvis/skills",
       "skills",
@@ -813,10 +870,21 @@ export async function buildExecuteRunDeps({
       () => import("@clarvis/skills/capability"),
     );
     capabilities.push(
-      createSkillsCapability(
-        skills,
-        skillBootstraps !== undefined ? { bootstraps: skillBootstraps } : {},
-      ),
+      createSkillsCapability(useSkills ? skills : undefined, {
+        ...(skillBootstraps !== undefined ? { bootstraps: skillBootstraps } : {}),
+        ...(systemSkillProvider === undefined
+          ? {}
+          : {
+              systemOnly: {
+                provider: systemSkillProvider,
+                eligible: async (ctx: RunCapabilityContext) =>
+                  useTools &&
+                  ctx.env.CLARVIS_AGENT_TOOLS_ENABLED &&
+                  agentToolCaps(ctx.entryGrants, ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT).canMutate &&
+                  (await sharedResolveGuard?.(ctx))?.reviewMutation !== undefined,
+              },
+            }),
+      }),
     );
   }
   capabilities.push(...(extraCapabilities ?? []));

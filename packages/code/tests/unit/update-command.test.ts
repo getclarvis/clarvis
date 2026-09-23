@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -18,7 +18,7 @@ import {
   verifyStagedRelease,
   withUpdateLock,
 } from "../../src/update/installation.ts";
-import { manifestFiles } from "../../src/update/release-manifest.ts";
+import { CLARVIS_DOCS_FIRST_VERSION, manifestFiles } from "../../src/update/release-manifest.ts";
 
 function output(): { stream: { write(value: string): boolean }; text: () => string } {
   let value = "";
@@ -218,6 +218,42 @@ test("activation verifies an existing version and rejects a non-directory destin
     await expect(
       activateStagedRelease(installation, join(root, "unused-stage"), "0.0.3-beta", target),
     ).rejects.toThrow("release destination is not a directory");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("activation waits for the selected release's documentation publisher before switching current", async () => {
+  if (process.platform === "win32") return;
+  const target = releaseTarget();
+  if (target === undefined) return;
+  const root = await mkdtemp(join(tmpdir(), "clarvis-update-docs-"));
+  const versions = join(root, "versions");
+  const previous = "v0.0.1-beta";
+  const staged = join(root, "staged");
+  const runtime = join(staged, "runtime");
+  const executable = join(runtime, releaseRuntimeExecutableName());
+  const installation = { root, versions, currentTag: previous };
+  try {
+    await mkdir(versions);
+    await mkdir(runtime, { recursive: true });
+    await writeFile(join(root, "current"), `${previous}\n`);
+    await writeFile(join(runtime, "system-docs.js"), "verified helper");
+    await writeFile(executable, "#!/bin/sh\nprintf 'invalid output\\n'\n");
+    await chmod(executable, 0o755);
+    await expect(
+      activateStagedRelease(installation, staged, CLARVIS_DOCS_FIRST_VERSION, target),
+    ).rejects.toThrow("system documentation publication failed");
+    expect(await readFile(join(root, "current"), "utf8")).toBe(`${previous}\n`);
+
+    const selected = join(versions, `v${CLARVIS_DOCS_FIRST_VERSION}`);
+    await rm(selected, { recursive: true, force: true });
+    await mkdir(runtime, { recursive: true });
+    await writeFile(join(runtime, "system-docs.js"), "verified helper");
+    await writeFile(executable, "#!/bin/sh\nprintf 'published\\n'\n");
+    await chmod(executable, 0o755);
+    await activateStagedRelease(installation, staged, CLARVIS_DOCS_FIRST_VERSION, target);
+    expect(await readFile(join(root, "current"), "utf8")).toBe(`v${CLARVIS_DOCS_FIRST_VERSION}\n`);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

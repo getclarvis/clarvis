@@ -19,7 +19,9 @@ their digests to that release. Production: root `package.json` (`version`, priva
 This document does not make the package-local `bun run setup` path portable; that remains the
 developer-checkout path described by [Code bootstrap](../hosts/code-bootstrap.md). It does not define
 user-configuration formats or their own retention policy. Release payloads and Clarvis state occupy
-separate roots, and install, update, and uninstall never rewrite `.clarvis` or `.agents`. Production:
+separate roots. Install and update may publish only the product-owned global
+`.clarvis/skills/.system/clarvis-docs` tree; they do not rewrite authored configuration or `.agents`.
+Uninstall preserves Clarvis state. Production:
 `packages/code/src/update/installation.ts` (`ManagedInstallation`) and the root installers.
 
 ## 2. Surface
@@ -67,7 +69,24 @@ texts beneath `third-party/`, generated `THIRD_PARTY_NOTICES.txt`, `runtime/clar
 `runtime/clarvis.exe`, a legacy `runtime/bun` or `runtime/bun.exe` compatibility entry, Code's small
 TypeScript launcher/update graph, the map-free split
 `packages/code/dist`, and the target-native runtime dependency closure beneath `node_modules`. The
-generated notice routes to the static inventory and lists the exact target closure; license files
+payload also carries the raw `packages/kernel/assets/skills/.system/clarvis-docs` Markdown tree and
+the bundled `runtime/system-docs.js` publisher from the first stable skill-bearing release. The
+release manifest requires and hashes these files for that release and later ones, while older
+archives remain valid without them. The active Code launcher passes its own product root to the
+kernel; source modules do not search `dist` for skill assets. `publishSelectedSystemDocs` verifies
+the selected release tree before publication. Managed installers and self-update invoke that helper
+before switching `current`; developer and candidate launchers use the selected source checkout.
+An owned old revision is retired on rollback to a pre-skill release, and an unowned destination is
+left untouched. Production: `CLARVIS_DOCS_FIRST_VERSION` and `verifyReleaseTree` in
+`packages/code/src/update/release-manifest.ts`, `publishSelectedSystemDocs` in
+`packages/code/src/bootstrap/system-docs-cli.ts`, `reconcileSystemDocs` in
+`packages/kernel/src/skills/system-docs.ts`, root `install.sh` and `install.ps1`, and
+`publishStagedSystemDocs` in `packages/code/src/update/installation.ts`. Test:
+`packages/code/tests/unit/release-manifest.test.ts`,
+`packages/code/tests/unit/candidate-install.test.ts`, and
+`packages/kernel/tests/unit/system-docs-publication.test.ts`.
+
+The generated notice routes to the static inventory and lists the exact target closure; license files
 supplied by those packages remain in their copied package directories. Production:
 `packages/code/tooling/release/package.ts` (`copySource`, `copyRuntime`, `runtimeClosure`,
 `copyDependencies`).

@@ -1,14 +1,20 @@
 import { expect, test } from "bun:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
+  CLARVIS_DOCS_FIRST_VERSION,
+  CLARVIS_DOCS_PUBLISHER_FILE,
+  CLARVIS_DOCS_RELEASE_FILES,
   isPortableReleasePath,
   manifestFiles,
   parseReleaseManifest,
+  releaseRequiresClarvisDocs,
   verifyReleaseTree,
 } from "../../src/update/release-manifest.ts";
+
+const earlierCandidate = `${CLARVIS_DOCS_FIRST_VERSION}-rc.1`;
 
 test("release paths reject traversal, absolute paths, separators, controls and empty segments", () => {
   expect(isPortableReleasePath("packages/code/src/cli.ts")).toBe(true);
@@ -28,11 +34,11 @@ test("manifest generation and verification cover exactly every regular payload f
       {
         schema: 1,
         repository: "getclarvis/clarvis-releases",
-        version: "0.0.1-beta",
+        version: earlierCandidate,
         target: "linux-x64",
         files,
       },
-      { version: "0.0.1-beta", target: "linux-x64" },
+      { version: earlierCandidate, target: "linux-x64" },
     );
     await writeFile(join(root, "release.json"), JSON.stringify(manifest));
     await expect(verifyReleaseTree(root, manifest)).resolves.toBeUndefined();
@@ -47,7 +53,7 @@ test("manifest parsing rejects duplicate, self-referential and malformed file en
   const base = {
     schema: 1,
     repository: "getclarvis/clarvis-releases",
-    version: "0.0.1-beta",
+    version: earlierCandidate,
     target: "linux-x64",
   };
   const file = { path: "runtime/bun", size: 1, sha256: "a".repeat(64) };
@@ -66,6 +72,74 @@ test("manifest parsing rejects duplicate, self-referential and malformed file en
       base as never,
     ),
   ).toThrow("invalid file entry");
+});
+
+test("stable skill-bearing releases require every raw documentation page; older candidates remain valid", () => {
+  const base = {
+    schema: 1,
+    repository: "getclarvis/clarvis-releases",
+    target: "linux-x64",
+  } as const;
+  const ordinary = { path: "runtime/clarvis", size: 1, sha256: "a".repeat(64) };
+  const docs = [...CLARVIS_DOCS_RELEASE_FILES, CLARVIS_DOCS_PUBLISHER_FILE].map((path) => ({
+    path,
+    size: 1,
+    sha256: "b".repeat(64),
+  }));
+  expect(releaseRequiresClarvisDocs(earlierCandidate)).toBe(false);
+  expect(releaseRequiresClarvisDocs(CLARVIS_DOCS_FIRST_VERSION)).toBe(true);
+  expect(() =>
+    parseReleaseManifest(
+      { ...base, version: earlierCandidate, files: [ordinary] },
+      { version: earlierCandidate, target: "linux-x64" },
+    ),
+  ).not.toThrow();
+  expect(() =>
+    parseReleaseManifest(
+      { ...base, version: CLARVIS_DOCS_FIRST_VERSION, files: [ordinary, ...docs] },
+      { version: CLARVIS_DOCS_FIRST_VERSION, target: "linux-x64" },
+    ),
+  ).not.toThrow();
+  for (const missing of docs) {
+    expect(() =>
+      parseReleaseManifest(
+        {
+          ...base,
+          version: CLARVIS_DOCS_FIRST_VERSION,
+          files: [ordinary, ...docs.filter((item) => item !== missing)],
+        },
+        { version: CLARVIS_DOCS_FIRST_VERSION, target: "linux-x64" },
+      ),
+    ).toThrow("missing required Clarvis documentation");
+  }
+});
+
+test("verified skill-bearing releases reject a modified raw reference", async () => {
+  const root = await mkdtemp(join(tmpdir(), "clarvis-release-docs-integrity-"));
+  try {
+    for (const path of [...CLARVIS_DOCS_RELEASE_FILES, CLARVIS_DOCS_PUBLISHER_FILE]) {
+      const destination = join(root, ...path.split("/"));
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, "a");
+    }
+    const manifest = parseReleaseManifest(
+      {
+        schema: 1,
+        repository: "getclarvis/clarvis-releases",
+        version: CLARVIS_DOCS_FIRST_VERSION,
+        target: "linux-x64",
+        files: await manifestFiles(root),
+      },
+      { version: CLARVIS_DOCS_FIRST_VERSION, target: "linux-x64" },
+    );
+    await writeFile(join(root, "release.json"), JSON.stringify(manifest));
+    await expect(verifyReleaseTree(root, manifest)).resolves.toBeUndefined();
+    const reference = join(root, ...CLARVIS_DOCS_RELEASE_FILES[1]!.split("/"));
+    await writeFile(reference, "b");
+    await expect(verifyReleaseTree(root, manifest)).rejects.toThrow("checksum mismatch");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("manifest generation refuses a source map anywhere in the payload", async () => {

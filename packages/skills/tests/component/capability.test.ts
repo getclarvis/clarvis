@@ -118,6 +118,36 @@ describe("skills capability composition", () => {
     ).toBeNull();
   });
 
+  it("gives an eligible entry agent a system-only view while ordinary skills are disabled", async () => {
+    const docsInfo = makeInfo({ name: "clarvis-docs", source: "builtin", userInvocable: false });
+    const docs: SkillsProvider = {
+      listSkills: () => [docsInfo],
+      loadSkill: (name) =>
+        name === "clarvis-docs" ? makeContent("clarvis-docs", docsInfo) : undefined,
+      readResource: () => "bundled reference",
+    };
+    const capability = createSkillsCapability(provider(), {
+      systemOnly: { provider: docs, eligible: () => true },
+    });
+    const run = await capability.forRun(
+      fakeRunCapabilityContext({ env: loadEnv({ CLARVIS_SKILLS_ENABLED: "0" }) }),
+    );
+    if (run === null) throw new Error("expected the system-only capability");
+    expect(run.systemSection!(ungranted)).toContain("clarvis-docs");
+    expect(run.systemSection!({ ...ungranted, entry: false })).toBeUndefined();
+    const entry = await run.forAgent!(fakeAgentScope({ entry: true, grants: [] }));
+    expect(entry).not.toBeNull();
+    expect(await run.forAgent!(fakeAgentScope({ entry: false, grants: [] }))).toBeNull();
+    const contribution = await entry!.attach(fakeAgentBuildContext());
+    const handler = contribution.handlers![0]!;
+    const rejected = await handler.handle(
+      { id: "ordinary", name: LOAD_SKILL_TOOL_NAME, arguments: { name: "alpha" } },
+      0,
+    );
+    expect(JSON.stringify(rejected)).toContain("clarvis-docs");
+    expect(JSON.stringify(rejected)).not.toContain("using-superpowers");
+  });
+
   it("resolves plugin bootstraps lazily once and reuses them for spawned agents", async () => {
     const { logger, warnings } = recordingLogger();
     const skills = provider();

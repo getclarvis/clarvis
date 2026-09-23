@@ -83,6 +83,51 @@ describe("root discovery and shadowing", () => {
     });
   });
 
+  it("keeps skills beneath .system model-readable but not user-invocable", () => {
+    const root = path.join(workspace, "internal-skills");
+    writeSkill(path.join(root, ".system"), "implicit", {
+      resources: { "references/guide.md": "Private documentation." },
+    });
+    writeSkill(path.join(root, ".system"), "explicit", {
+      frontmatter: { "user-invocable": true },
+    });
+    writeSkill(root, "ordinary", { frontmatter: { "user-invocable": true } });
+    const registry = discoverSkills(
+      resolveConfig({ home, cwd: workspace, workspace, roots: [{ path: root }] }),
+    );
+
+    expect(registry.get("implicit")?.userInvocable).toBe(false);
+    expect(registry.get("explicit")?.userInvocable).toBe(false);
+    expect(registry.get("implicit")?.body).toContain("Body of implicit.");
+    expect(registry.readResource("implicit", "references/guide.md")).toBe("Private documentation.");
+    expect(registry.get("ordinary")?.userInvocable).toBe(true);
+  });
+
+  it("applies .system invocation protection in every global and workspace skill root", () => {
+    const roots = clarvisRoots(home, workspace);
+    for (const [index, root] of roots.entries()) {
+      const internal = path.join(root.path, ".system");
+      writeSkill(internal, `implicit-${String(index)}`, {
+        resources: { "references/guide.md": "Model-readable guide." },
+      });
+      writeSkill(internal, `explicit-${String(index)}`, {
+        frontmatter: { "user-invocable": true },
+      });
+      writeSkill(root.path, `ordinary-${String(index)}`, {
+        frontmatter: { "user-invocable": true },
+      });
+    }
+    const registry = discoverSkills(resolveConfig({ home, cwd: workspace, workspace, roots }));
+    for (const index of roots.keys()) {
+      expect(registry.get(`implicit-${String(index)}`)?.userInvocable).toBe(false);
+      expect(registry.get(`explicit-${String(index)}`)?.userInvocable).toBe(false);
+      expect(registry.get(`ordinary-${String(index)}`)?.userInvocable).toBe(true);
+      expect(registry.readResource(`implicit-${String(index)}`, "references/guide.md")).toBe(
+        "Model-readable guide.",
+      );
+    }
+  });
+
   it("admits only exact manifest names from a root allowlist", () => {
     const root = path.join(workspace, "selected-store");
     writeSkill(root, "keep", { body: "kept" });

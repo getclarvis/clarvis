@@ -234,6 +234,20 @@ describe("Extension Profile manager", () => {
     expect(inventory.standalone_skills.every((skill) => skill.found && !skill.active)).toBeTrue();
   });
 
+  it("keeps system directories and the reserved product skill out of standalone selection", async () => {
+    const globalSkills = globalPaths(globalDir).skillsDir;
+    writeSkill(join(globalSkills, ".system"), "clarvis-docs");
+    writeSkill(join(globalSkills, ".system"), "other-system");
+    writeSkill(workspacePaths(workspaceRoot).skillsDir, "clarvis-docs");
+    writeSkill(globalSkills, "ordinary");
+    const target = manager();
+    target.resolveActive([], TRUSTED);
+
+    expect(
+      (await target.service.inventory()).standalone_skills.map((skill) => skill.ref.name),
+    ).toEqual(["ordinary"]);
+  });
+
   it("keeps builtin standalone skill shadowing identical to four-root discovery", async () => {
     writeSkill(globalPaths(globalDir).skillsDir, "same-skill");
     writeSkill(workspacePaths(workspaceRoot).skillsDir, "same-skill");

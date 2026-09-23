@@ -373,8 +373,37 @@ try {
         (Get-FileHash $Manifest -Algorithm SHA256).Hash -ne (Get-FileHash $ExistingManifest -Algorithm SHA256).Hash) {
       Fail "$Destination contains a different build"
     }
+    $PublisherRoot = $Payload
   } else {
     Move-Item -Path $Payload -Destination $Destination
+    $PublisherRoot = $Destination
+  }
+
+  $Publisher = Join-Path $PublisherRoot "runtime\system-docs.js"
+  $PublisherRuntime = Join-Path $PublisherRoot "runtime\clarvis.exe"
+  if (!(Test-Path $Publisher -PathType Leaf)) {
+    $CurrentFile = Join-Path $InstallRoot "current"
+    if (Test-Path $CurrentFile -PathType Leaf) {
+      $PriorTag = (Get-Content -LiteralPath $CurrentFile -TotalCount 1).Trim()
+      if ($PriorTag -match '^v[0-9A-Za-z.-]+$') {
+        $PriorRoot = Join-Path $Versions $PriorTag
+        $PriorPublisher = Join-Path $PriorRoot "runtime\system-docs.js"
+        if (Test-Path $PriorPublisher -PathType Leaf) {
+          $Publisher = $PriorPublisher
+          $PublisherRuntime = Join-Path $PriorRoot "runtime\clarvis.exe"
+        }
+      }
+    }
+  }
+  if (Test-Path $Publisher -PathType Leaf) {
+    & $PublisherRuntime $Publisher --release-root $Destination --version $Version --target $Target
+    if ($LASTEXITCODE -ne 0) { Fail "system documentation could not be verified and published" }
+  } else {
+    $BaseVersion = $Version.Split('-')[0]
+    if ([version]$BaseVersion -gt [version]"0.2.0" -or
+        ([version]$BaseVersion -eq [version]"0.2.0" -and $Version -eq $BaseVersion)) {
+      Fail "this release lacks the required system documentation publisher"
+    }
   }
 
   $MarkerTemporary = Join-Path $InstallRoot (".managed-" + [guid]::NewGuid())

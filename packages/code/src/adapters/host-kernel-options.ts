@@ -37,6 +37,9 @@ export function createCodeHostKernelOptions(
   return {
     workspaceRoot: options.workspaceRoot,
     globalDir: options.globalDir,
+    ...(environment.CLARVIS_PRODUCT_ROOT === undefined
+      ? {}
+      : { systemDocsSourceRoot: environment.CLARVIS_PRODUCT_ROOT }),
     ...(options.defaultOwner === undefined ? {} : { defaultOwner: options.defaultOwner }),
     ...(options.extensionProfileSelector === undefined
       ? {}

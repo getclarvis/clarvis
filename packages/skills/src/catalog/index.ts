@@ -43,6 +43,7 @@ export function renderSkillCatalog(skills: SkillInfo[]): string {
   if (listed.length === 0) return "";
   const sorted = listed.sort(
     (a, b) =>
+      Number(b.productOwned === true) - Number(a.productOwned === true) ||
       Number(b.source === "builtin") - Number(a.source === "builtin") ||
       a.name.localeCompare(b.name),
   );

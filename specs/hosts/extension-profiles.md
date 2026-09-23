@@ -24,6 +24,15 @@ or filesystem convention is never substituted. (`defaultStandaloneSelection` and
 branches in `resolved`, `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; exact inventory
 cases in `packages/kernel/tests/integration/extension-profile-manager.test.ts`.)
 
+The reserved product skill `clarvis-docs` is outside Extension Profile selection. `standaloneCatalog`
+excludes `.system` directories and that reserved name from inventory, and `pinnedSkillRoots` cannot
+offer them as selected standalone roots. The host provides the verified system skill separately to
+the loop; ordinary user and plugin definitions cannot replace its identity. Production:
+`standaloneCatalog` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts` and
+`buildRunDeps` in `packages/loop/src/runtime/build-run-deps.ts`. Test:
+`packages/kernel/tests/integration/extension-profile-manager.test.ts` and
+`packages/kernel/tests/integration/configuration-surface.test.ts`.
+
 The kernel owns discovery, resolution, trust, and snapshot identity. `@clarvis/skills` receives only
 resolved roots and exact `include` lists, while the loop sees roots plus opaque host metadata rather
 than an Extension Profile domain object. (`skillRoots` in

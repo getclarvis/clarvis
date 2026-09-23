@@ -122,6 +122,21 @@ async function copySource(payload: string): Promise<void> {
     recursive: true,
     dereference: true,
   });
+  const docsDestination = join(
+    payload,
+    "packages",
+    "kernel",
+    "assets",
+    "skills",
+    ".system",
+    "clarvis-docs",
+  );
+  await mkdir(dirname(docsDestination), { recursive: true });
+  await cp(
+    join(repositoryRoot, "packages", "kernel", "assets", "skills", ".system", "clarvis-docs"),
+    docsDestination,
+    { recursive: true },
+  );
   await copyFile(join(repositoryRoot, "package.json"), join(payload, "package.json"));
   await copyFile(join(repositoryRoot, "LICENSE"), join(payload, "LICENSE"));
   await copyFile(
@@ -143,6 +158,17 @@ async function copySource(payload: string): Promise<void> {
     join(repositoryRoot, "third-party", "vercel-ai-sdk", "LICENSE"),
     join(payload, "third-party", "vercel-ai-sdk", "LICENSE"),
   );
+}
+
+async function buildSystemDocsPublisher(payload: string): Promise<void> {
+  const result = await Bun.build({
+    entrypoints: [join(packageRoot, "src", "bootstrap", "system-docs-cli.ts")],
+    outdir: join(payload, "runtime"),
+    target: "bun",
+    sourcemap: "none",
+    naming: "system-docs.js",
+  });
+  if (!result.success) throw new Error("system documentation publisher build failed");
 }
 
 async function copyRuntime(payload: string): Promise<void> {
@@ -247,6 +273,7 @@ async function main(): Promise<void> {
     await mkdir(payload, { recursive: true });
     await copySource(payload);
     await copyRuntime(payload);
+    await buildSystemDocsPublisher(payload);
     const closure = await runtimeClosure(target);
     await copyDependencies(payload, closure);
     await removeSourceMaps(payload);

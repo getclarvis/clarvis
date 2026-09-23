@@ -38,6 +38,20 @@ step() {
   printf '[%s/%s] %s\n' "$step_number" "$step_total" "$1"
 }
 
+requires_system_docs() {
+  base=${version%%-*}
+  major=${base%%.*}
+  remainder=${base#*.}
+  minor=${remainder%%.*}
+  patch=${remainder#*.}
+  [ "$major" -gt 0 ] && return 0
+  [ "$minor" -gt 2 ] && return 0
+  [ "$minor" -lt 2 ] && return 1
+  [ "$patch" -gt 0 ] && return 0
+  [ "$patch" -lt 0 ] && return 1
+  [ "$version" = "$base" ]
+}
+
 cleanup() {
   if [ -n "$operation_lock" ]; then
     rm -f "$operation_lock"
@@ -361,8 +375,27 @@ fi
 if [ -e "$destination" ] || [ -L "$destination" ]; then
   [ ! -L "$destination" ] && [ -d "$destination" ] || fail "$destination exists and is not a regular directory"
   cmp -s "$payload/release.json" "$destination/release.json" || fail "$destination contains a different build"
+  publisher_root=$payload
 else
   mv "$payload" "$destination"
+  publisher_root=$destination
+fi
+
+publisher="$publisher_root/runtime/system-docs.js"
+publisher_runtime="$publisher_root/runtime/clarvis"
+if [ ! -f "$publisher" ] && [ -f "$install_root/current" ]; then
+  prior_tag=$(sed -n '1p' "$install_root/current")
+  prior_root="$versions/$prior_tag"
+  if [ -f "$prior_root/runtime/system-docs.js" ]; then
+    publisher="$prior_root/runtime/system-docs.js"
+    publisher_runtime="$prior_root/runtime/clarvis"
+  fi
+fi
+if [ -f "$publisher" ]; then
+  "$publisher_runtime" "$publisher" --release-root "$destination" --version "$version" --target "$target" ||
+    fail "system documentation could not be verified and published"
+elif requires_system_docs; then
+  fail "this release lacks the required system documentation publisher"
 fi
 
 marker_temporary=$(mktemp "$install_root/.managed.XXXXXX")

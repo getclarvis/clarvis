@@ -29,22 +29,34 @@ Workspace dependencies: `@clarvis/protocol` (the contract it implements), `@clar
 `@clarvis/capability`, `@clarvis/goal`, `@clarvis/judge`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
 `@clarvis/tools`, `@clarvis/trace`, `@clarvis/tasks` and `@clarvis/workflows`. It injects
 host-owned capabilities into runs, so the engine never imports those product layers.
-Clients remain independent of the engine through six deliberately bounded public entrypoints. Each
+Clients remain independent of the engine through seven deliberately bounded public entrypoints. Each
 public symbol has one thematic owner; the root is not a compatibility barrel for lower packages.
 
-| Entry                       | Responsibility                                                                                                                |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `@clarvis/kernel`           | in-process kernel, kernel services/errors, client/server/transports and wire metadata                                         |
-| `@clarvis/kernel/bootstrap` | file-backed construction, authenticated local host/launcher, owner-scoped stores, stdio hosting, bootstrap logger/environment |
-| `@clarvis/kernel/config`    | config stores/schemas, agents, models, plugins, workflows and settings composition                                            |
-| `@clarvis/kernel/policy`    | guard, sanitization, tool identity, event mapping/policy/spans and ingest state                                               |
-| `@clarvis/kernel/local`     | shell/process/executable helpers and local filesystem/git adapters                                                            |
-| `@clarvis/kernel/logger`    | logger constructor and types without loading file-kernel bootstrap                                                            |
+| Entry                         | Responsibility                                                                                                                |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `@clarvis/kernel`             | in-process kernel, kernel services/errors, client/server/transports and wire metadata                                         |
+| `@clarvis/kernel/bootstrap`   | file-backed construction, authenticated local host/launcher, owner-scoped stores, stdio hosting, bootstrap logger/environment |
+| `@clarvis/kernel/config`      | config stores/schemas, agents, models, plugins, workflows and settings composition                                            |
+| `@clarvis/kernel/policy`      | guard, sanitization, tool identity, event mapping/policy/spans and ingest state                                               |
+| `@clarvis/kernel/local`       | shell/process/executable helpers and local filesystem/git adapters                                                            |
+| `@clarvis/kernel/logger`      | logger constructor and types without loading file-kernel bootstrap                                                            |
+| `@clarvis/kernel/system-docs` | verified publication of the product-owned Markdown skill for installers and source launchers                                  |
 
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
 > may change during the beta period.
 
 ## Contract
+
+`createFileKernel` reconciles the product-owned `clarvis-docs` Markdown tree in the resolved global
+Clarvis skills directory before capturing the skill catalog. `reconcileSystemDocs` verifies a
+portable release's listed Markdown hashes or reads the current source checkout, then publishes a
+complete revision only into the owned `.system/clarvis-docs` subtree. An unsafe or unowned target
+leaves user content untouched and makes this optional guide unavailable. The host supplies its
+active product root explicitly to bundled kernels; a package-local Kernel module derives its
+checkout from the package identity without naming an output directory.
+`createSystemDocsProvider` keeps body and resource bytes stable for an
+active host generation. See [self-configuration](../../specs/hosts/self-configuration.md) and
+[skills](../../specs/execution/skills.md).
 
 Steering acceptance persists the host-selected destination in its receipt before source delivery.
 After restart, consumption reconciliation reads that destination instead of depending on unrelated

@@ -21,11 +21,12 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { helpText, parseMode, productVersion, versionText } from "./cli-args.ts";
-import { privateEntry, resolveEntry } from "./cli-entry.ts";
+import { privateEntry, productRootForEntry, resolveEntry } from "./cli-entry.ts";
 
 const argv = process.argv.slice(2);
 const privateMode = privateEntry(argv);
 if (privateMode === "remote-kernel") {
+  process.env.CLARVIS_PRODUCT_ROOT = productRootForEntry(fileURLToPath(import.meta.url));
   const remoteDistPath = fileURLToPath(new URL("../dist/remote-host.js", import.meta.url));
   const remoteChoice = resolveEntry({
     distPath: remoteDistPath,
@@ -54,6 +55,8 @@ if (mode.kind === "update") {
   const { runUpdateCommand } = await import("./update/index.ts");
   process.exit(await runUpdateCommand({ currentVersion: productVersion() }));
 }
+
+process.env.CLARVIS_PRODUCT_ROOT = productRootForEntry(fileURLToPath(import.meta.url));
 
 const distPath = fileURLToPath(new URL("../dist/index.js", import.meta.url));
 const choice = resolveEntry({

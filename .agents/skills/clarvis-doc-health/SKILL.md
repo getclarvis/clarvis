@@ -64,11 +64,13 @@ regression check only when an executable rule caused the drift; wording changes 
 behavioral tests.
 
 For configuration, command, activation, grant/capability, session/runtime lifecycle or recovery
-claims, review the owning source and specs in the same iteration. Update affected installed skill
-instructions only when that skill actually exists in the requested corpus; ordinary Clarvis
-configuration now uses reviewed file tools and has no bundled guide.
-Record its disposition explicitly: updated, or reviewed with a reason no change was needed.
-Unrelated wording changes do not require rewriting the builtin.
+claims, review the owning source and specs in the same iteration. Inspect the maintained
+`packages/kernel/assets/skills/.system/clarvis-docs/SKILL.md` and affected `references/*.md`
+alongside them. Update those source pages in the same authorized edit when their guidance changes,
+or record why no change was needed. The installed global copy is managed by product install and
+update paths; do not edit or regenerate it directly. The shipped skill must carry the information
+it needs in its own files: repository source links are not usable in a portable Bun bundle.
+Unrelated wording changes do not require rewriting the skill.
 
 When a user-visible TUI surface or its proof requirement changes, follow
 [the TUI inventory maintenance section](../clarvis-tui-validation/references/full-audit.md#maintain-the-inventory).
@@ -85,12 +87,13 @@ formatter. Run `bun run check:graph` only for dependency/package changes; source
 receive their targeted tests and checks. Reuse enclosing checks already completed on the same
 inputs instead of starting full suites for documentation-only work.
 
-When the builtin body or examples change, run the existing Kernel component/integration
-`builtin-skills.test.ts` and integration `configuration-guidance.test.ts` checks. They validate
-distribution, disclosure, example embedding/loaders and the body budget; they do not prove that an
-agent followed new prose or that a TUI journey ran. Do not add tests that merely mirror new wording.
+When `clarvis-docs` changes, run the skill asset/content checks, the Kernel system-skill
+integration tests, and the portable release packaging/install checks that cover the affected
+distribution path. These establish distribution, disclosure, resource boundaries and copy
+integrity; they do not prove that an agent followed new prose or that a TUI journey ran. Do not
+add tests that merely mirror new wording.
 
 Review `git diff --check` and the final diff, including newly added files. Report the contradictions
 resolved, remaining decisions, reviewed README/spec files, exact validation and limits, external
-documentation and builtin-guidance dispositions, and publication status under the repository
+documentation and `clarvis-docs` dispositions, and publication status under the repository
 handoff contract.

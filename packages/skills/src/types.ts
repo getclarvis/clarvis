@@ -155,6 +155,8 @@ export interface SkillInfo {
   /** Skill name from frontmatter; also the lookup key and merge identity. */
   name: string;
   description: string;
+  /** Host-attested product identity; discovery never sets this from source text or frontmatter. */
+  productOwned?: boolean;
   /** The full parsed frontmatter, including passthrough keys. */
   metadata: SkillFrontmatter;
   /**

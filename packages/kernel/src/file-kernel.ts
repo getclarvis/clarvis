@@ -1,6 +1,8 @@
 import { createHostJudge } from "./guard/judge-host.ts";
 import { createNativeKernel } from "./native-kernel.ts";
 import { createAuthoringMutationReview } from "./configuration/authoring-mutations.ts";
+import { reconcileSystemDocs, SYSTEM_DOCS_NAME } from "./skills/system-docs.ts";
+import { createSystemDocsProvider } from "./skills/system-docs-provider.ts";
 import type { RunServiceConfig } from "./runs/run-service.ts";
 import { extractEnvRefs, loadEnv, type EnvConfig } from "@clarvis/capability";
 import { configurationRoots } from "@clarvis/paths";
@@ -126,6 +128,8 @@ export interface CreateFileKernelOptions {
   traceLocksDir?: string;
   /** Global Clarvis dir for config/secrets/models/sessions; defaults to the standard global root. */
   globalDir?: string;
+  /** Checkout or verified portable release that owns raw product skill assets. */
+  systemDocsSourceRoot?: string;
   /** Host-selected home for the shared global Agent configuration root. */
   configurationHome?: string;
   /** Process-local Extension Profile override (`scope:name`); never persisted. */
@@ -332,6 +336,19 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   );
   const auditLogger = createAuditLogger(logger, env.CLARVIS_LOG_AUDIT);
   const globalDir = opts.globalDir ?? globalRoot();
+  let systemDocs: ReturnType<typeof createSystemDocsProvider> | undefined;
+  try {
+    await reconcileSystemDocs(globalDir, opts.systemDocsSourceRoot);
+    systemDocs = createSystemDocsProvider(globalDir, logger);
+  } catch (error) {
+    logger.warn(
+      {
+        event: "kernel.system_docs_unavailable",
+        cause: error instanceof Error ? error.message : String(error),
+      },
+      "product configuration documentation is unavailable for this host",
+    );
+  }
   const authoredRoots = configurationRoots({
     workspaceRoot: opts.workspaceRoot,
     globalDir,
@@ -752,6 +769,8 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       logger,
       workspaceRoot: opts.workspaceRoot,
       skillRoots: pluginSkillRoots,
+      reservedSystemSkillName: SYSTEM_DOCS_NAME,
+      ...(systemDocs === undefined ? {} : { systemSkillProvider: systemDocs.provider }),
       skillBootstraps: pluginSkillBootstraps,
       resolveGuard: async (ctx) => {
         const resolution = await createGuardResolver({
@@ -952,6 +971,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
               runtime: nativeRuntime(),
             },
             dispose: async (): Promise<void> => {
+              systemDocs?.close();
               extensionProfileManager.close();
               pluginContributions.close();
               try {
@@ -969,6 +989,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       };
     },
   }).catch(async (error: unknown) => {
+    systemDocs?.close();
     extensionProfileManager.close();
     pluginContributions.close();
     await Promise.allSettled([capabilityExecutables.close(), subscriptionManager?.close()]);

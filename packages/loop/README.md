@@ -89,6 +89,14 @@ The durable vocabulary and replay contract are owned by
 
 ## Contract
 
+`buildRunDeps` composes the host-attested `clarvis-docs` provider separately from ordinary skill
+roots. Agents with `use_skills` receive it in their normal catalog. An entry agent without that
+grant receives only the system guide when its immutable ceiling permits editing, the placement is
+Host or Sandbox, and the host configuration-review port is available. This does not change tool
+grants, approve a mutation, or grant the same view to children. See
+[self-configuration](../../specs/hosts/self-configuration.md) and
+[skills](../../specs/execution/skills.md).
+
 The loop contract is divided across the focused specs under the
 [`engine` map](../../specs/README.md#engine--the-loop-itself): lifecycle, request/settings,
 capability composition, tool dispatch, compaction, budgets/guards, delegation, vision routing,

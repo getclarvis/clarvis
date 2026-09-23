@@ -24,6 +24,23 @@ adapt a scanned catalog into the protocol `SkillsService` for slash-commands
 (`packages/kernel/src/skills/skills-service.ts`) without either side knowing the other's
 internals.
 
+The file kernel may supply a host-attested, product-owned `clarvis-docs` provider outside ordinary
+Extension Profile selection. `createSkillsCapability` in `packages/skills/src/capability.ts`
+serves it through the existing load and resource tools. An agent with `use_skills` sees it in the
+normal catalog. The eligible entry agent without that grant receives only the product guide, even
+if ordinary skills are disabled; this exception does not propagate to child agents. The host
+determines eligibility from the selected placement, editing ceiling and configuration reviewer,
+as specified in [self-configuration](../hosts/self-configuration.md). `renderSkillCatalog` in
+`packages/skills/src/catalog/index.ts` prioritizes the host-attested `productOwned` marker, which
+untrusted frontmatter cannot set. `buildRegistry` in `packages/skills/src/registry.ts` makes every
+`.system` entry non-invocable by the user.
+
+Production: `createSkillsCapability` in `packages/skills/src/capability.ts`,
+`renderSkillCatalog` in `packages/skills/src/catalog/index.ts`, and `buildRegistry` in
+`packages/skills/src/registry.ts`. Test: `packages/skills/tests/component/capability.test.ts`,
+`packages/skills/tests/integration/discovery.test.ts`, and
+`packages/kernel/tests/integration/system-skill-invocation.test.ts`.
+
 Everything the reader does is bounded and degrading. Roots, per-root manifests, distinct skills,
 directory entries, nesting depth, file bytes, decoded characters, resource counts and sidecar size
 each carry a hard cap (`packages/skills/src/limits.ts`), and a manifest written in a dialect

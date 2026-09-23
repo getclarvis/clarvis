@@ -8,8 +8,10 @@ with the same file tools it uses for other workspace work. The file kernel provi
 editing, and the selected placement is Host or Sandbox. Agent Profiles, skills, hooks and edited
 files cannot install that port or widen the ceiling. Container guests receive no host writer;
 operator Settings, provider login and other administrative controls retain their own host APIs.
-There is no separate configuration tool, bundled configuration skill, slash command or system
-prompt listing the four roots. Generic skills named by the user still follow normal discovery.
+There is no separate configuration tool or slash command. The product-owned `clarvis-docs`
+skill supplies a short catalog entry and loads its self-contained Markdown references on demand.
+The guide does not grant write authority, change the effective configuration, or replace the
+operator's request. Generic skills named by the user still follow normal discovery.
 
 Production: `createFileKernel` in [file-kernel.ts](../../packages/kernel/src/file-kernel.ts),
 `createAgentToolsCapability` in
@@ -18,8 +20,43 @@ Production: `createFileKernel` in [file-kernel.ts](../../packages/kernel/src/fil
 and denied paths in
 [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts)
 and [api.test.ts](../../packages/tools/tests/integration/api.test.ts).
-The absent guide, slash route and dollar expansion are checked in
+The catalog, body/resource reads, absent slash route and dollar expansion are checked in
 [configuration-surface.test.ts](../../packages/kernel/tests/integration/configuration-surface.test.ts).
+
+## Product documentation skill
+
+The maintained Markdown tree lives in
+[clarvis-docs](../../packages/kernel/assets/skills/.system/clarvis-docs/SKILL.md) and its
+`references` directory. `reconcileSystemDocs` in
+[system-docs.ts](../../packages/kernel/src/skills/system-docs.ts) publishes only that reserved
+subtree under the resolved global Clarvis skills directory. It verifies shipped release hashes,
+checks ownership and path types, and replaces complete revisions under a lease. An unowned or
+unsafe destination degrades the skill without changing user content. `createSystemDocsProvider` in
+[system-docs-provider.ts](../../packages/kernel/src/skills/system-docs-provider.ts) captures the
+installed body and resources for the current host generation without an execution directory.
+Package-local Kernel modules derive the product root from the package identity; the Code launcher
+passes the active product root explicitly to a bundled host. Source code does not resolve assets
+through a `dist` layout.
+
+The host reserves `clarvis-docs` from ordinary Extension Profile inventory and skill roots. A
+workspace or plugin skill with the same name cannot replace the product entry. Existing
+`use_skills` agents see it in the ordinary catalog. An entry agent without that grant receives a
+system-only view only when its immutable run ceiling and selected Host or Sandbox placement admit
+file editing and the host configuration-review port exists. Children and read-only or Container
+agents receive no special view. The normal `load_skill` and `read_skill_resource` tools serve it;
+loading a skill never approves a subsequent file mutation.
+
+Production: `reconcileSystemDocs` in
+[system-docs.ts](../../packages/kernel/src/skills/system-docs.ts), `createSystemDocsProvider` in
+[system-docs-provider.ts](../../packages/kernel/src/skills/system-docs-provider.ts),
+`buildRunDeps` in [build-run-deps.ts](../../packages/loop/src/runtime/build-run-deps.ts), and
+`createSkillsCapability` in [capability.ts](../../packages/skills/src/capability.ts).
+Test: [system-docs-publication.test.ts](../../packages/kernel/tests/unit/system-docs-publication.test.ts),
+[system-docs-assets.test.ts](../../packages/kernel/tests/unit/system-docs-assets.test.ts),
+[configuration-surface.test.ts](../../packages/kernel/tests/integration/configuration-surface.test.ts),
+[system-docs-eligibility.test.ts](../../packages/kernel/tests/integration/system-docs-eligibility.test.ts),
+[system-skill-invocation.test.ts](../../packages/kernel/tests/integration/system-skill-invocation.test.ts),
+and [capability.test.ts](../../packages/skills/tests/component/capability.test.ts).
 
 ## Targets and file operations
 

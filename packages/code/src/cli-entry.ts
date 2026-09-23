@@ -12,6 +12,18 @@
  * transform through Babel on every start, which `tooling/artifact/build.ts` does once.
  */
 
+import { dirname, join, resolve, sep } from "node:path";
+
+/** Resolve the checkout or portable release containing this source launcher. */
+export function productRootForEntry(entryPath: string): string {
+  const directory = dirname(resolve(entryPath));
+  const layout = join("packages", "code", "src");
+  if (!directory.endsWith(`${sep}${layout}`)) {
+    throw new Error("Clarvis entry is outside its product root");
+  }
+  return resolve(directory.slice(0, -layout.length));
+}
+
 /** Facts the launcher gathers before {@link resolveEntry} can choose. */
 export interface EntryInputs {
   /** Absolute path of the built bundle. */

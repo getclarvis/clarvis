@@ -12,7 +12,7 @@ import {
   watchFile,
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { z } from "zod";
 import {
   acquireLocalLeaseSync,
@@ -35,6 +35,7 @@ import {
   type SkillRootInput,
 } from "@clarvis/skills";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import { SYSTEM_DOCS_NAME } from "../skills/system-docs.ts";
 import type {
   ExtensionProfileApplyResult,
   ExtensionProfileCompositionApplyResult,
@@ -850,6 +851,8 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
           logger,
         });
         for (const info of skills.listSkills()) {
+          const parts = relative(root.path, info.dir).split(sep);
+          if (info.name === SYSTEM_DOCS_NAME || parts.includes(".system")) continue;
           const ref: ExtensionProfileSkillRef = {
             scope: root.scope ?? "workspace",
             source: root.source === "agents" ? "agents" : "clarvis",

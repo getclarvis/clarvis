@@ -47,6 +47,14 @@ that directly contains `SKILL.md`. Discovery stops at the first skill boundary,
 so files below that directory remain resources rather than becoming nested
 skills.
 
+The host may add one product-attested `clarvis-docs` provider to a run. Its reserved identity wins
+over a user or plugin skill with the same name, and the catalog keeps it under prompt-size pressure.
+`createSkillsCapability` serves that provider through the existing `load_skill` and
+`read_skill_resource` tools. Agents with `use_skills` see it in the normal catalog; an eligible entry
+agent without that grant can receive only this system skill, even when ordinary skills are disabled.
+Discovery marks any `.system` skill as non-invocable by the user regardless of its frontmatter.
+See [self-configuration](../../specs/hosts/self-configuration.md).
+
 ## Usage
 
 ```ts

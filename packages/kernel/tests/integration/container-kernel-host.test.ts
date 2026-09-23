@@ -20,6 +20,82 @@ import { connectKernelClient } from "../../src/transport/client.ts";
 import { modelCallInput } from "../../src/hosting/container-model-contract.ts";
 import { DISCOVERY_SCHEMA } from "@clarvis/workflows";
 
+test("Container native graph yields and stops a run-owned shell session", async () => {
+  let step = 0;
+  let sessionId: string | undefined;
+  let stopConfirmed = false;
+  const usage = { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 };
+  const fixture = await containerNativeFixture({
+    enableCommandTools: true,
+    agents: [
+      {
+        name: "fixture",
+        scope: "global",
+        body: "Execute the fixture request.",
+        frontmatter: {
+          model: "logical/model",
+          grants: ["read_workspace", "edit_workspace", "run_commands"],
+        },
+      },
+    ],
+    llm: {
+      call: async (params) => {
+        const current = step++;
+        if (current === 2) {
+          const result = params.messages.findLast((message) => message.role === "tool");
+          if (result?.role !== "tool") throw new Error("missing shell_session stop result");
+          const stopped = JSON.parse(
+            result.content.slice("Tool 'shell_session' result: ".length),
+          ) as { termination_confirmed: boolean };
+          stopConfirmed = stopped.termination_confirmed;
+          return { text: "Session stopped.", usage };
+        }
+        const name = current === 0 ? "shell" : "shell_session";
+        const tool = params.tools.find((item) => item.toolName === name);
+        if (tool === undefined) throw new Error(`missing Container tool ${name}`);
+        let args: Record<string, unknown>;
+        if (current === 0) {
+          const file = join(fixture.workspaceRoot, "session.cjs");
+          writeFileSync(file, "process.stdout.write('READY\\n'); setInterval(() => {}, 1000);");
+          const invocation = `"${process.execPath}" "${file}"`;
+          args = {
+            command: process.platform === "win32" ? `& ${invocation}` : invocation,
+            ready_when: "READY",
+            yield_time_ms: 5000,
+            timeout_ms: 10000,
+          };
+        } else {
+          const result = params.messages.findLast((message) => message.role === "tool");
+          if (result?.role !== "tool") throw new Error("missing yielded shell result");
+          const yielded = JSON.parse(result.content.slice("Tool 'shell' result: ".length)) as {
+            running: boolean;
+            session_id: string;
+            ready: boolean;
+          };
+          expect(yielded).toMatchObject({ running: true, ready: true });
+          sessionId = yielded.session_id;
+          args = { action: "stop", session_id: sessionId };
+        }
+        return {
+          toolCalls: [{ id: `session-${current}`, name: tool.wireName, arguments: args }],
+          usage,
+        };
+      },
+    },
+  });
+  try {
+    const { attachment } = await fixture.start({ guard_mode: "off" });
+    const done = await attachment.handle.done;
+    await attachment.handle.closed;
+    expect(done.status).toBe("completed");
+    expect(step).toBe(3);
+    expect(sessionId).toMatch(/^ses_[0-9a-f]{32}$/);
+    expect(stopConfirmed).toBe(true);
+  } finally {
+    await fixture.close();
+  }
+});
+
 test("Container rejects Judge request controls before inference and permits guard off", async () => {
   let calls = 0;
   const fixture = await containerNativeFixture({

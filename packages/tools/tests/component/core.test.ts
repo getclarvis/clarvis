@@ -141,12 +141,10 @@ describe("listTools surface", () => {
   });
 
   it("names the end an oversized result actually loses, per tool", () => {
-    // Neither shape drops a *middle*: `bound`/`renderNumberedSlice` keep the
-    // head, `boundOrSpill` keeps the tail. A description saying otherwise has
-    // the model reasoning about which part of a large result it holds from a
-    // false premise.
+    // `bound`/`renderNumberedSlice` keep the head; shell sessions retain a
+    // bounded tail. Descriptions must name the end the reader actually loses.
     const byName = new Map(listTools(config).map((t) => [t.name, t.description]));
-    expect(byName.get("shell")).toContain("loses its head");
+    expect(byName.get("shell")).toContain("older bytes may expire");
     for (const name of ["grep", "read_file"]) {
       expect(byName.get(name)).toContain("loses its tail");
     }

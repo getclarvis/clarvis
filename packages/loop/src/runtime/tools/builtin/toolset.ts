@@ -10,6 +10,7 @@ import {
   type Elicit,
   type SandboxConfig,
   type ToolsLogger,
+  type ExecutionSessionManager,
 } from "@clarvis/tools";
 import type { NamespacedTool } from "@clarvis/capability";
 import type { ToolResultImage } from "@clarvis/capability";
@@ -30,8 +31,9 @@ export interface AgentToolsetOptions {
   canExec: boolean;
   confineToWorkspace?: boolean;
   temporaryRoots?: readonly string[];
+  sessionManager?: ExecutionSessionManager;
+  sessionAgent?: object;
   skillExecutionRoots?: readonly string[];
-  onTemporaryRootRegistered?: (root: string) => void;
   guard?: Guard;
   reviewMutation?: MutationReview;
   elicit?: Elicit;
@@ -75,6 +77,7 @@ export interface AgentToolResult {
 export interface AgentToolset {
   defs: NamespacedTool[];
   names: Set<string>;
+  continuation?: (sessionId: string) => { stop(): Promise<boolean>; completed: Promise<unknown> };
   dispatch: (
     name: string,
     args: Record<string, unknown>,
@@ -91,6 +94,7 @@ export interface AgentToolset {
 export interface AgentToolsAdapter {
   resolve(opts: AgentToolsetOptions): {
     defs: NamespacedTool[];
+    continuation?: (sessionId: string) => { stop(): Promise<boolean>; completed: Promise<unknown> };
     dispatch: AgentToolset["dispatch"];
   };
 }
@@ -164,11 +168,10 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
         ? { confineToWorkspace: opts.confineToWorkspace }
         : {}),
       ...(opts.temporaryRoots !== undefined ? { temporaryRoots: opts.temporaryRoots } : {}),
+      ...(opts.sessionManager !== undefined ? { sessionManager: opts.sessionManager } : {}),
+      ...(opts.sessionAgent !== undefined ? { sessionAgent: opts.sessionAgent } : {}),
       ...(opts.skillExecutionRoots !== undefined
         ? { skillExecutionRoots: opts.skillExecutionRoots }
-        : {}),
-      ...(opts.onTemporaryRootRegistered !== undefined
-        ? { onTemporaryRootRegistered: opts.onTemporaryRootRegistered }
         : {}),
       ...(opts.guard !== undefined ? { guard: opts.guard } : {}),
       ...(opts.reviewMutation !== undefined ? { reviewMutation: opts.reviewMutation } : {}),
@@ -182,6 +185,10 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
     });
     return {
       defs: buildAgentToolDefs(config),
+      continuation: (sessionId) => {
+        const session = config.sessionManager.getSession(sessionId, config.sessionAgent);
+        return { stop: () => session.stop(), completed: session.completed };
+      },
       dispatch: (name, args, signal, onOutput, onExecutionStarted) =>
         pkgDispatch(name, args, config, signal, {
           ...(onOutput ? { onOutput } : {}),
@@ -237,6 +244,7 @@ export function createAgentToolsetWithAdapter(
   return {
     defs,
     names,
+    ...(resolved.continuation === undefined ? {} : { continuation: resolved.continuation }),
     dispatch: (name, args, signal, onOutput, onExecutionStarted, runSignal) => {
       if (!names.has(name)) {
         return Promise.resolve({

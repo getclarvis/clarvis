@@ -306,10 +306,17 @@ comma-joined scalar (`packages/workflows/src/log.ts`) — but the current vocabu
 intentional array-valued exceptions. `tasks.provider.invalid_response.zod_issues` carries at most the
 bounded, deduplicated **paths** that failed projection, never their values
 (`packages/tasks/src/mcp-provider.ts`; pinned at
-`packages/tasks/tests/component/tasks-observability.test.ts`), and
-`tools.monitor_spawn.stdio_slots` records the fixed three-slot disposition
-(`packages/tools/src/tools/monitor.ts`). Consumers therefore must accept JSON field values;
+`packages/tasks/tests/component/tasks-observability.test.ts`).
+Consumers therefore must accept JSON field values;
 they cannot assume every non-error field is scalar.
+
+`tools.shell_exit` records saturated observed-byte counts, per-stream truncation and omitted-byte
+counts. These fields describe output retention, not a
+process-failure cause; timeout and abort remain separate. Production: `runCommand` in
+`packages/tools/src/tools/shell.ts` and `LiveSession` in `packages/tools/src/lib/execution-session.ts`.
+Test: `packages/tools/tests/integration/shell.test.ts` ("returns exit zero and honest truncation
+after output exceeds the spill quota") ("keeps cancellation ahead of truncation after a large
+output burst").
 
 Only an `error`-level record carries a stack. `faultFields` attaches `stack` and `cause` when the thrown
 value is an `Error` that has them (`packages/workflows/src/log.ts`), and the three fault sites in

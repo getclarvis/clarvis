@@ -11,7 +11,7 @@ import { globTool } from "./glob.ts";
 import { grep } from "./grep.ts";
 import { diffTool } from "./diff.ts";
 import { shell } from "./shell.ts";
-import { monitorStart, monitorPoll, monitorStop, monitorList } from "./monitor.ts";
+import { shellSession } from "./shell-session.ts";
 import { move } from "./move.ts";
 import { copy } from "./copy.ts";
 import { mkdir } from "./mkdir.ts";
@@ -52,10 +52,7 @@ export const toolDescriptors: readonly ToolDescriptor[] = [
   { tool: grep, readOnly: true },
   { tool: diffTool, readOnly: true },
   { tool: shell, readOnly: false },
-  { tool: monitorStart, readOnly: false },
-  { tool: monitorPoll, readOnly: false },
-  { tool: monitorStop, readOnly: false },
-  { tool: monitorList, readOnly: false },
+  { tool: shellSession, readOnly: false },
   { tool: move, readOnly: false },
   { tool: copy, readOnly: false },
   { tool: mkdir, readOnly: false },

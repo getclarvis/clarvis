@@ -10,6 +10,7 @@ import {
   write,
   lines,
   posixShell,
+  fixtureStatePaths,
 } from "../helpers/fixtures.ts";
 import { touchesOutside } from "../../src/guard/index.ts";
 import { buildGuardContext } from "../../src/guard/context.ts";
@@ -194,17 +195,14 @@ describe("dispatch guard hook", () => {
     expect(lines(allowed.json.stdout)).toBe("hi\n");
   });
 
-  it("keeps spills readable without granting an unsandboxed shell write path", async () => {
+  it("keeps generic spills readable without granting shell state access", async () => {
     const guard: Guard = (ctx) =>
       touchesOutside(ctx) ? { verdict: "deny" } : { verdict: "allow" };
     const config = makeConfig(root, { guard, maxShellOutputBytes: 64 });
-    const produced = await callTool(
-      "shell",
-      { command: "for i in $(seq 1 200); do echo line$i; done; echo needle" },
-      { ...config, guard: undefined },
-    );
-    const spill = /full output written to (\S+)/.exec(produced.text)?.[1];
-    expect(spill).toBeDefined();
+    const paths = fixtureStatePaths(root);
+    mkdirSync(paths.localDir, { recursive: true });
+    const spill = paths.toolOutputSpill("12345678");
+    writeFileSync(spill, "needle\n");
 
     const admitted = await callTool("read_file", { path: spill }, config);
     expect(admitted.isError).toBe(false);
@@ -214,7 +212,7 @@ describe("dispatch guard hook", () => {
     expect(shellRead.isError).toBe(true);
     const overwrite = await callTool("shell", { command: `printf changed > ${spill}` }, config);
     expect(overwrite.isError).toBe(true);
-    expect(readFileSync(spill!, "utf8")).toContain("needle");
+    expect(readFileSync(spill, "utf8")).toContain("needle");
 
     const sandboxed = makeConfig(root, {
       guard,
@@ -222,7 +220,7 @@ describe("dispatch guard hook", () => {
     });
     expect(
       touchesOutside(buildGuardContext("shell", { command: `grep -n needle ${spill}` }, sandboxed)),
-    ).toBe(false);
+    ).toBe(true);
 
     const state = workspaceStatePaths(root);
     mkdirSync(state.localDir, { recursive: true });

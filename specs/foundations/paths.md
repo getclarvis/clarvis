@@ -31,8 +31,7 @@ an optional feature package that is structurally forbidden from importing it," s
 dependency-free leaf is the only place both could share them (`packages/paths/src/index.ts`).
 
 The package draws one structural line through everything it builds: a workspace's `<ws>/.clarvis`
-tree holds only what a human authors or reads, and every byte of generated machinery — monitor
-sidecars, shell spills, prompt history, the memory wiki's journal, plan lockfiles — lives instead
+tree holds only what a human authors or reads, and every byte of generated machinery — prompt history, the memory wiki's journal, plan lockfiles — lives instead
 under the user's **global** root, keyed per workspace. That split is enforced by the *type
 system*, not by convention: `WorkspacePaths` (`packages/paths/src/workspace.ts`) simply has no
 key for any of that machinery, so writing it into a repository is a compile error rather than a
@@ -101,12 +100,8 @@ Test: `packages/paths/tests/unit/git-environment.test.ts`.
 | `DIR_MODE` | `0o700` | `packages/paths/src/constants.ts` |
 | `FILE_MODE` | `0o600` | `packages/paths/src/constants.ts` |
 | `TMP_GLOB` | `` `${TMP_PREFIX}*` `` | `packages/paths/src/constants.ts` |
-| `MONITOR_PREFIX` | `"monitor-"` | `packages/paths/src/constants.ts` |
-| `SPILL_PREFIX` | `"shell-"` | `packages/paths/src/constants.ts` |
 | `TOOL_OUTPUT_PREFIX` | `"toolout-"` | `packages/paths/src/constants.ts` |
 | `TOOL_OUTPUT_SUFFIX` | `".txt"` | `packages/paths/src/constants.ts` |
-| `MONITOR_SIDECAR_SUFFIX` | `".json"` | `packages/paths/src/constants.ts` |
-| `LOG_SUFFIX` | `".log"` | `packages/paths/src/constants.ts` |
 | `CONTEXT_FILENAMES` | `["CLARVIS.md", "AGENTS.md"]` | `packages/paths/src/constants.ts` |
 | `INTERNAL_SKIP_DIRS` | `[".git","node_modules","dist",CLARVIS_DIR,".next","coverage","build"]` | `packages/paths/src/constants.ts` |
 | `INTERNAL_IGNORE_PATTERNS` | `[".git", CLARVIS_DIR, TMP_GLOB]` | `packages/paths/src/constants.ts` |
@@ -293,14 +288,9 @@ record (`packages/paths/src/workspace-state.ts`) rooted at `<global>/state/works
 | `extensionProfileSelectionFile` | `<root>/local/extension-profile.json` | `packages/paths/src/workspace-state.ts` |
 | `memoryMachineryRootForOwner(owner)` | `<root>/owners/<seg>/memory` | `packages/paths/src/workspace-state.ts` |
 | `plansLockDirForOwner(owner)` | `<root>/owners/<seg>/plans` | `packages/paths/src/workspace-state.ts` |
-| `monitorSidecar(id)` | `<localDir>/monitor-<id>.json` | `packages/paths/src/workspace-state.ts` |
-| `monitorLog(id)` | `<localDir>/monitor-<id>.log` | `packages/paths/src/workspace-state.ts` |
-| `monitorExit(id)` | `<localDir>/monitor-<id>.exit` | `packages/paths/src/workspace-state.ts` |
-| `spillFile(token, stream)` | `<localDir>/shell-<token>.<stream>.log` | `packages/paths/src/workspace-state.ts` |
 | `toolOutputSpill(token)` | `<localDir>/toolout-<token>.txt` | `packages/paths/src/workspace-state.ts` |
 
-Predicates paired with the builders above: `isMonitorSidecar(name)` (`packages/paths/src/workspace-state.ts`)
-and `isSpillFile(name)` (`packages/paths/src/workspace-state.ts`).
+The `isSpillFile(name)` predicate is paired with `toolOutputSpill(token)` in `packages/paths/src/workspace-state.ts`. Command sessions have no persisted path builder.
 
 The `.agents` accessors do not share one blanket write policy. Standalone skills and marketplace
 documents are read-only authored inputs. The managed global plugin lifecycle may mutate exactly one
@@ -328,6 +318,16 @@ path or run id used to spend that limit for the command's own socket. `allocateS
 identity of a run is metadata rather than a path component; an existing entry is never adopted, a
 pre-existing container must have exactly Clarvis's type, owner and mode, and the returned `remove()`
 is idempotent and removes only a path it first proves is still that allocation.
+The run-owned tools adapter keeps accessible temporary roots separate from roots it may remove.
+`systemTemporaryRoots()` adds compatibility access but never cleanup authority. At run end, the
+adapter closes command admission and removes its short allocation and newly registered exact roots
+only after `ExecutionSessionManager.close` confirms tracked process exit. An uncertain tree retains the
+allocation and its recovery record. The short path shape and socket budget do not change.
+Production: `createAgentToolsCapability` in `packages/loop/src/runtime/capabilities/tools.ts`,
+`ExecutionSessionManager.close` in `packages/tools/src/lib/execution-session.ts`, and
+`allocateShortTemporaryRoot` in `packages/paths/src/short-temporaries.ts`. Test:
+`packages/loop/tests/integration/tools.test.ts` and
+`packages/paths/tests/integration/short-temporaries.test.ts`.
 
 `shortTemporaryRootCandidates` (`packages/paths/src/short-temporaries.ts`) orders the host's short
 temporary roots — `XDG_RUNTIME_DIR`, `/tmp`, `/dev/shm`, then the environment's own temporary root —
@@ -535,7 +535,7 @@ and `cache/` (`models-dev.json`, `update-check.json`)
 
 `<global>/state/workspaces/<segment>/`, where `segment = ownerSegment(ownerFromWorkspace(root))`
 (`packages/paths/src/workspace-state.ts`). Under it: `local/` (prompt history, `code.json`, `extension-profile.json`, `diagnostics/`,
-monitor sidecars/logs/exits, shell spills, tool-output spills), `memory/` (the wiki's machinery —
+tool-output spills), `memory/` (the wiki's machinery —
 delegated to [memory-wiki-store](../capabilities/memory-store.md)), `plans/` (lockfiles — delegated to plan's own spec), `trace-locks/` (cross-process trace coordination), and
 `owners/<seg>/{memory,plans}` for a multi-owner deployment. "Nothing here is seeded with a
 `.gitignore`: this tree is not inside anyone's repository, which is the entire point of it."
@@ -1080,11 +1080,7 @@ it here would require an import this package must never have.
 **`@clarvis/kernel`'s `workspace-surface.test.ts` is the one place outside this package that
 exercises the workspace-content-vs-machinery rule end-to-end**, because it is "the lowest package
 that sees both `@clarvis/plan` and `@clarvis/memory`" (`packages/kernel/tests/architecture/workspace-surface.test.ts`) — a
-runtime/import-graph fact (this package cannot see either), not a type-level one. The monitor and
-spill writers are explicitly *not* driven from here because "the kernel does not depend on
-`@clarvis/tools`" (`packages/kernel/tests/architecture/workspace-surface.test.ts`); that coverage instead lives in `@clarvis/
-tools`'s own suites (delegated, per the same comment, to `tools`' `monitor-lib`/`shell` suites and
-`loop`'s `tool-spill` suite — outside this document's scope).
+runtime/import-graph fact (this package cannot see either), not a type-level one. Generic spill writes are exercised by `@clarvis/loop`'s `tool-spill` suite; command sessions keep output in memory and are exercised by `@clarvis/tools`'s `shell-session` suite. The kernel does not depend directly on `@clarvis/tools`.
 
 **`WORKSPACE_ENV` (`CLARVIS_WORKSPACE_ROOT`) is a cross-package contract with `@clarvis/hooks`**:
 this package defines the name (`packages/paths/src/roots.ts`) and `@clarvis/hooks` injects it into every hook

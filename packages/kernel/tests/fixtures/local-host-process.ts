@@ -13,7 +13,7 @@ const host = await serveLocalFileKernel({
     memory: true,
     subscriptions: false,
     logger: NOOP_LOGGER,
-    builtins: { tools: false, hooks: false, tasks: false },
+    builtins: { tools: process.env.CLARVIS_TEST_SESSION === "1", hooks: false, tasks: false },
     env: loadEnv(process.env),
     async executeRun(args) {
       const executionId = (args.rawBody as { execution_id: string }).execution_id;
@@ -47,7 +47,53 @@ const host = await serveLocalFileKernel({
         ...args,
         deps: {
           ...args.deps,
-          llm: new MockLLM({ script: [{ text: "Completed in the independent host." }] }),
+          llm:
+            process.env.CLARVIS_TEST_SESSION === "1"
+              ? {
+                  async call(params) {
+                    if (!params.messages.some((message) => message.role === "tool")) {
+                      return {
+                        toolCalls: [
+                          {
+                            id: "session",
+                            name: "shell",
+                            arguments: {
+                              command:
+                                'printf \'%s\\n%s\\n\' "$TMPDIR" "$$" > session-meta; printf ready; sleep 30',
+                              ready_when: "ready",
+                              yield_time_ms: 1000,
+                            },
+                          },
+                        ],
+                        usage: {
+                          input_tokens: 1,
+                          output_tokens: 1,
+                          cached_tokens: 0,
+                          cache_write_tokens: 0,
+                        },
+                      };
+                    }
+                    while (
+                      !(await access(join(input.workspaceRoot, "finish.flag")).then(
+                        () => true,
+                        () => false,
+                      ))
+                    ) {
+                      params.signal?.throwIfAborted();
+                      await Bun.sleep(5);
+                    }
+                    return {
+                      text: "Completed in the independent host.",
+                      usage: {
+                        input_tokens: 1,
+                        output_tokens: 1,
+                        cached_tokens: 0,
+                        cache_write_tokens: 0,
+                      },
+                    };
+                  },
+                }
+              : new MockLLM({ script: [{ text: "Completed in the independent host." }] }),
         },
       });
     },

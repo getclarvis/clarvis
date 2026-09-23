@@ -522,6 +522,14 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
+      "mechanism": "positive-wait",
+      "file": "packages/loop/tests/integration/selective-shell-interrupt.test.ts",
+      "identity": "positive-wait|it:stops a yielded session through its original hosted interrupt token|Bun.sleep(10)|0",
+      "package_owner": "@clarvis/loop",
+      "classification": "boundary-canary",
+      "reason": "Polls physical process-stop evidence under a bounded deadline; the delay is not the awaited event."
+    },
+    {
       "mechanism": "timer",
       "file": "packages/loop/tests/integration/steering-lead-subagent.test.ts",
       "identity": "timer|describe:steering reaches the entry Lead but never a spawned subagent/it:a run-level steer channel does not reach a background child either|setTimeout(r, 50)|0",
@@ -560,6 +568,22 @@
       "package_owner": "@clarvis/loop",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
+    },
+    {
+      "mechanism": "timer",
+      "file": "packages/loop/tests/integration/tools.test.ts",
+      "identity": "timer|sessionMeta|setTimeout(resolve, 10)|0",
+      "package_owner": "@clarvis/loop",
+      "classification": "boundary-canary",
+      "reason": "Polls a marker written by a spawned command under a bounded deadline; the timer does not establish readiness."
+    },
+    {
+      "mechanism": "timer",
+      "file": "packages/loop/tests/integration/tools.test.ts",
+      "identity": "timer|releaseRetainedScratch|setTimeout(resolve, 20)|0",
+      "package_owner": "@clarvis/loop",
+      "classification": "boundary-canary",
+      "reason": "Polls physical process-tree exit before removing test-owned scratch under a bounded deadline."
     },
     {
       "mechanism": "listener",
@@ -698,6 +722,30 @@
       "reason": "physical listener or subprocess boundary is required by this test"
     },
     {
+      "mechanism": "subprocess",
+      "file": "packages/tools/tests/integration/execution-session.test.ts",
+      "identity": "subprocess|describe:ExecutionSessionManager/it:spawns once and settles both streams with physical exit status|spawn(file, args, options)|0",
+      "package_owner": "@clarvis/tools",
+      "classification": "boundary-canary",
+      "reason": "Exercises the physical shell subprocess boundary and counts the single owned spawn."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/tools/tests/integration/execution-session.test.ts",
+      "identity": "subprocess|describe:ExecutionSessionManager/it:reports an asynchronous child error and still owns the spawned process|spawn(file, args, options)|0",
+      "package_owner": "@clarvis/tools",
+      "classification": "boundary-canary",
+      "reason": "Exercises an asynchronous child error after a real owned process starts."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/tools/tests/integration/process-owner.test.ts",
+      "identity": "subprocess|module|spawn( process.execPath, [ \"-e\", \"process.on('SIGTERM', () => {}); process.stdout.write('READY\\\\n'); setInterval(() => {}, 1000)\", ], { cwd: root, detached: true, stdio: [\"ignore\", \"pipe\", \"ignore\"] }, )|0",
+      "package_owner": "@clarvis/tools",
+      "classification": "boundary-canary",
+      "reason": "Exercises physical TERM-to-KILL escalation and confirmed process-group shutdown."
+    },
+    {
       "mechanism": "listener",
       "file": "packages/tools/tests/integration/file-stat.test.ts",
       "identity": "listener|describe:file_stat|server.listen(sock, () => { server.off(\"error\", reject); resolve(); })|0",
@@ -736,30 +784,6 @@
       "package_owner": "@clarvis/tools",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/monitor-lib.test.ts",
-      "identity": "subprocess|describe:monitor lib|spawnSync(mkfifo!, [fifo], { stdio: \"ignore\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/monitor-lib.test.ts",
-      "identity": "subprocess|describe:monitor lib|spawnSync(mkfifo!, [fifo], { stdio: \"ignore\" })|1",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/tools/tests/integration/monitor.test.ts",
-      "identity": "timer|waitDead|setTimeout(res, 20)|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
       "mechanism": "subprocess",

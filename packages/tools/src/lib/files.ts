@@ -26,6 +26,10 @@ export interface ReadFileOptions {
   noFollow?: boolean;
   /** Revalidate the opened object against these roots before reading bytes. */
   confinement?: ReadConfinement;
+  /** Exact filesystem object admitted before opening a state artifact. */
+  expectedIdentity?: { readonly dev: bigint; readonly ino: bigint };
+  /** Canonical parent required for an exact machine-state artifact read. */
+  expectedParent?: string;
 }
 
 /**
@@ -236,6 +240,37 @@ export async function readRawFile(
   try {
     const stat = await handle.stat();
     if (!stat.isFile()) throw notRegularFile(stat, relForError);
+    if (options.expectedIdentity !== undefined) {
+      const opened = await handle.stat({ bigint: true });
+      if (
+        opened.dev !== options.expectedIdentity.dev ||
+        opened.ino !== options.expectedIdentity.ino
+      ) {
+        throw new ToolError(
+          "path_escape",
+          `Path changed while it was being opened: ${relForError}.`,
+          { path: relForError },
+        );
+      }
+    }
+    if (options.expectedParent !== undefined) {
+      const parent = await fs.realpath(path.dirname(target));
+      const current = await fs.lstat(target);
+      const comparable = (value: string) =>
+        process.platform === "win32" ? value.toLowerCase() : value;
+      if (
+        comparable(parent) !== comparable(options.expectedParent) ||
+        !current.isFile() ||
+        current.isSymbolicLink() ||
+        current.nlink !== 1
+      ) {
+        throw new ToolError(
+          "path_escape",
+          `State artifact path changed while it was being opened: ${relForError}.`,
+          { path: relForError },
+        );
+      }
+    }
     if (options.confinement) {
       await assertOpenedFileConfined(handle, target, relForError, options.confinement);
     }

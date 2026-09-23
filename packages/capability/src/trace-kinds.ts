@@ -148,6 +148,8 @@ export interface ToolCallDetail {
    * signal aborted while the run remained live. Implies a non-null `error`.
    */
   interruption?: { source: "operator" };
+  /** Live command session that outlived this tool call. */
+  control?: { tool_execution_id: string; actions: readonly ["interrupt"] };
 }
 
 /**

@@ -39,7 +39,7 @@ describe("createToolEffectPort", () => {
     }
     // They observe and mutate through one entry point, so no caller can treat
     // them as safe without running the command first.
-    for (const name of ["shell", "monitor_start", "monitor_poll", "monitor_stop"]) {
+    for (const name of ["shell", "shell_session"]) {
       expect(effect(name)).toBe("mutate");
     }
   });

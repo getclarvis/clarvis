@@ -82,6 +82,43 @@ describe("tool interrupt registry", () => {
     expect(status).toBe("not_running");
   });
 
+  it("keeps a yielded session interruptible until physical completion", async () => {
+    const registry = createToolInterruptRegistry();
+    const controller = new AbortController();
+    let finish!: () => void;
+    const completed = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let stops = 0;
+    registry.register({ toolExecutionId: "tok_session", callId: "call", controller });
+    registry.retain("tok_session", {
+      completed,
+      async stop() {
+        stops++;
+        return true;
+      },
+    });
+    let status: string | undefined;
+    const delivery = {
+      toolExecutionId: "tok_session",
+      fail(error: unknown) {
+        throw error;
+      },
+      settle(next: string) {
+        status = next;
+      },
+    };
+    registry.deliver(delivery);
+    expect(status).toBe("accepted");
+    expect(stops).toBe(1);
+    expect(controller.signal.aborted).toBe(false);
+    finish();
+    await completed;
+    await Promise.resolve();
+    registry.deliver(delivery);
+    expect(status).toBe("not_running");
+  });
+
   it("does not classify a run cancel as an operator interrupt", () => {
     const run = new AbortController();
     const tool = new AbortController();

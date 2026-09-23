@@ -494,7 +494,7 @@ lock-ordering deadlock between them.
     read configuration into an ordinary destination.
     Recursive `replace` discovers only bounded canonical authoring leaves inside an explicitly named
     configuration scope and otherwise filters both roots. Command execution keeps the separate
-    posture in [tools-shell-and-monitor.md](tools-shell-and-monitor.md) and is not an alternate writer.
+    posture in [tools-shell-and-sessions.md](tools-shell-and-sessions.md) and is not an alternate writer.
     Production: `protectWorkspaceConfiguration` in `packages/tools/src/core.ts`,
     `isCanonicalAuthoringPath` in `packages/tools/src/guard/authoring-path.ts`, `MutationReview` in
     `packages/tools/src/lib/atomic.ts`, and `createAuthoringMutationReview` in

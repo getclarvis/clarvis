@@ -8,9 +8,9 @@ corpus had left open — is **gone because every item in it was closed.** Nothin
 was dropped in the closing. What was a code defect was fixed with a test; what was an unpinned
 rule got the test; what genuinely depends on something outside this repository moved into
 [`known-issues.md`](known-issues.md), which is where evidence the source cannot supply belongs;
-and what a document had simply never described is now described in the document that owns it. Each
-resolution is recorded beside the original claim in the owning spec's section 8, struck through
-rather than deleted, so the reasoning outlives the finding.
+and what a document had simply never described is now described in the document that owns it.
+Historical evidence that still affects current work remains in the owning spec or
+[`known-issues.md`](known-issues.md).
 
 ## What this is
 
@@ -94,7 +94,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`tools-contract.md`](execution/tools-contract.md) | The one dispatcher every tool sits behind: argument validation, the approval gate, output bounding, the immutable `RuntimeConfig`, and the single registry both surfaces derive from | `tools` |
 | [`tools-read-and-search.md`](execution/tools-read-and-search.md) | The nine observing tools (`read_file`, `read_image`, `read_files`, `list_dir`, `glob`, `grep`, `diff`, `file_stat`, `tree`) and the ripgrep-parity contract between grep's two engines | `tools` |
 | [`tools-mutation.md`](execution/tools-mutation.md) | The nine mutating tools and the shared staging/locking/rollback machinery that makes a write all-or-nothing | `tools` |
-| [`tools-shell-and-monitor.md`](execution/tools-shell-and-monitor.md) | Running host commands: `shell` to completion and the `monitor_*` family in the background, shell resolution, process trees, killing, and bounded spill-backed output | `tools` |
+| [`tools-shell-and-sessions.md`](execution/tools-shell-and-sessions.md) | Running commands with `shell` and `shell_session`, process trees, killing, bounded capture, and cursors | `tools` |
 | [`command-guard.md`](execution/command-guard.md) | Per-call approval: the shell analyzer that produces facts, the kernel's single deterministic policy, and the one Judge review path every remaining Auto `ask` takes | `tools`, `kernel`, `loop`, `code` |
 | [`effect-review.md`](execution/effect-review.md) | Authenticated operator evidence, host effect attestation, revisioned grants, configuration-review receipts and the restricted writers | `capability`, `tools`, `kernel`, `loop`, `trace`, `workflows`, `protocol`, `code` |
 | [`hooks.md`](execution/hooks.md) | Operator- and plugin-declared command or MCP-tool invocations bound to lifecycle events: matching, blocking and observer semantics, subprocess and MCP execution, foreign payloads, and argument rewriting | `hooks`, `capability`, `loop`, `mcp-client` |

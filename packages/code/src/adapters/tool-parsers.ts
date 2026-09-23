@@ -6,6 +6,8 @@ export interface BashResult {
   signal: string | null;
   timedOut: boolean;
   parsed: boolean;
+  running?: boolean;
+  sessionId?: string;
 }
 
 /** Parse `s` as a JSON object, returning `undefined` for anything else (non-JSON, array, primitive). */
@@ -54,6 +56,8 @@ export function parseBash(result: string, error: string | null): BashResult {
       signal: typeof j.signal === "string" ? j.signal : null,
       timedOut: j.timed_out === true,
       parsed: true,
+      ...(j.running === true ? { running: true } : {}),
+      ...(typeof j.session_id === "string" ? { sessionId: j.session_id } : {}),
     };
   }
   const message = j ? errorText(j) : undefined;
@@ -316,97 +320,45 @@ export function parseReadFiles(result: string): {
   return { sections, note };
 }
 
-interface MonitorEntry {
-  id: string;
-  command: string;
-  running: boolean;
-}
-/**
- * A `monitor` tool call's JSON result, either a `monitor_list` snapshot
- * (`isList: true`) or a single monitor's status/output.
- */
-export interface MonitorParsed {
+export interface ShellSessionParsed {
   isList: boolean;
-  monitors: MonitorEntry[];
+  sessions: Array<{ id: string; running: boolean; exitCode: number | null }>;
   id: string | null;
-  command: string | null;
   running: boolean | null;
   ready: boolean | null;
   exitCode: number | null;
-  hasExitCode: boolean;
   stopped: boolean | null;
-  output: string;
+  stdout: string;
+  stderr: string;
 }
 
-/** Normalize a JSON value to a strict tri-state boolean: `true`, `false`, or `null` for anything else. */
-const triBool = (v: unknown): boolean | null => (v === true ? true : v === false ? false : null);
-
-/**
- * Parse a `monitor` tool call's result/error text into a {@link MonitorParsed}.
- *
- * @returns `undefined` if neither `result` nor `error` is a JSON object.
- */
-export function parseMonitor(result: string, error: string | null): MonitorParsed | undefined {
+/** Read a bounded shell-session result without mistaking a typed error for status. */
+export function parseShellSession(
+  result: string,
+  error: string | null,
+): ShellSessionParsed | undefined {
   const j = tryJson(result) ?? (error ? tryJson(error) : undefined);
-  if (!j || !isMonitorPayload(j)) return undefined;
-  if (Array.isArray(j.monitors)) {
-    const monitors: MonitorEntry[] = j.monitors
-      .filter((m): m is Record<string, unknown> => !!m && typeof m === "object")
-      .map((m) => ({
-        id: String(m.id ?? ""),
-        command: String(m.command ?? ""),
-        running: m.running === true,
-      }));
-    return {
-      isList: true,
-      monitors,
-      id: null,
-      command: null,
-      running: null,
-      ready: null,
-      exitCode: null,
-      hasExitCode: false,
-      stopped: null,
-      output: "",
-    };
-  }
+  if (!j || typeof j.error === "string") return undefined;
+  if (!Array.isArray(j.sessions) && typeof j.session_id !== "string") return undefined;
+  const triBool = (value: unknown): boolean | null =>
+    value === true ? true : value === false ? false : null;
   return {
-    isList: false,
-    monitors: [],
-    id: typeof j.id === "string" ? j.id : null,
-    command: typeof j.command === "string" ? j.command : null,
+    isList: Array.isArray(j.sessions),
+    sessions: Array.isArray(j.sessions)
+      ? j.sessions
+          .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === "object")
+          .map((entry) => ({
+            id: typeof entry.session_id === "string" ? entry.session_id : "",
+            running: entry.running === true,
+            exitCode: typeof entry.exit_code === "number" ? entry.exit_code : null,
+          }))
+      : [],
+    id: typeof j.session_id === "string" ? j.session_id : null,
     running: triBool(j.running),
     ready: triBool(j.ready),
     exitCode: typeof j.exit_code === "number" ? j.exit_code : null,
-    hasExitCode: "exit_code" in j,
     stopped: triBool(j.stopped),
-    output: typeof j.output === "string" ? j.output : "",
+    stdout: typeof j.stdout === "string" ? j.stdout : "",
+    stderr: typeof j.stderr === "string" ? j.stderr : "",
   };
-}
-
-/** The fields a real monitor payload may carry; one of them must be present. */
-const MONITOR_PAYLOAD_KEYS = [
-  "monitors",
-  "id",
-  "command",
-  "running",
-  "ready",
-  "exit_code",
-  "stopped",
-  "output",
-] as const;
-
-/**
- * Whether a parsed JSON object is a monitor payload at all.
- *
- * @remarks The same distinction {@link parseBash} draws, for the same reason: a
- *   `ToolError` such as `{"error":"monitor_not_found","message":"…"}` parses
- *   cleanly and then satisfies none of the field reads, yielding a status with
- *   every field null. The renderer painted a bare `○ monitor <id>` and dropped
- *   the message entirely, so polling or stopping an unknown id reported nothing
- *   at all about what went wrong. Returning `undefined` instead falls through to
- *   `renderGeneric`, which prints the error once.
- */
-function isMonitorPayload(j: Record<string, unknown>): boolean {
-  return MONITOR_PAYLOAD_KEYS.some((k) => j[k] !== undefined);
 }

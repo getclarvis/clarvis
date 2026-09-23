@@ -423,7 +423,7 @@ tool family, and an unrecognized tool yields no paths and no shell facts :
 
 | Family | Members | Extraction | File |
 | --- | --- | --- | --- |
-| command tools | `shell`, `monitor_start` | `analyzeShell(args.command)`, each path occurrence resolved with **shell semantics** (tilde expansion) against workspace, every configured temporary root (product run scratch plus system compatibility roots), and exact host-selected skill roots; an absolute command head beneath a platform system executable root or configured runtime root is admitted only for that segment occurrence and normalized to its basename for allow/deny matching, with Windows `PATHEXT` suffixes removed; duplicate absolute operands remain outside even when their string equals an admitted head; when a sandbox is configured, an existing verified spill is admitted as that exact read-only-mounted file; unsandboxed commands do not receive the spill exception; `args.cwd` is added with plain fs semantics against the same roots; `sandbox_permissions` and `justification` are copied onto the context | `packages/tools/src/guard/context.ts` (`commandPathOccurrences`, `externalExecutableHeads`, `normalizeExternalExecutables`), `packages/tools/src/lib/state-artifacts.ts`, `packages/tools/src/lib/system-executables.ts`, `packages/loop/src/runtime/capabilities/tools.ts` |
+| command tools | `shell` | `analyzeShell(args.command)` resolves each path occurrence with shell semantics against workspace, configured temporary roots, and exact selected skill roots; an absolute command head beneath a platform system executable root or configured runtime root is admitted only for that occurrence and normalized to its basename for allow/deny matching; `args.cwd` is resolved against the same roots; `sandbox_permissions` and `justification` are copied onto the context. Commands receive no machine-state spill exception. | `packages/tools/src/guard/context.ts` (`commandPathOccurrences`, `externalExecutableHeads`, `normalizeExternalExecutables`), `packages/tools/src/lib/system-executables.ts` |
 | patch | `apply_patch` | `patchPaths(args.patch)` — raw unified `---`/`+++` plus model-envelope Update/Add/Delete/Move headers, `/dev/null` dropped, `a/`/`b/` prefixes stripped, deduped first-seen | `packages/tools/src/guard/context.ts`, `packages/tools/src/guard/paths.ts` |
 | src/dest | `move`, `copy` | `args.source`, `args.destination` | `packages/tools/src/guard/context.ts`, `packages/tools/src/guard/paths.ts` |
 | list | `read_files` | every string in `args.paths` | `packages/tools/src/guard/context.ts`, `packages/tools/src/guard/paths.ts` |
@@ -509,15 +509,7 @@ process reaches the host's null device. Other absolute device paths remain ordin
 `packages/tools/tests/unit/posix-dialect.test.ts` and
 `packages/tools/tests/integration/guard-dispatch.test.ts`.
 
-The state-spill exception is narrower than `config.stateRoot`. `readableStateArtifactPath` requires
-the candidate to be a direct child of `<stateRoot>/local`, match the `@clarvis/paths` spill naming
-family, exist as a regular file, reject a final symlink, and resolve back to that same local
-directory. The guard adds only that exact file to read-only `read_file`/`read_files`, and to
-`shell`/`monitor_start` only when a sandbox can mount it read-only. Unsandboxed command tools retain
-`outside_workspace`, preventing overwrite or deletion; prompt history and all other state paths do
-too. Production:
-`packages/tools/src/lib/state-artifacts.ts`, `packages/tools/src/guard/context.ts`. Test:
-`packages/tools/tests/integration/guard-dispatch.test.ts`.
+The state-spill exception is narrower than `config.stateRoot`. `resolveReadableTextPath` admits only an exact generic result spill directly under `<stateRoot>/local`, requires a regular non-link file, and pins its filesystem identity through the read. Only `read_file` and `read_files` receive that exact-file allowance; `shell` cannot mount or read state through it. Prompt history, legacy sidecars, and another workspace's state remain outside the exception. Production: `packages/tools/src/lib/state-artifacts.ts`, `packages/tools/src/lib/files.ts`, and `packages/tools/src/guard/context.ts`. Test: `packages/tools/tests/unit/read-confinement-allowance.test.ts` and `packages/tools/tests/integration/guard-dispatch.test.ts`.
 
 Skill execution roots are a separate host-approved class. Command analysis admits only the exact
 canonical directories reported by selected skills; they are not added to native file-tool roots and
@@ -1182,7 +1174,7 @@ broken.
     across shell and native tools without owning its parent`).
 
 59. **An absolute executable spelling is not mistaken for an external data operand, and cannot
-    bypass command policy.** For `shell`/`monitor_start`, only the first argv item of a segment is a
+    bypass command policy.** For `shell`, only the first argv item of a segment is a
     candidate; it must resolve outside the workspace but beneath a platform system executable root
     or the configured sandbox runtime roots. The exception is attached to that lexical occurrence,
     never to the path string globally: the same path used as a later operand stays outside. Its

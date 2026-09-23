@@ -19,7 +19,7 @@ and user-authored extensions are not a fixed inventory.
 
 | Surface | Declarations | Source owner |
 | --- | ---: | --- |
-| Coding, files, search, shell and monitors | 23 | `toolDescriptors` in [tools/registry.ts](../../packages/tools/src/tools/registry.ts) |
+| Coding, files, search, shell and sessions | 20 | `toolDescriptors` in [tools/registry.ts](../../packages/tools/src/tools/registry.ts) |
 | Independent and tracked child spawning | 2 | [lead-tools.ts](../../packages/loop/src/runtime/subagents/lead-tools.ts) |
 | Child listing, polling, waiting, steering and stopping | 5 | `buildTools` in [agents.ts](../../packages/loop/src/runtime/capabilities/agents.ts) |
 | Human question and structured completion | 2 | [ask-user-tool.ts](../../packages/loop/src/runtime/tools/ask-user-tool.ts), [submit-result-tool.ts](../../packages/loop/src/runtime/tools/submit-result-tool.ts) |
@@ -116,7 +116,7 @@ handoff cases in [builtin-agents.test.ts](../../packages/kernel/tests/component/
    280, 410, 160, 160 and 180 tokens respectively, with a 1150-token fleet ceiling. The estimate is
    `ceil(characters / 4)`, not provider tokenization; a run does not inject all five bodies together.
 2. **Descriptions preserve usable command and recovery details.** Persistent commands route to
-   `monitor_start`, not shell `&`; truncation names the lost end and continuation path; patch examples
+   `shell` with `yield_time_ms`; truncation names omitted bytes and the cursor for a live session; patch examples
    are executable. Production: descriptors under `packages/tools/src/tools/`. Test:
    `packages/tools/tests/component/core.test.ts`, `tool-surface.test.ts` in that directory, and
    `packages/tools/tests/integration/apply-patch.test.ts`. The complete advertised coding descriptor
@@ -179,7 +179,7 @@ Focused owners are [kernel config](../hosts/kernel-config.md), [tool dispatch](.
 [delegation](../engine/delegation-and-subagents.md), [compaction](../engine/context-compaction.md),
 [vision](../engine/vision-routing.md), [tool surface](../execution/tools-contract.md),
 [reads/search](../execution/tools-read-and-search.md), [mutation](../execution/tools-mutation.md),
-[shell/monitor](../execution/tools-shell-and-monitor.md), [planning](../capabilities/plan-capability.md),
+[shell/session](../execution/tools-shell-and-sessions.md), [planning](../capabilities/plan-capability.md),
 [workflow scheduling](../capabilities/workflows-scheduling.md), [workflow service](../capabilities/workflows-service.md),
 [tasks](../capabilities/tasks-capability.md) and [MCP facade](../hosts/server-mcp.md).
 

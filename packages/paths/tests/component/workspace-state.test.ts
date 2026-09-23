@@ -9,18 +9,14 @@ import {
   ensureWorkspaceStateDir,
   globalPaths,
   HOME_ENV,
-  isMonitorSidecar,
   isSpillFile,
-  MONITOR_PREFIX,
   ownerFromWorkspace,
   ownerSegment,
-  SPILL_PREFIX,
   TOOL_OUTPUT_PREFIX,
   TOOL_OUTPUT_SUFFIX,
   workspacePaths,
   workspaceStatePaths,
   WORKSPACE_ENV,
-  type SpillStream,
 } from "../../src/index.ts";
 
 const GLOBAL = "/home/alice/.clarvis";
@@ -73,10 +69,6 @@ describe("workspaceStatePaths", () => {
       p.promptHistoryFile,
       p.codeConfigFile,
       p.extensionProfileSelectionFile,
-      p.monitorSidecar("m"),
-      p.monitorLog("m"),
-      p.monitorExit("m"),
-      p.spillFile("t", "stdout"),
       p.toolOutputSpill("t"),
       p.memoryMachineryRootForOwner("u1"),
       p.plansLockDirForOwner("u1"),
@@ -112,24 +104,10 @@ describe("workspaceStatePaths", () => {
     expect(p.memoryMachineryRootForOwner("u1")).not.toBe(p.memoryMachineryRootForOwner("u2"));
   });
 
-  test("a monitor's three files share an id and differ only by suffix", () => {
-    expect(p.monitorSidecar("mon_ab")).toBe(join(p.localDir, `${MONITOR_PREFIX}mon_ab.json`));
-    expect(p.monitorLog("mon_ab")).toBe(join(p.localDir, `${MONITOR_PREFIX}mon_ab.log`));
-    expect(p.monitorExit("mon_ab")).toBe(join(p.localDir, `${MONITOR_PREFIX}mon_ab.exit`));
-  });
-
-  test("spill files name their stream", () => {
-    const streams: SpillStream[] = ["stdout", "stderr"];
-    for (const stream of streams) {
-      expect(p.spillFile("tok", stream)).toBe(join(p.localDir, `${SPILL_PREFIX}tok.${stream}.log`));
-    }
-  });
-
-  test("a tool-result spill is prose, not a per-stream log", () => {
+  test("a tool-result spill is a single bounded text artifact", () => {
     expect(p.toolOutputSpill("tok")).toBe(
       join(p.localDir, `${TOOL_OUTPUT_PREFIX}tok${TOOL_OUTPUT_SUFFIX}`),
     );
-    expect(p.toolOutputSpill("tok")).not.toBe(p.spillFile("tok", "stdout"));
   });
 
   test("resolves a relative root and reads the environment when given none", () => {
@@ -147,7 +125,7 @@ describe("workspaceStatePaths", () => {
   });
 
   test("no builder emits a hardcoded separator", () => {
-    for (const value of [p.root, p.localDir, p.monitorSidecar("m"), p.spillFile("t", "stderr")]) {
+    for (const value of [p.root, p.localDir, p.toolOutputSpill("t")]) {
       expect(value).toBe(resolve(value));
       if (sep === "\\") expect(value.includes("/")).toBe(false);
     }
@@ -188,25 +166,7 @@ describe("ensureWorkspaceStateDir / ensureWorkspaceLocalDir", () => {
 });
 
 describe("filename predicates", () => {
-  test("isMonitorSidecar accepts what monitorSidecar builds", () => {
-    const built = p.monitorSidecar("mon_dead");
-    expect(isMonitorSidecar(built.slice(built.lastIndexOf(sep) + 1))).toBe(true);
-  });
-
-  test("isMonitorSidecar rejects a monitor's other two files", () => {
-    for (const built of [p.monitorLog("mon_dead"), p.monitorExit("mon_dead")]) {
-      expect(isMonitorSidecar(built.slice(built.lastIndexOf(sep) + 1))).toBe(false);
-    }
-  });
-
-  test("isSpillFile accepts what spillFile builds — the sweeper/writer pairing", () => {
-    for (const stream of ["stdout", "stderr"] as SpillStream[]) {
-      const built = p.spillFile("tok9", stream);
-      expect(isSpillFile(built.slice(built.lastIndexOf(sep) + 1))).toBe(true);
-    }
-  });
-
-  test("isSpillFile accepts what toolOutputSpill builds — the same pairing", () => {
+  test("isSpillFile accepts what toolOutputSpill builds", () => {
     const built = p.toolOutputSpill("tok9");
     expect(isSpillFile(built.slice(built.lastIndexOf(sep) + 1))).toBe(true);
   });
@@ -216,16 +176,14 @@ describe("filename predicates", () => {
     expect(isSpillFile("toolout-tok.log")).toBe(false);
   });
 
-  test("the two predicates never claim each other's files", () => {
+  test("legacy control and shell names are not generic result spills", () => {
     expect(isSpillFile("monitor-mon_1.json")).toBe(false);
     expect(isSpillFile("monitor-mon_1.log")).toBe(false);
-    expect(isMonitorSidecar("shell-tok.stdout.log")).toBe(false);
-    expect(isMonitorSidecar(p.toolOutputSpill("t"))).toBe(false);
+    expect(isSpillFile("shell-tok.stdout.log")).toBe(false);
   });
 
-  test("both reject unrelated names", () => {
+  test("rejects unrelated names", () => {
     for (const name of ["settings.json", "prompt-history", "", "shell-no-suffix"]) {
-      expect(isMonitorSidecar(name)).toBe(false);
       expect(isSpillFile(name)).toBe(false);
     }
   });

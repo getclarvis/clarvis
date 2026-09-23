@@ -23,19 +23,14 @@ The literal used to be repeated across eight packages, and the copies had alread
 
 - `join(workspaceRoot, ".clarvis")` was computed independently in seven places.
 - One creator used `mkdir` with no mode while three others used `0o700`.
-- The shell tool wrote spill files as `shell-<token>.<stream>.log` while the sweeper looked
-  for `bash-*` — so shell spills were never collected at all.
 - The workspace `.gitignore` was seeded by whichever tool happened to run first, so whether
   it existed depended on the order of events rather than on any decision.
 
 Centralising the vocabulary is what makes those failure modes unrepresentable. Builders and
-their recognisers live together — `monitorSidecar` beside `isMonitorSidecar`, `spillFile`
-beside `isSpillFile` — because a scanner that re-spells the convention is exactly how the
-spill defect happened.
+their recognisers live together — `toolOutputSpill` beside `isSpillFile` — so the generic-result sweeper follows the producer convention.
 
 The collector belongs here too: `sweepSpillDir(workspaceRoot)` removes recognised
-shell and generic-result spills older than 24 hours while preserving recent,
-monitor and unrelated files. A pass scans at most 10,000 entries and processes
+generic-result spills older than 24 hours while preserving recent and unrelated files. A pass scans at most 10,000 entries and processes
 four at a time by default, so one pathological directory cannot turn cleanup
 into an unbounded allocation or `Promise.all` burst. This keeps generic run housekeeping on an
 always-present infrastructure leaf rather than making `@clarvis/tools` a hidden
@@ -126,7 +121,7 @@ ws.plansRoot; //                /work/repo/.clarvis/plans
 agentsWorkspaceDir("/work/repo"); // /work/repo/.agents
 
 const st = workspaceStatePaths("/work/repo");
-st.monitorSidecar("mon_ab"); // ~/.clarvis/state/workspaces/ws_<sha256>/local/monitor-mon_ab.json
+st.toolOutputSpill("12345678"); // ~/.clarvis/state/workspaces/ws_<sha256>/local/toolout-12345678.txt
 st.diagnosticsDir; //             ~/.clarvis/state/workspaces/ws_<sha256>/local/diagnostics
 
 const g = globalPaths(); //     $CLARVIS_HOME ?? ~/.clarvis
@@ -173,7 +168,7 @@ history; `plans/` and `memory/` are generated Markdown the user is expected to o
 always excluded by `.clarvis/.gitignore` before Git creates a checkout.
 
 `<global>/state/workspaces/<segment>/` holds that workspace's **machinery** — `local/` (prompt
-history, the UI's `code.json`, bounded opt-in diagnostics, legacy run containers from before the scratch moved to a short root, monitor sidecars and logs, shell and tool-result spills), the memory
+history, the UI's `code.json`, bounded opt-in diagnostics, legacy run containers from before the scratch moved to a short root, and generic tool-result spills), the memory
 wiki's `.history`/`.journal`/`.state`/`.lock`, plan lockfiles and workspace-scoped trace locks. The segment is
 `ownerSegment(ownerFromWorkspace(root))`, the same composition `state/traces` and `state/sessions`
 already use, so one workspace's generated data all lands under one name.
@@ -211,7 +206,7 @@ Definition and selection ownership is specified in
 global/workspace roots, while global and per-workspace choices live in generated state.
 
 **The separation is enforced by the type, not by convention.** `WorkspacePaths` has no key naming
-`local/`, a monitor file, a spill, prompt history or `code.json` — they were _removed_ rather than
+`local/`, a spill, prompt history or `code.json` — they were _removed_ rather than
 deprecated, so writing generated bookkeeping into someone's working tree is a compile error.
 `workspaceStatePaths` is the only way to spell them. The keys used to be on `WorkspacePaths`, and
 four writers reached them through a hand-rolled `mkdir` that skipped `ensureLocalDir` entirely; the
@@ -299,8 +294,8 @@ writeFileAtomicSync(file, text); // for the config/session writers that cannot a
 writeFileDurableSync(file, text);
 ```
 
-- **`tmpPathFor` ships with `isTmpFile`**, for the reason `monitorSidecar` ships with
-  `isMonitorSidecar`: `@clarvis/trace` carried a private `/\.json\.tmp-/` recognising a shape
+- **`tmpPathFor` ships with `isTmpFile`**, for the same reason `toolOutputSpill` ships with
+  `isSpillFile`: `@clarvis/trace` carried a private `/\.json\.tmp-/` recognising a shape
   six other modules built independently, which is the spill defect again. The name is
   `<dir>/.clarvis-tmp-<pid>-<counter>-<uuid>` — the pid makes an orphan attributable, the counter
   separates two writers inside one process, the UUID makes the whole thing collision-free. It is a

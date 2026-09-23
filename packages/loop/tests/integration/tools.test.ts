@@ -1,24 +1,75 @@
 import { afterEach, describe, expect, it } from "../bun-test.ts";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { workspaceStatePaths } from "@clarvis/paths";
+import { ExecutionSessionManager } from "@clarvis/tools";
+import { isAlive, killTree } from "@clarvis/tools/shell";
+import { createAgentToolsCapability } from "../../src/runtime/capabilities/tools.ts";
 import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
+import { GateLLM } from "./_gate-llm.ts";
 import { makeHarness, type TestHarness } from "./_helpers.ts";
 
 let harness: TestHarness | null = null;
 const dirs: string[] = [];
+const sessionPids: number[] = [];
 
 afterEach(async () => {
   await harness?.close();
   harness = null;
+  for (const pid of sessionPids.splice(0)) {
+    if (isAlive(pid)) killTree(pid, "SIGKILL");
+  }
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
+
+async function sessionMeta(root: string): Promise<{ scratch: string; pid: number }> {
+  const path = join(root, "session-meta");
+  const deadline = Date.now() + 5_000;
+  while (!existsSync(path) && Date.now() < deadline)
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  const [scratch, pidText] = readFileSync(path, "utf8").trim().split("\n");
+  const pid = Number(pidText);
+  if (!scratch || !Number.isSafeInteger(pid)) throw new Error("invalid session fixture metadata");
+  sessionPids.push(pid);
+  return { scratch, pid };
+}
 
 function workspace(): string {
   const dir = mkdtempSync(join(tmpdir(), "clarvis-tools-it-"));
   dirs.push(dir);
   return dir;
+}
+
+async function releaseRetainedScratch(scratch: string, pid: number): Promise<void> {
+  if (basename(dirname(scratch)) !== "r") throw new Error("unexpected scratch path");
+  const active = (): boolean => {
+    if (process.platform !== "linux") return isAlive(pid);
+    for (const name of readdirSync("/proc")) {
+      if (!/^\d+$/.test(name)) continue;
+      try {
+        const stat = readFileSync(`/proc/${name}/stat`, "utf8");
+        const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+        if (Number(fields[2]) === pid && fields[0] !== "Z" && fields[0] !== "X") return true;
+      } catch {
+        continue;
+      }
+    }
+    return false;
+  };
+  const deadline = Date.now() + 3000;
+  while (active() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+  if (active()) return;
+  rmSync(scratch, { recursive: true, force: true });
+  rmSync(join(dirname(dirname(scratch)), "a", `${basename(scratch)}.json`), { force: true });
 }
 
 type ToolEvent = {
@@ -147,7 +198,7 @@ describe("built-in tools adapter integrations", () => {
     const paths = workspaceStatePaths(root);
     mkdirSync(paths.localDir, { recursive: true });
     const id = "mon_stale";
-    const sidecar = paths.monitorSidecar(id);
+    const sidecar = join(paths.localDir, `${id}.json`);
     writeFileSync(
       sidecar,
       JSON.stringify({
@@ -159,7 +210,7 @@ describe("built-in tools adapter integrations", () => {
         readyWhen: null,
       }),
     );
-    writeFileSync(paths.monitorLog(id), "old");
+    writeFileSync(join(paths.localDir, `${id}.log`), "old");
     harness = await makeHarness({
       llm: new MockLLM({ script: [{ text: "done" }] }),
       mcpFactory: mockMCPFactory({}),
@@ -172,6 +223,236 @@ describe("built-in tools adapter integrations", () => {
     await new Promise((resolve) => setTimeout(resolve, 25));
 
     expect(existsSync(sidecar)).toBe(true);
-    expect(existsSync(paths.monitorLog(id))).toBe(true);
+    expect(existsSync(join(paths.localDir, `${id}.log`))).toBe(true);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "drains a session before removing its run scratch on normal completion",
+    async () => {
+      const root = workspace();
+      const llm = new MockLLM({
+        script: [
+          {
+            toolCalls: [
+              {
+                id: "start",
+                name: "shell",
+                arguments: {
+                  command:
+                    'printf \'%s\\n%s\\n\' "$TMPDIR" "$$" > session-meta; printf ready; sleep 30',
+                  ready_when: "ready",
+                  yield_time_ms: 1000,
+                },
+              },
+            ],
+          },
+          { text: "done" },
+        ],
+      });
+      harness = await makeHarness({
+        llm,
+        mcpFactory: mockMCPFactory({}),
+        workspaceRoot: root,
+        agentTools: true,
+        env: { CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" },
+      });
+      try {
+        const response = await harness.run(body(["run_commands"]));
+        expect(response.status).toBe("completed");
+        expect(
+          (await toolEvents(response.execution_id)).find((event) => event.mcp_name === "shell")
+            ?.error,
+        ).toBeNull();
+        const { scratch, pid } = await sessionMeta(root);
+        expect(isAlive(pid)).toBe(false);
+        expect(scratch).toContain("/r/");
+        expect(existsSync(scratch)).toBe(false);
+      } finally {
+        for (const pid of sessionPids) if (isAlive(pid)) killTree(pid, "SIGKILL");
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "retains run scratch when the run-end budget cannot cover cleanup",
+    async () => {
+      const root = workspace();
+      const llm = new MockLLM({
+        script: [
+          {
+            toolCalls: [
+              {
+                id: "start",
+                name: "shell",
+                arguments: {
+                  command:
+                    "printf '%s\\n%s\\n' \"$TMPDIR\" \"$$\" > session-meta; printf ready; trap '' TERM; while :; do sleep 1; done",
+                  ready_when: "ready",
+                  yield_time_ms: 1000,
+                },
+              },
+            ],
+          },
+          { text: "done" },
+        ],
+      });
+      harness = await makeHarness({
+        llm,
+        mcpFactory: mockMCPFactory({}),
+        workspaceRoot: root,
+        agentTools: true,
+        env: { CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec", CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS: "1" },
+      });
+      let retained: { scratch: string; pid: number } | undefined;
+      try {
+        const response = await harness.run(body(["run_commands"]));
+        expect(response.status).toBe("completed");
+        const { scratch, pid } = await sessionMeta(root);
+        retained = { scratch, pid };
+        expect(existsSync(scratch)).toBe(true);
+      } finally {
+        if (retained) {
+          if (isAlive(retained.pid)) killTree(retained.pid, "SIGKILL");
+          await releaseRetainedScratch(retained.scratch, retained.pid);
+        }
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "retains run scratch when tracked process exit is unconfirmed",
+    async () => {
+      const root = workspace();
+      const llm = new MockLLM({
+        script: [
+          {
+            toolCalls: [
+              {
+                id: "start",
+                name: "shell",
+                arguments: {
+                  command:
+                    'printf \'%s\\n%s\\n\' "$TMPDIR" "$$" > session-meta; printf ready; sleep 30',
+                  ready_when: "ready",
+                  yield_time_ms: 1000,
+                },
+              },
+            ],
+          },
+          { text: "done" },
+        ],
+      });
+      harness = await makeHarness({
+        llm,
+        mcpFactory: mockMCPFactory({}),
+        workspaceRoot: root,
+        capabilities: [
+          createAgentToolsCapability({
+            createSessionManager: () =>
+              new (class extends ExecutionSessionManager {
+                override async close(): Promise<boolean> {
+                  return false;
+                }
+              })(),
+          }),
+        ],
+        env: { CLARVIS_AGENT_TOOLS_ENABLED: "true", CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" },
+      });
+      let retained: { scratch: string; pid: number } | undefined;
+      try {
+        const response = await harness.run(body(["run_commands"]));
+        expect(response.status).toBe("completed");
+        const { scratch, pid } = await sessionMeta(root);
+        retained = { scratch, pid };
+        expect(isAlive(pid)).toBe(true);
+        expect(existsSync(scratch)).toBe(true);
+      } finally {
+        if (retained) {
+          if (isAlive(retained.pid)) killTree(retained.pid, "SIGKILL");
+          await releaseRetainedScratch(retained.scratch, retained.pid);
+        }
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")("drains a session after run cancellation", async () => {
+    const root = workspace();
+    const cancel = new AbortController();
+    const llm = new GateLLM((index) =>
+      index === 0
+        ? {
+            toolCalls: [
+              {
+                id: "start",
+                name: "shell",
+                arguments: {
+                  command:
+                    'printf \'%s\\n%s\\n\' "$TMPDIR" "$$" > session-meta; printf ready; sleep 30',
+                  ready_when: "ready",
+                  yield_time_ms: 1000,
+                },
+              },
+            ],
+          }
+        : { text: "late" },
+    );
+    harness = await makeHarness({
+      llm,
+      mcpFactory: mockMCPFactory({}),
+      workspaceRoot: root,
+      agentTools: true,
+      env: { CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" },
+      externalSignal: cancel.signal,
+    });
+    const run = harness.run(body(["run_commands"]));
+    await llm.started(0);
+    llm.release(0);
+    await llm.started(1);
+    const { scratch, pid } = await sessionMeta(root);
+    cancel.abort();
+    llm.release(1);
+    const response = await run;
+    expect(response.status).toBe("cancelled");
+    expect(isAlive(pid)).toBe(false);
+    expect(existsSync(scratch)).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32")("drains a session after provider failure", async () => {
+    const root = workspace();
+    const llm = new MockLLM({
+      script: [
+        {
+          toolCalls: [
+            {
+              id: "start",
+              name: "shell",
+              arguments: {
+                command:
+                  'printf \'%s\\n%s\\n\' "$TMPDIR" "$$" > session-meta; printf ready; sleep 30',
+                ready_when: "ready",
+                yield_time_ms: 1000,
+              },
+            },
+          ],
+        },
+        { throw: new Error("provider unavailable") },
+      ],
+    });
+    harness = await makeHarness({
+      llm,
+      mcpFactory: mockMCPFactory({}),
+      workspaceRoot: root,
+      agentTools: true,
+      env: {
+        CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec",
+        CLARVIS_RETRY_CEILING: "0",
+        CLARVIS_DEFAULT_MAX_RETRIES: "0",
+      },
+    });
+    const response = await harness.run(body(["run_commands"]));
+    expect(response.status).toBe("error");
+    const { scratch, pid } = await sessionMeta(root);
+    expect(isAlive(pid)).toBe(false);
+    expect(existsSync(scratch)).toBe(false);
   });
 });

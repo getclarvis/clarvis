@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawn } from "node:child_process";
-import { readFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 import path from "node:path";
 import { isSpillFile, workspacePaths } from "@clarvis/paths";
@@ -54,6 +54,23 @@ describe("shell", () => {
       expect(lines(r.json.stderr)).toBe("oops\n");
       expect(lines(r.json.stdout)).toBe("");
     });
+
+    it.skipIf(!posixShell)(
+      "joins split UTF-8 chunks and keeps output without a newline",
+      async () => {
+        const r = await callTool(
+          "shell",
+          { command: "printf '\\303'; sleep 0.02; printf '\\251'; printf err 1>&2" },
+          config,
+        );
+        expect(r.isError).toBe(false);
+        expect(r.json.stdout).toBe("é");
+        expect(r.json.stderr).toBe("err");
+        expect(r.json.stdout_truncated).toBe(false);
+        expect(r.json.stderr_truncated).toBe(false);
+        expect(r.json.stdout_omitted_bytes).toBe(0);
+      },
+    );
 
     it.skipIf(!posixShell)(
       "reports the raw exit code, both streams, and a null signal when the command exits nonzero",
@@ -272,62 +289,24 @@ describe("shell", () => {
     });
   });
 
-  describe("output limits and spill", () => {
-    it.skipIf(!posixShell)(
-      "spills overflowing stdout to the state tree and points the footer at it",
-      async () => {
-        const small = makeConfig(root, { maxShellOutputBytes: 64 });
-        const r = await callTool(
-          "shell",
-          { command: "for i in $(seq 1 200); do echo line$i; done" },
-          small,
-        );
-        expect(r.isError).toBe(false);
-        const stdout = r.json.stdout as string;
-        expect(stdout).toContain("output truncated");
-        expect(stdout).toContain("full output written to");
-        expect(stdout).toContain("line200");
-
-        const m = stdout.match(/full output written to (\S+) \.\.\.\]/);
-        expect(m).not.toBeNull();
-        const named = m![1]!;
-        expect(path.isAbsolute(named)).toBe(true);
-        expect(named.startsWith(fixtureStatePaths(root).localDir)).toBe(true);
-        const full = readFileSync(named, "utf8");
-        expect(full).toContain("line1\n");
-        expect(full).toContain("line200\n");
-        expect(Buffer.byteLength(full, "utf8")).toBeGreaterThan(64);
-      },
-    );
-
-    it.skipIf(!posixShell)("a spill on a virgin workspace writes nothing into it", async () => {
-      const small = makeConfig(root, { maxShellOutputBytes: 64 });
-      expect(existsSync(workspacePaths(root).clarvisDir)).toBe(false);
-
-      await callTool("shell", { command: "for i in $(seq 1 200); do echo line$i; done" }, small);
-
-      expect(existsSync(workspacePaths(root).clarvisDir)).toBe(false);
-      expect(readdirSync(root)).toEqual([]);
-
-      const spills = readdirSync(fixtureStatePaths(root).localDir);
-      expect(spills.some((name) => isSpillFile(name))).toBe(true);
-    });
-
-    it.skipIf(!posixShell)("the spilled file is reported by a path read_file accepts", async () => {
+  describe("bounded output", () => {
+    it.skipIf(!posixShell)("keeps only a bounded tail and creates no shell spill", async () => {
       const small = makeConfig(root, { maxShellOutputBytes: 64 });
       const r = await callTool(
         "shell",
         { command: "for i in $(seq 1 200); do echo line$i; done" },
         small,
       );
-
-      const named = /full output written to (\S+)/.exec(r.text)?.[1];
-      expect(named).toBeDefined();
-      expect(path.isAbsolute(named as string)).toBe(true);
-
-      const back = await callTool("read_file", { path: named }, small);
-      expect(back.isError).toBe(false);
-      expect(back.text).toContain("line200");
+      expect(r.isError).toBe(false);
+      expect(r.json.stdout_truncated).toBe(true);
+      expect(r.json.stdout_omitted_bytes).toBeGreaterThan(0);
+      expect(r.json.stdout).toContain("line200");
+      expect(r.json.stdout).not.toContain("output written to");
+      expect(existsSync(workspacePaths(root).clarvisDir)).toBe(false);
+      expect(readdirSync(root)).toEqual([]);
+      const local = fixtureStatePaths(root).localDir;
+      if (existsSync(local))
+        expect(readdirSync(local).some((name) => isSpillFile(name))).toBe(false);
     });
 
     it.skipIf(!posixShell)("budgets stdout and stderr against a single shared cap", async () => {
@@ -342,6 +321,10 @@ describe("shell", () => {
       const err = r.json.stderr as string;
       expect(out).toContain("output truncated:");
       expect(err).toContain("output truncated:");
+      expect(r.json.stdout_truncated).toBe(true);
+      expect(r.json.stderr_truncated).toBe(true);
+      expect(r.json.stdout_omitted_bytes).toBeGreaterThan(0);
+      expect(r.json.stderr_omitted_bytes).toBeGreaterThan(0);
       const marker = /^\[\.\.\. earlier output truncated:[^\n]+\.\.\.\]\n/u;
       const outMarker = marker.exec(out)?.[0];
       const errMarker = marker.exec(err)?.[0];
@@ -353,22 +336,60 @@ describe("shell", () => {
       expect(combinedTail).toBeLessThanOrEqual(2000);
     });
 
-    it("kills a runaway producer at the capture ceiling instead of growing unbounded", async () => {
+    it("drains a continuous producer until the timeout without treating truncation as failure", async () => {
       const start = Date.now();
-      const r = await callTool("shell", { command: "yes", timeout_ms: 60000 }, config);
+      const r = await callTool("shell", { command: "yes", timeout_ms: 300 }, config);
       const elapsed = Date.now() - start;
       expect(r.isError).toBe(true);
-      expect(r.json.error).toBe("output_limit");
-      expect(elapsed).toBeLessThan(30000);
+      expect(r.json.error).toBe("timeout");
+      expect(elapsed).toBeLessThan(10000);
       expect(typeof r.json.stdout).toBe("string");
+      expect(r.json.stdout_truncated).toBe(true);
+      expect(r.json.stdout_omitted_bytes).toBeGreaterThan(0);
     }, 60000);
 
-    it("rejects with output_limit when a single stream floods past the capture cap", async () => {
+    it("returns exit zero and honest truncation after a large burst", async () => {
       const r = await callTool("shell", { command: "yes CLARVIS_FLOOD | head -c 9000000" }, config);
-      expect(r.isError).toBe(true);
-      expect(r.json.error).toBe("output_limit");
-      expect(r.json.max_capture_bytes).toBe(8 * 1024 * 1024);
+      expect(r.isError).toBe(false);
+      expect(r.json.exit_code).toBe(0);
+      expect(r.json.stdout_truncated).toBe(true);
+      expect(r.json.stdout_omitted_bytes).toBeGreaterThan(0);
     });
+
+    it.skipIf(
+      (process.platform !== "linux" && process.platform !== "darwin") ||
+        process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1",
+    )("drains oversized output through the native sandbox", async () => {
+      const isolated = makeConfig(root, {
+        sandbox: { type: "native", availability: "required", network: "none" },
+      });
+      const r = await callTool(
+        "shell",
+        { command: "yes CLARVIS_FLOOD | head -c 9000000" },
+        isolated,
+      );
+      expect(r.isError).toBe(false);
+      expect(r.json.exit_code).toBe(0);
+      expect(r.json.stdout_truncated).toBe(true);
+    });
+
+    it("keeps cancellation ahead of truncation after a large output burst", async () => {
+      const controller = new AbortController();
+      const r = await callTool(
+        "shell",
+        { command: "yes CLARVIS_FLOOD | head -c 9000000; sleep 30", timeout_ms: 60000 },
+        config,
+        controller.signal,
+        {
+          onOutput() {
+            controller.abort();
+          },
+        },
+      );
+      expect(r.json.error).toBe("aborted");
+      expect(r.json.stdout_truncated).toBe(true);
+      expect(r.json.stdout_omitted_bytes).toBeGreaterThan(0);
+    }, 60000);
 
     it("kills a backgrounded grandchild when the command times out", async () => {
       const r = await callTool(
@@ -466,6 +487,13 @@ describe("shell", () => {
   });
 
   describe("schema validation", () => {
+    it("rejects an invalid readiness pattern before spawning", async () => {
+      const r = await callTool("shell", { command: "echo x", ready_when: "[" }, config);
+      expect(r.isError).toBe(true);
+      expect(r.json.error).toBe("invalid_input");
+      expect(r.text).toContain("Invalid ready_when regex");
+    });
+
     it("ignores out-of-schema extra fields", async () => {
       const r = await callTool("shell", { command: "echo x", bogus: 1 }, config);
       expect(r.isError).toBe(false);

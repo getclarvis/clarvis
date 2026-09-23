@@ -87,7 +87,7 @@ const sandboxSchema = z
       .optional(),
   })
   .strict()
-  .describe("Optional native sandbox for shell and monitor_start on Linux and macOS.");
+  .describe("Optional native sandbox for shell on Linux and macOS.");
 
 /** The validated `sandbox` settings block (the inferred shape of `sandboxSchema`). */
 export type SandboxSettings = z.infer<typeof sandboxSchema>;

@@ -257,72 +257,80 @@ test("the diff tool over the cap shows the summary and a stats chip instead of t
   expect(out).toContain("+0");
 });
 
-test("monitor_list with no monitors renders the muted placeholder", async () => {
-  const out = await frame(
-    toolNode({ mcpName: "monitor_list", args: {}, result: JSON.stringify({ monitors: [] }) }),
-  );
-  expect(out).toContain("(no monitors)");
-});
-
-test("monitor_list renders each monitor's running state and command", async () => {
+test("shell_session list with no sessions renders the muted placeholder", async () => {
   const out = await frame(
     toolNode({
-      mcpName: "monitor_list",
-      args: {},
+      mcpName: "shell_session",
+      args: { action: "list" },
+      result: JSON.stringify({ sessions: [] }),
+    }),
+  );
+  expect(out).toContain("(no sessions)");
+});
+
+test("shell_session list renders status without command text", async () => {
+  const out = await frame(
+    toolNode({
+      mcpName: "shell_session",
+      args: { action: "list" },
       result: JSON.stringify({
-        monitors: [
-          { id: "m1", command: "npm run dev", running: true },
-          { id: "m2", command: "npm run build", running: false },
+        sessions: [
+          { session_id: "s1", running: true, exit_code: null },
+          { session_id: "s2", running: false, exit_code: 1 },
         ],
       }),
     }),
   );
-  expect(out).toContain("m1");
-  expect(out).toContain("npm run dev");
-  expect(out).toContain("m2");
-  expect(out).toContain("npm run build");
+  expect(out).toContain("s1");
+  expect(out).toContain("s2");
+  expect(out).toContain("exit 1");
 });
 
-test("a collapsed monitor_list counts monitors, not lines of its JSON", () => {
-  // monitor_list returns unindented JSON.stringify, so the raw line count is
-  // always 1 while the rendered body is one row per monitor.
+test("a collapsed shell_session list counts sessions", () => {
   const result = JSON.stringify({
-    monitors: [
-      { id: "m1", command: "npm run dev", running: true },
-      { id: "m2", command: "npm run build", running: false },
-      { id: "m3", command: "npm test", running: false },
+    sessions: [
+      { session_id: "s1", running: true },
+      { session_id: "s2", running: false },
+      { session_id: "s3", running: false },
     ],
   });
   expect(result.split("\n")).toHaveLength(1);
-  expect(hiddenBodyLines("monitor_list", "", result)).toBe(3);
-  expect(hiddenBodyLines("monitor_list", "", JSON.stringify({ monitors: [] }))).toBe(0);
+  expect(hiddenBodyLines("shell_session", "", result)).toBe(3);
+  expect(hiddenBodyLines("shell_session", "", JSON.stringify({ sessions: [] }))).toBe(0);
 });
 
-test("monitor_start shows running + not-ready and tails live output", async () => {
+test("shell_session poll shows running status and both streams", async () => {
   const out = await frame(
     toolNode({
-      mcpName: "monitor_start",
+      mcpName: "shell_session",
       args: {},
-      result: JSON.stringify({ id: "m1", running: true, ready: false, output: "booting up\n" }),
+      result: JSON.stringify({
+        session_id: "s1",
+        running: true,
+        ready: false,
+        stdout: "booting up\n",
+        stderr: "warn\n",
+      }),
     }),
   );
   expect(out).toContain("running");
-  expect(out).toContain("m1");
+  expect(out).toContain("s1");
   expect(out).toContain("not ready");
   expect(out).toContain("booting up");
+  expect(out).toContain("warn");
 });
 
-test("monitor_poll shows ready + exit code once the process has finished", async () => {
+test("shell_session poll shows ready and exit code", async () => {
   const out = await frame(
     toolNode({
-      mcpName: "monitor_poll",
+      mcpName: "shell_session",
       args: {},
       result: JSON.stringify({
-        id: "m1",
+        session_id: "s1",
         running: false,
         ready: true,
         exit_code: 1,
-        output: "done\n",
+        stdout: "done\n",
       }),
     }),
   );
@@ -331,19 +339,19 @@ test("monitor_poll shows ready + exit code once the process has finished", async
   expect(out).toContain("exit 1");
 });
 
-test("monitor_stop reports the stopped label", async () => {
+test("shell_session stop reports the stopped label", async () => {
   const out = await frame(
     toolNode({
-      mcpName: "monitor_stop",
+      mcpName: "shell_session",
       args: {},
-      result: JSON.stringify({ id: "m1", stopped: true, running: false, output: "" }),
+      result: JSON.stringify({ session_id: "s1", stopped: true, running: false }),
     }),
   );
   expect(out).toContain("stopped");
 });
 
-test("monitor with an unparsable result falls back to the generic renderer", async () => {
-  const out = await frame(toolNode({ mcpName: "monitor_poll", args: {}, result: "" }));
+test("shell_session with an unparsable result falls back to the generic renderer", async () => {
+  const out = await frame(toolNode({ mcpName: "shell_session", args: {}, result: "" }));
   expect(out).toContain("(no output)");
 });
 

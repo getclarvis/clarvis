@@ -554,6 +554,8 @@ export interface HandlerResult {
   progress: boolean;
   taskId?: string;
   images?: ToolResultImage[];
+  /** Run-local physical execution that remains interruptible after this call returns. */
+  interruptContinuation?: { stop(): Promise<boolean>; completed: Promise<unknown> };
 }
 
 /**

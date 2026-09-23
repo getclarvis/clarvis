@@ -341,7 +341,7 @@ may render the phase, but only the matching provider adapter interprets the cont
 Normalization happens **once**, in `@clarvis/llm`'s `buildCallResult`. A rejected payload sets
 `LLMToolCall.malformedArguments` to a bounded preview and both dispatchers refuse the call. Two rules
 are load-bearing: an _absent_ payload is still a legitimate `{}` (`list_dir`, `list_memories` and
-`monitor_list` are called that way), and the convergence-guard signature is built from the
+`shell_session` are called that way), and the convergence-guard signature is built from the
 **preview** rather than the normalized `{}` — otherwise every malformed call reads as the same call
 and the guard kills the run faster than the bug it is reporting.
 

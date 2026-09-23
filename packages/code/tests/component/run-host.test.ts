@@ -3465,6 +3465,55 @@ test("interruptTool asks the live handle without cancelling the run", async () =
   await receipt.completion;
 });
 
+test("a yielded shell keeps its interrupt control through the hosted run", async () => {
+  const fake = fakeClient();
+  fake.getRunImpl.fn = async (id) => persisted(id);
+  const { host, store } = mount({ client: fake.client });
+  const receipt = admitted(host.submitScheduledTurn(schedule(host)));
+  await flush();
+  const control = { tool_execution_id: "tok_yield", actions: ["interrupt"] as const };
+  host.onEvent(
+    ev({
+      type: "tool_call_started",
+      at: 2,
+      agent: "lead",
+      call_id: "yielded-shell",
+      server: "",
+      tool: "shell",
+      arguments: { command: "sleep 30", yield_time_ms: 100 },
+      control,
+    }),
+    "live",
+    receipt.executionId,
+  );
+  host.onEvent(
+    ev({
+      type: "tool_call",
+      at: 3,
+      agent: "lead",
+      call_id: "yielded-shell",
+      server: "",
+      tool: "shell",
+      arguments: { command: "sleep 30", yield_time_ms: 100 },
+      ok: true,
+      result: '{"running":true,"session_id":"ses_123","stdout":"","stderr":""}',
+      control,
+    }),
+    "live",
+    receipt.executionId,
+  );
+  const tool = store.nodes.find((node) => node.kind === "tool_call");
+  expect(tool).toMatchObject({ toolPhase: "running" });
+  expect(tool?.kind === "tool_call" ? tool.control?.tool_execution_id : undefined).toBe(
+    "tok_yield",
+  );
+  await expect(host.interruptTool("tok_yield")).resolves.toMatchObject({ status: "accepted" });
+  expect(fake.runs[0]!.interrupts).toEqual(["tok_yield"]);
+  expect(fake.runs[0]!.cancelled).toBe(false);
+  fake.runs[0]!.resolve(completed(receipt.executionId));
+  await receipt.completion;
+});
+
 test("interrupt receipts preserve running state and clear pending only on not_running or error", async () => {
   for (const outcome of ["accepted", "not_running", "error"] as const) {
     const fake = fakeClient();

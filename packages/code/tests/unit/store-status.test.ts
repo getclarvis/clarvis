@@ -1052,6 +1052,40 @@ test("live shell control is installed on start and interruption projects interru
   expect(tool?.kind === "tool_call" ? tool.interruptRequest : "not-tool").toBeUndefined();
 });
 
+test("a yielded shell retains its original interrupt control after the tool call", () => {
+  const nodes = replay([
+    ev({ type: "run_started", at: 1 }),
+    ev({
+      type: "tool_call_started",
+      agent: "lead",
+      call_id: "sh-yield",
+      at: 2,
+      server: "",
+      tool: "shell",
+      arguments: { command: "sleep 30", yield_time_ms: 100 },
+      control: { tool_execution_id: "tok_yield", actions: ["interrupt"] },
+    }),
+    ev({
+      type: "tool_call",
+      agent: "lead",
+      call_id: "sh-yield",
+      at: 3,
+      server: "",
+      tool: "shell",
+      arguments: { command: "sleep 30", yield_time_ms: 100 },
+      ok: true,
+      result: '{"running":true,"session_id":"ses_123","stdout":"","stderr":""}',
+      control: { tool_execution_id: "tok_yield", actions: ["interrupt"] },
+    }),
+  ]);
+  const tool = nodes.find((node) => node.kind === "tool_call");
+  expect(tool).toMatchObject({
+    toolPhase: "running",
+    status: "ok",
+    control: { tool_execution_id: "tok_yield" },
+  });
+});
+
 test("setToolInterruptRequest marks only the matching live shell pending", () => {
   const store = replayStore([
     ev({ type: "run_started", at: 1 }),

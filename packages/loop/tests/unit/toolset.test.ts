@@ -10,7 +10,7 @@ import {
   type AgentToolResult,
 } from "../../src/runtime/tools/builtin/toolset.ts";
 
-const TOOL_NAMES = ["read_file", "write_file", "shell", "monitor_poll"] as const;
+const TOOL_NAMES = ["read_file", "write_file", "shell", "shell_session"] as const;
 
 function definition(name: string): NamespacedTool {
   return {
@@ -95,7 +95,7 @@ describe("createAgentToolset policy", () => {
     expect(created.defs.map((entry) => entry.wireName)).toEqual(["read_file", "write_file"]);
   });
 
-  it.each(["shell", "monitor_start", "unknown"])(
+  it.each(["shell", "shell_session", "unknown"])(
     "refuses unavailable tool %s without dispatching",
     async (name) => {
       const adapter = fakeAdapter();

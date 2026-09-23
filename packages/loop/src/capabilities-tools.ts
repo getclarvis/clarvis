@@ -50,7 +50,6 @@ export type {
 export {
   resolveShell,
   shellArgs,
-  exitCaptureWrapper,
   currentShellFlavor,
   executableOnPath,
   resolveCommand,

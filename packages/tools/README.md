@@ -18,16 +18,16 @@ The tool surface and dispatcher contract are specified in
 [`execution/tools-contract.md`](../../specs/execution/tools-contract.md), with focused contracts for
 [`reads and search`](../../specs/execution/tools-read-and-search.md),
 [`mutation`](../../specs/execution/tools-mutation.md), and
-[`shell and monitors`](../../specs/execution/tools-shell-and-monitor.md). Approval analysis and the
+[`shell and sessions`](../../specs/execution/tools-shell-and-sessions.md). Approval analysis and the
 host sandbox boundary are specified in
 [`execution/command-guard.md`](../../specs/execution/command-guard.md) and
 [`execution/sandbox.md`](../../specs/execution/sandbox.md).
 
 The compact model-facing surface follows
 [`model-instructions.md`](../../specs/cross-cutting/model-instructions.md): local argument rules and
-recovery details live beside each tool. Shell commands block; persistent work uses `monitor_start`.
+recovery details live beside each tool. Shell commands block by default; `yield_time_ms` returns a live `session_id` for `shell_session`.
 Descriptions retain truncation direction and continuation guidance, distinguish grep's regex engines,
-and provide an executable multiline `apply_patch` example. The complete 23-tool descriptor JSON has
+and provide an executable multiline `apply_patch` example. The complete 20-tool descriptor JSON has
 a 21,000-character regression ceiling; that is not a provider token count.
 
 ## What it provides
@@ -36,10 +36,10 @@ a 21,000-character regression ceiling; that is not a provider token count.
   copy, move, mkdir, remove and stat.
 - Discovery: directory listing, tree, glob, grep and diff.
 - Project-wide regular-expression replacement.
-- Shell execution and background-process monitors, including a per-call host escalation field when Isolation is Sandbox. An abort of the process tree is a generic `Command aborted` error; the engine, not this package, distinguishes run cancellation from a selective operator interrupt of one live `shell`. `monitor_*` is not interruptible through that path.
+- Shell execution and run-owned sessions with per-call sandbox escalation. A command can yield a session ID, then `shell_session` polls, stops, or lists it within the same run and agent.
 - Read-only and workspace-confined surfaces.
 - A guard contract and shell analysis helpers for approval policies.
-- Bounded output with spill files for large results.
+- Bounded in-memory shell output with per-stream cursors and omitted-byte counts. Generic oversized results from other tools may spill to workspace state; shell output does not.
 
 `read_image` recognizes PNG, JPEG, GIF and WebP from their bytes. PNG input also requires a complete
 chunk stream with valid CRCs, so a signature-only or corrupt file is refused before it can enter
@@ -50,11 +50,16 @@ abort-listener installation. Failed spawn and pre-aborted dispatch do not announ
 An abort after process exit does not turn its completed output into an aborted result. The engine
 waits for cooperative selective settlement to preserve stdout/stderr; the tools layer reports only
 its structured generic `aborted` code, never the operator's intent.
+The `shell` result, including timeout and abort errors, reports `stdout_truncated`,
+`stderr_truncated`, `stdout_omitted_bytes`, `stderr_omitted_bytes`, and per-stream
+`*_spill_incomplete` fields. A partial spill is labelled as such in the output marker; callers
+must not treat its path as a complete transcript.
 
 Spill names and their 24-hour collector are owned by `@clarvis/paths`; this
-package writes those paths at owner-only `0600` permissions but does not export the collector. Monitor cleanup
-remains tools-specific and runs when the tools capability is installed, even if
-that capability is disabled for a particular run by environment.
+package writes those paths at owner-only `0600` permissions but does not export the collector.
+Monitors create no sidecar, log, or exit file. The loop supplies one `ExecutionSessionManager`
+for the run and closes it before removing run-owned scratch; a disabled tools capability allocates
+no manager or scratch.
 
 `apply_patch` recommends the model-familiar `*** Begin Patch` envelope with `Update File`, `Add
 File`, `Delete File`, and optional `Move to` blocks. It also accepts raw `---`/`+++` unified diffs.
@@ -64,13 +69,7 @@ destinations. Numbered model-envelope hunks honor their old-file coordinates aft
 earlier hunks, with a three-line tolerance for small drift; this also makes coordinate-only
 insertions and duplicate context deterministic.
 
-A later `read_file` or `read_files` call may read an overflow artifact whose absolute path was reported by
-an earlier tool call, including one restored from a previous run. A `shell` or `monitor_start`
-command receives the same exception only when its configured sandbox can expose the file read-only.
-This is an exact-file exception, not state-directory access: Clarvis admits only an existing,
-regular, non-link spill directly under this workspace's machine-local state directory. Prompt
-history, monitor controls, other state files and another workspace's spills remain outside
-confinement. POSIX `/dev/null` is treated as the null device,
+A later `read_file` or `read_files` call may read an exact generic overflow artifact in the current workspace's machine-local state. The file must be regular and non-link, and its identity is checked again after opening. No shell command receives state access through this exception. Prompt history, old sidecars, other state files, and another workspace's spills remain outside confinement. POSIX `/dev/null` is treated as the null device,
 not as an escaping host file, so ordinary output-discard redirections do not create false denials.
 The POSIX command analyzer matches `eval`/`env`/`source` and friends at the effective command head
 so arguments such as `cat source` stay decidable, does not treat `NAME=value` assignment-only
@@ -87,9 +86,8 @@ consumers that need the same bounded descriptor read. Callers supply their byte 
 confinement policy. The kernel uses it to hash declared goal artifacts inside the selected workspace;
 this library operation does not add a model tool or grant access to host state roots.
 
-The same descriptor-first rule covers ignore sources, `file_stat`, monitor logs and monitor control
-records. Ignore files cap at 1 MiB, monitor metadata at 256 KiB and exit sentinels at 64 bytes;
-non-regular inputs are ignored or rejected according to that surface's existing error contract.
+The same descriptor-first rule covers ignore sources and `file_stat`. Ignore files cap at 1 MiB. Command sessions use bounded in-memory pipes and create no control or output files.
+Non-regular inputs are ignored or rejected according to the reading surface's error contract.
 Single-file ripgrep searches receive the already-bounded snapshot on stdin, so the subprocess never
 reopens a pathname after validation. Confined directory searches always use the in-process scanner:
 passing the mutable directory pathname to a subprocess would let a concurrent parent-link swap escape
@@ -120,6 +118,7 @@ console.log(agentTools.listTools().map((tool) => tool.name));
 const result = await agentTools.callTool("read_file", {
   path: "package.json",
 });
+await agentTools.close();
 ```
 
 `workspaceRoot` must name an existing directory. Tools are confined to it by
@@ -153,7 +152,7 @@ separate canary packs a local fixture outside Seatbelt, then requires npm to ins
 offline inside a denied-network profile; this isolates package execution from public-registry
 latency while preserving the real npm/Homebrew/runtime path.
 
-`shell` and `monitor_start` accept optional `sandbox_permissions`. Omitted or `use_default` follows
+`shell` accepts optional `sandbox_permissions`. Omitted or `use_default` follows
 the run Isolation. `require_escalated` plus a short `justification` asks to run that one command on
 the host after review when Isolation is Sandbox. Isolation Host already runs unsandboxed, so the
 field is a no-op. The complete Container Kernel runs all ordinary commands without Command Review and rejects
@@ -173,7 +172,7 @@ directory is pinned in runtime configuration and exposed for later sandbox comma
 `.git` or `commondir` files are not consulted again.
 
 A host may pass up to 512 canonical `skillExecutionRoots` for selected skills whose helper files
-must be addressed by `shell` or `monitor_start`. Each entry must already be a directory and may be
+must be addressed by `shell`. Each entry must already be a directory and may be
 neither a filesystem root nor a root that contains the workspace. The containment comparison uses
 the canonical identities of both paths, so platform aliases such as macOS `/var` → `/private/var`
 cannot disguise the workspace as a separate child. Command path analysis and `cwd` confinement admit
@@ -197,23 +196,19 @@ using them as an alternate writer.
 
 A host may additionally pass existing `temporaryRoots`. Every native tool,
 guarded path analysis, and native sandbox admits every listed root; `shell` and
-`monitor_start` expose the first one as `TMPDIR`, `TEMP`, and `TMP`. The standalone
+`shell` exposes the first one as `TMPDIR`, `TEMP`, and `TMP`. The standalone
 library defaults to no temporary roots. The Clarvis loop instead supplies its
 owner-only run scratch first, followed by `systemTemporaryRoots()`: the existing
 environment-selected temp directory plus `/tmp` on POSIX, or the environment-selected
 temp directory on Windows. This matches host-native CLIs that ignore or replace
 `TMPDIR`, so a path they return remains usable by a later shell or native coding tool.
 
-System temporary roots are access policy, never lifecycle ownership. The loop
-removes only its run scratch and exact directories registered as newly created by
-the run; it never removes the system roots or unrelated content below them. For an
-explicit POSIX `mktemp -d /tmp/name-XXXXXX` template, `shell` still snapshots that
-template and registers only a new, non-symlink directory owned by the current user.
+System temporary roots are access policy, never lifecycle ownership. After tracked command trees physically exit, the loop removes only the scratch it allocated. A command owns directories it creates with `mktemp`, even under an accessible system temporary root. Uncertain termination retains the run scratch.
 When a read-only workspace lives below a system temporary root, Bubblewrap mount
 ordering and Seatbelt exclusions keep the workspace read-only while the exact run
 scratch remains writable.
 
-For `shell` and `monitor_start`, an absolute command head below a platform system executable root or
+For `shell`, an absolute command head below a platform system executable root or
 an explicitly admitted sandbox runtime root is classified as the executable, not as an external
 data operand. Its exact argv remains available for review, while allow/deny matching uses the same
 basename identity as the PATH spelling (`/usr/bin/git push` is still `git push` to policy). Windows
@@ -228,10 +223,15 @@ const readOnly = createAgentTools({
   workspaceRoot: process.cwd(),
   readOnly: true,
 });
+// Close the instance after the final call.
+await readOnly.close();
 ```
 
 For lower-level integrations, `listTools(config)` returns the available
 definitions and `dispatch(name, args, config)` executes one call.
+`createAgentTools` and direct `resolveConfig`/`dispatch` get a private in-process `ExecutionSessionManager` by default. Call `await tools.close()` or `await config.sessionManager.close()` before discarding the owner. `shell_session` uses only live handles admitted to that manager and agent; no persisted file authorizes control. An unconfirmed stop reports `termination_unconfirmed`.
+IDs carry 128 bits of randomness. Host or sandbox process trees that deliberately daemonize out of
+the tracked group can escape this backend; an abrupt host crash outside a sandbox may orphan work.
 
 ### Lifting the confinement
 
@@ -260,15 +260,13 @@ message for that shape, so a helpful-looking hint cannot come back by accident.
 | ------------------------ | --------------------------------------------------------------------------------------------------------------- |
 | `@clarvis/tools`         | `createAgentTools`, `listTools`, `dispatch`, and the re-exported `which` helpers                                |
 | `@clarvis/tools/guard`   | the guard types and shell-analysis helpers, without the rest of the tool API                                    |
-| `@clarvis/tools/shell`   | `resolveShell`, `shellArgs`, `killTree`, `ownProcessGroup`                                                      |
+| `@clarvis/tools/shell`   | `resolveShell`, `shellArgs`, `killTree`, `ownProcessGroup`, `isAlive`                                           |
 | `@clarvis/tools/sandbox` | Native Bubblewrap/Seatbelt probing, policy construction, host temporary-root discovery, and path-policy helpers |
-| `@clarvis/tools/monitor` | `sweepMonitors` housekeeping without loading the complete tool registry                                         |
 
 `./shell` exists for `@clarvis/hooks`, which spawns operator-declared commands and
 must behave exactly like a `shell` tool command on the same host, without pulling
 in the tool API.
-`./monitor` exists for the kernel's startup housekeeping path; it retains the root export for
-compatibility while keeping tool definitions and dispatch code outside kernel boot.
+calls it.
 
 ## Guards
 
@@ -364,7 +362,8 @@ single-threaded host for hours with nothing able to interrupt it (an
 `AbortSignal` cannot preempt synchronous regex work already in flight).
 
 `regexScanBudgetMs` (default 5000, `DEFAULT_REGEX_SCAN_BUDGET_MS`, min 1) caps how much
-_regular-expression_ time one call may spend. Disk reads and the directory walk
+_regular-expression_ time one call may spend. Shell `ready_when` matching uses the same budget
+over its bounded rolling output window. Disk reads and the directory walk
 are never charged; unrelated delay between regex applications does not consume
 the budget, while scheduler time during an in-flight application is part of its
 elapsed cost. A plain pattern over 200,000 lines normally charges 5-7 ms against
@@ -403,40 +402,26 @@ carries a structured `ToolsWarning` beside its message, so a host bridges both o
 without losing the event name. Until a host installs one, the default writes to `stderr` — a
 fallback the TUI host must replace before tool warnings are possible.
 
-| Level   | `event`                         | Fields                                                                                              |
-| ------- | ------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `debug` | `tools.config_resolved`         | `ripgrep, sandbox_mode, sandbox_availability, read_only, confined, skill_execution_roots, platform` |
-| `warn`  | `tools.sandbox_unavailable`     | `requested, reason` — the probe reason an `optional` sandbox used to discard                        |
-| `debug` | `tools.shell_spawn`             | `shell_file, flavor, detached, cwd, timeout_ms, sandboxed` — **never the command text**             |
-| `debug` | `tools.shell_exit`              | `exit_code, signal, timed_out, aborted, output_limited, stdout_bytes, stderr_bytes, duration_ms`    |
-| `warn`  | `tools.kill_tree_failed`        | `pid, signal, platform` — every caller ignores the `false` return                                   |
-| `debug` | `tools.monitor_spawn`           | `id, platform, detached, stdio_slots, log_path, flavor` — the write side of the capture             |
-| `debug` | `tools.monitor_poll`            | `id, running, offset, log_bytes` — the read side                                                    |
-| `warn`  | `tools.monitor_exit_unreadable` | `id, raw, reason, flavor`                                                                           |
-| `warn`  | `tools.spill_failed`            | `stream, target, cause`                                                                             |
-| `debug` | `tools.grep_path`               | `engine, is_dir, confined`                                                                          |
-| `debug` | `tools.path_refused`            | `input, reason, allow_roots_count`                                                                  |
-| `error` | `tools.internal_error`          | `err` — via the warn sink                                                                           |
-| `warn`  | `tools.ignore_unreadable`       | `path` — via the warn sink                                                                          |
-| `debug` | `tools.fs_error_unmapped`       | `errno_code, syscall, path, platform` — via the warn sink                                           |
+| Level   | `event`                     | Fields                                                                                                                                                           |
+| ------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `debug` | `tools.config_resolved`     | `ripgrep, sandbox_mode, sandbox_availability, read_only, confined, skill_execution_roots, platform`                                                              |
+| `warn`  | `tools.sandbox_unavailable` | `requested, reason` — the probe reason an `optional` sandbox used to discard                                                                                     |
+| `debug` | `tools.shell_spawn`         | `shell_file, flavor, detached, cwd, timeout_ms, sandboxed` — **never the command text**                                                                          |
+| `debug` | `tools.shell_exit`          | `exit_code, signal, timed_out, aborted, stdout_bytes, stderr_bytes, stdout_truncated, stderr_truncated, stdout_omitted_bytes, stderr_omitted_bytes, duration_ms` |
+| `warn`  | `tools.kill_tree_failed`    | `pid, signal, platform` — every caller ignores the `false` return                                                                                                |
+| `warn`  | `tools.session_stop_failed` | `cause` — a timeout or abort stop threw before confirmation                                                                                                      |
+| `debug` | `tools.grep_path`           | `engine, is_dir, confined`                                                                                                                                       |
+| `debug` | `tools.path_refused`        | `input, reason, allow_roots_count`                                                                                                                               |
+| `error` | `tools.internal_error`      | `err` — via the warn sink                                                                                                                                        |
+| `warn`  | `tools.ignore_unreadable`   | `path` — via the warn sink                                                                                                                                       |
+| `debug` | `tools.fs_error_unmapped`   | `errno_code, syscall, path, platform` — via the warn sink                                                                                                        |
 
-Four of these exist to make remaining **Windows** gaps diagnosable. The Windows
-CI leg now runs `@clarvis/tools`; named capability predicates suppress only the
-platform properties that are unavailable or still unverified there. The current
-evidence and those residual gaps are recorded in `specs/known-issues.md`:
+Windows process capture and stop still require native CI qualification; `specs/known-issues.md` records that boundary.
 
-- `tools.monitor_spawn` and `tools.monitor_poll` are a pair. A monitor that is
-  `running` with `log_bytes: 0` names the write side as the failure and settles
-  the `monitor` capture gap — the conclusion an abandoned two-handle experiment
-  (`50aa7c2`, reverted in `2705c3a`) was needed to reach.
-- `tools.monitor_exit_unreadable` separates an unparsable sentinel from a killed
-  process. Without it both arrive as `{ exited: true, code: null }`, which also
-  swallows a parse error in the command and PowerShell's `$?`-vs-`$LASTEXITCODE`
-  gap.
-- `tools.fs_error_unmapped` names the errno behind `apply_patch` reporting
-  `io_error` where POSIX reports `not_a_file` — the code known-issues records as
-  _"not been identified"_, because it existed only inside a tool result no CI job
-  retains.
+`tools.fs_error_unmapped` names the errno behind `apply_patch` reporting
+`io_error` where POSIX reports `not_a_file` — the code known-issues records as
+_"not been identified"_, because it existed only inside a tool result no CI job
+retains.
 
 `tools.path_refused` closes the other conflation: a symlink that stopped the
 canonicalization walk (`reason: "unresolvable"`) used to be reported exactly like
@@ -475,13 +460,13 @@ bun --filter @clarvis/tools format:check
 - `tests/unit/` owns pure policies, parsers, renderers, shell dialect analysis,
   and process decisions exercised through narrow injected collaborators.
 - `tests/component/` owns the package facade, registry/surface selection, and
-  monitor composition when process effects are replaced by fakes. The expected
+  session composition when process effects are replaced by fakes. The expected
   surface metadata has one oracle in `tests/helpers/tool-surface.ts`; registry,
   public-facade, and read-only assertions derive their views from it instead of
   repeating name matrices.
 - `tests/contract/` owns behavior shared by the ripgrep and in-process grep
   implementations.
-- `tests/integration/` owns real filesystem, symlink, process, shell, monitor,
+- `tests/integration/` owns real filesystem, symlink, process, shell session,
   ripgrep, timing, and platform effects, including confinement and
   other OS/security contracts. Its atomic tests own the tools-specific
   multi-file transaction and rollback; `@clarvis/paths` owns temp naming,

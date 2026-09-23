@@ -720,7 +720,7 @@ while the two named process-group tests beside it — `a grandchild holding the 
 not wedge the job` and `timeout kills the whole process group` — are unguarded and
 written in POSIX shell (`sleep 5 & echo launched`, `sleep 30 & sleep 30`), so on a Windows runner
 they would die on the command text long before reaching the behaviour they check. Guarding them would
-be the wrong repair for the same reason the `monitor` gap stayed hidden: it would turn a real
+be the wrong repair: it would turn a real
 unknown into a green run.
 
 One failure mode around shell resolution on this path *has* been identified, and it was found from
@@ -1717,42 +1717,9 @@ have moved since the record was first written, and both change how the gaps can 
   windows job will settle it" was not a plan while the workflow was disabled. They remain useful
   even after trigger restoration and are described under the gaps they serve.
 
-### `monitor` captures no output
+### Windows session capture and stop await native verification
 
-`monitor_start` redirects its child's stdout and stderr into an inherited file descriptor
-(`packages/tools/src/tools/monitor.ts`, `stdio: ["ignore", fd, fd]` — one `openSync(lp, "a")`
-handed to both slots), and on Windows nothing arrives — the log is empty, not merely differently
-encoded.
-
-Only the write side is implicated: reads stat and read the log by path, and every monitor test
-asserting bookkeeping rather than captured output passes. `shell` is unaffected because it captures
-over pipes (`packages/tools/src/tools/shell.ts`, `stdio: ["ignore", "pipe", "pipe"]`).
-
-Nine `monitor` tests are suppressed behind `monitorCapturesOutput`
-(`packages/tools/tests/helpers/fixtures.ts`; the nine call sites are
-`packages/tools/tests/integration/monitor.test.ts`) — a predicate
-kept **separate from `posixShell` on purpose**, because those tests are suppressed by a defect, not
-by inapplicability.
-
-**Ruled out, with the reasoning that ruled it out.** Opening the log twice (one handle per stdio
-slot) was tried and changed nothing. The source and package README record that experiment as
-`50aa7c2`, reverted in `2705c3a`; neither hash resolves in the current public repository history, so
-the exact commit provenance is not locally verifiable. Its hypothesis was that handing the
-*same* descriptor to two stdio slots is the one
-thing this path does that the working `shell` path does not — Node services that on Windows by
-duplicating the underlying handle per slot, and Bun reimplements `child_process` — so two independent
-`"a"` handles would remove the sharing while interleaving identically and leaving POSIX untouched.
-The recorded diagnostic still stands and is worth keeping: *that the log is completely empty* is
-the evidence, because if either stream were connected, PowerShell's own parse errors would have
-landed in it. Neither stdout nor stderr reaches the file. The remaining explanation is that
-inheriting a numeric descriptor does not work there at all, so the fix is to let the child open the
-log itself rather than inherit it.
-
-**What was built instead of a runner.** `tools.monitor_spawn`
-(`packages/tools/src/tools/monitor.ts`, naming platform, `detached`, the stdio slots and the log
-path) and `tools.monitor_poll` (naming `running`, `offset` and `log_bytes`) are a deliberate
-write-side/read-side pair: a `running` monitor whose poll reports zero bytes answers "which side
-fails" directly, from a single hand-run on a Windows host, with no CI job involved.
+Command sessions now capture stdout and stderr through separate pipes under `ExecutionSessionManager` and stop tracked trees through the retained child handle and `taskkill /T /F`. Linux integration tests cover yield, readiness, polling, and stop. The Windows capture and physical stop behavior remain unqualified until native CI runs the new session tests. Production: `ExecutionSessionManager` in `packages/tools/src/lib/execution-session.ts` and `stopOwnedProcess` in `packages/tools/src/lib/process-owner.ts`. Test: `packages/tools/tests/integration/shell-session.test.ts` and `packages/tools/tests/integration/execution-session.test.ts`.
 
 ### PowerShell serializes stderr as CLIXML
 
@@ -1765,15 +1732,6 @@ but `AGENTS.md`. The stderr fixtures that would surface it are scoped by `posixS
 `1>&2`), and that is correct on its own terms: the redirection syntax genuinely is POSIX. But it
 means the CLIXML gap is recorded here and nowhere else in code. Anyone deciding the product question
 should give it a named predicate at that point, not before.
-
-### `exitCaptureWrapper` cannot carry `exit N` from a PowerShell statement
-
-It tests `$?` ahead of `$LASTEXITCODE` (`packages/tools/src/shell.ts`), so only a native command
-keeps its real status; a pure-cmdlet command reports only `0` or `1`, because PowerShell gives cmdlet
-failures no richer status. That ordering is deliberate and documented on the function
-(`packages/tools/src/shell.ts`): `$LASTEXITCODE` is sticky for the whole payload — once any
-native command has run it stays set — so testing it first would make `git status; Write-Output ok`
-report git's status rather than the payload's.
 
 ### `apply_patch` reports `io_error` where POSIX reports `not_a_file`
 
@@ -1789,47 +1747,42 @@ so no CI job retained it. The fallback now also emits `tools.fs_error_unmapped`
 `debug`, since an unusual errno is an ordinary outcome rather than a degradation. One Windows run
 with debug logging on now answers the question that CI was previously the only way to ask.
 
-### Three pid-liveness probes spell "exists but is not mine" as `EPERM` alone
+### Two pid-liveness probes spell "exists but is not mine" as `EPERM` alone
 
-Four modules probe whether a pid is alive with a signal-0 `process.kill`, and they split three to
+Three modules probe whether a pid is alive with a signal-0 `process.kill`, and they split two to
 one on what an unclassifiable errno means. That split is deliberate and each owning spec records the
 direction its site chose (`specs/foundations/paths.md`,
-`specs/execution/tools-shell-and-monitor.md`, `specs/capabilities/memory-store.md`,
+`specs/execution/tools-shell-and-sessions.md`, `specs/capabilities/memory-store.md`,
 `specs/foundations/trace.md`), so it is not the defect. The defect is the **errno
-spelling** the three fail-open sites share:
+spelling** the two fail-open sites share:
 
 | Site | Reads "alive" as |
 | --- | --- |
 | `packages/memory/src/file-store/lock.ts` | `code === "EPERM"` |
-| `packages/tools/src/lib/monitor.ts` | `code === "EPERM"` |
 | `packages/trace/src/journal-recovery.ts` | `code === "EPERM"` |
 | `packages/paths/src/local-lease.ts` | `errno !== "ESRCH"` |
 
 On Windows, libuv's `uv_kill` opens the target and passes an `OpenProcess` failure through
 `uv_translate_sys_error`, which maps `ERROR_ACCESS_DENIED` to `EACCES` rather than `EPERM`. Under
-that reading the three `=== "EPERM"` sites report a live process owned by another principal as
-**dead**, and `packages/tools` is one of the four packages the Windows job runs.
+that reading the two `=== "EPERM"` sites report a live process owned by another principal as
+**dead**, and the affected modules still need native qualification.
 `packages/paths/src/atomic.ts` already treats `EPERM` and `EACCES` as one Windows family, which is
 the in-tree precedent. **This is read off libuv's error table, not measured here** — no Windows
 runner has confirmed it, and none can while CI is dispatch-only.
 
-**The obvious repair is wrong, and the trap is worth recording.** Converging all five on
+**The obvious repair is wrong, and the trap is worth recording.** Converging all three on
 `!== "ESRCH"` widens "alive" to every error the probe can raise, and `process.kill` raises more than
 errnos. Measured on the pinned Bun on Linux: `process.kill(2147483647, 0)` throws `ESRCH`, but
 `2147483648`, `4294967296` and `1.5` all throw a `TypeError` with `code === "ERR_INVALID_ARG_TYPE"` —
-the probe was never made. All three sites accept the pid from a file with no upper-bound check
+the probe was never made. Both sites accept the pid from a file with no upper-bound check
 (`packages/trace/src/journal-recovery.ts` admits any JSON number,
-`packages/memory/src/file-store/lock.ts` guards `Number.isInteger(pid) && pid > 0` and no more,
-`packages/tools/src/lib/monitor.ts` admits any number in a guard whose own TSDoc says it exists
-"to reject corrupt sidecars"). Under a blanket `!== "ESRCH"` such a file reads as alive forever:
+`packages/memory/src/file-store/lock.ts` guards `Number.isInteger(pid) && pid > 0` and no more). Under a blanket `!== "ESRCH"` such a file reads as alive forever:
 memory's `stealable()` never returns true and every `store.exclusive` ends in "timed out waiting for
-tree lock"; trace's journal is never recovered and never quarantined; monitor never GCs the sidecar.
+tree lock"; trace's journal is never recovered and never quarantined.
 The narrow repair — pre-guard the pid, then accept the closed set `EPERM | EACCES` — keeps each
 site's chosen direction and loses nothing.
 
 Note that the existing tests are **vacuous with respect to this**:
-`packages/tools/tests/integration/monitor-lib.test.ts` stub `EPERM` → alive
-and `ESRCH` → dead, both already true today, and
 `packages/trace/tests/integration/journal.test.ts` uses `pid: 2_147_483_646`, just under the
 boundary. Only an `EACCES` case would be non-vacuous.
 
@@ -1888,9 +1841,9 @@ has ever run on.
 
 `packages/tools/src/lib/files.ts` returns early on `win32` with Node's portable `"r"` mode,
 dropping both `O_NONBLOCK` and `O_NOFOLLOW`. Losing `O_NONBLOCK` is harmless and the TSDoc says why — Windows filesystem paths expose no FIFOs. Losing `O_NOFOLLOW` is a real
-reduction: `noFollow` becomes advisory there, and the three callers that ask for it
-(`packages/tools/src/lib/files.ts`, `packages/tools/src/lib/logslice.ts`,
-`packages/tools/src/tools/file-stat.ts`) pass no compensating confinement. The TSDoc's
+reduction: `noFollow` becomes advisory there. The generic spill reader compensates with a pinned
+inode check and post-open confinement in `packages/tools/src/lib/files.ts`; `file_stat` in
+`packages/tools/src/tools/file-stat.ts` still requires its own native Windows qualification. The TSDoc's
 "descriptor metadata remains the authority on every platform" is true only where a
 `confinement` is supplied.
 
@@ -1956,8 +1909,7 @@ This is the exception that proves the rule below rather than a licence to ignore
 and `head` all run there; only genuine *shell syntax* (`1>&2`, `$$`, `for … in`, `while [ … ]`,
 `trap`) is unavailable.
 
-A guard applied on the wrong premise turns a real defect into a green run — which is exactly how the
-`monitor` gap above stayed hidden. `posixShell`
+A guard applied on the wrong premise turns a real defect into a green run. `posixShell`
 (`packages/tools/tests/helpers/fixtures.ts`) is for syntax; a defect gets its own named
 predicate.
 

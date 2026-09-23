@@ -9,6 +9,7 @@ import type {
   ToolInterruptSource,
 } from "../../src/runtime/tools/tool-interrupt.ts";
 import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
+import { GateLLM } from "./_gate-llm.ts";
 import { makeHarness, type TestHarness } from "./_helpers.ts";
 
 const posixShell = process.platform !== "win32";
@@ -87,6 +88,58 @@ function shellScript(command = "printf 'partial-out\\n'; printf 'partial-err\\n'
 }
 
 describe.skipIf(!posixShell)("selective interrupt through executeRun and the real shell", () => {
+  it("stops a yielded session through its original hosted interrupt token", async () => {
+    const control = channel();
+    const events: TraceEvent[] = [];
+    const llm = new GateLLM((index) =>
+      index === 0
+        ? {
+            toolCalls: [
+              {
+                id: "yielded",
+                name: "shell",
+                arguments: {
+                  command: "printf ready; sleep 3; printf leaked > leak.txt",
+                  yield_time_ms: 100,
+                },
+              },
+            ],
+          }
+        : { text: "done", toolCalls: [] },
+    );
+    const root = workspace();
+    harness = await makeHarness({
+      llm,
+      mcpFactory: mockMCPFactory({}),
+      workspaceRoot: root,
+      env: { CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" },
+      agentTools: true,
+      toolInterrupts: control.source,
+      onEvent(event) {
+        events.push(event);
+      },
+    });
+    const run = harness.run(body());
+    await llm.started(0);
+    llm.release(0);
+    await llm.started(1);
+    try {
+      const terminal = events.find(
+        (event): event is Extract<TraceEvent, { type: "tool_call" }> => event.type === "tool_call",
+      );
+      expect(terminal?.control?.tool_execution_id).toBeDefined();
+      const token = terminal!.control!.tool_execution_id;
+      expect(control.request(token)).toBe("accepted");
+      const deadline = Date.now() + 2000;
+      while (control.request(token) !== "not_running" && Date.now() < deadline) await Bun.sleep(10);
+      expect(control.request(token)).toBe("not_running");
+    } finally {
+      llm.release(1);
+    }
+    expect((await run).status).toBe("completed");
+    expect(await Bun.file(join(root, "leak.txt")).exists()).toBe(false);
+  });
+
   it("retains both partial streams, settles receipts, records one terminal and continues", async () => {
     const control = channel();
     const events: TraceEvent[] = [];

@@ -57,7 +57,7 @@ const MUTATE_TOOLS = new Set([
   "multi_edit",
   "apply_patch",
   "shell",
-  "monitor_start",
+  "shell_session",
 ]);
 const CONTROL_TOOLS = new Set([
   "ask_user",
@@ -745,7 +745,7 @@ describe("reviewBlocker before any plan exists", () => {
     return orch.contribution.handlers![0]!.matches(call);
   };
 
-  it.each(["write_file", "edit_file", "multi_edit", "apply_patch", "shell", "monitor_start"])(
+  it.each(["write_file", "edit_file", "multi_edit", "apply_patch", "shell", "shell_session"])(
     "refuses %s before a plan exists, naming create_plan as the way forward",
     async (name) => {
       const orch = unplannedOrch();

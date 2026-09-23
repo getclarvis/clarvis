@@ -8,7 +8,7 @@
 
 ## 1. Purpose
 
-The `sandbox:` block asks Clarvis to execute `shell` and `monitor_start` inside the native isolation
+The `sandbox:` block asks Clarvis to execute `shell` inside the native isolation
 backend for the kernel host:
 
 - Linux selects Bubblewrap (`bwrap`).
@@ -41,7 +41,7 @@ Ownership is deliberately split:
 - `@clarvis/protocol` owns the settings and inspection DTOs.
 - `@clarvis/code` owns operator-facing configuration and status copy; it never imports the loop.
 
-Only `shell` and `monitor_start` consume `sandboxCommand`. Native file tools enforce their own path
+Only `shell` consumes `sandboxCommand`. Native file tools enforce their own path
 confinement and do not run inside Bubblewrap or Seatbelt.
 
 ## 2. Surface
@@ -392,12 +392,12 @@ probeSandbox`).
    `/usr/bin/sandbox-exec`;
 4. available Bubblewrap → validate paths and return `bwrap` argv.
 
-The returned `sandboxed` bit reports what will actually run, not what was requested. Shell and monitor
+The returned `sandboxed` bit reports what will actually run, not what was requested. Shell
 diagnostics consume it; callers never infer wrapping by reparsing argv.
 
 Production: `packages/tools/src/sandbox.ts` (`sandboxCommand`),
-`packages/tools/src/tools/shell.ts` (`runCommand`), and
-`packages/tools/src/tools/monitor.ts` (`monitor_start`). Tests:
+`ExecutionSessionManager.launch` in `packages/tools/src/lib/execution-session.ts`, used by
+`createShell` in `packages/tools/src/tools/shell.ts`. Tests:
 `packages/tools/tests/integration/sandbox.test.ts` and
 `packages/tools/tests/unit/observability.test.ts` (`fails closed instead of logging a silent optional fallback`).
 
@@ -680,7 +680,7 @@ reported in place. Only a new explicit operator selection can place a later run 
 | Merged bounded sandbox list exceeds its limit | Settings merge throws; it never truncates policy silently |
 
 Nothing retries a failed backend command launch. Process lifecycle, timeouts, output bounds, and kill
-semantics remain owned by [tools-shell-and-monitor.md](tools-shell-and-monitor.md).
+semantics remain owned by [tools-shell-and-sessions.md](tools-shell-and-sessions.md).
 
 The artifact smoke harness has a separate, narrower native gate in
 `packages/code/tooling/artifact/isolation.ts`: when its required-confinement mode is selected, the

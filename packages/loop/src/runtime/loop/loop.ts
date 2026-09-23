@@ -717,7 +717,10 @@ function openToolInvocation(
   handler: ToolHandler,
   call: LLMToolCall,
   core: LoopCore,
-): { context: ToolInvocationContext; release: () => void } {
+): {
+  context: ToolInvocationContext;
+  release: (continuation?: { stop(): Promise<boolean>; completed: Promise<unknown> }) => void;
+} {
   const runSignal = invocationRunSignal(core.runtime.signal);
   const registry = core.runtime.toolInterrupts;
   if (handler.interruptible?.(call) !== true || registry === undefined) {
@@ -735,8 +738,9 @@ function openToolInvocation(
       signal: combineSignals(runSignal, controller.signal) ?? controller.signal,
       control: { toolExecutionId, actions: ["interrupt"] },
     },
-    release() {
-      registry.unregister(toolExecutionId);
+    release(continuation) {
+      if (continuation !== undefined) registry.retain(toolExecutionId, continuation);
+      else registry.unregister(toolExecutionId);
     },
   };
 }
@@ -819,13 +823,16 @@ async function runDispatch(
           : { ...original, arguments: rewritten.arguments, rewrittenFrom: original.arguments };
       const invocation = openToolInvocation(handler, call, core);
       let handled: Awaited<ReturnType<typeof settleOrAbort<HandlerVerdict>>>;
+      let continuation: { stop(): Promise<boolean>; completed: Promise<unknown> } | undefined;
       try {
         handled = await settleOrAbort(
           Promise.resolve().then(() => handler.handle(call, iteration, invocation.context)),
           core.runtime.signal,
         );
+        if (handled.kind === "fulfilled" && handled.value.kind === "result")
+          continuation = handled.value.interruptContinuation;
       } finally {
-        invocation.release();
+        invocation.release(continuation);
       }
       if (handled.kind === "aborted") {
         results[i] = `Tool '${call.name}' was cancelled.`;

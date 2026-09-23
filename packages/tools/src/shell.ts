@@ -121,57 +121,5 @@ export function shellArgs(shell: ShellSpec, command: string): string[] {
   return ["-NoProfile", "-NonInteractive", "-EncodedCommand", encodePowerShellCommand(command)];
 }
 
-/**
- * Wrap `command` so its exit status lands in the file named by `$MON_EXIT`.
- *
- * @param command - the raw command text to wrap.
- * @param flavor - the syntax to emit the wrapper in.
- * @returns the wrapped command.
- * @remarks
- * POSIX installs an `EXIT` trap. PowerShell uses `try`/`finally`, which is safe
- * in the two ways that matter: `exit N` inside a `try` still runs the `finally`
- * before terminating, and a `try` block is not a new variable scope, so wrapping
- * does not change what the command itself means.
- *
- * `$?` is read first, and tested *before* `$LASTEXITCODE`. `$LASTEXITCODE` is
- * sticky for the whole payload - once any native command has run it stays set -
- * so testing it first would make `git status; Write-Output ok` report git's
- * status rather than the payload's. The consequence of this ordering is that a
- * pure-cmdlet command reports only `0` or `1`, because PowerShell gives cmdlet
- * failures no richer status; native commands keep their real exit codes.
- *
- * Both wrappers write to a `.tmp` sibling and rename it onto `$MON_EXIT`, rather
- * than writing the exit file in place: a plain `>`/`WriteAllText` truncates the
- * destination before it writes the content, so a poller reading exactly then
- * would see the file exist with no parseable code yet - a race that made
- * `readExitState` misreport a still-live process as exited with an unknown
- * code. A same-directory rename is atomic on both platforms, so a reader only
- * ever observes the file absent or fully written.
- *
- * Neither wrapper survives a *parse* error in `command` (nothing runs at all) or
- * a forced kill. Both then leave no exit file, which the monitor already reports
- * as an unknown exit code.
- */
-export function exitCaptureWrapper(command: string, flavor: ShellFlavor): string {
-  if (flavor === "posix") {
-    return (
-      `trap 'printf "%s" "$?" > "$MON_EXIT.tmp" && mv -f "$MON_EXIT.tmp" "$MON_EXIT"' EXIT\n` +
-      `${command}\n`
-    );
-  }
-  return [
-    "try {",
-    command,
-    "} finally {",
-    "$__clarvisExit = if ($?) { 0 } elseif ($LASTEXITCODE) { $LASTEXITCODE } else { 1 }",
-    '$__clarvisExitTmp = "$env:MON_EXIT.tmp"',
-    '[IO.File]::WriteAllText($__clarvisExitTmp, "$__clarvisExit", ' +
-      "(New-Object System.Text.UTF8Encoding $false))",
-    "Move-Item -Force $__clarvisExitTmp $env:MON_EXIT",
-    "}",
-    "",
-  ].join("\n");
-}
-
 export { currentShellFlavor };
 export type { ShellFlavor };

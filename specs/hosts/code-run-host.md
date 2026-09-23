@@ -47,7 +47,7 @@ whether a late callback still owns the surface it wants to write to
 
 ### Selective shell interruption
 
-`RunHost.interruptTool` requests one live invocation through the current controlled handle without
+`RunHost.interruptTool` requests one live invocation or yielded shell session through the current controlled handle without
 cancelling the run. A receipt is not a tool terminal: `accepted` keeps the pending projection;
 `not_running` or a failed request clears pending without inventing an outcome or operator cause.
 A current-owner failure adds a warning, while a late response from retired run ownership cannot
@@ -57,6 +57,8 @@ mutate the current UI. Production: `createRunHost.interruptTool` in
 [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts), `interrupt receipts preserve
 running state and clear pending only on not_running or error` and `a late interrupt failure cannot
 add a notice after run ownership changes`.
+
+A yielded `shell` result carries its original control token while the process remains live. The loop retains a stop callback bound to that run's `ExecutionSessionManager` and agent, removes it on physical completion, and publishes the control on the terminal tool event for the TUI row. Production: `createToolInterruptRegistry` in `packages/loop/src/runtime/tools/tool-interrupt.ts`, `buildAgentToolsHandler` in `packages/loop/src/runtime/capabilities/tools.ts`, and `applyEvent` in `packages/code/src/adapters/store.ts`. Test: `packages/loop/tests/integration/selective-shell-interrupt.test.ts`, `packages/loop/tests/unit/tool-interrupt.test.ts`, and `packages/code/tests/component/run-host.test.ts` (`a yielded shell keeps its interrupt control through the hosted run`).
 
 ### Hosted backend adapter
 

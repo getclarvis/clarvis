@@ -65,16 +65,16 @@ describe("sweepSpillDir", () => {
     await expect(sweepSpillDir(root)).resolves.toBeUndefined();
   });
 
-  test("removes old spills while preserving recent, monitor, directory and unrelated entries", async () => {
+  test("removes old generic spills while preserving recent and unrelated entries", async () => {
     const paths = workspaceStatePaths(root);
     mkdirSync(paths.localDir, { recursive: true });
     const staleTime = new Date(Date.now() - 2 * DAY_MS);
-    const stale = paths.spillFile("stale", "stdout");
+    const stale = paths.toolOutputSpill("stale");
     writeFileSync(stale, "old");
     utimesSync(stale, staleTime, staleTime);
-    const fresh = paths.spillFile("fresh", "stderr");
+    const fresh = paths.toolOutputSpill("fresh");
     writeFileSync(fresh, "new");
-    const monitor = paths.monitorLog("mon_1");
+    const monitor = join(paths.localDir, "monitor-mon_1.log");
     writeFileSync(monitor, "monitor");
     utimesSync(monitor, staleTime, staleTime);
     const unrelated = join(paths.localDir, "keep.txt");
@@ -88,32 +88,32 @@ describe("sweepSpillDir", () => {
     for (const kept of [fresh, monitor, unrelated, directory]) expect(existsSync(kept)).toBe(true);
   });
 
-  test("recognises both shell stream names and generic tool-result names", async () => {
+  test("recognises only generic tool-result names", async () => {
     const paths = workspaceStatePaths(root);
     mkdirSync(paths.localDir, { recursive: true });
     const staleTime = new Date(Date.now() - 2 * DAY_MS);
-    const spills = [
-      paths.spillFile("tok", "stdout"),
-      paths.spillFile("tok", "stderr"),
-      paths.toolOutputSpill("old"),
-    ];
+    const spills = [paths.toolOutputSpill("old")];
     for (const spill of spills) {
       writeFileSync(spill, "x");
       utimesSync(spill, staleTime, staleTime);
     }
     const fresh = paths.toolOutputSpill("new");
     writeFileSync(fresh, "x");
+    const legacy = join(paths.localDir, "shell-tok.stdout.log");
+    writeFileSync(legacy, "x");
+    utimesSync(legacy, staleTime, staleTime);
 
     await sweepSpillDir(root);
 
     for (const spill of spills) expect(existsSync(spill)).toBe(false);
     expect(existsSync(fresh)).toBe(true);
+    expect(existsSync(legacy)).toBe(true);
   });
 
   test("ignores stat failures and leaves the spill in place", async () => {
     const paths = workspaceStatePaths(root);
     mkdirSync(paths.localDir, { recursive: true });
-    const spill = paths.spillFile("x", "stdout");
+    const spill = paths.toolOutputSpill("x");
     writeFileSync(spill, "data");
     const spy = vi.spyOn(fsp, "lstat").mockRejectedValue(new Error("boom"));
 
@@ -127,7 +127,7 @@ describe("sweepSpillDir", () => {
     mkdirSync(paths.localDir, { recursive: true });
     const staleTime = new Date(Date.now() - 2 * DAY_MS);
     const spills = Array.from({ length: 8 }, (_, index) =>
-      paths.spillFile(`bounded-${index}`, "stdout"),
+      paths.toolOutputSpill(`bounded-${index}`),
     );
     for (const spill of spills) {
       writeFileSync(spill, "old");
@@ -162,7 +162,7 @@ describe("sweepGlobalStateArtifacts", () => {
     for (const paths of [first, second]) mkdirSync(paths.localDir, { recursive: true });
     const recent = first.toolOutputSpill("recent");
     writeFileSync(recent, "new", { mode: 0o644 });
-    const stale = second.spillFile("stale", "stdout");
+    const stale = second.toolOutputSpill("stale");
     writeFileSync(stale, "old", { mode: 0o644 });
     const staleTime = new Date(Date.now() - 2 * DAY_MS);
     utimesSync(stale, staleTime, staleTime);
@@ -210,8 +210,8 @@ describe("sweep diagnostics", () => {
   test("a completed pass reports what it scanned and what it removed", async () => {
     const dir = workspaceStatePaths(root).localDir;
     mkdirSync(dir, { recursive: true });
-    spill(dir, "shell-old.stdout.log", 2 * DAY_MS);
-    spill(dir, "shell-new.stdout.log", 0);
+    spill(dir, "toolout-old.txt", 2 * DAY_MS);
+    spill(dir, "toolout-new.txt", 0);
     writeFileSync(join(dir, "unrelated.txt"), "x");
     const sink = recorder();
     await sweepSpillDir(root, { logger: sink.logger });
@@ -227,7 +227,7 @@ describe("sweep diagnostics", () => {
   test("a directory past the scan bound reports that the rest was never swept", async () => {
     const dir = workspaceStatePaths(root).localDir;
     mkdirSync(dir, { recursive: true });
-    for (let i = 0; i < 4; i += 1) spill(dir, `shell-${i}.stdout.log`, 2 * DAY_MS);
+    for (let i = 0; i < 4; i += 1) spill(dir, `toolout-${i}.txt`, 2 * DAY_MS);
     const sink = recorder();
     setPathsLogger(sink.logger);
     await sweepSpillDir(root, { maxEntries: 2 });

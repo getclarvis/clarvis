@@ -918,7 +918,7 @@ appends a horizontal ellipsis when it truncates at `MALFORMED_ARGUMENTS_PREVIEW_
 own cut is distinguishable from the provider's (`packages/capability/src/tool-arguments.ts`).
 
 The docstring records the reason absent arguments are accepted as `{}`: a tool whose schema requires
-nothing is legitimately called that way, and it names `list_dir`, `list_memories`, `monitor_list`
+nothing is legitimately called that way, and it names `list_dir`, `list_memories`, `shell_session`
 (`packages/capability/src/tool-arguments.ts`). It records the reason everything else fails rather than defaulting to
 `{}`: substituting an empty object makes the tool answer with a schema error naming a property the
 model did send.

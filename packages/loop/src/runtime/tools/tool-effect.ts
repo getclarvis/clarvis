@@ -45,9 +45,8 @@ const CONTROL = new Set<string>([
  * @remarks The engine's coding toolset is split by its eagerly available wire
  *   vocabulary, whose drift test is pinned to `@clarvis/tools`' actual surface.
  *   Everything the engine knows and is not read-only or control is `mutate`;
- *   `shell` and the monitors land there deliberately, since they observe and
- *   mutate through one entry point and no caller can treat them as safe without
- *   running the command.
+ *   `shell` and `shell_session` land there deliberately: the first can mutate
+ *   through a command and the second controls a live command.
  * @remarks The engine's own vocabulary is consulted **first**, so a capability
  *   can classify the tools it contributes but can never reclassify `shell` as
  *   `read`. A name a capability merely *reserved* without classifying is not in

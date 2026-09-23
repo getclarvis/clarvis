@@ -559,10 +559,11 @@ export type RunEvent =
        * Why this call ended without success when the operator interrupted it.
        *
        * @remarks Implies `ok: false`. Absence keeps the previous terminal
-       * semantics (`ok ? completed : failed`). The terminal does not repeat
-       * `control`; arrival of this event removes live interrupt capacity.
+       * semantics (`ok ? completed : failed`).
        */
       interruption?: ToolInterruption;
+      /** Present only when a yielded shell session remains live after the call. */
+      control?: ToolExecutionControl;
     })
   /**
    * Live, incremental slice of a running tool's output (streamed only — never

@@ -1,7 +1,6 @@
 import { ToolError } from "../errors.ts";
-import { readFileOptions } from "../lib/files.ts";
+import { resolveReadableTextPath } from "../lib/state-artifacts.ts";
 import { bound } from "../lib/output.ts";
-import { resolvePath } from "../lib/paths.ts";
 import { renderNumberedSlice } from "../lib/render-lines.ts";
 import { splitLines } from "../lib/text.ts";
 import { readTextFile } from "../lib/textfile.ts";
@@ -103,21 +102,8 @@ export const readFiles: ToolDef = {
 
       let section: string;
       try {
-        const target = resolvePath(
-          rel,
-          config.workspaceRoot,
-          config.confineToWorkspace,
-          [config.stateRoot, ...config.temporaryRoots],
-          config.logger,
-        );
-        const text = (
-          await readTextFile(
-            target,
-            rel,
-            config.maxFileBytes,
-            readFileOptions(config, [config.stateRoot]),
-          )
-        ).content;
+        const { target, options } = resolveReadableTextPath(rel, config);
+        const text = (await readTextFile(target, rel, config.maxFileBytes, options)).content;
         const header = `==> ${rel} <==`;
         if (text === "") {
           section = `${header}\n(empty file)`;

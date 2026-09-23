@@ -533,6 +533,8 @@ The standalone entry statically installs the loop's lazy Ajv modules before serv
 the compiled executable never falls back to `node_modules` when a run first constructs tool
 validators. Artifact qualification must instantiate that validation path; a successful hello alone
 does not prove the executable's dependency closure.
+Workflow title validation is also created on first use, after that installation, rather than during
+module import.
 
 Effective inspection accepts only the engine's exact representation. Podman must report the precise
 effective and bounding capability sets, its explicit no-new-privileges value, and the canonical
@@ -1025,7 +1027,7 @@ the calling agent. Auto never routes those outcomes to a person, including `on_u
 Failed and malformed attempts are not memoized, so fixing a transient provider problem restores
 automatic review without restarting the session.
 
-A `shell` or `monitor_start` call with `sandbox_permissions: "require_escalated"` under Isolation
+A `shell` call with `sandbox_permissions: "require_escalated"` under Isolation
 Sandbox is a `host_command` ask, after deny-list matches and undecidability with a nonempty deny
 list are rejected. The resolver passes `allowHostJudge: true` to `createShellGuard` only in Auto;
 otherwise this ask carries `escalate: "human"`. Auto's judge may allow or deny the host effect;

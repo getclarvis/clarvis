@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { callTool, cleanup, makeConfig, makeWorkspace } from "../helpers/fixtures.ts";
 
 describe("shell sandbox_permissions", () => {
@@ -53,6 +55,52 @@ describe("shell sandbox_permissions", () => {
     expect(result.isError).toBe(false);
     expect(result.json.exit_code).toBe(0);
     expect(String(result.json.stdout)).toContain("escalated");
+  });
+
+  it("reviews an escalated yielded command once and does not review its session operations", async () => {
+    const file = join(root, "approved-session.cjs");
+    writeFileSync(file, "process.stdout.write('READY\\n'); setInterval(() => {}, 1000);");
+    const invocation = `"${process.execPath}" "${file}"`;
+    let reviews = 0;
+    let approvals = 0;
+    const config = makeConfig(root, {
+      sandbox: { type: "native", availability: "required" },
+      guard: () => {
+        reviews++;
+        return { verdict: "ask", escalate: "human", reason: "approved command", mode: "on" };
+      },
+      elicit: () => {
+        approvals++;
+        return true;
+      },
+    });
+    try {
+      const started = await callTool(
+        "shell",
+        {
+          command: process.platform === "win32" ? `& ${invocation}` : invocation,
+          sandbox_permissions: "require_escalated",
+          justification: "approved command",
+          ready_when: "READY",
+          yield_time_ms: 5000,
+        },
+        config,
+      );
+      expect(started.json).toMatchObject({ running: true, ready: true });
+      const sessionId = started.json.session_id as string;
+      expect(
+        (await callTool("shell_session", { action: "poll", session_id: sessionId }, config)).json
+          .stdout,
+      ).toContain("READY");
+      expect(
+        (await callTool("shell_session", { action: "stop", session_id: sessionId }, config)).json
+          .termination_confirmed,
+      ).toBe(true);
+      expect(reviews).toBe(1);
+      expect(approvals).toBe(1);
+    } finally {
+      await config.sessionManager.close();
+    }
   });
 
   it("does not extra-prompt on Isolation Host when the field is present", async () => {
@@ -121,24 +169,5 @@ describe("shell sandbox_permissions", () => {
       expect(result.isError).toBe(true);
       expect(result.json.error).toBe("denied");
     }
-  });
-});
-
-describe("monitor_start sandbox_permissions", () => {
-  let root: string;
-
-  beforeEach(() => {
-    root = makeWorkspace();
-  });
-  afterEach(() => cleanup(root));
-
-  it("rejects require_escalated without justification", async () => {
-    const result = await callTool(
-      "monitor_start",
-      { command: "sleep 30", sandbox_permissions: "require_escalated" },
-      makeConfig(root),
-    );
-    expect(result.isError).toBe(true);
-    expect(result.json.error).toBe("invalid_input");
   });
 });

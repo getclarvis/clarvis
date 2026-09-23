@@ -38,6 +38,10 @@ export interface ToolInterruptSource {
 /** Live child-controller registry for interruptible invocations in one run. */
 export interface ToolInterruptRegistry {
   register(entry: { toolExecutionId: string; callId: string; controller: AbortController }): void;
+  retain(
+    toolExecutionId: string,
+    continuation: { stop(): Promise<boolean>; completed: Promise<unknown> },
+  ): void;
   unregister(toolExecutionId: string): void;
   deliver(delivery: ToolInterruptDelivery): void;
   close(): void;
@@ -45,12 +49,25 @@ export interface ToolInterruptRegistry {
 
 /** Create an empty run-local interrupt registry. */
 export function createToolInterruptRegistry(): ToolInterruptRegistry {
-  const entries = new Map<string, { controller: AbortController; requested: boolean }>();
+  const entries = new Map<
+    string,
+    { controller: AbortController; requested: boolean; stop?: () => Promise<boolean> }
+  >();
   let closed = false;
   return {
     register(entry) {
       if (closed) return;
       entries.set(entry.toolExecutionId, { controller: entry.controller, requested: false });
+    },
+    retain(toolExecutionId, continuation) {
+      const entry = entries.get(toolExecutionId);
+      if (entry !== undefined && !closed) {
+        entry.stop = () => continuation.stop();
+        void continuation.completed.then(
+          () => entries.delete(toolExecutionId),
+          () => entries.delete(toolExecutionId),
+        );
+      }
     },
     unregister(toolExecutionId) {
       entries.delete(toolExecutionId);
@@ -70,7 +87,8 @@ export function createToolInterruptRegistry(): ToolInterruptRegistry {
         return;
       }
       entry.requested = true;
-      entry.controller.abort(OPERATOR_INTERRUPTED_TOOL);
+      if (entry.stop === undefined) entry.controller.abort(OPERATOR_INTERRUPTED_TOOL);
+      else void entry.stop().catch(() => undefined);
       delivery.settle("accepted");
     },
     close() {

@@ -157,7 +157,7 @@ describe("tools guard wiring", () => {
     const calls = await toolEvents(harness, executionId);
     const shell = calls.find((event) => event.mcp_name === "shell");
     expect(shell?.error).toBeNull();
-    const scratch = /scratch=(\S+)/.exec(shell?.result ?? "")?.[1];
+    const scratch = /scratch=([^"\s]+)/.exec(shell?.result ?? "")?.[1];
     expect(scratch).toBeDefined();
     const stateRoot = workspaceStatePaths(root).root;
     expect(scratch!.startsWith(root)).toBe(false);
@@ -165,7 +165,10 @@ describe("tools guard wiring", () => {
     expect(Buffer.byteLength(scratch!, "utf8")).toBeLessThanOrEqual(UNIX_SOCKET_PATH_BUDGET_BYTES);
     expect(ancestorTrust(scratch!).trusted).toBe(true);
     expect(existsSync(scratch!)).toBe(false);
-    expect(readdirSync(tmpdir()).some((name) => name.startsWith(explicitPrefix))).toBe(false);
+    const commandOwned = readdirSync(tmpdir()).find((name) => name.startsWith(explicitPrefix));
+    expect(commandOwned).toBeDefined();
+    if (commandOwned !== undefined)
+      rmSync(join(tmpdir(), commandOwned), { recursive: true, force: true });
   });
 
   it("a guard that denies bash blocks the tool and the file is not written", async () => {

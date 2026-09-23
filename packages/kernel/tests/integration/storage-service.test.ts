@@ -57,8 +57,8 @@ describe("StorageService", () => {
     const state = workspaceStatePaths(workspace, { env: { [HOME_ENV]: dir } });
     mkdirSync(state.localDir, { recursive: true });
     mkdirSync(paths.cache, { recursive: true });
-    const stale = state.spillFile("stale", "stdout");
-    const fresh = state.spillFile("fresh", "stderr");
+    const stale = state.toolOutputSpill("12345678");
+    const fresh = state.toolOutputSpill("87654321");
     writeFileSync(stale, "old");
     writeFileSync(fresh, "new");
     writeFileSync(paths.modelsCacheFile, "cache");

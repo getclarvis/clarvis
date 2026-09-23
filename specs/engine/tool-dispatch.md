@@ -503,7 +503,7 @@ returned port's `effect(wireName)` checks, **in this fixed order**:
 1. `CONTROL` set (`submit_result`, `ask_user`, `delegate_task`, the five
    `AGENT_SUPERVISION_WIRE_NAMES`) → `"control"`.
 2. `READ` set (`READ_ONLY_AGENT_TOOL_WIRE_NAMES`) → `"read"`.
-3. `CODING` set (`AGENT_TOOL_WIRE_NAMES`) → `"mutate"` — this covers `shell` and every monitor tool,
+3. `CODING` set (`AGENT_TOOL_WIRE_NAMES`) → `"mutate"` — this covers `shell` and `shell_session`,
    deliberately, because they "observe and mutate through one entry point".
 4. otherwise, `declared[wireName] ?? "unknown"`.
 
@@ -543,7 +543,7 @@ Test: `packages/capability/tests/unit/compose.test.ts`, `packages/loop/tests/uni
 | INV-064 | Every run requests background MCP authorization/admission. If any failed server is pending browser OAuth or deferred behind a saturated connection/handshake bound, an otherwise empty pool returns success plus `mcp_degraded`; mixed terminal failures cannot mask that nonterminal state. | `openToolPool` in `packages/loop/src/runtime/open-tool-pool.ts` | `packages/loop/tests/integration/open-tool-pool.test.ts` (all-pending, mixed pending/terminal, busy-admission, and consecutive-run cases) |
 | INV-065 | `AGENT_TOOL_WIRE_NAMES` stays exactly in sync (as a set) with `AGENT_TOOL_NAMES`, the list `@clarvis/tools` actually registers. | `packages/loop/src/runtime/tools/wire-names.ts`, `packages/loop/src/runtime/tools/builtin/names.ts` | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts` |
 | INV-066 | `READ_ONLY_AGENT_TOOL_WIRE_NAMES` matches `READ_ONLY_TOOL_NAMES` exactly, and `READ_ONLY_TOOL_NAMES ∪ EDIT_TOOL_NAMES` equals `AGENT_TOOL_NAMES` with no overlap. | `packages/loop/src/runtime/tools/wire-names.ts`, `packages/loop/src/runtime/tools/builtin/names.ts` | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts` |
-| INV-067 | `shell` and `monitor_start` are never classified as read-only. | `packages/loop/src/runtime/tools/builtin/names.ts` (via `readOnlyTools` from `@clarvis/tools`) | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts`, also `packages/loop/tests/unit/tool-effect.test.ts` |
+| INV-067 | `shell` and `shell_session` are never classified as read-only. | `packages/loop/src/runtime/tools/builtin/names.ts` (via `readOnlyTools` from `@clarvis/tools`) | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts`, also `packages/loop/tests/unit/tool-effect.test.ts` |
 | INV-TD-01 | A handler's canonical identity is additive: lifecycle hooks retain the model-facing wire name as `tool` and receive a different resolved identity only as `toolFullName`, consistently before and after dispatch. | `packages/capability/src/loop-contract.ts`, `packages/loop/src/runtime/loop/loop.ts` | `packages/loop/tests/unit/tool-hooks.test.ts` |
 
 Additional invariants derived directly from the code, carrying no INV number of their own:

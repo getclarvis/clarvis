@@ -1,4 +1,5 @@
 import { resolveConfig } from "./config.ts";
+import { ToolError } from "./errors.ts";
 import { dispatch, listTools } from "./core.ts";
 import type { AgentToolsOptions, RuntimeConfig } from "./config.ts";
 import type { DispatchResult, ToolInfo } from "./core.ts";
@@ -23,6 +24,8 @@ export interface AgentTools {
    * @returns the {@link DispatchResult}; failures are in-band, never thrown.
    */
   callTool(name: string, args?: Record<string, unknown>): Promise<DispatchResult>;
+  /** Seal command admission and stop all sessions owned by this instance. */
+  close(): Promise<void>;
 }
 
 /**
@@ -39,6 +42,11 @@ export function createAgentTools(options: AgentToolsOptions): AgentTools {
     config,
     listTools: () => listTools(config),
     callTool: (name, args = {}) => dispatch(name, args, config),
+    async close() {
+      if (!(await config.sessionManager.close())) {
+        throw new ToolError("io_error", "Command session termination was not confirmed");
+      }
+    },
   };
 }
 
@@ -60,23 +68,18 @@ export {
   DEFAULT_MAX_TOOL_META_BYTES,
   DEFAULT_SHELL_TIMEOUT_MS,
   DEFAULT_SHELL_TIMEOUT_MAX_MS,
-  DEFAULT_MONITOR_READY_TIMEOUT_MS,
-  DEFAULT_MAX_MONITORS,
+  DEFAULT_MAX_SESSIONS,
   DEFAULT_REGEX_SCAN_BUDGET_MS,
 } from "./config.ts";
 export type { RuntimeConfig, AgentToolsOptions } from "./config.ts";
+export { ExecutionSessionManager } from "./lib/execution-session.ts";
 export type { SandboxConfig } from "./sandbox.ts";
 export { systemTemporaryRoots } from "./sandbox.ts";
-export {
-  resolveShell,
-  shellArgs,
-  encodePowerShellCommand,
-  exitCaptureWrapper,
-  currentShellFlavor,
-} from "./shell.ts";
+export { resolveShell, shellArgs, encodePowerShellCommand, currentShellFlavor } from "./shell.ts";
 export type { ShellSpec, ShellDeps, ShellFlavor } from "./shell.ts";
 export { executableOnPath, resolveCommand } from "@clarvis/paths";
 export { killTree, ownProcessGroup } from "./lib/process.ts";
+export { isAlive } from "./lib/process-owner.ts";
 export type { KillDeps, TaskkillRunner } from "./lib/process.ts";
 
 export { tools, readOnlyTools, getTool, selectSurface } from "./tools/registry.ts";
@@ -125,8 +128,6 @@ export { contentText } from "./tools/content.ts";
 
 export { ToolError, serializeError, fsError } from "./errors.ts";
 export type { ErrorCode } from "./errors.ts";
-
-export { sweepMonitors } from "./lib/monitor.ts";
 
 export { setWarnSink, warn, NOOP_TOOLS_LOGGER } from "./lib/log.ts";
 export type { WarnSink, ToolsLogger, ToolsWarning } from "./lib/log.ts";

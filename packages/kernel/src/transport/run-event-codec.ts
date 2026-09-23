@@ -183,6 +183,13 @@ const RUN_EVENT_SCHEMAS = {
       error: text.optional(),
       diff: text.optional(),
       guard: commandGuardReview.optional(),
+      control: z
+        .object({
+          tool_execution_id: text,
+          actions: z.tuple([z.literal("interrupt")]),
+        })
+        .strict()
+        .optional(),
       interruption: z
         .object({ source: z.literal("operator") })
         .strict()

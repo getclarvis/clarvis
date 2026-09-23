@@ -24,8 +24,7 @@ import {
   DEFAULT_MAX_TOOL_META_BYTES,
   DEFAULT_SHELL_TIMEOUT_MS,
   DEFAULT_SHELL_TIMEOUT_MAX_MS,
-  DEFAULT_MONITOR_READY_TIMEOUT_MS,
-  DEFAULT_MAX_MONITORS,
+  DEFAULT_MAX_SESSIONS,
   DEFAULT_REGEX_SCAN_BUDGET_MS,
   type ServerConfig,
 } from "../../src/config.ts";
@@ -33,6 +32,7 @@ import { NOOP_TOOLS_LOGGER } from "../../src/lib/log.ts";
 import { contentText, type ContentPart, type ToolResult } from "../../src/tools/content.ts";
 import { workspaceStatePaths } from "@clarvis/paths";
 import type { GuardReview } from "../../src/guard/types.ts";
+import { ExecutionSessionManager } from "../../src/lib/execution-session.ts";
 
 const fixtureGlobals = new Map<string, string>();
 
@@ -44,7 +44,7 @@ export function makeWorkspace(): string {
 
 // Windows refuses to unlink a file another process still holds open, and
 // `taskkill` returns as soon as the kill is *requested* - the handles a
-// monitor's log holds are released a moment later, so a teardown that runs
+// command-session handles are released a moment later, so a teardown that runs
 // straight after it races and throws EBUSY. Retrying briefly is enough;
 // `maxRetries` alone is not, because Bun's rmSync does not back off on EBUSY.
 export function cleanup(root: string): void {
@@ -87,8 +87,7 @@ export function makeConfig(root: string, overrides: Partial<ServerConfig> = {}):
     maxToolMetaBytes: DEFAULT_MAX_TOOL_META_BYTES,
     shellTimeoutMs: DEFAULT_SHELL_TIMEOUT_MS,
     shellTimeoutMaxMs: DEFAULT_SHELL_TIMEOUT_MAX_MS,
-    monitorReadyTimeoutMs: DEFAULT_MONITOR_READY_TIMEOUT_MS,
-    maxMonitors: DEFAULT_MAX_MONITORS,
+    maxSessions: DEFAULT_MAX_SESSIONS,
     regexScanBudgetMs: DEFAULT_REGEX_SCAN_BUDGET_MS,
     ripgrepAvailable: false,
     skillExecutionRoots: [],
@@ -97,8 +96,9 @@ export function makeConfig(root: string, overrides: Partial<ServerConfig> = {}):
     stateRoot: statePaths.root,
     statePaths,
     temporaryRoots: [],
+    sessionAgent: {},
+    sessionManager: new ExecutionSessionManager(),
     gitMetadataPaths: [],
-    registerTemporaryRoot() {},
     ...overrides,
   };
 }
@@ -249,24 +249,6 @@ export const nonUtf8FilenamesSupported = ((): boolean => {
     return false;
   }
 })();
-
-/**
- * Whether a monitor's log actually captures the output of its child.
- *
- * False on Windows, and not because anything about those fixtures is
- * POSIX-specific - it is an open defect. `monitor_start` redirects the child's
- * stdout and stderr into an inherited descriptor, and on Windows nothing ever
- * arrives: the log is empty, not merely differently encoded or line-ended. The
- * write side is the only part implicated - reads stat and read the log by path,
- * inheriting nothing, and every monitor test that asserts bookkeeping rather
- * than captured output passes there. `shell` is unaffected because it captures
- * over pipes instead.
- *
- * This predicate exists to keep that distinct from {@link posixShell}: these
- * tests are suppressed because the product is broken on Windows, not because
- * they do not apply to it. See the Windows section of `AGENTS.md`.
- */
-export const monitorCapturesOutput = process.platform !== "win32";
 
 /**
  * Whether "settled on the shell's exit rather than waiting for a backgrounded

@@ -4,7 +4,7 @@
  *
  * @remarks Line granularity is the load-bearing choice. Because a line is never
  * split, a page boundary can never land inside a UTF-8 sequence and there is no
- * partial-line hold-back to get wrong (which is the one piece of `monitor_poll`'s
+ * partial-line hold-back to get wrong (which is one piece of a session poll's
  * contract this does *not* need to mirror). Offsets are absolute over everything
  * the child has ever emitted, not over what the ring currently holds, so they
  * stay monotonic across a head drop: dropping the oldest lines raises `head` and

@@ -1,6 +1,7 @@
 import type { MutationReview } from "./lib/atomic.ts";
+import { ExecutionSessionManager } from "./lib/execution-session.ts";
 import { spawnSync } from "node:child_process";
-import { lstatSync, realpathSync, statSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./lib/log.ts";
 import type { Guard, Elicit } from "./guard/types.ts";
@@ -47,19 +48,16 @@ export interface RuntimeConfig {
   /** Hard ceiling in milliseconds a per-call shell timeout may request. */
   shellTimeoutMaxMs: number;
 
-  /** How long, in milliseconds, to wait for a background monitor's ready marker. */
-  monitorReadyTimeoutMs: number;
-
-  /** Maximum number of concurrently running background monitors. */
-  maxMonitors: number;
+  /** Maximum number of command sessions retained by this run. */
+  maxSessions: number;
 
   /**
    * Milliseconds of regular-expression time one in-process scan may spend
    * before it stops applying the pattern.
    *
    * @remarks
-   * Charged by `grep`'s in-process fallback and by `replace` (which has no
-   * ripgrep path in any deployment) through
+   * Charged by `grep`'s in-process fallback, `replace`, and shell readiness
+   * matching through
    * {@link "./lib/scan-budget.js" | createScanBudget}. It bounds a
    * catastrophically backtracking user pattern, which would otherwise freeze
    * the single-threaded host for as long as the scope takes to walk; see that
@@ -80,7 +78,7 @@ export interface RuntimeConfig {
   confineToWorkspace: boolean;
 
   /**
-   * The per-workspace state root holding monitor sidecars and output spills.
+   * The per-workspace state root holding bounded output spills and other tool state.
    *
    * @remarks Outside the working tree by design — a repository is not where
    * generated bookkeeping belongs — which is why the read tools must be told
@@ -95,15 +93,16 @@ export interface RuntimeConfig {
 
   /** Ordered writable temporary roots admitted in addition to the workspace; first is primary. */
   temporaryRoots: readonly string[];
+  /** Unforgeable identity of this toolset's agent within its session manager. */
+  sessionAgent: object;
+  /** Run-owned authority for shell command processes. */
+  sessionManager: ExecutionSessionManager;
 
   /** Host-selected skill directories admitted only to command execution. */
   skillExecutionRoots: readonly string[];
 
   /** Immutable linked-worktree metadata roots pinned before the agent can mutate the workspace. */
   gitMetadataPaths: readonly string[];
-
-  /** Admit one verified scratch root discovered after this toolset started. */
-  registerTemporaryRoot(root: string): void;
 
   /**
    * Where this toolset reports what its machinery did.
@@ -166,10 +165,8 @@ export const DEFAULT_MAX_TOOL_META_BYTES = 256 * 1024;
 export const DEFAULT_SHELL_TIMEOUT_MS = 120000;
 /** Default {@link RuntimeConfig.shellTimeoutMaxMs} ceiling (600 s). */
 export const DEFAULT_SHELL_TIMEOUT_MAX_MS = 600000;
-/** Default {@link RuntimeConfig.monitorReadyTimeoutMs} (30 s). */
-export const DEFAULT_MONITOR_READY_TIMEOUT_MS = 30000;
-/** Default {@link RuntimeConfig.maxMonitors} (32). */
-export const DEFAULT_MAX_MONITORS = 32;
+/** Default {@link RuntimeConfig.maxSessions} (32). */
+export const DEFAULT_MAX_SESSIONS = 32;
 /**
  * Default {@link RuntimeConfig.regexScanBudgetMs} (5 s).
  *
@@ -259,10 +256,12 @@ export interface AgentToolsOptions {
   confineToWorkspace?: boolean;
   /** Existing writable temporary roots available to every tool; first supplies the command env. */
   temporaryRoots?: readonly string[];
+  /** Agent identity for sessions; standalone toolsets get a private token. */
+  sessionAgent?: object;
+  /** Host-owned command sessions; standalone configs receive a private closable manager. */
+  sessionManager?: ExecutionSessionManager;
   /** Host-selected skill directories required by enabled skills. */
   skillExecutionRoots?: readonly string[];
-  /** Host lifecycle hook for a scratch root verified after a shell call. */
-  onTemporaryRootRegistered?: (root: string) => void;
 
   /** Override {@link RuntimeConfig.maxOutputBytes} (min 1024). */
   maxOutputBytes?: number;
@@ -294,11 +293,8 @@ export interface AgentToolsOptions {
   /** Override the shell timeout ceiling (min 1); must be >= `shellTimeoutMs`. */
   shellTimeoutMaxMs?: number;
 
-  /** Override the monitor ready-marker timeout (min 1). */
-  monitorReadyTimeoutMs?: number;
-
-  /** Override the maximum concurrent monitors (min 1). */
-  maxMonitors?: number;
+  /** Override the maximum retained command sessions (min 1). */
+  maxSessions?: number;
 
   /** Override {@link RuntimeConfig.regexScanBudgetMs} (min 1). */
   regexScanBudgetMs?: number;
@@ -425,21 +421,6 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
       }),
     ),
   ];
-  const registerTemporaryRoot = (root: string): void => {
-    const resolved = path.resolve(root);
-    const linkStat = lstatSync(resolved);
-    if (linkStat.isSymbolicLink())
-      throw new StartupError(`Temporary root must not be a symbolic link: ${resolved}`);
-    const canonical = realpathSync(resolved);
-    const stat = statSync(canonical);
-    if (!stat.isDirectory())
-      throw new StartupError(`Temporary root is not a directory: ${resolved}`);
-    if (!temporaryRoots.includes(canonical)) {
-      temporaryRoots.push(canonical);
-      options.onTemporaryRootRegistered?.(canonical);
-    }
-  };
-
   logger.debug(
     {
       event: "tools.config_resolved",
@@ -509,12 +490,7 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
     ),
     shellTimeoutMs,
     shellTimeoutMaxMs,
-    monitorReadyTimeoutMs: requireMin(
-      options.monitorReadyTimeoutMs ?? DEFAULT_MONITOR_READY_TIMEOUT_MS,
-      1,
-      "monitorReadyTimeoutMs",
-    ),
-    maxMonitors: requireMin(options.maxMonitors ?? DEFAULT_MAX_MONITORS, 1, "maxMonitors"),
+    maxSessions: requireMin(options.maxSessions ?? DEFAULT_MAX_SESSIONS, 1, "maxSessions"),
     regexScanBudgetMs: requireMin(
       options.regexScanBudgetMs ?? DEFAULT_REGEX_SCAN_BUDGET_MS,
       1,
@@ -526,9 +502,10 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
     stateRoot: statePaths.root,
     statePaths,
     temporaryRoots,
+    sessionAgent: options.sessionAgent ?? {},
+    sessionManager: options.sessionManager ?? new ExecutionSessionManager(),
     skillExecutionRoots,
     gitMetadataPaths,
-    registerTemporaryRoot,
     guard: options.guard,
     reviewMutation: options.reviewMutation,
     elicit: options.elicit,

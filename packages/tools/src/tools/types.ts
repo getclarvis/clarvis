@@ -11,8 +11,9 @@ export interface ToolCallHooks {
   /**
    * Live, incremental output from a long-running tool, coalesced by the
    * producer (per line / short interval). Purely advisory: the authoritative
-   * output is the handler's result, and a flood-capped stream may omit middle
-   * segments - consumers should treat the accumulated text as a display tail.
+   * output is the handler's result, and a busy stream may omit middle segments
+   * from live updates. Consumers should treat accumulated deltas as a display
+   * tail.
    *
    * @param chunk - the next fragment of streamed output.
    */

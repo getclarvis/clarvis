@@ -166,6 +166,7 @@ function mapEntryRaw(
       if (d.tool_evidence !== undefined) event.tool_evidence = d.tool_evidence;
       if (d.guard !== undefined) event.guard = d.guard;
       if (d.interruption !== undefined) event.interruption = d.interruption;
+      if (d.control !== undefined) event.control = d.control;
       return event;
     }
     case "tool_call_started": {

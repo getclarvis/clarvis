@@ -178,7 +178,7 @@ describe("durable host goal runtime port", () => {
         },
         100,
       )!;
-    for (const name of ["get_goal", "update_goal", "agent_status", "monitor_poll"])
+    for (const name of ["get_goal", "update_goal", "agent_status", "shell_session"])
       evidence.observe(mapped(name, "Control acknowledged"));
     expect((await port.read()).evidence).toEqual([]);
     for (const result of [

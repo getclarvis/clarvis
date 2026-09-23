@@ -195,7 +195,7 @@ export interface PathFact {
  * call touches, and, for command tools, the {@link ShellFacts} analysis.
  *
  * @remarks
- * `shell` is present only for command-running tools (`shell`, `monitor_start`);
+ * `shell` is present only for a command-running `shell` call;
  * `paths` is populated per tool by {@link buildGuardContext}.
  */
 export interface GuardContext {
@@ -204,7 +204,7 @@ export interface GuardContext {
   config: RuntimeConfig;
   paths: PathFact[];
   shell?: ShellFacts;
-  /** Per-call sandbox posture for `shell` and `monitor_start`. */
+  /** Per-call sandbox posture for `shell`. */
   sandboxPermissions?: "use_default" | "require_escalated";
   /** Operator-facing reason supplied with `require_escalated`. */
   justification?: string;

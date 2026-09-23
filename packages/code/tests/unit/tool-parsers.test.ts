@@ -5,7 +5,7 @@ import {
   toolErrorSummaryText,
   parseGrepContent,
   parseJsonObject,
-  parseMonitor,
+  parseShellSession,
   parsePathList,
   parseReadFile,
   parseReadFiles,
@@ -178,41 +178,29 @@ test("parseReadFiles splits on headers, keeps bodies, and surfaces per-file erro
   expect(note).toBe("[... 2 more file(s) not shown ...]");
 });
 
-test("parseMonitor keeps ready/exit_code tri-state (null is not false)", () => {
-  const started = parseMonitor(
-    JSON.stringify({ id: "m1", running: true, ready: null, output: "boot\n", next_offset: 5 }),
-    null,
-  );
-  expect(started!.isList).toBe(false);
-  expect(started!.id).toBe("m1");
-  expect(started!.running).toBe(true);
-  expect(started!.ready).toBeNull();
-  expect(started!.hasExitCode).toBe(false);
-
-  const polled = parseMonitor(
-    JSON.stringify({ running: false, output: "", next_offset: 9, exit_code: 0 }),
-    null,
-  );
-  expect(polled!.running).toBe(false);
-  expect(polled!.hasExitCode).toBe(true);
-  expect(polled!.exitCode).toBe(0);
-
-  const notReady = parseMonitor(
-    JSON.stringify({ id: "m2", running: true, ready: false, output: "", next_offset: 0 }),
-    null,
-  );
-  expect(notReady!.ready).toBe(false);
-});
-
-test("parseMonitor recognises the list shape", () => {
-  const m = parseMonitor(
+test("parseShellSession keeps bounded status and stream fields", () => {
+  const started = parseShellSession(
     JSON.stringify({
-      monitors: [{ id: "a", command: "npm run dev", running: true, started_at: 1, cwd: "." }],
+      session_id: "ses_1",
+      running: true,
+      ready: false,
+      stdout: "boot\n",
+      stderr: "warn\n",
     }),
     null,
   );
-  expect(m!.isList).toBe(true);
-  expect(m!.monitors).toEqual([{ id: "a", command: "npm run dev", running: true }]);
+  expect(started).toMatchObject({
+    id: "ses_1",
+    running: true,
+    ready: false,
+    stdout: "boot\n",
+    stderr: "warn\n",
+  });
+  const listed = parseShellSession(
+    JSON.stringify({ sessions: [{ session_id: "ses_1", running: true, exit_code: null }] }),
+    null,
+  );
+  expect(listed?.sessions).toEqual([{ id: "ses_1", running: true, exitCode: null }]);
 });
 
 test("parseBash: a guard denial is not a shell envelope and must not read as success", () => {
@@ -238,12 +226,7 @@ test("parseBash: a genuine success envelope is still parsed, including an all-em
   expect(r.exitCode).toBe(0);
 });
 
-test("parseMonitor: an unknown-id error falls through instead of rendering an empty status", () => {
-  const err = JSON.stringify({ error: "monitor_not_found", message: "no monitor mon_1" });
-  expect(parseMonitor(err, err)).toBeUndefined();
-});
-
-test("parseMonitor: a real status payload still parses", () => {
-  const ok = JSON.stringify({ id: "mon_1", command: "sleep 1", running: true, output: "x" });
-  expect(parseMonitor(ok, null)?.id).toBe("mon_1");
+test("parseShellSession leaves typed errors to the generic renderer", () => {
+  const err = JSON.stringify({ error: "not_found", message: "no session", session_id: "ses_1" });
+  expect(parseShellSession(err, err)).toBeUndefined();
 });

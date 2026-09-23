@@ -1,11 +1,14 @@
 import { lstatSync, realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, normalize, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, normalize, relative, resolve, sep } from "node:path";
 import { isSpillFile } from "@clarvis/paths";
+import { ToolError } from "../errors.ts";
 import type { RuntimeConfig } from "../config.ts";
-import { analyzeShell } from "../guard/analyze-shell.ts";
-import type { ShellDialect } from "../guard/dialect.ts";
-import { currentDialect } from "../guard/dialects/index.ts";
-import { resolveCandidate } from "../guard/paths.ts";
+import { readFileOptions, type ReadFileOptions } from "./files.ts";
+import { resolvePath } from "./paths.ts";
+export interface ReadableStateArtifact {
+  readonly path: string;
+  readonly identity: { readonly dev: bigint; readonly ino: bigint };
+}
 
 /**
  * Recognize one persisted, model-readable output artifact owned by this workspace.
@@ -15,8 +18,7 @@ import { resolveCandidate } from "../guard/paths.ts";
  * @returns The normalized artifact path, or `undefined` when the candidate is not
  *   a direct, regular, non-link spill in this workspace's local state directory.
  * @remarks This deliberately admits neither the state root nor its local directory.
- * The exact-file result is suitable as an additional confinement root and as a
- * read-only sandbox bind without exposing prompt history, monitor controls, or
+ * The exact-file result permits a confined read without exposing prompt history, unrelated state, or
  * another workspace's state.
  */
 export function readableStateArtifactPath(
@@ -26,12 +28,24 @@ export function readableStateArtifactPath(
   if (!isAbsolute(candidate)) return undefined;
   const artifact = normalize(candidate);
   const localDir = resolve(stateRoot, "local");
-  if (dirname(artifact) !== localDir || !isSpillFile(basename(artifact))) return undefined;
+  if (
+    dirname(artifact) !== localDir ||
+    !isSpillFile(basename(artifact)) ||
+    !/^toolout-[a-f0-9]{8}\.txt$/.test(basename(artifact))
+  )
+    return undefined;
 
   try {
     const entry = lstatSync(artifact);
-    if (entry.isSymbolicLink() || !entry.isFile()) return undefined;
+    if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1) return undefined;
+    if (lstatSync(localDir).isSymbolicLink()) return undefined;
     const realLocal = realpathSync.native(localDir);
+    const expectedLocal = resolve(realpathSync.native(stateRoot), "local");
+    if (
+      (process.platform === "win32" ? realLocal.toLowerCase() : realLocal) !==
+      (process.platform === "win32" ? expectedLocal.toLowerCase() : expectedLocal)
+    )
+      return undefined;
     const realArtifact = realpathSync.native(artifact);
     const rel = relative(realLocal, realArtifact);
     if (rel === "" || isAbsolute(rel) || dirname(rel) !== "." || rel.startsWith("..")) {
@@ -43,39 +57,59 @@ export function readableStateArtifactPath(
   }
 }
 
-/**
- * Collect the exact readable state artifacts referenced by one shell command.
- *
- * @param command - The command string that will be guarded or spawned.
- * @param config - Runtime ownership and path configuration.
- * @param dialect - The syntax the command is interpreted as.
- * @returns Deduplicated existing spill paths belonging to this workspace.
- */
-function readableStateArtifactsInCommand(
-  command: string,
-  config: RuntimeConfig,
-  dialect: ShellDialect = currentDialect(),
-): string[] {
-  const artifacts = new Set<string>();
-  for (const raw of analyzeShell(command, dialect).paths) {
-    const resolved = resolveCandidate(raw, config.workspaceRoot, { shell: true }).resolved;
-    const artifact = readableStateArtifactPath(resolved, config.stateRoot);
-    if (artifact !== undefined) artifacts.add(artifact);
+/** Pin the exact spill inode admitted by the name and workspace checks. */
+function readableStateArtifact(
+  candidate: string,
+  stateRoot: string,
+): ReadableStateArtifact | undefined {
+  const path = readableStateArtifactPath(candidate, stateRoot);
+  if (path === undefined) return undefined;
+  try {
+    const entry = lstatSync(path, { bigint: true });
+    if (!entry.isFile() || entry.isSymbolicLink() || entry.nlink !== 1n) return undefined;
+    return { path, identity: { dev: entry.dev, ino: entry.ino } };
+  } catch {
+    return undefined;
   }
-  return [...artifacts];
 }
 
-/** Add exact state artifacts to a sandbox policy as read-only mounts. */
-export function sandboxWithReadableStateArtifacts(
-  command: string,
+/** Resolve a model read while admitting only one pinned generic spill in state. */
+export function resolveReadableTextPath(
+  input: string,
   config: RuntimeConfig,
-  dialect: ShellDialect = currentDialect(),
-): RuntimeConfig["sandbox"] {
-  if (config.sandbox === undefined) return undefined;
-  const artifacts = readableStateArtifactsInCommand(command, config, dialect);
-  if (artifacts.length === 0) return config.sandbox;
+): {
+  readonly target: string;
+  readonly options: ReadFileOptions;
+} {
+  const absolute = resolve(config.workspaceRoot, input);
+  const stateRelative = relative(config.stateRoot, absolute);
+  const inState =
+    stateRelative === "" ||
+    (!isAbsolute(stateRelative) && stateRelative !== ".." && !stateRelative.startsWith(`..${sep}`));
+  const artifact = inState ? readableStateArtifact(absolute, config.stateRoot) : undefined;
+  if (inState && artifact === undefined) {
+    throw new ToolError("path_escape", `Path is not a readable output artifact: ${input}`, {
+      path: input,
+    });
+  }
+  const target = resolvePath(
+    input,
+    config.workspaceRoot,
+    config.confineToWorkspace,
+    [...config.temporaryRoots, ...(artifact === undefined ? [] : [artifact.path])],
+    config.logger,
+  );
   return {
-    ...config.sandbox,
-    readOnlyPaths: [...(config.sandbox.readOnlyPaths ?? []), ...artifacts],
+    target,
+    options: {
+      ...readFileOptions(config, artifact === undefined ? [] : [artifact.path]),
+      ...(artifact === undefined
+        ? {}
+        : {
+            noFollow: true,
+            expectedIdentity: artifact.identity,
+            expectedParent: resolve(realpathSync.native(config.stateRoot), "local"),
+          }),
+    },
   };
 }

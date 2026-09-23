@@ -8,7 +8,7 @@ import {
   parseBash,
   parseGrepContent,
   parseJsonObject,
-  parseMonitor,
+  parseShellSession,
   parsePathList,
   parseReadFile,
   parseReadFiles,
@@ -218,6 +218,7 @@ function renderBash(call: ToolCallView): JSX.Element {
         ? tokens.add
         : tokens.del;
   const status = (): string => {
+    if (b.running) return "running";
     if (b.exitCode !== null) return `exit ${b.exitCode}`;
     return failedUnparsed ? "failed" : "done";
   };
@@ -230,6 +231,9 @@ function renderBash(call: ToolCallView): JSX.Element {
         </Show>
         <Show when={b.signal}>
           <span style={{ fg: tokens.warn }}>{" " + glyph("separator") + " " + b.signal}</span>
+        </Show>
+        <Show when={b.sessionId}>
+          <span style={{ fg: tokens.accent2 }}>{"  " + b.sessionId}</span>
         </Show>
         <Show when={cmd.length > 0}>
           <span style={{ fg: tokens.muted }}>{"  $ " + firstLine(cmd)}</span>
@@ -587,21 +591,23 @@ function renderDiffTool(call: ToolCallView): JSX.Element {
   );
 }
 
-function renderMonitor(call: ToolCallView): JSX.Element {
-  const m = parseMonitor(call.result, call.error);
+function renderShellSession(call: ToolCallView): JSX.Element {
+  const m = parseShellSession(call.result, call.error);
   if (!m) return renderGeneric(call);
   if (m.isList) {
-    if (m.monitors.length === 0) return <text fg={tokens.muted}>(no monitors)</text>;
+    if (m.sessions.length === 0) return <text fg={tokens.muted}>(no sessions)</text>;
     return (
       <box flexDirection="column">
-        <For each={m.monitors}>
+        <For each={m.sessions}>
           {(e) => (
             <text>
               <span style={{ fg: e.running ? tokens.add : tokens.muted }}>
                 {e.running ? glyph("dotFull") + " " : glyph("dotEmpty") + " "}
               </span>
               <span style={{ fg: tokens.accent2 }}>{e.id}</span>
-              <span style={{ fg: tokens.muted }}>{"  " + firstLine(e.command)}</span>
+              <Show when={e.exitCode !== null}>
+                <span style={{ fg: tokens.muted }}>{"  exit " + e.exitCode}</span>
+              </Show>
             </text>
           )}
         </For>
@@ -615,7 +621,7 @@ function renderMonitor(call: ToolCallView): JSX.Element {
       ? "running"
       : m.running === false
         ? "exited"
-        : "monitor";
+        : "session";
   return (
     <box flexDirection="column">
       <text>
@@ -632,14 +638,22 @@ function renderMonitor(call: ToolCallView): JSX.Element {
               : "  " + glyph("separator") + " not ready"}
           </span>
         </Show>
-        <Show when={m.hasExitCode && m.exitCode !== null}>
+        <Show when={m.exitCode !== null}>
           <span style={{ fg: m.exitCode === 0 ? tokens.add : tokens.del }}>
             {"  " + glyph("separator") + " exit " + m.exitCode}
           </span>
         </Show>
       </text>
-      <Show when={m.output.trim().length > 0}>
-        <ClampedText content={trimTrailing(m.output)} full={call.full} wrap={call.wrap} />
+      <Show when={m.stdout.trim().length > 0}>
+        <ClampedText content={trimTrailing(m.stdout)} full={call.full} wrap={call.wrap} />
+      </Show>
+      <Show when={m.stderr.trim().length > 0}>
+        <ClampedText
+          content={trimTrailing(m.stderr)}
+          fg={tokens.del}
+          full={call.full}
+          wrap={call.wrap}
+        />
       </Show>
     </box>
   );
@@ -731,10 +745,7 @@ const byTool: Record<string, ToolRenderer> = {
   remove: renderSummary,
   tree: renderTree,
   file_stat: renderJsonCard,
-  monitor_start: renderMonitor,
-  monitor_poll: renderMonitor,
-  monitor_stop: renderMonitor,
-  monitor_list: renderMonitor,
+  shell_session: renderShellSession,
   read_memory: renderMemoryRead,
   list_memories: renderPathList,
   grep_memories: renderMemoryGrep,
@@ -753,9 +764,8 @@ export function resolveToolRenderer(mcpName: string, toolName: string): ToolRend
  * to size the "N more" affordance without fully rendering the tool.
  *
  * @remarks Every tool routed to a renderer that reshapes its result needs a case
- *   here, `monitor_list` included: its payload is one line of unindented JSON,
- *   so falling through to the raw line count always answered `1` while the
- *   rendered body is one row per monitor.
+ *   here, `shell_session` list included: its payload is one JSON line while the
+ *   rendered body is one row per session.
  */
 export function hiddenBodyLines(mcpName: string, toolName: string, result: string): number {
   const lines = (s: string): number => {
@@ -767,19 +777,14 @@ export function hiddenBodyLines(mcpName: string, toolName: string, result: strin
     const b = parseBash(result, null);
     return lines(b.stdout) + lines(b.stderr);
   }
-  if (
-    id === "monitor_start" ||
-    id === "monitor_poll" ||
-    id === "monitor_stop" ||
-    id === "monitor_list"
-  ) {
-    const m = parseMonitor(result, null);
-    if (m) return m.isList ? m.monitors.length : lines(m.output);
+  if (id === "shell_session") {
+    const m = parseShellSession(result, null);
+    if (m) return m.isList ? m.sessions.length : lines(m.stdout) + lines(m.stderr);
   }
   return lines(result);
 }
 
-const ERROR_AWARE = new Set<string>(["shell", "monitor_start", "monitor_poll", "monitor_stop"]);
+const ERROR_AWARE = new Set<string>(["shell", "shell_session"]);
 
 function renderErrorGeneric(call: ToolCallView): JSX.Element {
   // An error is exactly the text a reader needs whole: it carries the cause, the

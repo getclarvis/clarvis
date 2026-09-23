@@ -575,7 +575,7 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
           <DetailLines
             rows={[
               {
-                text: "Bubblewrap on Linux; Seatbelt on macOS; applies to shell and monitor_start",
+                text: "Bubblewrap on Linux; Seatbelt on macOS; applies to shell commands",
                 fg: tokens.muted,
               },
             ]}

@@ -1757,9 +1757,19 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             n.error = event.error;
             n.guard = event.guard;
             n.status = event.ok ? "ok" : "error";
-            n.toolPhase = event.interruption ? "interrupted" : event.ok ? "completed" : "failed";
+            const yieldedSession =
+              identity === "shell" &&
+              event.control?.actions.includes("interrupt") === true &&
+              parseBash(event.result ?? "", null).running === true;
+            n.toolPhase = yieldedSession
+              ? "running"
+              : event.interruption
+                ? "interrupted"
+                : event.ok
+                  ? "completed"
+                  : "failed";
             n.interruption = event.interruption;
-            n.control = undefined;
+            n.control = yieldedSession ? event.control : undefined;
             n.interruptRequest = undefined;
             n.liveOutput = undefined;
             n.inputChars = undefined;

@@ -57,23 +57,11 @@ export const FILE_MODE = 0o600;
 /** Glob form of {@link TMP_PREFIX}, for ignore files that take patterns rather than names. */
 export const TMP_GLOB = `${TMP_PREFIX}*`;
 
-/** Filename prefix shared by a background monitor's sidecar, log, and exit files. */
-export const MONITOR_PREFIX = "monitor-";
-
-/** Filename prefix for a shell tool's overflow capture. */
-export const SPILL_PREFIX = "shell-";
-
 /** Filename prefix for the untruncated copy of an oversized tool result. */
 export const TOOL_OUTPUT_PREFIX = "toolout-";
 
 /** Suffix of a tool-result spill: prose the model reads back, not a log. */
 export const TOOL_OUTPUT_SUFFIX = ".txt";
-
-/** Suffix of the JSON sidecar holding a monitor's bookkeeping. */
-export const MONITOR_SIDECAR_SUFFIX = ".json";
-
-/** Suffix of a captured output log, shared by monitors and shell spills. */
-export const LOG_SUFFIX = ".log";
 
 /**
  * Agent-context filenames, in the order a scope is searched.

@@ -34,14 +34,13 @@ export interface KillDeps {
  *
  * Windows has no process groups, and `detached` there does not approximate one -
  * Node maps it to `DETACHED_PROCESS`, which denies the child a console. A
- * console-subsystem shell spawned that way produces nothing at all: empty
- * stdout and stderr, a `null` exit code, and - for a monitor, which writes to an
- * inherited file descriptor rather than a pipe - an empty log and no exit
- * sidecar, while the spawn itself still reports success.
+ * console-subsystem shell spawned that way can produce empty stdout and stderr
+ * and a `null` exit code while the spawn itself still reports success. Command
+ * sessions capture both streams through pipes on every platform.
  *
  * Nothing on Windows needs the flag. {@link killTree} walks the parent-pid tree
- * with `taskkill /T` rather than addressing a group, and a Windows child already
- * outlives its parent, so a backgrounded monitor survives on `unref` alone.
+ * with `taskkill /T` rather than addressing a group; the run-owned manager
+ * retains the child handle until cleanup.
  */
 export function ownProcessGroup(platform: NodeJS.Platform = process.platform): boolean {
   return platform !== "win32";

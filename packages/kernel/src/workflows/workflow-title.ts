@@ -63,8 +63,9 @@ const SET_TITLE_MAX_ATTEMPTS = 2;
  * The engine's own rule for a tool call's arguments, applied to the one call this
  * routine reads.
  *
- * @remarks Built once because {@link SET_TITLE_TOOL}'s schema is a module constant,
- *   so the rule is compiled once rather than per title. It checks the whole
+ * @remarks Built on first use because a standalone Kernel installs its bundled
+ *   Ajv modules after imports are evaluated. {@link SET_TITLE_TOOL}'s schema is a
+ *   module constant, so the rule is compiled once rather than per title. It checks the whole
  *   argument object — `additionalProperties: false` included — which is what makes a
  *   payload the tool never declared a protocol violation instead of a title with
  *   company. The validator fails open for tool *dispatch*, where a broken
@@ -72,7 +73,7 @@ const SET_TITLE_MAX_ATTEMPTS = 2;
  *   static, so its compile cannot vary per call, and a test pins that a payload the
  *   schema refuses is refused here too.
  */
-const titleArgumentValidator = createToolArgValidator();
+let titleArgumentValidator: ReturnType<typeof createToolArgValidator> | undefined;
 
 /** Inputs for the best-effort workflow-title metadata call. */
 export interface WorkflowTitleInput {
@@ -159,7 +160,7 @@ function classifyTitleResponse(result: LLMCallResult): TitleResponse {
         `[workflow_title: ${SET_TITLE_TOOL_NAME} takes one object argument carrying a ` +
         `"title" string]`,
     };
-  const violation = titleArgumentValidator.validate(
+  const violation = (titleArgumentValidator ??= createToolArgValidator()).validate(
     SET_TITLE_TOOL.inputSchema,
     args,
     SET_TITLE_TOOL_NAME,

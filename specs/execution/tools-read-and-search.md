@@ -15,8 +15,8 @@ The problem the subsystem solves is bounded, confined observation. Every answer 
 bounded in bytes, in files touched, in directory entries retained, and — for the in-process regex
 scanner — in regular-expression CPU time. When confinement is enabled, every path is proven to stay
 under the workspace or an explicitly configured temporary root; `read_file` and `read_files`
-also admit the machine-local state root so the model can read a spill it was handed
-(`packages/tools/src/lib/paths.ts`, `packages/tools/src/config.ts`). Content reads routed
+also admit an exact generic tool-result spill in the current workspace's local state
+(`packages/tools/src/lib/state-artifacts.ts`). Content reads routed
 through `readRawFile` re-establish that proof against the *open descriptor* rather than trusting only
 the pathname (`packages/tools/src/lib/files.ts`).
 
@@ -103,11 +103,11 @@ Resolution and validation belong to tools-contract-and-dispatch; the fields cons
 | `maxImageBytes` | `5_000_000` (`packages/tools/src/config.ts`) | `read_image` only (`packages/tools/src/tools/read-image.ts`) |
 | `maxTraversalEntries` | `50_000` (`packages/tools/src/config.ts`) | `list_dir`, `glob`, `tree`, and the grep file walk |
 | `maxDiffInputBytes` | `8 * 1024 * 1024` (`packages/tools/src/config.ts`) | `diff` combined operand size (`packages/tools/src/tools/diff.ts`) |
-| `regexScanBudgetMs` | `5000` (`packages/tools/src/config.ts`) | in-process grep only (`packages/tools/src/lib/rg.ts`) |
+| `regexScanBudgetMs` | `5000` (`packages/tools/src/config.ts`) | in-process grep (`packages/tools/src/lib/rg.ts`), replace, and shell readiness; this document covers grep |
 | `ripgrepAvailable` | probed by `rg --version` (`packages/tools/src/config.ts`) | grep engine choice (`packages/tools/src/lib/rg.ts`) |
 | `confineToWorkspace` | `true` (`packages/tools/src/config.ts`) | path confinement **and** grep engine choice |
-| `stateRoot` | `workspaceStatePaths(workspaceRoot).root` (`packages/tools/src/config.ts`) | extra read root, passed by `read_file`/`read_files` only |
-| `temporaryRoots` | `[]` (`resolveConfig`) | extra confined roots admitted by all nine tools; the product loop pre-seeds run scratch plus host system temp roots, and the list may grow after a verified shell-created `mktemp -d` |
+| `stateRoot` | `workspaceStatePaths(workspaceRoot).root` (`packages/tools/src/config.ts`) | identifies the current workspace's exact generic spill allowance for `read_file`/`read_files` |
+| `temporaryRoots` | `[]` (`resolveConfig`) | extra confined roots admitted by all nine tools; the product loop pre-seeds run scratch plus host system temp roots |
 | `readOnly` | `false` (`packages/tools/src/config.ts`) | selects the nine-tool surface (`packages/tools/src/core.ts`) |
 
 ## 3. Data and formats
@@ -278,13 +278,11 @@ dropped — which is how a non-UTF-8 filename disappears from the result
    (`unresolvable` | `outside_root`) and `allow_roots_count`, then a `path_escape` `ToolError` is
    thrown (`packages/tools/src/lib/paths.ts`).
 
-Every read tool passes `config.temporaryRoots` to `resolvePath`; `read_file` and `read_files` add
-`config.stateRoot` as their one extra allowance
-(`packages/tools/src/tools/read-file.ts`, `packages/tools/src/tools/read-files.ts`).
-Content readers also feed the same temporary roots into the descriptor-time policy through
-`readFileOptions`; the two spill readers again add `stateRoot`
-(`packages/tools/src/lib/files.ts`, `packages/tools/src/tools/read-file.ts`,
-`packages/tools/src/tools/read-files.ts`). This admits only the configured roots. A standalone caller
+Every read tool passes `config.temporaryRoots` to `resolvePath`; `read_file` and `read_files`
+add only an exact generic spill path from `resolveReadableTextPath`, then bind the opened file's
+identity through `readRawFile` (`packages/tools/src/lib/state-artifacts.ts`,
+`packages/tools/src/lib/files.ts`, `packages/tools/src/tools/read-file.ts`, and
+`packages/tools/src/tools/read-files.ts`). A standalone caller
 that supplies one exact run root still refuses its parent; the product loop deliberately also
 configures the environment-selected system temp and POSIX `/tmp`, allowing host-native temp output
 without learning a path from an earlier result (`packages/tools/tests/integration/api.test.ts`,
@@ -573,7 +571,7 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 | **RS-22** | The binary heuristic scans only the first and last 8000 bytes, so a NUL buried in the middle of a larger file is **not** detected. | `packages/tools/src/lib/binary.ts` | `packages/tools/tests/unit/binary.test.ts` (asserts the miss explicitly) |
 | **RS-23** | A confined `readRawFile` proves the opened descriptor is the same filesystem object the canonical path names (`dev` + `ino`); a mismatch is `path_escape`, not a silent redirect. | `packages/tools/src/lib/files.ts` | **unpinned** in `@clarvis/tools` |
 | **RS-24** | `readRawFile` reads at most `maxBytes + 1` bytes from one handle and detects growth after the initial stat. | `packages/tools/src/lib/files.ts` | `packages/tools/tests/integration/bounded-read.test.ts` |
-| **RS-25** | Only `read_file` and `read_files` admit `config.stateRoot`; every read tool separately admits the complete configured `temporaryRoots`, and nothing receives the state root merely because temporary access is enabled. | `packages/tools/src/tools/read-file.ts`, `packages/tools/src/tools/read-files.ts` vs. the `config.temporaryRoots` argument in the other seven handlers | `packages/tools/tests/unit/read-confinement-allowance.test.ts` pins the state-root half; `packages/tools/tests/integration/api.test.ts` pins exact scratch and opt-in system-temp configurations |
+| **RS-25** | Only `read_file` and `read_files` admit an exact generic spill in the current workspace's local state; every read tool separately admits the configured `temporaryRoots`. A state directory itself is never an extra read root. | `resolveReadableTextPath` in `packages/tools/src/lib/state-artifacts.ts`, `packages/tools/src/tools/read-file.ts`, and `packages/tools/src/tools/read-files.ts` | `packages/tools/tests/unit/read-confinement-allowance.test.ts` pins exact spill admission and state-directory refusal; `packages/tools/tests/integration/api.test.ts` pins scratch and system-temp configurations |
 | **RS-26** | The `path_escape` refusal never tells the model how to lift the boundary; it states the boundary is fixed before the run. | `packages/tools/src/lib/paths.ts` | `packages/tools/tests/architecture/no-bypass-hints.test.ts` (which proves the detector recognises the old wording) |
 | **RS-27** | Confinement folds case on Windows only, compares canonicalised forms on both sides, and requires a `root + sep` prefix so a sibling whose name merely starts with the root's is refused. | `packages/tools/src/lib/paths.ts` | `packages/tools/tests/integration/paths.test.ts` |
 | **RS-28** | A path that cannot be canonicalised *because a skipped segment is a symlink* is refused, not admitted — otherwise a `0o311` link out of the workspace would be writable. | `packages/tools/src/lib/paths.ts` | `packages/tools/tests/integration/paths.test.ts` |
@@ -596,7 +594,7 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 | **RS-45** | `blockSpan` extends a matched span to swallow the following line's newline when `oldString` itself ends in `\n` — except when the matched block is the text's final line, where there is no following newline to swallow. | `packages/tools/src/lib/match-cascade.ts` | `packages/tools/tests/unit/match-cascade.test.ts` ("extends the span to include the trailing newline") ("does not over-extend when old ends in newline but the block is the final line") |
 | **RS-46** | `scanLineBlocks` treats a sparse-array hole in either the haystack window or the needle as an empty string (`eq(hay[i+j] ?? "", need[j] ?? "")`), rather than skipping it or throwing. | `packages/tools/src/lib/match-cascade.ts` | `packages/tools/tests/unit/match-cascade.test.ts` ("treats a hole in the haystack window as an empty line") ("treats a hole in the needle as an empty line") |
 | **RS-47 (INV-302)** | Both grep engines apply `maxFileBytes` identically **and in both directions**: a file over the ceiling is skipped in a directory search (a small sibling still matches), and naming that same oversized file directly yields `(no matches)` on both paths rather than an error. | `packages/tools/src/lib/rg.ts` (`--max-filesize`) (the single-file `readRawFile` bound, whose failure resolves to an empty result rather than a throw) | `packages/tools/tests/contract/grep-parity.test.ts` |
-| **RS-48** | Temporary observation follows configuration, not tool history: a standalone exact run root leaves its parent as `path_escape`, while the product loop pre-authorizes host system temp parents so a bare native `mktemp` result is immediately searchable. A verified explicit `mktemp -d /tmp/name-XXXXXX` result is still registered exactly for ownership/cleanup. | `packages/tools/src/config.ts`; `packages/tools/src/sandbox.ts` (`systemTemporaryRoots`); `packages/loop/src/runtime/capabilities/tools.ts` (`accessibleTemporaryRoots`, `ownedTemporaryRoots`); all nine handlers' `resolvePath` calls; `packages/tools/src/lib/files.ts` | `packages/tools/tests/integration/api.test.ts`, "lets native tools read scratch created by shell inside the run-owned temporary root", "reuses a bare mktemp result from the host temp root in a later native tool", and "adopts an explicit mktemp directory created by this shell call"; `packages/tools/tests/integration/guard-dispatch.test.ts`, "treats the configured run temporary root as confined without widening generic /tmp"; `packages/loop/tests/integration/command-guard-wiring.test.ts`, "preauthorizes the host temp across shell and native tools without owning its parent" |
+| **RS-48** | Temporary observation follows configuration, not tool history: a standalone exact run root leaves its parent as `path_escape`, while the product loop pre-authorizes host system temp parents so a bare native `mktemp` result is immediately searchable. A command-created `mktemp -d` directory remains the command's cleanup responsibility. | `packages/tools/src/config.ts`; `packages/tools/src/sandbox.ts` (`systemTemporaryRoots`); `packages/loop/src/runtime/capabilities/tools.ts` (`accessibleTemporaryRoots`); all nine handlers' `resolvePath` calls; `packages/tools/src/lib/files.ts` | `packages/tools/tests/integration/api.test.ts`, "lets native tools read scratch created by shell inside the run-owned temporary root", "reuses a bare mktemp result from the host temp root in a later native tool", and "does not adopt a temporary directory created by a shell command"; `packages/tools/tests/integration/guard-dispatch.test.ts`, "treats the configured run temporary root as confined without widening generic /tmp"; `packages/loop/tests/integration/command-guard-wiring.test.ts`, "preauthorizes the host temp across shell and native tools without owning its parent" |
 
 ## 6. Failure modes and degradation
 
@@ -727,32 +725,21 @@ The direction is one-way and structural: `@clarvis/tools` imports nothing from `
 
 ## 8. Open questions
 
-1. ~~**Two tool descriptions claim a truncation behaviour the code does not implement.**~~
-   **Resolved:** the descriptions were stale — no function in the package has ever dropped a middle —
-   and all **three** now name the end the reader actually loses. `read_file`
-   (`packages/tools/src/tools/read-file.ts`) and `grep`
-   (`packages/tools/src/tools/grep.ts`) say the result loses its **tail**, which is what
-   `renderNumberedSlice` (`packages/tools/src/lib/render-lines.ts`) and `bound`
-   (`packages/tools/src/lib/output.ts`) do. `shell` was wrong in the other direction and
-   was corrected with them: it bounds through `boundOrSpill`/`bufferTail`, so it loses its **head**
-   (`packages/tools/src/tools/shell.ts`). Both sentences are now pinned per tool
-   (`packages/tools/tests/component/core.test.ts`), including the negative — that none of
-   the three claims a middle-drop again.
+1. The result descriptions identify the end that can be lost: `read_file` and `grep` lose
+   their tail, while a shell session can expire older bytes from its bounded window.
+   Production: `packages/tools/src/tools/read-file.ts`, `packages/tools/src/tools/grep.ts`,
+   and `packages/tools/src/tools/shell.ts`. Test: `packages/tools/tests/component/core.test.ts`.
 2. **RS-2 is only pinned by construction.** No test asserts that a *confined* directory grep refuses
    ripgrep; the parity suite merely disables confinement so it can compare the engines
    (`packages/tools/tests/contract/grep-parity.test.ts`). A regression that started spawning `rg`
    for confined directories would keep the whole suite green.
-3. ~~**The `stateRoot` read allowance (RS-25) is untested in both packages.** `rg -n stateRoot` over
-   `packages/tools/tests` returns only the fixture default
-   (`packages/tools/tests/helpers/fixtures.ts`), and `packages/loop/tests/integration/tool-spill.test.ts`
-   contains no `read_file` round-trip. The one behaviour the widening exists for — a model reading back
-   a spilled result — has no executable evidence.~~ **Resolved** in `@clarvis/tools`, which
-   is where the allowance lives: a state root that is a genuine sibling of the workspace, a file
-   written into it, and both read tools opening it with `confineToWorkspace: true`. The two negative
-   controls are what make it mean something — a third directory is still refused, and `write_file`
-   against the same spill path fails.
+3. The generic spill read allowance admits only an exact regular non-link artifact in the
+   current workspace's local state. Other state files and state directories remain refused.
+   Production: `resolveReadableTextPath` in `packages/tools/src/lib/state-artifacts.ts` and
+   `readRawFile` in `packages/tools/src/lib/files.ts`. Test:
+   `packages/tools/tests/unit/read-confinement-allowance.test.ts`.
 4. ~~**The `tools.grep_path` debug record is untested.** `packages/tools/tests/unit/observability.test.ts`
-   pins `tools.path_refused`, `tools.fs_error_unmapped` and `tools.spill_failed`, but not the engine
+   pins `tools.path_refused` and `tools.fs_error_unmapped`, but not the engine
    record at `packages/tools/src/lib/rg.ts`, whose message claims "the two do not share regex
    semantics, so which one ran decides what a pattern means".~~ **Resolved.** The record is
    now pinned in that same file — and it turned out to be the right instrument for RS-2 above, since

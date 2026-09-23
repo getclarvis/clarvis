@@ -17,12 +17,10 @@ export type ErrorCode =
   | "io_error"
   | "timeout"
   | "aborted"
-  | "output_limit"
   | "too_large"
   | "path_escape"
   | "denied"
-  | "monitor_not_found"
-  | "too_many_monitors"
+  | "too_many_sessions"
   | "internal";
 
 /**

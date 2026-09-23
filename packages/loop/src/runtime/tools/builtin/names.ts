@@ -8,8 +8,8 @@ export const AGENT_TOOL_NAMES: readonly string[] = tools.map((t) => t.name);
  *
  * @remarks Read straight off `@clarvis/tools`' own `readOnlyTools`, so there is
  * one source of truth and nothing to keep in sync. Note what it excludes:
- * `shell` and the monitors observe and mutate through the same entry point, so
- * no caller can treat them as safe without executing the command first.
+ * `shell` can mutate by running a command; `shell_session` controls a live
+ * command. Neither belongs to a read-only surface.
  */
 export const READ_ONLY_TOOL_NAMES: readonly string[] = readOnlyTools.map((t) => t.name);
 
@@ -30,7 +30,7 @@ export const EDIT_TOOL_NAMES: readonly string[] = AGENT_TOOL_NAMES.filter(
  * whether a tool *changes the workspace*, and every exec tool is already
  * not-read-only by that measure. Adding an `exec` bit beside it would ask
  * `@clarvis/tools` to model a grant boundary that belongs to the engine, and it
- * would be a bit with exactly these five members.
+ * would duplicate this explicit pair.
  *
  * Being written out is also what makes it auditable: the set of tools that can
  * run arbitrary commands is the most security-relevant list in the engine, and a
@@ -38,13 +38,7 @@ export const EDIT_TOOL_NAMES: readonly string[] = AGENT_TOOL_NAMES.filter(
  * `AGENT_TOOL_NAMES` is the registry, so a rename shows up as a name here that
  * no longer exists rather than as a quietly empty filter.
  */
-export const EXEC_TOOL_NAMES: readonly string[] = [
-  "shell",
-  "monitor_start",
-  "monitor_poll",
-  "monitor_stop",
-  "monitor_list",
-];
+export const EXEC_TOOL_NAMES: readonly string[] = ["shell", "shell_session"];
 
 /**
  * Coding tools presented as direct mutations: edit tools minus command runners.

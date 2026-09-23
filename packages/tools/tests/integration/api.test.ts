@@ -331,33 +331,30 @@ describe("createAgentTools (library API)", () => {
   });
 
   it.skipIf(!posixShell)(
-    "adopts an explicit mktemp directory created by this shell call, but not generic /tmp",
+    "does not adopt a temporary directory created by a shell command",
     async () => {
       const prefix = `clarvis-explicit-${process.pid}-${Date.now()}`;
       const template = join(realpathSync(tmpdir()), `${prefix}-XXXXXX`);
       const record = join(root, "created-temp-path.txt");
       let created: string | undefined;
       try {
-        const registered: string[] = [];
         const t = createAgentTools({
           workspaceRoot: root,
           probeRipgrep: () => false,
-          onTemporaryRootRegistered: (path) => registered.push(path),
         });
         const made = await t.callTool("shell", {
           command: `made=$(mktemp -d ${template}) && printf alpha > "$made/a.txt" && printf %s "$made" > ${record}`,
         });
         expect(made.isError).toBe(false);
         created = readFileSync(record, "utf8");
-        expect(registered).toEqual([created]);
-
         const searched = await t.callTool("grep", { path: created, pattern: "alpha" });
-        expect(searched.isError).toBe(false);
-        expect(resultText(searched.content)).toContain("a.txt");
+        expect(searched.isError).toBe(true);
+        expect(JSON.parse(resultText(searched.content))).toMatchObject({ error: "path_escape" });
 
         const refused = await t.callTool("grep", { path: tmpdir(), pattern: "alpha" });
         expect(refused.isError).toBe(true);
         expect(JSON.parse(resultText(refused.content))).toMatchObject({ error: "path_escape" });
+        await t.close();
       } finally {
         if (created !== undefined) cleanup(created);
       }

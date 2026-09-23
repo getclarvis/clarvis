@@ -94,6 +94,7 @@ export function createJudgeEventProjection(): (event: TraceEvent) => TraceEvent 
         diff: discard,
         guard: discard,
         interruption: discard,
+        control: discard,
       } satisfies Fields<"tool_call">)
       .strict(),
     tool_call_started: z

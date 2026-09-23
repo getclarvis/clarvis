@@ -23,6 +23,21 @@ export interface AgentToolCallResult {
   errText: string | null;
   productive: boolean;
   images?: ToolResultImage[];
+  sessionId?: string;
+}
+
+function yieldedSessionId(name: string, text: string, isError: boolean): string | undefined {
+  if (name !== "shell" || isError) return undefined;
+  try {
+    const result = JSON.parse(text) as Record<string, unknown>;
+    return result.running === true &&
+      typeof result.session_id === "string" &&
+      /^ses_[a-f0-9]{32}$/.test(result.session_id)
+      ? result.session_id
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -236,6 +251,7 @@ export async function executeAgentToolCall(
   const resultText = interrupted ? `Shell interrupted by the operator.\n${text}` : text;
   const errText = interrupted || isError ? resultText : null;
   const productive = !isError && !interrupted;
+  const sessionId = yieldedSessionId(call.name, text, isError);
 
   trace.record("tool_call", {
     agent,
@@ -253,6 +269,9 @@ export async function executeAgentToolCall(
     ...(diff !== undefined ? { diff } : {}),
     ...(guard !== undefined ? { guard } : {}),
     ...(interrupted ? { interruption: { source: "operator" as const } } : {}),
+    ...(sessionId !== undefined && control !== undefined
+      ? { control: { tool_execution_id: control.toolExecutionId, actions: control.actions } }
+      : {}),
   });
 
   if (!signal?.aborted) {
@@ -263,5 +282,11 @@ export async function executeAgentToolCall(
     );
   }
 
-  return { resultText, errText, productive, ...(images ? { images } : {}) };
+  return {
+    resultText,
+    errText,
+    productive,
+    ...(images ? { images } : {}),
+    ...(sessionId === undefined ? {} : { sessionId }),
+  };
 }

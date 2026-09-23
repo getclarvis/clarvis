@@ -1,7 +1,7 @@
 {
   "name": "@clarvis/tools",
   "private": true,
-  "description": "A minimal, opinionated set of coding tools for driving an LLM agent over a workspace \u2014 read/write/edit/patch/move, batch read, grep/glob/diff, project-wide regex replace, shell + background monitors \u2014 usable as a plain library.",
+  "description": "A minimal, opinionated set of coding tools for driving an LLM agent over a workspace \u2014 read/write/edit/patch/move, batch read, grep/glob/diff, project-wide regex replace, and run-owned shell sessions \u2014 usable as a plain library.",
   "license": "MIT",
   "keywords": [
     "llm",
@@ -45,11 +45,6 @@
       "bun": "./src/sandbox-entry.ts",
       "types": "./dist/sandbox-entry.d.ts",
       "import": "./dist/sandbox-entry.js"
-    },
-    "./monitor": {
-      "bun": "./src/monitor-entry.ts",
-      "types": "./dist/monitor-entry.d.ts",
-      "import": "./dist/monitor-entry.js"
     },
     "./package.json": "./package.json"
   },

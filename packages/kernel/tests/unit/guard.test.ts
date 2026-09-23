@@ -52,7 +52,7 @@ function bashReq(command: string, shell: ShellFacts = shellFacts(command)): Elic
 function makeCtx(tool: string, args: Record<string, unknown>, supplied?: ShellFacts): GuardContext {
   const paths: GuardContext["paths"] = [];
   let shell: GuardContext["shell"];
-  if ((tool === "shell" || tool === "monitor_start") && typeof args.command === "string") {
+  if (tool === "shell" && typeof args.command === "string") {
     shell = supplied ?? shellFacts(args.command);
     for (const raw of shell.paths) {
       paths.push({ raw, resolved: resolve(ROOT, raw), withinWorkspace: isWithinRoot(raw) });

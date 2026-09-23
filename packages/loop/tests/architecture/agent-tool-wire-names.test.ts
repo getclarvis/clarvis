@@ -27,8 +27,8 @@ describe("READ_ONLY_TOOL_NAMES", () => {
     for (const name of READ_ONLY_TOOL_NAMES) expect(EDIT_TOOL_NAMES).not.toContain(name);
   });
 
-  it("excludes shell and the monitors, which observe and mutate through one entry point", () => {
+  it("excludes shell and shell_session from the read-only surface", () => {
     expect(READ_ONLY_TOOL_NAMES).not.toContain("shell");
-    expect(READ_ONLY_TOOL_NAMES).not.toContain("monitor_start");
+    expect(READ_ONLY_TOOL_NAMES).not.toContain("shell_session");
   });
 });

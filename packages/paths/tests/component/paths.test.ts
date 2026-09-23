@@ -343,8 +343,7 @@ describe("portability", () => {
       g.agentFile("a"),
       w.plansRoot,
       w.plansRootForOwner("o"),
-      s.monitorSidecar("m"),
-      s.spillFile("t", "stdout"),
+      s.toolOutputSpill("t"),
     ];
     for (const value of built) {
       expect(value).toBe(resolve(value));

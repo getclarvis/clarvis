@@ -59,10 +59,9 @@ export function tmpPathFor(target: string): string {
  * @returns `true` when a sweeper should treat it as an orphan candidate.
  *
  * @remarks
- * Paired with {@link tmpPathFor} for the reason `isMonitorSidecar` is paired
- * with its builder. `@clarvis/trace` carried a private `` /\.json\.tmp-/ ``
- * matching a shape six other modules built independently — exactly the drift
- * that once left every shell spill uncollected. Because the convention is a
+ * Paired with {@link tmpPathFor} so a collector cannot drift from its builder.
+ * `@clarvis/trace` once carried a private `` /\.json\.tmp-/ `` matching a
+ * shape six other modules built independently. Because the convention is a
  * prefix, `TMP_GLOB` already ignores these files, so an orphan is invisible to
  * `grep`/`glob` and to git without any further rule.
  */

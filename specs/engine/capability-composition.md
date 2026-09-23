@@ -29,6 +29,15 @@ property true as the codebase changes
 (`packages/loop/tests/architecture/{optional-package-boundary,optional-package-loading,
 no-feature-names,no-internal-entrypoint,builtin-capability-names}.test.ts`).
 
+The opt-in tools capability creates one `ExecutionSessionManager` per run, shares it among its
+agent toolsets, and closes command admission and tracked processes before releasing run scratch.
+This value import remains behind `./capabilities/tools`; loading the ordinary loop entry does
+not load the optional tools runtime. Production: `createAgentToolsCapability` in
+`packages/loop/src/runtime/capabilities/tools.ts` and `createAgentToolset` in
+`packages/loop/src/runtime/tools/builtin/toolset.ts`. Test:
+`packages/loop/tests/integration/tools.test.ts` and
+`packages/loop/tests/architecture/optional-package-loading.test.ts`.
+
 ## 2. Surface
 
 ### 2.1 The five public entrypoints (`packages/loop/package.json`)

@@ -519,6 +519,7 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         ...(ev.diff !== undefined ? { diff: ev.diff } : {}),
         ...(ev.guard !== undefined ? { guard: ev.guard } : {}),
         ...(ev.interruption !== undefined ? { interruption: ev.interruption } : {}),
+        ...(ev.control !== undefined ? { control: ev.control } : {}),
       };
 
     case "model_reasoning":

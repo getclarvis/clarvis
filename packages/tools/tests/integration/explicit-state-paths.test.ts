@@ -1,16 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, writeFileSync, utimesSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { ensureWorkspaceLocalDir, workspaceStatePaths } from "@clarvis/paths";
 import { resolveConfig, StartupError } from "../../src/config.ts";
 import { readableStateArtifactPath } from "../../src/lib/state-artifacts.ts";
-import {
-  exitPath,
-  logPath,
-  sidecarPath,
-  sweepMonitors,
-  writeSidecar,
-} from "../../src/lib/monitor.ts";
 import { callTool, cleanup, makeWorkspace } from "../helpers/fixtures.ts";
 
 describe("explicit machinery namespace", () => {
@@ -55,7 +48,7 @@ describe("explicit machinery namespace", () => {
     const other = sibling.toolOutputSpill("12345678");
     writeFileSync(own, "selected result");
     writeFileSync(other, "sibling result");
-    const control = sidecarPath(selected, "mon_12345678");
+    const control = join(selected.localDir, "monitor-old.json");
     writeFileSync(control, "private control record");
     const config = resolveConfig({
       workspaceRoot: workspace,
@@ -72,43 +65,26 @@ describe("explicit machinery namespace", () => {
     expect(readableStateArtifactPath(selected.localDir, config.stateRoot)).toBeUndefined();
   });
 
-  it("lists, polls and sweeps monitors in the same explicit namespace", async () => {
+  it("does not adopt persisted monitor controls from either namespace", async () => {
     const selected = paths("selected");
     const sibling = paths("sibling");
-    const id = "mon_12345678";
+    const id = "ses_12345678";
     for (const state of [selected, sibling]) {
       ensureWorkspaceLocalDir(state);
-      await writeSidecar(state, {
-        id,
-        command: "fixture",
-        cwd: workspace,
-        pid: 2147483647,
-        startedAt: Date.now(),
-        readyWhen: null,
-      });
-      writeFileSync(logPath(state, id), state === selected ? "selected log" : "sibling log");
-      writeFileSync(exitPath(state, id), "0");
-      const old = new Date(Date.now() - 48 * 60 * 60 * 1000);
-      utimesSync(exitPath(state, id), old, old);
+      writeFileSync(join(state.localDir, "monitor-old.json"), "private control record");
     }
     const config = resolveConfig({
       workspaceRoot: workspace,
       statePaths: selected,
       probeRipgrep: () => false,
     });
-    const listed = await callTool("monitor_list", {}, config);
+    const listed = await callTool("shell_session", { action: "list" }, config);
     expect(listed.isError).toBe(false);
-    expect(listed.text).toContain(id);
-    const polled = await callTool("monitor_poll", { id, offset: 0 }, config);
-    expect(polled.isError).toBe(false);
-    expect(polled.text).toContain("selected log");
-    expect(polled.text).not.toContain("sibling log");
-    await sweepMonitors(selected);
-    expect(existsSync(sidecarPath(selected, id))).toBe(false);
-    expect(existsSync(logPath(selected, id))).toBe(false);
-    expect(existsSync(exitPath(selected, id))).toBe(false);
-    expect(existsSync(sidecarPath(sibling, id))).toBe(true);
-    expect(existsSync(logPath(sibling, id))).toBe(true);
-    expect(existsSync(exitPath(sibling, id))).toBe(true);
+    expect(listed.text).toBe('{"sessions":[]}');
+    const polled = await callTool("shell_session", { action: "poll", session_id: id }, config);
+    expect(polled.isError).toBe(true);
+    expect(polled.text).toContain("not_found");
+    expect(existsSync(join(selected.localDir, "monitor-old.json"))).toBe(true);
+    expect(existsSync(join(sibling.localDir, "monitor-old.json"))).toBe(true);
   });
 });

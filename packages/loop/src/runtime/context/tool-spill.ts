@@ -33,15 +33,13 @@ export type ToolSpill = (text: string) => Promise<string | undefined>;
  *   already known, rather than being threaded into the loop's config object.
  *
  *   A failure degrades to the marker without a path rather than failing the run,
- *   matching `boundOrSpill`'s posture in `@clarvis/tools`: losing the middle of
- *   one tool result is a bad outcome, and losing the run over it is a worse one.
+ *   preserving the run when one oversized tool result cannot be retained in full.
  *
  *   The file sits in the workspace's *state* tree under the user's global root,
  *   so it is outside the working tree and cannot be committed by accident. The
- *   model still reads it back: `read_file` and `read_files` admit
- *   `RuntimeConfig.stateRoot` alongside the workspace when confining a path, and
- *   the returned path is absolute for that reason. The shell tool's own spill
- *   depends on the same allowance.
+ *   model still reads it back: `read_file` and `read_files` admit only this exact
+ *   generic spill file in the current workspace's local state. The returned
+ *   path is absolute for that reason.
  */
 export function createToolSpill(
   workspaceRoot: string | WorkspaceStatePaths,

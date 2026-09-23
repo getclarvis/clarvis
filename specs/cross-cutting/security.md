@@ -37,7 +37,7 @@ code and none of them a sandbox:
 3. **Environment filtering** — a hook subprocess's environment is built keep-list-first, then filtered
    against a per-run credential denylist derived from that run's own configuration
    (`packages/hooks/src/env.ts`); a stdio MCP child gets a fixed safe base plus only what its own
-   `env` block names (`packages/mcp-client/src/client.ts`); a shell/monitor command spawned by the
+   `env` block names (`packages/mcp-client/src/client.ts`); a shell command spawned by the
    toolset has the host's credential variables deleted from its environment
    (`packages/tools/src/sandbox.ts`); and a Clarvis-owned Git subprocess that selects a repository
    removes Git's repository-local environment before it starts
@@ -414,68 +414,29 @@ merely-unreadable child (`0o000` directory) is admitted so its own errno surface
 
 ### 4.2 Which tools confine, and against which roots
 
-Every tool passes `config.confineToWorkspace` as the `confine` argument and admits
-`config.temporaryRoots`. State artifacts and selected skill execution roots are the only narrower
-additions:
+Native file tools confine paths to the workspace and configured temporary roots. `read_file` and `read_files` additionally admit only an exact generic output spill in the current workspace's local state; `resolveReadableTextPath` checks a regular non-link file and `readRawFile` binds the opened descriptor to its admitted identity. Shell command analysis admits configured temporary roots and selected skill execution roots, but no state artifact. An absolute command head under a platform executable root is admitted for that occurrence only. Production: `resolveReadableTextPath` in `packages/tools/src/lib/state-artifacts.ts`, `readRawFile` in `packages/tools/src/lib/files.ts`, and `buildGuardContext` in `packages/tools/src/guard/context.ts`. Test: `packages/tools/tests/unit/read-confinement-allowance.test.ts`, `packages/tools/tests/integration/guard-dispatch.test.ts`, and `packages/tools/tests/unit/guard-context.test.ts`.
 
-| Tool | `alsoAllow` | Site |
-| --- | --- | --- |
-| `read_file` | `[config.stateRoot, ...config.temporaryRoots]`; guard analysis also admits an exact verified state spill | `packages/tools/src/tools/read-file.ts`, `packages/tools/src/guard/context.ts` |
-| `read_files` | `[config.stateRoot, ...config.temporaryRoots]`; guard analysis also admits exact verified state spills | `packages/tools/src/tools/read-files.ts`, `packages/tools/src/guard/context.ts` |
-| every other native file tool | `config.temporaryRoots` | see the `resolvePath(` call in each `packages/tools/src/tools/*.ts` |
-| `shell`, `monitor_start` guard analysis | `config.temporaryRoots` plus exact host-selected `config.skillExecutionRoots`; an absolute command head may use only a platform system executable root (including `/opt/homebrew` on Darwin) or configured sandbox runtime root, and that exception is occurrence-local so an identical operand remains outside; only when a sandbox is configured, each exact verified state spill is also admitted and mounted read-only | `packages/tools/src/guard/context.ts`, `packages/tools/src/lib/system-executables.ts`, `packages/tools/src/lib/state-artifacts.ts` |
-
-The state-root widening remains reachable from exactly two call sites, both read-only. Temporary
-roots are different: the loop allocates one short, exclusive, account-owned scratch root per run with
-`allocateShortTemporaryRoot` and places it first, then appends `systemTemporaryRoots()` — the existing
-environment temp plus `/tmp` on POSIX, or only the environment temp on Windows. Guard analysis, native
-confinement, post-open validation and native sandboxes admit the complete list, while the shell
-environment continues to name the owner-only first root. An explicit absolute `mktemp -d` template may
-add exactly the new directory it created after a before/after snapshot proves the match, lstat rejects
-symlinks, and uid ownership matches. Lifecycle ownership remains separate: the loop removes only its own
-allocation and those exact registered directories, never a system parent or unrelated pre-existing
-child, and an abandoned allocation is collected later only when a same-host record proves it dead and its
-subtree holds no file or symlink. Choosing that root also applies the same private-state ancestor policy the kernel
-enforces, so a foreign-owned scratch root is refused instead of accepted and then rejected by the
-component that publishes private state beneath it. Production:
-`allocateShortTemporaryRoot`, `ancestorTrust` and `UNIX_SOCKET_PATH_BUDGET_BYTES` in
-`packages/paths/src/short-temporaries.ts`; `createAgentToolsRunCapability` in
-`packages/loop/src/runtime/capabilities/tools.ts`; `systemTemporaryRoots` in
-`packages/tools/src/sandbox.ts`; `RuntimeConfig.temporaryRoots` and
-`RuntimeConfig.registerTemporaryRoot` in `packages/tools/src/config.ts`;
-`snapshotExplicitTemporaryDirectories` and `createdTemporaryDirectories` in
-`packages/tools/src/lib/temporary-roots.ts`; `buildGuardContext` in
-`packages/tools/src/guard/context.ts`; `readFileOptions` in `packages/tools/src/lib/files.ts`;
-and `assertPrivateHostDirectory` in `packages/kernel/src/hosting/private-files.ts`. Tests:
-`packages/paths/tests/integration/short-temporaries.test.ts`,
-`packages/loop/tests/integration/command-guard-wiring.test.ts`,
-`packages/tools/tests/integration/api.test.ts`, and
-`packages/tools/tests/integration/guard-dispatch.test.ts`.
+The loop allocates one short, account-owned scratch root per run and adds compatible system temporary roots for access. The shell environment names the run scratch first. After owned command trees physically exit, the loop removes only the scratch it allocated. Directories created by command text, including an explicit `mktemp -d`, remain the command's responsibility. Uncertain physical termination retains scratch. Production: `allocateShortTemporaryRoot` in `packages/paths/src/short-temporaries.ts`, `createAgentToolsCapability` in `packages/loop/src/runtime/capabilities/tools.ts`, and `ExecutionSessionManager.close` in `packages/tools/src/lib/execution-session.ts`. Test: `packages/loop/tests/integration/tools.test.ts` and `packages/loop/tests/integration/command-guard-wiring.test.ts`.
 
 Skill execution roots are canonical directories exposed only by selected skills whose host root
 opted into helper execution. They widen command path and `cwd` admission, while the dispatcher
 denies every native file mutation beneath them. A native sandbox mounts them read-only; without one,
-`shell` and `monitor_start` remain ordinary secret-scrubbed host processes, so the root is not an
+`shell` remains ordinary secret-scrubbed host processes, so the root is not an
 immutability claim. Production: `packages/skills/src/registry.ts`,
 `packages/loop/src/runtime/build-run-deps.ts`, `packages/tools/src/config.ts`, and
 `packages/tools/src/core.ts`. Tests: `packages/skills/tests/integration/api.test.ts` and
 `packages/tools/tests/integration/api.test.ts`.
 
-The spill files state-root widening exists for are written by
-`createToolSpill` (`packages/loop/src/runtime/context/tool-spill.ts`) and by `shell`'s
-`spillTarget` (`packages/tools/src/tools/shell.ts`), both under
-`workspaceStatePaths(workspaceRoot)`.
-
-The state-spill exception does not mount or admit that directory. It recognizes only a direct
-child whose basename belongs to the shared spill family, verifies that it currently is a regular
-non-link file resolving under this workspace's `local` state directory, and admits that one path.
-`read_file` and `read_files` may use that exact path without a sandbox. Command tools receive it only when
-a sandbox policy exists, and add the same exact path to the call's read-only mounts; an unsandboxed
-shell is refused so it cannot mutate a supposedly read-only artifact. This makes an absolute spill
-pointer from a previous tool call usable without
-exposing prompt history, monitor control files, memory machinery, plans locks, or another
-workspace's state. Production: `readableStateArtifactPath`,
-`sandboxWithReadableStateArtifacts`, `buildGuardContext`, `runCommand`, and `monitor_start`. Test:
+Generic oversized tool results are written by `createToolSpill` under the current workspace's
+`local` state directory. The read exception does not admit that directory as a root: it recognizes
+only an exact generic spill basename, verifies a regular non-link file, and pins the admitted file's
+identity through open. Only `read_file` and `read_files` receive this exact-file allowance. A shell
+command receives no state mount or guard exception, so the pointer cannot expose prompt history,
+other machine state, or another workspace's spill. Production: `createToolSpill` in
+`packages/loop/src/runtime/context/tool-spill.ts`, `resolveReadableTextPath` in
+`packages/tools/src/lib/state-artifacts.ts`, `readRawFile` in `packages/tools/src/lib/files.ts`, and
+`buildGuardContext` in `packages/tools/src/guard/context.ts`. Test:
+`packages/tools/tests/unit/read-confinement-allowance.test.ts` and
 `packages/tools/tests/integration/guard-dispatch.test.ts`.
 
 Recognized spill writers use `FILE_MODE` (`0600` on POSIX), and bounded global housekeeping repairs
@@ -619,7 +580,7 @@ and [POSIX dialect](../../packages/tools/src/guard/dialects/posix.ts) (`pathCand
 | Consumer | Policy | File |
 | --- | --- | --- |
 | Clarvis-owned Git selecting a repository | `withoutGitRepositoryEnvironment(inherited)` — preserve ordinary/transport inputs, remove Git's complete repository-local set and `GIT_CEILING_DIRECTORIES` before `cwd`, `-C`, or a clone destination selects the repository | helper `packages/paths/src/git-environment.ts`; plugin fetch `packages/kernel/src/adapters/git/plugin-fetcher.ts`; plugin metadata `packages/kernel/src/adapters/filesystem/plugin-repository.ts`; memory workspace probe `packages/memory/src/workspace-state.ts`; client clone `packages/code/src/adapters/plugin-install.ts` |
-| `shell` / `monitor` command (unsandboxed or `require_escalated`) | `withoutSecrets(process.env, secretEnvNames)` — a copy with the named keys deleted. Git credential output, `gh auth token`, Git `--exec` helpers and `scheme::` URLs are denied independently of review. Isolated container guests reject `require_escalated`. | `packages/tools/src/sandbox.ts` (`withoutSecrets`, applied by `sandboxCommand`); `packages/tools/src/lib/sensitive-commands.ts`; `packages/tools/src/lib/sandbox-permissions.ts` |
+| `shell` command (unsandboxed or `require_escalated`) | `withoutSecrets(process.env, secretEnvNames)` — a copy with the named keys deleted. Git credential output, `gh auth token`, Git `--exec` helpers and `scheme::` URLs are denied independently of review. Isolated container guests reject `require_escalated`. | `packages/tools/src/sandbox.ts` (`withoutSecrets`, applied by `sandboxCommand`); `packages/tools/src/lib/sensitive-commands.ts`; `packages/tools/src/lib/sandbox-permissions.ts` |
 | stdio MCP child | `{ ...getDefaultEnvironment(), ...server.env }` — authored values are normally interpolated, but remain literal when a portable adapter sets `expandVariables: false`; the caller's environment is **never** the base | `buildTransport` in `packages/mcp-client/src/client.ts` |
 | remote MCP request headers | authored headers follow `expandVariables`; `bearer_token_env_var` and `env_http_headers` always resolve their explicitly named values and the resulting headers remain confined to the configured resource origin | `buildTransport` in `packages/mcp-client/src/client.ts`; `createMCPRemoteFetch` in `packages/mcp-client/src/remote-fetch.ts` |
 | capability executable (plans/memory/tasks provider) | `{ ...inherited, ...additions }` — the **whole** kernel environment plus the declaration's interpolated `env` | `packages/kernel/src/capability-executables/session-manager.ts` |

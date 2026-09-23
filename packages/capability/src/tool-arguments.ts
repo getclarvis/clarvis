@@ -42,7 +42,7 @@ function preview(value: unknown): string {
  *   bounded `preview` of what arrived and why it was rejected.
  * @remarks Absent arguments are **accepted as `{}`**, because a tool whose
  *   schema requires nothing is legitimately called that way and several are
- *   (`list_dir`, `list_memories`, `monitor_list`). An empty or whitespace-only
+ *   (`list_dir`, `list_memories`). An empty or whitespace-only
  *   string is the same case: the AI SDK itself treats `""` as `{}`.
  *
  *   A string that parses to an object is accepted, because a provider handing

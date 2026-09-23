@@ -262,7 +262,7 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
 Human-authored plans and memory remain in workspace/global content trees; machine state uses
 `@clarvis/paths` global state roots. Run journals are recovered before the kernel reports ready.
 Durable memory jobs begin draining only after the host calls `startMemoryRecovery()`. Workspace
-housekeeping sweeps temporary spill/monitor artifacts without deleting Git checkouts.
+housekeeping sweeps generic temporary spill artifacts without deleting Git checkouts.
 
 Remote MCP OAuth is the deliberate credential exception to run-scoped state: its bounded,
 schema-validated document lives at `<global>/state/mcp-oauth.json`, is private to the local host, and is

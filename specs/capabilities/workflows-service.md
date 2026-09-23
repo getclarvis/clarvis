@@ -636,6 +636,13 @@ handle settles.
 
 ### 4.8 Semantic title generation — `generateWorkflowTitle` (`packages/kernel/src/workflows/workflow-title.ts`)
 
+The title argument validator is created on first use, after the standalone Kernel installs its
+bundled Ajv modules. Importing workflow-title code must not resolve Ajv before that installation.
+Production: `titleArgumentValidator` in `packages/kernel/src/workflows/workflow-title.ts` and
+`installBundledAjvModules` in `tooling/runtime/kernel-entry.ts`. Test:
+`packages/kernel/tests/unit/workflow-title.test.ts` and
+`packages/kernel/tests/integration/container-kernel.e2e.test.ts`.
+
 1. Find the manager's own profile (`request.profiles.find(p => p.name === request.entry)`) and the
    most recent `role: "user"` message's text; if either is missing, return `null` immediately with
    no provider call (`packages/kernel/src/workflows/workflow-title.ts`, proven by

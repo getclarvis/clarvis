@@ -8,7 +8,7 @@ import type { ShellFacts, GuardContext, PathFact } from "./types.ts";
 import { readableStateArtifactPath } from "../lib/state-artifacts.ts";
 import { stripWindowsExecutableSuffix, systemExecutableRoots } from "../lib/system-executables.ts";
 
-const COMMAND_TOOLS = new Set(["shell", "monitor_start"]);
+const COMMAND_TOOLS = new Set(["shell"]);
 const PATH_ARG_TOOLS = new Set([
   "read_file",
   "write_file",
@@ -141,8 +141,8 @@ function normalizeExternalExecutables(
  * @returns a {@link GuardContext} carrying the resolved {@link PathFact}s and,
  *   when applicable, the analyzed shell facts.
  * @remarks
- * Each tool family reads its own arg shape: command tools (`shell`,
- * `monitor_start`) analyze `command` and add `cwd`; `apply_patch` mines the
+ * Each tool family reads its own arg shape: `shell` analyzes `command` and adds
+ * `cwd`; `apply_patch` mines the
  * patch text; `move`/`copy` take `source`/`destination`; `read_files` a `paths`
  * array; `diff` a `from`/`to` pair; `replace` a `path` scope (defaulting to
  * `.`); and the remaining path tools a single `path`. Command paths are
@@ -169,14 +169,8 @@ export function buildGuardContext(
       shell = normalizeExternalExecutables(shell, executables, dialect);
       for (const occurrence of occurrences) {
         const p = occurrence.raw;
-        const resolved = resolveCandidate(p, root, { shell: true }).resolved;
-        const artifact = readableStateArtifactPath(resolved, config.stateRoot);
-        const readableRoots =
-          artifact === undefined || config.sandbox === undefined
-            ? commandRoots
-            : [...commandRoots, artifact];
         const executable = occurrence.commandHead && executables.get(occurrence.segmentIndex) === p;
-        const alsoAllow = executable ? [...readableRoots, p] : readableRoots;
+        const alsoAllow = executable ? [...commandRoots, p] : commandRoots;
         paths.push(resolveCandidate(p, root, { shell: true, alsoAllow }));
       }
     }

@@ -27,8 +27,7 @@ const CONTROL_TOOLS = new Set([
   "await_agents",
   "agent_status",
   "agent_await",
-  "monitor_poll",
-  "monitor_status",
+  "shell_session",
 ]);
 
 export { goalEvidenceDigest } from "./evidence-digest.ts";
@@ -107,7 +106,7 @@ const LABEL_ARGUMENT_KEYS = [
   "query",
   "task_id",
   "subagent",
-  "monitor_id",
+  "session_id",
   "name",
   "title",
 ] as const;

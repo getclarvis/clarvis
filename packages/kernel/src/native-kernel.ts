@@ -8,7 +8,6 @@ import {
 import { TraceCleanup, type TraceStore } from "@clarvis/trace";
 import type { Logger } from "@clarvis/capability";
 import { sweepGlobalStateArtifacts, sweepSpillDir, workspaceStatePaths } from "@clarvis/paths";
-import { sweepMonitors } from "@clarvis/tools/monitor";
 import { WorkspaceHousekeeping } from "./application/workspace-housekeeping.ts";
 import { createKernelLifecycle } from "./application/lifecycle.ts";
 import { referencedSessionExecutionIds } from "./sessions/session-service.ts";
@@ -128,7 +127,6 @@ export async function createNativeKernel(options: CreateNativeKernelOptions): Pr
     resources.register({ close: () => cleanup?.stop() });
     housekeeping = new WorkspaceHousekeeping({
       sweepSpills: () => sweepSpillDir(statePaths),
-      sweepMonitors: () => sweepMonitors(statePaths),
       sweepGlobalArtifacts: async () => {
         await sweepGlobalStateArtifacts(options.globalDir);
       },

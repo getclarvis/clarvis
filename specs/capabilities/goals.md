@@ -87,7 +87,7 @@ delegation surface: `shared_prompt: ""`, no MCP servers, no spawnable agents and
 generic `submit_result`. The Kernel replaces, rather than extends, dependencies with the canonical
 Tools capability, whose effective surface derives from `@clarvis/tools` `readOnlyTools`. Therefore
 read file(s), image, directory, glob, grep, diff, file stat and tree operations may be available;
-write/edit/shell/monitor and every Goal, Plan, Memory, Workflow, skill, hook, MCP or delegation
+write/edit/shell/session control and every Goal, Plan, Memory, Workflow, skill, hook, MCP or delegation
 surface is absent and undispatchable. If Tools is disabled or the host ceiling forbids reads, the run
 continues from seed/trajectory with `workspace_read_available: false` and receives no substitute.
 For a normative source, the trace retains a host-minted SHA-256 attestation of the complete tool

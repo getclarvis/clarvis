@@ -109,7 +109,7 @@ workspace-write mode and read-only for workspace-read-only mode without re-readi
 It does not mount the operator's home directory, credential files, or keyring.
 
 When the sandbox lacks a required host environment variable, credential channel, runtime, or
-service, the model retries the same `shell` or `monitor_start` command with
+service, the model retries the same `shell` command with
 `sandbox_permissions: "require_escalated"` and a short `justification`. Isolation Sandbox then
 spawns that one command on the host after approval: `on` asks a human; Auto uses the judge, with
 `allow` executing and `deny`, unsure, failed or malformed review refusing to the calling agent. An

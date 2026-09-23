@@ -129,6 +129,16 @@ verifies the connection and reload routes.
 
 `/background` requests a durable handoff for the selected run and exits only after its receipt on a
 local Host/Sandbox connection whose independently owned host survives client disconnect.
+Agent command sessions started in that hosted run remain owned by the run through client disconnect. The
+tools capability closes command admission, drains tracked process trees, and releases run scratch
+only when the hosted execution itself ends. Closing a TUI window is not a run-end signal. An abrupt
+host crash outside a sandbox may leave an orphan; a stale session ID cannot authorize signalling in a later run. Production: `createAgentToolsCapability` in
+`packages/loop/src/runtime/capabilities/tools.ts`, `ExecutionSessionManager` in
+`packages/tools/src/lib/execution-session.ts`, and `createHostedExecution` in
+`packages/kernel/src/hosting/sessions.ts`. Test:
+`packages/kernel/tests/integration/local-host-process.test.ts` (hosted session through disconnect
+and cancellation)
+and `packages/loop/tests/integration/tools.test.ts` (drain at run end).
 Uncertain handoff remains visible and consults the same operation receipt instead of replaying start.
 A draft received during handoff keeps the TUI open even after the run has entered background.
 The exit path restores the terminal and prints the execution identity; it bypasses checkout removal.
@@ -453,7 +463,7 @@ including while the goal is physically idle. Old proof cleanup cannot retire a n
 `startControlled` and `cancelControlled` are host-only registry methods using this proof and the
 existing start/cancel machinery. They cannot target another session or bypass physical exclusion.
 `hosting.interrupt_tool` uses the same interactive-control admission as steer, compact, cancel and
-respond: an `observe` attachment cannot interrupt a live shell; acquire/takeover can. A stale
+respond: an `observe` attachment cannot interrupt a blocking shell or a yielded session; acquire/takeover can. A stale
 controller epoch is refused before delivery. Subscription identities belong to one connection;
 knowing another connection's identity cannot control its run. A token is delivered only to the
 observation's bound run, never looked up across runs.

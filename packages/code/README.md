@@ -1228,7 +1228,7 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   collapsed failed group likewise renders one aggregate failure row rather than repeating each
   member's error. Nonzero shell results follow the same folded presentation and keep their parsed
   `exit N` diagnosis visible.
-- A live controllable builtin shell exposes `[X]` immediately after its elapsed time without folding its row or cancelling
+- A live controllable builtin shell, including one that yielded a session ID, exposes `[X]` immediately after its elapsed time without folding its row or cancelling
   the run. The focused eligible shell also accepts Ctrl+X then T; elicitation and a rebound
   protected cancellation shortcut take precedence. After a click, the muted `[X]` remains stable and
   ignores repeated clicks while waiting for the authoritative tool terminal, not merely an accepted receipt. Only an explicit operator interruption in that terminal

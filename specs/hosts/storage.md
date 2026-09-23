@@ -77,8 +77,8 @@ Test: the metadata and credential-posture case in
 
 Only two cleanup classes can be named:
 
-- `temporary`: recognized shell/tool-output spills older than 24 hours and stale empty run scratch
-  containers. Recent spills, monitor state, occupied run directories and unrecognized files remain.
+- `temporary`: recognized generic tool-output spills older than 24 hours and stale empty run scratch
+  containers. Recent generic spills, occupied run directories and unrecognized files remain.
 - `cache`: the rebuildable global cache tree.
 
 The rebuildable cache includes host-local Container runtime artifacts whose admitted payload files

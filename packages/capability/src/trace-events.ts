@@ -101,6 +101,7 @@ export type BuiltinTraceEvent =
       diff?: string;
       guard?: CommandGuardReview;
       interruption?: { source: "operator" };
+      control?: { tool_execution_id: string; actions: readonly ["interrupt"] };
     }
   | {
       type: "tool_call_started";

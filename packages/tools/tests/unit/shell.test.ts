@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import {
   currentShellFlavor,
   encodePowerShellCommand,
-  exitCaptureWrapper,
   resolveShell,
   shellArgs,
   type ShellSpec,
@@ -101,36 +100,5 @@ describe("shellArgs", () => {
     // stdout, breaking every assertion on exact output.
     expect(preamble).toContain("New-Object System.Text.UTF8Encoding $false");
     expect(preamble).not.toContain("[Text.Encoding]::UTF8");
-  });
-});
-
-describe("exitCaptureWrapper", () => {
-  it("installs an EXIT trap on POSIX", () => {
-    expect(exitCaptureWrapper("bun test", "posix")).toBe(
-      `trap 'printf "%s" "$?" > "$MON_EXIT.tmp" && mv -f "$MON_EXIT.tmp" "$MON_EXIT"' EXIT\n` +
-        `bun test\n`,
-    );
-  });
-
-  it("wraps the command in try/finally on PowerShell", () => {
-    const w = exitCaptureWrapper("bun test", "powershell");
-    expect(w.startsWith("try {\n")).toBe(true);
-    expect(w).toContain("\nbun test\n");
-    expect(w).toContain("$env:MON_EXIT");
-    expect(w).toContain("UTF8Encoding $false");
-  });
-
-  it("embeds the command verbatim, applying no escaping of its own", () => {
-    const command = 'Write-Output "}" ; Get-Item `x`';
-    expect(exitCaptureWrapper(command, "powershell")).toContain(`\n${command}\n`);
-  });
-
-  it("tests $? before $LASTEXITCODE", () => {
-    // $LASTEXITCODE is sticky for the whole payload: once any native command has
-    // run it stays set, so testing it first would make `git status; Write-Output ok`
-    // report git's status rather than the payload's. Reversing these is the most
-    // likely way for a later simplification to silently break exit reporting.
-    const w = exitCaptureWrapper("bun test", "powershell");
-    expect(w.indexOf("$?")).toBeLessThan(w.indexOf("$LASTEXITCODE"));
   });
 });

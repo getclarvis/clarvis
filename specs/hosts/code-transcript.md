@@ -335,7 +335,7 @@ Constants: `SEGMENT_MIN = 4096`, `TAIL_PLAIN_CAP = 24_576`,
 | Tool family | Accepted text | Recogniser |
 | --- | --- | --- |
 | `shell` | JSON object carrying at least one of `exit_code`, `stdout`, `stderr`, `signal`, `timed_out` | `packages/code/src/adapters/tool-parsers.ts` |
-| `monitor_*` | JSON object carrying at least one of `monitors`, `id`, `command`, `running`, `ready`, `exit_code`, `stopped`, `output` | `packages/code/src/adapters/tool-parsers.ts` |
+| `shell_session` | JSON object carrying `session_id`, `running`, `ready`, `exit_code`, `stdout`, `stderr`, or `sessions` | `packages/code/src/adapters/tool-parsers.ts` |
 | `read_file` | `cat -n` style: `<spaces><digits>\t<content>`; any other non-blank line is a note | `packages/code/src/adapters/tool-parsers.ts` |
 | `read_files` | `==> <path> <==` banners; a banner of the form `<path> — <code>: <message>` carries a per-file error; a line matching `/more file\(s\) not shown/` is the trailing note | `packages/code/src/adapters/tool-parsers.ts` |
 | `grep` (content mode) | `path:line:text` (match) and `path-line-text` (context), `--` separates groups, an unmatched line appends to the previous row | `packages/code/src/adapters/tool-parsers.ts` |
@@ -659,7 +659,7 @@ affordances that exist. Pinned at
 | `renderSummary` | `move`, `copy`, `mkdir`, `remove`, `delete_memory` |
 | `renderTree` | `tree` |
 | `renderJsonCard` | `file_stat` |
-| `renderMonitor` | `monitor_start`, `monitor_poll`, `monitor_stop`, `monitor_list` |
+| `renderShellSession` | `shell_session` |
 | `renderMemoryRead` | `read_memory` |
 | `renderMemoryGrep` | `grep_memories` |
 
@@ -667,10 +667,7 @@ affordances that exist. Pinned at
 status word by exit code (`add` for `0`, `del` otherwise) and distinguishes a settled `"failed"`
 (unparsed result with an error present) from an ordinary `"done"`/`"exit N"`. `renderReadFile`
  prints a `path · lines N–M` header only when `parseReadFile` found line numbers; with
-none, only the code body renders. `renderMonitor` renders a filled/hollow dot glyph per
-monitor in list mode, and in single-monitor mode a `running`/`stopped`/`exited`/`monitor` status word
-plus a `ready`/`not ready` chip and the exit-code chip gated on `hasExitCode` (see section 3.5).
-`renderImage` is a fixed `[image]` tag plus the path, with no body at all.
+none, only the code body renders. `renderShellSession` presents session status and separate stdout/stderr windows; list mode contains IDs and status without command text. `renderImage` is a fixed `[image]` tag plus the path, with no body at all.
 `renderMemoryRead` forces `filetype="markdown"` syntax highlighting regardless of the
 memory document's actual name. `renderMemoryGrep` delegates to `renderGrep` by
 rewriting the call's `output_mode` argument to `"content"`, falling back to `renderGeneric` when
@@ -682,7 +679,7 @@ Collapsed generic errors parse a serialized `{error, message}` envelope through
 `toolErrorSummaryText`: the snake-case code becomes a sentence-case label followed by its message;
 plain text remains plain text. Expanded error bodies retain the original full diagnostic.
 `resolveErrorRenderer` returns the *normal* renderer for a tool in
-`ERROR_AWARE = {shell, monitor_start, monitor_poll, monitor_stop}`, and `renderErrorGeneric`
+`ERROR_AWARE = {shell, shell_session}`, and `renderErrorGeneric`
 otherwise. `renderErrorGeneric` respects `full`/`wrap` so an error's stack trace can be
 lifted out of the ten-line clamp.
 
@@ -743,7 +740,7 @@ before the first section becomes a muted preamble. Each section's filetype comes
 `/dev/null`; the fallback is `firstPathArg` over `path`/`from`/`to`/`source`/`file`.
 
 `hiddenBodyLines` is identity-specific: `shell` counts parsed stdout + stderr lines,
-`monitor_start`/`monitor_poll`/`monitor_stop` count parsed output lines, everything else counts the
+`shell_session` counts parsed stdout and stderr lines, everything else counts the
 raw result's lines. Blank-only text counts as `0`.
 
 ### 4.11 Signature formatting
@@ -1352,8 +1349,7 @@ breaks the unified-diff parser", plus the lead/delegated/manual-fold matrix in
 `packages/code/tests/integration/tool-mutation-diff.test.tsx`.
 
 **INV-T26.** Being JSON is not being an envelope: a `shell` result is parsed as an envelope only if it
-carries at least one of `exit_code`, `stdout`, `stderr`, `signal`, `timed_out`; a monitor payload only
-if it carries at least one of its eight keys. Production
+carries at least one of `exit_code`, `stdout`, `stderr`, `signal`, `timed_out`; a `shell_session` payload only if it carries session status, output, or a session list. Production
 `packages/code/src/adapters/tool-parsers.ts`. Tests
 `packages/code/tests/unit/tool-parsers.test.ts`.
 
@@ -1690,7 +1686,7 @@ instead of covering the conversation").
 | `file_stat` / generic result is not a JSON object | `renderJsonCard` falls back to `renderGeneric`; `renderGeneric` itself upgrades to the JSON card only when `parseJsonObject` succeeds | `packages/code/src/views/tools/registry.tsx` |
 | `diff`/`replace` with an empty body | falls back to `renderGeneric` | `packages/code/src/views/tools/registry.tsx` |
 | Any tool with no registry entry | `renderGeneric` | `packages/code/src/views/tools/registry.tsx` |
-| Empty result | a muted placeholder — `"(no output)"`, `"(no matches)"`, `"(no monitors)"`, `"(empty)"`, `"(done)"` | `packages/code/src/views/tools/registry.tsx` |
+| Empty result | a muted placeholder — `"(no output)"`, `"(no matches)"`, `"(no sessions)"`, `"(empty)"`, `"(done)"` | `packages/code/src/views/tools/registry.tsx` |
 | A tool call errored | `resolveErrorRenderer` — the tool's own renderer for the four `ERROR_AWARE` tools, plain error text otherwise | `packages/code/src/views/tools/registry.tsx` |
 | An error body would exceed the clamp | `renderErrorGeneric` honours `full`, so the clamp can be lifted; the code states clamping "truncates the stack trace that explains the failure" | `packages/code/src/views/tools/registry.tsx` |
 | `JSON.stringify` throws while formatting a signature value | caught, falls back to `String(v)` | `packages/code/src/views/tools/signature.ts` |
@@ -1795,68 +1791,4 @@ owned. The performance contract distinguishes measured results from proposed tar
 `collapsed` is test-fixture data only: production expansion reads the external override map and
 `defaultFolded`, never a field on an execution record.
 
-~~**`hiddenBodyLines` does not special-case `monitor_list`.**~~ **Resolved:** it does now.
-`monitor_list` joins the other three in the branch, which returns `m.monitors.length` on an `isList`
-payload and `lines(m.output)` otherwise (`packages/code/src/views/tools/registry.tsx`) —
-so a collapsed list reports one hidden row per monitor, which is exactly what `renderMonitor`'s
-`isList` branch paints (routed). It was a missing special case rather than a
-choice between two readings: the tool's handler returns `JSON.stringify({ monitors })` with no
-indentation (`packages/tools/src/tools/monitor.ts`), so the generic `lines(result)` always
-answered exactly `1` whatever the list size, and `lines(m.output)` — the reading the three
-single-monitor tools use — would always have answered `0`, since `MonitorParsed.output` is hard-coded
-to `""` for `isList: true` (`packages/code/src/adapters/tool-parsers.ts`). An empty list
-now reports `0` rather than `1`: there is nothing behind the `(no monitors)` placeholder to reveal.
-Pinned at `packages/code/tests/integration/tool-registry-render.test.tsx`.
-
-~~**Diff CR normalization was unpinned.**~~ **Resolved:** `StableDiff` now owns the normalization for
-every registry caller, and `packages/code/tests/integration/tool-diff-render.test.tsx` ("every diff
-normalizes CRLF and bare CR before it reaches OpenTUI") feeds both line-ending forms through the
-real component and inspects the resulting `DiffRenderable`.
-
-**`mark()` has no callers.** `packages/code/src/core/marks.ts` exports `mark` and the deprecated
-`glyph` alias — yet `glyph` (via the theme wrapper at `packages/code/src/theme/glyphs.ts`) is what
-every rendering site uses. No migration is in progress in the source.
-
-**Symbols exported but used only within their own module.** `railColor` (`packages/code/src/views/blocks.tsx`),
-`agentGlyph`, `capitalize` (also used by `views/App.tsx`), `diffHeaderPath`
-(`packages/code/src/views/tools/registry.tsx`), `segmentMarkdown` (`packages/code/src/core/transcript/segment.ts`). Whether these are exported for testing,
-for a planned consumer, or by accident is not stated. `knip.json` sets
-`ignoreExportsUsedInFile` only for `interface` and `type`, so functions in this position survive Knip
-only because test files count as entries.
-
-**`TranscriptMessageNode`'s persistence fields.** `sourceExecutionId`, `sourceTextFingerprint`,
-`textTruncated` and `proseReleased` (`packages/code/src/core/transcript/types.ts`) are declared here but produced and consumed
-by the store and the export path. The doc says presenters "must prefer" `proseReleased` over
-`textTruncated` (`packages/code/src/core/transcript/types.ts`), which `packages/code/src/core/transcript/presenters.ts` does — but what *writes* either field,
-and when, belongs to [hosts/code-run-host.md](code-run-host.md).
-
-**A truncated sentence in `AssistantMarkdown`'s TSDoc.** `packages/code/src/views/blocks.tsx`
-ends mid-clause — "The sealed prefixes are" — begins a new sentence, so one clause of the
-rationale is missing from the source. What it was going to say is not recoverable from the code.
-
-**`EventSource`** (`packages/code/src/adapters/event-span.ts`) is declared in this document's scope but is a store/run-host
-concept; its consumers are outside this document.
-
-**The `subagent` node's `toolCalls`/`inputTokens`/`outputTokens`** (`packages/code/src/core/transcript/types.ts`) and the
-`run` node's equivalents (`packages/code/src/core/transcript/types.ts`) are never read by any renderer in
-`blocks.tsx` — the run block prints only the outcome word and elapsed time, and the
-subagent block prints only its brief. Nor does the sidebar render them: it holds the same
-figures through `ActivityStore` and paints none of them (INV-T45). Workflow iteration counts likewise
-remain in the projection and outside the compact Sidebar roster. Whether the node fields have any
-renderer at all is still not determinable: nothing this document or the sidebar reads consumes them.
-
-**No test covers `renderTranscriptMarkdown`'s omission of `subagent`, `plan`, `annotation` and
-`error` nodes.** `packages/code/src/views/transcript-markdown.ts` silently yields nothing for those four kinds;
-`packages/code/tests/unit/transcript-markdown.test.ts` exercises only the five kinds that do render. Whether the
-omission is intended is not stated.
-
-## Structured effect review receipts
-
-Guard elicitation shows one-based segment causes and argument positions, effect attestation and
-reviewer failure kind. The global expansion warning is omitted when structured causes are available.
-Durable shell labels append bounded effect, relation and failure vocabulary to their answerer;
-they contain no evidence text or reviewer prose. Production:
-[effect-review.ts](../../packages/code/src/core/transcript/effect-review.ts),
-[guard-review.ts](../../packages/code/src/core/transcript/guard-review.ts), and
-[ElicitBlock.tsx](../../packages/code/src/views/ElicitBlock.tsx).
-Wire ownership is in [effect review](../execution/effect-review.md).
+`hiddenBodyLines` counts each `shell_session` list entry or parsed stdout/stderr line through `parseShellSession` in `packages/code/src/views/tools/registry.tsx`. Production: `hiddenBodyLines` and `renderShellSession` in that file. Test: `packages/code/tests/integration/tool-registry-render.test.tsx`.

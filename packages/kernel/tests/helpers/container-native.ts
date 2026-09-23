@@ -18,6 +18,7 @@ export async function containerNativeFixture(options: {
   llm: LLMProvider;
   settings?: SettingsData;
   agents?: AgentRecord[];
+  enableCommandTools?: boolean;
 }) {
   const settings: SettingsData = {
     default_model: "logical/model",
@@ -42,7 +43,10 @@ export async function containerNativeFixture(options: {
           },
         ],
     },
-    env: envSchema.parse({ CLARVIS_OWNER: "fixture" }),
+    env: envSchema.parse({
+      CLARVIS_OWNER: "fixture",
+      ...(options.enableCommandTools ? { CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" } : {}),
+    }),
     modelCatalog: [
       {
         provider: "logical",

@@ -1,22 +1,12 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { join } from "node:path";
 import { resolveConfig } from "../../src/config.ts";
 import { NOOP_TOOLS_LOGGER, setWarnSink, warn, type ToolsLogger } from "../../src/lib/log.ts";
 import { fsError, serializeError, ToolError } from "../../src/errors.ts";
 import { killTree } from "../../src/lib/process.ts";
 import { resolvePath } from "../../src/lib/paths.ts";
-import { boundOrSpill, createCaptureSink } from "../../src/lib/output.ts";
 import { sandboxCommand } from "../../src/sandbox.ts";
-import { readExitState } from "../../src/lib/monitor.ts";
 import { bestEffort } from "../../src/lib/tasks.ts";
-import {
-  callTool,
-  cleanup,
-  fixtureStatePaths,
-  makeConfig,
-  makeWorkspace,
-  write,
-} from "../helpers/fixtures.ts";
+import { callTool, cleanup, makeConfig, makeWorkspace, write } from "../helpers/fixtures.ts";
 
 interface Record_ {
   level: "debug" | "info" | "warn" | "error";
@@ -231,121 +221,6 @@ describe("tools.path_refused", () => {
     root = makeWorkspace();
     const { logger, records } = recorder();
     resolvePath("inside.txt", root, true, undefined, logger);
-    expect(records).toEqual([]);
-  });
-});
-
-describe("tools.spill_failed", () => {
-  it("reports a spill file that could not be written", async () => {
-    const root = makeWorkspace();
-    try {
-      write(root, "not-a-directory", "x");
-      const { logger, records } = recorder();
-      const text = await boundOrSpill(
-        "abcdefghijklmnopqrstuvwxyz",
-        4,
-        { absPath: join(root, "not-a-directory", "out.log"), displayPath: "out.log" },
-        logger,
-        "stdout",
-      );
-      expect(text.endsWith("wxyz")).toBe(true);
-      expect(text).not.toContain("out.log");
-      const [record] = eventsOf(records, "tools.spill_failed");
-      expect(record?.level).toBe("warn");
-      expect(record?.fields).toMatchObject({
-        event: "tools.spill_failed",
-        stream: "stdout",
-        target: "out.log",
-      });
-      expect(typeof record?.fields.cause).toBe("string");
-    } finally {
-      cleanup(root);
-    }
-  });
-
-  it("a write-through sink reports the stream whose overflow was lost", async () => {
-    const root = makeWorkspace();
-    try {
-      write(root, "not-a-directory", "x");
-      const { logger, records } = recorder();
-      const sink = createCaptureSink({
-        inlineLimit: 4,
-        captureCap: 1_000,
-        spill: () => ({
-          absPath: join(root, "not-a-directory", "out.log"),
-          displayPath: "err.log",
-        }),
-        stream: "stderr",
-        logger,
-      });
-      sink.push("aaaaaaaaaa");
-      await sink.finish(4);
-      expect(eventsOf(records, "tools.spill_failed")[0]?.fields).toMatchObject({
-        stream: "stderr",
-        target: "err.log",
-      });
-    } finally {
-      cleanup(root);
-    }
-  });
-
-  it("a successful spill says nothing", async () => {
-    const root = makeWorkspace();
-    try {
-      const { logger, records } = recorder();
-      const text = await boundOrSpill(
-        "abcdefghijklmnopqrstuvwxyz",
-        4,
-        { absPath: `${root}/out.log`, displayPath: "out.log" },
-        logger,
-        "stdout",
-      );
-      expect(text).toContain("out.log");
-      expect(records).toEqual([]);
-    } finally {
-      cleanup(root);
-    }
-  });
-});
-
-describe("tools.monitor_exit_unreadable", () => {
-  let root = "";
-  afterEach(() => {
-    if (root !== "") cleanup(root);
-    root = "";
-  });
-
-  it("an unparsable sentinel is reported, not silently folded into 'killed'", async () => {
-    root = makeWorkspace();
-    const { logger, records } = recorder();
-    const { ensureWorkspaceLocalDir } = await import("@clarvis/paths");
-    const statePaths = fixtureStatePaths(root);
-    ensureWorkspaceLocalDir(statePaths);
-    const exit = statePaths.monitorExit("mon_badexit");
-    const { mkdirSync, writeFileSync } = await import("node:fs");
-    const { dirname } = await import("node:path");
-    mkdirSync(dirname(exit), { recursive: true });
-    writeFileSync(exit, "not-a-number\n");
-
-    const state = await readExitState(statePaths, "mon_badexit", logger);
-    expect(state).toEqual({ exited: true, code: null });
-    const [record] = eventsOf(records, "tools.monitor_exit_unreadable");
-    expect(record?.level).toBe("warn");
-    expect(record?.fields).toMatchObject({
-      event: "tools.monitor_exit_unreadable",
-      id: "mon_badexit",
-      raw: "not-a-number",
-      reason: "non_numeric",
-    });
-  });
-
-  it("a still-running monitor with no sentinel says nothing", async () => {
-    root = makeWorkspace();
-    const { logger, records } = recorder();
-    expect(await readExitState(fixtureStatePaths(root), "mon_absent", logger)).toEqual({
-      exited: false,
-      code: null,
-    });
     expect(records).toEqual([]);
   });
 });

@@ -32,11 +32,7 @@ export {
   GIT_DIR,
   INTERNAL_IGNORE_PATTERNS,
   INTERNAL_SKIP_DIRS,
-  LOG_SUFFIX,
   MARKETPLACE_FILE,
-  MONITOR_PREFIX,
-  MONITOR_SIDECAR_SUFFIX,
-  SPILL_PREFIX,
   TOOL_OUTPUT_PREFIX,
   TOOL_OUTPUT_SUFFIX,
   TMP_GLOB,
@@ -83,10 +79,8 @@ export {
 export {
   ensureWorkspaceLocalDir,
   ensureWorkspaceStateDir,
-  isMonitorSidecar,
   isSpillFile,
   workspaceStatePaths,
-  type SpillStream,
   type WorkspaceStatePaths,
 } from "./workspace-state.ts";
 

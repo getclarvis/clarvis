@@ -194,8 +194,7 @@ const NO_COUNTER_ALLOWLIST = {
     "src/guard/types.ts",
     "src/guard/effect-review.ts",
     "src/tools/types.ts",
-    // Pure re-export barrels for the narrow shell and monitor subpaths.
-    "src/monitor-entry.ts",
+    // Pure re-export barrel for the narrow shell subpath.
     "src/shell-entry.ts",
   ],
   trace: [

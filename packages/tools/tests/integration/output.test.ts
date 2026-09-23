@@ -1,22 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
-import path from "node:path";
-import {
-  makeWorkspace,
-  cleanup,
-  makeConfig,
-  callTool,
-  write,
-  exists,
-  read,
-  modeBitsEnforced,
-} from "../helpers/fixtures.ts";
-import {
-  allocateBudget,
-  bound,
-  boundOrSpill,
-  createOutputCoalescer,
-} from "../../src/lib/output.ts";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { makeWorkspace, cleanup, makeConfig, callTool, write } from "../helpers/fixtures.ts";
+import { allocateBudget, bound, createOutputCoalescer } from "../../src/lib/output.ts";
 import type { ServerConfig } from "../../src/config.ts";
 
 describe("bound()", () => {
@@ -104,96 +88,24 @@ describe("createOutputCoalescer()", () => {
     expect(emitted[0]!.includes("HEAD")).toBe(false);
   });
 
+  it("bounds pending live output across a continuous burst", () => {
+    const emitted: string[] = [];
+    const c = createOutputCoalescer((chunk) => emitted.push(chunk), 60_000);
+    for (let i = 0; i < 1000; i++) {
+      c.push("x".repeat(1024));
+      expect(c.residentBytes).toBeLessThanOrEqual(8192);
+    }
+    c.settle();
+    expect(emitted).toHaveLength(1);
+    expect(Buffer.byteLength(emitted[0]!, "utf8")).toBe(8192);
+  });
+
   it("swallows a throwing emit instead of breaking the producer", () => {
     const c = createOutputCoalescer(() => {
       throw new Error("consumer broke");
     }, 60_000);
     c.push("data");
     expect(() => c.settle()).not.toThrow();
-  });
-});
-
-describe("boundOrSpill()", () => {
-  let root: string;
-
-  beforeEach(() => {
-    root = makeWorkspace();
-  });
-  afterEach(() => {
-    vi.restoreAllMocks();
-    cleanup(root);
-  });
-
-  it("returns the text unchanged when it fits within maxBytes", async () => {
-    const text = "small";
-    const out = await boundOrSpill(text, 1000, {
-      absPath: path.join(root, ".clarvis", "bash-stdout.txt"),
-      displayPath: ".clarvis/bash-stdout.txt",
-    });
-    expect(out).toBe(text);
-    expect(exists(root, ".clarvis/bash-stdout.txt")).toBe(false);
-  });
-
-  it("spills the full output and keeps the TAIL inline", async () => {
-    const text = "HEAD" + "A".repeat(500) + "TAIL";
-    const out = await boundOrSpill(text, 50, {
-      absPath: path.join(root, ".clarvis", "bash-stdout.txt"),
-      displayPath: ".clarvis/bash-stdout.txt",
-    });
-    expect(out).toContain("full output written to .clarvis/bash-stdout.txt");
-    expect(out.endsWith("TAIL")).toBe(true);
-    expect(out).not.toContain("HEAD");
-    expect(out.startsWith("[... earlier output truncated")).toBe(true);
-    expect(read(root, ".clarvis/bash-stdout.txt")).toBe(text);
-  });
-
-  it.skipIf(!modeBitsEnforced)("writes the spill owner-only", async () => {
-    const text = "A".repeat(500);
-    const absPath = path.join(root, ".clarvis", "bash-stdout.txt");
-
-    await boundOrSpill(text, 50, { absPath, displayPath: ".clarvis/bash-stdout.txt" });
-
-    expect(statSync(absPath).mode & 0o777).toBe(0o600);
-  });
-
-  it("cuts the tail on a valid UTF-8 boundary (no broken multibyte char)", async () => {
-    const text = "x".repeat(20) + "é".repeat(20);
-    const out = await boundOrSpill(text, 15, {
-      absPath: path.join(root, ".clarvis", "bash-stdout.txt"),
-      displayPath: ".clarvis/bash-stdout.txt",
-    });
-    expect(out).not.toContain("�");
-    expect(out.endsWith("é")).toBe(true);
-    expect(read(root, ".clarvis/bash-stdout.txt")).toBe(text);
-  });
-
-  it("writes into a directory it does not itself have to ignore", async () => {
-    const dir = path.join(root, ".clarvis");
-    mkdirSync(dir, { recursive: true });
-
-    const text = "B".repeat(400);
-    const out = await boundOrSpill(text, 40, {
-      absPath: path.join(dir, "bash-stderr.txt"),
-      displayPath: ".clarvis/bash-stderr.txt",
-    });
-    expect(out).toContain("full output written to .clarvis/bash-stderr.txt");
-    expect(read(root, ".clarvis/bash-stderr.txt")).toBe(text);
-    expect(existsSync(path.join(dir, ".gitignore"))).toBe(false);
-  });
-
-  it("falls back to the plain truncation marker when the spill write fails", async () => {
-    const blocker = path.join(root, "blk");
-    writeFileSync(blocker, "not a dir");
-
-    const text = "C".repeat(300);
-    const out = await boundOrSpill(text, 30, {
-      absPath: path.join(blocker, "sub", "bash-stdout.txt"),
-      displayPath: "blk/sub/bash-stdout.txt",
-    });
-    expect(out).toMatch(
-      /^\[\.\.\. earlier output truncated: last \d+ of \d+ bytes shown \.\.\.\]\n/,
-    );
-    expect(out).not.toContain("full output written");
   });
 });
 

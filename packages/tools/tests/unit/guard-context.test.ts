@@ -134,9 +134,9 @@ describe("buildGuardContext — command tools", () => {
     expect(within(ctx, "sub")).toBe(true);
   });
 
-  it("handles monitor_start like bash", () => {
-    const ctx = buildGuardContext("monitor_start", { command: "npm run dev" }, config);
-    expect(ctx.shell).toBeDefined();
+  it("does not analyze a session operation as a command", () => {
+    const ctx = buildGuardContext("shell_session", { action: "list" }, config);
+    expect(ctx.shell).toBeUndefined();
   });
 });
 
@@ -264,7 +264,7 @@ describe("buildGuardContext — replace (scope)", () => {
 
 describe("buildGuardContext — tools without path/command args", () => {
   it("returns empty paths and no bash facts", () => {
-    const ctx = buildGuardContext("monitor_poll", { id: "m1" }, config);
+    const ctx = buildGuardContext("shell_session", { action: "poll", session_id: "ses_1" }, config);
     expect(ctx.paths).toHaveLength(0);
     expect(ctx.shell).toBeUndefined();
   });

@@ -1,4 +1,4 @@
-import type { MutationReview } from "@clarvis/tools";
+import { ExecutionSessionManager, type MutationReview } from "@clarvis/tools";
 /**
  * The built-in coding toolset (@clarvis/tools) packaged as a capability:
  * per-run enablement via env, per-agent capability ceiling from grants, and
@@ -40,7 +40,6 @@ import {
 
 export { agentToolsActive };
 import { executeAgentToolCall } from "../tools/builtin/execute-agent-tool-call.ts";
-import { rmSync } from "node:fs";
 import {
   allocateShortTemporaryRoot,
   workspaceStatePaths,
@@ -88,7 +87,7 @@ export type SkillExecutionRootsResolver = (ctx: RunCapabilityContext) => readonl
  * guard, sandbox and credential names. All optional; omitting one runs
  * unguarded / unsandboxed / without scrubbing. */
 export interface AgentToolsCapabilityOptions {
-  /** Host-resolved paths shared by temporary roots, spills and monitors. */
+  /** Host-resolved workspace state paths shared by tools and run cleanup. */
   statePaths?: WorkspaceStatePaths;
   resolveGuard?: GuardResolver;
   resolveSandbox?: SandboxResolver;
@@ -96,6 +95,8 @@ export interface AgentToolsCapabilityOptions {
   resolveSkillExecutionRoots?: SkillExecutionRootsResolver;
   /** Isolated container guests set this to false so `require_escalated` fails closed. */
   allowHostEscalation?: boolean;
+  /** Test seam for a run-local execution manager; called once for each activated run. */
+  createSessionManager?: () => ExecutionSessionManager;
 }
 
 /**
@@ -166,6 +167,7 @@ export function createAgentToolsCapability(opts?: AgentToolsCapabilityOptions): 
         opts?.allowHostEscalation,
         scratch,
         statePaths,
+        opts?.createSessionManager?.() ?? new ExecutionSessionManager(),
       );
     },
   };
@@ -188,10 +190,10 @@ function createAgentToolsRunCapability(
   allowHostEscalation: boolean | undefined,
   scratch: ShortTemporaryRoot,
   statePaths: WorkspaceStatePaths,
+  sessionManager: ExecutionSessionManager,
 ): RunCapability {
   const elicitWaitMs = ctx.request.elicit_wait_ms ?? ctx.env.CLARVIS_DEFAULT_ELICIT_WAIT_MS;
   const temporaryRoot = scratch.path;
-  const ownedTemporaryRoots = new Set([temporaryRoot]);
   const accessibleTemporaryRoots = [...new Set([temporaryRoot, ...systemTemporaryRoots()])];
   return {
     name: AGENT_TOOLS_CAPABILITY_NAME,
@@ -206,28 +208,35 @@ function createAgentToolsRunCapability(
       return (
         temporary +
         "\n\n## Commands and Isolation\n\n" +
-        "Commands follow the run Isolation. When Isolation is Sandbox, `shell` and `monitor_start` run inside the native sandbox.\n\n" +
+        "Commands follow the run Isolation. When Isolation is Sandbox, `shell` runs inside the native sandbox; `shell_session` only inspects or stops a session that this run already owns.\n\n" +
         "If a command that is required to finish the user's request fails because the sandbox blocked filesystem, network, or host services, call the same tool again with `sandbox_permissions` set to `require_escalated` and a short `justification` requesting review of that one command on the host. Do not switch tools and do not rewrite the command as argv.\n\n" +
         "Do not request escalation for routine workspace builds, tests, or git queries that work inside the sandbox. Isolated container runs cannot reach the host this way."
       );
     },
-    onRunEnd() {
-      for (const root of ownedTemporaryRoots) {
-        if (root === temporaryRoot) continue;
-        try {
-          rmSync(root, { recursive: true, force: true });
-        } catch (error) {
-          ctx.logger?.warn(
-            {
-              event: "tools.temporary_root_cleanup_failed",
-              execution_id: ctx.executionId,
-              cause: error instanceof Error ? error.message : String(error),
-            },
-            "a run-owned temporary root could not be removed",
-          );
-        }
+    async onRunEnd() {
+      const budgetMs = ctx.env.CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS;
+      const cleanupDeadline = Date.now() + budgetMs;
+      const drained = await sessionManager.close(Math.max(0, budgetMs - 250));
+      if (!drained) {
+        ctx.logger?.warn(
+          { event: "tools.session_drain_unconfirmed", execution_id: ctx.executionId },
+          "command termination was not confirmed; run temporary roots were retained",
+        );
+        return;
       }
-      scratch.remove();
+      if (budgetMs <= 250 || Date.now() >= cleanupDeadline) {
+        ctx.logger?.warn(
+          { event: "tools.session_cleanup_budget_exhausted", execution_id: ctx.executionId },
+          "run temporary roots were retained after the cleanup budget expired",
+        );
+        return;
+      }
+      if (Date.now() < cleanupDeadline) scratch.remove();
+      else
+        ctx.logger?.warn(
+          { event: "tools.session_cleanup_budget_exhausted", execution_id: ctx.executionId },
+          "run temporary roots were retained after the cleanup budget expired",
+        );
     },
     forAgent(scope): AgentCapability | null {
       const caps = agentToolCaps(scope.grants, ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT);
@@ -246,8 +255,9 @@ function createAgentToolsRunCapability(
         canExec: caps.canExec,
         confineToWorkspace: ctx.env.CLARVIS_AGENT_TOOLS_CONFINE,
         temporaryRoots: accessibleTemporaryRoots,
+        sessionManager,
+        sessionAgent: {},
         skillExecutionRoots,
-        onTemporaryRootRegistered: (root) => ownedTemporaryRoots.add(root),
         ...(ctx.logger !== undefined ? { logger: ctx.logger } : {}),
         ...(secretEnvNames.length > 0 ? { secretEnvNames } : {}),
         ...(resolution?.guard !== undefined ? { guard: resolution.guard } : {}),
@@ -313,7 +323,7 @@ export function buildAgentToolsHandler(deps: {
     canonicalName: (call) => (toolset.names.has(call.name) ? call.name : undefined),
     interruptible: (call) => call.name === "shell",
     async handle(call, iteration, context): Promise<HandlerVerdict> {
-      const { resultText, errText, productive, images } = await executeAgentToolCall({
+      const { resultText, errText, productive, images, sessionId } = await executeAgentToolCall({
         call,
         toolset,
         guards: deps.guards,
@@ -336,6 +346,9 @@ export function buildAgentToolsHandler(deps: {
         text,
         progress: deps.progress({ errText, productive }),
         ...(images ? { images } : {}),
+        ...(sessionId !== undefined && toolset.continuation !== undefined
+          ? { interruptContinuation: toolset.continuation(sessionId) }
+          : {}),
       };
     },
   };

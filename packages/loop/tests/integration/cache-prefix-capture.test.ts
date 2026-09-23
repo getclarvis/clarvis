@@ -223,8 +223,8 @@ describe("what a provider's prefix cache actually sees", () => {
         call("write_file", { path: "big.txt", content: "x".repeat(200_000) }),
         call("read_file", { path: "big.txt" }),
         call("shell", { command: "echo hello" }),
-        call("monitor_start", { command: "sleep 30", ready_when: "never" }),
-        call("monitor_list"),
+        call("shell", { command: "sleep 30", yield_time_ms: 0 }),
+        call("shell_session", { action: "list" }),
         call("edit_file", { path: "a.js", old_string: "1", new_string: "9" }),
         call("transition_plan_task", {
           transitions: [{ task_id: "t2", to: "done", result: "ok" }],

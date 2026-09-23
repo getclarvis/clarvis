@@ -123,8 +123,8 @@ async function removeStaleEmptyRunDirs(runsDir: string, maxEntries: number): Pro
  * @param workspaceRoot - the workspace whose state directory is swept.
  * @param options - scan bounds, and where to report the pass.
  * @returns nothing; a missing directory or per-file errors are ignored.
- * @remarks Only recognised shell and generic-result spills older than 24 hours
- *   are removed. Recent spills, monitor files and unrelated entries survive.
+ * @remarks Only recognised generic-result spills older than 24 hours
+ *   are removed. Recent spills and unrelated entries survive.
  *
  *   The pass returns `void`, so a workspace that has grown past `maxEntries`
  *   would otherwise stop being swept silently and permanently. That is what the

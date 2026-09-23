@@ -29,8 +29,8 @@ describe("the advertised tool surface", () => {
   });
   afterEach(() => cleanup(root));
 
-  it("is 23 coding tools, 9 of them read-only, on every config", () => {
-    expect(EXPECTED_TOOL_DESCRIPTORS).toHaveLength(23);
+  it("is 20 coding tools, 9 of them read-only, on every config", () => {
+    expect(EXPECTED_TOOL_DESCRIPTORS).toHaveLength(20);
     expect(expectedToolNames({ readOnly: true })).toHaveLength(9);
     expect(listTools(makeConfig(root)).map(({ name }) => name)).toEqual(
       expectedToolNames({ readOnly: false }),
@@ -53,18 +53,16 @@ describe("the advertised tool surface", () => {
     expect(JSON.stringify(listTools(makeConfig(root))).length).toBeLessThanOrEqual(21_000);
   });
 
-  it("routes persistent commands to monitors without conflicting shell guidance", () => {
+  it("routes persistent commands through run-owned sessions", () => {
     const listed = listTools(makeConfig(root));
     const shell = listed.find((tool) => tool.name === "shell")!;
     const command = (shell.inputSchema.properties as Record<string, { description: string }>)
       .command!;
-    expect(shell.description).toContain("use monitor_start");
-    expect(command.description).toContain("Use monitor_start, not `&`");
-    const monitor = listed.find((tool) => tool.name === "monitor_start")!;
-    const monitorCommand = (
-      monitor.inputSchema.properties as Record<string, { description: string }>
-    ).command!;
-    expect(monitorCommand.description).toContain("PowerShell on Windows");
+    expect(shell.description).toContain("yield_time_ms");
+    expect(command.description).toContain("yield_time_ms");
+    expect(listed.find((tool) => tool.name === "shell_session")?.description).toContain(
+      "run-owned",
+    );
   });
 
   it("refuses a removed tool exactly as it refuses a typo", async () => {

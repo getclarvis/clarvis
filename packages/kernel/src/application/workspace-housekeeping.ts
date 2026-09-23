@@ -10,7 +10,6 @@ export class WorkspaceHousekeeping {
   constructor(
     private readonly options: {
       sweepSpills: () => Promise<void>;
-      sweepMonitors: () => Promise<void>;
       sweepGlobalArtifacts?: () => Promise<void>;
       logger?: Logger;
     },
@@ -34,7 +33,6 @@ export class WorkspaceHousekeeping {
     if (this.active !== undefined) return this.active;
     const collectors: Array<{ name: string; run: () => Promise<void> }> = [
       { name: "spills", run: this.options.sweepSpills },
-      { name: "monitors", run: this.options.sweepMonitors },
       ...(this.options.sweepGlobalArtifacts === undefined
         ? []
         : [{ name: "global_artifacts", run: this.options.sweepGlobalArtifacts }]),

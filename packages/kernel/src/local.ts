@@ -21,7 +21,6 @@ export {
 export {
   resolveShell,
   shellArgs,
-  exitCaptureWrapper,
   currentShellFlavor,
   killTree,
   ownProcessGroup,

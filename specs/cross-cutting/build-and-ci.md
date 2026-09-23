@@ -1082,13 +1082,13 @@ base64 UTF-16LE `-EncodedCommand`.
 Production: `packages/tools/src/shell.ts` (`computeShell`: `pwsh` from `PATH` restricted to
 `.EXE`, else `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`, tail), reached
 through `resolveShell` (`encodePowerShellCommand`) (`shellArgs` →
-`-NoProfile -NonInteractive -EncodedCommand`). Detailed behaviour is delegated to **tools-shell-monitor-and-process**.
+`-NoProfile -NonInteractive -EncodedCommand`). Detailed behaviour is delegated to **tools-shell-and-sessions**.
 
 **BUILD-23.** `spawn`'s `detached` option is derived from the platform, never passed
 unconditionally: `true` on POSIX, `false` on Windows.
 Production: `packages/tools/src/lib/process.ts`, with the Windows consequence documented ("a console-subsystem shell spawned that way produces nothing at all: empty stdout and
 stderr, a `null` exit code … while the spawn itself still reports success"). Call sites:
-`packages/tools/src/tools/shell.ts`, `packages/tools/src/tools/monitor.ts`.
+`packages/tools/src/lib/execution-session.ts`.
 
 **BUILD-24.** A test that exercises a platform-conditional branch pins `process.platform` rather than
 relying on the ambient host.
@@ -1099,15 +1099,7 @@ call, so a test that only *assumes* it is off win32 is really asserting whatever
 held until `@clarvis/plan` joined the Windows CI job … Skipping it there would have been the wrong
 repair: the branch under test is platform-independent code, so the test should be too."
 
-**BUILD-25.** A Windows suppression is scoped to what is actually unavailable: shell **syntax**
-(`posixShell`), an enforcement property (`modeBitsEnforced`), a measurement that is undecidable
-(`backgroundSettleIsMeasurable`), or a **named open defect** (`monitorCapturesOutput`) — never a
-blanket platform skip.
-Production: `packages/tools/tests/helpers/fixtures.ts` (`modeBitsEnforced`)
-(`posixShell`) (`monitorCapturesOutput`) (`backgroundSettleIsMeasurable`)
-(`canSymlink`, *probed* rather than derived) (`nonUtf8FilenamesSupported`, probed because
-it is a filesystem property). states the distinction explicitly: "these tests are
-suppressed because the product is broken on Windows, not because they do not apply to it."
+**BUILD-25.** Platform conditional tests name the property they cannot exercise: POSIX shell syntax (`posixShell`), mode-bit enforcement (`modeBitsEnforced`), or a process-settlement measurement (`backgroundSettleIsMeasurable`). Session capture is exercised through the new `shell` and `shell_session` tests on every supported platform; native Windows and macOS CI evidence remains necessary. Production: `packages/tools/tests/helpers/fixtures.ts` and `packages/tools/src/lib/execution-session.ts`. Test: `packages/tools/tests/integration/shell-session.test.ts` and `packages/tools/tests/integration/execution-session.test.ts`.
 
 **BUILD-26 (INV-313).** Every executable and declaration surface derives from the one exact Bun
 version in `mise.toml`: every host Bun CI job, the release package matrix, the release publication gate,
@@ -1330,7 +1322,7 @@ which is what BUILD-3 pins.
 **Delegated.** Coverage thresholds, the LCOV counter allowlist and the test taxonomy belong to
 **test-architecture-and-gate** (`tooling/checks/coverage.ts` holds `NO_COUNTER_ALLOWLIST`, whose
 `code` entry lists `src/cli.ts` among "executable entry points"). Shell resolution, process
-groups, `killTree` and monitor capture belong to **tools-shell-monitor-and-process**.
+groups, `killTree` and session capture belong to **tools-shell-and-sessions**.
 
 ## 8. Open questions
 

@@ -9,6 +9,8 @@ as persistent operator instructions. Direct operator restrictions take precedenc
 commands do not require repeated consent merely because static analysis deferred their review.
 The fixed policy separates evidence, authorization, intrinsic risk, decision and private protocol.
 It is command-agnostic; concrete operations and their constraints come from the case and host descriptors.
+For effect review, its private protocol directs the model to copy every constraint of the covering
+host fact into each proposed grant. The host rejects omitted or widened constraints.
 A conventional name, path prefix or temporary-directory location is not proof that a target is
 discardable, and a recognized cleanup does not authorize other effects in the same call.
 Trajectory informs the current case only; it neither denies hypothetical future actions nor grants

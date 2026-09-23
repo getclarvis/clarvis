@@ -59,6 +59,7 @@ test("policy separates risk from authorization without replacing the private pro
     "Never authorize future actions through this decision.",
     "Do not output risk scores or a high/low classification.",
     "cite the exact revision and transition_token",
+    "copy its covering fact's complete constraints object exactly",
     "do not invent evidence",
   ])
     expect(JUDGE_POLICY).toContain(rule);

@@ -198,8 +198,8 @@ try {
 without changing the filesystem scanner or the engine's optional dependency boundary. The callback
 runs once only when skills are enabled, and receives the discovered provider or `undefined` after
 a discovery failure. Its result backs both the skills capability and the returned owner-facing
-provider. The kernel uses this seam for its shipped configuration guide; the engine does not own
-the guide or its reserved name. Existing `use_skills` grants still control model access.
+provider. Existing `use_skills` grants still control model access; the kernel supplies no bundled
+configuration skill through this seam.
 
 `buildExecuteRunDeps({ mcpAuthorization })` optionally creates the shared remote-MCP OAuth
 coordinator. The host owns the private store path and may supply a browser opener; the builder wires

@@ -221,6 +221,13 @@ human fallback, even with `on_unsure: "ask"`. Auto never invokes human fallback,
 that are neither allow-listed nor dangerous.
 `guard_judge.guidance` is bounded additional context and cannot replace the
 fixed policy. Both command and effect review use Judge-owned `JUDGE_POLICY`. Code composes operator-global guidance first and appends workspace guidance within the single bounded payload; absent guidance does not disable Auto.
+For an effect grant, that policy requires the Judge to copy the covering host fact's complete
+constraints, target digest and current authority revision into its candidate. The host still rejects
+any incomplete or widened candidate. Production: `JUDGE_POLICY` in
+[prompt.ts](../../packages/judge/src/prompt.ts) and `validateAuthorityEnvelope` in
+[authority-validation.ts](../../packages/kernel/src/guard/authority-validation.ts). Test:
+[execution-boundaries.test.ts](../../packages/judge/tests/unit/execution-boundaries.test.ts) and
+[effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
 
 The explicit rollout stages are `shadow` and `local`, and they scope configuration review only. Shadow
 computes configuration review evidence

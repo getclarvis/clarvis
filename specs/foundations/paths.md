@@ -37,34 +37,6 @@ system*, not by convention: `WorkspacePaths` (`packages/paths/src/workspace.ts`)
 key for any of that machinery, so writing it into a repository is a compile error rather than a
 possibility to remember to avoid (`packages/paths/src/workspace.ts`).
 
-### Container path vocabulary
-
-`containerLaunchPaths(namespace, globalDir?)` places only the host launch lease (`launch.lock`) and
-process registry (`registry.json`) under `<global>/state/container-hosts/<namespace>`. It does not
-create directories, publish an endpoint or resolve credentials. `containerDataVolumeNames` returns
-`clarvis-data-v1-<namespace>-content` and `clarvis-data-v1-<namespace>-state`;
-`containerArtifactVolumeName` returns `clarvis-artifact-v1-<archive-sha256>`. Both identities must be
-full, bare lowercase SHA-256 hashes; truncation, digest prefixes and path syntax are rejected.
-No generation, product version or engine parameter participates in these name builders.
-
-`containerGuestPaths` is immutable Linux-guest vocabulary: workspace `/workspace`, private content
-under its Clarvis directory, the shared-agent mask under its agents directory, global root
-`/var/lib/clarvis`, home `/var/lib/clarvis/home`, Git metadata
-`/var/lib/clarvis/git-metadata` with common root beneath it, artifact `/opt/clarvis` and its
-`bin/clarvis-kernel` entry, payload subpath `payload`, mise `/mise` and temporary root `/tmp`.
-These virtual names use POSIX composition, never the launcher's native Windows path syntax.
-Kernel owns namespace derivation and validation of volume labels, ownership and lifecycle; these
-pure helpers do not authorize any mount or data deletion.
-
-Production: `containerLaunchPaths`, `containerDataVolumeNames`, `containerArtifactVolumeName` and
-`containerGuestPaths` in [container.ts](../../packages/paths/src/container.ts).
-Test: [container.test.ts](../../packages/paths/tests/unit/container.test.ts) checks exact names,
-role separation, canonical identity refusal and fixed guest paths independently of host separators.
-The Kernel's `containerGitDirectoryTarget` maps a host-native linked-worktree path beneath this
-fixed common root and `prepareRuntimeMounts` writes the guest-only `.git` indirection. Test:
-[runtime-mounts.test.ts](../../packages/kernel/tests/unit/runtime-mounts.test.ts) and
-[git-workspace.test.ts](../../packages/kernel/tests/integration/git-workspace.test.ts).
-
 ## 2. Surface
 
 ### 2.1 Exports map
@@ -160,7 +132,6 @@ chose it — is the first thing every other path in this package is derived from
 | `mcpOAuthFile` | `<global>/state/mcp-oauth.json` | `packages/paths/src/global.ts` |
 | `pluginsDir` | `<global>/plugins` | `packages/paths/src/global.ts` |
 | `extensionProfilesDir` | `<global>/extension-profiles` | `packages/paths/src/global.ts` |
-| `runtimeRecipesDir` | `<global>/runtime-recipes` | `GlobalPaths.runtimeRecipesDir`, `globalPaths` |
 | `workspaceTrustFile` | `<global>/workspace-trust.json` | `packages/paths/src/global.ts` |
 | `skillsDir` | `<global>/skills` | `packages/paths/src/global.ts` |
 | `workflowsDir` | `<global>/workflows` | `packages/paths/src/global.ts` |
@@ -176,8 +147,6 @@ chose it — is the first thing every other path in this package is derived from
 | `codeConfigFile` | `<global>/state/code.json` | `packages/paths/src/global.ts` |
 | `modelsCacheFile` | `<global>/cache/models-dev.json` | `packages/paths/src/global.ts` |
 | `updateCheckCacheFile` | `<global>/cache/update-check.json` | `packages/paths/src/global.ts` |
-| `runtimeRecipeStateDir` | `<global>/state/runtime-recipes` | `GlobalPaths.runtimeRecipeStateDir`, `globalPaths` |
-| `runtimeRecipeLeaseFile(identity)` | `<global>/state/runtime-recipes/<ownerSegment(identity)>.lock` | `GlobalPaths.runtimeRecipeLeaseFile`, `globalPaths` |
 | `contextCandidates` | `<global>/{CLARVIS.md,AGENTS.md}` | `packages/paths/src/global.ts` |
 | `exportsDirForOwner(owner)` | `<global>/exports/<ownerSegment(owner)>` | `packages/paths/src/global.ts` |
 | `agentFile(name)` | `<agentsDir>/<name>.md` | `packages/paths/src/global.ts` |
@@ -187,17 +156,6 @@ a `config/` subdirectory" — burying it "made the global tree disagree with the
 (`packages/paths/src/global.ts`). What is nested under `state`/`cache` is what a user never edits: `state` is
 "generated and recoverable but costly to lose", `cache` "may be deleted at any moment without
 consequence" (`packages/paths/src/global.ts`).
-
-`runtimeRecipesDir` is the operator-authored root for Docker customization scripts. Keeping it
-outside workspace roots prevents an isolated agent from turning a later cold launch into an
-operator-authorized build. `runtimeRecipeLeaseFile` is host-only coordination for one
-content-addressed Docker image build. It lives under generated state rather than cache so an
-operator cache cleanup cannot delete a live cross-process lease; the acquired file itself is
-removed on release. The identity is encoded by the same `ownerSegment` boundary as every other
-untrusted dynamic path component. Production: `GlobalPaths.runtimeRecipesDir`,
-`GlobalPaths.runtimeRecipeStateDir`, `GlobalPaths.runtimeRecipeLeaseFile`, and `globalPaths` in
-`packages/paths/src/global.ts`. Test: `globalPaths > names the generated state and the cache` in
-`packages/paths/tests/component/paths.test.ts`.
 
 ### 2.4.1 Local host namespaces
 
@@ -247,9 +205,7 @@ builder tests do not qualify native IPC behavior.
 | `memoryRootForOwner(owner)` | `<ws>/.clarvis/owners/<seg>/memory` | `packages/paths/src/workspace.ts` |
 | `agentFile(name)` | `<agentsDir>/<name>.md` | `packages/paths/src/workspace.ts` |
 
-`agentsWorkspaceDir(root?)` returns the complete `<ws>/.agents` control root. Container mount policy
-uses this root together with `workspacePaths(root).clarvisDir`; it does not reconstruct either
-literal or enumerate their children outside `@clarvis/paths`.
+`agentsWorkspaceDir(root?)` returns the complete `<ws>/.agents` control root.
 
 Interface doc: "Machinery is deliberately **absent from this type**… The keys are removed rather
 than deprecated so that writing generated bookkeeping into someone's working tree is a compile
@@ -502,16 +458,6 @@ confirmed by the absence of `zod` from its dependencies (`package.json`, section
 real writer against: `.gitignore`, `settings.json`, `agents`, `skills`, `workflows`, `plugins`,
 `extension-profiles`, `guard-judge.md`, `plans`, `memory`, `owners`, `worktrees`
 (`packages/kernel/tests/architecture/workspace-surface.test.ts`, INV-192).
-
-That writer inventory is not a Container visibility allow-list. Docker/Podman covers
-`<ws>/.clarvis` with its private persistent content volume, overlays only the canonical Plans and
-Memory directories read-write, and covers `<ws>/.agents` with an empty read-only mask. Exact
-owner-scoped session, workflow and trace directories plus workspace machinery are overlaid below
-the private state volume so Host/Sandbox and Container use one durable domain history. Mask sources are host-created outside the selected workspace and removed after
-launch failure or teardown. Production:
-`agentsWorkspaceDir` in `packages/paths/src/workspace.ts` and `prepareRuntimeMounts` in
-`packages/kernel/src/runtime/container-mounts.ts`. Test:
-`packages/kernel/tests/unit/runtime-mounts.test.ts`.
 
 `WORKSPACE_GITIGNORE` content, seeded verbatim (`packages/paths/src/ensure.ts`):
 ```

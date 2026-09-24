@@ -728,18 +728,11 @@ Two hooks, in this order (`packages/capability/src/contract.ts` explains why bot
    Returns immediately for checkpoint disposition, or unless `record.status === "completed"` **and** `ref.retention === "discard"`. Deletes through `bestEffort`, logs `plan.retention.discarded` with `deleted: boolean`
    at `info` either way, and emits `plan_removed` only when a document was actually removed.
 
-Plans is native in Host, Sandbox and Container. Container admits the Markdown provider and keeps
+Plans is native in Host and Sandbox. The host admits the Markdown provider and keeps
 the native plan service, tools, CAS, approval, continuation and retention lifecycle in its Kernel.
 An active external+external provider is rejected during projection; an inactive inherited setting
 does not start that provider. Plan documents and locks persist in the canonical workspace stores
 shared with Host/Sandbox.
-
-Production: `projectContainerConfiguration` in
-[`container-projection.ts`](../../packages/kernel/src/config/container-projection.ts) and
-`createContainerNativeKernel` in
-[`container-native.ts`](../../packages/kernel/src/hosting/container-native.ts). Test:
-[`container-projection.test.ts`](../../packages/kernel/tests/unit/container-projection.test.ts) and
-[`container-kernel-host.test.ts`](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
 
 The `lifecycle.onRunStart` hook exists only for a continuation (`packages/plan/src/capability/index.ts`): it reconciles,
 emits `plan_removed` if the continuation plan was gone (and returns), else emits

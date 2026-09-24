@@ -692,13 +692,6 @@ the caller to re-read and re-decide.
 
 ## 7. Coupling
 
-File and Container Kernels compose this store locally. Container places Markdown documents in its
-canonical workspace plan directory and serves plan control over the public Kernel protocol; there is no transfer
-or proxy store. This does not change the low-level `delete(id)` contract or `PlanService`
-control-plane deletion. Production: `createNativeKernel` in
-[`native-kernel.ts`](../../packages/kernel/src/native-kernel.ts). Test:
-[`container-kernel-host.test.ts`](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
-
 **Depends on (runtime, static):**
 
 | Target | Why forced | File |

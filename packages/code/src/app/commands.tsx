@@ -364,7 +364,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     name: "isolation.picker",
     enabled: () => !deps.runActive(),
     title: "Isolation",
-    desc: "Choose Host, Sandbox, Docker or Podman isolation for the next run",
+    desc: "Choose Host or Sandbox isolation for the next run",
     surface: "internal",
     group: "navigate",
     actionSurfaces: ["footer", "full-help"],
@@ -730,9 +730,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           catalog: deps.catalog,
           notify,
           runActive: deps.runActive,
-          ...(deps.runtime?.()?.kind === "container"
-            ? { reload: () => deps.reconnectBackend("reload") }
-            : {}),
           ...(deps.inspectRunContext === undefined
             ? {}
             : { inspectContext: deps.inspectRunContext }),

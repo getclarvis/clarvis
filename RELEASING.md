@@ -9,23 +9,18 @@ does not authorize a tag, push, GitHub Release, or any other publication action.
 - A final release tag is exactly `v<version>`, annotated, and signed by the authorized releaser.
 - The release workflow builds glibc-based Linux, macOS, and Windows archives for x64 and arm64 on
   native runners.
-- A pushed final tag also builds `linux/amd64` and `linux/arm64` isolated-runtime carrier/final images,
-  publishes their multi-platform indexes in the source repository's GHCR, attests both subjects,
-  and emits `runtime-release.json` with the exact digests and private protocol revision.
 - A tag-triggered workflow in `getclarvis/clarvis` uploads a complete draft to public
   `getclarvis/clarvis-releases` and activates it in its final step. There is no human pause after the
   tagged workflow starts.
 - The source repository's `GITHUB_TOKEN` is read-only by default and receives `Packages: write` only
-  inside the two GHCR jobs. Cross-repository publication uses the `Clarvis Release Publisher` GitHub
+  only where required. Cross-repository publication uses the `Clarvis Release Publisher` GitHub
   App, installed on `clarvis` and `clarvis-releases` with `Contents: write`. Its Client ID is repository
   variable `CLARVIS_RELEASE_APP_CLIENT_ID`; its private key is repository secret
   `CLARVIS_RELEASE_APP_PRIVATE_KEY`.
 - The final publish job independently extracts all six archives, rejects any case-insensitive
-  `.map` suffix, inline `sourceMappingURL=data:` payload, malformed/runtime-version-mismatched
-  `runtime-release.json`, and non-allowlisted asset, rechecks every sidecar and `SHA256SUMS`, and only
+  `.map` suffix, inline `sourceMappingURL=data:` payload, and non-allowlisted asset, rechecks every sidecar and `SHA256SUMS`, and only
   then mints the short-lived GitHub App token.
-- A manual workflow dispatch builds downloadable portable artifacts but cannot publish a runtime
-  image or release.
+- A manual workflow dispatch builds downloadable portable artifacts but cannot publish a release.
 - Active source-repository rulesets protect `main`, `develop`, and release tags. Published releases in the
   distribution repository are immutable: fixes use a new version; never move or reuse a release tag.
 
@@ -50,50 +45,15 @@ These credentials and external ruleset permissions must be checked live before c
 integration operational. Local tests use temporary repositories and throwaway signing keys; they
 do not establish GitHub App permissions or successful public publication.
 
-## Image channels and first publication
+## Source candidates
 
-Candidate images live in `ghcr.io/getclarvis/clarvis-runtime-candidate-artifact` and
-`ghcr.io/getclarvis/clarvis-runtime-candidate`, linked to the source repository. The signed RC tag
-starts native amd64 and arm64 builds on Ubuntu 26.04 runners with Podman 5.7. The image itself
-still uses the pinned Debian base. Ubuntu 24.04's Podman 4.9 cannot implement the required volume
-subpath contract; engine tests must not weaken that contract to accommodate an older runner. Each runnable image must pass the existing real-engine Docker
-and rootless Podman canaries before its digest is included in a candidate index. These canaries use
-a deterministic model provider; they do not establish a live subscription result. The source
-prerelease attaches `runtime-candidate.json`, which is deliberately separate from the stable manifest.
-New installable candidates declare `installation: "source-v1"`. Use `./dev-install.sh --candidate`
-for the newest published RC among the latest 100 source releases, or supply an exact RC tag. This
-installs an isolated source checkout using the candidate's pinned Bun. An available Docker or Podman
-engine prefetches and verifies the image before `clarvis-develop` is replaced; without either engine,
-the native-capable candidate is installed and container isolation remains unavailable. Git must be
-available. The existing image-only
-RCs cannot be installed this way. The stable portable installer and updater remain separate.
-Candidate source/image matching is enforced again on container runtime initialization. Previous
-candidate checkouts and images are retained; reinstall selects a newer candidate explicitly.
-The root version remains the prepared final version; the RC tag and candidate channel identify
-these non-stable images. No stable installer is published from an RC.
-
-Official images use `ghcr.io/getclarvis/clarvis-runtime-artifact` and
-`ghcr.io/getclarvis/clarvis-runtime`, linked to `clarvis-releases`. Both official packages must be
-public and grant Actions write access to `clarvis`; registry writes use its job-scoped
-`GITHUB_TOKEN`, not the Publisher App token. Source/revision OCI labels and attestations continue
-to identify the source build even when the official package is connected to the distribution repo.
-
-Multi-platform index assembly uses the runner-provided Docker Buildx plugin and verifies its
-availability before use; it requires no third-party action allowlist expansion.
-
-GHCR package controls exist only after the first image push. At first publication, verify the
-package's connected repository, visibility, and Actions access in GitHub; creating a public Git
-repository does not prove that a newly pushed package is public. The stable publish job attempts
-anonymous pulls of both exact manifest digests and refuses to activate the release if either fails.
-Keep official digests and their attestations for every published release. Do not apply candidate
-cleanup rules to official packages. No automatic deletion is configured.
-
-Build staging tags include the workflow run and attempt. Candidate version indexes are never
-silently overwritten: an existing index stops publication and requires inspection. A partially
-published candidate is not qualified merely because some registry blobs exist. Retry failed jobs
-before index publication; after an index has been written, investigate and use a new candidate
-when rebuilding would change its digest. Stable releases accept only exact `v<major.minor.patch>`
-tags; prereleases remain in `clarvis`. Historical distribution prereleases are preserved.
+The signed RC tag triggers `candidate.yml`, which checks the source identity and publishes a
+source prerelease with `source-candidate.json`. Use `./dev-install.sh --candidate` for the newest
+published RC among the latest 100 source releases, or supply an exact RC tag. This installs an
+isolated source checkout using the candidate's pinned Bun. Git must be available. Candidate
+checkouts are retained; reinstall selects a newer candidate explicitly. The root version remains
+the prepared final version, while the RC tag identifies the source snapshot. No stable installer
+is published from an RC.
 
 ## Branch lifecycle
 
@@ -121,8 +81,8 @@ reset `main`, move a tag, or disable protections without separate explicit autho
    receives the next RC number. Reopening or retargeting a PR into `main` also evaluates its head;
    closing without merge stops new candidate tagging. Existing tags remain intact.
    Repeating a run for the same commit reuses its tag. `release.yml` excludes `v*-rc.*` pushes, so
-   candidates cannot publish stable installers or official runtime images. The separate
-   `candidate.yml` workflow publishes only candidate packages and a prerelease in `clarvis`. Wait for each candidate run before
+   candidates cannot publish stable installers. The separate
+   `candidate.yml` workflow publishes a source prerelease in `clarvis`. Wait for each candidate run before
    pushing another revision: GitHub concurrency serializes tag writes but can replace pending runs
    during rapid pushes. A replaced run creates no candidate; its newer revision is the candidate.
    Candidate tagging after its final tag exists fails and requires a new release version.
@@ -175,15 +135,6 @@ bun run release:smoke
 bun run release:install-smoke
 ```
 
-On a qualified Docker/Colima host, also build a local base with
-`bun run runtime:base:build --engine docker --target linux-x64 --tag clarvis-base:release-canary`,
-compile the matching Kernel archive with
-`bun run runtime:artifact:build --engine docker --target linux-x64 --out <directory>`, and execute
-the gated Docker runtime canary against that explicit pair through
-`bun run runtime:qualify --engine docker --base <image> --artifact <archive> --report <file>`, or
-through its strict wrapper `tooling/ci/qualify-runtime.sh`. This is current-source evidence only; it
-does not publish or emulate a registry attestation.
-
 Run the manual `workflow_dispatch` path to exercise every native runner without publishing. Download
 the six workflow artifacts and confirm:
 
@@ -195,10 +146,8 @@ the six workflow artifacts and confirm:
 - unsigned macOS and Windows behavior is accurately described in the docs;
 - no source map, secret, private fixture, or developer path is present in any archive.
 
-The complete `release-assets` allowlist also requires the real `runtime-release.json`, which exists
-only after the tag-only GHCR jobs resolve their registry digests. Do not fabricate it to make a
-manual dispatch look like a publication rehearsal. The tag workflow runs that complete gate before
-it obtains the cross-repository publication credential.
+The tag workflow runs the complete release-assets gate before obtaining the cross-repository
+publication credential. A manual dispatch validates the portable artifacts without publishing.
 
 The public documentation repository resolves the newest complete published release during its
 build and rebuilds on a schedule. A patch release therefore requires no documentation version bump;
@@ -229,7 +178,7 @@ fixes into any active release branch; keep any subsequent development on `develo
 
 Then:
 
-1. Confirm all archives, `SHA256SUMS`, `runtime-release.json`, installer scripts, and
+1. Confirm all archives, `SHA256SUMS`, installer scripts, and
    license/notices are visible under the correct `getclarvis/clarvis-releases` tag and that no
    uploaded filename or archive member ends in `.map`, case-insensitively, or embeds an inline source
    map.
@@ -237,8 +186,5 @@ Then:
 3. Verify `clarvis --version`, first-run setup, `clarvis --update`, and the documented removal path.
 4. Check README badges and links, the public changelog entry, private vulnerability reporting, issue
    forms, branch/tag rulesets, and the GitHub Community Profile.
-5. Resolve both GHCR references from `runtime-release.json`, verify their platform set and GitHub
-   attestations, pull the final image by digest, and run the gated Docker runtime canary against its
-   local immutable image ID.
-6. Record platform evidence and any launch incident. If a release must be superseded, publish a new
+5. Record platform evidence and any launch incident. If a release must be superseded, publish a new
    version and explain the affected one; do not mutate its binaries.

@@ -25,12 +25,6 @@ these with canonical FileKernel services and immutable run preparation behind re
 lease fencing and bounded idle shutdown. Code's workspace manager connects to this composition;
 its background feature exposes explicit handoff, discovery and attachment through the kernel RPC.
 
-Production: `HostedRunRef`, `HostedRunAttachment`, `HostedRunReceipt` and `HostingService` in
-[hosting.ts](../../packages/protocol/src/hosting.ts). The concrete kernel RPC and its IPC adapters
-remain owned by [kernel transport](kernel-transport.md). The Container launcher carries this same
-public hosting service through channel 1; process
-ownership and broker channels remain owned by [isolated agent runtime](isolated-agent-runtime.md).
-
 ## Code integration
 
 Host-started goal stages use `RunHost.synchronizeGoal` in the already selected conversation.
@@ -143,15 +137,14 @@ Uncertain handoff remains visible and consults the same operation receipt instea
 A draft received during handoff keeps the TUI open even after the run has entered background.
 The exit path restores the terminal and prints the execution identity; it bypasses checkout removal.
 
-Container and SSH processes are owned by the current client channel and refuse that handoff before
+SSH processes are owned by the current client channel and refuse that handoff before
 any hosting mutation. Their list, attach and cancel controls remain useful only while the same
 connection is alive. The workspace manager exposes this lifecycle fact explicitly; Code does not
-infer it from the Kernel's native/container runtime label.
+infer it from the Kernel's native runtime label.
 
 | Connection destination | `/background` survives TUI exit | List, attach and cancel |
 | --- | --- | --- |
 | local Host or Sandbox | yes, after a confirmed host receipt | current or reopened TUI while the local host exists |
-| Docker or Podman | no | current Container connection only |
 | SSH remote | no | current SSH stdio connection only; saved history persists after closure |
 
 Opening a local workspace offers runs with `continue` policy after first paint, unless a draft,
@@ -286,7 +279,7 @@ siblings remain. Segmentation bounds files and read buffers, not total disk rete
 
 Production: `openProjectionStorage` and `removeProjectionStorage` in
 [projection-storage.ts](../../packages/kernel/src/hosting/projection-storage.ts), used by
-`openHostedProjection`, local host and Container storage. Test: `streams beyond the former lifetime
+`openHostedProjection`, local host storage. Test: `streams beyond the former lifetime
 quota with bounded segments and immutable cuts` in
 [hosted-projection-file.test.ts](../../packages/kernel/tests/component/hosted-projection-file.test.ts)
 streams more than 64 MiB through the real snapshot decoder and preserves an earlier cut.
@@ -302,7 +295,7 @@ this local syscall recovery does not establish crash resumption or projection re
 
 Production: `recoverProjectionIO` in
 [projection-io.ts](../../packages/kernel/src/hosting/projection-io.ts), called by `openProjectionStorage`;
-local and Container hosts supply their Logger. Test: `recovers positional writes and rotation sync
+local hosts supply their Logger. Test: `recovers positional writes and rotation sync
 without duplicating frames or changing a snapshot` in
 [hosted-projection-file.test.ts](../../packages/kernel/tests/component/hosted-projection-file.test.ts)
 uses real segmented files with faults before/after individual IO operations. `positional IO recovery
@@ -386,15 +379,6 @@ retires it on switch/resume, and `disconnect` retires every scope of that connec
 receives a fresh scope. At most 64 conversation scopes are retained per connection. Even when the
 revocation callback fails, a disconnected peer and its controls become unusable before that error is
 reported; all scopes are attempted. The concrete guard/configuration policy supplies this callback.
-
-Native Host/Sandbox command approval consults the live scope on every check. Answers received after
-that scope retires deny even when the old dialog selected one-time approval. Human fallback answers
-are not cached by effect review. Container composes no guard or approval port. Production:
-`createGuardHumanApproval` in [human-approval.ts](../../packages/kernel/src/guard/human-approval.ts)
-and `createContainerNativeKernel` in
-[container-native.ts](../../packages/kernel/src/hosting/container-native.ts). Test:
-[guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts) and
-[container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
 
 Production: `createHostedAdmission`, `HostedAdmission` and `HostedControl` in
 [admission.ts](../../packages/kernel/src/hosting/admission.ts). Test: the reservation/disconnect,
@@ -1110,7 +1094,7 @@ current controller claims a request; another observer or an earlier controller c
 Disconnect relinquishes the claim without approving the request. Expiry or host close resolves an
 unanswered request as not opened. Opening a browser is separate from provider authorization.
 
-Inspection returns copied process state. Application-owned Docker recipe preparation publishes
+Inspection returns copied process state. The application may publish
 bounded, sequenced `runtime_notice` data through `FileRunHost.runtimeNotice`, which is not a guest
 RPC operation. The workspace adapter reports that notice to the TUI. Runtime retry and configuration
 restart are explicit operator operations; neither inspection nor reconnect triggers them.
@@ -1226,7 +1210,6 @@ Test: `restart scopes steering reconciliation to its persisted destination, cons
 `retains steering when canonical history is %s and retries only the lookup` and
 `finds steering consumption older than sixteen turns despite a missing newer trace` in
 [hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).
-
 
 Production: `startOperator` and the observation controls in
 [registry.ts](../../packages/kernel/src/hosting/registry.ts), `acceptOperator`, `prepareOperator` and

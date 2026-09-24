@@ -51,51 +51,13 @@ export interface KernelCapabilities {
   runtime?: RuntimeStatus;
 }
 
-/** Truthful host-reported runtime placement and effective container policy. */
-export type RuntimeStatus =
-  | {
-      kind: "native";
-      host_platform: string;
-      isolation: "host" | "sandbox";
-      lifecycle: "ready";
-    }
-  | ({
-      kind: "container";
-      engine: "podman" | "docker";
-      host_platform: string;
-      guest_platform: "linux";
-      network: "none" | "outbound";
-      engine_version?: string;
-    } & (
-      | {
-          generation: string;
-          image_digest: string;
-          artifact_digest: string;
-          base_abi: string;
-          broker_version: number;
-          channel_version: number;
-          state_namespace: string;
-          lifecycle: "ready";
-        }
-      | {
-          generation?: string;
-          image_digest?: string;
-          artifact_digest?: string;
-          base_abi?: string;
-          broker_version?: number;
-          channel_version?: number;
-          state_namespace?: string;
-          lifecycle:
-            | "cold"
-            | "inspecting"
-            | "preparing"
-            | "starting"
-            | "stopping"
-            | "stopped"
-            | "disconnected"
-            | "failed";
-        }
-    ));
+/** Truthful host-reported native execution placement. */
+export interface RuntimeStatus {
+  kind: "native";
+  host_platform: string;
+  isolation: "host" | "sandbox";
+  lifecycle: "ready";
+}
 
 /** Options passed when connecting a {@link KernelClient}. */
 export interface ConnectOptions {

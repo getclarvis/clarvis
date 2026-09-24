@@ -11,7 +11,7 @@ retains the manager's already assembled body, including a skill seed, and fixes 
 fan-out settings, selectable leaders and default leader for the whole tree. Later file edits affect
 future preparations. They do not change a leader spawned by an already admitted manager or grant
 an expired interactive permission. The scheduler and physical tree use the native workflow service
-and lifecycle; Docker/Podman does not compose a workflow bridge.
+and lifecycle.
 
 Production: `PreparedWorkflowExecution`, `runManagerWorkflow` and `assembleLeader` in
 [workflows-service.ts](../../packages/kernel/src/workflows/workflows-service.ts), and
@@ -58,14 +58,10 @@ See [self-configuration.md](../hosts/self-configuration.md) for the writer's aut
 
 ## 2. Surface
 
-Workflow execution is available in Host, Sandbox and Container. Container keeps manager, leaders,
+Workflow execution is available in Host and Sandbox. The native host keeps manager, leaders,
 registry and execution in its Kernel, persists records in the canonical owner-scoped host directory
 shared with Host/Sandbox, and uses frozen projected definitions. Plugin
 definitions remain unavailable; no subset or host bridge substitutes for the workflow.
-
-Production: `createContainerNativeKernel` in
-`packages/kernel/src/hosting/container-native.ts`. Test:
-`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 ### `@clarvis/workflows` — `./artifact` entry
 
@@ -635,13 +631,6 @@ handle settles.
 
 ### 4.8 Semantic title generation — `generateWorkflowTitle` (`packages/kernel/src/workflows/workflow-title.ts`)
 
-The title argument validator is created on first use, after the standalone Kernel installs its
-bundled Ajv modules. Importing workflow-title code must not resolve Ajv before that installation.
-Production: `titleArgumentValidator` in `packages/kernel/src/workflows/workflow-title.ts` and
-`installBundledAjvModules` in `tooling/runtime/kernel-entry.ts`. Test:
-`packages/kernel/tests/unit/workflow-title.test.ts` and
-`packages/kernel/tests/integration/container-kernel.e2e.test.ts`.
-
 1. Find the manager's own profile (`request.profiles.find(p => p.name === request.entry)`) and the
    most recent `role: "user"` message's text; if either is missing, return `null` immediately with
    no provider call (`packages/kernel/src/workflows/workflow-title.ts`, proven by
@@ -1118,7 +1107,6 @@ is signalled through `WorkflowCtx.onBudgetExhausted` by `runLeader`, `buildRunLe
 `runOne`. Test: `packages/kernel/tests/unit/workflows-service.test.ts` (`finalWorkflowStatus` and
 `reconcileRunningWorkflowRecord`) and `packages/kernel/tests/integration/workflows-service.test.ts`
 (`flushes one coalesced terminal snapshot before done and closed settle`).
-
 
 ## 6. Failure modes and degradation
 

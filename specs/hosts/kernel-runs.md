@@ -873,18 +873,6 @@ closing" through `done` rather than through `start`.
 Production `packages/kernel/src/runs/managed-run.ts`. Test `packages/kernel/tests/unit/managed-run.test.ts`,
 `packages/kernel/tests/integration/run-service.smoke.test.ts`.
 
-**INV-R22.** Steering is acknowledged only when the loop drains the message. If the run closes
-before that drain, or steering begins after settlement, `steer` throws `not_found`; `compact` also
-throws `not_found` after settlement. A protocol success therefore cannot mean only that a transient
-queue accepted data.
-Production: `packages/kernel/src/runs/steer-queue.ts` (`push`, `drain`, `close`),
-`packages/kernel/src/runs/managed-run.ts` (`RunHandle.steer`, `RunHandle.compact`), and
-`packages/kernel/src/runs/compaction-queue.ts` (`push`). Tests:
-`packages/kernel/tests/unit/run-control-queues.test.ts` (drain acknowledgement and close refusal) and
-`packages/kernel/tests/unit/managed-run.test.ts` (close-before-drain and post-settlement refusal).
-Container exposes these controls through the same public `RunHandle`; no second queue or execution
-RPC exists outside its Kernel. Test: `packages/kernel/tests/integration/container-kernel-host.test.ts`.
-
 Both queues also expose `undrained()`, which inspects queued-but-not-yet-drained messages without
 consuming them (`packages/kernel/src/runs/steer-queue.ts`; `packages/kernel/src/runs/compaction-queue.ts`). The handle's `compact`
 also wraps its argument before pushing: `compaction.push(request === undefined ? {} : { request })`

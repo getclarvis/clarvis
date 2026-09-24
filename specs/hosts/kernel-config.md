@@ -138,7 +138,7 @@ silently weakening the service's concurrency guarantee" (`packages/kernel/src/co
 ### 2.5 Settings schema composition
 
 `kernelCapabilityRegistry` registers `memorySettingsSpec`, `plansSettingsSpec`, `goalsSettingsSpec`,
-`workflowsSettingsSpec`, `tasksSettingsSpec` and `runtimeSettingsSpec` at module load. There is no
+`workflowsSettingsSpec` and `tasksSettingsSpec` at module load. There is no
 worktree settings block: worktrees are a launch-time Code choice rather than a kernel capability.
 `kernelSettingsSchema =
 settingsSchemaFor(kernelCapabilityRegistry)`, which extends the engine's `settingsSchema` with
@@ -277,7 +277,7 @@ agent and per attempt: the lead's counter and each child's counter are separate,
 retry starts a fresh one while the Goal's consumption and global limits keep accumulating
 ([budgets-and-guards.md](../engine/budgets-and-guards.md)). 512 is also
 `CLARVIS_DEFAULT_ITERATION_LIMIT` and `CLARVIS_ITERATION_CEILING`, and the same test asserts every
-shipped value fits under the default ceiling — the Container image's own ceiling has to admit it too
+shipped value fits under the default ceiling
 ([build-and-ci.md](../cross-cutting/build-and-ci.md)).
 
 The bodies are deliberately limited to role, effective harness surface and runtime constraints. The

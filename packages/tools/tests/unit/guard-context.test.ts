@@ -21,12 +21,12 @@ describe("buildGuardContext — command tools", () => {
       {
         command: "echo hi",
         sandbox_permissions: "require_escalated",
-        justification: "need host docker.sock",
+        justification: "need host service",
       },
       config,
     );
     expect(ctx.sandboxPermissions).toBe("require_escalated");
-    expect(ctx.justification).toBe("need host docker.sock");
+    expect(ctx.justification).toBe("need host service");
   });
 
   it("analyzes bash and resolves in-workspace vs escaping paths", () => {

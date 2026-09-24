@@ -55,7 +55,7 @@ export type KernelResolver = (ctx: OwnerContext) => Promise<ResolvedHost>;
  * @param host - the kernel backing every session.
  * @param owner - the owner id reported back; defaults to `"default"`.
  * @returns a {@link KernelResolver} that ignores the request context.
- * @remarks The one-container-one-config deployment. Per-owner data separation
+ * @remarks The one-server-one-config deployment. Per-owner data separation
  *   replaces this with a resolver that scopes the kernel by `ctx.owner`.
  */
 export function fixedKernelResolver(host: RunHost, owner = "default"): KernelResolver {

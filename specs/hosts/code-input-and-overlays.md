@@ -28,7 +28,7 @@ share the same windowing math
 Hosted backends add `/background`, `/background list`, `/background cancel <execution-id>` and
 `/attach <execution-id>` through the same deterministic command registry. Invalid arguments return
 `block` so the composer retains them. No command is forwarded to the model. The command description
-scopes exit-surviving handoff to local Host/Sandbox; Container and SSH retain the management
+scopes exit-surviving handoff to local Host/Sandbox; SSH retains the management
 subcommands but reject bare `/background`. Startup discovery is offered only for that local durable
 lifecycle, rechecks interaction ownership after its list request and cannot replace a newly typed
 draft. The complete lifecycle is owned by [hosted runs](hosted-runs.md#code-integration).
@@ -219,7 +219,7 @@ Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL
 | `ListPicker<T>(props)` | Generic filterable/scrollable/windowed picker inside a `FloatFrame`; an optional fixed `intro` declares its responsive `introRows` cost | `packages/code/src/views/overlays/ListPicker.tsx` (`ListPicker`) |
 | `ListPickerVerb<T>` | shared `PanelVerbName` or one-off `{key,label,run,when?}` | `packages/code/src/views/overlays/ListPicker.tsx` |
 | `AgentProfilePicker(props)` | `ListPicker` of Agent Profiles + a nested default-scope `ListPicker` | `packages/code/src/views/overlays/AgentProfilePicker.tsx` |
-| `IsolationPicker(props)` | Lazy retained `ListPicker` over Host, native Sandbox, lazy Docker and lazy Podman, with armed confirmation before direct-host execution | `packages/code/src/views/overlays/IsolationPicker.tsx` (`IsolationPicker`) |
+| `IsolationPicker(props)` | Lazy retained `ListPicker` over Host and native Sandbox, with armed confirmation before direct-host execution | `packages/code/src/views/overlays/IsolationPicker.tsx` (`IsolationPicker`) |
 | `ReviewPicker(props)` | Lazy retained `ListPicker` over Off, Approval and Auto Guard modes without changing isolation | `packages/code/src/views/overlays/ReviewPicker.tsx` (`ReviewPicker`) |
 | `Help(props)` | Full-page live-projected key/action/destination reference with stable indexed rows | `packages/code/src/views/overlays/Help.tsx` (`Help`) |
 | `DiffViewer(props)` | Full-screen changed-file tree and per-file reader for every mutation in the active transcript; an optional active accessor gates retained key layers | `packages/code/src/views/overlays/DiffViewer.tsx` (`DiffViewer`) |
@@ -666,22 +666,11 @@ name, matching Settings > Agents (`packages/code/src/adapters/active-agent.ts`).
 `packages/code/tests/unit/active-agent.test.ts` (`"agent list uses the same canonical presentation
 order as the Agents window"`).
 
-When effective Isolation is Docker/Podman, the list also projects kernel-owned Container
-compatibility: unmodified `marshall`, `coder`, `explorer` and `planner` remain selectable through
-their core projection; `admiral`, Plugin Agents and custom profiles with MCP tools, non-core grants
-or a `default_spawn` outside the admitted graph are labelled as requiring Sandbox/Host. The `$`
-completion provider returns no Skills while Container is effective. This is submit-time guidance,
-not authority; kernel admission revalidates the graph if state changes. Production:
-`packages/code/src/adapters/agents.ts` and `packages/code/src/views/App.tsx`. Test:
-`packages/code/tests/unit/agents.test.ts` and
-`packages/code/tests/component/kernel-run-client.test.ts`.
-
 ### `IsolationPicker` and `ReviewPicker`
 
 The two quick pickers reuse `ListPicker` but never combine their state. `IsolationPicker` marks the
-effective Host/Sandbox/Docker/Podman boundary, persists the global choice through `applyIsolation`, and
-arms `useArmedConfirm` before Host removes containment. Its Docker or Podman choice writes only
-`runtime.backend`, keeps native Sandbox settings intact, and does not start an engine from the picker.
+effective Host/Sandbox boundary, persists the global choice through `applyIsolation`, and
+arms `useArmedConfirm` before Host removes containment.
 A placement choice keeps the picker modal while saving and reconnecting, names the current phase in
 the footer, blocks navigation and Escape during that operation, and closes only after the replacement
 is admitted. Failure leaves the saved choice and wrapped error visible in the bounded preview, while
@@ -690,12 +679,10 @@ connection layer recovers that placement,
 and the standard navigation offers another choice or Escape without a competing footer. If restoring the setting itself fails, the error
 explicitly retains the pending reconnect state. Armed Host
 confirmation replaces the ordinary picker actions with `use host`/`keep isolation` and does not
-repeat its warning in the footer. A later Container failure remains failed until the operator chooses
-a placement and starts a new run. `ReviewPicker` marks Off/Approval/Auto in native placement, writes through `applyReviewMode` at
+repeat its warning in the footer. `ReviewPicker` marks Off/Approval/Auto in native placement, writes through `applyReviewMode` at
 the current scope, preserves command policy and leaves Isolation untouched. Auto's visible detail
 states that an LLM reviews risk and never asks a person.
-Under Container it
-renders `Not applicable in Container` and does not overwrite that policy. Both are lazy `retain-one`
+ Both are lazy `retain-one`
 portal boundaries, so neither module enters first boot and each native tree is reused after first
 open. Production:
 `packages/code/src/features/run/isolation.ts`, `packages/code/src/features/run/review.ts`,

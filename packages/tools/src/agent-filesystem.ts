@@ -34,7 +34,7 @@ export interface FilesystemCall {
 
 /**
  * Environment-selected file execution. Host can use a local implementation;
- * Sandbox uses one run-owned isolated service; Container invokes it in the guest.
+ * Sandbox uses one run-owned isolated service.
  */
 export interface AgentFilesystem {
   execute(

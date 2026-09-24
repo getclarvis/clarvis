@@ -27,8 +27,6 @@ function mount(
     /** The current per-client memory override; defaults to "on". */
     memoryMode?: "on" | "off";
     memoryEnabled?: boolean;
-    /** Optional container runtime used to exercise its effective descriptions. */
-    runtime?: { backend: "docker" };
     sandboxInspection?:
       | {
           available: boolean;
@@ -55,7 +53,6 @@ function mount(
     memory: { enabled: opts.memoryEnabled ?? true },
     default_model: "openrouter/glm-5.2",
     providers: opts.resolvable === false ? [] : [{ name: "openrouter", kind: "openai-compatible" }],
-    ...(opts.runtime === undefined ? {} : { runtime: opts.runtime }),
     ...(opts.sandboxInspection === undefined
       ? {}
       : {
@@ -198,33 +195,6 @@ async function activateMemoryOff(
   await selectOption(press, render, 2, ["down"]);
 }
 
-test("the isolation row opens sandbox details and persists minimal lazy Docker", async () => {
-  const { host, deps, press, notes, writes, guardSetModeCalls, sandboxOpened, inspectionCalls } =
-    mount();
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await t.renderOnce();
-
-  press("b");
-  expect(sandboxOpened).toEqual([true]);
-  await selectOption(press, () => t.renderOnce(), 0, ["down", "down"]);
-
-  expect(writes).toEqual([
-    {
-      scope: "global",
-      patch: {
-        runtime: { backend: "docker" },
-      },
-    },
-  ]);
-  expect(guardSetModeCalls).toEqual([]);
-  expect(notes).toEqual(["isolation: docker (global)"]);
-  expect(inspectionCalls()).toBe(2);
-  t.renderer.destroy();
-});
-
 test("an isolation change during a run is saved for the next run without reconnecting", async () => {
   const { host, deps, press, notes, writes } = mount({ runActive: true });
   const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
@@ -232,9 +202,9 @@ test("an isolation change during a run is saved for the next run without reconne
     height: 40,
   });
   await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 0, ["down", "down"]);
+  await selectOption(press, () => t.renderOnce(), 0, ["down"]);
   expect(writes).toHaveLength(1);
-  expect(notes).toEqual(["isolation: docker (global) — applies to the next run"]);
+  expect(notes).toEqual(["isolation: sandbox (global) — applies to the next run"]);
   t.renderer.destroy();
 });
 
@@ -247,7 +217,7 @@ test("an isolation reconnect refusal reports that the saved setting is pending",
     height: 40,
   });
   await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 0, ["down", "down"]);
+  await selectOption(press, () => t.renderOnce(), 0, ["down"]);
   expect(writes).toHaveLength(1);
   expect(notes).toEqual(["isolation saved, pending reconnect: run still owns the host"]);
   t.renderer.destroy();
@@ -262,7 +232,7 @@ test("an isolation write failure is surfaced without claiming a change", async (
     height: 40,
   });
   await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 0, ["down", "down"]);
+  await selectOption(press, () => t.renderOnce(), 0, ["down"]);
   expect(writes).toEqual([]);
   expect(notes).toEqual(["disk is read-only"]);
   t.renderer.destroy();
@@ -305,34 +275,6 @@ test("run controls follow host Sandbox inspection over a weaker workspace merge"
   t.renderer.destroy();
 });
 
-test("the Docker consequences remain complete in a narrow Run controls viewport", async () => {
-  const { host, deps, press } = mount({ runtime: { backend: "docker" } });
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 72,
-    height: 40,
-  });
-  await t.renderOnce();
-  press("i");
-  await t.renderOnce();
-
-  const frame = t.captureCharFrame();
-  const prose = frame.replaceAll(/\s+/gu, " ");
-  expect(prose).toContain(
-    "The selected workspace is mounted directly; changes appear on the host immediately.",
-  );
-  expect(prose).toContain(
-    "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
-  );
-  expect(prose).toContain("Outbound network access is enabled and may cause remote effects");
-  expect(prose).toContain("Commands run without Guard.");
-  expect(prose).toContain("Git metadata is read-only; use Sandbox or Host for commits.");
-  expect(prose).toContain(
-    "Docker stays cold until the first run and fails closed if it cannot start.",
-  );
-  expect(frame.split("\n").every((line) => line.length <= 72)).toBe(true);
-  t.renderer.destroy();
-});
-
 test("Host isolation requires confirmation and leaves command review untouched", async () => {
   const { host, deps, press, notes, writes, guardSetModeCalls } = mount({
     sandboxInspection: { available: true, degraded: false },
@@ -358,7 +300,6 @@ test("Host isolation requires confirmation and leaves command review untouched",
     {
       scope: "global",
       patch: {
-        runtime: { backend: "native" },
         sandbox: {
           type: "native",
           enabled: false,

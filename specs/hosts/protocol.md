@@ -187,10 +187,7 @@ optional hosted-run ownership and a close method:
 `KernelCapabilities` has the four booleans `memory`, `skills`, `agent_tools`, and `tasks`, plus the
 optional host-reported `runtime` and `hosting.host_generation`. Native placement reports `kind`,
 `host_platform`, effective isolation and lifecycle.
-Container placement additionally reports generation, selected Docker/Podman engine and version,
-host/guest platform, local immutable base image digest, artifact digest, base ABI, broker/channel
-versions, state namespace, effective network grant and lifecycle. This is an informational
-projection, not a client-controlled launch input. Public compatibility remains the concrete
+The runtime projection is informational, not a client-controlled launch input. Public compatibility remains the concrete
 transport's `CLARVIS_WIRE_VERSION` handshake (`packages/kernel/src/transport/wire.ts`).
 
 Production: `KernelCapabilities` and `RuntimeStatus` in `packages/protocol/src/client.ts`;
@@ -328,17 +325,9 @@ TLS plus at-rest protection" (`packages/protocol/src/secrets.ts`).
 | `refreshEntitled` | `(scheme: SubscriptionScheme) => Promise<CatalogProvider>` | `packages/protocol/src/models.ts` |
 
 `ModelCatalog.source` distinguishes `cache`, `bundle`, and `projection`. A projection is immutable
-logical execution metadata, not a downloaded cache or provider configuration. The Container catalog
-adapter supplies no endpoint, credential name or fake URL; it marks logical entries as not requiring
-URL configuration in the guest. Refresh and subscription-entitlement operations are `unsupported`
-there; operator administration remains a separate host service.
+logical execution metadata, not a downloaded cache or provider configuration.
 
-Production: `ModelCatalog` in [models.ts](../../packages/protocol/src/models.ts) and
-`createContainerModelCatalog` in
-[container-model-catalog.ts](../../packages/kernel/src/config/container-model-catalog.ts).
-Test: the guest catalog case in
-[container-projection.test.ts](../../packages/kernel/tests/unit/container-projection.test.ts)
-checks compatible/subscription aliases, closed resolution, defensive snapshots and refresh refusal.
+Production: `ModelCatalog` in [models.ts](../../packages/protocol/src/models.ts).
 
 #### `WorkspaceService` (`packages/protocol/src/workspace.ts`)
 
@@ -770,8 +759,7 @@ invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
 | Type | Shape | File |
 | --- | --- | --- |
 | `WorkspaceTrustVerdict` | `{ state: "inert" \| "unapproved" \| "trusted" \| "changed"; fingerprint?; approved? }` | `packages/protocol/src/config.ts` |
-| `SettingsData` | `{ default_model?; providers?: ProviderConfig[]; mcp_servers?: Record<string, McpServerConfig>; guard?: GuardConfig; sandbox?: SandboxConfig; runtime?: RuntimeConfig; memory?: MemoryConfig; budget?; [block: string]: unknown }` | `SettingsData` in `packages/protocol/src/config.ts` |
-| `RuntimeConfig` | native, or simple/advanced Docker or Podman; Docker may add an optional `recipe`; neither engine has fallback placement | `RuntimeConfig`, `RuntimeRecipeConfig` in `packages/protocol/src/config.ts` |
+| `SettingsData` | `{ default_model?; providers?: ProviderConfig[]; mcp_servers?: Record<string, McpServerConfig>; guard?: GuardConfig; sandbox?: SandboxConfig; memory?: MemoryConfig; budget?; [block: string]: unknown }` | `SettingsData` in `packages/protocol/src/config.ts` |
 | `ProviderConfig` | `{ name; kind?; base_url?; api_key_env?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 | `McpServerConfig` | `{ command?; args?; url?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 | `GuardConfig` | `{ mode?: "off" \| "on" \| "auto"; allowed_commands?; denied_commands?; [k]: unknown }` | `packages/protocol/src/config.ts` |
@@ -779,30 +767,6 @@ invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
 | `SandboxConfig` | `{ type: "native"; enabled?; availability?: "required" \| "optional"; filesystem?; network?; pass_env?; toolchains?: { mode?: "auto" \| "manual"; include?; exclude?; extra_paths?; excluded_paths? } }` | `packages/protocol/src/config.ts` (`SandboxConfig`) |
 | `SandboxToolchainScope` | `"system" \| "auto" \| "global" \| "workspace"` | `packages/protocol/src/config.ts` |
 | `SandboxInspection` | `{ filesystem: { placement: "host" \| "sandbox"; reads: "host-visible"; writes: "host-os" \| "declared-roots"; workspace: "read-write" \| "read-only" }; effective_network: "host" \| "none"; backend: { type: "bubblewrap" \| "seatbelt" \| "unsupported"; available; mode: "fresh-proc" \| "host-proc" \| "seatbelt" \| "unavailable"; degraded; reason? }; toolchains: SandboxToolchainStatus[]; extra_paths: SandboxPathStatus[]; effective_path: string[] }` | `packages/protocol/src/config.ts` (`SandboxInspection`) |
-
-`RuntimeConfig` is the host-operator input, not a run grant. A simple Docker or Podman object may
-omit image, executable, connection and limits; the kernel fills product-owned defaults. Omitting a
-container `network` selects
-the kernel's ordinary routable `outbound` default; this may reach host and LAN peers as well as the
-public internet. Podman has no `recipe` field. `RuntimeStatus.network` in `client.ts` is required for
-container placement because it reports the effective value after the kernel has resolved defaults.
-Neither type calls `outbound` internet-only, and the protocol exposes no host-port or engine-argument
-mutation method. Docker and Podman have no fallback field: either engine reports its own bounded
-failure and changing to Sandbox/Host requires a new explicit selection and run. The private
-Container framing and model broker are revision 1 and remain kernel-private. Channel 1 carries this
-same public Kernel protocol at wire revision 10; channel 2 admits only initialization/shutdown and
-channel 3 only logical model calls/deltas. There is no parallel execution/capability/checkpoint
-protocol.
-Docker's optional `RuntimeRecipeConfig` contains only `{name, script, network?}`: a safe diagnostic
-name, an absolute path under the global operator recipe directory and `none`/`outbound` build
-networking. It is persisted operator input;
-the protocol exposes no operation that executes, edits, publishes or delegates a recipe to a guest.
-
-Production: `RuntimeConfig` and `SettingsData` in `packages/protocol/src/config.ts`;
-`RuntimeStatus` in `packages/protocol/src/client.ts`; `runtimeSettingsSchema` in
-`packages/kernel/src/runtime/settings.ts`. Test: `runtime settings` in
-`packages/kernel/tests/unit/runtime-settings.test.ts`; `runtime status` coverage in
-`packages/kernel/tests/contract/transport-codecs.test.ts`.
 
 `SandboxInspection.backend` identifies what the host actually probed: Bubblewrap uses `fresh-proc`
 or degraded `host-proc`, Seatbelt uses `seatbelt`, and an unavailable selected/unsupported backend

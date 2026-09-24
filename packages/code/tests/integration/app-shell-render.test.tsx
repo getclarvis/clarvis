@@ -671,30 +671,6 @@ test("a live MCP startup failure appears once as a transient warning outside the
   t.renderer.destroy();
 });
 
-test("Container suppresses MCP degraded presentation defensively", async () => {
-  const store = createTranscriptStore();
-  const [notice, setNotice] =
-    createSignal<ReturnType<NonNullable<AppProps["run"]["mcpStartupNotice"]>>>(null);
-  const t = await mountApp(
-    defaultProps({
-      store,
-      mcpStartupNotice: notice,
-      settingsKnobs: () => ({ runtime: { backend: "docker" } }),
-    }),
-  );
-
-  setNotice({
-    sequence: 1,
-    servers: [{ name: "forged", reason: "must stay hidden" }],
-  });
-  const frame = await captureUntil(t, "Docker");
-  expect(frame).not.toContain("MCP unavailable for this run");
-  expect(frame).not.toContain("must stay hidden");
-  expect(store.nodes.some((node) => node.text.includes("must stay hidden"))).toBe(false);
-
-  t.renderer.destroy();
-});
-
 test("skill drift is a transient warning while the conversation remains untouched", async () => {
   const store = createTranscriptStore();
   const [notice, setNotice] =
@@ -1842,7 +1818,7 @@ test("Ctrl+X I opens the isolation picker and Escape returns to the composer", a
   const picker = await captureUntil(t, "Select isolation");
 
   expect(picker).toContain("Sandbox");
-  expect(picker).toContain("Docker");
+  expect(picker).toContain("Host");
   press(t, "escape");
   const back = await captureUntil(t, "New task");
   expect(back).not.toContain("Select isolation");

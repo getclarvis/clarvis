@@ -101,18 +101,8 @@ this document covers only the grant string that gates them.
 `process.env.CLARVIS_AGENT_TOOLS_MAX_GRANT ??= "exec"`),
 above the loop's own schema default of `"edit"` (`packages/capability/src/env.ts`).
 
-Container applies a frozen native capability policy. Shipped builtin profiles keep every native
-grant, including Workflow, and lose only `use_skills`. Operator profiles remain intact and are
-marked incompatible when they require Tasks, skills, plugins, MCP or another external provider;
-selection then fails before inference. Tool enable receives the projected enabled/confinement policy and
-`allowHostEscalation` remains false.
-
-Production: `projectContainerConfiguration` in
-[`container-projection.ts`](../../packages/kernel/src/config/container-projection.ts) and
-`createContainerNativeKernel` in
-[`container-native.ts`](../../packages/kernel/src/hosting/container-native.ts). Test:
-[`container-projection.test.ts`](../../packages/kernel/tests/unit/container-projection.test.ts) and
-[`container-kernel-host.test.ts`](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
+Host and Sandbox apply the resolved capability policy. Shipped builtin and operator profiles
+retain their admitted grants.
 
 ### 2.5 Built-in agent profiles' grant/spawn arrays
 

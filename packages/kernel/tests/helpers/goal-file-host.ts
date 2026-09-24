@@ -7,7 +7,6 @@ import { globalPaths, localHostPaths, writeFileDurableSync } from "@clarvis/path
 import { createFileRunHost } from "../../src/bootstrap.ts";
 import { openHostedProjection } from "../../src/hosting/projection.ts";
 import { createKernelEnvironment } from "../../src/ports/environment.ts";
-import type { RuntimeSettingsInput } from "../../src/runtime/settings.ts";
 import { connectKernelClient } from "../../src/transport/client.ts";
 import { connectLocalKernelTransport, listenLocalKernel } from "../../src/transport/local.ts";
 
@@ -53,7 +52,6 @@ export function imposesToolChoice(body: GoalFixtureRequest): boolean {
 /** Real file host, IPC, provider HTTP and SDK; only the provider's responses are controlled. */
 export async function createGoalFileHostFixture(
   options: {
-    runtime?: RuntimeSettingsInput;
     timeoutMs?: number;
     plansMode?: "off" | "on" | "review";
     planRetention?: "keep" | "discard";
@@ -271,7 +269,6 @@ export async function createGoalFileHostFixture(
             base_url: `http://127.0.0.1:${String(provider.port)}/v1`,
           },
         ],
-        runtime: options.runtime ?? { backend: "native" },
         plans: { mode: options.plansMode ?? "on", retention: options.planRetention ?? "keep" },
         ...(options.memory === true ? { memory: { enabled: true } } : {}),
         guard: { type: "shell", mode: "off" },

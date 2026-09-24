@@ -50,7 +50,6 @@ async function fixture(environmentOverrides: Readonly<Record<string, string | un
     JSON.stringify({
       default_model: "anthropic/test",
       providers: [{ name: "anthropic", kind: "anthropic" }],
-      runtime: { backend: "native" },
       plans: { mode: "off" },
       memory: { enabled: false },
     }),

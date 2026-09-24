@@ -102,8 +102,6 @@ export interface RunHostDeps {
   project: string;
   workspaceId: string;
   workspace: string;
-  /** Process placement owning the current Kernel connection. */
-  runtimeKind?: () => "native" | "container" | undefined;
   /** True only when a confirmed hosted handoff survives closing this client connection. */
   backgroundHandoffSurvivesExit: () => boolean;
   priceFor: (model: string) => CatalogCost | undefined;
@@ -1670,12 +1668,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   function runBangCommand(cmd: string): boolean {
-    if (deps.runtimeKind?.() === "container") {
-      setStatus([
-        "! commands are unavailable in Isolation Container; use the agent shell tool inside the Container",
-      ]);
-      return false;
-    }
     if (scheduledReserved() || humanSubmissions() > 0 || sessionLoading()) return false;
     if (currentSettlement !== undefined || compactionCalls() > 0 || physicalRunCount() > 0)
       return false;

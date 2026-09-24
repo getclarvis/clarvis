@@ -196,31 +196,6 @@ describe("prepared kernel execution", () => {
     expect(JSON.stringify(f.llm.calls)).toContain("The original worker.");
   });
 
-  test("does not retrofit a connected File Kernel when the operator selects Container", async () => {
-    const f = await fixture();
-    f.store.writeSettings("global", {
-      ...f.store.readSettings().merged,
-      runtime: { backend: "docker" },
-    });
-    for (const request of [
-      { plans: "off" as const },
-      { memory: "off" as const },
-      { guard_mode: "on" as const },
-      { skill: { name: "test-flow", task: "Run it" } },
-    ]) {
-      expect(
-        f.kernel.prepareRun({
-          execution_id: `native-${Object.keys(request)[0]}`,
-          agent: "worker",
-          messages: [{ role: "user", content: "Go" }],
-          ...request,
-        }),
-      ).toMatchObject({ agent: expect.any(String), start: expect.any(Function) });
-      expect(f.leases()).toBe(0);
-      expect(f.llm.calls).toHaveLength(0);
-    }
-  });
-
   test("does not resurrect a retired owner generation through a prepared start", async () => {
     const f = await fixture();
     const lease = await f.kernel.acquireOwner("secondary");

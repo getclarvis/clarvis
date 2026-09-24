@@ -48,7 +48,7 @@ const messageSchema = z.object({
  * `clarvis_run` arguments.
  *
  * @remarks `guard_mode`/`guard_judge` are deliberately absent: a pass-through
- * would let any caller send `guard_mode: "off"` and disable the container
+ * would let any caller send `guard_mode: "off"` and disable the server
  * operator's command guard. The guard is now on unless the operator's
  * `settings.json` says otherwise, so this omission is the whole protection
  * rather than a formality over an already-open door.

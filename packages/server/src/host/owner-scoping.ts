@@ -9,7 +9,7 @@ export interface OwnerScopedKernel {
 /**
  * Serve each connection the kernel scope of the owner it speaks for.
  *
- * @param kernel - the single kernel this container runs.
+ * @param kernel - the single kernel this server runs.
  * @returns a {@link KernelResolver} binding `kernel.forOwner(ctx.owner)`.
  * @remarks One kernel, many owners: the expensive singletons — the provider
  * adapter, the trace store, the config and skills catalogues, `process.env`

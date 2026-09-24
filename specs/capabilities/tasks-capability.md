@@ -793,18 +793,7 @@ array copies: `taskRefFromDto`, `taskRefDto`, `taskActorDto`, `taskSummaryDto`, 
 
 ### 4.13 Host composition
 
-Tasks remains a native Host/Sandbox capability and control plane. Docker/Podman registers no Tasks
-provider or lifecycle callback because the only current provider is MCP. An explicit `task`, a
-continuation with an active task binding, or a profile carrying `tasks.*` grants fails before model
-work. Inherited Tasks settings remain on the host and do not block an unrelated Container run.
-
-Production: `projectContainerConfiguration` in
-`packages/kernel/src/config/container-projection.ts`, `createContainerNativeKernel` in
-`packages/kernel/src/hosting/container-native.ts`, and `KernelRunClient.startRun` in
-`packages/code/src/adapters/kernel-run-client.ts`. Test:
-`packages/kernel/tests/unit/container-projection.test.ts`,
-`packages/kernel/tests/integration/container-kernel-host.test.ts`, and
-`packages/code/tests/integration/container-run-host.test.ts`.
+Tasks remains a native Host/Sandbox capability and control plane.
 
 `createFileKernel` computes `tasksEnabled = opts.builtins?.tasks !== false`
 (`packages/kernel/src/file-kernel.ts`), then, in order: builds the server port over the shared MCP

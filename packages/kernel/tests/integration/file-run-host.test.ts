@@ -116,7 +116,6 @@ async function fixture(
           base_url: `http://127.0.0.1:${String(provider.port)}/v1`,
         },
       ],
-      runtime: { backend: "native" },
       plans: { mode: "off" },
     }),
   );
@@ -857,9 +856,9 @@ describe("file kernel behind the hosted RPC", () => {
 
   test("runtime preparation notices reach operator inspection as bounded sequenced data", async () => {
     const f = await fixture();
-    f.host.runtimeNotice("Preparing Docker environment: test");
+    f.host.runtimeNotice("Preparing workspace: test");
     const first = (await f.client.localHost!.inspect()).runtime_notice!;
-    expect(first.message).toBe("Preparing Docker environment: test");
+    expect(first.message).toBe("Preparing workspace: test");
     f.host.runtimeNotice("preparing ".repeat(600));
     const next = (await f.client.localHost!.inspect()).runtime_notice!;
     expect(next.message.length).toBe(4096);

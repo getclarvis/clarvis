@@ -36,7 +36,6 @@ import {
 import { createGoalService } from "../goals/service.ts";
 import { unavailableGoalService } from "../goals/unavailable.ts";
 import { createGoalChanges } from "../goals/changes.ts";
-import { createContainerNativeKernel, type ContainerNativeOptions } from "./container-native.ts";
 
 /** Operator-owned process resources; storage and authentication are never selected by an RPC peer. */
 interface FileRunHostCommonOptions {
@@ -57,32 +56,10 @@ interface FileRunHostCommonOptions {
   exposeDefaultOwner?: boolean;
 }
 
-/** File composition preserves discovery; Container accepts only admitted data and inference ports. */
-export type FileRunHostOptions = FileRunHostCommonOptions &
-  (
-    | {
-        composition?: { kind: "file" };
-        kernel: Omit<CreateFileKernelOptions, "sessionAllowlistFor" | "ownershipMode">;
-      }
-    | ContainerFileRunHostOptions
-  );
-
-interface ContainerFileRunHostOptions {
-  composition: Pick<ContainerNativeOptions, "configuration" | "llm" | "runtime"> & {
-    kind: "container";
-  };
-  kernel: Pick<ContainerNativeOptions, "globalDir" | "project" | "workspace" | "logger"> & {
-    workspaceRoot: string;
-    defaultOwner: string;
-  };
-}
-
-/** Narrow the nested composition discriminator before using file-only adapter options. */
-function isContainerHost(
-  options: FileRunHostOptions,
-): options is FileRunHostCommonOptions & ContainerFileRunHostOptions {
-  return options.composition?.kind === "container";
-}
+/** File-backed host composition over the native Kernel. */
+export type FileRunHostOptions = FileRunHostCommonOptions & {
+  kernel: Omit<CreateFileKernelOptions, "sessionAllowlistFor" | "ownershipMode">;
+};
 
 /** A process-owned native Kernel and authenticated RPC server, independent of its pipes. */
 export interface FileRunHost {
@@ -108,9 +85,7 @@ export interface FileRunHost {
  * admission. Offline compaction and generated-state cleanup reserve a host-wide maintenance slot.
  */
 export async function createFileRunHost(options: FileRunHostOptions): Promise<FileRunHost> {
-  if (isContainerHost(options) && options.exposeLocalControls === true)
-    throw kernelError("unsupported", "Container cannot expose local machine controls");
-  const exposeLocalControls = !isContainerHost(options) && options.exposeLocalControls !== false;
+  const exposeLocalControls = options.exposeLocalControls !== false;
   const logger = options.kernel.logger ?? NOOP_LOGGER;
   const goalChanges = createGoalChanges(logger);
   const owner = options.kernel.defaultOwner ?? ownerFromWorkspace(options.kernel.workspaceRoot);
@@ -125,21 +100,6 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
     runtimeNotice = { sequence: ++sequence, message: sanitizeText(message).slice(0, 4096) };
   };
   const kernel: FileRunHost["kernel"] = await (async () => {
-    if (isContainerHost(options)) {
-      if (options.kernel.workspaceRoot !== options.kernel.workspace.path)
-        throw kernelError(
-          "invalid_request",
-          "Container workspace identity does not match its root",
-        );
-      return (
-        await createContainerNativeKernel({
-          ...options.composition,
-          ...options.kernel,
-          owner,
-          operatorAuthorityFor: (run) => registry?.operatorAuthorityFor(run),
-        })
-      ).kernel;
-    }
     return createFileKernel({
       ...options.kernel,
       defaultOwner: owner,

@@ -19,8 +19,7 @@ The non-degraded modes on both supported hosts promise the same **observable Cla
 host-visible filesystem reads, writes limited to admitted workspace, Git and temporary roots,
 an explicitly writable or read-only workspace, protected read-only paths, no signaling or inspection
 of host processes, optional host networking, and an environment rebuilt from a small allowlist.
-Sandbox is a write and process boundary; it does not hide every readable host file. Container is
-the placement for a mount-limited filesystem view. The native backends do not promise
+Sandbox is a write and process boundary; it does not hide every readable host file. The native backends do not promise
 identical kernel primitives. Bubblewrap adds mount, user, pid, ipc, and uts namespaces plus capability
 dropping; Seatbelt enforces the same file/network/process boundary with an SBPL profile but does not
 manufacture Linux namespaces. Bubblewrap's explicitly reported `host-proc` mode is the exception: it
@@ -406,8 +405,7 @@ probeSandbox`).
 ### 4.2 Command selection and availability
 
 `resolveConfig` creates a frozen `ResolvedFilesystemPolicy` with the host-selected placement,
-run identity, workspace posture, writable and protected roots, and temporary roots. A Container
-policy describes guest mounts and never introduces a host path bridge. `ExecutionSessionManager`
+run identity, workspace posture, writable and protected roots, and temporary roots. `ExecutionSessionManager`
 passes this same value to `sandboxCommand` for blocking and yielded shell calls; model arguments
 cannot widen it. The same policy governs native file calls in the run-owned service. Production: `resolveFilesystemPolicy` and `sandboxCommand` in
 [sandbox.ts](../../packages/tools/src/sandbox.ts), `resolveConfig` in
@@ -519,25 +517,6 @@ Production: `packages/code/src/views/config/SandboxConfigPanel.tsx` (`SandboxCon
 `packages/code/tests/integration/run-controls-render.test.tsx`, and
 `packages/code/tests/integration/doctor.test.ts`.
 
-### 4.6 Native Sandbox and Container are separate placements
-
-Native Sandbox keeps the integrated host composition described in this document. Docker and Podman
-select the complete Kernel Container contract in
-[isolated-agent-runtime.md](../hosts/isolated-agent-runtime.md): native domain services run inside
-the Container while Command Review, extensions and host process authority stay absent. The selected
-workspace remains writable and Git metadata is read-only. Selecting Container does not rewrite the
-persisted native Sandbox policy.
-
-Neither engine falls back to Sandbox or Host. Engine acquisition, image, policy, mount, handshake or
-guest failures are returned from the selected Container placement. The operator must explicitly
-select Sandbox/Host and begin a new run; a Container run is never replayed natively.
-
-Production: `packages/kernel/src/hosting/connect-local-container.ts`
-(`connectLocalContainerKernel`) and `packages/kernel/src/sandbox/policy.ts`
-(`effectiveSandboxSettings`). Tests:
-`packages/code/tests/component/workspace-client-manager.test.ts` and
-`packages/kernel/tests/integration/sandbox-policy.test.ts`.
-
 ## 5. Invariants
 
 **INV-S1 — Platform selection is local and explicit.** One `type: "native"` policy selects
@@ -554,7 +533,7 @@ a human; Auto may judge the host effect after deny-list enforcement (`allow` exe
 unsure, failed or malformed review refuse to the calling agent). An unavailable model refuses. The
 call's judge facts use Host placement and omit native network restrictions. Host-command asks bypass
 session coverage and never offer `allow_session`; clean exact-call judge memoization remains separate. Review `off` is
-unchanged. Docker/Podman reject escalation; on Host the field is a no-op under normal review.
+unchanged. On Host the field is a no-op under normal review.
 
 Production: `createShellGuard` in `packages/kernel/src/guard/shell-guard.ts` and `createGuardResolver`
 in `packages/kernel/src/guard/resolver.ts`. Test:
@@ -695,18 +674,9 @@ macOS canary packs a local package fixture outside the sandbox, then requires np
 execute, and materialize its output inside Seatbelt with `network: "none"`. Network enforcement is
 proved independently by INV-S14, so public-registry latency cannot fail this package-execution gate.
 
-**INV-S16 — Container selection never changes or invokes native Sandbox.** Docker/Podman failure is
-reported in place. Only a new explicit operator selection can place a later run in native Sandbox.
-
-- Production: `connectLocalContainerKernel` in
-  `packages/kernel/src/hosting/connect-local-container.ts` and `effectiveSandboxSettings` in
-  `packages/kernel/src/sandbox/policy.ts`.
-- Test: `packages/code/tests/component/workspace-client-manager.test.ts` and
-  `packages/kernel/tests/integration/sandbox-policy.test.ts`.
-
 **INV-S17 — Shell working directories and file tools follow placement.** An
 explicit `cwd` is resolved relative to the workspace and checked to be a directory. Host OS
-permissions, the native Sandbox, or Container mounts then decide access for commands and file tools.
+permissions or the native Sandbox then decide access for commands and file tools.
 
 - Production: `createShell` in `packages/tools/src/tools/shell.ts` and `resolvePath` in
   `packages/tools/src/lib/paths.ts`.
@@ -744,7 +714,6 @@ bootstrap inside Seatbelt without network`).
 | Fresh `/proc` blocked but host `/proc` bind works                                              | Available `bubblewrap` / `host-proc`, `degraded: true`, explicit reason                          |
 | Legacy optional backend unavailable                                                            | `ToolError("io_error")`; no host fallback                                                        |
 | Required backend unavailable                                                                   | `ToolError("io_error")`; no command spawn                                                        |
-| Docker or Podman fails before guest execution                                                  | Original bounded Container failure; no native execution, latch or replay                         |
 | Relative, broad, canonically broad, or workspace-containing mechanism path                     | `ToolError("invalid_input")`                                                                     |
 | Invalid, overly broad, missing, non-directory, or more than 512 selected skill execution roots | `StartupError`; no toolset is returned                                                           |
 | Missing configured extra path                                                                  | Omitted from resolved roots and surfaced unavailable in inspection                               |

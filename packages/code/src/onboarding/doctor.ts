@@ -367,10 +367,7 @@ export const GATES: Gate[] = [
       const eff = ctx.settings.effective();
       const selected = deriveIsolation(eff);
       const inspection = ctx.sandboxInspection();
-      const isolation =
-        selected === "docker" || selected === "podman"
-          ? selected
-          : (inspection?.filesystem.placement ?? selected);
+      const isolation = inspection?.filesystem.placement ?? selected;
       const reviewMode = resolvedGuardMode(eff.guard);
       const review = reviewMode === "on" ? "approval" : reviewMode;
       const posture = `${isolation} ${glyph("separator")} review ${review}`;
@@ -380,19 +377,6 @@ export const GATES: Gate[] = [
           return {
             status: "pass",
             detail: `${posture} ${glyph("emDash")} checking Sandbox host`,
-          };
-        }
-        if ((isolation === "docker" || isolation === "podman") && !a.available) {
-          return {
-            status: "warn",
-            detail: `${posture} ${glyph("emDash")} container starts fail closed`,
-            hint: `The Container connection fails closed if ${isolation === "docker" ? "Docker" : "Podman"} cannot start; native Sandbox is ${a.reason}.`,
-          };
-        }
-        if (isolation === "docker" || isolation === "podman") {
-          return {
-            status: "pass",
-            detail: `${posture} ${glyph("emDash")} connects before use and never falls back`,
           };
         }
         if (!a.available) {

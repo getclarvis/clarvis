@@ -175,7 +175,6 @@ transitions, bounded rejection feedback, host fault propagation and late-result 
 [authority-review-transaction.test.ts](../../packages/kernel/tests/unit/authority-review-transaction.test.ts)
 checks rejected candidate reasons and unchanged authority before correction.
 
-
 ## Private run contribution
 
 `createJudgeRunCapability` creates one mandatory `judge-private` contribution for the entry agent,
@@ -210,7 +209,6 @@ runs the ordinary engine and asserts the command-only provider schema, one itera
 two for compile/decide, terminal
 errors after bounded correction, recovery from text-only output with correction feedback, explicit
 object roots without forced selection, a single tool catalog and no partial compile on multiple calls.
-
 
 ## Isolated execution and cache prefix
 
@@ -309,7 +307,6 @@ per-stage limits, a single installation and unchanged message prefixes across co
 checks reservations, canonical JSON and framing rejection. These deterministic tests do not prove
 provider KV-cache hits; that requires the live canary before final qualification.
 
-
 ## Public capability and coordinator
 
 `createJudgeCapability` uses a host-provided pure `requiredFor` predicate, without static global
@@ -349,7 +346,6 @@ ownership, one preflight evaluation, lazy lookup and retirement through the ordi
 deduplication, complete-key invalidation, post-compile reuse, host validation, classified failures and
 retirement without another provider call.
 
-
 ## Native host composition
 
 `createHostJudge` binds the projected internal store and empty connection manager once per native
@@ -360,7 +356,7 @@ identity are architecture errors, not uncertainty.
 
 The pure eligibility predicate includes edit/exec profiles when tools are enabled and mode is Auto
 or off; automatic configuration review remains possible in off mode. Explicit human-only mode and
-read-only ceilings exclude it. Memory indexing filters Judge from inherited capabilities. Container
+read-only ceilings exclude it. Memory indexing filters Judge from inherited capabilities.
 composition does not invoke the native FileKernel factory. Command, configuration and effect review use this binding.
 
 Each actual inference emits one parent `guard_reviewer_model_call` with private
@@ -398,17 +394,6 @@ the workflow memory ownership journey observes Judge activation in manager and l
 the formulation executor dependencies;
 [goal-steward-runtime.test.ts](../../packages/kernel/tests/unit/goal-steward-runtime.test.ts) verifies
 required Judge exclusion while retaining only the Steward result gate.
-
-The Container boundary rejects every supplied `guard_judge` value, including an empty object,
-and guard modes Auto/On before inference. Guard off remains admitted without a Judge child.
-Production: [container-native.ts](../../packages/kernel/src/hosting/container-native.ts),
-`createContainerNativeKernel` request assembly.
-Test: [container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts),
-`Container rejects Judge request controls before inference and permits guard off`.
-The private executor also discards an inherited required Judge capability rather than recursively
-activating it; [executor.test.ts](../../packages/judge/tests/integration/executor.test.ts),
-`executor isolates %s and reuses the effective host provider`, exercises both command and compile paths.
-
 
 Effect consumers supply installed transitions through the trusted execution binding. The executor
 puts an existing case-bound transition in the volatile case message as `host_transition`, alongside

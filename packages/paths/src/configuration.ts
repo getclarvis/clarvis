@@ -30,14 +30,7 @@ const CLARVIS_FILES = new Set([
   "CLARVIS.md",
   "AGENTS.md",
 ]);
-const CLARVIS_DIRS = new Set([
-  "agents",
-  "skills",
-  "plugins",
-  "workflows",
-  "extension-profiles",
-  "runtime-recipes",
-]);
+const CLARVIS_DIRS = new Set(["agents", "skills", "plugins", "workflows", "extension-profiles"]);
 const SHARED_DIRS = new Set(["skills", "plugins"]);
 const PRIVATE_COMPONENT =
   /^(?:keys?|subscriptions?|auth(?:-key)?|credentials?|secrets?|tokens?|workspace-trust)(?:[.-]|$)|^\.env(?:[.-]|$)|\.(?:pem|key|p12|pfx)$/i;

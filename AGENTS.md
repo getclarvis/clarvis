@@ -84,7 +84,7 @@ their ancestry. External approving reviews are not required for the single-maint
 this does not replace the owner's review of the change.
 
 Prepare the final root version on `release/<major.minor.patch>` before its first push. Open a PR from that branch to `main`; only its open PR head receives the next signed `v<version>-rc.<number>` source-candidate tag.
-Candidates publish qualified runtime images and a source-repository prerelease; they do not publish stable installers. Promote through a merge PR from that branch to `main`; after
+Candidates publish a source-repository prerelease; they do not publish stable installers. Promote through a merge PR from that branch to `main`; after
 CI passes on the exact merge commit, automation signs and pushes `v<version>`, which publishes the
 real release. Direct `develop` promotions do not trigger this automation. Hotfix work starts from
 the latest published tag; stage its qualified patch on `release/<patch-version>` for the same
@@ -305,7 +305,7 @@ bun --filter @clarvis/code start
   `bun test` and is exempt. Package `bunfig.toml` files keep the shared preload and
   `coveragePathIgnorePatterns = ["../**"]`. `bun run check:harness` enforces both.
 - Bun is pinned exactly by `mise.toml`; `bun run check:bun-version` enforces the same runtime across
-  CI, the crash canary, Docker, all manifests, `@types/bun`, and the lockfile.
+  CI, the crash canary, all manifests, `@types/bun`, and the lockfile.
 - Coverage authority is `tooling/checks/coverage.ts` over LCOV counters, including source-file
   presence. Do not infer package coverage from Bun's averaged `All files` row or lower a floor to pass.
 - Keep the pre-commit phases sequential and in their current order. Each phase already fans out.

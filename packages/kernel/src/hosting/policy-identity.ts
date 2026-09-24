@@ -1,9 +1,19 @@
 import { createHash } from "node:crypto";
 import type { EnvConfig } from "@clarvis/capability";
 import type { ResolvedSandboxSettings } from "@clarvis/loop/host";
-import { runtimeLoopPolicy } from "../runtime/loop-policy.ts";
 import { createFileConfigStore } from "../config/file-config-store.ts";
 import { createSandboxPolicyResolver } from "../sandbox/policy.ts";
+
+const hostOnlyEnvironmentKeys = new Set<keyof EnvConfig>([
+  "CLARVIS_OWNER",
+  "CLARVIS_LOG_LEVEL",
+  "CLARVIS_LOG",
+  "CLARVIS_LOG_AUDIT",
+  "CLARVIS_MEMORY_LOCK_WARN_MS",
+  "CLARVIS_TRACE_TTL_DAYS",
+  "CLARVIS_TRACE_CLEANUP_INTERVAL_MS",
+  "CLARVIS_TRACE_CLEANUP_BATCH_SIZE",
+]);
 
 /**
  * Identify effective operator execution policy, including the resolved Sandbox snapshot, without
@@ -17,7 +27,11 @@ export function localKernelPolicyIdentity(
   return createHash("sha256")
     .update(
       JSON.stringify({
-        loop: runtimeLoopPolicy(env),
+        loop: Object.fromEntries(
+          Object.entries(env).filter(
+            ([key]) => !hostOnlyEnvironmentKeys.has(key as keyof EnvConfig),
+          ),
+        ),
         tools: {
           enabled: env.CLARVIS_AGENT_TOOLS_ENABLED,
           maxGrant: env.CLARVIS_AGENT_TOOLS_MAX_GRANT,

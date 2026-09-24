@@ -169,12 +169,8 @@ For an owner-scoped `SessionService` built with `dir`/`owner`, files live under:
 path segment, or falls back to `h_<sha256hex>` past a 200-byte encoded length
 (`packages/paths/src/roots.ts`) — so an owner or session id of unbounded length
 or containing `/`/`.`/`..` cannot escape the owner directory or collide with a sibling segment.
-For a local Container placement the launcher bind mounts this exact owner directory into the guest;
-Host/Sandbox and Container therefore list and continue the same sessions, including embedded Goal
-state and persisted conversation context, without exposing sibling owners or the global config root.
-Production: `prepareContainerDomainMounts` in
-`packages/kernel/src/runtime/container-mounts.ts`. Test:
-`packages/kernel/tests/unit/runtime-mounts.test.ts`.
+Host and remote clients use the same canonical owner directory without exposing sibling owners
+or the global config root.
 
 The canonical session uses `writeFileDurableSync`: staged payload synchronization, atomic rename
 and directory synchronization. The rebuildable summary uses `writeFileAtomicSync`. The old sidecar

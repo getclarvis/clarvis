@@ -514,7 +514,7 @@ Two further downgrades, both recorded as human-readable strings in `downgrades`:
   unanswered plan-review gate does not skip approval, it cancels the whole run.
 
 `guard_confirmations` is `"relayed"` only when **all three** hold: `allowRemoteGuardApproval` (an
-operator/container switch), `roleAllowsGuardApproval` (defaults `true` with no auth), and
+operator/server switch), `roleAllowsGuardApproval` (defaults `true` with no auth), and
 `elicitation !== "auto_decline"`; otherwise `"denied"`, and a downgrade note names which of the two
 gates was missing.
 
@@ -799,7 +799,7 @@ Test: `packages/server/tests/unit/elicitation.test.ts` ("downgrades plans:review
 answer channel exists").
 
 **ELI-07.** Guard confirmations are relayed to a remote server caller only when the
-operator's container switch, the caller's own role, and the resolved elicitation posture all three
+operator's server switch, the caller's own role, and the resolved elicitation posture all three
 permit it; any one of the three being false forces `guard_confirmations: "denied"`.
 Production: `packages/server/src/mcp/elicitation.ts`.
 Test: `packages/server/tests/unit/elicitation.test.ts` ("relays guard approval only when operator,
@@ -923,18 +923,6 @@ direct client under its own id).
 | A pooled (stdio + `shared`) MCP connection is acquired with a `relay` | `ConnectionManager`'s `openFresh(o, signal, pooled=true)` (`packages/mcp-client/src/connection-manager.ts`) | the `relay` is dropped — opened `...(o.relay && !pooled ? { relay: o.relay } : {})` — so the connection advertises no `elicitation` capability at all; `warnRelayDropped` logs `mcp.pool.relay_dropped` once per server name, not once per acquire |
 
 ## 7. Coupling
-
-Container admits no MCP elicitation relay. Intentional native questions such as `ask_user`, Plan
-approval and Goal controls travel stay inside the complete Kernel and reach the TUI through the same
-public run/service protocol as SSH hosting. They are not Command Review and cannot select placement
-or invoke host execution. Production: `createContainerNativeKernel` in
-[`container-native.ts`](../../packages/kernel/src/hosting/container-native.ts) and
-`createKernelServer` in
-[`server.ts`](../../packages/kernel/src/transport/server.ts). Test:
-[`container-kernel-host.test.ts`](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
-and [`transport-codecs.test.ts`](../../packages/kernel/tests/contract/transport-codecs.test.ts). The
-private process lifetime contract belongs to
-[isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
 
 **Depends on** (runtime edges, forced by import):
 

@@ -434,10 +434,7 @@ surfaces and are not duplicated here.
 - `write_memory` / `edit_memory` / `delete_memory` — maintain it (each mutation
   triggers a reindex).
 
-Host, Sandbox and Container runs retain that seven-tool surface when Memory is active. Container
-builds the native local wiki/file provider and lifecycle inside its Kernel, stores documents in its
-canonical workspace content and machinery shared with Host/Sandbox, and routes indexing inference through the host model broker. External Memory
-providers are rejected during projection; disabled Memory does not resolve a provider.
+Host and Sandbox runs retain that seven-tool surface when Memory is active.
 
 The read-only `file` provider accepts at most 64 declared paths, 1 MiB per
 document and 8 MiB across one call by default. Oversized inputs are not loaded
@@ -446,7 +443,7 @@ visit at most 10,000 directory entries, read at most 1 MiB from a job record and
 retain a top page of at most 200 jobs; counts, next-due lookup and claims fold
 over the scan without collecting the queue.
 
-A write-enabled entry agent may write memory directly during a Host, Sandbox or Container run. The
+A write-enabled entry agent may write memory directly during a Host or Sandbox run. The
 same native tools back the Kernel editing surface and the dedicated indexing pass in the Kernel that
 owns that Memory store.
 

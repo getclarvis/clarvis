@@ -36,12 +36,7 @@ test("configuration classes distinguish authoring, generated, secret and unknown
       "workflows/review/WORKFLOW.md",
     ])
       expect(configurationPathClass(root, path)).toBe("authoring");
-    for (const path of [
-      "settings.json",
-      "plugins/review/plugin.json",
-      "runtime-recipes/build.sh",
-      "skills/review/helper.sh",
-    ])
+    for (const path of ["settings.json", "plugins/review/plugin.json", "skills/review/helper.sh"])
       expect(configurationPathClass(root, path)).toBe("operational");
   }
   for (const root of ["workspace_agents", "global_agents"] as const) {

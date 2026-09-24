@@ -8,7 +8,7 @@
 
 An explicit `cwd` is resolved relative to the workspace when necessary and checked to be a
 directory; the legacy file-tool confinement flag does not authorize command working directories.
-The selected Host, Sandbox or Container placement decides whether the shell can enter that
+The selected Host or Sandbox placement decides whether the shell can enter that
 directory. Blocking and yielded commands use the same frozen filesystem policy through their
 `ExecutionSessionManager`; `shell_session` can inspect or stop only the resulting owned session.
 Production: `createShell` in [shell.ts](../../packages/tools/src/tools/shell.ts),
@@ -34,8 +34,6 @@ physical exit before an exit code is reported as `exited_pending_status`, never 
 [execution-session.ts](../../packages/tools/src/lib/execution-session.ts) and `shellSession`
 in [shell-session.ts](../../packages/tools/src/tools/shell-session.ts). Test: physical-exit
 projection in [execution-session.test.ts](../../packages/tools/tests/integration/execution-session.test.ts).
-
-Container native composition dispatches these same command tools through the run-owned manager. Its graph fixture exercises yield and confirmed stop; physical Container placement still requires engine qualification. Production: `createFileRunHost` in `packages/kernel/src/hosting/file-host.ts` and `createAgentToolsCapability` in `packages/loop/src/runtime/capabilities/tools.ts`. Test: `packages/kernel/tests/integration/container-kernel-host.test.ts` (`Container native graph yields and stops a run-owned shell session`).
 
 The manager admits at most `maxSessions` tracked sessions. Finished entries may be evicted to make room; a live process tree keeps its slot. At run end, `close` seals admission and stops all tracked processes before the loop removes its own scratch. Failed physical confirmation or an exhausted cleanup budget retains that scratch. The loop does not adopt or clean temporary directories inferred from command text. `createAgentTools` exposes `close()` for its private manager. Production: `ExecutionSessionManager.launch` and `close` in `packages/tools/src/lib/execution-session.ts`, `createAgentToolsCapability` in `packages/loop/src/runtime/capabilities/tools.ts`, and `createAgentTools` in `packages/tools/src/index.ts`. Test: `packages/tools/tests/integration/execution-session.test.ts`, `packages/loop/tests/integration/tools.test.ts`, and `packages/loop/tests/integration/command-guard-wiring.test.ts`.
 

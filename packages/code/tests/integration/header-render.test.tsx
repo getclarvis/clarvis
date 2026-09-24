@@ -66,7 +66,7 @@ test("the right-anchored version keeps its gutter when the configuration chips f
       version: "0.1.1",
       agentName: "marshall",
       model: "chatgpt/gpt-5.6-terra",
-      isolation: "docker",
+      isolation: "sandbox",
       review: "on",
       workspace: "/tmp/clarvis-development-temp/workspace-gAmvlw",
     }),

@@ -48,9 +48,9 @@ export type SandboxConfig = NativeSandbox;
 /** Immutable command-filesystem authority selected once for a run by its host. */
 export interface ResolvedFilesystemPolicy {
   readonly identity: string;
-  readonly placement: "host" | "sandbox" | "container";
-  readonly readScope: "host-visible" | "guest-mounts";
-  readonly writeScope: "host-os" | "declared-roots" | "guest-mounts";
+  readonly placement: "host" | "sandbox";
+  readonly readScope: "host-visible";
+  readonly writeScope: "host-os" | "declared-roots";
   readonly workspaceRoot: string;
   readonly workspaceAccess: "read-write" | "read-only";
   readonly writableRoots: readonly string[];
@@ -63,7 +63,7 @@ export interface ResolvedFilesystemPolicy {
 /** Resolve a host-selected placement and paths into one per-run shell policy. */
 export function resolveFilesystemPolicy(input: {
   runId: string;
-  placement: "host" | "sandbox" | "container";
+  placement: "host" | "sandbox";
   workspaceRoot: string;
   temporaryRoots: readonly string[];
   gitMetadataPaths: readonly string[];
@@ -92,7 +92,7 @@ export function resolveFilesystemPolicy(input: {
   const protectedRoots = Object.freeze([
     ...new Set([
       ...(workspaceAccess === "read-only" ? [workspaceRoot, ...gitMetadataPaths] : []),
-      ...(input.placement === "container" || input.placement === "sandbox"
+      ...(input.placement === "sandbox"
         ? [
             ...gitMetadataPaths,
             ...(workspaceAccess === "read-write" ? [resolve(workspaceRoot, ".git")] : []),
@@ -122,13 +122,8 @@ export function resolveFilesystemPolicy(input: {
   return Object.freeze({
     identity,
     placement: input.placement,
-    readScope: input.placement === "container" ? "guest-mounts" : "host-visible",
-    writeScope:
-      input.placement === "container"
-        ? "guest-mounts"
-        : input.placement === "sandbox"
-          ? "declared-roots"
-          : "host-os",
+    readScope: "host-visible",
+    writeScope: input.placement === "sandbox" ? "declared-roots" : "host-os",
     workspaceRoot,
     workspaceAccess,
     writableRoots,

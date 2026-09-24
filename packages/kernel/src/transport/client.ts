@@ -383,69 +383,11 @@ export async function connectKernelClient(
   const validRuntime =
     runtime === undefined ||
     (isRecord(runtime) &&
-      ((runtime.kind === "native" &&
-        hasOnly(runtime, ["kind", "host_platform", "isolation", "lifecycle"]) &&
-        typeof runtime.host_platform === "string" &&
-        (runtime.isolation === "host" || runtime.isolation === "sandbox") &&
-        runtime.lifecycle === "ready") ||
-        (runtime.kind === "container" &&
-          hasOnly(runtime, [
-            "kind",
-            "generation",
-            "engine",
-            "engine_version",
-            "host_platform",
-            "guest_platform",
-            "image_digest",
-            "artifact_digest",
-            "base_abi",
-            "broker_version",
-            "channel_version",
-            "state_namespace",
-            "network",
-            "lifecycle",
-          ]) &&
-          (runtime.engine === "podman" || runtime.engine === "docker") &&
-          typeof runtime.host_platform === "string" &&
-          runtime.guest_platform === "linux" &&
-          (runtime.generation === undefined ||
-            (typeof runtime.generation === "string" &&
-              /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
-                runtime.generation,
-              ))) &&
-          (runtime.engine_version === undefined || typeof runtime.engine_version === "string") &&
-          (runtime.image_digest === undefined ||
-            (typeof runtime.image_digest === "string" &&
-              /^sha256:[a-f0-9]{64}$/u.test(runtime.image_digest))) &&
-          (runtime.artifact_digest === undefined ||
-            (typeof runtime.artifact_digest === "string" &&
-              /^sha256:[a-f0-9]{64}$/u.test(runtime.artifact_digest))) &&
-          (runtime.base_abi === undefined || typeof runtime.base_abi === "string") &&
-          (runtime.broker_version === undefined || runtime.broker_version === 1) &&
-          (runtime.channel_version === undefined || runtime.channel_version === 1) &&
-          (runtime.state_namespace === undefined ||
-            (typeof runtime.state_namespace === "string" &&
-              /^[a-f0-9]{64}$/u.test(runtime.state_namespace))) &&
-          (runtime.lifecycle !== "ready" ||
-            (typeof runtime.generation === "string" &&
-              typeof runtime.image_digest === "string" &&
-              typeof runtime.artifact_digest === "string" &&
-              typeof runtime.base_abi === "string" &&
-              typeof runtime.broker_version === "number" &&
-              typeof runtime.channel_version === "number" &&
-              typeof runtime.state_namespace === "string")) &&
-          ["none", "outbound"].includes(String(runtime.network)) &&
-          [
-            "cold",
-            "inspecting",
-            "preparing",
-            "starting",
-            "ready",
-            "stopping",
-            "stopped",
-            "disconnected",
-            "failed",
-          ].includes(String(runtime.lifecycle)))));
+      runtime.kind === "native" &&
+      hasOnly(runtime, ["kind", "host_platform", "isolation", "lifecycle"]) &&
+      typeof runtime.host_platform === "string" &&
+      (runtime.isolation === "host" || runtime.isolation === "sandbox") &&
+      runtime.lifecycle === "ready");
   if (
     !isRecord(hello) ||
     !hasOnly(hello, ["wire_version", "capabilities", "project", "workspace", "principal"]) ||

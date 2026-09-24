@@ -33,19 +33,17 @@ import type { AgentsStore } from "../adapters/agents-store.ts";
 import type { SettingsAdapter } from "../adapters/settings.ts";
 import { resolveContextWindow } from "../adapters/settings.ts";
 import type { ModelsCatalog } from "../adapters/models-catalog.ts";
-import { isContainerCompatibleProfile, type ClarvisDirs } from "../adapters/agents.ts";
+import { type ClarvisDirs } from "../adapters/agents.ts";
 import type { KeysAdapter } from "../adapters/provider-secrets.ts";
 import type { CodeConfigStore } from "../adapters/code-config.ts";
 import type { GuardModeStore } from "../adapters/guard-mode.ts";
 import type { MemoryModeStore } from "../adapters/memory-mode.ts";
 import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
 import {
-  deriveIsolation,
   deriveRunControls,
   effectiveRunIsolation,
   type IsolationMode,
 } from "../adapters/execution-safety.ts";
-import { isContainerIsolation } from "../features/run/isolation.ts";
 import type { ThemePreview } from "../theme/theme.ts";
 import { readEnvView } from "../adapters/agent-files.ts";
 import { registerCodeCommands } from "../app/command-composition.ts";
@@ -266,7 +264,6 @@ export interface AppRunControls {
   runtimePlacementNotice?: Accessor<{
     sequence: number;
     message: string;
-    pendingReconnect?: boolean;
   } | null>;
   bang: (cmd: string) => boolean;
   localBusy: () => boolean;
@@ -343,7 +340,7 @@ export interface AppBackend {
   skills: SkillsService;
   tasks: TasksController;
   storage: StorageService;
-  /** Host-reported execution placement and effective container policy. */
+  /** Host-reported execution placement and effective isolation policy. */
   runtime?: () => RuntimeStatus | undefined;
   reconnect: (mode?: ReconnectMode) => Promise<{ ok: boolean; message: string }>;
   restoreIsolation?: (isolation: IsolationMode) => Promise<{ ok: boolean; message: string }>;
@@ -402,7 +399,6 @@ export function App(props: AppProps): JSX.Element {
       return;
     shownMcpStartupNotice = notice.sequence;
     props.fleet.settings.version();
-    if (isContainerIsolation(deriveIsolation(props.fleet.settings.effective()))) return;
     notify(
       `MCP unavailable for this run ${glyph("emDash")} ${notice.servers
         .map((server) => `${server.name}: ${server.reason}`)
@@ -1221,7 +1217,6 @@ export function App(props: AppProps): JSX.Element {
       memory: runControls().memory,
       plans: runControls().plans,
       connection: props.backend.connection(),
-      configurationPending: props.run.runtimePlacementNotice?.()?.pendingReconnect === true,
       doctorDirty: doctorDirty() && !focusedRepairSurface(),
       workspace: props.shell.workspace,
       workspaceLabel: props.shell.workspaceLabel,
@@ -1281,17 +1276,15 @@ export function App(props: AppProps): JSX.Element {
 
   const skillMentionProvider = createSkillMentionProvider({
     skills: () =>
-      isContainerIsolation(runControls().isolation)
-        ? []
-        : commands
-            .entries()
-            .filter((entry) => entry.namespace === "skills")
-            .map((entry) => ({
-              name:
-                entry.slashes[0]?.replace(/^\//, "") ||
-                (entry.name.startsWith("skill.") ? entry.name.slice("skill.".length) : entry.name),
-              description: entry.desc,
-            })),
+      commands
+        .entries()
+        .filter((entry) => entry.namespace === "skills")
+        .map((entry) => ({
+          name:
+            entry.slashes[0]?.replace(/^\//, "") ||
+            (entry.name.startsWith("skill.") ? entry.name.slice("skill.".length) : entry.name),
+          description: entry.desc,
+        })),
   });
 
   const argHintProviders = (): CompleteProvider[] =>
@@ -1654,11 +1647,7 @@ export function App(props: AppProps): JSX.Element {
                 enabled={lifecycle.active}
                 list={props.fleet.agents.list}
                 active={props.fleet.agents.active}
-                isRunnable={(name) =>
-                  props.fleet.agents.isRunnable(name) &&
-                  (!isContainerIsolation(runControls().isolation) ||
-                    isContainerCompatibleProfile(name, props.fleet.agents.list()))
-                }
+                isRunnable={(name) => props.fleet.agents.isRunnable(name)}
                 defaults={() => {
                   const global = props.fleet.code.read("global").agent?.default;
                   const workspace = props.fleet.code.read("workspace").agent?.default;

@@ -249,35 +249,6 @@ describe("single command-review path", () => {
     },
   );
 
-  test("resolves Container placement and its network policy without a reviewer", async () => {
-    const decisionFor = async (
-      runtime: GuardSettings["runtime"],
-    ): Promise<{ verdict: string; placement?: string; network?: string }> => {
-      const services = createCapabilityServices();
-      const resolver = createGuardResolver({ loadSettings: () => ({ runtime }) });
-      const resolution = (await resolver({
-        services,
-        owner: "owner",
-        executionId: "run",
-        workspaceRoot: workspace,
-        env: {},
-        requestParam: () => undefined,
-        request: { guard_mode: "auto" },
-        llm: { call: async () => ({}) },
-      } as unknown as RunCapabilityContext))!;
-      return resolution.guard!(context("npm install"));
-    };
-    expect(await decisionFor({ backend: "podman", network: "none" })).toMatchObject({
-      verdict: "ask",
-      placement: "contained",
-      network: "none",
-    });
-    expect(await decisionFor({ backend: "docker", network: "internet" })).toMatchObject({
-      verdict: "ask",
-      placement: "contained",
-    });
-  });
-
   test("resolves no guard and no review for mode off", () => {
     const services = createCapabilityServices();
     const resolver = createGuardResolver({

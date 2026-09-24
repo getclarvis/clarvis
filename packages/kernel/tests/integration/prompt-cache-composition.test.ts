@@ -44,7 +44,6 @@ describe("kernel prompt-cache composition through the real SDK transport", () =>
         providers: [
           { name: "fixture", kind: "openai-compatible", base_url: "https://fixture.invalid/v1" },
         ],
-        runtime: { backend: "native" },
         plans: { mode: "on", pending_task_nudges: 0 },
       }),
     );
@@ -365,7 +364,6 @@ describe("kernel prompt-cache composition through the real SDK transport", () =>
         providers: [
           { name: "fixture", kind: "openai-compatible", base_url: "https://fixture.invalid/v1" },
         ],
-        runtime: { backend: "native" },
         plans: { mode: "on", pending_task_nudges: 0 },
       }),
     );

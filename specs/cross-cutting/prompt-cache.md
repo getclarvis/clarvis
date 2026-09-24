@@ -166,7 +166,7 @@ single assigned agent ID supplies the instance. Continuations inherit both unles
 branching into another agent instance. Each spawned child uses its existing persisted delegation ID.
 Workflow leaders share the manager's session and use the scheduler's reserved child execution ID
 as their agent instance. The manager and same-profile workflow leaders must have distinct keys;
-Host/Sandbox assembly and the native Container Kernel retain this identity in the persisted request.
+Host/Sandbox assembly retains this identity in the persisted request.
 
 The typed `composePromptCacheKey(PromptCacheIdentity)` is the only composer. Raw components accept
 the existing ASCII execution-ID alphabet: letters, digits, `.`, `_`, `:`, `-`. Embedded underscores
@@ -236,13 +236,9 @@ continuation from persisted requests are
 covered by `separates workflow leader cache identities` in
 [`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts).
 Native Goal continuation keeps this same session/instance affinity; its binding never substitutes
-the new execution ID or goal ID for the agent identity. Container runs the same Goal domain inside
-its Kernel and reaches the host model broker through the logical model port, so no Goal bridge or
-alternate cache identity exists. Production:
-[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts) and
-[model-broker-client.ts](../../packages/kernel/src/runtime/model-broker-client.ts). Test:
-[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts)
-and [container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
+the new execution ID or goal ID for the agent identity. Production:
+[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts). Test:
+[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts).
 
 ## Provider wire and replay
 
@@ -291,9 +287,8 @@ requested/resolved model, requested/effective effort where available, SDK/config
 endpoint without sensitive query data, effective key and affinity hashes, serialized surface/item
 hashes, first divergence, timings, tool-call identities and usage presence. Reports contain no
 credentials, raw prompts or encrypted reasoning. Unknown consumption remains explicit.
-Completed-call snapshots from a failed Container Kernel generation remain in the trial and global
-consumption ledger, deduplicated by physical attempt. A process failure cannot erase already
-observed usage.
+Completed-call snapshots remain in the trial and global consumption ledger, deduplicated by
+physical attempt. A process failure cannot erase already observed usage.
 Serialized model and reasoning effort are recorded separately from requested settings and any
 provider-reported effective values. Item metadata records existing IDs, phase, call correlation,
 summary-part counts and encrypted-content presence without recording the encrypted content.

@@ -209,11 +209,8 @@ When the engine requests `preserveState` for an interrupted continuing activity,
 retains the current plan instead of changing its status. A later final result follows the ordinary
 task-closure and retention rules. This behavior does not grant review approval or continuation authority.
 
-Plans is available to Host, Sandbox and Container Kernels. Container uses the native Markdown
-provider, tools, review, CAS, continuation and retention callbacks, with documents persisted in its
-canonical workspace plan directory shared with Host/Sandbox. An active external provider is incompatible; disabled Plans does not resolve
-a provider. The placement contract belongs to
-[`isolated-agent-runtime.md`](../../specs/hosts/isolated-agent-runtime.md).
+Plans is available to native Host and Sandbox runs. The selected provider owns documents,
+review, CAS, continuation and retention through the canonical workspace plan directory.
 
 The default is defined once as `DEFAULT_PLAN_RETENTION` in `src/schemas.ts` and mirrored by
 `PLANS_DEFAULTS` in `src/settings.ts`. The component test in

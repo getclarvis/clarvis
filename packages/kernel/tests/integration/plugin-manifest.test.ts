@@ -885,7 +885,7 @@ describe("MCP server entries a manifest carries", () => {
     write(".mcp.json", {
       mcpServers: {
         grafana: {
-          command: "docker",
+          command: "external-tool",
           env: {
             GRAFANA_URL: "${user_config.grafana_url}",
             GRAFANA_SERVICE_ACCOUNT_TOKEN: "${user_config.grafana_token}",

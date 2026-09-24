@@ -35,8 +35,6 @@ export interface GuardSettings {
   defaultModel?: string;
   /** Effective native policy, including any host-resolved fail-closed fallback. */
   sandbox?: SandboxSettings;
-  /** Host-selected container placement; never read from tool arguments. */
-  runtime?: { backend: "native" | "docker" | "podman"; network?: "none" | "internet" | "outbound" };
 }
 
 /** Loads current {@link GuardSettings} (typically from merged config). */
@@ -265,17 +263,8 @@ function createGuardRuntimeResolver(
     const judgeConfig = judgeRequestConfig(ctx);
     const guardMode = resolveGuardMode(ctx.request.guard_mode, settings.guard);
     const audit = auditRoot.child?.({ run_id: ctx.executionId, owner: ctx.owner }) ?? auditRoot;
-    const container =
-      settings.runtime?.backend === "docker" || settings.runtime?.backend === "podman";
-    const placement: GuardPlacement =
-      container || sandboxWouldApply(settings.sandbox) ? "contained" : "host";
-    const network = container
-      ? settings.runtime?.network === "none"
-        ? "none"
-        : undefined
-      : sandboxWouldApply(settings.sandbox)
-        ? settings.sandbox?.network
-        : undefined;
+    const placement: GuardPlacement = sandboxWouldApply(settings.sandbox) ? "contained" : "host";
+    const network = sandboxWouldApply(settings.sandbox) ? settings.sandbox?.network : undefined;
     const guard = buildGuard(
       settings.guard,
       guardMode,

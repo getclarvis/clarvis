@@ -25,7 +25,7 @@ export interface ConnectionHealth {
  *   and pooled ones are keyed per workspace/owner — so keying on the name alone
  *   let one run's failure mark the server down for everyone and an unrelated run's
  *   recovery clear it. A name is unavailable while *any* of its live connections
- *   is: readiness is a property of the container, not of one owner.
+ *   is: readiness is a property of the server process, not of one owner.
  *
  *   `closed` drops the entry, which is why this counts connections rather than
  *   summing transitions. A connection that goes `unavailable` and is then closed

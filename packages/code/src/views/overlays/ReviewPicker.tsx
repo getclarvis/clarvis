@@ -9,8 +9,6 @@ import { detachObserved } from "../../core/tasks.ts";
 import { glyph, glyphColWidth } from "../../theme/glyphs.ts";
 import { tokens } from "../../theme/tokens.ts";
 import { ListPicker } from "./ListPicker.tsx";
-import { deriveIsolation } from "../../adapters/execution-safety.ts";
-import { isContainerIsolation } from "../../features/run/isolation.ts";
 
 const CURRENT_COL_WIDTH = glyphColWidth("radioOn");
 const LABEL_COL_WIDTH = 10;
@@ -31,10 +29,6 @@ export function ReviewPicker(props: {
 
   const apply = async (choice: ReviewChoice): Promise<void> => {
     if (applying) return;
-    if (isContainerIsolation(deriveIsolation(props.settings.effective()))) {
-      props.notify("Guard is not applicable in Container. Use Isolation Sandbox or Host.", "warn");
-      return;
-    }
     applying = true;
     try {
       const scope = props.scope();
@@ -72,11 +66,7 @@ export function ReviewPicker(props: {
       confirmLabel="use Guard"
       onConfirm={(choice) => detachObserved("review_apply", () => apply(choice))}
       onClose={props.onClose}
-      footer={() =>
-        isContainerIsolation(deriveIsolation(props.settings.effective()))
-          ? "saved Guard unchanged"
-          : `${props.scope()} setting ${glyph("separator")} isolation is unchanged`
-      }
+      footer={() => `${props.scope()} setting ${glyph("separator")} isolation is unchanged`}
       cells={(choice, selected) => [
         {
           width: CURRENT_COL_WIDTH,
@@ -89,13 +79,11 @@ export function ReviewPicker(props: {
       preview={(choice) => (
         <box flexDirection="column">
           <text fg={choice.value === "off" ? tokens.warn : tokens.fg}>
-            {isContainerIsolation(deriveIsolation(props.settings.effective()))
-              ? "Not applicable in Container. Commands run without Guard."
-              : choice.value === "off"
-                ? `${glyph("warning")} Commands are not reviewed.`
-                : choice.value === "on"
-                  ? "Clarvis asks you before unlisted commands that are not classified dangerous."
-                  : "The configured LLM judge reviews commands. Deny and unsure return to the agent, not to you."}
+            {choice.value === "off"
+              ? `${glyph("warning")} Commands are not reviewed.`
+              : choice.value === "on"
+                ? "Clarvis asks you before unlisted commands that are not classified dangerous."
+                : "The configured LLM judge reviews commands. Deny and unsure return to the agent, not to you."}
           </text>
           <text fg={tokens.muted}>The selected Isolation boundary does not change.</text>
         </box>

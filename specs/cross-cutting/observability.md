@@ -90,8 +90,7 @@ model call.
 
 Production: formulation diagnostics in
 [service.ts](../../packages/kernel/src/goals/service.ts), purpose propagation in
-[execute-run.ts](../../packages/loop/src/runtime/execute-run.ts), and the Container purpose codec in
-[container-model-contract.ts](../../packages/kernel/src/hosting/container-model-contract.ts).
+[execute-run.ts](../../packages/loop/src/runtime/execute-run.ts).
 Test: [agent-run.test.ts](../../packages/goal/tests/unit/agent-run.test.ts) verifies `callPurpose`,
 while [goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts)
 verifies the separate persisted execution and receipt replay.

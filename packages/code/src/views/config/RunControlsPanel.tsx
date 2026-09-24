@@ -30,7 +30,6 @@ import {
 import {
   applyIsolation,
   isolationConfirmation,
-  isContainerIsolation,
   ISOLATION_CHOICES,
   type IsolationChoice,
 } from "../../features/run/isolation.ts";
@@ -65,7 +64,7 @@ const PLAN_RETENTION_CHOICES = [
 
 /**
  * Per-run controls expose isolation and Guard as independent axes.
- * Isolation persists globally because container placement is host-owned;
+ * Isolation persists globally because execution placement is host-owned;
  * Guard and completed-plan retention use the selected scope, while memory is
  * session-only.
  */
@@ -100,8 +99,7 @@ export function RunControlsPanel(
       deps.memory.mode(),
     );
     const observed = inspection();
-    if (observed === null || configured.isolation === "docker" || configured.isolation === "podman")
-      return configured;
+    if (observed === null) return configured;
     const sandboxEnabled = observed.filesystem.placement === "sandbox";
     return {
       ...configured,
@@ -116,16 +114,6 @@ export function RunControlsPanel(
 
   function sandboxLine(): { text: string; fg: string } {
     const s = state();
-    if (s.isolation === "docker")
-      return {
-        text: "Docker stays cold until the first run and fails closed if it cannot start.",
-        fg: tokens.muted,
-      };
-    if (s.isolation === "podman")
-      return {
-        text: "Podman is configured through advanced settings and starts on the first run.",
-        fg: tokens.muted,
-      };
     const observed = inspection();
     if (observed ? observed.filesystem.placement === "host" : !s.sandboxEnabled)
       return { text: "Native sandbox is off.", fg: tokens.warn };
@@ -255,13 +243,11 @@ export function RunControlsPanel(
         );
         break;
       case 1:
-        if (isContainerIsolation(state().isolation)) return;
         fe.startEnum("Guard", REVIEW_PICKER_CHOICES, state().guardMode, (value) =>
           detachObserved("run_controls_guard", () => applyGuard(value as GuardMode)),
         );
         break;
       case 2:
-        if (isContainerIsolation(state().isolation)) return;
         fe.startEnum(
           "Memory for this session",
           MEMORY_CHOICES,
@@ -270,7 +256,6 @@ export function RunControlsPanel(
         );
         break;
       case 3:
-        if (isContainerIsolation(state().isolation)) return;
         fe.startEnum("Completed plans", PLAN_RETENTION_CHOICES, state().plans.retention, (value) =>
           detachObserved("run_controls_plan_retention", () =>
             applyPlanRetention(value as PlanRetention),
@@ -335,7 +320,7 @@ export function RunControlsPanel(
     deps.guard.mode() === persistedGuardMode() ? settingSource("guard") : "session";
   const configuredIsolation = (): string => {
     const global = deps.settings.read("global");
-    if (global?.runtime === undefined && global?.sandbox === undefined) return "product default";
+    if (global?.sandbox === undefined) return "product default";
     return deriveIsolation(global ?? {});
   };
 
@@ -352,9 +337,7 @@ export function RunControlsPanel(
       {
         label: "Guard",
         configured: scopedGuard()?.mode ?? "inherit",
-        effective: isContainerIsolation(state().isolation)
-          ? "Not applicable in Container"
-          : state().guardMode,
+        effective: state().guardMode,
         source: guardSource(),
         applies: "next run",
         mutation: "immediate",
@@ -362,11 +345,7 @@ export function RunControlsPanel(
       {
         label: "Memory for this session",
         configured: deps.memory.mode(),
-        effective: isContainerIsolation(state().isolation)
-          ? "Unavailable in Container"
-          : state().memory === "off"
-            ? "off"
-            : "on",
+        effective: state().memory === "off" ? "off" : "on",
         source: "session",
         applies: "next run",
         mutation: "immediate",
@@ -379,11 +358,7 @@ export function RunControlsPanel(
             : scopedPlans()!.retention === "keep"
               ? "keep plans"
               : "delete after success",
-        effective: isContainerIsolation(state().isolation)
-          ? "Unavailable in Container"
-          : state().plans.retention === "keep"
-            ? "keep plans"
-            : "delete after success",
+        effective: state().plans.retention === "keep" ? "keep plans" : "delete after success",
         source: settingSource("plans"),
         applies: "next run",
         mutation: "immediate",

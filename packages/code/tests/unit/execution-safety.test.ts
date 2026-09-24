@@ -33,26 +33,13 @@ describe("execution safety", () => {
       isolation: "host",
       lifecycle: "ready",
     } as const;
-    expect(effectiveRunIsolation("docker", host, true)).toBe("host");
-    expect(effectiveRunIsolation("docker", host, false)).toBe("docker");
-    expect(effectiveRunIsolation("docker", undefined, true)).toBe("docker");
+    expect(effectiveRunIsolation("sandbox", host, true)).toBe("host");
+    expect(effectiveRunIsolation("sandbox", host, false)).toBe("sandbox");
+    expect(effectiveRunIsolation("sandbox", undefined, true)).toBe("sandbox");
   });
   it("derives isolation independently from command review", () => {
     expect(deriveIsolation({})).toBe("host");
     expect(deriveIsolation({ sandbox: { type: "native", enabled: true } })).toBe("sandbox");
-    expect(deriveIsolation(onDisk({ runtime: { backend: "docker" } }))).toBe("docker");
-    expect(
-      deriveIsolation(
-        onDisk({
-          runtime: {
-            backend: "podman",
-            executable: "podman",
-            image: "clarvis-runtime@sha256:" + "a".repeat(64),
-            image_digest: "sha256:" + "a".repeat(64),
-          },
-        }),
-      ),
-    ).toBe("podman");
     expect(deriveRunControls({}, "auto", "off").isolation).toBe("host");
   });
 
@@ -126,31 +113,6 @@ describe("execution safety", () => {
       "Successful runs delete their plan after the result is recorded.",
       "Failed, cancelled or interrupted runs keep their plan.",
     ]);
-  });
-
-  it("describes container isolation without promising a hidden copy or merge", () => {
-    expect(
-      safetyDescription(
-        deriveRunControls(onDisk({ runtime: { backend: "docker" } }), "off", "off"),
-      ),
-    ).toEqual([
-      "The full native Kernel runs inside the Container.",
-      "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
-      "The selected workspace is mounted directly; changes appear on the host immediately.",
-      "Outbound network access is enabled and may cause remote effects or expose workspace content.",
-      "Commands run without Guard.",
-      "Git metadata is read-only; use Sandbox or Host for commits.",
-    ]);
-    expect(
-      safetyDescription(
-        deriveRunControls(onDisk({ runtime: { backend: "podman", network: "none" } }), "on", "off"),
-      ),
-    ).toContain("Commands run without Guard.");
-    expect(
-      safetyDescription(
-        deriveRunControls(onDisk({ runtime: { backend: "docker" } }), "auto", "off"),
-      ),
-    ).toContain("Commands run without Guard.");
   });
 });
 

@@ -132,11 +132,8 @@ g.subscriptionsFile; //         …/subscriptions.json (renewable subscription c
 g.mcpOAuthFile; //              …/state/mcp-oauth.json (remote MCP registrations and tokens)
 g.tracesDir; //                 …/state/traces
 g.extensionProfilesDir; //           …/extension-profiles (operator-authored definitions)
-g.runtimeRecipesDir; //               …/runtime-recipes (operator-authored Docker scripts)
 g.extensionProfileSelectionFile; //  …/state/extension-profile.json (operator-wide default)
 g.updateCheckCacheFile; //             …/cache/update-check.json (discardable version-check result)
-g.runtimeRecipeStateDir; //            …/state/runtime-recipes (host build coordination)
-g.runtimeRecipeLeaseFile("sha256:…"); // …/state/runtime-recipes/<segment>.lock
 ```
 
 Two environment variables override the roots: `CLARVIS_HOME` and `CLARVIS_WORKSPACE_ROOT`.
@@ -168,20 +165,17 @@ history; `plans/` and `memory/` are generated Markdown the user is expected to o
 always excluded by `.clarvis/.gitignore` before Git creates a checkout.
 
 `<global>/state/workspaces/<segment>/` holds that workspace's **machinery** — `local/` (prompt
-history, the UI's `code.json`, bounded opt-in diagnostics, legacy run containers from before the scratch moved to a short root, and generic tool-result spills), the memory
+history, the UI's `code.json`, bounded opt-in diagnostics and generic tool-result spills), the memory
 wiki's `.history`/`.journal`/`.state`/`.lock`, plan lockfiles and workspace-scoped trace locks. The segment is
 `ownerSegment(ownerFromWorkspace(root))`, the same composition `state/traces` and `state/sessions`
 already use, so one workspace's generated data all lands under one name.
 The workspace's active Extension Profile selection is also local machinery under that `local/`
 tree, so switching Extension Profiles never dirties the repository.
-The container mounts the already-selected workspace directly, so that checkout remains outside runtime
-state and outside runtime cleanup.
 
 `~/.clarvis` keeps the **operator's own files at the root** — `settings.json`, `agents/`,
 `keys.json`, `subscriptions.json`, plugins, reusable Extension Profile definitions and their trust
-records, Docker runtime recipes, `shared-agent.md`, `guard-judge.md`, `auth.json` — and nests only what a user never
-edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, content-addressed
-runtime-recipe build leases, the per-workspace machinery above), `cache/` (including the models.dev
+records, `shared-agent.md`, `guard-judge.md`, `auth.json` — and nests only what a user never
+edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, the per-workspace machinery above), `cache/` (including the models.dev
 snapshot and automatic version-check result), `exports/`. A `config/` layer was tried and removed:
 it made the global tree disagree with
 the workspace one, where `settings.json` and `agents/` have always sat at the root. This physical
@@ -196,38 +190,6 @@ managed global installs may target either global convention, and both workspace 
 repository-owned rather than lifecycle-managed by the UI. Persistent `PLUGIN_DATA` never enters an
 installed checkout: global instances use `<global>/state/plugin-data/<source>/<name>/`, and
 workspace instances use that workspace's machine-local `plugin-data/<source>/<name>/` state tree.
-Container uses `agentsWorkspaceDir()` as a complete control-root mask target and covers
-`workspacePaths().clarvisDir` with its private content volume. Kernel then overlays only the exact
-Plans and Memory descendants selected through the path vocabulary; the mask builder itself does not
-enumerate descendants.
-
-Definition and selection ownership is specified in
-[`hosts/extension-profiles.md`](../../specs/hosts/extension-profiles.md): authored definitions live in the
-global/workspace roots, while global and per-workspace choices live in generated state.
-
-**The separation is enforced by the type, not by convention.** `WorkspacePaths` has no key naming
-`local/`, a spill, prompt history or `code.json` — they were _removed_ rather than
-deprecated, so writing generated bookkeeping into someone's working tree is a compile error.
-`workspaceStatePaths` is the standard way to spell them.
-`workspaceStatePathsFromRoot(workspaceRoot, stateRoot)` reconstructs the same complete path set
-from a state root selected by the host. The native filesystem worker uses it after receiving the
-root as data, so owner and spill builders never cross the process boundary as callbacks.
-The keys used to be on `WorkspacePaths`, and
-four writers reached them through a hand-rolled `mkdir` that skipped `ensureLocalDir` entirely; the
-worst was `code`'s prompt history, which fired on the first Enter — before any tool had run, so
-before anything had seeded the ignore file — leaving a fresh repository reporting `?? .clarvis/`
-after a single prompt, at the ambient umask rather than `0700`/`0600`.
-
-One residue is unavoidable and deliberate: `plans/` and `memory/` still receive **transient**
-`.clarvis-tmp-*` siblings, because `rename` is atomic only within one filesystem and an atomic
-write's temp file must sit beside its target. `TMP_GLOB` and `INTERNAL_IGNORE_PATTERNS` already hide
-them. `packages/kernel/tests/architecture/workspace-surface.test.ts` asserts that everything else under those two
-directories ends in `.md`.
-
-`workflowsDir` is authored config; `workflowRecordsDir` is generated history. Both would have been
-called `workflows`, so the record store was renamed rather than left to collide. Authored
-`WORKFLOW.md` documents are deliberately **not** gitignored — a workflow is configuration a
-workspace keeps, exactly like an agent or a skill.
 
 ## Windows is a hard constraint here
 
@@ -440,21 +402,6 @@ Three of these exist because the code path they describe resolves to a boolean n
 `paths.spill_sweep`'s `truncated` is the same class: `sweepSpillDir` stops at 10,000 entries and
 returns `void`, so a workspace past that threshold would otherwise stop being swept silently and
 permanently.
-
-## Container namespaces
-
-`containerLaunchPaths(namespace, globalDir?)` resolves the host-only launch lease and registry under
-`state/container-hosts/<namespace>`. It exposes no local-host endpoint or credential path.
-`containerDataVolumeNames(namespace)` separates the persistent `content` and `state` roles;
-`containerArtifactVolumeName(archiveSha256)` addresses the independent immutable artifact volume.
-These helpers require full bare lowercase SHA-256 identities and perform no filesystem or engine
-mutation. `containerGuestPaths` is the fixed Linux virtual path vocabulary, even when the launcher
-runs on a different platform. It includes the private Git metadata/common roots used when a Windows
-or POSIX host's linked-worktree indirection must be rewritten for the Linux guest. Namespace
-derivation, volume admission and lifecycle belong to Kernel.
-Kernel uses these builders to bind only canonical native domain stores into a Container: Plans and
-Memory content/machinery, owner-scoped sessions/workflow records/trace records, and trace locks.
-Configuration, credentials, extensions, local UI state and other owners are not part of that map.
 
 ## Owner segments
 

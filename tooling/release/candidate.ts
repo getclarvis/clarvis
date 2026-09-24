@@ -1,5 +1,4 @@
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { parseRuntimeReleaseManifest } from "../runtime/release-manifest.ts";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 /** Validate the source-only candidate identity independently of workflow tag glob matching. */
 export function candidateIdentity(tag: string, version: string, sha: string, repository: string) {
@@ -20,10 +19,6 @@ export function candidateIdentity(tag: string, version: string, sha: string, rep
     version,
     source_revision: sha,
     repository,
-    kernel_wire_version: 11,
-    broker_version: 1,
-    channel_version: 1,
-    targets: ["linux-x64", "linux-arm64"],
   };
 }
 
@@ -39,28 +34,18 @@ export function main(): void {
   const mode = process.argv[2];
   if (mode === "validate") return;
   if (mode === "manifest") {
-    const release = parseRuntimeReleaseManifest(
-      readFileSync("build/candidate/runtime-release.json", "utf8"),
-      identity.version,
-    );
+    mkdirSync("build/candidate", { recursive: true });
     writeFileSync(
-      "build/candidate/runtime-candidate.json",
-      `${JSON.stringify(
-        {
-          ...identity,
-          runtime: release,
-        },
-        null,
-        2,
-      )}\n`,
+      "build/candidate/source-candidate.json",
+      `${JSON.stringify(identity, null, 2)}\n`,
     );
     return;
   }
   if (mode !== "publish") throw new Error("usage: candidate.ts <validate|manifest|publish>");
-  const notes = "build/candidate/notes.md";
+  const notes = `${process.env.RUNNER_TEMP ?? "/tmp"}/clarvis-candidate-notes.md`;
   writeFileSync(
     notes,
-    `Candidate runtime built from source commit \`${identity.source_revision}\`.\n\nQualified base and Kernel artifacts are recorded in runtime-candidate.json. This is not a stable Clarvis release and contains no stable installers.\n`,
+    `Source candidate from commit \`${identity.source_revision}\`. This prerelease contains no stable installers.\n`,
   );
   const result = Bun.spawnSync(
     [
@@ -68,16 +53,7 @@ export function main(): void {
       "release",
       "create",
       identity.tag,
-      "build/candidate/runtime-candidate.json",
-      "build/candidate/runtime-release.json",
-      ...readdirSync("build/candidate")
-        .filter((name) => /^clarvis-kernel-linux-(?:x64|arm64)\.tar\.gz(?:\.sha256)?$/u.test(name))
-        .sort()
-        .map((name) => `build/candidate/${name}`),
-      ...readdirSync("build/candidate")
-        .filter((name) => /^qualification-(?:docker|podman)-linux-(?:x64|arm64)\.json$/u.test(name))
-        .sort()
-        .map((name) => `build/candidate/${name}`),
+      "build/candidate/source-candidate.json",
       "--repo",
       "getclarvis/clarvis",
       "--verify-tag",

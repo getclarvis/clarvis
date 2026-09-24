@@ -35,27 +35,10 @@ function valid() {
     vercelAiSdkLicense: "Copyright 2023 Vercel, Inc.\nApache License, Version 2.0",
     releaseWorkflow: `env:
   RELEASE_REPOSITORY: getclarvis/clarvis-releases
-  BASE_REPOSITORY: ghcr.io/getclarvis/clarvis-runtime-base
 cp third-party/vercel-ai-sdk/LICENSE build/release/VERCEL-AI-SDK-LICENSE
 if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-  runtime:
-  runtime-manifest:
-needs: [package, runtime-manifest]
-RELEASE_TAG: \${{ github.ref_name }}
-bun run tooling/runtime/release-manifest.ts
-bun run runtime:base:build
-bun run runtime:artifact:build
-bun run runtime:qualify --engine docker
-bun run runtime:qualify --engine podman
-docker login ghcr.io
-docker push "$published_base"
-uses: actions/attest@${PIN}
-subject-path: build/runtime/clarvis-kernel-*.tar.gz
-artifact-metadata: write
-packages: write
-build/release/runtime-release.json
+needs: package
+RELEASE_TAG: \${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
 bun run tooling/checks/release-assets.ts build/release "$GITHUB_REF_NAME"
 uses: actions/create-github-app-token@${PIN}
 client-id: \${{ vars.CLARVIS_RELEASE_APP_CLIENT_ID }}
@@ -91,7 +74,7 @@ test("rejects an incomplete Vercel AI SDK license release set", () => {
     "third-party notices must identify the Vercel AI SDK",
     "Vercel AI SDK license must contain its Apache-2.0 grant",
     "release workflow must publish the Vercel AI SDK license",
-    "release workflow must publish the immutable base, attest Kernel artifacts and qualify both engines only on tag pushes",
+    "release workflow must package verified installers before tag-only publication",
     "release publish job must reject manual workflow dispatches",
     "release workflow must target getclarvis/clarvis-releases",
     "release workflow is missing scoped GitHub App setting: uses: actions/create-github-app-token@",
@@ -111,7 +94,7 @@ test("rejects a publish job that a manual dispatch on a tag could reach", () => 
   input.releaseWorkflow =
     "cp third-party/vercel-ai-sdk/LICENSE build/release/VERCEL-AI-SDK-LICENSE\nif: startsWith(github.ref, 'refs/tags/')";
   expect(releaseReadinessFailures(input)).toEqual([
-    "release workflow must publish the immutable base, attest Kernel artifacts and qualify both engines only on tag pushes",
+    "release workflow must package verified installers before tag-only publication",
     "release publish job must reject manual workflow dispatches",
     "release workflow must target getclarvis/clarvis-releases",
     "release workflow is missing scoped GitHub App setting: uses: actions/create-github-app-token@",
@@ -137,22 +120,22 @@ test("rejects publication that bypasses the scoped cross-repository app token", 
   ]);
 });
 
-test("rejects a runtime release path without provenance or the manifest publication barrier", () => {
+test("rejects a publication path that bypasses packaging", () => {
   const input = withReleaseRepositories(valid());
-  input.releaseWorkflow = input.releaseWorkflow
-    .replace("uses: actions/attest@", "uses: actions/example@")
-    .replace("needs: [package, runtime-manifest]", "needs: package");
+  input.releaseWorkflow = input.releaseWorkflow.replace("needs: package", "needs: identity");
   expect(releaseReadinessFailures(input)).toContain(
-    "release workflow must publish the immutable base, attest Kernel artifacts and qualify both engines only on tag pushes",
+    "release workflow must package verified installers before tag-only publication",
   );
 });
 
-test("rejects a runtime identity gate that occurs after the first registry mutation", () => {
+test("rejects a release without a tag-aware package identity gate", () => {
   const input = withReleaseRepositories(valid());
-  const gate = "RELEASE_TAG: ${{ github.ref_name }}\n";
-  input.releaseWorkflow = input.releaseWorkflow.replace(gate, "") + gate;
+  input.releaseWorkflow = input.releaseWorkflow.replace(
+    "RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}",
+    "",
+  );
   expect(releaseReadinessFailures(input)).toContain(
-    "release workflow must publish the immutable base, attest Kernel artifacts and qualify both engines only on tag pushes",
+    "release workflow must package verified installers before tag-only publication",
   );
 });
 

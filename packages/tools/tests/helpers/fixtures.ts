@@ -107,12 +107,7 @@ export function makeConfig(root: string, overrides: Partial<ServerConfig> = {}):
       overrides.filesystemPolicy ??
       resolveFilesystemPolicy({
         runId: "test-run",
-        placement:
-          base.allowHostEscalation === false
-            ? "container"
-            : base.sandbox === undefined
-              ? "host"
-              : "sandbox",
+        placement: base.sandbox === undefined ? "host" : "sandbox",
         workspaceRoot: base.workspaceRoot,
         temporaryRoots: base.temporaryRoots,
         gitMetadataPaths: base.gitMetadataPaths,

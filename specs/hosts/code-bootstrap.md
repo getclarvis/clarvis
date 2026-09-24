@@ -107,52 +107,33 @@ download Bun or mutate shell profiles; ordinary root/package builds retain detac
 `packages/code/tooling/setup.ts` (build and link phases)).
 
 The distinct POSIX development entry starts at root `dev-install.sh`, which checks that Bun is
-available and delegates to `packages/code/tooling/development-install.ts`. In its default local mode, that typed installer
-requires the exact `mise.toml` version, performs the frozen dependency install, configures the local
-Git hook, builds `clarvis-base:local` for each installed Docker/Podman engine, compiles one matching
-Linux Kernel archive, and atomically creates a marked `clarvis-develop` regular file without replacing an
-unmanaged destination. Docker and Podman are attempted independently because they keep separate
-image stores; a missing engine is skipped so a Docker-only or Podman-only host still completes.
-When neither engine is installed the launcher is still written and native mode remains usable.
-When every installed engine fails to build, installation fails closed. The launcher embeds the
-absolute checkout and Bun paths, does not change the
-caller's current directory, exports `CLARVIS_CODE_SOURCE=1`, and executes `src/cli.ts`; it therefore
-tests the current sources from another workspace without a release or Code build. Reinstallation
-updates only the marked launcher and `--uninstall` removes only that file. Application startup uses
-the authenticated local-host transition in `connectOrLaunchLocalKernel`: a same-wire prior artifact
-is replaced only after it accepts an idle restart, while active physical work preserves the prior
-generation. Production: `dev-install.sh`, `packages/code/tooling/development-install.ts`
-(`installDevelopmentLauncher`, `developmentLauncherSource`, `uninstallDevelopmentLauncher`,
-`prepareDevelopmentRuntimeImages`) and
+available and delegates to `packages/code/tooling/development-install.ts`. In default local mode,
+the installer requires the exact `mise.toml` version, installs frozen dependencies, configures the
+local Git hook, and atomically creates a marked `clarvis-develop` regular file without replacing an
+unmanaged destination. The launcher embeds the absolute checkout and Bun paths, preserves the
+caller's current directory, exports `CLARVIS_CODE_SOURCE=1`, and executes `src/cli.ts`.
+Reinstallation updates only the marked launcher and `--uninstall` removes only that file. The
+local host replaces a same-wire prior artifact only after an idle restart; active physical work
+preserves the prior generation. Production: `dev-install.sh`,
+`packages/code/tooling/development-install.ts` (`installDevelopmentLauncher`,
+`developmentLauncherSource`, `uninstallDevelopmentLauncher`), and
 `packages/kernel/src/hosting/launcher.ts` (`connectOrLaunchLocalKernel`). Test:
-`packages/code/tests/unit/development-install.test.ts` (delegation, caller-workspace preservation,
-source selection, ownership refusal, update, uninstall, and per-engine runtime-image cases) and
-`packages/kernel/tests/integration/local-host-process.test.ts` (idle artifact transition and active
-work refusal).
+`packages/code/tests/unit/development-install.test.ts` and
+`packages/kernel/tests/integration/local-host-process.test.ts`.
 
 The explicit `--candidate [tag]` mode installs a published source prerelease into a separate unique
 checkout below `${XDG_DATA_HOME:-$HOME/.local/share}/clarvis-candidates/`. Without a tag it chooses
 the numerically highest RC among the latest 100 source releases that are non-draft prereleases and
-have `runtime-candidate.json`. The manifest must declare `installation: "source-v1"`; older image-only
-RCs are not installable through this path. Exact tags must satisfy the same publication filter.
-The installer checks the fetched tag's commit against `source_revision`, root version and pinned Bun,
-installs frozen dependencies, and smokes `--version` before atomically switching the marked launcher.
-When Docker or Podman is installed, it tries the available engines in that order and requires one to
-pull and inspect the digest-pinned candidate image. When neither is installed it skips prefetch,
-activates the native-capable candidate and reports that container isolation still needs an engine.
-Failure from every installed engine removes only the new checkout
-and preserves the previous launcher; downloaded registry layers can remain. Successful older
-checkouts are retained. Candidate mode cannot combine with installer clearing or maintenance modes.
-The candidate launcher exports `CLARVIS_RUNTIME_CANDIDATE` and `CLARVIS_RUNTIME_CANDIDATE_REVISION`;
-local launchers unset both to avoid inheriting a candidate selection. Updates require another explicit
-candidate installation, and uninstall still removes only the launcher. Git and the exact Bun runtime
-are prerequisites; candidate installation does not install a container engine.
-Production: `packages/code/tooling/candidate-install.ts` (`installCandidate`, `candidateJson`,
-`selectCandidateRelease`), `packages/code/tooling/development-install.ts`
-(`parseDevelopmentInstallArgs`, `developmentLauncherSource`).
-Test: `packages/code/tests/unit/candidate-install.test.ts` (publication selection, bounded downloads,
-source/image identity and failure-safe activation), `packages/code/tests/unit/development-install.test.ts`
-(launcher ownership and caller workspace).
+have `source-candidate.json`. The manifest must declare `installation: "source-v1"`; older formats
+are refused. The installer verifies the tag commit against `source_revision`, root version and pinned
+Bun, installs frozen dependencies, and smokes `--version` before switching the marked launcher.
+Successful older checkouts are retained. Candidate mode cannot combine with installer clearing or
+maintenance modes. Updates require another explicit candidate installation; uninstall removes only
+the launcher. Git and the exact Bun runtime are prerequisites. Production:
+`packages/code/tooling/candidate-install.ts` (`installCandidate`, `selectCandidateRelease`) and
+`packages/code/tooling/development-install.ts` (`parseDevelopmentInstallArgs`,
+`developmentLauncherSource`). Test: `packages/code/tests/unit/candidate-install.test.ts` and
+`packages/code/tests/unit/development-install.test.ts`.
 
 The development-only `--empty-workspace` operation allocates a new empty
 `/tmp/clarvis-development-temp/workspace-*` directory on every invocation and changes into it before
@@ -479,9 +460,7 @@ Four literal fragments, top to bottom on the screen:
 - the run's own error text, from `props.error()`
 - `"the kernel could not boot " + glyph("emDash") + " fix the cause above and retry; once the app starts, Doctor lists checks and fixes"`
 - `props.busy() ? "working" + glyph("ellipsis") : "[r] retry [ctrl+c] quit"` for an ordinary
-  failure. A typed live Container ownership conflict inserts
-  `"[t] terminate previous Container"` between retry and quit. Another failure while Container
-  isolation is selected inserts `"[h] use Host"` instead.
+  failure.
 
 ### 3.12 The `Splash` agent/model line and hint row (`packages/code/src/views/Splash.tsx`, `Splash`)
 
@@ -631,7 +610,7 @@ resume/continue preflight and `--delete`: it creates a `WorkspaceClientManager` 
 loads the owner's session store. Its TSDoc records that `runPrintMode` creates its **own manager**
 instead because it needs `keySources` and `memory: true`, neither of which a silent listing/delete
 command has any use for. All complete kernel paths still acquire their kernel through
-`WorkspaceClientManager`, which owns lazy Docker/Podman factory composition
+`WorkspaceClientManager`, which owns local and SSH connection composition
 (`packages/code/src/runtime.tsx`, `bootSilentSessionStore`, `runPrintMode`, `runRefreshMode`).
 
 **`runPrintMode`** (`packages/code/src/runtime.tsx`, `runPrintMode`):
@@ -683,7 +662,7 @@ terminal result."
 | #   | Step                                                                                                                                                                                                                                                                        | Production                                                                                                                                                                                                                                          |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | the thin entry validates TTY/SSH/ASCII policy; resume/continue resolve worktree identity and session existence before any renderer call; a valid invocation then creates OpenTUI, immediately installs bootstrap teardown ownership, and mounts a focused `StartupComposer` | `runInteractive` in `packages/code/src/index.tsx`; `prepareInteractiveMode` in `packages/code/src/runtime.tsx`; `installBootRendererLifecycle` in `packages/code/src/adapters/renderer-bootstrap.ts`; `packages/code/src/views/StartupComposer.tsx` |
-| 2   | after renderer idle, capture `shellElapsedMs`; start the runtime import and, for ordinary `run`, the workspace foundation in parallel; typed Container phases update the startup status                                                                                     | `runInteractive`; `prepareStartupFoundation` and `containerConnectionStatus` in `packages/code/src/startup-foundation.ts`                                                                                                                           |
+| 2   | after renderer idle, capture `shellElapsedMs`; start the runtime import and, for ordinary `run`, the workspace foundation in parallel; connection progress updates the startup status                                                                                     | `runInteractive`; `prepareStartupFoundation` in `packages/code/src/startup-foundation.ts`                                                                                                                           |
 | 3   | the runtime opens diagnostics, records `app.boot.begin` plus the captured `app.boot.shell-painted`, then creates the complete platform and transfers Ctrl+C ownership while retaining exit/key teardown through full-app mount                                              | `BootShell.handoffRendererLifecycle`; `runApp` in `packages/code/src/runtime.tsx`                                                                                                                                                                   |
 | 4   | use the prepared `WorkspaceClientManager` or create one; establish immutable workspace identity and construct stores/config/history/capabilities                                                                                                                            | `runApp`; `WorkspaceClientManager.create`                                                                                                                                                                                                           |
 | 5   | load the foundation without reading models.dev, then list Agent Profiles, resolve the branch and bind the run host                                                                                                                                                          | `runApp`, `loadFoundation`                                                                                                                                                                                                                          |
@@ -699,9 +678,7 @@ inactive while the kernel resolves their bounded inventory; after `<App>` mounts
 command wiring opens the workspace approval modal automatically for `unapproved` or `changed`.
 Its centre uses the shared `BrandBanner`: the complete eight-row splash appears when 60×17 fits and
 the standard compact wordmark appears below either threshold. The startup-only connection status
-does not invent the not-yet-resolved agent/model line or advertise complete-app shortcuts. For a
-Container connection it names engine inspection, runtime resolution, workspace inspection,
-workspace/artifact/state preparation and Kernel start from the connector's typed progress callback.
+does not invent the not-yet-resolved agent/model line or advertise complete-app shortcuts. For a connection it reports Kernel startup without claiming complete-app readiness.
 Its
 header already anchors the root-owned `v<version>` at the right edge, so the product identity does
 not move when the complete application replaces it.
@@ -832,8 +809,6 @@ straight off the renderer".
 | State                                       | Key           | Effect                                                                                                                  | Production symbol                                                   |
 | ------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | idle                                        | `r`           | consume the key, `setBusy(true)`, call `retry()`                                                                        | `runFatalBoot` (`onKey`)                                            |
-| idle, typed Container owner conflict        | `t`           | consume the key, `setBusy(true)`, run the explicit exact-owner termination and reconnect action                         | `runFatalBoot` (`onKey`), `runtime.tsx` (`connectWorkspaceManager`) |
-| idle, other selected-Container boot failure | `h`           | consume the key, save Host through the operator config service and connect again                                        | `runFatalBoot` (`onKey`), `runtime.tsx` (`useHostForBoot`)          |
 | idle                                        | `ctrl+c`      | call `quit()` (expected to exit); `q`, Escape and all other keys are ignored                                            | `runFatalBoot` (`onKey`)                                            |
 | idle                                        | anything else | ignored                                                                                                                 | `runFatalBoot` (`onKey`)                                            |
 | busy                                        | `ctrl+c`      | prevent propagation and remain on the retry screen                                                                      | `runFatalBoot` (`onKey`)                                            |
@@ -853,18 +828,10 @@ state instead of falling through to platform shutdown. Test:
 `packages/code/tests/integration/fatal-boot-render.test.tsx` (`fatal boot owns Ctrl+C ahead of
 bootstrap teardown and ignores it during retry`).
 
-Workspace-manager boot failure uses the same screen before foundation loading.
-`isContainerKernelOwnershipConflict` enables the `t` resolution, and that attempt reconnects with
-`containerOwnershipConflict: "terminate"`. Other failures while
-`isContainerWorkspaceDestination` confirms a selected Container enable `h`; `useHostForBoot` writes
-the ordinary Host projection through `applyIsolation` and reconnects. An ordinary `r` reconnect
-keeps the selected placement and default ownership refusal.
-Production: `packages/code/src/runtime.tsx` (`connectWorkspaceManager`) and
-`packages/code/src/adapters/workspace-client-manager.ts`
-(`isContainerKernelOwnershipConflict`, `connectionPlan`). Test:
-`packages/code/tests/integration/fatal-boot-render.test.tsx` ("fatal boot: offers and runs an explicit
-Container ownership resolution") and
-`packages/code/tests/component/workspace-client-manager.test.ts` (typed conflict recognition).
+Workspace-manager boot failure uses the same screen before foundation loading. Ordinary retry
+reconnects the selected local or SSH destination. Production: `packages/code/src/runtime.tsx`
+(`connectWorkspaceManager`) and `packages/code/src/adapters/workspace-client-manager.ts`
+(`connectionPlan`).
 
 `packages/code/tests/integration/fatal-boot-render.test.tsx` ("fatal boot: disposes its root on
 success so the App mounts alone") additionally pins that the root is disposed on success — after
@@ -1106,7 +1073,7 @@ trust that flag: a dirty view or a run that will be cancelled on exit still requ
 Mechanically, `atStake = dirtyView || deps.isRunAtRisk()` and the gate arms whenever `confirm || atStake`.
 An observed hosted run with confirmed `continue` policy is not at risk merely because it is active
 only when the workspace manager confirms that its local Host/Sandbox lifecycle outlives this TUI;
-the activity line then displays `continues after exit`. Container and SSH processes are connection
+the activity line then displays `continues after exit`. SSH processes are connection
 owned, never receive that projection and remain at risk on exit. This projection does not change
 host policy or tool consent, and a later turn defaults to ordinary exit policy.
 A non-empty draft is deliberately excluded from that arming set: "Running `/quit` from the composer
@@ -1270,8 +1237,7 @@ reports local preparation, physical run closure, shell work or compaction. Other
 connection state to `connecting`, pauses loop readiness, and calls `runClient.reconnect(mode)`.
 `/reconnect` selects `connection`, which replaces the transport without restarting the executor;
 `/reconnect reload` and configuration callbacks select `reload`, which requires host quiescence.
-For a Container generation, quiescence means no hosted run in `starting`, `running`, or `finishing`
-state and no running Memory job. A recovered `unknown` outcome remains visible for explicit recovery
+A recovered `unknown` outcome remains visible for explicit recovery
 but does not represent current physical work and cannot permanently block a placement change.
 Success reloads local keys/settings/agent adapters and the profile catalogue before publishing
 `ready`. Failure probes the retained client: a rejected reload with a healthy connection remains
@@ -1592,8 +1558,7 @@ plumbing in `packages/code/src/runtime.tsx` and `packages/code/src/startup-found
 application parser or models-catalog path: one branded `StartupComposer` owns a focused input, a
 distinct startup-readiness marker and the shared `BrandBanner`. At 60×17 or larger it paints the same
 complete eight-row banner as an empty untouched run, with every art row and a blank separator
-reserved above connection progress; below either edge it paints the shared compact wordmark. Container progress follows the
-typed connector phases. It accepts at most one queued task; the snapshot survives root replacement, starts before
+reserved above connection progress; below either edge it paints the shared compact wordmark. It accepts at most one queued task; the snapshot survives root replacement, starts before
 complete-app hydration when submitted, and otherwise transfers the exact draft to `App`. It never
 contains the complete app's paint/readiness markers. Production:
 `runInteractive` in `packages/code/src/index.tsx`, `createStartupComposerState` in
@@ -1607,17 +1572,12 @@ contains the complete app's paint/readiness markers. Production:
 **INV-CB-44.** `clarvis-develop` is a marked, source-only launcher distinct from the product's sole
 `clarvis` executable. It preserves the caller's working directory unless `--empty-workspace`
 selects a newly allocated temporary directory, never replaces an unmanaged destination, and
-exposes global-state and managed-temporary deletion only through explicit `--clear`. Default
-installation also builds `clarvis-base:local` for each installed Docker/Podman engine and one
-target Linux Kernel archive; it skips missing engines and fails closed only when every installed
-engine fails.
-Production:
+exposes global-state and managed-temporary deletion only through explicit `--clear`. Production:
 `dev-install.sh` and `packages/code/tooling/development-install.ts`
 (`developmentLauncherSource`, `existingLauncher`, `cleanDevelopmentState`,
 `createEmptyDevelopmentWorkspace`, `clearDevelopmentTempWorkspaces`,
-`prepareDevelopmentRuntimeImages`). Test:
-`packages/code/tests/unit/development-install.test.ts` (launcher execution, ownership, cleanup,
-shell-delegation, per-engine base cases and artifact build).
+`cleanDevelopmentState`). Test:
+`packages/code/tests/unit/development-install.test.ts` (launcher execution, ownership, cleanup and shell delegation).
 
 **INV-CB-45.** Resume/continue session preflight finishes before OpenTUI renderer creation, so a
 missing session never enters raw mode or the alternate screen. Once renderer creation begins,
@@ -1672,8 +1632,7 @@ elision removes optional run configuration rather than the product identity. Pro
 
 **INV-CB-49.** Every complete Code kernel boot goes through `WorkspaceClientManager`, so interactive,
 `--print`, session-only and model-refresh modes all receive either the selected local host or the
-operator-selected SSH host. Both application host entries share the same Docker/Podman runtime
-factory. No direct `createFileKernel` call remains in `runtime.tsx`. Production:
+operator-selected SSH host. No direct `createFileKernel` call remains in `runtime.tsx`. Production:
 `packages/code/src/runtime.tsx` (`bootSilentSessionStore`, `runPrintMode`, `runRefreshMode`, `runApp`)
 and `packages/code/src/adapters/workspace-client-manager.ts` (`WorkspaceClientManager.create`) plus
 `packages/code/src/adapters/host-kernel-options.ts` (`createCodeHostKernelOptions`).
@@ -1774,7 +1733,7 @@ closed in the compact band").
 | `index.tsx`                            | `@opentui/core`, `@opentui/solid`, `solid-js`                                                                                 | renderer plus the focused startup root                                | `packages/code/src/index.tsx`                                                        |
 | `index.tsx`                            | `cli-args`, `StartupComposer`, renderer/terminal bootstrap                                                                    | value; bounded pre-runtime graph                                      | `packages/code/src/index.tsx`                                                        |
 | `startup-foundation.ts`                | `@clarvis/paths`, `@clarvis/kernel/logger`                                                                                    | minimal workspace/key-source projection while the runtime chunk loads | `packages/code/src/startup-foundation.ts`                                            |
-| `adapters/workspace-client-manager.ts` | `@clarvis/kernel/bootstrap`                                                                                                   | type-only options plus dynamic `connectOrLaunchLocalKernel` / `connectRemoteKernelOverSsh` / `connectLocalContainerKernel` factories             | `packages/code/src/adapters/workspace-client-manager.ts` (`WorkspaceClientManager.create`)   |
+| `adapters/workspace-client-manager.ts` | `@clarvis/kernel/bootstrap`                                                                                                   | type-only options plus dynamic `connectOrLaunchLocalKernel` / `connectRemoteKernelOverSsh` factories             | `packages/code/src/adapters/workspace-client-manager.ts` (`WorkspaceClientManager.create`)   |
 | `runtime.tsx`                          | `@clarvis/paths`, `@clarvis/kernel/logger`, OpenTUI/Solid, Node filesystem                                                    | complete headless and interactive composition graph                   | `packages/code/src/runtime.tsx`                                                      |
 | `views/App.tsx`                        | `../app/command-composition.ts`                                                                                               | value: `registerCodeCommands`                                         | `packages/code/src/views/App.tsx`                                                    |
 | `views/App.tsx`                        | `../app/layout.ts`                                                                                                            | value                                                                 | `packages/code/src/views/App.tsx`                                                    |

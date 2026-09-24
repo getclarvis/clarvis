@@ -51,31 +51,6 @@ SemVer ordering and the existing cross-file identity before writing, and never c
 publishes. Public documentation resolves the newest complete distribution release independently, so
 it is not part of this source mutation.
 
-`runtime/build-image.ts` builds the version-independent Container base through the explicit
-`runtime:base:build --engine ... --target ... --tag ...` interface. The base owns the pinned Debian
-environment, Git, certificates, the verified per-architecture mise binary and the stable artifact
-preparer; it contains no Clarvis product executable. Its content revision, ABI and immutable local
-image ID are inspected before any preparer runs. Docker and Podman IDs are normalized only when the
-engine returns the complete lowercase SHA-256.
-
-`runtime/build-artifact.ts` separately runs the pinned Linux Bun builder with the checkout read-only,
-autoload disabled and no network. Its root remains read-only while a 768 MiB, non-executable `/tmp`
-tmpfs supplies only the scratch space required by `bun build --compile`; Podman's implicit read-only
-tmpfs behavior is disabled so the declared mount remains authoritative. It emits
-`clarvis-kernel-<target>.tar.gz`, a checksum sidecar and a strict manifest containing the public
-Kernel wire, broker and channel revisions. The compiled Kernel entry statically installs the loop's
-lazy Ajv dependencies, and qualification instantiates tool validation so a binary that boots but
-still tries to resolve `node_modules` cannot pass. The artifact is qualified outside the checkout
-and is transferred into a content-addressed engine volume; changing only Clarvis code does not
-rebuild the base.
-
-`runtime/release-manifest.ts` owns schema 2: one root product version and source commit map each Linux
-target to an immutable base image/digest/ABI plus the artifact basename, SHA-256, size and wire
-revisions. `runtime/qualify-container.ts` admits an already-built base/artifact pair, runs the real
-Docker or Podman Container Kernel canary and writes attributable scenario and cleanup evidence. It
-does not build or download either input. The release workflow publishes the tarballs, sidecars,
-qualification reports and `runtime-release.json` in the verified release asset set.
-
 `release/gitflow.ts` validates an open or merged release PR against the checked-out SHA and
 root version. `lib/gitflow-release.ts` owns branch/event selection and immutable RC numbering.
 Candidates require a same-repository open `release/*` PR into `main`; branch pushes alone are ignored.
@@ -85,14 +60,11 @@ an actual merge commit at remote `main` and a candidate on the release head. The
 CI and supplies a source-scoped Publisher App token and SSH signing key; the workflow checks that key against `release/tag-signing-key.pub`, and the CLI verifies signatures
 and never force-pushes. See [RELEASING.md](../RELEASING.md#automation-setup) for activation requirements.
 
-`release/candidate.ts` validates RC identity, emits the separate candidate manifest with the
-`source-v1` installation contract, and publishes only source prereleases.
+`release/candidate.ts` validates RC identity, emits `source-candidate.json` with the
+`source-v1` installation contract, and publishes source prereleases.
 `packages/code/tooling/candidate-install.ts` consumes that contract for explicit development
-installs, verifying the source snapshot and its runtime manifest. `ci/qualify-runtime.sh` is the
-strict wrapper around `runtime:qualify`. `.github/workflows/candidate.yml` and
-`.github/workflows/release.yml` build and publish a base only when its inputs change, then build the
-product artifact and require Docker and rootless Podman qualification on both Linux architectures
-before attaching that pair to a source candidate or stable release.
+installs, verifying the source snapshot and its pinned Bun version. The stable release workflow
+publishes the six portable targets after package, smoke and asset checks.
 
 ## Prompt-cache evidence
 
@@ -112,7 +84,7 @@ model/affinity checks and independently verified output. The baseline must fail 
 Version 2 also retains bounded tool outcomes and argument shapes, excluding argument values and
 successful payloads, to diagnose rejected controls before isolated traces are removed. The ChatGPT
 affinity check accounts for the header already being the SHA-256 of the composed cache key.
-This host qualification does not establish real PTY behavior, an installed artifact or container
+This host qualification does not establish real PTY behavior or an installed artifact
 execution. No goal live command runs in CI. Its contract is [goals](../specs/capabilities/goals.md).
 
 `cache/` owns the typed schema-versioned physical-call report, independent per-agent evaluator,

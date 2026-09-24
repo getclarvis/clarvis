@@ -289,7 +289,7 @@ the concrete transport decides how to interrupt the request without serializing 
 wire parameters.
 
 The opening hello requires the exact `CLARVIS_WIRE_VERSION` declared by the kernel's
-[`wire.ts`](../kernel/src/transport/wire.ts), independently of the private Container channel revision.
+[`wire.ts`](../kernel/src/transport/wire.ts).
 Unknown versions and malformed or extra envelope fields fail closed. Stdio uses strict
 newline-delimited frames capped at 8 MiB and a
 serialized bounded writer; malformed JSON, oversized frames and stalled/backpressured output close
@@ -340,25 +340,9 @@ fallback.
 
 `SandboxInspection.filesystem` reports Host or Sandbox placement, host-visible read scope,
 the write boundary, and the effective workspace posture; `effective_network` reports the enforced
-network mode. The kernel resolves this doctor snapshot;
-the UI presents it alongside backend availability. Container mount authority remains in its
-separate runtime projection.
-
-The optional handshake runtime projection reports effective native or Container placement. Native
-status identifies Host versus Sandbox. Container status reports the selected Docker/Podman engine,
-Linux guest, effective network and lifecycle. A ready projection also requires generation, base
-image digest, artifact digest, base ABI, broker/channel versions and state namespace. It has no
-fallback origin/status. This projection is informational only; launch authority remains in Kernel.
-
-`SettingsData.runtime` accepts a simple Docker `{ "backend": "docker" }` or Podman
-`{ "backend": "podman" }` input plus advanced overrides. Omitted fields receive host-owned defaults;
-an omitted network selects ordinary routable `outbound` access. Neither engine has a fallback field;
-Podman has no recipe. The optional Docker `recipe` DTO carries only a safe name, an absolute script
-path under the global operator recipe directory and optional `none`/`outbound` build networking; it
-is operator configuration, not a guest grant or image-build protocol operation.
-`RuntimeStatus.network` is never omitted for a Container because it reports the effective policy;
-`outbound` may reach host/LAN peers and must not be presented as public-only internet access. Private
-broker and channel revisions remain outside this type-only package except for their status fields.
+network mode. The kernel resolves this doctor snapshot and the UI presents it alongside backend
+availability. The optional handshake runtime projection identifies native Host or Sandbox placement
+and a ready lifecycle. It is informational; the selected Kernel host owns execution policy.
 
 ## Development
 

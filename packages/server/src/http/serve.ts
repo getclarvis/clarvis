@@ -165,7 +165,7 @@ export interface ServeHandle {
  *   `initialize` attempts are bounded only by
  *   `CLARVIS_SERVER_MAX_SESSIONS`. That is a posture rather than an oversight,
  *   and it rests on a deployment shape stated elsewhere in this package: one
- *   container per config directory, with enrolled clients, behind whatever
+ *   server instance per config directory, with enrolled clients, behind whatever
  *   ingress the operator already runs. It stops holding the moment this is
  *   exposed to callers the operator has not enrolled — and under `--auth off`
  *   the bind address is the only boundary there is.

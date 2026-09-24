@@ -31,57 +31,10 @@ export interface SettingsData {
   mcp_servers?: Record<string, McpServerConfig>;
   guard?: GuardConfig;
   sandbox?: SandboxConfig;
-  runtime?: RuntimeConfig;
   memory?: MemoryConfig;
   budget?: unknown;
   /** Forward-compatible: the kernel owns the exhaustive schema. */
   [block: string]: unknown;
-}
-
-/** Host execution placement; absence is native and never probes an OCI engine. */
-export type RuntimeConfig =
-  | { backend: "native" }
-  | {
-      backend: "docker";
-      /** Advanced override. Omission selects the matching managed release image lazily. */
-      image_digest?: string;
-      /** Omission selects ordinary routable outbound access, which may also reach host/LAN peers. */
-      network?: "none" | "internet" | "outbound";
-      limits?: Partial<RuntimeLimitsConfig>;
-      executable?: string;
-      connection?: string;
-      /** Optional operator-owned, content-addressed first-use image customization. */
-      recipe?: RuntimeRecipeConfig;
-    }
-  | {
-      backend: "podman";
-      /** Advanced override. Omission selects the matching managed release image lazily. */
-      image_digest?: string;
-      /** Omission selects ordinary routable outbound access, which may also reach host/LAN peers. */
-      network?: "none" | "internet" | "outbound";
-      limits?: Partial<RuntimeLimitsConfig>;
-      executable?: string;
-      /** Omission selects the local Podman connection at launch. */
-      connection?: string;
-    };
-
-/** Advanced container ceilings; omitted fields use product defaults. */
-export interface RuntimeLimitsConfig {
-  cpu_count: number;
-  memory_bytes: number;
-  process_count: number;
-  output_bytes: number;
-  storage_bytes: number;
-}
-
-/** Operator-owned Docker image customization captured and run only by the host. */
-export interface RuntimeRecipeConfig {
-  /** Stable, filesystem-safe label used only for operator diagnostics. */
-  name: string;
-  /** Absolute host path under the operator's global runtime recipe directory. */
-  script: string;
-  /** Network available only while building the derived image. */
-  network?: "none" | "outbound";
 }
 
 /** One configured LLM / completion provider. */

@@ -79,7 +79,7 @@ describe("createShellGuard (kernel copy)", () => {
     const context = makeCtx("shell", {
       command: "bun test",
       sandbox_permissions: "require_escalated",
-      justification: "need host docker.sock",
+      justification: "need host service",
     });
     context.config = {
       ...context.config,
@@ -91,7 +91,7 @@ describe("createShellGuard (kernel copy)", () => {
       escalate: "human",
       reason: "this command will run outside the sandbox on the host",
       static_trigger: "this command will run outside the sandbox on the host",
-      agent_justification: "need host docker.sock",
+      agent_justification: "need host service",
     });
   });
 

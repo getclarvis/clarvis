@@ -228,18 +228,9 @@ jobs:
           CLARVIS_NATIVE_SANDBOX_CANARY: "1"
         run: bash tooling/ci/retry-code-coverage.sh
 
-  server-image:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - run: docker build --file packages/server/Dockerfile --tag clarvis-server:ci .
-
   linux:
     name: linux
-    needs: [build, typecheck, lint, knip, checks, coverage, server-image]
+    needs: [build, typecheck, lint, knip, checks, coverage]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -253,7 +244,7 @@ jobs:
           jq -e -s '
             length == 1 and (.[0] |
             type == "object" and
-            (keys == ["build", "checks", "coverage", "knip", "lint", "server-image", "typecheck"]) and
+            (keys == ["build", "checks", "coverage", "knip", "lint", "typecheck"]) and
             all(.[]; type == "object" and has("result") and .result == "success"))
           ' <<< "$NEEDS_JSON"
 

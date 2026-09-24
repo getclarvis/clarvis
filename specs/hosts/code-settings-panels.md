@@ -173,7 +173,7 @@ posture remain visible beside backend status. That host observation wins in the 
 line when an untrusted workspace requests weaker settings than the global Sandbox; editable rows
 continue to show the requested values. Run controls and Doctor use the same observation for
 effective placement, and the quick picker marks that placement as current. The Isolation picker states Host OS access, Sandbox
-host-visible reads with declared writes, and Container guest-mount access. Production:
+host-visible reads with declared writes. Production:
 `SandboxConfigPanel` in
 [SandboxConfigPanel.tsx](../../packages/code/src/views/config/SandboxConfigPanel.tsx) and
 `isolationPlacementLines` in
@@ -200,30 +200,16 @@ carries the reason a disabled, unresolved or session-overridden state cannot lea
 rows without intermediate scope headings"), with
 `packages/code/tests/integration/sandbox-config-render.test.tsx` as the shared-primitive sentinel.
 
-`RunControlsPanel` is the sole Settings screen for Host, Sandbox, Docker or Podman placement. Itwrites through shared `applyIsolation`; native Sandbox fields remain under `sandbox.config`.
-Workspace settings cannot contribute a runtime. Docker/Podman copy states
-that the full native Kernel, including Plans, Memory, Workflows and Goals, runs in the Container;
-skills, MCP, hooks, plugins, Tasks, external capability providers and Guard remain
-unavailable. It also names the writable workspace, outbound consequences, read-only Git metadata and
-fail-closed startup with no native fallback. Review renders `Not applicable in Container`, native
-capability settings remain visible, and unavailable extensions are marked as such; persisted settings
-are not overwritten. An active operation blocks the isolation transition until it stops. Production:
-`packages/code/src/features/run/isolation.ts` (`isolationPlacementLines`), and
-`packages/code/src/views/config/RunControlsPanel.tsx`. An idle save immediately requests a workspace
-connection reload, so the header reflects the newly admitted Kernel placement; a failed reload leaves
-the saved choice explicitly pending instead of reporting it as active. Any committed host-side
-settings, Agent, context or model-catalog change for an active Container generation also keeps a
-`reconnect pending` warning in the header until a successful generation replacement clears it.
-Production: `WorkspaceClientManager.invalidate` in
-`packages/code/src/adapters/workspace-client-manager.ts`, `urgentField` in
-`packages/code/src/views/header-projection.ts`, and
-the `reload` callbacks in `packages/code/src/views/overlays/IsolationPicker.tsx`,
-`packages/code/src/views/config/RunControlsPanel.tsx`. Test:
-`packages/code/tests/unit/isolation.test.ts`,
+`RunControlsPanel` is the Settings screen for Host or Sandbox placement. It writes through
+shared `applyIsolation`; native Sandbox fields remain under `sandbox.config`. An active operation
+keeps the saved setting for the next run. An idle save requests a workspace connection reload; a
+failed reload leaves the saved choice explicitly pending rather than reporting it as active.
+Production: `packages/code/src/features/run/isolation.ts` (`isolationPlacementLines`) and
+`packages/code/src/views/config/RunControlsPanel.tsx`.
+Test: `packages/code/tests/unit/isolation.test.ts`,
 `packages/code/tests/integration/isolation-review-picker-render.test.tsx`, and
 `packages/code/tests/integration/run-controls-render.test.tsx`; connection reselection is pinned by
-`packages/code/tests/component/workspace-client-manager.test.ts`, and the persistent warning by
-`packages/code/tests/unit/header-projection.test.ts`.
+`packages/code/tests/component/workspace-client-manager.test.ts`.
 
 The `Ctrl+X M` Memory picker mirrors Run controls' `on`/`off` choice but changes only the
 session `MemoryModeStore`; persisted Memory settings remain under `MemoryConfigPanel`. Production:

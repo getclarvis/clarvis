@@ -123,7 +123,7 @@ const NO_COUNTER_ALLOWLIST = {
     // Type-only: options and lifecycle contracts used by the creation port.
     "src/goals/creation-port-types.ts",
     // Type-only.
-    "src/runtime/tool-policy.ts",
+    "src/runtime/types.ts",
     "src/config/builtin-agents/types.ts",
     "src/guard/effects/types.ts",
     "src/connection-health.ts",

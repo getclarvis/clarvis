@@ -19,7 +19,7 @@ folds into a run's `deps.capabilities`. Per run it decides whether memory is act
 sees: a seed block carrying the compiled `PROFILE.md`, a `## Memory` system-prompt section whose
 wording differs for the entry agent versus every subagent, and a toolset — read tools for
 everyone, write tools for a write-enabled native entry agent only. `prepareMemoryRuntime` remains a
-provider-opaque package utility. Container composes the same native Memory capability from its
+provider-opaque package utility. The native host composes Memory from its
 frozen local-provider projection and injects the model broker port for indexing.
 `tools.ts` is where the
 seven native tool bodies actually
@@ -139,9 +139,7 @@ keeps four operations on the host: `seed(task?)`, schema-aware `accepts(name,arg
 `invoke(name,args,signal?)`, and `finish(record)` over the canonical `onRunEnd`. It exposes no
 provider/store object, provider key, credentials, path or mutating tool.
 
-The complete Container Kernel uses the native Memory factory directly with projected local-provider
-settings and an injected model port. This provider-opaque utility remains available to other host
-compositions and is not a Container bridge.
+This provider-opaque utility remains available to host compositions.
 
 Production: `MemoryRuntimeDescriptor`, `PreparedMemoryRuntime`, `prepareMemoryRunInternal` and
 `prepareMemoryRuntime` in `packages/memory/src/capability.ts`. Test:
@@ -612,15 +610,6 @@ statement of the instruction's own content owned by
 [capabilities/memory-indexer.md](memory-indexer.md) §5. Test (this document's half of the three-way
 check): `packages/memory/tests/architecture/write-policy.test.ts`.
 
-**Container native boundary.** `prepareMemoryRuntime` remains provider-opaque, while the complete
-Container Kernel composes the native Memory factory with projected local settings. Seed, tools and
-post-run indexing stay inside the guest; only model calls use the host broker. Production:
-`prepareMemoryRunInternal` in `packages/memory/src/capability.ts` and
-`createContainerNativeKernel` in `packages/kernel/src/hosting/container-native.ts`. Test:
-`packages/memory/tests/component/capability.test.ts` (`prepares a provider-opaque runtime lease with
-canonical calls and host run-end`) and
-`packages/kernel/tests/integration/container-kernel-host.test.ts`.
-
 ### Further invariants derived directly from the code (not in the owned INV range but load-bearing
 here)
 
@@ -659,7 +648,6 @@ constructs a provider whose tool descriptors differ from canonical and asserts t
 | `factory.providerFor` resolves `undefined` | Native `forRun` and provider-opaque preparation return `null` | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
 | `factory.providerFor` resolves `{ ok: false, failure }` | logs `memory_provider_unavailable` (with `cause`/`provider` fields) and returns `null` — never silently falls back to a different store | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
 | `provider.seed(...)` throws | logs `memory_seed_failed`; native `seedBlock()` is absent and preparation returns a null seed, so the native run proceeds without a memory block | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
-| Container configuration selects a local `wiki` or `file` provider | The native Container Kernel runs Memory against canonical workspace content/machinery shared with Host/Sandbox; external providers remain `unsupported` before provider startup or inference | `projectContainerConfiguration` in packages/kernel/src/config/container-projection.ts, `prepareContainerDomainMounts` in packages/kernel/src/runtime/container-mounts.ts and `createNativeKernel` in packages/kernel/src/native-kernel.ts |
 | A write/edit/delete tool's argument schema rejects | `fail("Invalid arguments: <path>: <message>")`, first zod issue only | packages/memory/src/tools.ts |
 | A tool body throws | `fail("Tool failed: <message>")` | packages/memory/src/tools.ts |
 | `grep_memories` regex too complex (backreference, lookaround, a quantifier applied to a group, or a pattern carrying more than three of `* + ? { \|`) | Not honoured — falls back to a keyword search rather than failing | packages/memory/src/tool-contract.ts |
@@ -715,10 +703,6 @@ durable index job queue is out of scope here (delegated to [capabilities/memory-
   engine's eager configuration path may reach it" and because this module is "the only place that
   knows both" the memory package's structural port and the kernel's MCP connection pool
   (packages/kernel/src/memory/memory-server-port.ts doc comment).
-- `packages/kernel/src/hosting/container-native.ts` keeps Memory native in Container and injects the
-  frozen policy and model resolver. No host-side Memory provider or indexer is constructed. Test:
-  `packages/kernel/tests/integration/container-kernel-host.test.ts`.
-
 **Forces the direction:**
 - `packages/memory/tests/architecture/settings-ownership.test.ts` fails the build if `settings.ts` ever value-imports
   `./factory.ts`, `./capability.ts`, or a `Logger` — this is what keeps the kernel's eager

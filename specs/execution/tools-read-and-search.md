@@ -12,7 +12,7 @@ the library those tools and their mutating siblings share. Each is declared in o
 from that bit rather than maintained separately (`packages/tools/src/tools/registry.ts`).
 
 The subsystem bounds bytes, retained entries, and in-process regex CPU time. `workspaceRoot`
-anchors relative paths; Host OS permissions, Sandbox native policy, or Container guest mounts
+anchors relative paths; Host OS permissions or Sandbox native policy
 control ordinary external access. Classified private configuration remains denied, and the two
 text read tools admit only an exact pinned output spill from selected state. Production:
 `resolveFileToolPath` in `packages/tools/src/lib/paths.ts`, `resolveReadableTextPath` in
@@ -192,8 +192,7 @@ configuration directory or file. Recursive walks apply
 canonical path admission before descending or reading, so private state and credential leaves are
 omitted. Configuration directory grep stays in process and opens admitted files through the
 descriptor-bound read path; it does not pass the global root to ripgrep. In Sandbox, that process
-is the isolated file service, which has the host-visible read scope of the shell. In Container,
-reads see only guest mounts. Production:
+is the isolated file service, which has the host-visible read scope of the shell. Production:
 `resolveFileToolPath` and `isAdmittedFileToolSearchPath` in
 [paths.ts](../../packages/tools/src/lib/paths.ts), `listFiles` and `readFileOptionsForPath` in
 [files.ts](../../packages/tools/src/lib/files.ts), and `grepSearch` in
@@ -291,7 +290,7 @@ dropped — which is how a non-UTF-8 filename disappears from the result
 
 Each handler resolves relative paths from `workspaceRoot` and keeps absolute paths absolute.
 `resolveFileToolPath` rejects private classified configuration, unadmitted selected state and
-redirected classified paths. Host OS permissions or the run's Sandbox/Container policy decide
+redirected classified paths. Host OS permissions or the run's Sandbox policy decide
 ordinary access. `read_file` and `read_files` additionally pin one exact generic output spill;
 other state files remain private. Production: `resolvePath` and `resolveFileToolPath` in
 `packages/tools/src/lib/paths.ts`, `resolveReadableTextPath` in
@@ -595,7 +594,7 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 | **RS-45** | `blockSpan` extends a matched span to swallow the following line's newline when `oldString` itself ends in `\n` — except when the matched block is the text's final line, where there is no following newline to swallow. | `packages/tools/src/lib/match-cascade.ts` | `packages/tools/tests/unit/match-cascade.test.ts` ("extends the span to include the trailing newline") ("does not over-extend when old ends in newline but the block is the final line") |
 | **RS-46** | `scanLineBlocks` treats a sparse-array hole in either the haystack window or the needle as an empty string (`eq(hay[i+j] ?? "", need[j] ?? "")`), rather than skipping it or throwing. | `packages/tools/src/lib/match-cascade.ts` | `packages/tools/tests/unit/match-cascade.test.ts` ("treats a hole in the haystack window as an empty line") ("treats a hole in the needle as an empty line") |
 | **RS-47 (INV-302)** | Both grep engines apply `maxFileBytes` identically **and in both directions**: a file over the ceiling is skipped in a directory search (a small sibling still matches), and naming that same oversized file directly yields `(no matches)` on both paths rather than an error. | `packages/tools/src/lib/rg.ts` (`--max-filesize`) (the single-file `readRawFile` bound, whose failure resolves to an empty result rather than a throw) | `packages/tools/tests/contract/grep-parity.test.ts` |
-| **RS-48** | Host temporary files follow OS permissions and the selected Sandbox/Container policy; run scratch is owned and removed only after physical command termination. | `resolveFilesystemPolicy` in `packages/tools/src/sandbox.ts`; `createAgentToolsCapability` in `packages/loop/src/runtime/capabilities/tools.ts` | `packages/tools/tests/integration/api.test.ts`; `packages/loop/tests/integration/command-guard-wiring.test.ts` |
+| **RS-48** | Host temporary files follow OS permissions and the selected Sandbox policy; run scratch is owned and removed only after physical command termination. | `resolveFilesystemPolicy` in `packages/tools/src/sandbox.ts`; `createAgentToolsCapability` in `packages/loop/src/runtime/capabilities/tools.ts` | `packages/tools/tests/integration/api.test.ts`; `packages/loop/tests/integration/command-guard-wiring.test.ts` |
 
 ## 6. Failure modes and degradation
 

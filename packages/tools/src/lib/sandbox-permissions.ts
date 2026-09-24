@@ -7,7 +7,7 @@ export const SANDBOX_PERMISSION_PROPERTIES = {
     type: "string",
     enum: ["use_default", "require_escalated"],
     description:
-      'Omitted or "use_default" follows Isolation. "require_escalated" runs this one command on the host after review when Isolation is Sandbox. Isolated container runs reject it.',
+      'Omitted or "use_default" follows Isolation. "require_escalated" runs this one command on the host after review when Isolation is Sandbox.',
   },
   justification: {
     type: "string",
@@ -43,9 +43,6 @@ export function resolveSandboxEscalation(
       "invalid_input",
       "justification is required when sandbox_permissions is require_escalated",
     );
-  }
-  if (config.allowHostEscalation === false) {
-    throw new ToolError("denied", "Isolated container runs cannot reach the host this way");
   }
   return { forceBare: config.filesystemPolicy.placement === "sandbox" };
 }

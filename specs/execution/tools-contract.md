@@ -245,8 +245,8 @@ changes identity when its effective access changes`, `uses the same broad-read w
 for shell and shell_session with an external cwd`).
 
 The closed `AgentFilesystem` port covers all 18 model file operations after schema, private-path,
-selected-skill and Guard admission. Host calls use the local implementation; Container calls use
-that implementation inside the guest; Sandbox calls use one run-owned isolated child. The parent
+selected-skill and Guard admission. Host calls use the local implementation; SSH calls use
+that implementation on the remote host; Sandbox calls use one run-owned isolated child. The parent
 accepts only framed file-operation and prepared-batch messages, binds each review receipt to the
 run policy and request bytes, and stops the child on cancellation or channel failure. Neither a
 model call nor the child chooses a command, mount or policy. Production: `FILE_OPERATIONS` in
@@ -500,11 +500,6 @@ in `packages/kernel/src/guard/shell-guard.ts` and `createGuardResolver` in
 `packages/kernel/src/guard/resolver.ts`. Test:
 `packages/kernel/tests/integration/guard-auto-review.test.ts` and
 `packages/kernel/tests/unit/guard.test.ts`.
-
-Isolated container guests set `allowHostEscalation: false` on the toolset so `require_escalated`
-fails closed in the handler. Production: `packages/tools/src/lib/sandbox-permissions.ts`
-(`resolveSandboxEscalation`) and `packages/loop/src/runtime/capabilities/tools.ts`. Test:
-`packages/tools/tests/integration/shell-escalation.test.ts`.
 
 ### Output bounding
 

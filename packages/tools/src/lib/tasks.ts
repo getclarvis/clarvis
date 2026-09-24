@@ -9,7 +9,7 @@ import { warn } from "./log.ts";
  *   `process.emitWarning`, which was the last remaining call of its kind in the
  *   repository. No package installs a `process.on("warning")` handler, so that
  *   call reached the host's raw stderr — painting over the terminal UI's frame —
- *   and, in a container, interleaved a non-JSON line with the host's JSON log.
+ *   and.
  *   The sink is the host's to install; until it does, the package default
  *   writes the message to `stderr`.
  *

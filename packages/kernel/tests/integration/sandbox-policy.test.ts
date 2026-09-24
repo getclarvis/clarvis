@@ -58,32 +58,6 @@ describe("sandbox host policy", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
-  it("does not change native Sandbox settings when Container is selected", () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-docker-fallback-policy-"));
-    const globalDir = join(root, "global");
-    const workspace = join(root, "workspace");
-    mkdirSync(workspace, { recursive: true });
-    const store = createFileConfigStore({ workspaceRoot: workspace, globalDir });
-    store.writeSettings("global", {
-      runtime: { backend: "docker" },
-      sandbox: {
-        type: "native",
-        enabled: false,
-        availability: "optional",
-        filesystem: "workspace-read-only",
-        network: "none",
-      },
-    });
-    expect(createSandboxPolicyResolver(store, workspace).resolve()).toMatchObject({
-      type: "native",
-      enabled: false,
-      availability: "optional",
-      filesystem: "workspace-read-only",
-      network: "none",
-    });
-    rmSync(root, { recursive: true, force: true });
-  });
-
   it.skipIf(process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1")(
     "inspects a discovered toolchain without executing it through the real native backend",
     async () => {

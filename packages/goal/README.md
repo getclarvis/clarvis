@@ -8,7 +8,7 @@ authority, isolated executor dependencies and evidence validation.
 
 The owning contract is [goals](../../specs/capabilities/goals.md). Hosting, plan finalization and
 prompt-cache behavior retain their owning package contracts; domain tests alone do not qualify
-automatic continuation, a TUI journey, a container or an installed artifact.
+automatic continuation, a TUI journey or an installed artifact.
 
 Runtime snapshots expose classified catalog failures through `evidence_unavailable`, separately
 from validated Goal authority. Iteration refresh and `get_goal` preserve this distinction in their
@@ -149,7 +149,7 @@ creation, and applies the completion gate to the same physical execution. `GoalC
 host-only and owns the transaction that creates and admits that execution.
 
 `goalRuntimePortOf` recovers the bound port only from a capability created by this package's
-factory. Placement adapters cannot substitute an object merely named `goal`. The complete Container
+factory. Placement adapters cannot substitute an object merely named `goal`. The native
 Kernel constructs the same canonical capability locally. Optional operation
 signals supplement the execution signal; host implementations check them again inside each mutation,
 so a cancelled queued operation cannot publish when its transaction eventually starts.

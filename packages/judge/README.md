@@ -126,7 +126,7 @@ The native Kernel binds a projected internal store once per host and uses the ex
 provider from the work run. Host observation metadata identifies consumer, stage and private
 execution; it does not enter semantic cache keys. Each actual call emits one payload-free parent
 event, while cache reuse emits none. The child keeps its own accounting. Memory indexing excludes
-the capability; the Container composition does not install the native host factory.
+the capability.
 
 Effect cases carry `facts` and an optional trusted `host_transition` in the volatile message.
 The case-specific transition token does not alter the stable snapshot prefix. Compile supplies its

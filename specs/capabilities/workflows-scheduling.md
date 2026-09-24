@@ -1131,14 +1131,10 @@ widens a mutator to unscoped (`packages/workflows/src/schedule.ts`) — visible 
 
 ## 7. Coupling
 
-Container composes this scheduler, registry, manager, leader requests and shared workflow budget in
+The native host composes this scheduler, registry, manager, leader requests and shared workflow budget in
 the same Kernel. It retains `workflowContextOf`, `workflowOutputBudgetOf`,
 `LeaderRequestAssembler` and the complete scheduling contract above, using the model broker for
 inference and private state for persistence.
-
-Production: `createContainerNativeKernel` in
-`packages/kernel/src/hosting/container-native.ts`. Test:
-`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 ### 7.1 What this package depends on
 

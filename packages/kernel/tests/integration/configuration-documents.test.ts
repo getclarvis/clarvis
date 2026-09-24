@@ -62,7 +62,7 @@ function fixture() {
 }
 
 describe("configuration documents against product loaders", () => {
-  it.each(["model", "extensions", "mcp", "hooks", "capabilities", "runtime"] as const)(
+  it.each(["model", "extensions", "mcp", "hooks", "capabilities"] as const)(
     "%s: saves the documented settings through the native file tool and reads the effective block",
     (name) => {
       const f = fixture();

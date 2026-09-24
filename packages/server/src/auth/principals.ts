@@ -48,7 +48,7 @@ export function resolvePrincipal(
  *
  * @param principal - the authenticated caller.
  * @param agent - the `agent` argument of `clarvis_run`, absent when the caller
- *   let the container's default apply.
+ *   let the server default apply.
  * @returns `true` when the run may proceed.
  * @remarks A role holding an explicit allowlist **requires** the argument. The
  *   facade cannot know which agent an omitted argument resolves to — that is the

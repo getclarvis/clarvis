@@ -75,11 +75,6 @@ permissions, immutable action pins, publication guards, and artifact names.
 
 Use [TUI validation](../clarvis-tui-validation/SKILL.md) for interactive release canaries, selecting
 focused mode unless a full product audit is requested. Share its artifact and evidence ledger.
-When Docker runtime distribution is in scope, follow the runtime procedure in `RELEASING.md` and
-the [runtime contract](../../../specs/hosts/isolated-agent-runtime.md), qualifying the image
-independently from the TUI archive. Native builds, local canaries, and registry attestations are
-different evidence; do not fabricate a release sidecar to pass a gate.
-
 Record unsupported or unrun targets separately. Review CI evidence only when it belongs to the
 requested source/artifact; a previous release's green job cannot qualify this one.
 

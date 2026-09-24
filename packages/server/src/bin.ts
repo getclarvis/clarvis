@@ -88,7 +88,7 @@ function hashSecretCommand(supplied: string | undefined): void {
  *
  * @remarks Binding before the kernel is deliberate. Kernel construction runs the
  * first trace-retention sweep synchronously, which on a large mounted trace
- * volume can take long enough that a liveness probe would kill the container
+ * volume can take long enough that a liveness probe would kill the server process
  * before it ever listened.
  */
 async function main(argv: string[]): Promise<void> {
@@ -298,7 +298,7 @@ async function main(argv: string[]): Promise<void> {
    *
    * @remarks
    * The guard is on unless settings say otherwise, and this facade resolves
-   * questions to `auto_decline` — so a container whose `settings.json` carries no
+   * questions to `auto_decline` — so a server whose `settings.json` carries no
    * `guard.allowed_commands` denies every command a run attempts. That is the
    * correct posture and a useless deployment, and the difference between the two
    * is one settings key. Reported at boot rather than discovered per run.
@@ -384,7 +384,7 @@ async function main(argv: string[]): Promise<void> {
       } catch (err) {
         logger.error(
           { event: "server.shutdown.failed", err },
-          "the shutdown ordering threw; exiting anyway, so a stuck teardown cannot hold the container open",
+          "the shutdown ordering threw; exiting anyway, so a stuck teardown cannot hold the server process open",
         );
       } finally {
         clearTimeout(force);

@@ -34,16 +34,7 @@ plugin / request schemas) even when the optional `@clarvis/hooks` package itself
 
 ## 2. Surface
 
-Hooks are a native Host/Sandbox capability. Docker/Podman does not construct external hook
-callbacks, connect Hook MCP or invoke Plugin Hooks. Inherited Hook configuration stays on the host;
-an explicit profile dependency is refused during the frozen Container projection. Internal native
-capability lifecycle callbacks remain active inside the complete Kernel.
-
-Production: `projectContainerConfiguration` in
-`packages/kernel/src/config/container-projection.ts` and `createContainerNativeKernel` in
-`packages/kernel/src/hosting/container-native.ts`. Test:
-`packages/kernel/tests/unit/container-projection.test.ts` and
-`packages/kernel/tests/integration/container-kernel-host.test.ts`.
+Hooks are a native Host/Sandbox capability.
 
 ### 2.1 `@clarvis/hooks` entrypoint `.` (`src/index.ts`)
 
@@ -481,19 +472,6 @@ into the transcript. Production: `scheduleBackground` and `run` in
 `packages/hooks/src/runner.ts`. Test: async, SessionEnd and plugin-environment cases in
 `packages/hooks/tests/component/runner.test.ts`.
 
-An `mcp_tool` hook calls the run-scoped `MCP_HOOK_TOOL_PORT` in native Host/Sandbox after the MCP pool
-opens. It does not traverse the model's tool dispatcher and therefore cannot recursively fire tool
-hooks. MCP absence, tool failure, cancellation and timeout become ordinary `HookResult` failures;
-schema policy makes them fail open. Portable SessionEnd MCP entries are skipped during dialect
-conversion. Container constructs neither Hooks nor this port and starts no MCP transport.
-Production: `MCP_HOOK_TOOL_PORT` in `packages/capability/src/hooks-config.ts`, its native provider in
-`packages/loop/src/runtime/orchestrator.ts`, `createWorkspaceHooksCapability` in
-`packages/hooks/src/capability.ts`, and `convertHooksDocument` in
-`packages/kernel/src/plugins/hook-dialects.ts`. Test: direct MCP cases in
-`packages/hooks/tests/component/runner.test.ts`, conversion cases in
-`packages/kernel/tests/integration/plugin-manifest.test.ts`, and Container absence in
-`packages/kernel/tests/integration/container-kernel-host.test.ts`.
-
 ### 4.4 `runHookCommand` — spawn/bound/kill state machine
 
 Injectable deps (`spawn`, `killTree`, `ownProcessGroup`, `resolveShell`, `shellArgs`, `timers`,
@@ -841,12 +819,6 @@ The following invariants govern the behaviour covered above.
     `mcp_tool`. Production: `MCP_HOOK_TOOL_PORT`, `createWorkspaceHooksCapability`, and
     `createHookRunner`. Test: direct MCP cases in
     `packages/hooks/tests/component/runner.test.ts`.
-
-28. **Container executes no external Hook callback or Hook MCP transport.** Configured Hooks stay on
-    the host and create no host command, HTTP/SSE connection or guest stdio process. Production:
-    `projectContainerConfiguration` in
-    [`packages/kernel/src/config/container-projection.ts`](../../packages/kernel/src/config/container-projection.ts).
-    Test: [`packages/kernel/tests/unit/container-projection.test.ts`](../../packages/kernel/tests/unit/container-projection.test.ts).
 
 ## 6. Failure modes and degradation
 

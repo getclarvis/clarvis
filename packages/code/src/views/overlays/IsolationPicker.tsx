@@ -5,7 +5,6 @@ import { deriveIsolation } from "../../adapters/execution-safety.ts";
 import {
   applyIsolation,
   isolationConfirmation,
-  isContainerIsolation,
   ISOLATION_CHOICES,
   type IsolationChoice,
   type IsolationConfirmation,
@@ -60,7 +59,7 @@ export function IsolationPicker(props: {
   };
   const current = () => {
     const configured = deriveIsolation(props.settings.effective());
-    return isContainerIsolation(configured) ? configured : (observedNative() ?? configured);
+    return observedNative() ?? configured;
   };
 
   const apply = async (isolation: IsolationChoice["value"]): Promise<void> => {
@@ -206,14 +205,8 @@ export function IsolationPicker(props: {
                     {[
                       choice.value === "host"
                         ? `${glyph("warning")} No containment boundary.`
-                        : isContainerIsolation(choice.value)
-                          ? "Full native Kernel; extensions and external capability providers are unavailable."
-                          : "Uses the native host sandbox.",
-                      choice.value === "docker"
-                        ? "If Docker cannot start, Clarvis reports the failure and does not run natively."
-                        : choice.value === "podman"
-                          ? "If Podman cannot start, Clarvis reports the failure and does not run natively."
-                          : choice.detail,
+                        : "Uses the native host sandbox.",
+                      choice.detail,
                     ].join(" ")}
                   </text>
                 }

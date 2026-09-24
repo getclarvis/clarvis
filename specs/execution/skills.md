@@ -698,7 +698,7 @@ when the catalog is empty" in `packages/skills/tests/integration/sidecar.test.ts
 
 Both operations first use `openCallEnvelope` with their own declared schema and the host-injected
 validator. An invalid call is reported as a failed `tool_call`; it never records
-`tool_call_started`, reads a provider or crosses the container bridge.
+`tool_call_started`, reads a provider.
 
 1. **Body operation:** `handleLoadSkillCall` accepts only `{name}`, starts the trace call, and invokes
    `loadSkill(name)`. A throw becomes `could not load skill '<name>'`; `undefined` becomes `unknown
@@ -852,16 +852,6 @@ The one `SkillsProvider` the host builds is threaded three ways by `createInProc
 `KernelCapabilities.skills` from whether a provider was actually wired —
 `skills: opts.skillsProvider !== undefined` (`packages/kernel/src/kernel.ts`) — rather than
 leaving it at `DEFAULT_KERNEL_CAPABILITIES.skills`'s static `false`.
-
-Container placement receives no Skill catalog, bootstrap body, tool, host root or broker. Explicit
-`skill`, a resolvable `$skill`, Plugin Agent, or operator profile with `use_skills` is refused during
-projection. Shipped builtin profiles lose only their builtin `use_skills`; operator profiles are
-never silently rewritten.
-
-Production: `projectContainerConfiguration` in
-`packages/kernel/src/config/container-projection.ts`. Test:
-`packages/kernel/tests/unit/container-projection.test.ts` and
-`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 ---
 
@@ -1088,11 +1078,6 @@ to this document.
     `parseSkillFrontmatterWithDefaults` and `parseSkillWithDefaults` in
     `packages/skills/src/parse.ts`. Test: `packages/skills/tests/integration/discovery.test.ts`
     ("applies Agent Skills identity validation only to roots that request it").
-53. **Container placement discloses no Skill content or root.** An explicit Skill and any operator
-    `use_skills` profile are incompatible; inactive configured Skills do not block an independent
-    run. Production: `projectContainerConfiguration` in
-    `packages/kernel/src/config/container-projection.ts`. Test:
-    `packages/kernel/tests/unit/container-projection.test.ts`.
 
 ---
 

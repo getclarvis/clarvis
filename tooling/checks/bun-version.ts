@@ -118,9 +118,9 @@ export function bunVersionFailures(snapshot) {
   failures.push(...ciRuntimeFailures(snapshot.ci, version));
 
   const releasePins = setupBunPins(snapshot.release);
-  if (releasePins.length !== 4) {
+  if (releasePins.length !== 2) {
     failures.push(
-      `.github/workflows/release.yml: expected four setup-bun pins, found ${String(releasePins.length)}`,
+      `.github/workflows/release.yml: expected two setup-bun pins, found ${String(releasePins.length)}`,
     );
   }
   for (const pin of releasePins) {
@@ -131,9 +131,9 @@ export function bunVersionFailures(snapshot) {
     }
   }
   const releaseEvidence = runtimeEvidenceCount(snapshot.release);
-  if (releaseEvidence !== 4) {
+  if (releaseEvidence !== 2) {
     failures.push(
-      `.github/workflows/release.yml: expected four Bun version/revision evidence steps, found ${String(releaseEvidence)}`,
+      `.github/workflows/release.yml: expected two Bun version/revision evidence steps, found ${String(releaseEvidence)}`,
     );
   }
 
@@ -147,37 +147,6 @@ export function bunVersionFailures(snapshot) {
   if (canaryEvidence !== 1) {
     failures.push(
       `.github/workflows/segfault-canary.yml: expected one Bun version/revision evidence step, found ${String(canaryEvidence)}`,
-    );
-  }
-
-  const dockerPins = [
-    ...snapshot.docker.matchAll(/^FROM\s+oven\/bun:([^\s]+)(?:\s+AS\s+\w+)?\s*$/gm),
-  ].map((match) => match[1]);
-  if (dockerPins.length !== 2) {
-    failures.push(
-      `packages/server/Dockerfile: expected two oven/bun stages, found ${String(dockerPins.length)}`,
-    );
-  }
-  for (const pin of dockerPins) {
-    if (pin !== `${version}-slim`) {
-      failures.push(
-        `packages/server/Dockerfile: base image observed ${observed(`oven/bun:${pin}`)}, expected oven/bun:${version}-slim`,
-      );
-    }
-  }
-
-  const runtimeBuildPins = [
-    ...snapshot.runtimeDevelopmentContainerfile.matchAll(
-      /^ARG\s+BUILD_IMAGE=docker\.io\/oven\/bun:([^\s@]+)@(sha256:[a-f0-9]{64})\s*$/gm,
-    ),
-  ];
-  if (runtimeBuildPins.length !== 1) {
-    failures.push(
-      `Containerfile.runtime-development: expected one digest-pinned oven/bun build image, found ${String(runtimeBuildPins.length)}`,
-    );
-  } else if (runtimeBuildPins[0][1] !== `${version}-debian`) {
-    failures.push(
-      `Containerfile.runtime-development: build image observed ${observed(`oven/bun:${runtimeBuildPins[0][1]}`)}, expected oven/bun:${version}-debian`,
     );
   }
 
@@ -230,8 +199,6 @@ export function readBunVersionSnapshot(root) {
     ci: read(".github/workflows/ci.yml"),
     release: read(".github/workflows/release.yml"),
     canary: read(".github/workflows/segfault-canary.yml"),
-    docker: read("packages/server/Dockerfile"),
-    runtimeDevelopmentContainerfile: read("Containerfile.runtime-development"),
     rootManifest,
     workspaceManifests: workspaces.map((workspace) => ({
       path: `${workspace}/package.json`,
@@ -248,7 +215,7 @@ export function checkBunVersion(root) {
   if (failures.length === 0) {
     const manifestCount = 1 + snapshot.workspaceManifests.length;
     console.log(
-      `bun version: mise, CI, canary, Docker, ${String(manifestCount)} manifests, types, lockfile and runtime evidence agree`,
+      `bun version: mise, CI, canary, ${String(manifestCount)} manifests, types, lockfile and runtime evidence agree`,
     );
     return;
   }

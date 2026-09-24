@@ -824,16 +824,6 @@ catalog case).
   validation and per-agent provider resolution inside the loop, outside this document's scope.
 - `createHostJudge` supplies the model binding to the private Judge run, which uses the ordinary
   Loop validation/model-resolution path; the effect adapter does not resolve providers itself.
-- Container model calls also use the same resolver on the host's captured provider registry, after
-  exact logical provider/model admission, so raw settings never masquerade as resolved adapter
-  configuration. Production: `createContainerModelBroker` in
-  [`model-broker-host.ts`](../../packages/kernel/src/runtime/model-broker-host.ts).
-  Test: exact profile/vision model admission and host-stream behavior in
-  [`container-model-stream.test.ts`](../../packages/kernel/tests/integration/container-model-stream.test.ts),
-  plus provider-routing-only guest projection in
-  [`container-projection.test.ts`](../../packages/kernel/tests/unit/container-projection.test.ts).
-  The wire boundary is owned by [isolated-agent-runtime](isolated-agent-runtime.md).
-
 ## 8. Open questions
 
 - **Where `settings-assembler.ts`'s "no model resolves → invalid_request" throw is pinned by test**

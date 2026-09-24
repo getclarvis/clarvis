@@ -12,7 +12,6 @@ import {
 } from "@clarvis/kernel/config";
 import type {
   ConfigService,
-  RuntimeConfig,
   SandboxInspection,
   SettingsData,
   SettingsRepairPlan,
@@ -84,10 +83,8 @@ function noteUnparsedModelRef(site: string, error: unknown): void {
 export { mergeProviders, mergeSettings };
 export type { SettingsFile } from "@clarvis/kernel/config";
 
-/** Settings patch accepted by the UI, including minimal Docker input before kernel defaults. */
-export type SettingsPatch = Partial<Omit<SettingsFile, "runtime">> & {
-  runtime?: RuntimeConfig;
-};
+/** Settings patch accepted by the UI. */
+export type SettingsPatch = Partial<SettingsFile>;
 
 /** The planning settings shape consumed by Code configuration surfaces. */
 export type PlansSettingsBlock = NonNullable<SettingsFile["plans"]>;

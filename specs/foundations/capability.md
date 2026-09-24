@@ -1385,7 +1385,7 @@ widening of the contract, preferring a port over exposing an engine type
 `SteerSource.onPending` replays pending admitted messages to a subscriber and reports new arrivals
 without acknowledging delivery. The engine's private authority writer consumes those arrivals only
 for a host-seeded entry run; tools receive the shared reader alone. Draining still delivers each
-message once to the normal loop, and closure removes the observer. No container projection is added.
+message once to the normal loop, and closure removes the observer.
 Production: `SteerSource` in [api.ts](../../packages/capability/src/api.ts), `createSteerQueue` in
 [steer-queue.ts](../../packages/kernel/src/runs/steer-queue.ts), and `executeRun` in
 [execute-run.ts](../../packages/loop/src/runtime/execute-run.ts).

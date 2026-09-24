@@ -185,19 +185,15 @@ interface ProtoRunHandle extends ProtocolRunHandle {
  */
 const ASK_USER_WINDOW_MS = 30_000;
 
-function toStartParams(
-  input: StartRunInput,
-  executionId: string,
-  container: boolean,
-): StartRunParams {
+function toStartParams(input: StartRunInput, executionId: string): StartRunParams {
   return {
     execution_id: executionId,
     messages: input.messages ?? [],
     ...(input.profile ? { agent: input.profile } : {}),
     ...(input.continueFrom ? { continue_from: input.continueFrom } : {}),
     ...(input.sessionId ? { session_id: input.sessionId } : {}),
-    ...(!container && input.guardMode ? { guard_mode: input.guardMode } : {}),
-    ...(!container && input.guardJudge
+    ...(input.guardMode ? { guard_mode: input.guardMode } : {}),
+    ...(input.guardJudge
       ? {
           guard_judge: {
             guidance: input.guardJudge.guidance,
@@ -212,8 +208,8 @@ function toStartParams(
       : {}),
     ...(input.memory ? { memory: input.memory } : {}),
     ...(input.plans ? { plans: input.plans } : {}),
-    ...(!container && input.task ? { task: input.task } : {}),
-    ...(!container && input.skill ? { skill: input.skill } : {}),
+    ...(input.task ? { task: input.task } : {}),
+    ...(input.skill ? { skill: input.skill } : {}),
     ...(input.goalIntent ? { goal_intent: input.goalIntent } : {}),
     ...(input.intent ? { intent: input.intent } : {}),
     elicit_policy: { ask_user_window_ms: ASK_USER_WINDOW_MS },
@@ -553,16 +549,7 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
   function startRun(input: StartRunInput): RunHandle {
     const executionId = input.executionId ?? "exec_" + crypto.randomUUID();
     const current = requireKernel();
-    const container = current.capabilities?.runtime?.kind === "container";
-    if (container && input.task !== undefined)
-      throw new Error(
-        "Tasks is unavailable in Isolation Container. Use Isolation Sandbox or Host.",
-      );
-    if (container && input.skill !== undefined)
-      throw new Error(
-        "Skills is unavailable in Isolation Container. Use Isolation Sandbox or Host.",
-      );
-    const params = toStartParams(input, executionId, container);
+    const params = toStartParams(input, executionId);
     if (current.hosting === undefined) return driveHandle(executionId, current.runs.start(params));
     const service = current.hosting;
     const handle =

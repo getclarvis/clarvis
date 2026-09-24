@@ -673,52 +673,6 @@ test("startRun maps the complete guard and active-task request without workspace
   await handle.done;
 });
 
-test("startRun keeps native capability settings but omits host guard settings for Container", async () => {
-  const ctrl = controllableHandle("exec_container");
-  let captured: Record<string, unknown> | undefined;
-  const { c } = client({
-    capabilities: { runtime: { kind: "container" } as never },
-    start: async (params) => {
-      captured = params as Record<string, unknown>;
-      return ctrl.handle;
-    },
-  });
-  await c.connect();
-  const handle = c.startRun({
-    executionId: "exec_container",
-    messages: [],
-    guardMode: "auto",
-    guardJudge: { guidance: "must not cross" },
-    memory: "off",
-    plans: "off",
-  });
-  expect(captured).not.toHaveProperty("guard_mode");
-  expect(captured).not.toHaveProperty("guard_judge");
-  expect(captured).toMatchObject({ memory: "off", plans: "off" });
-  ctrl.settle({ execution_id: "exec_container", status: "completed" });
-  ctrl.close();
-  await handle.done;
-});
-
-test("startRun refuses explicit Task and Skill before a Container request", async () => {
-  let starts = 0;
-  const { c } = client({
-    capabilities: { runtime: { kind: "container" } as never },
-    start: async () => {
-      starts += 1;
-      return controllableHandle("unexpected").handle;
-    },
-  });
-  await c.connect();
-  expect(() =>
-    c.startRun({ messages: [], task: { provider_key: "p", id: "1", mode: "work" } }),
-  ).toThrow("Tasks is unavailable in Isolation Container");
-  expect(() => c.startRun({ messages: [], skill: { name: "review" } })).toThrow(
-    "Skills is unavailable in Isolation Container",
-  );
-  expect(starts).toBe(0);
-});
-
 test("progress derives retries, plan revisions and non-successful run endings", async () => {
   const ctrl = controllableHandle("exec_progress");
   const { c, progress } = client({ start: async () => ctrl.handle });

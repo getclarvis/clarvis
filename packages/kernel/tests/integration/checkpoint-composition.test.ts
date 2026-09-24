@@ -70,7 +70,6 @@ describe("checkpoint composition", () => {
         providers: [
           { name: "fixture", kind: "openai-compatible", base_url: "https://fixture.invalid/v1" },
         ],
-        runtime: { backend: "native" },
         plans: { mode: "on", pending_task_nudges: 3, retention: "discard" },
       }),
     );

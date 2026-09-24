@@ -5,7 +5,7 @@ import type { MemoryMode } from "./memory-mode.ts";
 import type { RuntimeStatus } from "@clarvis/protocol";
 
 /** User-facing execution boundary, independent from Guard. */
-export type IsolationMode = "host" | "sandbox" | "docker" | "podman";
+export type IsolationMode = "host" | "sandbox";
 
 /** Actual active native placement overrides next-run preferences; an idle native host does not. */
 export function effectiveRunIsolation(
@@ -14,7 +14,6 @@ export function effectiveRunIsolation(
   active: boolean,
 ): IsolationMode {
   if (runtime?.kind === "native" && active) return runtime.isolation;
-  if (runtime?.kind === "container") return runtime.engine;
   return configured;
 }
 
@@ -114,8 +113,6 @@ export function memoryState(settings: SettingsFile, sessionMode: MemoryMode = "o
 
 /** Resolve the configured execution boundary without folding Guard into it. */
 export function deriveIsolation(settings: SettingsFile): IsolationMode {
-  if (settings.runtime?.backend === "docker") return "docker";
-  if (settings.runtime?.backend === "podman") return "podman";
   const sandbox = settings.sandbox;
   return sandbox !== undefined && sandbox.enabled !== false ? "sandbox" : "host";
 }
@@ -132,17 +129,12 @@ export function deriveRunControls(
   const sandbox = settings.sandbox;
   const sandboxEnabled = sandbox !== undefined && sandbox.enabled !== false;
   const isolation = deriveIsolation(settings);
-  const runtimeNetwork =
-    settings.runtime?.backend === "docker" || settings.runtime?.backend === "podman"
-      ? (settings.runtime.network ?? "outbound")
-      : undefined;
-
   return {
     isolation,
     sandboxEnabled,
     sandboxRequired: sandboxEnabled,
     filesystem: sandbox?.filesystem ?? "workspace-write",
-    network: runtimeNetwork ?? sandbox?.network ?? "host",
+    network: sandbox?.network ?? "host",
     guardMode,
     memory: memoryState(settings, memoryMode),
     plans: plansState(settings),
@@ -152,23 +144,6 @@ export function deriveRunControls(
 /** Plain-language lines describing what the current sandbox/guard state means for a run. */
 export function safetyDescription(state: RunControlsState): string[] {
   const lines: string[] = [];
-  if (state.isolation === "docker" || state.isolation === "podman") {
-    lines.push("The full native Kernel runs inside the Container.");
-    lines.push(
-      "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
-    );
-    lines.push(
-      "The selected workspace is mounted directly; changes appear on the host immediately.",
-    );
-    lines.push(
-      state.network === "none"
-        ? "Container network access is disabled."
-        : "Outbound network access is enabled and may cause remote effects or expose workspace content.",
-    );
-    lines.push("Commands run without Guard.");
-    lines.push("Git metadata is read-only; use Sandbox or Host for commits.");
-    return lines;
-  }
   if (state.sandboxEnabled) {
     lines.push(
       state.guardMode === "off"

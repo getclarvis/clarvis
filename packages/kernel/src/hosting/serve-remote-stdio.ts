@@ -9,7 +9,7 @@ import { localHostPolicyIdentity } from "./policy-identity.ts";
 
 /** Inputs for one process-owned hosted kernel carried by an already authenticated stdio channel. */
 export interface ServeRemoteStdioOptions {
-  kernel: Extract<FileRunHostOptions, { composition?: { kind: "file" } }>["kernel"];
+  kernel: FileRunHostOptions["kernel"];
   artifactId: string;
   input?: Readable;
   output?: Writable;

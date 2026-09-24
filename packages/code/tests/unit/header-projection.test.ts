@@ -21,15 +21,15 @@ function baseInput(overrides: Partial<HeaderInput> = {}): HeaderInput {
   };
 }
 
-test("header shows Podman as isolation without appending placement to the workspace", () => {
-  const plan = projectHeader(baseInput({ isolation: "podman" }));
-  expect(plan.status.find((chip) => chip.key === "isolation")?.text).toContain("Podman");
+test("header shows Sandbox isolation without appending placement to the workspace", () => {
+  const plan = projectHeader(baseInput({ isolation: "sandbox" }));
+  expect(plan.status.find((chip) => chip.key === "isolation")?.text).toContain("Sandbox");
   expect(plan.workspace.text).not.toContain("[");
 });
 
-test("header identifies Docker independently from command review", () => {
-  const status = projectHeader(baseInput({ isolation: "docker", review: "auto" })).status;
-  expect(status.find((chip) => chip.key === "isolation")?.text).toContain("Docker");
+test("header identifies Sandbox independently from command review", () => {
+  const status = projectHeader(baseInput({ isolation: "sandbox", review: "auto" })).status;
+  expect(status.find((chip) => chip.key === "isolation")?.text).toContain("Sandbox");
   expect(status.find((chip) => chip.key === "review")?.text).toContain("Auto");
 });
 
@@ -101,14 +101,6 @@ test("all widths retain the complete run configuration", () => {
 test("connection failure remains actionable in the stable header", () => {
   const plan = projectHeader(baseInput({ connection: { phase: "failed", detail: "closed" } }));
   expect(plan.urgent?.text).toContain("failed");
-});
-
-test("an immutable Container configuration save stays visible until reconnect", () => {
-  const pending = projectHeader(baseInput({ configurationPending: true }));
-  expect(pending.urgent?.text).toContain("reconnect pending");
-
-  const connected = projectHeader(baseInput({ configurationPending: false }));
-  expect(connected.urgent).toBeUndefined();
 });
 
 test("Host isolation is stated once and marked as the warning it is", () => {

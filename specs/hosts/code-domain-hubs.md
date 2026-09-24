@@ -591,16 +591,13 @@ host-global placement choice and always writes global settings; memory remains s
 
 | Row | Choices | Write |
 | --- | --- | --- |
-| Isolation | `Host`, `Sandbox`, `Docker`, `Podman` | shared `applyIsolation`, global |
+| Isolation | `Host`, `Sandbox` | shared `applyIsolation`, global |
 | Guard | `Off`, `Approval`, `Auto` | shared `applyReviewMode`, selected scope |
 | Memory | `on`, `off` | `applyMemory` — **session store only** |
 | Completed plans | `keep` / `discard` labelled "Keep plans" / "Delete after success" | `applyPlanRetention` |
 
 Run Controls and the `Ctrl+X I` quick picker share `applyIsolation`. Host requires an explicit
-danger confirmation; Sandbox enables a required native boundary; Docker and Podman write the minimal
-global runtime choice and connect a complete Kernel before the workspace client is returned. Both
-fail closed if the engine cannot start; neither invokes native Sandbox/Host. Container renders
-Guard as not applicable while native Memory/Plans controls target the guest. Run Controls and the
+danger confirmation; Sandbox enables a required native boundary. Run Controls and the
 `Ctrl+X G` quick picker separately share `applyReviewMode`. It preserves local
 allow/deny lists and, for a workspace without local lists, carries the global policy forward so the
 last-wins guard block does not shadow it. Auto without a resolvable judge degrades to persisted
@@ -903,8 +900,7 @@ specific to these files.
 
 50. **Isolation, Review and Memory have separate vocabularies and shared application paths
     across Run Controls and the quick pickers. Host confirmation cannot change Review; Review
-    cannot change runtime or Sandbox. Docker and Podman persist only the minimal global runtime selector and
-    request no engine work before the next run. Memory changes only the session store and never
+    cannot change Sandbox. Memory changes only the session store and never
     persists settings.** Production:
     `packages/code/src/features/run/isolation.ts` (`ISOLATION_CHOICES`, `isolationConfirmation`,
     `applyIsolation`), `packages/code/src/features/run/review.ts` (`REVIEW_CHOICES`,

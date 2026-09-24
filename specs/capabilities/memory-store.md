@@ -1253,7 +1253,7 @@ root (`packages/paths/src/workspace-state.ts`) are two different functions, and
   `bestEffort`/`detachObserved`. Its own doc comment states the rationale directly — the two used to
   route through `process.emitWarning`, which "bypasses every logger: no package installs a
   `process.on(\"warning\")` handler, so Bun's default handler wrote the line straight to the host's
-  stderr — over the TUI's own canvas, and as a non-JSON line interleaved into a container's JSON log"
+  stderr — over the TUI's own canvas"
   (`packages/memory/src/file-store/tasks.ts`). Five call sites route through it: lock cleanup,
   the stale-lock steal, lock release and the heartbeat (`packages/memory/src/file-store/lock.ts`), job pruning (`packages/memory/src/file-store/jobs.ts`), revision metadata and body pruning
   (`packages/memory/src/file-store/revisions.ts`), the orphan-bookkeeping cleanup on a vanished split wiki

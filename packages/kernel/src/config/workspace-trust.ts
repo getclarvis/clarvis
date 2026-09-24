@@ -31,7 +31,6 @@ import type { SettingsData, WorkspaceTrustVerdict } from "@clarvis/protocol";
  *   operator's install list wearing the operator's own authority.
  * - `providers.subscription` attempts to attach global subscription credentials
  *   to a repository-chosen provider declaration or endpoint contract.
- * - `runtime` can select a host executable, engine connection and broader network grant.
  *
  * Policy fields a repository might merely weaken (`guard`, `sandbox`) are
  * deliberately absent: keeping the list short is what keeps the verdict `inert`
@@ -47,7 +46,6 @@ export const WORKSPACE_RISK_FIELDS = [
   "plans.provider",
   "tasks.provider",
   "providers.subscription",
-  "runtime",
 ] as const;
 
 /** One entry of {@link WORKSPACE_RISK_FIELDS}. */
@@ -167,7 +165,7 @@ function nonSubscriptionProviders(settings: SettingsData): SettingsData["provide
 /**
  * Permanently remove host-only declarations and subscription overrides from a workspace.
  * Approval can authorize model selection, but never creates or redirects global credentials or
- * selects an execution backend.
+ * selects host credentials.
  */
 export function stripWorkspaceSubscriptionProviders(
   settings: SettingsData,
@@ -183,20 +181,15 @@ export function stripWorkspaceSubscriptionProviders(
     : undefined;
   const removedProviders =
     providers !== undefined && providers.length !== settings.providers?.length;
-  const removedRuntime = settings.runtime !== undefined;
-  if (!removedProviders && !removedRuntime) return { settings, withheld: [] };
+  if (!removedProviders) return { settings, withheld: [] };
   const kept = { ...settings };
-  if (removedRuntime) delete kept.runtime;
   if (removedProviders) {
     if (providers.length > 0) kept.providers = providers;
     else delete kept.providers;
   }
   return {
     settings: kept,
-    withheld: [
-      ...(removedProviders ? (["providers.subscription"] as const) : []),
-      ...(removedRuntime ? (["runtime"] as const) : []),
-    ],
+    withheld: [...(removedProviders ? (["providers.subscription"] as const) : [])],
   };
 }
 
@@ -264,7 +257,6 @@ function workspaceExecutableSurface(
 ): WorkspaceExecutableSurface | undefined {
   const risky: Record<string, unknown> = {};
   for (const field of WORKSPACE_RISK_FIELDS) {
-    if (field === "runtime") continue;
     if (field === "providers.subscription") {
       const providers = subscriptionProviders(settings ?? {});
       if (providers.length > 0) risky[field] = providers;

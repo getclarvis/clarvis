@@ -77,7 +77,7 @@ Note on `--port`: `assign("CLARVIS_SERVER_PORT", flag(argv, "port") ?? process.e
 (`packages/server/src/bin.ts`) overwrites `overrides.CLARVIS_SERVER_PORT` whenever *either* the
 flag or a bare `PORT` env var is present, regardless of whether `CLARVIS_SERVER_PORT` was already set
 in the ambient environment. The real precedence is `--port` flag > bare `PORT` > an operator-set
-`CLARVIS_SERVER_PORT`, not "`CLARVIS_SERVER_PORT` falling back to `PORT`" — so a container's ambient
+`CLARVIS_SERVER_PORT`, not "`CLARVIS_SERVER_PORT` falling back to `PORT`" — so a process ambient
 `PORT` silently clobbers an already-set `CLARVIS_SERVER_PORT` whenever no `--port` flag is passed.
 
 `hash-secret` prints the plaintext once and the digest to paste into `auth.json`; it stores nothing
@@ -220,7 +220,7 @@ Where this layer hands the elicitation posture to the MCP facade:
 `CLARVIS_SERVER_ALLOW_REMOTE_GUARD_APPROVAL` (`packages/server/src/config/env.ts`) becomes
 `McpServerLimits.allowRemoteGuardApproval` (`packages/server/src/http/serve.ts`), and the facade
 combines it with the role's own `guardConfirmations` — a guard confirmation is only relayed to a
-remote caller when *both* the container switch is on and `principal.permissions.guardConfirmations
+remote caller when *both* the server switch is on and `principal.permissions.guardConfirmations
 === "relay"` (`packages/server/src/mcp/run-tool.ts`, resolved at
 `packages/server/src/mcp/elicitation.ts`).
 
@@ -460,7 +460,7 @@ pins that `stopAccepting()` turns `/readyz` 503 while `/healthz` stays 200.
     (`packages/server/src/bin.ts`), with `resolveKernel` closing over a mutable `state` that
     throws `"kernel is not ready"` until then (`packages/server/src/bin.ts`). The reason is in
     the source: kernel construction runs the first trace-retention sweep synchronously and a liveness
-    probe would otherwise kill the container (`packages/server/src/bin.ts`, repeated at
+    probe would otherwise kill the server process (`packages/server/src/bin.ts`, repeated at
     `packages/server/src/http/serve.ts`).
 11. `server.boot.posture` logs the whole posture, including `owner_authenticated:
     OWNER_MODE === "token"` and `builtins: "tasks=false"`
@@ -891,7 +891,7 @@ or disabling a client invalidates its outstanding tokens immediately.
 `packages/server/tests/integration/auth-http.test.ts`.
 
 **S-34.** A role holding an explicit agent allowlist **requires** the `agent` argument; an omitted
-argument never resolves to the container's default agent.
+argument never resolves to the server's default agent.
 `packages/server/src/auth/principals.ts`. Test:
 `packages/server/tests/unit/auth-config.test.ts` (the latter asserts specifically
 against `DEFAULT_ENTRY_AGENT`).
@@ -1189,7 +1189,7 @@ lets `refreshPrincipal` narrow a live session's permissions between calls
 [hosts/server-mcp.md](server-mcp.md); the tests that cross the seam are
 `packages/server/tests/component/auth-role-enforcement.test.ts` (agent allowlist) (per-role run cap narrowing but never widening the server cap) and
 `packages/server/tests/unit/auth-role-posture.test.ts` (guard confirmations denied unless *both*
-the container switch and the role allow).
+the server switch and the role allow).
 
 ---
 
@@ -1326,7 +1326,7 @@ the container switch and the role allow).
     bounds a caller here is *capacity* — concurrent sessions, concurrent runs globally and per owner,
     stream buffers, body size, per-run wall clock — not *rate*; and the limiters that do exist guard
     credential guessing on `/token`, which is a different question. It also names the deployment shape
-    the posture rests on (one container per config directory, enrolled clients, behind the operator's
+    the posture rests on (one server instance per config directory, enrolled clients, behind the operator's
     own ingress) and the two conditions under which it stops holding: exposure to callers the operator
     has not enrolled, and `--auth off`, where the bind address is the only boundary there is.
 

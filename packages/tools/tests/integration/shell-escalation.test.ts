@@ -125,29 +125,6 @@ describe("shell sandbox_permissions", () => {
     expect(String(result.json.stdout)).toContain("host");
   });
 
-  it("rejects require_escalated in an isolated container placement", async () => {
-    let elicited = false;
-    const result = await callTool(
-      "shell",
-      {
-        command: "echo should-not-run",
-        sandbox_permissions: "require_escalated",
-        justification: "need host git",
-      },
-      makeConfig(root, {
-        allowHostEscalation: false,
-        elicit: () => {
-          elicited = true;
-          return true;
-        },
-      }),
-    );
-    expect(elicited).toBe(false);
-    expect(result.isError).toBe(true);
-    expect(result.json.error).toBe("denied");
-    expect(String(result.json.message)).toContain("Isolated container runs cannot reach the host");
-  });
-
   it("denies git credential and gh auth token on shell", async () => {
     for (const command of ["git credential fill", "gh auth token"]) {
       const result = await callTool("shell", { command }, makeConfig(root));

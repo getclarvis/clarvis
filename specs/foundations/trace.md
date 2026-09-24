@@ -429,16 +429,6 @@ and [journal-recovery.test.ts](../../packages/trace/tests/unit/journal-recovery.
 
 ### 3b. On-disk layout
 
-Rooted at `resolve(opts.dir)` (`packages/trace/src/json-trace-store.ts`); `resolveTraceStore` defaults it to
-`globalPaths().tracesDir` (`packages/trace/src/trace-store-factory.ts`). A caller may supply a
-separate lock root while retaining that record root. Local workspace hosts use
-`workspaceStatePaths(...).traceLocksDir`; the Container launcher mounts the exact owner record
-directory and this lock root so placement changes preserve replay without exposing sibling trace
-records. Production: `resolveTraceStore` in `packages/trace/src/trace-store-factory.ts`,
-`createJsonTraceStore` in `packages/trace/src/json-trace-store.ts` and
-`prepareContainerDomainMounts` in `packages/kernel/src/runtime/container-mounts.ts`. Test:
-`packages/kernel/tests/unit/runtime-mounts.test.ts`.
-
 ```
 <dir>/                                  mode 0700  (packages/trace/src/json-trace-store.ts)
   .locks/                               mode 0700

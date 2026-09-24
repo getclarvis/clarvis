@@ -333,7 +333,7 @@ describe("wire handshake", () => {
         ...HELLO,
         capabilities: {
           ...HELLO.capabilities,
-          runtime: { kind: "container", engine: "podman", generation: "forged" },
+          runtime: { kind: "unknown" },
         },
       },
     ]) {
@@ -346,37 +346,18 @@ describe("wire handshake", () => {
     }
   });
 
-  it("preserves a complete effective runtime status", async () => {
-    for (const engine of ["podman", "docker"] as const) {
+  it("preserves native Host and Sandbox runtime status", async () => {
+    for (const isolation of ["host", "sandbox"] as const) {
       const transport = new FakeTransport();
       transport.helloResult = {
         ...HELLO,
         capabilities: {
           ...HELLO.capabilities,
-          runtime: {
-            kind: "container",
-            generation: "00000000-0000-4000-8000-000000000001",
-            engine,
-            engine_version: "5.4.0",
-            host_platform: "linux",
-            guest_platform: "linux",
-            image_digest: `sha256:${"a".repeat(64)}`,
-            artifact_digest: `sha256:${"b".repeat(64)}`,
-            base_abi: "clarvis-linux-glibc-v1",
-            broker_version: 1,
-            channel_version: 1,
-            state_namespace: "c".repeat(64),
-            network: "none",
-            lifecycle: "ready",
-          },
+          runtime: { kind: "native", host_platform: "linux", isolation, lifecycle: "ready" },
         },
       };
       const client = await connectKernelClient(transport);
-      expect(client.capabilities.runtime).toMatchObject({
-        kind: "container",
-        engine,
-        guest_platform: "linux",
-      });
+      expect(client.capabilities.runtime).toMatchObject({ kind: "native", isolation });
       await client.close();
     }
   });

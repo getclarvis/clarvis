@@ -10,7 +10,7 @@
  * a subprocess that had no reason to see them.
  *
  * That is also why the filter is a denylist. An allowlist is strictly safer and
- * breaks essentially every real hook - `gh`, `docker`, a corporate proxy, a
+ * breaks essentially every real hook - `gh`, a corporate proxy, a
  * `direnv` layout all need variables nobody can enumerate in advance. If a real
  * boundary is wanted later, the answer is the sandbox, not a longer regex.
  */

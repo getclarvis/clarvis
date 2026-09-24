@@ -13,9 +13,9 @@ HTTP authentication, bind policy, owner resolution, and token verification are s
 notifications, and session-scoped control are specified in
 [`hosts/server-mcp.md`](../../specs/hosts/server-mcp.md).
 
-One container per deployment, holding its own `.clarvis/` configuration exactly as the `clarvis`
+One server instance per deployment uses its own `.clarvis/` configuration exactly as the `clarvis`
 TUI reads it. **Clients supply no configuration and no credentials**: they consume the models and MCP
-servers the container was set up with. An agent authored and debugged locally in `code` runs here
+servers the instance was set up with. An agent authored and debugged locally in `code` runs here
 unchanged — the config directory is the deliverable.
 
 ChatGPT/Grok subscription authentication is explicitly unavailable through this remote facade in
@@ -25,7 +25,7 @@ separate operator identity, TLS, credential-storage, and consent design; see
 [`subscription-providers.md`](../../specs/hosts/subscription-providers.md).
 
 The five agents Clarvis ships (`marshall`, `admiral`, `coder`, `explorer`, `planner`) are data inside
-`@clarvis/kernel`, so a container whose `.clarvis/agents/` is empty still serves all of them, and a
+`@clarvis/kernel`, so a server whose `.clarvis/agents/` is empty still serves all of them, and a
 `clarvis_run` naming no agent enters `marshall`. What the config directory must supply is providers,
 a default model and credentials — not a fleet.
 
@@ -139,7 +139,7 @@ overrides it field by field; any other role name starts from `user`. A role that
 **requires** `clarvis_run` to name one. An omitted `agent` does resolve — to the shipped entry agent
 — which is exactly why a restricted role may not omit it: the default is not on anyone's allowlist,
 and silently entering it would make the restriction decorative. `guard_confirmations: "relay"` still needs
-`CLARVIS_SERVER_ALLOW_REMOTE_GUARD_APPROVAL=1` — the container switch is the ceiling.
+`CLARVIS_SERVER_ALLOW_REMOTE_GUARD_APPROVAL=1` — the server switch is the ceiling.
 
 | Endpoint                                  | Auth                                  |
 | ----------------------------------------- | ------------------------------------- |
@@ -195,7 +195,7 @@ role.
 Two per-request knobs beyond the messages: `memory` (`on`/`off`) and `plans`
 (`off`/`on`/`review`). Nothing else is exposed — no config, secrets, files, plans, memory, sessions
 or cross-owner run listing. `guard_mode` is deliberately **not** accepted: a caller must not be able
-to switch off the container operator's command guard.
+to switch off the server operator's command guard.
 
 The backing kernel boots with `builtins.tasks = false`. This is stronger than merely omitting
 control endpoints: agents running through `clarvis_run` receive no external-task tools or bindings,
@@ -246,7 +246,7 @@ Every applied constraint is reported back in the result's `posture` block.
 
 Guard confirmations are denied regardless of posture unless
 `CLARVIS_SERVER_ALLOW_REMOTE_GUARD_APPROVAL=1` **and** the caller's role allows it. The guard exists
-to protect the container from the model; letting a caller approve arbitrary commands would remove the
+to protect the server from the model; letting a caller approve arbitrary commands would remove the
 only thing it does.
 
 ## Health
@@ -278,7 +278,7 @@ defaults. Below that, SIGKILL lands mid-drain and the drain was theatre.
 
 **One replica per config directory.** The trace store is local disk with an mtime-invalidated index
 and `O_EXCL` lockfiles, neither of which is reliable over NFS/EFS, so a shared volume is unsafe
-rather than merely awkward. Scale by running more containers off more config volumes. A restart
+rather than merely awkward. Scale by running more instances with separate config volumes. A restart
 drops in-flight runs — already true, since a run lives only while its connection is open — so the
 availability story is client retry with a stable `execution_id`.
 
@@ -392,9 +392,3 @@ bun --filter @clarvis/server test:architecture
 bun --filter @clarvis/server typecheck
 bun --filter @clarvis/server start -- --workspace /path/to/ws
 ```
-
-The server image and isolated-runtime carrier both build from the repository root. The root
-`.dockerignore` starts from a deny-all rule and re-includes only manifests, package source, the
-isolated guest entry, and required license files. Credential stores, environment files, SSH/private
-keys, generated output, and arbitrary root directories therefore never enter the engine build
-context, even when a developer has placed them under an otherwise included package directory.

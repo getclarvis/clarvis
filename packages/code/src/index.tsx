@@ -84,9 +84,7 @@ async function runInteractive(mode: InteractiveMode): Promise<void> {
       mode.kind === "run" &&
       mode.worktree === undefined &&
       !resolveDebugRequest(mode, process.env).enabled
-        ? import("./startup-foundation.ts").then((module) =>
-            module.prepareStartupFoundation(mode, (status) => startupInput.setStatus(status)),
-          )
+        ? import("./startup-foundation.ts").then((module) => module.prepareStartupFoundation(mode))
         : undefined;
     preparedFoundation?.catch(() => undefined);
     runtime ??= await import("./runtime.tsx");

@@ -10,7 +10,6 @@ permissions:
 
 env:
   RELEASE_REPOSITORY: getclarvis/clarvis-releases
-  BASE_REPOSITORY: ghcr.io/getclarvis/clarvis-runtime-base
 
 concurrency:
   group: stable-release-${{ github.ref }}
@@ -77,121 +76,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  runtime:
-    needs: identity
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    name: Kernel artifact ${{ matrix.target }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: linux-x64
-            runner: ubuntu-26.04
-          - target: linux-arm64
-            runner: ubuntu-26.04-arm
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.0
-      - run: bun --version && bun --revision
-      - run: bun install --frozen-lockfile
-      - run: bun run check:release
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-      - run: bun run build
-      - run: docker version && podman version
-      - name: build base, artifact and qualifications
-        shell: bash
-        env:
-          GHCR_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir -p "build/runtime/${{ matrix.target }}"
-          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          local_base="clarvis-base:release-${{ matrix.target }}"
-          bun run runtime:base:build --engine docker --target "${{ matrix.target }}" --tag "$local_base"
-          base_revision="$(docker image inspect --format '{{index .Config.Labels "io.clarvis.base.revision"}}' "$local_base")"
-          published_base="$BASE_REPOSITORY:clarvis-linux-glibc-v1-$base_revision-${{ matrix.target }}"
-          if docker buildx imagetools inspect "$published_base" >/dev/null 2>&1; then
-            docker pull "$published_base"
-          else
-            docker tag "$local_base" "$published_base"
-            docker push "$published_base"
-          fi
-          base_digest="$(docker image inspect --format '{{index .RepoDigests 0}}' "$published_base")"
-          base_digest="${base_digest##*@}"
-          [[ "$base_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
-          bun run runtime:artifact:build --engine docker --target "${{ matrix.target }}" --out "build/runtime/${{ matrix.target }}"
-          artifact="build/runtime/${{ matrix.target }}/clarvis-kernel-${{ matrix.target }}.tar.gz"
-          bun run runtime:qualify --engine docker --base "$published_base" --artifact "$artifact" --report "build/runtime/${{ matrix.target }}/qualification-docker-${{ matrix.target }}.json"
-          docker save "$published_base" | podman load
-          bun run runtime:qualify --engine podman --base "$published_base" --artifact "$artifact" --report "build/runtime/${{ matrix.target }}/qualification-podman-${{ matrix.target }}.json"
-          artifact_sha="$(cut -d' ' -f1 "$artifact.sha256")"
-          artifact_size="$(stat -c %s "$artifact")"
-          BASE_IMAGE="$BASE_REPOSITORY" BASE_DIGEST="$base_digest" ARTIFACT_SHA="$artifact_sha" ARTIFACT_SIZE="$artifact_size" TARGET="${{ matrix.target }}" bun -e 'const target=process.env.TARGET; await Bun.write("build/runtime/"+target+"/target.json", JSON.stringify({base:{image:process.env.BASE_IMAGE,digest:process.env.BASE_DIGEST,abi:"clarvis-linux-glibc-v1"},artifact:{asset:"clarvis-kernel-"+target+".tar.gz",sha256:process.env.ARTIFACT_SHA,size:Number(process.env.ARTIFACT_SIZE)},kernel_wire_version:10,broker_version:1,channel_version:1},null,2)+"\n")'
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: kernel-input-${{ matrix.target }}
-          path: build/runtime/${{ matrix.target }}/*
-          if-no-files-found: error
-          retention-days: 7
-
-  runtime-manifest:
-    needs: runtime
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
-      artifact-metadata: write
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.0
-      - run: bun --version && bun --revision
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          pattern: kernel-input-*
-          path: build/runtime
-      - name: assemble schema-2 manifest
-        shell: bash
-        run: |
-          set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          VERSION="$VERSION" bun -e 'const x=await Bun.file("build/runtime/kernel-input-linux-x64/target.json").json(); const a=await Bun.file("build/runtime/kernel-input-linux-arm64/target.json").json(); await Bun.write("build/runtime/runtime-input.json",JSON.stringify({schema_version:2,version:process.env.VERSION,source_revision:process.env.GITHUB_SHA,targets:{"linux-x64":x,"linux-arm64":a}},null,2)+"\n")'
-          bun run tooling/runtime/release-manifest.ts build/runtime/runtime-input.json build/runtime/runtime-release.json
-          find build/runtime -mindepth 2 -type f -exec mv {} build/runtime/ \;
-      - name: attest immutable Kernel archives
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
-        with:
-          subject-path: build/runtime/clarvis-kernel-*.tar.gz
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: release-runtime
-          path: |
-            build/runtime/runtime-release.json
-            build/runtime/clarvis-kernel-*.tar.gz
-            build/runtime/clarvis-kernel-*.tar.gz.sha256
-            build/runtime/qualification-*.json
-          if-no-files-found: error
-          retention-days: 7
-
   publish:
     name: publish verified release
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    needs: [package, runtime-manifest]
+    needs: package
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -213,10 +101,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f build/release/runtime-release.json
-          test "$(find build/release -maxdepth 1 -name 'clarvis-kernel-*.tar.gz' -type f | wc -l)" -eq 2
-          test "$(find build/release -maxdepth 1 -name 'clarvis-kernel-*.tar.gz.sha256' -type f | wc -l)" -eq 2
-          test "$(find build/release -maxdepth 1 -name 'qualification-*.json' -type f | wc -l)" -eq 4
           test "$(find build/release -maxdepth 1 -name 'clarvis-v*.tar.gz' -type f | wc -l)" -eq 6
           test "$(find build/release -maxdepth 1 -name 'clarvis-v*.tar.gz.sha256' -type f | wc -l)" -eq 6
           sed -n 'p' build/release/clarvis-v*.tar.gz.sha256 | LC_ALL=C sort -k2 > build/release/SHA256SUMS
@@ -235,14 +119,14 @@ jobs:
           owner: getclarvis
           repositories: clarvis-releases
           permission-contents: write
-      - name: create draft with verified installers and Kernel artifacts
+      - name: create draft with verified installers
         shell: bash
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
         run: |
           set -euo pipefail
           notes="$RUNNER_TEMP/clarvis-release-notes.md"
-          printf 'Portable Clarvis release built from source commit `%s`. Kernel archives are qualified separately against the immutable Container base recorded in runtime-release.json.\n' "$GITHUB_SHA" > "$notes"
+          printf 'Portable Clarvis release built from source commit `%s`.\n' "$GITHUB_SHA" > "$notes"
           gh release create "$GITHUB_REF_NAME" build/release/* --repo "$RELEASE_REPOSITORY" --target main --draft --title "Clarvis $GITHUB_REF_NAME" --notes-file "$notes"
       - name: activate only after every verified upload succeeds
         env:

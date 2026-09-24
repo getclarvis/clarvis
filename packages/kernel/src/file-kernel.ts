@@ -416,14 +416,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     },
     logger: componentLogger("config"),
   });
-  const configuredRuntime = configStore.readSettings().operator_merged?.runtime;
-  if (configuredRuntime?.backend === "docker" || configuredRuntime?.backend === "podman") {
-    extensionProfileManager.close();
-    pluginContributions.close();
-    throw new Error(
-      "Container placement must be established with connectLocalContainerKernel before creating a File Kernel",
-    );
-  }
   extensionProfileManager.bindRuntime({
     readWorkspaceTrust: () => configStore.readSettings().workspace_trust ?? { state: "inert" },
     approveWorkspace: () => {
@@ -516,9 +508,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
         env.CLARVIS_DEFAULT_MAX_RETRIES,
       ),
       ...(merged.guard !== undefined ? { guard: merged.guard as GuardConfig } : {}),
-      ...(merged.runtime !== undefined
-        ? { runtime: merged.runtime as GuardSettings["runtime"] }
-        : {}),
       sandbox: runSandboxPolicy(),
       ...(Array.isArray(merged.providers)
         ? { providers: merged.providers as ProviderConfig[] }
@@ -781,13 +770,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
           sessionAllowlistFor,
         })(ctx);
         const ceiling = ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT;
-        const backend = configStore.readSettings().merged.runtime?.backend;
-        if (
-          opts.builtins?.tools === false ||
-          (ceiling !== "edit" && ceiling !== "exec") ||
-          backend === "docker" ||
-          backend === "podman"
-        )
+        if (opts.builtins?.tools === false || (ceiling !== "edit" && ceiling !== "exec"))
           return resolution;
         return {
           ...resolution,

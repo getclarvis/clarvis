@@ -876,13 +876,6 @@ file framing, manifest limits, sidecar metadata, pinned projections, and fresh d
   says a plugin with no skills root contributes no skills either, so the name cannot resolve and the
   loop reports the miss.
 
-For Container placement, the active Plugin selection is excluded before configuration projection:
-no bootstrap, Skill, Agent, MCP server, Hook, settings fragment or capability executable reaches the
-guest. A selected Plugin Agent or external grant is incompatible; merely having Plugins installed
-does not block an independent run. Production: `projectContainerConfiguration` in
-`packages/kernel/src/config/container-projection.ts`. Test:
-`packages/kernel/tests/unit/container-projection.test.ts` and
-`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 - **`settingsScopes`** builds `pluginSettingsFragment(manifest)`, replaces `mcpServers` with the
   `<plugin>:<server>`-namespaced map, and carries every normalized hook definition of that selected
   plugin. No second mutable approval projection filters the snapshot.
@@ -1424,12 +1417,6 @@ All of the following are derived directly from this document's own source and te
     `packages/skills/tests/unit/bounded-read.test.ts` and the canonical framing, manifest limit,
     sidecar, post-watch verification, invalid-sibling, aggregate-bound, and lazy drift cases in
     `packages/kernel/tests/integration/plugin-contributions.test.ts`.
-
-44c. **A Container guest receives no Plugin contribution.** Projection excludes Plugin fragments,
-    and incompatible Plugin Agents/profile grants fail before model work. Production:
-    `projectContainerConfiguration` in
-    `packages/kernel/src/config/container-projection.ts`. Test:
-    `packages/kernel/tests/unit/container-projection.test.ts`.
 
 45. **A plugin cannot enable another plugin.** Custom Extension Profiles are complete external
     allow-lists; `builtin:default` derives exact `enabledPlugins` refs from operator scopes alone before

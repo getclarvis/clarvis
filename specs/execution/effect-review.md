@@ -167,7 +167,6 @@ Test: [review-context.test.ts](../../packages/kernel/tests/unit/review-context.t
 `review resolves Plans after activation and rejects replacement or removal in flight` and
 `a newly available Plans context invalidates a review begun without one`.
 
-
 The compiler runs lazily for a revision whose effects are not covered. Its locally validated tool uses a closed,
 bounded schema. Unknown effects, evidence IDs, targets or constraints invalidate the entire output.
 Only bounded descriptors accept prerequisite inference. Explicit effects require direct evidence;
@@ -341,24 +340,12 @@ Test: [effect-review-service.test.ts](../../packages/kernel/tests/integration/ef
 
 ## Wire and presentation
 
-Operator authority and effect review are Host/Sandbox-only. Docker/Podman Kernels receive no
-evidence, binding, epoch, reviewer settings, approval bridge or guard audit channel. Code omits
-Container guard fields before submission and the Container composition has no effect-review
-capability. Effect review has no Container channel method or descriptor.
-
 The public elicitation detail has optional analysis, effect, authority and reviewer fields. Older
 details still validate. A command elicitation now carries the analyzer's analysis only: no command
 produces a reviewed effect, so the resolved effect, authority and reviewer fields describe a
 configuration review or a hosted client's own detail. The UI shows a one-based segment, affected argument position, effect and
 failure kind. Durable shell rows retain answerer, effect, relation and failure vocabulary without
 reviewer prose. The standalone tools DTO and dependency-free protocol DTO share no package edge.
-
-Production: [review-detail-schema.ts](../../packages/kernel/src/guard/review-detail-schema.ts),
-[effect-review.ts](../../packages/code/src/core/transcript/effect-review.ts).
-Test: [container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
-and [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
-DTO discriminator drift is checked by
-[effect-review-dto.test.ts](../../packages/kernel/tests/architecture/effect-review-dto.test.ts).
 
 ## Inert corpus and opt-in probes
 
@@ -384,7 +371,6 @@ missing opt-in, duplicate model identities or invalid bounds stop before any pro
 single global budget refuses attempt twenty-one before it reaches the provider, and simulated
 authorization failure still exercises native private execution without exposing credentials.
 
-
 ## Shared Judge consumer
 
 `createHostEffectReview` supplies current case facts separately from live host snapshots and trusted
@@ -401,7 +387,6 @@ ledger/refusals, invalid grant/relation/revision/token, exclusions and missing c
 executes the real private protocol for authoring and pins operator-question counts.
 The old direct-provider characterization and canary helper are baseline-only; they do not qualify
 this private execution path. Real-provider/cache qualification remains outstanding.
-
 
 The native factory emits `effect_review.reviewer.started` once per actual provider invocation, with
 stage/consumer read from the private execution descriptor and live authority revision; the effect id

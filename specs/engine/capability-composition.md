@@ -120,7 +120,6 @@ buildExecuteRunDeps(options: BuildRunDepsOptions): Promise<BuiltRunDeps>
 | `resolveHooks?` | `(ctx) => readonly HookConfig[] \| undefined` | host port for workspace hooks; omitted entirely means no hook ever runs (`packages/loop/src/runtime/build-run-deps.ts`) |
 | `hookCredentialNames?` | `() => readonly string[]` | forwarded to the hooks capability's env denylist |
 | `resolveGuard?`, `resolveSandbox?`, `resolveSecretNames?` | host ports for the tools capability |  |
-| `filesystemPlacement?` | explicit `"container"` for the native guest; Host/Sandbox are derived from host settings |  |
 | `builtins?` | `BuiltinCapabilityToggles` | `{ tools?, skills?, hooks? }`, each defaults **on** (`packages/loop/src/runtime/build-run-deps.ts`) |
 | `capabilities?` | `Capability[]` | embedder/host capabilities, registered **after** the built-ins |
 | `onConnectionEvent?` | `ConnectionEventSink` | pooled-connection health transitions |
@@ -149,7 +148,7 @@ without a synthetic `ResolvedProviderConfig`. Production:
 [`compactStoredContext`](../../packages/loop/src/runtime/context/stored-context-compaction.ts).
 Test: [`model-execution.test.ts`](../../packages/loop/tests/unit/model-execution.test.ts) and
 [`stored-context-compaction.test.ts`](../../packages/loop/tests/unit/stored-context-compaction.test.ts).
-These generic embedding contracts do not establish Container host/runtime integration.
+These generic embedding contracts do not establish host isolation.
 
 Two exported factory functions, re-exported through the curated main entrypoint (`.`,
 `packages/loop/src/lib.ts`) beside `buildExecuteRunDeps` — so §2.1's "carries" list for `.` is these two

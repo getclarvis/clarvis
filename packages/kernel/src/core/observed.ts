@@ -20,7 +20,7 @@ export interface ObservationSink {
  * @remarks Every call site that uses this previously passed an `observer` that
  * called `process.emitWarning`. No package installs a `process.on("warning")`
  * handler, so those records reached the host's raw stderr — over the terminal a
- * TUI owns, and interleaved as non-JSON lines with pino JSON in a container.
+ * TUI owns.
  * They are diagnostics about Clarvis's own machinery and belong on the logger
  * like every other one.
  *

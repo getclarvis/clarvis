@@ -54,15 +54,15 @@ describe("reindex", () => {
     await store.write("infra/TOPIC.md", edited);
 
     await store.write(
-      "infra/docker/MEMORY.md",
-      "---\ndescription: compose on arm64\n---\n# Docker",
+      "infra/service/MEMORY.md",
+      "---\ndescription: compose on arm64\n---\n# Service",
     );
     await reindex(store);
 
     const after = (await store.read("infra/TOPIC.md")) as string;
     expect(after).toContain("Hand-written intro that must survive.");
     expect(after).toContain("[bun](bun/MEMORY.md) — bun");
-    expect(after).toContain("[docker](docker/MEMORY.md) — compose on arm64");
+    expect(after).toContain("[service](service/MEMORY.md) — compose on arm64");
   });
 
   test("migrates legacy marker blocks and repairs a blank profile description", async () => {

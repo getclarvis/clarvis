@@ -216,7 +216,7 @@ export function GoalView(
                         message: "Confirm all physical work has stopped?",
                         confirmLabel: "verify and resume",
                         detail: [
-                          "Verify that every process and container from this old host has stopped before confirming.",
+                          "Verify that every process from this old host has stopped before confirming.",
                           `Host: ${ref.host_generation} | run: ${ref.execution_id}`,
                           "Saved history and uncertain outcomes are retained. The pending resume starts only after physical closure.",
                         ],

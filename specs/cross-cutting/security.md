@@ -138,7 +138,7 @@ opened descriptor. Production: `resolvePath`, `resolveFileToolPath`, and `isWith
 `packages/tools/tests/integration/no-isolation.test.ts`, and
 `packages/kernel/tests/integration/file-tool-configuration.test.ts`.
 
-`ResolvedFilesystemPolicy` selects Host, Sandbox, or Container for both commands and file tools.
+`ResolvedFilesystemPolicy` selects Host or Sandbox for both commands and file tools.
 The grant ceiling (`CLARVIS_AGENT_TOOLS_MAX_GRANT`) separately gates read, edit, and exec surfaces.
 Production: `resolveFilesystemPolicy` in `packages/tools/src/sandbox.ts` and `agentToolCaps` in
 `packages/loop/src/runtime/tools/builtin/grants.ts`. Test:
@@ -376,7 +376,7 @@ quietly redirect a classified target. Production: `resolvePath` and `resolveFile
 ### 4.2 Environment authority and independent protected roots
 
 Host file tools and commands use OS permissions. Sandbox uses one frozen native policy for
-both, and Container file tools and commands see the guest mounts. The workspace is the relative
+both. The workspace is the relative
 path base, not a filesystem boundary. `read_file` and `read_files` recognize an exact regular,
 non-link spill in the selected state root and bind it to its opened inode; other selected state
 paths stay private. Guard receives workspace and temporary-root location facts, including a
@@ -392,13 +392,12 @@ Native Sandbox commands may read host-visible files, including files outside the
 the process identity could read. Bubblewrap binds the host root read-only before narrower writable
 overlays; Seatbelt allows broad file reads while restricting writes. The workspace and declared
 protected roots remain read-only when selected, including below a writable system temp. This is a
-write and process boundary, not a confidentiality boundary for host files. Container sees only the
-guest mounts, and Host follows OS permissions plus Guard review. Native Sandbox networking is
+write and process boundary, not a confidentiality boundary for host files. Host follows OS permissions plus Guard review. Native Sandbox networking is
 independent: `network: "host"` permits outbound transfer of host-visible file content, while
 `network: "none"` denies
 network connections. The default remains host for compatibility; confidentiality-sensitive runs
 must select none. The Guard still reviews external file-tool reads under the same placement as
-shell, and the sandbox or guest mounts enforce physical access. Production: `createShellGuard` in
+shell, and the sandbox enforces physical access. Production: `createShellGuard` in
 `packages/kernel/src/guard/shell-guard.ts` and `sandboxCommand` in
 `packages/tools/src/sandbox.ts`. Test: `packages/kernel/tests/integration/guard-file-parity.test.ts`
 and native networking cases in `packages/tools/tests/integration/sandbox.test.ts`.
@@ -567,7 +566,7 @@ and [POSIX dialect](../../packages/tools/src/guard/dialects/posix.ts) (`pathCand
 | Consumer | Policy | File |
 | --- | --- | --- |
 | Clarvis-owned Git selecting a repository | `withoutGitRepositoryEnvironment(inherited)` — preserve ordinary/transport inputs, remove Git's complete repository-local set and `GIT_CEILING_DIRECTORIES` before `cwd`, `-C`, or a clone destination selects the repository | helper `packages/paths/src/git-environment.ts`; plugin fetch `packages/kernel/src/adapters/git/plugin-fetcher.ts`; plugin metadata `packages/kernel/src/adapters/filesystem/plugin-repository.ts`; memory workspace probe `packages/memory/src/workspace-state.ts`; client clone `packages/code/src/adapters/plugin-install.ts` |
-| `shell` command (unsandboxed or `require_escalated`) | `withoutSecrets(process.env, secretEnvNames)` — a copy with the named keys deleted. Git credential output, `gh auth token`, Git `--exec` helpers and `scheme::` URLs are denied independently of review. Isolated container guests reject `require_escalated`. | `packages/tools/src/sandbox.ts` (`withoutSecrets`, applied by `sandboxCommand`); `packages/tools/src/lib/sensitive-commands.ts`; `packages/tools/src/lib/sandbox-permissions.ts` |
+| `shell` command (unsandboxed or `require_escalated`) | `withoutSecrets(process.env, secretEnvNames)` — a copy with the named keys deleted. Git credential output, `gh auth token`, Git `--exec` helpers and `scheme::` URLs are denied independently of review. | `packages/tools/src/sandbox.ts` (`withoutSecrets`, applied by `sandboxCommand`); `packages/tools/src/lib/sensitive-commands.ts`; `packages/tools/src/lib/sandbox-permissions.ts` |
 | stdio MCP child | `{ ...getDefaultEnvironment(), ...server.env }` — authored values are normally interpolated, but remain literal when a portable adapter sets `expandVariables: false`; the caller's environment is **never** the base | `buildTransport` in `packages/mcp-client/src/client.ts` |
 | remote MCP request headers | authored headers follow `expandVariables`; `bearer_token_env_var` and `env_http_headers` always resolve their explicitly named values and the resulting headers remain confined to the configured resource origin | `buildTransport` in `packages/mcp-client/src/client.ts`; `createMCPRemoteFetch` in `packages/mcp-client/src/remote-fetch.ts` |
 | capability executable (plans/memory/tasks provider) | `{ ...inherited, ...additions }` — the **whole** kernel environment plus the declaration's interpolated `env` | `packages/kernel/src/capability-executables/session-manager.ts` |
@@ -754,7 +753,7 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 ## 5. Invariants
 
 1. **Workspace is a relative base, not a file-access boundary.** Ordinary external paths follow
-   Host OS permissions, Sandbox native policy, or Container guest mounts. Production:
+   Host OS permissions or Sandbox native policy. Production:
    `resolvePath` in `packages/tools/src/lib/paths.ts` and `resolveFilesystemPolicy` in
    `packages/tools/src/sandbox.ts`. Test: `packages/tools/tests/integration/no-isolation.test.ts`
    and `packages/tools/tests/integration/sandbox.test.ts`.
@@ -908,7 +907,6 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/kernel/src/config/config-store.ts`, `packages/kernel/src/config/file-config-store.ts`
     `packages/kernel/src/configuration/authoring-mutations.ts`; pinned by
     `packages/kernel/tests/integration/workspace-trust.test.ts` and
-    `packages/kernel/tests/integration/native-configuration.test.ts` and
     `packages/kernel/tests/integration/file-tool-configuration.test.ts`.
 42. **An agent name is one filename segment.** No separator, no drive/stream separator, no leading dot,
     no `..`, no `:`. Production `packages/kernel/src/config/config-service.ts`;
@@ -1037,65 +1035,6 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/code/tests/integration/marketplace.test.ts`, and
     `packages/kernel/tests/integration/plugin-service.test.ts`.
 
-60. **A Container guest receives a complete native Kernel under a closed projection, never host
-    administration or external-capability authority.** The host admits the generation before engine
-    acquisition and projects compatible builtin/global/workspace profiles plus native Plans, Memory
-    and Workflow configuration. Plans, Memory, Workflows and Goals are constructed and persisted in
-    the guest; none crosses the boundary through a domain bridge. Tasks, Skill, MCP, Hook, Plugin,
-    executable capability providers, preview, Command Review and reviewer remain unavailable. The
-    reverse channel accepts only logical model calls; provider configuration, subscription state,
-    SDKs and credentials stay on the host. `require_escalated` is denied and no broker accepts
-    arbitrary host commands, argv, cwd, environment, endpoint or path.
-
-    The selected canonical workspace is mounted read-write, so its mutation is immediate and can be
-    destructive. `.clarvis` is covered by the namespace's private read-write content volume and
-    `.agents` by a private empty read-only mask. Git metadata is overlaid read-only for a primary
-    checkout; a linked worktree receives a rewritten guest-only indirection plus its worktree Git
-    directory and common directory at fixed POSIX targets. Current OCI engines
-    would materialize an absent nested protected target in the host bind, so a workspace missing
-    `.clarvis`, `.agents` or `.git` is refused before container creation. Effective Docker/Podman
-    inspection rejects missing, additional or writable protected binds. Model/subscription
-    credentials, host HOME, Git helpers, SSH agent and engine socket remain absent. `/mise` remains an
-    engine-owned volume partitioned by namespace and exact base image rather than a host-path bind.
-
-    This boundary protects host integrity outside the selected workspace. It is not network
-    hermeticity: ordinary `outbound` can reach public, host and LAN destinations and can exfiltrate
-    readable workspace content; `none` is explicit offline policy and unenforced `internet` remains
-    refused. Root filesystem read-only, capability drop, no-new-privileges, resource bounds, private
-    temporary storage, immutable image identity and repository build-context filtering remain. The
-    exact local base image ID, ABI and revision are admitted before any preparer executes. Every
-    privileged preparer is inspected before start for exact mounts, complete capability drop,
-    additions, no-new-privileges and tmpfs; uncertain creation and cancellation use exact-ID cleanup.
-    Docker recipes remain bounded global operator authority and never become guest tools or a secret
-    channel.
-
-    There is no Container-to-Sandbox/Host fallback, replay or placement-changing elicitation. Any
-    admission, engine, recipe, image, mount, policy, handshake, channel or guest failure stays a
-    bounded Container failure until the operator explicitly selects another placement for a new run.
-    No synthetic Markdown or policy prompt replaces a removed feature.
-
-    Production: `connectLocalContainerKernel` in
-    [`connect-local-container.ts`](../../packages/kernel/src/hosting/connect-local-container.ts),
-    `createContainerKernelBackend` in
-    [`container-kernel-backend.ts`](../../packages/kernel/src/runtime/container-kernel-backend.ts),
-    `runContainerPreparer` in
-    [`container-preparer.ts`](../../packages/kernel/src/runtime/container-preparer.ts),
-    `inspectContainerBaseImage` in
-    [`runtime-image.ts`](../../packages/kernel/src/runtime/runtime-image.ts),
-    `projectContainerConfiguration` in
-    [`container-projection.ts`](../../packages/kernel/src/config/container-projection.ts), and
-    `createContainerModelBroker` in
-    [`model-broker-host.ts`](../../packages/kernel/src/runtime/model-broker-host.ts). Test:
-    [`container-projection.test.ts`](../../packages/kernel/tests/unit/container-projection.test.ts),
-    [`runtime-mounts.test.ts`](../../packages/kernel/tests/unit/runtime-mounts.test.ts),
-    [`container-kernel-backend.test.ts`](../../packages/kernel/tests/unit/container-kernel-backend.test.ts),
-    [`connect-local-container.test.ts`](../../packages/kernel/tests/unit/connect-local-container.test.ts),
-    [`runtime-artifact-volume.test.ts`](../../packages/kernel/tests/unit/runtime-artifact-volume.test.ts),
-    [`container-model-broker.test.ts`](../../packages/kernel/tests/unit/container-model-broker.test.ts),
-    [`container-channel.test.ts`](../../packages/kernel/tests/contract/container-channel.test.ts), and
-    the opt-in [`container-kernel.e2e.test.ts`](../../packages/kernel/tests/integration/container-kernel.e2e.test.ts)
-    qualifier.
-
 61. **A remote Code connection delegates machine/user authentication, host-key verification,
     transport integrity and encryption to OpenSSH
     without widening Clarvis authority.** The client spawns SSH with argv and no local shell,
@@ -1139,16 +1078,10 @@ Production: `createAuthoringMutationReview` and `prepareConfigurationFileMutatio
 
 | Condition | Handler | Outcome |
 | --- | --- | --- |
-| Ordinary external path unavailable to the selected environment | `resolveFilesystemPolicy` in `packages/tools/src/sandbox.ts` and OS/guest access | `not_found` or `io_error`; no workspace `path_escape` |
+| Ordinary external path unavailable to the selected environment | `resolveFilesystemPolicy` in `packages/tools/src/sandbox.ts` and OS access | `not_found` or `io_error`; no workspace `path_escape` |
 | Private or redirected classified configuration path | `resolveFileToolPath` in `packages/tools/src/lib/paths.ts` | `denied` or `path_escape`; no bytes exposed |
 | Pinned artifact replaced before open | `readRawFile` in `packages/tools/src/lib/files.ts` | `path_escape`; no replacement bytes exposed |
 | Native mutation below a selected skill execution root | `protectSkillPackages` in `packages/tools/src/core.ts` | `path_escape` before guard/handler; no mutation runs |
-| Container protected mount has a symlink, wrong kind or missing source | `prepareRuntimeMounts` and `assertMountSources` | `RuntimeLaunchError("unsupported_policy")` before Container start |
-| Container `internet` network policy requested | `connectLocalContainerKernel` rejects launch as `unsupported` (`"Container requires Docker/Podman with none or outbound network"`); no engine is asked to substitute ordinary outbound access | `packages/kernel/src/hosting/connect-local-container.ts` (`connectLocalContainerKernel`); `packages/kernel/tests/unit/connect-local-container.test.ts` |
-| Operational Docker or Podman startup failure | Original bounded Container failure; no native probe, replay or fallback | `connectLocalContainerKernel`; launcher tests |
-| Runtime base, artifact, effective-policy or Kernel handshake failure | No fallback; the launch fails closed | `connectLocalContainerKernel`; artifact and launcher tests |
-| Runtime recipe path/content, build, base or derived-image identity failure | No fallback and no uncustomized launch; the host reports the bounded sanitized recipe error | `resolveDockerRuntimeRecipe`; runtime recipe tests |
-| Container request depends on an external capability | `unsupported` before inference; no provider or bridge is created | `projectContainerConfiguration`; Container projection tests |
 | Unsafe or unsupported borrowed `userConfig` reference | `resolveBorrowedUserConfig` in `packages/kernel/src/plugins/plugin-manifest.ts` | only the affected MCP is withheld; safe sibling contributions survive |
 | Write target is a symlink | `packages/tools/src/lib/atomic.ts` | `ToolError("invalid_input")`, `"Refusing to write through a symlink"` |
 | Atomic write fails after creating a parent | `packages/tools/src/lib/atomic.ts` | the created directory is removed best-effort, then rethrow |

@@ -73,16 +73,13 @@ describe("code's internal architecture", () => {
     const runtime = readFileSync(join(SRC, "runtime.tsx"), "utf8");
     const manager = readFileSync(join(SRC, "adapters", "workspace-client-manager.ts"), "utf8");
     const host = readFileSync(join(SRC, "local-host.ts"), "utf8");
-    const container = readFileSync(join(SRC, "adapters", "container-client.ts"), "utf8");
     expect(runtime).not.toContain("loadFileKernelFactory");
     expect(runtime).not.toContain("createFileKernel(");
     expect(manager).not.toContain("createFileKernel(");
     expect(manager).toContain("connectOrLaunchLocalKernel");
     expect(host).toContain("serveLocalFileKernel(");
     expect(host).toContain("serveLocalFileKernel(");
-    expect(manager).toContain("connectLocalContainerKernel");
-    expect(container).toContain("composeContainerClient");
-    expect(container).not.toContain("createFileKernel(");
+    expect(manager).toContain("connectRemoteKernelOverSsh");
   });
 
   it("does not tie process-owned memory recovery to TUI paint or connection recovery", () => {

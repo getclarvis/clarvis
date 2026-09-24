@@ -20,7 +20,7 @@ import {
 
 /** Process composition. None of these inputs are accepted from a connecting RPC peer. */
 export interface ServeLocalFileKernelOptions {
-  kernel: Extract<FileRunHostOptions, { composition?: { kind: "file" } }>["kernel"];
+  kernel: FileRunHostOptions["kernel"];
   artifactId: string;
   /** Idle duration measured with a monotonic clock. Defaults to one minute. */
   idleTimeoutMs?: number;

@@ -38,7 +38,7 @@ export interface ResolvePostureInput {
   clientDeclaresElicitation: boolean;
   requested: "auto_decline" | "await";
   requestedPlans?: "off" | "on" | "review";
-  /** Whether the container permits a remote caller to approve a guarded command. */
+  /** Whether the server permits a remote caller to approve a guarded command. */
   allowRemoteGuardApproval: boolean;
   /**
    * Whether the caller's own role permits it; defaults to `true` for a
@@ -46,7 +46,7 @@ export interface ResolvePostureInput {
    *
    * @remarks Kept separate from {@link ResolvePostureInput.allowRemoteGuardApproval}
    * rather than folded into it, so the two are reported as the distinct reasons
-   * they are: the container switch is the operator's ceiling, and the role is
+   * they are: the server switch is the operator's ceiling, and the role is
    * this caller's share of it.
    */
   roleAllowsGuardApproval?: boolean;
@@ -62,8 +62,8 @@ export interface ResolvePostureInput {
  *   *cancels* the run, which is a far worse outcome than not gating. That is the
  *   one request field the facade rewrites, and it says so in `downgrades`.
  *
- *   Guard confirmations default to `denied` regardless of posture. The container's
- *   guard exists to protect the container from the model; letting an
+ *   Guard confirmations default to `denied` regardless of posture. The server's
+ *   guard exists to protect the server from the model; letting an
  *   unauthenticated remote caller approve arbitrary commands would remove the
  *   only thing it does.
  */

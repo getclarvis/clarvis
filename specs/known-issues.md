@@ -164,7 +164,7 @@ hints on the unchanged code.
 ## Classified configuration writes retain a parent-directory TOCTOU
 
 **Status: open; path-based mutation limitation.** The workspace root no longer confines ordinary
-file tools. Host follows OS permissions; Sandbox and Container enforce their environment policies.
+file tools. Host follows OS permissions; Sandbox enforces its environment policy.
 A narrower race remains for classified configuration mutations: after `resolveFileToolPath` checks
 lexical and canonical classification and the host reviews the intended effect, a concurrent process
 can replace a parent directory before `applyOpsAtomic` performs `mkdir`, staging, or `rename` by
@@ -755,9 +755,6 @@ shipped in [Bun 1.4](https://bun.com/blog/bun-v1.4). Clarvis is now
 pinned to 1.4.0, but an upstream merge is not evidence that the exact GitHub-runner signature is
 gone. `packages/code/tests/helpers/tree-sitter-preload.ts` records the historical attribution
 at the one place in the tree that acts on it.
-
-**The earlier attribution to JSC GC thread suspension (oven-sh/bun#31832) was wrong** — that issue
-is `docker exec`-specific and lists 1.3.11 as *good*. Do not re-file it there.
 
 The fault address varies run to run — `0xFFFFFFFFFFFFFFF8` in 16 of the 26, plus `0x0`, `0x18`,
 `0xC`, `0x2E64F3C3A68` — which is the tell for heap corruption rather than one bad pointer. Most
@@ -1510,7 +1507,7 @@ server image ran a version neither of them qualified.
 The active contract is now exact Bun 1.4.0 for executable pins and `>=1.4.0` for every manifest.
 `tooling/checks/bun-version.ts` derives the canonical version from `mise.toml` and checks all
 three CI setup steps and their version/revision evidence, the crash-canary default and its evidence,
-both Docker stages, all workspaces discovered from the root manifest, `@types/bun`, and both the
+all workspaces discovered from the root manifest, `@types/bun`, and both the
 declared and resolved lockfile entries. It runs inside `lint:intent` (`package.json`), and the nine
 cases in `tooling/tests/unit/bun-version.test.ts` make every drift class fail independently.
 
@@ -1807,7 +1804,7 @@ call site was reduced to `constants.O_RDONLY`.
 
 `isWithinRoots` folds case on Windows for Guard risk facts. Linux tests can exercise the injected
 case-fold comparison, but cannot prove Windows drive and separator behavior with the host `path.sep`.
-The tool-access decision itself belongs to the Host OS, native Sandbox, or Container guest, not to
+The tool-access decision itself belongs to the Host OS or native Sandbox, not to
 that Guard location fact. Production: `isWithinRoots` in `packages/tools/src/lib/paths.ts`.
 Test: `packages/tools/tests/integration/paths.test.ts`; native Windows qualification remains open.
 
@@ -2100,21 +2097,3 @@ A runtime nudge that requests a result before completion creates the same bad ch
 
 If it is ever added it must read _close the task or state why you cannot_, never _mark it done_, and
 must not fire while the agent is still producing file writes.
-
----
-
-## Hosted Podman runner compatibility
-
-The candidate runtime workflow on Ubuntu 24.04 reached real container execution: the ARM64 Docker
-canaries passed, but Podman rejected the required volume mount with `subpath: invalid mount option`.
-GitHub restored distribution-provided Podman 4.9 on that runner; its
-[runner announcement](https://github.com/actions/runner-images/issues/14642) recommends Ubuntu 26.04
-with Podman 5.7 for workflows requiring Podman 5.x. Container qualification therefore selects native
-Ubuntu 26.04 amd64/arm64 runners. It preserves the existing mount policy and uses the same pinned
-Debian image inputs. The independent AMD64 attempt received HTTP 500 from GHCR during a carrier
-push; that registry failure is separate from engine compatibility.
-
-Evidence: [candidate workflow run](https://github.com/getclarvis/clarvis/actions/runs/34135887115).
-The owning contract remains [isolated agent runtime](hosts/isolated-agent-runtime.md). Availability
-and runner image versions are external evidence; workflow source alone does not prove an engine
-canary passed. Do not infer native Windows/macOS container qualification from these Linux runners.

@@ -261,10 +261,8 @@ The public settled-context helpers can estimate a persisted snapshot, run the sa
 compaction without another agent iteration, or mechanically fit it to a smaller model window.
 Mechanical fitting preserves retained entries byte-for-byte, including opaque provider metadata;
 the caller owns the explicit persisted replacement and its cache-breaking consequences.
-The host chooses which capabilities reach a run. Container builds this loop with native tools,
-Plans, Memory, Workflows and Goals, an injected logical model provider and an empty connection
-manager. Skills, MCP, Hooks, plugins and external Tasks remain absent; the loop does not create a
-fallback or host bridge for an omitted capability.
+The host chooses which capabilities reach a run. Omitted capabilities have no fallback or
+implicit host bridge.
 
 Built-ins cover:
 
@@ -272,7 +270,6 @@ Built-ins cover:
   blocked `shell` with `sandbox_permissions: "require_escalated"` instead of a
   second tool. The host-selected placement and run identity produce one frozen filesystem policy
   shared by each agent's command sessions and file service. Sandbox runs file calls in one isolated run-owned child, reads host-visible files and limits writes to declared roots;
-  Container sees only guest mounts. Isolated container guests set `allowHostEscalation: false` so that retry is refused;
   the File Kernel applies the enabled global Sandbox as a floor when workspace settings are not trusted;
 - one owner-only scratch root per run, allocated by `@clarvis/paths` as a short, exclusive,
   account-owned directory and advertised as `TMPDIR`, `TEMP` and `TMP`, plus the host's existing system
@@ -401,8 +398,7 @@ The resolver admits only exact catalog pairs with empty request `providers`, sup
 entry/delegated profiles, vision and compaction without fabricating native transport configuration.
 When catalog metadata omits a maximum output size, delegated profiles use the context window as a
 conservative per-call ceiling so aggregate Workflow budgets cannot exceed host broker admission.
-Without it, native provider resolution remains unchanged. These are generic embedding ports, not a
-claim that the Container runtime uses them. See [composition](../../specs/engine/capability-composition.md)
+Without it, native provider resolution remains unchanged. These are generic embedding ports. See [composition](../../specs/engine/capability-composition.md)
 and [request validation](../../specs/engine/request-and-settings-schema.md).
 
 A host supplies or builds:
@@ -659,7 +655,7 @@ context as authority. An `ask_user` question is retained separately as untrusted
 authenticated answer; other elicitation kinds and non-accepted outcomes create no evidence. See
 [effect review](../../specs/execution/effect-review.md).
 
-The Host/Sandbox guard resolution may supply a prepared `reviewMutation` callback. Tools transport it only to the entry agent within the captured editing ceiling. It is an in-process host port, never a profile option or container projection; the optional tools boundary remains type-only on composition paths.
+The Host/Sandbox guard resolution may supply a prepared `reviewMutation` callback. Tools transport it only to the entry agent within the captured editing ceiling. It is an in-process host port, never a profile option; the optional tools boundary remains type-only on composition paths.
 
 `ExecuteRunDeps.executionVisibility` is required host-owned persistence classification. It is
 validated before capability activation and copied into the journal header and final record.

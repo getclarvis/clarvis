@@ -119,7 +119,7 @@ await agentTools.close();
 ```
 
 `workspaceRoot` must name an existing directory and anchors relative paths. Host file access
-follows OS permissions; Sandbox and Container access follows the run filesystem policy.
+follows OS permissions; Sandbox access follows the run filesystem policy.
 Use `readOnly: true` to expose only non-mutating tools.
 
 `sandbox: { type: "native" }` selects Bubblewrap on Linux and Seatbelt on macOS. Both backends allow
@@ -129,8 +129,7 @@ Git metadata are read-only to sandboxed processes; classified file commits use t
 The run's immutable
 `ResolvedFilesystemPolicy` supplies the same placement and paths to `shell` and `shell_session`.
 All file tools run in one run-owned child under that same native policy; a missing backend or lost
-child fails the call closed. Host executes file calls locally and Container executes them inside the
-guest. Required
+child fails the call closed. Host executes file calls locally. Required
 isolation fails closed when the selected backend cannot apply its policy.
 The native service sends the host-selected state root as data; `@clarvis/paths` rebuilds the
 complete workspace state paths inside the worker, including owner and spill builders.
@@ -159,9 +158,7 @@ latency while preserving the real npm/Homebrew/runtime path.
 `shell` accepts optional `sandbox_permissions`. Omitted or `use_default` follows
 the run Isolation. `require_escalated` plus a short `justification` asks to run that one command on
 the host after review when Isolation is Sandbox. Isolation Host already runs unsandboxed, so the
-field is a no-op. The complete Container Kernel runs all ordinary commands without Command Review and rejects
-`require_escalated`: the guest has no channel to the machine host and no placement fallback. In
-native Host/Sandbox, mode `on` sends that unsandbox ask to a human. Mode `auto` sends it to the
+field is a no-op. In native Host/Sandbox, mode `on` sends that unsandbox ask to a human. Mode `auto` sends it to the
 judge: `allow` executes, and `deny`, unsure, failed or malformed review refuse to the calling agent.
 An unavailable judge refuses. Host-command review bypasses session coverage and never offers
 `allow_session`; clean judge decisions retain their exact-call memo. Mode `off` proceeds without a reviewer. Git credential output,
@@ -245,7 +242,7 @@ the tracked group can escape this backend; an abrupt host crash outside a sandbo
 ### Filesystem access
 
 The run placement controls file access for commands and native file tools. Host uses OS permissions;
-Sandbox runs both under its frozen native policy; Container sees only guest mounts. The workspace
+Sandbox runs both under its frozen native policy. The workspace
 root anchors relative paths. File-tool paths starting with `~`, `~/`, or `~\` fail with
 `invalid_input` instead of creating a literal workspace directory. Paths inside the workspace are
 reported relatively; external paths are reported absolutely. Classified secret configuration,
@@ -491,8 +488,7 @@ The standalone guard DTO can carry host-attested effect facts and review receipt
 capability. Those facts describe a configuration change, not a command: the command guard resolves
 one deterministic policy and sends every remaining Auto `ask` to the call-local reviewer without
 classifying an operation. Admitted workspace authoring and operational configuration passes native
-mutation protection only through the host's `reviewMutation` port. Without that port — a Container
-guest, a ceiling other than `edit`/`exec`, or disabled builtin tools — the file tool refuses the
+mutation protection only through the host's `reviewMutation` port. Without that port — a ceiling other than `edit`/`exec`, or disabled builtin tools — the file tool refuses the
 protected target before the guard runs, and an absent/off guard never authorizes the write. The
 host passes global roots only to eligible entry-agent file handlers; shell commands do not gain
 writable roots, and unrelated file paths follow the selected environment policy. See

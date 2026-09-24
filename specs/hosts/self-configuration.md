@@ -6,7 +6,7 @@ An eligible entry agent handles an operator's configuration request in the ordin
 with the same file tools it uses for other workspace work. The file kernel provides a host-owned
 `reviewMutation` port only when builtin tools are enabled, the run's immutable ceiling permits
 editing, and the selected placement is Host or Sandbox. Agent Profiles, skills, hooks and edited
-files cannot install that port or widen the ceiling. Container guests receive no host writer;
+files cannot install that port or widen the ceiling.
 operator Settings, provider login and other administrative controls retain their own host APIs.
 There is no separate configuration tool or slash command. The product-owned `clarvis-docs`
 skill supplies a short catalog entry and loads its self-contained Markdown references on demand.
@@ -42,8 +42,7 @@ The host reserves `clarvis-docs` from ordinary Extension Profile inventory and s
 workspace or plugin skill with the same name cannot replace the product entry. Existing
 `use_skills` agents see it in the ordinary catalog. An entry agent without that grant receives a
 system-only view only when its immutable run ceiling and selected Host or Sandbox placement admit
-file editing and the host configuration-review port exists. Children and read-only or Container
-agents receive no special view. The normal `load_skill` and `read_skill_resource` tools serve it;
+file editing and the host configuration-review port exists. Children and read-only agents receive no special view. The normal `load_skill` and `read_skill_resource` tools serve it;
 loading a skill never approves a subsequent file mutation.
 
 Production: `reconcileSystemDocs` in
@@ -113,8 +112,7 @@ and rollback and private-mode cases in
 In Sandbox, preparation happens inside the same isolated file service as ordinary file calls.
 The service sends the complete batch to the host reviewer; after approval, a classified batch
 commits through `commitClassified` on the host, including any ordinary workspace targets in a
-mixed patch. The host rechecks admission and protected roots. Container and children have no
-`reviewMutation` port and cannot request that host commit. Production:
+mixed patch. The host rechecks admission and protected roots. Children have no `reviewMutation` port and cannot request that host commit. Production:
 `SandboxAgentFilesystem` in
 [filesystem-service.ts](../../packages/tools/src/filesystem-service.ts),
 `createAuthoringMutationReview` in
@@ -182,10 +180,3 @@ and captured resources in
 [execution-snapshot.test.ts](../../packages/skills/tests/unit/execution-snapshot.test.ts).
 
 ## Related contracts
-
-See [kernel config](kernel-config.md), [Extension Profiles](extension-profiles.md),
-[skills](../execution/skills.md), [effect review](../execution/effect-review.md),
-[elicitation](../cross-cutting/elicitation.md), [security](../cross-cutting/security.md),
-and [isolated runtime](isolated-agent-runtime.md). The real interface evidence contract is the
-repository's PTY validation workflow; deterministic fixtures alone do not qualify a provider or
-platform journey.

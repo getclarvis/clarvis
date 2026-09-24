@@ -597,8 +597,7 @@ The original adjacent-pair ordering cases live in `packages/kernel/tests/unit/gu
 Placement, dangerous precedence and comparison-only POSIX directory handling are pinned by
 `packages/kernel/tests/integration/guard-auto-review.test.ts`.
 Reviewed commands and file tools may read a host-visible external file in a native Sandbox;
-Bubblewrap or Seatbelt still enforces declared write roots. Host uses its OS permissions, while
-Container sees guest mounts. External paths require review and do not become an access grant.
+Bubblewrap or Seatbelt still enforces declared write roots. Host uses its OS permissions. External paths require review and do not become an access grant.
 Production: `createShellGuard` in [shell-guard.ts](../../packages/kernel/src/guard/shell-guard.ts)
 and `resolveFilesystemPolicy` in [sandbox.ts](../../packages/tools/src/sandbox.ts).
 Test: `packages/kernel/tests/integration/guard-file-parity.test.ts` and external read/write cases
@@ -608,14 +607,11 @@ There is no contained silent-allow rule: unmatched Sandbox commands still ask, a
 changes who may answer. Placement is resolved once per Host/Sandbox run from host settings. An
 enabled native policy is contained-or-fail-closed (`sandboxWouldApply`); even legacy
 `availability: "optional"` never falls back to bare execution. `loadGuardSettings` uses the same
-effective native policy resolver as tool execution. Container placement is outside Command Guard:
-Code omits its stored guard fields and the guest receives no guard policy, authority ledger or
-reviewer. Per-call unsandbox overrides placement to Host and
+effective native policy resolver as tool execution. Per-call unsandbox overrides placement to Host and
 omits the native network restriction. Its `host_command` ask precedes generic undecidability, but
 never deny-list enforcement. Auto asks the reviewer; unsure, operational
 failures and malformed responses refuse to the calling agent and never use a human. Approval asks a
-human only for the grey zone. `off` is unchanged. Docker/Podman reject escalation structurally
-because no host-exec channel exists.
+human only for the grey zone. `off` is unchanged.
 Contained `rm`, `rmdir` and `rm -rf` therefore receive an Auto decision for their complete command;
 the native sandbox still blocks writes to workspace configuration and Git metadata after an allow.
 The file tool's ordinary bounded recursive cleanup follows the same Auto review principle through
@@ -626,13 +622,6 @@ its separate effect reviewer. Production: `createShellGuard` in
 [guard-auto-review.test.ts](../../packages/kernel/tests/integration/guard-auto-review.test.ts),
 [guard-file-parity.test.ts](../../packages/kernel/tests/integration/guard-file-parity.test.ts), and
 [sandbox.test.ts](../../packages/tools/tests/integration/sandbox.test.ts).
-
-Production: `createGuardResolver`, `createShellGuard`, `loadGuardSettings` in
-`packages/kernel/src/file-kernel.ts`, `sandboxWouldApply` in `packages/tools/src/sandbox.ts`, and
-`createContainerNativeKernel` in `packages/kernel/src/hosting/container-native.ts`. Test:
-`packages/kernel/tests/integration/guard-auto-review.test.ts`,
-`packages/tools/tests/unit/sandbox-placement.test.ts`, and
-`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 POSIX normalization removes consecutive leading Git `--no-pager`/`--no-color` presentation flags.
 `commandComparison` in `packages/kernel/src/guard/command-comparison.ts` additionally validates bare
@@ -722,15 +711,7 @@ Auto; Approval may ask a person for unsandbox.
 
 `createGuardHumanApproval` reads the current allowlist before and after the question. It refuses late
 answers after the controller or scope is retired. `humanApprovalFor` is available only to native
-Host/Sandbox runs; Container guests receive no approval port.
-
-Production: [resolver.ts](../../packages/kernel/src/guard/resolver.ts),
-[command-review.ts](../../packages/kernel/src/guard/command-review.ts),
-[human-approval.ts](../../packages/kernel/src/guard/human-approval.ts). Test:
-[guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts),
-[judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts),
-[command-guard-routing.test.ts](../../packages/kernel/tests/integration/command-guard-routing.test.ts), and
-[container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
+Host/Sandbox runs.
 
 ### 4.8 The engine's wiring
 
@@ -812,13 +793,12 @@ at `packages/kernel/tests/component/settings-assembler.test.ts`. The economics b
   though `toStartParams` forwards all three when present (`packages/code/src/adapters/kernel-run-client.ts`)
   and `GuardJudgeInput` declares them (`packages/code/src/adapters/run-types.ts`). The kernel resolves
   shared `effect_review` settings without requiring Code to duplicate those values in each request.
-- **Isolation is separate.** Host/Sandbox/Docker/Podman selection writes no guard field, and a Review write
-  writes no runtime or Sandbox field. The header and Run Controls therefore report both axes rather
+- **Isolation is separate.** Host/Sandbox selection writes no guard field, and a Review write
+  writes no Sandbox field. The header and Run Controls therefore report both axes rather
   than naming a combined posture (`packages/code/src/features/run/isolation.ts`,
   `packages/code/src/features/run/review.ts`,
   `packages/code/src/adapters/execution-safety.ts`). The containment half belongs to
-  [sandbox-and-toolchains](sandbox.md) and
-  [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
+  [sandbox-and-toolchains](sandbox.md).
 
 ---
 
@@ -1098,8 +1078,7 @@ broken.
 46. **The session allowlist is never persisted; its host can revoke it independently of the
     resolver.** The default lifetime remains one resolver, while `sessionAllowlistFor` chooses the
     current interactive scope per command. A revoked instance cannot be repopulated; a pending
-    answer from that scope cannot approve even once. Container constructs no guard/session-allowlist
-    lookup and never receives a guest judge. Production:
+    answer from that scope cannot approve even once. Production:
     `createGuardSessionAllowlist` and `createGuardResolver` in
     [guard-elicit.ts](../../packages/kernel/src/guard/guard-elicit.ts) and
     [resolver.ts](../../packages/kernel/src/guard/resolver.ts). Test: the default across-run and
@@ -1220,15 +1199,6 @@ broken.
     `packages/tools/tests/unit/powershell-dialect.test.ts` (settings-bound/uniqueness assertions,
     complete decidability/canonicality loops, ecosystem samples and exclusion matrices).
 
-61. **Container placement does not execute Command Guard or effect review.** An explicit
-    `guard_mode: "on" | "auto"` or `guard_judge` is withheld by the Code adapter before the public
-    request. The Container configuration has no reviewer, operator evidence or host execution
-    authority, and `require_escalated` remains false. Production: `KernelRunClient.startRun` in
-    `packages/code/src/adapters/kernel-run-client.ts` and `createContainerNativeKernel` in
-    `packages/kernel/src/hosting/container-native.ts`. Test:
-    `packages/code/tests/component/kernel-run-client.test.ts` and
-    `packages/kernel/tests/integration/container-kernel-host.test.ts`.
-
 62. **One policy decides, and one channel reviews a command.** A command `ask` that applicable
     session consent does not cover is reviewed by `createCommandReview` with the complete call. No
     effect classifier, operation rule, probe or compiled envelope intervenes between the policy and
@@ -1282,7 +1252,6 @@ broken.
 | `CLARVIS_AGENT_TOOLS_ENABLED` unset | no toolset at all, so no guard is even constructed | `packages/loop/src/runtime/capabilities/tools.ts` |
 | Host supplies no `resolveGuard` | calls receive no policy guard and proceed without command review, including `require_escalated` shell | `packages/loop/src/runtime/capabilities/tools.ts`; `packages/tools/src/core.ts` |
 | Host supplies no audit logger | `NOOP_LOGGER`; rulings still happen, nothing is recorded | `packages/kernel/src/guard/resolver.ts`; test `packages/kernel/tests/unit/guard-audit.test.ts` |
-| Container has stored Review `on`/`auto` or judge guidance | Code omits those fields; guest composes no guard/reviewer service | `KernelRunClient.startRun`; `container-kernel-host.test.ts` |
 | `guard-judge.md` unreadable / blank / >32 KiB | silently treated as absent, next scope wins | `packages/code/src/adapters/guard-judge-prompt.ts` |
 | `auto` chosen in Run Controls without a usable model | persisted as `"on"` with a notification | `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`) |
 
@@ -1333,7 +1302,7 @@ accumulate as execution failures`).
 | `packages/kernel/src/guard/shell-guard.ts` | `@clarvis/tools/guard` (`withinWorkspace`, `touchesOutside` + types) | the policy reasons over the analyzer's facts |
 | `packages/kernel/src/guard/shell-guard.ts` → `packages/kernel/src/guard/glob.ts` | `@clarvis/capability`'s `globToRegExp` | one shared glob dialect with `@clarvis/hooks` |
 | `packages/kernel/src/guard/resolver.ts` | `@clarvis/loop/host`'s `defaultGuardMode` + `GuardConfig` | the settings shape is the engine's, not the kernel's |
-| `packages/kernel/src/file-kernel.ts` | `createGuardResolver` | Host/Sandbox construction site; Container guests do not construct a guard |
+| `packages/kernel/src/file-kernel.ts` | `createGuardResolver` | Host/Sandbox construction site |
 | `packages/loop/src/runtime/capabilities/tools.ts` | `opts.resolveGuard` | the engine's single call into host guard policy |
 | `packages/loop/src/runtime/tools/builtin/index.ts` | `@clarvis/tools/guard` values | re-export barrel under the tools capability subpath |
 | `packages/code/src/onboarding/seed-default-allowlist.ts` | `@clarvis/kernel/local`'s two default lists | the seed is the analyzer's own list, not a copy |
@@ -1441,8 +1410,7 @@ separately postures guard confirmations per principal
   `auto_decline` posture ([elicitation-and-user-interaction](../cross-cutting/elicitation.md)); how `ElicitBlock` renders a
   `guard_confirm` (`packages/code/src/views/ElicitBlock.tsx`, [code-transcript-and-tool-rendering](../hosts/code-transcript.md));
   the seeding of `allowed_commands` on first boot ([code-onboarding-doctor-and-platform](../hosts/code-onboarding.md)); the
-  independent Isolation control ([sandbox-and-toolchains](sandbox.md) and
-  [isolated-agent-runtime](../hosts/isolated-agent-runtime.md)); and the prompt-cache economics
+  independent Isolation control ([sandbox-and-toolchains](sandbox.md)); and the prompt-cache economics
   behind the `1h` TTL ([prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md)).
 ## Single command-review path
 
@@ -1458,7 +1426,6 @@ failures are owned by [effect review](effect-review.md). Production: `createGuar
 [shell-guard.ts](../../packages/kernel/src/guard/shell-guard.ts) and `createCommandReview`.
 Test: [command-guard-routing.test.ts](../../packages/kernel/tests/integration/command-guard-routing.test.ts)
 and [guard-session-auto.test.ts](../../packages/kernel/tests/integration/guard-session-auto.test.ts).
-
 
 Native `createGuardHumanApproval` deduplicates identical in-flight requests per current allowlist
 scope. Canonical full request identity preserves differences in authority/context while ignoring JSON

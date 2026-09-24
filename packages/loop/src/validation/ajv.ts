@@ -48,23 +48,6 @@ function load(): AjvModules {
 }
 
 /**
- * Supply statically bundled Ajv modules to a standalone composition root.
- *
- * @param bundledModules - the exact modules included by the standalone build entry.
- * @throws when dependency resolution already happened or a composition root tries
- *   to replace an earlier installation.
- * @remarks This source-internal seam lets a compiled executable close over its
- *   dependency graph without changing the normal host contract: ordinary imports
- *   still defer both module resolution and instance construction until first use.
- */
-export function installBundledAjvModules(bundledModules: AjvModules): void {
-  if (modules !== undefined) {
-    throw new Error("Ajv runtime modules are already installed");
-  }
-  modules = bundledModules;
-}
-
-/**
  * Construct an Ajv instance with the given options and the `ajv-formats`
  * format vocabulary (e.g. `date-time`, `email`) registered.
  *

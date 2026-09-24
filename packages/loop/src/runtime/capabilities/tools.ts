@@ -94,12 +94,8 @@ export interface AgentToolsCapabilityOptions {
   statePaths?: WorkspaceStatePaths;
   resolveGuard?: GuardResolver;
   resolveSandbox?: SandboxResolver;
-  /** Guest composition names Container explicitly; native hosts infer Host or Sandbox. */
-  filesystemPlacement?: "container";
   resolveSecretNames?: SecretNamesResolver;
   resolveSkillExecutionRoots?: SkillExecutionRootsResolver;
-  /** Isolated container guests set this to false so `require_escalated` fails closed. */
-  allowHostEscalation?: boolean;
   /** Test seam for a run-local execution manager; called once for each activated run. */
   createSessionManager?: () => ExecutionSessionManager;
 }
@@ -169,8 +165,6 @@ export function createAgentToolsCapability(opts?: AgentToolsCapabilityOptions): 
         sandbox?.enabled === false ? undefined : sandbox,
         opts?.resolveSecretNames?.(ctx) ?? [],
         skillExecutionRoots,
-        opts?.allowHostEscalation,
-        opts?.filesystemPlacement,
         scratch,
         statePaths,
         opts?.createSessionManager?.() ?? new ExecutionSessionManager(),
@@ -193,8 +187,6 @@ function createAgentToolsRunCapability(
   sandbox: ResolvedSandboxSettings | undefined,
   secretEnvNames: readonly string[],
   skillExecutionRoots: readonly string[],
-  allowHostEscalation: boolean | undefined,
-  filesystemPlacement: "container" | undefined,
   scratch: ShortTemporaryRoot,
   statePaths: WorkspaceStatePaths,
   sessionManager: ExecutionSessionManager,
@@ -213,11 +205,9 @@ function createAgentToolsRunCapability(
         "can also reuse paths created by host-native temporary-file APIs.";
       if (!caps.canExec) return temporary;
       const filesystem =
-        filesystemPlacement === "container"
-          ? "Container commands can read and write only the guest mounts, subject to each mount's read-only setting. Unmounted host paths are unavailable."
-          : sandbox === undefined
-            ? "Host commands use the operating system's filesystem permissions; Guard reviews eligible commands."
-            : `Sandbox commands can read host-visible files. ${sandbox.filesystem === "workspace-read-only" ? "The workspace and Git metadata are read-only; writes are limited to admitted temporary roots." : "Writes are limited to the workspace, admitted Git metadata, and temporary roots."} Reading a path never grants permission to execute or write there.`;
+        sandbox === undefined
+          ? "Host commands use the operating system's filesystem permissions; Guard reviews eligible commands."
+          : `Sandbox commands can read host-visible files. ${sandbox.filesystem === "workspace-read-only" ? "The workspace and Git metadata are read-only; writes are limited to admitted temporary roots." : "Writes are limited to the workspace, admitted Git metadata, and temporary roots."} Reading a path never grants permission to execute or write there.`;
       return (
         temporary +
         "\n\n## Commands and Isolation\n\n" +
@@ -225,7 +215,7 @@ function createAgentToolsRunCapability(
         filesystem +
         "\n\n" +
         "If a command that is required to finish the user's request fails because the sandbox blocked filesystem, network, or host services, call the same tool again with `sandbox_permissions` set to `require_escalated` and a short `justification` requesting review of that one command on the host. Do not switch tools and do not rewrite the command as argv.\n\n" +
-        "Do not request escalation for routine workspace builds, tests, or git queries that work inside the sandbox. Isolated container runs cannot reach the host this way."
+        "Do not request escalation for routine workspace builds, tests, or git queries that work inside the sandbox."
       );
     },
     async onRunEnd() {
@@ -275,13 +265,11 @@ function createAgentToolsRunCapability(
         sessionManager,
         sessionAgent: {},
         runIdentity: ctx.executionId,
-        ...(filesystemPlacement === undefined ? {} : { filesystemPlacement }),
         skillExecutionRoots,
         ...(ctx.logger !== undefined ? { logger: ctx.logger } : {}),
         ...(secretEnvNames.length > 0 ? { secretEnvNames } : {}),
         ...(resolution?.guard !== undefined ? { guard: resolution.guard } : {}),
         ...(guardElicit !== undefined ? { elicit: guardElicit } : {}),
-        ...(allowHostEscalation !== undefined ? { allowHostEscalation } : {}),
         ...(sandbox !== undefined
           ? {
               sandbox: {

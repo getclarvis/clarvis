@@ -7,7 +7,7 @@ const positiveInt = z.coerce.number().int().positive();
 const nonnegativeInt = z.coerce.number().int().nonnegative();
 
 /** A comma-separated list, trimmed per entry with empties dropped, so a trailing
- * comma or padded value in a container spec is not read as a member. */
+ * comma or padded value in a deployment specification is not read as a member. */
 const csv = z
   .string()
   .default("")

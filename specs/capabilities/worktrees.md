@@ -115,7 +115,7 @@ spawns that one command on the host after approval: `on` asks a human; Auto uses
 `allow` executing and `deny`, unsure, failed or malformed review refusing to the calling agent. An
 unavailable model refuses. Host-command asks never use session coverage or offer `allow_session`;
 clean exact-call judge memoization remains separate. Isolation Host already runs unsandboxed and the field leaves normal review intact.
-Isolated container runs reject the field. Mode `off` proceeds without a reviewer. Executable Git
+Mode `off` proceeds without a reviewer. Executable Git
 options (`--upload-pack`, `--receive-pack`, and `--exec`), custom transport-helper URLs,
 `git credential`, and `gh auth token` remain denied independently of command review.
 
@@ -153,17 +153,6 @@ Test: `packages/tools/tests/integration/sandbox.test.ts`;
    Production: `packages/tools/src/config.ts` (`resolveConfig`);
    `packages/tools/src/sandbox.ts` (`discoverLinkedGitMetadataPaths`).
    Test: `packages/tools/tests/integration/sandbox.test.ts`.
-
-5. **Host fallback is the same command text with `sandbox_permissions: "require_escalated"` and
-   follows the operator-selected command-review mode.** Mode `off` proceeds without review; Isolation
-   Sandbox with mode `on` asks a human, while Auto may judge the host effect and refuses
-   unsure to the calling agent with no session approval. Isolated containers refuse the field.
-   Production: `packages/tools/src/lib/sandbox-permissions.ts`;
-   `packages/kernel/src/guard/shell-guard.ts`.
-   Test: `packages/tools/tests/integration/shell-escalation.test.ts`;
-   `packages/kernel/tests/unit/guard-audit.test.ts`;
-   `packages/kernel/tests/integration/guard-auto-review.test.ts`;
-   `packages/kernel/tests/integration/container-kernel.e2e.test.ts`.
 
 6. **A newly created branch starts from the commit at `HEAD` of the checkout Clarvis was started
    in; bootstrap neither fetches nor consults a remote default ref, and uncommitted changes are

@@ -26,7 +26,7 @@ async function fixture() {
   await mkdir(globalDir);
   await writeFile(
     globalPaths(globalDir).settingsFile,
-    JSON.stringify({ runtime: { backend: "native" }, memory: { enabled: false } }),
+    JSON.stringify({ memory: { enabled: false } }),
   );
   const identity = await resolveLocalHostIdentity({ workspaceRoot, globalDir, owner: "operator" });
   if (identity.paths.endpointDirectory !== undefined) {

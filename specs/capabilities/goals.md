@@ -253,7 +253,7 @@ Returning from the goal view keeps older checkpoint publications in history navi
 than repeating them in the live tail after a newer stage outcome. The handoff and its rendering
 regression are owned by [transcript stability](../hosts/code-transcript-stability.md).
 Deterministic rendering and observation tests do not qualify the complete local/remote TUI,
-container, real-provider or installed-artifact journeys.
+real-provider or installed-artifact journeys.
 
 Production: `parseGoalCommand` in [parser.ts](../../packages/code/src/features/goal/parser.ts) and
 `createGoalController` in [controller.ts](../../packages/code/src/features/goal/controller.ts).
@@ -1264,7 +1264,7 @@ instant a provider backoff leaves on a stage that blocked for another reason by
 The latter composes private file sessions, actual hosting, goal gates, loop and SDK with controlled
 responses. It verifies two automatic continuations, three separate run intents, decreasing budgets,
 single-count usage, complete serialized prefix/cache identity, stagnation, incompatible request
-refusal and pause/cancel races. These controlled-SDK tests are separate from TUI and Container qualification.
+refusal and pause/cancel races. These controlled-SDK tests are separate from TUI qualification.
 
 `createFileRunHost` registers this policy in its ordinary prepared execution path. It exposes a
 connection-scoped `GoalService` with availability, state, receipt lookup, semantic formulation and
@@ -1273,13 +1273,11 @@ Observer connections receive reads; writes resolve the actual registry controlle
 authority inside the short mutation and after asynchronous preparation. Initial/resumed execution
 uses the registry's internal start with that proof. Foreign peers and stale proof copies cannot
 control the conversation. Pause retains physical occupancy, and ordinary input cannot resume it.
-Native Host/Sandbox and complete Container Kernels advertise the service. Container keeps Goal
-state, controls, budgets and continuation inside the canonical session shared with Host/Sandbox; it does not resume an
-active Goal automatically after reconnect.
+Native Host and Sandbox Kernels advertise the service. Goal state, controls, budgets and
+continuation remain in the canonical owner session.
 The common client returns explicit unavailability when the optional capability is absent.
 Production: [service.ts](../../packages/kernel/src/goals/service.ts),
-[file-host.ts](../../packages/kernel/src/hosting/file-host.ts), and
-[container-native.ts](../../packages/kernel/src/hosting/container-native.ts).
+[file-host.ts](../../packages/kernel/src/hosting/file-host.ts).
 Test: `starts a durable goal over IPC and admits its checkpoint continuation through the real kernel`
 and `pause retains physical work, fences foreign control and prevents automatic continuation` in
 [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
@@ -1307,7 +1305,7 @@ Test: [goal-usage.test.ts](../../packages/kernel/tests/unit/goal-usage.test.ts) 
 The latter uses actual IPC, file hosting, SDK and controlled HTTP to cover two automatic
 checkpoints with a delegated plan, per-stage closure, exact prefix/catalog/identity preservation,
 complete physical-call accounting, pause/resume, cancellation, and missing usage/cache controls.
-It does not establish real-provider cache hits or container-engine/installed-artifact qualification.
+It does not establish real-provider cache hits or installed-artifact qualification.
 Test: [goal-file-host-plan.test.ts](../../packages/kernel/tests/integration/goal-file-host-plan.test.ts)
 uses real IPC review elicitations, plan gates and host continuation: human approval survives
 delegation and two checkpoints; cancellation or requested changes prevents writes and preserves an
@@ -1321,10 +1319,6 @@ Production: `createGoalCapability` in [capability.ts](../../packages/goal/src/ca
 `attemptCompaction` in [llm-compaction.ts](../../packages/loop/src/runtime/context/llm-compaction.ts),
 `createGoalUsageTracker` in [usage.ts](../../packages/kernel/src/goals/usage.ts), and
 `prepareHostedGoalTurn` in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts).
-Container Kernel coverage exercises Goal creation, pause and explicit resume using the native domain
-inside its canonical owner-scoped session state. Engine qualification also proves boot, persistence and broker
-availability; it never resumes an interrupted Goal or replays a stage automatically.
-
 The local `tooling/goal/live.ts` command qualifies the native file host with the existing global
 subscription through the kernel's production resolver. A Linux host mount view retains renewable
 credentials at their authoritative location and masks unrelated global configuration/state. The
@@ -1373,16 +1367,9 @@ owned by the planning capability. A checkpoint preserves open tasks; a final con
 normal plan gates. Goal context uses preserved append-only blocks and never a second compaction
 anchor or output budget. Session/agent cache identities survive runs; a goal ID is not cache affinity.
 
-Local, remote and Container TUI controls require the same authenticated conversation/controller
-guarantees. Container constructs the native Goal descriptor, runtime port and tools inside its
-Kernel; the host receives only bounded model calls. Reconnect preserves recoverable Goal state but
+Local and SSH TUI controls require the same authenticated conversation/controller
+guarantees. Reconnect preserves recoverable Goal state but
 requires explicit resume and never replays an unknown stage.
-
-Production: `createContainerNativeKernel` in
-[container-native.ts](../../packages/kernel/src/hosting/container-native.ts), and `goalRuntimePortOf`
-in [capability.ts](../../packages/goal/src/capability.ts). Test:
-[container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
-and the native Goal suites cited above.
 
 ### Auxiliary accounting and exploratory reads
 

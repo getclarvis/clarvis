@@ -137,11 +137,6 @@ export interface RuntimeConfig {
   /** One immutable filesystem authority shared by shell and its live sessions. */
   filesystemPolicy: ResolvedFilesystemPolicy;
   /**
-   * Isolated container guests set this to false so `require_escalated` fails closed.
-   * Native Host and Sandbox placements leave it true (the default).
-   */
-  allowHostEscalation?: boolean;
-  /**
    * Environment variable names holding credentials, withheld from every command
    * this toolset spawns.
    *
@@ -333,9 +328,7 @@ export interface AgentToolsOptions {
   /** Host-owned run identity; standalone toolsets receive a random identity. */
   runIdentity?: string;
   /** Host-selected physical placement; omitted standalone calls infer Host or Sandbox. */
-  filesystemPlacement?: "host" | "sandbox" | "container";
-  /** Isolated container guests set this to false so `require_escalated` fails closed. */
-  allowHostEscalation?: boolean;
+  filesystemPlacement?: "host" | "sandbox";
   /** Secret names passed through to {@link RuntimeConfig.secretEnvNames}. */
   secretEnvNames?: readonly string[];
 }
@@ -531,7 +524,6 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
     elicit: options.elicit,
     sandbox,
     filesystemPolicy,
-    allowHostEscalation: options.allowHostEscalation ?? true,
     secretEnvNames: options.secretEnvNames,
   };
 }

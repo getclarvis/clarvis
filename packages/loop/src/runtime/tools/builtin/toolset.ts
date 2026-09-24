@@ -41,9 +41,7 @@ export interface AgentToolsetOptions {
   /** Host-owned run identity for the resolved filesystem policy. */
   runIdentity?: string;
   /** Physical filesystem placement selected by the host, independently of escalation. */
-  filesystemPlacement?: "host" | "sandbox" | "container";
-  /** Isolated container guests set this to false so `require_escalated` fails closed. */
-  allowHostEscalation?: boolean;
+  filesystemPlacement?: "host" | "sandbox";
   /** Credential env-var names withheld from every spawned command. */
   secretEnvNames?: readonly string[];
   /**
@@ -184,9 +182,6 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
       ...(opts.runIdentity !== undefined ? { runIdentity: opts.runIdentity } : {}),
       ...(opts.filesystemPlacement !== undefined
         ? { filesystemPlacement: opts.filesystemPlacement }
-        : {}),
-      ...(opts.allowHostEscalation !== undefined
-        ? { allowHostEscalation: opts.allowHostEscalation }
         : {}),
       ...(opts.secretEnvNames !== undefined ? { secretEnvNames: opts.secretEnvNames } : {}),
       ...(opts.logger !== undefined ? { logger: opts.logger } : {}),

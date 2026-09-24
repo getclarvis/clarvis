@@ -16,7 +16,7 @@ import {
   installCandidate,
   selectCandidateRelease,
 } from "../../tooling/candidate-install.ts";
-import { parseRuntimeCandidate } from "../../src/adapters/runtime-candidate.ts";
+import { parseSourceCandidate } from "../../src/adapters/source-candidate.ts";
 import { productVersion } from "../../src/cli-args.ts";
 import { productRootForEntry } from "../../src/cli-entry.ts";
 import { CLARVIS_DOCS_FIRST_VERSION } from "../../src/update/release-manifest.ts";
@@ -24,28 +24,6 @@ import { CLARVIS_DOCS_FIRST_VERSION } from "../../src/update/release-manifest.ts
 const version = productVersion();
 const tag = `v${version}-rc.4`;
 const revision = "a".repeat(40);
-const target = (name: "linux-x64" | "linux-arm64", hash: string) =>
-  ({
-    base: {
-      image: "ghcr.io/getclarvis/clarvis-base",
-      digest: `sha256:${hash.repeat(64)}`,
-      abi: "clarvis-linux-glibc-v1",
-    },
-    artifact: {
-      asset: `clarvis-kernel-${name}.tar.gz`,
-      sha256: (hash === "b" ? "d" : "e").repeat(64),
-      size: 1024,
-    },
-    kernel_wire_version: 11,
-    broker_version: 1,
-    channel_version: 1,
-  }) as const;
-const runtime = {
-  schema_version: 2,
-  version,
-  source_revision: revision,
-  targets: { "linux-x64": target("linux-x64", "b"), "linux-arm64": target("linux-arm64", "c") },
-} as const;
 const candidate = {
   schema: 1,
   channel: "candidate",
@@ -54,21 +32,15 @@ const candidate = {
   version,
   source_revision: revision,
   repository: "getclarvis/clarvis",
-  kernel_wire_version: 11,
-  broker_version: 1,
-  channel_version: 1,
-  targets: ["linux-x64", "linux-arm64"],
-  runtime,
 } as const;
 
-test("candidate identity embeds the schema-2 base/artifact map without prefetching an image", () => {
-  expect(parseRuntimeCandidate(candidate, tag)).toEqual(candidate);
+test("candidate identity admits only the exact source commit", () => {
+  expect(parseSourceCandidate(candidate, tag)).toEqual(candidate);
   for (const invalid of [
-    { ...candidate, runtime: { ...runtime, schema_version: 1 } },
-    { ...candidate, broker_version: 2 },
-    { ...candidate, targets: ["linux-x64"] },
+    { ...candidate, source_revision: "invalid" },
+    { ...candidate, unexpected: "field" },
   ])
-    expect(() => parseRuntimeCandidate(invalid, tag)).toThrow();
+    expect(() => parseSourceCandidate(invalid, tag)).toThrow();
 });
 
 test("candidate selection requires an exact published sidecar and compares RC numbers numerically", () => {
@@ -76,7 +48,7 @@ test("candidate selection requires an exact published sidecar and compares RC nu
     tag_name: name,
     draft: false,
     prerelease: true,
-    assets: sidecar ? [{ name: "runtime-candidate.json" }] : [],
+    assets: sidecar ? [{ name: "source-candidate.json" }] : [],
   });
   expect(selectCandidateRelease([release(`v${version}-rc.2`), release(tag)])).toBe(tag);
   expect(() => selectCandidateRelease([release(tag, false)])).toThrow();
@@ -131,7 +103,6 @@ test("candidate installation publishes only its selected checkout and retires a 
       ...candidate,
       tag: selectedTag,
       version: selectedVersion,
-      runtime: { ...runtime, version: selectedVersion },
     };
   };
   const install = async (selectedVersion: string, withDocs: boolean) => {
@@ -146,13 +117,13 @@ test("candidate installation publishes only its selected checkout and retires a 
       fetcher: async (input) =>
         new Response(
           JSON.stringify(
-            String(input).endsWith("runtime-candidate.json")
+            String(input).endsWith("source-candidate.json")
               ? manifest
               : {
                   tag_name: manifest.tag,
                   draft: false,
                   prerelease: true,
-                  assets: [{ name: "runtime-candidate.json" }],
+                  assets: [{ name: "source-candidate.json" }],
                 },
           ),
         ),

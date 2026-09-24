@@ -65,7 +65,7 @@ describe("sandboxCommand", () => {
       readScope: "host-visible",
       writeScope: "declared-roots",
       workspaceAccess: "read-only",
-      protectedRoots: ["/workspace", "/git/common"],
+      protectedRoots: [resolve("/workspace"), resolve("/git/common")],
     });
     expect(Object.isFrozen(policy)).toBe(true);
     expect(Object.isFrozen(policy.temporaryRoots)).toBe(true);
@@ -148,8 +148,8 @@ describe("sandboxCommand", () => {
         TEMP: temporaryRoot,
         TMP: temporaryRoot,
       });
-      expect(isolated.args).toContain(temporaryRoot);
-      expect(isolated.args).toContain(compatibleRoot);
+      expect(isolated.args).toContain(realpathSync(temporaryRoot));
+      expect(isolated.args).toContain(realpathSync(compatibleRoot));
     } finally {
       rmSync(temporaryRoot, { recursive: true, force: true });
     }
@@ -356,7 +356,7 @@ describe("sandboxCommand", () => {
           expect(sandboxEntries).toContain("/usr/bin");
           expect(sandboxEntries).toContain("/bin");
           expect(sandboxEntries).not.toContain("/private/not-mounted");
-          expect(spec.args).toContain(root);
+          expect(spec.args).toContain(realpathSync(root));
         });
       } finally {
         rmSync(root, { recursive: true, force: true });
@@ -485,7 +485,9 @@ describe("sandboxCommand", () => {
       sandbox: { type: "native", readOnlyPaths: [sdk] },
       probe: () => ({ backend: "bubblewrap", mode: "fresh-proc" }),
     });
-    expect(spec.args.indexOf(workspace)).toBeLessThan(spec.args.indexOf(sdk));
+    expect(spec.args.indexOf(realpathSync(workspace))).toBeLessThan(
+      spec.args.indexOf(realpathSync(sdk)),
+    );
   });
 
   it("keeps a temp-contained read-only workspace closed and rejects scratch nested inside it", () => {
@@ -514,10 +516,12 @@ describe("sandboxCommand", () => {
         sandbox: { type: "native", filesystem: "workspace-read-only" },
         probe: () => ({ backend: "bubblewrap", mode: "fresh-proc" }),
       });
-      expect(bubblewrap.args.indexOf(compatibleTemporaryRoot)).toBeLessThan(
-        bubblewrap.args.indexOf(workspace),
+      expect(bubblewrap.args.indexOf(realpathSync(compatibleTemporaryRoot))).toBeLessThan(
+        bubblewrap.args.indexOf(realpathSync(workspace)),
       );
-      expect(bubblewrap.args.indexOf(workspace)).toBeLessThan(bubblewrap.args.indexOf(scratch));
+      expect(bubblewrap.args.indexOf(realpathSync(workspace))).toBeLessThan(
+        bubblewrap.args.indexOf(realpathSync(scratch)),
+      );
 
       const seatbelt = sandboxCommand({
         command: "true",

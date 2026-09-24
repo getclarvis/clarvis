@@ -56,7 +56,7 @@ describe("tree", () => {
 
   it("lists a symlinked directory with @ but does not traverse it", async () => {
     write(root, "realdir/inner.txt", "x");
-    makeSymlink(path.join(root, "realdir"), path.join(root, "linkdir"));
+    makeSymlink(path.join(root, "realdir"), path.join(root, "linkdir"), "dir");
     const r = await callTool("tree", {}, config);
     expect(r.text).toContain("linkdir@");
     expect(r.text.match(/inner\.txt/g)).toHaveLength(1);

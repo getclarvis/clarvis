@@ -433,7 +433,7 @@ export function readPluginManifestSource(dir: string): PluginManifestSource | { 
  *
  * Confinement is lexical. A symlink *inside* the plugin that points outside it is
  * still followed, which is the same open parent-directory weakness recorded for
- * workspace-confined writes; closing it needs descriptor-relative reads rather
+ * classified configuration writes; closing it needs descriptor-relative reads rather
  * than a stricter path check.
  */
 function companionPath(dirs: PluginDirs, declared: string): string | undefined {

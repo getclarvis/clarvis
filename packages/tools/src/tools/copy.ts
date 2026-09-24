@@ -2,7 +2,7 @@ import {
   isReviewedConfigurationPath,
   reviewedConfigurationModes,
 } from "../guard/authoring-path.ts";
-import { promises as fs } from "node:fs";
+import { fs } from "../lib/environment-fs.ts";
 import path from "node:path";
 import { fsyncDir, renameWithRetry, tmpPathFor } from "@clarvis/paths";
 import { ToolError, fsError } from "../errors.ts";
@@ -13,7 +13,7 @@ import type { ToolDef } from "./types.ts";
 
 /**
  * The `copy` tool: atomically copy a single regular file (binary-safe),
- * preserving its permission mode, confined to the workspace.
+ * preserving its permission mode under the selected environment policy.
  *
  * @remarks
  * A directory source is rejected (`not_a_file`) - use shell for directory copies.

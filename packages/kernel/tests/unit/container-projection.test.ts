@@ -231,11 +231,12 @@ describe("Container configuration projection", () => {
     const valid = project();
     expect(containerConfigurationSchema.safeParse(valid).success).toBe(true);
     for (const invalid of [
-      { ...valid, schemaVersion: 2 },
+      { ...valid, schemaVersion: 1 },
       { ...valid, providers: [] },
       { ...valid, defaults: { ...valid.defaults, endpoint: "hidden" } },
       { ...valid, loopPolicy: { ...valid.loopPolicy, CLARVIS_MCP_MAX_CONNECTIONS: 1 } },
       { ...valid, toolPolicy: { ...valid.toolPolicy, enabled: "true" } },
+      { ...valid, toolPolicy: { ...valid.toolPolicy, confine: true } },
       { ...valid, plans: { mode: "on" } },
       {
         ...valid,

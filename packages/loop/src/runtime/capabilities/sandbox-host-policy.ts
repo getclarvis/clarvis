@@ -90,11 +90,14 @@ export function resolveSandboxPath(
  */
 export function discoverSandboxToolchains(
   settings: SandboxSettings | undefined,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
 ): DiscoveredToolchain[] {
   const toolchains = settings?.toolchains;
   if (toolchains?.mode === "manual") return [];
   const excluded = new Set(toolchains?.exclude ?? []);
-  return discoverToolchains(toolchains?.include).filter((item) => !excluded.has(item.id));
+  return discoverToolchains(toolchains?.include, environment).filter(
+    (item) => !excluded.has(item.id),
+  );
 }
 
 /**

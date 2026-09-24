@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { ToolError } from "../errors.ts";
 import type { RuntimeConfig } from "../config.ts";
 import { sandboxCommand } from "../sandbox.ts";
+import type { AgentFilesystem } from "../agent-filesystem.ts";
 import { resolveShell, type ShellSpec } from "../shell.ts";
 import { ownProcessGroup } from "./process.ts";
 import { ownedTreeRunning, stopOwnedProcess } from "./process-owner.ts";
@@ -377,9 +378,23 @@ class LiveSession implements ExecutionSession {
 /** One run-local authority for shell processes and their bounded output. */
 export class ExecutionSessionManager {
   private readonly sessions = new Map<string, LiveSession>();
+  private filesystem: { identity: string; service: AgentFilesystem } | undefined;
   private closed = false;
 
   constructor(private readonly afterSpawn?: (child: ChildProcess) => void) {}
+
+  /** Admit exactly one filesystem service under the run's pinned policy. */
+  acquireFilesystem(identity: string, create: () => AgentFilesystem): AgentFilesystem {
+    if (this.closed) throw new ToolError("aborted", "Process admission is closed");
+    if (this.filesystem !== undefined) {
+      if (this.filesystem.identity !== identity)
+        throw new ToolError("denied", "Filesystem policy changed within the run");
+      return this.filesystem.service;
+    }
+    const service = create();
+    this.filesystem = { identity, service };
+    return service;
+  }
 
   async launch(request: LaunchRequest): Promise<ExecutionSession> {
     if (this.closed) throw new ToolError("aborted", "Process admission is closed");
@@ -401,6 +416,7 @@ export class ExecutionSessionManager {
       temporaryRoots: request.config.temporaryRoots,
       sandbox: request.config.sandbox,
       secretEnvNames: request.config.secretEnvNames,
+      filesystemPolicy: request.config.filesystemPolicy,
       shell: () => resolvedShell,
       logger: request.config.logger,
       forceBare: request.forceBare,
@@ -474,9 +490,10 @@ export class ExecutionSessionManager {
   async close(budgetMs = 1_200): Promise<boolean> {
     this.closed = true;
     const deadline = Date.now() + budgetMs;
-    const outcomes = await Promise.all(
-      [...this.sessions.values()].map((session) => session.stop(deadline)),
-    );
+    const outcomes = await Promise.all([
+      ...[...this.sessions.values()].map((session) => session.stop(deadline)),
+      ...(this.filesystem === undefined ? [] : [this.filesystem.service.close(deadline)]),
+    ]);
     return outcomes.every(Boolean);
   }
 }

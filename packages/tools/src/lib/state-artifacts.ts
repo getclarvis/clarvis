@@ -1,9 +1,9 @@
 import { lstatSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, normalize, relative, resolve, sep } from "node:path";
-import { configurationTarget, isSpillFile } from "@clarvis/paths";
+import { isSpillFile } from "@clarvis/paths";
 import { ToolError } from "../errors.ts";
 import type { RuntimeConfig } from "../config.ts";
-import { readFileOptions, type ReadFileOptions } from "./files.ts";
+import { readFileOptionsForPath, type ReadFileOptions } from "./files.ts";
 import { resolveFileToolPath } from "./paths.ts";
 export interface ReadableStateArtifact {
   readonly path: string;
@@ -18,7 +18,7 @@ export interface ReadableStateArtifact {
  * @returns The normalized artifact path, or `undefined` when the candidate is not
  *   a direct, regular, non-link spill in this workspace's local state directory.
  * @remarks This deliberately admits neither the state root nor its local directory.
- * The exact-file result permits a confined read without exposing prompt history, unrelated state, or
+ * The exact-file result permits a read without exposing prompt history, unrelated state, or
  * another workspace's state.
  */
 export function readableStateArtifactPath(
@@ -92,27 +92,11 @@ export function resolveReadableTextPath(
       path: input,
     });
   }
-  const target =
-    artifact === undefined
-      ? resolveFileToolPath(input, config)
-      : resolveFileToolPath(input, {
-          ...config,
-          temporaryRoots: [...config.temporaryRoots, artifact.path],
-        });
-  const admitted =
-    config.configurationRoots === undefined
-      ? undefined
-      : configurationTarget(config.configurationRoots, target);
-  const configurationRoot =
-    admitted === undefined ? [] : [config.configurationRoots![admitted.root]];
+  const target = artifact?.path ?? resolveFileToolPath(input, config);
   return {
     target,
     options: {
-      ...readFileOptions(config, [
-        ...configurationRoot,
-        ...(artifact === undefined ? [] : [artifact.path]),
-      ]),
-      ...(admitted === undefined ? {} : { noFollow: true, requireSingleLink: true }),
+      ...readFileOptionsForPath(config, target),
       ...(artifact === undefined
         ? {}
         : {

@@ -120,6 +120,7 @@ buildExecuteRunDeps(options: BuildRunDepsOptions): Promise<BuiltRunDeps>
 | `resolveHooks?` | `(ctx) => readonly HookConfig[] \| undefined` | host port for workspace hooks; omitted entirely means no hook ever runs (`packages/loop/src/runtime/build-run-deps.ts`) |
 | `hookCredentialNames?` | `() => readonly string[]` | forwarded to the hooks capability's env denylist |
 | `resolveGuard?`, `resolveSandbox?`, `resolveSecretNames?` | host ports for the tools capability |  |
+| `filesystemPlacement?` | explicit `"container"` for the native guest; Host/Sandbox are derived from host settings |  |
 | `builtins?` | `BuiltinCapabilityToggles` | `{ tools?, skills?, hooks? }`, each defaults **on** (`packages/loop/src/runtime/build-run-deps.ts`) |
 | `capabilities?` | `Capability[]` | embedder/host capabilities, registered **after** the built-ins |
 | `onConnectionEvent?` | `ConnectionEventSink` | pooled-connection health transitions |

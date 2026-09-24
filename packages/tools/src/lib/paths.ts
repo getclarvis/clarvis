@@ -1,94 +1,44 @@
 import path from "node:path";
 import { lstatSync, realpathSync } from "node:fs";
 import { ToolError, type ErrorCode } from "../errors.ts";
-import { configurationTarget, type ConfigurationRoot } from "@clarvis/paths";
+import { configurationRoots, configurationTarget, type ConfigurationRoot } from "@clarvis/paths";
 import type { RuntimeConfig } from "../config.ts";
-import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./log.ts";
 
 /**
- * Resolve a caller-supplied path to a normalized absolute path, optionally
- * proving it stays inside the workspace.
+ * Resolve a caller-supplied path to a normalized absolute path.
  *
  * @param input - an absolute path, or one relative to `workspaceRoot`.
  * @param workspaceRoot - the workspace directory relative paths resolve against.
- * @param confine - when `true`, reject a target that escapes the workspace root.
- * @param alsoAllow - further roots a confined target may legitimately sit under.
  * @returns the normalized absolute path.
- * @throws {@link ToolError} with code `path_escape` when `confine` is set and the
- *   resolved path lands outside every permitted root.
- * @remarks The confinement check follows symlinks via {@link canonicalize} and
- *   tolerates a not-yet-existing target (see {@link canonicalizeAllowingMissing}).
- *
- *   `alsoAllow` exists for one case and should not be widened casually: a tool
- *   result too large to inline is spilled to the workspace's *state* tree, which
- *   is outside the working tree by design, and the model is handed its path to
- *   read back. Only the read tools pass it, so the widening never admits a
- *   write. The content is output the model already produced and had truncated,
- *   so nothing new is exposed by letting it read the rest.
- *
- *   **The confinement it proves is a check, not a hold, and on the write path
- *   nothing re-establishes it.** What is returned is `abs` — the lexically
- *   normalized path — never the canonical form the check was performed against,
- *   so between this call and the `mkdir`, staging write or `rename` that
- *   follows, a concurrent process can replace a validated parent directory with
- *   a symlink or junction pointing outside the workspace, and the mutation
- *   lands there. That window is open for `mkdir`, `remove`, `move`, `copy` and
- *   for a `write_file` creating a new file.
- *
- *   The read path is not exposed the same way, and the asymmetry is deliberate
- *   rather than lucky: a content read re-proves confinement *after* `open`, by
- *   checking the opened descriptor's `dev`/`ino` identity
- *   (`assertOpenedFileConfined` in `lib/files.ts`), which is why
- *   discarding the canonical form here is harmless there and is not harmless
- *   here.
- *
- *   Closing it needs descriptor- or handle-relative mutation rooted at a trusted
- *   workspace directory — `openat`/`renameat` and the Windows equivalent —
- *   shared by every mutating tool. Narrowing the window by re-running
- *   `realpath`, or by checking the final component, does not close it, and
- *   atomic replacement does not imply confinement: an atomic `rename` into a
- *   swapped parent is atomically outside the workspace. The full threat model
- *   and the mitigations already rejected are in `specs/known-issues.md`; this
- *   remark exists so the decision is readable at the line that makes it rather
- *   than only in a document.
+ * @remarks `workspaceRoot` is a relative-path base, not an authorization boundary.
+ * The selected execution environment determines which absolute paths can be used.
  */
-export function resolvePath(
-  input: string,
-  workspaceRoot: string,
-  confine = false,
-  alsoAllow: readonly string[] = [],
-  logger: ToolsLogger = NOOP_TOOLS_LOGGER,
-): string {
-  const abs = path.isAbsolute(input) ? path.normalize(input) : path.resolve(workspaceRoot, input);
-  if (confine) assertWithinWorkspace(abs, workspaceRoot, input, undefined, alsoAllow, logger);
-  return abs;
+export function resolvePath(input: string, workspaceRoot: string): string {
+  return path.isAbsolute(input) ? path.normalize(input) : path.resolve(workspaceRoot, input);
 }
 
-/** Resolve a file-tool path through the host's exact configuration roots when supplied. */
+/** Resolve a file-tool path while preserving independent configuration protection. */
 export function resolveFileToolPath(
   input: string,
-  config: Pick<
-    RuntimeConfig,
-    "workspaceRoot" | "confineToWorkspace" | "temporaryRoots" | "logger" | "configurationRoots"
-  >,
+  config: Pick<RuntimeConfig, "workspaceRoot" | "stateRoot" | "configurationRoots">,
 ): string {
-  const abs = path.isAbsolute(input)
-    ? path.normalize(input)
-    : path.resolve(config.workspaceRoot, input);
-  const roots = config.configurationRoots;
-  if (roots === undefined)
-    return resolvePath(
-      input,
-      config.workspaceRoot,
-      config.confineToWorkspace,
-      config.temporaryRoots,
-      config.logger,
-    );
-  const canonical = canonicalizeAllowingMissing(abs);
-  if (canonical === undefined)
-    throw new ToolError("path_escape", `Path could not be safely resolved: ${input}.`, {
+  const abs = resolvePath(input, config.workspaceRoot);
+  if (isWithinRoots(abs, [config.stateRoot]))
+    throw new ToolError("path_escape", `Path is not a readable output artifact: ${input}`, {
       path: input,
     });
+  const roots =
+    config.configurationRoots ?? configurationRoots({ workspaceRoot: config.workspaceRoot });
+  const lexicalTarget = configurationTarget(roots, abs);
+  const canonical = canonicalizeAllowingMissing(abs);
+  if (canonical === undefined)
+    throw new ToolError(
+      lexicalTarget === undefined ? "io_error" : "path_escape",
+      `Path could not be safely resolved: ${input}.`,
+      {
+        path: input,
+      },
+    );
   const canonicalRoots = {} as Record<ConfigurationRoot, string>;
   for (const [root, directory] of Object.entries(roots)) {
     const resolved = canonicalizeAllowingMissing(directory);
@@ -96,7 +46,6 @@ export function resolveFileToolPath(
       throw new ToolError("path_escape", `Configuration root could not be resolved: ${root}.`);
     canonicalRoots[root as ConfigurationRoot] = resolved;
   }
-  const lexicalTarget = configurationTarget(roots, abs);
   const actualTarget = configurationTarget(canonicalRoots, canonical);
   if (lexicalTarget?.kind === "private" || actualTarget?.kind === "private")
     throw new ToolError("denied", `Configuration target is private: ${input}.`, { path: input });
@@ -123,23 +72,13 @@ export function resolveFileToolPath(
       }
     }
   }
-  const allowed = lexicalTarget === undefined ? [] : [roots[lexicalTarget.root]];
-  return resolvePath(
-    input,
-    config.workspaceRoot,
-    config.confineToWorkspace,
-    [...config.temporaryRoots, ...allowed],
-    config.logger,
-  );
+  return abs;
 }
 
 /** Skip private or redirected leaves before a recursive file tool observes them. */
 export function isAdmittedFileToolSearchPath(
   candidate: string,
-  config: Pick<
-    RuntimeConfig,
-    "workspaceRoot" | "confineToWorkspace" | "temporaryRoots" | "logger" | "configurationRoots"
-  >,
+  config: Pick<RuntimeConfig, "workspaceRoot" | "stateRoot" | "configurationRoots">,
 ): boolean {
   try {
     resolveFileToolPath(candidate, config);
@@ -180,7 +119,7 @@ function toPosix(p: string): string {
  * Windows only. macOS's default APFS volume is case-insensitive too, but
  * case-sensitive APFS exists, and folding there would accept `/ws/Foo` against
  * root `/ws/foo` where those are genuinely different directories - a real, if
- * narrow, confinement escape. Windows is unconditionally case-insensitive, so
+ * narrow, protected-root comparison error. Windows is unconditionally case-insensitive, so
  * the guarantee stays exact there.
  *
  * `toLowerCase`, never `toLocaleLowerCase`: the former is locale-independent, so
@@ -191,92 +130,22 @@ function forCompare(p: string, caseInsensitive: boolean): string {
   return caseInsensitive ? p.toLowerCase() : p;
 }
 
-/**
- * Assert that `abs` resolves to `workspaceRoot` or a path beneath it, comparing
- * canonicalized (symlink-resolved) forms so a symlink cannot smuggle a target
- * out of the workspace.
- *
- * @param abs - the absolute path to check.
- * @param workspaceRoot - the root the path must stay within.
- * @param input - the caller's original spelling, for the error message.
- * @param caseInsensitive - whether to fold case before comparing; defaults to
- *   the host filesystem's semantics and is injectable for tests, because the
- *   property only reproduces with paths whose case differs and those cannot be
- *   built as real directories on a case-sensitive host.
- * @throws {@link ToolError} with code `path_escape` when the target lies outside
- *   the workspace root.
- * @remarks
- * Folding happens *after* canonicalization, on both sides. That matters for a
- * not-yet-existing target: {@link canonicalizeAllowingMissing} re-appends the
- * caller's own spelling of the missing tail, which on Windows would otherwise be
- * compared against a root carrying the filesystem's canonical casing.
- *
- * The trailing separator in the prefix test is what keeps `C:\Projects\x` from
- * passing as a child of `C:\Proj`.
- *
- * Both sides resolve through {@link canonicalizeAllowingMissing}, not the
- * plain {@link canonicalize}, even though `workspaceRoot` is expected to
- * exist in practice. On Windows, a `canonicalize` that falls back to lexical
- * `path.normalize` (because the exact path is missing) never gains a drive
- * letter, while `canonicalizeAllowingMissing` walks up to an existing
- * ancestor and `realpath`s *that* - so the two resolvers can disagree on a
- * root that does not yet exist even though they agree on one that does. Using
- * the same resolver on both sides keeps them consistent in either case; for
- * an already-existing root it degrades to exactly one `canonicalize` call, so
- * there is no cost to the common path.
- *
- * **The refusal must not name the escape hatch.** This message becomes a tool
- * *result*, so its reader is the model, not the operator — and it used to end
- * with a parenthetical naming the environment variable that lifts it. An agent that wants to
- * finish its task reads that as the next step: export the variable in a `shell`
- * call, write it into a config file, or tell the user to. Handing the
- * workaround to the party the boundary exists to bound teaches bypassing a
- * security control as ordinary problem-solving, and a model that learns it here
- * will try it on the next confinement too.
- *
- * So the message states the fact, points at the productive move, and closes the
- * futile one: the setting is read when the toolset is constructed, before the
- * run, so nothing done inside a run can change it. Saying that is worth more
- * than silence — it stops the attempt rather than merely omitting the
- * instructions. The knob is real — `AgentToolsOptions.confineToWorkspace`, which
- * an operator running under `@clarvis/loop` reaches as
- * `CLARVIS_AGENT_TOOLS_CONFINE=0` — and stays documented where the person who
- * may legitimately set it will look: `packages/tools/README.md`.
- */
-export function assertWithinWorkspace(
+/** Canonical location fact for Guard risk analysis; this never grants file access. */
+export function isWithinRoots(
   abs: string,
-  workspaceRoot: string,
-  input: string,
+  roots: readonly string[],
   caseInsensitive = process.platform === "win32",
-  alsoAllow: readonly string[] = [],
-  logger: ToolsLogger = NOOP_TOOLS_LOGGER,
-): void {
+): boolean {
   const target = canonicalizeAllowingMissing(abs);
-  if (target !== undefined) {
-    const targetReal = forCompare(target, caseInsensitive);
-    for (const candidate of [workspaceRoot, ...alsoAllow]) {
-      const root = canonicalizeAllowingMissing(candidate);
-      if (root === undefined) continue;
-      const rootReal = forCompare(root, caseInsensitive);
-      if (targetReal === rootReal || targetReal.startsWith(rootReal + path.sep)) return;
-    }
+  if (target === undefined) return false;
+  const targetReal = forCompare(target, caseInsensitive);
+  for (const candidate of roots) {
+    const root = canonicalizeAllowingMissing(candidate);
+    if (root === undefined) continue;
+    const rootReal = forCompare(root, caseInsensitive);
+    if (targetReal === rootReal || targetReal.startsWith(rootReal + path.sep)) return true;
   }
-  logger.debug(
-    {
-      event: "tools.path_refused",
-      input,
-      reason: target === undefined ? "unresolvable" : "outside_root",
-      allow_roots_count: alsoAllow.length + 1,
-    },
-    "a tool path was refused; the call fails with path_escape and the model is told the boundary is fixed",
-  );
-  throw new ToolError(
-    "path_escape",
-    `Path escapes the workspace root: ${input}. Only paths inside the workspace are ` +
-      `available. This boundary is set before the run starts and cannot be changed from ` +
-      `within it.`,
-    { path: input },
-  );
+  return false;
 }
 
 /**
@@ -339,26 +208,24 @@ function canonicalize(p: string): string | undefined {
  *
  * @param abs - the absolute path to canonicalize.
  * @returns the real path of the resolvable prefix joined with the trailing
- *   segments, so a to-be-created file still confines correctly, or `undefined`
- *   when containment cannot be proven and the caller must refuse.
+ *   segments, so a to-be-created classified path can still be checked, or
+ *   `undefined` when the caller cannot prove its classification.
  * @remarks
  * The walk is driven by whether `realpath` *succeeds*, not by whether the path
  * exists. Those differ: a directory that exists but is mode `0o000` fails to
  * resolve on macOS, where `realpath(3)` must open the target, while resolving
  * fine on Linux, whose implementation only walks and `readlink`s. Falling back
  * to a lexical path in that case mixed an unresolved target against a resolved
- * root, and any workspace under a symlinked ancestor — every macOS temp
- * directory, since `/var` is a symlink to `/private/var` — then failed the
- * prefix test and reported `path_escape` for what was really a permission
- * error.
+ * root. A workspace under a symlinked ancestor — for example `/var` pointing
+ * to `/private/var` on macOS — can otherwise produce a false classification.
  *
  * Skipping a segment is only sound when that segment cannot redirect the path,
  * so every skipped segment is `lstat`ed and a symlink stops the walk with
  * `undefined`. Resolving less is otherwise *not* safe: `realpath` needs read
  * permission on a directory where creating a file needs only search and write,
- * so a link with mode `0o311` pointing out of the workspace fails to resolve
- * while `open` follows it perfectly well. Treating "unresolvable" as "inside"
- * would admit exactly that write. `lstat` is enough to decide it and needs only
+ * so a link with mode `0o311` may fail to resolve while `open` follows it.
+ * Treating "unresolvable" as an admitted classified path would allow a redirect.
+ * `lstat` is enough to decide it and needs only
  * search on the parent, which the walk has already proven by resolving it.
  */
 function canonicalizeAllowingMissing(abs: string): string | undefined {

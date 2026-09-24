@@ -161,83 +161,24 @@ would fit. Closing this also removed two assertions in
 and were in fact pinning the same discontinuity — the identical shell at 200 columns showed both
 hints on the unchanged code.
 
-## Workspace-confined writes are still vulnerable to a parent-directory TOCTOU
+## Classified configuration writes retain a parent-directory TOCTOU
 
-**Status: open; security boundary, native cross-platform primitive required.** Re-verified against the
-current tree. Nothing in the diagnosis below has moved: `packages/tools/src/lib/atomic.ts` and
-`packages/tools/src/lib/files.ts` are byte-identical to their state when this was first written, and
-the only change to `packages/tools/src/lib/paths.ts` since then is comment-only. What did change is
-recorded at the end.
+**Status: open; path-based mutation limitation.** The workspace root no longer confines ordinary
+file tools. Host follows OS permissions; Sandbox and Container enforce their environment policies.
+A narrower race remains for classified configuration mutations: after `resolveFileToolPath` checks
+lexical and canonical classification and the host reviews the intended effect, a concurrent process
+can replace a parent directory before `applyOpsAtomic` performs `mkdir`, staging, or `rename` by
+pathname. The host rechecks policy and effect before commit, but that does not pin the parent inode.
 
-`resolvePath(..., confineToWorkspace: true)` (`packages/tools/src/lib/paths.ts`) proves that a
-pathname resolves below the workspace at one instant. The mutating tools later pass that same pathname
-string to `mkdir`, staging, backup and `rename` operations. A process running concurrently can rename
-an already-validated parent directory and replace it with a symlink (or a Windows junction) to an
-outside directory in between. The final component may remain an ordinary file, so
-`assertNotSymlink(target)` (`packages/tools/src/lib/atomic.ts`) passes while the subsequent
-path-based operation follows the replaced parent and mutates outside the workspace.
-
-The mechanism is visible in the function's return: `resolvePath` computes `abs` lexically
-(`packages/tools/src/lib/paths.ts`), calls `assertWithinWorkspace` for its boolean verdict only,
-and returns `abs` — never the canonical form the check ran against.
-Threading that canonical form through would not have helped; the gap is that nothing re-establishes
-confinement after the check, not that the wrong string is carried.
-
-This affects the mutation shape used by `write_file`, `edit_file`/`multi_edit`, `apply_patch` and
-`replace`; `copy`, `move`, `remove` and `mkdir` use the same path-based boundary and belong in the same
-eventual fix. Concretely, every one of them still ends at a pathname:
-`packages/tools/src/lib/atomic.ts` stages with `fs.mkdir` then `fs.open(tmp, "wx")`;
-`writeAtomic` does `fs.mkdir` then `writeFileDurable(target, …)`;
-`commitWithRollback` renames by path. The tools reach those through
-`packages/tools/src/tools/write-file.ts`, `edit-file.ts` (`editFileLocked`, which
-`multi-edit.ts` also uses), `apply-patch.ts`, `replace.ts`, `remove.ts`,
-`copy.ts`, `move.ts` and `mkdir.ts`. The in-process locks in
-`packages/tools/src/lib/atomic.ts` (the map, `withFileLock`, `withFileLocks`)
-serialize Clarvis calls by pathname, but do not pin a filesystem object and cannot coordinate with a
-shell command or another process. Staging beside the destination makes replacement atomic for
-observers; it does not make the destination confined.
-
-Descriptor-backed file-content reads have a narrower primitive available: open the file, canonicalize
-the live path, compare its exact `dev`/`ino` identity with the opened descriptor, and then read from
-that descriptor. That is `assertOpenedFileConfined` (`packages/tools/src/lib/files.ts`, the
-identity comparison), reached from `readRawFile` whenever `readFileOptions`
- supplies the roots. It closes this file-open window on POSIX and Windows while keeping
-legitimate in-workspace symlinks. `write_file` also propagates a `path_escape` (and every other
-non-binary/non-size failure) from its optional prior-content read instead of treating the failure as
-merely "no diff" — `packages/tools/src/tools/write-file.ts`, whose `catch` re-throws anything
-that is not `is_binary` or `too_large`. A third piece of the same reasoning lives on the
-read side of grep: a confined directory search always uses the in-process scanner even when ripgrep is
-installed, because handing a mutable directory pathname to a subprocess would reopen this window
-(`packages/tools/src/lib/rg.ts`, reasoning). Those are real local fixes, but
-none of them secures the later mutation.
-
-Adding another `realpath`/`lstat` immediately before `rename` is not a fix. There is always one last
-gap between the final check and the path-based mutation; a post-write check detects the escape only
-after an outside file may already have been replaced. Rollback is path-based too and has the same race.
-Do not add such a recheck while claiming the boundary is closed.
-
-The durable fix needs a filesystem abstraction anchored to a trusted opened directory: on POSIX,
-descriptor-relative resolution and mutation (`openat`/`renameat`, preferably with the platform's
-beneath/no-symlink resolution guarantees); on Windows, the corresponding directory-handle-relative
-operations with reparse-point controls. Node/Bun's ordinary path-based `fs` API does not expose one
-portable primitive that supplies those guarantees, so this likely needs a small audited native layer
-and a shared implementation used by every mutating tool. Until then, `confineToWorkspace` must not be
-described as a strong write sandbox against a concurrently mutating workspace.
-
-**What has moved since this was first recorded.** Two things, neither of them behavioural.
-First, the decision is now readable beside the implementation: `resolvePath`'s `@remarks`
-(`packages/tools/src/lib/paths.ts`) carries the exposure, the read-side asymmetry and the
-rejected mitigations in the source itself, so an agent editing that function meets the threat model
-without opening this file. Second, the write-side race has one pinning test — `"aborts write_file when
-its prior read detects a parent-link race"`
-(`packages/tools/tests/integration/no-isolation.test.ts`), which swaps the validated parent for an
-outside symlink from inside the `fs.open` call and asserts `path_escape` with both the workspace file
-and the outside file untouched; its siblings pin the same race for `read_file` and
-`grep`. That test covers the prior *read*, not the write: `mkdir`, `remove`, `move` and `copy` call no
-`readFileOptions` at all, and **the residual write-side exposure remains unpinned by any test**. No
-descriptor- or handle-relative primitive was added anywhere in the monorepo — a search for
-`openat`/`renameat`/`dirfd`/`RESOLVE_BENEATH` across every package returns only the prose reference
-inside that TSDoc.
+The durable fix requires descriptor-relative mutation for all write handlers, with platform-specific
+handling of symlinks and Windows reparse points. Another `realpath` before a pathname-based rename
+would leave a final gap. Production: `resolveFileToolPath` in
+`packages/tools/src/lib/paths.ts`, `applyOpsAtomic` in `packages/tools/src/lib/atomic.ts`, and
+`createAuthoringMutationReview` in
+`packages/kernel/src/configuration/authoring-mutations.ts`. Test:
+`packages/kernel/tests/integration/file-tool-configuration.test.ts` covers review revalidation;
+it does not close this race. Ordinary external writes remain governed by their placement and OS
+permissions.
 
 ---
 
@@ -1842,10 +1783,10 @@ has ever run on.
 `packages/tools/src/lib/files.ts` returns early on `win32` with Node's portable `"r"` mode,
 dropping both `O_NONBLOCK` and `O_NOFOLLOW`. Losing `O_NONBLOCK` is harmless and the TSDoc says why — Windows filesystem paths expose no FIFOs. Losing `O_NOFOLLOW` is a real
 reduction: `noFollow` becomes advisory there. The generic spill reader compensates with a pinned
-inode check and post-open confinement in `packages/tools/src/lib/files.ts`; `file_stat` in
+inode and parent check in `packages/tools/src/lib/files.ts`; `file_stat` in
 `packages/tools/src/tools/file-stat.ts` still requires its own native Windows qualification. The TSDoc's
-"descriptor metadata remains the authority on every platform" is true only where a
-`confinement` is supplied.
+"descriptor metadata remains the authority on every platform" applies to descriptor-bound reads;
+classified configuration reads also recheck their canonical class.
 
 `packages/plan/src/file-repository.ts` composes the same flag word opens with it.
 The compensating controls are the `lstat` in `confined` and the `entry.isFile()` filter in
@@ -1854,7 +1795,7 @@ root-escape check is written *for* Windows and gated on a capability probe
 (`packages/plan/tests/integration/file-repository.test.ts`, used with `"junction"`) — so the gap report's "was not run on Windows" is half stale: it is written for Windows and
 has simply not executed since the triggers were disarmed.
 
-The fix is a handle-relative open — the same `openat`-shaped remedy the write-side TOCTOU entry above
+The fix is a handle-relative open — the same `openat`-shaped remedy the classified write-side TOCTOU entry above
 demands — and specifically **not** an `lstat` pre-check on Windows, which would convert a known
 absence into a believed protection. What *is* available from a POSIX host today is an assertion on
 the real read path that the flag word carries the bit. A pure test of the flag *arithmetic* proves
@@ -1862,29 +1803,13 @@ nothing: measured during the investigation pass and not re-run here, extracting 
 composition into a helper and asserting both arms left `@clarvis/plan` green at 266 passing while the
 call site was reduced to `constants.O_RDONLY`.
 
-### The separator half of the path checks belongs to the runner
+### Guard location facts on Windows need a native runner
 
-`assertWithinWorkspace` folds case only where the host filesystem ignores it —
-`caseInsensitive` defaults to `process.platform === "win32"`
-(`packages/tools/src/lib/paths.ts`) and `forCompare` applies it. The **fold
-itself is pinned** from Linux, because the parameter is injectable:
-`packages/tools/tests/integration/paths.test.ts` asserts both directions. What is not
-pinnable here is the drive-letter shape, and the reason is structural rather than neglect: the prefix
-test at `packages/tools/src/lib/paths.ts` uses `path.sep`, a host constant, so on a POSIX host the comparison builds
-`c:\proj/` and would pass or fail for the wrong reason. The test says so at
-`packages/tools/tests/integration/paths.test.ts`, and
-`packages/tools/tests/unit/powershell-dialect.test.ts` ("still extracts the paths a command
-touches") says the same about `PathFact.withinWorkspace`.
-
-Threading a path flavour through `canonicalizeAllowingMissing`
-(`packages/tools/src/lib/paths.ts`) and `resolvePath` to make this testable was considered
-and rejected: it replaces a host truth with a parameter
-across a confinement boundary, and a caller who could supply `caseInsensitive: false` on Windows
-would have the mirror of the escape `packages/tools/src/lib/paths.ts` already records. The honest position is that
-this one needs the runner.
-
-The gap report groups the `apply_patch` errno with these as runner-blocked. It is not, any more —
-see its own entry above.
+`isWithinRoots` folds case on Windows for Guard risk facts. Linux tests can exercise the injected
+case-fold comparison, but cannot prove Windows drive and separator behavior with the host `path.sep`.
+The tool-access decision itself belongs to the Host OS, native Sandbox, or Container guest, not to
+that Guard location fact. Production: `isWithinRoots` in `packages/tools/src/lib/paths.ts`.
+Test: `packages/tools/tests/integration/paths.test.ts`; native Windows qualification remains open.
 
 ### `backgroundSettleIsMeasurable` — the measurement, not the behaviour
 

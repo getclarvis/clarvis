@@ -106,6 +106,28 @@ async function toolEvents(id: string): Promise<ToolEvent[]> {
 }
 
 describe("built-in tools adapter integrations", () => {
+  it("reads a Host-visible absolute file outside the workspace through the tool adapter", async () => {
+    const root = workspace();
+    const target = join(import.meta.dir, "../../package.json");
+    const llm = new MockLLM({
+      script: [
+        { toolCalls: [{ id: "outside", name: "read_file", arguments: { path: target } }] },
+        { text: "done" },
+      ],
+    });
+    harness = await makeHarness({
+      llm,
+      mcpFactory: mockMCPFactory({}),
+      workspaceRoot: root,
+      agentTools: true,
+    });
+    const response = await harness.run(body(["read_workspace"]));
+    const result = (await toolEvents(response.execution_id)).find(
+      (event) => event.mcp_name === "read_file",
+    );
+    expect(result?.result).toContain("@clarvis/loop");
+  });
+
   it("wires edit/read effects and preserves unified diff metadata", async () => {
     const root = workspace();
     const llm = new MockLLM({

@@ -1,8 +1,8 @@
-import { promises as fs } from "node:fs";
+import { fs } from "../lib/environment-fs.ts";
 import path from "node:path";
 import { configurationRoots, configurationTarget } from "@clarvis/paths";
 import { fsError } from "../errors.ts";
-import { resolveFileToolPath } from "../lib/paths.ts";
+import { isAdmittedFileToolSearchPath, resolveFileToolPath } from "../lib/paths.ts";
 import { mapLimit, statDirectory, STAT_CONCURRENCY } from "../lib/files.ts";
 import type { ToolDef } from "./types.ts";
 
@@ -57,10 +57,18 @@ export const listDir: ToolDef = {
       const dir = await fs.opendir(target);
       try {
         for await (const entry of dir) {
-          const classified = configurationTarget(roots, path.join(target, entry.name));
+          const candidate = path.join(target, entry.name);
+          const classified = configurationTarget(roots, candidate);
+          const brokenLink =
+            entry.isSymbolicLink() &&
+            (await fs.stat(candidate).then(
+              () => false,
+              (error: NodeJS.ErrnoException) => error.code === "ENOENT",
+            ));
           if (
             classified?.kind === "private" ||
-            (classified !== undefined && entry.isSymbolicLink())
+            (classified !== undefined && entry.isSymbolicLink()) ||
+            (!brokenLink && !isAdmittedFileToolSearchPath(candidate, config))
           )
             continue;
           if (entries.length >= config.maxTraversalEntries) {

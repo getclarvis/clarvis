@@ -39,7 +39,6 @@ describe("runtime config", () => {
       regexScanBudgetMs: 5000,
       ripgrepAvailable: false,
       readOnly: false,
-      confineToWorkspace: true,
       temporaryRoots: [],
       skillExecutionRoots: [],
       gitMetadataPaths: [],
@@ -52,7 +51,6 @@ describe("runtime config", () => {
     const config = resolveConfig({
       workspaceRoot: root,
       readOnly: true,
-      confineToWorkspace: false,
       maxOutputBytes: 4096,
       maxShellOutputBytes: 2048,
       maxFileBytes: 8192,
@@ -73,7 +71,6 @@ describe("runtime config", () => {
 
     expect(config).toMatchObject({
       readOnly: true,
-      confineToWorkspace: false,
       maxOutputBytes: 4096,
       maxShellOutputBytes: 2048,
       maxFileBytes: 8192,

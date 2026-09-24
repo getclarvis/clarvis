@@ -55,10 +55,10 @@ describe("read_files — batch read", () => {
     expect(r.text).toMatch(/sub[^\n]*not_a_file/);
   });
 
-  it("surfaces an escaping path as a per-entry path_escape", async () => {
+  it("surfaces an absent parent-relative path as a per-entry not_found", async () => {
     const r = await callTool("read_files", { paths: ["../secret"] }, config);
     expect(r.isError).toBe(false);
-    expect(r.text).toMatch(/\.\.\/secret[^\n]*path_escape/);
+    expect(r.text).toMatch(/\.\.\/secret[^\n]*not_found/);
   });
 
   it("reads UTF-16 content", async () => {

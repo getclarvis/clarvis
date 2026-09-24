@@ -168,6 +168,24 @@ four panels named above. Test: `packages/code/tests/integration/defaults-panel-r
 `packages/code/tests/integration/sandbox-config-render.test.tsx`, and
 `packages/code/tests/integration/run-controls-render.test.tsx`.
 
+The Sandbox overview renders `SandboxInspection.filesystem` so the selected read scope and write
+posture remain visible beside backend status. That host observation wins in the effective access
+line when an untrusted workspace requests weaker settings than the global Sandbox; editable rows
+continue to show the requested values. Run controls and Doctor use the same observation for
+effective placement, and the quick picker marks that placement as current. The Isolation picker states Host OS access, Sandbox
+host-visible reads with declared writes, and Container guest-mount access. Production:
+`SandboxConfigPanel` in
+[SandboxConfigPanel.tsx](../../packages/code/src/views/config/SandboxConfigPanel.tsx) and
+`isolationPlacementLines` in
+[isolation.ts](../../packages/code/src/features/run/isolation.ts). Test:
+[sandbox-config-render.test.tsx](../../packages/code/tests/integration/sandbox-config-render.test.tsx)
+(`host inspection wins when an untrusted workspace requests weaker Sandbox access`)
+and [run-controls-render.test.tsx](../../packages/code/tests/integration/run-controls-render.test.tsx)
+(`run controls follow host Sandbox inspection over a weaker workspace merge`).
+The quick picker is tested by
+[isolation-review-picker-render.test.tsx](../../packages/code/tests/integration/isolation-review-picker-render.test.tsx)
+(`the isolation picker marks the host-inspected Sandbox as current`).
+
 `MemoryConfigPanel` adopts the same overview shape as `Sandbox`: the effective summary line, then
 one row per control, with no intermediate `settings (<scope>)` / `session (this client)` headings —
 the rows already name their own origin, and the headings spent the height a short terminal needed.

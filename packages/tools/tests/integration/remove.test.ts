@@ -72,9 +72,9 @@ describe("remove", () => {
     },
   );
 
-  it("rejects a path escaping the workspace with path_escape", async () => {
+  it("reports a missing parent-relative path using the OS error", async () => {
     const r = await callTool("remove", { path: "../a.txt" }, config);
-    expect(r.json.error).toBe("path_escape");
+    expect(r.json.error).toBe("not_found");
   });
 
   it("ignores out-of-schema extra fields", async () => {

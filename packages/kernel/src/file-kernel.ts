@@ -75,7 +75,7 @@ import {
 } from "./guard/resolver.ts";
 import { createGuardSessionAllowlist } from "./guard/guard-elicit.ts";
 import type { InProcessKernel } from "./kernel.ts";
-import { createSandboxPolicyResolver } from "./sandbox/policy.ts";
+import { createSandboxPolicyResolver, pinSandboxPolicy } from "./sandbox/policy.ts";
 import type { KernelOwnershipMode } from "./application/scope-policy.ts";
 import {
   createKernelEnvironment,
@@ -501,6 +501,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     opts.workspaceRoot,
     environment.values,
   );
+  const runSandboxPolicy = pinSandboxPolicy(sandboxPolicy);
 
   const loadGuardSettings = (): GuardSettings => {
     const snapshot = configStore.readSettings();
@@ -518,7 +519,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       ...(merged.runtime !== undefined
         ? { runtime: merged.runtime as GuardSettings["runtime"] }
         : {}),
-      sandbox: sandboxPolicy.resolve(),
+      sandbox: runSandboxPolicy(),
       ...(Array.isArray(merged.providers)
         ? { providers: merged.providers as ProviderConfig[] }
         : {}),
@@ -800,7 +801,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
           }),
         };
       },
-      resolveSandbox: () => sandboxPolicy.resolve(),
+      resolveSandbox: runSandboxPolicy,
       resolveSecretNames: loadSecretNames,
       resolveHooks: loadHooks,
       hookCredentialNames: managedSecretNames,

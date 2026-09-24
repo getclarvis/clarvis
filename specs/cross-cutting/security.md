@@ -1,4 +1,4 @@
-# Path confinement, secrets, redaction, environment filtering and trust
+# Filesystem policy, secrets, redaction, environment filtering and trust
 
 > Implemented at `packages/...`. Every claim below is anchored to a file and a named symbol or test. Open questions
 > are collected in the final section.
@@ -25,8 +25,8 @@ This subsystem is the set of mechanisms that bound what an agent-driven run can 
 run's machinery is allowed to *emit*. It has five largely independent halves, all reachable from
 code and none of them a sandbox:
 
-1. **Path confinement** — every coding tool resolves a caller-supplied path through one function,
-   `resolvePath`, which delegates the confined branch to the canonical containment proof
+1. **Filesystem policy** — every coding file tool and shell command uses the selected environment policy;
+   `workspaceRoot` anchors relative paths and Guard location facts
    (`packages/tools/src/lib/paths.ts`) before the tool touches the target. Two read tools additionally admit the
    workspace's machine-state root, because that is where an oversized tool result is spilled and the
    model is handed the path to read it back (`packages/tools/src/config.ts`).
@@ -61,8 +61,7 @@ code and none of them a sandbox:
    `packages/kernel/src/extension-profiles/extension-profile-manager.ts`).
 
 Two properties recur across all five and are worth stating once. First, refusals aimed at the **model**
-never name the escape hatch: `assertWithinWorkspace`'s message states the boundary and closes the futile
-move, and an architecture test scans every tool string for remediation phrasing
+never name a bypass in a refusal, and an architecture test scans every tool string for remediation phrasing
 (`packages/tools/src/lib/paths.ts`, `packages/tools/tests/architecture/no-bypass-hints.test.ts`).
 Second, what a filter withholds is **counted, never named** — the hook filter returns per-rule counts
 and the log line says so explicitly (`packages/hooks/src/env.ts`,
@@ -127,37 +126,24 @@ ones Clarvis itself already puts in the body, so the hatch needs a way to make a
 is the only spelling JSON allows for that in a settings file — the acknowledged cost is that an operator
 cannot force a literal `null` through this same hatch.
 
-### 2.4 Path confinement — `@clarvis/tools`
+### 2.4 Filesystem policy — `@clarvis/tools`
 
-| Export | Signature | Behaviour |
-| --- | --- | --- |
-| `resolvePath` | `(input, workspaceRoot, confine = false, alsoAllow: readonly string[] = [], logger) => string` (`packages/tools/src/lib/paths.ts`) | normalizes/resolves, then asserts when `confine` |
-| `assertWithinWorkspace` | `(abs, workspaceRoot, input, caseInsensitive = process.platform === "win32", alsoAllow = [], logger) => void` (`packages/tools/src/lib/paths.ts`) | throws `ToolError("path_escape")` |
-| `displayPath` | `(absPath, workspaceRoot) => string` (`packages/tools/src/lib/paths.ts`) | `"."`, a forward-slashed relative path, or the absolute path when outside |
-| `readFileOptions` | `(config, alsoAllow = []) => ReadFileOptions` (`packages/tools/src/lib/files.ts`) | returns `{}` when confinement is off |
-| `assertNotSymlink` | `(target) => Promise<void>` (`packages/tools/src/lib/atomic.ts`) | `ToolError("invalid_input")` on an existing symlink |
+`resolvePath(input, workspaceRoot)` resolves relative paths and preserves absolute paths;
+it does not grant access. `resolveFileToolPath` rejects private classified configuration and
+unadmitted state paths, and verifies configuration roots and links. `isWithinRoots` supplies
+canonical location facts to Guard. `readFileOptionsForPath` binds classified reads to their
+opened descriptor. Production: `resolvePath`, `resolveFileToolPath`, and `isWithinRoots` in
+`packages/tools/src/lib/paths.ts`; `readFileOptionsForPath` in
+`packages/tools/src/lib/files.ts`. Test: `packages/tools/tests/integration/paths.test.ts`,
+`packages/tools/tests/integration/no-isolation.test.ts`, and
+`packages/kernel/tests/integration/file-tool-configuration.test.ts`.
 
-Configuration fields (`packages/tools/src/config.ts`):
-
-| Field | Default | File |
-| --- | --- | --- |
-| `confineToWorkspace: boolean` | `true` | defaulted |
-| `stateRoot: string` | `workspaceStatePaths(workspaceRoot).root` | — |
-| `temporaryRoots: readonly string[]` | `[]`; each entry must already be a directory; first root supplies the command temp environment | `RuntimeConfig`, `resolveConfig` |
-| `readOnly: boolean` | `false` | — |
-| `secretEnvNames?: readonly string[]` | absent | — |
-
-The run-level knob is the environment variable `CLARVIS_AGENT_TOOLS_CONFINE`, default `true`
-(`packages/capability/src/env.ts`), threaded into the toolset at
-`packages/loop/src/runtime/capabilities/tools.ts`.
-
-Its sibling schema entry is the deployment-wide ceiling `CLARVIS_AGENT_TOOLS_MAX_GRANT: z.enum(["none",
-"read", "edit", "exec"]).default("edit")` (`packages/capability/src/env.ts`). `agentToolCaps(grants,
-ceiling)` (`packages/loop/src/runtime/tools/builtin/grants.ts`) intersects an agent profile's
-requested grants (`read_workspace`/`edit_workspace`/`run_commands`) against this ceiling's rank —
-`none < read < edit < exec` — so the ceiling caps but never widens what a profile can reach; it is
-consulted at `agentToolsActive` (`packages/loop/src/runtime/tools/builtin/grants.ts`) and again per agent scope in
-`packages/loop/src/runtime/capabilities/tools.ts`.
+`ResolvedFilesystemPolicy` selects Host, Sandbox, or Container for both commands and file tools.
+The grant ceiling (`CLARVIS_AGENT_TOOLS_MAX_GRANT`) separately gates read, edit, and exec surfaces.
+Production: `resolveFilesystemPolicy` in `packages/tools/src/sandbox.ts` and `agentToolCaps` in
+`packages/loop/src/runtime/tools/builtin/grants.ts`. Test:
+`packages/tools/tests/integration/sandbox.test.ts` and
+`packages/loop/tests/unit/grants.test.ts`.
 
 ### 2.4.1 Git repository environment filtering — `@clarvis/paths`
 
@@ -289,6 +275,7 @@ file mode `0o600` and directory mode `0o700` (`packages/paths/src/atomic.ts`,
   "OPENAI_API_KEY": "sk-def"
 }
 ```
+
 (shape from `packages/kernel/tests/integration/secret-store.test.ts`)
 
 `SecretSnapshot` is `{ values: Record<string,string>; error?: string }` (`packages/kernel/src/secrets/secret-store.ts`); a
@@ -304,9 +291,7 @@ path to a **non-empty array** of `{ fingerprint: /^sha256:[0-9a-f]{64}$/, approv
 ```json
 {
   "workspaces": {
-    "/home/me/project": [
-      { "fingerprint": "sha256:<64 hex>", "approved_at": "<iso-datetime>" }
-    ]
+    "/home/me/project": [{ "fingerprint": "sha256:<64 hex>", "approved_at": "<iso-datetime>" }]
   }
 }
 ```
@@ -377,49 +362,64 @@ fallback.
 
 ## 4. Behavior
 
-### 4.1 Confining one tool path
+### 4.1 Resolving one tool path
 
-`resolvePath` (`packages/tools/src/lib/paths.ts`):
+`resolvePath` returns the normalized absolute path: absolute input stays absolute and relative
+input is resolved from the selected workspace. `resolveFileToolPath` then checks the classified
+configuration roots and the selected state root. It refuses private configuration and redirected
+classified paths; ordinary external paths proceed to the environment's filesystem policy and OS
+permission checks. `canonicalizeAllowingMissing` checks existing prefixes so a symlink cannot
+quietly redirect a classified target. Production: `resolvePath` and `resolveFileToolPath` in
+`packages/tools/src/lib/paths.ts`. Test: `packages/tools/tests/integration/paths.test.ts` and
+`packages/tools/tests/integration/no-isolation.test.ts`.
 
-1. `path.isAbsolute(input) ? path.normalize(input) : path.resolve(workspaceRoot, input)`.
-2. If `confine`, call `assertWithinWorkspace(abs, workspaceRoot, input, undefined, alsoAllow, logger)`. Note `caseInsensitive` is passed `undefined`, so the parameter default
-   `process.platform === "win32"` applies.
-3. Return the **non-canonicalized** absolute path. The canonical form computed during the check is
-   discarded; the tool then operates on the lexical path.
+### 4.2 Environment authority and independent protected roots
 
-`assertWithinWorkspace` :
+Host file tools and commands use OS permissions. Sandbox uses one frozen native policy for
+both, and Container file tools and commands see the guest mounts. The workspace is the relative
+path base, not a filesystem boundary. `read_file` and `read_files` recognize an exact regular,
+non-link spill in the selected state root and bind it to its opened inode; other selected state
+paths stay private. Guard receives workspace and temporary-root location facts, including a
+narrow fact for the exact spill, without granting access. Production: `resolveReadableTextPath`
+in `packages/tools/src/lib/state-artifacts.ts`, `readRawFile` in
+`packages/tools/src/lib/files.ts`, and `buildGuardContext` in
+`packages/tools/src/guard/context.ts`. Test:
+`packages/tools/tests/unit/state-artifact-access.test.ts`,
+`packages/tools/tests/integration/guard-dispatch.test.ts`, and
+`packages/tools/tests/integration/sandbox.test.ts`.
 
-1. `target = canonicalizeAllowingMissing(abs)`.
-2. For each candidate root in `[workspaceRoot...alsoAllow]`, canonicalize it the *same* way, fold
-   both sides for case if required, and accept on equality or on `targetReal.startsWith(rootReal +
-   path.sep)`. The trailing separator is what stops `C:\Projects\x` passing as a child of
-   `C:\Proj`.
-3. Otherwise log `tools.path_refused` with `reason: "unresolvable" | "outside_root"` and an
-   `allow_roots_count`, never the roots themselves, and throw
-   `ToolError("path_escape", …, { path: input })`.
-
-`canonicalizeAllowingMissing` walks up from `abs` until `realpathSync.native` succeeds,
-re-appending the skipped tail. Two branches matter:
-
-| Condition | Result |
-| --- | --- |
-| `realpath` succeeds at `cur` | `path.join(real, ...tail)` |
-| `cur` is itself a symlink and unresolvable | `undefined` → refusal |
-| the walk reaches the filesystem root | `path.normalize(abs)` |
-
-The `isSymbolicLink` stop is load-bearing and is pinned: a link out of the workspace whose target is
-mode `0o311` cannot be `realpath`ed but *can* be written through, so treating unresolvable as inside
-would admit that write (`packages/tools/tests/integration/paths.test.ts`). Conversely a
-merely-unreadable child (`0o000` directory) is admitted so its own errno surfaces.
-
-### 4.2 Which tools confine, and against which roots
-
-Native file tools confine paths to the workspace and configured temporary roots. `read_file` and `read_files` additionally admit only an exact generic output spill in the current workspace's local state; `resolveReadableTextPath` checks a regular non-link file and `readRawFile` binds the opened descriptor to its admitted identity. Shell command analysis admits configured temporary roots and selected skill execution roots, but no state artifact. An absolute command head under a platform executable root is admitted for that occurrence only. Production: `resolveReadableTextPath` in `packages/tools/src/lib/state-artifacts.ts`, `readRawFile` in `packages/tools/src/lib/files.ts`, and `buildGuardContext` in `packages/tools/src/guard/context.ts`. Test: `packages/tools/tests/unit/read-confinement-allowance.test.ts`, `packages/tools/tests/integration/guard-dispatch.test.ts`, and `packages/tools/tests/unit/guard-context.test.ts`.
+Native Sandbox commands may read host-visible files, including files outside the workspace that
+the process identity could read. Bubblewrap binds the host root read-only before narrower writable
+overlays; Seatbelt allows broad file reads while restricting writes. The workspace and declared
+protected roots remain read-only when selected, including below a writable system temp. This is a
+write and process boundary, not a confidentiality boundary for host files. Container sees only the
+guest mounts, and Host follows OS permissions plus Guard review. Credential environment values are
+withheld from native and bare shell paths. Production: `resolveFilesystemPolicy`, `sandboxCommand`
+and `minimalEnv` in `packages/tools/src/sandbox.ts`; `createAgentToolsCapability` in
+`packages/loop/src/runtime/capabilities/tools.ts`. Test:
+`packages/tools/tests/integration/sandbox.test.ts` (`uses the same broad-read write-limited policy
+for shell and shell_session with an external cwd`, `enforces the native sandbox against real host
+resources`) and `packages/tools/tests/integration/shell-escalation.test.ts`.
+The same native policy encloses all model file handlers, including search subprocesses and
+descriptor reads, in one run-owned service. The host keeps only the reviewed coordinator for
+classified configuration batches; it rechecks path class, workspace write posture and protected
+roots before a host commit. Protocol loss and unavailable native backends fail closed. This does
+not make host-visible reads confidential. Production: `SandboxAgentFilesystem` in
+`packages/tools/src/filesystem-service.ts`, `runFilesystemWorker` in
+`packages/tools/src/filesystem-worker.ts`, and `createAuthoringMutationReview` in
+`packages/kernel/src/configuration/authoring-mutations.ts`. Test:
+`packages/tools/tests/integration/filesystem-service.test.ts` and
+`packages/kernel/tests/integration/file-tool-configuration.test.ts`.
+The File Kernel keeps an enabled global Sandbox as the floor for an untrusted workspace's weaker
+settings, including read-only workspace, network, passed environment, selected toolchains and
+protected paths. Production: `effectiveSandboxSettings` and `configuredPaths` in
+`packages/kernel/src/sandbox/policy.ts`. Test: `keeps the global Sandbox floor when an untrusted
+workspace asks for weaker access` in `packages/kernel/tests/integration/sandbox-policy.test.ts`.
 
 The loop allocates one short, account-owned scratch root per run and adds compatible system temporary roots for access. The shell environment names the run scratch first. After owned command trees physically exit, the loop removes only the scratch it allocated. Directories created by command text, including an explicit `mktemp -d`, remain the command's responsibility. Uncertain physical termination retains scratch. Production: `allocateShortTemporaryRoot` in `packages/paths/src/short-temporaries.ts`, `createAgentToolsCapability` in `packages/loop/src/runtime/capabilities/tools.ts`, and `ExecutionSessionManager.close` in `packages/tools/src/lib/execution-session.ts`. Test: `packages/loop/tests/integration/tools.test.ts` and `packages/loop/tests/integration/command-guard-wiring.test.ts`.
 
 Skill execution roots are canonical directories exposed only by selected skills whose host root
-opted into helper execution. They widen command path and `cwd` admission, while the dispatcher
+opted into helper execution. They widen command path analysis, while the dispatcher
 denies every native file mutation beneath them. A native sandbox mounts them read-only; without one,
 `shell` remains ordinary secret-scrubbed host processes, so the root is not an
 immutability claim. Production: `packages/skills/src/registry.ts`,
@@ -436,7 +436,7 @@ other machine state, or another workspace's spill. Production: `createToolSpill`
 `packages/loop/src/runtime/context/tool-spill.ts`, `resolveReadableTextPath` in
 `packages/tools/src/lib/state-artifacts.ts`, `readRawFile` in `packages/tools/src/lib/files.ts`, and
 `buildGuardContext` in `packages/tools/src/guard/context.ts`. Test:
-`packages/tools/tests/unit/read-confinement-allowance.test.ts` and
+`packages/tools/tests/unit/state-artifact-access.test.ts` and
 `packages/tools/tests/integration/guard-dispatch.test.ts`.
 
 Recognized spill writers use `FILE_MODE` (`0600` on POSIX), and bounded global housekeeping repairs
@@ -446,37 +446,19 @@ older recognized spill modes before applying the 24-hour age policy. Production:
 `packages/tools/tests/integration/output.test.ts`, `packages/loop/tests/integration/tool-spill.test.ts`,
 and `packages/paths/tests/integration/housekeeping.test.ts`.
 
-### 4.3 Post-open re-validation on a read
+### 4.3 Post-open validation on protected reads
 
-`readFileOptions(config, alsoAllow)` yields a `confinement` only when `confineToWorkspace` is set
-(`packages/tools/src/lib/files.ts`). When present, after `open()` the reader runs
-`assertOpenedFileConfined` :
-
-1. `fs.realpath(target)`, `handle.stat({ bigint: true })`, `fs.stat(canonical, { bigint: true })`.
-2. `assertWithinWorkspace(canonical, workspaceRoot, relForError, undefined, alsoAllow)`.
-3. Compare `dev`/`ino` between the descriptor and the path; a mismatch throws
-   `ToolError("path_escape", "Path changed while it was being opened: …")`.
-
-All bytes are then read from that descriptor with `position: null`, so a later path swap cannot redirect the read.
-
-Goal artifact evidence reuses the exported bounded descriptor reader with only the selected
-workspace admitted, capped at 16 MiB. Model references do not select paths; paths come from the
-user's declared criteria. Current digest validation is a snapshot, not a promise that a workspace
-file can never change afterward. Completion still requires the host's final revalidation and
-durable settlement. Production: `createGoalEvidenceSource` in
-[evidence.ts](../../packages/kernel/src/goals/evidence.ts).
-Test: artifact mutation and outside-workspace directory-link refusal in
-[goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts).
-
-Call sites of `readFileOptions`: `packages/tools/src/lib/rg.ts`, `packages/tools/src/lib/rg.ts`, `packages/tools/src/tools/diff.ts`,
-`packages/tools/src/tools/read-file.ts`, `packages/tools/src/tools/read-files.ts`, `packages/tools/src/tools/read-image.ts`,
-`packages/tools/src/tools/apply-patch.ts`, `packages/tools/src/tools/edit-file.ts`, `packages/tools/src/tools/replace.ts`,
-`packages/tools/src/tools/write-file.ts`.
-
-`grep` additionally refuses the ripgrep path for a **confined directory** search and uses the
-in-process walker instead, because handing a mutable directory pathname to a subprocess reopens the
-window (`packages/tools/src/lib/rg.ts`); a single-file ripgrep search is fed
-through stdin so the child never reopens the pathname.
+`readRawFile` opens one descriptor, requires a regular file and enforces a byte ceiling before and
+during the read. Exact spill reads compare the opened inode and parent to the pinned artifact.
+Classified configuration reads recheck the canonical class and opened inode. Host-owned Goal
+evidence uses its declared artifact root and an opened-inode check. Ordinary Host reads follow OS
+permissions without a workspace containment check. A single-file ripgrep search consumes the
+bounded descriptor snapshot; directory grep checks each candidate in process. Production:
+`readRawFile`, `readFileOptionsForPath`, and `assertOpenedArtifact` in
+`packages/tools/src/lib/files.ts`; `grepSearch` in `packages/tools/src/lib/rg.ts`. Test:
+`packages/tools/tests/unit/state-artifact-access.test.ts`,
+`packages/tools/tests/integration/grep.test.ts`, and
+`packages/kernel/tests/integration/goal-runtime-port.test.ts`.
 
 ### 4.4 Mutating writes
 
@@ -493,16 +475,13 @@ through stdin so the child never reopens the pathname.
 The batch form `applyOpsAtomic` pre-flights every op through `validateTargets`, which calls `assertNotSymlink` on each rename source, rename destination and
 create/modify target.
 
-**The gap.** Neither path re-validates the *parent chain* after the confinement check. Confinement is
-proved lexically/canonically at `resolvePath`; `mkdir`, staging (`fs.open(tmp, "wx")`) and the
-`rename` that publishes it all take the pathname again. The only mutating tool whose race is observably
-closed is one that reads the file first: `write_file` reads pre-existing content through
-`readTextFile(…, readFileOptions(config))` (`packages/tools/src/tools/write-file.ts`), and that
-read's descriptor check is what aborts the operation. The pinning test says so in its own title:
-*"aborts write_file when its prior read detects a parent-link race"*
-(`packages/tools/tests/integration/no-isolation.test.ts`). A `write_file` creating a **new**
-file takes no such read—the read is inside `if (existed)`—and `mkdir`,
-`remove`, `move` and `copy` never call `readFileOptions` at all.
+Classified mutation still uses path-based preflight followed by pathname operations. A parent
+may be replaced between review and commit; the host revalidates policy and effect immediately
+before commit, but descriptor-relative mutation would be needed to eliminate the full race.
+Production: `resolveFileToolPath` in `packages/tools/src/lib/paths.ts`, `applyOpsAtomic` in
+`packages/tools/src/lib/atomic.ts`, and `createAuthoringMutationReview` in
+`packages/kernel/src/configuration/authoring-mutations.ts`. Test:
+`packages/kernel/tests/integration/file-tool-configuration.test.ts`.
 
 ### 4.5 Building a hook subprocess's environment
 
@@ -648,7 +627,8 @@ and a generic command approval is never treated as
 configuration approval. The file kernel gives an editing entry agent that
 host-owned `MutationReview`: it prepares the complete atomic batch, validates each recognized
 document, captures every target and exact revision, reviews all effects together, and calls
-`withOperatorWrite` only for exact successful workspace target bytes. Private destinations remain denied;
+`withOperatorWrite` only for exact successful workspace target bytes. It rechecks live operator
+authority inside the final write callback after review. Private destinations remain denied;
 global paths are admitted only through the entry agent's file resolver. Selected skill packages stay
 immutable to native file tools, and command execution retains its separate shell/sandbox boundary
 rather than becoming an alternate writer. Production: `protectWorkspaceConfiguration` and `dispatch` in
@@ -657,7 +637,8 @@ rather than becoming an alternate writer. Production: `protectWorkspaceConfigura
 `packages/kernel/src/configuration/authoring-mutations.ts`. Test: the authoring review case in
 `packages/tools/tests/integration/api.test.ts` and the batch, drift, and trust cases in
 `packages/kernel/tests/integration/file-tool-configuration.test.ts` and
-`packages/kernel/tests/integration/workspace-trust.test.ts`.
+`packages/kernel/tests/integration/workspace-trust.test.ts`; post-review revocation is pinned in
+`packages/kernel/tests/unit/authoring-mutations.test.ts`.
 
 An explicit approve/revoke is refused with `conflict` while any run is active, before the trust file
 is changed. At an idle boundary, `resolveActive` recomposes the selected workspace Extension Profile (and
@@ -749,62 +730,44 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 
 ## 5. Invariants
 
-1. **A confined tool path is compared canonically on both sides.** `assertWithinWorkspace` resolves the
-   target *and* every candidate root through `canonicalizeAllowingMissing` before comparing, so a
-   symlink cannot smuggle a target out and a symlinked workspace root does not produce false escapes.
-   Production `packages/tools/src/lib/paths.ts`; pinned
-   `packages/tools/tests/integration/paths.test.ts`.
-2. **A path whose containment cannot be proven is refused, not admitted.** When the walk hits a symlink
-   it cannot resolve, `canonicalizeAllowingMissing` returns `undefined` and the caller throws.
-   Production `packages/tools/src/lib/paths.ts`; pinned
-   `packages/tools/tests/integration/paths.test.ts` (a `0o311` link target).
-3. **The prefix test requires a separator.** A sibling directory whose name merely starts with the
-   root's is rejected. Production `packages/tools/src/lib/paths.ts`; pinned
-   `packages/tools/tests/integration/paths.test.ts`.
-4. **Case folding is Windows-only.** `forCompare` folds only when `caseInsensitive`, whose default is
-   `process.platform === "win32"`. Production `packages/tools/src/lib/paths.ts`; pinned
-   `packages/tools/tests/integration/paths.test.ts`.
-5. **Only the two read tools widen confinement to the state root; every native file tool may use the
-   complete configured temporary-root policy, and command tools may additionally address exact
-   host-approved skill execution roots.** In the standalone library that policy defaults empty; the
-   product loop supplies owner-only run scratch followed by the host environment temp and POSIX
-   `/tmp`. State machinery therefore remains read-only, while host-native temp output is usable by
-   later calls. System parents are access-only and selected skill roots are denied to native mutation.
-   Command analysis additionally recognizes only an absolute segment head below a platform system
-   executable root or configured sandbox runtime root as the executable. The exception is attached
-   to that occurrence rather than its raw path string, so an identical later operand remains outside.
-   The policy-facing command name is reduced to its basename and Windows `PATHEXT` suffixes are
-   removed, so neither an absolute spelling nor `.exe`/`.com`/`.bat`/`.cmd` bypasses an extensionless
-   deny entry.
-   Production: `packages/tools/src/tools/read-file.ts`, `read-files.ts`, every other `resolvePath(`
-   call site, `packages/tools/src/lib/files.ts`, `packages/tools/src/guard/context.ts`,
-   `packages/tools/src/sandbox.ts` (`systemTemporaryRoots`),
-   `packages/loop/src/runtime/capabilities/tools.ts` (`accessibleTemporaryRoots`,
-   `ownedTemporaryRoots`), `packages/tools/src/lib/system-executables.ts`, and
-   `packages/tools/src/core.ts`. Pinned by
-   `packages/tools/tests/integration/api.test.ts`, `guard-dispatch.test.ts`, and
-   `packages/loop/tests/integration/command-guard-wiring.test.ts`.
-6. **A model-facing refusal never names the bypass.** No runtime string under `packages/tools/src`
-   matches the remediation shape. Production `packages/tools/src/lib/paths.ts`; pinned
-   `packages/tools/tests/architecture/no-bypass-hints.test.ts`, with the guard's own sensitivity
-   asserted and its specificity.
-7. **A read revalidates the opened object against the roots and against the descriptor's identity.**
-   Production `packages/tools/src/lib/files.ts`; pinned end-to-end for `read_file` and `grep`
-   at `packages/tools/tests/integration/no-isolation.test.ts`.
-8. **A confined directory grep never runs ripgrep.** Production `packages/tools/src/lib/rg.ts`;
-   pinned `packages/tools/tests/integration/no-isolation.test.ts` (which explicitly builds the
-   config with `ripgrepAvailable: true`).
-9. **No mutating tool writes through a symlink.** Production `packages/tools/src/lib/atomic.ts`,
-   invoked; pinned
-   `packages/tools/tests/integration/symlink.test.ts`.
-10. **Workspace-confined mutation still has an open parent-directory TOCTOU.** Confinement is decided at
-    `resolvePath` and the subsequent `mkdir`/`open("wx")`/`rename` all re-take the pathname
-    (`packages/tools/src/lib/atomic.ts`). The one mutating tool with an observed
-    mitigation gets it from its *prior read*, not from the write —
-    `packages/tools/src/tools/write-file.ts`, and the test's own title says
-    *"aborts write_file when its prior read detects a parent-link race"*
-    (`packages/tools/tests/integration/no-isolation.test.ts`). `mkdir`, `remove`, `move` and `copy`
-    call no `readFileOptions` at all. **Unpinned as a defect** — nothing asserts the residual exposure.
+1. **Workspace is a relative base, not a file-access boundary.** Ordinary external paths follow
+   Host OS permissions, Sandbox native policy, or Container guest mounts. Production:
+   `resolvePath` in `packages/tools/src/lib/paths.ts` and `resolveFilesystemPolicy` in
+   `packages/tools/src/sandbox.ts`. Test: `packages/tools/tests/integration/no-isolation.test.ts`
+   and `packages/tools/tests/integration/sandbox.test.ts`.
+2. **Private configuration remains denied to model file reads and writes.** Canonical and lexical
+   classification must agree. Production: `resolveFileToolPath` in
+   `packages/tools/src/lib/paths.ts`. Test:
+   `packages/kernel/tests/integration/file-tool-configuration.test.ts`.
+3. **A classified read binds the admitted root and target to its opened inode.** Production:
+   `readFileOptionsForPath` and `assertOpenedConfiguration` in
+   `packages/tools/src/lib/files.ts`. Test:
+   `packages/tools/tests/integration/no-isolation.test.ts` (parent and root swaps) and
+   `packages/kernel/tests/integration/file-tool-configuration.test.ts`.
+4. **Case folding of Guard location facts is Windows-only.** Production: `isWithinRoots` in
+   `packages/tools/src/lib/paths.ts`. Test: `packages/tools/tests/integration/paths.test.ts`.
+5. **An exact generic spill is the only readable selected state artifact.** Its parent and inode
+   are pinned; a shell receives no implicit state mount or grant. Production:
+   `resolveReadableTextPath` in `packages/tools/src/lib/state-artifacts.ts` and `readRawFile` in
+   `packages/tools/src/lib/files.ts`. Test:
+   `packages/tools/tests/unit/state-artifact-access.test.ts` and
+   `packages/tools/tests/integration/guard-dispatch.test.ts`.
+6. **A model-facing refusal never names a bypass.** Production: `resolveFileToolPath` in
+   `packages/tools/src/lib/paths.ts`. Test:
+   `packages/tools/tests/architecture/no-bypass-hints.test.ts`.
+7. **A read uses one regular-file descriptor and a byte ceiling.** Production: `readRawFile` in
+   `packages/tools/src/lib/files.ts`. Test: `packages/tools/tests/integration/read-files.test.ts`.
+8. **Directory grep checks candidates in process; single-file ripgrep uses a descriptor snapshot.**
+   Production: `grepSearch` in `packages/tools/src/lib/rg.ts`. Test:
+   `packages/tools/tests/unit/observability.test.ts` and
+   `packages/tools/tests/contract/regex-dialect.test.ts`.
+9. **Native mutation refuses symlink targets.** Production: `assertNotSymlink` in
+   `packages/tools/src/lib/atomic.ts`. Test: `packages/tools/tests/integration/symlink.test.ts`.
+10. **Classified mutation still has a parent-directory TOCTOU.** Review revalidation narrows this
+    window but does not replace descriptor-relative operations. Production:
+    `createAuthoringMutationReview` in `packages/kernel/src/configuration/authoring-mutations.ts`
+    and `applyOpsAtomic` in `packages/tools/src/lib/atomic.ts`. Test:
+    `packages/kernel/tests/integration/file-tool-configuration.test.ts`.
 11. **`sanitizeToolPayload` never applies the coarse fallback.** Production
     `packages/capability/src/sanitize.ts`; pinned
     `packages/capability/tests/unit/sanitize.test.ts`.
@@ -953,30 +916,12 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/capability/src/env.ts`, `packages/loop/src/runtime/tools/builtin/grants.ts`,
     consulted and `packages/loop/src/runtime/capabilities/tools.ts`; pinned
     `packages/loop/tests/unit/grants.test.ts`.
-48. **`resolvePath` never returns the canonical form it computes for the confinement check — every
-    call site, without exception, gets the lexical (un-symlink-resolved) path back.** `resolvePath`
-    itself only ever returns its local `abs` (`path.normalize`/`path.resolve` on the caller's input),
-    on both the confined and unconfined branches (`packages/tools/src/lib/paths.ts`); the
-    canonical form `assertWithinWorkspace` derives via `canonicalizeAllowingMissing`
-    lives entirely inside that function's own stack frame, is compared only as a boolean
-    prefix/equality test, and is never returned, assigned to an outer variable, or passed to
-    a caller — `canonicalize` and `canonicalizeAllowingMissing` both lack the `export` keyword
-    (`packages/tools/src/lib/paths.ts`), so no code outside this one file, and nothing the
-    package's own barrel (`packages/tools/src/index.ts`, which does not re-export `./lib/paths` at
-    all) could hand a consumer, could reach that value even if it wanted to. Every tool that turns a `resolvePath` result
-    into a filesystem operation — `readRawFile` (`packages/tools/src/lib/files.ts`), and the
-    `mkdir`/`open("wx")`/`rename` calls in `packages/tools/src/lib/atomic.ts` — takes
-    that same lexical string, never a canonicalized one. For reads this is not a gap: item 7 above
-    describes the second, independent canonicalization `assertOpenedFileConfined` performs on the
-    *opened* file (`packages/tools/src/lib/files.ts`), tying the confinement re-check to the
-    descriptor's `dev`/`ino` rather than to any string `resolvePath` could have carried forward — so a
-    canonical path threaded through from `resolvePath` would have been redundant with, and no safer
-    than, a second post-open canonicalization done fresh. For writes, item 10 already records that no
-    such post-open re-check exists, which is the residual TOCTOU — a defect in what happens *after*
-    `resolvePath`, not evidence that `resolvePath` was supposed to return something else. **Resolved**:
-    the "lexical, discarded-canonical" shape is not a leftover of the confinement check design across
-    every call site with no exception found; this closes one of the ambiguities
-    the retired gap report counted as fully resolved.
+48. **`resolvePath` returns a normalized lexical path.** Its `workspaceRoot` argument anchors
+    relative spelling only. Access is checked by the selected environment and independent
+    classified-resource protections. Production: `resolvePath` and `resolveFileToolPath` in
+    `packages/tools/src/lib/paths.ts`. Test:
+    `packages/tools/tests/integration/paths.test.ts` and
+    `packages/tools/tests/integration/no-isolation.test.ts`.
 49. **A Clarvis-owned Git command that selects its own repository cannot inherit another repository's
     routing, index, object store, shallow/graft/replace state, or local config.** The shared helper
     removes the complete set returned by `git rev-parse --local-env-vars`, case-insensitively, while
@@ -1041,7 +986,7 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 
 57. **Skill helper execution is explicit, package-scoped and never automatic.** Only a root carrying
     host execution approval yields an `executionRoot`, the value exposed for one skill is that
-    skill's own directory, and selecting it merely configures command confinement. Native mutations
+    skill's own directory, and selecting it contributes command review facts. Native mutations
     are refused; a native sandbox mounts it read-only; an unsandboxed command retains normal host
     rights and is not mislabeled isolated. Production: `packages/skills/src/registry.ts`,
     `packages/loop/src/runtime/build-run-deps.ts`, `packages/tools/src/config.ts`, and
@@ -1171,10 +1116,9 @@ Production: `createAuthoringMutationReview` and `prepareConfigurationFileMutatio
 
 | Condition | Handler | Outcome |
 | --- | --- | --- |
-| Confined path outside every root | `packages/tools/src/lib/paths.ts` | `ToolError("path_escape")`, `{ path: input }`; message states the boundary is fixed before the run |
-| Containment unprovable (unresolvable symlink) | `packages/tools/src/lib/paths.ts` → | same `path_escape`, logged with `reason: "unresolvable"` |
-| Path swapped between check and open | `packages/tools/src/lib/files.ts` | `path_escape`, `"Path changed while it was being opened"` |
-| `realpath`/`stat` failure during that check | `packages/tools/src/lib/files.ts` | mapped through `fsError` |
+| Ordinary external path unavailable to the selected environment | `resolveFilesystemPolicy` in `packages/tools/src/sandbox.ts` and OS/guest access | `not_found` or `io_error`; no workspace `path_escape` |
+| Private or redirected classified configuration path | `resolveFileToolPath` in `packages/tools/src/lib/paths.ts` | `denied` or `path_escape`; no bytes exposed |
+| Pinned artifact replaced before open | `readRawFile` in `packages/tools/src/lib/files.ts` | `path_escape`; no replacement bytes exposed |
 | Native mutation below a selected skill execution root | `protectSkillPackages` in `packages/tools/src/core.ts` | `path_escape` before guard/handler; no mutation runs |
 | Container protected mount has a symlink, wrong kind or missing source | `prepareRuntimeMounts` and `assertMountSources` | `RuntimeLaunchError("unsupported_policy")` before Container start |
 | Container `internet` network policy requested | `connectLocalContainerKernel` rejects launch as `unsupported` (`"Container requires Docker/Podman with none or outbound network"`); no engine is asked to substitute ordinary outbound access | `packages/kernel/src/hosting/connect-local-container.ts` (`connectLocalContainerKernel`); `packages/kernel/tests/unit/connect-local-container.test.ts` |
@@ -1266,21 +1210,13 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
 
 ## 8. Open questions
 
-- ~~**Why the parent-directory TOCTOU is left open.**~~ **Recorded, behaviour
-  unchanged.** The code showed the shape of the exposure and the read-side mitigation, and one test
-  title named the race, but nothing in `packages/**` stated a decision, a threat model or a rejected
-  fix — so the residual write-side exposure was derived from the *absence* of a `readFileOptions`
-  call rather than read off any statement. `resolvePath`'s `@remarks` now carries it
-  (`packages/tools/src/lib/paths.ts`): that what it returns is the lexically normalized `abs` and
-  never the canonical form the check ran against; that the window is open for
-  `mkdir`/`remove`/`move`/`copy` and for a `write_file` creating a new file; that the read path is
-  not exposed the same way because a content read re-proves confinement after `open` via the
-  descriptor's `dev`/`ino` identity, which is exactly why discarding the canonical form is harmless
-  there and not here; and that closing it needs descriptor-relative mutation (`openat`/`renameat` and
-  the Windows equivalent) shared by every mutating tool, because neither re-running `realpath` nor
-  atomic replacement closes it — an atomic `rename` into a swapped parent is atomically outside the
-  workspace. **The defect itself is unchanged and still open**; what changed is that the decision is
-  readable in the owning source instead of only in `specs/known-issues.md`.
+- **Classified mutation parent-directory races remain open.** The host reviews the intended effect
+  and revalidates before commit, but path-based create, rename and delete operations can encounter a
+  changed parent afterward. Closing the race needs descriptor-relative mutation across all native
+  write handlers. Production: `applyOpsAtomic` in `packages/tools/src/lib/atomic.ts` and
+  `createAuthoringMutationReview` in `packages/kernel/src/configuration/authoring-mutations.ts`.
+  Test: `packages/kernel/tests/integration/file-tool-configuration.test.ts` exercises review
+  revalidation; it does not prove that the remaining race is closed.
 - **Why `capability` executables inherit the whole kernel environment** while stdio MCP children get a
   fixed safe base. **Still open, but now visible at the implementation branch that makes the choice**: the divergence
   is recorded in `processEnvironment`'s own TSDoc, naming both counter-examples — the MCP child's
@@ -1302,7 +1238,7 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
   redactor over-matching costs legibility, while dropping an environment variable over-matching
   breaks the hook, which is why this one is separator-anchored and carries `auth`, `credentials` and
   `session` (`packages/hooks/src/env.ts`).
-  Whether the duplication is still wanted for the *behavioural* reason (`SECRET_NAME` is
+  Whether the duplication is still wanted for the _behavioural_ reason (`SECRET_NAME` is
   separator-anchored and adds `auth`/`session`/thirteen prefixes; `SENSITIVE_KEY` is an unanchored
   substring test) is not stated.
 - **`metadata.sensitivity` is never enforced, `secrets.set` carries its value in cleartext, and the
@@ -1315,7 +1251,7 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
   wiring one without the other is the incoherent state. Behaviour is unchanged and building the seam
   stays the owner's decision.
 - **Whether `keys.json` values are ever redacted on the wire.** `secrets.set`'s params object contains
-  the raw value; the redaction path (`toEnvelope`) applies only to *errors*, not to request params.
+  the raw value; the redaction path (`toEnvelope`) applies only to _errors_, not to request params.
   Whether a request frame is ever logged is a question for [cross-cutting/observability.md](observability.md).
 - **Unpinned rules found while surveying** (each already flagged in §5): the read-only nature of the
   the write-side TOCTOU residue (10), the bound-before-sanitize ordering (20),
@@ -1324,11 +1260,6 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
   of workspace trust (36), the empty-array risk value (37), the "unreadable store means unapproved"
   degradation (39), the realpath trust key (40), the env-only log knobs (45), and the `internal`
   collapse of a non-`ToolError` throw (46).
-- **`ALLOW_OUTSIDE_WORKSPACE` does not exist as a knob.** The name survives only in the architecture
-  test's positive/negative fixtures (`packages/tools/tests/architecture/no-bypass-hints.test.ts`). The real controls are
-  `AgentToolsOptions.confineToWorkspace` (`packages/tools/src/config.ts`) and
-  `CLARVIS_AGENT_TOOLS_CONFINE` (`packages/capability/src/env.ts`). Whether the historical variable
-  was ever read is not determinable from the current tree.
 ## Operator evidence and effect interpretation
 
 Workspace text, synthetic seeds, assistant output, commands and justification are never authority

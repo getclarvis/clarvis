@@ -25,7 +25,7 @@ SLA, but reports will be triaged as capacity allows and coordinated disclosure i
 
 ## Scope and trust boundaries
 
-Reports are especially useful when they concern workspace confinement, unsafe command execution,
+Reports are especially useful when they concern filesystem policy or classified configuration, unsafe command execution,
 credential exposure, untrusted MCP/plugin/hook content, release or updater integrity, network trust,
 or a bypass of an explicit approval boundary.
 

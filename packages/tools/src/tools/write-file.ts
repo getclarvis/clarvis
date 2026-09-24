@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { fs } from "../lib/environment-fs.ts";
 import { ToolError, fsError } from "../errors.ts";
 import { readFileOptionsForPath } from "../lib/files.ts";
 import { resolveFileToolPath, displayPath } from "../lib/paths.ts";

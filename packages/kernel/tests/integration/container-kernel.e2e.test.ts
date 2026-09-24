@@ -82,6 +82,41 @@ async function inspectBaseImageId(reference: string): Promise<`sha256:${string}`
   return id as `sha256:${string}`;
 }
 
+async function assertGuestFilesystem(namespace: string, hostOnlyPath: string): Promise<void> {
+  const running = Bun.spawn(
+    [
+      engine!,
+      "ps",
+      "--filter",
+      `label=io.clarvis.state.namespace=${namespace}`,
+      "--filter",
+      "label=io.clarvis.role=kernel",
+      "--format",
+      "{{.ID}}",
+    ],
+    { stdin: "ignore", stdout: "pipe", stderr: "pipe" },
+  );
+  const ids = (await new Response(running.stdout).text()).trim().split("\n").filter(Boolean);
+  if ((await running.exited) !== 0 || ids.length !== 1)
+    throw new Error("qualification could not identify the running Container guest");
+  const check = Bun.spawn(
+    [
+      engine!,
+      "exec",
+      ids[0]!,
+      "/bin/sh",
+      "-c",
+      'test ! -e "$1" && test "$(cat /workspace/visible.txt)" = "same host workspace" && printf guest > /workspace/guest-write.txt && if printf denied > /workspace/.git/denied.txt 2>/dev/null; then exit 41; fi',
+      "clarvis-guest-check",
+      hostOnlyPath,
+    ],
+    { stdin: "ignore", stdout: "pipe", stderr: "pipe" },
+  );
+  const detail = (await new Response(check.stderr).text()).trim();
+  if ((await check.exited) !== 0)
+    throw new Error(`qualification guest filesystem check failed: ${detail}`);
+}
+
 test.skipIf(!enabled)(
   "real engine boots the compiled full Kernel, shares the workspace and preserves the namespace",
   async () => {
@@ -92,6 +127,8 @@ test.skipIf(!enabled)(
     const globalDir = join(root, "operator");
     await Promise.all([mkdir(workspaceRoot), mkdir(globalDir)]);
     await writeFile(join(workspaceRoot, "visible.txt"), "same host workspace\n");
+    const hostOnlyPath = join(root, "host-only.txt");
+    await writeFile(hostOnlyPath, "must stay outside guest mounts\n");
     await writeFile(join(workspaceRoot, ".env"), "CLARVIS_OWNER=autoloaded\n");
     await writeFile(join(workspaceRoot, "bunfig.toml"), 'preload = ["./sentinel.ts"]\n');
     await writeFile(
@@ -190,6 +227,12 @@ test.skipIf(!enabled)(
       expect((await first.client.files.readFile("visible.txt")).content).toBe(
         "same host workspace\n",
       );
+      const namespace = runtime?.kind === "container" ? runtime.state_namespace : undefined;
+      expect(namespace).toMatch(/^[a-f0-9]{64}$/);
+      stage = "guest-filesystem";
+      await assertGuestFilesystem(namespace!, hostOnlyPath);
+      expect(await readFile(join(workspaceRoot, "guest-write.txt"), "utf8")).toBe("guest");
+      stage = "first-state";
       expect((await first.client.plans.read(seededPlan.id)).retention).toBe("keep");
       await first.client.plans.setRetention(seededPlan.id, "discard");
       await first.client.sessions.save({
@@ -211,8 +254,6 @@ test.skipIf(!enabled)(
         code: "conflict",
       });
 
-      const namespace = runtime?.kind === "container" ? runtime.state_namespace : undefined;
-      expect(namespace).toMatch(/^[a-f0-9]{64}$/);
       stage = "first-close";
       await first.close();
       first = undefined;
@@ -289,6 +330,7 @@ test.skipIf(!enabled)(
         scenarios: [
           "compiled-kernel-boot",
           "workspace-bind-and-control-mask",
+          "host-unmounted-path-invisible-and-guest-mount-write-posture",
           "concurrent-writer-refusal",
           "container-to-host-plan-memory-session-context-continuity",
           "same-namespace-reconnect",

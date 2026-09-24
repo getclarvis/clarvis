@@ -81,6 +81,7 @@ export {
   ensureWorkspaceStateDir,
   isSpillFile,
   workspaceStatePaths,
+  workspaceStatePathsFromRoot,
   type WorkspaceStatePaths,
 } from "./workspace-state.ts";
 

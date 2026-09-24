@@ -37,7 +37,7 @@ a 21,000-character regression ceiling; that is not a provider token count.
 - Discovery: directory listing, tree, glob, grep and diff.
 - Project-wide regular-expression replacement.
 - Shell execution and run-owned sessions with per-call sandbox escalation. A command can yield a session ID, then `shell_session` polls, stops, or lists it within the same run and agent.
-- Read-only and workspace-confined surfaces.
+- Read-only and environment-governed surfaces.
 - A guard contract and shell analysis helpers for approval policies.
 - Bounded in-memory shell output with per-stream cursors and omitted-byte counts. Generic oversized results from other tools may spill to workspace state; shell output does not.
 
@@ -63,13 +63,13 @@ no manager or scratch.
 
 `apply_patch` recommends the model-familiar `*** Begin Patch` envelope with `Update File`, `Add
 File`, `Delete File`, and optional `Move to` blocks. It also accepts raw `---`/`+++` unified diffs.
-Both forms share the same confinement, complete path locking, UTF-8 checks, and atomic multi-file
+Both forms share classified-path admission, complete path locking, UTF-8 checks, and atomic multi-file
 commit; a failed hunk changes nothing. The guard extracts paths from both grammars, including move
 destinations. Numbered model-envelope hunks honor their old-file coordinates after adjusting for
 earlier hunks, with a three-line tolerance for small drift; this also makes coordinate-only
 insertions and duplicate context deterministic.
 
-A later `read_file` or `read_files` call may read an exact generic overflow artifact in the current workspace's machine-local state. The file must be regular and non-link, and its identity is checked again after opening. No shell command receives state access through this exception. Prompt history, old sidecars, other state files, and another workspace's spills remain outside confinement. POSIX `/dev/null` is treated as the null device,
+A later `read_file` or `read_files` call may read an exact generic overflow artifact in the current workspace's machine-local state. The file must be regular and non-link, and its identity is checked again after opening. No shell command receives state access through this exception. Prompt history, old sidecars, and other selected state files remain private. POSIX `/dev/null` is treated as the null device,
 not as an escaping host file, so ordinary output-discard redirections do not create false denials.
 The POSIX command analyzer matches `eval`/`env`/`source` and friends at the effective command head
 so arguments such as `cat source` stay decidable, does not treat `NAME=value` assignment-only
@@ -81,18 +81,16 @@ the same bound feeds `read_file`, batch reads and the in-process grep path. FIFO
 cannot park the event loop and a concurrent path replacement cannot turn a validated small file into
 an unbounded allocation.
 
-The root library exports `readRawFile`, `ReadFileOptions` and `ReadConfinement` for trusted host
-consumers that need the same bounded descriptor read. Callers supply their byte ceiling and explicit
-confinement policy. The kernel uses it to hash declared goal artifacts inside the selected workspace;
+The root library exports `readRawFile` and `ReadFileOptions` for trusted host
+consumers that need the same bounded descriptor read. Callers supply their byte ceiling and, for
+Goal evidence, the selected artifact root. The kernel uses it to hash declared goal artifacts inside the selected workspace;
 this library operation does not add a model tool or grant access to host state roots.
 
 The same descriptor-first rule covers ignore sources and `file_stat`. Ignore files cap at 1 MiB. Command sessions use bounded in-memory pipes and create no control or output files.
 Non-regular inputs are ignored or rejected according to the reading surface's error contract.
 Single-file ripgrep searches receive the already-bounded snapshot on stdin, so the subprocess never
-reopens a pathname after validation. Confined directory searches always use the in-process scanner:
-passing the mutable directory pathname to a subprocess would let a concurrent parent-link swap escape
-the read boundary. Directory ripgrep is available only when the host explicitly disables workspace
-confinement.
+reopens a pathname after validation. Directory searches always use the in-process scanner so each discovered path receives
+classified-path admission. A single-file ripgrep search uses a bounded descriptor snapshot.
 
 Discovery and mutation have independent pre-materialization ceilings. One walk
 retains at most 50,000 entries; `list_dir`, `tree`, `glob`, in-process grep and
@@ -110,7 +108,6 @@ import { createAgentTools } from "@clarvis/tools";
 
 const agentTools = createAgentTools({
   workspaceRoot: process.cwd(),
-  confineToWorkspace: true,
 });
 
 console.log(agentTools.listTools().map((tool) => tool.name));
@@ -121,30 +118,35 @@ const result = await agentTools.callTool("read_file", {
 await agentTools.close();
 ```
 
-`workspaceRoot` must name an existing directory. Tools are confined to it by
-default. Use `readOnly: true` to expose only non-mutating tools.
+`workspaceRoot` must name an existing directory and anchors relative paths. Host file access
+follows OS permissions; Sandbox and Container access follows the run filesystem policy.
+Use `readOnly: true` to expose only non-mutating tools.
 
-`sandbox: { type: "native" }` selects Bubblewrap on Linux and Seatbelt on macOS. Both backends apply
-the configured workspace read/write posture, read-only runtime roots, minimal environment, writable
-run scratch, and host/denied networking; their kernel primitives are not identical. Required
+`sandbox: { type: "native" }` selects Bubblewrap on Linux and Seatbelt on macOS. Both backends allow
+reads from host-visible files and limit writes to the selected workspace, admitted Git metadata and
+temporary roots, subject to `workspace-read-only` and nested read-only roots. The run's immutable
+`ResolvedFilesystemPolicy` supplies the same placement and paths to `shell` and `shell_session`.
+All file tools run in one run-owned child under that same native policy; a missing backend or lost
+child fails the call closed. Host executes file calls locally and Container executes them inside the
+guest. Required
 isolation fails closed when the selected backend cannot apply its policy.
+The native service sends the host-selected state root as data; `@clarvis/paths` rebuilds the
+complete workspace state paths inside the worker, including owner and spill builders.
+Command Review asks before a Sandbox shell command touches a path outside the workspace; the native
+backend still enforces its write roots. Guard review continues to receive location facts for paths outside the workspace.
 `availability: "optional"` is accepted on stored settings and treated as required. Other platforms
 currently have no native backend. Toolchain inventory is passive: it resolves executable paths and
 install roots but never launches discovered entrypoints for version probes, so merely opening host
 diagnostics cannot trigger an operating-system installer or tool initialization.
-Seatbelt admits both authored and canonical spellings of the read-only macOS system aliases it
-depends on. In particular, `/etc` resolves to `/private/etc`, while `/var` plus the narrow
-authored/canonical `var/select` and `var/db` trees let Apple's installed Git shim resolve both
-`developer_dir` and `xcode_select_link`; denying those existence/readlink checks makes Apple
-incorrectly request Command Line Tools even when they are installed. The opt-in real-host canary
-first resolves both selectors inside the generated profile and only then executes
-`/usr/bin/git --version`; a selector regression therefore fails before Apple's Git shim can request
-the graphical installer. With `network: "host"`, Seatbelt also admits only the authored and
-canonical `mDNSResponder` socket paths required by the macOS resolver. `network: "none"` admits
-neither and still denies every network operation. The real-host canary tests host/denied networking
-against a local listener, independently of public DNS or registry availability. Native POSIX
+Seatbelt uses both authored and canonical path spellings in its write rules, so macOS aliases such
+as `/var` to `/private/var` cannot reopen a protected path. Broad reads let Apple's installed Git
+shim inspect `developer_dir` and `xcode_select_link`; the opt-in real-host canary resolves these
+selectors before executing `/usr/bin/git --version`. `network: "none"` still denies every network
+operation, even though filesystem reads include resolver sockets. The real-host canary tests
+host/denied networking against a local listener, independently of public DNS or registry
+availability. Native POSIX
 sandboxes set npm's script shell to the absolute `/bin/sh`: npm otherwise searches a bare `sh`
-through synthetic ancestor `node_modules/.bin` entries, where a deliberately hidden host path can
+through synthetic ancestor `node_modules/.bin` entries, where an inaccessible host path can
 turn package execution into `spawn EPERM` even after download and extraction succeeded. On macOS,
 the read-only system runtime and filtered `PATH` also include `/opt/homebrew`, so Apple Silicon
 Homebrew command shims remain executable while the prefix itself receives no sandbox write rule. A
@@ -175,8 +177,9 @@ A host may pass up to 512 canonical `skillExecutionRoots` for selected skills wh
 must be addressed by `shell`. Each entry must already be a directory and may be
 neither a filesystem root nor a root that contains the workspace. The containment comparison uses
 the canonical identities of both paths, so platform aliases such as macOS `/var` → `/private/var`
-cannot disguise the workspace as a separate child. Command path analysis and `cwd` confinement admit
-only those exact package roots. Native file-mutation tools still reject every target beneath them,
+cannot disguise the workspace as a separate child. Command path analysis still recognizes those
+exact package roots; an explicit shell `cwd` may name any existing directory the selected placement
+can access. Native file-mutation tools still reject every target beneath them,
 including when a package sits below the workspace. The recursive `replace` tool also rejects an
 ancestor scope that contains one of those packages; otherwise walking `.agents`, for example, could
 rewrite protected descendants without naming them directly. With a native sandbox the same roots
@@ -237,26 +240,17 @@ definitions and `dispatch(name, args, config)` executes one call.
 IDs carry 128 bits of randomness. Host or sandbox process trees that deliberately daemonize out of
 the tracked group can escape this backend; an abrupt host crash outside a sandbox may orphan work.
 
-### Lifting the confinement
+### Filesystem access
 
-Confinement is off only when the host asks for it. This package reads one
-control and no environment at all: `confineToWorkspace: false` on the options
-`createAgentTools` is **constructed** with, defaulting to `true`. It is read
-once, at construction, so nothing that happens during a run can change it.
-
-An operator reaches that option through whichever host built the toolset. Under
-`@clarvis/loop` the spelling is `CLARVIS_AGENT_TOOLS_CONFINE=0` in the engine's
-environment, which the tools capability forwards here.
-
-Lift it only when the agent is genuinely meant to work across the filesystem —
-never to unblock a task that hit the wall. A refused path is the boundary doing
-its job, and it is the operator's call whether the boundary was wrong.
-
-**The refusal itself deliberately does not mention any of this.** A `path_escape`
-message becomes a tool result, and its reader is the model — telling it which
-variable turns the check off is handing the workaround to the party the check
-exists to bound. `tests/architecture/no-bypass-hints.test.ts` scans every tool
-message for that shape, so a helpful-looking hint cannot come back by accident.
+The run placement controls file access for commands and native file tools. Host uses OS permissions;
+Sandbox runs both under its frozen native policy; Container sees only guest mounts. The workspace
+root anchors relative paths. Classified private configuration, selected skills and exact output
+artifact rules remain independent protections. Production: `resolveFilesystemPolicy` in
+`packages/tools/src/sandbox.ts`, `resolveFileToolPath` in `packages/tools/src/lib/paths.ts`, and
+`resolveReadableTextPath` in `packages/tools/src/lib/state-artifacts.ts`. Test:
+`packages/tools/tests/integration/no-isolation.test.ts`,
+`packages/tools/tests/integration/sandbox.test.ts`, and
+`packages/tools/tests/unit/state-artifact-access.test.ts`.
 
 ## Entry points
 
@@ -346,8 +340,7 @@ that still reports success. Use `ownProcessGroup()` instead.
 
 ## The regex scan budget
 
-`grep` uses `rg` for a single-file descriptor snapshot when it is on `PATH`. A directory uses `rg`
-only when workspace confinement is explicitly disabled; under the default confinement it uses the
+`grep` uses `rg` for a single-file descriptor snapshot when it is on `PATH`. A directory search uses the
 in-process JS scanner so Clarvis opens and validates every file itself. So the `path` argument alone
 decides which grammar reads the pattern, and the two are not the same language: some constructs one
 engine refuses outright, and a handful — `\A`, `\z`, `\p{...}`, `[]]`, `\d`/`\w`/`\b` and case
@@ -408,14 +401,13 @@ fallback the TUI host must replace before tool warnings are possible.
 
 | Level   | `event`                     | Fields                                                                                                                                                           |
 | ------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `debug` | `tools.config_resolved`     | `ripgrep, sandbox_mode, sandbox_availability, read_only, confined, skill_execution_roots, platform`                                                              |
+| `debug` | `tools.config_resolved`     | `ripgrep, sandbox_mode, sandbox_availability, read_only, skill_execution_roots, platform`                                                              |
 | `warn`  | `tools.sandbox_unavailable` | `requested, reason` — the probe reason an `optional` sandbox used to discard                                                                                     |
 | `debug` | `tools.shell_spawn`         | `shell_file, flavor, detached, cwd, timeout_ms, sandboxed` — **never the command text**                                                                          |
 | `debug` | `tools.shell_exit`          | `exit_code, signal, timed_out, aborted, stdout_bytes, stderr_bytes, stdout_truncated, stderr_truncated, stdout_omitted_bytes, stderr_omitted_bytes, duration_ms` |
 | `warn`  | `tools.kill_tree_failed`    | `pid, signal, platform` — every caller ignores the `false` return                                                                                                |
 | `warn`  | `tools.session_stop_failed` | `cause` — a timeout or abort stop threw before confirmation                                                                                                      |
-| `debug` | `tools.grep_path`           | `engine, is_dir, confined`                                                                                                                                       |
-| `debug` | `tools.path_refused`        | `input, reason, allow_roots_count`                                                                                                                               |
+| `debug` | `tools.grep_path`           | `engine, is_dir, classified_roots`                                                                                                                                       |
 | `error` | `tools.internal_error`      | `err` — via the warn sink                                                                                                                                        |
 | `warn`  | `tools.ignore_unreadable`   | `path` — via the warn sink                                                                                                                                       |
 | `debug` | `tools.fs_error_unmapped`   | `errno_code, syscall, path, platform` — via the warn sink                                                                                                        |
@@ -426,11 +418,6 @@ Windows process capture and stop still require native CI qualification; `specs/k
 `io_error` where POSIX reports `not_a_file` — the code known-issues records as
 _"not been identified"_, because it existed only inside a tool result no CI job
 retains.
-
-`tools.path_refused` closes the other conflation: a symlink that stopped the
-canonicalization walk (`reason: "unresolvable"`) used to be reported exactly like
-a genuine escape (`reason: "outside_root"`), and commits `0c655d9`/`8b3319f` both
-fixed instances of it.
 
 **What is deliberately not here.** A tool call's name, arguments, result, error,
 timing and diff are already trace entries (`tool_call`, `tool_call_started`), and
@@ -471,7 +458,7 @@ bun --filter @clarvis/tools format:check
 - `tests/contract/` owns behavior shared by the ripgrep and in-process grep
   implementations.
 - `tests/integration/` owns real filesystem, symlink, process, shell session,
-  ripgrep, timing, and platform effects, including confinement and
+  ripgrep, timing, and platform effects, including environment policy and
   other OS/security contracts. Its atomic tests own the tools-specific
   multi-file transaction and rollback; `@clarvis/paths` owns temp naming,
   rename retry, atomic-write cleanup, and directory fsync conformance, which
@@ -503,9 +490,9 @@ mutation protection only through the host's `reviewMutation` port. Without that 
 guest, a ceiling other than `edit`/`exec`, or disabled builtin tools — the file tool refuses the
 protected target before the guard runs, and an absent/off guard never authorizes the write. The
 host passes global roots only to eligible entry-agent file handlers; shell commands do not gain
-writable roots, and unrelated file paths retain workspace confinement. See
+writable roots, and unrelated file paths follow the selected environment policy. See
 [effect review](../../specs/execution/effect-review.md).
 
-Host-bound file tools prepare complete atomic mutation batches before effect review. The entry agent receives the host `reviewMutation` callback; profiles cannot install it. Configuration batches reuse the configuration reviewer, validate recognized documents and check captured revisions before staging. Copy uses captured UTF-8 bytes for protected destinations; rename/delete include their source effects. Mixed patches and recursive replacement review all prepared targets together. The callback carries exact workspace trust and notifies catalogs after success. Ordinary binary file operations retain their existing behavior.
+File tools prepare complete atomic mutation batches before effect review. The entry agent receives the host `reviewMutation` callback; profiles cannot install it. In Sandbox, the child sends prepared bytes through a bounded typed channel and waits for the host's decision before committing. Configuration batches reuse the configuration reviewer, validate recognized documents and check captured revisions before staging. The host commits only approved classified configuration batches; a mixed batch may include ordinary targets inside the writable workspace. Copy uses captured UTF-8 bytes for protected destinations; rename/delete include their source effects. Mixed patches and recursive replacement review all prepared targets together. The callback carries exact workspace trust and notifies catalogs after success. Ordinary binary file operations retain their existing behavior.
 
 An explicitly scoped recursive replacement inside configuration directories discovers bounded admitted leaves despite default configuration ignore rules. Private files are filtered before content reads; generic workspace replacement retains its normal ignore behavior.

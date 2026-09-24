@@ -1,12 +1,12 @@
 import type { RuntimeConfig } from "../config.ts";
-import { isAbsolute, posix, win32 } from "node:path";
+import { isAbsolute, posix, resolve, win32 } from "node:path";
 import { analyzeShell } from "./analyze-shell.ts";
 import type { ShellDialect } from "./dialect.ts";
 import { currentDialect } from "./dialects/index.ts";
 import { resolveCandidate, patchPaths } from "./paths.ts";
 import type { ShellFacts, GuardContext, PathFact } from "./types.ts";
-import { readableStateArtifactPath } from "../lib/state-artifacts.ts";
 import { stripWindowsExecutableSuffix, systemExecutableRoots } from "../lib/system-executables.ts";
+import { readableStateArtifactPath } from "../lib/state-artifacts.ts";
 
 const COMMAND_TOOLS = new Set(["shell"]);
 const PATH_ARG_TOOLS = new Set([
@@ -32,11 +32,12 @@ function resolveReadOnlyPath(
   config: RuntimeConfig,
   shell = false,
 ): PathFact {
-  const resolved = resolveCandidate(raw, root, { shell }).resolved;
-  const artifact = readableStateArtifactPath(resolved, config.stateRoot);
-  const alsoAllow =
-    artifact === undefined ? config.temporaryRoots : [...config.temporaryRoots, artifact];
-  return resolveCandidate(raw, root, { shell, alsoAllow });
+  const absolute = resolve(root, raw);
+  const artifact = readableStateArtifactPath(absolute, config.stateRoot);
+  return resolveCandidate(raw, root, {
+    shell,
+    alsoAllow: [...config.temporaryRoots, ...(artifact === undefined ? [] : [artifact])],
+  });
 }
 
 /**

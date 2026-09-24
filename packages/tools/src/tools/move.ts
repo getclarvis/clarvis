@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { fs } from "../lib/environment-fs.ts";
 import path from "node:path";
 import { fsyncDir, renameWithRetry } from "@clarvis/paths";
 import {
@@ -12,8 +12,8 @@ import { applyOpsAtomic, withFileLocks, assertNotSymlink } from "../lib/atomic.t
 import type { ToolDef } from "./types.ts";
 
 /**
- * The `move` tool: atomically move or rename a single regular file, confined to
- * the workspace.
+ * The `move` tool: atomically move or rename one regular file under the selected
+ * environment policy.
  *
  * @remarks
  * A directory source is rejected (`not_a_file`) - use shell for directory moves.

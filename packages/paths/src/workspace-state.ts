@@ -111,6 +111,22 @@ function segmentFor(root: string): string {
 export function workspaceStatePaths(root?: string, opts?: RootOptions): WorkspaceStatePaths {
   const ws = root === undefined ? workspaceRoot(opts) : resolve(root);
   const base = join(globalPaths(undefined, opts).state, "workspaces", segmentFor(ws));
+  return workspaceStatePathsFromRoot(ws, base);
+}
+
+/**
+ * Rebuild the complete path set from a trusted, already-selected state root.
+ *
+ * @param root - the workspace root selected by the host.
+ * @param stateRoot - the matching per-workspace state root selected by the host.
+ * @returns paths and owner/spill builders rooted at that exact state tree.
+ *
+ * @remarks Used across process boundaries where functions cannot be serialized.
+ * The caller owns the association between the workspace and state roots.
+ */
+export function workspaceStatePathsFromRoot(root: string, stateRoot: string): WorkspaceStatePaths {
+  const ws = resolve(root);
+  const base = resolve(stateRoot);
   const localDir = join(base, "local");
   const ownerBase = (owner: string) => join(base, "owners", ownerSegment(owner));
   return {

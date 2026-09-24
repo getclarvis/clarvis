@@ -365,12 +365,17 @@ export const GATES: Gate[] = [
     fix: { kind: "view", view: "controls" },
     check: (ctx) => {
       const eff = ctx.settings.effective();
-      const isolation = deriveIsolation(eff);
+      const selected = deriveIsolation(eff);
+      const inspection = ctx.sandboxInspection();
+      const isolation =
+        selected === "docker" || selected === "podman"
+          ? selected
+          : (inspection?.filesystem.placement ?? selected);
       const reviewMode = resolvedGuardMode(eff.guard);
       const review = reviewMode === "on" ? "approval" : reviewMode;
       const posture = `${isolation} ${glyph("separator")} review ${review}`;
       if (isolation !== "host") {
-        const a = ctx.sandboxInspection()?.backend;
+        const a = inspection?.backend;
         if (!a) {
           return {
             status: "pass",

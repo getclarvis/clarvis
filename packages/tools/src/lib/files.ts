@@ -1,12 +1,13 @@
 import { constants, promises as fs, type Stats } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
 import picomatch from "picomatch";
 import { ToolError, fsError } from "../errors.ts";
-import { configurationTarget } from "@clarvis/paths";
+import { configurationRoots, configurationTarget, type ConfigurationRoot } from "@clarvis/paths";
 import type { RuntimeConfig } from "../config.ts";
 import { loadIgnore } from "./ignore.ts";
-import { assertWithinWorkspace } from "./paths.ts";
+import { isWithinRoots } from "./paths.ts";
 
 /** Default parallelism for batched `stat` calls (see {@link mapLimit}). */
 export const STAT_CONCURRENCY = 32;
@@ -14,73 +15,51 @@ export const STAT_CONCURRENCY = 32;
 /** Keep each allocation modest while still amortizing filesystem calls. */
 const READ_CHUNK_BYTES = 64 * 1024;
 
-/** Roots against which an already-open read must still prove confinement. */
-export interface ReadConfinement {
-  /** Primary workspace root. */
-  workspaceRoot: string;
-  /** Additional read-only roots, such as the workspace state directory. */
-  alsoAllow?: readonly string[];
-}
-
-/** Descriptor and confinement policy for {@link readRawFile}. */
+/** Descriptor and classified-resource policy for {@link readRawFile}. */
 export interface ReadFileOptions {
   /** Refuse a last-component symlink where the host exposes `O_NOFOLLOW`. */
   noFollow?: boolean;
   /** Refuse aliases of a configuration document, including hardlinks. */
   requireSingleLink?: boolean;
-  /** Revalidate the opened object against these roots before reading bytes. */
-  confinement?: ReadConfinement;
   /** Exact filesystem object admitted before opening a state artifact. */
   expectedIdentity?: { readonly dev: bigint; readonly ino: bigint };
   /** Canonical parent required for an exact machine-state artifact read. */
   expectedParent?: string;
-}
-
-/**
- * Derive the read-time confinement policy from a runtime configuration.
- *
- * @param config - the two path-confinement fields shared by every tool.
- * @param alsoAllow - additional read-only roots admitted by this particular
- *   tool (currently the workspace state tree used for output spills).
- * @returns an empty options object when confinement is disabled, otherwise the
- *   roots {@link readRawFile} must verify after opening the descriptor.
- */
-export function readFileOptions(
-  config: {
-    readonly confineToWorkspace: boolean;
-    readonly workspaceRoot: string;
-    readonly temporaryRoots?: readonly string[];
-  },
-  alsoAllow: readonly string[] = [],
-): ReadFileOptions {
-  return config.confineToWorkspace
-    ? {
-        confinement: {
-          workspaceRoot: config.workspaceRoot,
-          alsoAllow: [...alsoAllow, ...(config.temporaryRoots ?? [])],
-        },
-      }
-    : {};
+  /** Host-owned workspace artifact root, verified against the opened descriptor. */
+  expectedArtifactRoot?: string;
+  /** Classified configuration leaf to revalidate against the opened descriptor. */
+  expectedConfiguration?: {
+    readonly roots: Readonly<Record<ConfigurationRoot, string>>;
+    readonly root: ConfigurationRoot;
+    readonly path: string;
+    readonly canonicalRoot: string;
+  };
 }
 
 /** Read one admitted configuration leaf through its exact host root and descriptor checks. */
 export function readFileOptionsForPath(
-  config: Pick<
-    RuntimeConfig,
-    "confineToWorkspace" | "workspaceRoot" | "temporaryRoots" | "configurationRoots"
-  >,
+  config: Pick<RuntimeConfig, "workspaceRoot" | "configurationRoots">,
   target: string,
 ): ReadFileOptions {
-  const classified =
-    config.configurationRoots === undefined
-      ? undefined
-      : configurationTarget(config.configurationRoots, target);
+  const roots =
+    config.configurationRoots ?? configurationRoots({ workspaceRoot: config.workspaceRoot });
+  const classified = configurationTarget(roots, target);
+  if (classified === undefined) return {};
+  let canonicalRoot: string;
+  try {
+    if (lstatSync(roots[classified.root]).isSymbolicLink())
+      throw new ToolError("denied", `Configuration root contains a link: ${target}.`, {
+        path: target,
+      });
+    canonicalRoot = realpathSync.native(roots[classified.root]);
+  } catch (err) {
+    if (err instanceof ToolError) throw err;
+    throw fsError(err as NodeJS.ErrnoException, target);
+  }
   return {
-    ...readFileOptions(
-      config,
-      classified === undefined ? [] : [config.configurationRoots![classified.root]],
-    ),
-    ...(classified === undefined ? {} : { noFollow: true, requireSingleLink: true }),
+    noFollow: true,
+    requireSingleLink: true,
+    expectedConfiguration: { roots, root: classified.root, path: classified.path, canonicalRoot },
   };
 }
 
@@ -102,6 +81,76 @@ export async function openReadHandle(target: string, noFollow = false): Promise<
     constants.O_NONBLOCK |
     (noFollow && typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0);
   return fs.open(target, flags);
+}
+
+/** Verify a host-owned artifact's opened inode still belongs to its selected root. */
+async function assertOpenedArtifact(
+  handle: FileHandle,
+  target: string,
+  relForError: string,
+  root: string,
+): Promise<void> {
+  let canonical: string;
+  let opened;
+  let current;
+  try {
+    canonical = await fs.realpath(target);
+    opened = await handle.stat({ bigint: true });
+    current = await fs.stat(canonical, { bigint: true });
+  } catch (err) {
+    throw fsError(err as NodeJS.ErrnoException, relForError);
+  }
+  if (!isWithinRoots(canonical, [root]) || opened.dev !== current.dev || opened.ino !== current.ino)
+    throw new ToolError(
+      "path_escape",
+      `Artifact changed while it was being opened: ${relForError}.`,
+      {
+        path: relForError,
+      },
+    );
+}
+
+/** Bind an admitted configuration leaf to the descriptor after its path was opened. */
+async function assertOpenedConfiguration(
+  handle: FileHandle,
+  target: string,
+  relForError: string,
+  expected: NonNullable<ReadFileOptions["expectedConfiguration"]>,
+): Promise<void> {
+  let canonical: string;
+  let opened;
+  let current;
+  try {
+    canonical = await fs.realpath(target);
+    opened = await handle.stat({ bigint: true });
+    current = await fs.stat(canonical, { bigint: true });
+  } catch (err) {
+    throw fsError(err as NodeJS.ErrnoException, relForError);
+  }
+  let root: string;
+  try {
+    root = await fs.realpath(expected.roots[expected.root]);
+  } catch (err) {
+    throw fsError(err as NodeJS.ErrnoException, relForError);
+  }
+  const actual = configurationTarget({ [expected.root]: root }, canonical);
+  const comparable = (value: string) =>
+    process.platform === "win32" ? value.toLowerCase() : value;
+  if (
+    comparable(root) !== comparable(expected.canonicalRoot) ||
+    actual?.root !== expected.root ||
+    actual.path !== expected.path ||
+    actual.kind === "private" ||
+    opened.dev !== current.dev ||
+    opened.ino !== current.ino
+  )
+    throw new ToolError(
+      "path_escape",
+      `Configuration path changed while opening: ${relForError}.`,
+      {
+        path: relForError,
+      },
+    );
 }
 
 function notRegularFile(stat: Stats, relForError: string): ToolError {
@@ -127,52 +176,6 @@ function tooLargeFile(
     `File is ${size} bytes, exceeding the ${maxBytes}-byte limit${hint}: ${relForError}`,
     { path: relForError, size, limit: maxBytes },
   );
-}
-
-/**
- * Prove that `handle` is the same file the confined pathname currently names.
- *
- * The lexical/canonical check in `resolvePath` necessarily happens before
- * `open()`. A workspace process can replace the file or any parent directory
- * with a symlink in that gap. Re-resolving after open closes that window only
- * when the result is also tied to the descriptor: otherwise a second swap
- * between `realpath()` and the read would still redirect the operation.
- * Comparing the filesystem identity (`dev` + `ino`) establishes that tie on
- * both POSIX and Windows; all bytes are then read from that same descriptor.
- */
-async function assertOpenedFileConfined(
-  handle: FileHandle,
-  target: string,
-  relForError: string,
-  confinement: ReadConfinement,
-): Promise<void> {
-  let canonical: string;
-  let opened;
-  let current;
-  try {
-    canonical = await fs.realpath(target);
-    opened = await handle.stat({ bigint: true });
-    current = await fs.stat(canonical, { bigint: true });
-  } catch (err) {
-    throw fsError(err as NodeJS.ErrnoException, relForError);
-  }
-
-  assertWithinWorkspace(
-    canonical,
-    confinement.workspaceRoot,
-    relForError,
-    undefined,
-    confinement.alsoAllow,
-  );
-
-  if (opened.dev !== current.dev || opened.ino !== current.ino) {
-    throw new ToolError(
-      "path_escape",
-      `Path changed while it was being opened: ${relForError}. Retry the read using a stable path ` +
-        `inside the workspace.`,
-      { path: relForError },
-    );
-  }
 }
 
 /**
@@ -233,8 +236,7 @@ export async function statDirectory(absPath: string, relForError: string): Promi
  * @param limitHint - optional name of the setting to raise, appended to the
  *   too-large message as a hint.
  * @param options - descriptor policy; `noFollow` is used for machine-owned
- *   control records whose pathname must never redirect the read, while
- *   `confinement` binds a caller-visible path to the file actually opened.
+ *   control records whose pathname must never redirect the read.
  * @returns the file contents as raw bytes (no decoding).
  * @throws a {@link ToolError} mapped from the errno failure (see
  *   {@link fsError}), `not_a_file` when the path is not a regular file, or
@@ -300,9 +302,10 @@ export async function readRawFile(
         );
       }
     }
-    if (options.confinement) {
-      await assertOpenedFileConfined(handle, target, relForError, options.confinement);
-    }
+    if (options.expectedArtifactRoot !== undefined)
+      await assertOpenedArtifact(handle, target, relForError, options.expectedArtifactRoot);
+    if (options.expectedConfiguration !== undefined)
+      await assertOpenedConfiguration(handle, target, relForError, options.expectedConfiguration);
     if (stat.size > maxBytes) {
       throw tooLargeFile(relForError, stat.size, maxBytes, limitHint);
     }

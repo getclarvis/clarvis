@@ -109,7 +109,7 @@ the settled-conversation carry-forward cases in that same test, and
 
 `ShellAnalysisIssue` records kind, affected position and zero-based segment index. The legacy
 `undecidable` value remains the conservative fold over issues. Syntax alone never proves authority
-or workspace confinement. Environment prefixes, including assignment-only segments, never inherit
+or filesystem authority. Environment prefixes, including assignment-only segments, never inherit
 a bare command's static allowlist entry. Deny matching still sees normalized bare commands. Those
 facts feed the policy and the command reviewer; they produce no effect fact and enter no envelope.
 

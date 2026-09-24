@@ -338,11 +338,7 @@ describe("grep asymmetric context and pagination (in-process)", () => {
       before_context: 1,
       after_context: 2,
     };
-    const a = await callTool(
-      "grep",
-      params,
-      makeConfig(root, { ripgrepAvailable: true, confineToWorkspace: false }),
-    );
+    const a = await callTool("grep", params, makeConfig(root, { ripgrepAvailable: true }));
     const b = await callTool("grep", params, makeConfig(root, { ripgrepAvailable: false }));
     expect(a.text).toBe(b.text);
   });

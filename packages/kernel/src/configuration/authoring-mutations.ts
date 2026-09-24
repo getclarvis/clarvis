@@ -1,7 +1,12 @@
-import type { RunCapabilityContext, Logger } from "@clarvis/capability";
+import {
+  OPERATOR_AUTHORITY_PORT,
+  type RunCapabilityContext,
+  type Logger,
+} from "@clarvis/capability";
 import { configurationTarget, type ConfigurationRoot } from "@clarvis/paths";
 import type { ExtensionProfileSkillRef } from "@clarvis/protocol";
-import type { MutationReview } from "@clarvis/tools";
+import { applyOpsAtomic, type MutationReview } from "@clarvis/tools";
+import type { ResolvedFilesystemPolicy } from "@clarvis/tools/sandbox";
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
@@ -64,7 +69,7 @@ export function createAuthoringMutationReview(
       throw error;
     }
   };
-  return async (operations, commit) => {
+  const authoring: MutationReview = async (operations, commit) => {
     const paths = operations.flatMap((op) => [
       op.path,
       ...(op.from === undefined ? [] : [op.from]),
@@ -172,13 +177,34 @@ export function createAuthoringMutationReview(
       { operations: prepared, membership: inclusion?.review },
       `Review configuration batch:\n${prepared.map((item) => `${item.operation} ${item.path}\n${item.content ?? ""}`).join("\n\n")}\n${inclusion === undefined ? "" : JSON.stringify(inclusion.review, null, 2)}`,
     );
+    const authority = ctx.services.get(OPERATOR_AUTHORITY_PORT);
+    const admitted = authority?.snapshot();
+    const assertAuthority = (): void => {
+      const current = authority?.snapshot();
+      if (admitted === undefined) return;
+      if (
+        current?.status !== "active" ||
+        current.revision !== admitted.revision ||
+        current.binding.owner_key_name !== admitted.binding.owner_key_name ||
+        current.binding.session_id !== admitted.binding.session_id ||
+        current.binding.controller_epoch !== admitted.binding.controller_epoch ||
+        current.binding.outcome_id !== admitted.binding.outcome_id
+      )
+        throw new Error("Configuration authority changed before commit. Prepare the batch again.");
+    };
     for (const [path, expected] of snapshots) {
       const current = capture(path);
       if ((current === null ? null : digest(current)) !== expected)
         throw new Error("Configuration revision conflict. Prepare the batch again.");
     }
     ctx.signal?.throwIfAborted();
-    const write = () => (inclusion === undefined ? commit() : inclusion.apply(commit));
+    const checkedCommit = () => {
+      ctx.signal?.throwIfAborted();
+      assertAuthority();
+      return commit();
+    };
+    const write = () =>
+      inclusion === undefined ? checkedCommit() : inclusion.apply(checkedCommit);
     const workspaceFacts = facts.filter((fact) => {
       const rel = relative(ctx.workspaceRoot, fact.canonicalPath);
       return !isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`);
@@ -194,4 +220,47 @@ export function createAuthoringMutationReview(
     for (const fact of facts) options.changed(fact.canonicalPath);
     recordSessionGrant?.();
   };
+  return Object.assign(authoring, {
+    async commitClassified(
+      operations: Parameters<MutationReview>[0],
+      policy: ResolvedFilesystemPolicy,
+    ): Promise<void> {
+      if (policy.placement !== "sandbox")
+        throw new Error("Classified host commit requires a native Sandbox policy.");
+      for (const operation of operations) {
+        for (const path of [
+          operation.path,
+          ...(operation.from === undefined ? [] : [operation.from]),
+        ]) {
+          if (!isAbsolute(path)) throw new Error("Classified host commit requires absolute paths.");
+          const target = locate(path);
+          if (target?.kind === "private")
+            throw new Error("Classified host commit cannot change private configuration.");
+          if (target === undefined) {
+            const local = relative(ctx.workspaceRoot, path);
+            if (isAbsolute(local) || local === ".." || local.startsWith(`..${sep}`))
+              throw new Error("Classified host commit requires a workspace batch target.");
+          }
+          if (
+            policy.workspaceAccess === "read-only" &&
+            (target === undefined || target.root.startsWith("workspace_"))
+          )
+            throw new Error("Classified workspace batch is read-only.");
+          if (
+            policy.protectedRoots.some((root) => {
+              const local = relative(root, path);
+              return (
+                local === "" ||
+                (!isAbsolute(local) && local !== ".." && !local.startsWith(`..${sep}`))
+              );
+            })
+          )
+            throw new Error("Classified host commit cannot change a protected path.");
+          capture(path);
+        }
+      }
+      ctx.signal?.throwIfAborted();
+      await applyOpsAtomic([...operations]);
+    },
+  });
 }

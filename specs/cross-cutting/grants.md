@@ -89,7 +89,6 @@ this document covers only the grant string that gates them.
 | Symbol | Signature | File |
 | --- | --- | --- |
 | `CLARVIS_AGENT_TOOLS_ENABLED` | boolean, default `true` | `packages/capability/src/env.ts` |
-| `CLARVIS_AGENT_TOOLS_CONFINE` | boolean, default `true` | `packages/capability/src/env.ts` |
 | `CLARVIS_AGENT_TOOLS_MAX_GRANT` | `"none" \| "read" \| "edit" \| "exec"`, default `"edit"` at the loop/env-schema level | `packages/capability/src/env.ts` |
 | `agentToolCaps(grants, ceiling)` | `(grants: readonly string[] \| undefined, ceiling: GrantCeiling) => { canRead, canMutate, canExec }` | `packages/loop/src/runtime/tools/builtin/grants.ts` |
 | `agentToolsActive(env, grants)` | `boolean` — true iff `CLARVIS_AGENT_TOOLS_ENABLED` and the grants clear the `read` ceiling | `packages/loop/src/runtime/tools/builtin/grants.ts` |

@@ -292,7 +292,8 @@ function digestOf(ctx: GuardContext): { commandDigest?: string } {
  * @returns a {@link Guard} evaluated in fixed precedence for each call: a denied
  *   segment → `deny`; an undecidable command → `deny` when a deny list is
  *   configured, else `ask` (human-only on Host unless Auto is enabled); a host command → `ask` through
- *   the configured reviewer; any path outside the workspace → `deny`; a
+ *   the configured reviewer; an outside path → `deny` on Host or a reviewed
+ *   `ask` for a native Sandbox shell command; a
  *   credential file that is also forced removal or sudo → Auto `ask` / Approval
  *   `deny`; other credential files → `ask`; a non-bash call → `allow`; an environment-prefixed
  *   dangerous command → Auto `ask` / Approval `deny`; other environment
@@ -368,8 +369,14 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
     if (touchesOutside(ctx)) {
       return {
         matched: "outside_workspace",
-        verdict: "deny",
-        reason: "command touches paths outside the workspace",
+        verdict:
+          placement === "contained" && ctx.config.sandbox !== undefined && ctx.tool === "shell"
+            ? "ask"
+            : "deny",
+        reason:
+          placement === "contained" && ctx.config.sandbox !== undefined && ctx.tool === "shell"
+            ? "command touches paths outside the workspace; native sandbox write limits still apply"
+            : "command touches paths outside the workspace",
       };
     }
     const changesEnvironment =

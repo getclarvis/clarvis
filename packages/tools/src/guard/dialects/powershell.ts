@@ -89,7 +89,7 @@ const COMMAND_POSITION_OPERATOR = /^\s*[&.](?:\s|["'])/;
  * This is a seed, not a policy: it is written into the user's settings once so
  * they can see and edit it, rather than compiled into the guard where it would
  * be an invisible default nobody could audit. Every entry still passes through
- * the deny list, the undecidable check and the confinement check first - a
+ * the deny list, the undecidable check and the location check first - a
  * match only spares the approval prompt.
  *
  * The list does not grant package installation, publication, deployment,
@@ -852,7 +852,7 @@ function looksLikePath(token: string): boolean {
  * not the filesystem, or a per-drive current directory only the running shell
  * knows - and reporting them as `none` would let them contribute no
  * {@link PathFact} while still looking analyzed, so a future allow-list entry
- * would clear `Get-Content Env:\SECRET` on a command nothing had confined.
+ * would clear `Get-Content Env:\SECRET` on a command no policy had classified.
  */
 function pathCandidate(token: Token): PathCandidate {
   const redirect = REDIRECT_PREFIX.exec(token.text);

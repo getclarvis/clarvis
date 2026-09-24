@@ -2,12 +2,62 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import type { ResolvedSandboxSettings } from "@clarvis/loop/host";
 import { createFileConfigStore } from "../../src/config/file-config-store.ts";
-import { createSandboxPolicyResolver } from "../../src/sandbox/policy.ts";
+import { createSandboxPolicyResolver, pinSandboxPolicy } from "../../src/sandbox/policy.ts";
 import { environmentFixture } from "../helpers/process-fixtures.ts";
 import { SANDBOX_CACHE_PROBE_PATH } from "../fixtures/sandbox-cache-probe.ts";
 
 describe("sandbox host policy", () => {
+  it("rejects a changed Sandbox snapshot before another run can use it", () => {
+    let current: ResolvedSandboxSettings = {
+      type: "native",
+      filesystem: "workspace-write",
+      network: "none",
+      pass_env: ["CI"],
+      toolchains: { include: ["bun"] },
+      resolved_runtime_paths: ["/opt/runtime"],
+    };
+    const admitted = pinSandboxPolicy({ resolve: () => current });
+    expect(admitted()).toEqual(current);
+    expect(Object.isFrozen(admitted())).toBe(true);
+    expect(Object.isFrozen(admitted()?.pass_env)).toBe(true);
+    expect(Object.isFrozen(admitted()?.toolchains?.include)).toBe(true);
+    expect(Object.isFrozen(admitted()?.resolved_runtime_paths)).toBe(true);
+    current = { ...current, filesystem: "workspace-read-only" };
+    expect(admitted).toThrow("Sandbox policy changed since host startup");
+  });
+  it("reports effective host-visible reads and the selected write posture", async () => {
+    const root = mkdtempSync(join(tmpdir(), "clarvis-sandbox-access-"));
+    const globalDir = join(root, "global");
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace);
+    const store = createFileConfigStore({ workspaceRoot: workspace, globalDir });
+    try {
+      const resolver = createSandboxPolicyResolver(store, workspace);
+      expect((await resolver.inspect()).filesystem).toEqual({
+        placement: "host",
+        reads: "host-visible",
+        writes: "host-os",
+        workspace: "read-write",
+      });
+      store.writeSettings("global", {
+        sandbox: {
+          type: "native",
+          filesystem: "workspace-read-only",
+          toolchains: { mode: "manual" },
+        },
+      });
+      expect((await resolver.inspect()).filesystem).toEqual({
+        placement: "sandbox",
+        reads: "host-visible",
+        writes: "declared-roots",
+        workspace: "read-only",
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
   it("does not change native Sandbox settings when Container is selected", () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-docker-fallback-policy-"));
     const globalDir = join(root, "global");
@@ -137,7 +187,7 @@ describe("sandbox host policy", () => {
     },
   );
 
-  it("lets workspace excluded_paths suppress an inherited global path", () => {
+  it("keeps the global Sandbox floor when an untrusted workspace asks for weaker access", async () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-sandbox-exclude-"));
     const globalDir = join(root, "global");
     const workspace = join(root, "workspace");
@@ -148,19 +198,39 @@ describe("sandbox host policy", () => {
     store.writeSettings("global", {
       sandbox: {
         type: "native",
+        filesystem: "workspace-read-only",
+        network: "none",
+        pass_env: ["CI"],
         toolchains: { mode: "manual", extra_paths: [globalSdk] },
       },
     });
     store.writeSettings("workspace", {
       sandbox: {
         type: "native",
-        toolchains: { excluded_paths: [globalSdk] },
+        enabled: false,
+        filesystem: "workspace-write",
+        network: "host",
+        pass_env: ["TERM"],
+        toolchains: { mode: "auto", include: ["python"], excluded_paths: [globalSdk] },
       },
     });
-
-    expect(
-      createSandboxPolicyResolver(store, workspace).resolve()?.resolved_read_only_paths,
-    ).toBeUndefined();
+    const resolver = createSandboxPolicyResolver(store, workspace);
+    const resolved = resolver.resolve();
+    expect(resolved).toMatchObject({
+      enabled: true,
+      filesystem: "workspace-read-only",
+      network: "none",
+      pass_env: ["CI"],
+      toolchains: { mode: "manual", include: [] },
+      resolved_read_only_paths: [globalSdk],
+    });
+    expect((await resolver.inspect()).filesystem).toEqual({
+      placement: "sandbox",
+      reads: "host-visible",
+      writes: "declared-roots",
+      workspace: "read-only",
+    });
+    expect((await resolver.inspect()).effective_network).toBe("none");
   });
 
   it("reports broad and workspace-containing paths without resolving them", async () => {

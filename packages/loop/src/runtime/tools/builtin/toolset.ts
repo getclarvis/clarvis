@@ -20,7 +20,7 @@ import { isOperatorInterruptedTool } from "../tool-interrupt.ts";
 
 /**
  * Options for {@link createAgentToolset}: the `workspaceRoot`, the `canMutate` /
- * `canExec` capability gates, and optional workspace confinement, `guard`,
+ * `canExec` capability gates, and optional `guard`,
  * `elicit` and `sandbox` wiring passed through to @clarvis/tools.
  */
 export interface AgentToolsetOptions {
@@ -29,7 +29,6 @@ export interface AgentToolsetOptions {
   workspaceRoot: string;
   canMutate: boolean;
   canExec: boolean;
-  confineToWorkspace?: boolean;
   temporaryRoots?: readonly string[];
   sessionManager?: ExecutionSessionManager;
   sessionAgent?: object;
@@ -39,6 +38,10 @@ export interface AgentToolsetOptions {
   configurationRoots?: Readonly<Record<ConfigurationRoot, string>>;
   elicit?: Elicit;
   sandbox?: SandboxConfig;
+  /** Host-owned run identity for the resolved filesystem policy. */
+  runIdentity?: string;
+  /** Physical filesystem placement selected by the host, independently of escalation. */
+  filesystemPlacement?: "host" | "sandbox" | "container";
   /** Isolated container guests set this to false so `require_escalated` fails closed. */
   allowHostEscalation?: boolean;
   /** Credential env-var names withheld from every spawned command. */
@@ -165,9 +168,6 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
       workspaceRoot: opts.workspaceRoot,
       ...(opts.statePaths === undefined ? {} : { statePaths: opts.statePaths }),
       readOnly: !opts.canMutate,
-      ...(opts.confineToWorkspace !== undefined
-        ? { confineToWorkspace: opts.confineToWorkspace }
-        : {}),
       ...(opts.temporaryRoots !== undefined ? { temporaryRoots: opts.temporaryRoots } : {}),
       ...(opts.sessionManager !== undefined ? { sessionManager: opts.sessionManager } : {}),
       ...(opts.sessionAgent !== undefined ? { sessionAgent: opts.sessionAgent } : {}),
@@ -181,6 +181,10 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
         : {}),
       ...(opts.elicit !== undefined ? { elicit: opts.elicit } : {}),
       ...(opts.sandbox !== undefined ? { sandbox: opts.sandbox } : {}),
+      ...(opts.runIdentity !== undefined ? { runIdentity: opts.runIdentity } : {}),
+      ...(opts.filesystemPlacement !== undefined
+        ? { filesystemPlacement: opts.filesystemPlacement }
+        : {}),
       ...(opts.allowHostEscalation !== undefined
         ? { allowHostEscalation: opts.allowHostEscalation }
         : {}),

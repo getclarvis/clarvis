@@ -236,6 +236,22 @@
     {
       "mechanism": "subprocess",
       "file": "packages/kernel/tests/integration/container-kernel.e2e.test.ts",
+      "identity": "subprocess|assertGuestFilesystem|Bun.spawn( [ engine!, \"exec\", ids[0]!, \"/bin/sh\", \"-c\", 'test ! -e \"$1\" && test \"$(cat /workspace/visible.txt)\" = \"same host workspace\" && printf guest > /workspace/guest-write.txt && if printf denied > /workspace/.git/denied.txt 2>/dev/null; then exit 41; fi', \"clarvis-guest-check\", hostOnlyPath, ], { stdin: \"ignore\", stdout: \"pipe\", stderr: \"pipe\" }, )|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "physical engine process and guest filesystem checks require a real Container boundary"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/kernel/tests/integration/container-kernel.e2e.test.ts",
+      "identity": "subprocess|assertGuestFilesystem|Bun.spawn( [ engine!, \"ps\", \"--filter\", `label=io.clarvis.state.namespace=${namespace}`, \"--filter\", \"label=io.clarvis.role=kernel\", \"--format\", \"{{.ID}}\", ], { stdin: \"ignore\", stdout: \"pipe\", stderr: \"pipe\" }, )|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "physical engine process and guest filesystem checks require a real Container boundary"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/kernel/tests/integration/container-kernel.e2e.test.ts",
       "identity": "subprocess|inspectBaseImageId|Bun.spawn([engine!, \"image\", \"inspect\", reference], { stdin: \"ignore\", stdout: \"pipe\", stderr: \"pipe\", })|0",
       "package_owner": "@clarvis/kernel",
       "classification": "boundary-canary",
@@ -728,6 +744,14 @@
       "package_owner": "@clarvis/tools",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/tools/tests/integration/container-filesystem.test.ts",
+      "identity": "subprocess|module|Bun.spawn( [ \"podman\", \"run\", \"--rm\", \"--pull=never\", \"--network\", \"none\", \"--read-only\", \"--read-only-tmpfs=false\", \"--tmpfs\", \"/tmp:rw,nosuid,nodev,noexec,size=67108864\", \"--cap-drop\", \"ALL\", \"--security-opt\", \"no-new-privileges=true\", \"--security-opt\", \"label=disable\", \"--userns=keep-id\", \"--user\", `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`, \"--mount\", `type=bind,source=${repository},target=/src,readonly`, \"--mount\", `type=bind,source=${workspace},target=/workspace`, \"--mount\", `type=bind,source=${script},target=/canary.ts,readonly`, \"--env\", `HOST_ONLY=${outside}`, \"--workdir\", \"/workspace\", \"--entrypoint\", \"bun\", image!, \"/canary.ts\", ], { stdin: \"ignore\", stdout: \"pipe\", stderr: \"pipe\" }, )|0",
+      "package_owner": "@clarvis/tools",
+      "classification": "boundary-canary",
+      "reason": "Opt-in real Podman subprocess is required to prove file tools see only guest mounts and cannot reach an unmounted host path."
     },
     {
       "mechanism": "subprocess",

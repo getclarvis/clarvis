@@ -23,9 +23,9 @@ repository in front of you.
   does not imply provider endorsement of Clarvis.
 - **Agent workflows:** use a built-in Lead, delegate to focused Sub-agents, or run the packaged
   `audit`, `implement`, and `research` workflows.
-- **Controlled tool use:** path-based workspace confinement, independent command review, native
-  sandboxing on Linux and macOS, lazy Docker or Podman isolation, and explicit workspace trust are
-  separate safeguards.
+- **Controlled tool use:** Host OS permissions, native Sandbox policy on Linux and macOS, Docker or
+  Podman guest mounts, classified configuration protection, command review, and workspace trust
+  govern access according to the selected environment.
 - **Extensible:** add MCP servers, plugins, hooks, Agent Skills, custom agents, and workflows.
 - **Interactive or headless:** use the full TUI or run a prompt from scripts with `clarvis -p`.
 

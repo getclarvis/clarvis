@@ -3,7 +3,7 @@ import { hostname } from "node:os";
 import { isAbsolute } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { detachObserved, loadEnv, NOOP_LOGGER, type Logger } from "@clarvis/capability";
-import { localKernelPolicyIdentity } from "./policy-identity.ts";
+import { localHostPolicyIdentity } from "./policy-identity.ts";
 import { kernelError } from "../core/errors.ts";
 import { connectKernelClient, type RemoteKernel } from "../transport/client.ts";
 import { connectLocalKernelTransport } from "../transport/local.ts";
@@ -111,7 +111,6 @@ export async function connectOrLaunchLocalKernel(
   if (!Number.isSafeInteger(timeout) || timeout <= 0 || timeout > 120_000)
     throw kernelError("invalid_request", "host startup timeout must be within 120 seconds");
   const logger = options.logger ?? NOOP_LOGGER;
-  const policyId = localKernelPolicyIdentity(loadEnv(options.environment));
   const identity = await resolveLocalHostIdentity({
     ...options,
     ...(process.platform === "win32"
@@ -123,6 +122,12 @@ export async function connectOrLaunchLocalKernel(
     CLARVIS_HOME: identity.globalDir,
     CLARVIS_WORKSPACE_ROOT: identity.workspaceRoot,
   };
+  const policyId = localHostPolicyIdentity({
+    env: loadEnv(options.environment),
+    workspaceRoot: identity.workspaceRoot,
+    globalDir: identity.globalDir,
+    environment,
+  });
   const deadline = performance.now() + timeout;
   let launched = false;
   let launchFailed = false;

@@ -1,12 +1,19 @@
 import type { MutationReview } from "./lib/atomic.ts";
 import { ExecutionSessionManager } from "./lib/execution-session.ts";
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./lib/log.ts";
 import type { Guard, Elicit } from "./guard/types.ts";
-import { discoverLinkedGitMetadataPaths, type SandboxConfig } from "./sandbox.ts";
 import {
+  discoverLinkedGitMetadataPaths,
+  resolveFilesystemPolicy,
+  type ResolvedFilesystemPolicy,
+  type SandboxConfig,
+} from "./sandbox.ts";
+import {
+  configurationRoots,
   resolveCommand,
   workspaceStatePaths,
   type ConfigurationRoot,
@@ -79,17 +86,12 @@ export interface RuntimeConfig {
   /** When true, only the read-only tool surface is exposed (no mutations). */
   readOnly: boolean;
 
-  /** When true, tool paths are confined to {@link RuntimeConfig.workspaceRoot}. */
-  confineToWorkspace: boolean;
-
   /**
    * The per-workspace state root holding bounded output spills and other tool state.
    *
    * @remarks Outside the working tree by design — a repository is not where
-   * generated bookkeeping belongs — which is why the read tools must be told
-   * about it: a spilled tool result the model is handed a path to would
-   * otherwise fail {@link RuntimeConfig.confineToWorkspace} on the way back in.
-   * Read-only: nothing that mutates consults it.
+   * generated bookkeeping belongs. Read tools admit only an exact pinned
+   * output artifact from this tree; other state remains private.
    */
   stateRoot: string;
 
@@ -132,6 +134,8 @@ export interface RuntimeConfig {
   elicit?: Elicit;
   /** Optional sandbox settings for isolating spawned commands. */
   sandbox?: SandboxConfig;
+  /** One immutable filesystem authority shared by shell and its live sessions. */
+  filesystemPolicy: ResolvedFilesystemPolicy;
   /**
    * Isolated container guests set this to false so `require_escalated` fails closed.
    * Native Host and Sandbox placements leave it true (the default).
@@ -145,9 +149,9 @@ export interface RuntimeConfig {
    * The agent controls the text of the commands it runs, so an unscrubbed
    * environment makes every API key on the host one `printenv` away — and a
    * command that exfiltrates one is indistinguishable from a command that
-   * legitimately reads its environment. Under a native sandbox this is
-   * redundant (the child's environment is built from nothing); it is the bare
-   * path on an unsupported host or explicit optional fallback that needs it.
+   * legitimately reads its environment. Native sandboxes use these names to
+   * reject credential variables requested through `passEnv`; bare host commands
+   * subtract them from the inherited environment.
    */
   secretEnvNames?: readonly string[];
 }
@@ -247,8 +251,7 @@ function assertTimeoutOrder(min: number, max: number, minLabel: string, maxLabel
 /**
  * Caller-facing options for building a {@link RuntimeConfig}. Only
  * `workspaceRoot` is required; every other field falls back to its `DEFAULT_*`
- * constant (limits) or a safe default (`readOnly` false, `confineToWorkspace`
- * true) inside {@link resolveConfig}.
+ * constant (limits) or a safe default (`readOnly` false) inside {@link resolveConfig}.
  */
 export interface AgentToolsOptions {
   /** The workspace root; validated to exist and be a directory. */
@@ -259,8 +262,6 @@ export interface AgentToolsOptions {
   /** Expose only the read-only tool surface. Defaults to false. */
   readOnly?: boolean;
 
-  /** Confine tool paths to the workspace. Defaults to true. */
-  confineToWorkspace?: boolean;
   /** Existing writable temporary roots available to every tool; first supplies the command env. */
   temporaryRoots?: readonly string[];
   /** Agent identity for sessions; standalone toolsets get a private token. */
@@ -329,6 +330,10 @@ export interface AgentToolsOptions {
   elicit?: Elicit;
   /** Sandbox settings passed through to {@link RuntimeConfig.sandbox}. */
   sandbox?: SandboxConfig;
+  /** Host-owned run identity; standalone toolsets receive a random identity. */
+  runIdentity?: string;
+  /** Host-selected physical placement; omitted standalone calls infer Host or Sandbox. */
+  filesystemPlacement?: "host" | "sandbox" | "container";
   /** Isolated container guests set this to false so `require_escalated` fails closed. */
   allowHostEscalation?: boolean;
   /** Secret names passed through to {@link RuntimeConfig.secretEnvNames}. */
@@ -378,7 +383,6 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
 
   const ripgrepAvailable = runProbe(options.probeRipgrep ?? probeRipgrep);
   const readOnly = options.readOnly ?? false;
-  const confineToWorkspace = options.confineToWorkspace ?? true;
   const temporaryRoots = (options.temporaryRoots ?? []).map((root) => {
     const resolved = path.resolve(root);
     let stat;
@@ -437,7 +441,6 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
       sandbox_mode: options.sandbox?.type ?? "none",
       sandbox_availability: options.sandbox?.availability ?? null,
       read_only: readOnly,
-      confined: confineToWorkspace,
       skill_execution_roots: skillExecutionRoots.length,
       platform: process.platform,
     },
@@ -453,6 +456,14 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
             ...new Set([...(options.sandbox.readOnlyPaths ?? []), ...skillExecutionRoots]),
           ],
         };
+  const filesystemPolicy = resolveFilesystemPolicy({
+    runId: options.runIdentity ?? randomUUID(),
+    placement: options.filesystemPlacement ?? (sandbox === undefined ? "host" : "sandbox"),
+    workspaceRoot,
+    temporaryRoots,
+    gitMetadataPaths,
+    ...(sandbox === undefined ? {} : { sandbox }),
+  });
 
   return {
     workspaceRoot,
@@ -507,7 +518,6 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
     ),
     ripgrepAvailable,
     readOnly,
-    confineToWorkspace,
     stateRoot: statePaths.root,
     statePaths,
     temporaryRoots,
@@ -517,9 +527,10 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
     gitMetadataPaths,
     guard: options.guard,
     reviewMutation: options.reviewMutation,
-    configurationRoots: options.configurationRoots,
+    configurationRoots: options.configurationRoots ?? configurationRoots({ workspaceRoot }),
     elicit: options.elicit,
     sandbox,
+    filesystemPolicy,
     allowHostEscalation: options.allowHostEscalation ?? true,
     secretEnvNames: options.secretEnvNames,
   };

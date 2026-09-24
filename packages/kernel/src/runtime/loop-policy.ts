@@ -37,7 +37,6 @@ const policyScopes = {
   CLARVIS_STREAM: "guest",
   CLARVIS_OWNER: "host",
   CLARVIS_AGENT_TOOLS_ENABLED: "tools",
-  CLARVIS_AGENT_TOOLS_CONFINE: "tools",
   CLARVIS_AGENT_TOOLS_MAX_GRANT: "tools",
   CLARVIS_SKILLS_ENABLED: "guest",
   CLARVIS_HOOKS_ENABLED: "guest",
@@ -123,7 +122,6 @@ export function guestLoopEnvironment(
     envSchema.parse({
       ...policy,
       CLARVIS_AGENT_TOOLS_ENABLED: tools.enabled,
-      CLARVIS_AGENT_TOOLS_CONFINE: tools.confine,
       CLARVIS_AGENT_TOOLS_MAX_GRANT: tools.maxGrant,
       CLARVIS_LOG_LEVEL: "silent",
     }),

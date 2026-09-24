@@ -53,7 +53,7 @@ export function createAgentTools(options: AgentToolsOptions): AgentTools {
 export { dispatch, listTools } from "./core.ts";
 export type { DispatchResult, ToolInfo } from "./core.ts";
 export { readRawFile } from "./lib/files.ts";
-export type { ReadFileOptions, ReadConfinement } from "./lib/files.ts";
+export type { ReadFileOptions } from "./lib/files.ts";
 
 export {
   resolveConfig,
@@ -134,3 +134,4 @@ export type { WarnSink, ToolsLogger, ToolsWarning } from "./lib/log.ts";
 export type { GuardEffectCallFact, EffectReviewDetail } from "./guard/effect-review.ts";
 
 export type { MutationReview, FileOp } from "./lib/atomic.ts";
+export { applyOpsAtomic } from "./lib/atomic.ts";

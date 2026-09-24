@@ -29,7 +29,16 @@ function mount(
     memoryEnabled?: boolean;
     /** Optional container runtime used to exercise its effective descriptions. */
     runtime?: { backend: "docker" };
-    sandboxInspection?: { available: boolean; degraded: boolean; reason?: string } | Error;
+    sandboxInspection?:
+      | {
+          available: boolean;
+          degraded: boolean;
+          reason?: string;
+          placement?: "host" | "sandbox";
+          network?: "host" | "none";
+        }
+      | Error;
+    effectiveSandboxEnabled?: boolean;
     runActive?: boolean;
     reloadResult?: { ok: boolean; message: string };
     writeError?: Error;
@@ -49,13 +58,20 @@ function mount(
     ...(opts.runtime === undefined ? {} : { runtime: opts.runtime }),
     ...(opts.sandboxInspection === undefined
       ? {}
-      : { sandbox: { type: "native", enabled: true, availability: "optional" } }),
+      : {
+          sandbox: {
+            type: "native",
+            enabled: opts.effectiveSandboxEnabled ?? true,
+            availability: "optional",
+          },
+        }),
     ...((scoped.workspace ?? scoped.global) ? { plans: scoped.workspace ?? scoped.global } : {}),
     ...((opts.guard?.workspace ?? opts.guard?.global)
       ? { guard: opts.guard?.workspace ?? opts.guard?.global }
       : {}),
   };
   const writes: { scope: string; patch: unknown }[] = [];
+  let inspectionCalls = 0;
   const settings = {
     version: () => 0,
     effective: () => effective,
@@ -77,8 +93,19 @@ function mount(
     },
     validateProviders: () => ({ ok: opts.resolvable !== false }),
     inspectSandbox: async () => {
+      inspectionCalls++;
       if (opts.sandboxInspection instanceof Error) throw opts.sandboxInspection;
+      const placement =
+        opts.sandboxInspection?.placement ??
+        (opts.sandboxInspection === undefined ? "host" : "sandbox");
       return {
+        effective_network: opts.sandboxInspection?.network ?? "host",
+        filesystem: {
+          placement,
+          reads: "host-visible",
+          writes: placement === "sandbox" ? "declared-roots" : "host-os",
+          workspace: "read-write",
+        },
         backend: {
           type: "bubblewrap",
           mode: "fresh-proc",
@@ -126,6 +153,7 @@ function mount(
     guardSetModeCalls,
     memorySetModeCalls,
     sandboxOpened,
+    inspectionCalls: () => inspectionCalls,
   };
 }
 
@@ -171,7 +199,8 @@ async function activateMemoryOff(
 }
 
 test("the isolation row opens sandbox details and persists minimal lazy Docker", async () => {
-  const { host, deps, press, notes, writes, guardSetModeCalls, sandboxOpened } = mount();
+  const { host, deps, press, notes, writes, guardSetModeCalls, sandboxOpened, inspectionCalls } =
+    mount();
   const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
     width: 110,
     height: 40,
@@ -192,6 +221,7 @@ test("the isolation row opens sandbox details and persists minimal lazy Docker",
   ]);
   expect(guardSetModeCalls).toEqual([]);
   expect(notes).toEqual(["isolation: docker (global)"]);
+  expect(inspectionCalls()).toBe(2);
   t.renderer.destroy();
 });
 
@@ -241,6 +271,25 @@ test("an isolation write failure is surfaced without claiming a change", async (
 test("the native sandbox detail reports a healthy available backend", async () => {
   const { host, deps, press } = mount({
     sandboxInspection: { available: true, degraded: false },
+  });
+  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
+    width: 110,
+    height: 40,
+  });
+  await tick();
+  await t.renderOnce();
+  press("i");
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain(
+    "Bubblewrap is available; an incompatible host fails closed.",
+  );
+  t.renderer.destroy();
+});
+
+test("run controls follow host Sandbox inspection over a weaker workspace merge", async () => {
+  const { host, deps, press } = mount({
+    effectiveSandboxEnabled: false,
+    sandboxInspection: { available: true, degraded: false, placement: "sandbox" },
   });
   const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
     width: 110,

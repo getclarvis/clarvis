@@ -270,7 +270,10 @@ Built-ins cover:
 
 - coding tools and command guards, including Isolation guidance so an exec-capable agent can retry a
   blocked `shell` with `sandbox_permissions: "require_escalated"` instead of a
-  second tool. Isolated container guests set `allowHostEscalation: false` so that retry is refused;
+  second tool. The host-selected placement and run identity produce one frozen filesystem policy
+  shared by each agent's command sessions and file service. Sandbox runs file calls in one isolated run-owned child, reads host-visible files and limits writes to declared roots;
+  Container sees only guest mounts. Isolated container guests set `allowHostEscalation: false` so that retry is refused;
+  the File Kernel applies the enabled global Sandbox as a floor when workspace settings are not trusted;
 - one owner-only scratch root per run, allocated by `@clarvis/paths` as a short, exclusive,
   account-owned directory and advertised as `TMPDIR`, `TEMP` and `TMP`, plus the host's existing system
   temporary roots pre-authorized across command and native tools. Shortness is what keeps a tool's own

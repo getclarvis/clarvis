@@ -10,21 +10,21 @@ export interface IsolationChoice {
 }
 
 export const ISOLATION_CHOICES: readonly IsolationChoice[] = [
-  { value: "host", label: "Host", detail: "direct host execution; fastest and least isolated" },
+  { value: "host", label: "Host", detail: "host filesystem permissions with Guard review" },
   {
     value: "sandbox",
     label: "Sandbox",
-    detail: "native Seatbelt or Bubblewrap; host access is requested per command",
+    detail: "read host-visible files; write only workspace and admitted temp roots",
   },
   {
     value: "docker",
     label: "Docker",
-    detail: "native Kernel; no extensions or external providers",
+    detail: "native Kernel; access only guest mounts",
   },
   {
     value: "podman",
     label: "Podman",
-    detail: "native Kernel; no extensions or external providers",
+    detail: "native Kernel; access only guest mounts",
   },
 ];
 
@@ -79,18 +79,20 @@ export function isolationPlacementLines(isolation: IsolationMode): string[] {
   switch (isolation) {
     case "host":
       return [
-        "No containment boundary.",
+        "Commands use the host's filesystem permissions.",
         "Guard remains a separate control and does not create isolation.",
       ];
     case "sandbox":
       return [
-        "Uses the native Seatbelt or Bubblewrap boundary as the default for commands.",
+        "Commands may read host-visible files; writes are limited to the workspace and admitted temporary roots.",
+        "Workspace-read-only forbids workspace writes even when the workspace is inside a writable temporary root.",
         "A blocked command can ask to run that one command on the host; Isolation Host is the whole session.",
         "Open Sandbox settings for filesystem, network and toolchains.",
       ];
     case "docker":
       return [
         "The full native Kernel runs inside Docker; Plans, Memory, Workflows and Goals remain available.",
+        "Tools see only guest mounts and follow each mount's read/write posture.",
         "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
         "Commands run without Guard; workspace writes and outbound network remain enabled.",
         "Git metadata is read-only; use Sandbox or Host for commits.",
@@ -99,6 +101,7 @@ export function isolationPlacementLines(isolation: IsolationMode): string[] {
     case "podman":
       return [
         "The full native Kernel runs inside Podman; Plans, Memory, Workflows and Goals remain available.",
+        "Tools see only guest mounts and follow each mount's read/write posture.",
         "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
         "Commands run without Guard; workspace writes and outbound network remain enabled.",
         "Git metadata is read-only; use Sandbox or Host for commits.",

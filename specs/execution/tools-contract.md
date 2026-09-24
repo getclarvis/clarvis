@@ -98,14 +98,14 @@ consumer outside this package's own workspace-linked build.
 
 ### Root (`.`) facade — `packages/tools/src/index.ts`
 
-The facade also exports `readRawFile` and the `ReadFileOptions`/`ReadConfinement` types for trusted
+The facade also exports `readRawFile` and the `ReadFileOptions` type for trusted
 host consumers. This is the existing bounded descriptor reader, with caller-supplied byte limits
-and confinement; it adds no advertised tool. Its behavior belongs to
+and a host-owned artifact root when required; it adds no advertised tool. Its behavior belongs to
 [reads and search](tools-read-and-search.md#42-readrawfile--the-descriptor-bound-read).
 Production: the exports in [index.ts](../../packages/tools/src/index.ts) and `readRawFile` in
 [files.ts](../../packages/tools/src/lib/files.ts).
 Test: [bounded-read.test.ts](../../packages/tools/tests/integration/bounded-read.test.ts), and the
-kernel's confined artifact case in
+kernel's bounded artifact case in
 [goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts).
 
 | Symbol | Kind | Location | Contract |
@@ -229,10 +229,39 @@ Test: [guard-helpers.test.ts](../../packages/tools/tests/unit/guard-helpers.test
 
 The full field list, defaults and overrides are given in §3. The fields most relevant to dispatch
 itself: `guard?: Guard`, `elicit?: Elicit` (consulted by `applyGuard`, `packages/tools/src/core.ts`), `readOnly:
-boolean` (selects the surface), `confineToWorkspace: boolean`, `stateRoot: string`, and
+boolean` (selects the surface), `stateRoot: string`, and
 `temporaryRoots: readonly string[]` (ordered temporary path policy consumed by individual tools, not
 by `core.ts` itself; the first root is the command environment's `TMPDIR`), `maxOutputBytes` and `maxToolMetaBytes`
 (consumed by `dispatch`'s own bounding step).
+`filesystemPolicy` is the frozen run identity, placement, read scope, write roots and protected
+roots consumed by `ExecutionSessionManager` for command and file-service launch. It is resolved once from
+host-owned `runIdentity` and `filesystemPlacement` inputs plus Sandbox settings. Commands and file tools use this placement policy. Production:
+`resolveConfig` in [config.ts](../../packages/tools/src/config.ts),
+`resolveFilesystemPolicy` in [sandbox.ts](../../packages/tools/src/sandbox.ts), and
+`ExecutionSessionManager.launch` in
+[execution-session.ts](../../packages/tools/src/lib/execution-session.ts). Test:
+[sandbox.test.ts](../../packages/tools/tests/integration/sandbox.test.ts) (`freezes a run policy and
+changes identity when its effective access changes`, `uses the same broad-read write-limited policy
+for shell and shell_session with an external cwd`).
+
+The closed `AgentFilesystem` port covers all 18 model file operations after schema, private-path,
+selected-skill and Guard admission. Host calls use the local implementation; Container calls use
+that implementation inside the guest; Sandbox calls use one run-owned isolated child. The parent
+accepts only framed file-operation and prepared-batch messages, binds each review receipt to the
+run policy and request bytes, and stops the child on cancellation or channel failure. Neither a
+model call nor the child chooses a command, mount or policy. Production: `FILE_OPERATIONS` in
+[agent-filesystem.ts](../../packages/tools/src/agent-filesystem.ts), `dispatch` in
+[core.ts](../../packages/tools/src/core.ts), `SandboxAgentFilesystem` in
+[filesystem-service.ts](../../packages/tools/src/filesystem-service.ts), and the parsers in
+[filesystem-protocol.ts](../../packages/tools/src/lib/filesystem-protocol.ts), and the native
+in-environment adapter in
+[environment-fs.ts](../../packages/tools/src/lib/environment-fs.ts). Test:
+[filesystem-protocol.test.ts](../../packages/tools/tests/contract/filesystem-protocol.test.ts)
+and [filesystem-service.test.ts](../../packages/tools/tests/integration/filesystem-service.test.ts).
+The architecture tests in
+[filesystem-boundary.test.ts](../../packages/tools/tests/architecture/filesystem-boundary.test.ts)
+pin every file tool to the port and keep direct filesystem imports out of those handlers.
+
 `skillExecutionRoots: readonly string[]` is the separately bounded, canonical set of selected skill
 package directories admitted only to command execution. `dispatch` consumes it before the guard via
 `protectSkillPackages`: native mutation tools may use the normal workspace/scratch surface but may
@@ -305,8 +334,7 @@ terms: roughly seven seconds worst case (the budget plus one in-flight applicati
 an unbounded scan would cost, while leaving roughly a thousandfold margin over the time a legitimate
 scan actually spends (a plain pattern over 200,000 lines charges 5-7 ms).
 
-Non-numeric fields: `readOnly` defaults `false` (`packages/tools/src/config.ts`), `confineToWorkspace` defaults
-`true` (`packages/tools/src/config.ts`), `ripgrepAvailable` is computed by probing `rg --version` on `PATH`
+Non-numeric fields: `readOnly` defaults `false` (`packages/tools/src/config.ts`); `ripgrepAvailable` is computed by probing `rg --version` on `PATH`
 (`probeRipgrep`, `packages/tools/src/config.ts`) unless a caller injects `probeRipgrep` (test seam), and a
 throwing probe is treated as `false` rather than propagating
 (`runProbe`, `packages/tools/src/config.ts`; pinned by `packages/tools/tests/integration/config.test.ts`). `stateRoot` is **not** a
@@ -390,7 +418,7 @@ before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/too
    `assertTimeoutOrder` (`packages/tools/src/config.ts`) throws if `shellTimeoutMaxMs < shellTimeoutMs`
    (`packages/tools/src/config.ts`).
 5. Run the ripgrep probe (`runProbe`, swallowing a throw to `false`) and resolve `readOnly` /
-   `confineToWorkspace` (`resolveConfig` in `packages/tools/src/config.ts`).
+   `filesystemPolicy` (`resolveConfig` in `packages/tools/src/config.ts`).
 6. Validate each ordered temporary root as an existing directory, then canonicalize and de-duplicate
    at most 512 `skillExecutionRoots`. Missing or non-directory entries fail startup in either list.
    For skill roots, the filesystem root, the workspace itself, and any ancestor of the workspace also
@@ -485,7 +513,7 @@ no validation, guard or bounding logic runs here.
 
 | # | Rule | Production site | Test |
 | --- | --- | --- | --- |
-| INV-037 | No tool-facing refusal message in `@clarvis/tools`'s source may tell the model how to lift the restriction it just hit (a "set/pass/export/use … to permit/allow/disable/bypass/override" shape, or a `FOO=1 to permit` shape). | `packages/tools/src/lib/paths.ts` is the concrete instance the test guards (`assertWithinWorkspace`'s `path_escape` message states the boundary and that it "cannot be changed from within it," but never names `ALLOW_OUTSIDE_WORKSPACE`). | `packages/tools/tests/architecture/no-bypass-hints.test.ts` (scans all of `src/`, excluding comments), guarded against a vacuous pass (`sources(SRC).length` must exceed 30) and calibrated both ways: proves the regex fires on three known-bad phrasings proves it does not fire on a refusal that merely states the boundary without hinting at how to lift it |
+| INV-037 | No model-facing refusal message suggests a command or setting to bypass its restriction. | `resolveFileToolPath` in `packages/tools/src/lib/paths.ts` and the dispatcher in `packages/tools/src/core.ts` | `packages/tools/tests/architecture/no-bypass-hints.test.ts` scans source messages and calibrates its matcher |
 | INV-038 | `@clarvis/tools` contains no source-code parser: no mention of tree-sitter (any spelling), the removed tool names (`outline`, `check_syntax`), the removed capability-flag identifiers (`treeSitterAvailable`, `probeTreeSitter`, `requiresTreeSitter`, `TREE_SITTER`), or the removed syntax annotation (`syntaxWarnings`, `surface_degraded`) anywhere in its `src/`, `tests/`, `README.md` or `package.json`. | n/a (absence) | `packages/tools/tests/architecture/no-tree-sitter.test.ts` (`it.each(FORBIDDEN)`), scanning >80 files |
 | INV-039 | No workspace manifest or `bun.lock` entry names `@vscode/tree-sitter-wasm`; no package's production `src/` names the removed `check_syntax` tool. | n/a (absence, repo-wide) | `packages/tools/tests/architecture/no-tree-sitter.test.ts` (manifests, lockfile, and repo-wide `check_syntax` scan) |
 | INV-040 | `web-tree-sitter` (a distinct npm specifier `@clarvis/code` legitimately depends on for OpenTUI syntax highlighting) is not a substring of, nor contains, the forbidden `@vscode/tree-sitter-wasm`, and `@clarvis/code`'s manifest and the lockfile still declare/install it. | `packages/code/package.json` (asserted by the cited test rather than cited directly) | `packages/tools/tests/architecture/no-tree-sitter.test.ts` (substring check) (calibration: the word-level `/tree[-_ ]?sitter/i` matcher *does* fire on `web-tree-sitter`, which is why the substring carve-out above is necessary at all rather than redundant) (still declared/installed) |

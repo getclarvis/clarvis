@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import path from "node:path";
-import { resolvePath } from "../lib/paths.ts";
+import { isWithinRoots, resolvePath } from "../lib/paths.ts";
 import type { PathFact } from "./types.ts";
 
 /**
@@ -33,15 +33,14 @@ function expandTilde(p: string, platform: NodeJS.Platform = process.platform): s
  *
  * @param raw - the path token as the caller wrote it (kept verbatim in the
  *   result's `raw`).
- * @param workspaceRoot - the workspace root that confinement is measured against.
+ * @param workspaceRoot - the workspace root used for relative paths and risk facts.
  * @param opts - `shell: true` first expands a leading `~`/`~/`, for tokens that
  *   came from a shell command line.
  * @returns a {@link PathFact} carrying `raw`, the `resolved` absolute path, and
  *   `withinWorkspace`.
  * @remarks
- * `withinWorkspace` is derived by re-running {@link resolvePath} in confining
- * mode and catching its throw, so a symlink or `..` escaping the root reports
- * `false` rather than raising here.
+ * `withinWorkspace` is a canonical location fact for Guard review. Additional
+ * roots may be counted as familiar to the Guard but never grant I/O.
  */
 export function resolveCandidate(
   raw: string,
@@ -50,12 +49,7 @@ export function resolveCandidate(
 ): PathFact {
   const input = opts.shell ? expandTilde(raw) : raw;
   const resolved = resolvePath(input, workspaceRoot);
-  let withinWorkspace = true;
-  try {
-    resolvePath(input, workspaceRoot, true, opts.alsoAllow);
-  } catch {
-    withinWorkspace = false;
-  }
+  const withinWorkspace = isWithinRoots(resolved, [workspaceRoot, ...(opts.alsoAllow ?? [])]);
   return { raw, resolved, withinWorkspace };
 }
 

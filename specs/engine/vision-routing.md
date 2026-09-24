@@ -503,7 +503,7 @@ The full composer image budget is transferable through local-host and Container 
 | No `usage` at all (call never returned any) | `packages/loop/src/runtime/vision-prepass.ts` | ledger/`accounting.vision.current` are simply left unset — no charge, no usage row |
 | `read_image` given a non-image / unsupported format | `packages/tools/src/tools/read-image.ts` | `ToolError("not_an_image", ...)` |
 | `read_image` given an oversized file | via `readRawFile`, `config.maxImageBytes` | `too_large` (`packages/tools/tests/integration/read-image.test.ts`) |
-| `read_image` given a missing path or one outside both the workspace and admitted temporary roots | via `resolvePath`/`readRawFile` | `not_found` / `path_escape` |
+| `read_image` given a missing or environment-inaccessible path | via `resolveFileToolPath`/`readRawFile` | `not_found` / `io_error`; private classified configuration remains `denied` |
 | Code: `@mention` load throws | `packages/code/src/core/attachments.ts` | `MentionImageLoadError`; `submitTurn` catches it, restores the draft, reports the message — the turn is **not** sent |
 | Code: `@mention`/staged image exceeds a budget | `checkImageAdmission` | `MentionImageAdmissionError` (mention path) or a rejected `AttachmentAdmission` (`ok: false`, composer path) — the composer never even retains the rejected item |
 | Code: `@mention`ed path not found | `loadMentionImages` | silently skipped — the mention text stays literal, no error |

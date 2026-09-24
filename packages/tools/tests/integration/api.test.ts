@@ -230,7 +230,6 @@ describe("createAgentTools (library API)", () => {
       write(globalDir, "keys.json", '{"secret":"fixture"}');
       const t = createAgentTools({
         workspaceRoot: root,
-        confineToWorkspace: true,
         configurationRoots: roots,
         reviewMutation: (_operations, commit) => commit(),
         probeRipgrep: () => false,
@@ -378,9 +377,9 @@ describe("createAgentTools (library API)", () => {
       expect(searched.isError).toBe(false);
       expect(resultText(searched.content)).toContain("a.txt");
 
-      const refused = await t.callTool("grep", { path: tmpdir(), pattern: "alpha" });
-      expect(refused.isError).toBe(true);
-      expect(JSON.parse(resultText(refused.content))).toMatchObject({ error: "path_escape" });
+      const readBack = await t.callTool("read_file", { path: join(created, "a.txt") });
+      expect(readBack.isError).toBe(false);
+      expect(resultText(readBack.content)).toContain("alpha");
     } finally {
       cleanup(temporaryRoot);
     }
@@ -479,7 +478,7 @@ describe("createAgentTools (library API)", () => {
   });
 
   it.skipIf(!posixShell)(
-    "does not adopt a temporary directory created by a shell command",
+    "reads a temporary directory created by a shell command under Host authority",
     async () => {
       const prefix = `clarvis-explicit-${process.pid}-${Date.now()}`;
       const template = join(realpathSync(tmpdir()), `${prefix}-XXXXXX`);
@@ -496,12 +495,8 @@ describe("createAgentTools (library API)", () => {
         expect(made.isError).toBe(false);
         created = readFileSync(record, "utf8");
         const searched = await t.callTool("grep", { path: created, pattern: "alpha" });
-        expect(searched.isError).toBe(true);
-        expect(JSON.parse(resultText(searched.content))).toMatchObject({ error: "path_escape" });
-
-        const refused = await t.callTool("grep", { path: tmpdir(), pattern: "alpha" });
-        expect(refused.isError).toBe(true);
-        expect(JSON.parse(resultText(refused.content))).toMatchObject({ error: "path_escape" });
+        expect(searched.isError).toBe(false);
+        expect(resultText(searched.content)).toContain("a.txt");
         await t.close();
       } finally {
         if (created !== undefined) cleanup(created);

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { workspacePaths } from "@clarvis/paths";
 import {
@@ -180,10 +180,16 @@ describe("move", () => {
       },
     );
 
-    it("rejects a path escaping the workspace with path_escape", async () => {
+    it("moves outside the workspace when Host OS access permits", async () => {
       write(root, "a.txt", "x");
-      const r = await callTool("move", { source: "a.txt", destination: "../b.txt" }, config);
-      expect(r.json.error).toBe("path_escape");
+      const destination = path.join(root, "..", `${path.basename(root)}-move.txt`);
+      try {
+        const r = await callTool("move", { source: "a.txt", destination }, config);
+        expect(r.isError).toBe(false);
+        expect(readFileSync(destination, "utf8")).toBe("x");
+      } finally {
+        rmSync(destination, { force: true });
+      }
     });
 
     it("ignores out-of-schema extra fields", async () => {

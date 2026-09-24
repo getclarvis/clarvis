@@ -45,7 +45,7 @@ policy:
 The analyzer's stated posture is that it is *not* a shell parser: "This is a best-effort heuristic
 for approval decisions, not a shell parser" (`packages/tools/src/guard/analyze-shell.ts`). Its
 one hard contract is that anything it cannot bound is reported `undecidable`, and callers "must
-treat an undecidable result as 'unknown', never as workspace-confined"
+treat an undecidable result as 'unknown', never as within-workspace"
 (`packages/tools/src/guard/analyze-shell.ts`).
 
 Delegated elsewhere and **not** described here: the elicitation transport that actually reaches a
@@ -509,7 +509,7 @@ process reaches the host's null device. Other absolute device paths remain ordin
 `packages/tools/tests/unit/posix-dialect.test.ts` and
 `packages/tools/tests/integration/guard-dispatch.test.ts`.
 
-The state-spill exception is narrower than `config.stateRoot`. `resolveReadableTextPath` admits only an exact generic result spill directly under `<stateRoot>/local`, requires a regular non-link file, and pins its filesystem identity through the read. Only `read_file` and `read_files` receive that exact-file allowance; `shell` cannot mount or read state through it. Prompt history, legacy sidecars, and another workspace's state remain outside the exception. Production: `packages/tools/src/lib/state-artifacts.ts`, `packages/tools/src/lib/files.ts`, and `packages/tools/src/guard/context.ts`. Test: `packages/tools/tests/unit/read-confinement-allowance.test.ts` and `packages/tools/tests/integration/guard-dispatch.test.ts`.
+The state-spill exception is narrower than `config.stateRoot`. `resolveReadableTextPath` admits only an exact generic result spill directly under `<stateRoot>/local`, requires a regular non-link file, and pins its filesystem identity through the read. Only `read_file` and `read_files` receive that exact-file allowance; `shell` cannot mount or read state through it. Prompt history, legacy sidecars, and another workspace's state remain outside the exception. Production: `packages/tools/src/lib/state-artifacts.ts`, `packages/tools/src/lib/files.ts`, and `packages/tools/src/guard/context.ts`. Test: `packages/tools/tests/unit/state-artifact-access.test.ts` and `packages/tools/tests/integration/guard-dispatch.test.ts`.
 
 Skill execution roots are a separate host-approved class. Command analysis admits only the exact
 canonical directories reported by selected skills; they are not added to native file-tool roots and
@@ -583,7 +583,7 @@ Evaluated top-down; the first match returns (`packages/kernel/src/guard/shell-gu
 | 2b | `sandboxPermissions === "require_escalated"` and Isolation is Sandbox (`config.sandbox` present) | `host_command` | `ask`; `escalate: "human"` unless `allowHostJudge` is true (Auto only) |
 | 3a | `shell.undecidable`, no/empty deny list, placement Host | `undecidable` | `ask`; `escalate: "human"` unless `allowHostJudge` is true (Auto only) |
 | 3b | `shell.undecidable`, no/empty deny list, placement contained | `undecidable` | `ask`, no escalation restriction |
-| 4 | `touchesOutside(ctx)` — some resolved path escapes | `outside_workspace` | `deny` |
+| 4 | `touchesOutside(ctx)` — some resolved path escapes | `outside_workspace` | `deny` on Host and for file tools; `ask` for a native Sandbox shell command |
 | 5a | some path's `raw` matches a credential pattern **and** the command is forced `rm` or `sudo` | `dangerous` | Auto `ask` (Judge); Approval `deny` with the exact segment |
 | 5b | some path's `raw` matches a credential pattern and no exception | `credential_file` | `ask` |
 | 6 | `ctx.shell === undefined` (a non-command tool) | `non_bash` | `allow` |
@@ -597,6 +597,11 @@ Evaluated top-down; the first match returns (`packages/kernel/src/guard/shell-gu
 The original adjacent-pair ordering cases live in `packages/kernel/tests/unit/guard.test.ts`.
 Placement, dangerous precedence and comparison-only POSIX directory handling are pinned by
 `packages/kernel/tests/integration/guard-auto-review.test.ts`.
+The Sandbox shell case lets reviewed commands read an external `cwd` or file while Bubblewrap or
+Seatbelt still enforces declared write roots. Host commands and legacy file tools keep their
+outside-workspace denial. Production: `createShellGuard` in
+`packages/kernel/src/guard/shell-guard.ts`. Test: `reviews an external Sandbox shell path while
+retaining the native write boundary` in `packages/kernel/tests/unit/guard.test.ts`.
 
 There is no contained silent-allow rule: unmatched Sandbox commands still ask, and only Auto
 changes who may answer. Placement is resolved once per Host/Sandbox run from host settings. An
@@ -811,7 +816,7 @@ at `packages/kernel/tests/component/settings-assembler.test.ts`. The economics b
 Numbered, declarative, falsifiable. "Unpinned" means no test was found that fails if the rule is
 broken.
 
-1. **An undecidable command is never workspace-confined.** `withinWorkspace` returns `false`
+1. **An undecidable command is never within-workspace.** `withinWorkspace` returns `false`
    whenever `ctx.shell.undecidable` is set, before looking at any path.
    `packages/tools/src/guard/helpers.ts`. Pinned:
    `packages/tools/tests/unit/guard-helpers.test.ts`.

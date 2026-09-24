@@ -79,7 +79,9 @@ to 256 KiB and strict UTF-8. Settings use the kernel schema, Agent Profiles use 
 validation, skill manifests use the discovery parser, and workflows use their artifact parser.
 Other authored formats retain their loader and trust checks. Protected destinations use private
 file and directory modes. Existing documents bind to an exact captured revision; after review,
-all target revisions and authority are checked again before atomic commit. A failed, denied,
+all target revisions and authority are checked again before atomic commit. The authority check
+also runs inside the final write callback, so revocation while entering the operator write
+transaction cannot commit a previously approved batch. A failed, denied,
 cancelled or drifted batch leaves no partial mutation.
 
 Production: `configurationTarget` in
@@ -93,11 +95,25 @@ Test: document schema, four-root, revision and link cases in
 [configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts),
 file-tool journeys in
 [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts),
+post-review revocation in
+[authoring-mutations.test.ts](../../packages/kernel/tests/unit/authoring-mutations.test.ts),
 and rollback and private-mode cases in
 [atomic.test.ts](../../packages/tools/tests/integration/atomic.test.ts),
 [api.test.ts](../../packages/tools/tests/integration/api.test.ts),
 [copy.test.ts](../../packages/tools/tests/integration/copy.test.ts) and
 [move.test.ts](../../packages/tools/tests/integration/move.test.ts).
+
+In Sandbox, preparation happens inside the same isolated file service as ordinary file calls.
+The service sends the complete batch to the host reviewer; after approval, a classified batch
+commits through `commitClassified` on the host, including any ordinary workspace targets in a
+mixed patch. The host rechecks admission and protected roots. Container and children have no
+`reviewMutation` port and cannot request that host commit. Production:
+`SandboxAgentFilesystem` in
+[filesystem-service.ts](../../packages/tools/src/filesystem-service.ts),
+`createAuthoringMutationReview` in
+[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts).
+Test: `commits reviewed global and workspace authoring documents through the Sandbox file service`
+in [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts).
 
 ## Effect review and operator authority
 

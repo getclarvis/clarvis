@@ -141,11 +141,15 @@ Test: `packages/kernel/tests/integration/container-kernel-host.test.ts`;
 
 ## Configuration and application facade
 
-The host projects schema version 1 configuration once per generation. The schema recursively rejects
+The host projects schema version 2 configuration once per generation. The schema recursively rejects
 unknown fields and contains effective defaults, builtin/global/workspace Agent Profiles, prompts,
 context, Memory policy, local Plans and Memory settings, native Workflow definitions, logical model
 metadata, loop policy and tool ceiling. It excludes provider endpoints, credentials, MCP, Tasks,
-plugins, hooks, skills, engine settings, process environment and subscription state.
+plugins, hooks, skills, engine settings, process environment and subscription state. A version 1
+projection or legacy tool-confinement field is rejected before the guest executes. Production:
+`parseContainerConfiguration` in `packages/kernel/src/config/container-projection.ts` and
+`projectContainerConfiguration` in the same file. Test:
+`packages/kernel/tests/unit/container-projection.test.ts`.
 
 The projection is canonical-JSON hashed and immutable. Guest configuration reads come from
 `createContainerConfigStore`; all writes and trust changes are unsupported. Workspace changes to
@@ -312,6 +316,31 @@ no-new-privileges, bounded PIDs, memory, CPU and tmpfs, fixed cwd and entrypoint
 environment, no engine socket and no implicit mounts. `network=none` or outbound bridge are the
 only modes. Model inference over the host pipe remains available under `network=none`; guest tools
 cannot use direct network access in that mode.
+The tools capability receives explicit Container filesystem placement when the native guest graph
+is built. Its immutable run policy describes guest mount scope; it never imports the native
+Sandbox's broad host read policy or treats disabled host escalation as a substitute for placement.
+An unmounted host path remains outside the guest namespace. Production:
+`createContainerNativeKernel` in
+[container-native.ts](../../packages/kernel/src/hosting/container-native.ts),
+`createAgentToolsCapability` in
+[tools.ts](../../packages/loop/src/runtime/capabilities/tools.ts), and
+`resolveFilesystemPolicy` in [sandbox.ts](../../packages/tools/src/sandbox.ts). Test:
+[container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
+(`Container native graph yields and stops a run-owned shell session`, `Container native graph refuses shell escalation to the host`) and the real engine
+[container-kernel.e2e.test.ts](../../packages/kernel/tests/integration/container-kernel.e2e.test.ts)
+guest filesystem check for an unmounted host path, writable workspace and read-only Git metadata.
+
+The guest's file tools use the same `AgentFilesystem` interface as Host and Sandbox, with local
+execution inside the guest Kernel. No host filesystem worker or generic host read/write RPC is
+created for Container calls. The host-owned classified configuration reviewer is absent there.
+Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts) and
+`createContainerNativeKernel` in
+[container-native.ts](../../packages/kernel/src/hosting/container-native.ts). Test:
+[container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
+and the opt-in real-engine file-tool mount canary in
+[container-filesystem.test.ts](../../packages/tools/tests/integration/container-filesystem.test.ts),
+plus the guest filesystem check in
+[container-kernel.e2e.test.ts](../../packages/kernel/tests/integration/container-kernel.e2e.test.ts).
 
 The host inspects the exact local image ID, ABI labels, created Container identity, labels, mounts,
 user and effective security policy before attaching. Effective policy requires a complete

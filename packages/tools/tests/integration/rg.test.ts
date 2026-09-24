@@ -60,7 +60,6 @@ describe.skipIf(!rgAvailable)("ripgrep stream-cap truncation", () => {
     root = makeWorkspace();
     config = makeConfig(root, {
       ripgrepAvailable: true,
-      confineToWorkspace: false,
       maxOutputBytes: 1,
     });
   });
@@ -88,7 +87,7 @@ describe.skipIf(!rgAvailable)("ripgrep non-UTF-8 output", () => {
 
   beforeEach(() => {
     root = makeWorkspace();
-    config = makeConfig(root, { ripgrepAvailable: true, confineToWorkspace: false });
+    config = makeConfig(root, { ripgrepAvailable: true });
   });
   afterEach(() => cleanup(root));
 

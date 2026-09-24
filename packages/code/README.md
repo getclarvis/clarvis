@@ -1593,6 +1593,13 @@ no fallback chip or rewrite to Sandbox. `WorkspaceClientManager` supplies the se
 a dynamic `@clarvis/kernel/local` import; native startup neither loads those adapters nor probes an engine.
 
 Settings > Run controls owns persisted global placement alongside the `Ctrl+X I` quick picker.
+The picker and Sandbox inspection describe filesystem access: Host follows OS permissions with
+Guard review, Sandbox reads host-visible files but limits writes to its declared roots, and Container
+sees only guest mounts. `workspace-read-only` keeps the workspace read-only even below a writable
+temporary root. A Sandbox command may use an accessible directory outside the workspace as `cwd`.
+The panel's effective access line follows host inspection when an untrusted workspace requests a
+weaker Sandbox than the global policy; Run controls, Doctor and the quick picker use the same
+observation for effective placement, while editable rows still show the requested settings.
 Docker/Podman runs native Plans, Memory, Workflows and Goals inside the Container. Skills,
 MCPs, Hooks, Plugins, external Tasks and host process capabilities are unavailable; commands run
 without Command Review; workspace writes and outbound network remain enabled; Git metadata is

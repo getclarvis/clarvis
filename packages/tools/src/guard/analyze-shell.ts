@@ -24,7 +24,7 @@ import type { ShellFacts, Segment, ShellAnalysisIssue } from "./types.ts";
  * decidable, or a token is {@link PathCandidate} `opaque` - a `~user`
  * reference, an upward-traversing glob, or another operand the dialect
  * recognizes as addressing something it cannot pin down. Callers must treat an
- * undecidable result as "unknown", never as workspace-confined. This is a
+ * undecidable result as "unknown", never as within-workspace. This is a
  * best-effort heuristic for approval decisions, not a shell parser.
  *
  * It is also `true` when a segment reduces to an empty `argv` *and* recorded no

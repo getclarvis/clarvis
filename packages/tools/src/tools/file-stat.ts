@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { fs } from "../lib/environment-fs.ts";
 import { fsError } from "../errors.ts";
 import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { isBinary } from "../lib/binary.ts";

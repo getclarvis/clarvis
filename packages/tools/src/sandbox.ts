@@ -2,6 +2,7 @@ import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync, statSy
 import { homedir, tmpdir } from "node:os";
 import nodePath, { delimiter, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { spawnSync, type SpawnOptions, type SpawnSyncReturns } from "node:child_process";
+import { createHash } from "node:crypto";
 import { ToolError } from "./errors.ts";
 import { executableOnPath } from "@clarvis/paths";
 import { resolveShell, shellArgs, type ShellSpec } from "./shell.ts";
@@ -17,22 +18,110 @@ export { systemExecutableRoots } from "./lib/system-executables.ts";
  * Clarvis selects Bubblewrap on Linux and Seatbelt on macOS. A configured sandbox
  * always fails closed when the native backend is unavailable; `availability:
  * "optional"` is accepted on stored settings and treated as `"required"`.
- * `readOnlyPaths` and `runtimePaths` are exposed read-only; `runtimePaths`
- * additionally shape the sandboxed `PATH`. `passEnv` names extra host env vars to
- * carry through the otherwise minimal environment.
+ * `readOnlyPaths` and `runtimePaths` remain protected against writes under the
+ * broad host-visible read scope; `runtimePaths` also shape the sandboxed `PATH`.
+ * `passEnv` names extra host env vars to carry through the otherwise minimal
+ * environment, excluding host-identified credentials.
  */
 export interface NativeSandbox {
   type: "native";
   availability?: "required" | "optional";
   filesystem?: "workspace-write" | "workspace-read-only";
   network?: "host" | "none";
-  passEnv?: string[];
-  readOnlyPaths?: string[];
-  runtimePaths?: string[];
+  passEnv?: readonly string[];
+  readOnlyPaths?: readonly string[];
+  runtimePaths?: readonly string[];
 }
 
 /** The supported sandbox configurations. */
 export type SandboxConfig = NativeSandbox;
+
+/** Immutable command-filesystem authority selected once for a run by its host. */
+export interface ResolvedFilesystemPolicy {
+  readonly identity: string;
+  readonly placement: "host" | "sandbox" | "container";
+  readonly readScope: "host-visible" | "guest-mounts";
+  readonly writeScope: "host-os" | "declared-roots" | "guest-mounts";
+  readonly workspaceRoot: string;
+  readonly workspaceAccess: "read-write" | "read-only";
+  readonly writableRoots: readonly string[];
+  readonly protectedRoots: readonly string[];
+  readonly temporaryRoots: readonly string[];
+  readonly gitMetadataPaths: readonly string[];
+  readonly sandbox?: Readonly<SandboxConfig>;
+}
+
+/** Resolve a host-selected placement and paths into one per-run shell policy. */
+export function resolveFilesystemPolicy(input: {
+  runId: string;
+  placement: "host" | "sandbox" | "container";
+  workspaceRoot: string;
+  temporaryRoots: readonly string[];
+  gitMetadataPaths: readonly string[];
+  sandbox?: SandboxConfig;
+}): ResolvedFilesystemPolicy {
+  const workspaceRoot = resolve(input.workspaceRoot);
+  const temporaryRoots = Object.freeze([...new Set(input.temporaryRoots.map((p) => resolve(p)))]);
+  const gitMetadataPaths = Object.freeze([
+    ...new Set(input.gitMetadataPaths.map((p) => resolve(p))),
+  ]);
+  if ((input.placement === "sandbox") !== (input.sandbox !== undefined))
+    throw new ToolError(
+      "invalid_input",
+      "Native sandbox placement requires exactly one sandbox policy",
+    );
+  const sandbox = input.sandbox
+    ? Object.freeze({
+        ...input.sandbox,
+        passEnv: Object.freeze([...(input.sandbox.passEnv ?? [])]),
+        readOnlyPaths: Object.freeze([...(input.sandbox.readOnlyPaths ?? [])]),
+        runtimePaths: Object.freeze([...(input.sandbox.runtimePaths ?? [])]),
+      })
+    : undefined;
+  const workspaceAccess =
+    sandbox?.filesystem === "workspace-read-only" ? "read-only" : "read-write";
+  const protectedRoots = Object.freeze([
+    ...(workspaceAccess === "read-only" ? [workspaceRoot, ...gitMetadataPaths] : []),
+    ...(input.placement === "container" ? gitMetadataPaths : []),
+    ...(sandbox?.readOnlyPaths ?? []),
+  ]);
+  const writableRoots = Object.freeze([
+    ...temporaryRoots,
+    ...(workspaceAccess === "read-write"
+      ? [workspaceRoot, ...(input.placement === "container" ? [] : gitMetadataPaths)]
+      : []),
+  ]);
+  const identity = createHash("sha256")
+    .update(
+      JSON.stringify({
+        runId: input.runId,
+        placement: input.placement,
+        workspaceRoot,
+        temporaryRoots,
+        gitMetadataPaths,
+        sandbox,
+      }),
+    )
+    .digest("hex");
+  return Object.freeze({
+    identity,
+    placement: input.placement,
+    readScope: input.placement === "container" ? "guest-mounts" : "host-visible",
+    writeScope:
+      input.placement === "container"
+        ? "guest-mounts"
+        : input.placement === "sandbox"
+          ? "declared-roots"
+          : "host-os",
+    workspaceRoot,
+    workspaceAccess,
+    writableRoots,
+    protectedRoots,
+    temporaryRoots,
+    gitMetadataPaths,
+    ...(sandbox ? { sandbox } : {}),
+  });
+}
 
 /**
  * A ready-to-spawn command: the executable `file`, its `args`, and the `cwd`/
@@ -385,7 +474,7 @@ export function forbiddenSandboxRoots(): string[] {
 }
 
 /**
- * Discover the host temporary roots that workspace-confined coding tools may
+ * Discover the host temporary roots that run-owned coding tools may
  * use for compatibility with native CLIs.
  *
  * @param platform - Host platform; injectable for cross-platform tests.
@@ -483,6 +572,7 @@ function minimalEnv(
   runtimePaths: readonly string[] = [],
   temporaryRoot = "/tmp",
   home = "/home/clarvis",
+  secretEnvNames: readonly string[] = [],
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     HOME: home,
@@ -492,11 +582,12 @@ function minimalEnv(
     TMP: temporaryRoot,
     npm_config_script_shell: "/bin/sh",
   };
+  const secretNames = new Set(secretEnvNames);
   for (const name of ["LANG", "TZ", "TERM", "NO_COLOR", ...passEnv]) {
-    if (process.env[name] !== undefined) env[name] = process.env[name];
+    if (!secretNames.has(name) && process.env[name] !== undefined) env[name] = process.env[name];
   }
   for (const [name, value] of Object.entries(process.env)) {
-    if (name.startsWith("LC_") && value !== undefined) env[name] = value;
+    if (name.startsWith("LC_") && !secretNames.has(name) && value !== undefined) env[name] = value;
   }
   return env;
 }
@@ -512,6 +603,8 @@ function minimalEnv(
 export interface SandboxCommandArgs {
   /** The shell string to run (executed via `sh -c`). */
   command: string;
+  /** Resolved run policy; when present it supplies all filesystem authority below. */
+  filesystemPolicy?: ResolvedFilesystemPolicy;
   /** The working directory; also the `--chdir` target inside the sandbox. */
   cwd: string;
   /** The workspace, bound writable or read-only according to the sandbox policy. */
@@ -535,12 +628,10 @@ export interface SandboxCommandArgs {
    * inherited environment on the unsandboxed path.
    *
    * @remarks
-   * Ignored under a native backend, which builds its environment from nothing
-   * via {@link minimalEnv} and where `passEnv` is already the only way in. This
-   * exists for the bare path on an unsupported host or a `forceBare` host
-   * spawn — there, an agent's own shell tool could simply print the host's
-   * API keys, and a command that exfiltrates them is indistinguishable from one
-   * that legitimately reads the environment.
+   * Native backends use these names to reject credential variables requested
+   * through `passEnv` while building a minimal environment. Bare host spawns
+   * subtract them from the inherited environment; otherwise a shell command
+   * could print the host's API keys.
    */
   secretEnvNames?: readonly string[] | undefined;
   /**
@@ -598,38 +689,6 @@ function pathVariants(path: string): string[] {
   return [...new Set([normalized, canonicalOrSelf(normalized)])];
 }
 
-const SEATBELT_SYSTEM_READ_FILTERS = [
-  '(literal "/")',
-  '(subpath "/System")',
-  '(subpath "/usr")',
-  '(subpath "/bin")',
-  '(subpath "/sbin")',
-  '(subpath "/Library/Apple")',
-  '(subpath "/Library/Preferences")',
-  '(subpath "/Library/Developer")',
-  '(subpath "/Applications/Xcode.app")',
-  '(subpath "/opt/homebrew")',
-  '(literal "/etc")',
-  '(subpath "/etc")',
-  '(subpath "/private/etc")',
-  '(subpath "/var/db")',
-  '(subpath "/private/var/db")',
-  '(literal "/var")',
-  '(subpath "/var/select")',
-  '(subpath "/private/var/select")',
-  '(literal "/dev/null")',
-  '(literal "/dev/zero")',
-  '(literal "/dev/random")',
-  '(literal "/dev/urandom")',
-] as const;
-
-const SEATBELT_SYSTEM_METADATA_FILTERS = ['(literal "/opt")'] as const;
-
-const SEATBELT_HOST_NETWORK_READ_FILTERS = [
-  '(literal "/var/run/mDNSResponder")',
-  '(literal "/private/var/run/mDNSResponder")',
-] as const;
-
 interface SeatbeltPolicy {
   profile: string;
   definitions: string[];
@@ -640,11 +699,9 @@ interface SeatbeltPolicy {
  *
  * @remarks
  * Dynamic paths are passed through `sandbox-exec -D` parameters rather than
- * interpolated into the profile. The profile starts from the host's normal
- * non-file behavior, removes all filesystem access, then admits only system
- * runtime reads, declared roots, and the configured writable trees. A final
- * deny makes a read-only path nested inside a writable workspace stay
- * read-only, matching Bubblewrap's later read-only bind.
+ * interpolated into the profile. Reads follow the host-visible filesystem;
+ * writes are confined to declared roots. A final deny protects nested read-only
+ * roots, matching Bubblewrap's later read-only bind.
  */
 function seatbeltPolicy(args: {
   sandbox: SandboxConfig;
@@ -672,13 +729,6 @@ function seatbeltPolicy(args: {
   const compatibleTemporaryPaths = compatibleTemporaryRoots.flatMap(pathVariants);
   const temporaryPaths = [...primaryTemporaryPaths, ...compatibleTemporaryPaths];
   const readOnlyPaths = args.readOnlyPaths.flatMap(pathVariants);
-  const readablePaths = [
-    ...workspacePaths,
-    ...gitMetadataPaths,
-    ...temporaryPaths,
-    ...readOnlyPaths,
-  ];
-  const readable = [...new Set(readablePaths.filter((path) => existsSync(path)))];
   const workspaceProtectedPaths =
     args.sandbox.filesystem === "workspace-read-only"
       ? [...workspacePaths, ...gitMetadataPaths]
@@ -689,8 +739,7 @@ function seatbeltPolicy(args: {
       : [...workspacePaths, ...gitMetadataPaths]
           .filter((path) => existsSync(path))
           .map(dynamicFilter)),
-    ...primaryTemporaryPaths.filter((path) => existsSync(path)).map(dynamicFilter),
-    ...compatibleTemporaryPaths
+    ...temporaryPaths
       .filter((path) => existsSync(path))
       .map((path) => {
         const exclusions = workspaceProtectedPaths.map(
@@ -708,23 +757,19 @@ function seatbeltPolicy(args: {
     "(allow signal (target same-sandbox))",
     "(deny process-info*)",
     "(allow process-info* (target same-sandbox))",
-    "(deny file-read* file-test-existence file-map-executable file-write*)",
-    `(allow file-read* file-test-existence file-map-executable ${[
-      ...SEATBELT_SYSTEM_READ_FILTERS,
-      ...(args.sandbox.network === "none" ? [] : SEATBELT_HOST_NETWORK_READ_FILTERS),
-      ...readable.map(dynamicFilter),
-    ].join(" ")})`,
-    `(allow file-read-metadata file-test-existence ${[
-      ...SEATBELT_SYSTEM_METADATA_FILTERS,
-      ...readable.map((path) => `(path-ancestors (param "${keyFor(path)}"))`),
-    ].join(" ")})`,
+    "(deny file-write*)",
+    "(allow file-read* file-test-existence file-map-executable)",
     ...(writableFilters.length === 0
       ? []
       : [`(allow file-write* ${[...new Set(writableFilters)].join(" ")})`]),
     '(allow file-write-data file-ioctl (literal "/dev/null") (literal "/dev/zero"))',
-    ...(readOnlyPaths.length === 0
+    ...([...readOnlyPaths, ...workspaceProtectedPaths].length === 0
       ? []
-      : [`(deny file-write* ${readOnlyPaths.map(dynamicFilter).join(" ")})`]),
+      : [
+          `(deny file-write* ${[...new Set([...readOnlyPaths, ...workspaceProtectedPaths])]
+            .map(dynamicFilter)
+            .join(" ")})`,
+        ]),
     ...(args.sandbox.network === "none" ? ["(deny network*)"] : []),
   ].join("\n");
   return { profile, definitions };
@@ -784,18 +829,19 @@ export function sandboxWouldApply(
  * {@link minimalEnv}.
  */
 export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
+  const policy = args_.filesystemPolicy;
   const {
     command,
     cwd,
-    workspaceRoot,
-    gitMetadataPaths = [],
-    sandbox,
     secretEnvNames,
-    temporaryRoots = [],
     probe = probeSandbox,
     shell = resolveShell,
     forceBare = false,
   } = args_;
+  const workspaceRoot = policy?.workspaceRoot ?? args_.workspaceRoot;
+  const gitMetadataPaths = policy?.gitMetadataPaths ?? args_.gitMetadataPaths ?? [];
+  const temporaryRoots = policy?.temporaryRoots ?? args_.temporaryRoots ?? [];
+  const sandbox = policy === undefined ? args_.sandbox : policy.sandbox;
   const resolvedTemporaryRoots = [...new Set(temporaryRoots.map((path) => resolve(path)))];
   const primaryTemporaryRoot = resolvedTemporaryRoots[0];
   const host = shell();
@@ -824,6 +870,18 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
 
   const root = resolve(workspaceRoot);
   const readOnlyPaths = validatedReadOnlyPaths(sandbox, root);
+  const protectedRoots = [
+    ...(sandbox.filesystem === "workspace-read-only" ? [root, ...gitMetadataPaths] : []),
+    ...readOnlyPaths,
+  ].map(canonicalOrSelf);
+  for (const temporaryRoot of resolvedTemporaryRoots) {
+    const canonical = canonicalOrSelf(temporaryRoot);
+    if (protectedRoots.some((protectedRoot) => isWithin(canonical, protectedRoot)))
+      throw new ToolError(
+        "invalid_input",
+        `Writable temporary root is inside a protected sandbox path: ${temporaryRoot}`,
+      );
+  }
   if (support.backend === "seatbelt") {
     const gitPaths = gitMetadataPaths.map((path) => resolve(path));
     const policy = seatbeltPolicy({
@@ -844,6 +902,7 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
           sandbox.runtimePaths,
           canonicalOrSelf(primaryTemporaryRoot ?? root),
           home,
+          secretEnvNames,
         ),
       },
       sandboxed: true,
@@ -859,42 +918,40 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
     "--unshare-uts",
     "--cap-drop",
     "ALL",
+    "--ro-bind",
+    "/",
+    "/",
     "--dev",
     "/dev",
-    "--tmpfs",
-    "/tmp",
-    "--dir",
-    "/home",
-    "--dir",
-    "/home/clarvis",
   ];
   args.push(
     support.mode === "host-proc" ? "--ro-bind" : "--proc",
     "/proc",
     ...(support.mode === "host-proc" ? ["/proc"] : []),
   );
-  for (const path of ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc"]) {
-    mountSystemPath(args, path);
-  }
   appendBubblewrapMounts(args, [
     ...resolvedTemporaryRoots.map((path, index) => ({
-      path,
+      path: canonicalOrSelf(path),
       mode: "--bind" as const,
       precedence: index === 0 ? 2 : 0,
     })),
     {
-      path: root,
+      path: canonicalOrSelf(root),
       mode:
         sandbox.filesystem === "workspace-read-only" ? ("--ro-bind" as const) : ("--bind" as const),
       precedence: 1,
     },
     ...gitMetadataPaths.map((path) => ({
-      path,
+      path: canonicalOrSelf(path),
       mode:
         sandbox.filesystem === "workspace-read-only" ? ("--ro-bind" as const) : ("--bind" as const),
       precedence: 1,
     })),
-    ...readOnlyPaths.map((path) => ({ path, mode: "--ro-bind" as const, precedence: 3 })),
+    ...readOnlyPaths.map((path) => ({
+      path: canonicalOrSelf(path),
+      mode: "--ro-bind" as const,
+      precedence: 3,
+    })),
   ]);
   if (sandbox.network === "none") args.push("--unshare-net");
   else args.push(...resolverMounts());
@@ -904,7 +961,13 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
     args,
     options: {
       cwd,
-      env: minimalEnv(sandbox.passEnv, sandbox.runtimePaths, primaryTemporaryRoot),
+      env: minimalEnv(
+        sandbox.passEnv,
+        sandbox.runtimePaths,
+        primaryTemporaryRoot,
+        primaryTemporaryRoot ?? "/tmp",
+        secretEnvNames,
+      ),
     },
     sandboxed: true,
   };
@@ -1065,13 +1128,19 @@ export function installationRoot(
  */
 export function discoverToolchains(
   include: readonly string[] = Object.keys(TOOLCHAIN_COMMANDS),
+  environment: Readonly<Record<string, string | undefined>> = process.env,
 ): DiscoveredToolchain[] {
   const wanted = new Set(include);
   const out: DiscoveredToolchain[] = [];
   for (const [rawId, allCommands] of Object.entries(TOOLCHAIN_COMMANDS)) {
     const id = rawId as ToolchainId;
     if (!wanted.has(id)) continue;
-    const logicalPath = executableOnPath(allCommands[0]);
+    const logicalPath = executableOnPath(
+      allCommands[0],
+      environment.PATH,
+      process.platform,
+      environment.PATHEXT,
+    );
     if (!logicalPath) {
       out.push({
         id,
@@ -1093,7 +1162,11 @@ export function discoverToolchains(
           : (resolvedRoot ?? logicalRoot);
       out.push({
         id,
-        commands: allCommands.filter((command) => executableOnPath(command) !== undefined),
+        commands: allCommands.filter(
+          (command) =>
+            executableOnPath(command, environment.PATH, process.platform, environment.PATHEXT) !==
+            undefined,
+        ),
         available: true,
         logicalPath,
         resolvedPath,

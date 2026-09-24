@@ -137,7 +137,7 @@ export interface SandboxConfig {
   /** Platform-native sandbox selection. */
   type: "native";
   enabled?: boolean;
-  /** `required` fails a run when the sandbox is unavailable; `optional` runs unsandboxed instead. */
+  /** Both `required` and legacy `optional` fail closed when the native backend is unavailable. */
   availability?: "required" | "optional";
   /** Whether the workspace mount is writable or read-only inside the jail. */
   filesystem?: "workspace-write" | "workspace-read-only";
@@ -153,7 +153,7 @@ export interface SandboxConfig {
     include?: string[];
     /** Toolchain ids to exclude. */
     exclude?: string[];
-    /** Extra host directories to expose read-only inside the jail. */
+    /** Extra host directories to keep read-only for writes inside the jail. */
     extra_paths?: string[];
     /** Entries from {@link extra_paths} to suppress (e.g. one inherited from another scope). */
     excluded_paths?: string[];
@@ -213,6 +213,15 @@ export interface SandboxPathStatus {
  * `PATH` a sandboxed run would see.
  */
 export interface SandboxInspection {
+  /** Host-resolved access posture shown even when native Sandbox is disabled. */
+  filesystem: {
+    placement: "host" | "sandbox";
+    reads: "host-visible";
+    writes: "host-os" | "declared-roots";
+    workspace: "read-write" | "read-only";
+  };
+  /** Network access after the host applies the selected placement and global policy floor. */
+  effective_network: "host" | "none";
   backend: {
     /** Backend selected for this host, even when it is unavailable. */
     type: "bubblewrap" | "seatbelt" | "unsupported";

@@ -356,7 +356,7 @@ export function createGoalEvidenceSource(options: {
         MAX_ARTIFACT_BYTES,
         undefined,
         {
-          confinement: { workspaceRoot: options.workspaceRoot },
+          expectedArtifactRoot: options.workspaceRoot,
         },
       );
     });

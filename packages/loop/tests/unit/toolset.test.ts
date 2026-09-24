@@ -76,7 +76,6 @@ describe("createAgentToolset policy", () => {
       workspaceRoot: "/workspace",
       canMutate: false,
       canExec: true,
-      confineToWorkspace: false,
       guard,
       secretEnvNames: ["TOKEN"],
     } satisfies AgentToolsetOptions;

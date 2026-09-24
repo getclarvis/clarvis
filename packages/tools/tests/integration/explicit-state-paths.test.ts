@@ -39,7 +39,7 @@ describe("explicit machinery namespace", () => {
     ).toThrow(StartupError);
   });
 
-  it("reads selected namespace spills and preserves the narrower guard artifact exception", async () => {
+  it("pins selected spills while Host access to another tree follows OS permissions", async () => {
     const selected = paths("selected");
     const sibling = paths("sibling");
     ensureWorkspaceLocalDir(selected);
@@ -58,7 +58,9 @@ describe("explicit machinery namespace", () => {
     const admitted = await callTool("read_file", { path: own }, config);
     expect(admitted.isError).toBe(false);
     expect(admitted.text).toContain("selected result");
-    expect((await callTool("read_file", { path: other }, config)).isError).toBe(true);
+    const siblingRead = await callTool("read_file", { path: other }, config);
+    expect(siblingRead.isError).toBe(false);
+    expect(siblingRead.text).toContain("sibling result");
     expect(readableStateArtifactPath(own, config.stateRoot)).toBe(own);
     expect(readableStateArtifactPath(other, config.stateRoot)).toBeUndefined();
     expect(readableStateArtifactPath(control, config.stateRoot)).toBeUndefined();

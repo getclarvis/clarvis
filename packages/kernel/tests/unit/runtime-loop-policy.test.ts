@@ -24,7 +24,7 @@ describe("isolated loop policy", () => {
     expect(policy).not.toHaveProperty("CLARVIS_LOG");
     expect(policy).not.toHaveProperty("CLARVIS_AGENT_TOOLS_ENABLED");
     if (!validRuntimeLoopPolicy(policy)) throw new Error("expected admitted policy");
-    const guest = guestLoopEnvironment(policy, { enabled: false, confine: true, maxGrant: "read" });
+    const guest = guestLoopEnvironment(policy, { enabled: false, maxGrant: "read" });
     expect(runtimeLoopPolicy(guest)).toEqual(runtimeLoopPolicy(env));
     expect(guest.CLARVIS_AGENT_TOOLS_ENABLED).toBe(false);
     expect(guest.CLARVIS_AGENT_TOOLS_MAX_GRANT).toBe("read");

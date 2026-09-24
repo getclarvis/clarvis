@@ -192,9 +192,9 @@ describe("file_stat", () => {
     }
   });
 
-  it("rejects a path escaping the workspace with path_escape", async () => {
+  it("reports a missing parent-relative path using the OS error", async () => {
     const r = await callTool("file_stat", { path: "../x" }, config);
-    expect(r.json.error).toBe("path_escape");
+    expect(r.json.error).toBe("not_found");
   });
 
   it("ignores out-of-schema extra fields", async () => {

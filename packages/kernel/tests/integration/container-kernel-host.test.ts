@@ -77,6 +77,8 @@ test("Container native graph yields and stops a run-owned shell session", async 
     llm: {
       call: async (params) => {
         const current = step++;
+        if (current === 0)
+          expect(JSON.stringify(params.messages)).toContain("only the guest mounts");
         if (current === 2) {
           const result = params.messages.findLast((message) => message.role === "tool");
           if (result?.role !== "tool") throw new Error("missing shell_session stop result");
@@ -127,6 +129,62 @@ test("Container native graph yields and stops a run-owned shell session", async 
     expect(step).toBe(3);
     expect(sessionId).toMatch(/^ses_[0-9a-f]{32}$/);
     expect(stopConfirmed).toBe(true);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("Container native graph refuses shell escalation to the host", async () => {
+  let calls = 0;
+  const fixture = await containerNativeFixture({
+    enableCommandTools: true,
+    agents: [
+      {
+        name: "fixture",
+        scope: "global",
+        body: "Execute the fixture request.",
+        frontmatter: {
+          model: "logical/model",
+          grants: ["read_workspace", "edit_workspace", "run_commands"],
+        },
+      },
+    ],
+    llm: {
+      call: async (params) => {
+        const step = calls++;
+        if (step === 0) {
+          const shell = params.tools.find((item) => item.toolName === "shell");
+          if (shell === undefined) throw new Error("missing Container shell tool");
+          return {
+            toolCalls: [
+              {
+                id: "host-escalation",
+                name: shell.wireName,
+                arguments: {
+                  command: "true",
+                  sandbox_permissions: "require_escalated",
+                  justification: "fixture host access",
+                },
+              },
+            ],
+            usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
+          };
+        }
+        expect(JSON.stringify(params.messages)).toContain(
+          "Isolated container runs cannot reach the host",
+        );
+        return {
+          text: "Host escalation refused.",
+          usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
+        };
+      },
+    },
+  });
+  try {
+    const { attachment } = await fixture.start({ guard_mode: "off" });
+    expect(await attachment.handle.done).toMatchObject({ status: "completed" });
+    await attachment.handle.closed;
+    expect(calls).toBe(2);
   } finally {
     await fixture.close();
   }

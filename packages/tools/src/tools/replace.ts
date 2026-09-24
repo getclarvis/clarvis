@@ -3,7 +3,7 @@ import {
   isReviewedConfigurationPath,
   reviewedConfigurationModes,
 } from "../guard/authoring-path.ts";
-import { promises as fs } from "node:fs";
+import { fs } from "../lib/environment-fs.ts";
 import { isAbsolute, relative, sep } from "node:path";
 import { configurationRoots } from "@clarvis/paths";
 import { ToolError, fsError } from "../errors.ts";

@@ -73,6 +73,13 @@ describe("ConfigService over a storage-agnostic ConfigStore (memory)", () => {
 
   it("exposes host sandbox inspection through the config service", async () => {
     const inspection = {
+      effective_network: "none" as const,
+      filesystem: {
+        placement: "sandbox" as const,
+        reads: "host-visible" as const,
+        writes: "declared-roots" as const,
+        workspace: "read-write" as const,
+      },
       backend: {
         type: "bubblewrap" as const,
         available: true,

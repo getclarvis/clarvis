@@ -330,17 +330,23 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
   function effectiveStatus(): { text: string; fg: string } {
     void savedVersion();
     const sandbox = deps.settings.effective().sandbox;
-    if (!sandbox || sandbox.enabled === false)
+    const observed = inspection()?.filesystem;
+    const active = observed
+      ? observed.placement === "sandbox"
+      : !!sandbox && sandbox.enabled !== false;
+    if (!active)
       return {
         text: "off " + glyph("emDash") + " commands run directly on the host",
         fg: tokens.warn,
       };
     const fallback =
-      (sandbox.availability ?? "required") === "optional"
+      (sandbox?.availability ?? "required") === "optional"
         ? " (optional is treated as required)"
         : "";
     return {
-      text: `on ${glyph("emDash")} ${sandbox.filesystem ?? "workspace-write"}, network:${sandbox.network ?? "host"}${fallback}`,
+      text: observed
+        ? `on ${glyph("emDash")} read host-visible files; workspace ${observed.workspace}, writes ${observed.writes}, network:${inspection()?.effective_network ?? "host"}${fallback}`
+        : `on ${glyph("emDash")} read host-visible files; ${sandbox?.filesystem ?? "workspace-write"}, network:${sandbox?.network ?? "host"}${fallback}`,
       fg: tokens.add,
     };
   }
@@ -348,7 +354,9 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
   function hostWarning(): { text: string; fg: string } | null {
     void savedVersion();
     const sandbox = deps.settings.effective().sandbox;
-    const enabled = sandbox && sandbox.enabled !== false;
+    const enabled =
+      inspection()?.filesystem.placement === "sandbox" ||
+      (inspection() === undefined && sandbox && sandbox.enabled !== false);
     if (!enabled) return null;
     const avail = availability();
     if (!avail) return null;
@@ -504,6 +512,13 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
     return (
       <DetailColumn fill>
         <StatusRow label="effective" text={effectiveStatus().text} fg={effectiveStatus().fg} />
+        <Show when={inspection() !== null}>
+          <StatusRow
+            label="filesystem"
+            text={`${inspection()!.filesystem.placement}: read ${inspection()!.filesystem.reads}; write ${inspection()!.filesystem.writes}; workspace ${inspection()!.filesystem.workspace}`}
+            fg={tokens.muted}
+          />
+        </Show>
         <Show when={hostWarning()}>
           <DetailLines rows={[{ text: hostWarning()!.text, fg: hostWarning()!.fg }]} />
         </Show>

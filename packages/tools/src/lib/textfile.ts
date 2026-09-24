@@ -29,7 +29,7 @@ function rejectIfUnreadable(buf: Buffer, relForError: string): void {
  * @param target - the absolute path to read.
  * @param relForError - the workspace-relative path echoed into error messages.
  * @param maxBytes - the maximum file size to accept (the `MAX_FILE_BYTES` limit).
- * @param options - descriptor and post-open confinement policy.
+ * @param options - descriptor and protected-resource policy.
  * @returns the {@link DecodedText} for the file.
  * @throws {@link ToolError} for a missing/oversized/non-file path (see
  *   {@link readRawFile}) or `is_binary` when the bytes look binary and lack a
@@ -52,7 +52,7 @@ export async function readTextFile(
  *
  * @param target - the absolute path to read.
  * @param maxBytes - the maximum file size to accept.
- * @param options - descriptor and post-open confinement policy.
+ * @param options - descriptor and protected-resource policy.
  * @returns the {@link DecodedText}, or `null` on any of the above conditions.
  * @remarks Unlike {@link readTextFile}, ordinary filesystem, size and binary
  *   failures collapse to `null`, so it suits callers that treat an unavailable

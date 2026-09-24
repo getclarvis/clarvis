@@ -115,15 +115,7 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
       denySensitiveShellCommand(command);
       const { forceBare } = resolveSandboxEscalation(args, config);
       const cwdArg = args.cwd as string | undefined;
-      const cwd = cwdArg
-        ? resolvePath(
-            cwdArg,
-            config.workspaceRoot,
-            config.confineToWorkspace,
-            [...config.temporaryRoots, ...config.skillExecutionRoots],
-            config.logger,
-          )
-        : config.workspaceRoot;
+      const cwd = cwdArg ? resolvePath(cwdArg, config.workspaceRoot) : config.workspaceRoot;
       const requestedTimeoutMs = (args.timeout_ms as number | undefined) || config.shellTimeoutMs;
       const timeoutMs = Math.min(requestedTimeoutMs, config.shellTimeoutMaxMs, MAX_TIMER_DELAY_MS);
       const yieldMs = args.yield_time_ms as number | undefined;

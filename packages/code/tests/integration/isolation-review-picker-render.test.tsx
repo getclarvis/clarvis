@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { IsolationPicker } from "../../src/views/overlays/IsolationPicker.tsx";
+import { glyph } from "../../src/theme/glyphs.ts";
 import { ReviewPicker } from "../../src/views/overlays/ReviewPicker.tsx";
 import { MemoryPicker } from "../../src/views/overlays/MemoryPicker.tsx";
 import type { Interaction } from "../../src/keys/interaction.ts";
@@ -54,6 +55,37 @@ test("the memory picker changes only the session mode", async () => {
   expect(memory.mode()).toBe("off");
   expect(notices).toEqual(["memory: off (this session) — applies to the next run"]);
   expect(applied).toEqual([true]);
+  rendered.renderer.destroy();
+});
+
+test("the isolation picker marks the host-inspected Sandbox as current", async () => {
+  const { keymap } = createFakeKeymap();
+  const settings = {
+    effective: () => ({ sandbox: { type: "native", enabled: false } }),
+    inspectSandbox: async () => ({ filesystem: { placement: "sandbox" } }),
+  } as unknown as SettingsAdapter;
+  const rendered = await openRender(
+    (() => (
+      <IsolationPicker
+        interaction={interactionWith(keymap)}
+        settings={settings}
+        runActive={() => false}
+        active={() => true}
+        notify={() => {}}
+        reload={async () => ({ ok: true, message: "reloaded" })}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />
+    )) as never,
+    { width: 100, height: 24 },
+  );
+  await tick();
+  await rendered.renderOnce();
+  const sandboxRow = rendered
+    .captureCharFrame()
+    .split("\n")
+    .find((line) => line.includes("Sandbox") && line.includes("read host-visible"));
+  expect(sandboxRow).toContain(glyph("radioOn"));
   rendered.renderer.destroy();
 });
 

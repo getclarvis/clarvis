@@ -778,7 +778,7 @@ invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
 | `MemoryConfig` | `{ enabled?; model?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 | `SandboxConfig` | `{ type: "native"; enabled?; availability?: "required" \| "optional"; filesystem?; network?; pass_env?; toolchains?: { mode?: "auto" \| "manual"; include?; exclude?; extra_paths?; excluded_paths? } }` | `packages/protocol/src/config.ts` (`SandboxConfig`) |
 | `SandboxToolchainScope` | `"system" \| "auto" \| "global" \| "workspace"` | `packages/protocol/src/config.ts` |
-| `SandboxInspection` | `{ backend: { type: "bubblewrap" \| "seatbelt" \| "unsupported"; available; mode: "fresh-proc" \| "host-proc" \| "seatbelt" \| "unavailable"; degraded; reason? }; toolchains: SandboxToolchainStatus[]; extra_paths: SandboxPathStatus[]; effective_path: string[] }` | `packages/protocol/src/config.ts` (`SandboxInspection`) |
+| `SandboxInspection` | `{ filesystem: { placement: "host" \| "sandbox"; reads: "host-visible"; writes: "host-os" \| "declared-roots"; workspace: "read-write" \| "read-only" }; effective_network: "host" \| "none"; backend: { type: "bubblewrap" \| "seatbelt" \| "unsupported"; available; mode: "fresh-proc" \| "host-proc" \| "seatbelt" \| "unavailable"; degraded; reason? }; toolchains: SandboxToolchainStatus[]; extra_paths: SandboxPathStatus[]; effective_path: string[] }` | `packages/protocol/src/config.ts` (`SandboxInspection`) |
 
 `RuntimeConfig` is the host-operator input, not a run grant. A simple Docker or Podman object may
 omit image, executable, connection and limits; the kernel fills product-owned defaults. Omitting a
@@ -811,6 +811,13 @@ values name where a discovered toolchain (or read-only path) originates: `"syste
 host `PATH`), `"auto"` (found by discovery), or the `"global"` / `"workspace"` settings scope that
 declared it (`packages/protocol/src/config.ts`). This is the return shape behind `ConfigService.inspectSandbox`,
 whose §2.3 table row names only the method signature.
+`SandboxInspection.filesystem` separately describes Host versus Sandbox, host-visible reads,
+the write boundary and workspace posture. `effective_network` reports the enforced network mode;
+backend availability does not itself grant access.
+Production: `SandboxInspection` in `packages/protocol/src/config.ts` and
+`createSandboxPolicyResolver.inspect` in `packages/kernel/src/sandbox/policy.ts`. Test:
+`packages/kernel/tests/integration/sandbox-policy.test.ts` (`reports effective host-visible reads
+and the selected write posture`) and `packages/kernel/tests/contract/config-service.test.ts`.
 
 ### 3.11 `ConfigService` data shapes II: repair plan and agents (`config.ts`)
 

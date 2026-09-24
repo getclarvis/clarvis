@@ -139,6 +139,21 @@ describe("createShellGuard (kernel copy)", () => {
     expect(d).toMatchObject({ verdict: "deny" });
   });
 
+  it("reviews an external Sandbox shell path while retaining the native write boundary", async () => {
+    const context = makeCtx(
+      "shell",
+      { command: "cat /etc/hosts" },
+      shellFacts("cat /etc/hosts", { paths: ["/etc/hosts"] }),
+    );
+    context.config = { ...context.config, sandbox: { type: "native" } } as GuardContext["config"];
+    const decision = await createShellGuard({ placement: "contained" })(context);
+    expect(decision).toMatchObject({
+      verdict: "ask",
+      placement: "contained",
+      touches_outside: true,
+    });
+  });
+
   it("denies a denylisted command even under an undecidable compound", async () => {
     const guard = createShellGuard({ deniedCommands: ["rm"] });
     const d = await guard(

@@ -56,7 +56,7 @@ const COMMAND_PREFIX_TOKENS = new Set([
  * This is a seed, not a policy: it is written into the user's settings once so
  * they can see and edit it, rather than compiled into the guard where it would
  * be an invisible default nobody could audit. Every entry still passes through
- * the deny list, the undecidable check and the confinement check first — a
+ * the deny list, the undecidable check and the location check first — a
  * match only spares the approval prompt.
  *
  * Multi-operation CLIs name a subcommand rather than the bare binary, because
@@ -764,7 +764,7 @@ function analyzeSources(command: string, sources: string[]): string[] {
  * A glob that traverses upward through `..` is reported opaque and therefore
  * contributes **no** prefix, where the pre-dialect analyzer forced the command
  * undecidable *and* still pushed the literal prefix. The verdict is unchanged
- * either way: an undecidable command can never be workspace-confined, so the
+ * either way: an undecidable command can never be within-workspace, so the
  * dropped prefix is never the fact a decision rests on.
  */
 function pathCandidate(token: Token): PathCandidate {

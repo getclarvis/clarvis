@@ -75,9 +75,9 @@ example; the example itself is executed in the integration suite. Production: `e
 
 ### 2.3 `packages/tools/src/lib/atomic.ts` exports
 
-Not part of any package `exports` subpath — the file is internal to `@clarvis/tools`'s own `src/`
-(the export map reaches none of them: `lib/atomic.ts`
-explicitly). Its symbols, as consumed by the tools above:
+The file remains internal to the tools source tree, while `applyOpsAtomic` is re-exported at the
+package root for the Kernel's narrow reviewed configuration commit. Its symbols, as consumed by
+the tools above:
 
 | Symbol | Kind | File | Used by |
 | --- | --- | --- | --- |
@@ -107,16 +107,16 @@ every handler above consumes them directly.
 | `maxDiffInputBytes` | `8 * 1024 * 1024` (`DEFAULT_MAX_DIFF_INPUT_BYTES`, `packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | packages/tools/src/tools/write-file.ts, packages/tools/src/tools/edit-file.ts, packages/tools/src/tools/replace.ts |
 | `maxTraversalEntries` | `50_000` (`DEFAULT_MAX_TRAVERSAL_ENTRIES`, `packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | packages/tools/src/tools/replace.ts (`scopeFiles`) |
 | `regexScanBudgetMs` | `5000` (`DEFAULT_REGEX_SCAN_BUDGET_MS`, `packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | packages/tools/src/tools/replace.ts (`createScanBudget`) |
-| `confineToWorkspace` | `true` default (`packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | every `resolvePath` call in every handler above |
 | `readOnly` | `false` default (`packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | gates tool visibility upstream ([tools-contract-and-dispatch](tools-contract.md)); observed effect: `packages/tools/tests/integration/replace.test.ts` shows `readOnly: true` making `replace` answer `not_found`, as if the tool did not exist |
 | `skillExecutionRoots` | `[]` | `RuntimeConfig.skillExecutionRoots` at `packages/tools/src/config.ts`; normalized in `resolveConfig` | the central dispatcher refuses every native source/destination below a selected skill package before any handler runs |
 
 ## 3. Data and formats
 
-### 3.1 The `FileOp` batch (in-memory only)
+### 3.1 The `FileOp` batch
 
-`applyOpsAtomic` never persists a `FileOp[]` to disk; it is an in-process array built by the calling
-tool for one call and discarded after commit. Example, from `apply_patch`'s rename-with-content path
+`applyOpsAtomic` never persists a `FileOp[]` to disk. In Sandbox, the child sends a bounded
+serialized copy to the host for review and waits for a receipt bound to the run policy and prepared
+bytes. The batch is discarded after commit or refusal. Example, from `apply_patch`'s rename-with-content path
 (`packages/tools/src/tools/apply-patch.ts`):
 
 ```ts
@@ -126,8 +126,27 @@ tool for one call and discarded after commit. Example, from `apply_patch`'s rena
 and from `remove` (`packages/tools/src/tools/remove.ts`):
 
 ```ts
-[{ type: "delete", path: target }]
+[{ type: "delete", path: target }];
 ```
+
+Sandbox mutation handlers prepare inside the isolated child before the host reviewer runs. The
+reviewer sends a typed commit or refusal, and the child rechecks the target at commit. Returning
+from review without invoking commit also refuses the prepared mutation. Classified
+configuration batches use the host's existing revisioned reviewer and a narrow host commit;
+ordinary paths in such a batch must remain inside the writable workspace, while private and
+protected paths are refused. A failed atomic batch rolls back its completed file operations. The
+existing parent-directory replacement race remains a separate known limitation; the process
+boundary does not close it. Production: `reviewFor` in
+[filesystem-worker.ts](../../packages/tools/src/filesystem-worker.ts), `mutationRoute` in
+[filesystem-service.ts](../../packages/tools/src/filesystem-service.ts), `applyOpsAtomic` in
+[atomic.ts](../../packages/tools/src/lib/atomic.ts), and `createAuthoringMutationReview` in
+[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts). Test:
+[filesystem-service.test.ts](../../packages/tools/tests/integration/filesystem-service.test.ts)
+(`a reviewer that returns without committing refuses the prepared mutation`,
+`a target changed to a symlink during review cannot redirect the commit`,
+`an existing hard link does not let a reviewed commit change the external inode`) and
+[file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts)
+(`commits reviewed global and workspace authoring documents through the Sandbox file service`).
 
 A `create` op with `content` omitted does not fail: `stageAll` defaults it to the empty string
 (`stage(op.path, op.content ?? "")`, `packages/tools/src/lib/atomic.ts`), which produces a real, empty file — pinned by
@@ -165,6 +184,7 @@ interface EditSpec {
   replace_all?: boolean;
 }
 ```
+
 (`packages/tools/src/tools/edit-file.ts`.) `multi_edit` applies an ordered array of these to one file inside a single
 transform (`packages/tools/src/tools/multi-edit.ts`).
 
@@ -200,7 +220,7 @@ expressed through it: `ToolError { code: ErrorCode, message, fields }`
 
 ### 4.1 `write_file` (`packages/tools/src/tools/write-file.ts`)
 
-1. Resolve and confine `path` (`resolvePath`, delegated to [security-confinement-and-redaction](../cross-cutting/security.md)).
+1. Resolve `path` relative to the workspace when needed, then admit classified configuration through `resolveFileToolPath` ([security](../cross-cutting/security.md)).
 2. `withFileLock(target, …)` (`packages/tools/src/lib/atomic.ts`) — serializes against any other call touching the same
    absolute path.
 3. `fs.stat(target)`: if it is a directory, throw `not_a_file` (`packages/tools/src/tools/write-file.ts`); if `ENOENT`,
@@ -237,6 +257,7 @@ a no-op write.
 5. Build the diff and return.
 
 `edit_file`'s `transform` is one call to `applyEdit` (`packages/tools/src/tools/edit-file.ts`):
+
 - `old_string === new_string` → `invalid_input`.
 - Count exact occurrences. Zero and no `replace_all`: try `findCascadeMatch` (whitespace-tolerant,
   owned by [tools-read-and-search](tools-read-and-search.md)); exactly one span → apply it and report `fuzzy: true`; more than
@@ -269,7 +290,7 @@ entry is malformed") — it propagates as the generic non-`ToolError` case in Se
    `parsePatch`. Either parse failure → `invalid_input: "Malformed patch: …"`.
 2. Reject an empty parse, or one where no block is "actionable" (has hunks, or is a genuine
    rename whose paths differ) → `invalid_input: "Patch contains no applicable hunks"`.
-3. Collect every referenced path (old and new name of every block) and resolve+confine each; lock all
+3. Collect every referenced path (old and new name of every block), resolve each and apply classified-path admission; lock all
    of them together via `withFileLocks` before any file is touched.
 4. For each block, in `applyParsed`:
    - `claim(abs, rel)` refuses a second block naming a path already claimed by this batch
@@ -323,7 +344,7 @@ modify").
 
 ### 4.5 `move` (`packages/tools/src/tools/move.ts`)
 
-1. Resolve+confine both `source` and `destination`; identical resolved paths → `invalid_input`.
+1. Resolve both `source` and `destination` with classified-path admission; identical resolved paths → `invalid_input`.
 2. `withFileLocks([absSrc, absDst], …)`.
 3. Reject either endpoint being a symlink (`assertNotSymlink`).
 4. `fs.stat(absSrc)`; a directory source → `not_a_file`; any stat failure →
@@ -345,7 +366,7 @@ cannot duplicate a file:
    (binary-safe), `chmod` the temp file to the source's mode (`& 0o777`), then
    `renameWithRetry(tmp, absDst)`; on any failure in this block, best-effort `fs.rm` the
    temp file before mapping the error through `fsError`.
-7. With host configuration review, capture bounded UTF-8 source bytes through the confined
+7. With host configuration review, capture bounded UTF-8 source bytes through the bounded
    descriptor read and pass a create/modify `FileOp` with private file and directory modes to
    `applyOpsAtomic`, so review and rollback use the same transaction as other prepared file batches.
 8. `fsyncDir` the destination directory only — unlike `move` (step 7 above), `copy` never
@@ -354,7 +375,7 @@ cannot duplicate a file:
 
 ### 4.7 `mkdir` (`packages/tools/src/tools/mkdir.ts`)
 
-Resolve+confine; `fs.mkdir(target, { recursive: true })`. Node's recursive `mkdir` throws `EEXIST`
+Resolve with classified-path admission; `fs.mkdir(target, { recursive: true })`. Node's recursive `mkdir` throws `EEXIST`
 only when the path exists as a **non**-directory, which this handler maps to `not_a_file`; any other error goes through `fsError`. Node returns the first path segment it
 actually created, or `undefined` when the directory already existed — that return value alone
 distinguishes "created" from "already existed" in the success message; no separate
@@ -362,7 +383,7 @@ existence check is made before the call.
 
 ### 4.8 `remove` (`packages/tools/src/tools/remove.ts`)
 
-Resolve+confine; `withFileLock(target, …)`; `fs.lstat` (not followed) — a missing path maps through
+Resolve with classified-path admission; `withFileLock(target, …)`; `fs.lstat` (not followed) — a missing path maps through
 `fsError` to `not_found`, a directory throws `not_a_file`. The actual delete is
 `applyOpsAtomic([{ type: "delete", path: target }])` — so a symlink target is caught by
 `applyOpsAtomic`'s own `assertNotSymlink` inside `validateTargets` (`packages/tools/src/lib/atomic.ts`) even though
@@ -598,19 +619,18 @@ lock-ordering deadlock between them.
 ## 7. Coupling
 
 **Depends on (runtime, static imports):**
+
 - `@clarvis/paths` — `tmpPathFor`, `renameWithRetry`, `fsyncDir`, `writeFileDurable`, `TMP_GLOB`
   (`packages/tools/src/lib/atomic.ts`; also directly in `packages/tools/src/tools/move.ts`, `packages/tools/src/tools/copy.ts`). This is a hard, static import; the
-  temp-naming and rename-retry *policy* is that package's, not re-implemented here — confirmed by
+  temp-naming and rename-retry _policy_ is that package's, not re-implemented here — confirmed by
   `renameForTools` (`packages/tools/src/lib/atomic.ts`) being a thin bind of `renameWithRetry` to this module's own
   `fs.rename`, kept as a live function reference specifically so a test can inject a failing rename
   "without duplicating `@clarvis/paths`' retry algorithm" (doc remark, `packages/tools/src/lib/atomic.ts`).
 - `../errors.ts` (`ToolError`, `fsError`) — every handler and `atomic.ts` itself construct or rethrow
   through this type; owned by [tools-contract-and-dispatch](tools-contract.md).
-- `../lib/paths.ts` (`resolvePath`, `displayPath`) — every handler resolves and confines its path
-  argument here before touching the filesystem; owned by [security-confinement-and-redaction](../cross-cutting/security.md)
-  (the check itself is `resolvePath`'s `confine` branch, `packages/tools/src/lib/paths.ts`,
-  which delegates to `assertWithinWorkspace`). This subsystem consumes but does not define workspace
-  confinement.
+- `../lib/paths.ts` (`resolvePath`, `resolveFileToolPath`, `displayPath`) — handlers resolve
+  relative paths and enforce classified configuration protection before I/O. Ordinary external
+  paths follow the selected environment policy. See [security](../cross-cutting/security.md).
 - `../lib/textfile.ts`, `../lib/text.ts`, `../lib/unified-diff.ts`, `../lib/scan-budget.ts`,
   `../lib/files.ts` — decode/encode/diff/budget/listing primitives, owned by [tools-read-and-search](tools-read-and-search.md).
 - `diff` (npm) — `packages/tools/src/tools/apply-patch.ts` (`applyPatch`, `parsePatch`, `StructuredPatch`) is the only
@@ -643,7 +663,7 @@ exclusively through the registry and tool dispatch, which is [tools-contract-and
   concurrent calls with overlapping, oppositely-ordered path sets to prove the property empirically —
   see invariant 20.~~ **Resolved**, see invariant 20: the deadlock is real and reproducible,
   and the guard now fails loudly instead of hanging. This was a gap to flag, not fill: the parent-directory TOCTOU threat model this
-  locking discipline does *not* address is explicitly delegated to [security-confinement-and-redaction](../cross-cutting/security.md),
+  locking discipline does *not* address is recorded in [security](../cross-cutting/security.md),
   and is out of bounds here. **Recorded**: that threat model is
   now written at `resolvePath` (`packages/tools/src/lib/paths.ts`), naming this document's five
   mutating tools as the exposed set — `mkdir`, `remove`, `move`, `copy` and a `write_file` creating a

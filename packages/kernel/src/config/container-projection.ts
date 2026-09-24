@@ -129,7 +129,7 @@ const plansSchema = PLANS_SETTINGS_FIELDS.plans
   );
 const shape = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     defaults: defaultsSchema,
     profiles: z.array(profileSchema).max(1024),
     sharedPrompt: z
@@ -160,7 +160,6 @@ const shape = z
     toolPolicy: z
       .object({
         enabled: z.boolean(),
-        confine: z.boolean(),
         maxGrant: z.enum(["none", "read", "edit", "exec"]),
       })
       .strict(),
@@ -178,7 +177,7 @@ const shape = z
     }
   });
 
-/** Closed, canonical version-1 configuration. No host SettingsSnapshot or provider transport survives. */
+/** Closed, canonical version-2 configuration. No host SettingsSnapshot or provider transport survives. */
 export type ContainerConfiguration = z.infer<typeof shape>;
 
 /** Runtime schema refuses lossy JSON, normalization/coercion, omitted canonical defaults and excess bytes. */
@@ -276,7 +275,7 @@ export function projectContainerConfiguration(
     return { name: record.name, frontmatter, prompt, origin: record.scope };
   });
   const configuration = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     defaults,
     profiles,
     sharedPrompt: input.sharedPrompt,
@@ -313,7 +312,6 @@ export function projectContainerConfiguration(
     loopPolicy: projectContainerLoopPolicy(input.env),
     toolPolicy: {
       enabled: input.env.CLARVIS_AGENT_TOOLS_ENABLED,
-      confine: input.env.CLARVIS_AGENT_TOOLS_CONFINE,
       maxGrant: input.env.CLARVIS_AGENT_TOOLS_MAX_GRANT,
     },
   };

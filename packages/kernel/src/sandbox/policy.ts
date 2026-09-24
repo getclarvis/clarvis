@@ -14,20 +14,28 @@ import type { ConfigStore, SettingsSnapshot } from "../config/config-store.ts";
  * @returns `resolved`, the de-duplicated absolute paths that resolved cleanly, and
  *   `status`, one {@link SandboxPathStatus} per configured entry (marking whether
  *   it resolved and, if not, why).
- * @remarks Walks `global` then `workspace` scope; entries listed in the merged
- *   `toolchains.excluded_paths` are dropped before resolution. A workspace-scoped
- *   entry may be relative; a global one may not.
+ * @remarks Walks `global` then `workspace` scope. For an untrusted workspace,
+ *   workspace exclusions cannot remove a global path. A workspace-scoped entry
+ *   may be relative; a global one may not.
  */
 function configuredPaths(
   snapshot: SettingsSnapshot,
   workspaceRoot: string,
 ): { resolved: string[]; status: SandboxPathStatus[] } {
   const merged = snapshot.merged.sandbox;
-  const excluded = new Set(merged?.toolchains?.excluded_paths ?? []);
+  const mergedExcluded = new Set(merged?.toolchains?.excluded_paths ?? []);
+  const protectGlobal =
+    snapshot.scopes.global?.sandbox?.enabled !== false &&
+    snapshot.scopes.global?.sandbox !== undefined &&
+    snapshot.workspace_trust?.state !== "trusted";
   const resolved: string[] = [];
   const status: SandboxPathStatus[] = [];
   for (const scope of ["global", "workspace"] as const satisfies readonly Scope[]) {
     const sandbox = snapshot.scopes[scope]?.sandbox;
+    const excluded =
+      protectGlobal && scope === "global"
+        ? new Set(sandbox?.toolchains?.excluded_paths ?? [])
+        : mergedExcluded;
     for (const raw of sandbox?.toolchains?.extra_paths ?? []) {
       if (excluded.has(raw)) continue;
       const { path, error } = resolveSandboxPath(raw, workspaceRoot, scope === "workspace");
@@ -77,8 +85,40 @@ function discoverySignature(
   });
 }
 
+/** Keeps an enabled global Sandbox as the floor for an untrusted workspace. */
 function effectiveSandboxSettings(snapshot: SettingsSnapshot): SandboxSettings | undefined {
-  return snapshot.merged.sandbox;
+  const merged = snapshot.merged.sandbox;
+  const global = snapshot.scopes.global?.sandbox;
+  if (
+    merged === undefined ||
+    global === undefined ||
+    global.enabled === false ||
+    snapshot.workspace_trust?.state === "trusted"
+  )
+    return merged;
+  const globalToolchains = global.toolchains;
+  return {
+    ...merged,
+    enabled: true,
+    ...(global.filesystem === "workspace-read-only"
+      ? { filesystem: "workspace-read-only" as const }
+      : {}),
+    ...(global.network === "none" ? { network: "none" as const } : {}),
+    pass_env: global.pass_env,
+    ...(globalToolchains === undefined
+      ? {}
+      : {
+          toolchains: {
+            ...merged.toolchains,
+            ...(globalToolchains.mode === undefined ? {} : { mode: globalToolchains.mode }),
+            ...(globalToolchains.include !== undefined
+              ? { include: globalToolchains.include }
+              : globalToolchains.mode === "manual"
+                ? { include: [] }
+                : {}),
+          },
+        }),
+  };
 }
 
 /**
@@ -108,6 +148,35 @@ export interface SandboxPolicyResolver {
   inspect(options?: { refresh?: boolean }): Promise<SandboxInspection>;
 }
 
+/** Pin the effective Sandbox settings for one host generation and reject later drift. */
+export function pinSandboxPolicy(
+  resolver: Pick<SandboxPolicyResolver, "resolve">,
+): () => ResolvedSandboxSettings | undefined {
+  const initial = resolver.resolve();
+  const signature = JSON.stringify(initial ?? null);
+  const snapshot = initial === undefined ? undefined : structuredClone(initial);
+  if (snapshot !== undefined) {
+    for (const paths of [
+      snapshot.pass_env,
+      snapshot.resolved_read_only_paths,
+      snapshot.resolved_runtime_paths,
+      snapshot.toolchains?.include,
+      snapshot.toolchains?.exclude,
+      snapshot.toolchains?.extra_paths,
+      snapshot.toolchains?.excluded_paths,
+    ]) {
+      if (paths !== undefined) Object.freeze(paths);
+    }
+    if (snapshot.toolchains !== undefined) Object.freeze(snapshot.toolchains);
+    Object.freeze(snapshot);
+  }
+  return () => {
+    if (JSON.stringify(resolver.resolve() ?? null) !== signature)
+      throw new Error("Sandbox policy changed since host startup; request an idle host restart");
+    return snapshot;
+  };
+}
+
 /**
  * Builds a {@link SandboxPolicyResolver} bound to a config store and workspace.
  *
@@ -132,7 +201,7 @@ export function createSandboxPolicyResolver(
   ): DiscoveredToolchain[] => {
     const signature = discoverySignature(settings, environment);
     if (!refresh && cachedDiscovery?.signature === signature) return cachedDiscovery.toolchains;
-    const toolchains = discoverSandboxToolchains(settings);
+    const toolchains = discoverSandboxToolchains(settings, environment);
     cachedDiscovery = { signature, toolchains };
     return toolchains;
   };
@@ -199,6 +268,20 @@ export function createSandboxPolicyResolver(
               probe: () => backend,
             });
       return {
+        effective_network:
+          settings === undefined || settings.enabled === false
+            ? "host"
+            : (settings.network ?? "host"),
+        filesystem: {
+          placement: settings === undefined || settings.enabled === false ? "host" : "sandbox",
+          reads: "host-visible",
+          writes:
+            settings === undefined || settings.enabled === false ? "host-os" : "declared-roots",
+          workspace:
+            settings?.filesystem === "workspace-read-only" && settings.enabled !== false
+              ? "read-only"
+              : "read-write",
+        },
         backend:
           backend.mode === "unavailable"
             ? {

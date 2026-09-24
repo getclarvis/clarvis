@@ -164,7 +164,7 @@ export interface Segment {
  * quotes/parens are unbalanced, a path token resolves through a `~user` /
  * `..` glob the analyzer cannot pin down, or a segment tokenized to no argv
  * and no env assignments; a `true` value means the reported `paths` are not a
- * complete picture, so never treat it as workspace-confined.
+ * complete picture, so never treat it as within-workspace.
  */
 export interface ShellFacts {
   paths: string[];

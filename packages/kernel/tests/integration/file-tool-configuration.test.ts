@@ -9,12 +9,94 @@ import { MockLLM } from "@clarvis/loop/testing";
 import { configurationRoots, globalPaths, workspacePaths } from "@clarvis/paths";
 import { createFileKernel } from "../../src/bootstrap.ts";
 import { tools as nativeFileTools } from "@clarvis/tools";
+import { probeSandbox } from "@clarvis/tools/sandbox";
 import { effectReviewInput, withHostValidatedEffectReview } from "../helpers/effect-review-llm.ts";
 
 const temporary: string[] = [];
 afterEach(() => {
   for (const root of temporary.splice(0)) rmSync(root, { recursive: true, force: true });
 });
+
+it.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable")(
+  "commits reviewed global and workspace authoring documents through the Sandbox file service",
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), "clarvis-sandbox-authoring-"));
+    temporary.push(root);
+    const workspaceRoot = join(root, "workspace");
+    const globalDir = join(root, "global");
+    mkdirSync(workspaceRoot);
+    mkdirSync(globalDir);
+    writeFileSync(
+      globalPaths(globalDir).settingsFile,
+      JSON.stringify({
+        default_model: "anthropic/test",
+        providers: [{ name: "anthropic", kind: "anthropic" }],
+        sandbox: { type: "native", filesystem: "workspace-write", network: "none" },
+      }),
+    );
+    const globalTarget = join(globalDir, "shared-agent.md");
+    const localTarget = join(workspaceRoot, ".clarvis", "shared-agent.md");
+    const ordinaryTarget = join(workspaceRoot, "ordinary.txt");
+    const agent = new MockLLM({
+      script: [
+        {
+          toolCalls: [
+            { name: "write_file", arguments: { path: globalTarget, content: "Global guide.\n" } },
+          ],
+        },
+        {
+          toolCalls: [
+            { name: "write_file", arguments: { path: localTarget, content: "Local guide.\n" } },
+          ],
+        },
+        {
+          toolCalls: [
+            {
+              name: "apply_patch",
+              arguments: {
+                patch: `*** Begin Patch\n*** Update File: ${globalTarget}\n@@\n-Global guide.\n+Updated global guide.\n*** Add File: ${ordinaryTarget}\n+Ordinary workspace file.\n*** End Patch`,
+              },
+            },
+          ],
+        },
+        { toolCalls: [{ name: "read_file", arguments: { path: globalTarget } }] },
+        { text: "Finished." },
+      ],
+    });
+    const kernel = await createFileKernel({
+      workspaceRoot,
+      globalDir,
+      logger: NOOP_LOGGER,
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      subscriptions: false,
+      builtins: { hooks: false, tasks: false },
+      executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm: agent } }),
+    });
+    try {
+      let prompts = 0;
+      const run = await kernel.runs.start({
+        agent: "coder",
+        guard_mode: "on",
+        messages: [{ role: "user", content: "Write both guides." }],
+      });
+      run.onElicit((request) => {
+        expect(request.kind).toBe("configuration_review");
+        prompts++;
+        void run.respond({ id: request.id, action: "accept", content: { decision: "allow" } });
+      });
+      const events = Array.fromAsync(run.events);
+      expect(await run.done).toMatchObject({ status: "completed" });
+      await events;
+      await run.closed;
+      expect(prompts).toBe(3);
+      expect(readFileSync(globalTarget, "utf8")).toBe("Updated global guide.\n");
+      expect(readFileSync(localTarget, "utf8")).toBe("Local guide.\n");
+      expect(readFileSync(ordinaryTarget, "utf8")).toBe("Ordinary workspace file.\n");
+    } finally {
+      await kernel.close();
+    }
+  },
+);
 
 it("validates operational settings from write_file before one host review", async () => {
   const root = mkdtempSync(join(tmpdir(), "clarvis-file-settings-"));

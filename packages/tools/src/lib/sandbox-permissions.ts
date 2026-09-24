@@ -47,5 +47,5 @@ export function resolveSandboxEscalation(
   if (config.allowHostEscalation === false) {
     throw new ToolError("denied", "Isolated container runs cannot reach the host this way");
   }
-  return { forceBare: config.sandbox !== undefined };
+  return { forceBare: config.filesystemPolicy.placement === "sandbox" };
 }

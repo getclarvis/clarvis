@@ -4,8 +4,8 @@ import { makeWorkspace, cleanup, makeConfig, callTool, write } from "../helpers/
 import type { ServerConfig } from "../../src/config.ts";
 
 // `grep` runs one of two regex engines and the caller does not choose which:
-// `packages/tools/src/lib/rg.ts` sends a confined directory to the in-process
-// JavaScript scanner and everything else to ripgrep. The two do not share a
+// `packages/tools/src/lib/rg.ts` sends directory scans to the in-process
+// JavaScript scanner and single-file searches to ripgrep. The two do not share a
 // grammar, so a pattern's meaning depends on the engine that ran.
 //
 // This file is the BOUNDARY, written down as executable documentation. Every
@@ -447,7 +447,7 @@ const ROWS: readonly Row[] = [
 
   // --------------------------------------------------------------- rg_only --
   // ripgrep answers; JavaScript refuses. These reach the caller as
-  // `invalid_input` on every confined directory search.
+  // `invalid_input` on every directory search.
   {
     label: "(?P<name>...) Rust-flavoured named group",
     pattern: "(?P<w>foo)",
@@ -817,6 +817,7 @@ async function runRow(row: Row, config: ServerConfig): Promise<string> {
     {
       pattern: row.pattern,
       output_mode: "content",
+      ...(config.ripgrepAvailable ? { path: "s.txt" } : {}),
       ...(row.ignoreCase ? { ignore_case: true } : {}),
     },
     config,
@@ -837,9 +838,9 @@ describe("regex dialect boundary", () => {
   afterEach(() => cleanup(root));
 
   /** In-process JavaScript engine: no ripgrep, so this runs on every host. */
-  const jsConfig = () => makeConfig(root, { ripgrepAvailable: false, confineToWorkspace: false });
-  /** ripgrep over an unconfined directory. */
-  const rgConfig = () => makeConfig(root, { ripgrepAvailable: true, confineToWorkspace: false });
+  const jsConfig = () => makeConfig(root, { ripgrepAvailable: false });
+  /** Ripgrep over one descriptor-pinned file. */
+  const rgConfig = () => makeConfig(root, { ripgrepAvailable: true });
 
   describe("the table describes itself", () => {
     it("every row's grade matches the outcomes recorded beside it", () => {

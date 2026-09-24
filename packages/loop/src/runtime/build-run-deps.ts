@@ -190,6 +190,8 @@ export interface BuildRunDepsOptions {
    * request and registered parameters, host settings, and the elicit channel. */
   resolveGuard?: GuardResolver;
   resolveSandbox?: SandboxResolver;
+  /** Explicit Container guest placement; native hosts derive Host or Sandbox from settings. */
+  filesystemPlacement?: "container";
   /** Host port naming the environment variables that hold credentials, so the
    * tools capability can withhold them from every command it spawns. */
   resolveSecretNames?: SecretNamesResolver;
@@ -591,6 +593,7 @@ export async function buildExecuteRunDeps({
   skillBootstraps,
   resolveGuard,
   resolveSandbox,
+  filesystemPlacement,
   resolveSecretNames,
   allowHostEscalation,
   resolveHooks,
@@ -843,6 +846,7 @@ export async function buildExecuteRunDeps({
         ...(statePaths === undefined ? {} : { statePaths }),
         ...(sharedResolveGuard !== undefined ? { resolveGuard: sharedResolveGuard } : {}),
         ...(resolveSandbox !== undefined ? { resolveSandbox } : {}),
+        ...(filesystemPlacement !== undefined ? { filesystemPlacement } : {}),
         ...(resolveSecretNames !== undefined ? { resolveSecretNames } : {}),
         ...(allowHostEscalation !== undefined ? { allowHostEscalation } : {}),
         ...(selectedSkills === undefined

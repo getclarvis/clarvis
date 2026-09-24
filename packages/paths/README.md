@@ -208,7 +208,11 @@ global/workspace roots, while global and per-workspace choices live in generated
 **The separation is enforced by the type, not by convention.** `WorkspacePaths` has no key naming
 `local/`, a spill, prompt history or `code.json` — they were _removed_ rather than
 deprecated, so writing generated bookkeeping into someone's working tree is a compile error.
-`workspaceStatePaths` is the only way to spell them. The keys used to be on `WorkspacePaths`, and
+`workspaceStatePaths` is the standard way to spell them.
+`workspaceStatePathsFromRoot(workspaceRoot, stateRoot)` reconstructs the same complete path set
+from a state root selected by the host. The native filesystem worker uses it after receiving the
+root as data, so owner and spill builders never cross the process boundary as callbacks.
+The keys used to be on `WorkspacePaths`, and
 four writers reached them through a hand-rolled `mkdir` that skipped `ensureLocalDir` entirely; the
 worst was `code`'s prompt history, which fired on the first Enter — before any tool had run, so
 before anything had seeded the ignore file — leaving a fresh repository reporting `?? .clarvis/`

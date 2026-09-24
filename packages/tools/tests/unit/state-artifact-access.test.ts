@@ -1,17 +1,3 @@
-/**
- * The read tools admit one exact generic spill beside the workspace.
- *
- * @remarks An oversized tool result is spilled outside the working tree and the
- * model is handed the path to read it back, so without this allowance
- * `confineToWorkspace` would reject Clarvis's own spill. The widening is
- * deliberately narrow — read-only, and only the two read tools pass
- * the pinned artifact path to `resolvePath` — because a mutation reaching machinery
- * state would be a workspace escape wearing the same clothes.
- *
- * The engine's spill suite unit-tests writing the file; nothing anywhere read
- * one back through a confined tool, which is the single behaviour the widening
- * exists for.
- */
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
@@ -19,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { callTool, cleanup, makeConfig, makeWorkspace, write } from "../helpers/fixtures.ts";
 import { resolveReadableTextPath } from "../../src/lib/state-artifacts.ts";
+import { readRawFile } from "../../src/lib/files.ts";
 import { readTextFile } from "../../src/lib/textfile.ts";
 
 let roots: string[] = [];
@@ -38,14 +25,10 @@ function workspaceWithState(): { root: string; stateRoot: string; spill: string 
   return { root, stateRoot, spill };
 }
 
-describe("the stateRoot read allowance", () => {
-  it("lets read_file open a spilled result while confinement is on", async () => {
+describe("exact output artifact admission", () => {
+  it("lets read_file open a pinned spill", async () => {
     const { root, stateRoot, spill } = workspaceWithState();
-    const res = await callTool(
-      "read_file",
-      { path: spill },
-      makeConfig(root, { confineToWorkspace: true, stateRoot }),
-    );
+    const res = await callTool("read_file", { path: spill }, makeConfig(root, { stateRoot }));
 
     expect(res.isError).toBe(false);
     expect(res.text).toContain("spilled line one");
@@ -58,7 +41,7 @@ describe("the stateRoot read allowance", () => {
     const res = await callTool(
       "read_files",
       { paths: [spill, path.join(root, "inside.txt")] },
-      makeConfig(root, { confineToWorkspace: true, stateRoot }),
+      makeConfig(root, { stateRoot }),
     );
 
     expect(res.isError).toBe(false);
@@ -66,26 +49,22 @@ describe("the stateRoot read allowance", () => {
     expect(res.text).toContain("workspace line");
   });
 
-  it("still refuses a path in neither the workspace nor the state root", async () => {
+  it("reads an ordinary external file through Host authority", async () => {
     const { root, stateRoot } = workspaceWithState();
     const outside = mkdtempSync(path.join(tmpdir(), "clarvis-outside-"));
     roots.push(outside);
     const target = path.join(outside, "secret.txt");
     writeFileSync(target, "not yours\n");
 
-    const res = await callTool(
-      "read_file",
-      { path: target },
-      makeConfig(root, { confineToWorkspace: true, stateRoot }),
-    );
+    const res = await callTool("read_file", { path: target }, makeConfig(root, { stateRoot }));
 
-    expect(res.isError).toBe(true);
-    expect(res.text).not.toContain("not yours");
+    expect(res.isError).toBe(false);
+    expect(res.text).toContain("not yours");
   });
 
   it("refuses history, legacy sidecars, and the state directory", async () => {
     const { root, stateRoot } = workspaceWithState();
-    const config = makeConfig(root, { confineToWorkspace: true, stateRoot });
+    const config = makeConfig(root, { stateRoot });
     for (const name of ["prompt-history", "monitor-old.json"]) {
       const target = path.join(stateRoot, "local", name);
       writeFileSync(target, "private\n");
@@ -102,22 +81,34 @@ describe("the stateRoot read allowance", () => {
     const { root, stateRoot, spill } = workspaceWithState();
     const linked = path.join(stateRoot, "local", "toolout-abcdef12.txt");
     symlinkSync(spill, linked);
-    const result = await callTool(
-      "read_file",
-      { path: linked },
-      makeConfig(root, { confineToWorkspace: true, stateRoot }),
-    );
+    const result = await callTool("read_file", { path: linked }, makeConfig(root, { stateRoot }));
     expect(result.isError).toBe(true);
   });
 
   it("rejects a replacement after the generic spill was admitted", async () => {
     const { root, stateRoot, spill } = workspaceWithState();
-    const config = makeConfig(root, { confineToWorkspace: true, stateRoot });
+    const config = makeConfig(root, { stateRoot });
     const admitted = resolveReadableTextPath(spill, config);
     renameSync(spill, `${spill}.old`);
     writeFileSync(spill, "replacement\n");
     await expect(
       readTextFile(admitted.target, spill, 1000, admitted.options),
+    ).rejects.toMatchObject({ code: "path_escape" });
+  });
+
+  it("binds host-owned artifact reads to the selected root after opening", async () => {
+    const { root, spill } = workspaceWithState();
+    const artifactRoot = path.join(root, "reports");
+    mkdirSync(artifactRoot);
+    const artifact = path.join(artifactRoot, "result.txt");
+    writeFileSync(artifact, "reported\n");
+    expect(
+      await readRawFile(artifact, artifact, 1024, undefined, {
+        expectedArtifactRoot: artifactRoot,
+      }),
+    ).toEqual(Buffer.from("reported\n"));
+    await expect(
+      readRawFile(spill, spill, 1024, undefined, { expectedArtifactRoot: artifactRoot }),
     ).rejects.toMatchObject({ code: "path_escape" });
   });
 
@@ -127,7 +118,7 @@ describe("the stateRoot read allowance", () => {
     const res = await callTool(
       "write_file",
       { path: spill, content: "overwritten" },
-      makeConfig(root, { confineToWorkspace: true, stateRoot }),
+      makeConfig(root, { stateRoot }),
     );
 
     expect(res.isError).toBe(true);

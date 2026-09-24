@@ -62,6 +62,24 @@ describe("commandRiskFindings", () => {
     ]);
   });
 
+  it("keeps an analyzer path issue on a static removal operand as uncertain", () => {
+    const shell = analyzeBash("rm -f file");
+    shell.segments[0]!.analysisIssues.push({
+      segmentIndex: 0,
+      kind: "dynamic_path",
+      impact: "path",
+    });
+    expect(commandRiskFindings(shell)).toEqual([
+      {
+        segmentIndex: 0,
+        kind: "forced_removal",
+        recursive: false,
+        operands: ["file"],
+        operand_uncertainty: "dynamic",
+      },
+    ]);
+  });
+
   it("keeps privilege elevation and forced removal as distinct segment findings", () => {
     const findings = commandRiskFindings(analyzeBash("rm -f file; sudo true"));
     expect(findings.map((finding) => finding.kind)).toEqual([

@@ -108,7 +108,6 @@ const baseEnvSchema = z.object({
 
   CLARVIS_OWNER: z.string().min(1).optional(),
   CLARVIS_AGENT_TOOLS_ENABLED: boolFromEnv(true),
-  CLARVIS_AGENT_TOOLS_CONFINE: boolFromEnv(true),
   CLARVIS_AGENT_TOOLS_MAX_GRANT: z.enum(["none", "read", "edit", "exec"]).default("edit"),
   CLARVIS_SKILLS_ENABLED: boolFromEnv(true),
   CLARVIS_HOOKS_ENABLED: boolFromEnv(true),

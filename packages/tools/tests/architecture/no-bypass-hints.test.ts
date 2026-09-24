@@ -1,13 +1,10 @@
 /**
  * A refusal the model reads must never hand it the way around itself.
  *
- * @remarks `assertWithinWorkspace` used to refuse with
- * `(set ALLOW_OUTSIDE_WORKSPACE=1 to permit)`. That string is a tool *result*,
- * so its reader is the agent — the party the boundary exists to bound — and an
- * agent trying to finish a task reads a remediation hint as the next step. It
- * will export the variable in a `shell` call, write it into a config file, or
- * ask the user to. Teaching that once generalises: a model that learns to look
- * for the off switch here tries it against the next confinement too.
+ * @remarks Tool results reach the agent. A refusal that advertises a setting
+ * or command to bypass itself would turn a security decision into a suggested
+ * next action, so messages for classified paths and environment failures do
+ * not include such instructions.
  *
  * The rule is not "no helpful errors" — it is that the audience decides. An
  * operator reading `clarvis-server --help` or a boot failure on their own

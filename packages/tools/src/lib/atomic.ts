@@ -3,6 +3,7 @@ import { bestEffort } from "./tasks.ts";
 import path from "node:path";
 import { TMP_GLOB, fsyncDir, renameWithRetry, tmpPathFor, writeFileDurable } from "@clarvis/paths";
 import { ToolError } from "../errors.ts";
+import type { ResolvedFilesystemPolicy } from "../sandbox.ts";
 
 const locks = new Map<string, Promise<unknown>>();
 
@@ -62,10 +63,16 @@ export function withFileLocks<T>(paths: string[], fn: () => Promise<T>): Promise
 }
 
 /** Host review of a fully prepared batch before staging or changing any target. */
-export type MutationReview = (
+export type MutationReview = ((
   operations: readonly FileOp[],
   commit: () => Promise<void>,
-) => Promise<void>;
+) => Promise<void>) & {
+  /** Host-owned commit of exclusively classified configuration paths after review. */
+  readonly commitClassified?: (
+    operations: readonly FileOp[],
+    policy: ResolvedFilesystemPolicy,
+  ) => Promise<void>;
+};
 
 interface Staged {
   tmp: string;
@@ -151,7 +158,7 @@ export async function writeAtomic(
   modes?: { mode: number; dirMode: number },
 ): Promise<void> {
   if (review !== undefined)
-    return review([{ type: "modify", path: target, content, intent }], () =>
+    return review([{ type: "modify", path: target, content, intent, ...modes }], () =>
       writeAtomic(target, content, undefined, intent, modes),
     );
   await assertNotSymlink(target);

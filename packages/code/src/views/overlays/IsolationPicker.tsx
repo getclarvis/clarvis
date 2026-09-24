@@ -1,5 +1,5 @@
 import type { Accessor, JSX } from "solid-js";
-import { createSignal, Show } from "solid-js";
+import { createSignal, onMount, Show } from "solid-js";
 import type { SettingsAdapter } from "../../adapters/settings.ts";
 import { deriveIsolation } from "../../adapters/execution-safety.ts";
 import {
@@ -42,6 +42,14 @@ export function IsolationPicker(props: {
   onApplied: () => void;
 }): JSX.Element {
   const [applyState, setApplyState] = createSignal<IsolationApplyState>();
+  const [observedNative, setObservedNative] = createSignal<"host" | "sandbox">();
+  onMount(() => {
+    if (typeof props.settings.inspectSandbox !== "function") return;
+    void props.settings
+      .inspectSandbox()
+      .then((inspection) => setObservedNative(inspection.filesystem.placement))
+      .catch(() => undefined);
+  });
   const applying = (): boolean => {
     const state = applyState();
     return state?.phase === "saving" || state?.phase === "reconnecting";
@@ -50,7 +58,10 @@ export function IsolationPicker(props: {
     const state = applyState();
     return state?.phase === "failed" ? state : undefined;
   };
-  const current = () => deriveIsolation(props.settings.effective());
+  const current = () => {
+    const configured = deriveIsolation(props.settings.effective());
+    return isContainerIsolation(configured) ? configured : (observedNative() ?? configured);
+  };
 
   const apply = async (isolation: IsolationChoice["value"]): Promise<void> => {
     if (applying()) return;

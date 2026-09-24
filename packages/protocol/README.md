@@ -338,6 +338,12 @@ fallback.
 
 ## Runtime projection
 
+`SandboxInspection.filesystem` reports Host or Sandbox placement, host-visible read scope,
+the write boundary, and the effective workspace posture; `effective_network` reports the enforced
+network mode. The kernel resolves this doctor snapshot;
+the UI presents it alongside backend availability. Container mount authority remains in its
+separate runtime projection.
+
 The optional handshake runtime projection reports effective native or Container placement. Native
 status identifies Host versus Sandbox. Container status reports the selected Docker/Podman engine,
 Linux guest, effective network and lifecycle. A ready projection also requires generation, base

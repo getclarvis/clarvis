@@ -1,11 +1,11 @@
-import { promises as fs } from "node:fs";
+import { fs } from "../lib/environment-fs.ts";
 import { ToolError, fsError } from "../errors.ts";
 import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { withFileLock, applyOpsAtomic } from "../lib/atomic.ts";
 import type { ToolDef } from "./types.ts";
 
 /**
- * The `remove` tool: delete a single regular file, confined to the workspace.
+ * The `remove` tool: delete one regular file under the selected environment policy.
  *
  * @remarks
  * A directory is rejected (`not_a_file`) - use shell for recursive directory

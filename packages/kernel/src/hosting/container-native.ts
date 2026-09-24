@@ -117,6 +117,7 @@ export async function createContainerNativeKernel(options: ContainerNativeOption
       connections: { acquire: unavailable, closeAll: async () => undefined },
       builtins: { tools: true, skills: false, hooks: false },
       allowHostEscalation: false,
+      filesystemPlacement: "container",
       capabilities: [createContainerEnvironmentCapability(options.runtime, workspaceRoot)],
     },
     planning: {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import {
   makeWorkspace,
@@ -63,9 +63,15 @@ describe("mkdir", () => {
     }
   });
 
-  it("rejects a path escaping the workspace with path_escape", async () => {
-    const r = await callTool("mkdir", { path: "../escape" }, config);
-    expect(r.json.error).toBe("path_escape");
+  it("creates a parent-relative directory when Host OS access permits", async () => {
+    const target = path.resolve(root, "..", `${path.basename(root)}-outside`);
+    try {
+      const r = await callTool("mkdir", { path: target }, config);
+      expect(r.isError).toBe(false);
+      expect(statSync(target).isDirectory()).toBe(true);
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
   });
 
   it("ignores out-of-schema extra fields", async () => {

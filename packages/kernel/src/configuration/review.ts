@@ -74,7 +74,6 @@ export function createConfigurationReview(
         JSON.stringify({
           workspace: ctx.workspaceRoot,
           ceiling: ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT,
-          confined: ctx.env.CLARVIS_AGENT_TOOLS_CONFINE,
           backend: settings.runtime?.backend,
           sandbox: settings.sandbox,
           mode,

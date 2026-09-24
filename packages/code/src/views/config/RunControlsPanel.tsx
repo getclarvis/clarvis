@@ -25,6 +25,7 @@ import {
   planRetentionDescription,
   safetyDescription,
   type PlanRetention,
+  type RunControlsState,
 } from "../../adapters/execution-safety.ts";
 import {
   applyIsolation,
@@ -82,16 +83,35 @@ export function RunControlsPanel(
 ): JSX.Element {
   const [sel, setSel] = createSignal(0);
   const fe = createFieldEditor(host.interaction, host.active);
-  const [availability, setAvailability] = createSignal<SandboxInspection["backend"] | null>(null);
-  onMount(() => {
-    void deps.settings
-      .inspectSandbox()
-      .then((inspection) => setAvailability(inspection.backend))
-      .catch(() => setAvailability(null));
-  });
-  const state = createMemo(() => {
+  const [inspection, setInspection] = createSignal<SandboxInspection | null>(null);
+  async function refreshInspection(): Promise<void> {
+    try {
+      setInspection(await deps.settings.inspectSandbox());
+    } catch {
+      setInspection(null);
+    }
+  }
+  onMount(() => void refreshInspection());
+  const state = createMemo((): RunControlsState => {
     deps.settings.version();
-    return deriveRunControls(deps.settings.effective(), deps.guard.mode(), deps.memory.mode());
+    const configured = deriveRunControls(
+      deps.settings.effective(),
+      deps.guard.mode(),
+      deps.memory.mode(),
+    );
+    const observed = inspection();
+    if (observed === null || configured.isolation === "docker" || configured.isolation === "podman")
+      return configured;
+    const sandboxEnabled = observed.filesystem.placement === "sandbox";
+    return {
+      ...configured,
+      isolation: observed.filesystem.placement,
+      sandboxEnabled,
+      sandboxRequired: sandboxEnabled,
+      filesystem:
+        observed.filesystem.workspace === "read-only" ? "workspace-read-only" : "workspace-write",
+      network: observed.effective_network,
+    };
   });
 
   function sandboxLine(): { text: string; fg: string } {
@@ -106,8 +126,10 @@ export function RunControlsPanel(
         text: "Podman is configured through advanced settings and starts on the first run.",
         fg: tokens.muted,
       };
-    if (!s.sandboxEnabled) return { text: "Native sandbox is off.", fg: tokens.warn };
-    const avail = availability();
+    const observed = inspection();
+    if (observed ? observed.filesystem.placement === "host" : !s.sandboxEnabled)
+      return { text: "Native sandbox is off.", fg: tokens.warn };
+    const avail = observed?.backend;
     if (!avail)
       return {
         text: "Checking native sandbox on the kernel host" + glyph("ellipsis"),
@@ -140,6 +162,7 @@ export function RunControlsPanel(
           deps.notify(`isolation saved, pending reconnect: ${reloaded.message}`);
           return;
         }
+        await refreshInspection();
       }
       deps.notify(
         `isolation: ${effective} (global)${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,

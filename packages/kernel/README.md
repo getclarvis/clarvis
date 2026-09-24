@@ -1006,6 +1006,14 @@ The resolver snapshots host-owned placement once per run: enabled native sandbox
 contained-or-fail-closed, including legacy optional availability; Docker/Podman guests also count
 as contained. Host and disabled native policies do not. Explicit per-call unsandbox is reviewed as
 Host, with native network restrictions omitted; Auto may judge it, while `on` requires a human.
+The hosted generation identity includes the effective Sandbox settings and resolved roots, not only
+environment flags. Runs use the startup Sandbox snapshot; a settings change that would alter it
+requires an idle host restart before another run can use it. Inspection reports host-visible reads,
+the selected workspace/write posture and effective network without exposing credential values.
+An untrusted workspace cannot weaken an enabled global Sandbox: the host retains its read-only,
+network, environment, toolchain and protected-path floor when resolving runs and inspection.
+An external path in a native Sandbox shell command receives Command Review rather than an automatic
+outside-workspace denial; Host commands and file tools retain their existing rule.
 The policy is the only classifier: it decides `allow`, `deny` or `ask`, and Auto sends every
 remaining `ask` to the call-local reviewer, including
 options, wrappers, dynamic arguments, environment prefixes and a command whose operation name once
@@ -1120,7 +1128,11 @@ becomes configuration approval.
 captures every target and exact revision, reviews it once through the host-owned authority reader
 and shared Judge coordinator, and commits all or none. Private targets and selected skill execution
 snapshots do not enter that route. The global roots are passed only to entry-agent file handlers and
-do not widen shell mounts or unrelated workspace confinement.
+do not widen shell mounts or the selected environment policy.
+In Sandbox, file tools prepare the batch inside the run-owned isolated service. The host reviewer
+binds its decision to those bytes and the run policy, then commits classified configuration batches
+through a narrow host path. Mixed batches may also change ordinary files inside the writable
+workspace; private paths, protected roots, Container guests and child agents cannot use that path.
 `createFileKernel` resolves the shared user root from the host home by default; its optional
 `configurationHome` input lets an isolated host use a separate home for that root.
 For a complete bounded batch, human review can grant the displayed operation and targets for the

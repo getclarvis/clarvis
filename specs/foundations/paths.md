@@ -290,6 +290,14 @@ record (`packages/paths/src/workspace-state.ts`) rooted at `<global>/state/works
 | `plansLockDirForOwner(owner)` | `<root>/owners/<seg>/plans` | `packages/paths/src/workspace-state.ts` |
 | `toolOutputSpill(token)` | `<localDir>/toolout-<token>.txt` | `packages/paths/src/workspace-state.ts` |
 
+`workspaceStatePathsFromRoot(workspaceRoot, stateRoot)` reconstructs the full record from the
+host-selected roots when a process boundary carries only data. It resolves every field and the
+owner/spill builder methods under that exact state root; the caller owns the association between
+the workspace and state roots. Production: `workspaceStatePathsFromRoot` in
+`packages/paths/src/workspace-state.ts` and `runFilesystemWorker` in
+`packages/tools/src/filesystem-worker.ts`. Test: `rebuilds all state paths and builders from the
+host-selected root` in `packages/paths/tests/component/workspace-state.test.ts`.
+
 The `isSpillFile(name)` predicate is paired with `toolOutputSpill(token)` in `packages/paths/src/workspace-state.ts`. Command sessions have no persisted path builder.
 
 The `.agents` accessors do not share one blanket write policy. Standalone skills and marketplace
@@ -1100,16 +1108,12 @@ root — a **runtime** (environment-variable) coupling, not an import.
 - **Worktree launch semantics** are explicitly out of scope here and belong to the
   [launch-worktrees](../capabilities/worktrees.md) document; this package owns only the canonical
   checkout path.
-- **The TOCTOU threat model for workspace-confined writes** (what happens if a parent directory is
-  swapped for a symlink between validation and mutation) is explicitly delegated to the
-  [security-confinement-and-redaction](../cross-cutting/security.md) document and is not analyzed here, even though
-  `ensureWorkspaceSubdir`'s confinement check (`packages/paths/src/ensure.ts`) is a `@clarvis/paths` function;
-  this document describes only what that function does, not whether it is sufficient against a
-  concurrent adversary. **Recorded, in `@clarvis/tools` rather than here**: the threat
-  model, the read/write asymmetry and the rejected partial mitigations are now stated in
-  `resolvePath`'s `@remarks` (`packages/tools/src/lib/paths.ts`). It is written there because that is
-  the function whose return value discards the canonical form — this package's own check is not the
-  one the race turns on. The defect remains open.
+- **The TOCTOU threat model for classified configuration writes** is owned by
+  [security](../cross-cutting/security.md). `ensureWorkspaceSubdir` in
+  `packages/paths/src/ensure.ts` has its own confinement contract; this document does not claim
+  that pathname checks close concurrent parent replacement. Ordinary model file tools follow their
+  selected environment policy, with `workspaceRoot` as a relative base.
+
 - **`memory`'s and `trace`'s own on-disk layouts** beneath the roots this package hands them
   (`memoryMachineryRoot`, `tracesDir`, etc.) are delegated to [memory-wiki-store](../capabilities/memory-store.md) and
   [trace-recording-and-persistence](trace.md) respectively, per this document's scope statement, and are not

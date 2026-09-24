@@ -1,5 +1,5 @@
 import type { RuntimeConfig } from "../config.ts";
-import { promises as fs } from "node:fs";
+import { fs } from "../lib/environment-fs.ts";
 import { applyPatch, parsePatch, type StructuredPatch } from "diff";
 import { ToolError, fsError } from "../errors.ts";
 import { reviewedConfigurationModes } from "../guard/authoring-path.ts";
@@ -45,7 +45,7 @@ function cleanName(name: string | undefined): string | undefined {
  * @param target - absolute path of the file.
  * @param rel - the caller-facing path, echoed in errors.
  * @param maxBytes - the size ceiling from the server configuration.
- * @param options - descriptor and post-open confinement policy.
+ * @param options - descriptor and classified target policy.
  * @returns the decoded text with its detected encoding, EOL, and BOM.
  * @throws {@link ToolError} `is_binary` when the file does not decode as UTF-8,
  *   since applying the patch would rewrite it as UTF-8 and corrupt it.
@@ -384,7 +384,7 @@ export const applyPatchTool: ToolDef = {
  * locks are held.
  *
  * @param parsed - the diff blocks, one per file (or rename pair).
- * @param config - workspace root, size ceiling, and confinement flag.
+ * @param config - relative-path base, size ceiling, and classified-path policy.
  * @returns a human-readable summary listing each change with its
  *   `A`/`M`/`D`/`R` verb and `(+adds -dels)` counts.
  * @throws {@link ToolError} `invalid_input` when two blocks target the same file,
@@ -401,13 +401,7 @@ async function applyParsed(
   parsed: ParsedPatch[],
   config: Pick<
     RuntimeConfig,
-    | "workspaceRoot"
-    | "maxFileBytes"
-    | "reviewMutation"
-    | "confineToWorkspace"
-    | "temporaryRoots"
-    | "logger"
-    | "configurationRoots"
+    "workspaceRoot" | "stateRoot" | "maxFileBytes" | "reviewMutation" | "configurationRoots"
   >,
 ): Promise<string> {
   const ops: FileOp[] = [];

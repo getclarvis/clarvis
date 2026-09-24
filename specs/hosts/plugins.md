@@ -559,7 +559,7 @@ if that directory is itself outside the root.
 
 Confinement is **lexical**, and the docstring says so: "A symlink *inside* the plugin that points
 outside it is still followed, which is the same open parent-directory weakness recorded for
-workspace-confined writes".
+classified configuration writes".
 
 Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts` (four refusal cases + one accepted nested case) (a `.alpha-plugin` manifest's `../skills/` resolves to the plugin's `skills/` with **no**
 "outside the plugin" note) (`../../elsewhere` is still refused from either base).

@@ -9,6 +9,8 @@ import type { ElicitRequest, GuardReview } from "./guard/types.ts";
 import type { RuntimeConfig } from "./config.ts";
 import { assertOutsideRoots } from "./lib/paths.ts";
 import { configurationRoots, configurationTarget } from "@clarvis/paths";
+import { isFileOperation, type AgentFilesystem } from "./agent-filesystem.ts";
+import { SandboxAgentFilesystem } from "./filesystem-service.ts";
 
 const NATIVE_MUTATION_TOOLS = new Set([
   "write_file",
@@ -53,10 +55,7 @@ function protectWorkspaceConfiguration(
 ): void {
   if (!NATIVE_MUTATION_TOOLS.has(name)) return;
   const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
-  const selectedRoots = config.configurationRoots ?? {
-    workspace_clarvis: roots.workspace_clarvis,
-    workspace_agents: roots.workspace_agents,
-  };
+  const selectedRoots = config.configurationRoots ?? roots;
   const protectedRoots = Object.values(selectedRoots);
   const context = buildGuardContext(name, args, config);
   const targets = name === "copy" ? context.paths.slice(1) : context.paths;
@@ -78,10 +77,7 @@ function protectPrivateConfiguration(
 ): void {
   if (name === "shell" || name === "shell_session") return;
   const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
-  const selectedRoots = config.configurationRoots ?? {
-    workspace_clarvis: roots.workspace_clarvis,
-    workspace_agents: roots.workspace_agents,
-  };
+  const selectedRoots = config.configurationRoots ?? roots;
   for (const fact of buildGuardContext(name, args, config).paths) {
     const target = configurationTarget(selectedRoots, fact.resolved);
     if (target?.kind === "private")
@@ -152,6 +148,23 @@ function boundMeta(meta: Record<string, unknown>, maxBytes: number): Record<stri
   }
   return best;
 }
+
+const localFilesystem: AgentFilesystem = {
+  async execute(call, config, signal) {
+    const tool = getTool(call.operation, selectSurface(config.readOnly));
+    if (!tool) throw new ToolError("not_found", `Unknown file tool: ${call.operation}`);
+    const { content, meta } = normalizeOutput(await tool.handler(call.args, config, signal));
+    const parts = typeof content === "string" ? [textPart(content)] : content;
+    return {
+      isError: false,
+      content: boundParts(parts, tool.bounded, config.maxOutputBytes),
+      ...(meta ? { meta: boundMeta(meta, config.maxToolMetaBytes) } : {}),
+    };
+  },
+  close() {
+    return Promise.resolve(true);
+  },
+};
 
 /**
  * The public description of a tool as advertised to a client/model: its name,
@@ -346,6 +359,17 @@ export async function dispatch(
 
   try {
     protectWorkspaceConfiguration(name, filled, config, gate.configurationReviewed);
+    if (isFileOperation(name)) {
+      const filesystem =
+        config.filesystemPolicy.placement === "sandbox"
+          ? config.sessionManager.acquireFilesystem(
+              config.filesystemPolicy.identity,
+              () => new SandboxAgentFilesystem(config),
+            )
+          : localFilesystem;
+      const result = await filesystem.execute({ operation: name, args: filled }, config, signal);
+      return { ...result, ...(gate.review ? { guard: gate.review } : {}) };
+    }
     const { content, meta } = normalizeOutput(await tool.handler(filled, config, signal, hooks));
     const parts = typeof content === "string" ? [textPart(content)] : content;
     return {

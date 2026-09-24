@@ -17,10 +17,25 @@
  */
 import { describe, expect, test } from "bun:test";
 import { Glob } from "bun";
+import { existsSync, realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, sep } from "node:path";
 
-const repoRoot = resolve(import.meta.dir, "..", "..", "..", "..");
+function sourceRoot(): string {
+  let current = realpathSync(import.meta.dir);
+  for (;;) {
+    if (
+      existsSync(join(current, "bun.lock")) &&
+      existsSync(join(current, "packages", "paths", "src", "index.ts"))
+    )
+      return current;
+    const parent = dirname(current);
+    if (parent === current) throw new Error("Clarvis source root was not found");
+    current = parent;
+  }
+}
+
+const repoRoot = sourceRoot();
 
 const FORBIDDEN = [
   { name: "process.stdout", pattern: /\bprocess\s*\.\s*stdout\b/ },
@@ -61,6 +76,7 @@ const STREAM_PLUMBING = new Set([
   "packages/kernel/src/hosting/container-launcher.ts",
   "packages/hooks/src/subprocess.ts",
   "packages/mcp-client/src/bun-stdio-client.ts",
+  "packages/tools/src/filesystem-worker.ts",
 ]);
 
 function isComment(line: string): boolean {

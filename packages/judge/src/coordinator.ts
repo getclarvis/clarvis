@@ -1,6 +1,7 @@
 import { ProviderError, type LLMProvider, type ProviderConfig } from "@clarvis/capability";
 import { JudgeArchitectureError } from "./errors.ts";
 import { executeJudge, type JudgeExecutionInput } from "./executor.ts";
+import type { JudgeInvalidDiagnostic } from "./run-capability.ts";
 import { canonicalJudgeJson, JUDGE_POLICY, type JudgeJson } from "./prompt.ts";
 import type { CompiledAuthorityTransition, JudgeTerminalReceipt } from "./private-protocol.ts";
 import type { JudgeStepBinding } from "./step-machine.ts";
@@ -39,8 +40,8 @@ export interface JudgeEffectContext extends JudgeReviewContext<JudgeEffectReceip
 type Metrics = { elapsedMs: number; attempts: number; executionId?: string; cacheHit: boolean };
 export type JudgeReviewOutcome<T extends JudgeTerminalReceipt> = Metrics &
   (
-    | { kind: "reviewed"; receipt: T }
-    | { kind: "failed"; failureKind: JudgeFailureKind }
+    | { kind: "reviewed"; receipt: T; diagnostic?: JudgeInvalidDiagnostic }
+    | { kind: "failed"; failureKind: JudgeFailureKind; diagnostic?: JudgeInvalidDiagnostic }
     | { kind: "stale" }
   );
 
@@ -196,7 +197,14 @@ export function createJudgeCoordinator(bound: JudgeCoordinatorOptions): JudgeCoo
           failureKind: failureKind(outcome.providerFailure?.error, outcome.timedOut, signal),
         };
       if (outcome.invalidResponse)
-        return { ...measured, kind: "failed", failureKind: "invalid_response" };
+        return {
+          ...measured,
+          kind: "failed",
+          failureKind: "invalid_response",
+          ...(outcome.invalidDiagnostic === undefined
+            ? {}
+            : { diagnostic: outcome.invalidDiagnostic }),
+        };
       if (outcome.response.status === "budget_exhausted")
         return { ...measured, kind: "failed", failureKind: "admission" };
       const receipt = outcome.receipt as T | undefined;
@@ -211,7 +219,14 @@ export function createJudgeCoordinator(bound: JudgeCoordinatorOptions): JudgeCoo
         if (path === "effects" && cache.size >= 128) cache.clear();
         cache.set(key(path, context.snapshot(), currentCase), structuredClone(receipt));
       }
-      return { ...measured, kind: "reviewed", receipt };
+      return {
+        ...measured,
+        kind: "reviewed",
+        receipt,
+        ...(outcome.invalidDiagnostic === undefined
+          ? {}
+          : { diagnostic: outcome.invalidDiagnostic }),
+      };
     })();
     inFlight.set(identity, operation);
     try {

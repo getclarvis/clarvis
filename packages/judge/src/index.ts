@@ -20,6 +20,8 @@ export type {
   CompiledAuthorityTransition,
 } from "./coordinator.ts";
 export type { JudgeExecutionServices } from "./executor.ts";
+export type { JudgeInvalidDiagnostic, JudgeInvalidCategory } from "./run-capability.ts";
+export type { AuthorityCandidateRejection } from "./step-machine.ts";
 export type { JudgeJson } from "./prompt.ts";
 export { canonicalJudgeJson } from "./prompt.ts";
 export { JudgeArchitectureError } from "./errors.ts";

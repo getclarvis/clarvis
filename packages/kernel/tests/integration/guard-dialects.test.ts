@@ -58,8 +58,9 @@ it("keeps an absolute executable exemption local to its command-head occurrence"
   );
   const allowedCommands = process.platform === "win32" ? ["where", "Write-Output"] : ["echo"];
   expect(await createShellGuard({ allowedCommands })(context)).toMatchObject({
-    verdict: "deny",
-    reason: "command touches paths outside the workspace",
+    verdict: "ask",
+    escalate: "human",
+    reason: "path is outside the workspace and requires review",
   });
 });
 

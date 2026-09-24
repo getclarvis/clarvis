@@ -4,11 +4,16 @@ import { existsSync } from "node:fs";
 import { isAbsolute, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { configurationTarget } from "@clarvis/paths";
-import { isFileOperation, type AgentFilesystem, type FilesystemCall } from "./agent-filesystem.ts";
+import {
+  isFileOperation,
+  type AgentFilesystem,
+  type FileOperation,
+  type FilesystemCall,
+} from "./agent-filesystem.ts";
 import type { FileOp } from "./lib/atomic.ts";
 import type { RuntimeConfig } from "./config.ts";
 import type { DispatchResult } from "./core.ts";
-import { ToolError } from "./errors.ts";
+import { ToolError, parseToolError } from "./errors.ts";
 import {
   mutationDigest,
   parseFilesystemChildMessage,
@@ -23,6 +28,7 @@ import { ownProcessGroup } from "./lib/process.ts";
 import { probeSandbox, sandboxCommand, type SandboxProbe } from "./sandbox.ts";
 
 interface PendingCall {
+  readonly operation: FileOperation;
   readonly config: RuntimeConfig;
   readonly resolve: (result: DispatchResult) => void;
   readonly reject: (error: Error) => void;
@@ -33,6 +39,29 @@ interface PendingCall {
   reviewFailure?: Error;
   commit?: { resolve(): void; reject(error: Error): void };
   committed?: boolean;
+}
+
+function workerFailure(message: Extract<FilesystemChildMessage, { kind: "failure" }>): ToolError {
+  return new ToolError(message.code, message.message, {
+    phase: message.phase,
+    operation: message.operation,
+    path_role: message.path_role,
+    retryable: message.retryable,
+    ...(message.source_exists === undefined ? {} : { source_exists: message.source_exists }),
+    ...(message.destination_committed === undefined
+      ? {}
+      : { destination_committed: message.destination_committed }),
+  });
+}
+
+function reviewFailure(error: unknown, signal: AbortSignal | undefined): ToolError {
+  if (error instanceof ToolError)
+    return new ToolError(error.code, error.message, {
+      phase: "review",
+      ...error.fields,
+    });
+  if (signal?.aborted) return new ToolError("aborted", "Filesystem review was cancelled");
+  return new ToolError("review_failed", "Filesystem review failed", { phase: "review" });
 }
 
 const BOOT_TIMEOUT_MS = 5_000;
@@ -84,8 +113,15 @@ function mutationRoute(
     ...(operation.from === undefined ? [] : [operation.from]),
   ]);
   const classified = paths.map((path) => configurationTarget(roots, path));
-  if (classified.some((target) => target?.kind === "private"))
-    throw new ToolError("denied", "Private configuration cannot be changed by file tools");
+  if (classified.some((target) => target?.kind === "secret"))
+    throw new ToolError("denied", "Secret configuration cannot be changed by file tools");
+  if (classified.some((target) => target?.kind === "reserved_unknown"))
+    throw new ToolError(
+      "unrecognized_configuration_target",
+      "Configuration target is not recognized",
+    );
+  if (classified.some((target) => target?.kind === "generated_read_only"))
+    throw new ToolError("denied", "Generated configuration is read-only");
   if (classified.every((target) => target === undefined)) return "worker";
   if (
     classified.some(
@@ -204,37 +240,31 @@ export class SandboxAgentFilesystem implements AgentFilesystem {
       return;
     }
     if (message.kind === "failure") {
+      if (message.operation !== call.operation)
+        throw new Error("Filesystem service failure names a different operation");
+      const failure = workerFailure(message);
+      call.commit?.reject(failure);
       if (call.review !== undefined)
         void call.review.then(
-          () =>
-            this.settle(
-              message.id,
-              call.reviewFailure ??
-                new ToolError("io_error", "Filesystem service operation failed"),
-            ),
-          (error: unknown) =>
-            this.settle(
-              message.id,
-              error instanceof Error ? error : new Error("Filesystem review failed"),
-            ),
+          () => this.settle(message.id, call.reviewFailure ?? failure),
+          (error: unknown) => this.settle(message.id, reviewFailure(error, call.signal)),
         );
-      else
-        this.settle(message.id, new ToolError("io_error", "Filesystem service operation failed"));
+      else this.settle(message.id, failure);
       return;
     }
     if (call.commit !== undefined) {
-      if (message.result.isError)
-        call.commit.reject(new ToolError("io_error", "Filesystem mutation commit failed"));
-      else call.commit.resolve();
+      if (message.result.isError) {
+        const part = message.result.content[0];
+        call.commit.reject(
+          parseToolError(part?.type === "text" ? part.text : undefined) ??
+            new ToolError("internal", "Filesystem mutation returned an invalid error"),
+        );
+      } else call.commit.resolve();
     }
     if (call.review !== undefined) {
       void call.review.then(
         () => this.settle(message.id, call.reviewFailure, message.result),
-        (error: unknown) =>
-          this.settle(
-            message.id,
-            error instanceof Error ? error : new Error("Filesystem review failed"),
-          ),
+        (error: unknown) => this.settle(message.id, reviewFailure(error, call.signal)),
       );
     } else this.settle(message.id, undefined, message.result);
   }
@@ -388,11 +418,20 @@ export class SandboxAgentFilesystem implements AgentFilesystem {
       const fuse = setTimeout(() => {
         this.fail(new Error("Filesystem service operation timed out"));
       }, this.callTimeoutMs);
-      this.pending.set(id, { config, resolve, reject, signal, abort, fuse });
+      this.pending.set(id, {
+        operation: call.operation,
+        config,
+        resolve,
+        reject,
+        signal,
+        abort,
+        fuse,
+      });
       signal?.addEventListener("abort", abort, { once: true });
       void this.send({
         kind: "invoke",
         id,
+        policyIdentity: config.filesystemPolicy.identity,
         operation: call.operation,
         args: call.args,
         context: contextOf(config),

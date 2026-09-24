@@ -3,6 +3,7 @@ import { writeFileSync } from "node:fs";
 import { spawn, type SpawnOptions } from "node:child_process";
 import { join } from "node:path";
 import { ExecutionSessionManager, sessionCommand } from "../../src/lib/execution-session.ts";
+import { shellSessionView } from "../../src/tools/shell-session.ts";
 import { NOOP_TOOLS_LOGGER } from "../../src/lib/log.ts";
 import { createAgentTools } from "../../src/index.ts";
 import { callTool, cleanup, makeConfig, makeWorkspace } from "../helpers/fixtures.ts";
@@ -64,6 +65,38 @@ describe("ExecutionSessionManager", () => {
     });
     expect(session.running).toBe(false);
     expect(session.terminationConfirmed).toBe(true);
+    expect(session.exitCode).toBe(4);
+    expect(session.signal).toBeNull();
+    expect(session.ready).toBe(false);
+  });
+
+  it("projects physical exit awaiting status as a nonrunning session", async () => {
+    const { root, command } = fixture("setInterval(() => {}, 1000)");
+    const manager = new ExecutionSessionManager();
+    managers.push(manager);
+    const config = makeConfig(root, { sessionManager: manager });
+    const session = await manager.launch({
+      config,
+      agent: config.sessionAgent,
+      command,
+      cwd: root,
+      forceBare: false,
+    });
+    if (session.snapshot().phase === "starting")
+      await new Promise<void>((resolve) => session.child.once("spawn", resolve));
+    const live = session as typeof session & { treeRunning(): boolean };
+    const tree = vi.spyOn(live, "treeRunning").mockReturnValue(false);
+    try {
+      expect(shellSessionView(session, undefined, 1024)).toMatchObject({
+        phase: "exited_pending_status",
+        running: false,
+        termination_confirmed: true,
+        exit_code: null,
+      });
+    } finally {
+      tree.mockRestore();
+      await session.stop();
+    }
   });
 
   it("stops a child when launch fails after spawn", async () => {

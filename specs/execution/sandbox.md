@@ -121,6 +121,14 @@ The contributed settings block is strict and not plugin-contributable:
 | `toolchains.include` / `exclude` | bounded lists | Add or remove toolchain ids |
 | `toolchains.extra_paths` / `excluded_paths` | bounded lists | Add or suppress read-only host roots |
 
+Filesystem access and network access are separate policies. A workspace-write Sandbox with
+`network: "host"` can send bytes read from host-visible files; select `network: "none"` when a run
+must prevent outbound traffic. The network default remains host for existing provider and tool
+compatibility. The real backend canary verifies that a local connection succeeds in host mode and
+fails in none mode while external file reads remain available. Production: `sandboxCommand` in
+[sandbox.ts](../../packages/tools/src/sandbox.ts). Test: native network and external read cases in
+[sandbox.test.ts](../../packages/tools/tests/integration/sandbox.test.ts).
+
 Production: `packages/loop/src/runtime/capabilities/tools-settings.ts` (`sandboxSchema`,
 `sandboxSettingsSpec`). Test: `packages/loop/tests/unit/settings-schema.test.ts`
 (`accepts an opt-in native sandbox`) and `packages/loop/tests/unit/settings-merge.test.ts`.
@@ -443,8 +451,9 @@ inspection rows and do not become mechanism paths.
 
 Linked-worktree Git metadata is discovered once while tool configuration is built. The pointer,
 `commondir`, backlink, directory shape, containment, and forbidden-root conditions all must agree;
-the immutable accepted common root is later exposed with the workspace's read/write posture. A model
-cannot retarget `.git` after configuration to gain another host mount.
+the immutable accepted common root is mounted read-only for sandboxed processes. The primary
+workspace `.git` entry is also read-only. A model cannot retarget `.git` after configuration to
+gain another host mount.
 
 `systemTemporaryRoots` is the deliberate host-path exception used by the product loop. It resolves
 the host environment temp and, on POSIX, `/tmp`; missing/non-directory roots and any root whose
@@ -557,7 +566,7 @@ in `packages/kernel/src/guard/resolver.ts`. Test:
   optional but unusable`) and `packages/tools/tests/unit/observability.test.ts`.
 
 **INV-S3 — Non-degraded backends enforce a host-visible read and declared-write boundary.** Both
-allow readable host files, confine writes to the workspace, admitted Git metadata and temporary
+allow readable host files, confine writes to the ordinary workspace and temporary
 roots, honor read-only roots and `network: "none"`, restrict host-process signaling and inspection,
 and expose only the filtered environment.
 Bubblewrap `host-proc` is the named process-visibility exception and is never reported as full mode.
@@ -577,12 +586,18 @@ parameters; the static profile never contains a workspace/runtime path.
 
 **INV-S5 — Declared read-only roots win below a writable workspace.** Bubblewrap mounts them after
 the workspace; Seatbelt emits a final write deny. The resolved list includes host-approved selected
-skill package roots, including a skill directory nested beneath the workspace.
+skill package roots, including a skill directory nested beneath the workspace. In workspace-write
+mode the native policy also protects workspace `.clarvis`, `.agents` and Git metadata. Missing
+configuration roots are prepared before Bubblewrap launch; redirected roots or aliased classified
+entries fail closed. The same alias scan protects Git metadata, with a bounded 50,000-entry limit
+per launch. Host placement has no physical sandbox boundary, and classified file-tool
+mutations still require the host reviewer.
 
 - Production: `packages/tools/src/config.ts` (`resolveConfig`) and
   `packages/tools/src/sandbox.ts` (`sandboxCommand`, `seatbeltPolicy`).
 - Test: `packages/tools/tests/integration/sandbox.test.ts` (`mounts a nested read-only path after the
-  writable workspace`, Seatbelt profile test) and
+  writable workspace`, `keeps classified workspace documents read-only to sandboxed shell commands`,
+  Seatbelt profile test) and
   `packages/tools/tests/integration/config.test.ts` (skill-root merge).
 
 **INV-S6 — Provider secrets are absent by default on every branch.** Native backends start from

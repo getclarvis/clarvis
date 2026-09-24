@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { workspaceStatePathsFromRoot } from "@clarvis/paths";
 import { dispatch } from "./core.ts";
 import { resolveConfig, type AgentToolsOptions } from "./config.ts";
-import { ToolError } from "./errors.ts";
+import { ToolError, parseToolError } from "./errors.ts";
 import type { FileOp } from "./lib/atomic.ts";
 import {
   mutationDigest,
@@ -12,6 +12,18 @@ import {
   type FilesystemChildMessage,
   type FilesystemWireContext,
 } from "./lib/filesystem-protocol.ts";
+
+const MUTATIONS = new Set([
+  "write_file",
+  "edit_file",
+  "multi_edit",
+  "replace",
+  "apply_patch",
+  "copy",
+  "move",
+  "mkdir",
+  "remove",
+]);
 
 interface PendingReview {
   readonly id: string;
@@ -37,12 +49,13 @@ export async function runFilesystemWorker(): Promise<void> {
   };
 
   const reviewFor =
-    (id: string) =>
+    (id: string, phase: (next: "review" | "commit") => void) =>
     async (operations: readonly FileOp[], commit: () => Promise<void>): Promise<void> => {
       if (policyIdentity === undefined || closed)
         throw new ToolError("aborted", "Filesystem service is closed");
       const batchId = randomUUID();
       const digest = mutationDigest(policyIdentity, id, operations);
+      phase("review");
       const route = await new Promise<"worker" | "classified-host">((resolve, reject) => {
         reviews.set(batchId, { id, digest, resolve, reject });
         void send({ kind: "prepare", id, batchId, digest, operations }).catch((error: unknown) => {
@@ -50,10 +63,17 @@ export async function runFilesystemWorker(): Promise<void> {
           reject(error instanceof Error ? error : new Error("Filesystem channel failed"));
         });
       });
-      if (route === "worker") await commit();
+      if (route === "worker") {
+        phase("commit");
+        await commit();
+      }
     };
 
-  const optionsFor = (context: FilesystemWireContext, id: string): AgentToolsOptions => ({
+  const optionsFor = (
+    context: FilesystemWireContext,
+    id: string,
+    phase: (next: "review" | "commit") => void,
+  ): AgentToolsOptions => ({
     workspaceRoot: context.workspaceRoot,
     statePaths: workspaceStatePathsFromRoot(context.workspaceRoot, context.stateRoot),
     temporaryRoots: context.temporaryRoots,
@@ -73,7 +93,7 @@ export async function runFilesystemWorker(): Promise<void> {
       : {
           configurationRoots: context.configurationRoots,
         }),
-    ...(context.reviewMutation ? { reviewMutation: reviewFor(id) } : {}),
+    ...(context.reviewMutation ? { reviewMutation: reviewFor(id, phase) } : {}),
   });
 
   try {
@@ -118,21 +138,56 @@ export async function runFilesystemWorker(): Promise<void> {
         continue;
       }
       if (controllers.has(message.id)) throw new Error("Filesystem request identity was reused");
+      if (message.policyIdentity !== policyIdentity)
+        throw new Error("Filesystem request policy differs from the initialized service");
       const controller = new AbortController();
       controllers.set(message.id, controller);
       void (async () => {
+        let phase: "prepare" | "review" | "commit" | "execute" = MUTATIONS.has(message.operation)
+          ? "prepare"
+          : "execute";
+        const failure = (error: ToolError | undefined): FilesystemChildMessage => ({
+          kind: "failure",
+          version: 1,
+          id: message.id,
+          code: error?.code ?? "internal",
+          message:
+            error !== undefined && error.message.length <= 1024
+              ? error.message
+              : "Filesystem service operation failed",
+          phase,
+          operation: message.operation,
+          path_role:
+            typeof error?.fields.path === "string" && error.fields.path === message.args.source
+              ? "source"
+              : typeof error?.fields.path === "string" &&
+                  error.fields.path === message.args.destination
+                ? "destination"
+                : typeof message.args.path === "string" || typeof error?.fields.path === "string"
+                  ? "target"
+                  : "none",
+          retryable: error?.code === "timeout",
+          ...(error?.code === "commit_partial" && typeof error.fields.source_exists === "boolean"
+            ? { source_exists: error.fields.source_exists }
+            : {}),
+          ...(error?.code === "commit_partial" &&
+          typeof error.fields.destination_committed === "boolean"
+            ? { destination_committed: error.fields.destination_committed }
+            : {}),
+        });
         try {
-          const config = resolveConfig(optionsFor(message.context, message.id));
+          const config = resolveConfig(
+            optionsFor(message.context, message.id, (next) => {
+              phase = next;
+            }),
+          );
           const result = await dispatch(message.operation, message.args, config, controller.signal);
-          await send({ kind: "result", id: message.id, result });
+          if (result.isError) {
+            const part = result.content[0];
+            await send(failure(parseToolError(part?.type === "text" ? part.text : undefined)));
+          } else await send({ kind: "result", id: message.id, result });
         } catch (error) {
-          await send({
-            kind: "failure",
-            id: message.id,
-            code: error instanceof ToolError ? error.code : "internal",
-            message:
-              error instanceof ToolError ? error.message : "Filesystem service operation failed",
-          });
+          await send(failure(error instanceof ToolError ? error : undefined));
         } finally {
           controllers.delete(message.id);
         }

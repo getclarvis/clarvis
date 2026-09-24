@@ -11,7 +11,7 @@ import {
   modeBitsEnforced,
 } from "../helpers/fixtures.ts";
 import { expectedToolNames } from "../helpers/tool-surface.ts";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -44,6 +44,45 @@ describe("createAgentTools (library API)", () => {
     const b = await t.callTool("shell", { command: "echo hi" });
     expect(b.isError).toBe(false);
     expect(JSON.parse(resultText(b.content))).toMatchObject({ exit_code: 0 });
+  });
+
+  it("rejects home shorthand before creating a literal workspace directory", async () => {
+    const t = createAgentTools({ workspaceRoot: root, probeRipgrep: () => false });
+    const result = await t.callTool("write_file", { path: "~/probe.txt", content: "probe" });
+    expect(JSON.parse(resultText(result.content))).toMatchObject({ error: "invalid_input" });
+    expect(existsSync(join(root, "~"))).toBe(false);
+  });
+
+  it("reads generated configuration, but refuses edits and distinguishes unknown targets", async () => {
+    const roots = configurationRoots({ workspaceRoot: root });
+    write(roots.workspace_clarvis, ".gitignore", "plans/\n");
+    const t = createAgentTools({ workspaceRoot: root, probeRipgrep: () => false });
+    const generated = join(roots.workspace_clarvis, ".gitignore");
+    expect((await t.callTool("read_file", { path: generated })).isError).toBe(false);
+    expect(
+      JSON.parse(
+        resultText(
+          (
+            await t.callTool("write_file", {
+              path: generated,
+              content: "changed",
+            })
+          ).content,
+        ),
+      ),
+    ).toMatchObject({ error: "denied" });
+    expect(readFileSync(generated, "utf8")).toBe("plans/\n");
+    expect(
+      JSON.parse(
+        resultText(
+          (
+            await t.callTool("read_file", {
+              path: join(roots.workspace_clarvis, "harness-probe.txt"),
+            })
+          ).content,
+        ),
+      ),
+    ).toMatchObject({ error: "unrecognized_configuration_target" });
   });
 
   it("requires the host mutation reviewer for protected configuration targets", async () => {
@@ -83,7 +122,7 @@ describe("createAgentTools (library API)", () => {
     });
     expect(copyIntoConfiguration.isError).toBe(true);
     expect(JSON.parse(resultText(copyIntoConfiguration.content))).toMatchObject({
-      error: "denied",
+      error: "unrecognized_configuration_target",
     });
 
     const patch = await t.callTool("apply_patch", {

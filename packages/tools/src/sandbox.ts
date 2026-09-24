@@ -1,10 +1,19 @@
-import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import nodePath, { delimiter, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import nodePath, { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawnSync, type SpawnOptions, type SpawnSyncReturns } from "node:child_process";
 import { createHash } from "node:crypto";
 import { ToolError } from "./errors.ts";
-import { executableOnPath } from "@clarvis/paths";
+import { configurationRoots, executableOnPath } from "@clarvis/paths";
 import { resolveShell, shellArgs, type ShellSpec } from "./shell.ts";
 import type { ToolsLogger } from "./lib/log.ts";
 import { systemExecutableRoots } from "./lib/system-executables.ts";
@@ -81,14 +90,21 @@ export function resolveFilesystemPolicy(input: {
   const workspaceAccess =
     sandbox?.filesystem === "workspace-read-only" ? "read-only" : "read-write";
   const protectedRoots = Object.freeze([
-    ...(workspaceAccess === "read-only" ? [workspaceRoot, ...gitMetadataPaths] : []),
-    ...(input.placement === "container" ? gitMetadataPaths : []),
-    ...(sandbox?.readOnlyPaths ?? []),
+    ...new Set([
+      ...(workspaceAccess === "read-only" ? [workspaceRoot, ...gitMetadataPaths] : []),
+      ...(input.placement === "container" || input.placement === "sandbox"
+        ? [
+            ...gitMetadataPaths,
+            ...(workspaceAccess === "read-write" ? [resolve(workspaceRoot, ".git")] : []),
+          ]
+        : []),
+      ...(sandbox?.readOnlyPaths ?? []),
+    ]),
   ]);
   const writableRoots = Object.freeze([
     ...temporaryRoots,
     ...(workspaceAccess === "read-write"
-      ? [workspaceRoot, ...(input.placement === "container" ? [] : gitMetadataPaths)]
+      ? [workspaceRoot, ...(input.placement === "host" ? gitMetadataPaths : [])]
       : []),
   ]);
   const identity = createHash("sha256")
@@ -683,6 +699,80 @@ function validatedReadOnlyPaths(sandbox: SandboxConfig, workspaceRoot: string): 
   return validated;
 }
 
+/** Keep shell processes out of the host-mediated workspace configuration writer. */
+function protectedWorkspaceConfigurationRoots(
+  workspaceRoot: string,
+  createMissing: boolean,
+): string[] {
+  const canonicalWorkspace = canonicalOrSelf(workspaceRoot);
+  const roots = configurationRoots({ workspaceRoot: canonicalWorkspace });
+  const paths = [roots.workspace_clarvis, roots.workspace_agents];
+  for (const path of paths) {
+    let stat;
+    try {
+      stat = lstatSync(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+        throw new ToolError("io_error", "Cannot inspect the protected workspace root.");
+    }
+    if (stat === undefined && createMissing && existsSync(canonicalWorkspace)) {
+      try {
+        mkdirSync(path, { mode: 0o700 });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST")
+          throw new ToolError("io_error", "Cannot prepare the protected workspace root.");
+      }
+      stat = lstatSync(path);
+    }
+    if (stat !== undefined) {
+      if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(path) !== path)
+        throw new ToolError("denied", "Protected workspace root is redirected.");
+    }
+  }
+  return paths;
+}
+
+/** Reject writable aliases to documents hidden behind a read-only sandbox mount. */
+function assertUnaliasedProtectedEntries(roots: readonly string[]): void {
+  let inspected = 0;
+  const pending = roots.filter(existsSync);
+  while (pending.length > 0) {
+    const path = pending.pop()!;
+    let stat;
+    try {
+      stat = lstatSync(path);
+    } catch {
+      throw new ToolError("io_error", "Cannot inspect a protected workspace entry.");
+    }
+    inspected++;
+    if (inspected > 50_000)
+      throw new ToolError(
+        "too_large",
+        "Protected workspace tree exceeds sandbox inspection limit.",
+      );
+    if (stat.isSymbolicLink()) {
+      let destination;
+      try {
+        destination = realpathSync(path);
+      } catch {
+        throw new ToolError("denied", "Protected workspace entry is redirected.");
+      }
+      if (!roots.some((root) => isWithin(destination, root)))
+        throw new ToolError("denied", "Protected workspace entry is redirected.");
+      continue;
+    }
+    if (stat.isFile() && stat.nlink !== 1)
+      throw new ToolError("denied", "Protected workspace entry has a writable alias.");
+    if (stat.isDirectory()) {
+      try {
+        for (const entry of readdirSync(path)) pending.push(join(path, entry));
+      } catch {
+        throw new ToolError("io_error", "Cannot inspect a protected workspace directory.");
+      }
+    }
+  }
+}
+
 /** Return the normalized authored path and its filesystem-canonical target. */
 function pathVariants(path: string): string[] {
   const normalized = resolve(path);
@@ -869,7 +959,26 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
   }
 
   const root = resolve(workspaceRoot);
-  const readOnlyPaths = validatedReadOnlyPaths(sandbox, root);
+  const classifiedPaths =
+    sandbox.filesystem === "workspace-read-only"
+      ? []
+      : protectedWorkspaceConfigurationRoots(root, support.backend === "bubblewrap");
+  const gitPaths = [resolve(root, ".git"), ...gitMetadataPaths.map((path) => resolve(path))].filter(
+    (path) => {
+      try {
+        const stat = lstatSync(path);
+        if (stat.isSymbolicLink())
+          throw new ToolError("denied", "Git metadata root is redirected.");
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+        if (error instanceof ToolError) throw error;
+        throw new ToolError("io_error", "Cannot inspect Git metadata root.");
+      }
+    },
+  );
+  assertUnaliasedProtectedEntries([...classifiedPaths, ...gitPaths]);
+  const readOnlyPaths = [...validatedReadOnlyPaths(sandbox, root), ...classifiedPaths, ...gitPaths];
   const protectedRoots = [
     ...(sandbox.filesystem === "workspace-read-only" ? [root, ...gitMetadataPaths] : []),
     ...readOnlyPaths,
@@ -883,7 +992,6 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
       );
   }
   if (support.backend === "seatbelt") {
-    const gitPaths = gitMetadataPaths.map((path) => resolve(path));
     const policy = seatbeltPolicy({
       sandbox,
       workspaceRoot: root,
@@ -943,8 +1051,7 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
     },
     ...gitMetadataPaths.map((path) => ({
       path: canonicalOrSelf(path),
-      mode:
-        sandbox.filesystem === "workspace-read-only" ? ("--ro-bind" as const) : ("--bind" as const),
+      mode: "--ro-bind" as const,
       precedence: 1,
     })),
     ...readOnlyPaths.map((path) => ({

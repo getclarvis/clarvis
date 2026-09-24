@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { sanitizeText } from "@clarvis/capability";
 import {
   type ShellFacts,
   type Guard,
@@ -268,7 +269,18 @@ function riskDecision(
       : `command uses ${kind}: ${quotedCommand(segment)}`;
   return reviewable
     ? { matched: "dangerous", verdict: "ask", reason }
-    : { matched: "dangerous", verdict: "deny", reason };
+    : forced && !privileged
+      ? { matched: "dangerous", verdict: "ask", reason, escalate: "human" }
+      : { matched: "dangerous", verdict: "deny", reason };
+}
+
+function expansionReason(shell: ShellFacts): string {
+  const issue = shell.analysisIssues[0];
+  if (issue === undefined) return "command contains dynamic expansions that cannot be analyzed";
+  const segment = shell.segments[issue.segmentIndex];
+  const token =
+    issue.kind === "parameter_expansion" && segment?.command.includes("$?") ? " ($?)" : "";
+  return `segment ${issue.segmentIndex + 1} contains ${issue.kind.replaceAll("_", " ")}${token} that cannot be analyzed`;
 }
 
 /**
@@ -289,17 +301,13 @@ function digestOf(ctx: GuardContext): { commandDigest?: string } {
  * Tool guard for bash (and path-touching) calls: deny lists, allow lists, path bounds, otherwise ask.
  *
  * @param opts - optional allow/deny command lists; see {@link ShellGuardOptions}.
- * @returns a {@link Guard} evaluated in fixed precedence for each call: a denied
- *   segment → `deny`; an undecidable command → `deny` when a deny list is
- *   configured, else `ask` (human-only on Host unless Auto is enabled); a host command → `ask` through
- *   the configured reviewer; an outside path → `deny` on Host or a reviewed
- *   `ask` for a native Sandbox shell command; a
- *   credential file that is also forced removal or sudo → Auto `ask` / Approval
- *   `deny`; other credential files → `ask`; a non-bash call → `allow`; an environment-prefixed
- *   dangerous command → Auto `ask` / Approval `deny`; other environment
- *   changes → review; a fully allow-listed command → `allow`; forced removal or sudo → Auto `ask`
- *   or Approval `deny`; a command that may leave the workspace → `ask`;
- *   otherwise `ask` (noting whether an allow list was configured at all).
+ * @returns a {@link Guard} evaluated in fixed precedence for each call: deny list;
+ *   undecidable command; explicit host execution; credential and command risk;
+ *   outside path; non-command tool; environment changes; allow list; unresolved
+ *   paths; then default review. Forced removal asks a person in Approval mode,
+ *   while privilege elevation is denied there. Auto sends reviewable cases to
+ *   the private reviewer. Physical filesystem access remains the selected
+ *   environment's decision after approval.
  * @remarks
  * The guard only ever narrows toward asking or denying — it allows solely for
  * non-bash calls and commands matched in full by the allow list.
@@ -341,7 +349,7 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
         matched: "undecidable",
         verdict: "deny",
         reason:
-          "command contains dynamic expansions that cannot be analyzed, so it cannot be " +
+          `${expansionReason(ctx.shell)}, so it cannot be ` +
           "checked against the denied commands list",
       };
     }
@@ -350,10 +358,7 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
         matched: "host_command",
         verdict: "ask",
         ...(opts?.allowHostJudge === true ? {} : { escalate: "human" as const }),
-        reason:
-          ctx.justification !== undefined && ctx.justification.length > 0
-            ? ctx.justification
-            : "this command will run outside the sandbox on the host",
+        reason: "this command will run outside the sandbox on the host",
       };
     }
     if (ctx.shell?.undecidable) {
@@ -363,20 +368,7 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
         ...(placement === "host" && opts?.allowHostJudge !== true
           ? { escalate: "human" as const }
           : {}),
-        reason: "command contains dynamic expansions that cannot be analyzed",
-      };
-    }
-    if (touchesOutside(ctx)) {
-      return {
-        matched: "outside_workspace",
-        verdict:
-          placement === "contained" && ctx.config.sandbox !== undefined && ctx.tool === "shell"
-            ? "ask"
-            : "deny",
-        reason:
-          placement === "contained" && ctx.config.sandbox !== undefined && ctx.tool === "shell"
-            ? "command touches paths outside the workspace; native sandbox write limits still apply"
-            : "command touches paths outside the workspace",
+        reason: expansionReason(ctx.shell),
       };
     }
     const changesEnvironment =
@@ -393,6 +385,22 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
         matched: "credential_file",
         verdict: "ask",
         reason: `command touches a credential file (${sensitive})`,
+      };
+    }
+    if (ctx.shell !== undefined && (privileged || forced)) {
+      return riskDecision(privileged, forced, reviewable, ctx.shell, riskFindings);
+    }
+    if (touchesOutside(ctx)) {
+      return {
+        matched: "outside_workspace",
+        verdict: "ask",
+        ...(placement === "host" && opts?.allowHostJudge !== true
+          ? { escalate: "human" as const }
+          : {}),
+        reason:
+          placement === "contained" && ctx.config.sandbox !== undefined
+            ? "path is outside the workspace; the sandbox still enforces its filesystem policy"
+            : "path is outside the workspace and requires review",
       };
     }
     if (ctx.shell === undefined) {
@@ -465,6 +473,10 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
       ctx.shell === undefined ? [] : commandRiskFindings(ctx.shell);
     return {
       ...decision,
+      ...(decision.reason === undefined ? {} : { static_trigger: decision.reason }),
+      ...(ctx.justification === undefined
+        ? {}
+        : { agent_justification: sanitizeText(ctx.justification).slice(0, 512) }),
       matched,
       placement,
       ...(!unsandbox && opts?.network !== undefined ? { network: opts.network } : {}),

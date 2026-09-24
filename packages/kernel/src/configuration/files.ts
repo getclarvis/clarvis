@@ -22,6 +22,7 @@ import type { ConfigurationMutationFacts } from "../guard/effects/configuration.
 import { agentFrontmatterSchema, splitAgentFrontmatter } from "@clarvis/loop/host";
 import { validateSkillDocument } from "@clarvis/skills";
 import { validateWorkflowDocument, WORKFLOW_FILE } from "@clarvis/workflows/artifact";
+import { ToolError } from "@clarvis/tools";
 
 const MAX_BYTES = 256 * 1024;
 /** Revision-bound configuration mutation used by the host's file and profile writers. */
@@ -53,7 +54,10 @@ function pathParts(path: string): string[] {
         /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part),
     )
   )
-    throw new Error("Use a relative configuration path without traversal or alternate separators.");
+    throw new ToolError(
+      "invalid_input",
+      "Use a relative configuration path without traversal or alternate separators.",
+    );
   return parts;
 }
 
@@ -72,7 +76,10 @@ function directories(root: string, parts: readonly string[], create: boolean): b
       stat = lstatSync(current);
     }
     if (!stat.isDirectory() || stat.isSymbolicLink())
-      throw new Error("Configuration directories must be real directories, not links.");
+      throw new ToolError(
+        "denied",
+        "Configuration directories must be real directories, not links.",
+      );
   }
   return true;
 }
@@ -87,7 +94,10 @@ function readDocument(file: string): { content: string; revision: string; bytes:
     throw error;
   }
   if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1 || before.size > MAX_BYTES)
-    throw new Error("Only bounded regular configuration files with one link are accessible.");
+    throw new ToolError(
+      "denied",
+      "Only bounded regular configuration files with one link are accessible.",
+    );
   const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const opened = fstatSync(fd);
@@ -97,7 +107,7 @@ function readDocument(file: string): { content: string; revision: string; bytes:
       opened.ino !== before.ino ||
       opened.dev !== before.dev
     )
-      throw new Error("Configuration file changed while opening it.");
+      throw new ToolError("revision_conflict", "Configuration file changed while opening it.");
     const bytes = Buffer.alloc(MAX_BYTES + 1);
     let size = 0;
     while (size < bytes.length) {
@@ -105,10 +115,16 @@ function readDocument(file: string): { content: string; revision: string; bytes:
       if (count === 0) break;
       size += count;
     }
-    if (size > MAX_BYTES) throw new Error("Configuration file exceeds the size limit.");
-    const content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
-      bytes.subarray(0, size),
-    );
+    if (size > MAX_BYTES)
+      throw new ToolError("too_large", "Configuration file exceeds the size limit.");
+    let content: string;
+    try {
+      content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+        bytes.subarray(0, size),
+      );
+    } catch {
+      throw new ToolError("invalid_input", "Configuration document must be UTF-8 text.");
+    }
     const readBytes = Buffer.from(bytes.subarray(0, size));
     return { content, revision: settingsDocumentRevision(readBytes), bytes: readBytes };
   } finally {
@@ -122,10 +138,16 @@ export function readConfigurationDocument(
   rootName: ConfigurationRoot,
   relativePath: string,
 ): { content: string; revision: string; bytes: Buffer } | null {
-  if (!Object.hasOwn(roots, rootName)) throw new Error("Unknown configuration root.");
+  if (!Object.hasOwn(roots, rootName))
+    throw new ToolError("invalid_input", "Unknown configuration root.");
   const parts = pathParts(relativePath);
-  if (parts.length === 0 || configurationPathClass(rootName, parts.join("/")) === "private")
-    throw new Error("This path is outside authored configuration access.");
+  if (
+    parts.length === 0 ||
+    !["authoring", "operational", "generated_read_only"].includes(
+      configurationPathClass(rootName, parts.join("/")),
+    )
+  )
+    throw new ToolError("denied", "This path is outside authored configuration access.");
   const root = roots[rootName];
   return directories(root, parts.slice(0, -1), false) ? readDocument(join(root, ...parts)) : null;
 }
@@ -147,10 +169,11 @@ export function prepareConfigurationFileMutation(
     current: { content: string; revision: string } | null;
   },
 ): PreparedConfigurationFileMutation {
-  if (!Object.hasOwn(roots, request.root)) throw new Error("Unknown configuration root.");
+  if (!Object.hasOwn(roots, request.root))
+    throw new ToolError("invalid_input", "Unknown configuration root.");
   const parts = captured?.parts ?? pathParts(request.path);
-  if (configurationPathClass(request.root, parts.join("/")) === "private")
-    throw new Error("This path is outside authored configuration access.");
+  if (!["authoring", "operational"].includes(configurationPathClass(request.root, parts.join("/"))))
+    throw new ToolError("denied", "This path is outside authored configuration access.");
   const root = captured?.root ?? roots[request.root];
   const parents = parts.slice(0, -1);
   const file = join(root, ...parts);
@@ -161,20 +184,24 @@ export function prepareConfigurationFileMutation(
         : null
       : captured.current;
   const fieldClass = parts.at(0);
-  if (fieldClass === undefined) throw new Error("Choose a configuration file, not its root.");
+  if (fieldClass === undefined)
+    throw new ToolError("invalid_input", "Choose a configuration file, not its root.");
   if (
     request.operation !== "write" &&
     request.operation !== "edit" &&
     request.operation !== "delete"
   )
-    throw new Error("Unknown configuration operation.");
+    throw new ToolError("invalid_input", "Unknown configuration operation.");
   if (
     request.expected_revision === undefined ||
     request.expected_revision !== (current?.revision ?? null)
   )
-    throw new Error("Configuration revision conflict. Read the file again before changing it.");
+    throw new ToolError(
+      "revision_conflict",
+      "Configuration revision conflict. Read the file again before changing it.",
+    );
   if (request.operation === "delete") {
-    if (current === null) throw new Error("Configuration file does not exist.");
+    if (current === null) throw new ToolError("not_found", "Configuration file does not exist.");
     const facts: ConfigurationMutationFacts = {
       canonicalPath: file,
       root: request.root,
@@ -183,14 +210,18 @@ export function prepareConfigurationFileMutation(
       bytes: 0,
       operation: "delete",
       fieldClass,
-      surface: "delete",
+      surface:
+        configurationPathClass(request.root, parts.join("/")) === "authoring"
+          ? "authoring_delete"
+          : "delete",
     };
     return {
       facts,
       before: current,
       commit(onAttested) {
         if (!directories(root, parents, false) || readDocument(file)?.revision !== current.revision)
-          throw new Error(
+          throw new ToolError(
+            "revision_conflict",
             "Configuration revision conflict. Read the file again before changing it.",
           );
         onAttested?.(facts);
@@ -201,36 +232,67 @@ export function prepareConfigurationFileMutation(
   }
   let content = request.content;
   if (request.operation === "edit") {
-    if (current === null) throw new Error("Read an existing file before editing it.");
+    if (current === null)
+      throw new ToolError("not_found", "Read an existing file before editing it.");
     const { old_text: oldText, new_text: newText } = request;
     if (typeof oldText !== "string" || oldText.length === 0 || typeof newText !== "string")
-      throw new Error("An edit requires nonempty old_text and a new_text replacement.");
+      throw new ToolError(
+        "invalid_input",
+        "An edit requires nonempty old_text and a new_text replacement.",
+      );
     const index = current.content.indexOf(oldText);
     if (index < 0 || current.content.indexOf(oldText, index + 1) >= 0)
-      throw new Error("old_text must match exactly once. Include more surrounding context.");
+      throw new ToolError(
+        "no_match",
+        "old_text must match exactly once. Include more surrounding context.",
+      );
     content =
       current.content.slice(0, index) + newText + current.content.slice(index + oldText.length);
   }
   if (typeof content !== "string" || Buffer.byteLength(content) > MAX_BYTES)
-    throw new Error("Provide UTF-8 configuration content within the size limit.");
+    throw new ToolError(
+      "invalid_input",
+      "Provide UTF-8 configuration content within the size limit.",
+    );
   if (parts[0] === "agents" && parts.length === 2 && parts[1]?.endsWith(".md")) {
     const document = splitAgentFrontmatter(content);
-    agentFrontmatterSchema.strict().parse(document.data);
+    try {
+      agentFrontmatterSchema.strict().parse(document.data);
+    } catch {
+      throw new ToolError("invalid_input", "Agent document frontmatter is invalid.");
+    }
   }
   if (parts[0] === "skills" && parts.at(-1) === "SKILL.md" && parts.length >= 3) {
-    validateSkillDocument(content, {
-      directory: join(root, ...parents),
-      ...(request.root.endsWith("_agents") ? { validation: "agent-skills" as const } : {}),
-    });
+    try {
+      validateSkillDocument(content, {
+        directory: join(root, ...parents),
+        ...(request.root.endsWith("_agents") ? { validation: "agent-skills" as const } : {}),
+      });
+    } catch {
+      throw new ToolError("invalid_input", "Skill document is invalid.");
+    }
   }
   if (parts[0] === "workflows" && parts.length === 3 && parts[2] === WORKFLOW_FILE) {
-    validateWorkflowDocument(content, { directory: join(root, ...parents) });
+    try {
+      validateWorkflowDocument(content, { directory: join(root, ...parents) });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      throw new ToolError(
+        "invalid_input",
+        detail.includes("is not a selector")
+          ? "Workflow round reference is not a selector."
+          : "Workflow document is invalid.",
+      );
+    }
   }
   if (parts.length === 1 && parts[0] === "settings.json") {
     try {
       kernelSettingsSchema.parse(JSON.parse(content));
     } catch {
-      throw new Error("settings.json must be valid JSON satisfying Clarvis settings schema.");
+      throw new ToolError(
+        "invalid_input",
+        "settings.json must be valid JSON satisfying Clarvis settings schema.",
+      );
     }
   }
   const authoring = configurationPathClass(request.root, parts.join("/")) === "authoring";
@@ -252,7 +314,10 @@ export function prepareConfigurationFileMutation(
         ? (readDocument(file)?.revision ?? null)
         : null;
       if (currentRevision !== facts.expectedRevision)
-        throw new Error("Configuration revision conflict. Read the file again before changing it.");
+        throw new ToolError(
+          "revision_conflict",
+          "Configuration revision conflict. Read the file again before changing it.",
+        );
       onAttested?.(facts);
       directories(root, parents, true);
       writeFileAtomicSync(file, content);

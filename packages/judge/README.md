@@ -87,7 +87,10 @@ validates this framing and marks the end of the evidence prefix without rewritin
 identity. Operational Goal state and Plan CAS/task-status headers remain owned by the work run and do
 not enter the reviewer.
 
-Command output is capped at 1024 tokens per attempt; effects at 2048. The independent output budget
+Command output is capped at 1024 tokens per attempt; effect compilation allows 8192 from the
+first attempt, while effect decisions rise from 2048 to 4096 and 8192 on correction.
+A provider length finish is rejected as `output_limit`.
+The independent output budget
 covers one or two stages, four correction attempts per stage and configured transport retries.
 Calls use the ordinary model inactivity timeout and transport retry machinery; there is no private
 wall-clock timer. The host default is `CLARVIS_DEFAULT_CALL_TIMEOUT_MS` unless explicitly overridden,
@@ -112,6 +115,12 @@ results are never cached; an installed snapshot becomes the key for the validate
 Host validators run again on reuse. Uncertainty, stale state and failures are not cached. Retirement
 aborts children, clears caches and refuses new inference. Authority installation, refusals, effect
 consumption and human fallback remain in the Kernel. Command, effect and configuration consumers use this shared port.
+
+Invalid private responses carry a bounded diagnostic category, protocol stage, correction count and
+optional closed authority-candidate rejection reason to the host, even when a corrected call later
+succeeds. No raw model response enters the receipt. Production: `createJudgeRunCapability` in
+`src/run-capability.ts` and `executeJudge` in `src/executor.ts`. Test: invalid-response correction
+cases in `tests/integration/run-capability.test.ts`.
 
 The native Kernel binds a projected internal store once per host and uses the exact effective base
 provider from the work run. Host observation metadata identifies consumer, stage and private

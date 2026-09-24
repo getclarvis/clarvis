@@ -66,7 +66,8 @@ export const listDir: ToolDef = {
               (error: NodeJS.ErrnoException) => error.code === "ENOENT",
             ));
           if (
-            classified?.kind === "private" ||
+            classified?.kind === "secret" ||
+            classified?.kind === "reserved_unknown" ||
             (classified !== undefined && entry.isSymbolicLink()) ||
             (!brokenLink && !isAdmittedFileToolSearchPath(candidate, config))
           )

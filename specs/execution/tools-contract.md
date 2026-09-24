@@ -122,7 +122,7 @@ kernel's bounded artifact case in
 | `ToolDef`, `ToolCallHooks` | type | `packages/tools/src/tools/types.ts` | one tool's schema+handler; optional live output and successful-shell-spawn hooks |
 | `ContentPart`, `TextPart`, `ImagePart`, `ToolResult`, `contentText` | type/fn | `tools/content.ts` | the result envelope shape |
 | `ToolError`, `serializeError`, `fsError` | class/fn | `packages/tools/src/errors.ts` | the package's error type and its two renderers |
-| `ErrorCode` | type | `packages/tools/src/errors.ts` | the closed union of 18 stable codes |
+| `ErrorCode` | type | `packages/tools/src/errors.ts` | the closed union of stable codes |
 | `SandboxConfig` | type | `packages/tools/src/index.ts` | re-exported from `./sandbox.ts` |
 | `systemTemporaryRoots(platform?, environmentTemporaryRoot?)` | function | `packages/tools/src/index.ts` | returns the existing environment-selected temp root plus `/tmp` on POSIX, or only the environment root on Windows; forbidden roots are omitted |
 | `resolveShell`, `shellArgs`, `encodePowerShellCommand`, `currentShellFlavor` | fn | `packages/tools/src/index.ts` | shell resolution primitives, the same ones `./shell` exposes |
@@ -379,8 +379,10 @@ key:
 ### `ErrorCode` — the closed union (`packages/tools/src/errors.ts`)
 
 `invalid_input`, `not_found`, `not_a_file`, `is_binary`, `not_an_image`, `no_match`,
-`ambiguous_match`, `patch_failed`, `io_error`, `timeout`, `aborted`, `too_large`,
-`path_escape`, `denied`, `too_many_sessions`, `internal` — 16 codes.
+`ambiguous_match`, `patch_failed`, `io_error`, `cross_device`, `commit_partial`,
+`review_failed`, `revision_conflict`, `approval_unavailable`,
+`unrecognized_configuration_target`, `timeout`, `aborted`, `too_large`,
+`path_escape`, `denied`, `too_many_sessions`, `internal`.
 
 ### `fsError` mapping table (`packages/tools/src/errors.ts`)
 
@@ -389,10 +391,23 @@ key:
 | `ENOENT` | `not_found` | `No such file: <path>` |
 | `EISDIR` | `not_a_file` | `Path is a directory: <path>` |
 | `ENOTDIR` | `not_a_file` | `Not a directory: <path>` |
+| `EXDEV` | `cross_device` | `Cross-filesystem rename: <path>` |
 | anything else (e.g. `EACCES`), or no code at all | `io_error` | `<code ?? "EIO">: <err.message>` |
 
-All four branches attach `{ path }` to `fields`. Pinned by
+All mapped branches attach `{ path }` to `fields`. Pinned by
 `packages/tools/tests/unit/errors.test.ts`.
+
+Native file-service failures use a versioned bounded worker frame with error code, phase,
+operation, path role, retryability, and optional partial-commit endpoint state. The host validates
+the frame and preserves expected `ToolError` codes; unknown exceptions remain generic `internal`.
+The policy identity is checked at handshake and invocation. Production: `parseFilesystemChildMessage`
+in [filesystem-protocol.ts](../../packages/tools/src/lib/filesystem-protocol.ts),
+`runFilesystemWorker` in [filesystem-worker.ts](../../packages/tools/src/filesystem-worker.ts),
+and `SandboxAgentFilesystem` in
+[filesystem-service.ts](../../packages/tools/src/filesystem-service.ts). Test:
+[filesystem-protocol.test.ts](../../packages/tools/tests/contract/filesystem-protocol.test.ts)
+and typed failure cases in
+[filesystem-service.test.ts](../../packages/tools/tests/integration/filesystem-service.test.ts).
 
 ### Tool result envelope
 

@@ -1,10 +1,12 @@
 import {
+  chmodSync,
   existsSync,
   linkSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -19,7 +21,7 @@ import { probeSandbox } from "../../src/sandbox.ts";
 import { resolveConfig } from "../../src/config.ts";
 import { SandboxAgentFilesystem } from "../../src/filesystem-service.ts";
 import { isAlive } from "../../src/lib/process-owner.ts";
-import { writePng } from "../helpers/fixtures.ts";
+import { resultText, writePng } from "../helpers/fixtures.ts";
 
 test.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable")(
   "native file calls execute in the run-owned Sandbox service under shell's write policy",
@@ -54,12 +56,137 @@ test.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable
       const written = await tools.callTool("write_file", { path: "inside.txt", content: "inside" });
       expect(written.isError).toBe(false);
       expect(readFileSync(join(workspace, "inside.txt"), "utf8")).toBe("inside");
+
+      const link = join(workspace, "external-link");
+      symlinkSync(marker, link);
+      const removed = await tools.callTool("remove", { path: link });
+      expect(removed.isError).toBe(false);
+      expect(existsSync(link)).toBe(false);
+      expect(readFileSync(marker, "utf8")).toBe("outside\n");
     } finally {
       await tools.close();
       rmSync(root, { recursive: true, force: true });
     }
   },
 );
+
+test.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable")(
+  "worker and host preserve typed prepare, review and commit failures",
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), "clarvis-file-failures-"));
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace);
+    const tools = createAgentTools({
+      workspaceRoot: workspace,
+      sandbox: { type: "native", filesystem: "workspace-write", network: "none" },
+      reviewMutation: async (_operations, commit) => commit(),
+    });
+    try {
+      const missing = await tools.callTool("read_file", { path: "missing.txt" });
+      expect(JSON.parse(resultText(missing.content))).toMatchObject({
+        error: "not_found",
+        phase: "execute",
+        operation: "read_file",
+      });
+      const outside = join(root, "outside.txt");
+      writeFileSync(outside, "outside");
+      symlinkSync(outside, join(workspace, "linked.txt"));
+      const refused = await tools.callTool("write_file", {
+        path: "linked.txt",
+        content: "changed",
+      });
+      expect(JSON.parse(resultText(refused.content))).toMatchObject({
+        error: "invalid_input",
+        phase: "commit",
+        operation: "write_file",
+        path_role: "target",
+      });
+      expect(readFileSync(outside, "utf8")).toBe("outside");
+    } finally {
+      await tools.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable")(
+  "a technical reviewer failure crosses the native worker channel without becoming internal",
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), "clarvis-file-review-failed-"));
+    const tools = createAgentTools({
+      workspaceRoot: root,
+      sandbox: { type: "native", filesystem: "workspace-write", network: "none" },
+      reviewMutation: async () => {
+        throw new ToolError("review_failed", "Automatic configuration review failed", {
+          failure_kind: "invalid_response",
+        });
+      },
+    });
+    try {
+      const result = await tools.callTool("write_file", { path: "target.txt", content: "data" });
+      expect(JSON.parse(resultText(result.content))).toMatchObject({
+        error: "review_failed",
+        phase: "review",
+        failure_kind: "invalid_response",
+      });
+      expect(existsSync(join(root, "target.txt"))).toBe(false);
+    } finally {
+      await tools.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test.skipIf(
+  process.platform !== "linux" ||
+    probeSandbox().mode === "unavailable" ||
+    statSync(process.cwd()).dev === statSync(tmpdir()).dev,
+)("native move stages across filesystems and preserves overwrite", async () => {
+  const workspace = mkdtempSync(join(process.cwd(), ".clarvis-cross-move-"));
+  const destinationRoot = mkdtempSync(join(tmpdir(), "clarvis-cross-move-"));
+  const destination = join(destinationRoot, "target.txt");
+  writeFileSync(join(workspace, "source.txt"), "first");
+  writeFileSync(destination, "previous");
+  let blockSourceRemoval = false;
+  const tools = createAgentTools({
+    workspaceRoot: workspace,
+    temporaryRoots: [destinationRoot],
+    sandbox: { type: "native", filesystem: "workspace-write", network: "none" },
+    reviewMutation: async (_operations, commit) => {
+      if (blockSourceRemoval) chmodSync(workspace, 0o500);
+      await commit();
+    },
+  });
+  try {
+    const result = await tools.callTool("move", {
+      source: "source.txt",
+      destination,
+      overwrite: true,
+    });
+    expect(result.isError, resultText(result.content)).toBe(false);
+    expect(readFileSync(destination, "utf8")).toBe("first");
+    expect(existsSync(join(workspace, "source.txt"))).toBe(false);
+    writeFileSync(join(workspace, "second.txt"), "second");
+    const secondDestination = join(destinationRoot, "second.txt");
+    blockSourceRemoval = true;
+    const partial = await tools.callTool("move", {
+      source: "second.txt",
+      destination: secondDestination,
+    });
+    expect(JSON.parse(resultText(partial.content))).toMatchObject({
+      error: "commit_partial",
+      source_exists: true,
+      destination_committed: true,
+    });
+    expect(readFileSync(join(workspace, "second.txt"), "utf8")).toBe("second");
+    expect(readFileSync(secondDestination, "utf8")).toBe("second");
+  } finally {
+    await tools.close();
+    chmodSync(workspace, 0o700);
+    rmSync(workspace, { recursive: true, force: true });
+    rmSync(destinationRoot, { recursive: true, force: true });
+  }
+});
 
 test("an unavailable native backend cannot start the file service or fall back to host I/O", async () => {
   const root = mkdtempSync(join(tmpdir(), "clarvis-file-backend-unavailable-"));
@@ -348,6 +475,43 @@ test.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable
       expect(outcome.isError).toBe(false);
       expect(reviewed).toEqual(["fixed"]);
       expect(readFileSync(target, "utf8")).toBe("fixed");
+    } finally {
+      await tools.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable")(
+  "native recursive cleanup previews its bounded tree before worker commit",
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), "clarvis-file-tree-review-"));
+    const workspace = join(root, "workspace");
+    const target = join(workspace, "probe");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "a.txt"), "probe");
+    let reviewed = false;
+    const tools = createAgentTools({
+      workspaceRoot: workspace,
+      sandbox: { type: "native", filesystem: "workspace-write", network: "none" },
+      reviewMutation: async (operations, commit) => {
+        expect(operations).toMatchObject([
+          {
+            type: "rmtree",
+            path: target,
+            treeEntries: [".", "a.txt"],
+          },
+        ]);
+        expect(existsSync(join(target, "a.txt"))).toBe(true);
+        reviewed = true;
+        await commit();
+      },
+    });
+    try {
+      const result = await tools.callTool("remove", { path: "probe", recursive: true });
+      expect(result.isError, resultText(result.content)).toBe(false);
+      expect(reviewed).toBe(true);
+      expect(existsSync(target)).toBe(false);
     } finally {
       await tools.close();
       rmSync(root, { recursive: true, force: true });

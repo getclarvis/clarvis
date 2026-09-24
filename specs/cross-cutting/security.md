@@ -393,8 +393,16 @@ the process identity could read. Bubblewrap binds the host root read-only before
 overlays; Seatbelt allows broad file reads while restricting writes. The workspace and declared
 protected roots remain read-only when selected, including below a writable system temp. This is a
 write and process boundary, not a confidentiality boundary for host files. Container sees only the
-guest mounts, and Host follows OS permissions plus Guard review. Credential environment values are
-withheld from native and bare shell paths. Production: `resolveFilesystemPolicy`, `sandboxCommand`
+guest mounts, and Host follows OS permissions plus Guard review. Native Sandbox networking is
+independent: `network: "host"` permits outbound transfer of host-visible file content, while
+`network: "none"` denies
+network connections. The default remains host for compatibility; confidentiality-sensitive runs
+must select none. The Guard still reviews external file-tool reads under the same placement as
+shell, and the sandbox or guest mounts enforce physical access. Production: `createShellGuard` in
+`packages/kernel/src/guard/shell-guard.ts` and `sandboxCommand` in
+`packages/tools/src/sandbox.ts`. Test: `packages/kernel/tests/integration/guard-file-parity.test.ts`
+and native networking cases in `packages/tools/tests/integration/sandbox.test.ts`.
+Credential environment values are withheld from native and bare shell paths. Production: `resolveFilesystemPolicy`, `sandboxCommand`
 and `minimalEnv` in `packages/tools/src/sandbox.ts`; `createAgentToolsCapability` in
 `packages/loop/src/runtime/capabilities/tools.ts`. Test:
 `packages/tools/tests/integration/sandbox.test.ts` (`uses the same broad-read write-limited policy
@@ -639,6 +647,21 @@ rather than becoming an alternate writer. Production: `protectWorkspaceConfigura
 `packages/kernel/tests/integration/file-tool-configuration.test.ts` and
 `packages/kernel/tests/integration/workspace-trust.test.ts`; post-review revocation is pinned in
 `packages/kernel/tests/unit/authoring-mutations.test.ts`.
+
+Native Sandbox mounts workspace `.clarvis`, `.agents` and Git metadata read-only for shell and
+file-service child processes. The host-mediated classified commit remains available after exact
+review and revision checks. Missing workspace configuration roots are prepared before a Linux
+mount; redirected roots and preexisting symlink or hardlink aliases inside classified and Git
+metadata trees fail closed. The scan is bounded at 50,000 entries per native launch. Host placement
+has no physical boundary, so command approval there does not attest a
+classified file mutation. Production: `protectedWorkspaceConfigurationRoots`,
+`assertUnaliasedProtectedEntries`, `sandboxCommand` and `resolveFilesystemPolicy` in
+`packages/tools/src/sandbox.ts`, and `createAuthoringMutationReview` in
+`packages/kernel/src/configuration/authoring-mutations.ts`. Test: `keeps classified workspace
+documents read-only to sandboxed shell commands` in
+`packages/tools/tests/integration/sandbox.test.ts` and `commits reviewed global and workspace
+authoring documents through the Sandbox file service` in
+`packages/kernel/tests/integration/file-tool-configuration.test.ts`.
 
 An explicit approve/revoke is refused with `conflict` while any run is active, before the trust file
 is changed. At an idle boundary, `resolveActive` recomposes the selected workspace Extension Profile (and

@@ -18,6 +18,8 @@ export function callFacts(req: ElicitRequest, evidence: unknown, reviewContext?:
       tool: req.tool,
       args: req.args,
       guard_reason: req.reason,
+      static_trigger: req.static_trigger,
+      agent_justification: req.agent_justification,
       segments: req.shell?.segments.map((segment) => ({
         source: segment.command,
         normalized: segment.normalized,

@@ -6,12 +6,14 @@ import type { GuardEffectDescriptor } from "./types.ts";
  *
  * @remarks Every producer and consumer of an effect fact lives in the restricted configuration
  * path: `attestConfiguration` builds the fact, `createConfigurationReview` reviews it, and the
- * authority envelope compiles a grant only for one of these four ids. Command review does not
+ * authority envelope compiles a grant only for one of these registered ids. Command review does not
  * consult this registry at all, so an operation name is never an authorization rule.
  */
 const BUILTINS: ReadonlyArray<readonly [string, ReviewedEffectClass, ReviewedEffectInference]> = [
   ["workspace.content.write", "local_mutation", "bounded"],
+  ["workspace.tree.delete", "destructive", "bounded"],
   ["clarvis.authoring.write", "local_mutation", "bounded"],
+  ["clarvis.authoring.delete", "destructive", "bounded"],
   ["clarvis.operational_config.write", "authority_change", "explicit"],
   ["destructive.delete", "destructive", "human_only"],
 ];
@@ -32,6 +34,7 @@ function configurationConstraints(value: Record<string, string | number | boolea
     "operation",
     "field_class",
     "diff_digest",
+    "environment_digest",
   ];
   if (Object.keys(value).some((key) => !keys.includes(key))) return false;
   if (
@@ -53,8 +56,29 @@ function configurationConstraints(value: Record<string, string | number | boolea
       ["write", "edit", "delete"].includes(String(value.operation))) &&
     (value.field_class === undefined || typeof value.field_class === "string") &&
     (value.diff_digest === undefined ||
-      (typeof value.diff_digest === "string" && /^[a-f0-9]{64}$/.test(value.diff_digest)))
+      (typeof value.diff_digest === "string" && /^[a-f0-9]{64}$/.test(value.diff_digest))) &&
+    (value.environment_digest === undefined ||
+      (typeof value.environment_digest === "string" &&
+        /^[a-f0-9]{64}$/.test(value.environment_digest)))
   );
+}
+
+function descriptorConstraints(
+  id: string,
+  value: Record<string, string | number | boolean>,
+): boolean {
+  if (!configurationConstraints(value)) return false;
+  if (id === "workspace.tree.delete")
+    return (
+      value.field_class === "bounded_tree" &&
+      value.operation === "delete" &&
+      value.next_revision === "absent" &&
+      value.bytes === 0 &&
+      typeof value.environment_digest === "string"
+    );
+  if (id === "clarvis.authoring.delete")
+    return value.operation === "delete" && value.next_revision === "absent";
+  return value.environment_digest === undefined;
 }
 
 /** Registry cannot be mutated after composition; workspace configuration never registers effects. */
@@ -67,7 +91,7 @@ export function createGuardEffectRegistry() {
         id,
         class: effectClass,
         inference,
-        validateConstraints: configurationConstraints,
+        validateConstraints: (value) => descriptorConstraints(id, value),
         covers(grant, fact) {
           return (
             inference !== "human_only" &&
@@ -80,8 +104,8 @@ export function createGuardEffectRegistry() {
             fact.target !== undefined &&
             grant.target_digests.includes(fact.target.digest) &&
             (grant.relation === "direct" || inference === "bounded") &&
-            configurationConstraints(grant.constraints) &&
-            configurationConstraints(fact.constraints) &&
+            descriptorConstraints(id, grant.constraints) &&
+            descriptorConstraints(id, fact.constraints) &&
             Object.entries(fact.constraints).every(
               ([key, value]) => grant.constraints[key] === value,
             ) &&

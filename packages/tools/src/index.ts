@@ -128,6 +128,12 @@ export { contentText } from "./tools/content.ts";
 
 export { ToolError, serializeError, fsError } from "./errors.ts";
 export type { ErrorCode } from "./errors.ts";
+export {
+  scanSmallTree,
+  SMALL_TREE_MAX_ENTRIES,
+  SMALL_TREE_MAX_PATH_BYTES,
+} from "./lib/small-tree.ts";
+export type { SmallTreeSnapshot } from "./lib/small-tree.ts";
 
 export { setWarnSink, warn, NOOP_TOOLS_LOGGER } from "./lib/log.ts";
 export type { WarnSink, ToolsLogger, ToolsWarning } from "./lib/log.ts";

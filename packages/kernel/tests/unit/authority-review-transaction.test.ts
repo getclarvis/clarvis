@@ -68,7 +68,17 @@ test("invalid candidates can be corrected before the single installation", () =>
   const f = fixture();
   const transaction = f.make();
   expect(transaction.validateAndInstall({ ...f.envelope, version: 2 })).toBeUndefined();
+  expect(transaction.rejection()).toBe("invalid_shape");
   expect(f.ledger.reader.snapshot().envelope).toBeUndefined();
+  expect(
+    transaction.validateAndInstall({
+      ...f.envelope,
+      objectives: [
+        { id: "objective", summary: "probe", target_digests: ["unknown"], evidence_ids: ["input"] },
+      ],
+    }),
+  ).toBeUndefined();
+  expect(transaction.rejection()).toBe("objective_reference");
   expect(transaction.validateAndInstall(f.envelope)).toBeDefined();
   expect(transaction.validateAndInstall(f.envelope)).toBeUndefined();
 });

@@ -132,7 +132,7 @@ describe("createShellGuard onDecision", () => {
       matched: "host_command",
       escalate: "human",
       tool: "shell",
-      reason: "need host gh",
+      reason: "this command will run outside the sandbox on the host",
     });
   });
 
@@ -164,7 +164,7 @@ describe("createShellGuard onDecision", () => {
     const context = ctx("read_file", { path: "../x" });
     context.paths.push({ raw: "../x", resolved: "/etc/x", withinWorkspace: false });
     const [decision] = decisionsFor({}, context);
-    expect(decision).toMatchObject({ verdict: "deny", matched: "outside_workspace" });
+    expect(decision).toMatchObject({ verdict: "ask", matched: "outside_workspace" });
   });
 
   it("reports a non-bash call as allowed without a digest", () => {

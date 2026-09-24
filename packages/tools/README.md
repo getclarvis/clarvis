@@ -123,8 +123,10 @@ follows OS permissions; Sandbox and Container access follows the run filesystem 
 Use `readOnly: true` to expose only non-mutating tools.
 
 `sandbox: { type: "native" }` selects Bubblewrap on Linux and Seatbelt on macOS. Both backends allow
-reads from host-visible files and limit writes to the selected workspace, admitted Git metadata and
-temporary roots, subject to `workspace-read-only` and nested read-only roots. The run's immutable
+reads from host-visible files and limit writes to the selected workspace and temporary roots,
+subject to `workspace-read-only` and nested read-only roots. Workspace `.clarvis`, `.agents` and
+Git metadata are read-only to sandboxed processes; classified file commits use the host review port.
+The run's immutable
 `ResolvedFilesystemPolicy` supplies the same placement and paths to `shell` and `shell_session`.
 All file tools run in one run-owned child under that same native policy; a missing backend or lost
 child fails the call closed. Host executes file calls locally and Container executes them inside the
@@ -244,7 +246,10 @@ the tracked group can escape this backend; an abrupt host crash outside a sandbo
 
 The run placement controls file access for commands and native file tools. Host uses OS permissions;
 Sandbox runs both under its frozen native policy; Container sees only guest mounts. The workspace
-root anchors relative paths. Classified private configuration, selected skills and exact output
+root anchors relative paths. File-tool paths starting with `~`, `~/`, or `~\` fail with
+`invalid_input` instead of creating a literal workspace directory. Paths inside the workspace are
+reported relatively; external paths are reported absolutely. Classified secret configuration,
+selected skills and exact output
 artifact rules remain independent protections. Production: `resolveFilesystemPolicy` in
 `packages/tools/src/sandbox.ts`, `resolveFileToolPath` in `packages/tools/src/lib/paths.ts`, and
 `resolveReadableTextPath` in `packages/tools/src/lib/state-artifacts.ts`. Test:
@@ -401,13 +406,13 @@ fallback the TUI host must replace before tool warnings are possible.
 
 | Level   | `event`                     | Fields                                                                                                                                                           |
 | ------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `debug` | `tools.config_resolved`     | `ripgrep, sandbox_mode, sandbox_availability, read_only, skill_execution_roots, platform`                                                              |
+| `debug` | `tools.config_resolved`     | `ripgrep, sandbox_mode, sandbox_availability, read_only, skill_execution_roots, platform`                                                                        |
 | `warn`  | `tools.sandbox_unavailable` | `requested, reason` — the probe reason an `optional` sandbox used to discard                                                                                     |
 | `debug` | `tools.shell_spawn`         | `shell_file, flavor, detached, cwd, timeout_ms, sandboxed` — **never the command text**                                                                          |
 | `debug` | `tools.shell_exit`          | `exit_code, signal, timed_out, aborted, stdout_bytes, stderr_bytes, stdout_truncated, stderr_truncated, stdout_omitted_bytes, stderr_omitted_bytes, duration_ms` |
 | `warn`  | `tools.kill_tree_failed`    | `pid, signal, platform` — every caller ignores the `false` return                                                                                                |
 | `warn`  | `tools.session_stop_failed` | `cause` — a timeout or abort stop threw before confirmation                                                                                                      |
-| `debug` | `tools.grep_path`           | `engine, is_dir, classified_roots`                                                                                                                                       |
+| `debug` | `tools.grep_path`           | `engine, is_dir, classified_roots`                                                                                                                               |
 | `error` | `tools.internal_error`      | `err` — via the warn sink                                                                                                                                        |
 | `warn`  | `tools.ignore_unreadable`   | `path` — via the warn sink                                                                                                                                       |
 | `debug` | `tools.fs_error_unmapped`   | `errno_code, syscall, path, platform` — via the warn sink                                                                                                        |
@@ -494,5 +499,25 @@ writable roots, and unrelated file paths follow the selected environment policy.
 [effect review](../../specs/execution/effect-review.md).
 
 File tools prepare complete atomic mutation batches before effect review. The entry agent receives the host `reviewMutation` callback; profiles cannot install it. In Sandbox, the child sends prepared bytes through a bounded typed channel and waits for the host's decision before committing. Configuration batches reuse the configuration reviewer, validate recognized documents and check captured revisions before staging. The host commits only approved classified configuration batches; a mixed batch may include ordinary targets inside the writable workspace. Copy uses captured UTF-8 bytes for protected destinations; rename/delete include their source effects. Mixed patches and recursive replacement review all prepared targets together. The callback carries exact workspace trust and notifies catalogs after success. Ordinary binary file operations retain their existing behavior.
+
+`remove` accepts one file, symlink entry, or empty directory. Directory removal checks emptiness,
+passes the target through review, and synchronizes the parent after commit. With `recursive: true`,
+it can delete an ordinary workspace tree after one bounded effect review in Auto or human review in
+On. An empty directory still takes the `rmdir` route. The preview
+is limited to 64 entries, 8 KiB of path names and depth 32; links, special files, deceptive names, configuration,
+selected skills, state, and Git metadata are refused. The tree is rechecked before deletion.
+Partial removal is reported as `commit_partial`; recursive cleanup is not atomic.
+The exported `scanSmallTree` helper returns the bounded entry list and an identity revision for
+the host review; it never reads file bodies or grants deletion authority.
+
+The native file service carries bounded typed failures for prepare, review, commit, and execution;
+expected errors keep their code instead of collapsing into `internal`. `remove` unlinks an admitted
+symlink entry without following its destination. `move` keeps same-filesystem rename and stages a
+bounded copy in the destination filesystem on `EXDEV`; a failed source removal after publication
+returns `commit_partial` with observable endpoint state. Production: `SandboxAgentFilesystem` in
+`src/filesystem-service.ts`, `applyOpsAtomic` in `src/lib/atomic.ts`, `remove` and `move` in
+`src/tools/`. Test: typed worker and native cross-device cases in
+`tests/integration/filesystem-service.test.ts` and symlink deletion in
+`tests/integration/remove.test.ts`.
 
 An explicitly scoped recursive replacement inside configuration directories discovers bounded admitted leaves despite default configuration ignore rules. Private files are filtered before content reads; generic workspace replacement retains its normal ignore behavior.

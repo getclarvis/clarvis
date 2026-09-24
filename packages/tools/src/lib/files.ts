@@ -140,7 +140,8 @@ async function assertOpenedConfiguration(
     comparable(root) !== comparable(expected.canonicalRoot) ||
     actual?.root !== expected.root ||
     actual.path !== expected.path ||
-    actual.kind === "private" ||
+    actual.kind === "secret" ||
+    actual.kind === "reserved_unknown" ||
     opened.dev !== current.dev ||
     opened.ino !== current.ino
   )

@@ -17,11 +17,22 @@ export function resolvePath(input: string, workspaceRoot: string): string {
   return path.isAbsolute(input) ? path.normalize(input) : path.resolve(workspaceRoot, input);
 }
 
+/** Reject shell-only home shorthand before a file tool can create a literal `~` directory. */
+function rejectHomeShorthand(input: string): void {
+  if (input === "~" || input.startsWith("~/") || input.startsWith("~\\"))
+    throw new ToolError(
+      "invalid_input",
+      `Home shorthand is not supported in file tools: ${input}. Use an absolute path or a path relative to the workspace.`,
+      { path: input },
+    );
+}
+
 /** Resolve a file-tool path while preserving independent configuration protection. */
 export function resolveFileToolPath(
   input: string,
   config: Pick<RuntimeConfig, "workspaceRoot" | "stateRoot" | "configurationRoots">,
 ): string {
+  rejectHomeShorthand(input);
   const abs = resolvePath(input, config.workspaceRoot);
   if (isWithinRoots(abs, [config.stateRoot]))
     throw new ToolError("path_escape", `Path is not a readable output artifact: ${input}`, {
@@ -47,8 +58,15 @@ export function resolveFileToolPath(
     canonicalRoots[root as ConfigurationRoot] = resolved;
   }
   const actualTarget = configurationTarget(canonicalRoots, canonical);
-  if (lexicalTarget?.kind === "private" || actualTarget?.kind === "private")
-    throw new ToolError("denied", `Configuration target is private: ${input}.`, { path: input });
+  const classification = lexicalTarget?.kind ?? actualTarget?.kind;
+  if (classification === "secret")
+    throw new ToolError("denied", `Configuration target is secret: ${input}.`, { path: input });
+  if (classification === "reserved_unknown")
+    throw new ToolError(
+      "unrecognized_configuration_target",
+      `Configuration target is not recognized: ${input}.`,
+      { path: input },
+    );
   if (
     (lexicalTarget === undefined) !== (actualTarget === undefined) ||
     (lexicalTarget !== undefined &&

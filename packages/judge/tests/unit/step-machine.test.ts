@@ -188,6 +188,22 @@ test("host semantic rejection leaves compilation available for correction", asyn
   expect(machine.stage()).toBe("compile");
 });
 
+test("host rejection gives a bounded correction reason without candidate content", async () => {
+  const machine = createJudgeStepMachine({
+    kind: "compile_effects",
+    async validateAndInstall() {
+      return { rejected: "grant_constraints" };
+    },
+  });
+  expect(
+    await machine.accept([call({ action: "compile_authority", candidate: envelope })]),
+  ).toEqual({
+    kind: "invalid_response",
+    reason: "authority_candidate_rejected:grant_constraints",
+  });
+  expect(machine.stage()).toBe("compile");
+});
+
 test("host receipt validation faults close the machine without correction", async () => {
   const fault = new Error("host validator fault");
   const machine = createJudgeStepMachine({ kind: "command" }, () => {

@@ -51,6 +51,19 @@ export interface SessionResult {
   readonly aborted: boolean;
 }
 
+export type SessionPhase =
+  "starting" | "running" | "exited_pending_status" | "exited_draining" | "closed";
+
+export interface SessionSnapshot {
+  readonly phase: SessionPhase;
+  readonly running: boolean;
+  readonly terminationConfirmed: boolean;
+  readonly exitCode: number | null;
+  readonly signal: NodeJS.Signals | null;
+  readonly ready: boolean;
+  readonly timedOut: boolean;
+}
+
 export interface ExecutionSession {
   readonly id: string;
   readonly agent: object;
@@ -66,6 +79,7 @@ export interface ExecutionSession {
   readonly signal: NodeJS.Signals | null;
   readonly timedOut: boolean;
   readonly aborted: boolean;
+  snapshot(): SessionSnapshot;
   readStreams(cursor: string | undefined, limit: number): SessionPage;
   waitForChange(cursor: string | undefined, timeoutMs: number, signal?: AbortSignal): Promise<void>;
   waitReady(timeoutMs: number, signal?: AbortSignal): Promise<boolean>;
@@ -107,6 +121,7 @@ class LiveSession implements ExecutionSession {
   private didTimeOut = false;
   private wasAborted = false;
   private stopConfirmed = false;
+  private spawned = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private drainTimer: ReturnType<typeof setTimeout> | undefined;
   private abortListener: (() => void) | undefined;
@@ -132,7 +147,30 @@ class LiveSession implements ExecutionSession {
   }
 
   get running(): boolean {
-    return !this.stopConfirmed && this.child.exitCode === null && this.child.signalCode === null;
+    return this.snapshot().running;
+  }
+
+  snapshot(): SessionSnapshot {
+    const statusKnown = this.child.exitCode !== null || this.child.signalCode !== null;
+    const terminationConfirmed = this.stopConfirmed || (this.spawned && !this.treeRunning());
+    const phase: SessionPhase = this.settled
+      ? "closed"
+      : statusKnown
+        ? "exited_draining"
+        : terminationConfirmed
+          ? "exited_pending_status"
+          : this.spawned
+            ? "running"
+            : "starting";
+    return {
+      phase,
+      running: phase === "running" || phase === "starting",
+      terminationConfirmed,
+      exitCode: this.child.exitCode,
+      signal: this.child.signalCode,
+      ready: this.readyMatched,
+      timedOut: this.didTimeOut,
+    };
   }
 
   get ready(): boolean {
@@ -140,7 +178,7 @@ class LiveSession implements ExecutionSession {
   }
 
   get terminationConfirmed(): boolean {
-    return this.stopConfirmed || !this.treeRunning();
+    return this.snapshot().terminationConfirmed;
   }
 
   get exitCode(): number | null {
@@ -228,6 +266,7 @@ class LiveSession implements ExecutionSession {
     });
     this.child.on("close", (code, exitSignal) => void this.finish(code, exitSignal, signal));
     this.child.once("spawn", () => {
+      this.spawned = true;
       if (!this.settled && !signal?.aborted) onExecutionStarted?.();
     });
   }

@@ -36,6 +36,38 @@ export const effectReviewAuditSchema = z.discriminatedUnion("event", [
       input_tokens: count.optional(),
       output_tokens: count.optional(),
       cache_hit: z.boolean().optional(),
+      diagnostic_category: z
+        .enum([
+          "output_limit",
+          "no_tool_call",
+          "multiple_tool_calls",
+          "invalid_tool_call",
+          "invalid_json",
+          "schema",
+          "stage_order",
+          "authority_constraints",
+          "receipt_constraints",
+          "unknown",
+        ])
+        .optional(),
+      diagnostic_rejection: z
+        .enum([
+          "stale_context",
+          "invalid_shape",
+          "revision_mismatch",
+          "duplicate_id",
+          "objective_reference",
+          "effect_not_inferable",
+          "grant_constraints",
+          "grant_reference",
+          "grant_not_covered",
+          "ceiling_mismatch",
+          "invalid_exclusion",
+          "missing_exclusion",
+          "blocked_effect",
+        ])
+        .optional(),
+      correction_count: count.max(3).optional(),
     })
     .strict(),
   z
@@ -44,6 +76,43 @@ export const effectReviewAuditSchema = z.discriminatedUnion("event", [
       ...common,
       input_tokens: count.optional(),
       output_tokens: count.optional(),
+      proposal_digest: z.string().regex(/^[a-f0-9]{64}$/),
+      diagnostic_category: z
+        .enum([
+          "output_limit",
+          "no_tool_call",
+          "multiple_tool_calls",
+          "invalid_tool_call",
+          "invalid_json",
+          "schema",
+          "stage_order",
+          "authority_constraints",
+          "receipt_constraints",
+          "unknown",
+        ])
+        .optional(),
+      diagnostic_stage: z
+        .string()
+        .regex(/^[a-z_]{1,32}$/)
+        .optional(),
+      diagnostic_rejection: z
+        .enum([
+          "stale_context",
+          "invalid_shape",
+          "revision_mismatch",
+          "duplicate_id",
+          "objective_reference",
+          "effect_not_inferable",
+          "grant_constraints",
+          "grant_reference",
+          "grant_not_covered",
+          "ceiling_mismatch",
+          "invalid_exclusion",
+          "missing_exclusion",
+          "blocked_effect",
+        ])
+        .optional(),
+      correction_count: count.max(3).optional(),
       failure_kind: z.enum([
         "timeout",
         "auth",

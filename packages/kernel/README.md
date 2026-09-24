@@ -2,6 +2,10 @@
 
 Reviewer configuration is owned by `@clarvis/judge/settings` and registered before host parsing.
 Technical Judge failures never trigger operator questions, including when `on_unsure` is `ask`.
+An identical configuration-review failure is reused within the run until its document facts,
+call context, authority, review context or environment changes. Closed candidate-rejection reasons remain
+available for diagnostics without logging document contents. Auto reviews bounded ordinary tree
+cleanup and authored skill deletion; operational configuration deletion retains human review.
 Judge calls inherit `CLARVIS_DEFAULT_CALL_TIMEOUT_MS` unless explicitly overridden. The shared
 provider owns inactivity timing and transport retries, without a separate Judge wall deadline.
 Workspace timeout overrides may only lower the operator limit or effective runtime default.
@@ -991,6 +995,13 @@ canonical snapshot breakpoint and separate volatile case. The configuration comp
 live Plans context before accepting a result. Plan progress fields are excluded from its projection.
 The command adapter coalesces concurrent identical Auto reviews without caching refusals as
 consent. Missing Judge composition and architecture faults propagate; retirement never asks a human.
+Configuration review returns typed technical failures and preserves private invalid-response
+diagnostics as category, stage and correction count in bounded audit fields. Human-only deletion
+requires an available elicitation channel. Guard reviews external file reads against the selected
+Host or Sandbox placement, while the environment still enforces access. Production:
+`src/configuration/review.ts`, `src/guard/effect-review.ts`, and `src/guard/shell-guard.ts`.
+Test: `tests/unit/configuration-review.test.ts`, `tests/unit/effect-review.test.ts`, and
+`tests/integration/guard-file-parity.test.ts`.
 Each real command-review or configuration-review provider invocation also records one kernel-owned
 `guard_reviewer_model_call` event through `RUN_TRACE_PORT`. It totals winning and retried usage,
 retains unknown usage/cache flags, and reports a cache-read ratio only when cache counters are
@@ -1129,6 +1140,12 @@ captures every target and exact revision, reviews it once through the host-owned
 and shared Judge coordinator, and commits all or none. Private targets and selected skill execution
 snapshots do not enter that route. The global roots are passed only to entry-agent file handlers and
 do not widen shell mounts or the selected environment policy.
+Removing an empty admitted configuration directory uses the same review channel, requires human
+consent, and checks its directory identity and emptiness again before host commit. A concurrent
+entry causes `revision_conflict` rather than deleting the changed directory.
+For an ordinary workspace tree, `remove` sends a bounded entry preview and revision through the
+same channel. Human consent is one-time, with no session grant; the worker rechecks the tree before
+deletion and reports a partial commit if it cannot finish.
 In Sandbox, file tools prepare the batch inside the run-owned isolated service. The host reviewer
 binds its decision to those bytes and the run policy, then commits classified configuration batches
 through a narrow host path. Mixed batches may also change ordinary files inside the writable

@@ -1,5 +1,6 @@
 import type { OperatorAuthorityReader } from "@clarvis/capability";
 import type { CompiledAuthorityTransition } from "@clarvis/judge";
+import type { AuthorityCandidateRejection } from "@clarvis/judge";
 import { validateAuthorityEnvelope } from "./authority-validation.ts";
 import { installAuthorityEnvelope } from "./operator-authority.ts";
 import { effectDigest } from "./effects/facts.ts";
@@ -59,11 +60,16 @@ export function createAuthorityReviewTransaction(input: {
   const initialIdentity = authorityIdentity(options.authority);
   const batch = structuredClone(options.batch);
   let attempted = false;
+  let rejection: AuthorityCandidateRejection = "stale_context";
   const contextCurrent = () =>
     !options.signal?.aborted &&
     reviewerContextIsCurrent(options.reviewContext, options.expectedReviewContextRevision);
   return {
+    rejection(): AuthorityCandidateRejection {
+      return rejection;
+    },
     validateAndInstall(candidate: unknown): CompiledAuthorityTransition | undefined {
+      rejection = "stale_context";
       if (attempted) return undefined;
       if (
         !contextCurrent() ||
@@ -76,6 +82,9 @@ export function createAuthorityReviewTransaction(input: {
         options.authority,
         options.registry,
         batch,
+        (reason) => {
+          rejection = reason;
+        },
       );
       if (
         envelope === undefined ||

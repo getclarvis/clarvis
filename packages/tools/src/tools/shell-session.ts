@@ -4,10 +4,10 @@ import type { ToolDef } from "./types.ts";
 
 const MAX_YIELD_MS = 30_000;
 
-function exitCode(session: ExecutionSession): number | null {
-  if (session.running) return null;
-  if (session.exitCode !== null) return session.exitCode;
-  if (session.signal !== null) return 128 + (osConstants.signals[session.signal] ?? 0);
+function exitCode(snapshot: ReturnType<ExecutionSession["snapshot"]>): number | null {
+  if (snapshot.running) return null;
+  if (snapshot.exitCode !== null) return snapshot.exitCode;
+  if (snapshot.signal !== null) return 128 + (osConstants.signals[snapshot.signal] ?? 0);
   return null;
 }
 
@@ -18,14 +18,16 @@ export function shellSessionView(
   limit: number,
 ): Record<string, unknown> {
   const page = session.readStreams(cursor, limit);
+  const snapshot = session.snapshot();
   return {
-    running: session.running,
+    phase: snapshot.phase,
+    running: snapshot.running,
     session_id: session.id,
-    exit_code: exitCode(session),
-    signal: session.signal,
-    timed_out: session.timedOut,
-    ready: session.ready,
-    termination_confirmed: session.terminationConfirmed,
+    exit_code: exitCode(snapshot),
+    signal: snapshot.signal,
+    timed_out: snapshot.timedOut,
+    ready: snapshot.ready,
+    termination_confirmed: snapshot.terminationConfirmed,
     stdout: page.stdout.text,
     stderr: page.stderr.text,
     next_cursor: page.nextCursor,
@@ -84,13 +86,17 @@ export const shellSession: ToolDef = {
   async handler(args, config, signal) {
     const action = args.action as "poll" | "stop" | "list";
     if (action === "list") {
-      const sessions = config.sessionManager.listSessions(config.sessionAgent).map((session) => ({
-        session_id: session.id,
-        running: session.running,
-        exit_code: exitCode(session),
-        ready: session.ready,
-        timed_out: session.timedOut,
-      }));
+      const sessions = config.sessionManager.listSessions(config.sessionAgent).map((session) => {
+        const snapshot = session.snapshot();
+        return {
+          session_id: session.id,
+          phase: snapshot.phase,
+          running: snapshot.running,
+          exit_code: exitCode(snapshot),
+          ready: snapshot.ready,
+          timed_out: snapshot.timedOut,
+        };
+      });
       return JSON.stringify({ sessions });
     }
     const session = config.sessionManager.getSession(

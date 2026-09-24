@@ -29,7 +29,7 @@ export function isReviewedConfigurationPath(
   },
 ): boolean {
   const target = configurationTarget(roots, path);
-  return target !== undefined && target.kind !== "private";
+  return target?.kind === "authoring" || target?.kind === "operational";
 }
 
 /** Reviewed configuration uses the restricted writer's private creation modes. */

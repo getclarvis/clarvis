@@ -900,6 +900,14 @@
     {
       "mechanism": "subprocess",
       "file": "packages/tools/tests/integration/sandbox.test.ts",
+      "identity": "subprocess|module|spawnSync(spec.file, spec.args, { ...spec.options, encoding: \"utf8\", timeout: 10_000, })|0",
+      "package_owner": "@clarvis/tools",
+      "classification": "boundary-canary",
+      "reason": "A real Bubblewrap process must reject classified writes while an ordinary workspace write succeeds."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/tools/tests/integration/sandbox.test.ts",
       "identity": "subprocess|module|spawnSync(spec.file, spec.args, spec.options)|0",
       "package_owner": "@clarvis/tools",
       "classification": "boundary-canary",

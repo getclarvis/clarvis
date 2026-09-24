@@ -3,9 +3,11 @@ import type { Readable, Writable } from "node:stream";
 import { deserialize, serialize } from "node:v8";
 import type { ConfigurationRoot } from "@clarvis/paths";
 import type { FileOp } from "./atomic.ts";
+import { SMALL_TREE_MAX_ENTRIES, SMALL_TREE_MAX_PATH_BYTES } from "./small-tree.ts";
 import type { FileOperation } from "../agent-filesystem.ts";
 import type { DispatchResult } from "../core.ts";
 import { isFileOperation } from "../agent-filesystem.ts";
+import { isErrorCode, type ErrorCode } from "../errors.ts";
 
 /** Bound a full prepared batch without charging JSON escape expansion to mutation bytes. */
 export const MAX_FILESYSTEM_FRAME_BYTES = 96 * 1024 * 1024;
@@ -34,6 +36,7 @@ export type FilesystemParentMessage =
   | {
       readonly kind: "invoke";
       readonly id: string;
+      readonly policyIdentity: string;
       readonly operation: FileOperation;
       readonly args: Readonly<Record<string, unknown>>;
       readonly context: FilesystemWireContext;
@@ -58,9 +61,16 @@ export type FilesystemChildMessage =
     }
   | {
       readonly kind: "failure";
+      readonly version: 1;
       readonly id: string;
-      readonly code: string;
+      readonly code: ErrorCode;
       readonly message: string;
+      readonly phase: "prepare" | "review" | "commit" | "execute";
+      readonly operation: FileOperation;
+      readonly path_role: "source" | "destination" | "target" | "none";
+      readonly retryable: boolean;
+      readonly source_exists?: boolean;
+      readonly destination_committed?: boolean;
     }
   | {
       readonly kind: "prepare";
@@ -135,16 +145,44 @@ function fileOperations(value: unknown): value is FileOp[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > 50_000) return false;
   return value.every((raw) => {
     const item = record(raw);
-    fields(item, ["type", "path"], ["from", "content", "intent", "mode", "dirMode", "overwrite"]);
+    fields(
+      item,
+      ["type", "path"],
+      [
+        "from",
+        "content",
+        "intent",
+        "mode",
+        "dirMode",
+        "overwrite",
+        "maxBytes",
+        "treeEntries",
+        "treeRevision",
+      ],
+    );
     return (
-      ["create", "modify", "delete", "rename"].includes(item.type as string) &&
+      ["create", "modify", "delete", "rename", "rmdir", "rmtree"].includes(item.type as string) &&
       string(item.path) &&
       (item.from === undefined || string(item.from)) &&
       (item.content === undefined || typeof item.content === "string") &&
       (item.intent === undefined || item.intent === "write" || item.intent === "edit") &&
       (item.mode === undefined || Number.isSafeInteger(item.mode)) &&
       (item.dirMode === undefined || Number.isSafeInteger(item.dirMode)) &&
-      (item.overwrite === undefined || typeof item.overwrite === "boolean")
+      (item.overwrite === undefined || typeof item.overwrite === "boolean") &&
+      (item.maxBytes === undefined ||
+        (Number.isSafeInteger(item.maxBytes) && Number(item.maxBytes) > 0)) &&
+      (item.type === "rmtree"
+        ? Array.isArray(item.treeEntries) &&
+          item.treeEntries.length > 0 &&
+          item.treeEntries.length <= SMALL_TREE_MAX_ENTRIES &&
+          item.treeEntries.every(string) &&
+          item.treeEntries.reduce(
+            (bytes: number, name: string) => bytes + Buffer.byteLength(name),
+            0,
+          ) <= SMALL_TREE_MAX_PATH_BYTES &&
+          typeof item.treeRevision === "string" &&
+          /^[a-f0-9]{64}$/.test(item.treeRevision)
+        : item.treeEntries === undefined && item.treeRevision === undefined)
     );
   });
 }
@@ -175,8 +213,13 @@ export function parseFilesystemParentMessage(value: unknown): FilesystemParentMe
         return item as unknown as FilesystemParentMessage;
       break;
     case "invoke":
-      fields(item, ["kind", "id", "operation", "args", "context"]);
-      if (string(item.id) && isFileOperation(item.operation) && context(item.context)) {
+      fields(item, ["kind", "id", "policyIdentity", "operation", "args", "context"]);
+      if (
+        string(item.id) &&
+        string(item.policyIdentity) &&
+        isFileOperation(item.operation) &&
+        context(item.context)
+      ) {
         record(item.args);
         return item as unknown as FilesystemParentMessage;
       }
@@ -222,8 +265,39 @@ export function parseFilesystemChildMessage(value: unknown): FilesystemChildMess
         return item as unknown as FilesystemChildMessage;
       break;
     case "failure":
-      fields(item, ["kind", "id", "code", "message"]);
-      if (string(item.id) && string(item.code) && typeof item.message === "string")
+      fields(
+        item,
+        [
+          "kind",
+          "version",
+          "id",
+          "code",
+          "message",
+          "phase",
+          "operation",
+          "path_role",
+          "retryable",
+        ],
+        ["source_exists", "destination_committed"],
+      );
+      if (
+        item.version === 1 &&
+        string(item.id) &&
+        isErrorCode(item.code) &&
+        typeof item.message === "string" &&
+        item.message.length > 0 &&
+        item.message.length <= 1024 &&
+        ["prepare", "review", "commit", "execute"].includes(item.phase as string) &&
+        isFileOperation(item.operation) &&
+        ["source", "destination", "target", "none"].includes(item.path_role as string) &&
+        typeof item.retryable === "boolean" &&
+        (item.source_exists === undefined || typeof item.source_exists === "boolean") &&
+        (item.destination_committed === undefined ||
+          typeof item.destination_committed === "boolean") &&
+        (item.code === "commit_partial"
+          ? typeof item.source_exists === "boolean" && item.destination_committed === true
+          : item.source_exists === undefined && item.destination_committed === undefined)
+      )
         return item as unknown as FilesystemChildMessage;
       break;
     case "prepare":

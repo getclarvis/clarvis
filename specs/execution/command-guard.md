@@ -583,25 +583,26 @@ Evaluated top-down; the first match returns (`packages/kernel/src/guard/shell-gu
 | 2b | `sandboxPermissions === "require_escalated"` and Isolation is Sandbox (`config.sandbox` present) | `host_command` | `ask`; `escalate: "human"` unless `allowHostJudge` is true (Auto only) |
 | 3a | `shell.undecidable`, no/empty deny list, placement Host | `undecidable` | `ask`; `escalate: "human"` unless `allowHostJudge` is true (Auto only) |
 | 3b | `shell.undecidable`, no/empty deny list, placement contained | `undecidable` | `ask`, no escalation restriction |
-| 4 | `touchesOutside(ctx)` — some resolved path escapes | `outside_workspace` | `deny` on Host and for file tools; `ask` for a native Sandbox shell command |
-| 5a | some path's `raw` matches a credential pattern **and** the command is forced `rm` or `sudo` | `dangerous` | Auto `ask` (Judge); Approval `deny` with the exact segment |
-| 5b | some path's `raw` matches a credential pattern and no exception | `credential_file` | `ask` |
-| 6 | `ctx.shell === undefined` (a non-command tool) | `non_bash` | `allow` |
-| 7a | an environment-prefixed command is forced `rm` (`-f`, `--force`, short cluster containing `f`) or `sudo` | `dangerous` | Auto `ask` (Judge); Approval `deny` with the exact segment |
-| 7b | any segment has a preserved environment assignment | `default` | `ask`; `escalate: "human"` on Host unless `allowHostJudge` is true |
-| 8 | allow list configured and **every** comparison segment matches, ignoring validated POSIX `cd` | `allow_list` | `allow` |
-| 8a | forced `rm` or `sudo` without an environment prefix | `dangerous` | Auto `ask` (Judge); Approval `deny` with the exact segment |
-| 9 | `!withinWorkspace(ctx)` — i.e. no resolved paths at all | `outside_workspace` | `ask` |
-| 10 | otherwise | `default` | `ask` |
+| 4 | credential path plus forced removal or privilege elevation | `dangerous` | Auto `ask` (Judge); Approval asks a human for forced removal and denies privilege elevation |
+| 5 | credential path without that command risk | `credential_file` | `ask` |
+| 6 | forced removal (`rm -f`, `rm --force` or a short force cluster) or privilege elevation | `dangerous` | Auto `ask` (Judge); Approval asks a human for forced removal and denies privilege elevation, regardless of the allow list |
+| 7 | `touchesOutside(ctx)` — some resolved path escapes | `outside_workspace` | `ask`; on Host without Auto, ask a human. The selected environment still enforces physical access |
+| 8 | `ctx.shell === undefined` (a non-command tool) | `non_bash` | `allow` |
+| 9 | any segment has a preserved environment assignment | `default` | `ask`; `escalate: "human"` on Host unless `allowHostJudge` is true |
+| 10 | allow list configured and **every** comparison segment matches, ignoring validated POSIX `cd` | `allow_list` | `allow` |
+| 11 | `!withinWorkspace(ctx)` — i.e. no resolved paths at all | `outside_workspace` | `ask` |
+| 12 | otherwise | `default` | `ask` |
 
 The original adjacent-pair ordering cases live in `packages/kernel/tests/unit/guard.test.ts`.
 Placement, dangerous precedence and comparison-only POSIX directory handling are pinned by
 `packages/kernel/tests/integration/guard-auto-review.test.ts`.
-The Sandbox shell case lets reviewed commands read an external `cwd` or file while Bubblewrap or
-Seatbelt still enforces declared write roots. Host commands and legacy file tools keep their
-outside-workspace denial. Production: `createShellGuard` in
-`packages/kernel/src/guard/shell-guard.ts`. Test: `reviews an external Sandbox shell path while
-retaining the native write boundary` in `packages/kernel/tests/unit/guard.test.ts`.
+Reviewed commands and file tools may read a host-visible external file in a native Sandbox;
+Bubblewrap or Seatbelt still enforces declared write roots. Host uses its OS permissions, while
+Container sees guest mounts. External paths require review and do not become an access grant.
+Production: `createShellGuard` in [shell-guard.ts](../../packages/kernel/src/guard/shell-guard.ts)
+and `resolveFilesystemPolicy` in [sandbox.ts](../../packages/tools/src/sandbox.ts).
+Test: `packages/kernel/tests/integration/guard-file-parity.test.ts` and external read/write cases
+in `packages/tools/tests/integration/filesystem-service.test.ts`.
 
 There is no contained silent-allow rule: unmatched Sandbox commands still ask, and only Auto
 changes who may answer. Placement is resolved once per Host/Sandbox run from host settings. An
@@ -615,6 +616,16 @@ never deny-list enforcement. Auto asks the reviewer; unsure, operational
 failures and malformed responses refuse to the calling agent and never use a human. Approval asks a
 human only for the grey zone. `off` is unchanged. Docker/Podman reject escalation structurally
 because no host-exec channel exists.
+Contained `rm`, `rmdir` and `rm -rf` therefore receive an Auto decision for their complete command;
+the native sandbox still blocks writes to workspace configuration and Git metadata after an allow.
+The file tool's ordinary bounded recursive cleanup follows the same Auto review principle through
+its separate effect reviewer. Production: `createShellGuard` in
+[shell-guard.ts](../../packages/kernel/src/guard/shell-guard.ts), `sandboxCommand` in
+[sandbox.ts](../../packages/tools/src/sandbox.ts) and `remove` in
+[remove.ts](../../packages/tools/src/tools/remove.ts). Test:
+[guard-auto-review.test.ts](../../packages/kernel/tests/integration/guard-auto-review.test.ts),
+[guard-file-parity.test.ts](../../packages/kernel/tests/integration/guard-file-parity.test.ts), and
+[sandbox.test.ts](../../packages/tools/tests/integration/sandbox.test.ts).
 
 Production: `createGuardResolver`, `createShellGuard`, `loadGuardSettings` in
 `packages/kernel/src/file-kernel.ts`, `sandboxWouldApply` in `packages/tools/src/sandbox.ts`, and

@@ -53,7 +53,7 @@ function fixture(change?: (receipt: JudgeEffectReceipt) => void) {
       compiles++;
       transition = await context.binding.validateAndInstall(candidate);
     } else transition = context.binding.transition;
-    if (transition === undefined)
+    if (transition === undefined || "rejected" in transition)
       return { ...metrics, kind: "failed", failureKind: "invalid_response" };
     decisions++;
     const receipt: JudgeEffectReceipt = {
@@ -185,6 +185,36 @@ test.each(["compile", "decide"] as const)(
     expect(JSON.stringify(audit.records)).not.toContain("PRIVATE_CASE");
   },
 );
+
+test("a corrected successful review keeps its closed diagnostic in the audit", async () => {
+  const f = fixture();
+  const port = f.deps.judge();
+  const original = port.reviewEffects.bind(port);
+  port.reviewEffects = async (...args) => {
+    const outcome = await original(...args);
+    return outcome.kind === "reviewed"
+      ? {
+          ...outcome,
+          diagnostic: {
+            category: "authority_constraints" as const,
+            stage: "compile" as const,
+            corrections: 1,
+            rejection: "grant_not_covered" as const,
+          },
+        }
+      : outcome;
+  };
+  const audit = recordingLogger();
+  const review = createHostEffectReview({ ...f.deps, audit });
+  expect((await review.review(f.batch, {}, "configuration_file")).decision).toBe("allow");
+  const [completed] = audit.events("effect_review.reviewer.completed");
+  expect(completed).toMatchObject({
+    diagnostic_category: "authority_constraints",
+    diagnostic_rejection: "grant_not_covered",
+    correction_count: 1,
+  });
+  expect(effectReviewAuditSchema.safeParse(completed).success).toBe(true);
+});
 
 test("human-only facts never enter semantic inference", async () => {
   const f = fixture();

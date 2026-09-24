@@ -61,6 +61,8 @@ export interface GuardRiskFinding {
 
 /** Trusted host facts for one review; never populated from model-supplied arguments. */
 export interface GuardCallFacts extends EffectReviewDetail {
+  static_trigger?: string;
+  agent_justification?: string;
   effects?: GuardEffectCallFact[];
   matched?: string;
   placement?: GuardPlacement;

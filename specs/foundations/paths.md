@@ -886,13 +886,15 @@ synchronous persistence APIs that cannot yield while holding their transaction."
 resolved global directory and workspace; shared global content uses the user home. Production:
 [configuration.ts](../../packages/paths/src/configuration.ts). Test: all-four-root operations in
 [configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
-`configurationPathClass` classifies relative targets as authoring, operational or private. Only
+`configurationPathClass` classifies relative targets as `authoring`, `operational`, `secret`,
+`reserved_unknown`, or `generated_read_only`. Only
 canonical agent, skill and workflow Markdown names enter authoring; settings, executable declarations
-and other admitted configuration remain operational. Private trees, credential-like names and
-malformed relative paths never become inferred writes. The classifier performs no filesystem I/O:
+and other admitted configuration remain operational. Credential and trust records are `secret`;
+unknown names are `reserved_unknown`; the generated workspace ignore file is readable but
+`generated_read_only`. Malformed relative paths never become inferred writes. The classifier performs no filesystem I/O:
 consumers still resolve actual targets and enforce links, confinement and revisions.
 Production: `configurationPathClass` in [configuration.ts](../../packages/paths/src/configuration.ts).
-Test: `configuration classes share a closed authoring, operational and private vocabulary` in
+Test: configuration classification cases in
 [configuration.test.ts](../../packages/paths/tests/unit/configuration.test.ts).
 Effect review is owned by [self-configuration.md](../hosts/self-configuration.md).
 

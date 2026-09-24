@@ -103,12 +103,38 @@ test("the wire rejects unknown operations, policy selectors and malformed review
       operations: [{ type: "modify", path: "/tmp/file", command: "rm -rf /" }],
     }),
   ).toThrow();
+  expect(() =>
+    parseFilesystemChildMessage({
+      kind: "prepare",
+      id: "call",
+      batchId: "batch",
+      digest: "digest",
+      operations: [{ type: "rmtree", path: "/workspace/tree", treeEntries: ["."] }],
+    }),
+  ).toThrow();
+  expect(
+    parseFilesystemChildMessage({
+      kind: "prepare",
+      id: "call",
+      batchId: "batch",
+      digest: "digest",
+      operations: [
+        {
+          type: "rmtree",
+          path: "/workspace/tree",
+          treeEntries: [".", "file.txt"],
+          treeRevision: "a".repeat(64),
+        },
+      ],
+    }),
+  ).toMatchObject({ kind: "prepare" });
 });
 
 test("parent messages carry bounded file calls and closed review receipts", () => {
   const invoke: Extract<FilesystemParentMessage, { kind: "invoke" }> = {
     kind: "invoke",
     id: "request",
+    policyIdentity: "policy",
     operation: "read_file",
     args: { path: "file.txt" },
     context,
@@ -138,6 +164,7 @@ test("parent messages carry bounded file calls and closed review receipts", () =
   }
   for (const invalid of [
     { ...invoke, args: ["file.txt"] },
+    { ...invoke, policyIdentity: "" },
     { ...invoke, context: { ...context, temporaryRoots: [42] } },
     { ...invoke, context: { ...context, maxFileBytes: 0 } },
     { ...invoke, context: { ...context, extraMount: "/" } },
@@ -155,7 +182,17 @@ test("child events validate results and prepared mutations before host review", 
   const messages: FilesystemChildMessage[] = [
     { kind: "ready", nonce: "nonce", policyIdentity: "policy" },
     { kind: "result", id: "request", result },
-    { kind: "failure", id: "request", code: "denied", message: "refused" },
+    {
+      kind: "failure",
+      version: 1,
+      id: "request",
+      code: "denied",
+      message: "refused",
+      phase: "review",
+      operation: "write_file",
+      path_role: "target",
+      retryable: false,
+    },
     {
       kind: "prepare",
       id: "request",
@@ -170,7 +207,28 @@ test("child events validate results and prepared mutations before host review", 
   for (const invalid of [
     { kind: "result", id: "request", result: { isError: false, content: ["raw"] } },
     { kind: "result", id: "request", result: { isError: false, content: [] }, policy: "host" },
-    { kind: "failure", id: "request", code: "", message: "refused" },
+    {
+      kind: "failure",
+      version: 1,
+      id: "request",
+      code: "unknown",
+      message: "refused",
+      phase: "review",
+      operation: "write_file",
+      path_role: "target",
+      retryable: false,
+    },
+    {
+      kind: "failure",
+      version: 2,
+      id: "request",
+      code: "denied",
+      message: "refused",
+      phase: "review",
+      operation: "write_file",
+      path_role: "target",
+      retryable: false,
+    },
     { kind: "prepare", id: "request", batchId: "batch", digest: "digest", operations: [] },
     {
       kind: "prepare",

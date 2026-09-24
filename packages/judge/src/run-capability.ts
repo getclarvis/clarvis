@@ -8,15 +8,79 @@ import {
   type HandlerVerdict,
 } from "@clarvis/capability";
 import { z } from "zod";
+import { authorityEnvelopeSchema } from "./authority-schema.ts";
 import {
   decideCommandStepSchema,
-  judgeStepSchema,
   type JudgeTerminalReceipt,
+  judgeStepSchema,
 } from "./private-protocol.ts";
-import { createJudgeStepMachine, type JudgeStepBinding } from "./step-machine.ts";
+import {
+  createJudgeStepMachine,
+  type AuthorityCandidateRejection,
+  type JudgeStepBinding,
+} from "./step-machine.ts";
 
 /** Corrections use ordinary tool-result continuation, never a second inference loop. */
 export const JUDGE_CORRECTION_RETRIES = 3;
+
+export type JudgeInvalidCategory =
+  | "output_limit"
+  | "no_tool_call"
+  | "multiple_tool_calls"
+  | "invalid_tool_call"
+  | "invalid_json"
+  | "schema"
+  | "stage_order"
+  | "authority_constraints"
+  | "receipt_constraints"
+  | "unknown";
+
+export interface JudgeInvalidDiagnostic {
+  readonly category: JudgeInvalidCategory;
+  readonly stage: string;
+  readonly corrections: number;
+  readonly rejection?: AuthorityCandidateRejection;
+}
+
+const candidateRejections = new Set<AuthorityCandidateRejection>([
+  "stale_context",
+  "invalid_shape",
+  "revision_mismatch",
+  "duplicate_id",
+  "objective_reference",
+  "effect_not_inferable",
+  "grant_constraints",
+  "grant_reference",
+  "grant_not_covered",
+  "ceiling_mismatch",
+  "invalid_exclusion",
+  "missing_exclusion",
+  "blocked_effect",
+]);
+
+function candidateRejection(reason: string): AuthorityCandidateRejection | undefined {
+  const prefix = "authority_candidate_rejected:";
+  if (!reason.startsWith(prefix)) return undefined;
+  const value = reason.slice(prefix.length) as AuthorityCandidateRejection;
+  return candidateRejections.has(value) ? value : undefined;
+}
+
+function invalidCategory(reason: string): JudgeInvalidCategory {
+  if (reason === "output_limit") return "output_limit";
+  if (reason === "no_tool_call") return "no_tool_call";
+  if (reason === "multiple_tool_calls") return "multiple_tool_calls";
+  if (reason === "invalid_tool_name_or_arguments") return "invalid_tool_call";
+  if (reason === "invalid_arguments_json") return "invalid_json";
+  if (reason.includes("invalid_step_schema")) return "schema";
+  if (reason.startsWith("authority_candidate_rejected")) return "authority_constraints";
+  if (reason === "host_receipt_rejected") return "receipt_constraints";
+  if (reason === "unexpected_action_or_transition" || reason === "invalid_response_shape")
+    return "stage_order";
+  return "unknown";
+}
+
+const candidateSchema = z.toJSONSchema(authorityEnvelopeSchema);
+delete candidateSchema.$schema;
 
 const tool = (binding: JudgeStepBinding): NamespacedTool => ({
   fullName: "judge_step",
@@ -26,11 +90,25 @@ const tool = (binding: JudgeStepBinding): NamespacedTool => ({
   description:
     binding.kind === "command"
       ? "Decide the exact command case with action decide_command."
-      : "Return exactly the requested private review stage.",
-  inputSchema: {
-    ...z.toJSONSchema(binding.kind === "command" ? decideCommandStepSchema : judgeStepSchema),
-    type: "object",
-  },
+      : "Use compile_authority to propose an envelope, then decide_effects with the installed transition. Submit exactly one action per call.",
+  inputSchema:
+    binding.kind === "command"
+      ? { ...z.toJSONSchema(decideCommandStepSchema), type: "object" }
+      : {
+          type: "object",
+          properties: {
+            action: { type: "string", enum: ["compile_authority", "decide_effects"] },
+            candidate: candidateSchema,
+            decision: { type: "string", enum: ["allow", "deny", "unsure"] },
+            reason: { type: "string", maxLength: 512 },
+            revision: { type: "integer", minimum: 0 },
+            transition_token: { type: "string" },
+            grant_ids: { type: "array", items: { type: "string" } },
+            relation: { type: "string", enum: ["direct", "bounded_prerequisite", "none"] },
+          },
+          required: ["action"],
+          additionalProperties: false,
+        },
 });
 const invalidResult = (): AgentResult => ({
   status: "error",
@@ -56,6 +134,7 @@ export function createJudgeRunCapability(
   let invalid = false;
   let admissionError: string | undefined;
   const corrections = new Map<string, number>();
+  let invalidDiagnostic: JudgeInvalidDiagnostic | undefined;
   let hostFailure: { error: unknown } | undefined;
   const reject = (): AgentResult => {
     invalid = true;
@@ -66,9 +145,17 @@ export function createJudgeRunCapability(
   const correct = (reason: string): HandlerVerdict => {
     const stage = machine.stage();
     const used = corrections.get(stage) ?? 0;
+    const rejection = candidateRejection(reason);
+    invalidDiagnostic = {
+      category: invalidCategory(reason),
+      stage,
+      corrections: [...corrections.values()].reduce((sum, count) => sum + count, 0),
+      ...(rejection === undefined ? {} : { rejection }),
+    };
     if (stage === "closed" || stage === "pending" || used >= JUDGE_CORRECTION_RETRIES)
       return { kind: "terminal", result: reject() };
     corrections.set(stage, used + 1);
+    invalidDiagnostic = { ...invalidDiagnostic, corrections: invalidDiagnostic.corrections + 1 };
     return {
       kind: "result",
       progress: false,
@@ -210,22 +297,27 @@ export function createJudgeRunCapability(
   return {
     capability,
     invalidResponse: () => invalid,
+    invalidDiagnostic: () => invalidDiagnostic,
     hostFailure: () => hostFailure,
     stage: () => machine.stage(),
-    admitResponse(calls: readonly LLMToolCall[] | undefined, _text?: string): boolean {
+    admitResponse(
+      calls: readonly LLMToolCall[] | undefined,
+      _text?: string,
+      finishReason?: string,
+    ): boolean {
       const malformed = (reason: string): false => {
         admitted = undefined;
         admissionError = reason;
         return false;
       };
-      if (
-        invalid ||
-        admitted !== undefined ||
-        machine.stage() === "closed" ||
-        calls?.length !== 1
-      ) {
-        return malformed("expected_one_tool_call");
+      if (invalid || admitted !== undefined || machine.stage() === "closed") {
+        return malformed("invalid_response_shape");
       }
+      if (finishReason === "length") return malformed("output_limit");
+      if (calls?.length !== 1)
+        return malformed(
+          calls === undefined || calls.length === 0 ? "no_tool_call" : "multiple_tool_calls",
+        );
       const call = calls[0];
       if (
         call === undefined ||

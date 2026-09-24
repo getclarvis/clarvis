@@ -80,7 +80,7 @@ export async function executeJudge(input: JudgeExecutionInput) {
     throw new JudgeArchitectureError();
   const stages = input.binding.kind === "compile_effects" ? 2 : 1;
   const iterations = stages * (JUDGE_CORRECTION_RETRIES + 1);
-  const cap = input.binding.kind === "command" ? 1024 : 2048;
+  const cap = input.binding.kind === "command" ? 1024 : 8192;
   const privateRun = createJudgeRunCapability(
     input.binding,
     createJudgeOutputBudget(cap, input.maxRetries + 1, iterations),
@@ -118,6 +118,12 @@ export async function executeJudge(input: JudgeExecutionInput) {
     async call(params) {
       const stage = privateRun.stage();
       const stageCalls = calledStages.get(stage) ?? 0;
+      const attemptCap =
+        input.binding.kind === "command"
+          ? cap
+          : stage === "compile"
+            ? cap
+            : Math.min(cap, 2048 * 2 ** stageCalls);
       if (
         providerFailure !== undefined ||
         framingFailure !== undefined ||
@@ -140,7 +146,7 @@ export async function executeJudge(input: JudgeExecutionInput) {
         const response = await services.llm.call({
           ...params,
           cacheBreakpoints,
-          maxOutputTokens: Math.min(params.maxOutputTokens ?? cap, cap),
+          maxOutputTokens: Math.min(params.maxOutputTokens ?? attemptCap, attemptCap),
           onRetry(event) {
             attempts++;
             params.onRetry?.(event);
@@ -150,7 +156,7 @@ export async function executeJudge(input: JudgeExecutionInput) {
           privateRun.admitResponse(undefined);
           return rejectedResponse(response);
         }
-        return privateRun.admitResponse(response.toolCalls, response.text)
+        return privateRun.admitResponse(response.toolCalls, response.text, response.finishReason)
           ? response
           : rejectedResponse(response);
       } catch (error) {
@@ -229,5 +235,6 @@ export async function executeJudge(input: JudgeExecutionInput) {
       (outcome.response.status === "error" && outcome.response.error.code === "timeout"),
     providerFailure,
     invalidResponse: privateRun.invalidResponse(),
+    invalidDiagnostic: privateRun.invalidDiagnostic(),
   };
 }

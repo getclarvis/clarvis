@@ -1,4 +1,5 @@
 import type { AuthorityEnvelopeV1, OperatorAuthorityReader } from "@clarvis/capability";
+import type { AuthorityCandidateRejection } from "@clarvis/judge";
 import type { GuardEffectRegistry } from "./effects/registry.ts";
 import type { GuardEffectBatch } from "./effects/types.ts";
 import { authorityEnvelopeSchema as envelopeSchema } from "./authority-schema.ts";
@@ -9,11 +10,17 @@ export function validateAuthorityEnvelope(
   reader: OperatorAuthorityReader,
   registry: GuardEffectRegistry,
   batch: GuardEffectBatch,
+  onRejected?: (reason: AuthorityCandidateRejection) => void,
 ): AuthorityEnvelopeV1 | undefined {
+  const reject = (reason: AuthorityCandidateRejection): undefined => {
+    onRejected?.(reason);
+    return undefined;
+  };
   const parsed = envelopeSchema.safeParse(value);
   const state = reader.snapshot();
-  if (!parsed.success || state.status !== "active" || parsed.data.revision !== state.revision)
-    return undefined;
+  if (!parsed.success) return reject("invalid_shape");
+  if (state.status !== "active") return reject("stale_context");
+  if (parsed.data.revision !== state.revision) return reject("revision_mismatch");
   const envelope = parsed.data;
   const evidence = new Set(
     [...state.evidence, ...(state.instructions ?? [])].map((entry) => entry.id),
@@ -22,31 +29,35 @@ export function validateAuthorityEnvelope(
     batch.facts.flatMap((fact) => (fact.target === undefined ? [] : [fact.target.digest])),
   );
   if (new Set(envelope.grants.map((grant) => grant.id)).size !== envelope.grants.length)
-    return undefined;
+    return reject("duplicate_id");
   if (
     new Set(envelope.objectives.map((objective) => objective.id)).size !==
     envelope.objectives.length
   )
-    return undefined;
+    return reject("duplicate_id");
   for (const objective of envelope.objectives) {
     if (
       objective.evidence_ids.some((key) => !evidence.has(key)) ||
       objective.target_digests.some((key) => !targets.has(key))
     )
-      return undefined;
+      return reject("objective_reference");
   }
   for (const grant of envelope.grants) {
     const descriptor = registry.get(grant.effect_id);
     if (
       descriptor === undefined ||
       descriptor.inference === "human_only" ||
-      (grant.relation === "bounded_prerequisite" && descriptor.inference !== "bounded") ||
-      !descriptor.validateConstraints(grant.constraints) ||
-      grant.evidence_ids.some((key) => !evidence.has(key)) ||
-      grant.target_digests.some((key) => !targets.has(key)) ||
-      !batch.facts.some((fact) => descriptor.covers(grant, fact))
+      (grant.relation === "bounded_prerequisite" && descriptor.inference !== "bounded")
     )
-      return undefined;
+      return reject("effect_not_inferable");
+    if (!descriptor.validateConstraints(grant.constraints)) return reject("grant_constraints");
+    if (
+      grant.evidence_ids.some((key) => !evidence.has(key)) ||
+      grant.target_digests.some((key) => !targets.has(key))
+    )
+      return reject("grant_reference");
+    if (!batch.facts.some((fact) => descriptor.covers(grant, fact)))
+      return reject("grant_not_covered");
     if (
       state.ceiling !== undefined &&
       !state.ceiling.grants.some(
@@ -57,7 +68,7 @@ export function validateAuthorityEnvelope(
           JSON.stringify(parent.constraints) === JSON.stringify(grant.constraints),
       )
     )
-      return undefined;
+      return reject("ceiling_mismatch");
   }
   for (const item of envelope.exclusions) {
     const retained = [
@@ -68,7 +79,7 @@ export function validateAuthorityEnvelope(
       (item.effect_id !== undefined && registry.get(item.effect_id) === undefined) ||
       (!retained && item.target_digests?.some((target) => !targets.has(target)))
     )
-      return undefined;
+      return reject("invalid_exclusion");
   }
   if (
     state.envelope?.exclusions.some(
@@ -78,7 +89,7 @@ export function validateAuthorityEnvelope(
         ),
     )
   )
-    return undefined;
+    return reject("missing_exclusion");
   if (
     state.ceiling?.exclusions.some(
       (item) =>
@@ -87,6 +98,6 @@ export function validateAuthorityEnvelope(
         ),
     )
   )
-    return undefined;
+    return reject("missing_exclusion");
   return envelope;
 }

@@ -1,5 +1,6 @@
 import { JUDGE_DEFAULTS, judgeRequestConfig } from "@clarvis/judge/settings";
 import { createHash } from "node:crypto";
+import { ToolError } from "@clarvis/tools";
 import {
   OPERATOR_AUTHORITY_PORT,
   PLANS_REVIEW_CONTEXT_PORT,
@@ -55,20 +56,23 @@ export function createConfigurationReview(
       guidance: judgeConfig?.guidance,
     },
   });
+  const technicalFailures = new Map<string, ToolError>();
   return async (
     mutations: readonly ConfigurationMutationFacts[],
     context: unknown,
     prompt: string,
+    reviewOptions: { offerSession?: boolean } = {},
   ): Promise<(() => void) | undefined> => {
-    ctx.signal?.throwIfAborted();
+    if (ctx.signal?.aborted) throw new ToolError("aborted", "Configuration review was cancelled.");
     const state = authority?.snapshot();
     if (state !== undefined && state.status !== "active")
-      throw new Error("Configuration authority is no longer active.");
+      throw new ToolError("denied", "Configuration authority is no longer active.");
     const attested = mutations.map((mutation) => ({
       mutation,
       fact: attestConfiguration(mutation, registry),
     }));
     const facts = attested.map(({ fact }) => fact);
+    const reviewedContext = sanitizeDeep(context);
     const environmentDigest = createHash("sha256")
       .update(
         JSON.stringify({
@@ -77,6 +81,18 @@ export function createConfigurationReview(
           backend: settings.runtime?.backend,
           sandbox: settings.sandbox,
           mode,
+        }),
+      )
+      .digest("hex");
+    const failureKey = createHash("sha256")
+      .update(
+        JSON.stringify({
+          facts,
+          reviewedContext,
+          binding: state?.binding,
+          authorityRevision: state?.revision,
+          reviewContextRevision: ctx.services.get(PLANS_REVIEW_CONTEXT_PORT)?.snapshot().revision,
+          environmentDigest,
         }),
       )
       .digest("hex");
@@ -97,6 +113,7 @@ export function createConfigurationReview(
           }
         : undefined;
     const canOfferSession =
+      reviewOptions.offerSession !== false &&
       grant !== undefined &&
       facts.length > 0 &&
       facts.length <= 16 &&
@@ -109,8 +126,10 @@ export function createConfigurationReview(
         ? ("human_only" as const)
         : ("static" as const),
     };
+    const humanOnly = batch.reviewability === "human_only";
     if (reviewer.wasRefused(batch))
-      throw new Error(
+      throw new ToolError(
+        "denied",
         "This exact configuration change was already refused. A different proposal requires its own review.",
       );
     let reviewReason =
@@ -125,12 +144,33 @@ export function createConfigurationReview(
     let saveSessionGrant = false;
     let expectedRevision = state?.revision;
     let reviewedBinding = state?.binding;
-    if (!allowed && mode !== "on" && settings.effect_review?.rollout !== "shadow") {
-      const receipt = await reviewer.review(batch, sanitizeDeep(context), "configuration_file");
-      if (receipt.failure_kind !== undefined)
-        throw new Error(
-          `Configuration not changed: automatic review failed (${receipt.failure_kind}). This is a technical review failure, not missing operator authorization. Do not request authorization again to resolve it.`,
+    if (!allowed && !humanOnly && mode !== "on" && settings.effect_review?.rollout !== "shadow") {
+      const previousFailure = technicalFailures.get(failureKey);
+      if (previousFailure !== undefined) throw previousFailure;
+      const receipt = await reviewer.review(batch, reviewedContext, "configuration_file");
+      if (receipt.failure_kind !== undefined) {
+        const failure = new ToolError(
+          "review_failed",
+          `Configuration not changed: automatic review failed (${receipt.failure_kind}${receipt.diagnostic === undefined ? "" : `: ${receipt.diagnostic.category} at ${receipt.diagnostic.stage}`}). This is a technical review failure, not missing operator authorization. Do not request authorization again to resolve it.`,
+          {
+            failure_kind: receipt.failure_kind,
+            ...(receipt.diagnostic === undefined
+              ? {}
+              : {
+                  diagnostic_category: receipt.diagnostic.category,
+                  diagnostic_stage: receipt.diagnostic.stage,
+                  ...(receipt.diagnostic.rejection === undefined
+                    ? {}
+                    : { diagnostic_rejection: receipt.diagnostic.rejection }),
+                  correction_count: receipt.diagnostic.corrections,
+                }),
+          },
         );
+        if (technicalFailures.size >= 32)
+          technicalFailures.delete(technicalFailures.keys().next().value!);
+        technicalFailures.set(failureKey, failure);
+        throw failure;
+      }
       if (
         receipt.decision === "deny" ||
         (receipt.decision === "unsure" &&
@@ -138,12 +178,13 @@ export function createConfigurationReview(
             settings.effect_review?.on_unsure ??
             JUDGE_DEFAULTS.onUnsure) !== "ask")
       )
-        throw new Error("Configuration effect was denied by authority review.");
+        throw new ToolError("denied", "Configuration effect was denied by authority review.");
       expectedRevision = state === undefined ? undefined : receipt.revision;
       if (authority !== undefined) {
         const reviewedState = authority.snapshot();
         if (reviewedState.status !== "active" || reviewedState.revision !== expectedRevision)
-          throw new Error(
+          throw new ToolError(
+            "revision_conflict",
             "Configuration authority changed during review. Prepare the change again.",
           );
         reviewedBinding = reviewedState.binding;
@@ -153,8 +194,16 @@ export function createConfigurationReview(
         reviewReason = "Automatic review could not establish authorization for this effect.";
     }
     if (!allowed) {
+      if (mode === "auto" && !humanOnly)
+        throw new ToolError(
+          "denied",
+          "Automatic review did not authorize this exact configuration effect.",
+        );
       if (ctx.elicit === undefined)
-        throw new Error("This configuration change requires human review.");
+        throw new ToolError(
+          "approval_unavailable",
+          "This configuration change requires a human review channel.",
+        );
       const signal = AbortSignal.any([
         ...(ctx.signal === undefined ? [] : [ctx.signal]),
         AbortSignal.timeout(ctx.request.elicit_wait_ms ?? ctx.env.CLARVIS_DEFAULT_ELICIT_WAIT_MS),
@@ -206,27 +255,40 @@ export function createConfigurationReview(
         };
         void operation.then(retire, retire);
       }
-      const answer = await operation;
-      signal.throwIfAborted();
+      let answer: ConfigurationAnswer;
+      try {
+        answer = await operation;
+      } catch {
+        if (ctx.signal?.aborted)
+          throw new ToolError("aborted", "Configuration review was cancelled.");
+        if (signal.aborted) throw new ToolError("timeout", "Configuration human review timed out.");
+        throw new ToolError("approval_unavailable", "Configuration human review did not complete.");
+      }
+      if (ctx.signal?.aborted)
+        throw new ToolError("aborted", "Configuration review was cancelled.");
+      if (signal.aborted) throw new ToolError("timeout", "Configuration human review timed out.");
       const decision = answer.content?.decision;
       if (
         answer.action !== "accept" ||
         (decision !== "allow" && !(canOfferSession && decision === "allow_session"))
       ) {
         reviewer.refuse(batch, expectedRevision ?? 0);
-        throw new Error("Configuration change was not approved.");
+        throw new ToolError("denied", "Configuration change was not approved.");
       }
       saveSessionGrant = decision === "allow_session";
     }
-    ctx.signal?.throwIfAborted();
+    if (ctx.signal?.aborted) throw new ToolError("aborted", "Configuration review was cancelled.");
     if (reviewer.wasRefused(batch))
-      throw new Error("This exact configuration change was refused during review.");
+      throw new ToolError("denied", "This exact configuration change was refused during review.");
     const current = authority?.snapshot();
     if (
       (current !== undefined && current.status !== "active") ||
       current?.revision !== expectedRevision
     )
-      throw new Error("Configuration authority changed during review. Prepare the change again.");
+      throw new ToolError(
+        "revision_conflict",
+        "Configuration authority changed during review. Prepare the change again.",
+      );
     if (
       current !== undefined &&
       reviewedBinding !== undefined &&
@@ -235,7 +297,8 @@ export function createConfigurationReview(
         current.binding.controller_epoch !== reviewedBinding.controller_epoch ||
         current.binding.outcome_id !== reviewedBinding.outcome_id)
     )
-      throw new Error(
+      throw new ToolError(
+        "revision_conflict",
         "Configuration authority binding changed during review. Prepare the change again.",
       );
     if (saveSessionGrant && grant !== undefined && authority !== undefined)

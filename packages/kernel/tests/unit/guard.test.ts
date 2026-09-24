@@ -89,7 +89,9 @@ describe("createShellGuard (kernel copy)", () => {
     expect(decision).toMatchObject({
       verdict: "ask",
       escalate: "human",
-      reason: "need host docker.sock",
+      reason: "this command will run outside the sandbox on the host",
+      static_trigger: "this command will run outside the sandbox on the host",
+      agent_justification: "need host docker.sock",
     });
   });
 
@@ -128,7 +130,7 @@ describe("createShellGuard (kernel copy)", () => {
     expect(d.reason).toContain("no allowed commands list");
   });
 
-  it("denies a command that touches a path outside the workspace", async () => {
+  it("reviews a command that touches a path outside the workspace", async () => {
     const d = await createShellGuard()(
       makeCtx(
         "shell",
@@ -136,7 +138,7 @@ describe("createShellGuard (kernel copy)", () => {
         shellFacts("echo hi > /etc/passwd", { paths: ["/etc/passwd"] }),
       ),
     );
-    expect(d).toMatchObject({ verdict: "deny" });
+    expect(d).toMatchObject({ verdict: "ask", escalate: "human" });
   });
 
   it("reviews an external Sandbox shell path while retaining the native write boundary", async () => {
@@ -183,6 +185,18 @@ describe("createShellGuard (kernel copy)", () => {
     expect(
       await createShellGuard({ allowedCommands: ["mise x"] })(makeCtx("shell", { command }, facts)),
     ).toMatchObject({ verdict: "allow" });
+  });
+
+  it("identifies the expansion and segment in a compound move review", async () => {
+    const command = 'mv a /tmp/b; echo "rc=$?"';
+    const decision = await createShellGuard({ deniedCommands: ["git push"] })(
+      makeCtx("shell", { command }, analyzeShell(command)),
+    );
+    expect(decision).toMatchObject({
+      verdict: "deny",
+      matched: "undecidable",
+      reason: expect.stringContaining("segment 2 contains parameter expansion ($?)"),
+    });
   });
 
   it("reviews an assignment-only prefix in front of an allow-listed command", async () => {
@@ -279,7 +293,7 @@ describe("createShellGuard — precedence order", () => {
           shellFacts("cat /etc/passwd", { paths: ["/etc/passwd"] }),
         ),
       ),
-    ).toMatchObject({ verdict: "deny" });
+    ).toMatchObject({ verdict: "ask", escalate: "human" });
   });
 
   it("allows a call carrying no shell facts at all", async () => {
@@ -758,12 +772,12 @@ describe("default posture: an unconfigured workspace", () => {
     expect(resolution?.guard).toBeDefined();
   });
 
-  it("blocks a destructive command outside the workspace with no settings at all", async () => {
+  it("requires a human for destructive removal with no settings at all", async () => {
     const resolution = await resolveUnconfigured();
     const decision = await resolution!.guard!(
-      makeCtx("shell", { command: "rm -rf /etc" }, shellFacts("rm -rf /etc", { paths: ["/etc"] })),
+      makeCtx("shell", { command: "rm -rf /etc" }, analyzeShell("rm -rf /etc")),
     );
-    expect(decision.verdict).toBe("deny");
+    expect(decision).toMatchObject({ verdict: "ask", escalate: "human", matched: "dangerous" });
   });
 
   it("asks before an unlisted command instead of running it", async () => {

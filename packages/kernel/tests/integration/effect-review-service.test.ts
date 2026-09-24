@@ -431,7 +431,7 @@ describe("effect review through the production Judge runtime", () => {
     expect(calls[0]).toMatchObject({
       maxRetries: 0,
       timeoutMs: 1000,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 8192,
       reasoningEffort: "low",
       sessionId: "session_with_underscore",
       agentInstanceId: "judge",

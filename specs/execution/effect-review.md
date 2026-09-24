@@ -5,7 +5,8 @@
 This contract owns the transactional review of an operational configuration change. Its host
 descriptor vocabulary, authority envelope, compiler, ledger and refusals serve protected
 configuration file tools through `reviewMutation` and their operational
-content mutations. It does not intercept a shell command. Command authorization is one
+content mutations, plus bounded recursive cleanup of an ordinary workspace tree. It does not
+intercept a shell command. Command authorization is one
 deterministic policy plus one Judge review path, owned by
 [command-guard.md](command-guard.md); a command compiles no envelope, consumes no grant and reads no
 rollout stage.
@@ -122,12 +123,28 @@ it the tool refuses the target rather than turning a generic command approval in
 approval. Operational settings and executable manifests receive their own validated descriptors;
 private state and credentials remain inaccessible and never inherit generic content-write authority.
 
-The descriptor vocabulary is closed and small: `workspace.content.write`, `clarvis.authoring.write`,
-`clarvis.operational_config.write` and `destructive.delete`. Those four are the only ids the registry
+The descriptor vocabulary is closed and small: `workspace.content.write`, `workspace.tree.delete`,
+`clarvis.authoring.write`, `clarvis.authoring.delete`, `clarvis.operational_config.write` and
+`destructive.delete`. Those six are the only ids the registry
 accepts, so an operation name is never an authorization rule and no removed classification can be
 reintroduced through the audit schema. Repository, GitHub, release, deployment and process
 classification, the argv probes they needed, and the environment recapture that fenced them were
 deleted with the command classifier.
+`destructive.delete` is `human_only` for operational configuration: an Auto batch containing it
+goes to the run's human elicitation channel. Without that channel the operation returns
+`approval_unavailable`; a declined question returns `denied` before commit. An authored skill file
+or empty skill directory uses `clarvis.authoring.delete`, which the Judge may authorize from exact
+operator evidence in Auto. Bounded recursive ordinary workspace cleanup uses
+`workspace.tree.delete`, with the captured entry list, tree revision and environment digest. Auto
+sends that effect to Judge and never asks a human; On asks for the complete tree. A changed tree
+invalidates review, and the tree never offers session consent. A recursive request for an empty
+directory follows the ordinary `rmdir` path.
+Production: `createConfigurationReview` in
+[review.ts](../../packages/kernel/src/configuration/review.ts).
+Test: `human-only configuration deletion goes straight to a person in Auto mode` and
+`Auto authorizes an attested skill deletion without a human question` in
+[configuration-review.test.ts](../../packages/kernel/tests/unit/configuration-review.test.ts)
+and Auto tree review in [authoring-mutations.test.ts](../../packages/kernel/tests/unit/authoring-mutations.test.ts).
 
 Production: [analyze-shell.ts](../../packages/tools/src/guard/analyze-shell.ts),
 [registry.ts](../../packages/kernel/src/guard/effects/registry.ts),
@@ -216,8 +233,9 @@ uncertainty. A plugin cannot contribute this block. Explicit run reviewer overri
 The fallback defaults to `deny`: `unsure`, missing authority coverage, an unavailable reviewer,
 provider failure, timeout, or malformed structured output returns a denial to the calling model so it
 can identify a technical review failure rather than missing consent. Technical failures never invoke
-human fallback, even with `on_unsure: "ask"`. Auto never invokes human fallback, including
-`on_unsure: "ask"`: deny and unsure refuse to the principal. Approval asks a human only for asks
+human fallback, even with `on_unsure: "ask"`. Auto never invokes human fallback for automatically
+reviewable effects, including `on_unsure: "ask"`: deny and unsure refuse to the principal.
+Operational configuration deletion is a separate human-only effect. Approval asks a human only for asks
 that are neither allow-listed nor dangerous.
 `guard_judge.guidance` is bounded additional context and cannot replace the
 fixed policy. Both command and effect review use Judge-owned `JUDGE_POLICY`. Code composes operator-global guidance first and appends workspace guidance within the single bounded payload; absent guidance does not disable Auto.
@@ -274,6 +292,19 @@ Test: `invalid candidates can be corrected before the single installation` in
 [authority-review-transaction.test.ts](../../packages/kernel/tests/unit/authority-review-transaction.test.ts).
 Audit fields contain counts, timing, model identity, effect IDs and digests, never raw command,
 justification, operator evidence, reviewer prompt or probe output.
+Invalid private responses add only category, stage, correction count and an optional closed
+authority-candidate rejection reason to a proposal digest. Technical review failure remains
+distinct from semantic denial and missing human approval. An identical technical failure is reused
+within the run only while the facts, sanitized call context, authority revision, review-context revision and environment
+identity are unchanged; a changed input starts a new review. A completed review that needed
+correction records the same bounded diagnostic fields in its completion audit.
+Production: `createJudgeRunCapability` in [run-capability.ts](../../packages/judge/src/run-capability.ts),
+`createHostEffectReview` in [effect-review.ts](../../packages/kernel/src/guard/effect-review.ts),
+and `createConfigurationReview` in
+[review.ts](../../packages/kernel/src/configuration/review.ts). Test:
+[run-capability.test.ts](../../packages/judge/tests/integration/run-capability.test.ts),
+[effect-review.test.ts](../../packages/kernel/tests/unit/effect-review.test.ts), and
+[configuration-review.test.ts](../../packages/kernel/tests/unit/configuration-review.test.ts).
 
 Every logical provider call made by the call-local judge or the effect reviewer records exactly one
 kernel-owned contributed trace event named `guard_reviewer_model_call`. The flat persisted event

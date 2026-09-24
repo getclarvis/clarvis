@@ -61,7 +61,8 @@ and [capability.test.ts](../../packages/skills/tests/component/capability.test.t
 ## Targets and file operations
 
 `configurationRoots` identifies global and workspace `.clarvis` and `.agents` roots.
-`configurationPathClass` distinguishes authoring, operational and private paths. File tools
+`configurationPathClass` distinguishes `authoring`, `operational`, `secret`,
+`reserved_unknown`, and `generated_read_only` paths. File tools
 classify canonical paths, including both ends of moves and copies, before dispatch; one protected
 mutation sends the entire prepared batch to the host reviewer. Global access is limited to
 classified file handlers and does not become a general shell or workspace mount. Private state,
@@ -82,7 +83,13 @@ file and directory modes. Existing documents bind to an exact captured revision;
 all target revisions and authority are checked again before atomic commit. The authority check
 also runs inside the final write callback, so revocation while entering the operator write
 transaction cannot commit a previously approved batch. A failed, denied,
-cancelled or drifted batch leaves no partial mutation.
+cancelled or drifted document batch leaves no partial mutation. Removing an empty configuration
+directory has a separate reviewed `rmdir` commit: it rechecks emptiness and identity, and a
+parent-directory sync failure after removal reports `commit_partial` instead of claiming rollback.
+Production: `createAuthoringMutationReview` in
+[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts).
+Test: `Approval mode reviews an empty configuration directory before removal` in
+[authoring-mutations.test.ts](../../packages/kernel/tests/unit/authoring-mutations.test.ts).
 
 Production: `configurationTarget` in
 [configuration.ts](../../packages/paths/src/configuration.ts),
@@ -121,7 +128,10 @@ Configuration and shell commands use the same host-owned authority reader and Ju
 with facts appropriate to each effect. The configuration path attests each destination, operation,
 document class and revision through `createHostEffectReview`. Skill prose and model arguments are
 untrusted context. Review Auto can allow an effect covered by authenticated operator evidence
-without a human prompt. Review On asks once for the complete batch. Review Off does not relax
+without a human prompt, including deletion of an authored skill file or its empty directory.
+Operational configuration deletion remains a human-only exception. Review On asks once for the
+complete batch. An identical technical failure is reused only while the document facts, authority,
+review context and environment remain unchanged. Review Off does not relax
 hard target or document validation. A generic command approval never authorizes a protected file
 write. A refusal binds to the exact proposal; corrected bytes require a fresh decision.
 

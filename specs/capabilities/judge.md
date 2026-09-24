@@ -136,6 +136,20 @@ correction retries per stage follow the initial attempt through ordinary Loop to
 operator questions. Exhaustion terminates as `invalid_response`. A command receipt completes directly. A compile transaction returns a validated
 envelope, revision and transition token; only a decide referencing that exact revision/token may
 complete the effects case. An existing host transition allows a direct decide.
+The host may reject a compile candidate with a closed, content-free reason such as a revision,
+reference, constraint, coverage or exclusion mismatch. That reason enters the private correction
+result; the host still owns validation and installation, and no candidate bytes enter public audit.
+
+The terminal invalid result carries a bounded category (`output_limit`, `no_tool_call`, multiple/invalid tool
+calls, JSON/schema/stage failure, authority or receipt constraints, or unknown), the protocol stage,
+correction count and, for candidate rejection, a closed reason such as `grant_not_covered`. The host
+receives these diagnostics without private model content, including when a corrected call completes
+the review.
+Production: `createJudgeRunCapability` in
+[run-capability.ts](../../packages/judge/src/run-capability.ts), `executeJudge` in
+[executor.ts](../../packages/judge/src/executor.ts), and `JudgeCoordinator` in
+[coordinator.ts](../../packages/judge/src/coordinator.ts). Test: invalid correction and terminal
+cases in [run-capability.test.ts](../../packages/judge/tests/integration/run-capability.test.ts).
 Accompanying text does not invalidate a single valid call and is never parsed as a decision or
 authority. Conflicting prose cannot override validated tool arguments. Text remains private context;
 the existing projected trace does not publish it. Schema, ordering and host validation remain mandatory.
@@ -150,10 +164,16 @@ unchanged instead of becoming uncertainty. Closing a pending case discards its l
 does not roll back a completed host installation. These protocol modules serve the private capability and executor; the native host integrates them through the public coordinator.
 
 Production: [private-protocol.ts](../../packages/judge/src/private-protocol.ts), `judgeStepSchema`
-and `compiledAuthorityTransitionSchema`; [step-machine.ts](../../packages/judge/src/step-machine.ts),
+and `compiledAuthorityTransitionSchema`;
+[authority-validation.ts](../../packages/kernel/src/guard/authority-validation.ts),
+`validateAuthorityEnvelope`; [authority-review-transaction.ts](../../packages/kernel/src/guard/authority-review-transaction.ts),
+`createAuthorityReviewTransaction`;
+[step-machine.ts](../../packages/judge/src/step-machine.ts),
 `createJudgeStepMachine`.
 Test: [step-machine.test.ts](../../packages/judge/tests/unit/step-machine.test.ts) checks exact stage
-transitions, rejection before installation, host fault propagation and late-result fencing.
+transitions, bounded rejection feedback, host fault propagation and late-result fencing;
+[authority-review-transaction.test.ts](../../packages/kernel/tests/unit/authority-review-transaction.test.ts)
+checks rejected candidate reasons and unchanged authority before correction.
 
 
 ## Private run contribution
@@ -161,10 +181,13 @@ transitions, rejection before installation, host fault propagation and late-resu
 `createJudgeRunCapability` creates one mandatory `judge-private` contribution for the entry agent,
 with one `judge_step` tool, no provider-side forced selection, and an injected aggregate output budget. Its response-admission
 seam checks the complete model response before dispatch without executing authority transactions.
-A command run publishes the strict `decide_command` schema rather than the three-action union;
-admission applies that same schema, the state machine still enforces its stage, and effect runs
-retain their staged protocol. Both schemas declare an explicit object root while preserving their
-closed variants. Tool selection is enforced by local admission and bounded correction for every model.
+A command run publishes the strict `decide_command` schema rather than the three-action union.
+Effect runs publish one stable object schema with the two applicable action names and the full
+authority-envelope shape, avoiding a variant union in the model-facing tool catalog. The strict
+`judgeStepSchema` still admits every response, and the state machine enforces the current stage,
+required fields, constraints and host transaction. Keeping the model-facing schema stable also
+preserves the tool prefix across the compile and decide calls. Both published schemas have an
+explicit object root. Tool selection is enforced by local admission and bounded correction for every model.
 A handler without admission fails closed. Compile invokes the host transaction in the handler and
 returns a tool result; decide returns a terminal completed structured receipt in that same iteration.
 A raw text finalization without response admission is terminal `judge_invalid_response`.
@@ -242,7 +265,11 @@ and [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test
 `policy separates risk from authorization without replacing the private protocol` checks the shipped
 policy contract, not probabilistic model compliance.
 
-Per-attempt output caps are 1024 for command and 2048 for effects. The aggregate output budget is
+Per-attempt output caps are 1024 for command. Effect compilation allows 8192 from its first
+attempt because a live configuration write exhausted a smaller cap while reproducing a complete
+authority envelope. Effect decisions begin at 2048 and rise to 4096, then 8192 on correction.
+A provider `length` finish is classified as `output_limit` and
+cannot install authority. The aggregate output budget is
 cap times configured transport attempts times four correction attempts times the closed stage count. Its reservations cap each retry group
 independently. The child input/output token ceiling is the host environment ceiling, independent of
 the parent ledger. Call timing belongs to the shared provider: streaming activity renews the

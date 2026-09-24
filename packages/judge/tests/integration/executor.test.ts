@@ -137,6 +137,7 @@ test.each([
     const env = loadEnv({ CLARVIS_LOG_LEVEL: "silent" });
     const infrastructure = createTestRunInfrastructure({ env, workspaceRoot: root });
     const requests: LLMCallParams["messages"][] = [];
+    const outputCaps: number[] = [];
     let firstTools: LLMCallParams["tools"];
     let validations = 0;
     let installations = 0;
@@ -148,6 +149,7 @@ test.each([
         expect(params.tools).toEqual(firstTools);
         expect(params.promptCacheKey).toBe("parent_judge");
         requests.push(structuredClone(params.messages));
+        outputCaps.push(params.maxOutputTokens ?? 0);
         const index = requests.length;
         if (index <= retries) {
           if (scenario === "empty") return { text: "", usage: answer(command).usage };
@@ -217,6 +219,7 @@ test.each([
       });
       expect(result.response.status).toBe("completed");
       expect(result.attempts).toBe(scenario === "deny" ? 1 : effects ? 8 : retries + 1);
+      if (effects) expect(outputCaps).toEqual([8192, 8192, 8192, 8192, 2048, 4096, 8192, 8192]);
       expect(installations).toBe(effects ? 1 : 0);
       const messages = requests;
       for (let index = 1; index < messages.length; index++) {
@@ -401,13 +404,13 @@ test.each(["command", "compile"] as const)(
       expect(stored.total_input_tokens).toBe(kind === "command" ? 10 : 27);
       expect(stored.total_output_tokens).toBe(kind === "command" ? 5 : 13);
       expect(outcome.timedOut).toBe(false);
-      for (const call of calls) {
+      for (const [index, call] of calls.entries()) {
         expect(call.executionId).toBe("child");
         expect(call.sessionId).toBe("parent");
         expect(call.agentInstanceId).toBe("judge");
         expect(call.promptCacheKey).toBe("parent_judge");
         expect(call.promptCacheTtl).toBe("1h");
-        expect(call.maxOutputTokens).toBe(kind === "command" ? 1024 : 2048);
+        expect(call.maxOutputTokens).toBe(kind === "command" ? 1024 : index === 0 ? 8192 : 2048);
         expect(call.maxRetries).toBe(1);
         expect(call.timeoutMs).toBe(20_000);
         expect(call.messages[0]).toEqual({ role: "system", content: JUDGE_POLICY });

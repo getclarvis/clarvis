@@ -103,7 +103,22 @@ test.each([
     completed: false,
     installs: 0,
   },
+  {
+    kind: "compile",
+    script: [{ toolCalls: [tool(compile)] }],
+    iterations: 4,
+    completed: false,
+    installs: 4,
+    rejection: "grant_not_covered" as const,
+  },
   { kind: "command", script: [{ text: "yes" }], iterations: 1, completed: false, installs: 0 },
+  {
+    kind: "command",
+    script: [{ text: "truncated", finishReason: "length" }],
+    iterations: 1,
+    completed: false,
+    installs: 0,
+  },
   {
     kind: "command",
     script: [{ toolCalls: [{ name: "foreign", arguments: {} }] }],
@@ -131,6 +146,8 @@ test.each([
           async validateAndInstall() {
             installs++;
             if ("hostFailure" in fixture) throw new Error("host transaction fault");
+            if ("rejection" in fixture && fixture.rejection !== undefined)
+              return { rejected: fixture.rejection };
             return transition;
           },
         },
@@ -181,7 +198,7 @@ test.each([
             expect(params.toolChoice).toBeUndefined();
             const first = fixture.script[0];
             if (calls++ > 0 && first !== undefined && "text" in first && first.text === "yes") {
-              expect(JSON.stringify(params.messages)).toContain("expected_one_tool_call");
+              expect(JSON.stringify(params.messages)).toContain("no_tool_call");
               expect(JSON.stringify(params.messages)).toContain("retries_remaining");
             }
             expect(params.tools?.map((entry) => entry.wireName)).toEqual(["judge_step"]);
@@ -195,10 +212,18 @@ test.each([
                 decision: { enum: ["allow", "deny", "unsure"] },
               });
             } else {
-              expect(schema.oneOf).toBeArray();
+              expect(schema.oneOf).toBeUndefined();
+              expect(schema.required).toEqual(["action"]);
+              expect(schema.properties).toMatchObject({
+                action: { enum: ["compile_authority", "decide_effects"] },
+                candidate: {
+                  type: "object",
+                  required: ["version", "revision", "objectives", "grants", "exclusions"],
+                },
+              });
             }
             const result = await llm.call(params);
-            return privateRun.admitResponse(result.toolCalls, result.text)
+            return privateRun.admitResponse(result.toolCalls, result.text, result.finishReason)
               ? result
               : {
                   ...result,
@@ -222,6 +247,27 @@ test.each([
       );
     expect(privateRun.stage()).toBe("closed");
     expect(privateRun.invalidResponse()).toBe(!fixture.completed && !("hostFailure" in fixture));
+    if (!fixture.completed && !("hostFailure" in fixture)) {
+      expect(privateRun.invalidDiagnostic()).toMatchObject({ corrections: 3 });
+      if ("rejection" in fixture)
+        expect(privateRun.invalidDiagnostic()).toMatchObject({
+          category: "authority_constraints",
+          stage: "compile",
+          rejection: fixture.rejection,
+        });
+      const category = privateRun.invalidDiagnostic()?.category;
+      expect(category).toBeDefined();
+      expect([
+        "no_tool_call",
+        "output_limit",
+        "multiple_tool_calls",
+        "invalid_tool_call",
+        "invalid_json",
+        "schema",
+        "stage_order",
+        "authority_constraints",
+      ]).toContain(category!);
+    }
     expect(privateRun.hostFailure() !== undefined).toBe("hostFailure" in fixture);
   } finally {
     await infrastructure.connections.closeAll();

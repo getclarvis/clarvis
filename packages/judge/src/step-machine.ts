@@ -8,6 +8,21 @@ import {
 } from "./private-protocol.ts";
 
 type CompileStep = Extract<JudgeStep, { action: "compile_authority" }>;
+/** Closed, content-free reasons the host may return for a rejected authority candidate. */
+export type AuthorityCandidateRejection =
+  | "stale_context"
+  | "invalid_shape"
+  | "revision_mismatch"
+  | "duplicate_id"
+  | "objective_reference"
+  | "effect_not_inferable"
+  | "grant_constraints"
+  | "grant_reference"
+  | "grant_not_covered"
+  | "ceiling_mismatch"
+  | "invalid_exclusion"
+  | "missing_exclusion"
+  | "blocked_effect";
 /** Host bindings capture the original case and revisions; model input cannot select them. */
 export type JudgeStepBinding =
   | { kind: "command" }
@@ -16,7 +31,9 @@ export type JudgeStepBinding =
       kind: "compile_effects";
       validateAndInstall(
         candidate: CompileStep["candidate"],
-      ): Promise<CompiledAuthorityTransition | undefined>;
+      ): Promise<
+        CompiledAuthorityTransition | { rejected: AuthorityCandidateRejection } | undefined
+      >;
     };
 
 export type JudgeStepOutcome =
@@ -104,9 +121,13 @@ export function createJudgeStepMachine(
       stage = "pending";
       try {
         const candidate = await binding.validateAndInstall(step.candidate);
-        if (candidate === undefined) {
+        if (candidate === undefined || "rejected" in candidate) {
           if (stage === "pending") stage = "compile";
-          return invalid("authority_candidate_rejected");
+          return invalid(
+            candidate === undefined
+              ? "authority_candidate_rejected"
+              : `authority_candidate_rejected:${candidate.rejected}`,
+          );
         }
         const installed = compiledAuthorityTransitionSchema.parse(candidate);
         if (stage !== "pending") return invalid();

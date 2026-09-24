@@ -61,7 +61,12 @@ function protectWorkspaceConfiguration(
   const targets = name === "copy" ? context.paths.slice(1) : context.paths;
   for (const fact of targets) {
     const target = configurationTarget(selectedRoots, fact.resolved);
-    if (target !== undefined && target.kind !== "private" && reviewed) continue;
+    if (
+      target !== undefined &&
+      (target.kind === "authoring" || target.kind === "operational") &&
+      reviewed
+    )
+      continue;
     assertOutsideRoots(fact.resolved, protectedRoots, fact.raw, {
       code: "denied",
       message: `Configuration target requires host-mediated file review: ${fact.raw}.`,
@@ -80,10 +85,16 @@ function protectPrivateConfiguration(
   const selectedRoots = config.configurationRoots ?? roots;
   for (const fact of buildGuardContext(name, args, config).paths) {
     const target = configurationTarget(selectedRoots, fact.resolved);
-    if (target?.kind === "private")
-      throw new ToolError("denied", `Configuration target is private: ${fact.raw}.`, {
+    if (target?.kind === "secret")
+      throw new ToolError("denied", `Configuration target is secret: ${fact.raw}.`, {
         path: fact.raw,
       });
+    if (target?.kind === "reserved_unknown")
+      throw new ToolError(
+        "unrecognized_configuration_target",
+        `Configuration target is not recognized: ${fact.raw}.`,
+        { path: fact.raw },
+      );
   }
 }
 
@@ -251,8 +262,15 @@ async function applyGuard(
       };
     const req: ElicitRequest = {
       tool: name,
-      args: ctx.args,
+      args:
+        decision.agent_justification === undefined || typeof ctx.args.justification !== "string"
+          ? ctx.args
+          : { ...ctx.args, justification: decision.agent_justification },
       reason: decision.reason,
+      ...(decision.static_trigger === undefined ? {} : { static_trigger: decision.static_trigger }),
+      ...(decision.agent_justification === undefined
+        ? {}
+        : { agent_justification: decision.agent_justification }),
       shell: ctx.shell,
       ...(decision.analysis === undefined ? {} : { analysis: decision.analysis }),
       ...(decision.effect === undefined ? {} : { effect: decision.effect }),

@@ -28,7 +28,7 @@ test("configuration roots default to the normal global resolver and OS home", ()
   expect(roots.global_agents).toBe(join(homedir(), AGENTS_DIR));
 });
 
-test("configuration classes share a closed authoring, operational and private vocabulary", () => {
+test("configuration classes distinguish authoring, generated, secret and unknown targets", () => {
   for (const root of ["workspace_clarvis", "global_clarvis"] as const) {
     for (const path of [
       "agents/reviewer.md",
@@ -46,19 +46,20 @@ test("configuration classes share a closed authoring, operational and private vo
   }
   for (const root of ["workspace_agents", "global_agents"] as const) {
     expect(configurationPathClass(root, "skills/review/SKILL.md")).toBe("authoring");
-    expect(configurationPathClass(root, "agents/reviewer.md")).toBe("private");
-    expect(configurationPathClass(root, "settings.json")).toBe("private");
+    expect(configurationPathClass(root, "agents/reviewer.md")).toBe("reserved_unknown");
+    expect(configurationPathClass(root, "settings.json")).toBe("reserved_unknown");
   }
+  for (const path of ["state/run.json", "auth.json", "skills/review/token.json"])
+    expect(configurationPathClass("workspace_clarvis", path)).toBe("secret");
   for (const path of [
-    "state/run.json",
-    "auth.json",
-    "skills/review/token.json",
     "../agents/a.md",
     "skills/../agents/a.md",
     "skills/review\\SKILL.md",
     "/agents/a.md",
   ])
-    expect(configurationPathClass("workspace_clarvis", path)).toBe("private");
+    expect(configurationPathClass("workspace_clarvis", path)).toBe("reserved_unknown");
+  expect(configurationPathClass("workspace_clarvis", ".gitignore")).toBe("generated_read_only");
+  expect(configurationPathClass("global_clarvis", "harness-probe.txt")).toBe("reserved_unknown");
 });
 
 test("resolved configuration targets share one root classification and reject sibling prefixes", () => {
@@ -74,5 +75,5 @@ test("resolved configuration targets share one root classification and reject si
   ).toBeUndefined();
   expect(
     configurationTarget(roots, join(roots.workspace_clarvis, "state", "private.json"))?.kind,
-  ).toBe("private");
+  ).toBe("secret");
 });

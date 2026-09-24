@@ -12,7 +12,8 @@ export interface ConfigurationMutationFacts {
   bytes: number;
   operation: "write" | "edit" | "delete";
   fieldClass: string;
-  surface: "workspace" | "authoring" | "operational" | "delete";
+  surface: "workspace" | "authoring" | "authoring_delete" | "operational" | "delete" | "tree";
+  environmentDigest?: string;
 }
 
 /** The restricted writer and shell guard use the same immutable descriptor vocabulary. */
@@ -23,11 +24,15 @@ export function attestConfiguration(
   const id =
     input.surface === "workspace"
       ? "workspace.content.write"
-      : input.surface === "authoring"
-        ? "clarvis.authoring.write"
-        : input.surface === "delete"
-          ? "destructive.delete"
-          : "clarvis.operational_config.write";
+      : input.surface === "tree"
+        ? "workspace.tree.delete"
+        : input.surface === "authoring"
+          ? "clarvis.authoring.write"
+          : input.surface === "authoring_delete"
+            ? "clarvis.authoring.delete"
+            : input.surface === "delete"
+              ? "destructive.delete"
+              : "clarvis.operational_config.write";
   return effectFact(
     registry,
     id,
@@ -44,6 +49,9 @@ export function attestConfiguration(
       operation: input.operation,
       field_class: input.fieldClass,
       diff_digest: effectDigest(input.expectedRevision ?? "absent", input.nextRevision ?? "absent"),
+      ...(input.environmentDigest === undefined
+        ? {}
+        : { environment_digest: input.environmentDigest }),
     },
     true,
   );

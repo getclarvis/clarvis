@@ -5,6 +5,8 @@ import {
   type JudgeEffectReceipt,
   type JudgeJson,
   type CompiledAuthorityTransition,
+  type JudgeInvalidDiagnostic,
+  type AuthorityCandidateRejection,
 } from "@clarvis/judge";
 import { NOOP_LOGGER, type OperatorAuthorityReader, type Logger } from "@clarvis/capability";
 import type { GuardJudgeConfig } from "@clarvis/judge/settings";
@@ -16,6 +18,7 @@ export interface EffectReviewReceipt {
   relation: "direct" | "bounded_prerequisite" | "none";
   revision: number;
   failure_kind?: ReviewerFailureKind;
+  diagnostic?: JudgeInvalidDiagnostic;
   elapsed_ms: number;
   attempts: number;
 }
@@ -89,6 +92,7 @@ export function createHostEffectReview(deps: {
         decision: EffectReviewReceipt["decision"],
         relation: EffectReviewReceipt["relation"] = "none",
         failure_kind?: EffectReviewReceipt["failure_kind"],
+        diagnostic?: JudgeInvalidDiagnostic,
       ): EffectReviewReceipt => ({
         decision,
         relation,
@@ -96,6 +100,7 @@ export function createHostEffectReview(deps: {
         attempts,
         elapsed_ms: Math.round(performance.now() - started),
         ...(failure_kind === undefined ? {} : { failure_kind }),
+        ...(diagnostic === undefined ? {} : { diagnostic }),
       });
       if (wasRefused(batch)) return receipt("deny");
       if (deps.signal?.aborted) return receipt("unsure", "none", "cancelled");
@@ -219,8 +224,11 @@ export function createHostEffectReview(deps: {
                 kind: "compile_effects",
                 async validateAndInstall(
                   candidate,
-                ): Promise<CompiledAuthorityTransition | undefined> {
+                ): Promise<
+                  CompiledAuthorityTransition | { rejected: AuthorityCandidateRejection }
+                > {
                   transition = transaction.validateAndInstall(candidate);
+                  if (transition === undefined) return { rejected: transaction.rejection() };
                   if (transition !== undefined) {
                     compileInstalled = true;
                     revision = transition.revision;
@@ -235,7 +243,7 @@ export function createHostEffectReview(deps: {
                       "operator authority compiled",
                     );
                   }
-                  return blocked() ? undefined : transition;
+                  return blocked() ? { rejected: "blocked_effect" } : transition;
                 },
               },
         },
@@ -245,7 +253,10 @@ export function createHostEffectReview(deps: {
       if (transition !== undefined && transaction.isCurrent(transition) && blocked())
         return receipt("deny");
       if (outcome.kind === "stale") return receipt("unsure");
-      const failed = (failure: NonNullable<EffectReviewReceipt["failure_kind"]>) => {
+      const failed = (
+        failure: NonNullable<EffectReviewReceipt["failure_kind"]>,
+        diagnostic?: JudgeInvalidDiagnostic,
+      ) => {
         audit.warn(
           {
             event: "effect_review.reviewer.failed",
@@ -255,12 +266,23 @@ export function createHostEffectReview(deps: {
             elapsed_ms: outcome.elapsedMs,
             attempts,
             failure_kind: failure,
+            proposal_digest: caseDigest,
+            ...(diagnostic === undefined
+              ? {}
+              : {
+                  diagnostic_category: diagnostic.category,
+                  diagnostic_stage: diagnostic.stage,
+                  ...(diagnostic.rejection === undefined
+                    ? {}
+                    : { diagnostic_rejection: diagnostic.rejection }),
+                  correction_count: diagnostic.corrections,
+                }),
           },
           "effect review failed",
         );
-        return receipt("unsure", "none", failure);
+        return receipt("unsure", "none", failure, diagnostic);
       };
-      if (outcome.kind === "failed") return failed(outcome.failureKind);
+      if (outcome.kind === "failed") return failed(outcome.failureKind, outcome.diagnostic);
       if (!isCurrent(outcome.receipt) || !validateReceipt(outcome.receipt))
         return failed("invalid_response");
       revision = outcome.receipt.revision;
@@ -275,6 +297,15 @@ export function createHostEffectReview(deps: {
           elapsed_ms: outcome.elapsedMs,
           attempts,
           cache_hit: outcome.cacheHit,
+          ...(outcome.diagnostic === undefined
+            ? {}
+            : {
+                diagnostic_category: outcome.diagnostic.category,
+                ...(outcome.diagnostic.rejection === undefined
+                  ? {}
+                  : { diagnostic_rejection: outcome.diagnostic.rejection }),
+                correction_count: outcome.diagnostic.corrections,
+              }),
         },
         "effect review completed",
       );

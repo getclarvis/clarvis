@@ -14,13 +14,12 @@ This subsystem is the set of `@clarvis/tools` handlers that mutate the filesyste
 shared staging/locking/rollback machinery in `packages/tools/src/lib/atomic.ts` that every one of them
 (except `mkdir`, which has no content to stage) routes through.
 
-The problem it solves is giving a model-driven agent filesystem writes that behave like a database
-transaction rather than like raw `fs` calls: a write that either lands whole or leaves nothing
-changed, a batch of edits across one or many files that is all-or-nothing, and a locking discipline
+The subsystem gives a model-driven agent staged writes, rollback for file batches, and a locking discipline
 that serializes concurrent tool calls on the same path instead of racing them. It also absorbs a
 model's characteristic mistakes — pasting `read_file`'s line-number prefixes back into an edit,
 missing on whitespace, writing through a symlink — and turns each into a diagnosable, structured
-`ToolError` rather than a corrupted file or a silent no-op.
+`ToolError` rather than a corrupted file or a silent no-op. A cross-filesystem move has a separate
+publication and source-removal boundary and may report a verifiable partial commit.
 
 ## 2. Surface
 
@@ -33,10 +32,10 @@ missing on whitespace, writing through a symlink — and turns each into a diagn
 | `multi_edit` | `packages/tools/src/tools/multi-edit.ts` | Apply an ordered list of `edit_file`-style edits to one file, atomically | `path`, `edits` (≥1) |
 | `apply_patch` | `packages/tools/src/tools/apply-patch.ts` | Apply a model-friendly patch envelope or raw unified diff across one or more files (modify/create/delete/rename) atomically | `patch` |
 | `replace` | `packages/tools/src/tools/replace.ts` | Regex find-and-replace across a scope, preview-first | `pattern`, `replacement` (plus `path` and/or `glob`) |
-| `move` | `packages/tools/src/tools/move.ts` | Atomically move/rename one regular file | `source`, `destination` |
+| `move` | `packages/tools/src/tools/move.ts` | Move one regular file; rename is atomic on one filesystem, while a cross-filesystem move has an explicit partial-commit outcome | `source`, `destination` |
 | `copy` | `packages/tools/src/tools/copy.ts` | Atomically copy one regular file, binary-safe, mode-preserving | `source`, `destination` |
 | `mkdir` | `packages/tools/src/tools/mkdir.ts` | `mkdir -p`, idempotent | `path` |
-| `remove` | `packages/tools/src/tools/remove.ts` | Delete one regular file | `path` |
+| `remove` | `packages/tools/src/tools/remove.ts` | Delete one file, symlink entry, or empty directory; bounded nonempty recursive workspace cleanup requires effect review | `path` |
 
 Each is a `ToolDef` (`name`, `description`, `inputSchema`, `handler`) — the shape itself belongs to
 [tools-contract-and-dispatch](tools-contract.md) (`packages/tools/src/tools/types.ts`) and is not re-derived here.
@@ -53,7 +52,7 @@ Each is a `ToolDef` (`name`, `description`, `inputSchema`, `handler`) — the sh
 | `move` | `overwrite: boolean`, default `false` (`packages/tools/src/tools/move.ts`) |
 | `copy` | `overwrite: boolean`, default `false` (`packages/tools/src/tools/copy.ts`) |
 | `mkdir` | none beyond `path` |
-| `remove` | none beyond `path` |
+| `remove` | `recursive: boolean`, default `false` |
 
 None of these `inputSchema`s declares `additionalProperties: false`, so every one of them silently
 accepts and ignores an unrecognized extra property rather than rejecting the call — pinned, one tool
@@ -84,7 +83,7 @@ the tools above:
 | `RM_RETRY` | const | `packages/tools/src/lib/atomic.ts` | every `fs.rm` cleanup call in this file; re-exported for `packages/tools/src/tools/copy.ts` |
 | `withFileLock<T>(absPath, fn)` | fn | `packages/tools/src/lib/atomic.ts` | write_file, edit_file (via `editFileLocked`), remove |
 | `withFileLocks<T>(paths, fn)` | fn | `packages/tools/src/lib/atomic.ts` | apply_patch, replace, move, copy |
-| `assertNotSymlink(target)` | fn | `packages/tools/src/lib/atomic.ts` | write_file (via `writeAtomic`), edit_file (via `writeAtomic`), move, copy, apply_patch (via `validateTargets`), replace (via `applyOpsAtomic`'s `validateTargets`, on a non-dry-run commit), remove (via `applyOpsAtomic`) |
+| `assertNotSymlink(target)` | fn | `packages/tools/src/lib/atomic.ts` | write_file (via `writeAtomic`), edit_file (via `writeAtomic`), move, copy, apply_patch (via `validateTargets`), replace (via `applyOpsAtomic`'s `validateTargets`, on a non-dry-run commit); delete validates a symlink entry with `lstat` instead |
 | `writeAtomic(target, content)` | fn | `packages/tools/src/lib/atomic.ts` | write_file, edit_file/multi_edit (via `editFileLocked`) |
 | `FileOp` | interface | `packages/tools/src/lib/atomic.ts` | apply_patch, replace, remove, reviewed copy and move |
 | `applyOpsAtomic(ops: FileOp[])` | fn | `packages/tools/src/lib/atomic.ts` | apply_patch, replace, remove, reviewed copy and move |
@@ -103,7 +102,7 @@ every handler above consumes them directly.
 | Field | Default | Definition | Consumed at |
 | --- | --- | --- | --- |
 | `maxFileBytes` | `20_000_000` (`DEFAULT_MAX_FILE_BYTES`, `packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | packages/tools/src/tools/edit-file.ts, apply-patch.ts (`readEditableFile`), packages/tools/src/tools/replace.ts |
-| `maxMutationBytes` | `64 * 1024 * 1024` (`DEFAULT_MAX_MUTATION_BYTES`, `packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | packages/tools/src/tools/replace.ts |
+| `maxMutationBytes` | `64 * 1024 * 1024` (`DEFAULT_MAX_MUTATION_BYTES`, `packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | packages/tools/src/tools/replace.ts and move.ts |
 | `maxDiffInputBytes` | `8 * 1024 * 1024` (`DEFAULT_MAX_DIFF_INPUT_BYTES`, `packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | packages/tools/src/tools/write-file.ts, packages/tools/src/tools/edit-file.ts, packages/tools/src/tools/replace.ts |
 | `maxTraversalEntries` | `50_000` (`DEFAULT_MAX_TRAVERSAL_ENTRIES`, `packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | packages/tools/src/tools/replace.ts (`scopeFiles`) |
 | `regexScanBudgetMs` | `5000` (`DEFAULT_REGEX_SCAN_BUDGET_MS`, `packages/tools/src/config.ts`) | `packages/tools/src/config.ts` | packages/tools/src/tools/replace.ts (`createScanBudget`) |
@@ -353,9 +352,13 @@ modify").
    `overwrite`; existing file destination without `overwrite` → `invalid_input`.
 6. An ordinary move creates the parent and calls `renameWithRetry(absSrc, absDst)`
    (`@clarvis/paths`), then `fsyncDir` on both parents. A reviewed configuration endpoint
-   instead uses `applyOpsAtomic`, including rollback for an allowed overwrite. A configuration
-   destination stages bounded UTF-8 source content with private file and directory modes.
-7. Mutation errors follow the tool error mapping; no failed reviewed move leaves only one endpoint changed.
+   instead uses `applyOpsAtomic`, including rollback for an allowed overwrite. On `EXDEV`,
+   `applyOpsAtomic` stages a bounded descriptor copy beside the destination, verifies source identity,
+   publishes locally and only then unlinks the source. A configuration destination stages bounded
+   UTF-8 source content with private file and directory modes.
+7. Pre-publication failure restores the old endpoints. If source removal fails after a cross-device
+   publication, the tool returns `commit_partial` with `source_exists` and `destination_committed`.
+   Other expected mutation errors retain a typed code across the native worker channel.
 8. Report the move, noting `(overwritten)` when the destination previously existed.
 
 ### 4.6 `copy` (`packages/tools/src/tools/copy.ts`)
@@ -384,11 +387,26 @@ existence check is made before the call.
 ### 4.8 `remove` (`packages/tools/src/tools/remove.ts`)
 
 Resolve with classified-path admission; `withFileLock(target, …)`; `fs.lstat` (not followed) — a missing path maps through
-`fsError` to `not_found`, a directory throws `not_a_file`. The actual delete is
-`applyOpsAtomic([{ type: "delete", path: target }])` — so a symlink target is caught by
-`applyOpsAtomic`'s own `assertNotSymlink` inside `validateTargets` (`packages/tools/src/lib/atomic.ts`) even though
-`remove.ts` itself only `lstat`s, never symlink-checks directly; a non-`ToolError` failure from the
-atomic apply is remapped through `fsError`.
+`fsError` to `not_found`. A file or symlink entry uses
+`applyOpsAtomic([{ type: "delete", path: target }])`. `validateTargets` admits a symlink entry for
+delete, while write and rename still reject links; rollback and unlink operate on the entry only.
+An empty directory takes a separate reviewed `rmdir` commit with a post-review emptiness check and
+parent-directory sync, even when `recursive: true` was requested. A nonempty directory requires
+`recursive: true`: `scanSmallTree` captures at
+most 64 regular-file/directory entries, at most 8 KiB of relative paths and depth at most 32, and
+refuses links, special files, names that can spoof the review display, configuration, selected
+skills, state and Git metadata. The host
+compares the captured entry list and revision, presents every target for bounded effect review in
+Auto or human review in On, and
+the sandbox worker rechecks the tree before `fs.rm`. A changed tree yields `revision_conflict`; a
+failure after partial removal yields `commit_partial`. Recursive removal is not an atomic batch and
+cannot remove the workspace root. Production: `remove` in
+[remove.ts](../../packages/tools/src/tools/remove.ts), `scanSmallTree` in
+[small-tree.ts](../../packages/tools/src/lib/small-tree.ts), and `createAuthoringMutationReview` in
+[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts).
+Test: `packages/tools/tests/integration/remove.test.ts`,
+`packages/tools/tests/integration/filesystem-service.test.ts`, and
+`packages/kernel/tests/unit/authoring-mutations.test.ts`.
 
 ### 4.9 `applyOpsAtomic` — the shared transaction (`packages/tools/src/lib/atomic.ts`)
 
@@ -400,6 +418,16 @@ atomic apply is remapped through `fsError`.
 | fsync | — | Every directory touched by any op (destination's, and a rename's source's) is `fsyncDir`ed | An unexpected failure rolls back committed entries before reporting it |
 | Cleanup | — | Every backup and from-backup created during commit is best-effort removed (`bestEffort("atomic_backup_cleanup"/"atomic_source_backup_cleanup", …)`) | best-effort — a cleanup failure does not fail the call |
 | Outer catch | `applyOpsAtomic` | Any directory this call created (from staging) is removed | `packages/tools/src/lib/atomic.ts` |
+
+For `EXDEV`, `stageCrossDevice` opens the source without following a link, bounds its bytes, writes
+and syncs a destination-sibling stage, then `commitWithRollback` publishes it and preserves the
+old destination for rollback. The source identity is checked before publication and before unlink.
+Once the destination is durable, a failed unlink or source-directory sync is `commit_partial`, not
+an atomic rollback claim. Production: `stageCrossDevice`, `assertSourceUnchanged`, and
+`applyOpsAtomic` in [atomic.ts](../../packages/tools/src/lib/atomic.ts), plus `move` in
+[move.ts](../../packages/tools/src/tools/move.ts). Test: native cross-filesystem success and
+partial-commit cases in
+[filesystem-service.test.ts](../../packages/tools/tests/integration/filesystem-service.test.ts).
 
 `applyOpsAtomic` itself places no restriction on a batch reusing the same absolute path across two
 ops — e.g. a `rename` into a path immediately followed by a `delete` of that same path in one call
@@ -428,11 +456,13 @@ lock-ordering deadlock between them.
    Production: `packages/tools/src/lib/atomic.ts`.
    Test: `packages/tools/tests/integration/write-file.test.ts`.
 
-3. **A batch of `FileOp`s is all-or-nothing: any failure during staging, validation or commit restores
-   every already-committed op.**
+3. **A batch of `FileOp`s rolls back failed staging, validation or publication.** A cross-filesystem
+   move is admitted only as one operation; after its destination is published, failure to remove or
+   sync the source reports `commit_partial` with both endpoint states rather than claiming rollback.
    Production: `packages/tools/src/lib/atomic.ts` (staging cleanup commit rollback).
    Test: `packages/tools/tests/integration/atomic.test.ts` (pure-rename rollback)
-   (delete+create rollback) (rename-that-fails-during-its-own-commit rollback).
+   (delete+create rollback) (rename-that-fails-during-its-own-commit rollback)
+   (cross-filesystem partial outcome and batch refusal).
 
 4. **When rollback itself cannot restore an original, the batch fails `io_error` naming exactly which
    path could not be restored, and says its content is preserved in an adjacent temp/backup file
@@ -556,13 +586,17 @@ lock-ordering deadlock between them.
     `undefined` when nothing new was created).
     Test: `packages/tools/tests/integration/mkdir.test.ts`.
 
-18. **`remove` operates only on regular files**, never directories, and never through a symlink — the
-    symlink guard is enforced by the shared `applyOpsAtomic` path even though `remove.ts` itself only
-    `lstat`s.
-    Production: `packages/tools/src/tools/remove.ts`; symlink guard at
-    `packages/tools/src/lib/atomic.ts` (inside `validateTargets`, reached via
-    `applyOpsAtomic` → the generic non-`rename` branch).
-    Test: `packages/tools/tests/integration/remove.test.ts` (directory) (symlink).
+18. **`remove` deletes one regular file, symlink entry, or empty directory; recursive cleanup
+    requires a bounded preview and effect review in Auto or human review in On.** An empty-directory commit checks its
+    contents, passes the target through mutation review, and synchronizes the parent directory.
+    An empty authored skill directory can receive Auto effect review; operational configuration
+    directories retain human review. Both receive a second revision check before host commit.
+    Production: `remove` in `packages/tools/src/tools/remove.ts`,
+    `createAuthoringMutationReview` in `packages/kernel/src/configuration/authoring-mutations.ts`,
+    and `validateTargets` in `packages/tools/src/lib/atomic.ts`.
+    Test: empty/nonempty directory and symlink-entry cases in
+    `packages/tools/tests/integration/remove.test.ts`; classified review and changed-directory
+    conflict and recursive preview in `packages/kernel/tests/unit/authoring-mutations.test.ts`.
 
 19. **Concurrent calls against the same absolute path are serialized in call order and never lose an
     update**; a rejection from one holder does not wedge the next.
@@ -596,7 +630,8 @@ lock-ordering deadlock between them.
 | Target path is a directory (write/edit) | `not_a_file` | `packages/tools/src/tools/write-file.ts`, `packages/tools/src/lib/atomic.ts` (via `applyOpsAtomic`'s `validateTargets`) | fails hard, nothing written |
 | File missing (edit/move/copy/remove) | `not_found` | `fsError` (`packages/tools/src/errors.ts`), `packages/tools/src/lib/atomic.ts` (rename source) | fails hard |
 | Non-UTF-8 file targeted by edit/patch | `is_binary` | `packages/tools/src/tools/edit-file.ts`, `packages/tools/src/tools/apply-patch.ts` | fails hard — "would be rewritten as UTF-8" |
-| Symlink target/source/destination | `invalid_input` | `packages/tools/src/lib/atomic.ts` | fails hard, before any I/O |
+| Symlink write target or rename endpoint | `invalid_input` | `packages/tools/src/lib/atomic.ts` | fails hard; delete of the entry is admitted |
+| Cross-device source removal after destination publication | `commit_partial` with source/destination state | `applyOpsAtomic` in `packages/tools/src/lib/atomic.ts` | destination committed; caller must inspect source before retrying |
 | `old_string`/`new_string` identical | `invalid_input` | `packages/tools/src/tools/edit-file.ts` | fails hard |
 | `old_string` empty | `invalid_input` | `edit-file.ts` schema `minLength: 1` (edit_file) / `packages/tools/src/tools/multi-edit.ts` (multi_edit, explicit check since the array item schema has no `minLength`) | fails hard |
 | No exact/fuzzy match | `no_match` | `packages/tools/src/tools/edit-file.ts` | fails hard, message extended with a diagnosis |
@@ -614,7 +649,7 @@ lock-ordering deadlock between them.
 | Non-`ToolError` throw anywhere in a handler | `internal` | `serializeError` (`packages/tools/src/errors.ts`) | degrades — real detail goes to the warn sink at `error` level, caller sees only `"internal error"` |
 | Rollback itself cannot restore an original | `io_error`, message names the unrestored path(s) | `packages/tools/src/lib/atomic.ts` | fails hard, but is explicit about data loss risk rather than silent |
 | Best-effort cleanup (temp/backup removal) fails | *(not returned to the caller)* | `bestEffort(operation, run)` (`packages/tools/src/lib/tasks.ts`), called at `packages/tools/src/lib/atomic.ts` | reaches the log channel, not the model: `bestEffort` catches, logs through the package's `warn` sink at `debug` with `event: "tools.best_effort_failed"` and `fields.operation` naming the call site, then resolves — the same not-surfaced-to-the-model/reaches-the-log-channel distinction the `io_error` row above draws, not silence |
-| `remove`'s own `lstat` fails for a reason other than missing/directory | mapped via `fsError` | `packages/tools/src/tools/remove.ts` | fails hard |
+| `remove`'s own `lstat` fails for a reason other than a missing path | mapped via `fsError` | `packages/tools/src/tools/remove.ts` | fails hard |
 
 ## 7. Coupling
 

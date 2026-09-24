@@ -53,21 +53,18 @@ describe("resolvePosture", () => {
       resolvePosture({
         clientDeclaresElicitation: true,
         requested: "auto_decline",
-        allowRemoteGuardApproval: false,
       }).elicitation,
     ).toBe("relay");
     expect(
       resolvePosture({
         clientDeclaresElicitation: false,
         requested: "await",
-        allowRemoteGuardApproval: false,
       }).elicitation,
     ).toBe("tool");
     expect(
       resolvePosture({
         clientDeclaresElicitation: false,
         requested: "auto_decline",
-        allowRemoteGuardApproval: false,
       }).elicitation,
     ).toBe("auto_decline");
   });
@@ -77,7 +74,6 @@ describe("resolvePosture", () => {
       clientDeclaresElicitation: false,
       requested: "auto_decline",
       requestedPlans: "review",
-      allowRemoteGuardApproval: false,
     });
     expect(declined.plans_effective).toBe("on");
     expect(declined.downgrades.join(" ")).toContain("plans:review");
@@ -87,36 +83,14 @@ describe("resolvePosture", () => {
         clientDeclaresElicitation: true,
         requested: "await",
         requestedPlans: "review",
-        allowRemoteGuardApproval: false,
       }).plans_effective,
     ).toBe("review");
-  });
-
-  it("relays guard approval only when operator, role and answer channel all permit it", () => {
-    const cases = [
-      { client: true, request: "await", operator: false, role: true, expected: "denied" },
-      { client: false, request: "auto_decline", operator: true, role: true, expected: "denied" },
-      { client: true, request: "await", operator: true, role: false, expected: "denied" },
-      { client: false, request: "await", operator: true, role: true, expected: "relayed" },
-      { client: true, request: "await", operator: true, role: true, expected: "relayed" },
-    ] as const;
-    for (const testCase of cases) {
-      expect(
-        resolvePosture({
-          clientDeclaresElicitation: testCase.client,
-          requested: testCase.request,
-          allowRemoteGuardApproval: testCase.operator,
-          roleAllowsGuardApproval: testCase.role,
-        }).guard_confirmations,
-      ).toBe(testCase.expected);
-    }
   });
 
   it("pins the short prompt-cache lifetime only for auto-decline", () => {
     const declined = resolvePosture({
       clientDeclaresElicitation: false,
       requested: "auto_decline",
-      allowRemoteGuardApproval: false,
     });
     expect(declined.prompt_cache_ttl).toBe("5m");
     expect(declined.downgrades.some((note) => note.includes("prompt_cache_ttl"))).toBe(true);
@@ -124,12 +98,10 @@ describe("resolvePosture", () => {
     const viaTool = resolvePosture({
       clientDeclaresElicitation: false,
       requested: "await",
-      allowRemoteGuardApproval: false,
     });
     const viaRelay = resolvePosture({
       clientDeclaresElicitation: true,
       requested: "await",
-      allowRemoteGuardApproval: false,
     });
     expect(viaTool.prompt_cache_ttl).toBeUndefined();
     expect(viaRelay.prompt_cache_ttl).toBeUndefined();
@@ -142,7 +114,6 @@ describe("ElicitationController", () => {
     const posture = resolvePosture({
       clientDeclaresElicitation: false,
       requested: "await",
-      allowRemoteGuardApproval: false,
     });
     const controller = createElicitationController({
       posture,
@@ -167,7 +138,6 @@ describe("ElicitationController", () => {
     const posture = resolvePosture({
       clientDeclaresElicitation: false,
       requested: "await",
-      allowRemoteGuardApproval: false,
     });
     const controller = createElicitationController({
       posture,
@@ -193,7 +163,6 @@ describe("ElicitationController", () => {
     const posture = resolvePosture({
       clientDeclaresElicitation: false,
       requested: "await",
-      allowRemoteGuardApproval: false,
     });
     const controller = createElicitationController({
       posture,
@@ -220,7 +189,6 @@ describe("ElicitationController", () => {
     const posture = resolvePosture({
       clientDeclaresElicitation: false,
       requested: "await",
-      allowRemoteGuardApproval: false,
     });
     const controller = createElicitationController({
       posture,
@@ -249,7 +217,6 @@ describe("ElicitationController", () => {
     const posture = resolvePosture({
       clientDeclaresElicitation: true,
       requested: "await",
-      allowRemoteGuardApproval: false,
     });
     const controller = createElicitationController({
       posture,

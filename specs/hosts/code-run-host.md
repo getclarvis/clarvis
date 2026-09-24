@@ -212,7 +212,7 @@ Module-private: `EXPORT_BATCH_NODE_LIMIT = 128` and `EXPORT_INCOMPLETE_PREFIX`.
 | `backgroundHandoffSurvivesExit` | `() => boolean` — explicit destination lifecycle supplied by `WorkspaceClientManager`; true only for local Host/Sandbox | yes | `packages/code/src/run-host.ts` |
 | `priceFor` | `(model) => CatalogCost \| undefined` | yes | `packages/code/src/run-host.ts` |
 | `activeProfile` / `setActiveProfile` | agent selection | yes | `packages/code/src/run-host.ts` |
-| `guardMode` / `judgePayload` / `memoryMode` | run policy | yes | `packages/code/src/run-host.ts` |
+| `memoryMode` | run policy | yes | `packages/code/src/run-host.ts` |
 | `executionConfiguration` | fingerprint and readable effective model label | no | [run-host.ts](../../packages/code/src/run-host.ts) |
 | `scheduledBlockedReason` / `onSessionInvalidated` | current execution health and registration invalidation ports | no | [run-host.ts](../../packages/code/src/run-host.ts) |
 | `plansMode` | `() => PlanMode` | no | `packages/code/src/run-host.ts` |
@@ -305,8 +305,6 @@ it for the identical `not_found`-to-`null` pattern; this document is its one des
 | `profile` | `agent` | truthy |
 | `continueFrom` | `continue_from` | truthy |
 | `sessionId` | `session_id` | truthy |
-| `guardMode` | `guard_mode` | truthy |
-| `guardJudge` | `guard_judge` `{guidance?, model?, on_unsure?, timeout_ms?, max_retries?}` | truthy |
 | `memory` | `memory` | truthy |
 | `plans` | `plans` | truthy |
 | `task` | `task` | truthy |
@@ -464,7 +462,7 @@ while `failed`, and `null` otherwise.
    `packages/code/tests/component/session.test.ts` ("beginTurn stamps the selected Extension Profile and
    reconcile adopts the persisted run snapshot").
 10. `rememberResidentTurn` records the turn and folds the oldest when over the limit.
-11. Collect `sessionId = sess.meta()?.id`, `guardMode`, `judgePayload(guardMode)`, and `memory`
+11. Collect `sessionId = sess.meta()?.id` and `memory`
     only when the mode is `"off"`.
 12. `workflowRunId = executionId; setWorkflowActivity(null)`.
 13. Run through `runManaged` : a continuation start when `continueFrom && !isManager`
@@ -545,9 +543,7 @@ while a run is already active").
    and call `rememberResidentTurn`. `beginTranscriptTurn` writes `kind: "transcript"` but does not
    append the skill's internal prompt to model history or advance the session's conversation
    continuation base.
-3. `client.startRun` is composed inline — `guardMode: skillGuardMode...deps.judgePayload(skillGuardMode)...(skillMemoryMode === "off" ? {memory: skillMemoryMode} : {})` — rather than
-   through the intermediate `guardArgs` object `submitTurn` builds once and spreads at its call sites. The composed fields are the same shape either way: `guardMode` always present,
-   `memory` only when the mode is `"off"`.
+3. `client.startRun` is composed inline, passing `memory` only when the mode is `"off"`.
 4. Run through `runManaged` with `run` calling `client.startRun({ skill: {name, task}, … })`.
 5. `afterRun` calls `sess.endTranscriptTurn(envelope)`, which settles the matching transcript-kind
    turn without appending its assistant result to conversation history. `onStored` never calls
@@ -955,15 +951,14 @@ startRun ──> live.set(executionId, handleP)
 
 `wireElicit(handle)` is the elicitation bridge `started` installs on every handle
 before its pump begins. Each incoming `ElicitationRequest` is mapped to an `ElicitRequestParams`:
-`message: req.prompt`, `kind: req.kind`, `detail: req.detail` only when the kernel sent one, and
+`message: req.prompt`, `kind: req.kind`, and
 `requestedSchema: req.schema ?? {type: "object", properties: {}}` when the kernel sent none. The callback runs `detachObserved`: `callbacks.onElicit?.(params)` if registered,
 else `{action: "decline"}`; a thrown handler is caught by `reportElicitFailure`, which answers
 `{action: "cancel"}` instead. The result is mapped back to an
 `ElicitationResponse` — `id: req.id`, `action: result.action`, `content: result.content` only when
 present — and sent via `handle.respond(response)`. Both directions are
 pinned by `packages/code/tests/component/kernel-run-client.test.ts` ("elicitation bridges
-request→UI→respond") ("a guard_confirm's structured command detail reaches the UI params",
-which proves a `guard_confirm`'s `detail: {command, cwd, reason}` reaches `onElicit` verbatim).
+request→UI→respond").
 
 `makeProgressEmitter` emits on exactly four event shapes, each with a monotonically
 increasing `counter`:
@@ -1036,17 +1031,14 @@ retain the plan. Planning mode is intentionally absent from this presentation he
 TUI changes review policy through `/plan`, not Run Controls. Pinned by
 `packages/code/tests/unit/execution-safety.test.ts` (plan-retention consequence case).
 
-`applyIsolation` maps Host and Sandbox to the global native `sandbox` block. Guard policy is
-untouched. Run Controls and the `Ctrl+X I` picker share that writer. With no active work, each
+`applyIsolation` maps Host and Sandbox to the global native `sandbox` block.
+Run Controls and the `Ctrl+X I` picker share that writer. With no active work, each
 surface requests a reload; failure reports the saved selection as pending reconnect. During active
 work the settings panel may save for later and the quick picker refuses a transition.
-`applyReviewMode` separately maps Off/Approval/Auto to the selected scope's guard mode, carrying
-that scope's allow/deny lists or the global lists into a workspace with no local policy. It writes
-no Sandbox field. Production: `packages/code/src/features/run/isolation.ts`,
-`packages/code/src/features/run/review.ts`, and
+Production: `packages/code/src/features/run/isolation.ts` and
 `packages/code/src/views/config/RunControlsPanel.tsx`. Test:
 `packages/code/tests/unit/isolation.test.ts`,
-`packages/code/tests/integration/isolation-review-picker-render.test.tsx`, and
+`packages/code/tests/integration/isolation-review-picker-render.test.tsx` and
 `packages/code/tests/integration/run-controls-render.test.tsx`.
 
 ### 4.21 Memory-pressure state machine (`packages/code/src/adapters/memory-pressure.ts`)
@@ -1340,10 +1332,9 @@ The following are derived directly from this document's own source and its tests
     `packages/code/tests/unit/execution-safety.test.ts` ("is on only when the extraction model
     reaches a declared provider" and inert-state cases).
 
-50. **Isolation is derived independently from Guard.** An enabled native Sandbox is `sandbox` and absence/disablement is `host`. Guard mode cannot change that result. Production:
+50. **Isolation follows the native Sandbox setting.** An enabled native Sandbox is `sandbox` and absence/disablement is `host`. Production:
     `packages/code/src/adapters/execution-safety.ts` (`deriveIsolation`, `deriveRunControls`). Pinned:
-    `packages/code/tests/unit/execution-safety.test.ts` ("derives isolation independently from
-    command review").
+    `packages/code/tests/unit/execution-safety.test.ts` (isolation derivation).
 
 51. **`@clarvis/code`'s adapters never import from `ui/` or `views/`** (INV-244) — full statement
     owned by [hosts/code-bootstrap.md](code-bootstrap.md) §5. This is why
@@ -1379,11 +1370,6 @@ The following are derived directly from this document's own source and its tests
     `"session project identity is required"`. Effectively pinned only indirectly through
     `packages/code/tests/component/session-store.test.ts`, which always supplies one — the throw
     itself is unpinned.
-
-56. **Isolation choice and persisted command-review policy remain independently stored.**
-    Switching between Host and Sandbox leaves the Review value intact. Production:
-    `packages/code/src/adapters/execution-safety.ts` (`deriveIsolation`, `deriveRunControls`).
-    Test: `packages/code/tests/unit/execution-safety.test.ts`.
 
 57. **An elicitation's structured `detail` reaches the UI only when the kernel sent one, and the
     kernel is always answered, even when no handler is registered or the handler throws.**

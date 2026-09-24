@@ -81,7 +81,6 @@ function fakeCode(): CodeConfigStore {
     themeAt: () => ({}),
     effectiveTheme: () => ({}),
     agentDefault: () => undefined,
-    guardModeDefault: () => undefined,
     updateCheckEnabled: () => true,
     asciiEnabled: () => false,
     keyboardConfig: () => ({ version: 1, environments: {} }),
@@ -130,7 +129,6 @@ function harness(): {
     effects: {
       openAgentPicker: () => calls.push("agent-picker"),
       openIsolationPicker: () => calls.push("isolation-picker"),
-      openReviewPicker: () => calls.push("review-picker"),
       openMemoryPicker: () => calls.push("memory-picker"),
       openDiff: () => calls.push("diff"),
       openPlan: () => calls.push("plan"),
@@ -191,12 +189,6 @@ function harness(): {
         throw new Error("not implemented in composition test");
       },
     },
-    guard: {
-      mode: () => "off",
-      setMode: () => {},
-      setDefault: () => {},
-      cycle: () => "on",
-    } as never,
     getRun: async () => null,
     runActive: () => false,
     hasAvailablePlan: () => false,

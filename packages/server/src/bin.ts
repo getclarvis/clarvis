@@ -60,10 +60,6 @@ const USAGE = `clarvis-server — MCP over Streamable HTTP for the Clarvis loop
                                                (CLARVIS_LOG_LEVEL, default info)
   --help, --version
 
-
-The command guard is on unless settings.json says otherwise, and this facade
-answers its confirmations with a decline, so configure guard.allowed_commands
-as part of deployment or every command a run attempts will be refused.
 `;
 
 /**
@@ -293,30 +289,6 @@ async function main(argv: string[]): Promise<void> {
     "listening; the kernel is still starting, so /readyz answers 503 until it reports ready",
   );
 
-  /**
-   * Warn when the guard will refuse everything.
-   *
-   * @remarks
-   * The guard is on unless settings say otherwise, and this facade resolves
-   * questions to `auto_decline` — so a server whose `settings.json` carries no
-   * `guard.allowed_commands` denies every command a run attempts. That is the
-   * correct posture and a useless deployment, and the difference between the two
-   * is one settings key. Reported at boot rather than discovered per run.
-   */
-  const warnIfGuardHasNoAllowlist = async (): Promise<void> => {
-    const settings = await state.kernel?.config.getSettings();
-    const guard = settings?.merged.guard as
-      { mode?: string; allowed_commands?: unknown } | undefined;
-    if (guard?.mode === "off") return;
-    if (Array.isArray(guard?.allowed_commands)) return;
-    logger.warn(
-      { event: "server.guard.no_allowlist" },
-      "the command guard is active and no guard.allowed_commands is configured, so every command " +
-        "will be denied: this facade declines guard confirmations, so there is nobody to approve " +
-        "them. Configure guard.allowed_commands, or set guard.mode to 'off' deliberately.",
-    );
-  };
-
   state.kernel = await createFileKernel({
     workspaceRoot,
     environment: baseKernelEnvironment,
@@ -341,7 +313,6 @@ async function main(argv: string[]): Promise<void> {
     traceDir: globalPaths(configDir).tracesDir,
   });
   state.ready = true;
-  await warnIfGuardHasNoAllowlist();
   logger.info(
     { event: "server.boot.ready" },
     "the kernel is up; /readyz reports ready and runs may start",

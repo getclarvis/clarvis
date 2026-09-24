@@ -162,7 +162,6 @@ describe("independent local kernel process", () => {
         params: {
           execution_id: "session-run",
           agent: "solo",
-          guard_mode: "off",
           messages: [{ role: "user", content: "Start session" }],
         },
       });
@@ -253,7 +252,6 @@ describe("independent local kernel process", () => {
         params: {
           execution_id: "session-cancel-run",
           agent: "solo",
-          guard_mode: "off",
           messages: [{ role: "user", content: "Start session" }],
         },
       });

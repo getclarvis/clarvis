@@ -780,9 +780,6 @@ describe("host generation recovery", () => {
         attention: "none",
       });
       expect(rows[1]!.recovery_error).toContain("cannot be resumed");
-      expect(
-        f.registry.guardAllowlistFor({ executionId: "interrupted", owner: "owner" }),
-      ).toBeUndefined();
       expect(f.registry.occupied("session-interrupted")).toBe(true);
       expect(f.registry.occupied("session-complete")).toBe(false);
       expect((await peer.service.receipt("handoff"))!.run.outcome!.status).toBe("completed");

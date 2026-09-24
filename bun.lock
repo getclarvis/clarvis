@@ -59,14 +59,6 @@
         "@clarvis/tools": "workspace:*",
       },
     },
-    "packages/judge": {
-      "name": "@clarvis/judge",
-      "dependencies": {
-        "@clarvis/capability": "workspace:*",
-        "@clarvis/loop": "workspace:*",
-        "zod": "^4.4.3",
-      },
-    },
     "packages/kernel": {
       "name": "@clarvis/kernel",
       "bin": {
@@ -75,7 +67,6 @@
       "dependencies": {
         "@clarvis/capability": "workspace:*",
         "@clarvis/goal": "workspace:*",
-        "@clarvis/judge": "workspace:*",
         "@clarvis/llm": "workspace:*",
         "@clarvis/loop": "workspace:*",
         "@clarvis/mcp-client": "workspace:*",
@@ -305,8 +296,6 @@
     "@clarvis/goal": ["@clarvis/goal@workspace:packages/goal"],
 
     "@clarvis/hooks": ["@clarvis/hooks@workspace:packages/hooks"],
-
-    "@clarvis/judge": ["@clarvis/judge@workspace:packages/judge"],
 
     "@clarvis/kernel": ["@clarvis/kernel@workspace:packages/kernel"],
 

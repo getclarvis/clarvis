@@ -96,10 +96,6 @@ export interface OrchestratorDeps {
   /** Preserve the resolved namespace through entry and child orchestration. */
   statePaths?: EntryInputDeps["statePaths"];
   modelExecutionResolver?: ModelExecutionResolver;
-  /** Read projection published before activation. */
-  operatorAuthority?: OperatorAuthorityReader;
-  /** Private loop-owned steer observer; not passed to capability contexts. */
-  onOperatorSteer?: (context: UserSteerContext) => void;
   env: EnvConfig;
   llm: LLMProvider;
   /** Host provider before this execution's decorators; direct orchestrator callers already own it. */
@@ -274,8 +270,6 @@ export async function runOrchestrator(
 
   const services = createCapabilityServices();
   services.provide(RUN_TRACE_PORT, traceHandle);
-  if (deps.operatorAuthority !== undefined)
-    services.provide(OPERATOR_AUTHORITY_PORT, deps.operatorAuthority);
   if (agents !== undefined) services.provide(AGENT_REGISTRY_PORT, agents);
   const capabilityCtx: RunCapabilityContext = {
     owner: deps.owner,
@@ -382,19 +376,7 @@ export async function runOrchestrator(
       )
     ).filter((capability): capability is RunCapability => capability !== null),
   );
-  const hooks: LifecycleHook[] = [
-    ...(deps.onOperatorSteer === undefined
-      ? []
-      : [
-          {
-            onUserSteer: (context: UserSteerContext) => {
-              deps.onOperatorSteer!(context);
-              return Promise.resolve();
-            },
-          },
-        ]),
-    ...runCapabilities.flatMap((c) => c.lifecycle ?? []),
-  ];
+  const hooks: LifecycleHook[] = runCapabilities.flatMap((c) => c.lifecycle ?? []);
   const seedBlocks = (
     await Promise.all(
       runCapabilities.map(async (capability) => {
@@ -749,8 +731,3 @@ async function runEntryAgent(p: RunEntryParams): Promise<EntryAgentOutcome> {
     ...(finalContext !== undefined && finalContext.length > 0 ? { finalContext } : {}),
   };
 }
-import {
-  OPERATOR_AUTHORITY_PORT,
-  type OperatorAuthorityReader,
-  type UserSteerContext,
-} from "@clarvis/capability";

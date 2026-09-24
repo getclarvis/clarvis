@@ -36,7 +36,6 @@ import type { ModelsCatalog } from "../adapters/models-catalog.ts";
 import { type ClarvisDirs } from "../adapters/agents.ts";
 import type { KeysAdapter } from "../adapters/provider-secrets.ts";
 import type { CodeConfigStore } from "../adapters/code-config.ts";
-import type { GuardModeStore } from "../adapters/guard-mode.ts";
 import type { MemoryModeStore } from "../adapters/memory-mode.ts";
 import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
 import {
@@ -130,11 +129,6 @@ import { productVersion } from "../cli-args.ts";
 const IsolationPicker = lazy(async () => {
   const module = await import("./overlays/IsolationPicker.tsx");
   return { default: module.IsolationPicker };
-});
-
-const ReviewPicker = lazy(async () => {
-  const module = await import("./overlays/ReviewPicker.tsx");
-  return { default: module.ReviewPicker };
 });
 
 const MemoryPicker = lazy(async () => {
@@ -303,14 +297,13 @@ export interface AppSessionControls {
   usage?: () => { input: number; output: number; cached?: number } | null;
 }
 
-/** The workspace's configuration surfaces — agents, settings, guard/memory mode, keys and the model catalog. */
+/** The workspace's configuration surfaces — agents, settings, memory mode, keys and the model catalog. */
 export interface AppFleet {
   agents: ActiveAgentStore;
   agentFiles: AgentsStore;
   settings: SettingsAdapter;
   dirs: ClarvisDirs;
   code: CodeConfigStore;
-  guard: GuardModeStore;
   memoryMode: MemoryModeStore;
   preview: ThemePreview;
   keys: KeysAdapter;
@@ -783,10 +776,6 @@ export function App(props: AppProps): JSX.Element {
       if (props.run.active()) return;
       if (overlays.openPicker("isolationPicker")) notify("");
     },
-    openReviewPicker: () => {
-      if (props.run.active()) return;
-      if (overlays.openPicker("reviewPicker")) notify("");
-    },
     openMemoryPicker: () => {
       if (props.run.active()) return;
       if (overlays.openPicker("memoryPicker")) notify("");
@@ -943,9 +932,7 @@ export function App(props: AppProps): JSX.Element {
   createEffect(() => {
     if (
       props.run.active() &&
-      ["agentPicker", "isolationPicker", "reviewPicker", "memoryPicker"].includes(
-        overlays.overlay(),
-      )
+      ["agentPicker", "isolationPicker", "memoryPicker"].includes(overlays.overlay())
     )
       overlays.dismissTop();
   });
@@ -1009,11 +996,7 @@ export function App(props: AppProps): JSX.Element {
   });
   const runControls = createMemo(() => {
     props.fleet.settings.version();
-    return deriveRunControls(
-      props.fleet.settings.effective(),
-      props.fleet.guard.mode(),
-      props.fleet.memoryMode.mode(),
-    );
+    return deriveRunControls(props.fleet.settings.effective(), props.fleet.memoryMode.mode());
   });
 
   let pendingSlashArgs = "";
@@ -1067,7 +1050,6 @@ export function App(props: AppProps): JSX.Element {
     agentFiles: props.fleet.agentFiles,
     code: props.fleet.code,
     memoryMode: props.fleet.memoryMode,
-    guard: props.fleet.guard,
     workflows: props.backend.workflows,
     modelsService: props.backend.models,
     providerAuth: props.backend.providerAuth,
@@ -1209,7 +1191,6 @@ export function App(props: AppProps): JSX.Element {
       agentName: agentName(),
       model: resolvedModel(),
       isolation: effectiveIsolation(),
-      review: runControls().guardMode,
       sandboxUnavailable:
         effectiveIsolation() === "sandbox" &&
         appWiring.sandboxInspection()?.backend.available === false,
@@ -1714,29 +1695,6 @@ export function App(props: AppProps): JSX.Element {
                   {...(props.backend.restoreIsolation === undefined
                     ? {}
                     : { restore: props.backend.restoreIsolation })}
-                  onClose={() => overlays.dismissTop()}
-                  onApplied={() => overlays.dismissTop()}
-                />
-              </Suspense>
-            )}
-          </SurfaceBoundary>
-          <SurfaceBoundary
-            active={() => overlays.overlay() === "reviewPicker"}
-            retention="retain-one"
-            placement="portal"
-          >
-            {(lifecycle) => (
-              <Suspense fallback={<text>Loading Guard{glyph("ellipsis")}</text>}>
-                <ReviewPicker
-                  interaction={interaction}
-                  settings={props.fleet.settings}
-                  guard={props.fleet.guard}
-                  scope={() =>
-                    props.fleet.settings.read("workspace") !== undefined ? "workspace" : "global"
-                  }
-                  runActive={props.run.active}
-                  active={lifecycle.active}
-                  notify={notify}
                   onClose={() => overlays.dismissTop()}
                   onApplied={() => overlays.dismissTop()}
                 />

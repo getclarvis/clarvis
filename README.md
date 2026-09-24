@@ -23,9 +23,8 @@ repository in front of you.
   does not imply provider endorsement of Clarvis.
 - **Agent workflows:** use a built-in Lead, delegate to focused Sub-agents, or run the packaged
   `audit`, `implement`, and `research` workflows.
-- **Controlled tool use:** Host OS permissions, native Sandbox policy on Linux and macOS,
-  classified configuration protection, command review, and workspace trust
-  govern access according to the selected environment.
+- **Tool use:** Shell and file tools follow Host OS permissions or the configured native Sandbox
+  policy on Linux and macOS. Workspace trust still governs activation of workspace configuration.
 - **Extensible:** add MCP servers, plugins, hooks, Agent Skills, custom agents, and workflows.
 - **Interactive or headless:** use the full TUI or run a prompt from scripts with `clarvis -p`.
 
@@ -100,7 +99,6 @@ Essential controls:
 | `/effort`  | Choose the default reasoning effort supported by that model              |
 | `/goal`    | Create, inspect and control a persistent bounded objective               |
 | `Ctrl+X I` | Choose Host or native Sandbox isolation                                  |
-| `Ctrl+X G` | Choose Off, Approval, or automatic LLM command review                    |
 
 Other shortcuts depend on the terminal keyboard profile and appear in the footer and `/help`; the
 README does not duplicate a keymap that the application generates dynamically.
@@ -235,7 +233,6 @@ units and are not published independently.
 | [`@clarvis/memory`](packages/memory)           | product capability  | `packages/memory`      | Markdown memory wiki, search, and indexing.                           |
 | [`@clarvis/plan`](packages/plan)               | product capability  | `packages/plan`        | Provider-neutral plans and review gates.                              |
 | [`@clarvis/goal`](packages/goal)               | product capability  | `packages/goal`        | Semantic formulation, persistent objectives and bounded continuation. |
-| [`@clarvis/judge`](packages/judge)             | product capability  | `packages/judge`       | Semantic reviewer configuration and isolated review capability.       |
 | [`@clarvis/tasks`](packages/tasks)             | product capability  | `packages/tasks`       | External task-management adapters and tools.                          |
 | [`@clarvis/workflows`](packages/workflows)     | product capability  | `packages/workflows`   | Multi-agent workflow scheduling and records.                          |
 | [`@clarvis/kernel`](packages/kernel)           | host implementation | `packages/kernel`      | Composition root and isolated-runtime model/MCP authority.            |

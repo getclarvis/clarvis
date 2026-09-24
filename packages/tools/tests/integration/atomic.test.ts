@@ -77,6 +77,41 @@ describe("applyOpsAtomic — cross-filesystem outcomes", () => {
     }) as unknown as typeof fsp.stat);
   }
 
+  it("commits a cross-device content rename as one file", async () => {
+    write(root, "source.txt", "old");
+    classifyDestinationAsAnotherDevice();
+    await applyOpsAtomic([
+      {
+        type: "rename",
+        from: path.join(root, "source.txt"),
+        path: path.join(root, "destination.txt"),
+        content: "replacement",
+      },
+    ]);
+    expect(exists(root, "source.txt")).toBe(false);
+    expect(read(root, "destination.txt")).toBe("replacement");
+  });
+
+  it("refuses a cross-device content rename inside a larger batch", async () => {
+    write(root, "source.txt", "old");
+    classifyDestinationAsAnotherDevice();
+    const error = (await catchErr(
+      applyOpsAtomic([
+        {
+          type: "rename",
+          from: path.join(root, "source.txt"),
+          path: path.join(root, "destination.txt"),
+          content: "replacement",
+        },
+        { type: "create", path: path.join(root, "other.txt"), content: "other" },
+      ]),
+    )) as ToolError;
+    expect(error.code).toBe("cross_device");
+    expect(read(root, "source.txt")).toBe("old");
+    expect(exists(root, "destination.txt")).toBe(false);
+    expect(exists(root, "other.txt")).toBe(false);
+  });
+
   it("reports both endpoint states when the destination commits but source unlink fails", async () => {
     write(root, "source.txt", "original bytes");
     const source = path.join(root, "source.txt");

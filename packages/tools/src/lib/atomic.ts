@@ -3,7 +3,6 @@ import { bestEffort } from "./tasks.ts";
 import path from "node:path";
 import { TMP_GLOB, fsyncDir, renameWithRetry, tmpPathFor, writeFileDurable } from "@clarvis/paths";
 import { ToolError } from "../errors.ts";
-import type { ResolvedFilesystemPolicy } from "../sandbox.ts";
 
 const locks = new Map<string, Promise<unknown>>();
 
@@ -61,18 +60,6 @@ export function withFileLocks<T>(paths: string[], fn: () => Promise<T>): Promise
   const sorted = [...new Set(paths)].sort();
   return sorted.reduceRight<() => Promise<T>>((acc, p) => () => withFileLock(p, acc), fn)();
 }
-
-/** Host review of a fully prepared batch before staging or changing any target. */
-export type MutationReview = ((
-  operations: readonly FileOp[],
-  commit: () => Promise<void>,
-) => Promise<void>) & {
-  /** Host-owned commit of exclusively classified configuration paths after review. */
-  readonly commitClassified?: (
-    operations: readonly FileOp[],
-    policy: ResolvedFilesystemPolicy,
-  ) => Promise<void>;
-};
 
 interface Staged {
   tmp: string;
@@ -146,21 +133,15 @@ export async function assertNotSymlink(target: string): Promise<void> {
  * @remarks Atomic staging, retry, cleanup, payload fsync, and directory fsync
  * are owned by `@clarvis/paths`. This wrapper preserves the behavior specific
  * to coding tools: refusing a symlink, retaining an existing file's mode or
- * applying explicit reviewed configuration modes, using the host umask for an
+ * using the host umask for an
  * ordinary new file/directory, and removing a parent directory this call
  * created if the write fails.
  */
 export async function writeAtomic(
   target: string,
   content: string,
-  review?: MutationReview,
-  intent: "write" | "edit" = "write",
   modes?: { mode: number; dirMode: number },
 ): Promise<void> {
-  if (review !== undefined)
-    return review([{ type: "modify", path: target, content, intent, ...modes }], () =>
-      writeAtomic(target, content, undefined, intent, modes),
-    );
   await assertNotSymlink(target);
   const dir = path.dirname(target);
   const createdDir = await fs.mkdir(dir, {
@@ -182,14 +163,14 @@ export async function writeAtomic(
 
 /**
  * One prepared filesystem mutation. File operations enter the all-or-nothing
- * {@link applyOpsAtomic} batch; directory removals use separate reviewed commits.
+ * {@link applyOpsAtomic} batch; directory removals use separate commits.
  *
  * @remarks `content` is the new file body for `create`/`modify` (and for a
  *   `rename` that also rewrites the file). `from` is the source path for a
  *   `rename` and is ignored otherwise.
  */
 export interface FileOp {
-  /** File create/modify/delete/rename, or a separately reviewed directory removal. */
+  /** File create/modify/delete/rename, or a separate directory removal. */
   type: "create" | "modify" | "delete" | "rename" | "rmdir" | "rmtree";
   /** The destination/target path this op acts on. */
   path: string;
@@ -197,17 +178,17 @@ export interface FileOp {
   from?: string;
   /** The new file body for `create`/`modify`, or an optional rewrite alongside a `rename`. */
   content?: string;
-  /** Host review distinguishes a file edit from a full replacement write. */
+  /** Distinguishes a file edit from a full replacement write. */
   intent?: "write" | "edit";
-  /** Explicit permission bits for a reviewed configuration destination. */
+  /** Explicit permission bits for a destination. */
   mode?: number;
-  /** Directory mode for a newly created protected parent. */
+  /** Directory mode for a newly created parent. */
   dirMode?: number;
   /** A rename may replace a destination only when its caller explicitly allowed it. */
   overwrite?: boolean;
   /** Bound for a cross-filesystem rename staged as a copy. */
   maxBytes?: number;
-  /** Bounded review preview for a recursive directory removal. */
+  /** Bounded preview for a recursive directory removal. */
   treeEntries?: readonly string[];
   /** Captured identity of every previewed entry. */
   treeRevision?: string;
@@ -591,13 +572,9 @@ async function rollbackCommitted(
  *   on success every affected directory is `fsync`ed and the backups/temps are
  *   removed. Permission bits of overwritten files are preserved.
  */
-export async function applyOpsAtomic(ops: FileOp[], review?: MutationReview): Promise<void> {
+export async function applyOpsAtomic(ops: FileOp[]): Promise<void> {
   if (ops.some((op) => op.type === "rmdir" || op.type === "rmtree"))
-    throw new ToolError(
-      "invalid_input",
-      "Directory removal uses the remove tool's reviewed commit.",
-    );
-  if (review !== undefined) return review(ops, () => applyOpsAtomic(ops));
+    throw new ToolError("invalid_input", "Directory removal uses the remove tool.");
   const createdDirs: (string | undefined)[] = [];
   try {
     const { staged, cross } = await stageAll(ops, createdDirs);

@@ -139,13 +139,13 @@ function toolEvidence(tool: string, result: string, error: string | null): ToolE
  * the start/streamed-output/terminal trace events, run the tool, and feed the
  * convergence guards.
  *
- * @param args - the call and its toolset/guard/trace context; see
+ * @param args - the call and its toolset/trace context; see
  *   {@link AgentToolDispatchArgs}.
  * @returns an {@link AgentToolCallResult}; a tool error is carried as `errText`
  *   with `productive` false, not thrown.
  * @remarks Streamed tool output is relayed as `tool_output_delta` trace signals.
  *   Any `diff` the tool returns is attached to the terminal `tool_call` event.
- *   The guard signature is recorded only when the run was not aborted.
+ *   The convergence record is written only when the run was not aborted.
  */
 export async function executeAgentToolCall(
   args: AgentToolDispatchArgs,
@@ -234,15 +234,14 @@ export async function executeAgentToolCall(
     });
   };
 
-  const { isError, text, images, diff, guard, abortUnsettled, executionAborted } =
-    await toolset.dispatch(
-      call.name,
-      callArgs,
-      signal,
-      onOutput,
-      control === undefined ? undefined : recordStarted,
-      runSignal,
-    );
+  const { isError, text, images, diff, abortUnsettled, executionAborted } = await toolset.dispatch(
+    call.name,
+    callArgs,
+    signal,
+    onOutput,
+    control === undefined ? undefined : recordStarted,
+    runSignal,
+  );
   terminal = true;
   const interrupted =
     executionAborted === true &&
@@ -267,7 +266,6 @@ export async function executeAgentToolCall(
     tool_evidence: toolEvidence(call.name, resultText, errText),
     error: errText,
     ...(diff !== undefined ? { diff } : {}),
-    ...(guard !== undefined ? { guard } : {}),
     ...(interrupted ? { interruption: { source: "operator" as const } } : {}),
     ...(sessionId !== undefined && control !== undefined
       ? { control: { tool_execution_id: control.toolExecutionId, actions: control.actions } }
@@ -275,11 +273,7 @@ export async function executeAgentToolCall(
   });
 
   if (!signal?.aborted) {
-    guards.record(
-      `${call.name}:${safeStringify(call.arguments)}`,
-      text,
-      guard?.outcome === "denied" ? "denied" : errText !== null,
-    );
+    guards.record(`${call.name}:${safeStringify(call.arguments)}`, text, errText !== null);
   }
 
   return {

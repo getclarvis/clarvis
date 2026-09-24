@@ -14,14 +14,10 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
 
 ## 2. Construction
 
-Native FileKernel composes one host-bound Judge capability and projected private trace store.
-Its eligibility covers automatic command/configuration review; Memory indexing removes it,. Work-run providers and parent observation remain host
-bindings. The [Judge contract](../capabilities/judge.md#native-host-composition) owns this boundary
-and the current consumer-cutover limit.
-Production: `createHostJudge` in [judge-host.ts](../../packages/kernel/src/guard/judge-host.ts),
-`createFileKernel` and `composeIndexPassDeps`.
-Test: [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts) and
-[index-pass-deps.test.ts](../../packages/kernel/tests/unit/index-pass-deps.test.ts).
+Native FileKernel composes the loop and host services. Work-run providers and parent observation
+remain host bindings. Production: `createFileKernel` in
+[file-kernel.ts](../../packages/kernel/src/file-kernel.ts). Test:
+[file-kernel.test.ts](../../packages/kernel/tests/integration/file-kernel.test.ts).
 
 The in-process facade exposes an unavailable `GoalService`; authenticated conversation hosting
 supplies the live service per connection. `InProcessKernel.prepareRun` accepts a host-only goal
@@ -160,29 +156,13 @@ capability executables, and plugin skill roots are composed. Standalone skill se
 resolved `SkillRootInput` entries with exact `include` lists. The loop receives those roots and the
 opaque `{ id, fingerprint }` run metadata; it does not import Extension Profile policy.
 
-The tools capability receives the selected workspace, sandbox policy, guard resolver, and secret
-environment names. It creates the run-owned scratch and appends host system temporary access inside
-the optional tools capability. The kernel guard makes Isolation Sandbox `require_escalated` an `ask`
-matched `host_command`: mode `on` uses `escalate: "human"`, while Auto may use the judge to allow
-or deny. Inconclusive, failed or malformed Auto review refuses to the calling agent; an unavailable
-model refuses. Host-command asks bypass session coverage and never offer `allow_session`; clean
-exact-call judge memoization is separate. Mode `off` returns no guard, so that one command proceeds without command review.
-
-
-Production: `createGuardResolver` in `packages/kernel/src/guard/resolver.ts` and `createShellGuard`
-in `packages/kernel/src/guard/shell-guard.ts`. Test:
-`packages/kernel/tests/integration/guard-auto-review.test.ts` and
-`packages/kernel/tests/unit/guard.test.ts`.
-
-`CreateFileKernelOptions.sessionAllowlistFor` can bind command consent to a persistent host's current
-interactive controller. Without it, the guard keeps its ordinary resolver-local lifetime. The
-host owns the shared operator authority reader and revokes it with the interactive scope. Direct
-configuration and command review consume that same reader; no separate configuration consent
-lifecycle exists. Production: `createFileKernel` in
-[file-kernel.ts](../../packages/kernel/src/file-kernel.ts) and `createHostedRegistry` in
-[registry.ts](../../packages/kernel/src/hosting/registry.ts).
-Test: [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts)
-and the controller-lifetime cases in [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts).
+The tools capability receives the selected workspace, sandbox policy, and secret environment names.
+It creates run-owned scratch and appends host system temporary access inside the optional tools
+capability. File and shell calls use the configured native sandbox without a per-call bypass.
+Production: `packages/kernel/src/file-kernel.ts` (`createFileKernel`),
+`packages/tools/src/sandbox.ts` (`sandboxCommand`). Test:
+`packages/kernel/tests/integration/file-kernel.test.ts` and
+`packages/tools/tests/integration/sandbox.test.ts`.
 
 Workflow leaders are separate auxiliary runs. `auxiliaryWorkflowRunDeps` removes the memory
 capability and leader assembly forces `memory: "off"`; the primary manager remains the workflow's
@@ -211,7 +191,7 @@ in [memory indexing](../capabilities/memory-indexer.md) and
 
 Production: `packages/kernel/src/config/capability-registry.ts`;
 `packages/kernel/src/file-kernel.ts`; `packages/kernel/src/extension-profiles/extension-profile-manager.ts`;
-`packages/kernel/src/guard/resolver.ts`.
+`packages/tools/src/sandbox.ts`.
 
 Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
 `packages/kernel/tests/integration/builtin-fleet.test.ts`.

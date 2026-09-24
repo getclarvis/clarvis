@@ -59,11 +59,6 @@ export function createMemoryConfigStore(seed?: MemoryConfigSeed): ConfigStore {
   /** Recompute the snapshot: a shallow `global` then `workspace` merge plus `memory:`-prefixed sources. */
   const snapshot = (): SettingsSnapshot => {
     const merged: SettingsData = { ...(settings.global ?? {}), ...(settings.workspace ?? {}) };
-    const effectReview = resolveEffectReviewSettings(
-      settings.global?.effect_review,
-      settings.workspace?.effect_review,
-    );
-    if (effectReview !== undefined) merged.effect_review = effectReview;
     const mcpServerOrigins = Object.fromEntries(
       Object.keys(merged.mcpServers ?? {}).map((name) => [name, "operator" as const]),
     );
@@ -184,4 +179,3 @@ export function createMemoryConfigStore(seed?: MemoryConfigSeed): ConfigStore {
     },
   };
 }
-import { resolveEffectReviewSettings } from "./effect-review-settings.ts";

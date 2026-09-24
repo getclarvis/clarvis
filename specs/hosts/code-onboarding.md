@@ -15,7 +15,7 @@ just started" to "a person can trust what they're looking at."
    the shell or must first send the user to a setup wizard or a repair screen
    (`packages/code/src/onboarding/doctor.ts`), plus the idempotent "seed a default into global
    settings the first time this workspace is used" functions
-   (`seed-memory.ts`, `seed-plans.ts`, `seed-default-allowlist.ts`, sharing one guard sequence in
+   (`seed-memory.ts`, `seed-plans.ts`, sharing one guard sequence in
    `seed-block-once.ts`).
 2. **Platform adapter** (`src/adapters/platform.ts`): the one seam between `code` and everything
    OS-specific that is not already `@clarvis/kernel/local` — terminal capability detection, graceful
@@ -63,7 +63,6 @@ report without waiting for it to happen twice.
 | `seedBlockOnce<T>(settings, {alreadyConfigured, buildPatch, additionalOutcome?}): Promise<SeedOutcome<T>>` | shared guard sequence: already-configured → corrupt → no-settings-file → write to `global` | `packages/code/src/onboarding/seed-block-once.ts` |
 | `seedMemoryBlock(settings): Promise<MemorySeedOutcome>` | writes `{memory:{enabled:true}}` | `packages/code/src/onboarding/seed-memory.ts` |
 | `seedPlansBlock(settings): Promise<PlansSeedOutcome>` | writes `{plans:{...PLANS_DEFAULTS}}` (from `@clarvis/kernel/config`) | `packages/code/src/onboarding/seed-plans.ts`, `seedPlansBlock` |
-| `seedDefaultAllowlist(settings, platform?): Promise<AllowlistSeedOutcome>` | writes `{guard:{...existingGlobalGuard, type:"shell", allowed_commands:[...]}}`, list picked by `platform` | `packages/code/src/onboarding/seed-default-allowlist.ts`, `seedDefaultAllowlist` |
 
 ### 2.3 `DoctorView`
 
@@ -194,7 +193,7 @@ the blocked/cleared issue text, its two action bindings, inert `q`/Escape behavi
 
 ### 3.1 Settings patches the seeders write
 
-All three seeders write to the **global** scope only, never workspace
+Both seeders write to the **global** scope only, never workspace
 (`packages/code/src/onboarding/seed-block-once.ts`), and every write is a full-block *replacement* of that key, not a merge with
 whatever else might be under it in the global file (`buildPatch()` in each seeder).
 
@@ -202,23 +201,6 @@ whatever else might be under it in the global file (`buildPatch()` in each seede
 | --- | --- | --- |
 | `seedMemoryBlock` | `{ memory: { enabled: true } }` — `model` deliberately omitted | `packages/code/src/onboarding/seed-memory.ts`, pinned by `packages/code/tests/unit/seed-memory.test.ts` |
 | `seedPlansBlock` | `{ plans: { ...PLANS_DEFAULTS } }`, where `PLANS_DEFAULTS` (from `@clarvis/kernel/config`) is asserted to include `{mode:"on", retention:"keep"}` | `packages/code/src/onboarding/seed-plans.ts`, `packages/code/tests/unit/seed-plans.test.ts` |
-| `seedDefaultAllowlist` | `{ guard: { ...existingGlobalGuardFieldsOnly, type:"shell", allowed_commands:[...POSIX_or_WINDOWS_DEFAULTS] } }` | `packages/code/src/onboarding/seed-default-allowlist.ts`, `seedDefaultAllowlist` |
-
-The allowlist seeder reads the *global* `guard` block only to spread its other fields forward
-(`packages/code/src/onboarding/seed-default-allowlist.ts`), but decides whether seeding is needed from the **effective** (merged)
-guard (`packages/code/src/onboarding/seed-default-allowlist.ts`) — so a workspace-only `allowed_commands` still counts as
-configured, but a workspace-only `guard.mode` is never carried into the global write
-(`packages/code/tests/unit/seed-default-allowlist.test.ts`).
-
-The platform-selected lists cover conventional inspection, build, test, lint and type-check
-commands across common language ecosystems while leaving generic interpreters/task runners and
-explicit install, publish, deploy and migration commands reviewable. They are intentionally
-first-seed-only: an existing list, including `[]`, remains operator-owned and is never expanded by a
-later Clarvis version. Production: `POSIX_DEFAULT_ALLOWED_COMMANDS` and
-`WINDOWS_DEFAULT_ALLOWED_COMMANDS` in `packages/tools/src/guard/dialects/`. Test:
-`packages/tools/tests/unit/posix-dialect.test.ts`,
-`packages/tools/tests/unit/powershell-dialect.test.ts`, and
-`packages/code/tests/unit/seed-default-allowlist.test.ts`.
 
 ### 3.2 Workflow-free onboarding
 
@@ -477,9 +459,9 @@ gate's result.
 
 ### 4.4 Seeding sequence at app mount
 
-On mount (`packages/code/src/app/commands.tsx`, `registerAppCommands`'s `seed_plans_settings`,
-`seed_memory_settings` and `seed_default_allowlist` observed tasks; outside this document's owned file set but the call site of every
-seeder here), three seeders run unconditionally and idempotently, each `.then()`-notifying the user only
+On mount (`packages/code/src/app/commands.tsx`, `registerAppCommands`'s `seed_plans_settings` and
+`seed_memory_settings` observed tasks; outside this document's owned file set but the call site of every
+seeder here), two seeders run unconditionally and idempotently, each `.then()`-notifying the user only
 on a real write and calling `recheck()` to re-run the gate ladder:
 
 1. `seedPlansBlock` → on success, notify `planning: on · keep plans (<scope> settings) — use
@@ -488,11 +470,10 @@ on a real write and calling `recheck()` to re-run the gate ladder:
    notifying — the memory-mode store freezes its signal from `configured()` at construction
    (`packages/code/src/onboarding/seed-memory.ts`), so a mid-session seed must force both calls or the session keeps asking for
    `memory:"off"` for its whole lifetime.
-3. `seedDefaultAllowlist` → on success, notify the count of commands seeded.
 
-Only after those three (fire-and-forget) is `startupRoute` consulted to decide whether to open
+After scheduling those two seeders, `startupRoute` decides whether to open
 `setup.open` or `recovery.open` (`packages/code/src/app/commands.tsx`, `startupRoute`). The first-run **wizard** path
-(`prepareSetup` in `packages/code/src/app/commands.tsx`) calls the same three seeders synchronously
+(`prepareSetup` in `packages/code/src/app/commands.tsx`) calls the same two seeders synchronously
 (`seedSetupDefaults`) before refreshing the live agent catalogue and setting the default entry agent.
 It performs no workflow filesystem writes.
 
@@ -670,17 +651,6 @@ recovery screen with no further keypress — pinned by
    `packages/code/tests/unit/seed-memory.test.ts`, `tests/unit/seed-plans.test.ts` (analogous cases).
 7. **A seeder's write always targets the global scope**, regardless of which scope had a settings file. —
    `packages/code/src/onboarding/seed-block-once.ts` — pinned by `packages/code/tests/unit/seed-memory.test.ts`.
-8. **An explicit `enabled:false`/`mode:"off"`/present `allowed_commands` (including an empty array)
-   counts as already-configured and is never re-seeded.** — each seeder's `alreadyConfigured` —
-   `packages/code/src/onboarding/seed-memory.ts`, `packages/code/src/onboarding/seed-plans.ts`, `packages/code/src/onboarding/seed-default-allowlist.ts` — pinned by
-   `packages/code/tests/unit/seed-memory.test.ts`, `tests/unit/seed-plans.test.ts` ("never re-seeds over an
-   explicit opt-out"), `packages/code/tests/unit/seed-default-allowlist.test.ts` (empty list is deliberate).
-9. **The default-allowlist seed never carries a workspace's `guard` fields other than
-   `allowed_commands`/`type` into the global write** — it spreads only the *global* scope's existing
-   `guard` block, deciding "already configured" from the merged `effective()` but writing from the
-   unmerged global file. Production: `packages/code/src/onboarding/seed-default-allowlist.ts`
-   (`seedDefaultAllowlist`). Test: `packages/code/tests/unit/seed-default-allowlist.test.ts`
-   ("does not persist untrusted workspace guard fields into the global scope").
 10. **Onboarding never materializes built-in workflow documents.** `prepareSetup` seeds settings,
     refreshes profiles and selects the default agent; workflow definitions are supplied by the kernel.
     — `packages/code/src/app/commands.tsx` (`prepareSetup`) — pinned end to end by
@@ -773,11 +743,10 @@ recovery screen with no further keypress — pinned by
 - `@clarvis/paths` — `CLARVIS_DIR`, `globalPaths`, `ensureWorkspaceLocalDir`, `workspaceStatePaths` — for
   settings-file location and the diagnostics directory (`packages/code/src/onboarding/doctor.ts`,
   `packages/code/src/adapters/diagnostic-session.ts`).
-- `@clarvis/kernel/policy` — `defaultGuardMode` (via `resolvedGuardMode`, doctor's `run_safety` gate, `packages/code/src/adapters/guard-mode.ts`) and
-  `sanitizeErrorMessage` (diagnostic string scrubbing, `packages/code/src/adapters/diagnostic-session.ts`).
+- `@clarvis/kernel/policy` — `sanitizeErrorMessage` (diagnostic string scrubbing,
+  `packages/code/src/adapters/diagnostic-session.ts`).
 - `@clarvis/kernel/config` — `PLANS_DEFAULTS` (`packages/code/src/adapters/settings.ts`).
-- `@clarvis/kernel/local` — `POSIX_DEFAULT_ALLOWED_COMMANDS`/`WINDOWS_DEFAULT_ALLOWED_COMMANDS`
-  (`packages/code/src/onboarding/seed-default-allowlist.ts`), `resolveShell`/`shellArgs` (Windows clipboard script construction,
+- `@clarvis/kernel/local` — `resolveShell`/`shellArgs` (Windows clipboard script construction,
   `packages/code/src/adapters/platform.ts`), `killTree`/`ownProcessGroup` (`packages/code/src/adapters/clipboard-process.ts`).
 - `../adapters/execution-safety.ts` (`deriveIsolation`, `memoryState`, `modelResolves`,
   `planRetentionLabel`, `plansState`) and `../adapters/agent-files.ts` (`agentReadiness`) — doctor's gate
@@ -808,7 +777,7 @@ recovery screen with no further keypress — pinned by
 
 - `packages/code/src/runtime.tsx` and `packages/code/src/app/commands.tsx` (outside this document's file set)
   are the sole call sites of every symbol here: `runGates`/`bootGate`/`startupRoute` drive boot routing
-  (`packages/code/src/app/commands.tsx`, `report`, `prepareSetup`, `recovery.open`, startup routing), and the three seeders are called
+  (`packages/code/src/app/commands.tsx`, `report`, `prepareSetup`, `recovery.open`, startup routing), and the two seeders are called
   both at `onMount` and from the guided-setup `prepareSetup`, while workflows require no onboarding
   call. `createDebugSessionController`/`resolveDebugRequest`/`installDiagnosticSession` drive the
   `--debug` lifecycle (`packages/code/src/runtime.tsx`, `runApp`, `runHeadlessMode`, and

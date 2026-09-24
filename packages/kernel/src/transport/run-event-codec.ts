@@ -13,33 +13,6 @@ const attributed = {
   subagent_id: text.optional(),
 };
 const argumentsRecord = z.record(z.string(), z.unknown());
-const commandGuardReview = z
-  .object({
-    reviewer_decision: z.enum(["allow", "deny", "unsure", "failed"]).optional(),
-    mode: z.enum(["on", "auto"]),
-    outcome: z.enum(["allowed", "denied"]),
-    answerer: z.enum(["policy", "human", "judge", "session_allowlist", "unavailable"]),
-    effect_id: z
-      .string()
-      .regex(/^[a-z][a-z0-9_.]{0,127}$/)
-      .optional(),
-    relation: z.enum(["direct", "bounded_prerequisite", "none"]).optional(),
-    failure_kind: z
-      .enum([
-        "timeout",
-        "auth",
-        "quota",
-        "rate_limit",
-        "transport",
-        "admission",
-        "cancelled",
-        "invalid_response",
-        "unknown",
-      ])
-      .optional(),
-  })
-  .strict();
-
 const planTask = z
   .object({
     id: text,
@@ -190,7 +163,6 @@ const RUN_EVENT_SCHEMAS = {
       result: text.optional(),
       error: text.optional(),
       diff: text.optional(),
-      guard: commandGuardReview.optional(),
       control: z
         .object({
           tool_execution_id: text,

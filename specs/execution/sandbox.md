@@ -25,9 +25,8 @@ dropping; Seatbelt enforces the same file/network/process boundary with an SBPL 
 manufacture Linux namespaces. Bubblewrap's explicitly reported `host-proc` mode is the exception: it
 is available but degraded because host process information remains visible.
 
-This is one defense layer, not a claim that Clarvis itself is a security sandbox. Classified-path
-protection, command review, workspace trust, secret filtering, and native process isolation remain
-separate controls. Approved host operations and Clarvis host code remain outside this process
+This is one defense layer, not a claim that Clarvis itself is a security sandbox. Workspace trust,
+secret filtering, and native process isolation remain separate controls. Clarvis host code remains outside this process
 boundary; [security.md](../cross-cutting/security.md) owns those limits.
 
 Ownership is deliberately split:
@@ -75,7 +74,7 @@ The published subpath is `packages/tools/src/sandbox-entry.ts`.
 | `sandboxCommand(args)`                                       | Builds a bare, Bubblewrap, or Seatbelt spawn specification without executing it                                                                        |
 | `resolveFilesystemPolicy(input)`                             | Freezes one run's placement, identity, read scope, writable roots, protected roots and Sandbox settings                                                |
 | `ResolvedFilesystemPolicy`                                   | The immutable description consumed by command launch and retained sessions                                                                             |
-| `sandboxWouldApply(sandbox, forceBare?)`                     | Probe-free containment-or-failure commitment shared with command construction; false for absent/disabled policies or explicit bare execution           |
+| `sandboxWouldApply(sandbox)`                                 | Probe-free containment-or-failure commitment shared with command construction; false for absent or disabled policies                                    |
 | `systemTemporaryRoots(platform?, environmentTemporaryRoot?)` | Discovers existing host temp roots: environment-selected plus `/tmp` on POSIX, environment-selected only on Windows; never conveys lifecycle ownership |
 | `discoverLinkedGitMetadataPaths(workspaceRoot)`              | Pins a valid linked worktree's common Git metadata root                                                                                                |
 | `discoverToolchains(include?)`                               | Resolves requested toolchain executables, install roots, and managers without executing them                                                           |
@@ -259,8 +258,8 @@ A sandboxed command does not inherit `process.env`. `minimalEnv` creates:
 - present `LANG`, `TZ`, `TERM`, `NO_COLOR`, every `LC_*`, and explicitly named `passEnv` values,
   excluding host-identified credential variables even if they were requested in `passEnv`.
 
-The unsandboxed path copies the host environment only after subtracting `secretEnvNames`. Per-call
-`forceBare` uses that same scrubbed bare path; an unavailable backend never restores provider
+The unsandboxed Host path copies the host environment only after subtracting `secretEnvNames`.
+An unavailable backend never restores provider
 credentials.
 
 Production: `packages/tools/src/sandbox.ts` (`sandboxPath`, `minimalEnv`, `withoutSecrets`,
@@ -417,7 +416,7 @@ write-limited policy for shell and shell_session with an external cwd`) and
 
 `sandboxCommand` resolves the host shell, then:
 
-1. `forceBare` or no `sandbox` → return the bare shell with `secretEnvNames` removed;
+1. no `sandbox` → return the bare shell with `secretEnvNames` removed;
 2. unavailable, including stored `availability: "optional"` → throw `ToolError("io_error", "Native sandbox is
    required: <reason>")` before a command process starts;
 3. available Seatbelt → validate paths, build the parameterized profile, and return
@@ -426,11 +425,12 @@ write-limited policy for shell and shell_session with an external cwd`) and
 
 The returned `sandboxed` bit reports what will actually run, not what was requested. Shell
 diagnostics consume it; callers never infer wrapping by reparsing argv.
-Command Review asks for an external path in a native Sandbox shell call; the native backend still
-blocks writes outside declared roots. Host calls and native file tools retain the guard's existing
-outside-workspace denial. Production: `createShellGuard` in
-`packages/kernel/src/guard/shell-guard.ts`. Test: `reviews an external Sandbox shell path while
-retaining the native write boundary` in `packages/kernel/tests/unit/guard.test.ts`.
+The configured native backend blocks writes outside declared roots. Host calls use OS permissions;
+file tools share the selected native policy. Production: `sandboxCommand` in
+`packages/tools/src/sandbox.ts` and `SandboxAgentFilesystem` in
+`packages/tools/src/filesystem-service.ts`. Test:
+`packages/tools/tests/integration/sandbox.test.ts` and
+`packages/tools/tests/integration/filesystem-service.test.ts`.
 
 Production: `packages/tools/src/sandbox.ts` (`sandboxCommand`),
 `ExecutionSessionManager.launch` in `packages/tools/src/lib/execution-session.ts`, used by
@@ -527,18 +527,12 @@ Bubblewrap only on Linux and Seatbelt only on macOS; unsupported hosts never gue
   platform`).
 
 **INV-S2 — Required isolation fails closed before the command.** An unavailable sandbox throws,
-including stored `availability: "optional"`. Per-call `forceBare` is the only remaining unsandbox
-path and is gated by command review. For native Sandbox `require_escalated`, Review `on` requires
-a human; Auto may judge the host effect after deny-list enforcement (`allow` executes; `deny`,
-unsure, failed or malformed review refuse to the calling agent). An unavailable model refuses. The
-call's judge facts use Host placement and omit native network restrictions. Host-command asks bypass
-session coverage and never offer `allow_session`; clean exact-call judge memoization remains separate. Review `off` is
-unchanged. On Host the field is a no-op under normal review.
-
-Production: `createShellGuard` in `packages/kernel/src/guard/shell-guard.ts` and `createGuardResolver`
-in `packages/kernel/src/guard/resolver.ts`. Test:
-`packages/kernel/tests/integration/guard-auto-review.test.ts` and
-`packages/kernel/tests/unit/guard.test.ts`.
+including stored `availability: "optional"`. There is no per-call command path that disables a
+configured native sandbox. Production: `sandboxWouldApply` and `sandboxCommand` in
+`packages/tools/src/sandbox.ts`, and `ExecutionSessionManager.launch` in
+`packages/tools/src/lib/execution-session.ts`. Test:
+`packages/tools/tests/unit/sandbox-placement.test.ts` and
+`packages/tools/tests/integration/sandbox.test.ts`.
 
 - Production: `packages/tools/src/sandbox.ts` (`sandboxCommand`).
 - Test: `packages/tools/tests/integration/sandbox.test.ts` (`fails closed when the native sandbox is
@@ -566,21 +560,18 @@ parameters; the static profile never contains a workspace/runtime path.
 **INV-S5 — Declared read-only roots win below a writable workspace.** Bubblewrap mounts them after
 the workspace; Seatbelt emits a final write deny. The resolved list includes host-approved selected
 skill package roots, including a skill directory nested beneath the workspace. In workspace-write
-mode the native policy also protects workspace `.clarvis`, `.agents` and Git metadata. Missing
-configuration roots are prepared before Bubblewrap launch; redirected roots or aliased classified
-entries fail closed. The same alias scan protects Git metadata, with a bounded 50,000-entry limit
-per launch. Host placement has no physical sandbox boundary, and classified file-tool
-mutations still require the host reviewer.
+mode, authored configuration and linked Git metadata follow the workspace write policy; a
+workspace-read-only policy also protects the linked Git metadata. Host placement has no physical
+sandbox boundary.
 
 - Production: `packages/tools/src/config.ts` (`resolveConfig`) and
   `packages/tools/src/sandbox.ts` (`sandboxCommand`, `seatbeltPolicy`).
 - Test: `packages/tools/tests/integration/sandbox.test.ts` (`mounts a nested read-only path after the
-  writable workspace`, `keeps classified workspace documents read-only to sandboxed shell commands`,
-  Seatbelt profile test) and
+  writable workspace`, workspace write posture and Seatbelt profile test) and
   `packages/tools/tests/integration/config.test.ts` (skill-root merge).
 
 **INV-S6 — Provider secrets are absent by default on every branch.** Native backends start from
-`minimalEnv` and exclude host-identified credential names even from `passEnv`; bare/`forceBare`
+`minimalEnv` and exclude host-identified credential names even from `passEnv`; Host
 paths subtract `secretEnvNames` from a copy without mutating
 `process.env`.
 
@@ -653,8 +644,7 @@ roots from all temporary write filters. The loop removes only its owned scratch.
 - Test: `packages/tools/tests/integration/sandbox.test.ts` (`keeps a temp-contained read-only
 workspace closed and rejects scratch nested inside it`, `exposes host-native temp roots without
 reopening a temp-contained read-only workspace`) and
-  `packages/loop/tests/integration/command-guard-wiring.test.ts` (`preauthorizes the host temp across
-shell and native tools without owning its parent`).
+  `packages/loop/tests/integration/tools.test.ts` (run-owned temporary roots).
 
 **INV-S14 — Seatbelt networking remains a separate policy.** Broad file reads include resolver
 metadata in host-network mode; `network: "none"` retains its global network deny. The real-host

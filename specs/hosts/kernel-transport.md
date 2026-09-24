@@ -191,7 +191,7 @@ The special operations and their metadata:
 | --- | --- | --- |
 | `hello` | read | — |
 | `hosting.start` | write | — |
-| `hosting.attach` | read; acquiring/taking control additionally requires registry operator authority | — |
+| `hosting.attach` | read; acquiring/taking control additionally requires registry control authority | — |
 | `hosting.steer` | write | — |
 | `hosting.compact` | write | — |
 | `hosting.cancel` | write | — |
@@ -1395,32 +1395,14 @@ arbitrary asymmetry.** `run.event` is validated by a strict `zod` discriminated-
 closed, fixed-key shape over a closed enum (`ConfigChangeKind`, `packages/protocol/src/config.ts`).
 `run.elicitation` applies `hasOnly` only at the top level and checks four scalar fields of `request`
 without constraining its key set (`packages/kernel/src/transport/client.ts`) precisely because `ElicitationRequest`
-is declared open on purpose: `kind` is `"ask_user" | "guard_confirm" | "plan_review" | "workflow_review"
+is declared open on purpose: `kind` is `"ask_user" | "plan_review" | "workflow_review"
 | (string & {})`, documented "so a kernel may add kinds without a protocol bump" |
 (`ElicitationRequest.kind` in `packages/protocol/src/runs.ts`), and `schema` is `JsonSchema = Record<string, unknown>`, documented "a JSON
 Schema passed through opaquely" (`packages/protocol/src/common.ts`). Applying a closed `hasOnly` to `request`
 today would reject a future `kind`'s legitimate extra fields, defeating the exact extensibility `kind`
 was made open for — so the omission is the correct reading, not an arbitrary weakening.
 
-~~**One narrower residual is not explained by either the open-`kind` or opaque-`schema` reasoning:
-`ElicitationRequest.detail` gets no structural check at all — not even `isRecord`.**~~ **Resolved.**
-The residual was correctly identified, and the argument for closing it was weaker than
-the case deserved. `detail` (`ElicitationCommandDetail` in `packages/protocol/src/runs.ts`, carrying
-`command`/`cwd`/`reason`/`warning?`) shares neither property that keeps the request around it open,
-so a nested `hasOnly` costs nothing in forward-compatibility — but "it costs nothing" is not why it
-has to be there. `detail` is what a human reads when approving a command, and its TSDoc tells clients
-to render it directly rather than parse `prompt`, so a `detail` whose `command` is absent
-or not a string reaches an approval dialog as `undefined` and the approval is then given for a
-command nobody was shown. That is the reasoning now recorded at `isCommandDetail`
-(`packages/kernel/src/transport/client.ts`), which checks the closed key set and every
-member's type and is consulted only when `detail` is present. `kind` and
-`schema` stay untouched, for exactly the reasons above. Five malformed shapes — not a record, a
-missing `command`, a non-string `command`, a non-string `warning`, an unknown key — close the
-transport fail-closed under `it.each` at
-`packages/kernel/tests/contract/transport-codecs.test.ts` ("closes fail-closed on a
-guard_confirm detail with %s"), with a well-formed `detail` delivered intact and a
-control asserting that an unknown `kind` and an opaque `schema` still pass through
-unexamined.
+The request keeps an open `kind` and opaque `schema`; the transport rejects the retired command-detail field and validates the optional countdown duration. Production: `observe` for `N.runElicitation` in [client.ts](../../packages/kernel/src/transport/client.ts). Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
 
 **`transport.frame_dropped` with `reason: "serialization"` is unpinned.** It is emitted at
 `packages/kernel/src/transport/stdio.ts` and is the only one of the six reasons absent from the drop-reason suite

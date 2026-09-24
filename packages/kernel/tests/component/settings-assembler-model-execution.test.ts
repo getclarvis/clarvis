@@ -44,12 +44,8 @@ function assembler(
   );
 }
 
-test("catalog assembler validates the delegated closure and reviewer without native transports", () => {
-  const body = assembler()({
-    ...start,
-    guard_mode: "auto",
-    guard_judge: { model: "alias/org/model:tag" },
-  });
+test("catalog assembler validates the delegated closure without native transports", () => {
+  const body = assembler()(start);
   const { request } = validateBody(body, loadEnv({}), kernelCapabilityRegistry, {
     modelExecutionResolver: resolver,
   });
@@ -61,9 +57,6 @@ test("catalog assembler validates the delegated closure and reviewer without nat
   expect(request.vision_model).toBe("alias/org/model:tag");
   expect(request.prompt_cache_ttl).toBeUndefined();
   expect(() => assembler("alias/missing")(start)).toThrow(/execution catalog/);
-  expect(() => assembler()({ ...start, guard_judge: { model: "alias/missing" } })).toThrow(
-    /execution catalog/,
-  );
 });
 
 test("catalog assembler rejects a resolver returning a different provider or model", () => {

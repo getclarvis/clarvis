@@ -989,7 +989,7 @@ describe("file kernel behind the hosted RPC", () => {
     expect(f.entered).toEqual([]);
   });
 
-  test("delivers a concrete configuration review across hosted transport without dropping the connection", async () => {
+  test("writes configuration across hosted transport without dropping the connection", async () => {
     const f = await fixture(
       undefined,
       [
@@ -1010,25 +1010,12 @@ describe("file kernel behind the hosted RPC", () => {
       true,
     );
     const input = await f.input("configuration-review");
-    input.params.guard_mode = "on";
     input.params.messages = [{ role: "user", content: "Set workspace budget to 200000 tokens" }];
     const started = await f.client.hosting!.start(input);
-    let reviews = 0;
-    started.handle.onElicit((request) => {
-      reviews++;
-      expect(request.kind).toBe("configuration_review");
-      expect(request.prompt).toContain("200000");
-      void started.handle.respond({
-        id: request.id,
-        action: "accept",
-        content: { decision: "allow" },
-      });
-    });
     const events = Array.fromAsync(started.handle.events);
     f.released.resolve();
     expect(await started.handle.done).toMatchObject({ status: "completed" });
     await events;
-    expect(reviews).toBe(1);
     expect(await f.client.config.getSettings()).toMatchObject({
       merged: { budget: { total_token_limit: 200000 } },
     });

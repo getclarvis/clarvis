@@ -45,12 +45,11 @@ Production: `goalBinding`, `prepareGoalConversation` and `synchronizeGoal` in
 Test: automatic-stage, delayed-goal-read, diverging-canonical-history and refused-submission cases in
 [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
 
-The host also seeds command-review authority separately from the synthetic Goal work prompt. Guided
+The host seeds Goal authority separately from the synthetic Goal work prompt. Guided
 stages preserve the exact seed after exact user messages reconstructed from host-recorded source
 executions; auto stages use only those source messages; literal stages serialize the complete
-user-declared definition. The reviewer also receives the complete persisted Goal definition as a
-separate host-attested `review_context`, so it can assess whether a command is necessary for the
-current objective without converting inferred assumptions or human criteria into permission.
+user-declared definition. The host also retains the complete persisted Goal definition as a
+separate host-attested `review_context`, without converting inferred assumptions or human criteria into permission.
 Automatic continuations inherit both fields and never capture their synthetic reminder as fresh
 evidence. Production: `goalAuthorityMessages`, `goalReviewContext` and
 `GoalExecutionPolicy` in
@@ -371,18 +370,12 @@ clients. Disconnecting a client retires its control but retains physical occupan
 
 Peers are host-created identities, not caller-supplied RPC records. Observers cannot reserve work or
 acquire control. An occupied controller requires explicit takeover; successful transfer increments
-the epoch and revokes the previous conversation's consent without revoking unrelated conversations.
+the epoch and retires the previous conversation controller without affecting unrelated conversations.
 Controls carrying an earlier epoch are refused.
-
-A consent scope survives consecutive turns in the same live conversation instance. `closeSession`
-retires it on switch/resume, and `disconnect` retires every scope of that connection. A later instance
-receives a fresh scope. At most 64 conversation scopes are retained per connection. Even when the
-revocation callback fails, a disconnected peer and its controls become unusable before that error is
-reported; all scopes are attempted. The concrete guard/configuration policy supplies this callback.
 
 Production: `createHostedAdmission`, `HostedAdmission` and `HostedControl` in
 [admission.ts](../../packages/kernel/src/hosting/admission.ts). Test: the reservation/disconnect,
-forged-peer, takeover, conversation-resume, independent-limit and revocation-failure cases in
+forged-peer, takeover, conversation-resume and independent-limit cases in
 [hosted-admission.test.ts](../../packages/kernel/tests/unit/hosted-admission.test.ts).
 
 ## Execution pump and subscribers
@@ -575,7 +568,7 @@ and definite refusal, uncertain conflict and lost receipt recovery in
 The registry retains at most 32 runs and 128 handoff operation identities per generation. Receipt
 lookup expires after 24 hours by default; an expired/failed operation id is never replayed. The commit
 queue holds at most 16 operations and an encoded index cannot exceed 2 MiB. No provider credentials,
-prompts or live consent scopes enter that index. Acknowledged terminal entries are reclaimed only
+prompts enter that index. Acknowledged terminal entries are reclaimed only
 after observations close, using the dedicated `removeProjection` port; session and trace deletion
 are outside that port. Reclamation failures cannot silently free retention capacity.
 
@@ -830,7 +823,7 @@ action.
 must supply the host generation, durable index/projection operations and a token verifier; RPC
 parameters cannot select them. A successful hello binds the configured workspace and an operator or
 observer role; a supplied workspace selector must match that workspace's id or canonical path.
-Operator authority and machine-local application controls are separate. The bootstrap may set
+Machine-local application controls are separately exposed. The bootstrap may set
 `exposeLocalControls: false`; the connection then retains hosting and goal services but advertises no
 `local_host` capability and receives no local inspection, browser handoff, runtime retry or restart
 service. This is the required composition boundary for a later remote transport.
@@ -852,7 +845,7 @@ exported through [bootstrap.ts](../../packages/kernel/src/bootstrap.ts). Test:
 FileKernel, real loop with MockLLM, file-backed projection/index and Unix socket. It verifies
 withholding local controls without removing hosted goal authority,
 completion with no connected client, the same execution id after attach, canonical turn settlement,
-authentication, observer restrictions and shared operator authority revocation. This is not evidence of
+authentication, observer restrictions and conversation control retirement. This is not evidence of
 a surviving child process, a subscription provider, or a TUI journey.
 
 `serveRemoteFileKernelOverStdio` composes that same file host for one process-owned authenticated

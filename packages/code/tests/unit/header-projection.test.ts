@@ -10,7 +10,6 @@ function baseInput(overrides: Partial<HeaderInput> = {}): HeaderInput {
     agentName: "coder",
     model: "openrouter/x-ai/grok-4.5",
     isolation: "sandbox",
-    review: "off",
     memoryConfigured: true,
     memory: "on",
     plans: { mode: "on", retention: "discard", configured: true },
@@ -25,12 +24,6 @@ test("header shows Sandbox isolation without appending placement to the workspac
   const plan = projectHeader(baseInput({ isolation: "sandbox" }));
   expect(plan.status.find((chip) => chip.key === "isolation")?.text).toContain("Sandbox");
   expect(plan.workspace.text).not.toContain("[");
-});
-
-test("header identifies Sandbox independently from command review", () => {
-  const status = projectHeader(baseInput({ isolation: "sandbox", review: "auto" })).status;
-  expect(status.find((chip) => chip.key === "isolation")?.text).toContain("Sandbox");
-  expect(status.find((chip) => chip.key === "review")?.text).toContain("Auto");
 });
 
 test("header owns workspace identity rather than the full path", () => {
@@ -48,20 +41,19 @@ test("an eligible update adds a persistent compact marker without replacing the 
   expect(plan.version.color).toBe(tokens.accent);
 });
 
-test("the header states model, isolation, review and memory independently", () => {
+test("the header states model, isolation and memory independently", () => {
   const status = projectHeader(baseInput()).status;
-  expect(status.map((chip) => chip.key)).toEqual(["model", "isolation", "review", "memory"]);
+  expect(status.map((chip) => chip.key)).toEqual(["model", "isolation", "memory"]);
   expect(status[0]!.text).toContain("grok-4.5");
   expect(status[1]!.text).toContain("Isolation: Sandbox");
-  expect(status[2]!.text).toContain("Guard: Off");
-  expect(status[3]!.text).toContain("Memory: on");
+  expect(status[2]!.text).toContain("Memory: on");
 });
 
 test("configuration joins the identity run rather than floating past the gap", () => {
   const plan = projectHeader(baseInput({ width: 140 }));
   for (const chip of plan.status) expect(chip.text.startsWith("  ·  ")).toBe(true);
   expect(plan.identity!.text + plan.status.map((chip) => chip.text).join("")).toBe(
-    "  ·  coder  ·  x-ai/grok-4.5  ·  Isolation: Sandbox  ·  Guard: Off  ·  Memory: on",
+    "  ·  coder  ·  x-ai/grok-4.5  ·  Isolation: Sandbox  ·  Memory: on",
   );
 });
 
@@ -93,7 +85,7 @@ test("memory reports off only when it is off; inert stays configured", () => {
 test("all widths retain the complete run configuration", () => {
   for (const width of [24, 48, 60, 72, 84, 200]) {
     const status = projectHeader(baseInput({ width })).status;
-    expect(status.map((field) => field.key)).toEqual(["model", "isolation", "review", "memory"]);
+    expect(status.map((field) => field.key)).toEqual(["model", "isolation", "memory"]);
     expect(status.map((field) => field.text).join(" ")).toContain("Memory: on");
   }
 });

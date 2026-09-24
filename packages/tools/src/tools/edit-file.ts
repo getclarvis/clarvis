@@ -1,8 +1,6 @@
 import { ToolError } from "../errors.ts";
-import { readFileOptionsForPath } from "../lib/files.ts";
 import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { writeAtomic, withFileLock } from "../lib/atomic.ts";
-import { reviewedConfigurationModes } from "../guard/authoring-path.ts";
 import { reencode } from "../lib/text.ts";
 import { readTextFile } from "../lib/textfile.ts";
 import { findCascadeMatch, scanLineBlocks, trimEnds } from "../lib/match-cascade.ts";
@@ -38,12 +36,7 @@ export async function editFileLocked(
   message: (rel: string) => string,
 ): Promise<ToolResult> {
   return withFileLock(target, async () => {
-    const decoded = await readTextFile(
-      target,
-      relPath,
-      config.maxFileBytes,
-      readFileOptionsForPath(config, target),
-    );
+    const decoded = await readTextFile(target, relPath, config.maxFileBytes);
     if (decoded.encoding !== "utf8") {
       throw new ToolError(
         "is_binary",
@@ -53,13 +46,7 @@ export async function editFileLocked(
       );
     }
     const newText = transform(decoded.content);
-    await writeAtomic(
-      target,
-      reencode(newText, decoded),
-      config.reviewMutation,
-      "edit",
-      reviewedConfigurationModes(target, config),
-    );
+    await writeAtomic(target, reencode(newText, decoded));
     const rel = displayPath(target, config.workspaceRoot);
     const content = message(rel);
     const diff = unifiedDiff(rel, decoded.content, newText, config.maxDiffInputBytes);

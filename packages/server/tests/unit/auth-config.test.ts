@@ -123,7 +123,6 @@ describe("parseAuthConfig", () => {
     );
     expect(narrowed.roles.admin).toEqual({
       agents: ["triage"],
-      guardConfirmations: "relay",
       mayImpersonateOwner: true,
       maxRuns: 2,
     });
@@ -139,7 +138,6 @@ describe("parseAuthConfig", () => {
     );
     expect(config.roles.service).toEqual({
       agents: ["support"],
-      guardConfirmations: "deny",
       mayImpersonateOwner: false,
     });
   });
@@ -174,7 +172,7 @@ describe("mayRunAgent", () => {
     clientId: "svc",
     owner: "acme",
     role: "service",
-    permissions: { agents, guardConfirmations: "deny" as const, mayImpersonateOwner: false },
+    permissions: { agents, mayImpersonateOwner: false },
   });
 
   it("lets an unrestricted role omit the agent entirely", () => {

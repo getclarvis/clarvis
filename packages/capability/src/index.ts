@@ -200,7 +200,6 @@ export type {
   PromptCacheTtl,
   RunRequest,
   AgentsParam,
-  GuardMode,
   HandlerResult,
   GateVerdict,
   HookVerdict,
@@ -342,7 +341,6 @@ export type {
   SubagentIterationDetail,
   ToolCallDetail,
   ToolEvidenceDetail,
-  CommandGuardReview,
   ToolCallStartedDetail,
   ToolOutputDeltaDetail,
   ToolInputDeltaDetail,
@@ -415,25 +413,8 @@ export {
 } from "./capability-run-policies.ts";
 export type { CapabilityRunPolicies, CapabilitySkillPlansMode } from "./capability-run-policies.ts";
 export type {
-  ReviewedEffectClass,
-  ReviewedEffectInference,
-  ReviewedEffectTarget,
-  OperatorEvidence,
-  OperatorInstructions,
-  OperatorElicitationContext,
-  OperatorAuthorityBinding,
-  OperatorConfigurationSessionGrant,
   OperatorReviewContext,
   OperatorReviewContextSnapshot,
   OperatorReviewContextProvider,
-  OperatorAuthoritySeed,
-  AuthorityEnvelopeV1,
-  OperatorAuthorityState,
-  OperatorAuthoritySnapshot,
-  OperatorAuthorityReader,
-} from "./operator-authority.ts";
-export {
-  OPERATOR_AUTHORITY_PORT,
-  PLANS_REVIEW_CONTEXT_PORT,
-  inheritOperatorAuthority,
-} from "./operator-authority.ts";
+} from "./review-context.ts";
+export { PLANS_REVIEW_CONTEXT_PORT } from "./review-context.ts";

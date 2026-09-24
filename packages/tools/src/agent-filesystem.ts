@@ -26,7 +26,7 @@ export const FILE_OPERATIONS = [
 /** A closed operation name; no shell command or policy selector is part of this union. */
 export type FileOperation = (typeof FILE_OPERATIONS)[number];
 
-/** One schema-validated file call after the host has applied grants and review. */
+/** One schema-validated file call after the host has applied grants. */
 export interface FilesystemCall {
   readonly operation: FileOperation;
   readonly args: Readonly<Record<string, unknown>>;

@@ -144,7 +144,6 @@ function fakeCode(): CodeConfigStore {
     themeAt: () => ({}),
     effectiveTheme: () => ({}),
     agentDefault: () => undefined,
-    guardModeDefault: () => undefined,
     updateCheckEnabled: () => true,
     asciiEnabled: () => false,
     keyboardConfig: () => ({ version: 1, environments: {} }),
@@ -175,7 +174,6 @@ function baseDeps(
     effects: {
       openAgentPicker: () => calls.push("agent-picker"),
       openIsolationPicker: () => calls.push("isolation-picker"),
-      openReviewPicker: () => calls.push("review-picker"),
       openMemoryPicker: () => calls.push("memory-picker"),
       openDiff: () => calls.push("diff"),
       openPlan: () => calls.push("plan"),
@@ -277,12 +275,6 @@ function baseDeps(
         throw new Error("not implemented in command registration test");
       },
     },
-    guard: {
-      mode: () => "off",
-      setMode: (m: string) => calls.push("guard:" + m),
-      setDefault: () => {},
-      cycle: () => "on",
-    } as never,
     getRun: async () => null,
     runActive: () => false,
     hasAvailablePlan: () => false,
@@ -532,12 +524,8 @@ test("Marketplace install atomically activates the plugin and stays active after
   };
   const settings: SettingsAdapter = {
     ...fakeSettings(),
-    read: (scope) =>
-      scope === "global"
-        ? ({ guard: { type: "shell", allowed_commands: ["git status"] }, enabledPlugins } as never)
-        : undefined,
+    read: (scope) => (scope === "global" ? ({ enabledPlugins } as never) : undefined),
     effective: () => ({
-      guard: { type: "shell", allowed_commands: ["git status"] },
       enabledPlugins,
     }),
     write: async (_scope, patch) => {
@@ -957,7 +945,6 @@ test("every top-level command carries a canonical /token (no bare-title rows)", 
     "app.quit": ["/quit"],
     "agent.picker": ["/agent"],
     "isolation.picker": [],
-    "review.picker": [],
     "memory.picker": [],
     "transcript.diff": ["/diff"],
     "plan.toggleReview": ["/plan"],
@@ -994,9 +981,6 @@ test("non-aliased hub children and folded toggles stay off the slash surface", (
       name.includes("plugin") || name === "mcp.browse" ? "extensions" : "settings",
     ]);
   }
-  // Review opens an explicit picker; the old blind guard-cycle action is gone.
-  expect(byName.get("review.picker")!.surface).toBe("internal");
-  expect(byName.get("guard.cycle")).toBeUndefined();
   expect(byName.get("memory.cycle")).toBeUndefined();
   dispose();
 });
@@ -1052,7 +1036,6 @@ test("settings children prefer workspace scope when workspace settings exist", (
 const DISPOSITION: [string, { surface: string; group: string; parent?: string }][] = [
   ["agent.picker", { surface: "slash", group: "navigate" }],
   ["isolation.picker", { surface: "internal", group: "navigate" }],
-  ["review.picker", { surface: "internal", group: "navigate" }],
   ["memory.picker", { surface: "internal", group: "navigate" }],
   ["sessions.open", { surface: "slash", group: "navigate", parent: "sessions" }],
   ["workflows.open", { surface: "slash", group: "navigate" }],
@@ -1102,7 +1085,6 @@ test("thin action commands dispatch through their injected application effects",
   const contract = [
     ["agent.picker", "agent-picker"],
     ["isolation.picker", "isolation-picker"],
-    ["review.picker", "review-picker"],
     ["memory.picker", "memory-picker"],
     ["transcript.diff", "diff"],
     ["plan.open", "plan"],
@@ -1310,9 +1292,7 @@ test("onMount seeds the planning block once settings exist and it is unconfigure
       corrupt: () => null,
       planRepair: () => null,
       applyRepair: async () => {},
-      // A host past first boot: with an allow list already present the one-time
-      // guard seed is a no-op, so `writes` holds only what this case triggers.
-      effective: () => ({ guard: { type: "shell", allowed_commands: ["git status"] } }),
+      effective: () => ({}),
       origin: () => undefined,
       effectiveProviders: () => [],
       knownGrants: () => undefined,

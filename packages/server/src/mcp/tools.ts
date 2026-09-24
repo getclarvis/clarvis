@@ -47,11 +47,7 @@ const messageSchema = z.object({
 /**
  * `clarvis_run` arguments.
  *
- * @remarks `guard_mode`/`guard_judge` are deliberately absent: a pass-through
- * would let any caller send `guard_mode: "off"` and disable the server
- * operator's command guard. The guard is now on unless the operator's
- * `settings.json` says otherwise, so this omission is the whole protection
- * rather than a formality over an already-open door.
+ * @remarks
  * Cache keys and their `session_id`/`agent_instance_id` components are host-owned.
  * Accepting arbitrary affinity would allow callers to reuse another conversation
  * identity in a shared kernel. Continuation resolves its persisted identities.
@@ -79,7 +75,6 @@ export const runInputShape = {
 /** The posture block echoed back so a caller sees the constraints it ran under. */
 const postureShape = z.object({
   elicitation: z.enum(["relay", "tool", "auto_decline"]),
-  guard_confirmations: z.enum(["relayed", "denied"]),
   plans_effective: z.enum(["off", "on", "review"]).optional(),
   downgrades: z.array(z.string()),
   auto_answered: z.number().int().nonnegative(),

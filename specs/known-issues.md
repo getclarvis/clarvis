@@ -161,22 +161,20 @@ would fit. Closing this also removed two assertions in
 and were in fact pinning the same discontinuity — the identical shell at 200 columns showed both
 hints on the unchanged code.
 
-## Classified configuration writes retain a parent-directory TOCTOU
+## Path-based native writes retain a parent-directory TOCTOU
 
 **Status: open; path-based mutation limitation.** The workspace root no longer confines ordinary
 file tools. Host follows OS permissions; Sandbox enforces its environment policy.
-A narrower race remains for classified configuration mutations: after `resolveFileToolPath` checks
-lexical and canonical classification and the host reviews the intended effect, a concurrent process
-can replace a parent directory before `applyOpsAtomic` performs `mkdir`, staging, or `rename` by
-pathname. The host rechecks policy and effect before commit, but that does not pin the parent inode.
+A concurrent process can replace a parent directory after `resolveFileToolPath` resolves a path
+and before `applyOpsAtomic` performs `mkdir`, staging, or `rename` by pathname. Native sandbox
+containment remains the environment boundary when configured; the file tool itself does not pin
+the parent inode.
 
 The durable fix requires descriptor-relative mutation for all write handlers, with platform-specific
 handling of symlinks and Windows reparse points. Another `realpath` before a pathname-based rename
 would leave a final gap. Production: `resolveFileToolPath` in
-`packages/tools/src/lib/paths.ts`, `applyOpsAtomic` in `packages/tools/src/lib/atomic.ts`, and
-`createAuthoringMutationReview` in
-`packages/kernel/src/configuration/authoring-mutations.ts`. Test:
-`packages/kernel/tests/integration/file-tool-configuration.test.ts` covers review revalidation;
+`packages/tools/src/lib/paths.ts` and `applyOpsAtomic` in `packages/tools/src/lib/atomic.ts`.
+Test: `packages/tools/tests/integration/atomic.test.ts` covers native mutation behavior;
 it does not close this race. Ordinary external writes remain governed by their placement and OS
 permissions.
 

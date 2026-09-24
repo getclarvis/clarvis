@@ -27,10 +27,8 @@ The finalization note does not ask for invented evidence or early completion; se
 The active capability publishes a run-scoped reviewer context containing only the Plan's
 substantive title, objective, context, task title/detail/exit fields and validation list. Status,
 progress, outcomes, assignees, revisions, timestamps, paths and digests are excluded, so ordinary
-task progress does not churn Auto Guard input. The Judge receives this stable projection beside any
-Goal definition when deciding whether a routine bounded prerequisite belongs to the requested work.
-The snapshot carries a host-owned semantic revision; reviewer results are refused if that revision
-changes during inference, and stale compiled envelopes or cached decisions are not reused.
+task progress does not churn the Goal's semantic context. The Goal capability can receive this
+stable projection beside its definition. The snapshot carries a host-owned semantic revision.
 
 `read_plan` accepts an omitted or null ID for the active plan. `list_plans` accepts omitted or null
 options for the first page, default limit and absent status/retention filters. Non-null IDs and

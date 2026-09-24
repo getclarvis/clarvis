@@ -164,7 +164,6 @@ function mapEntryRaw(
       if (d.call_id !== undefined) event.call_id = d.call_id;
       if (d.diff !== undefined) event.diff = d.diff;
       if (d.tool_evidence !== undefined) event.tool_evidence = d.tool_evidence;
-      if (d.guard !== undefined) event.guard = d.guard;
       if (d.interruption !== undefined) event.interruption = d.interruption;
       if (d.control !== undefined) event.control = d.control;
       return event;

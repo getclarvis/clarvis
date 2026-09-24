@@ -820,7 +820,7 @@ Test: **unpinned** — no test asserts `callArgs.maxRetries === 0`.
 permanent `client` fault. On a streaming path the deadline resets on every provider part; generation
 has no progress signal and remains absolutely bounded.
 The error subtype is owned by `packages/capability/src/llm-port.ts`; the adapter, retry wrapper,
-timeout bridge and consumers such as Judge import that same contract directly, without compatibility
+timeout bridge and consumers import that same contract directly, without compatibility
 re-exports or a second timeout timer.
 Production: `timeoutAbort` and both timeout branches in `AiSdkAdapter.call`.
 Test: `packages/llm/tests/component/ai-sdk-adapter.test.ts` (generate) and

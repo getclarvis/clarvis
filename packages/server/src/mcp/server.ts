@@ -36,7 +36,6 @@ export interface McpServerLimits {
   settleGraceMs: number;
   elicitToolWaitMs: number;
   elicitRelayMs: number;
-  allowRemoteGuardApproval: boolean;
 }
 
 /** Configuration for {@link buildMcpServer}. */
@@ -52,10 +51,9 @@ export interface BuildMcpServerOptions {
    * @remarks A function, not a value, because it is read **per tool call**
    * rather than captured once. The enrolment file is the authority and is
    * re-read on every request, so a role narrowed while a session is open must
-   * narrow that session too — a captured snapshot would keep relaying guard
-   * approvals and running de-listed agents until the client happened to
-   * reconnect. Its role decides which agents may run, how many runs may be in
-   * flight, and whether a guarded command may be approved.
+   * narrow that session too — a captured snapshot would keep running de-listed
+   * agents until the client reconnects. Its role decides which agents may run
+   * and how many runs may be in flight.
    */
   getPrincipal?: () => Principal | undefined;
   /**

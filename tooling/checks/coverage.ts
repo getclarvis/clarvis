@@ -29,7 +29,6 @@ const PACKAGE_THRESHOLDS = {
   capability: { functions: 1, lines: 1 },
   code: { functions: 0.93, lines: 0.96 },
   goal: { functions: 0.95, lines: 0.98 },
-  judge: { functions: 0.95, lines: 0.98 },
   hooks: { functions: 1, lines: 1 },
   kernel: { functions: 0.94, lines: 0.97 },
   llm: { functions: 1, lines: 1 },
@@ -75,7 +74,6 @@ const TYPE_ONLY_PACKAGES = new Set(["protocol"]);
 // below is one of the three permanent reasons. Do not open a fourth: an
 // untested module belongs in a test, not here.
 const NO_COUNTER_ALLOWLIST = {
-  judge: [],
   capability: [
     // Type-only: declares interfaces/aliases and emits nothing at runtime.
     "src/agents-port.ts",
@@ -125,7 +123,6 @@ const NO_COUNTER_ALLOWLIST = {
     // Type-only.
     "src/runtime/types.ts",
     "src/config/builtin-agents/types.ts",
-    "src/guard/effects/types.ts",
     "src/connection-health.ts",
     "src/ports/plugin-repository.ts",
     "src/ports/process-runner.ts",
@@ -190,9 +187,6 @@ const NO_COUNTER_ALLOWLIST = {
   ],
   tools: [
     // Type-only.
-    "src/guard/dialect.ts",
-    "src/guard/types.ts",
-    "src/guard/effect-review.ts",
     "src/tools/types.ts",
     // Pure re-export barrel for the narrow shell subpath.
     "src/shell-entry.ts",

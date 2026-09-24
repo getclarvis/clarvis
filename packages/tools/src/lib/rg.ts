@@ -2,13 +2,13 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { ToolError, fsError } from "../errors.ts";
 import { isBinary } from "../lib/binary.ts";
-import { listFiles, readFileOptionsForPath, readRawFile, type FileListing } from "../lib/files.ts";
+import { listFiles, readRawFile, type FileListing } from "../lib/files.ts";
 import { decodeText, splitLines, type DecodedText } from "../lib/text.ts";
 import { readTextBuffer } from "../lib/textfile.ts";
 import { createScanBudget } from "../lib/scan-budget.ts";
 import type { RuntimeConfig } from "../config.ts";
-import { configurationTarget, resolveCommand } from "@clarvis/paths";
-import { isAdmittedFileToolSearchPath, resolveFileToolPath } from "./paths.ts";
+import { resolveCommand } from "@clarvis/paths";
+import { resolveFileToolPath } from "./paths.ts";
 
 /** A single grep request over a file or directory tree. */
 export interface GrepParams {
@@ -118,8 +118,7 @@ const RG_JSON_OVERHEAD = 8;
  *   capped at `config.maxOutputBytes`; the ripgrep path allows a larger raw JSON
  *   stream (by {@link RG_JSON_OVERHEAD}) before killing the child and reporting
  *   `truncated`. The `.git` directory is always excluded. Directory searches
- *   use the in-process scanner so each discovered path receives classified
- *   configuration admission before it is read; single files can use ripgrep
+ *   use the in-process scanner; single files can use ripgrep
  *   against an already-bounded descriptor snapshot.
  *
  *   The in-process path additionally spends at most
@@ -150,7 +149,6 @@ export async function grepSearch(params: GrepParams, config: RuntimeConfig): Pro
         params.searchRoot,
         config.maxFileBytes,
         undefined,
-        readFileOptionsForPath(config, params.searchRoot),
       );
       if (isBinary(singleFile)) {
         return { matches: [], truncated: false, budgetExhausted: false, walkCapped: false };
@@ -168,7 +166,6 @@ export async function grepSearch(params: GrepParams, config: RuntimeConfig): Pro
       event: "tools.grep_path",
       engine: useRipgrep ? "ripgrep" : "in_process",
       is_dir: isDir,
-      classified_roots: config.configurationRoots === undefined ? "workspace" : "host_selected",
     },
     "a grep chose its engine; the two do not share regex semantics, so which one ran decides what a pattern means",
   );
@@ -336,7 +333,7 @@ async function inProcessSearch(
     const decoded =
       singleFile !== undefined && !isDir
         ? singleFile
-        : await readTextBuffer(file, config.maxFileBytes, readFileOptionsForPath(config, file));
+        : await readTextBuffer(file, config.maxFileBytes);
     if (!decoded) continue;
 
     const lines = splitLines(decoded.content);
@@ -489,13 +486,8 @@ async function gatherFiles(params: GrepParams, config: RuntimeConfig): Promise<F
     : "**/*";
   const listing = await listFiles(params.searchRoot, config.workspaceRoot, {
     pattern,
-    respectGitignore:
-      config.configurationRoots === undefined ||
-      configurationTarget(config.configurationRoots, params.searchRoot)?.root.startsWith(
-        "global_",
-      ) !== true,
+    respectGitignore: true,
     maxEntries: config.maxTraversalEntries,
-    admit: (candidate) => isAdmittedFileToolSearchPath(candidate, config),
   });
   listing.files.sort();
   return listing;

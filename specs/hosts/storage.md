@@ -89,7 +89,6 @@ cleanup in `packages/loop/src/runtime/capabilities/tools.ts`, `referencedSession
 `packages/kernel/src/sessions/session-service.ts`, and trace cleanup composition in
 `packages/kernel/src/file-kernel.ts`.
 Test: `packages/paths/tests/integration/housekeeping.test.ts`,
-`packages/loop/tests/integration/command-guard-wiring.test.ts`,
 `packages/kernel/tests/integration/session-service.test.ts`, and
 `packages/trace/tests/component/cleanup.test.ts`.
 

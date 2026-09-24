@@ -61,8 +61,6 @@ export interface GlobalPaths {
    * every agent rather than overlaying one profile.
    */
   sharedAgentPromptFile: string;
-  /** Operator-authored guard-judge prompt override. */
-  guardJudgeFile: string;
   /**
    * Operator-authored memory editorial policy — what this person wants recorded.
    *
@@ -136,7 +134,6 @@ export function globalPaths(root?: string, opts?: RootOptions): GlobalPaths {
     skillsDir: join(base, "skills"),
     workflowsDir: join(base, "workflows"),
     sharedAgentPromptFile: join(base, "shared-agent.md"),
-    guardJudgeFile: join(base, "guard-judge.md"),
     memoryPolicyFile: join(base, "memory-policy.md"),
     authFile: join(base, "auth.json"),
     authKeyFile: join(base, "auth-key.json"),

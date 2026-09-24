@@ -15,7 +15,6 @@ export type ElicitationPosture = "relay" | "tool" | "auto_decline";
 /** The constraints a run actually ran under, reported back to the caller. */
 export interface AppliedPosture {
   elicitation: ElicitationPosture;
-  guard_confirmations: "relayed" | "denied";
   plans_effective?: "off" | "on" | "review";
   /**
    * The prompt-cache lifetime the facade pins for this run.
@@ -38,18 +37,6 @@ export interface ResolvePostureInput {
   clientDeclaresElicitation: boolean;
   requested: "auto_decline" | "await";
   requestedPlans?: "off" | "on" | "review";
-  /** Whether the server permits a remote caller to approve a guarded command. */
-  allowRemoteGuardApproval: boolean;
-  /**
-   * Whether the caller's own role permits it; defaults to `true` for a
-   * deployment with no authentication.
-   *
-   * @remarks Kept separate from {@link ResolvePostureInput.allowRemoteGuardApproval}
-   * rather than folded into it, so the two are reported as the distinct reasons
-   * they are: the server switch is the operator's ceiling, and the role is
-   * this caller's share of it.
-   */
-  roleAllowsGuardApproval?: boolean;
 }
 
 /**
@@ -62,10 +49,6 @@ export interface ResolvePostureInput {
  *   *cancels* the run, which is a far worse outcome than not gating. That is the
  *   one request field the facade rewrites, and it says so in `downgrades`.
  *
- *   Guard confirmations default to `denied` regardless of posture. The server's
- *   guard exists to protect the server from the model; letting an
- *   unauthenticated remote caller approve arbitrary commands would remove the
- *   only thing it does.
  */
 export function resolvePosture(input: ResolvePostureInput): AppliedPosture {
   const elicitation: ElicitationPosture = input.clientDeclaresElicitation
@@ -77,19 +60,6 @@ export function resolvePosture(input: ResolvePostureInput): AppliedPosture {
   const downgrades: string[] = [];
   if (input.requested === "await" && input.clientDeclaresElicitation) {
     downgrades.push("elicitations:await→relay (client declares the elicitation capability)");
-  }
-
-  const roleAllowsGuardApproval = input.roleAllowsGuardApproval ?? true;
-  const guard_confirmations =
-    input.allowRemoteGuardApproval && roleAllowsGuardApproval && elicitation !== "auto_decline"
-      ? "relayed"
-      : "denied";
-  if (guard_confirmations === "denied" && input.allowRemoteGuardApproval) {
-    downgrades.push(
-      roleAllowsGuardApproval
-        ? "guard approvals denied (no channel to ask on)"
-        : "guard approvals denied (this role may not approve guarded commands)",
-    );
   }
 
   let plans_effective = input.requestedPlans;
@@ -104,7 +74,6 @@ export function resolvePosture(input: ResolvePostureInput): AppliedPosture {
 
   return {
     elicitation,
-    guard_confirmations,
     ...(plans_effective !== undefined ? { plans_effective } : {}),
     ...(elicitation === "auto_decline" ? { prompt_cache_ttl: "5m" as const } : {}),
     downgrades,
@@ -176,8 +145,7 @@ function reportAnswered(
  * @returns the controller; `attach` it before the run's first iteration.
  * @remarks This is what keeps a headless run from stalling. Answering through
  *   `RunHandle.respond` short-circuits *every* ask site at once — `ask_user`
- *   continues with a declined answer, a guard confirmation resolves to denied, a
- *   soft budget breach stops with the partial result (exactly what
+ *   continues with a declined answer, a soft budget breach stops with the partial result (exactly what
  *   `on_exceed: "stop"` would have done), and a relayed MCP-server question
  *   declines. Without it, a client that cannot answer does not fail fast: the run
  *   parks on each question for the engine's elicit wait bound.
@@ -219,11 +187,6 @@ export function createElicitationController(
           return;
         }
         opts.publish(request);
-
-        if (request.kind === "guard_confirm" && opts.posture.guard_confirmations === "denied") {
-          autoDecline(request.id);
-          return;
-        }
 
         if (opts.posture.elicitation === "auto_decline") {
           autoDecline(request.id);

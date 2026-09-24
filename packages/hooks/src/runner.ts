@@ -570,7 +570,7 @@ export function createHookRunner(deps: HookRunnerDeps): HookRunner {
       } else if (verdict.kind === "rewrite") {
         logger.info(
           fields,
-          "a workspace hook replaced the pending tool call's arguments; the call runs with the replacement, which still meets the tool schema and the guard",
+          "a workspace hook replaced the pending tool call's arguments; the replacement still meets the tool schema",
         );
       } else {
         logger.debug(fields, "a workspace hook returned a verdict");

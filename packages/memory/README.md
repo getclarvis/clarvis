@@ -178,12 +178,8 @@ own — not a shared budget, so a long project file cannot crowd out your person
 one.
 
 They **concatenate**, global first, so the project reads as a refinement rather
-than a replacement. That is a deliberate departure from `guard-judge.md`, which
-takes the nearest scope whole: a judging prompt is one complete instruction, but
-"always keep the exact commands" and "record the migration traps here" are both
-true at once, and shadowing would drop the personal half the moment a project
-added its own. A blank file counts as absent, as it does for `guard-judge.md` —
-emptying one is how you turn it off, and it is the same as deleting it.
+than a replacement. A blank file counts as absent; emptying one is how you turn
+it off, and it is the same as deleting it.
 
 It governs **what**, never **where**:
 

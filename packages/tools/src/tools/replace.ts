@@ -1,15 +1,8 @@
-import {
-  isAuthoringSearchScope,
-  isReviewedConfigurationPath,
-  reviewedConfigurationModes,
-} from "../guard/authoring-path.ts";
 import { fs } from "../lib/environment-fs.ts";
-import { isAbsolute, relative, sep } from "node:path";
-import { configurationRoots } from "@clarvis/paths";
 import { ToolError, fsError } from "../errors.ts";
 import { applyOpsAtomic, withFileLocks, type FileOp } from "../lib/atomic.ts";
-import { listFiles, readFileOptionsForPath } from "../lib/files.ts";
-import { isAdmittedFileToolSearchPath, resolveFileToolPath, displayPath } from "../lib/paths.ts";
+import { listFiles } from "../lib/files.ts";
+import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { reencode } from "../lib/text.ts";
 import { unifiedDiff } from "../lib/unified-diff.ts";
 import { readTextBuffer } from "../lib/textfile.ts";
@@ -79,12 +72,8 @@ async function scopeFiles(
   const pattern = glob ? (glob.includes("/") ? glob : `**/${glob}`) : "**/*";
   const listing = await listFiles(root, config.workspaceRoot, {
     pattern,
-    respectGitignore: !(
-      config.reviewMutation !== undefined &&
-      isAuthoringSearchScope(root, config.workspaceRoot, config.configurationRoots)
-    ),
+    respectGitignore: true,
     maxEntries: config.maxTraversalEntries,
-    admit: (candidate) => isAdmittedFileToolSearchPath(candidate, config),
   });
   if (listing.truncated) {
     throw new ToolError(
@@ -93,22 +82,7 @@ async function scopeFiles(
       { limit: config.maxTraversalEntries },
     );
   }
-  const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
-  const protectedRoots = Object.values(
-    config.configurationRoots ?? {
-      workspace_clarvis: roots.workspace_clarvis,
-      workspace_agents: roots.workspace_agents,
-    },
-  );
-  const files = listing.files.filter(
-    (file) =>
-      (config.reviewMutation !== undefined &&
-        isReviewedConfigurationPath(file, config.workspaceRoot, config.configurationRoots)) ||
-      protectedRoots.every((protectedRoot) => {
-        const rel = relative(protectedRoot, file);
-        return rel !== "" && (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel));
-      }),
-  );
+  const files = listing.files;
   files.sort();
   return files;
 }
@@ -227,11 +201,7 @@ export const replace: ToolDef = {
           { pattern, scanned },
         );
       }
-      const decoded = await readTextBuffer(
-        file,
-        config.maxFileBytes,
-        readFileOptionsForPath(config, file),
-      );
+      const decoded = await readTextBuffer(file, config.maxFileBytes);
       if (!decoded) continue;
       scanned++;
       const matches = scanBudget.charge(() => decoded.content.match(re));
@@ -253,7 +223,6 @@ export const replace: ToolDef = {
         path: file,
         content: text,
         intent: "edit",
-        ...reviewedConfigurationModes(file, config),
       });
       changed.push({ rel, count: matches.length, before: decoded.content, after, text });
       totalReplacements += matches.length;
@@ -272,7 +241,7 @@ export const replace: ToolDef = {
     try {
       await withFileLocks(
         ops.map((o) => o.path),
-        () => applyOpsAtomic(ops, config.reviewMutation),
+        () => applyOpsAtomic(ops),
       );
     } catch (err) {
       if (err instanceof ToolError) throw err;

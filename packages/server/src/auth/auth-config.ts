@@ -14,8 +14,6 @@ const MAX_ROLE_AGENTS = 256;
 export interface RolePermissions {
   /** Agents the role may run: every one, or an explicit allowlist. */
   readonly agents: "*" | readonly string[];
-  /** Whether a guarded command may be approved by this caller at all. */
-  readonly guardConfirmations: "relay" | "deny";
   /** Whether the caller may act for an owner other than its own. */
   readonly mayImpersonateOwner: boolean;
   /** Per-role concurrent-run cap; the server-wide per-owner cap still applies. */
@@ -54,12 +52,10 @@ export interface AuthConfig {
 export const BUILT_IN_ROLES: Readonly<Record<string, RolePermissions>> = Object.freeze({
   admin: Object.freeze({
     agents: "*",
-    guardConfirmations: "relay",
     mayImpersonateOwner: true,
   }),
   user: Object.freeze({
     agents: "*",
-    guardConfirmations: "deny",
     mayImpersonateOwner: false,
   }),
 });
@@ -109,7 +105,6 @@ const roleSchema = z
     agents: z
       .union([z.literal("*"), z.array(z.string().min(1).max(128)).min(1).max(MAX_ROLE_AGENTS)])
       .optional(),
-    guard_confirmations: z.enum(["relay", "deny"]).optional(),
     may_impersonate_owner: z.boolean().optional(),
     max_runs: z.coerce.number().int().positive().optional(),
   })
@@ -208,7 +203,6 @@ export function parseAuthConfig(raw: unknown, defaults: AuthConfigDefaults): Aut
     const inherited = BUILT_IN_ROLES[name] ?? BUILT_IN_ROLES.user;
     roles[name] = {
       agents: declared.agents ?? inherited?.agents ?? "*",
-      guardConfirmations: declared.guard_confirmations ?? inherited?.guardConfirmations ?? "deny",
       mayImpersonateOwner:
         declared.may_impersonate_owner ?? inherited?.mayImpersonateOwner ?? false,
       ...(declared.max_runs !== undefined ? { maxRuns: declared.max_runs } : {}),

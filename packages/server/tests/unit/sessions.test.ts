@@ -25,7 +25,6 @@ const LIMITS: McpServerLimits = {
   settleGraceMs: 1_000,
   elicitToolWaitMs: 1_000,
   elicitRelayMs: 1_000,
-  allowRemoteGuardApproval: false,
 };
 
 function closeTarget(

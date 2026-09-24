@@ -802,14 +802,6 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
       kernelCapabilityRegistry,
     ) as unknown as SettingsData;
     const merged = mergeSettings(mergeScopes, kernelCapabilityRegistry) as unknown as SettingsData;
-    const effectReview = resolveEffectReviewSettings(
-      global?.effect_review,
-      workspace?.effect_review,
-    );
-    if (effectReview !== undefined) {
-      operatorMerged.effect_review = effectReview;
-      merged.effect_review = effectReview;
-    }
     const scopes: Partial<Record<Scope, SettingsData>> = {
       ...(global !== undefined ? { global } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
@@ -1205,4 +1197,3 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     },
   };
 }
-import { resolveEffectReviewSettings } from "./effect-review-settings.ts";

@@ -66,13 +66,12 @@ export interface ElicitParams {
   requestedSchema: ElicitRequestedSchema;
   /**
    * What kind of question this is, so a UI can frame it appropriately: a
-   * security-styled "command approval" for `guard_confirm`, a plan-approval
-   * gate for `plan_review`, a workflow preflight for `workflow_review`, or a
+   * plan-approval gate for `plan_review`, a workflow preflight for `workflow_review`, or a
    * neutral "agent asks" for `ask_user`. Defaults
    * to a plain user question when omitted; the kernel forwards it verbatim as
    * the protocol elicit `kind`.
    */
-  kind?: "ask_user" | "guard_confirm" | "plan_review" | "workflow_review" | (string & {});
+  kind?: "ask_user" | "plan_review" | "workflow_review" | (string & {});
   /**
    * Trusted provenance of the request, set by whoever raised it.
    *

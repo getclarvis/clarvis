@@ -209,7 +209,6 @@ export function serveClarvisMcpOverHttp(opts: ServeHttpOptions): ServeHandle {
     settleGraceMs: env.CLARVIS_SERVER_RUN_SETTLE_GRACE_MS,
     elicitToolWaitMs: env.CLARVIS_SERVER_ELICIT_TOOL_WAIT_MS,
     elicitRelayMs: env.CLARVIS_SERVER_ELICIT_RELAY_MS,
-    allowRemoteGuardApproval: env.CLARVIS_SERVER_ALLOW_REMOTE_GUARD_APPROVAL,
   };
   const guards = {
     allowedOrigins: env.CLARVIS_SERVER_ALLOWED_ORIGINS,

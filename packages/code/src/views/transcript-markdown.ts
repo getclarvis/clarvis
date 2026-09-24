@@ -1,7 +1,6 @@
 import type { TranscriptNode } from "../adapters/store.ts";
 import { toolLabel } from "../adapters/tool-identity.ts";
 import { resolveToolCallSignature } from "./tools/signature.ts";
-import { guardReviewLabel } from "../core/transcript/index.ts";
 import { projectTranscriptToolDisplay } from "../core/transcript/index.ts";
 
 /** The document prelude, separated so interactive export can write it once. */
@@ -23,8 +22,7 @@ export function* renderTranscriptMarkdownChunks(
     else if (n.kind === "tool_call") {
       const name = toolLabel(n.mcpName, n.toolName);
       const sig = resolveToolCallSignature(n);
-      const guard = guardReviewLabel(n);
-      yield `\n- \`${name}${sig}\` — ${n.status}${guard ? ` — ${guard}` : ""}\n`;
+      yield `\n- \`${name}${sig}\` — ${n.status}\n`;
       const display = projectTranscriptToolDisplay(n);
       if (display.hasArguments) {
         yield `\n  Bounded arguments:\n\n  \`\`\`json\n${display.argumentsText

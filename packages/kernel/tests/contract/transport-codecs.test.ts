@@ -493,7 +493,7 @@ describe("transport operation descriptors", () => {
 });
 
 describe("remote run codec", () => {
-  it("preserves the terminal shell auto-guard verdict", () => {
+  it("rejects removed command-review metadata on terminal tool calls", () => {
     const event = {
       type: "tool_call",
       at: 12,
@@ -502,16 +502,9 @@ describe("remote run codec", () => {
       tool: "shell",
       server: "",
       ok: true,
-      guard: { mode: "auto", outcome: "allowed", answerer: "judge" },
     } as const;
     expect(decodeRunEvent(event)).toEqual(event);
-    for (const reviewer_decision of ["allow", "deny", "unsure", "failed"] as const) {
-      const reviewed = { ...event, guard: { ...event.guard, reviewer_decision } };
-      expect(decodeRunEvent(reviewed)).toEqual(reviewed);
-    }
-    expect(
-      decodeRunEvent({ ...event, guard: { ...event.guard, reviewer_decision: "invented" } }),
-    ).toBeNull();
+    expect(decodeRunEvent({ ...event, guard: { mode: "auto", outcome: "allowed" } })).toBeNull();
   });
 
   it("preserves live shell interrupt control and rejects interruption with ok true", () => {
@@ -921,65 +914,6 @@ describe("remote run codec", () => {
     for await (const value of handle.events) events.push(value);
     expect(events).toEqual([ended]);
     expect(transport.closeCount).toBe(0);
-    await client.close();
-  });
-
-  it("delivers a well-formed guard_confirm detail", async () => {
-    const transport = new FakeTransport();
-    const client = await connectKernelClient(transport);
-    const handle = await client.runs.start({ execution_id: "exec-detail-ok", messages: [] });
-    let seen: unknown;
-    handle.onElicit((request) => {
-      seen = request.detail;
-    });
-
-    transport.emit("run.elicitation", {
-      request: {
-        id: "exec-detail-ok:elicit:0",
-        execution_id: "exec-detail-ok",
-        kind: "guard_confirm",
-        prompt: "Approve?",
-        schema: { type: "object", properties: {} },
-        detail: { command: "rm -rf /", cwd: "/ws", reason: "destructive", warning: "undecidable" },
-      },
-    });
-
-    expect(seen).toEqual({
-      command: "rm -rf /",
-      cwd: "/ws",
-      reason: "destructive",
-      warning: "undecidable",
-    });
-    expect(transport.closeCount).toBe(0);
-    await client.close();
-  });
-
-  it.each([
-    ["not a record", "rm -rf /"],
-    ["a missing command", { cwd: "/ws", reason: "destructive" }],
-    ["a non-string command", { command: 12, cwd: "/ws", reason: "destructive" }],
-    ["a non-string warning", { command: "ls", cwd: "/ws", reason: "x", warning: 7 }],
-    ["an unknown key", { command: "ls", cwd: "/ws", reason: "x", extra: true }],
-  ])("closes fail-closed on a guard_confirm detail with %s", async (_label, detail) => {
-    const transport = new FakeTransport();
-    const client = await connectKernelClient(transport);
-    const handle = await client.runs.start({ execution_id: "exec-detail-bad", messages: [] });
-
-    transport.emit("run.elicitation", {
-      request: {
-        id: "exec-detail-bad:elicit:0",
-        execution_id: "exec-detail-bad",
-        kind: "guard_confirm",
-        prompt: "Approve?",
-        detail,
-      },
-    });
-
-    expect(await handle.done).toMatchObject({
-      status: "failed",
-      error: { code: "unavailable", message: expect.stringContaining("protocol violation") },
-    });
-    expect(transport.closeCount).toBe(1);
     await client.close();
   });
 

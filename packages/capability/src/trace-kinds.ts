@@ -142,8 +142,6 @@ export interface ToolCallDetail {
   tool_evidence?: ToolEvidenceDetail;
   error: string | null;
   diff?: string;
-  /** Final command-review outcome, present only when the host guard exposes its mode. */
-  guard?: CommandGuardReview;
   /**
    * Operator interruption of this invocation. Present only when the child
    * signal aborted while the run remained live. Implies a non-null `error`.
@@ -173,26 +171,6 @@ export interface ToolEvidenceDetail {
     stdout_excerpt: string;
     stderr_excerpt: string;
   };
-}
-
-/** Persisted final command-review fact attached to its terminal tool call. */
-export interface CommandGuardReview {
-  reviewer_decision?: "allow" | "deny" | "unsure" | "failed";
-  effect_id?: string;
-  relation?: "direct" | "bounded_prerequisite" | "none";
-  failure_kind?:
-    | "timeout"
-    | "auth"
-    | "quota"
-    | "rate_limit"
-    | "transport"
-    | "admission"
-    | "cancelled"
-    | "invalid_response"
-    | "unknown";
-  mode: "on" | "auto";
-  outcome: "allowed" | "denied";
-  answerer: "policy" | "human" | "judge" | "session_allowlist" | "unavailable";
 }
 
 /**

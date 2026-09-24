@@ -37,10 +37,10 @@ describe("execution safety", () => {
     expect(effectiveRunIsolation("sandbox", host, false)).toBe("sandbox");
     expect(effectiveRunIsolation("sandbox", undefined, true)).toBe("sandbox");
   });
-  it("derives isolation independently from command review", () => {
+  it("derives isolation from sandbox settings", () => {
     expect(deriveIsolation({})).toBe("host");
     expect(deriveIsolation({ sandbox: { type: "native", enabled: true } })).toBe("sandbox");
-    expect(deriveRunControls({}, "auto", "off").isolation).toBe("host");
+    expect(deriveRunControls({}, "off").isolation).toBe("host");
   });
 
   it("explains the effective behavior", () => {
@@ -56,11 +56,10 @@ describe("execution safety", () => {
           network: "none",
         },
       },
-      "off",
       "on",
     );
     expect(safetyDescription(state)).toEqual([
-      "Commands run autonomously inside the native sandbox.",
+      "Commands run inside the native sandbox.",
       "Shell commands see the workspace read-only.",
       "Shell network access is disabled.",
     ]);
@@ -69,7 +68,7 @@ describe("execution safety", () => {
     );
   });
 
-  it("explains every guard, sandbox, memory, and plan-retention consequence", () => {
+  it("explains sandbox, memory, and plan-retention consequences", () => {
     const sandbox = {
       ...deriveRunControls(
         {
@@ -81,27 +80,16 @@ describe("execution safety", () => {
             network: "host" as const,
           },
         },
-        "auto" as const,
         "off" as const,
       ),
     };
     expect(safetyDescription(sandbox)).toEqual([
-      "Commands stay contained; a blocked command can ask to run that one command on the host.",
+      "Commands run inside the native sandbox.",
       "Shell commands may change this workspace.",
       "Host network access is enabled.",
     ]);
-    expect(safetyDescription({ ...sandbox, guardMode: "on" })[0]).toBe(
-      "Risky actions ask first; approved commands remain contained. A blocked command can ask to run on the host.",
-    );
-
-    expect(safetyDescription(deriveRunControls({}, "off", "off"))).toEqual([
-      "Commands run directly without approval.",
-    ]);
-    expect(safetyDescription(deriveRunControls({}, "on", "off"))).toEqual([
-      "Risky actions ask before running directly on the host.",
-    ]);
-    expect(safetyDescription(deriveRunControls({}, "auto", "off"))).toEqual([
-      "Commands run directly on the host after model review; uncertain actions ask you.",
+    expect(safetyDescription(deriveRunControls({}, "off"))).toEqual([
+      "Commands run with the host process's permissions.",
     ]);
     expect(memoryDescription({ ...sandbox, memory: "inert" })).toContain("no extraction model");
     expect(memoryDescription({ ...sandbox, memory: "off" })).toContain("Disabled for this session");
@@ -148,8 +136,8 @@ describe("memoryState — the one on/inert/off rule every surface shares", () =>
     expect(memoryState(undeclared)).toBe("inert");
     const modelless = onDisk({ memory: {}, providers: [OPENAI] });
     expect(memoryState(modelless)).toBe("inert");
-    expect(deriveRunControls(undeclared, "off", "on").memory).toBe("inert");
-    expect(deriveRunControls(modelless, "off", "on").memory).toBe("inert");
+    expect(deriveRunControls(undeclared, "on").memory).toBe("inert");
+    expect(deriveRunControls(modelless, "on").memory).toBe("inert");
   });
 
   it("modelResolves rejects unparsable tokens instead of throwing", () => {

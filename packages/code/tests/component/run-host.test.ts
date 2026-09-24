@@ -738,8 +738,6 @@ function mount(over: Partial<RunHostDeps> = {}): {
       priceFor: () => undefined,
       activeProfile: () => "coder",
       setActiveProfile: () => {},
-      guardMode: () => "on",
-      judgePayload: () => ({}),
       memoryMode: () => "on",
       ...over,
       project: over.project ?? "prj_test",

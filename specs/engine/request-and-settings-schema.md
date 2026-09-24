@@ -108,8 +108,7 @@ with these top-level fields: `execution_id?`, `continue_from?`, `session_id?`, `
 `prompt_cache_ttl?`, `messages`, `servers`, `profiles`, `entry`, `providers`, `vision_model?`,
 `budget`, `elicit_wait_ms?`, `guard_escalation?`, `output_schema?`, plus
 `...capabilityRequestParamFields` (`packages/loop/src/validation/request/request-schema.ts`) — a
-static spread of every **built-in** capability's own request params (for example `guard_mode`
-from tools). Product parameters are supplied by the host's `CapabilityRegistry` and read through
+static spread of every **built-in** capability's own request params. Product parameters are supplied by the host's `CapabilityRegistry` and read through
 `CapabilityRequestView.requestParam`; their owners remain outside the engine.
 
 The hooks capability contributes `hook_user_prompt_expansion?: { command_name: string }`. It is a
@@ -809,10 +808,6 @@ is a compile-time-only edge with zero runtime cost.
   time; a host-registered capability cannot be named there without the engine depending on it, which
   is the registry's whole purpose. So it is not two mechanisms for one job — it is the type boundary
   between what the engine knows statically and what a host adds.
-- Registered model references participate in provider validation without becoming profile entries
-  or contributing to the engine's running-agent budgets. Their execution/accounting policy belongs
-  to their owning capability. See [Judge](../capabilities/judge.md) and
-  [command guard](../execution/command-guard.md).
 
 - **`typo-suggestion.ts`'s `editDistance`/`typoBudget` have no call site inside this document's own
   scope** (`settings-schema.ts`, `settings-merge.ts`, `capability-settings.ts`, `engine-server.ts`,
@@ -826,22 +821,3 @@ is a compile-time-only edge with zero runtime cost.
   used at `packages/loop/src/validation/request/provider-rules.ts`) is out of this document's scope
   (owned by `@clarvis/capability`); what is verified is only that `rejectProviderMapIssues` calls it to
   reject any leftover `${` after stripping every well-formed match.
-## Shared reviewer settings
-
-`effect_review` is a non-plugin cross-cutting settings block. It carries model, timeout, retry,
-uncertainty fallback and the operator rollout stage (`shadow` or `local`), which scopes the
-transactional configuration reviewer. A settings document written before the `ci_retry` stage was
-withdrawn still loads — that spelling normalizes to `local` — because a schema-invalid document is
-discarded whole, which would silently drop every unrelated setting stored beside it; any other
-unknown value still fails closed. Kernel scope resolution admits only reductions from
-workspace configuration. Command authorization reads neither the block's rollout stage nor a
-per-operation effect: it is one deterministic policy plus one Judge review path. `guard_judge` accepts optional `guidance` and explicit overrides; additional guidance is not required.
-Unknown keys are rejected rather than converted to guidance. Authority seeds remain absent from the strict
-public request schema. Production:
-[settings.ts](../../packages/judge/src/settings.ts),
-[tools-settings.ts](../../packages/loop/src/runtime/capabilities/tools-settings.ts), and
-[run-service.ts](../../packages/kernel/src/runs/run-service.ts). Test: the withdrawn-stage upgrade
-regression in
-[file-config-store.test.ts](../../packages/kernel/tests/integration/file-config-store.test.ts) and the
-schema cases in [settings.test.ts](../../packages/judge/tests/unit/settings.test.ts). The complete
-contract is [effect review](../execution/effect-review.md).

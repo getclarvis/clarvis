@@ -1,26 +1,5 @@
 # `@clarvis/kernel`
 
-Reviewer configuration is owned by `@clarvis/judge/settings` and registered before host parsing.
-Technical Judge failures never trigger operator questions, including when `on_unsure` is `ask`.
-An identical configuration-review failure is reused within the run until its document facts,
-call context, authority, review context or environment changes. Closed candidate-rejection reasons remain
-available for diagnostics without logging document contents. Auto reviews bounded ordinary tree
-cleanup and authored skill deletion; operational configuration deletion retains human review.
-Judge calls inherit `CLARVIS_DEFAULT_CALL_TIMEOUT_MS` unless explicitly overridden. The shared
-provider owns inactivity timing and transport retries, without a separate Judge wall deadline.
-Workspace timeout overrides may only lower the operator limit or effective runtime default.
-Retries likewise inherit `CLARVIS_DEFAULT_MAX_RETRIES` under `CLARVIS_RETRY_CEILING`; workspace
-settings can only lower the operator or runtime value. Typed provider inactivity, not an inferred
-child abort, determines timeout classification. Review integration tests use the production Judge
-and Loop; no test-only reviewer implementation or policy is retained.
-Malformed candidates may be corrected before authority installation; installation remains single-use
-and fenced by the captured authority and context. Semantic uncertainty retains its configured policy.
-Command and configuration review read its typed overrides through the generic request view.
-The host manifest parser enforces the same registered operator-only prohibition for plugins.
-
-Reviewer overrides accept bounded `guidance` as additional context. Unknown configuration fields
-are rejected by the strict request schema; guidance never replaces host policy or operator evidence.
-
 The in-process implementation of `@clarvis/protocol` over `@clarvis/loop`.
 It is the Clarvis server core: applications can use it directly or consume the same typed services
 through its RPC transports, including the independently owned local workspace host.
@@ -30,7 +9,7 @@ adapter is Git and never writes to the repository.
 `@clarvis/code` uses this package as its backend, and it is the only backend.
 
 Workspace dependencies: `@clarvis/protocol` (the contract it implements), `@clarvis/loop` (the engine),
-`@clarvis/capability`, `@clarvis/goal`, `@clarvis/judge`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
+`@clarvis/capability`, `@clarvis/goal`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
 `@clarvis/tools`, `@clarvis/trace`, `@clarvis/tasks` and `@clarvis/workflows`. It injects
 host-owned capabilities into runs, so the engine never imports those product layers.
 Clients remain independent of the engine through seven deliberately bounded public entrypoints. Each
@@ -41,7 +20,7 @@ public symbol has one thematic owner; the root is not a compatibility barrel for
 | `@clarvis/kernel`             | in-process kernel, kernel services/errors, client/server/transports and wire metadata                                         |
 | `@clarvis/kernel/bootstrap`   | file-backed construction, authenticated local host/launcher, owner-scoped stores, stdio hosting, bootstrap logger/environment |
 | `@clarvis/kernel/config`      | config stores/schemas, agents, models, plugins, workflows and settings composition                                            |
-| `@clarvis/kernel/policy`      | guard, sanitization, tool identity, event mapping/policy/spans and ingest state                                               |
+| `@clarvis/kernel/policy`      | sanitization, tool identity, event mapping/policy/spans and ingest state                                                      |
 | `@clarvis/kernel/local`       | shell/process/executable helpers and local filesystem/git adapters                                                            |
 | `@clarvis/kernel/logger`      | logger constructor and types without loading file-kernel bootstrap                                                            |
 | `@clarvis/kernel/system-docs` | verified publication of the product-owned Markdown skill for installers and source launchers                                  |
@@ -156,22 +135,17 @@ See [subscription providers](../../specs/hosts/subscription-providers.md).
 
 ## Hosted observation infrastructure
 
-The settings assembler captures effective global and workspace context for the work agent and
-Judge: `CLARVIS.md`, falling back to `AGENTS.md` independently per scope. Host-only request identity
+The settings assembler captures effective global and workspace context for the work agent:
+`CLARVIS.md`, falling back to `AGENTS.md` independently per scope. Host-only request identity
 preserves this snapshot through preparation and workflow admission. Persistent instructions inform
-authorization below direct operator restrictions; arbitrary request fields cannot supply them.
-See [operator authority](../../specs/execution/effect-review.md) for lifetime and inheritance.
+the run but arbitrary request fields cannot replace them. See
+[model instructions](../../specs/cross-cutting/model-instructions.md).
 Hosted Goal preparation gives the tool-free Steward only the bounded Goal definition and execution
 receipts. It has no repository instructions or file-reading context and does not reread context
 files during evaluation.
 
 `src/hosting/admission.ts` separates physical conversation occupancy from interactive control and
-revokes volatile consent scopes on disconnect, takeover or conversation close.
-Native Host/Sandbox guard decisions use the current interactive command allowlist. Retired native scopes
-reject late answers, including one-time approval, and configuration review caches only host-validated final
-decisions. Configuration mutations consume the same host-owned authority reader and revocation
-signal as command review. `createFileKernel` binds the protected file-tool reviewer into admitted editable
-Host/Sandbox runs; the ordinary agent and placement remain in use.
+retires conversation control on disconnect, takeover or conversation close.
 `src/hosting/projection.ts` provides bounded append-only observation storage with immutable,
 byte-paginated snapshots over private 64 MiB segments, without a default lifetime history quota.
 It uses the existing run event coalescer and keeps structural events; append/sync failures prevent
@@ -240,12 +214,6 @@ continuation or the complete product journey.
 atomic turn/goal intent, revision-fenced terminal evidence and the internal continuation policy.
 Goal start and resume previews include the complete current objective after
 `Work toward the persistent goal:`; this display text does not change the model input.
-Its command-review authority never comes from the synthetic Goal start or continuation message.
-Literal Goals contribute their complete user-declared definition; guided Goals contribute their
-exact seed after the exact source-execution user messages; auto Goals contribute only those exact
-source messages. The complete persisted definition is supplied separately as host-attested reviewer
-context, so the judge can assess relevance without treating model-formulated semantics as operator
-authority or inferred human approval.
 Evidence validation releases the session lock so user controls remain available; the terminal write
 rechecks those controls and charges usage once. The host also checks the persisted absolute deadline
 before every physical model call. An already-started call may finish and remains chargeable, while
@@ -521,9 +489,8 @@ physical runs still hold their own catalog leases. The host stream lease remains
 `closed`. Invalid replacements retain the last catalog and its monitors. Root watchers also detect
 new skills.
 Plugin drift retains its explicit trust boundary. Builtin and custom standalone roots carry exact
-`include` lists for the captured generation. New skills authored through reviewed file tools
-join custom profiles in a reviewed membership delta: global profiles are copied and selected
-locally. The builtin default discovers standalone skills at the next safe refresh, without a
+`include` lists for the captured generation. New skills authored through file tools are discovered
+at the next safe refresh. The builtin default discovers standalone skills without a
 separate workspace-trust approval for the skill file alone. If any
 packaged skill in a plugin cannot be captured within its bounds, that plugin's entire skill-root
 surface is withheld while its independently valid non-skill contributions remain.
@@ -612,8 +579,7 @@ An embedding that isolates filesystem fixtures may pass `home` to relocate only 
 and use the operator's normal home; `globalConfigDir` continues to own `.clarvis` independently.
 
 The package exports constructors for individual services, file and in-memory
-configuration stores, secret storage, model catalogs, guard resolution and
-engine-to-protocol mapping.
+configuration stores, secret storage, model catalogs and engine-to-protocol mapping.
 
 The operator-scoped `StorageService` walks Clarvis-owned roots with entry/depth bounds, reports
 logical category totals without exposing persisted content, paths or credential sizes, and applies
@@ -782,7 +748,7 @@ the hosted `hosting.present`, and keeps the operational `elicit_wait_ms` ceiling
 for a question nobody ever presented. Only a request the engine marked
 `origin: "model"` with `kind: "ask_user"` receives a window, and only for a
 duration a host timer can hold (`MAX_ELICIT_WINDOW_MS`); a relayed MCP
-question, a guard confirmation, a plan or workflow review and the soft-budget ask
+question, a plan or workflow review and the soft-budget ask
 keep their existing policies. See
 [elicitation](../../specs/cross-cutting/elicitation.md).
 
@@ -817,129 +783,25 @@ live-only run event. The persisted terminal event records the applied operation 
 summary-to-eviction `fallback_reason`; replay therefore retains what happened without reviving an
 already-finished spinner.
 
-## Guards and control plane
+## Control plane and isolation
 
-The kernel owns command-approval policy through `createGuardResolver` and
-`createShellGuard`. It also provides first-class services for configuration,
-plugins, secrets, models, provider authentication, files, memory, plans, workflows, skills,
-sessions, tasks, storage, Extension Profiles and runs — the fifteen `KernelClient` services. These are control-plane APIs rather
-than model-callable MCP tools.
+The kernel provides services for configuration, plugins, secrets, models, provider
+authentication, files, memory, plans, workflows, skills, sessions, tasks, storage,
+Extension Profiles and runs. These are control-plane APIs rather than model-callable
+MCP tools. The tools capability executes shell and file calls under the configured
+native sandbox; it offers no per-call escape. Production:
+`packages/kernel/src/file-kernel.ts` (`createFileKernel`) and
+`packages/tools/src/sandbox.ts` (`sandboxCommand`). Test:
+`packages/kernel/tests/integration/file-kernel.test.ts` and
+`packages/tools/tests/integration/sandbox.test.ts`. See the
+[sandbox contract](../../specs/execution/sandbox.md).
 
-A run's effective mode is the per-run `guard_mode` param, else the `guard.mode`
-settings block, else `on` (`resolveGuardMode`). The three modes differ only in
-what happens to an **ask** verdict — `off` skips the ruling, `on` relays it to a
-human, `auto` has an LLM answer it. In `on` and `auto`, a **deny** is enforced before
-review, and `denied_commands` outranks `allowed_commands`. Mode `off` supplies no command guard;
-independent filesystem, credential, capability and runtime boundaries remain active.
-
-The kernel supplies nonreplaceable policies for command review and for the transactional
-configuration review. Auto resolves its model from
-operator-owned `effect_review` settings or the default model; `guard_judge` supplies optional
-overrides and guidance. Code no longer supplies a complete system prompt. Workspace guidance
-cannot grant authority. The [command-guard contract](../../specs/execution/command-guard.md)
-owns the single deterministic policy and the one review path: every Auto `ask` that applicable
-session consent does not cover reaches `createCommandReview` with the complete call, and no effect
-classification, operation rule or probe sits between the policy and the Judge. The
-[effect-review contract](../../specs/execution/effect-review.md)
-owns the host evidence ledger, effect registry and validated effect path, which now scope the
-protected file-tool configuration writes through `reviewMutation`. Hosted Goal runs supply their complete persisted definition, and
-the active Plans capability supplies only its stable substantive specification, as separate
-host-attested review context. The reviewer treats those definitions as the operator's semantic
-objective and implementation path, so a necessary bounded prerequisite such as installing declared
-dependencies can be approved. It cannot infer publication, deployment,
-destruction, credential access or external contact from that context. A verdict is valid only for the exact call and installs no
-descriptor, envelope grant or session permission. The evidence is chronological: a fresh publication
-instruction can refer to the authenticated implementation scope from earlier turns, while an old
-publication instruction alone cannot authorize a changed outcome. Accepted entry-agent `ask_user`
-answers join that evidence before the next review; their model-authored questions are labeled
-untrusted context, and decline, cancel or another elicitation kind grants nothing.
-Command review obtains `JUDGE_PORT` lazily and executes the private Judge run through the
-work run's effective base provider. The child owns its `judge` identity, resolved TTL, fixed policy,
-canonical snapshot breakpoint and separate volatile case. The configuration compiler and decision use the same private execution boundary. Both retain canonical session affinity and recheck
-live Plans context before accepting a result. Plan progress fields are excluded from its projection.
-The command adapter coalesces concurrent identical Auto reviews without caching refusals as
-consent. Missing Judge composition and architecture faults propagate; retirement never asks a human.
-Configuration review returns typed technical failures and preserves private invalid-response
-diagnostics as category, stage and correction count in bounded audit fields. Human-only deletion
-requires an available elicitation channel. Guard reviews external file reads against the selected
-Host or Sandbox placement, while the environment still enforces access. Production:
-`src/configuration/review.ts`, `src/guard/effect-review.ts`, and `src/guard/shell-guard.ts`.
-Test: `tests/unit/configuration-review.test.ts`, `tests/unit/effect-review.test.ts`, and
-`tests/integration/guard-file-parity.test.ts`.
-Each real command-review or configuration-review provider invocation also records one kernel-owned
-`guard_reviewer_model_call` event through `RUN_TRACE_PORT`. It totals winning and retried usage,
-retains unknown usage/cache flags, and reports a cache-read ratio only when cache counters are
-complete. Verdict memoization emits nothing. The persisted event contains identity, timing, status,
-attempts, token counters and bounded authority/effect identifiers only; it is deliberately dropped
-before protocol projection and never enters run usage totals or context.
-Auto reuses eligible exact human session approvals before invoking the reviewer, while deny-list
-matches and explicit Host escalation retain their precedence. Historical target exclusions survive
-configuration reviews of other targets without
-authorizing grants for those historical targets.
-
-The resolver snapshots host-owned placement once per run: enabled native sandbox means
-contained-or-fail-closed, including legacy optional availability. Host and disabled native policies do not. Explicit per-call unsandbox is reviewed as
-Host, with native network restrictions omitted; Auto may judge it, while `on` requires a human.
 The hosted generation identity includes the effective Sandbox settings and resolved roots, not only
 environment flags. Runs use the startup Sandbox snapshot; a settings change that would alter it
 requires an idle host restart before another run can use it. Inspection reports host-visible reads,
 the selected workspace/write posture and effective network without exposing credential values.
 An untrusted workspace cannot weaken an enabled global Sandbox: the host retains its read-only,
 network, environment, toolchain and protected-path floor when resolving runs and inspection.
-An external path in a native Sandbox shell command receives Command Review rather than an automatic
-outside-workspace denial; Host commands and file tools retain their existing rule.
-The policy is the only classifier: it decides `allow`, `deny` or `ask`, and Auto sends every
-remaining `ask` to the call-local reviewer, including
-options, wrappers, dynamic arguments, environment prefixes and a command whose operation name once
-carried its own rule — an explicit push, a pull-request edit, a rerun or a release publishes no
-operation-specific refusal before review.
-Review `on` (Approval) asks a human only for the grey zone that is neither allow-listed nor
-dangerous; a dangerous match, including forced removal of a credential file, denies to the
-principal with the exact segment. Auto never elicits a
-person: the Judge decides forced removal, privilege elevation, credential-file asks and unsandbox,
-and both deny and unsure refuse to the principal. A nonempty deny list rejects undecidable commands
-before any reviewer. No unmatched contained silent-allow rule is installed.
-
-POSIX Git presentation globals normalize for matching, while validated `cd <in-workspace>` and
-Git `-C` directory operands receive comparison-only handling for straight `&&` chains.
-Environment prefixes and assignment-only `NAME=value` segments prevent static allow-list approval,
-including wildcard entries. In Auto, the call-local payload separates each binding at its first `=`,
-labels the effective executable and parameters, and retains the exact segment source; other modes
-keep the human review. Bare normalized commands remain visible to deny matching. Sequential literal `$NAME`
-bindings are still inlined for path analysis without authorizing their environment effects. Session
-approval keys keep their original normalized identities; unsupported control flow and PowerShell
-retain ordinary matching. Paths still participate in denial.
-
-Operator evidence is captured before synthetic message assembly and transported outside the public
-request. The configuration reviewer reads the live revisioned ledger, and does not derive grants from
-assistant text, child briefs, command arguments, justification or role-filtered final context. Its
-seed accepts the same message-count and character envelope as validated run input, including the
-separator overhead of extracted multipart text, so a valid long operator prompt does not silently
-disable Auto review. When a new authenticated operator turn continues the same host controller after
-the previous run settled, the host carries its authenticated evidence into a fresh outcome without
-reviving the prior envelope or refusals. Synthetic continuations and controller
-changes cannot reactivate settled evidence.
-
-A resolved judge reports which channel ultimately answered. An `allow` or `deny` is attributed to
-the judge; `unsure`, a provider failure, a malformed response, or an unavailable reviewer denies to
-the calling agent. Auto never routes those outcomes to a person, including `on_unsure: "ask"`.
-Failed and malformed attempts are not memoized, so fixing a transient provider problem restores
-automatic review without restarting the session.
-
-A `shell` call with `sandbox_permissions: "require_escalated"` under Isolation
-Sandbox is a `host_command` ask, after deny-list matches and undecidability with a nonempty deny
-list are rejected. The resolver passes `allowHostJudge: true` to `createShellGuard` only in Auto;
-otherwise this ask carries `escalate: "human"`. Auto's judge may allow or deny the host effect;
-unsure, failed and malformed responses refuse to the calling agent. An absent usable model refuses.
-Host-command asks bypass volatile session coverage and never offer `allow_session`; clean exact-call
-judge memoization remains separate. Isolation Host already runs unsandboxed, so the field does not add
-a second prompt. Mode `off` supplies no guard and proceeds without command review, honoring the
-operator's explicit choice.
-
-The resolver returns the final answer together with its answerer, and the kernel
-projects the resulting `tool_call.guard` unchanged to `RunEvent`. This makes the
-auto-guard verdict visible after replay rather than leaving it only in audit logs.
-
 ## The settings schema
 
 The kernel publishes exactly one, `kernelSettingsSchema`: the engine's blocks
@@ -974,8 +836,7 @@ owner and derives the effective per-child buffer slice; the kernel does not mate
 
 `createSettingsRunAssembler` optionally accepts a `modelExecutionResolver`: it checks exact entry,
 delegated, vision and explicit reviewer targets against that closed catalog and emits empty
-`providers`, keeping transport declarations outside the request. Reviewer availability for the
-guard-derived cache TTL uses the same catalog. Without this option, native provider declarations
+`providers`, keeping transport declarations outside the request. Without this option, native provider declarations
 and resolution are preserved.
 
 Every settings source exposes an exact-byte revision. Ordinary saves and settings repair are kernel
@@ -992,40 +853,13 @@ state. The lease is not a distributed-lock claim for NFS or multi-host storage.
 
 ## File-tool configuration
 
-An editing entry agent uses ordinary file tools for admitted global and workspace
-authoring and operational configuration when the run carries the host-owned `reviewMutation` port;
-without it — a ceiling other than `edit`/`exec`, or disabled builtin tools — the
-file tool refuses the protected target before the guard runs, and a generic command approval never
-becomes configuration approval.
-`createAuthoringMutationReview` prepares the complete batch, validates each recognized document,
-captures every target and exact revision, reviews it once through the host-owned authority reader
-and shared Judge coordinator, and commits all or none. Private targets and selected skill execution
-snapshots do not enter that route. The global roots are passed only to entry-agent file handlers and
-do not widen shell mounts or the selected environment policy.
-Removing an empty admitted configuration directory uses the same review channel, requires human
-consent, and checks its directory identity and emptiness again before host commit. A concurrent
-entry causes `revision_conflict` rather than deleting the changed directory.
-For an ordinary workspace tree, `remove` sends a bounded entry preview and revision through the
-same channel. Human consent is one-time, with no session grant; the worker rechecks the tree before
-deletion and reports a partial commit if it cannot finish.
-In Sandbox, file tools prepare the batch inside the run-owned isolated service. The host reviewer
-binds its decision to those bytes and the run policy, then commits classified configuration batches
-through a narrow host path. Mixed batches may also change ordinary files inside the writable
-workspace; private paths, protected roots and child agents cannot use that path.
-`createFileKernel` resolves the shared user root from the host home by default; its optional
-`configurationHome` input lets an isolated host use a separate home for that root.
-For a complete bounded batch, human review can grant the displayed operation and targets for the
-current session. The grant is recorded only after a successful commit, does not cover new targets or
-effect classes, and is invalidated by steer or run settlement. One-time approval creates no grant.
-Standalone skill changes request a coalesced refresh after captured users settle, without changing
-the host process. Skill snapshots keep resource and helper bytes together. See
-[self-configuration.md](../../specs/hosts/self-configuration.md).
-
-Configuration requests need no special skill, slash command or additional tool schema. Skill
-discovery, `$name` mentions and slash invocation retain their generic behavior for installed skills.
-Credentials, workspace trust, UI preferences, provider login, Extension Profile selection and
-background controls retain their operator interfaces. Workflow files are loaded on the next manager
-run; changes to pinned placement or providers need an explicit idle reconnect.
+Entry agents use ordinary file tools to edit workspace and global configuration when
+allowed by the selected execution environment and OS permissions. The host configuration
+service validates known document semantics when it subsequently loads those files. Tool
+calls do not use a separate configuration review port. Production:
+`packages/tools/src/lib/paths.ts` (`resolveFileToolPath`) and
+`packages/kernel/src/config/file-config-store.ts` (`createFileConfigStore`).
+See [self-configuration](../../specs/hosts/self-configuration.md).
 
 ## The agent fleet ships as data
 
@@ -1202,23 +1036,13 @@ and traversal segments are rejected before filesystem access.
 
 `createFileKernel` builds one logger (`opts.logger`, else `createLogger(CLARVIS_LOG_LEVEL, { service:
 "@clarvis/kernel" })`) and hands `componentLogger(<component>)` to every collaborator it constructs —
-`config`, `guard`, `plugins`, `plan`, `memory`, `tasks`, `trace`, `kernel`.
+`config`, `plugins`, `plan`, `memory`, `tasks`, `trace`, `kernel`.
 `CLARVIS_LOG=config=debug` therefore turns one subsystem on without
 raising the global level. `createInProcessKernel` takes a `logger` of its own and passes it to the
 plugin service, the model catalog and each owner's runs/sessions with `{ owner }` bound.
 
-**The audit channel is a second logger, not a level.** `createAuditLogger(root, env.CLARVIS_LOG_AUDIT)`
-derives a child pinned at `info` over the same destination, and only command-guard decisions use it.
-`CLARVIS_LOG_LEVEL=warn` is a legitimate production setting and must not silence the record of what a
-run was allowed to execute. It is configurable by environment only — never `settings.json`, whose
-workspace scope is a file inside the agent's own working tree.
-
 | Level | `event`                                                        | Fields                                                                                          |
 | ----- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| info  | `guard.decision` _(audit)_                                     | `verdict`, `matched`, `mode`, `tool`, `reason`, `escalate`, `command_digest`, `run_id`, `owner` |
-| info  | `guard.resolved` _(audit)_                                     | `mode`, `source`, `judge_configured`, `human_channel`                                           |
-| info  | `guard.elicit.answered` _(audit)_                              | `answer`, `answerer`                                                                            |
-| warn  | `guard.escalation.no_channel` _(audit)_                        | `run_id`                                                                                        |
 | info  | `kernel.boot.started`                                          | `workspace_root`, `global_dir`, `ownership_mode`, `memory_enabled`, `default_model`             |
 | info  | `kernel.config.scopes`                                         | `global_present`, `workspace_present`, `workspace_trust`, `plugin_scopes`, `enabled_plugins`    |
 | error | `kernel.config.rejected`                                       | `scope`, `path`, `at`, `message`, `schema`                                                      |
@@ -1242,17 +1066,8 @@ workspace scope is a file inside the agent's own working tree.
 | warn  | `lifecycle.late_close_failed`                                  | `operation`, `cause`                                                                            |
 | warn  | `capexec.session.failed`                                       | `capability`, `cause`                                                                           |
 
-Six properties are load-bearing rather than incidental:
+The diagnostic properties below are load-bearing:
 
-- **`guard.decision` never carries the command.** It carries the first 16 hex of its SHA-256, which
-  is enough to tell "the same command was approved twice" from "two different commands were" and
-  nothing more. A command line routinely holds a token or a private path, and this record is the one
-  designed to be durable. The guard itself stays a pure function: `createShellGuard` takes an
-  `onDecision` observer that cannot change a verdict, and `createGuardResolver` — which already holds
-  the run's identity — does the binding.
-- **`matched` is the machine contract, not `reason`.** The six-way rule vocabulary
-  (`deny_list`/`allow_list`/`undecidable`/`outside_workspace`/`credential_file`/`non_bash`/`default`)
-  is greppable; the sentence beside it is prose and free to change.
 - **`kernel.config.rejected` is the diagnostic that already existed and had no channel.** The precise
   `invalid <path>: <at>: <message>` was built and attached as `SettingsSource.error`, visible only to
   a client that called `config.getSettings()` — which is why a `settings.json` this schema refuses
@@ -1286,7 +1101,7 @@ before or during the settings read, so a block could not configure the logging o
 
 The suite is classified by its primary boundary while the architecture migration proceeds:
 
-- `tests/unit/` owns pure mapping, event policy and state-machine decisions, guard policy,
+- `tests/unit/` owns pure mapping, event policy and state-machine decisions,
   prompt-cache configuration, workflow routing policy and other deterministic request projections.
 - `tests/component/` owns kernel services and assembly over typed fakes or in-memory collaborators:
   memory, skills, planning, the memory MCP port, settings-to-run assembly and executable facade
@@ -1319,10 +1134,6 @@ remote run codec; its complete service fake records calls without implementing a
 service's CRUD semantics. `tests/contract/stdio-codec.test.ts` owns NDJSON framing, error envelopes
 and EOF. Loopback and stdio integrations each retain a representative real-kernel flow, while service
 behavior remains with the service/component suites.
-
-Guard units begin at the `ShellFacts`/`PathFact` boundary the kernel actually consumes. POSIX and
-PowerShell parsing/canonicalization belong to `@clarvis/tools`; this package keeps one integration per
-dialect to prove analyzer facts cross into kernel deny policy without replaying either parser matrix.
 
 `tests/integration/memory-capability.test.ts` proves only the kernel-owned join: the kernel registry
 accepts the memory run parameter, the deps-level capability reaches an ordinary run, and its
@@ -1384,7 +1195,7 @@ Workflow leaders retain the manager's session identity and use their reserved ch
 as their own persisted agent instance. Two leaders of the same profile therefore have distinct
 cache keys, separate from the manager, in both direct and prepared host assembly.
 The captured SDK requests also cover transport retry, two same-profile children, physical-call
-cancellation, guard-policy resume and the actual indexing pass. Restricting indexing dispatch
+cancellation and the actual indexing pass. Restricting indexing dispatch
 preserves the complete advertised catalog while rejecting inherited workspace tools.
 Memory passes receive the same composed capability registry as foreground runs and
 carry the source's registered request parameters. Planning is replaced in place by
@@ -1401,73 +1212,19 @@ provider import to the kernel.
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
 
-`createAuthoringMutationReview` binds ordinary file-tool batches to the same
-`createConfigurationReview` and authority reader. It validates each
-recognized configuration document, captures every target, reviews one complete batch (including local skill
-membership), rechecks revisions, and carries trust only after the asynchronous transaction succeeds.
-Concurrent changes to other executable inputs withhold trust. Profile definition/selection leases
-remain held through async file mutation and rollback companion changes on failure. The port is the
-only route for file-tool configuration mutation: without it the tool refuses a protected target before
-the command guard is consulted.
-
-Concrete configuration refusals live in the shared authority ledger. Identical before/after bytes cannot trigger another prompt merely by switching edit and write; corrected bytes receive their own decision. The bounded ledger persists only under the validated authority binding and is invalidated by fresh admitted evidence. See [self-configuration](../../specs/hosts/self-configuration.md).
-
 Goal formulation and Steward executions capture provider usage, including retries, through the
 same usage tracker. Once-only auxiliary settlement applies model prices to session cost totals
 when usage and cache measurements are known. Partial observation reads do not attest complete
 artifacts; completion still requires complete current reads for every cited artifact.
-Goal stage settlement prices the host-observed calls, including Guard reviews absent from the
-run's per-agent detail. It persists that priced subtotal with the stage measurement and credits
+Goal stage settlement prices the host-observed calls. It persists that priced subtotal with the stage measurement and credits
 the Session cost total once, beside ordinary run and auxiliary costs. A later measurement revision
 credits only the difference.
-Ordinary hosted runs also add measured Guard review calls from their private trace to the same
-Session totals once; Goal stages already include those calls in their host measurement. The file
+The file
 host loads model prices before recovery and refreshes them before new runs.
 
 The Kernel composes a public trace view for ordinary execution and run services. Internal records
 are absent from run lookup, listing, context, compaction, continuation and deletion by ID. Their IDs
 remain reserved across the physical store. Native recovery and retention cover both classes.
-
-### Private Judge trace projection
-
-The host-owned `createJudgeTraceStore` factory composes internal visibility with strict projections
-of journal headers/events, final records and context replacements. It retains operational identity,
-status and accounting while removing prompts, model/provider prose, arguments/results and private
-state. Known live-only events are discarded; unknown shapes fail closed without raw fallback.
-`createHostJudge` binds this store once in native FileKernel composition, together with empty MCP
-machinery and the work run's effective base provider. Its pure eligibility predicate includes
-editing/execution profiles in Auto and guard-off mode (automatic configuration review), and excludes
-explicit human-only mode and disabled tools. Memory indexing removes the capability.
-Actual private calls emit one payload-free parent event with `judge_execution_id`; cache reuse emits
-none, and child usage does not enter the parent execution ledger. Real JSON integration tests verify
-private visibility and removal of case/model prose. Command and configuration consumers use this binding. See the [Judge contract](../../specs/capabilities/judge.md).
-
-The authority ledger retains `envelope_context_revision` beside the installed envelope. This
-host-owned binding survives a validated checkpoint and is replaced atomically with compilation;
-revocation or settlement clears it. Reviewers compare it with the current live Plans revision,
-including disappearance, instead of maintaining a separate compile cache. It is not model-authored
-candidate data or operator evidence. See [effect review](../../specs/execution/effect-review.md).
-
-Effect compilation uses `createAuthorityReviewTransaction`: it captures host authority and context
-before inference, validates the candidate against registered descriptors, and installs once through
-the ledger. The resulting case-bound transition distinguishes the compiler's own revision change
-from an external change, including envelope replacement at the same revision. Validation lives in
-`authority-validation.ts`; the Judge package never receives the authority writer.
-
-Native human guard approval coalesces identical pending questions within the current controller's
-allowlist scope, using canonical full request identity. Settlement removes the pending entry; human
-consent is not memoized. A replacement scope gets its own question, and late answers from the old
-scope remain denied.
-
-Configuration review applies the same pending-only rule across file-tool authoring consumers in
-one run. Its identity includes the complete prepared change and authority binding;
-distinct proposals do not share a question, and settlement, channel failure or cancellation cannot
-leave reusable human consent.
-
-Effect review audit starts are emitted by the native inference binding, once per actual call, using
-its private stage/consumer descriptor. The adapter records bounded typed failures and semantic
-completion; compilation records the installed authority revision. Cache reuse emits no start, and
-usage remains in the single parent model-call event rather than being counted again from audit logs.
 
 Operator submissions persist their identity, input and sequence in the existing session before
 waiting for physical closure. Repeating an accepted identity reattaches to its execution; it cannot

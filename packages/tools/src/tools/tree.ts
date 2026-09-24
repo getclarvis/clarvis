@@ -1,7 +1,7 @@
 import { fs } from "../lib/environment-fs.ts";
 import path from "node:path";
 import { fsError } from "../errors.ts";
-import { resolveFileToolPath, isAdmittedFileToolSearchPath, displayPath } from "../lib/paths.ts";
+import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { mapLimit, statDirectory, STAT_CONCURRENCY } from "../lib/files.ts";
 import { loadIgnore, type Matcher } from "../lib/ignore.ts";
 import type { RuntimeConfig } from "../config.ts";
@@ -63,7 +63,6 @@ async function readEntries(
   const mapped = await mapLimit(dirents, STAT_CONCURRENCY, async (d) => {
     const abs = path.join(dir, d.name);
     if (ig && ig.ignores(path.relative(config.workspaceRoot, abs))) return null;
-    if (!isAdmittedFileToolSearchPath(abs, config)) return null;
     const isSymlink = d.isSymbolicLink();
     if (isSymlink) return { name: d.name, isDir: false, isSymlink: true, size: 0 };
     if (d.isDirectory()) return { name: d.name, isDir: true, isSymlink: false, size: 0 };

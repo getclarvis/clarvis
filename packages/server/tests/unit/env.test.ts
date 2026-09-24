@@ -14,7 +14,6 @@ describe("loadServerEnv", () => {
     expect(env.CLARVIS_SERVER_PATH).toBe("/mcp");
     expect(env.CLARVIS_SERVER_OWNER_MODE).toBe("fixed");
     expect(env.CLARVIS_SERVER_OWNER).toBe("default");
-    expect(env.CLARVIS_SERVER_ALLOW_REMOTE_GUARD_APPROVAL).toBe(false);
     expect(env.CLARVIS_SERVER_ALLOW_PUBLIC_BIND).toBe(false);
     expect(env.CLARVIS_SERVER_MEMORY).toBe(false);
     expect(env.CLARVIS_SERVER_MAX_SESSIONS).toBe(128);

@@ -11,11 +11,6 @@ import {
   type SettingsAdapter,
   type SettingsFile,
 } from "../../adapters/settings.ts";
-import {
-  resolvedGuardMode,
-  type GuardMode,
-  type GuardModeStore,
-} from "../../adapters/guard-mode.ts";
 import type { MemoryModeStore } from "../../adapters/memory-mode.ts";
 import {
   deriveIsolation,
@@ -33,7 +28,6 @@ import {
   ISOLATION_CHOICES,
   type IsolationChoice,
 } from "../../features/run/isolation.ts";
-import { applyReviewMode, REVIEW_CHOICES } from "../../features/run/review.ts";
 import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
 import { bindLevelKeys, createFieldEditor, LevelHost } from "./view-host.tsx";
 import type { PickItem } from "./field-editor.tsx";
@@ -42,7 +36,6 @@ import type { SettingPresentation } from "../../ui/presentation.ts";
 import { DetailColumn, DetailSettingRow, SettingDetail } from "../../ui/patterns/detail-view.tsx";
 
 const ISOLATION_PICKER_CHOICES = ISOLATION_CHOICES satisfies readonly PickItem[];
-const REVIEW_PICKER_CHOICES = REVIEW_CHOICES satisfies readonly PickItem[];
 
 const MEMORY_CHOICES = [
   { value: "on", label: "on", detail: "read before runs and learn afterward" },
@@ -63,16 +56,14 @@ const PLAN_RETENTION_CHOICES = [
 ] as const satisfies readonly PickItem[];
 
 /**
- * Per-run controls expose isolation and Guard as independent axes.
+ * Per-run controls expose isolation, memory, and plan retention.
  * Isolation persists globally because execution placement is host-owned;
- * Guard and completed-plan retention use the selected scope, while memory is
- * session-only.
+ * completed-plan retention uses the selected scope, while memory is session-only.
  */
 export function RunControlsPanel(
   host: ViewHost,
   deps: {
     settings: SettingsAdapter;
-    guard: GuardModeStore;
     memory: MemoryModeStore;
     notify: (message: string) => void;
     runActive: () => boolean;
@@ -93,11 +84,7 @@ export function RunControlsPanel(
   onMount(() => void refreshInspection());
   const state = createMemo((): RunControlsState => {
     deps.settings.version();
-    const configured = deriveRunControls(
-      deps.settings.effective(),
-      deps.guard.mode(),
-      deps.memory.mode(),
-    );
+    const configured = deriveRunControls(deps.settings.effective(), deps.memory.mode());
     const observed = inspection();
     if (observed === null) return configured;
     const sandboxEnabled = observed.filesystem.placement === "sandbox";
@@ -160,38 +147,6 @@ export function RunControlsPanel(
     }
   }
 
-  /**
-   * The `guard` block this scope's file already carries, if any.
-   *
-   * @remarks
-   * Deliberately the raw per-scope file, not the merged view — the same
-   * reason {@link scopedMemory} exists.
-   */
-  function scopedGuard(): NonNullable<SettingsFile["guard"]> | undefined {
-    return deps.settings.read(host.scope())?.guard;
-  }
-
-  async function applyGuard(mode: GuardMode): Promise<void> {
-    try {
-      const result = await applyReviewMode(mode, {
-        settings: deps.settings,
-        guard: deps.guard,
-        scope: host.scope(),
-      });
-      if (result.degraded) {
-        deps.notify(
-          `Guard: approval (${host.scope()} settings) ${glyph("emDash")} Auto needs a usable default_model for the LLM judge`,
-        );
-        return;
-      }
-      deps.notify(
-        `Guard: ${mode === "on" ? "approval" : mode} (${host.scope()} settings)${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
-      );
-    } catch (error) {
-      deps.notify(errorText(error));
-    }
-  }
-
   function applyMemory(mode: "on" | "off"): void {
     deps.memory.setMode(mode);
     const effective = memoryState(deps.settings.effective(), mode);
@@ -243,11 +198,6 @@ export function RunControlsPanel(
         );
         break;
       case 1:
-        fe.startEnum("Guard", REVIEW_PICKER_CHOICES, state().guardMode, (value) =>
-          detachObserved("run_controls_guard", () => applyGuard(value as GuardMode)),
-        );
-        break;
-      case 2:
         fe.startEnum(
           "Memory for this session",
           MEMORY_CHOICES,
@@ -255,7 +205,7 @@ export function RunControlsPanel(
           (value) => applyMemory(value as "on" | "off"),
         );
         break;
-      case 3:
+      case 2:
         fe.startEnum("Completed plans", PLAN_RETENTION_CHOICES, state().plans.retention, (value) =>
           detachObserved("run_controls_plan_retention", () =>
             applyPlanRetention(value as PlanRetention),
@@ -279,7 +229,7 @@ export function RunControlsPanel(
   }
 
   function openDetails(): void {
-    host.level.push(settingsRows()[Math.max(0, Math.min(3, sel()))]?.label ?? "Details");
+    host.level.push(settingsRows()[Math.max(0, Math.min(2, sel()))]?.label ?? "Details");
   }
 
   const spec = (): LevelSpec =>
@@ -294,7 +244,7 @@ export function RunControlsPanel(
         }
       : {
           nav: {
-            count: () => 4,
+            count: () => 3,
             index: sel,
             setIndex: setSel,
             activate: { label: "change", run: activate },
@@ -315,9 +265,6 @@ export function RunControlsPanel(
 
   const settingSource = (key: keyof SettingsFile) =>
     deps.settings.origin?.(key) ?? "product default";
-  const persistedGuardMode = (): GuardMode => resolvedGuardMode(deps.settings.effective().guard);
-  const guardSource = (): string =>
-    deps.guard.mode() === persistedGuardMode() ? settingSource("guard") : "session";
   const configuredIsolation = (): string => {
     const global = deps.settings.read("global");
     if (global?.sandbox === undefined) return "product default";
@@ -331,14 +278,6 @@ export function RunControlsPanel(
         configured: configuredIsolation(),
         effective: state().isolation,
         source: "global",
-        applies: "next run",
-        mutation: "immediate",
-      },
-      {
-        label: "Guard",
-        configured: scopedGuard()?.mode ?? "inherit",
-        effective: state().guardMode,
-        source: guardSource(),
         applies: "next run",
         mutation: "immediate",
       },
@@ -381,7 +320,7 @@ export function RunControlsPanel(
   }
 
   function detailBody(): JSX.Element {
-    const index = Math.max(0, Math.min(3, sel()));
+    const index = Math.max(0, Math.min(2, sel()));
     return (
       <SettingDetail setting={settingsRows()[index]}>
         <Show when={index === 0}>
@@ -397,14 +336,11 @@ export function RunControlsPanel(
           </text>
         </Show>
         <Show when={index === 1}>
-          <text fg={tokens.muted}>Guard saves to {host.scope()} settings.</text>
-        </Show>
-        <Show when={index === 2}>
           <text fg={tokens.muted} wrapMode="word">
             {memoryDescription(state())}
           </text>
         </Show>
-        <Show when={index === 3}>
+        <Show when={index === 2}>
           <For each={planRetentionDescription(state().plans.retention)}>
             {(line) => <text fg={tokens.muted}>{line}</text>}
           </For>

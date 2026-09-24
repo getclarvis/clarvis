@@ -1,5 +1,4 @@
 import { addGoalAuxiliaryUsage } from "../goals/usage.ts";
-import { guardReviewerUsage } from "../guard/reviewer-trace.ts";
 import { createHash } from "node:crypto";
 import { bestEffort, NOOP_LOGGER, sanitizeText } from "@clarvis/capability";
 import { resolveGoalsSettings } from "@clarvis/goal/settings";
@@ -104,8 +103,6 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
       ...options.kernel,
       defaultOwner: owner,
       ownershipMode: "single",
-      sessionAllowlistFor: (run) => registry?.guardAllowlistFor(run),
-      operatorAuthorityFor: (run) => registry?.operatorAuthorityFor(run),
       onRuntimePlacement(notice) {
         options.kernel.onRuntimePlacement?.(notice);
         if (notice.message !== undefined) publishRuntimeNotice(notice.message);
@@ -161,8 +158,6 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
       occupied: (sessionId) => maintenance || registry!.occupied(sessionId),
       redact: sanitizeText,
       priceFor: (model) => prices.get(model),
-      guardUsageFor: (executionId) =>
-        guardReviewerUsage(kernel.readRunEvidenceTrace(executionId, owner)),
       async readRun(id) {
         try {
           return await kernel.runs.get(id);

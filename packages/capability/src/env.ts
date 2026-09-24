@@ -185,12 +185,12 @@ const baseEnvSchema = z.object({
    */
   CLARVIS_LOG: z.string().optional(),
   /**
-   * Whether audit records — authentication and command-guard decisions — are
+   * Whether authentication audit records are
    * emitted regardless of the active level.
    *
    * @remarks Its own knob because `CLARVIS_LOG_LEVEL=warn` is a legitimate
    *   production setting and would otherwise silence every authentication
-   *   success and every guard verdict. Environment only: a run that could write
+   *   success. Environment only: a run that could write
    *   this through settings could silence the record of what it did.
    */
   CLARVIS_LOG_AUDIT: boolFromEnv(true),

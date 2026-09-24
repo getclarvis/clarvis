@@ -1746,15 +1746,6 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
     provider currently owns it (`packages/code/src/views/config/providers/list-level.tsx`) — and
     that first-run setup is the one flow that still stages it alongside a provider
     (`packages/code/src/features/providers/controller.ts`).
-## Reviewer model readiness
-
-`guardAutoResolves` considers `effect_review.model` before the default model. Code forwards actual
-reviewer overrides and optional guidance; kernel owns the first safety policy. Selecting a model
-does not widen effect authority. Production:
-[guard-mode.ts](../../packages/code/src/adapters/guard-mode.ts) and
-[kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts).
-The review contract is [effect review](../execution/effect-review.md).
-
 Agent Profile documents with unknown frontmatter keys remain listable with an invalid marker. The editor does not promote `base_prompt` from invalid metadata; writes use the same closed schema as execution admission.
 Production: `docToAgentFile` and `normalizeAgentWrite` in [agent-files.ts](../../packages/code/src/adapters/agent-files.ts).
 Test: unknown-key rejection and unchecked-prompt isolation in [agent-files.test.ts](../../packages/code/tests/unit/agent-files.test.ts).

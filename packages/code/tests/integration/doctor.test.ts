@@ -792,12 +792,11 @@ test("plans: unconfigured reports the defaults; an explicit block reports its po
   });
 });
 
-test("run_safety reports isolation and review as independent axes", async () => {
+test("run_safety reports configured isolation", async () => {
   const dirs = tmpDirs();
   seedSettings(dirs.global, {
     providers: [KEYLESS_PROVIDER as never],
     default_model: "local/m",
-    guard: { type: "shell", mode: "auto" } as never,
     sandbox: {
       type: "native",
       enabled: true,
@@ -811,7 +810,6 @@ test("run_safety reports isolation and review as independent axes", async () => 
   createRoot((dispose) => {
     const report = runGates(buildCtx(dirs, settings));
     expect(report.results.run_safety.detail).toContain("sandbox");
-    expect(report.results.run_safety.detail).toContain("review auto");
     dispose();
   });
 });
@@ -819,7 +817,6 @@ test("run_safety reports isolation and review as independent axes", async () => 
 test("run_safety reports the inspected native placement when settings disagree", async () => {
   const dirs = tmpDirs();
   seedSettings(dirs.global, {
-    guard: { type: "shell", mode: "auto" } as never,
     sandbox: { type: "native", enabled: true } as never,
   });
   const settings = await settingsFrom(dirs);

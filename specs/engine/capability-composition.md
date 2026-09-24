@@ -80,7 +80,7 @@ rather than left thin:
 | Settings merge | `mergeProviders`, `mergeSettings`, `SettingsScope` | `settings/settings-merge.js` (`packages/loop/src/host.ts`) |
 | Capability settings | `readCapabilitySettings`, `settingsSchemaFor` | `settings/capability-settings.js` (`packages/loop/src/host.ts`) |
 | Settings schema | `mcpServerSettingsSchema`, `mcpServerPluginSchema`, `pluginNameField`, `pluginRefField`, `settingsSchema`, `McpServerSettings`, `SettingsFile`, plus `settingsServerToEngine` | `settings/settings-schema.js`, `settings/engine-server.js` (`packages/loop/src/host.ts`) |
-| Guard/sandbox config | `defaultGuardMode`, `GuardConfig`, `ResolvedSandboxSettings`, `SandboxSettings` | `runtime/capabilities/tools-settings.js` (`packages/loop/src/host.ts`) |
+| Sandbox config | `ResolvedSandboxSettings`, `SandboxSettings` | `runtime/capabilities/tools-settings.ts` (`packages/loop/src/host.ts`) |
 | Request-schema helpers | `parseModelRef`, `resolveProvider`, `providerConfigSchema`, `grantSchema`, `BUILTIN_GRANT_NAMES`, `profileReadinessIssues`, `ReadinessIssue`, `ReadinessProfile` | `@clarvis/capability`, `validation/request-schema.js`, `validation/request/grant-registry.js`, `validation/profile-readiness.js` (`packages/loop/src/host.ts`) |
 | Wire names / misc helpers | `deriveEventSpan`, `EventSpan`, `CONTROL_PLANE_TOOL_NAMES`, `SUBMIT_RESULT_TOOL_NAME`, `boundPromise`, `contentToText`, `errorText`, `isWellFormedHttpUrl`, `readJsonFile`, `ownerFromWorkspace`, `loadEnv` | various (`packages/loop/src/host.ts`) |
 | Extension admission / run-deps construction | `createExtensionAdmissionController`, `ExtensionCallUnavailableError`, `ExtensionAdmissionController`, `ExtensionAdmissionOptions`, `ExtensionAdmissionSnapshot`, `MCPStatus`, `NamespacedTool`, `ToolTransport`, `buildExecuteRunDeps`, `createHostExtensionAdmission`, `createHostModelCallAdmission`, `hooksEffective`, `BuildRunDepsOptions`, `BuiltRunDeps`, `HostExtensionAdmission`, `HostModelCallAdmission`, `SkillRootInput`, `PluginBootstrapSkill` | `@clarvis/capability`, `./runtime/build-run-deps.ts`, `./runtime/capabilities/skills-settings.ts` (`packages/loop/src/host.ts`) |
@@ -306,7 +306,7 @@ capability touches its own module and this one file" contract stated in the modu
 comment (`packages/loop/src/runtime/capabilities/settings-specs.ts`).
 
 `settingsSchemaFor(registry?)` (`packages/loop/src/settings/capability-settings.ts`) is how a **host-registered**
-spec (memory/plan/judge/workflows/tasks — delegated to [kernel-config-and-agents](../hosts/kernel-config.md)) is admitted
+spec (memory/plan/workflows/tasks — delegated to [kernel-config-and-agents](../hosts/kernel-config.md)) is admitted
 into the schema **without the engine's built-in set changing**: it `.extend()`s `settingsSchema`
 with one optional key per registered spec, throwing if a registered `key` collides with a built-in
 block (`packages/loop/src/settings/capability-settings.ts`) or if it declares unsupported plugin
@@ -787,16 +787,6 @@ their own:**
 - **The kernel-side half of settings/capability registration** (which specs the kernel actually
   registers, in what order, and how `settingsSchemaFor`'s registry is populated at boot) is not
   covered here; it belongs to [kernel-config-and-agents](../hosts/kernel-config.md).
-## Host authority substrate
-
-The operator ledger is transversal, not owned by tools. `executeRun` creates it through a host
-factory, and `runOrchestrator` prepublishes its reader before concurrent capability activation.
-Capabilities cannot obtain the writer. Persistence and inheritance are owned by
-[effect review](../execution/effect-review.md). Production:
-[execute-run.ts](../../packages/loop/src/runtime/execute-run.ts) and
-[orchestrator.ts](../../packages/loop/src/runtime/orchestrator.ts). Test:
-[operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).
-
 ### Host-owned execution visibility
 
 `ExecuteRunDeps.executionVisibility` is required and validated before activation. The engine copies

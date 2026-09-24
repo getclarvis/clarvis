@@ -1,7 +1,6 @@
 import path from "node:path";
 import { lstatSync, realpathSync } from "node:fs";
-import { ToolError, type ErrorCode } from "../errors.ts";
-import { configurationRoots, configurationTarget, type ConfigurationRoot } from "@clarvis/paths";
+import { ToolError } from "../errors.ts";
 import type { RuntimeConfig } from "../config.ts";
 
 /**
@@ -27,83 +26,13 @@ function rejectHomeShorthand(input: string): void {
     );
 }
 
-/** Resolve a file-tool path while preserving independent configuration protection. */
+/** Resolve a file-tool path against the workspace without imposing an access boundary. */
 export function resolveFileToolPath(
   input: string,
-  config: Pick<RuntimeConfig, "workspaceRoot" | "stateRoot" | "configurationRoots">,
+  config: Pick<RuntimeConfig, "workspaceRoot">,
 ): string {
   rejectHomeShorthand(input);
-  const abs = resolvePath(input, config.workspaceRoot);
-  if (isWithinRoots(abs, [config.stateRoot]))
-    throw new ToolError("path_escape", `Path is not a readable output artifact: ${input}`, {
-      path: input,
-    });
-  const roots =
-    config.configurationRoots ?? configurationRoots({ workspaceRoot: config.workspaceRoot });
-  const lexicalTarget = configurationTarget(roots, abs);
-  const canonical = canonicalizeAllowingMissing(abs);
-  if (canonical === undefined)
-    throw new ToolError(
-      lexicalTarget === undefined ? "io_error" : "path_escape",
-      `Path could not be safely resolved: ${input}.`,
-      {
-        path: input,
-      },
-    );
-  const canonicalRoots = {} as Record<ConfigurationRoot, string>;
-  for (const [root, directory] of Object.entries(roots)) {
-    const resolved = canonicalizeAllowingMissing(directory);
-    if (resolved === undefined)
-      throw new ToolError("path_escape", `Configuration root could not be resolved: ${root}.`);
-    canonicalRoots[root as ConfigurationRoot] = resolved;
-  }
-  const actualTarget = configurationTarget(canonicalRoots, canonical);
-  const classification = lexicalTarget?.kind ?? actualTarget?.kind;
-  if (classification === "secret")
-    throw new ToolError("denied", `Configuration target is secret: ${input}.`, { path: input });
-  if (classification === "reserved_unknown")
-    throw new ToolError(
-      "unrecognized_configuration_target",
-      `Configuration target is not recognized: ${input}.`,
-      { path: input },
-    );
-  if (
-    (lexicalTarget === undefined) !== (actualTarget === undefined) ||
-    (lexicalTarget !== undefined &&
-      (lexicalTarget.root !== actualTarget?.root || lexicalTarget.path !== actualTarget.path))
-  )
-    throw new ToolError("path_escape", `Configuration path changed during resolution: ${input}.`, {
-      path: input,
-    });
-  if (lexicalTarget !== undefined) {
-    let current = roots[lexicalTarget.root];
-    for (const part of ["", ...lexicalTarget.path.split("/")]) {
-      if (part !== "") current = path.join(current, part);
-      try {
-        const stat = lstatSync(current);
-        if (stat.isSymbolicLink() || (current === abs && stat.isFile() && stat.nlink !== 1))
-          throw new ToolError("denied", `Configuration target contains a link: ${input}.`, {
-            path: input,
-          });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      }
-    }
-  }
-  return abs;
-}
-
-/** Skip private or redirected leaves before a recursive file tool observes them. */
-export function isAdmittedFileToolSearchPath(
-  candidate: string,
-  config: Pick<RuntimeConfig, "workspaceRoot" | "stateRoot" | "configurationRoots">,
-): boolean {
-  try {
-    resolveFileToolPath(candidate, config);
-    return true;
-  } catch {
-    return false;
-  }
+  return resolvePath(input, config.workspaceRoot);
 }
 
 /**
@@ -148,7 +77,7 @@ function forCompare(p: string, caseInsensitive: boolean): string {
   return caseInsensitive ? p.toLowerCase() : p;
 }
 
-/** Canonical location fact for Guard risk analysis; this never grants file access. */
+/** Canonical location comparison for host-owned path boundaries. */
 export function isWithinRoots(
   abs: string,
   roots: readonly string[],
@@ -164,47 +93,6 @@ export function isWithinRoots(
     if (targetReal === rootReal || targetReal.startsWith(rootReal + path.sep)) return true;
   }
   return false;
-}
-
-/**
- * Refuse a native mutation whose canonical target overlaps a host-protected root.
- *
- * @param options.rejectAncestors - Also rejects a target that contains a protected root.
- *   Recursive callers must enable this because traversing an otherwise writable
- *   ancestor would still let them mutate the protected package below it.
- * @param options.code - Stable error code for a protected-root overlap.
- * @param options.message - Human-facing error for a protected-root overlap.
- */
-export function assertOutsideRoots(
-  abs: string,
-  protectedRoots: readonly string[],
-  input: string,
-  options: { rejectAncestors?: boolean; code?: ErrorCode; message?: string } = {},
-): void {
-  const target = canonicalizeAllowingMissing(abs);
-  if (target === undefined) {
-    throw new ToolError("path_escape", `Path could not be safely resolved: ${input}.`, {
-      path: input,
-    });
-  }
-  const targetReal = forCompare(target, process.platform === "win32");
-  for (const candidate of protectedRoots) {
-    const root = canonicalizeAllowingMissing(candidate);
-    if (root === undefined) continue;
-    const rootReal = forCompare(root, process.platform === "win32");
-    if (
-      targetReal === rootReal ||
-      targetReal.startsWith(rootReal + path.sep) ||
-      (options.rejectAncestors === true && rootReal.startsWith(targetReal + path.sep))
-    ) {
-      throw new ToolError(
-        options.code ?? "path_escape",
-        options.message ??
-          `Path targets an enabled skill package and cannot be changed by native file tools: ${input}.`,
-        { path: input },
-      );
-    }
-  }
 }
 
 /**

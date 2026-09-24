@@ -1,14 +1,9 @@
-import {
-  isReviewedConfigurationPath,
-  reviewedConfigurationModes,
-} from "../guard/authoring-path.ts";
 import { fs } from "../lib/environment-fs.ts";
 import path from "node:path";
 import { fsyncDir, renameWithRetry, tmpPathFor } from "@clarvis/paths";
 import { ToolError, fsError } from "../errors.ts";
 import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
-import { applyOpsAtomic, withFileLocks, assertNotSymlink, RM_RETRY } from "../lib/atomic.ts";
-import { readFileOptionsForPath, readRawFile } from "../lib/files.ts";
+import { withFileLocks, assertNotSymlink, RM_RETRY } from "../lib/atomic.ts";
 import type { ToolDef } from "./types.ts";
 
 /**
@@ -25,9 +20,7 @@ import type { ToolDef } from "./types.ts";
  * then `fs.rename`-ing it into place and fsyncing the directory; the temp file is
  * removed on any failure. Passing the same path for source and destination fails
  * with `invalid_input`. The handler returns a human-readable summary noting when
- * an existing file was overwritten. A protected configuration destination uses
- * the host's prepared review and shared rollback transaction with the captured
- * UTF-8 source bytes and private configuration modes.
+ * an existing file was overwritten.
  */
 export const copy: ToolDef = {
   atomicMutation: true,
@@ -108,32 +101,12 @@ export const copy: ToolDef = {
         );
       }
 
-      if (
-        config.reviewMutation !== undefined &&
-        isReviewedConfigurationPath(absDst, config.workspaceRoot, config.configurationRoots) &&
-        srcStat.size > config.maxFileBytes
-      )
-        throw new ToolError("too_large", "Authoring copy source exceeds the file budget");
-      const captured =
-        config.reviewMutation !== undefined &&
-        isReviewedConfigurationPath(absDst, config.workspaceRoot, config.configurationRoots)
-          ? await readRawFile(
-              absSrc,
-              srcRel,
-              config.maxFileBytes,
-              undefined,
-              readFileOptionsForPath(config, absSrc),
-            )
-          : undefined;
-      if (captured !== undefined && !Buffer.from(captured.toString("utf8")).equals(captured))
-        throw new ToolError("invalid_input", "Authoring requires UTF-8 text");
       const commit = async (): Promise<void> => {
         const dstDir = path.dirname(absDst);
         const tmp = tmpPathFor(absDst);
         try {
           await fs.mkdir(dstDir, { recursive: true });
-          if (captured === undefined) await fs.copyFile(absSrc, tmp);
-          else await fs.writeFile(tmp, captured);
+          await fs.copyFile(absSrc, tmp);
           await fs.chmod(tmp, srcStat.mode & 0o777);
           await renameWithRetry(tmp, absDst);
         } catch (err) {
@@ -142,19 +115,7 @@ export const copy: ToolDef = {
         }
         await fsyncDir(dstDir);
       };
-      if (captured !== undefined && config.reviewMutation !== undefined)
-        await applyOpsAtomic(
-          [
-            {
-              type: dstExists ? "modify" : "create",
-              path: absDst,
-              content: captured.toString("utf8"),
-              ...reviewedConfigurationModes(absDst, config),
-            },
-          ],
-          config.reviewMutation,
-        );
-      else await commit();
+      await commit();
 
       const from = displayPath(absSrc, config.workspaceRoot);
       const to = displayPath(absDst, config.workspaceRoot);

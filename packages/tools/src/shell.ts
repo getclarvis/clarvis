@@ -72,10 +72,7 @@ function computeShell(deps: ShellDeps): ShellSpec {
  * default - and only `.EXE` is considered, because a `pwsh.cmd` shim could not
  * be spawned directly.
  *
- * There is deliberately no configuration surface. A configurable shell plus a
- * configurable analyzer flavor makes "analyze one dialect, run another"
- * expressible, and that state produces no error and no failing test - the guard
- * simply stops seeing what it is ruling on. `cmd.exe` is likewise unsupported:
+ * There is deliberately no configuration surface. `cmd.exe` is unsupported:
  * it has no `-EncodedCommand` equivalent, so every command would have to survive
  * its non-composable quoting, and it offers no dependable exit status across a
  * chained command.

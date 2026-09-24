@@ -136,7 +136,6 @@ chose it — is the first thing every other path in this package is derived from
 | `skillsDir` | `<global>/skills` | `packages/paths/src/global.ts` |
 | `workflowsDir` | `<global>/workflows` | `packages/paths/src/global.ts` |
 | `sharedAgentPromptFile` | `<global>/shared-agent.md` | `packages/paths/src/global.ts` |
-| `guardJudgeFile` | `<global>/guard-judge.md` | `packages/paths/src/global.ts` |
 | `memoryPolicyFile` | `<global>/memory-policy.md` | `packages/paths/src/global.ts` |
 | `authFile` | `<global>/auth.json` | `packages/paths/src/global.ts` |
 | `authKeyFile` | `<global>/auth-key.json` | `packages/paths/src/global.ts` |
@@ -196,7 +195,6 @@ builder tests do not qualify native IPC behavior.
 | `pluginsDir` | `<ws>/.clarvis/plugins` | `packages/paths/src/workspace.ts` |
 | `extensionProfilesDir` | `<ws>/.clarvis/extension-profiles` | `packages/paths/src/workspace.ts` |
 | `sharedAgentPromptFile` | `<ws>/.clarvis/shared-agent.md` | `packages/paths/src/workspace.ts` |
-| `guardJudgeFile` | `<ws>/.clarvis/guard-judge.md` | `packages/paths/src/workspace.ts` |
 | `memoryPolicyFile` | `<ws>/.clarvis/memory-policy.md` | `packages/paths/src/workspace.ts` |
 | `plansRoot` | `<ws>/.clarvis/plans` | `packages/paths/src/workspace.ts` |
 | `memoryRoot` | `<ws>/.clarvis/memory` | `packages/paths/src/workspace.ts` |
@@ -327,7 +325,7 @@ pipes are not filesystem paths and are never measured by it. Production:
 `assertPrivateHostDirectory` in `packages/kernel/src/hosting/private-files.ts`. Tests:
 `packages/paths/tests/unit/short-temporaries.test.ts`,
 `packages/paths/tests/integration/short-temporaries.test.ts`,
-`packages/loop/tests/integration/command-guard-wiring.test.ts` and
+`packages/loop/tests/integration/tools.test.ts` and
 `packages/code/tests/unit/artifact-isolation.test.ts`.
 
 ### 2.7 Ensure functions and the workspace `.gitignore` (`packages/paths/src/ensure.ts`)
@@ -456,7 +454,7 @@ confirmed by the absence of `zod` from its dependencies (`package.json`, section
 
 `<ws>/.clarvis` top level, exhaustively enumerated by the allow-list a kernel test drives every
 real writer against: `.gitignore`, `settings.json`, `agents`, `skills`, `workflows`, `plugins`,
-`extension-profiles`, `guard-judge.md`, `plans`, `memory`, `owners`, `worktrees`
+`extension-profiles`, `plans`, `memory`, `owners`, `worktrees`
 (`packages/kernel/tests/architecture/workspace-surface.test.ts`, INV-192).
 
 `WORKSPACE_GITIGNORE` content, seeded verbatim (`packages/paths/src/ensure.ts`):
@@ -479,7 +477,7 @@ hand-edited file with the seeded template. Production: `ensureWorkspaceDir` and 
 
 `<global>` = `$CLARVIS_HOME` or `<home>/.clarvis` (`packages/paths/src/roots.ts`). Beneath it:
 operator-authored files at the root (`settings.json`, `agents/`, `keys.json`, `plugins/`, `extension-profiles/`,
-`workspace-trust.json`, `skills/`, `workflows/`, `guard-judge.md`,
+`workspace-trust.json`, `skills/`, `workflows/`,
 `memory-policy.md`, `auth.json`, `auth-key.json`), and generated state under `state/`
 (`sessions/`, `traces/`, `workflows/` [records], `extension-profile.json`, `code.json`, private remote-MCP OAuth credentials)
 and `cache/` (`models-dev.json`, `update-check.json`)
@@ -830,8 +828,8 @@ synchronous persistence APIs that cannot yield while holding their transaction."
 `configurationRoots` exposes `global_clarvis`, `workspace_clarvis`, `global_agents` and
 `workspace_agents` without creating or authorizing their directories. The kernel supplies its
 resolved global directory and workspace; shared global content uses the user home. Production:
-[configuration.ts](../../packages/paths/src/configuration.ts). Test: all-four-root operations in
-[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
+[configuration.ts](../../packages/paths/src/configuration.ts). Test: configuration root fixtures in
+[configuration-documents.test.ts](../../packages/kernel/tests/integration/configuration-documents.test.ts).
 `configurationPathClass` classifies relative targets as `authoring`, `operational`, `secret`,
 `reserved_unknown`, or `generated_read_only`. Only
 canonical agent, skill and workflow Markdown names enter authoring; settings, executable declarations
@@ -842,7 +840,7 @@ consumers still resolve actual targets and enforce links, confinement and revisi
 Production: `configurationPathClass` in [configuration.ts](../../packages/paths/src/configuration.ts).
 Test: configuration classification cases in
 [configuration.test.ts](../../packages/paths/tests/unit/configuration.test.ts).
-Effect review is owned by [self-configuration.md](../hosts/self-configuration.md).
+Configuration activation is owned by [self-configuration.md](../hosts/self-configuration.md).
 
 **INV-001.** No package outside `@clarvis/paths` may spell the literal directory names `.clarvis`
 or `.agents`, or the temp-file prefix `.clarvis-tmp-`, in executable source under any package's
@@ -924,7 +922,7 @@ evidence the owner is dead. Test: `packages/paths/tests/contract/local-lease.tes
 **INV-192.** Driving every writer that touches a workspace (plan repository listing, two memory
 batch writes, `markIndexed`) leaves `<ws>/.clarvis`'s top level containing only entries from the
 fixed allowed set (`.gitignore`, `settings.json`, `agents`, `skills`, `workflows`, `plugins`,
-`guard-judge.md`, `plans`, `memory`, `owners`, `worktrees`), and every file found under the workspace root is
+`plans`, `memory`, `owners`, `worktrees`), and every file found under the workspace root is
 inside `.clarvis/`. Test:
 `packages/kernel/tests/architecture/workspace-surface.test.ts`.
 

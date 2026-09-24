@@ -1,5 +1,5 @@
 import { PLAN_REVIEW_ELICIT_KIND } from "./elicit-types.ts";
-import type { ElicitCommandDetail, ElicitRequestParams, ElicitResult } from "./elicit-types.ts";
+import type { ElicitRequestParams, ElicitResult } from "./elicit-types.ts";
 
 /** A single elicitation field's answer, coerced to the type its `kind` implies. */
 export type ElicitContentValue = string | number | boolean | string[];
@@ -27,9 +27,6 @@ export interface ElicitForm {
   message: string;
   fields: ElicitField[];
   url?: string;
-  /** Structured guard command context; when present the view renders it
-   * instead of `message`. */
-  detail?: ElicitCommandDetail;
 }
 
 type PrimitiveSchema = {
@@ -83,17 +80,6 @@ function fieldFromSchema(name: string, schema: PrimitiveSchema, required: boolea
   };
 }
 
-const GUARD_DECISION_LABELS: Record<string, string> = {
-  deny: "deny",
-  allow: "allow once",
-  allow_session: "allow for this session",
-};
-const CONFIGURATION_DECISION_LABELS: Record<string, string> = {
-  deny: "deny",
-  allow: "allow once",
-  allow_session: "allow these targets for this session",
-};
-
 /** The plan-review verdicts in the user's words rather than the wire's. */
 const PLAN_DECISION_LABELS: Record<string, string> = {
   approve: "approve",
@@ -107,8 +93,6 @@ const WORKFLOW_DECISION_LABELS: Record<string, string> = {
 };
 
 const DECISION_LABELS: Record<string, Record<string, string>> = {
-  guard_confirm: GUARD_DECISION_LABELS,
-  configuration_review: CONFIGURATION_DECISION_LABELS,
   [PLAN_REVIEW_ELICIT_KIND]: PLAN_DECISION_LABELS,
   workflow_review: WORKFLOW_DECISION_LABELS,
 };
@@ -138,10 +122,9 @@ function iterationLimitCopy(value: string): string {
  * Chooses the `url` variant when `mode` says so, or when a `url` is present
  * with no `requestedSchema`; otherwise renders the schema's properties as
  * fields. When `kind` names a known decision vocabulary
- * (`guard_confirm`/`plan_review`), option labels are relabeled into the
+ * (`plan_review`/`workflow_review`), option labels are relabeled into the
  * user-facing wording from {@link DECISION_LABELS} instead of the raw wire
- * values. Guard decisions are also projected in affirmative-first order while
- * retaining `deny` as their safe Enter default.
+ * values.
  */
 export function parseElicitForm(params: ElicitRequestParams): ElicitForm {
   const p = params as {
@@ -172,20 +155,6 @@ export function parseElicitForm(params: ElicitRequestParams): ElicitForm {
     for (const field of fields)
       for (const option of field.options) option.label = labels[option.value] ?? option.label;
   }
-  if (params.kind === "guard_confirm" || params.kind === "configuration_review") {
-    const decision = fields.find((field) => field.name === "decision");
-    const order = ["allow", "allow_session", "deny"];
-    decision?.options.sort(
-      (left, right) =>
-        (order.includes(left.value) ? order.indexOf(left.value) : order.length) -
-        (order.includes(right.value) ? order.indexOf(right.value) : order.length),
-    );
-    if (
-      decision?.options.some((option) => option.value === "deny") &&
-      decision.default === undefined
-    )
-      decision.default = "deny";
-  }
   if (params.kind === "workflow_review") {
     const decision = fields.find((field) => field.name === "decision");
     const order = ["run", "cancel"];
@@ -195,17 +164,10 @@ export function parseElicitForm(params: ElicitRequestParams): ElicitForm {
         (order.includes(right.value) ? order.indexOf(right.value) : order.length),
     );
   }
-  const detail =
-    params.detail !== undefined &&
-    "command" in params.detail &&
-    params.detail.command.trim().length > 0
-      ? params.detail
-      : undefined;
   return {
     mode: "form",
     message,
     fields,
-    ...(detail !== undefined ? { detail } : {}),
   };
 }
 

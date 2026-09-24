@@ -1,21 +1,17 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { isAbsolute, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { configurationTarget } from "@clarvis/paths";
 import {
   isFileOperation,
   type AgentFilesystem,
   type FileOperation,
   type FilesystemCall,
 } from "./agent-filesystem.ts";
-import type { FileOp } from "./lib/atomic.ts";
 import type { RuntimeConfig } from "./config.ts";
 import type { DispatchResult } from "./core.ts";
-import { ToolError, parseToolError } from "./errors.ts";
+import { ToolError } from "./errors.ts";
 import {
-  mutationDigest,
   parseFilesystemChildMessage,
   readFilesystemFrames,
   writeFilesystemFrame,
@@ -35,10 +31,6 @@ interface PendingCall {
   readonly signal?: AbortSignal;
   readonly abort?: () => void;
   readonly fuse: ReturnType<typeof setTimeout>;
-  review?: Promise<void>;
-  reviewFailure?: Error;
-  commit?: { resolve(): void; reject(error: Error): void };
-  committed?: boolean;
 }
 
 function workerFailure(message: Extract<FilesystemChildMessage, { kind: "failure" }>): ToolError {
@@ -52,16 +44,6 @@ function workerFailure(message: Extract<FilesystemChildMessage, { kind: "failure
       ? {}
       : { destination_committed: message.destination_committed }),
   });
-}
-
-function reviewFailure(error: unknown, signal: AbortSignal | undefined): ToolError {
-  if (error instanceof ToolError)
-    return new ToolError(error.code, error.message, {
-      phase: "review",
-      ...error.fields,
-    });
-  if (signal?.aborted) return new ToolError("aborted", "Filesystem review was cancelled");
-  return new ToolError("review_failed", "Filesystem review failed", { phase: "review" });
 }
 
 const BOOT_TIMEOUT_MS = 5_000;
@@ -85,11 +67,7 @@ function contextOf(config: RuntimeConfig): FilesystemWireContext {
     stateRoot: config.statePaths.root,
     temporaryRoots: config.temporaryRoots,
     skillExecutionRoots: config.skillExecutionRoots,
-    ...(config.configurationRoots === undefined
-      ? {}
-      : { configurationRoots: config.configurationRoots }),
     readOnly: config.readOnly,
-    reviewMutation: config.reviewMutation !== undefined,
     ripgrepAvailable: config.ripgrepAvailable,
     maxOutputBytes: config.maxOutputBytes,
     maxFileBytes: config.maxFileBytes,
@@ -100,51 +78,6 @@ function contextOf(config: RuntimeConfig): FilesystemWireContext {
     maxToolMetaBytes: config.maxToolMetaBytes,
     regexScanBudgetMs: config.regexScanBudgetMs,
   };
-}
-
-function mutationRoute(
-  operations: readonly FileOp[],
-  config: RuntimeConfig,
-): "worker" | "classified-host" {
-  const roots = config.configurationRoots;
-  if (roots === undefined || config.reviewMutation?.commitClassified === undefined) return "worker";
-  const paths = operations.flatMap((operation) => [
-    operation.path,
-    ...(operation.from === undefined ? [] : [operation.from]),
-  ]);
-  const classified = paths.map((path) => configurationTarget(roots, path));
-  if (classified.some((target) => target?.kind === "secret"))
-    throw new ToolError("denied", "Secret configuration cannot be changed by file tools");
-  if (classified.some((target) => target?.kind === "reserved_unknown"))
-    throw new ToolError(
-      "unrecognized_configuration_target",
-      "Configuration target is not recognized",
-    );
-  if (classified.some((target) => target?.kind === "generated_read_only"))
-    throw new ToolError("denied", "Generated configuration is read-only");
-  if (classified.every((target) => target === undefined)) return "worker";
-  if (
-    classified.some(
-      (target, index) =>
-        target === undefined &&
-        (!within(config.workspaceRoot, paths[index]!) ||
-          config.filesystemPolicy.workspaceAccess === "read-only" ||
-          config.filesystemPolicy.protectedRoots.some((root) => within(root, paths[index]!))),
-    )
-  )
-    throw new ToolError("denied", "A configuration batch includes an unadmitted target");
-  if (
-    config.filesystemPolicy.workspaceAccess === "read-only" &&
-    classified.some((target) => target?.root.startsWith("workspace_"))
-  )
-    throw new ToolError("denied", "The workspace is read-only under this Sandbox policy");
-  return "classified-host";
-}
-
-function within(root: string, target: string): boolean {
-  if (!isAbsolute(target)) return false;
-  const path = relative(root, target);
-  return path === "" || (!isAbsolute(path) && path !== ".." && !path.startsWith(`..${sep}`));
 }
 
 /** One physical child shared by every file call in a run's native Sandbox. */
@@ -173,7 +106,6 @@ export class SandboxAgentFilesystem implements AgentFilesystem {
       clearTimeout(call.fuse);
       if (call.signal !== undefined && call.abort !== undefined)
         call.signal.removeEventListener("abort", call.abort);
-      call.commit?.reject(error);
       call.reject(error);
     }
   }
@@ -235,104 +167,14 @@ export class SandboxAgentFilesystem implements AgentFilesystem {
     }
     const call = this.pending.get(message.id);
     if (!call) throw new Error("Filesystem service returned an unknown request");
-    if (message.kind === "prepare") {
-      this.prepare(message, call);
-      return;
-    }
     if (message.kind === "failure") {
       if (message.operation !== call.operation)
         throw new Error("Filesystem service failure names a different operation");
       const failure = workerFailure(message);
-      call.commit?.reject(failure);
-      if (call.review !== undefined)
-        void call.review.then(
-          () => this.settle(message.id, call.reviewFailure ?? failure),
-          (error: unknown) => this.settle(message.id, reviewFailure(error, call.signal)),
-        );
-      else this.settle(message.id, failure);
+      this.settle(message.id, failure);
       return;
     }
-    if (call.commit !== undefined) {
-      if (message.result.isError) {
-        const part = message.result.content[0];
-        call.commit.reject(
-          parseToolError(part?.type === "text" ? part.text : undefined) ??
-            new ToolError("internal", "Filesystem mutation returned an invalid error"),
-        );
-      } else call.commit.resolve();
-    }
-    if (call.review !== undefined) {
-      void call.review.then(
-        () => this.settle(message.id, call.reviewFailure, message.result),
-        (error: unknown) => this.settle(message.id, reviewFailure(error, call.signal)),
-      );
-    } else this.settle(message.id, undefined, message.result);
-  }
-
-  private prepare(
-    message: Extract<FilesystemChildMessage, { kind: "prepare" }>,
-    call: PendingCall,
-  ): void {
-    if (
-      call.review !== undefined ||
-      message.digest !==
-        mutationDigest(this.owner.filesystemPolicy.identity, message.id, message.operations)
-    )
-      throw new Error("Filesystem service prepared a divergent mutation");
-    const reviewer = call.config.reviewMutation;
-    if (!reviewer) throw new Error("Filesystem service requested unavailable host review");
-    let route: "worker" | "classified-host";
-    try {
-      route = mutationRoute(message.operations, call.config);
-    } catch (error) {
-      call.review = Promise.reject(
-        error instanceof Error ? error : new Error("Filesystem mutation route failed"),
-      );
-      void call.review.catch(() => undefined);
-      void this.send({ kind: "reject", id: message.id, batchId: message.batchId }).catch(
-        () => undefined,
-      );
-      return;
-    }
-    call.review = reviewer(message.operations, async () => {
-      if (this.closed || this.failed)
-        throw new ToolError("aborted", "Filesystem service is unavailable");
-      if (call.signal?.aborted) throw new ToolError("aborted", "Filesystem call was cancelled");
-      if (call.committed) throw new Error("Filesystem mutation receipt was reused");
-      if (route === "classified-host")
-        await reviewer.commitClassified!(message.operations, call.config.filesystemPolicy);
-      call.committed = true;
-      const committed = new Promise<void>((resolve, reject) => {
-        call.commit = { resolve, reject };
-      });
-      await this.send({
-        kind: "commit",
-        id: message.id,
-        batchId: message.batchId,
-        digest: message.digest,
-        route,
-      });
-      await committed;
-    });
-    void call.review.then(
-      () => {
-        if (!call.committed) {
-          call.reviewFailure = new ToolError(
-            "denied",
-            "Filesystem mutation was not committed by review",
-          );
-          void this.send({ kind: "reject", id: message.id, batchId: message.batchId }).catch(
-            () => undefined,
-          );
-        }
-      },
-      () => {
-        if (!call.committed)
-          void this.send({ kind: "reject", id: message.id, batchId: message.batchId }).catch(
-            () => undefined,
-          );
-      },
-    );
+    this.settle(message.id, undefined, message.result);
   }
 
   private settle(id: string, error?: Error, result?: DispatchResult): void {

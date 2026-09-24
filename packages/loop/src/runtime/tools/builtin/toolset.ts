@@ -4,10 +4,6 @@ import {
   listTools,
   resolveConfig,
   type RuntimeConfig,
-  type MutationReview,
-  type Guard,
-  type GuardReview,
-  type Elicit,
   type SandboxConfig,
   type ToolsLogger,
   type ExecutionSessionManager,
@@ -15,13 +11,12 @@ import {
 import type { NamespacedTool } from "@clarvis/capability";
 import type { ToolResultImage } from "@clarvis/capability";
 import { EXEC_TOOL_NAMES } from "./names.ts";
-import type { ConfigurationRoot, WorkspaceStatePaths } from "@clarvis/paths";
+import type { WorkspaceStatePaths } from "@clarvis/paths";
 import { isOperatorInterruptedTool } from "../tool-interrupt.ts";
 
 /**
  * Options for {@link createAgentToolset}: the `workspaceRoot`, the `canMutate` /
- * `canExec` capability gates, and optional `guard`,
- * `elicit` and `sandbox` wiring passed through to @clarvis/tools.
+ * `canExec` capability gates and optional `sandbox` wiring passed through to @clarvis/tools.
  */
 export interface AgentToolsetOptions {
   /** Trusted resolved machinery namespace, not a model argument. */
@@ -33,10 +28,6 @@ export interface AgentToolsetOptions {
   sessionManager?: ExecutionSessionManager;
   sessionAgent?: object;
   skillExecutionRoots?: readonly string[];
-  guard?: Guard;
-  reviewMutation?: MutationReview;
-  configurationRoots?: Readonly<Record<ConfigurationRoot, string>>;
-  elicit?: Elicit;
   sandbox?: SandboxConfig;
   /** Host-owned run identity for the resolved filesystem policy. */
   runIdentity?: string;
@@ -67,8 +58,6 @@ export interface AgentToolResult {
   text: string;
   images?: ToolResultImage[];
   diff?: string;
-  /** Final command-review outcome for guarded shell-family calls. */
-  guard?: GuardReview;
 }
 
 /**
@@ -172,12 +161,6 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
       ...(opts.skillExecutionRoots !== undefined
         ? { skillExecutionRoots: opts.skillExecutionRoots }
         : {}),
-      ...(opts.guard !== undefined ? { guard: opts.guard } : {}),
-      ...(opts.reviewMutation !== undefined ? { reviewMutation: opts.reviewMutation } : {}),
-      ...(opts.configurationRoots !== undefined
-        ? { configurationRoots: opts.configurationRoots }
-        : {}),
-      ...(opts.elicit !== undefined ? { elicit: opts.elicit } : {}),
       ...(opts.sandbox !== undefined ? { sandbox: opts.sandbox } : {}),
       ...(opts.runIdentity !== undefined ? { runIdentity: opts.runIdentity } : {}),
       ...(opts.filesystemPlacement !== undefined
@@ -210,7 +193,6 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
               : {}),
             ...(images.length > 0 ? { images } : {}),
             ...(diff ? { diff } : {}),
-            ...(r.guard ? { guard: r.guard } : {}),
           };
         }),
     };
@@ -285,8 +267,8 @@ export function createAgentToolsetWithAdapter(
  * config from the options, drop the exec tools when `canExec` is false, and
  * expose an abort-aware `dispatch`.
  *
- * @param opts - workspace root, capability gates and optional guard/elicit/
- *   sandbox wiring; see {@link AgentToolsetOptions}.
+ * @param opts - workspace root, capability gates and optional sandbox wiring;
+ *   see {@link AgentToolsetOptions}.
  * @returns the toolset; `dispatch` returns an error result for a tool not in the
  *   agent's set and resolves to {@link abortedResult} when the signal fires.
  * @remarks Read-only mode is derived from `!canMutate`. Image content is surfaced

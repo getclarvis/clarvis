@@ -58,17 +58,7 @@ const startParams = {
   plans: "review",
   task: { id: "CLAR-42", provider_key: "tasks:mcp:v1:sha256:fixture", mode: "work" },
   output_schema: { type: "object" },
-  guard_judge: { guidance: "Review bounded workspace changes", on_unsure: "deny" },
 } satisfies StartRunParams;
-
-const rejectedLegacyJudge = {
-  messages: [],
-  guard_judge: {
-    // @ts-expect-error The removed prompt alias must not reappear in the public DTO.
-    prompt: "Replace the Judge policy",
-  },
-} satisfies StartRunParams;
-void rejectedLegacyJudge;
 
 const textDelta = {
   type: "text_delta",

@@ -18,16 +18,10 @@ export const PLAN_REVIEW_ELICIT_KIND = "plan_review";
 
 export interface ElicitRequestParams {
   message: string;
-  /** What raised this question, so the UI can frame it: a security-styled
-   * command approval for `guard_confirm`, a plan-approval gate for
+  /** What raised this question, so the UI can frame it: a plan-approval gate for
    * `plan_review`, or a neutral question for `ask_user`. Mirrors the protocol
    * `ElicitationRequest.kind`. */
-  kind?: "ask_user" | "guard_confirm" | "plan_review" | "workflow_review" | (string & {});
-  /** Structured command context on a `guard_confirm` — when present the UI
-   * renders it (highlighted command + cwd) instead of the plain `message`,
-   * which stays the human-readable fallback. Mirrors the protocol
-   * `ElicitationCommandDetail`. */
-  detail?: ElicitCommandDetail;
+  kind?: "ask_user" | "plan_review" | "workflow_review" | (string & {});
   /** Form variant: a JSON-schema object describing the requested fields. */
   requestedSchema?: {
     type?: string;
@@ -44,7 +38,7 @@ export interface ElicitRequestParams {
   id?: string;
   /** Milliseconds the question stays open after this frontend confirms it is on
    * screen — present only when a host window policy applies to the question.
-   * Absent for guard confirmations, plan/workflow reviews, relayed MCP
+   * Absent for plan/workflow reviews, relayed MCP
    * questions and headless runs, which keep the operational wait ceiling and
    * render no countdown. Mirrors the protocol `ElicitationRequest.window_ms`. */
   windowMs?: number;
@@ -54,7 +48,7 @@ export interface ElicitRequestParams {
  * Confirms to the kernel that the pending question is really on screen.
  *
  * @returns milliseconds left in the question's decision window, or `undefined`
- *   when no window applies (guard confirmations, plan/workflow reviews, relayed
+ *   when no window applies (plan/workflow reviews, relayed
  *   questions, headless runs) or the kernel already settled the question.
  */
 export type ElicitPresenter = () => Promise<number | undefined>;
@@ -72,20 +66,6 @@ export function elicitCountdownText(remainingMs: number): string {
 
 /** Copy for a question the kernel closed because its decision window elapsed. */
 export const ELICIT_NO_RESPONSE_TEXT = "No response in time; decision returned to the model.";
-
-/** Structured command context of a guard confirmation. */
-export interface ElicitCommandDetail extends EffectReviewDetail {
-  /** The literal command awaiting approval, exactly as the agent wants to run it. */
-  command: string;
-  /** Absolute directory the command would run in. */
-  cwd: string;
-  /** Why the guard is asking — rendered alongside the command. */
-  reason: string;
-  /** Analyzer caveat (e.g. undecidable expansions) rendered as a warning. */
-  warning?: string;
-}
-
-import type { EffectReviewDetail } from "@clarvis/protocol";
 
 type ElicitAction = "accept" | "decline" | "cancel";
 

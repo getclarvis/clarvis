@@ -31,11 +31,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./guard": {
-      "bun": "./src/guard/index.ts",
-      "types": "./dist/guard/index.d.ts",
-      "import": "./dist/guard/index.js"
-    },
     "./shell": {
       "bun": "./src/shell-entry.ts",
       "types": "./dist/shell-entry.d.ts",

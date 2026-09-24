@@ -29,13 +29,12 @@ runs unchanged (`packages/kernel/src/config/agent-overlay.ts`).
 ## 2. Surface
 
 Agent-driven edits in the ordinary conversation use the
-[direct self-configuration contract](self-configuration.md): shared effect review, authored-file
-classification and revision-bound file mutations. The host reviewer does not expose credential,
-trust or private-state stores, and does not replace the operator-facing config service below.
-Production: `prepareConfigurationFileMutation` in
-[files.ts](../../packages/kernel/src/configuration/files.ts) and `createAuthoringMutationReview` in
-[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts). Test:
-[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
+[direct self-configuration contract](self-configuration.md): ordinary file tools write configuration
+documents under host permissions or the configured native sandbox. The config service below still
+validates documents when it reads them. Production: `dispatch` in
+[core.ts](../../packages/tools/src/core.ts) and `createFileConfigStore` in
+[file-config-store.ts](../../packages/kernel/src/config/file-config-store.ts). Test:
+[configuration-surface.test.ts](../../packages/kernel/tests/integration/configuration-surface.test.ts).
 
 ### 2.1 Public exports (`packages/kernel/src/config.ts`, the `./config` entrypoint)
 
@@ -578,15 +577,6 @@ unchanged, `AGENTS.md` is used as the fallback, and seeding both candidates puts
 the assembled entry profile. The lower-level empty-scope and oversized-file cases remain covered by
 `packages/kernel/tests/integration/file-config-store.test.ts`.
 
-The same captured records, global then workspace, also supply Judge's persistent operator
-instructions and the hosted Goal Steward's normative evaluation context; no second filesystem read
-can diverge from the assembled work-agent snapshot.
-Production: `captureRunInstructions` in
-[instruction-snapshot.ts](../../packages/kernel/src/runs/instruction-snapshot.ts) and
-`createSettingsRunAssembler` in [settings-assembler.ts](../../packages/kernel/src/runs/settings-assembler.ts).
-Test: `shares exact global and workspace contexts with Judge using per-scope filename precedence`
-in [settings-assembler.test.ts](../../packages/kernel/tests/component/settings-assembler.test.ts).
-
 ## 5. Invariants
 
 Each entry: **rule** — production anchor — test anchor.
@@ -763,8 +753,7 @@ Each entry: **rule** — production anchor — test anchor.
 26a. **Trust carry is limited to the exact authorized target revision.** Every other settings,
     agent and Extension Profile input must match the pre-write snapshot, and the trust record uses
     the fingerprint from the verified post-write snapshot. Production:
-    `packages/kernel/src/config/file-config-store.ts` and
-    `packages/kernel/src/configuration/authoring-mutations.ts`. Pinned by the concurrent
+    `packages/kernel/src/config/file-config-store.ts`. Pinned by the concurrent
     executable-change case in `packages/kernel/tests/integration/workspace-trust.test.ts`.
 
 27. **Settings mutation is serialized by a local lease and derives its input from the bytes whose
@@ -1061,11 +1050,3 @@ type-only import plus an injected `opts.plugins` object.
     (`packages/kernel/src/config/file-config-store.ts`) asserts "the shared primitive additionally proves that its
     same-host process is dead", which `packages/kernel/tests/integration/file-config-store.test.ts` / demonstrate but do not
     explain.
-## Effect reviewer ownership
-
-The file kernel resolves `effect_review` model and rollout from operator/global settings. Workspace
-settings can reduce timeout/retry bounds and require deny-on-unsure. The block scopes the
-transactional configuration reviewer; the command guard reads no rollout stage. Configuration changes affect
-future captured runs; authenticated intent can change within the current execution ceiling.
-Production: `loadGuardSettings` in [file-kernel.ts](../../packages/kernel/src/file-kernel.ts).
-See [effect review](../execution/effect-review.md) for the trust and compiler contracts.

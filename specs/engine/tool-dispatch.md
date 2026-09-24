@@ -135,15 +135,14 @@ owns.
 | `createAgentToolset` | `(opts: AgentToolsetOptions) => AgentToolset` | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
 | `createAgentToolsetWithAdapter` | `(opts, adapter: AgentToolsAdapter) => AgentToolset` | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
 | `AgentToolset` | `{ defs: NamespacedTool[]; names: Set<string>; dispatch(name, args, signal?, onOutput?, onExecutionStarted?, runSignal?) => Promise<AgentToolResult> }` | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
-| `AgentToolResult` | `{ isError; text; images?; diff?; guard?; executionAborted?; abortUnsettled? }`; `guard` is the final review metadata returned by a guarded shell-family call | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
-| `AgentToolsetOptions` | `{ workspaceRoot; canMutate; canExec; temporaryRoots?; skillExecutionRoots?; onTemporaryRootRegistered?; guard?; elicit?; sandbox?; secretEnvNames?; logger? }` — the configuration surface connecting the coding toolset to temporary access, selected skill roots, command review, elicitation and sandboxing | `packages/loop/src/runtime/tools/builtin/toolset.ts` (`AgentToolsetOptions`) |
+| `AgentToolResult` | `{ isError; text; images?; diff?; executionAborted?; abortUnsettled? }` | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
+| `AgentToolsetOptions` | `{ statePaths?; workspaceRoot; canMutate; canExec; temporaryRoots?; sessionManager?; sessionAgent?; skillExecutionRoots?; sandbox?; runIdentity?; filesystemPlacement?; secretEnvNames?; logger? }` — the configuration surface connecting the coding toolset to temporary access, selected skill roots and sandboxing | `packages/loop/src/runtime/tools/builtin/toolset.ts` (`AgentToolsetOptions`) |
 | `AgentToolsAdapter` | `{ resolve(opts: AgentToolsetOptions): { defs: NamespacedTool[]; dispatch: AgentToolset["dispatch"] } }` — the injectable test seam `createAgentToolsetWithAdapter` takes in place of the real `@clarvis/tools` calls; its own doc comment calls it a "package-private seam" | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
 
 `builtin/index.ts` is the barrel: it re-exports `FILE_MUTATING_TOOL_NAMES`, `agentToolCaps`,
-`agentToolsActive`, `createAgentToolset`, `systemTemporaryRoots`, the
-`AgentToolset`/`AgentToolsetOptions` types, and the whole
-`@clarvis/tools/guard` analyzer surface (`Guard`, `Elicit`, `analyzeShell`, dialects, etc. —
-`packages/loop/src/runtime/tools/builtin/index.ts`); the guard/analyzer surface itself belongs to [command-guard-and-approval](../execution/command-guard.md).
+`agentToolsActive`, `createAgentToolset`, `systemTemporaryRoots` and the
+`AgentToolset`/`AgentToolsetOptions` types
+(`packages/loop/src/runtime/tools/builtin/index.ts`).
 `AgentToolsAdapter` is **not** re-exported through the barrel — `packages/loop/tests/unit/toolset.test.ts` imports it
 directly from `../../src/runtime/tools/builtin/toolset.ts`, consistent with the doc comment above
 calling it package-private.
@@ -369,11 +368,11 @@ throws inside the reporter itself.
 
 Mirrors §4.3's shape without a registry resolve step (the toolset's `dispatch` already gates on
 `names.has(name)` — see §4.6): malformed arguments short-circuit to a traced, non-productive error. A controlled shell publishes
-`tool_call_started` only from its successful-spawn callback, after review and abort-listener setup;
-other tools publish it before dispatch. Denied review and failed spawn expose no control.
+`tool_call_started` only from its successful-spawn callback after abort-listener setup;
+other tools publish it before dispatch. Failed spawn exposes no control.
 `toolset.dispatch` runs with an `onOutput`
 callback relayed as `tool_output_delta` trace **signals**, and the terminal `tool_call`
-record carries any returned `diff`, final command-review `guard` metadata and a bounded
+record carries any returned `diff` and a bounded
 `tool_evidence` receipt captured before the display result is capped. Shell-family receipts classify
 exit code, timeout and signal and retain bounded stdout/stderr; other tools retain a bounded content
 excerpt. The convergence-guard signature always uses
@@ -384,16 +383,12 @@ fabricated-empty arguments, the model being told what actually arrived, the trac
 arrived preview, and the distinct-signature rule above across `executeAgentToolCall` and
 `executeMcpToolCall`.
 
-For a schema-valid built-in call, convergence classification uses the structured review rather than
-the serialized error text alone: `guard.outcome === "denied"` records the `"denied"` disposition;
-otherwise `errText !== null` records a genuine execution failure and `null` records success. A denial
-therefore remains visible as an error result/trace event but breaks, rather than increments, the
-execution-failure streak. The doom guard does not make a threshold irrevocable until `runAgentLoop`
+For a schema-valid built-in call, convergence classification records `errText !== null` as an
+execution failure and `null` as success. The doom guard does not make a threshold irrevocable until `runAgentLoop`
 observes it after the whole dispatch, so a later success in the model-declared call order can reset a
 crossing reached earlier in the same batch. Production: `executeAgentToolCall`,
 `createConvergenceGuards`, and `createDoomLoopGuard`. Tests:
-`packages/loop/tests/integration/command-guard-wiring.test.ts`,
-`packages/loop/tests/integration/doom-loop-lead.test.ts`, and
+`packages/loop/tests/integration/doom-loop-lead.test.ts` and
 `packages/loop/tests/unit/doom-loop-guard.test.ts`.
 
 ### 4.5 Building the two dispatch handlers and their ordering (context in `runtime/loop/run-agent.ts`)
@@ -446,10 +441,9 @@ raw tool defs + dispatch, then:
 `createAgentToolset` is the only barrel-exported factory and always binds
 `REAL_AGENT_TOOLS_ADAPTER`, which calls `@clarvis/tools`' `resolveConfig`/`listTools`/
 `dispatch`/`contentText`, translating a coding-tool result's image content parts into
-`ToolResultImage[]`, its `meta.diff` into the flat `diff` field, and its final `GuardReview` into the
-flat `guard` field. `temporaryRoots` and `onTemporaryRootRegistered` are forwarded into
-`resolveConfig`, so roots admitted during a run become available to the already-resolved toolset and
-are reported back to its owner (`packages/loop/src/runtime/tools/builtin/toolset.ts`).
+`ToolResultImage[]` and its `meta.diff` into the flat `diff` field. `temporaryRoots` are forwarded into
+`resolveConfig`; the resolved toolset uses them for the run
+(`packages/loop/src/runtime/tools/builtin/toolset.ts`).
 
 This whole policy layer (gate, exec filtering, abort race, listener cleanup) is directly pinned by
 `packages/loop/tests/unit/toolset.test.ts` against a fake `AgentToolsAdapter`, independent of the real

@@ -4,7 +4,7 @@ import { AGENTS_DIR, MARKETPLACE_FILE } from "./constants.ts";
 import { globalPaths } from "./global.ts";
 import { workspacePaths } from "./workspace.ts";
 
-/** The four configuration scopes; each mutation requires independent effect admission. */
+/** The four configuration scopes. */
 export type ConfigurationRoot =
   "global_clarvis" | "workspace_clarvis" | "global_agents" | "workspace_agents";
 
@@ -25,7 +25,6 @@ export function configurationRoots(options: {
 const CLARVIS_FILES = new Set([
   "settings.json",
   "shared-agent.md",
-  "guard-judge.md",
   "memory-policy.md",
   "CLARVIS.md",
   "AGENTS.md",

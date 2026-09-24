@@ -7,7 +7,6 @@ import type {
   StartHostedTurnParams,
   ToolInterruptReceipt,
 } from "@clarvis/protocol";
-import type { GuardMode } from "./guard-mode.ts";
 
 /**
  * The run-slice vocabulary the UI programs against, independent of any backend.
@@ -32,14 +31,6 @@ export interface ProfileInfo {
   tools?: string[];
 }
 
-interface GuardJudgeInput {
-  guidance?: string;
-  model?: string;
-  onUnsure?: "ask" | "deny";
-  timeoutMs?: number;
-  maxRetries?: number;
-}
-
 /** Parameters accepted by the adapter's `startRun` entry point. */
 export interface StartRunInput {
   /** Host-owned turn admission; required when the backend advertises hosted execution. */
@@ -49,8 +40,6 @@ export interface StartRunInput {
   executionId?: string;
   continueFrom?: string;
   sessionId?: string;
-  guardMode?: GuardMode;
-  guardJudge?: GuardJudgeInput;
   memory?: "on" | "off";
   plans?: PlansMode;
   /** Optional external task bound to this run; the current workspace stays implicit. */

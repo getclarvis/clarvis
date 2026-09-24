@@ -4,7 +4,6 @@ export type {
   TranscriptNode,
   TranscriptPlanTask,
 } from "./types.ts";
-export { guardReviewLabel } from "./guard-review.ts";
 
 export {
   compactionNoticeText,

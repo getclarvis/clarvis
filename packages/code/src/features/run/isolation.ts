@@ -9,7 +9,7 @@ export interface IsolationChoice {
 }
 
 export const ISOLATION_CHOICES: readonly IsolationChoice[] = [
-  { value: "host", label: "Host", detail: "host filesystem permissions with Guard review" },
+  { value: "host", label: "Host", detail: "host filesystem permissions" },
   {
     value: "sandbox",
     label: "Sandbox",
@@ -33,7 +33,6 @@ export function isolationConfirmation(
   return {
     message: "Run agent tools directly on this host?",
     danger: true,
-    detail: ["Guard remains a separate control and does not create a containment boundary."],
     confirmLabel: "use host",
     cancelLabel: "keep isolation",
   };
@@ -54,19 +53,15 @@ function nativeSandbox(
   };
 }
 
-/** Placement-only copy for Isolation settings; Guard stays a separate control. */
+/** Explain the selected execution placement. */
 export function isolationPlacementLines(isolation: IsolationMode): string[] {
   switch (isolation) {
     case "host":
-      return [
-        "Commands use the host's filesystem permissions.",
-        "Guard remains a separate control and does not create isolation.",
-      ];
+      return ["Commands use the host's filesystem permissions."];
     case "sandbox":
       return [
         "Commands may read host-visible files; writes are limited to the workspace and admitted temporary roots.",
         "Workspace-read-only forbids workspace writes even when the workspace is inside a writable temporary root.",
-        "A blocked command can ask to run that one command on the host; Isolation Host is the whole session.",
         "Open Sandbox settings for filesystem, network and toolchains.",
       ];
   }

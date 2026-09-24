@@ -1,34 +1,27 @@
 import { fs } from "../lib/environment-fs.ts";
 import path from "node:path";
-import { configurationRoots, fsyncDir } from "@clarvis/paths";
+import { fsyncDir } from "@clarvis/paths";
 import { ToolError, fsError } from "../errors.ts";
-import {
-  resolveFileToolPath,
-  displayPath,
-  assertOutsideRoots,
-  isWithinRoots,
-} from "../lib/paths.ts";
+import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { withFileLock, applyOpsAtomic } from "../lib/atomic.ts";
-import { scanSmallTree } from "../lib/small-tree.ts";
 import type { ToolDef } from "./types.ts";
 
 /**
- * The `remove` tool: delete one file, symlink entry, empty directory, or reviewed small tree.
+ * The `remove` tool: delete one file, symlink entry, empty directory, or recursive tree.
  *
  * @remarks
- * A bounded nonempty tree requires `recursive: true` and a mutation review channel.
+ * A nonempty tree requires `recursive: true`.
  * The target is `lstat`-ed (not followed) before any delete; a missing path
  * fails with `not_found` via {@link fsError}. All variants hold
  * {@link withFileLock}. Files and symlink entries use {@link applyOpsAtomic};
- * directory removals use their reviewed commits and report a partial outcome
+ * directory removals report a partial outcome
  * when a deletion has landed but durability or completion is uncertain.
  */
 export const remove: ToolDef = {
   atomicMutation: true,
   name: "remove",
   description:
-    "Delete ONE file, symlink entry, or empty directory. With recursive:true, delete a bounded " +
-    "ordinary workspace tree after explicit review of every target. Fails with not_found " +
+    "Delete ONE file, symlink entry, or empty directory. With recursive:true, delete a directory tree. Fails with not_found " +
     "if the path does not exist. Refuses to follow a symlink to its destination.",
   inputSchema: {
     type: "object",
@@ -40,8 +33,7 @@ export const remove: ToolDef = {
       },
       recursive: {
         type: "boolean",
-        description:
-          "Remove a small ordinary directory tree after effect review. Defaults to false.",
+        description: "Remove a directory tree. Defaults to false.",
       },
     },
     required: ["path"],
@@ -49,7 +41,7 @@ export const remove: ToolDef = {
   async handler(args, config) {
     const rel = args.path as string;
     const target = resolveFileToolPath(rel, config);
-    let recursive = args.recursive === true;
+    const recursive = args.recursive === true;
 
     return withFileLock(target, async () => {
       let stat;
@@ -63,103 +55,21 @@ export const remove: ToolDef = {
           path: rel,
         });
       if (stat.isDirectory()) {
-        if (target === config.workspaceRoot || config.temporaryRoots.includes(target))
-          throw new ToolError("denied", `Cannot remove an execution root: ${rel}`, { path: rel });
         if (recursive) {
-          let directory;
           try {
-            directory = await fs.opendir(target);
+            await fs.rm(target, { recursive: true, force: false });
           } catch (error) {
             throw fsError(error as NodeJS.ErrnoException, rel);
           }
           try {
-            recursive = (await directory.read()) !== null;
-          } finally {
-            await directory.close();
-          }
-        }
-        if (recursive) {
-          if (config.reviewMutation === undefined)
+            await fsyncDir(path.dirname(target));
+          } catch {
             throw new ToolError(
-              "approval_unavailable",
-              "Recursive cleanup requires a review channel.",
+              "commit_partial",
+              "Tree was removed but durability could not be confirmed.",
             );
-          const selected = config.workspaceRoot;
-          const local = path.relative(selected, target);
-          if (
-            local === "" ||
-            local === ".." ||
-            path.isAbsolute(local) ||
-            local.startsWith(`..${path.sep}`) ||
-            !isWithinRoots(target, [selected])
-          )
-            throw new ToolError("denied", "Recursive cleanup requires a workspace tree.");
-          const protectedRoots = [
-            ...Object.values(
-              config.configurationRoots ??
-                configurationRoots({ workspaceRoot: config.workspaceRoot }),
-            ),
-            ...config.skillExecutionRoots,
-            ...config.gitMetadataPaths,
-            config.stateRoot,
-          ];
-          assertOutsideRoots(target, protectedRoots, rel, { rejectAncestors: true });
-          let current = target;
-          while (current !== selected) {
-            const entry = await fs.lstat(current);
-            if (entry.isSymbolicLink())
-              throw new ToolError("denied", "Recursive cleanup refuses symlinked path components.");
-            current = path.dirname(current);
           }
-          const snapshot = scanSmallTree(target);
-          const operation = {
-            type: "rmtree" as const,
-            path: target,
-            treeEntries: snapshot.entries,
-            treeRevision: snapshot.revision,
-          };
-          const commit = async (): Promise<void> => {
-            let current;
-            try {
-              current = scanSmallTree(target);
-            } catch (error) {
-              if (error instanceof ToolError && error.code === "not_found")
-                throw new ToolError("revision_conflict", "Directory tree changed during review.");
-              throw error;
-            }
-            if (
-              current.revision !== snapshot.revision ||
-              JSON.stringify(current.entries) !== JSON.stringify(snapshot.entries)
-            )
-              throw new ToolError("revision_conflict", "Directory tree changed during review.");
-            try {
-              await fs.rm(target, { recursive: true, force: false });
-            } catch (error) {
-              const unchanged = (() => {
-                try {
-                  return scanSmallTree(target).revision === snapshot.revision;
-                } catch {
-                  return false;
-                }
-              })();
-              if (!unchanged)
-                throw new ToolError(
-                  "commit_partial",
-                  "Recursive cleanup may have removed some entries.",
-                );
-              throw fsError(error as NodeJS.ErrnoException, rel);
-            }
-            try {
-              await fsyncDir(path.dirname(target));
-            } catch {
-              throw new ToolError(
-                "commit_partial",
-                "Tree was removed but durability could not be confirmed.",
-              );
-            }
-          };
-          await config.reviewMutation([operation], commit);
-          return `Removed reviewed tree ${displayPath(target, config.workspaceRoot)} (${snapshot.entries.length} entries).`;
+          return `Removed tree ${displayPath(target, config.workspaceRoot)}.`;
         }
         try {
           const directory = await fs.opendir(target);
@@ -191,14 +101,12 @@ export const remove: ToolDef = {
             );
           }
         };
-        if (config.reviewMutation !== undefined)
-          await config.reviewMutation([{ type: "rmdir", path: target }], commit);
-        else await commit();
+        await commit();
         return `Removed empty directory ${displayPath(target, config.workspaceRoot)}.`;
       }
 
       try {
-        await applyOpsAtomic([{ type: "delete", path: target }], config.reviewMutation);
+        await applyOpsAtomic([{ type: "delete", path: target }]);
       } catch (err) {
         if (err instanceof ToolError) throw err;
         throw fsError(err as NodeJS.ErrnoException, rel);

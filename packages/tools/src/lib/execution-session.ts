@@ -20,7 +20,6 @@ interface LaunchRequest {
   readonly agent: object;
   readonly command: string;
   readonly cwd: string;
-  readonly forceBare: boolean;
   readonly shell?: ShellSpec;
   readonly timeoutMs?: number;
   readonly readyWhen?: RegExp;
@@ -458,7 +457,6 @@ export class ExecutionSessionManager {
       filesystemPolicy: request.config.filesystemPolicy,
       shell: () => resolvedShell,
       logger: request.config.logger,
-      forceBare: request.forceBare,
     });
     const detached = ownProcessGroup();
     request.config.logger.debug(

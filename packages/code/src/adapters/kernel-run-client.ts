@@ -192,20 +192,6 @@ function toStartParams(input: StartRunInput, executionId: string): StartRunParam
     ...(input.profile ? { agent: input.profile } : {}),
     ...(input.continueFrom ? { continue_from: input.continueFrom } : {}),
     ...(input.sessionId ? { session_id: input.sessionId } : {}),
-    ...(input.guardMode ? { guard_mode: input.guardMode } : {}),
-    ...(input.guardJudge
-      ? {
-          guard_judge: {
-            guidance: input.guardJudge.guidance,
-            ...(input.guardJudge.model ? { model: input.guardJudge.model } : {}),
-            ...(input.guardJudge.onUnsure ? { on_unsure: input.guardJudge.onUnsure } : {}),
-            ...(input.guardJudge.timeoutMs ? { timeout_ms: input.guardJudge.timeoutMs } : {}),
-            ...(input.guardJudge.maxRetries === undefined
-              ? {}
-              : { max_retries: input.guardJudge.maxRetries }),
-          },
-        }
-      : {}),
     ...(input.memory ? { memory: input.memory } : {}),
     ...(input.plans ? { plans: input.plans } : {}),
     ...(input.task ? { task: input.task } : {}),
@@ -371,7 +357,6 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
       const params: ElicitRequestParams = {
         message: req.prompt,
         kind: req.kind,
-        ...(req.detail !== undefined ? { detail: req.detail } : {}),
         requestedSchema: req.schema ?? { type: "object", properties: {} },
         id: req.id,
         ...(req.window_ms !== undefined ? { windowMs: req.window_ms } : {}),

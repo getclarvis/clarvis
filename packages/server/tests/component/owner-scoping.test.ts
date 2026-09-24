@@ -18,7 +18,6 @@ describe("ownerScopedKernelResolver", () => {
       role: "user",
       permissions: {
         agents: "*" as const,
-        guardConfirmations: "deny" as const,
         mayImpersonateOwner: false,
       },
     };

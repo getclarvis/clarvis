@@ -41,7 +41,6 @@ export interface RunToolDeps {
     settleGraceMs: number;
     elicitToolWaitMs: number;
     elicitRelayMs: number;
-    allowRemoteGuardApproval: boolean;
   };
   /** Internal deterministic-test seam; production uses the host timer API. */
   scheduleTimeout?: ScheduleTimeout;
@@ -221,10 +220,6 @@ export async function handleRunTool(
     clientDeclaresElicitation: deps.clientDeclaresElicitation(),
     requested: args.elicitations,
     ...(args.plans !== undefined ? { requestedPlans: args.plans } : {}),
-    allowRemoteGuardApproval: deps.limits.allowRemoteGuardApproval,
-    ...(principal !== undefined
-      ? { roleAllowsGuardApproval: principal.permissions.guardConfirmations === "relay" }
-      : {}),
   });
 
   const fail = (err: unknown): ToolResult => {

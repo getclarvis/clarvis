@@ -548,16 +548,9 @@ distinguishing fields:
 | `iteration_started` | `iteration`, `model?` | `packages/protocol/src/runs.ts` |
 | `iteration_completed` | `iteration`, `model?`, `response`, `response_phase?: "commentary"\|"final_answer"`, `input_tokens`, `output_tokens`, `cached_tokens?` | `packages/protocol/src/runs.ts` |
 | `tool_call_started` | `call_id`, `tool`, `server`, `arguments?`, `control?` | `packages/protocol/src/runs.ts`; `control` is present only while the invocation is interruptible |
-| `tool_call` | `call_id?`, `tool`, `server`, `arguments?`, `ok`, `result?`, `error?`, `diff?`, `guard?`, `interruption?` | `packages/protocol/src/runs.ts`; `interruption` implies `ok: false` and is operator-only |
+| `tool_call` | `call_id?`, `tool`, `server`, `arguments?`, `ok`, `result?`, `error?`, `diff?`, `interruption?` | `packages/protocol/src/runs.ts`; `interruption` implies `ok: false` and is operator-only |
 | `tool_output_delta` | `call_id`, `chunk` | `packages/protocol/src/runs.ts` |
 
-`guard`, when present, is the strict `CommandGuardReview` object with mode,
-allowed/denied outcome, and answerer. The run-event codec accepts exactly those
-fields and enum values. Production: `CommandGuardReview`/the `tool_call` variant
-in `packages/protocol/src/runs.ts` and `commandGuardReview` in
-`packages/kernel/src/transport/run-event-codec.ts`. Test: `"preserves the
-terminal shell auto-guard verdict"` in
-`packages/kernel/tests/contract/transport-codecs.test.ts`.
 | `tool_call_announced` | `call_id`, `tool`, non-negative `iteration`, positive `attempt`; no arguments | `RunEvent` in `packages/protocol/src/runs.ts` |
 | `tool_input_delta` | `call_id`, `tool`, `chars`, `stream_chars?`, `complete?: true` | `packages/protocol/src/runs.ts` (`RunEvent`) |
 | `reasoning` | `iteration`, `text` | `packages/protocol/src/runs.ts` |
@@ -629,9 +622,7 @@ in parallel. Production: `RunEvent` in `packages/protocol/src/runs.ts`. Test:
 | `agent?` | `string` | Agent Profile id; "the kernel translates it to the engine's profile/entry concept" (`packages/protocol/src/runs.ts`) |
 | `continue_from?` | `string` | resume / steer-after-end |
 | `session_id?` / `agent_instance_id?` | `string` | persisted conversation and entry-agent instance |
-| `prompt_cache_ttl?` | `"5m" \| "1h"` | kernel derives it when omitted (`packages/protocol/src/runs.ts`) |
-| `guard_mode?` | `GuardMode` | `"off" \| "on" \| "auto"` (`packages/protocol/src/runs.ts`) |
-| `guard_judge?` | `GuardJudge` | caller-owned judge guidance/model/timeout |
+| `prompt_cache_ttl?` | `"5m" \| "1h"` | forwarded only when provided (`packages/protocol/src/runs.ts`) |
 | `memory?` | `MemoryMode` | `"on" \| "off"` (`packages/protocol/src/runs.ts`) |
 | `plans?` | `PlansMode` | `"off" \| "on" \| "review"` (`packages/protocol/src/runs.ts`) |
 | `task?` | `ActiveTaskRequestDto` | binds one external task |
@@ -740,19 +731,14 @@ serializing a definition, settings, or secrets (`packages/protocol/src/extension
 
 | Type | Shape | Declaration |
 | --- | --- | --- |
-| `ElicitationCommandDetail` | `{ command: string; cwd: string; reason: string; warning? }` | `ElicitationCommandDetail` |
-| `ElicitationRequest` | `{ id; execution_id; kind; prompt; schema?: JsonSchema; detail?: ElicitationCommandDetail }` | `ElicitationRequest` |
+| `ElicitationRequest` | `{ id; execution_id; kind; prompt; schema?: JsonSchema; window_ms?: number }` | `ElicitationRequest` |
 | `ElicitationResponse` | `{ id; action: "accept" \| "decline" \| "cancel"; content? }` | `ElicitationResponse` |
 
-`ElicitationRequest.kind` includes `"ask_user"` (a free question), `"guard_confirm"` (a
-command awaiting approval), `"plan_review"` (a proposed plan awaiting approval), `"workflow_review"`
+`ElicitationRequest.kind` includes `"ask_user"` (a free question), `"plan_review"` (a proposed plan awaiting approval), `"workflow_review"`
 (an installed workflow preflight) — plus a deliberately open `(string & {})` escape, "so a kernel may
 add kinds without a protocol bump" (`ElicitationRequest.kind` in `packages/protocol/src/runs.ts`).
 This is structurally the same open/closed pattern already noted for `capability_event` in §5
 invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
-`ElicitationCommandDetail` exists so a client "render[s] this directly
-(e.g. as highlighted code) and never parse[s] `prompt`, which stays the human-readable fallback"
-(`ElicitationCommandDetail` in `packages/protocol/src/runs.ts`).
 
 ### 3.10 `ConfigService` data shapes I: settings and sandbox (`config.ts`)
 
@@ -1158,19 +1144,6 @@ on the engine" as one design, not two.
   `coverage.ts` deliberately exempts such a package: its `test:coverage`
   writes no LCOV, so whatever file exists can never be refreshed and the warning would be permanent
   noise.
-## Effect review detail
-
-`ElicitationCommandDetail` adds optional closed analysis, effect, authority and reviewer fields.
-Legacy command/cwd/reason details remain valid. `CommandGuardReview` carries optional effect ID,
-relation, failure kind and `reviewer_decision` (`allow`, `deny`, `unsure`, `failed`) for replay.
-The reviewer result is distinct from the final outcome after fallback. `GuardJudge` accepts optional guidance and explicit retries;
-guidance is data, never a system-policy replacement. Public run requests contain no
-operator evidence seed or controller binding. Production:
-[runs.ts](../../packages/protocol/src/runs.ts) and
-[review-detail-schema.ts](../../packages/kernel/src/guard/review-detail-schema.ts).
-Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
-See [effect review](../execution/effect-review.md).
-
 Host-owned `Session.operator_intents` retains bounded accepted submissions separately from executed
 turns, and `operator_sequence` survives pruning of admitted receipts. Client saves cannot modify
 these fields. `GoalReceipt.resume_pending` denotes durable recovery work, not a successful launch.

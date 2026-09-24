@@ -21,15 +21,12 @@ export interface WorkspaceTrustVerdict {
  * in this draft — the kernel remains the authority on the real schema.
  */
 export interface SettingsData {
-  /** Operator-owned shared effect reviewer; workspace values may only narrow limits. */
-  effect_review?: EffectReviewConfig;
   default_model?: string;
   /**
    * Provider list (each entry carries its own `name`) — mirrors the engine’s shape.
    */
   providers?: ProviderConfig[];
   mcp_servers?: Record<string, McpServerConfig>;
-  guard?: GuardConfig;
   sandbox?: SandboxConfig;
   memory?: MemoryConfig;
   budget?: unknown;
@@ -61,23 +58,6 @@ export interface McpServerConfig {
   args?: string[];
   url?: string;
   [k: string]: unknown;
-}
-
-/** Guard / command-approval settings block. */
-export interface GuardConfig {
-  mode?: "off" | "on" | "auto";
-  allowed_commands?: string[];
-  denied_commands?: string[];
-  [k: string]: unknown;
-}
-
-/** Protocol projection of the operator-owned shared reviewer settings. */
-export interface EffectReviewConfig {
-  model?: string;
-  timeout_ms?: number;
-  max_retries?: number;
-  on_unsure?: "ask" | "deny";
-  rollout?: "shadow" | "local";
 }
 
 /**

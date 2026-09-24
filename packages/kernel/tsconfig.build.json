@@ -61,9 +61,6 @@
     },
     {
       "path": "../skills/tsconfig.build.json"
-    },
-    {
-      "path": "../judge/tsconfig.build.json"
     }
   ],
   "include": ["src"]

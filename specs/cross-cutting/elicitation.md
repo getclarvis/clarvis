@@ -1,4 +1,4 @@
-# Asking a human: ask_user, guard prompts, MCP elicitation and the mux
+# Asking a human: ask_user, MCP elicitation and the mux
 
 > Implemented at `packages/...`. Every claim below is anchored to a file and a named symbol or test. Open questions
 > are collected in the final section.
@@ -8,7 +8,7 @@
 This subsystem is how a Clarvis run stops and asks a live human a question, and how the answer gets
 back to the model or to whatever engine mechanism asked. One port — `Elicit`
 (`packages/capability/src/elicit.ts`) — carries every such question: the model's own `ask_user`
-tool call, a guard's command-confirmation prompt, a soft-budget escalation ask, and a question an
+tool call, a soft-budget escalation ask, and a question an
 *external* MCP server raises through Clarvis acting as its MCP client. All of them funnel through the
 same per-run FIFO serializer (`packages/loop/src/runtime/elicit-relay.ts`) so at most one prompt is
 ever live for a given run at a time, and — one level up — a workflow's concurrently running leaders
@@ -26,34 +26,18 @@ default posture, or a headless `code --prompt` invocation) still gets an answer 
 just always the same one, `decline` or `cancel` — so the engine's control flow never has to special-case
 "nobody is listening."
 
-An accepted entry-agent `ask_user` answer also crosses a private engine-to-host authority callback.
-The host ledger records the operator's answer as authenticated evidence and keeps the model-authored
-question as explicitly untrusted context, so the effect judge can interpret a scoped answer such as
-"yes, those three lines" against the next concrete operation. This does not grant the operation:
-the judge still compiles and decides against host-attested effect facts. Decline, cancel, malformed
-answers and every other elicitation kind add no authority evidence.
 
 A surface that can actually put a question on screen may also declare a **decision window** for the
 model's own `ask_user` questions: how long one stays open once the frontend confirms the block is
 really on screen. The interactive TUI declares 30 seconds. The window is a host policy carried with
 the run-creation request, it starts only after that confirmation, and on expiry the kernel closes the
 question by id and hands the decision back to the model as an honest "no answer" (§4.11). Nothing
-else changes: guard confirmations, plan and workflow reviews, soft-budget asks, relayed MCP
+else changes: plan and workflow reviews, soft-budget asks, relayed MCP
 questions, headless and server runs keep the wait policies below, and an elapsed window is never an
 approval.
 
 ## 2. Surface
 
-The host-reviewed file-tool route uses the existing `configuration_review` bridge for a concrete
-mutation when policy requires human review. The prompt binds the target and expected revision to
-the proposed change. Denial is selected initially; approval covers that change only. Validation and
-catalog application do not request another activation approval. A host-admitted steer changes the
-authority revision immediately, invalidating an approval still in flight before mutation.
-Production: `createConfigurationReview` in
-[review.ts](../../packages/kernel/src/configuration/review.ts).
-Test: [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts)
-and [elicitation.test.ts](../../packages/code/tests/unit/elicitation.test.ts).
-The complete authority contract is [self-configuration.md](../hosts/self-configuration.md).
 
 ### 2.1 The elicitation port (`@clarvis/capability`)
 
@@ -64,7 +48,7 @@ The complete authority contract is [self-configuration.md](../hosts/self-configu
 | `ElicitNoResponseReason` | type | `packages/capability/src/elicit.ts` | `"window_elapsed" \| "wait_bound_elapsed"` — which bound closed an unanswered question |
 | `ElicitOrigin` | type | `packages/capability/src/elicit.ts` | `"model" \| "external"` — trusted provenance a host keys window policy on; never `kind` |
 | `ElicitRequestedSchema` | interface | `packages/capability/src/elicit.ts` | `{ type: "object", properties: Record<string,{type:"string",enum?,description?}>, required: string[] }` |
-| `ElicitParams` | interface | `packages/capability/src/elicit.ts` | `{ message, requestedSchema, kind?: "ask_user"\|"guard_confirm"\|"plan_review"\|"workflow_review"\|(string&{}), origin?: ElicitOrigin }` |
+| `ElicitParams` | interface | `packages/capability/src/elicit.ts` | `{ message, requestedSchema, kind?: "ask_user"\|"plan_review"\|"workflow_review"\|(string&{}), origin?: ElicitOrigin }` |
 | `ElicitRawResult` | interface | `packages/capability/src/elicit.ts` | `{ action, content?: Record<string,unknown>, windowElapsed?: boolean }` — `windowElapsed` is host-internal and never crosses an MCP boundary |
 | `Elicit` | type | `packages/capability/src/elicit.ts` | `(params, {signal?, timeoutMs?}) => Promise<ElicitRawResult>` |
 | `ElicitTimeoutError` | class | `packages/capability/src/elicit.ts` | thrown when the wait bound elapses |
@@ -84,28 +68,6 @@ The complete authority contract is [self-configuration.md](../hosts/self-configu
 | Reservation | `ASK_USER_TOOL_NAME` is one of `BUILTIN_WIRE_NAMES` (`packages/loop/src/runtime/tools/wire-names.ts`), which spreads into `RESERVED_WIRE_NAMES`; `buildRegistry` seeds that set into the registry's `used` names, so no MCP server tool can take it (`packages/loop/src/runtime/tools/mcp-registry.ts`) |
 | Bypass entrypoint | `askUserAgentCapability(askUser)` (`packages/loop/src/runtime/capabilities/ask-user.ts`) — the per-agent attachment alone, for a caller that already holds an `AskUser`; contributes the tool/handler without the run-level grant/entry gate `createAskUserCapability` enforces. Used directly by `packages/loop/tests/unit/run-agent.test.ts` and `packages/loop/tests/unit/ask-user-call.test.ts` to attach the tool for testing without those checks |
 
-### 2.3 Guard elicitation (`@clarvis/kernel`)
-
-| Symbol | Location | Shape |
-| --- | --- | --- |
-| `GuardElicitParams` | `packages/kernel/src/guard/guard-elicit.ts` | `ElicitParams & { detail?: ElicitationCommandDetail }` |
-| `createGuardElicit` | `packages/kernel/src/guard/guard-elicit.ts` | adapts an `Elicit` into a boolean `GuardElicit` (`req => Promise<boolean>`) |
-| `createGuardSessionAllowlist` | `packages/kernel/src/guard/guard-elicit.ts` | in-memory, session-lifetime `GuardSessionAllowlist` |
-| Requested schema | `decision: enum["deny","allow"]` or, when a session allowlist and a decidable non-empty command are both present, `enum["deny","allow","allow_session"]` |
-| `kind` sent | `"guard_confirm"` |
-| Wait bound | `ELICIT_NO_TIMEOUT_MS` = `2_147_483_647` ms — effectively unbounded unless the signal aborts |
-
-The lower-level guard callback is wider than this human adapter. `@clarvis/tools`' `Elicit` may
-return a boolean or `GuardElicitAnswer = { allowed, answerer }`, where `answerer` is
-`"human" | "judge" | "session_allowlist" | "unavailable"`
-(`packages/tools/src/guard/types.ts`). `createGuardElicit` itself still returns a
-boolean; the kernel resolver enriches human answers and preserves judge/session attribution before
-returning its run-bound guard callback (`packages/kernel/src/guard/resolver.ts`). The
-full selection policy remains the concern of **command-guard-and-approval**.
-
-The guard's own policy for *when* to prompt (escalation chain, per-tool rules) is out of scope here —
-see **command-guard-and-approval**. This document covers only how the guard's yes/no question rides the
-`Elicit` port.
 
 ### 2.4 The kernel elicit bridge
 
@@ -120,8 +82,7 @@ see **command-guard-and-approval**. This document covers only how the guard's ye
 
 | Symbol | Location | Shape |
 | --- | --- | --- |
-| `ElicitationCommandDetail` | `ElicitationCommandDetail` in `packages/protocol/src/runs.ts` | `{ command, cwd, reason, warning? }` |
-| `ElicitationRequest` | `ElicitationRequest` in `packages/protocol/src/runs.ts` | `{ id, execution_id, kind, prompt, schema?, detail?, window_ms? }` — `window_ms` is published only when a host window policy applies to the request |
+| `ElicitationRequest` | `ElicitationRequest` in `packages/protocol/src/runs.ts` | `{ id, execution_id, kind, prompt, schema?, window_ms? }` — `window_ms` is published only when a host window policy applies to the request |
 | `ElicitationResponse` | `ElicitationResponse` in `packages/protocol/src/runs.ts` | `{ id, action: "accept"\|"decline"\|"cancel", content? }` |
 | `ElicitWindowPolicy` | `ElicitWindowPolicy` in `packages/protocol/src/runs.ts` | `{ ask_user_window_ms?: number }` |
 | `StartRunParams.elicit_policy?` | `StartRunParams` in `packages/protocol/src/runs.ts` | the host window policy carried by the run-creation request |
@@ -143,11 +104,11 @@ concern of **kernel-transport-and-wire**; this document stops at the DTO shapes 
 | Item | Location | Shape |
 | --- | --- | --- |
 | `clarvis_run` input fields (elicitation-relevant) | `packages/server/src/mcp/tools.ts` | `elicitations: enum["auto_decline","await"].default("auto_decline")`, `elicitation_wait_ms?: number.int().min(1000).max(600000)` |
-| `clarvis_run` output field | `packages/server/src/mcp/tools.ts` | `posture: { elicitation, guard_confirmations, plans_effective?, downgrades: string[], auto_answered: number }` |
+| `clarvis_run` output field | `packages/server/src/mcp/tools.ts` | `posture: { elicitation, plans_effective?, downgrades: string[], auto_answered: number }` |
 | `clarvis_respond` input | `packages/server/src/mcp/tools.ts` | `{ execution_id, id, action, content? }` |
 | `clarvis_respond` description | `packages/server/src/mcp/tools.ts` | `"Only meaningful when the run was started with elicitations: \"await\"; otherwise questions are declined automatically."` |
 | `ElicitationPosture` | `packages/server/src/mcp/elicitation.ts` | `"relay" \| "tool" \| "auto_decline"` |
-| `AppliedPosture` | `packages/server/src/mcp/elicitation.ts` | `{ elicitation, guard_confirmations, plans_effective?, prompt_cache_ttl?, downgrades: string[], auto_answered: number }` |
+| `AppliedPosture` | `packages/server/src/mcp/elicitation.ts` | `{ elicitation, plans_effective?, prompt_cache_ttl?, downgrades: string[], auto_answered: number }` |
 | `resolvePosture(input)` | `packages/server/src/mcp/elicitation.ts` | decides the posture before the run starts |
 | `createElicitationController(opts)` | `packages/server/src/mcp/elicitation.ts` | owns one run's `onElicit` handler + pending map |
 | MCP wire request the server sends its own client | `packages/server/src/mcp/server.ts` | `{ method: "elicitation/create", params: request }` via `extra.sendRequest`, answer validated against `z.object({ action: enum, content?: record })` |
@@ -178,8 +139,7 @@ concern of **kernel-transport-and-wire**; this document stops at the DTO shapes 
 
 | Symbol | Location | Shape |
 | --- | --- | --- |
-| `ElicitRequestParams` | `packages/code/src/adapters/elicit-types.ts` | `{ id?, windowMs?, message, kind?, detail?, requestedSchema?, mode?, url? }` — a local mirror of the protocol type, kept dependency-free of the SDK; `id` is what a presentation confirmation names and `windowMs` marks a question the kernel windowed, whose countdown the block renders only from the projected remaining time |
-| `ElicitCommandDetail` | `packages/code/src/adapters/elicit-types.ts` | `{ command, cwd, reason, warning? }` |
+| `ElicitRequestParams` | `packages/code/src/adapters/elicit-types.ts` | `{ id?, windowMs?, message, kind?, requestedSchema?, mode?, url? }` — a local mirror of the protocol type, kept dependency-free of the SDK; `id` is what a presentation confirmation names and `windowMs` marks a question the kernel windowed, whose countdown the block renders only from the projected remaining time |
 | `ElicitResult` | `packages/code/src/adapters/elicit-types.ts` | `{ action, content? }` |
 | `ElicitPresenter` | `packages/code/src/adapters/elicit-types.ts` | `() => Promise<number \| undefined>` — confirms presentation and yields the kernel's remaining projection, or `undefined` when no window applies |
 | `elicitCountdownText(remainingMs)` | `packages/code/src/adapters/elicit-types.ts` | the discreet one-line countdown the block shows while the window is open, and only once the kernel has projected a remaining time — the block never renders a declared window as if it were counting |
@@ -219,10 +179,6 @@ when it is a string, `JSON.stringify(content)` (the whole content object) when t
 content exists, `safeStringify(v)` (just that value) when the field is present but not itself a string,
 and `""` when there is no content at all.
 
-Guard confirmations use the same `ElicitParams` shape but key their schema's single property
-`decision` instead (`packages/kernel/src/guard/guard-elicit.ts`), and carry the additional
-`GuardElicitParams.detail: ElicitationCommandDetail` — `{ command, cwd, reason, warning? }` — built only when a `command` string argument and a `workspaceRoot` are both known; `cwd` resolves a
-relative `cwd` argument against `workspaceRoot` via `node:path`'s `resolve`.
 
 `origin` is the *trusted provenance* of a question, not presentation vocabulary: the engine's own
 `ask_user` tool marks its requests `"model"` (`buildElicitParams`), and a relayed MCP question is
@@ -269,14 +225,6 @@ second `trace.record("user_question", ...)`, so a relayed question never produce
 therefore never an `elicitation_resolved` `RunEvent`) at all, while an `ask_user`-tool question always
 produces both.
 
-### 3.5 Session-scoped guard allowlist key
-
-`sessionKey(segment)` (`packages/kernel/src/guard/guard-elicit.ts`) = the segment's
-`envAssignments` joined with its `normalized` command, space-separated — e.g. a segment with
-`envAssignments: ["FOO=1"]` and `normalized: "rm -rf build"` keys as `"FOO=1 rm -rf build"`. A changed
-env assignment or any changed token therefore keys differently and re-prompts. `covers`/`record`
- both return/no-op immediately for an `undecidable` or zero-segment command — an
-allow-for-session decision never covers something the shell-fact analyzer could not fully parse.
 
 ### 3.6 `code`'s wire-schema-to-form vocabulary
 
@@ -289,15 +237,9 @@ JSON-Schema `enum` array (each value used as both `value` and `label`) or a `one
 `"text"`; a `boolean`-typed field with no `enum`/`oneOf` of its own synthesizes a yes/no option pair
 (`{value:"true",label:"yes"}`/`{value:"false",label:"no"}`) so it renders as a choice like any other.
 
-Three decision-relabeling tables — `GUARD_DECISION_LABELS`, `PLAN_DECISION_LABELS` and
-`WORKFLOW_DECISION_LABELS` — plus the `DECISION_LABELS` dispatch keyed by `params.kind`
-(`packages/code/src/adapters/elicitation.ts`) rewrite a field's option `label`s from the raw wire values
-(`"allow_session"`) into user-facing wording (`"allow for this session"`) whenever `kind` is
-`"guard_confirm"`, `"plan_review"` or `"workflow_review"`; `option.value` (what
-is actually sent back) is untouched. Guard and configuration decisions are presented in
-affirmative-first order (`allow, deny`, or `allow, allow_session, deny`) while the projected field
-keeps `deny` as its default, preserving fail-closed untouched Enter behavior independently of the
-wire enum order.
+`PLAN_DECISION_LABELS` and `WORKFLOW_DECISION_LABELS`, selected by `params.kind` in
+`packages/code/src/adapters/elicitation.ts`, rewrite a field's option labels for plan and workflow
+reviews. `option.value`, which is sent back, remains unchanged.
 
 An iteration soft-budget question has no dedicated wire `kind`, so `parseElicitForm` recognizes it
 only when both the message contains `soft iterations limit` and the `continue` field offers the
@@ -330,25 +272,6 @@ rather than sent as `NaN`; a `boolean`-kind field's non-blank value becomes `raw
 `acceptResult`/`DECLINE_RESULT`/`CANCEL_RESULT` are the three `ElicitResult` constants a
 view resolves an elicitation with.
 
-### 3.7 Guard elicitation message construction
-
-`createGuardElicit` (`packages/kernel/src/guard/guard-elicit.ts`) builds the human-facing
-`message` and the `requestedSchema`/`detail` around one guard request:
-
-- **Reason.** `req.reason` is used when present; otherwise a default reason is synthesized as
-  `` `Tool "${req.tool}" requires confirmation.` ``.
-- **Command line.** When `req.args?.command` is a non-blank string, the message gets a literal
-  `` `$ ${command}` `` line; otherwise, when `req.shell` is present, it falls back to
-  `` `Command segments: ${req.shell.segments.map(s => s.normalized).join(", ")}` ``.
-- **Undecidable warning.** When `req.shell?.undecidable`, the fixed line
-  `"Warning: this command contains undecidable expansions."` (`UNDECIDABLE_WARNING`) is appended.
-- **`allow_session` offer.** The `decision` schema's `enum` includes `"allow_session"` only when an
-  `opts.allowlist` was supplied *and* `req.shell` is present, decidable, and non-empty;
-  otherwise the schema offers only `["deny","allow"]`.
-- **Structured `detail`.** `ElicitationCommandDetail` is attached only when both a `command` string arg
-  and `opts.workspaceRoot` are known; its `cwd` resolves a relative `req.args?.cwd` against
-  `workspaceRoot` via `node:path`'s `resolve`, or falls back to `workspaceRoot` itself when no `cwd` arg
-  was given.
 
 ## 4. Behavior
 
@@ -392,10 +315,8 @@ The configured wait and three wrappers/bounds can participate in one elicitation
 
 | Layer | Bound | Applied by |
 | --- | --- | --- |
-| Configured run wait | `request.elicit_wait_ms ?? CLARVIS_DEFAULT_ELICIT_WAIT_MS` (default 1,800,000 ms) | supplies ordinary `Elicit` call sites and the outer guard-confirmation wrapper (`packages/loop/src/runtime/orchestrator.ts`, `packages/loop/src/runtime/capabilities/tools.ts`) |
+| Configured run wait | `request.elicit_wait_ms ?? CLARVIS_DEFAULT_ELICIT_WAIT_MS` (default 1,800,000 ms) | supplies ordinary `Elicit` call sites (`packages/loop/src/runtime/orchestrator.ts`) |
 | Enforcement | `withElicitWaitBound(elicit, graceMs=1000)` wraps the run's `elicit` once, at orchestrator construction, adding `ELICIT_WAIT_GRACE_MS` (1000 ms) grace so the *outer* bound fires slightly after the transport's own deadline (`packages/loop/src/runtime/tools/ask-user-tool.ts`, `packages/loop/src/runtime/orchestrator.ts`) | `boundPromise` (`packages/loop/src/runtime/support/bounded.ts`) |
-| Guard adapter's port-level declaration | `ELICIT_NO_TIMEOUT_MS` = 2,147,483,647 ms (practical "never") plus the run signal | `createGuardElicit` (`packages/kernel/src/guard/guard-elicit.ts`) |
-| Effective guard-confirmation enforcement | `withGuardElicitWaitBound` wraps the complete guard callback with the configured run wait; timeout, abort, or rejection resolves `false`, while a timely boolean or attributed `GuardElicitAnswer` passes through unchanged | `packages/loop/src/runtime/capabilities/tools.ts`; rich-answer test at `packages/loop/tests/unit/guard-elicit-bound.test.ts` |
 | Interactive decision window | `StartRunParams.elicit_policy.ask_user_window_ms`, applied only to a model-originated `ask_user` question confirmed on screen | `createElicitBridge`'s monotonic window timer (`packages/kernel/src/runs/elicit-bridge.ts`), with the run `elicit_wait_ms` ceiling still above it |
 
 `withElicitWaitBound`'s special cases (`packages/loop/src/runtime/tools/ask-user-tool.ts`, pinned by
@@ -421,8 +342,8 @@ the bridge alone would still wait forever on an unresolved question.
 (a promise chain that runs each queued `job` after the previous settles, success or failure)
 shared by two consumers:
 
-- `serializedElicit`: what the built-in `ask_user` tool (and the soft-budget ask, and the guard
-  elicit) actually call — every direct call is wrapped in `serialize(() => elicit(params, opts))`.
+- `serializedElicit`: what the built-in `ask_user` tool and soft-budget ask call — every direct
+  call is wrapped in `serialize(() => elicit(params, opts))`.
 - `relay: ElicitationRelay`: what an MCP server's own elicitation request is routed through
    — it additionally pauses the run's compute clock for the duration
   (`clock?.pauseCompute()` / `releaseCompute?.()`), records `elicitation_requested` with
@@ -513,10 +434,6 @@ Two further downgrades, both recorded as human-readable strings in `downgrades`:
   "on"`, `"plans:review→on (an unanswered review gate cancels the run)"` — because an
   unanswered plan-review gate does not skip approval, it cancels the whole run.
 
-`guard_confirmations` is `"relayed"` only when **all three** hold: `allowRemoteGuardApproval` (an
-operator/server switch), `roleAllowsGuardApproval` (defaults `true` with no auth), and
-`elicitation !== "auto_decline"`; otherwise `"denied"`, and a downgrade note names which of the two
-gates was missing.
 
 Under `auto_decline`, `prompt_cache_ttl` is pinned to `"5m"` with the note "no elicitation can pause
 this run" — left `undefined` otherwise so the kernel derives it as usual.
@@ -530,13 +447,12 @@ iteration (`attach(runHandle)` installs `runHandle.onElicit(...)`). Per incoming
 1. If `disposed`, auto-decline immediately.
 2. Always `opts.publish(request)` first — the question reaches the run's own event stream regardless
    of posture.
-3. `kind === "guard_confirm"` and `posture.guard_confirmations === "denied"` → auto-decline.
-4. `posture.elicitation === "auto_decline"` → auto-decline.
-5. `posture.elicitation === "relay"` and a `sendRequest` is configured → forwards via
+3. `posture.elicitation === "auto_decline"` → auto-decline.
+4. `posture.elicitation === "relay"` and a `sendRequest` is configured → forwards via
    `sendRequest(...)` (the MCP `elicitation/create` request to the connected client); on the answer,
    calls `runHandle.respond(...)`; on any thrown error (timeout, rejection, malformed answer) — falls
    back to auto-decline.
-6. Otherwise (`tool` posture) — schedules a timeout (`opts.scheduleTimeout ?? scheduleSystemTimeout`,
+5. Otherwise (`tool` posture) — schedules a timeout (`opts.scheduleTimeout ?? scheduleSystemTimeout`,
    `opts.toolWaitMs`) that auto-declines if it fires, and records the pending entry so
    `clarvis_respond` can answer it first.
 
@@ -620,17 +536,6 @@ already retired the id, so an answer would be a no-op round trip against a run t
 gone. Settling can therefore remove a prompt a human never answered — it is not an answer, and only
 the human's own `resolve` ever accepts or declines one.
 
-### 4.9 The human `GuardElicit` adapter's action-to-boolean resolution
-
-`createGuardElicit`'s returned function (§3.7 builds its input) resolves the human's answer to the
-boolean a guard actually branches on (`packages/kernel/src/guard/guard-elicit.ts`): any `result.action !== "accept"`
-(a `decline` or `cancel`) resolves `false` immediately; on `accept`, `decision === "allow"` resolves
-`true`; `decision === "allow_session"` resolves `true` **only** when a `session` was actually offered in
-the request (i.e. an allowlist was configured and the command was decidable and non-empty, §3.7) — and,
-as a side effect of that one branch, calls `session.allowlist.record(session.shell)` before resolving,
-which is what makes later identical commands in the same session pass without asking again (§3.5). Any
-other `decision` value, or an `allow_session` answer when no `session` was offered at all, resolves
-`false`.
 
 ### 4.10 Run admission: whether a run needs a human at all
 
@@ -665,7 +570,7 @@ frontend does.
 (the engine's own `ask_user` tool) **and** whose `kind` is `"ask_user"` can be windowed. Params with no
 `origin`, or `origin: "external"` (a relayed MCP question, rebuilt at the relay boundary, §3.1), never
 window — even when they name `kind: "ask_user"`, which is presentation vocabulary rather than
-provenance. Guard confirmations, plan reviews, workflow reviews and the soft-budget ask are not
+provenance. Plan reviews, workflow reviews and the soft-budget ask are not
 windowed and keep the wait policies of §4.2. A policy with an absent, non-integer, non-positive or
 unrepresentable `ask_user_window_ms` publishes no window at all: a duration above
 `MAX_ELICIT_WINDOW_MS` — the longest delay a host timer honours
@@ -700,9 +605,7 @@ nothing left to answer.
 the continuation guidance (§3.3): decide with the information available, stay inside the authorized
 scope, do not read the silence as approval, do not immediately repeat the question. This is distinct
 from `wait_bound_elapsed` (the operational bound of §4.2, whose existing wording stays), from a human
-decline and from a cancellation, and it is never an `accept`: no synthetic answer reaches the model,
-and no operator-authority evidence is admitted (§4.1's `authorityElicit` path, pinned by
-`packages/loop/tests/component/execute-run.test.ts`). The marker is host-internal: a relayed MCP reply
+decline and from a cancellation, and it is never an `accept`: no synthetic answer reaches the model. The marker is host-internal: a relayed MCP reply
 is rebuilt as `{action, content}`, so `windowElapsed` never crosses the MCP boundary.
 
 **Acceptance matrix.**
@@ -798,12 +701,6 @@ Production: `packages/server/src/mcp/elicitation.ts`.
 Test: `packages/server/tests/unit/elicitation.test.ts` ("downgrades plans:review only when no
 answer channel exists").
 
-**ELI-07.** Guard confirmations are relayed to a remote server caller only when the
-operator's server switch, the caller's own role, and the resolved elicitation posture all three
-permit it; any one of the three being false forces `guard_confirmations: "denied"`.
-Production: `packages/server/src/mcp/elicitation.ts`.
-Test: `packages/server/tests/unit/elicitation.test.ts` ("relays guard approval only when operator,
-role and answer channel all permit it").
 
 **ELI-08.** A workflow preflight has no implicit affirmative path. The TUI begins with no selected
 decision; the wire schema places `cancel` before `run`; only an explicitly submitted `run` starts the
@@ -825,7 +722,7 @@ and whose `kind` is `"ask_user"`, and only when the run declared a positive
 `MAX_ELICIT_WINDOW_MS`, since a longer delay is not honoured by a host timer and would close the
 question almost immediately. An unmarked request, a relayed external one, or one that merely
 names `kind: "ask_user"` never receives `window_ms`, never expires by window, and never receives the
-window's continuation guidance; guard confirmations, plan reviews, workflow reviews, soft-budget
+window's continuation guidance; plan reviews, workflow reviews, soft-budget
 asks, headless runs and server runs keep their existing wait policies.
 Production: `packages/kernel/src/runs/elicit-bridge.ts` (`windowFor`, `MAX_ELICIT_WINDOW_MS`),
 `packages/loop/src/runtime/elicit-relay.ts` (`buildElicitRelay`'s relay rebuild).
@@ -886,7 +783,7 @@ settlement notification of §4.8).
 Test: `packages/code/tests/unit/elicit-slot.test.ts` (the kernel's projection arms the countdown, the
 slot arms no timer by itself, and a settlement by id closes only its own question),
 `packages/code/tests/integration/elicit-block-render.test.tsx` (countdown, expired state, no
-countdown without a projection, guard confirmation unaffected),
+countdown without a projection),
 `packages/code/tests/integration/app-shell-render.test.tsx` (the block is confirmed only once it is
 really visible — not while a dirty overlay still hides it — and the countdown follows the projected
 remaining time),
@@ -944,8 +841,7 @@ direct client under its own id).
   `packages/workflows/tests/architecture/dependency-direction.test.ts`.
 - `@clarvis/kernel`'s `elicit-bridge.ts` imports `Elicit`/`ElicitRawResult` from `@clarvis/loop` and
   `ElicitationRequest`/`ElicitationResponse` from `@clarvis/protocol`
-  (`packages/kernel/src/runs/elicit-bridge.ts`) — it is the type-level bridge between the two, and `guard-elicit.ts` imports
-  its `GuardElicitParams` back (`packages/kernel/src/guard/guard-elicit.ts`) to attach structured `detail`.
+  (`packages/kernel/src/runs/elicit-bridge.ts`) — it is the type-level bridge between the two.
 - `@clarvis/kernel`'s `managed-run.ts` constructs one `ElicitBridge` per run
   (`packages/kernel/src/runs/managed-run.ts`) and wires `bridge.elicit` into the `ManagedRunContext.elicit` the engine's
   `execute` closure receives; `RunHandle.onElicit`/`respond` on the returned handle forward
@@ -981,10 +877,6 @@ direct client under its own id).
   `elicitWaitMs` derivation as `ask_user` — it is a second consumer of the one per-run FIFO, out of
   scope for this document's detail (see the budget/soft-limit document) but coupled here through
   `elicitWithClockPause` and `createElicitSerializer`.
-- `packages/kernel/src/guard/resolver.ts` selects the current interactive allowlist for each command
-  and constructs `createGuardElicit(ctx.elicit, {...})` for each human question — the guard's own escalation/decision
-  policy (out of scope here; see **command-guard-and-approval**) rides this document's `Elicit`/`GuardElicit`
-  adaptation to reach the human.
 - `code`'s `run-host.ts` and `runtime.tsx` hold the only production `ElicitSlot`
   (`packages/code/src/runtime.tsx`, `runApp`), threading `elicit.ask` into the run callback
   (`packages/code/src/runtime.tsx`, `buildRunHost`), `elicit.cancelPending` into run teardown
@@ -1009,70 +901,6 @@ direct client under its own id).
   a question emitted before `runs.start` resolves is delivered to the handler that attaches later, a
   question the kernel settles first leaves the buffer empty, and a settlement naming another run
   leaves the buffered question alone.
-- ~~**Why `guard_confirm`'s wait bound is a 32-bit-max sentinel rather than `undefined`.**~~
-  **Resolved, in two parts: the numeric choice is fully explained; the sentinel-vs-omission style
-  choice is inert for the current wiring, not merely "observationally identical absent an abort".**
-
-  The *value* `2_147_483_647` is not invented for guard confirms — it is `MAX_TIMER_DELAY_MS`,
-  defined once in `packages/loop/src/runtime/support/bounded.ts`, whose own comment states the
-  reason directly: "The largest delay a `setTimeout` accepts (2^31 - 1 ms); longer waits are clamped
-  to this so the timer fires rather than overflowing to immediate." `boundPromise` clamps any
-  supplied `timeoutMs` to it (`packages/loop/src/runtime/support/bounded.ts`,
-  `Math.min(opts.timeoutMs, MAX_TIMER_DELAY_MS)`) for
-  exactly this reason — Node's `setTimeout` silently misbehaves on delays at or above 2^31.
-  `ELICIT_NO_TIMEOUT_MS` in `packages/kernel/src/guard/guard-elicit.ts` is the identical constant,
-  so wherever a real `setTimeout`-backed bound is involved, this is precisely the "wait as close to
-  forever as `setTimeout` safely allows" value.
-
-  But for *this specific caller*, the choice is provably inert, not merely indistinguishable in
-  practice: the concrete `Elicit` the kernel wires up, `createElicitBridge`'s `elicit`
-  (`packages/kernel/src/runs/elicit-bridge.ts`), **never reads `opts.timeoutMs` at all** — it
-  only listens for `opts.signal`'s `abort` event, and every "wait forever" reading above still holds
-  for it. It does own a timer of a different kind — the interactive decision window of §4.11, started
-  only by a run's own `elicit_policy` and a frontend's presentation confirmation, never by
-  `timeoutMs` (already noted in §4.2's table). So `createGuardElicit`'s inner `elicit(params, { timeoutMs: ELICIT_NO_TIMEOUT_MS,
-  ... })` (`packages/kernel/src/guard/guard-elicit.ts`) has the same observable effect as
-  omitting `timeoutMs`
-  **unconditionally**, not just "absent an abort" — the field is dead for every call this bridge ever
-  serves, timeout or not.
-
-  The *real*, effective wait bound on a guard confirmation is enforced one layer up, in the loop, by
-  `withGuardElicitWaitBound` (`packages/loop/src/runtime/capabilities/tools.ts`), which wraps
-  the **whole** `GuardElicit` callback — not the raw `elicit` — in `boundPromise` using the run's own
-  `elicit_wait_ms`/`CLARVIS_DEFAULT_ELICIT_WAIT_MS`
-  (`packages/loop/src/runtime/capabilities/tools.ts`), racing it against
-  abort exactly as §4.2's "Enforcement" row does for the ask-user path. Its own doc comment states
-  "Only a non-finite `waitMs` is unbounded"
-  (`packages/loop/src/runtime/capabilities/tools.ts`) — confirming this outer wrap, not the
-  inner `ELICIT_NO_TIMEOUT_MS`, is where a guard confirmation's real deadline lives.
-
-  ~~What remains genuinely unstated by any comment or test: *why* `createGuardElicit` bothers passing
-  an explicit sentinel to a backend that ignores it, rather than omitting `timeoutMs`.~~ **Resolved
-  as a recorded derivation; no behaviour changed.** The reason is now documented beside the constant
-  (`packages/kernel/src/guard/guard-elicit.ts`), and it is the opposite of the "defensive
-  future-proofing" reading offered here: the `Elicit` port documents `timeoutMs` as a wait bound a
-  backend honours, and an *omitted* one means unbounded
-  (`packages/capability/src/elicit.ts`), so the sentinel is this function's declaration,
-  addressed to whatever backend is wired in, that a command approval always terminates. Omitting it
-  would have declared the opposite. That the kernel's own backend does not read it makes the value a
-  statement of contract here rather than an observed timer — which is what the two paragraphs above
-  establish — not a redundancy. Pinned by "declares a terminating wait bound to the backend, at
-  setTimeout's own ceiling"
-  (`packages/kernel/tests/unit/guard.test.ts`), which captures what the backend is handed
-  and asserts it is `2 ** 31 - 1` and finite.
-
-  Closing it also turned up a false statement in the source, since corrected. `createGuardElicit`'s
-  `@remarks` used to say prompts "wait effectively forever ({@link ELICIT_NO_TIMEOUT_MS}) unless the
-  signal aborts", which is wrong in the one direction that matters for a command approval: the real
-  bound is the engine's `withGuardElicitWaitBound` over the run's `elicit_wait_ms`
-  (`packages/loop/src/runtime/capabilities/tools.ts`), and on expiry it does not fall
-  through to a still-open prompt — `onTimeout: () => false` fails closed to a **denial**.
-  The remark now says so (`packages/kernel/src/guard/guard-elicit.ts`).
-- **The full decision policy behind guard escalation** — when the guard chooses to prompt at all, what
-  `req.reason`/`req.shell` are populated from upstream, and how `allow_session` composes with the
-  guard's broader ruleset — is explicitly delegated to **command-guard-and-approval**; only the
-  human `Elicit → boolean` adaptation mechanism and the attributed-answer-preserving wait wrapper
-  are covered here.
 - **Detailed wire framing** (JSON-RPC method names `M.runsRespond`, notification names `N.runElicitation`,
   request/response envelope validation beyond the DTO shapes in §2.5) is delegated to
   **kernel-transport-and-wire**.

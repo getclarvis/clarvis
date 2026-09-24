@@ -210,8 +210,8 @@ holds its own catalog lease while it can use skills. Production: `releaseRunLeas
 | `entry` | resolved agent name |
 | `budget` | entry-agent frontmatter `budget`, else `merged.budget`, else the fallback, with `on_exceed` completed |
 | `vision_model` | `merged.default_vision_model`, only when a string |
-| `execution_id`, `continue_from`, `session_id`, `agent_instance_id`, `output_schema`, `guard_mode`, `guard_judge`, `memory`, `task` | straight passthrough, present only when the param is |
-| `prompt_cache_ttl` | request value, else `"1h"` when `guardParksOnHuman(...)`, else absent |
+| `execution_id`, `continue_from`, `session_id`, `agent_instance_id`, `output_schema`, `memory`, `task` | straight passthrough, present only when the param is |
+| `prompt_cache_ttl` | request value when provided, else absent |
 | `hook_user_prompt_expansion` | only for a resolved user-invoked skill; `{ command_name }` is bare for operator/workspace skills and `<plugin>:<skill>` for plugin skills |
 | `plans` | request value, else settings block with the skill-mode override, else settings block, else absent |
 | `agents` | present only when `merged.agents` is a non-null object |
@@ -474,12 +474,10 @@ ten numeric fields, `AGENTS_FIELDS` : `buffer_lines`, `buffer_bytes`,
 `max_retained_children`, `max_notices_per_iteration`, `max_consecutive_failed_children`,
 `finish_nudges` — each carried through only when it is a non-negative integer.
 
-`prompt_cache_ttl` derivation: an explicit request value wins; otherwise
-`guardParksOnHuman(params.guard_mode, merged.guard, params.guard_judge !== undefined)`
-(`packages/kernel/src/guard/resolver.ts`) yields `"1h"`, and nothing is emitted when it is
-false. The guard predicate returns true for mode `on` and for mode `auto` with no judge
-(`packages/kernel/src/guard/resolver.ts`). `packages/kernel/tests/component/settings-assembler.test.ts` pins all four cases, including that an
-unconfigured host derives `"1h"` because the guard defaults to on.
+`prompt_cache_ttl` is forwarded only when the request supplies it; the kernel does not
+invent a fallback. Production: `packages/kernel/src/runs/settings-assembler.ts`
+(`createSettingsRunAssembler`). Test: `packages/kernel/tests/component/settings-assembler.test.ts`
+(`does not invent a prompt cache TTL when the caller sets none`).
 
 ### 4.3 Managed-run construction (`packages/kernel/src/runs/managed-run.ts`)
 
@@ -604,12 +602,6 @@ Notable renames and derivations inside the switch: `mcp_name` becomes `server` a
 but `completed`/`cancelled` to `failed`. `mcp_degraded` drops each
 server's `transport`. `delegation_completed`/`delegation_failed` put the engine's `result`
 through `terminalLabel` — sanitized and capped at 256 code points — as `summary`.
-
-The `tool_call` projection copies `ev.guard` unchanged when present, so live and
-rehydrated runs expose the same final command-review fact. Production: the
-`tool_call` arm of `engineEventToProto` in
-`packages/kernel/src/runs/map-events.ts`; Test: the first tool-call mapping case
-in `packages/kernel/tests/unit/map-events.test.ts`.
 
 Two builtin types are refused **explicitly** rather than by the default arm: `convergence_warning`
 and `guard_escalation`. They shared one comment that explained only the first, which left the second
@@ -973,10 +965,9 @@ spawned child takes its own frontmatter first.
 Production `packages/kernel/src/runs/settings-assembler.ts`. Test
 `packages/kernel/tests/component/settings-assembler.test.ts`.
 
-**INV-R38.** `prompt_cache_ttl` defaults to `"1h"` exactly when the effective guard mode parks on a
-human, and an explicit request param always wins.
-Production `packages/kernel/src/runs/settings-assembler.ts`; predicate `packages/kernel/src/guard/resolver.ts`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts`.
+**INV-R38.** `prompt_cache_ttl` is absent unless the request supplies it.
+Production: `packages/kernel/src/runs/settings-assembler.ts` (`createSettingsRunAssembler`).
+Test: `packages/kernel/tests/component/settings-assembler.test.ts`.
 
 **INV-R39.** `completeBudget` fills in exactly one field: a declared budget missing `on_exceed` gets
 the fallback's `on_exceed` (`{...declared, on_exceed: fallback.on_exceed }`). It never supplies a

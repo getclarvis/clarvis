@@ -100,8 +100,7 @@ policy still applies before the loop accepts the stage. The external event spell
 - **`rewrite` replaces the pending call's arguments wholesale** — never a merge, so a hook's effect
   cannot depend on which keys the model happened to send. It is honoured only on `pre_tool_use`;
   asked for anywhere else it is bad output, never a silent no-op. Replacement arguments are still
-  validated against the tool's own schema and still meet the command guard, both of which sit
-  downstream, and the model is told what actually ran.
+  validated against the tool's own schema downstream, and the model is told what actually ran.
 - **exit code** — non-zero is a failure even when stdout parsed cleanly, with one exception: **exit
   2 at a gate is a denial**, with the reason taken from stderr. It is the blocking form a shell
   script reaches for when writing JSON is inconvenient.
@@ -210,4 +209,4 @@ arguments it was matched against.
 - **Argument rewriting is sequential and selection-stable.** Every matching hook is selected against
   the model's original call. A successful `pre_tool_use` rewrite replaces the entire argument object
   seen by later selected hooks; it never re-runs selection, so one hook cannot silence another. The
-  final replacement still passes the tool schema and command guard before dispatch.
+  final replacement still passes the tool schema before dispatch.

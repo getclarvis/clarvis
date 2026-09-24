@@ -276,19 +276,6 @@ export async function connectKernelClient(
     if (run.resultReceived) clientRuns.delete(execution_id);
   });
   /**
-   * Check an elicitation's `detail` against the closed {@link ElicitationCommandDetail} shape.
-   *
-   * @remarks
-   * The request around it is deliberately left open — `kind` is `(string & {})` so a kernel may add
-   * kinds without a protocol bump, and `schema` is passed through opaquely — so neither can be key
-   * checked. `detail` shares neither property: it is a fully closed interface, and it is what a
-   * human reads when approving a command. A `detail` whose `command` is absent or not a string
-   * would reach an approval dialog as `undefined`, and the approval would then be given for a
-   * command nobody was shown, which is the one failure this transport must not pass on silently.
-   */
-  const isCommandDetail = (value: unknown): boolean =>
-    elicitationCommandDetailSchema.safeParse(value).success;
-  /**
    * A published decision window is a positive whole number of milliseconds or absent.
    *
    * @remarks The countdown a frontend renders and the confirmation it sends back both
@@ -307,9 +294,8 @@ export async function connectKernelClient(
       typeof params.request.execution_id !== "string" ||
       typeof params.request.kind !== "string" ||
       typeof params.request.prompt !== "string" ||
-      (params.request.detail !== undefined && !isCommandDetail(params.request.detail)) ||
       (params.request.window_ms !== undefined && !isWindowMs(params.request.window_ms)) ||
-      (params.request.kind === "guard_confirm" && !isCommandDetail(params.request.detail))
+      params.request.detail !== undefined
     ) {
       protocolViolation("invalid run.elicitation notification");
       return;
@@ -704,4 +690,3 @@ export async function connectKernelClient(
     },
   };
 }
-import { elicitationCommandDetailSchema } from "../guard/review-detail-schema.ts";

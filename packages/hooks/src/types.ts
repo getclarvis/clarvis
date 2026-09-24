@@ -14,8 +14,8 @@
  * Filter narrowing a tool-scoped hook to a subset of tool calls.
  *
  * @remarks
- * A scoping device, not a security boundary — the command guard is what enforces
- * policy. See {@link matchesCandidate} for the exact evaluation rules.
+ * A scoping device, not a security boundary. See {@link matchesCandidate} for
+ * the exact evaluation rules.
  */
 export interface HookMatch {
   /**

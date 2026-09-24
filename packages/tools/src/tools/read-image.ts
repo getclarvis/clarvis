@@ -1,5 +1,5 @@
 import { ToolError } from "../errors.ts";
-import { readFileOptionsForPath, readRawFile } from "../lib/files.ts";
+import { readRawFile } from "../lib/files.ts";
 import { imageBytesAreValid, sniffImageMime } from "../lib/image.ts";
 import { resolveFileToolPath } from "../lib/paths.ts";
 import { imagePart } from "./content.ts";
@@ -40,13 +40,7 @@ export const readImage: ToolDef = {
   async handler(args, config) {
     const relPath = args.path as string;
     const target = resolveFileToolPath(relPath, config);
-    const buf = await readRawFile(
-      target,
-      relPath,
-      config.maxImageBytes,
-      "MAX_IMAGE_BYTES",
-      readFileOptionsForPath(config, target),
-    );
+    const buf = await readRawFile(target, relPath, config.maxImageBytes, "MAX_IMAGE_BYTES");
     const mimeType = sniffImageMime(buf);
     if (mimeType === null || !imageBytesAreValid(buf, mimeType)) {
       throw new ToolError(

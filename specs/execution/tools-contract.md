@@ -1,556 +1,94 @@
-# The tool contract: dispatch, config, registry and the advertised surface
-
-> Implemented at `packages/tools/src/{core,config,errors,index}.ts`,
-> `packages/tools/src/tools/{registry,types,content}.ts` and the package's `tests/architecture` and
-> `tests/component` suites. Every claim below is anchored to a file and a named symbol or test. Open questions are
-> collected in the final section.
-
-## 1. Purpose
-
-`@clarvis/tools` (`packages/tools`) exposes a fixed catalog of coding tools to an LLM agent as one
-validated call surface. This document covers the load-bearing seam every individual tool sits
-behind: a single dispatcher (`core.ts`) that validates a call's arguments, runs the optional
-command-approval gate, invokes the tool's handler, and bounds its output — all against one resolved
-`RuntimeConfig` (`config.ts`) built for the toolset by `resolveConfig`
-(`packages/tools/src/config.ts`). The registry (`tools/registry.ts`) is the single table that
-both the full and read-only surfaces are derived from, so there is exactly one place a tool is added,
-removed, or reclassified. The package's own architecture tests pin two properties about this seam
-that the type system cannot express on its own: that the advertised surface has one fixed size
-(`packages/tools/tests/component/tool-surface.test.ts`), and that no model-facing refusal may name
-the way around a restriction it just enforced
-(`packages/tools/tests/architecture/no-bypass-hints.test.ts`).
-
-The package also owns a negative property: it contains no source-code parser. `outline` and
-`check_syntax`, and every capability flag and syntax annotation that went with them, were removed
-together and are asserted absent by name
-(`packages/tools/tests/architecture/no-tree-sitter.test.ts`), so a caller that dispatches
-either name today gets the same `not_found` refusal as a typo
-(`packages/tools/tests/component/tool-surface.test.ts`).
-
-## 2. Surface
-
-`GuardReview.reviewer_decision` optionally preserves the semantic `allow`, `deny`, `unsure` or
-`failed` result separately from the final dispatch outcome. A denied reviewed command labels its
-static trigger separately for semantic decisions. When the answerer is the judge, the denied tool
-result says that automatic review denied or was unsure and that this is not a missing UI approval;
-it does not instruct the caller to obtain a human prompt that was not emitted. Technical failures
-instead name the failure category and explain that repeated operator authorization does not repair
-the failure; their message omits the static trigger. Structured guard metadata retains the trigger
-for diagnostics.
-Production: `applyGuard` and `reviewDenialMessage` in [core.ts](../../packages/tools/src/core.ts) and
-`GuardReview` in [types.ts](../../packages/tools/src/guard/types.ts).
-Test: [guard-dispatch.test.ts](../../packages/tools/tests/integration/guard-dispatch.test.ts).
-
-The guard surface exports `ShellAnalysisIssue`, `ShellAnalysisIssueKind`, `ShellAnalysisImpact`
-and `GuardReviewability` through both root and guard entries. Causes describe syntax, not authority;
-the host owns effect attestation and approval. Production:
-[guard types](../../packages/tools/src/guard/types.ts) and
-[analyzer](../../packages/tools/src/guard/analyze-shell.ts) (`analyzeShell`). Test:
-[analysis issues](../../packages/tools/tests/unit/analysis-issues.test.ts).
-
-### Package exports (five `exports` keys, four source entries)
-
-`packages/tools/package.json` declares five keys under `exports`: four source entries each with a
-`bun` (source), `types` and `import` (built) condition, plus `./package.json` as a bare self-reference:
-
-| Subpath | Source entry | Consumer-facing purpose |
-| --- | --- | --- |
-| `.` | `packages/tools/src/index.ts` | the library facade: `createAgentTools`, `dispatch`, `listTools`, config, registry, errors, content — and, re-exported alongside them, the same shell, guard, process-kill and warn-sink bindings the `./shell`/`./guard` subpaths expose (see below) |
-| `./guard` | `packages/tools/src/guard/index.ts` | the command-approval analysis surface (owned by the sibling [command-guard-and-approval](command-guard.md) document) |
-| `./shell` | `packages/tools/src/shell-entry.ts` | shell resolution primitives (`resolveShell`, `shellArgs`, `encodePowerShellCommand`, `currentShellFlavor`, plus `killTree`/`ownProcessGroup`/`isAlive` and the `ShellSpec`/`ShellDeps`/`ShellFlavor`/`KillDeps`/`TaskkillRunner` types) re-exported for `@clarvis/hooks` and `@clarvis/kernel` without pulling in the rest of the tool API |
-| `./sandbox` | `packages/tools/src/sandbox-entry.ts` | sandbox configuration, host temporary-root discovery, probes and policy construction (owned by the sibling [sandbox-and-toolchains](sandbox.md) document) |
-| `./package.json` | `package.json` itself | boilerplate self-reference (no `bun`/`types`/`import` condition); not a source entry and out of scope below |
-
-`./shell` and `./guard` are not the *only* way to reach those bindings: root `.` re-exports the
-identical shell primitives and the identical guard-analysis surface (see the root facade table below),
-so a consumer that already imports `.` for anything else does not need the subpath at all — the
-subpaths exist so `@clarvis/hooks` (for `./shell`) and the sibling guard document's
-consumers (for `./guard`) can pull in only that surface without the rest of the tool API.
-
-### `./shell` — `packages/tools/src/shell-entry.ts` (re-exports only)
-
-The module's own doc comment states the reason it exists rather than `.` alone: "`@clarvis/tools`'
-root export pulls the whole tool registry - ajv, diff, tinyglobby and ripgrep - which is the wrong
-price for a consumer that only needs to know which shell this host speaks and how to kill what it
-spawned" (`packages/tools/src/shell-entry.ts`), and it pairs the two halves deliberately: "{@link
-ownProcessGroup} decides what `spawn`'s `detached` option must be on this platform, and {@link
-killTree} is what that decision exists to enable". It re-exports, with no logic of its
-own:
-
-| From | Symbols |
-| --- | --- |
-| `./shell.ts` (value) | `resolveShell`, `shellArgs`, `encodePowerShellCommand`, `currentShellFlavor` (`packages/tools/src/shell-entry.ts`) |
-| `./shell.ts` (type) | `ShellSpec`, `ShellDeps`, `ShellFlavor` |
-| `./lib/process.ts` (value) | `killTree`, `ownProcessGroup` |
-| `./lib/process-owner.ts` (value) | `isAlive` |
-| `./lib/process.ts` (type) | `KillDeps`, `TaskkillRunner` |
-
-**Verified consumers** (resolving the prior "declared-but-unverified" note — see §8's former entry,
-now removed): `packages/hooks/src/subprocess.ts` imports `killTree`, `ownProcessGroup`,
-`resolveShell`, `shellArgs` and the `ShellSpec` type from `@clarvis/tools/shell`, aliasing all four
-functions with a `default*` prefix. `packages/kernel/src/local.ts` re-exports all seven value
-symbols and both remaining types (`ShellSpec`, `ShellFlavor`) from `@clarvis/tools/shell` verbatim —
-a consumer this document's own scope had not previously named. `packages/kernel/src/capability-executables/session-manager.ts`
-imports only `killTree`/`ownProcessGroup` from it, to tear down a capability-executable's child
-process tree the same way a `shell` tool call would. `packages/hooks/tests/unit/subprocess.test.ts`
-imports `shellArgs` from the same subpath directly, confirming the export map resolves for a
-consumer outside this package's own workspace-linked build.
-
-### Root (`.`) facade — `packages/tools/src/index.ts`
-
-The facade also exports `readRawFile` and the `ReadFileOptions` type for trusted
-host consumers. This is the existing bounded descriptor reader, with caller-supplied byte limits
-and a host-owned artifact root when required; it adds no advertised tool. Its behavior belongs to
-[reads and search](tools-read-and-search.md#42-readrawfile--the-descriptor-bound-read).
-Production: the exports in [index.ts](../../packages/tools/src/index.ts) and `readRawFile` in
-[files.ts](../../packages/tools/src/lib/files.ts).
-Test: [bounded-read.test.ts](../../packages/tools/tests/integration/bounded-read.test.ts), and the
-kernel's bounded artifact case in
-[goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts).
-
-| Symbol | Kind | Location | Contract |
-| --- | --- | --- | --- |
-| `AgentTools` | interface | `packages/tools/src/index.ts` | `{ config: RuntimeConfig; listTools(): ToolInfo[]; callTool(name, args?): Promise<DispatchResult>; close(): Promise<void> }` |
-| `createAgentTools(options)` | function | `packages/tools/src/index.ts` | resolves `options` via `resolveConfig`, returns an `AgentTools` bound to that config |
-| `dispatch(name, args, config, signal?, hooks?)` | function | `packages/tools/src/core.ts` | invokes one tool by name |
-| `listTools(config)` | function | `packages/tools/src/core.ts` | lists the effective `ToolInfo[]` for a config |
-| `resolveConfig(options)` | function | `packages/tools/src/config.ts` | builds a validated `RuntimeConfig` |
-| `ExecutionSessionManager` | class | `packages/tools/src/lib/execution-session.ts` | per-run shell process authority with explicit `close` |
-| `StartupError` | class | `packages/tools/src/config.ts` | thrown by `resolveConfig` on invalid startup options |
-| twelve `DEFAULT_*` limit constants | const | `packages/tools/src/config.ts` | see §3 |
-| `tools`, `readOnlyTools`, `getTool`, `selectSurface` | value | `packages/tools/src/tools/registry.ts` | the registry (see §2's surface table below) |
-| `ToolDef`, `ToolCallHooks` | type | `packages/tools/src/tools/types.ts` | one tool's schema+handler; optional live output and successful-shell-spawn hooks |
-| `ContentPart`, `TextPart`, `ImagePart`, `ToolResult`, `contentText` | type/fn | `tools/content.ts` | the result envelope shape |
-| `ToolError`, `serializeError`, `fsError` | class/fn | `packages/tools/src/errors.ts` | the package's error type and its two renderers |
-| `ErrorCode` | type | `packages/tools/src/errors.ts` | the closed union of stable codes |
-| `SandboxConfig` | type | `packages/tools/src/index.ts` | re-exported from `./sandbox.ts` |
-| `systemTemporaryRoots(platform?, environmentTemporaryRoot?)` | function | `packages/tools/src/index.ts` | returns the existing environment-selected temp root plus `/tmp` on POSIX, or only the environment root on Windows; forbidden roots are omitted |
-| `resolveShell`, `shellArgs`, `encodePowerShellCommand`, `currentShellFlavor` | fn | `packages/tools/src/index.ts` | shell resolution primitives, the same ones `./shell` exposes |
-| `ShellSpec`, `ShellDeps`, `ShellFlavor` | type | `packages/tools/src/index.ts` | types for the shell primitives above |
-| `executableOnPath`, `resolveCommand` | fn | `packages/tools/src/index.ts` | re-exported from `@clarvis/paths` |
-| `killTree`, `ownProcessGroup`, `isAlive` | fn | `packages/tools/src/index.ts` | process-tree kill and liveness primitives |
-| `KillDeps`, `TaskkillRunner` | type | `packages/tools/src/index.ts` | types for the kill primitives above |
-| `analyzeShell`, `posixDialect`, `POSIX_DEFAULT_ALLOWED_COMMANDS`, `WINDOWS_DEFAULT_ALLOWED_COMMANDS`, `buildGuardContext`, `withinWorkspace`, `touchesOutside` | fn/const | `packages/tools/src/index.ts` | the guard-analysis surface, the same bindings `./guard` exposes |
-| `Verdict`, `GuardDecision`, `Segment`, `ShellFacts`, `PathFact`, `GuardContext`, `Guard`, `ElicitRequest`, `Elicit`, `ShellDialect`, `Token`, `PathCandidate` | type | `packages/tools/src/index.ts` | types for the guard-analysis surface above |
-| `setWarnSink`, `warn`, `NOOP_TOOLS_LOGGER` | fn/const | `packages/tools/src/index.ts` | the package's warn-sink API |
-| `WarnSink`, `ToolsLogger`, `ToolsWarning` | type | `packages/tools/src/index.ts` | types for the warn-sink API above |
-
-`createAgentTools` is the package's "headline example": its options type makes every field but
-`workspaceRoot` optional so `createAgentTools({ workspaceRoot })` alone works
-(`packages/tools/src/config.ts`, documented on `AgentToolsOptions.logger`).
-
-### Model-facing tool surface
-
-The surface is a single ordered table, `toolDescriptors` (`packages/tools/src/tools/registry.ts`),
-of `{ tool: ToolDef, readOnly: boolean }` pairs. `tools` is its full projection and `readOnlyTools` its
-`readOnly`-filtered one (`packages/tools/src/tools/registry.ts`); both preserve `toolDescriptors`' order. The oracle
-of this table, `EXPECTED_TOOL_DESCRIPTORS`
-(`packages/tools/tests/helpers/tool-surface.ts`), pins the presentation order and read-only flags,
-verified equal to the production registry by
-`packages/tools/tests/component/core.test.ts` (`toolDescriptors.map(...).toEqual([...EXPECTED_TOOL_DESCRIPTORS])`):
-
-| # | Tool name | Read-only |
-| --- | --- | --- |
-| 1 | `read_file` | yes |
-| 2 | `read_image` | yes |
-| 3 | `read_files` | yes |
-| 4 | `write_file` | no |
-| 5 | `edit_file` | no |
-| 6 | `multi_edit` | no |
-| 7 | `apply_patch` | no |
-| 8 | `replace` | no |
-| 9 | `list_dir` | yes |
-| 10 | `glob` | yes |
-| 11 | `grep` | yes |
-| 12 | `diff` | yes |
-| 13 | `shell` | no |
-| 14 | `shell_session` | no |
-| 15 | `move` | no |
-| 16 | `copy` | no |
-| 17 | `mkdir` | no |
-| 18 | `remove` | no |
-| 19 | `file_stat` | yes |
-| 20 | `tree` | yes |
-
-20 tools total, 9 read-only (`read_file`, `read_image`, `read_files`, `list_dir`, `glob`, `grep`,
-`diff`, `file_stat`, `tree`). Individual tool argument schemas and handler behaviour belong to the
-three sibling `tools-*` documents; this document covers only that the table exists, is single-owned, and
-is what `dispatch`/`listTools` consume.
-
-The model-facing descriptions follow the cross-surface
-[`instruction contract`](../cross-cutting/model-instructions.md): routing, local input constraints,
-results and recovery, without an embedded generic engineering handbook. The complete serialized
-`ToolInfo[]` has a 21,000-character regression ceiling, with headroom for Windows shell wording.
-Production: `toolDescriptors` and the individual descriptors under `packages/tools/src/tools/`.
-Test: `packages/tools/tests/component/tool-surface.test.ts` (`keeps the complete advertised coding
-surface within its character budget`). This measures text size, not provider tokens or accuracy.
-
-### `ToolInfo` (model-visible descriptor) — `packages/tools/src/core.ts`
-
-```ts
-interface ToolInfo {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-}
-```
-
-`listTools(config)` (`packages/tools/src/core.ts`) maps `selectSurface(config.readOnly)` to this shape, dropping the
-handler. `selectSurface(readOnly)` (`packages/tools/src/tools/registry.ts`) returns `readOnlyTools` when `readOnly` is true,
-else `tools`.
-
-### `RuntimeConfig` — `packages/tools/src/config.ts`
-
-The guard subpath and root export `GuardPlacement` (`"host" | "contained"`) and `GuardCallFacts`.
-The latter supplies optional `matched: string`, `placement`, `network: "none" | "host"`,
-`dangerous`, `risk_findings`, `within_workspace`, and `touches_outside` fields shared by
-`GuardDecision` and `ElicitRequest`. `applyGuard` forwards only the trusted decision's values,
-including false booleans; same-named model arguments are never promoted to review facts.
-`ElicitRequest.operator_message` is separate optional host-reviewer context, not a replacement
-for the policy reason.
-Production: `GuardCallFacts` in [types.ts](../../packages/tools/src/guard/types.ts) and `applyGuard`
-in [core.ts](../../packages/tools/src/core.ts). Test: trusted-fact and argument-forgery cases in
-[guard-dispatch.test.ts](../../packages/tools/tests/integration/guard-dispatch.test.ts).
-
-The guard-analysis surface also exports `resolveCandidate` for symlink-aware path classification
-and `commandRiskFindings(shell: ShellFacts)` / `isDangerousCommand(shell: ShellFacts)` for the
-narrow `sudo` / forceful `rm` / PowerShell `Remove-Item -Force` review facts. Neither helper
-authorizes a command or selects a human channel. Findings use the trusted normalized command head,
-including admitted absolute executables, and check force options in argv only before `--` or
-`--%`. POSIX Git normalization peels consecutive global `--no-pager`/`--no-color` prefixes after
-wrappers and env assignments, never subcommand flags or `-C`; PowerShell canonicalizes `rm`/`del`
-to `Remove-Item`.
-Production: [paths.ts](../../packages/tools/src/guard/paths.ts),
-[helpers.ts](../../packages/tools/src/guard/helpers.ts), and
-[posix.ts](../../packages/tools/src/guard/dialects/posix.ts).
-Test: [guard-helpers.test.ts](../../packages/tools/tests/unit/guard-helpers.test.ts),
-[guard-context.test.ts](../../packages/tools/tests/unit/guard-context.test.ts), and
-[guard-normalization.test.ts](../../packages/tools/tests/unit/guard-normalization.test.ts).
-
-The full field list, defaults and overrides are given in §3. The fields most relevant to dispatch
-itself: `guard?: Guard`, `elicit?: Elicit` (consulted by `applyGuard`, `packages/tools/src/core.ts`), `readOnly:
-boolean` (selects the surface), `stateRoot: string`, and
-`temporaryRoots: readonly string[]` (ordered temporary path policy consumed by individual tools, not
-by `core.ts` itself; the first root is the command environment's `TMPDIR`), `maxOutputBytes` and `maxToolMetaBytes`
-(consumed by `dispatch`'s own bounding step).
-`filesystemPolicy` is the frozen run identity, placement, read scope, write roots and protected
-roots consumed by `ExecutionSessionManager` for command and file-service launch. It is resolved once from
-host-owned `runIdentity` and `filesystemPlacement` inputs plus Sandbox settings. Commands and file tools use this placement policy. Production:
-`resolveConfig` in [config.ts](../../packages/tools/src/config.ts),
-`resolveFilesystemPolicy` in [sandbox.ts](../../packages/tools/src/sandbox.ts), and
-`ExecutionSessionManager.launch` in
-[execution-session.ts](../../packages/tools/src/lib/execution-session.ts). Test:
-[sandbox.test.ts](../../packages/tools/tests/integration/sandbox.test.ts) (`freezes a run policy and
-changes identity when its effective access changes`, `uses the same broad-read write-limited policy
-for shell and shell_session with an external cwd`).
-
-The closed `AgentFilesystem` port covers all 18 model file operations after schema, private-path,
-selected-skill and Guard admission. Host calls use the local implementation; SSH calls use
-that implementation on the remote host; Sandbox calls use one run-owned isolated child. The parent
-accepts only framed file-operation and prepared-batch messages, binds each review receipt to the
-run policy and request bytes, and stops the child on cancellation or channel failure. Neither a
-model call nor the child chooses a command, mount or policy. Production: `FILE_OPERATIONS` in
-[agent-filesystem.ts](../../packages/tools/src/agent-filesystem.ts), `dispatch` in
-[core.ts](../../packages/tools/src/core.ts), `SandboxAgentFilesystem` in
-[filesystem-service.ts](../../packages/tools/src/filesystem-service.ts), and the parsers in
-[filesystem-protocol.ts](../../packages/tools/src/lib/filesystem-protocol.ts), and the native
-in-environment adapter in
-[environment-fs.ts](../../packages/tools/src/lib/environment-fs.ts). Test:
-[filesystem-protocol.test.ts](../../packages/tools/tests/contract/filesystem-protocol.test.ts)
-and [filesystem-service.test.ts](../../packages/tools/tests/integration/filesystem-service.test.ts).
-The architecture tests in
-[filesystem-boundary.test.ts](../../packages/tools/tests/architecture/filesystem-boundary.test.ts)
-pin every file tool to the port and keep direct filesystem imports out of those handlers.
-
-`skillExecutionRoots: readonly string[]` is the separately bounded, canonical set of selected skill
-package directories admitted only to command execution. `dispatch` consumes it before the guard via
-`protectSkillPackages`: native mutation tools may use the normal workspace/scratch surface but may
-not target a protected skill package, and recursive `replace` may not target an ancestor containing
-one (`RuntimeConfig`, `protectSkillPackages`, and `assertOutsideRoots` in `packages/tools/src`).
-The list of accessible temporary roots is fixed when the run constructs the toolset; command text does not add ownership or mutate this list. Production: `createAgentToolsCapability` in `packages/loop/src/runtime/capabilities/tools.ts`. Test: `packages/loop/tests/integration/command-guard-wiring.test.ts`.
-`sessionManager` and `sessionAgent` are process-local authority ports: the loop shares one
-manager across a run and supplies a distinct token per agent; a standalone config gets private
-defaults. `createAgentTools.close()` and direct `RuntimeConfig.sessionManager.close()` seal
-admission and stop owned processes. Persisted files cannot reconstitute authority. Production:
-`resolveConfig` in `packages/tools/src/config.ts`, `createAgentTools` in
-`packages/tools/src/index.ts`, and `createAgentToolsCapability` in
-`packages/loop/src/runtime/capabilities/tools.ts`. Test:
-`packages/tools/tests/integration/execution-session.test.ts` and
-`packages/loop/tests/integration/tools.test.ts`.
-`gitMetadataPaths` is the immutable linked-worktree metadata-root list discovered while resolving the
-config, before the agent can mutate `.git`; sandbox execution consumes the pinned roots rather than
-re-reading mutable worktree pointers (`packages/tools/src/config.ts`). The
-discovery and mount validation belong to [sandbox-and-toolchains](sandbox.md).
-
-### `DispatchResult` — `packages/tools/src/core.ts`
-
-```ts
-interface DispatchResult {
-  isError: boolean;
-  content: ContentPart[];
-  meta?: Record<string, unknown>;
-  guard?: GuardReview;
-}
-```
-
-`guard` is present when the host policy exposes its effective mode. It is the
-final review fact — `{ mode, outcome, answerer }` — and accompanies both a
-successful dispatch and a guard denial. Production: `DispatchResult`,
-`GuardGate`, and `applyGuard` in `packages/tools/src/core.ts`; Test:
-`"returns the final auto-guard verdict and answerer with the tool result"` in
-`packages/tools/tests/integration/guard-dispatch.test.ts`.
-
-## 3. Data and formats
-
-### `RuntimeConfig` fields, defaults and minimums
-
-Every numeric limit in `AgentToolsOptions` (`packages/tools/src/config.ts`) is optional and falls back to a
-`DEFAULT_*` constant, then is re-validated by `requireMin` (`packages/tools/src/config.ts`) against a minimum.
-Confirmed by `packages/tools/tests/integration/config.test.ts` (documented defaults)
-(each override's minimum, and the inverted-timeout-range rejection).
-
-| Field | Default constant | Default value | Minimum | Source |
-| --- | --- | --- | --- | --- |
-| `maxOutputBytes` | `DEFAULT_MAX_OUTPUT_BYTES` | `131072` | `1024` (`MIN_OUTPUT_BYTES`) | `packages/tools/src/config.ts` |
-| `maxShellOutputBytes` | `DEFAULT_MAX_SHELL_OUTPUT_BYTES` | `16384` | `1024` | `packages/tools/src/config.ts` |
-| `maxFileBytes` | `DEFAULT_MAX_FILE_BYTES` | `20_000_000` | `1024` (`MIN_FILE_BYTES`) | `packages/tools/src/config.ts` |
-| `maxImageBytes` | `DEFAULT_MAX_IMAGE_BYTES` | `5_000_000` | `1024` | `packages/tools/src/config.ts` |
-| `maxTraversalEntries` | `DEFAULT_MAX_TRAVERSAL_ENTRIES` | `50_000` | `1` | `packages/tools/src/config.ts` |
-| `maxMutationBytes` | `DEFAULT_MAX_MUTATION_BYTES` | `64 * 1024 * 1024` | `1024` | `packages/tools/src/config.ts` |
-| `maxDiffInputBytes` | `DEFAULT_MAX_DIFF_INPUT_BYTES` | `8 * 1024 * 1024` | `1024` | `packages/tools/src/config.ts` |
-| `maxToolMetaBytes` | `DEFAULT_MAX_TOOL_META_BYTES` | `256 * 1024` | `1024` | `packages/tools/src/config.ts` |
-| `shellTimeoutMs` | `DEFAULT_SHELL_TIMEOUT_MS` | `120000` | `1` | `packages/tools/src/config.ts` |
-| `shellTimeoutMaxMs` | `DEFAULT_SHELL_TIMEOUT_MAX_MS` | `600000` | `1`, and `>= shellTimeoutMs` | `packages/tools/src/config.ts` |
-| `maxSessions` | `DEFAULT_MAX_SESSIONS` | `32` | `1` | `packages/tools/src/config.ts` |
-| `regexScanBudgetMs` | `DEFAULT_REGEX_SCAN_BUDGET_MS` | `5000` | `1` | `packages/tools/src/config.ts` |
-
-Unlike the size limits above it, `regexScanBudgetMs` is not a plain byte ceiling: its TSDoc
-(`packages/tools/src/config.ts`, `RuntimeConfig.regexScanBudgetMs`) states it is charged by `grep`'s in-process fallback, `replace`, and shell readiness matching
-through `createScanBudget`; it bounds a catastrophically
-backtracking user pattern, and it is never charged for disk or directory-walk time, so machine load
-between applications cannot trip it; scheduler time during a charged application remains part of
-its elapsed cost. Its default's own TSDoc (`packages/tools/src/config.ts`, `DEFAULT_REGEX_SCAN_BUDGET_MS`) reasons about the value in worst-case
-terms: roughly seven seconds worst case (the budget plus one in-flight application) against the hours
-an unbounded scan would cost, while leaving roughly a thousandfold margin over the time a legitimate
-scan actually spends (a plain pattern over 200,000 lines charges 5-7 ms).
-
-Non-numeric fields: `readOnly` defaults `false` (`packages/tools/src/config.ts`); `ripgrepAvailable` is computed by probing `rg --version` on `PATH`
-(`probeRipgrep`, `packages/tools/src/config.ts`) unless a caller injects `probeRipgrep` (test seam), and a
-throwing probe is treated as `false` rather than propagating
-(`runProbe`, `packages/tools/src/config.ts`; pinned by `packages/tools/tests/integration/config.test.ts`). `stateRoot` is **not** a
-caller override — `resolveConfig` always derives it as
-`workspaceStatePaths(workspaceRoot).root` (`packages/tools/src/config.ts`), which is a value from `@clarvis/paths`
-outside this package's scope. `logger` defaults to `NOOP_TOOLS_LOGGER` when the caller supplies none
-(`packages/tools/src/config.ts`). `guard`, `elicit`, and `secretEnvNames` pass through unchanged
-from `AgentToolsOptions` with no default beyond `undefined`. `skillExecutionRoots` defaults empty;
-`resolveConfig` canonicalizes at most 512 existing directories, rejects a filesystem root or a root
-that contains the workspace, and appends them to `sandbox.readOnlyPaths` when a sandbox exists
-(`resolveConfig` in `packages/tools/src/config.ts`).
-
-### `AgentToolsOptions` (`packages/tools/src/config.ts`) vs. `RuntimeConfig` (`packages/tools/src/config.ts`)
-
-`AgentToolsOptions` is the caller-facing input: only `workspaceRoot` is required, every limit is
-optional, and `probeRipgrep` exists solely as a test seam (`packages/tools/src/config.ts`). `resolveConfig` is the
-one function that turns it into the fully resolved `RuntimeConfig` every handler consumes as-is — no
-handler re-applies a default or re-validates a limit.
-
-### `ServerConfig` — `packages/tools/src/config.ts`
-
-`export type ServerConfig = RuntimeConfig;`, with the comment "Internal compatibility for tests that
-import this private module directly" (`packages/tools/src/config.ts`). It is not re-exported from `index.ts`'s root
-facade — a caller reaching it goes straight at `config.ts` rather than through the package's public
-surface. Over 20 files under `packages/tools/tests/` import `ServerConfig` from `../../src/config.ts`
-rather than `RuntimeConfig` (e.g. `packages/tools/tests/component/core.test.ts`, `packages/tools/tests/component/read-only.test.ts`,
-`packages/tools/tests/integration/rg.test.ts`, `packages/tools/tests/unit/guard-context.test.ts`).
-
-### Error wire shape
-
-`serializeError` (`packages/tools/src/errors.ts`) renders any thrown value to a JSON string, always with an `error`
-key:
-
-- A `ToolError`: `{"error": "<code>", "message": "<message>", ...fields}` (`packages/tools/src/errors.ts`) — `fields`
-  is spread flat alongside `error`/`message`, e.g. `{ error: "not_found", message: "No such file:
-  /w/a.txt", path: "/w/a.txt" }` from `fsError` (`packages/tools/src/errors.ts`).
-- Anything else: collapsed to `{"error": "internal", "message": "internal error"}`
-  (`packages/tools/src/errors.ts`), regardless of the original error's message or type — pinned by
-  `packages/tools/tests/unit/errors.test.ts` across a plain `Error`, a stackless `Error`, and a
-  bare string throwable.
-
-### `ErrorCode` — the closed union (`packages/tools/src/errors.ts`)
-
-`invalid_input`, `not_found`, `not_a_file`, `is_binary`, `not_an_image`, `no_match`,
-`ambiguous_match`, `patch_failed`, `io_error`, `cross_device`, `commit_partial`,
-`review_failed`, `revision_conflict`, `approval_unavailable`,
-`unrecognized_configuration_target`, `timeout`, `aborted`, `too_large`,
-`path_escape`, `denied`, `too_many_sessions`, `internal`.
-
-### `fsError` mapping table (`packages/tools/src/errors.ts`)
-
-| Node `err.code` | `ErrorCode` | Message shape |
-| --- | --- | --- |
-| `ENOENT` | `not_found` | `No such file: <path>` |
-| `EISDIR` | `not_a_file` | `Path is a directory: <path>` |
-| `ENOTDIR` | `not_a_file` | `Not a directory: <path>` |
-| `EXDEV` | `cross_device` | `Cross-filesystem rename: <path>` |
-| anything else (e.g. `EACCES`), or no code at all | `io_error` | `<code ?? "EIO">: <err.message>` |
-
-All mapped branches attach `{ path }` to `fields`. Pinned by
-`packages/tools/tests/unit/errors.test.ts`.
-
-Native file-service failures use a versioned bounded worker frame with error code, phase,
-operation, path role, retryability, and optional partial-commit endpoint state. The host validates
-the frame and preserves expected `ToolError` codes; unknown exceptions remain generic `internal`.
-The policy identity is checked at handshake and invocation. Production: `parseFilesystemChildMessage`
-in [filesystem-protocol.ts](../../packages/tools/src/lib/filesystem-protocol.ts),
-`runFilesystemWorker` in [filesystem-worker.ts](../../packages/tools/src/filesystem-worker.ts),
-and `SandboxAgentFilesystem` in
-[filesystem-service.ts](../../packages/tools/src/filesystem-service.ts). Test:
-[filesystem-protocol.test.ts](../../packages/tools/tests/contract/filesystem-protocol.test.ts)
-and typed failure cases in
-[filesystem-service.test.ts](../../packages/tools/tests/integration/filesystem-service.test.ts).
-
-### Tool result envelope
-
-`ToolResult` (`packages/tools/src/tools/content.ts`) is `{ content: string | ContentPart[]; meta?: Record<string,
-unknown> }`. A `ToolDef.handler` may return a bare string or this envelope
-(`packages/tools/src/tools/types.ts`); `normalizeOutput` (`packages/tools/src/core.ts`) wraps a bare string as `{ content }`
-before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/tools/src/tools/content.ts`); `contentText`
-(`packages/tools/src/tools/content.ts`) flattens an array to its concatenated text, dropping image parts to `""`.
-
-## 4. Behavior
-
-### `resolveConfig` (`packages/tools/src/config.ts`), in call order
-
-1. Reject a falsy `workspaceRoot` (`packages/tools/src/config.ts`).
-2. `validateWorkspace` (`packages/tools/src/config.ts`): `path.resolve` it, `statSync` it, throw `StartupError` if it
-   does not exist or is not a directory (`packages/tools/src/config.ts`). The existence check's `catch` is
-   untyped (`packages/tools/src/config.ts`): *any* thrown error from `statSync` — not only `ENOENT` —
-   collapses to the same "Workspace root does not exist" message, so a permission-denied root
-   (`EACCES`) is reported identically to a genuinely missing one.
-3. Pin any valid linked-worktree metadata roots with `discoverLinkedGitMetadataPaths`, then resolve
-   `logger` (fallback `NOOP_TOOLS_LOGGER`, `packages/tools/src/config.ts`).
-4. Resolve and validate `shellTimeoutMs`/`shellTimeoutMaxMs` against their minimum, then
-   `assertTimeoutOrder` (`packages/tools/src/config.ts`) throws if `shellTimeoutMaxMs < shellTimeoutMs`
-   (`packages/tools/src/config.ts`).
-5. Run the ripgrep probe (`runProbe`, swallowing a throw to `false`) and resolve `readOnly` /
-   `filesystemPolicy` (`resolveConfig` in `packages/tools/src/config.ts`).
-6. Validate each ordered temporary root as an existing directory, then canonicalize and de-duplicate
-   at most 512 `skillExecutionRoots`. Missing or non-directory entries fail startup in either list.
-   For skill roots, the filesystem root, the workspace itself, and any ancestor of the workspace also
-   fail startup. Both sides of that containment comparison use their filesystem-canonical identity,
-   so authored platform aliases cannot bypass the broad-root refusal (`resolveConfig`; pinned by
-   `packages/tools/tests/integration/config.test.ts`).
-7. Emit one `debug` log, `event: "tools.config_resolved"`, including only the count
-   `skill_execution_roots`, never their paths.
-8. Merge those roots into native-sandbox `readOnlyPaths`, then build the `RuntimeConfig`, validating
-   every remaining limit and deriving `stateRoot` from `@clarvis/paths` (`resolveConfig`).
-
-### `dispatch` (`packages/tools/src/core.ts`), in call order
-
-1. **Lookup.** `getTool(name, selectSurface(config.readOnly))` (`packages/tools/src/core.ts`). A miss — an unknown
-   name, or a write tool name against a read-only surface (`getTool` only searches the surface it is
-   given, `packages/tools/src/tools/registry.ts`) — returns `errorResult(new ToolError("not_found", "Unknown tool:
-   <name>"))` (`packages/tools/src/core.ts`).
-2. **Validate.** `structuredClone(args)` (so the caller's object is never mutated,
-   `packages/tools/src/core.ts`), then run the tool's pre-compiled Ajv validator (`validators`, a `Map<name,
-   ValidateFunction>` built once at module load over every entry in `tools`, `packages/tools/src/core.ts`) with
-   `{ allErrors: true, useDefaults: true, coerceTypes: true }` (`packages/tools/src/core.ts`). On failure, return
-   `invalid_input` with `ajv.errorsText(...)` joined by `"; "`, or the literal string `"invalid
-   arguments"` if that text is empty (`packages/tools/src/core.ts`).
-3. **Protect selected skill packages.** For native mutation tools, `protectSkillPackages` extracts
-   every source and destination through the same guard-context parser and refuses a target below any
-   `skillExecutionRoot` with `path_escape`. Recursive `replace` also refuses an ancestor scope that
-   contains a protected root. This applies even when that package is nested beneath the otherwise
-   writable workspace (`packages/tools/src/core.ts`; pinned by
-   `packages/tools/tests/integration/api.test.ts`).
-4. **Guard.** `applyGuard(name, filled, config)` (detailed below) returns a gate;
-   its `denied` member short-circuits dispatch and its `review` member is retained
-   on the eventual result.
-5. **Execute.** Call `tool.handler(filled, config, signal, hooks)`, `normalizeOutput` its return
-   value, split `content` into parts if it was a bare string, and return
-   `{ isError: false, content: boundParts(...), ...(meta && { meta: boundMeta(...) }) }`
-   (`packages/tools/src/core.ts`). A thrown error (from the handler, or a bug anywhere in step 5) is caught and
-   rendered via `errorResult` (`packages/tools/src/core.ts`) — nothing above this dispatcher ever throws.
-
-### `applyGuard` (`packages/tools/src/core.ts`)
-
-| Input state | Outcome |
-| --- | --- |
-| `config.guard` unset | empty gate (proceed), including for `require_escalated` shell |
-| guard throws | caught, `errorResult(err)` — `packages/tools/src/core.ts` |
-| `decision.verdict === "allow"` | proceed; when mode is known, review is `allowed/policy` |
-| `decision.verdict === "deny"` | `errorResult(new ToolError("denied", reason))` — `packages/tools/src/core.ts` |
-| `decision.verdict === "ask"`, no `config.elicit` | `errorResult(... "denied" ...)` — `packages/tools/src/core.ts` |
-| `verdict === "ask"`, `elicit` allows | proceed and retain the rich answerer's allowed review |
-| `verdict === "ask"`, `elicit` resolves `false` | `errorResult(... "denied" ...)` — `packages/tools/src/core.ts` |
-
-`reason` defaults to the literal `"blocked by guard"` when `decision.reason` is absent
-(`packages/tools/src/core.ts`). The `GuardContext` passed to `config.guard` is built by `buildGuardContext(name,
-args, config)` (`packages/tools/src/core.ts`), which is owned by the sibling [command-guard-and-approval](command-guard.md) document;
-`core.ts` only calls it and interprets the three-way `Verdict` (`"allow" | "deny" | "ask"`) it
-produces.
-
-Native Sandbox `require_escalated` is a `host_command` ask after deny-list enforcement: Review `on`
-requires a human, while Auto may judge the host effect (`allow` executes; `deny`, unsure, failed
-and malformed responses refuse to the calling agent). An unavailable model refuses. Session coverage
-and `allow_session` never apply to host-command asks; clean exact-call judge memoization remains
-separate. Review `off` supplies
-no guard, and on Host the field is a no-op under normal command policy. Production: `createShellGuard`
-in `packages/kernel/src/guard/shell-guard.ts` and `createGuardResolver` in
-`packages/kernel/src/guard/resolver.ts`. Test:
-`packages/kernel/tests/integration/guard-auto-review.test.ts` and
-`packages/kernel/tests/unit/guard.test.ts`.
-
-### Output bounding
-
-- `boundParts` (`packages/tools/src/core.ts`): a no-op when `tool.bounded` is true; otherwise every `TextPart`'s
-  text is passed through `bound(text, config.maxOutputBytes)` (from `lib/output.ts`, a sibling
-  concern — see `packages/tools/tests/component/core.test.ts` for the bounded/unbounded
-  distinction observed end-to-end).
-- `boundMeta` (`packages/tools/src/core.ts`): a no-op if the JSON-encoded `meta` already fits
-  `config.maxToolMetaBytes`. Otherwise it returns `{ truncated: true, truncation_reason: "tool
-  metadata exceeded <N> bytes" }`, and if `meta.diff` is a string it binary-searches (`low`/`high`
-  over `diff.length`) for the longest prefix of `diff` (plus a `"\n[diff truncated to metadata
-  budget]"` suffix) whose encoding still fits the budget alongside the `base` fields
-  (`packages/tools/src/core.ts`).
-
-### `listTools` (`packages/tools/src/core.ts`)
-
-`selectSurface(config.readOnly).map(t => ({ name, description, inputSchema }))` — a pure projection;
-no validation, guard or bounding logic runs here.
-
-## 5. Invariants
-
-| # | Rule | Production site | Test |
-| --- | --- | --- | --- |
-| INV-037 | No model-facing refusal message suggests a command or setting to bypass its restriction. | `resolveFileToolPath` in `packages/tools/src/lib/paths.ts` and the dispatcher in `packages/tools/src/core.ts` | `packages/tools/tests/architecture/no-bypass-hints.test.ts` scans source messages and calibrates its matcher |
-| INV-038 | `@clarvis/tools` contains no source-code parser: no mention of tree-sitter (any spelling), the removed tool names (`outline`, `check_syntax`), the removed capability-flag identifiers (`treeSitterAvailable`, `probeTreeSitter`, `requiresTreeSitter`, `TREE_SITTER`), or the removed syntax annotation (`syntaxWarnings`, `surface_degraded`) anywhere in its `src/`, `tests/`, `README.md` or `package.json`. | n/a (absence) | `packages/tools/tests/architecture/no-tree-sitter.test.ts` (`it.each(FORBIDDEN)`), scanning >80 files |
-| INV-039 | No workspace manifest or `bun.lock` entry names `@vscode/tree-sitter-wasm`; no package's production `src/` names the removed `check_syntax` tool. | n/a (absence, repo-wide) | `packages/tools/tests/architecture/no-tree-sitter.test.ts` (manifests, lockfile, and repo-wide `check_syntax` scan) |
-| INV-040 | `web-tree-sitter` (a distinct npm specifier `@clarvis/code` legitimately depends on for OpenTUI syntax highlighting) is not a substring of, nor contains, the forbidden `@vscode/tree-sitter-wasm`, and `@clarvis/code`'s manifest and the lockfile still declare/install it. | `packages/code/package.json` (asserted by the cited test rather than cited directly) | `packages/tools/tests/architecture/no-tree-sitter.test.ts` (substring check) (calibration: the word-level `/tree[-_ ]?sitter/i` matcher *does* fire on `web-tree-sitter`, which is why the substring carve-out above is necessary at all rather than redundant) (still declared/installed) |
-| INV-042 | The advertised tool surface is exactly 20 coding tools, 9 of them read-only, and the same set (in the same order) is advertised on every config. | `packages/tools/src/tools/registry.ts` (`toolDescriptors`, `tools`, `readOnlyTools`) | `packages/tools/tests/component/tool-surface.test.ts` |
-| INV-043 | Neither the full nor the read-only tool surface advertises `outline` or `check_syntax`. | `packages/tools/src/tools/registry.ts` (absent from `toolDescriptors`) | `packages/tools/tests/component/tool-surface.test.ts` |
-| INV-044 | Dispatching a removed tool name (`outline`, `check_syntax`) fails with the exact same `{error: "not_found", message: "Unknown tool: <name>"}` shape as dispatching a name that never existed (`does_not_exist`). | `packages/tools/src/core.ts` (`getTool` miss path, uniform for any unrecognized name) | `packages/tools/tests/component/tool-surface.test.ts` |
-| INV-045 | The refusal for dispatching `outline` never leaks why the tool was removed or hints at a runtime the model could try to install: it contains none of `tree`, `sitter`, `unavailable`, `disabled`, `install`, `degraded` (case-insensitive). | `packages/tools/src/core.ts` (`Unknown tool: ${name}` is the entire message — no code path appends anything else for a `not_found`) | `packages/tools/tests/component/tool-surface.test.ts` |
-| INV-046 | Host temporary roots are explicit access policy, not ownership: `systemTemporaryRoots` discovers the environment temp plus `/tmp` on POSIX (environment temp only on Windows), and the product loop appends them after its short run-owned root. Teardown removes only that allocation and only after tracked command sessions physically exit. Uncertain termination retains ownership metadata. An abandoned allocation is reclaimed later only when a same-host record proves its process dead and its subtree holds no file and no symlink. | `systemTemporaryRoots` in `packages/tools/src/sandbox.ts`; `createAgentToolsCapability` in `packages/loop/src/runtime/capabilities/tools.ts`; `ExecutionSessionManager.close` in `packages/tools/src/lib/execution-session.ts`; `allocateShortTemporaryRoot` and `collectAbandonedShortTemporaryRoots` in `packages/paths/src/short-temporaries.ts` | `packages/tools/tests/integration/api.test.ts` (`reuses a bare mktemp result from the host temp root in a later native tool`); `packages/loop/tests/integration/tools.test.ts` (`retains run scratch when tracked process exit is unconfirmed`); `packages/loop/tests/integration/command-guard-wiring.test.ts` (`preauthorizes the host temp across shell and native tools without owning its parent`); `packages/paths/tests/integration/short-temporaries.test.ts` (`removes only provably dead and empty allocations`) |
-
-INV-038's own scan exempts exactly three files from the forbidden-vocabulary check via an
-`ASSERT_ABSENCE` set — this file itself, `tests/component/tool-surface.test.ts`, and
-`tests/integration/no-syntax-annotation.test.ts` — because each of them must keep spelling the
-removed vocabulary in order to assert its absence (dispatching `outline`, asserting no write result
-carries the old syntax warning, etc.). The file's own comment states the rule directly: "Keep the
-list at three — anything else naming these tokens is drift"
-(`packages/tools/tests/architecture/no-tree-sitter.test.ts`; the set itself is).
-
-Three further invariants this document's scope directly evidences, but that the table above does not
-number:
-
-- **Arguments are never mutated in place.** `dispatch` validates a `structuredClone` of `args`, never
-  the caller's object (`packages/tools/src/core.ts`, documented at `packages/tools/src/core.ts`). Unpinned by a dedicated test
-  in this document's scope — `tests/component/core.test.ts` exercises validation outcomes but does not
-  assert on the original `args` object's identity/contents after a coercing call.
-- **A descriptor carries exactly two fields.** `toolDescriptors` entries are `{ tool, readOnly }` and
-  nothing else — a third field (e.g. a capability bit making the surface conditional again) requires
-  a deliberate, visible edit. Production: `packages/tools/src/tools/registry.ts` (`ToolDescriptor` interface). Test:
-  `packages/tools/tests/component/core.test.ts`
-  (`expect(Object.keys(descriptor).sort()).toEqual(["readOnly", "tool"])`).
-- **The two command tools are execution-only.** `toolDescriptors` marks `shell` and `shell_session` as `readOnly: false`; `@clarvis/loop` derives its read-only coding names from that registry and separately gates both names under `EXEC_TOOL_NAMES`. Polling does not authorize a new command, but it still belongs to an execution-capable run. Production: `packages/tools/src/tools/registry.ts` (`toolDescriptors`) and `packages/loop/src/runtime/tools/builtin/names.ts` (`EXEC_TOOL_NAMES`). Test: `packages/tools/tests/component/tool-surface.test.ts` and `packages/loop/tests/architecture/agent-tool-wire-names.test.ts`.
+# The tool contract: dispatch, configuration and advertised surface
+
+## Purpose
+
+`@clarvis/tools` exposes a fixed catalog of coding tools. `dispatch` validates a cloned argument
+object against the selected tool's schema, invokes its handler and bounds the result. There is no
+command approval or file mutation review gate in this dispatcher. Relative file paths use the
+workspace as their base; absolute paths remain absolute. Host filesystem permissions and the
+configured native sandbox determine actual access.
+
+Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts), `resolveConfig` in
+[config.ts](../../packages/tools/src/config.ts), and `resolveToolPath` in
+[paths.ts](../../packages/tools/src/lib/paths.ts).
+Test: [core.test.ts](../../packages/tools/tests/component/core.test.ts),
+[open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts), and
+[sandbox.test.ts](../../packages/tools/tests/integration/sandbox.test.ts).
+
+## Package surface
+
+The [manifest](../../packages/tools/package.json) publishes the root facade, `./shell`,
+`./sandbox` and `./package.json`. The root exports `createAgentTools`, `dispatch`, `listTools`,
+configuration and result types, the tool registry, shell/process helpers, sandbox configuration
+and the warning sink. `./shell` allows hooks and kernel consumers to load shell/process helpers
+without loading the registry. `./sandbox` exposes native sandbox policy and probes.
+
+Production: exports in [index.ts](../../packages/tools/src/index.ts),
+[shell-entry.ts](../../packages/tools/src/shell-entry.ts), and
+[sandbox-entry.ts](../../packages/tools/src/sandbox-entry.ts).
+Test: [api.test.ts](../../packages/tools/tests/integration/api.test.ts) and
+[tool-surface.test.ts](../../packages/tools/tests/component/tool-surface.test.ts).
+
+The ordered `toolDescriptors` table in [registry.ts](../../packages/tools/src/tools/registry.ts)
+owns all 20 names. `readOnlyTools` is its nine-tool observing projection:
+`read_file`, `read_image`, `read_files`, `list_dir`, `glob`, `grep`, `diff`, `file_stat` and `tree`.
+The full projection also contains `write_file`, `edit_file`, `multi_edit`, `apply_patch`, `replace`,
+`shell`, `shell_session`, `move`, `copy`, `mkdir` and `remove`. `listTools` advertises the
+projection selected by `RuntimeConfig.readOnly`; `dispatch` selects from that same projection.
+
+Production: `toolDescriptors`, `readOnlyTools` and `selectSurface` in
+[registry.ts](../../packages/tools/src/tools/registry.ts), and `listTools` in
+[core.ts](../../packages/tools/src/core.ts).
+Test: [tool-surface.test.ts](../../packages/tools/tests/component/tool-surface.test.ts) and
+[core.test.ts](../../packages/tools/tests/component/core.test.ts).
+
+## Runtime configuration and results
+
+`resolveConfig` requires an existing directory for `workspaceRoot`, validates numeric ceilings,
+probes ripgrep and resolves the filesystem policy. A toolset owns a session manager unless the
+host supplies one. `readOnly` defaults to false. Limits cover text and shell output, input file
+and image sizes, traversal, mutation bytes, diff input, metadata, shell duration, sessions and
+regular-expression scan time. `secretEnvNames` is host supplied and removed from spawned command
+environments. `stateRoot` stores run machinery; it is not a separate tool read gate.
+
+Production: `RuntimeConfig`, `AgentToolsOptions` and `resolveConfig` in
+[config.ts](../../packages/tools/src/config.ts), and `resolveFilesystemPolicy` in
+[sandbox.ts](../../packages/tools/src/sandbox.ts).
+Test: [config.test.ts](../../packages/tools/tests/integration/config.test.ts),
+[no-isolation.test.ts](../../packages/tools/tests/integration/no-isolation.test.ts), and
+[sandbox.test.ts](../../packages/tools/tests/integration/sandbox.test.ts).
+
+`DispatchResult` reports failures in band as `isError: true` with a serialized text part.
+Unknown or unavailable tools return `not_found`; invalid arguments return `invalid_input`.
+The caller's argument object is not mutated. Text parts from tools that do not self-bound are
+clamped to `maxOutputBytes`; metadata is clamped to `maxToolMetaBytes` and retains a bounded
+`diff` prefix when possible. File operations use `SandboxAgentFilesystem` only for native
+sandbox placement and otherwise execute through the local file handler. `close` releases
+run-owned command sessions.
+
+Production: `dispatch`, `boundParts`, `boundMeta` and `localFilesystem` in
+[core.ts](../../packages/tools/src/core.ts), `serializeError` in
+[errors.ts](../../packages/tools/src/errors.ts), and `createAgentTools` in
+[index.ts](../../packages/tools/src/index.ts).
+Test: [core.test.ts](../../packages/tools/tests/component/core.test.ts),
+[filesystem-service.test.ts](../../packages/tools/tests/integration/filesystem-service.test.ts),
+and [api.test.ts](../../packages/tools/tests/integration/api.test.ts).
+
+## Invariants and coupling
+
+- The advertised and dispatchable tool names come from one registry. Production:
+  `selectSurface` in [registry.ts](../../packages/tools/src/tools/registry.ts). Test:
+  [tool-surface.test.ts](../../packages/tools/tests/component/tool-surface.test.ts).
+- A validated tool call does not pass through a Shell Guard or Judge. Production: `dispatch` in
+  [core.ts](../../packages/tools/src/core.ts). Test:
+  [open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts).
+- The configured native sandbox remains the filesystem and command isolation boundary.
+  Production: `resolveFilesystemPolicy` in [sandbox.ts](../../packages/tools/src/sandbox.ts)
+  and `SandboxAgentFilesystem` in
+  [filesystem-service.ts](../../packages/tools/src/filesystem-service.ts). Test:
+  [sandbox.test.ts](../../packages/tools/tests/integration/sandbox.test.ts).
+
+Read and search behavior belongs to [tools-read-and-search.md](tools-read-and-search.md),
+mutations to [tools-mutation.md](tools-mutation.md), shell sessions to
+[tools-shell-and-sessions.md](tools-shell-and-sessions.md), and native isolation to
+[sandbox.md](sandbox.md).

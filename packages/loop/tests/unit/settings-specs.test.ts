@@ -41,14 +41,6 @@ describe("capability settings registry", () => {
         expect(manifestKeys).not.toContain(spec.key);
       }
     }
-    const guardTry = pluginManifestSchema.safeParse({
-      name: "p1",
-      version: "1.0.0",
-      description: "d",
-      guard: { type: "shell" },
-    });
-    expect(guardTry.success).toBe(false);
-    expect(JSON.stringify(guardTry.error?.issues)).toContain("a plugin may not contribute 'guard'");
   });
 
   it("keeps bootstrapSkill a manifest-only key with no settings spec", () => {

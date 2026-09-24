@@ -1,24 +1,16 @@
-import type { MutationReview } from "./lib/atomic.ts";
 import { ExecutionSessionManager } from "./lib/execution-session.ts";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./lib/log.ts";
-import type { Guard, Elicit } from "./guard/types.ts";
 import {
   discoverLinkedGitMetadataPaths,
   resolveFilesystemPolicy,
   type ResolvedFilesystemPolicy,
   type SandboxConfig,
 } from "./sandbox.ts";
-import {
-  configurationRoots,
-  resolveCommand,
-  workspaceStatePaths,
-  type ConfigurationRoot,
-  type WorkspaceStatePaths,
-} from "@clarvis/paths";
+import { resolveCommand, workspaceStatePaths, type WorkspaceStatePaths } from "@clarvis/paths";
 
 /**
  * The fully resolved, validated runtime configuration threaded through every
@@ -90,8 +82,8 @@ export interface RuntimeConfig {
    * The per-workspace state root holding bounded output spills and other tool state.
    *
    * @remarks Outside the working tree by design — a repository is not where
-   * generated bookkeeping belongs. Read tools admit only an exact pinned
-   * output artifact from this tree; other state remains private.
+   * generated bookkeeping belongs. Tool reads use ordinary host filesystem
+   * permissions or the configured native sandbox for this tree.
    */
   stateRoot: string;
 
@@ -123,15 +115,6 @@ export interface RuntimeConfig {
    */
   readonly logger: ToolsLogger;
 
-  /** Optional command-approval hook consulted before a gated tool runs. */
-  guard?: Guard;
-  /** Host-only review of final configuration bytes, before the atomic mutation commits. */
-  reviewMutation?: MutationReview;
-  /** Entry-agent configuration roots for individually mediated file operations. */
-  configurationRoots?: Readonly<Record<ConfigurationRoot, string>>;
-
-  /** Optional interactive prompt invoked when the {@link Guard} returns `ask`. */
-  elicit?: Elicit;
   /** Optional sandbox settings for isolating spawned commands. */
   sandbox?: SandboxConfig;
   /** One immutable filesystem authority shared by shell and its live sessions. */
@@ -314,15 +297,6 @@ export interface AgentToolsOptions {
    */
   logger?: ToolsLogger;
 
-  /** Command-approval hook passed through to {@link RuntimeConfig.guard}. */
-  guard?: Guard;
-  /** Host-only review of final configuration bytes, before the atomic mutation commits. */
-  reviewMutation?: MutationReview;
-  /** Entry-agent configuration roots; does not widen command execution. */
-  configurationRoots?: Readonly<Record<ConfigurationRoot, string>>;
-
-  /** Interactive approval prompt passed through to {@link RuntimeConfig.elicit}. */
-  elicit?: Elicit;
   /** Sandbox settings passed through to {@link RuntimeConfig.sandbox}. */
   sandbox?: SandboxConfig;
   /** Host-owned run identity; standalone toolsets receive a random identity. */
@@ -518,10 +492,6 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
     sessionManager: options.sessionManager ?? new ExecutionSessionManager(),
     skillExecutionRoots,
     gitMetadataPaths,
-    guard: options.guard,
-    reviewMutation: options.reviewMutation,
-    configurationRoots: options.configurationRoots ?? configurationRoots({ workspaceRoot }),
-    elicit: options.elicit,
     sandbox,
     filesystemPolicy,
     secretEnvNames: options.secretEnvNames,

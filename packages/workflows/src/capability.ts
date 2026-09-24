@@ -28,13 +28,7 @@ import type {
   RunCapability,
   ToolHandler,
 } from "@clarvis/capability";
-import {
-  bind,
-  parseTaskTitle,
-  TASK_TITLE_MAX,
-  OPERATOR_AUTHORITY_PORT,
-  type CapabilityServices,
-} from "@clarvis/capability";
+import { bind, parseTaskTitle, TASK_TITLE_MAX } from "@clarvis/capability";
 import { AGENT_REGISTRY_PORT, registerBackgroundChild } from "@clarvis/supervision";
 import { reportSettled } from "./dispatch.ts";
 import { createFairShareOutputBudget, type WorkflowReservation } from "./ledger.ts";
@@ -146,10 +140,7 @@ export function createWorkflowsCapability(ctx: WorkflowCtx): Capability {
     ),
   );
   const logger = workflowLogger(ctx);
-  const runCapabilityFor = (
-    agents: AgentRegistryPort,
-    services: CapabilityServices,
-  ): RunCapability => {
+  const runCapabilityFor = (agents: AgentRegistryPort): RunCapability => {
     const coordinator = createRoundCoordinator(ctx);
     return {
       name: WORKFLOWS_CAPABILITY_NAME,
@@ -159,7 +150,6 @@ export function createWorkflowsCapability(ctx: WorkflowCtx): Capability {
         const clock = scope.clock;
         return {
           attach(bc: AgentBuildContext): AgentLoopContribution {
-            ctx.operatorAuthority = services.get(OPERATOR_AUTHORITY_PORT);
             if (!manager) {
               return { outputBudget: createDescendantOutputBudget(ctx) };
             }
@@ -213,7 +203,7 @@ export function createWorkflowsCapability(ctx: WorkflowCtx): Capability {
         );
         return null;
       }
-      return runCapabilityFor(agents, runCtx.services);
+      return runCapabilityFor(agents);
     },
   };
   workflowContexts.set(capability, ctx);

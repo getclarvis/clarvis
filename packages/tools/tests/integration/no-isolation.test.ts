@@ -58,27 +58,23 @@ describe("Host file tools use OS filesystem authority", () => {
     },
   );
 
-  it.skipIf(!canSymlink)(
-    "rejects a classified read redirected to private configuration during open",
-    async () => {
-      write(root, ".clarvis/agents/agent.md", "public agent\n");
-      write(root, ".clarvis/keys/agent.md", "private credential\n");
-      const agents = path.join(root, ".clarvis", "agents");
-      const parked = path.join(root, ".clarvis", "agents-parked");
-      const originalOpen = fs.open;
-      vi.spyOn(fs, "open").mockImplementationOnce(async (file, flags, mode) => {
-        renameSync(agents, parked);
-        makeSymlink(path.join(root, ".clarvis", "keys"), agents, "dir");
-        return originalOpen(file, flags, mode);
-      });
-      const result = await callTool("read_file", { path: ".clarvis/agents/agent.md" }, config);
-      expect(result.isError).toBe(true);
-      expect(result.json.error).toBe("path_escape");
-      expect(result.text).not.toContain("private credential");
-    },
-  );
+  it.skipIf(!canSymlink)("reads a configuration path redirected during open", async () => {
+    write(root, ".clarvis/agents/agent.md", "public agent\n");
+    write(root, ".clarvis/keys/agent.md", "private credential\n");
+    const agents = path.join(root, ".clarvis", "agents");
+    const parked = path.join(root, ".clarvis", "agents-parked");
+    const originalOpen = fs.open;
+    vi.spyOn(fs, "open").mockImplementationOnce(async (file, flags, mode) => {
+      renameSync(agents, parked);
+      makeSymlink(path.join(root, ".clarvis", "keys"), agents, "dir");
+      return originalOpen(file, flags, mode);
+    });
+    const result = await callTool("read_file", { path: ".clarvis/agents/agent.md" }, config);
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("private credential");
+  });
 
-  it.skipIf(!canSymlink)("rejects a configuration root replaced during open", async () => {
+  it.skipIf(!canSymlink)("reads a configuration root replaced during open", async () => {
     write(root, ".clarvis/agents/agent.md", "public agent\n");
     write(outside, "agents/agent.md", "external secret\n");
     const configRoot = path.join(root, ".clarvis");
@@ -90,9 +86,8 @@ describe("Host file tools use OS filesystem authority", () => {
       return originalOpen(file, flags, mode);
     });
     const result = await callTool("read_file", { path: ".clarvis/agents/agent.md" }, config);
-    expect(result.isError).toBe(true);
-    expect(result.json.error).toBe("path_escape");
-    expect(result.text).not.toContain("external secret");
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("external secret");
   });
 
   it("runs a shell command under the same Host placement", async () => {

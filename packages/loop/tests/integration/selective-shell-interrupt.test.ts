@@ -274,49 +274,6 @@ describe.skipIf(!posixShell)("selective interrupt through executeRun and the rea
     ).toHaveLength(1);
   });
 
-  it("pending and denied guard never advertise a control or a started execution", async () => {
-    const control = channel();
-    const events: TraceEvent[] = [];
-    let entered!: () => void;
-    const reviewing = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    let deny!: () => void;
-    const reviewed = new Promise<void>((resolve) => {
-      deny = resolve;
-    });
-    harness = await makeHarness({
-      llm: shellScript("echo forbidden"),
-      mcpFactory: mockMCPFactory({}),
-      workspaceRoot: workspace(),
-      env: { CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" },
-      toolInterrupts: control.source,
-      agentTools: {
-        guard: async () => {
-          entered();
-          await reviewed;
-          return { verdict: "deny", reason: "test denied" };
-        },
-      },
-      onEvent: (event) => {
-        events.push(event);
-      },
-    });
-    const pending = harness.run(body());
-    await reviewing;
-    expect(events.filter((e) => e.type === "tool_call_started")).toEqual([]);
-    expect(control.request("unpublished-token")).toBe("not_running");
-    deny();
-    expect((await pending).status).toBe("completed");
-    expect(events.filter((e) => e.type === "tool_call_started")).toEqual([]);
-    const terminals = events.filter(
-      (e): e is Extract<TraceEvent, { type: "tool_call" }> => e.type === "tool_call",
-    );
-    expect(terminals).toHaveLength(1);
-    expect(terminals[0]?.error).toContain("test denied");
-    expect(terminals[0]?.interruption).toBeUndefined();
-  });
-
   it("global cancellation concurrent with selective abort wins classification and stops iterations", async () => {
     const control = channel();
     const cancel = new AbortController();

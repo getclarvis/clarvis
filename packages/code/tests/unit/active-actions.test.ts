@@ -198,18 +198,18 @@ test("shared footer modifiers preserve full help keys and budget the rendered te
 test("mixed custom alternatives stay explicit outside the modifier group", () => {
   const actions = [
     action("isolation", 50, "navigation", { keys: ["Ctrl+X I", "Alt+I"] }),
-    action("guard", 49, "navigation", { keys: ["Ctrl+X G"] }),
+    action("diff", 49, "navigation", { keys: ["Ctrl+X D"] }),
     action("memory", 48, "navigation", { keys: ["Ctrl+X M"] }),
   ];
-  expect(footerText(actions)).toBe("[Ctrl+X I/Alt+I] isolation  │  Ctrl+X: [G] guard  [M] memory");
-  expect(footerText(actions.slice(0, 2))).toBe("[Ctrl+X I/Alt+I] isolation  [Ctrl+X G] guard");
+  expect(footerText(actions)).toBe("[Ctrl+X I/Alt+I] isolation  │  Ctrl+X: [D] diff  [M] memory");
+  expect(footerText(actions.slice(0, 2))).toBe("[Ctrl+X I/Alt+I] isolation  [Ctrl+X D] diff");
 });
 
 test("responsive footer retains every action across rows with explicit modifier prefixes", () => {
   const actions = [
     action("send", 100, "primary", { keys: ["↵"] }),
     action("isolation", 50, "navigation", { keys: ["Ctrl+X I"] }),
-    action("guard", 49, "navigation", { keys: ["Ctrl+X G"] }),
+    action("diff", 49, "navigation", { keys: ["Ctrl+X D"] }),
     action("memory", 48, "navigation", { keys: ["Ctrl+X M"] }),
     action("cancel", 90, "escape", { keys: ["Ctrl+C"] }),
   ];

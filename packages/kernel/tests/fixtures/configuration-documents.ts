@@ -152,12 +152,4 @@ Call run_workflow with name review-project, args containing scope, and explain t
 Then call it without explain to request human preflight. Inspect workflow_status and use the
 current session_id and revision with workflow_decide at any checkpoint. Report actual outcomes.`,
   },
-  review: {
-    path: "settings.json",
-    language: "json",
-    content: `{
-  "guard": {"type": "shell", "mode": "auto"},
-  "effect_review": {"on_unsure": "deny"}
-}`,
-  },
 } as const;

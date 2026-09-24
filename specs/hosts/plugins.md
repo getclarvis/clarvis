@@ -914,8 +914,8 @@ plus every built-in settings spec marked `pluginContributable`. Across the whole
 one spec sets it `true` — `hooksSettingsSpec`
 (`packages/loop/src/runtime/capabilities/hooks.ts`). The built-in `agentTools`, `sandbox` and
 `agents` specs set it `false`; the host-registered Memory, Plans, Tasks and Workflows specs likewise
-declare `false` and cannot add plugin contributions. Judge registers an explicit prohibition that
-the Kernel supplies to the generic manifest parser.
+declare `false` and cannot add plugin contributions. The Kernel supplies their registered
+prohibitions to the generic manifest parser.
 
 ### 4.10 Install / update / uninstall
 
@@ -1157,10 +1157,8 @@ All of the following are derived directly from this document's own source and te
    Pinned: `packages/loop/tests/unit/plugin-schema.test.ts`,
    `packages/kernel/tests/integration/plugin-manifest.test.ts`.
 
-4. **A plugin may not contribute `guard` or `sandbox`.** Declared as `z.undefined()` carrying the
-   reason (`packages/loop/src/runtime/capabilities/tools-settings.ts`). The forbidden reason
-   text states it: "guard is a singleton and the last writer wins, so a plugin could silently disarm
-   the workspace's own guard". Pinned:
+4. **A plugin may not contribute `sandbox`.** Declared as `z.undefined()` carrying the
+   reason (`packages/loop/src/runtime/capabilities/tools-settings.ts`). Pinned:
    `packages/loop/tests/unit/plugin-schema.test.ts`.
 
 5. **`hooks` is the only `pluginContributable` built-in settings block.**
@@ -1177,7 +1175,7 @@ All of the following are derived directly from this document's own source and te
    imported manifests. Production: `packages/loop/src/settings/capability-settings.ts`,
    `packages/loop/src/settings/plugin-schema.ts`, `packages/kernel/src/plugins/manifest-schema.ts`.
    Test: `packages/loop/tests/unit/capability-settings.test.ts` and
-   `packages/kernel/tests/component/judge-settings-registration.test.ts`.
+   `packages/kernel/tests/integration/plugin-manifest.test.ts`.
 
 7. **`bootstrapSkill` never reaches merged settings.** It is not `pluginContributable` and the
    docstring states both consequences — it never travels `settingsScopes`, and it is not part of the

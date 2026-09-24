@@ -28,7 +28,6 @@ export const PACKAGE_ROLES = {
   "@clarvis/memory": "product-capability",
   "@clarvis/plan": "product-capability",
   "@clarvis/goal": "product-capability",
-  "@clarvis/judge": "product-capability",
   "@clarvis/tasks": "product-capability",
   "@clarvis/workflows": "product-capability",
   "@clarvis/kernel": "host-implementation",
@@ -66,7 +65,6 @@ const PACKAGE_EDGE_EXCEPTIONS = new Set([
   "@clarvis/hooks\0@clarvis/tools",
   "@clarvis/goal\0@clarvis/loop",
   "@clarvis/memory\0@clarvis/loop",
-  "@clarvis/judge\0@clarvis/loop",
   "@clarvis/workflows\0@clarvis/loop",
   "@clarvis/workflows\0@clarvis/supervision",
 ]);

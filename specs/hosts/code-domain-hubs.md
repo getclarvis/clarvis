@@ -64,7 +64,7 @@ declared at `packages/code/src/keys/commands.ts` and supplies `scope()`/`toggleS
 | `WorkflowsHub` | `WorkflowsHubDeps` = `{ list; get; getRun; delete?; now; live?; openAgentPicker?; pollMs?; refreshSlowMs? }` | `packages/code/src/views/config/WorkflowsHub.tsx` |
 | `SessionsHub` | `SessionsHubDeps` = `{ sessions; catalog?; now; statusLine; resume; resumeCatalog?; delete? }` plus `SessionCatalogItem` | `packages/code/src/views/config/SessionsHub.tsx` |
 | `MemoryConfigPanel` | `MemoryConfigDeps` = `{ settings: SettingsAdapter; memoryMode: MemoryModeStore; notify }` | `packages/code/src/views/config/MemoryConfigPanel.tsx` |
-| `RunControlsPanel` | inline deps `{ settings; guard: GuardModeStore; memory: MemoryModeStore; notify; runActive; openSandbox }` | `packages/code/src/views/config/RunControlsPanel.tsx` (`RunControlsPanel`) |
+| `RunControlsPanel` | inline deps `{ settings; memory: MemoryModeStore; notify; runActive; reload; openSandbox }` | `packages/code/src/views/config/RunControlsPanel.tsx` (`RunControlsPanel`) |
 
 `refreshSlowMs` on `WorkflowsHubDeps` is explicitly documented as an internal test seam for the
 pending-operation warning (`packages/code/src/views/config/WorkflowsHub.tsx`).
@@ -592,30 +592,13 @@ host-global placement choice and always writes global settings; memory remains s
 | Row | Choices | Write |
 | --- | --- | --- |
 | Isolation | `Host`, `Sandbox` | shared `applyIsolation`, global |
-| Guard | `Off`, `Approval`, `Auto` | shared `applyReviewMode`, selected scope |
 | Memory | `on`, `off` | `applyMemory` — **session store only** |
 | Completed plans | `keep` / `discard` labelled "Keep plans" / "Delete after success" | `applyPlanRetention` |
 
 Run Controls and the `Ctrl+X I` quick picker share `applyIsolation`. Host requires an explicit
-danger confirmation; Sandbox enables a required native boundary. Run Controls and the
-`Ctrl+X G` quick picker separately share `applyReviewMode`. It preserves local
-allow/deny lists and, for a workspace without local lists, carries the global policy forward so the
-last-wins guard block does not shadow it. Auto without a resolvable judge degrades to persisted
-Approval. Neither path changes the other axis.
+danger confirmation; Sandbox enables a required native boundary.
 Run Controls and the `Ctrl+X M` Memory picker both write only `MemoryModeStore`; they never persist
 settings. All application shortcuts use the shared Ctrl+X family.
-
-`applyGuard` degrades `auto` to `on` when `guardAutoResolves(settings)` is false, writes the
-degraded value and says why. It uses the same `scopedGuardPolicy` preservation path.
-
-The Guard row's `Source` value comes from `guardSource()` : it reads as the
-scope that actually supplied the persisted value (`settingSource("guard")`, itself
-`deps.settings.origin?.(key) ?? "product default"`) *unless* the live `deps.guard.mode()`
-has since diverged from that persisted value, in which case it reads `"session"` — the same
-inherited-scope-vs-session-override distinction the memory panel's `Source` badge makes (invariant
-47), applied here to the guard mode instead of the memory block. Pinned by
-`packages/code/tests/integration/run-controls-render.test.tsx` ("command review separates an
-inherited scoped value from a session override").
 
 `applyMemory` never writes settings. It sets the session mode and then reports one of three
 outcomes computed from `memoryState(effective, mode)`: `inert` → memory will not learn; still `off` →
@@ -874,17 +857,6 @@ specific to these files.
     Production: `packages/code/src/views/config/RunControlsPanel.tsx` (`applyMemory`).
     Pinned: `packages/code/tests/integration/run-controls-render.test.tsx`.
 
-46. **A Review write preserves the effective allow/deny policy; a workspace with no local lists
-    carries forward the global lists, and Isolation remains untouched.** Production:
-    `packages/code/src/features/run/review.ts` (`applyReviewMode`, `scopedGuardPolicy`) and
-    `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`). Pinned:
-    `packages/code/tests/integration/run-controls-render.test.tsx` and
-    `packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
-
-47. **`auto` without a resolvable judge model persists `on`, not a misleading `auto`.**
-    Production: `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`).
-    Pinned: `packages/code/tests/integration/run-controls-render.test.tsx`.
-
 48. **Run Controls contains no planning-mode selector; completed-plan retention is its only editable
     plan row.** Planning review belongs to `/plan`. Production:
     `packages/code/src/views/config/RunControlsPanel.tsx` (`activate`, `body`). Pinned:
@@ -898,15 +870,12 @@ specific to these files.
     `packages/code/tests/integration/run-controls-render.test.tsx` (global/provider and workspace
     preservation cases).
 
-50. **Isolation, Review and Memory have separate vocabularies and shared application paths
-    across Run Controls and the quick pickers. Host confirmation cannot change Review; Review
-    cannot change Sandbox. Memory changes only the session store and never
+50. **Isolation and Memory have separate vocabularies and shared application paths
+    across Run Controls and the quick pickers. Memory changes only the session store and never
     persists settings.** Production:
     `packages/code/src/features/run/isolation.ts` (`ISOLATION_CHOICES`, `isolationConfirmation`,
-    `applyIsolation`), `packages/code/src/features/run/review.ts` (`REVIEW_CHOICES`,
-    `applyReviewMode`), `packages/code/src/views/config/RunControlsPanel.tsx`,
-    `packages/code/src/views/overlays/IsolationPicker.tsx`, and
-    `packages/code/src/views/overlays/ReviewPicker.tsx`,
+    `applyIsolation`), `packages/code/src/views/config/RunControlsPanel.tsx`,
+    `packages/code/src/views/overlays/IsolationPicker.tsx`,
     `packages/code/src/views/overlays/MemoryPicker.tsx`, and
     `packages/code/src/adapters/memory-mode.ts`. Pinned:
     `packages/code/tests/unit/isolation.test.ts`,
@@ -988,7 +957,6 @@ request that has been superseded by a queued one (`packages/code/src/views/confi
 | `adapters/agents-store.ts` | `@clarvis/kernel/config` (`compareAgentDisplayOrder`, `resolveAgentsByName`), `solid-js` | `packages/code/src/adapters/agents-store.ts` |
 | `features/agents/controller.ts` | `solid-js` | `packages/code/src/features/agents/controller.ts` |
 | `views/config/AgentsPanel.tsx` | `solid-js` | `packages/code/src/views/config/AgentsPanel.tsx` |
-| `adapters/guard-mode.ts` | `@clarvis/kernel/policy` (`defaultGuardMode`) | `packages/code/src/adapters/guard-mode.ts` (`defaultGuardMode` import) |
 | `adapters/agents.ts` | `@clarvis/paths` (types only) | `packages/code/src/adapters/agents.ts` |
 | `views/config/{TasksHub,WorkflowsHub}.tsx`, `features/tasks/controller.ts` | `@clarvis/protocol` — **type-only** | `packages/code/src/views/config/TasksHub.tsx`, `packages/code/src/views/config/WorkflowsHub.tsx`, `packages/code/src/features/tasks/controller.ts` |
 
@@ -1030,7 +998,7 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
 - `DoctorView`, `KeyboardView` → their own documents.
 - `execution-safety.ts` (`deriveRunControls`, `deriveIsolation`, `memoryState`,
   `planRetentionDescription`, `safetyDescription`, `memoryDescription`),
-  `guard-mode.ts`, `session-store.ts`, `workflow-projection.ts`, `settings.ts` →
+  `session-store.ts`, `workflow-projection.ts`, `settings.ts` →
   [hosts/code-run-host.md](code-run-host.md) / [hosts/code-settings-panels.md](code-settings-panels.md).
 - The domain semantics behind each hub — the tasks provider contract, workflow
   documents, memory wiki, plan documents, the shipped agent fleet and overlay resolution — belong to

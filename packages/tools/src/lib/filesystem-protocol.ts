@@ -1,15 +1,11 @@
-import { createHash } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
 import { deserialize, serialize } from "node:v8";
-import type { ConfigurationRoot } from "@clarvis/paths";
-import type { FileOp } from "./atomic.ts";
-import { SMALL_TREE_MAX_ENTRIES, SMALL_TREE_MAX_PATH_BYTES } from "./small-tree.ts";
 import type { FileOperation } from "../agent-filesystem.ts";
 import type { DispatchResult } from "../core.ts";
 import { isFileOperation } from "../agent-filesystem.ts";
 import { isErrorCode, type ErrorCode } from "../errors.ts";
 
-/** Bound a full prepared batch without charging JSON escape expansion to mutation bytes. */
+/** Maximum length of a filesystem service frame. */
 export const MAX_FILESYSTEM_FRAME_BYTES = 96 * 1024 * 1024;
 
 export interface FilesystemWireContext {
@@ -17,9 +13,7 @@ export interface FilesystemWireContext {
   readonly stateRoot: string;
   readonly temporaryRoots: readonly string[];
   readonly skillExecutionRoots: readonly string[];
-  readonly configurationRoots?: Readonly<Record<ConfigurationRoot, string>>;
   readonly readOnly: boolean;
-  readonly reviewMutation: boolean;
   readonly ripgrepAvailable: boolean;
   readonly maxOutputBytes: number;
   readonly maxFileBytes: number;
@@ -41,14 +35,6 @@ export type FilesystemParentMessage =
       readonly args: Readonly<Record<string, unknown>>;
       readonly context: FilesystemWireContext;
     }
-  | {
-      readonly kind: "commit";
-      readonly id: string;
-      readonly batchId: string;
-      readonly digest: string;
-      readonly route: "worker" | "classified-host";
-    }
-  | { readonly kind: "reject"; readonly id: string; readonly batchId: string }
   | { readonly kind: "cancel"; readonly id: string }
   | { readonly kind: "close" };
 
@@ -65,19 +51,12 @@ export type FilesystemChildMessage =
       readonly id: string;
       readonly code: ErrorCode;
       readonly message: string;
-      readonly phase: "prepare" | "review" | "commit" | "execute";
+      readonly phase: "execute";
       readonly operation: FileOperation;
       readonly path_role: "source" | "destination" | "target" | "none";
       readonly retryable: boolean;
       readonly source_exists?: boolean;
       readonly destination_committed?: boolean;
-    }
-  | {
-      readonly kind: "prepare";
-      readonly id: string;
-      readonly batchId: string;
-      readonly digest: string;
-      readonly operations: readonly FileOp[];
     };
 
 function record(value: unknown): Record<string, unknown> {
@@ -115,7 +94,6 @@ function context(value: unknown): value is FilesystemWireContext {
     "temporaryRoots",
     "skillExecutionRoots",
     "readOnly",
-    "reviewMutation",
     "ripgrepAvailable",
     "maxOutputBytes",
     "maxFileBytes",
@@ -126,70 +104,20 @@ function context(value: unknown): value is FilesystemWireContext {
     "maxToolMetaBytes",
     "regexScanBudgetMs",
   ] as const;
-  fields(item, names, ["configurationRoots"]);
+  fields(item, names);
   return (
     string(item.workspaceRoot) &&
     string(item.stateRoot) &&
     stringArray(item.temporaryRoots) &&
     stringArray(item.skillExecutionRoots) &&
-    (item.configurationRoots === undefined ||
-      Object.values(record(item.configurationRoots)).every(string)) &&
-    ["readOnly", "reviewMutation", "ripgrepAvailable"].every(
-      (key) => typeof item[key] === "boolean",
-    ) &&
-    names.slice(7).every((key) => Number.isSafeInteger(item[key]) && (item[key] as number) > 0)
+    ["readOnly", "ripgrepAvailable"].every((key) => typeof item[key] === "boolean") &&
+    names.slice(6).every((key) => Number.isSafeInteger(item[key]) && (item[key] as number) > 0)
   );
-}
-
-function fileOperations(value: unknown): value is FileOp[] {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 50_000) return false;
-  return value.every((raw) => {
-    const item = record(raw);
-    fields(
-      item,
-      ["type", "path"],
-      [
-        "from",
-        "content",
-        "intent",
-        "mode",
-        "dirMode",
-        "overwrite",
-        "maxBytes",
-        "treeEntries",
-        "treeRevision",
-      ],
-    );
-    return (
-      ["create", "modify", "delete", "rename", "rmdir", "rmtree"].includes(item.type as string) &&
-      string(item.path) &&
-      (item.from === undefined || string(item.from)) &&
-      (item.content === undefined || typeof item.content === "string") &&
-      (item.intent === undefined || item.intent === "write" || item.intent === "edit") &&
-      (item.mode === undefined || Number.isSafeInteger(item.mode)) &&
-      (item.dirMode === undefined || Number.isSafeInteger(item.dirMode)) &&
-      (item.overwrite === undefined || typeof item.overwrite === "boolean") &&
-      (item.maxBytes === undefined ||
-        (Number.isSafeInteger(item.maxBytes) && Number(item.maxBytes) > 0)) &&
-      (item.type === "rmtree"
-        ? Array.isArray(item.treeEntries) &&
-          item.treeEntries.length > 0 &&
-          item.treeEntries.length <= SMALL_TREE_MAX_ENTRIES &&
-          item.treeEntries.every(string) &&
-          item.treeEntries.reduce(
-            (bytes: number, name: string) => bytes + Buffer.byteLength(name),
-            0,
-          ) <= SMALL_TREE_MAX_PATH_BYTES &&
-          typeof item.treeRevision === "string" &&
-          /^[a-f0-9]{64}$/.test(item.treeRevision)
-        : item.treeEntries === undefined && item.treeRevision === undefined)
-    );
-  });
 }
 
 function dispatchResult(value: unknown): value is DispatchResult {
   const item = record(value);
-  fields(item, ["isError", "content"], ["meta", "guard"]);
+  fields(item, ["isError", "content"], ["meta"]);
   return (
     typeof item.isError === "boolean" &&
     Array.isArray(item.content) &&
@@ -224,21 +152,6 @@ export function parseFilesystemParentMessage(value: unknown): FilesystemParentMe
         return item as unknown as FilesystemParentMessage;
       }
       break;
-    case "commit":
-      fields(item, ["kind", "id", "batchId", "digest", "route"]);
-      if (
-        string(item.id) &&
-        string(item.batchId) &&
-        string(item.digest) &&
-        (item.route === "worker" || item.route === "classified-host")
-      )
-        return item as unknown as FilesystemParentMessage;
-      break;
-    case "reject":
-      fields(item, ["kind", "id", "batchId"]);
-      if (string(item.id) && string(item.batchId))
-        return item as unknown as FilesystemParentMessage;
-      break;
     case "cancel":
       fields(item, ["kind", "id"]);
       if (string(item.id)) return item as unknown as FilesystemParentMessage;
@@ -250,7 +163,7 @@ export function parseFilesystemParentMessage(value: unknown): FilesystemParentMe
   throw new Error("Filesystem service parent operation is invalid");
 }
 
-/** Validate every child event before it can enter host review or a tool result. */
+/** Validate every child event before it can enter a tool result. */
 export function parseFilesystemChildMessage(value: unknown): FilesystemChildMessage {
   const item = record(value);
   switch (item.kind) {
@@ -287,7 +200,7 @@ export function parseFilesystemChildMessage(value: unknown): FilesystemChildMess
         typeof item.message === "string" &&
         item.message.length > 0 &&
         item.message.length <= 1024 &&
-        ["prepare", "review", "commit", "execute"].includes(item.phase as string) &&
+        item.phase === "execute" &&
         isFileOperation(item.operation) &&
         ["source", "destination", "target", "none"].includes(item.path_role as string) &&
         typeof item.retryable === "boolean" &&
@@ -300,29 +213,8 @@ export function parseFilesystemChildMessage(value: unknown): FilesystemChildMess
       )
         return item as unknown as FilesystemChildMessage;
       break;
-    case "prepare":
-      fields(item, ["kind", "id", "batchId", "digest", "operations"]);
-      if (
-        string(item.id) &&
-        string(item.batchId) &&
-        string(item.digest) &&
-        fileOperations(item.operations)
-      )
-        return item as unknown as FilesystemChildMessage;
-      break;
   }
   throw new Error("Filesystem service child operation is invalid");
-}
-
-/** Digest the prepared bytes and authority binding without serializing a callback. */
-export function mutationDigest(
-  policyIdentity: string,
-  requestId: string,
-  operations: readonly FileOp[],
-): string {
-  return createHash("sha256")
-    .update(JSON.stringify({ policyIdentity, requestId, operations }))
-    .digest("hex");
 }
 
 /** Encode a single bounded, length-prefixed typed message onto an owned pipe. */

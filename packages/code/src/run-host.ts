@@ -50,7 +50,6 @@ import { formatBashObservation, runLocalBash } from "./adapters/local-shell.ts";
 import type { ActivityStore } from "./adapters/activity-store.ts";
 import { promptMessagesToContent, type PromptMessage } from "./adapters/mcp-capabilities.ts";
 import type { ElicitSlot } from "./adapters/elicit-slot.ts";
-import type { GuardMode } from "./adapters/guard-mode.ts";
 import type { MemoryMode } from "./adapters/memory-mode.ts";
 import type { PlanMode } from "./adapters/execution-safety.ts";
 import type { CatalogCost } from "./adapters/models-catalog.ts";
@@ -107,8 +106,6 @@ export interface RunHostDeps {
   priceFor: (model: string) => CatalogCost | undefined;
   activeProfile: () => string;
   setActiveProfile: (name: string) => void;
-  guardMode: () => GuardMode;
-  judgePayload: (mode: GuardMode) => { guardJudge?: { guidance?: string } };
   memoryMode: () => MemoryMode;
   /** The planning policy the next run will use, so the shell can warn about an
    * approval gate before the run starts. Optional; headless hosts omit it. */
@@ -484,8 +481,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           JSON.stringify([
             configuration?.fingerprint,
             profile,
-            deps.guardMode(),
-            deps.judgePayload(deps.guardMode()),
             deps.memoryMode(),
             deps.plansMode?.(),
             deps.planProviderKey?.(),
@@ -494,8 +489,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           ]),
         )
         .digest("hex"),
-      configLabel:
-        configuration?.label ?? `review ${deps.guardMode()} · memory ${deps.memoryMode()}`,
+      configLabel: configuration?.label ?? `memory ${deps.memoryMode()}`,
     };
   }
 
@@ -1309,11 +1303,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const continueFrom = sess.beginTurn(msg, executionId);
     rememberResidentTurn({ userKey });
     const sessionId = sess.meta()?.id;
-    const guardMode = deps.guardMode();
     const memoryMode = deps.memoryMode();
-    const guardArgs = {
-      guardMode,
-      ...deps.judgePayload(guardMode),
+    const requestOptions = {
       ...(memoryMode === "off" ? { memory: memoryMode } : {}),
     };
     const pending = sess.takePending();
@@ -1391,7 +1382,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         ...(goalIntent === undefined ? {} : { goalIntent }),
         ...(sessionId ? { sessionId } : {}),
         ...(sessionTask === undefined ? {} : { task: sessionTask }),
-        ...guardArgs,
+        ...requestOptions,
       });
     };
     await runManaged({
@@ -1435,7 +1426,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
                 ...(goalIntent === undefined ? {} : { goalIntent }),
                 ...(sessionId ? { sessionId } : {}),
                 ...(sessionTask === undefined ? {} : { task: sessionTask }),
-                ...guardArgs,
+                ...requestOptions,
               })
             : startFull(isManager ? await fullRequestMessages() : undefined);
         attach(handle);
@@ -1557,7 +1548,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const sessionId = sess.meta()?.id;
     sess.beginTranscriptTurn(label, executionId);
     rememberResidentTurn({ userKey });
-    const skillGuardMode = deps.guardMode();
     const skillMemoryMode = deps.memoryMode();
     await runManaged({
       sess,
@@ -1572,8 +1562,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           executionId,
           profile,
           ...(sessionId ? { sessionId } : {}),
-          guardMode: skillGuardMode,
-          ...deps.judgePayload(skillGuardMode),
           ...(skillMemoryMode === "off" ? { memory: skillMemoryMode } : {}),
         });
         setHandle(handle);
@@ -1628,7 +1616,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     sess.beginTurn(message, executionId);
     rememberResidentTurn({ userKey });
     const sessionId = sess.meta()?.id;
-    const guardMode = deps.guardMode();
     const memoryMode = deps.memoryMode();
     workflowRunId = executionId;
     setWorkflowActivity(null);
@@ -1646,8 +1633,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           executionId,
           task: sessionTask,
           ...(sessionId ? { sessionId } : {}),
-          guardMode,
-          ...deps.judgePayload(guardMode),
           ...(memoryMode === "off" ? { memory: memoryMode } : {}),
         });
         setHandle(handle);

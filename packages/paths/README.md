@@ -151,15 +151,14 @@ removed rather than deprecated.
 
 `configurationRoots({ workspaceRoot, globalDir?, home? })` resolves the four authored configuration
 scopes for self configuration: `global_clarvis`, `workspace_clarvis`, `global_agents` and
-`workspace_agents`. It neither creates directories nor authorizes access. `configurationPathClass` shares the closed
-authoring/operational/secret/reserved-unknown/generated-read-only vocabulary between file tools and the restricted writer. Classification
-does not resolve links or authorize a mutation; callers retain confinement checks and effect review.
-The kernel owns the review policy described in
+`workspace_agents`. It neither creates directories nor authorizes access. `configurationPathClass` supplies the closed
+authoring/operational/secret/reserved-unknown/generated-read-only vocabulary to kernel configuration services. Classification
+does not resolve links or authorize a mutation. The kernel's configuration loader is described in
 [self-configuration.md](../../specs/hosts/self-configuration.md).
 
 `<ws>/.clarvis` holds what a human authors or reads plus one explicitly ignored Git-owned checkout
 root. `settings.json`, `agents/`, `skills/`,
-`plugins/`, `extension-profiles/`, `workflows/`, `shared-agent.md` and `guard-judge.md` are the workspace's own configuration and belong in its
+`plugins/`, `extension-profiles/`, `workflows/` and `shared-agent.md` are the workspace's own configuration and belong in its
 history; `plans/` and `memory/` are generated Markdown the user is expected to open mid-run.
 `worktrees/` contains operator-requested linked checkouts anchored in the primary worktree and is
 always excluded by `.clarvis/.gitignore` before Git creates a checkout.
@@ -174,7 +173,7 @@ tree, so switching Extension Profiles never dirties the repository.
 
 `~/.clarvis` keeps the **operator's own files at the root** — `settings.json`, `agents/`,
 `keys.json`, `subscriptions.json`, plugins, reusable Extension Profile definitions and their trust
-records, `shared-agent.md`, `guard-judge.md`, `auth.json` — and nests only what a user never
+records, `shared-agent.md`, `auth.json` — and nests only what a user never
 edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, the per-workspace machinery above), `cache/` (including the models.dev
 snapshot and automatic version-check result), `exports/`. A `config/` layer was tried and removed:
 it made the global tree disagree with
@@ -440,4 +439,4 @@ each came to need one — a value two packages need belongs in the leaf both can
 nothing beyond the Node path and crypto primitives. `@clarvis/loop` re-exports them from `host.ts`, so `kernel` and `code`
 never saw the move.
 
-`configurationTarget` locates an already resolved path within the shared roots and returns the same five-way classification. Both file-tool guards and the host batch writer consume it. It does not canonicalize disk links or authorize writes; callers retain their filesystem confinement checks.
+`configurationTarget` locates an already resolved path within the shared roots and returns the same five-way classification. Kernel configuration services consume it. It does not canonicalize disk links or authorize writes.

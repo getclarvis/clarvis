@@ -335,17 +335,6 @@ test("a running tool's streamed output accumulates on its node and clears on clo
   expect(closed.elapsedMs).toBe(7);
 });
 
-test("a terminal shell call retains its auto-guard verdict for rendering and replay", () => {
-  const { store, apply } = driver();
-  apply(toolStart("guarded"));
-  apply({
-    ...toolClose("guarded"),
-    guard: { mode: "auto", outcome: "allowed", answerer: "judge" },
-  });
-  const closed = store.nodes.find((n) => n.kind === "tool_call")!;
-  expect(closed.guard).toEqual({ mode: "auto", outcome: "allowed", answerer: "judge" });
-});
-
 test("the live tail keeps only the last ~50 lines of a verbose command", () => {
   const { store, apply } = driver();
   apply(toolStart("c1"));

@@ -1,5 +1,5 @@
 /**
- * The executor and the guard analyzer must never disagree about which shell runs.
+ * The executor uses one host shell flavor source.
  *
  * @remarks A guard that parses POSIX while PowerShell executes produces no error
  * and no failing test — it just rules on a language nobody is running, and every
@@ -19,7 +19,6 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { currentShellFlavor } from "../../src/lib/platform.ts";
-import { currentDialect } from "../../src/guard/dialects/index.ts";
 import { resolveShell } from "../../src/shell.ts";
 
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -94,10 +93,9 @@ describe("one derivation decides which shell this host speaks", () => {
     expect(reintroduced.includes("currentShellFlavor")).toBe(false);
   });
 
-  it("the executor and the analyzer answer the same for every host", () => {
+  it("the executor uses the selected flavor for every host", () => {
     for (const platform of ["win32", "linux", "darwin", "freebsd"] as const) {
       const flavor = currentShellFlavor(platform);
-      expect(currentDialect(platform).flavor).toBe(flavor);
       expect(resolveShell({ platform, lookup: () => undefined, systemRoot: "C:\\W" }).flavor).toBe(
         flavor,
       );

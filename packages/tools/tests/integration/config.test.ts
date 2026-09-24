@@ -46,8 +46,6 @@ describe("runtime config", () => {
   });
 
   it("honours every caller-facing runtime override", () => {
-    const guard = () => Promise.resolve({ verdict: "allow" as const });
-    const elicit = () => Promise.resolve(true);
     const config = resolveConfig({
       workspaceRoot: root,
       readOnly: true,
@@ -64,8 +62,6 @@ describe("runtime config", () => {
       maxSessions: 4,
       regexScanBudgetMs: 250,
       probeRipgrep: () => true,
-      guard,
-      elicit,
       secretEnvNames: ["TOKEN"],
     });
 
@@ -84,8 +80,6 @@ describe("runtime config", () => {
       maxSessions: 4,
       regexScanBudgetMs: 250,
       ripgrepAvailable: true,
-      guard,
-      elicit,
       secretEnvNames: ["TOKEN"],
     });
   });

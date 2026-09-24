@@ -1291,6 +1291,34 @@ describe("Extension Profile manager", () => {
     target.close();
   });
 
+  it("retains the prior skill generation when an idle subscriber rejects replacement", async () => {
+    const skillRoot = workspacePaths(workspaceRoot).skillsDir;
+    writeSkill(skillRoot, "original");
+    const logger = recordingLogger();
+    const callbacks = new Map<string, () => void>();
+    const target = manager(undefined, logger, {
+      watchSkillPath: (path, callback) => {
+        callbacks.set(path, callback);
+        return { close: () => callbacks.delete(path) };
+      },
+    });
+    const before = target.resolveActive([], TRUSTED);
+    const skills = createAgentSkills({ workspace: workspaceRoot, roots: target.skillRoots() });
+    target.observeSkillCatalog(
+      skills.listSkills().flatMap((skill) => skills.loadSkill(skill.name) ?? []),
+    );
+    target.onSkillRootsChanged(() => {
+      throw new Error("catalog replacement failed");
+    });
+    writeSkill(skillRoot, "created");
+    target.requestSkillRefresh();
+    target.flushSkillRefresh();
+    expect((await target.service.current()).fingerprint).toBe(before.fingerprint);
+    expect(logger.events("kernel.extension_profile.skill_recomposition_failed")).toHaveLength(1);
+    expect(callbacks.size).toBeGreaterThan(0);
+    target.close();
+  });
+
   it("observes a newly created empty directory before its manifest arrives", () => {
     const callbacks = new Map<string, () => void>();
     const target = manager(undefined, undefined, {

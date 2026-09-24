@@ -114,16 +114,11 @@ host fails closed before another ready/review attempt. The selected main-agent p
 model. The run has host-minted execution and agent-instance IDs, its own persisted trace, no
 conversation turn, and provider `callPurpose: "goal"`.
 
-When work starts, the command reviewers receive the complete persisted definition as host-attested
-Goal review context alongside, but separate from, the exact operator evidence that created it. The
-context guides relevance and necessity; it cannot grant authority or manufacture acceptance of a
-human criterion. Production: `goalReviewContext` in
-[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts) and the reviewer payloads in
-[command-review.ts](../../packages/kernel/src/guard/command-review.ts) and
-[effect-review.ts](../../packages/kernel/src/guard/effect-review.ts). Test:
-[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts),
-[judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts) and
-[effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
+When work starts, the Goal coordinator retains the complete persisted definition as
+host-attested context beside the exact operator evidence that created it. The context
+does not manufacture acceptance of a human criterion. Production: `goalReviewContext` in
+[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts). Test:
+[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts).
 
 `projectGoalTrajectory` reconstructs every persisted `continue_from` ancestor reachable from
 non-pending conversation turns, then orders sanitized user messages, final-answer assistant results,
@@ -356,7 +351,7 @@ same ring, including insufficient, stale and provider/schema failure. An identic
 operation shares its process promise; replay after settlement reads the durable receipt. Reusing an
 operation ID for a different mode or seed conflicts.
 
-Before inference the service checks operator authority, expected Goal revision, absence of any
+Before inference the service checks the authenticated operator role, expected Goal revision, absence of any
 current Goal and absence of physical conversation work. It captures the complete Session revision,
 trajectory, configuration and host-owned IDs, then releases all session transactions during the
 semantic run. Auto with no eligible user message records a deterministic question without a model
@@ -1291,7 +1286,7 @@ measurement is `partial` whenever a subtotal exists next to them and only `unkno
 produced a usable figure — a provider-flagged all-zero object is an absence, not an observation, and
 zero-initialized loop totals never stand in for one. Missing cache detail alone counts input
 conservatively. Settlement uses that host observation and prices the same calls when their model
-prices and cache splits are known. Guard reviews can appear in the host observation but not in the
+prices and cache splits are known. Auxiliary work can appear in the host observation but not in the
 loop's per-agent run detail, so the priced subtotal travels with Goal usage through preparation and
 recovery. The Session credits that cost once beside ordinary run costs. The per-agent breakdown is
 retained only when its totals agree; otherwise settlement uses the observed aggregate. An unresolved measurement suspends

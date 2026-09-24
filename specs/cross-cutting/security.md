@@ -26,10 +26,8 @@ run's machinery is allowed to *emit*. It has five largely independent halves, al
 code and none of them a sandbox:
 
 1. **Filesystem policy** — every coding file tool and shell command uses the selected environment policy;
-   `workspaceRoot` anchors relative paths and Guard location facts
-   (`packages/tools/src/lib/paths.ts`) before the tool touches the target. Two read tools additionally admit the
-   workspace's machine-state root, because that is where an oversized tool result is spilled and the
-   model is handed the path to read it back (`packages/tools/src/config.ts`).
+   `workspaceRoot` anchors relative paths (`packages/tools/src/lib/paths.ts`), while absolute paths
+   retain their meaning. Host OS permissions or the configured native sandbox decide access.
 2. **Redaction** — one module, `packages/capability/src/sanitize.ts`, owns every secret pattern in the
    repository, and publishes **two** rule sets: one for content that is replayed verbatim (a trace's
    tool arguments and results) and one, with more reach and more false positives, for free text bound
@@ -68,8 +66,7 @@ and the log line says so explicitly (`packages/hooks/src/env.ts`,
 `packages/hooks/src/capability.ts`).
 
 Delegated to siblings: server authentication and bind policy
-([hosts/server-auth.md](../hosts/server-auth.md)), command approval and the guard judge
-([execution/command-guard.md](../execution/command-guard.md)), native Bubblewrap/Seatbelt sandboxing
+([hosts/server-auth.md](../hosts/server-auth.md)), native Bubblewrap/Seatbelt sandboxing
 ([execution/sandbox.md](../execution/sandbox.md)), the `.clarvis`/state directory layout itself
 ([foundations/paths.md](../foundations/paths.md)), and release artifact identity, checksums, download
 bounds, staging, and activation ([distribution-and-updates.md](distribution-and-updates.md)).
@@ -128,15 +125,10 @@ cannot force a literal `null` through this same hatch.
 
 ### 2.4 Filesystem policy — `@clarvis/tools`
 
-`resolvePath(input, workspaceRoot)` resolves relative paths and preserves absolute paths;
-it does not grant access. `resolveFileToolPath` rejects private classified configuration and
-unadmitted state paths, and verifies configuration roots and links. `isWithinRoots` supplies
-canonical location facts to Guard. `readFileOptionsForPath` binds classified reads to their
-opened descriptor. Production: `resolvePath`, `resolveFileToolPath`, and `isWithinRoots` in
-`packages/tools/src/lib/paths.ts`; `readFileOptionsForPath` in
-`packages/tools/src/lib/files.ts`. Test: `packages/tools/tests/integration/paths.test.ts`,
-`packages/tools/tests/integration/no-isolation.test.ts`, and
-`packages/kernel/tests/integration/file-tool-configuration.test.ts`.
+`resolveToolPath(input, workspaceRoot)` resolves relative paths and preserves absolute paths;
+it does not grant access. Production: `resolveToolPath` in
+`packages/tools/src/lib/paths.ts`. Test: `packages/tools/tests/integration/paths.test.ts` and
+`packages/tools/tests/integration/open-authority.test.ts`.
 
 `ResolvedFilesystemPolicy` selects Host or Sandbox for both commands and file tools.
 The grant ceiling (`CLARVIS_AGENT_TOOLS_MAX_GRANT`) separately gates read, edit, and exec surfaces.
@@ -364,131 +356,69 @@ fallback.
 
 ### 4.1 Resolving one tool path
 
-`resolvePath` returns the normalized absolute path: absolute input stays absolute and relative
-input is resolved from the selected workspace. `resolveFileToolPath` then checks the classified
-configuration roots and the selected state root. It refuses private configuration and redirected
-classified paths; ordinary external paths proceed to the environment's filesystem policy and OS
-permission checks. `canonicalizeAllowingMissing` checks existing prefixes so a symlink cannot
-quietly redirect a classified target. Production: `resolvePath` and `resolveFileToolPath` in
-`packages/tools/src/lib/paths.ts`. Test: `packages/tools/tests/integration/paths.test.ts` and
-`packages/tools/tests/integration/no-isolation.test.ts`.
+`resolveToolPath` makes relative paths absolute under the workspace and preserves absolute paths.
+It does not classify a path as safe or protected. Host calls then use OS permissions; sandboxed
+calls use the configured native filesystem policy. The same rule applies to configuration and
+machine-state paths.
 
-### 4.2 Environment authority and independent protected roots
-
-Host file tools and commands use OS permissions. Sandbox uses one frozen native policy for
-both. The workspace is the relative
-path base, not a filesystem boundary. `read_file` and `read_files` recognize an exact regular,
-non-link spill in the selected state root and bind it to its opened inode; other selected state
-paths stay private. Guard receives workspace and temporary-root location facts, including a
-narrow fact for the exact spill, without granting access. Production: `resolveReadableTextPath`
-in `packages/tools/src/lib/state-artifacts.ts`, `readRawFile` in
-`packages/tools/src/lib/files.ts`, and `buildGuardContext` in
-`packages/tools/src/guard/context.ts`. Test:
-`packages/tools/tests/unit/state-artifact-access.test.ts`,
-`packages/tools/tests/integration/guard-dispatch.test.ts`, and
+Production: `resolveToolPath` in `packages/tools/src/lib/paths.ts`, `dispatch` in
+`packages/tools/src/core.ts`, and `resolveFilesystemPolicy` in
+`packages/tools/src/sandbox.ts`. Test: `packages/tools/tests/integration/paths.test.ts`,
+`packages/tools/tests/integration/open-authority.test.ts`, and
 `packages/tools/tests/integration/sandbox.test.ts`.
 
-Native Sandbox commands may read host-visible files, including files outside the workspace that
-the process identity could read. Bubblewrap binds the host root read-only before narrower writable
-overlays; Seatbelt allows broad file reads while restricting writes. The workspace and declared
-protected roots remain read-only when selected, including below a writable system temp. This is a
-write and process boundary, not a confidentiality boundary for host files. Host follows OS permissions plus Guard review. Native Sandbox networking is
-independent: `network: "host"` permits outbound transfer of host-visible file content, while
-`network: "none"` denies
-network connections. The default remains host for compatibility; confidentiality-sensitive runs
-must select none. The Guard still reviews external file-tool reads under the same placement as
-shell, and the sandbox enforces physical access. Production: `createShellGuard` in
-`packages/kernel/src/guard/shell-guard.ts` and `sandboxCommand` in
-`packages/tools/src/sandbox.ts`. Test: `packages/kernel/tests/integration/guard-file-parity.test.ts`
-and native networking cases in `packages/tools/tests/integration/sandbox.test.ts`.
-Credential environment values are withheld from native and bare shell paths. Production: `resolveFilesystemPolicy`, `sandboxCommand`
-and `minimalEnv` in `packages/tools/src/sandbox.ts`; `createAgentToolsCapability` in
-`packages/loop/src/runtime/capabilities/tools.ts`. Test:
-`packages/tools/tests/integration/sandbox.test.ts` (`uses the same broad-read write-limited policy
-for shell and shell_session with an external cwd`, `enforces the native sandbox against real host
-resources`) and `packages/tools/tests/integration/shell-escalation.test.ts`.
-The same native policy encloses all model file handlers, including search subprocesses and
-descriptor reads, in one run-owned service. The host keeps only the reviewed coordinator for
-classified configuration batches; it rechecks path class, workspace write posture and protected
-roots before a host commit. Protocol loss and unavailable native backends fail closed. This does
-not make host-visible reads confidential. Production: `SandboxAgentFilesystem` in
-`packages/tools/src/filesystem-service.ts`, `runFilesystemWorker` in
-`packages/tools/src/filesystem-worker.ts`, and `createAuthoringMutationReview` in
-`packages/kernel/src/configuration/authoring-mutations.ts`. Test:
-`packages/tools/tests/integration/filesystem-service.test.ts` and
-`packages/kernel/tests/integration/file-tool-configuration.test.ts`.
-The File Kernel keeps an enabled global Sandbox as the floor for an untrusted workspace's weaker
-settings, including read-only workspace, network, passed environment, selected toolchains and
-protected paths. Production: `effectiveSandboxSettings` and `configuredPaths` in
-`packages/kernel/src/sandbox/policy.ts`. Test: `keeps the global Sandbox floor when an untrusted
-workspace asks for weaker access` in `packages/kernel/tests/integration/sandbox-policy.test.ts`.
+### 4.2 Environment authority
 
-The loop allocates one short, account-owned scratch root per run and adds compatible system temporary roots for access. The shell environment names the run scratch first. After owned command trees physically exit, the loop removes only the scratch it allocated. Directories created by command text, including an explicit `mktemp -d`, remain the command's responsibility. Uncertain physical termination retains scratch. Production: `allocateShortTemporaryRoot` in `packages/paths/src/short-temporaries.ts`, `createAgentToolsCapability` in `packages/loop/src/runtime/capabilities/tools.ts`, and `ExecutionSessionManager.close` in `packages/tools/src/lib/execution-session.ts`. Test: `packages/loop/tests/integration/tools.test.ts` and `packages/loop/tests/integration/command-guard-wiring.test.ts`.
+Native Sandbox commands can read host-visible files allowed by their process identity and
+policy. Bubblewrap binds the host root read-only before narrower writable overlays; Seatbelt
+allows broad reads while restricting writes. The workspace and declared read-only roots remain
+read-only when configured, including beneath a writable system temp root. This is a write and
+process boundary, not a confidentiality boundary for host files. `network: "none"` denies
+network connections independently of filesystem reads. Sandbox file calls run in a run-owned
+child under the same frozen policy. An unavailable backend or lost child fails closed. Host
+commands and file calls use OS permissions.
 
-Skill execution roots are canonical directories exposed only by selected skills whose host root
-opted into helper execution. They widen command path analysis, while the dispatcher
-denies every native file mutation beneath them. A native sandbox mounts them read-only; without one,
-`shell` remains ordinary secret-scrubbed host processes, so the root is not an
-immutability claim. Production: `packages/skills/src/registry.ts`,
-`packages/loop/src/runtime/build-run-deps.ts`, `packages/tools/src/config.ts`, and
-`packages/tools/src/core.ts`. Tests: `packages/skills/tests/integration/api.test.ts` and
-`packages/tools/tests/integration/api.test.ts`.
+Production: `resolveFilesystemPolicy` and `sandboxCommand` in
+`packages/tools/src/sandbox.ts`, and `SandboxAgentFilesystem` in
+`packages/tools/src/filesystem-service.ts`. Test:
+`packages/tools/tests/integration/sandbox.test.ts` and
+`packages/tools/tests/integration/filesystem-service.test.ts`.
 
-Generic oversized tool results are written by `createToolSpill` under the current workspace's
-`local` state directory. The read exception does not admit that directory as a root: it recognizes
-only an exact generic spill basename, verifies a regular non-link file, and pins the admitted file's
-identity through open. Only `read_file` and `read_files` receive this exact-file allowance. A shell
-command receives no state mount or guard exception, so the pointer cannot expose prompt history,
-other machine state, or another workspace's spill. Production: `createToolSpill` in
-`packages/loop/src/runtime/context/tool-spill.ts`, `resolveReadableTextPath` in
-`packages/tools/src/lib/state-artifacts.ts`, `readRawFile` in `packages/tools/src/lib/files.ts`, and
-`buildGuardContext` in `packages/tools/src/guard/context.ts`. Test:
-`packages/tools/tests/unit/state-artifact-access.test.ts` and
-`packages/tools/tests/integration/guard-dispatch.test.ts`.
+The File Kernel keeps an enabled global Sandbox as the floor for an untrusted workspace's
+weaker settings. Credential environment values are withheld from native and host shell paths.
+The loop allocates a short account-owned scratch root per run and removes only that allocation
+after tracked command trees physically exit. An uncertain exit retains scratch.
 
-Recognized spill writers use `FILE_MODE` (`0600` on POSIX), and bounded global housekeeping repairs
-older recognized spill modes before applying the 24-hour age policy. Production:
-`packages/tools/src/lib/output.ts`, `packages/loop/src/runtime/context/tool-spill.ts`, and
-`sweepGlobalStateArtifacts` in `packages/paths/src/housekeeping.ts`. Test:
-`packages/tools/tests/integration/output.test.ts`, `packages/loop/tests/integration/tool-spill.test.ts`,
-and `packages/paths/tests/integration/housekeeping.test.ts`.
+Production: `effectiveSandboxSettings` in `packages/kernel/src/sandbox/policy.ts`,
+`createAgentToolsCapability` in `packages/loop/src/runtime/capabilities/tools.ts`, and
+`ExecutionSessionManager.close` in `packages/tools/src/lib/execution-session.ts`.
+Test: `packages/kernel/tests/integration/sandbox-policy.test.ts`,
+`packages/loop/tests/integration/tools.test.ts`, and
+`packages/tools/tests/integration/sandbox.test.ts`.
 
-### 4.3 Post-open validation on protected reads
+### 4.3 Bounded reads
 
-`readRawFile` opens one descriptor, requires a regular file and enforces a byte ceiling before and
-during the read. Exact spill reads compare the opened inode and parent to the pinned artifact.
-Classified configuration reads recheck the canonical class and opened inode. Host-owned Goal
-evidence uses its declared artifact root and an opened-inode check. Ordinary Host reads follow OS
-permissions without a workspace containment check. A single-file ripgrep search consumes the
-bounded descriptor snapshot; directory grep checks each candidate in process. Production:
-`readRawFile`, `readFileOptionsForPath`, and `assertOpenedArtifact` in
-`packages/tools/src/lib/files.ts`; `grepSearch` in `packages/tools/src/lib/rg.ts`. Test:
-`packages/tools/tests/unit/state-artifact-access.test.ts`,
-`packages/tools/tests/integration/grep.test.ts`, and
-`packages/kernel/tests/integration/goal-runtime-port.test.ts`.
+`readRawFile` opens one descriptor, requires a regular file and enforces a byte ceiling before
+and during the read. A single-file ripgrep search consumes a bounded descriptor snapshot;
+directory grep checks each candidate in process. Model file reads have no special state-artifact
+gate; actual access follows Host OS permissions or the native sandbox.
+
+Production: `readRawFile` in `packages/tools/src/lib/files.ts`, `grepSearch` in
+`packages/tools/src/lib/rg.ts`, and `dispatch` in `packages/tools/src/core.ts`.
+Test: `packages/tools/tests/integration/bounded-read.test.ts`,
+`packages/tools/tests/integration/explicit-state-paths.test.ts`, and
+`packages/tools/tests/integration/grep.test.ts`.
 
 ### 4.4 Mutating writes
 
-`writeAtomic` (`packages/tools/src/lib/atomic.ts`):
+`writeAtomic` and `applyOpsAtomic` preflight operations and stage durable writes. They refuse
+symlink targets and roll back failed batches. Ordinary file calls can target paths outside the
+workspace; the OS or configured sandbox decides access. Path-based mutation still has a
+parent-directory replacement race, which this layer does not claim to close.
 
-| Step |
-| --- |
-| `assertNotSymlink(target)` — refuse an existing symlink |
-| `fs.mkdir(dirname(target), { recursive: true })`, remembering whether it created anything |
-| capture the existing file's mode, or `0o666 & ~umask` for a new one |
-| `writeFileDurable(target, content, { mode, dirMode })` |
-| on failure, remove the directory this call created and rethrow |
-
-The batch form `applyOpsAtomic` pre-flights every op through `validateTargets`, which calls `assertNotSymlink` on each rename source, rename destination and
-create/modify target.
-
-Classified mutation still uses path-based preflight followed by pathname operations. A parent
-may be replaced between review and commit; the host revalidates policy and effect immediately
-before commit, but descriptor-relative mutation would be needed to eliminate the full race.
-Production: `resolveFileToolPath` in `packages/tools/src/lib/paths.ts`, `applyOpsAtomic` in
-`packages/tools/src/lib/atomic.ts`, and `createAuthoringMutationReview` in
-`packages/kernel/src/configuration/authoring-mutations.ts`. Test:
-`packages/kernel/tests/integration/file-tool-configuration.test.ts`.
+Production: `writeAtomic` and `applyOpsAtomic` in `packages/tools/src/lib/atomic.ts`.
+Test: `packages/tools/tests/integration/atomic.test.ts` and
+`packages/tools/tests/integration/open-authority.test.ts`.
 
 ### 4.5 Building a hook subprocess's environment
 
@@ -553,20 +483,11 @@ denylist is derived from exactly this run's credentials"* (`packages/hooks/src/c
 
 ### 4.6 Other subprocess environments use distinct policies
 
-Command-review allowlists never silently approve an environment prefix or assignment-only segment,
-even through a wildcard command entry. The normalized executable remains visible to deny rules;
-path-shaped assignment values are resolved as values, not assignment-shaped filenames. Unattested
-bindings require human review on Host and explicit review under containment. This does not change
-mode `off` or the independent subprocess environment filters. Production:
-[shell guard](../../packages/kernel/src/guard/shell-guard.ts) (`commandsAllowed`, `createShellGuard`)
-and [POSIX dialect](../../packages/tools/src/guard/dialects/posix.ts) (`pathCandidate`). Test:
-[guard contrasts](../../packages/kernel/tests/integration/guard-auto-review.test.ts) and
-[analysis issues](../../packages/tools/tests/unit/analysis-issues.test.ts).
 
 | Consumer | Policy | File |
 | --- | --- | --- |
 | Clarvis-owned Git selecting a repository | `withoutGitRepositoryEnvironment(inherited)` — preserve ordinary/transport inputs, remove Git's complete repository-local set and `GIT_CEILING_DIRECTORIES` before `cwd`, `-C`, or a clone destination selects the repository | helper `packages/paths/src/git-environment.ts`; plugin fetch `packages/kernel/src/adapters/git/plugin-fetcher.ts`; plugin metadata `packages/kernel/src/adapters/filesystem/plugin-repository.ts`; memory workspace probe `packages/memory/src/workspace-state.ts`; client clone `packages/code/src/adapters/plugin-install.ts` |
-| `shell` command (unsandboxed or `require_escalated`) | `withoutSecrets(process.env, secretEnvNames)` — a copy with the named keys deleted. Git credential output, `gh auth token`, Git `--exec` helpers and `scheme::` URLs are denied independently of review. | `packages/tools/src/sandbox.ts` (`withoutSecrets`, applied by `sandboxCommand`); `packages/tools/src/lib/sensitive-commands.ts`; `packages/tools/src/lib/sandbox-permissions.ts` |
+| `shell` command | `withoutSecrets(process.env, secretEnvNames)` — a copy with the named keys deleted. | `packages/tools/src/sandbox.ts` (`withoutSecrets`, applied by `sandboxCommand`) |
 | stdio MCP child | `{ ...getDefaultEnvironment(), ...server.env }` — authored values are normally interpolated, but remain literal when a portable adapter sets `expandVariables: false`; the caller's environment is **never** the base | `buildTransport` in `packages/mcp-client/src/client.ts` |
 | remote MCP request headers | authored headers follow `expandVariables`; `bearer_token_env_var` and `env_http_headers` always resolve their explicitly named values and the resulting headers remain confined to the configured resource origin | `buildTransport` in `packages/mcp-client/src/client.ts`; `createMCPRemoteFetch` in `packages/mcp-client/src/remote-fetch.ts` |
 | capability executable (plans/memory/tasks provider) | `{ ...inherited, ...additions }` — the **whole** kernel environment plus the declaration's interpolated `env` | `packages/kernel/src/capability-executables/session-manager.ts` |
@@ -624,43 +545,9 @@ Transitions:
 | any | `approveWorkspace()` | `trusted` | `writeWorkspaceTrust(globalDir, key, fingerprint)` appends the entry if new (`packages/kernel/src/config/workspace-trust.ts`) |
 | any | `revokeWorkspace()` | `unapproved` | `delete workspaces[key]` |
 | `trusted` | the surface changes | `changed` | withheld again (`packages/kernel/tests/integration/workspace-trust.test.ts`) |
-| `trusted`/`inert` | operator write through `ConfigService` or a reviewed configuration file batch | re-recorded over the new surface | `ConfigStore.withOperatorWrite` (`packages/kernel/src/config/config-store.ts`, `packages/kernel/src/config/file-config-store.ts`, `packages/kernel/src/configuration/authoring-mutations.ts`) |
-| `unapproved`/`changed` | the same operator-authorized write surfaces | unchanged | `if (!carried) return out` |
+| `trusted`/`inert` | operator write through `ConfigService` | re-recorded over the new surface | `ConfigStore.withOperatorWrite` (`packages/kernel/src/config/config-store.ts`, `packages/kernel/src/config/file-config-store.ts`) |
+| `unapproved`/`changed` | the same operator-authorized write surface | unchanged | `if (!carried) return out` |
 
-Within the four configuration roots, the generic `@clarvis/tools` API admits ordinary native
-file-mutation tools for classified authoring and operational destinations when the run carries the
-restricted `MutationReview` writer. Without that port the file tool refuses the protected target,
-and a generic command approval is never treated as
-configuration approval. The file kernel gives an editing entry agent that
-host-owned `MutationReview`: it prepares the complete atomic batch, validates each recognized
-document, captures every target and exact revision, reviews all effects together, and calls
-`withOperatorWrite` only for exact successful workspace target bytes. It rechecks live operator
-authority inside the final write callback after review. Private destinations remain denied;
-global paths are admitted only through the entry agent's file resolver. Selected skill packages stay
-immutable to native file tools, and command execution retains its separate shell/sandbox boundary
-rather than becoming an alternate writer. Production: `protectWorkspaceConfiguration` and `dispatch` in
-`packages/tools/src/core.ts`, `isReviewedConfigurationPath` in
-`packages/tools/src/guard/authoring-path.ts`, and `createAuthoringMutationReview` in
-`packages/kernel/src/configuration/authoring-mutations.ts`. Test: the authoring review case in
-`packages/tools/tests/integration/api.test.ts` and the batch, drift, and trust cases in
-`packages/kernel/tests/integration/file-tool-configuration.test.ts` and
-`packages/kernel/tests/integration/workspace-trust.test.ts`; post-review revocation is pinned in
-`packages/kernel/tests/unit/authoring-mutations.test.ts`.
-
-Native Sandbox mounts workspace `.clarvis`, `.agents` and Git metadata read-only for shell and
-file-service child processes. The host-mediated classified commit remains available after exact
-review and revision checks. Missing workspace configuration roots are prepared before a Linux
-mount; redirected roots and preexisting symlink or hardlink aliases inside classified and Git
-metadata trees fail closed. The scan is bounded at 50,000 entries per native launch. Host placement
-has no physical boundary, so command approval there does not attest a
-classified file mutation. Production: `protectedWorkspaceConfigurationRoots`,
-`assertUnaliasedProtectedEntries`, `sandboxCommand` and `resolveFilesystemPolicy` in
-`packages/tools/src/sandbox.ts`, and `createAuthoringMutationReview` in
-`packages/kernel/src/configuration/authoring-mutations.ts`. Test: `keeps classified workspace
-documents read-only to sandboxed shell commands` in
-`packages/tools/tests/integration/sandbox.test.ts` and `commits reviewed global and workspace
-authoring documents through the Sandbox file service` in
-`packages/kernel/tests/integration/file-tool-configuration.test.ts`.
 
 An explicit approve/revoke is refused with `conflict` while any run is active, before the trust file
 is changed. At an idle boundary, `resolveActive` recomposes the selected workspace Extension Profile (and
@@ -757,26 +644,6 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
    `resolvePath` in `packages/tools/src/lib/paths.ts` and `resolveFilesystemPolicy` in
    `packages/tools/src/sandbox.ts`. Test: `packages/tools/tests/integration/no-isolation.test.ts`
    and `packages/tools/tests/integration/sandbox.test.ts`.
-2. **Private configuration remains denied to model file reads and writes.** Canonical and lexical
-   classification must agree. Production: `resolveFileToolPath` in
-   `packages/tools/src/lib/paths.ts`. Test:
-   `packages/kernel/tests/integration/file-tool-configuration.test.ts`.
-3. **A classified read binds the admitted root and target to its opened inode.** Production:
-   `readFileOptionsForPath` and `assertOpenedConfiguration` in
-   `packages/tools/src/lib/files.ts`. Test:
-   `packages/tools/tests/integration/no-isolation.test.ts` (parent and root swaps) and
-   `packages/kernel/tests/integration/file-tool-configuration.test.ts`.
-4. **Case folding of Guard location facts is Windows-only.** Production: `isWithinRoots` in
-   `packages/tools/src/lib/paths.ts`. Test: `packages/tools/tests/integration/paths.test.ts`.
-5. **An exact generic spill is the only readable selected state artifact.** Its parent and inode
-   are pinned; a shell receives no implicit state mount or grant. Production:
-   `resolveReadableTextPath` in `packages/tools/src/lib/state-artifacts.ts` and `readRawFile` in
-   `packages/tools/src/lib/files.ts`. Test:
-   `packages/tools/tests/unit/state-artifact-access.test.ts` and
-   `packages/tools/tests/integration/guard-dispatch.test.ts`.
-6. **A model-facing refusal never names a bypass.** Production: `resolveFileToolPath` in
-   `packages/tools/src/lib/paths.ts`. Test:
-   `packages/tools/tests/architecture/no-bypass-hints.test.ts`.
 7. **A read uses one regular-file descriptor and a byte ceiling.** Production: `readRawFile` in
    `packages/tools/src/lib/files.ts`. Test: `packages/tools/tests/integration/read-files.test.ts`.
 8. **Directory grep checks candidates in process; single-file ripgrep uses a descriptor snapshot.**
@@ -785,11 +652,6 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
    `packages/tools/tests/contract/regex-dialect.test.ts`.
 9. **Native mutation refuses symlink targets.** Production: `assertNotSymlink` in
    `packages/tools/src/lib/atomic.ts`. Test: `packages/tools/tests/integration/symlink.test.ts`.
-10. **Classified mutation still has a parent-directory TOCTOU.** Review revalidation narrows this
-    window but does not replace descriptor-relative operations. Production:
-    `createAuthoringMutationReview` in `packages/kernel/src/configuration/authoring-mutations.ts`
-    and `applyOpsAtomic` in `packages/tools/src/lib/atomic.ts`. Test:
-    `packages/kernel/tests/integration/file-tool-configuration.test.ts`.
 11. **`sanitizeToolPayload` never applies the coarse fallback.** Production
     `packages/capability/src/sanitize.ts`; pinned
     `packages/capability/tests/unit/sanitize.test.ts`.
@@ -897,17 +759,12 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/kernel/src/config/file-config-store.ts`. **Unpinned.**
 40. **A trust key is the realpath of the workspace root.** Production
     `packages/kernel/src/config/workspace-trust.ts`. **Unpinned.**
-41. **An operator-authorized configuration write carries an existing approval and never creates
-    one.** When the pre-write workspace verdict is `trusted` or `inert`,
-    `ConfigStore.withOperatorWrite` records the already-verified post-write fingerprint only when
-    the authorized file has its expected revision and every other executable input is unchanged.
-    Concurrent drift or a different target revision leaves the resulting surface withheld. When
-    the pre-write verdict is `unapproved` or `changed`, the write does not approve it. Both
-    `ConfigService` mutations and reviewed native authoring batches use this boundary. Production:
-    `packages/kernel/src/config/config-store.ts`, `packages/kernel/src/config/file-config-store.ts`
-    `packages/kernel/src/configuration/authoring-mutations.ts`; pinned by
-    `packages/kernel/tests/integration/workspace-trust.test.ts` and
-    `packages/kernel/tests/integration/file-tool-configuration.test.ts`.
+41. **An operator-authorized ConfigService write carries existing workspace trust.** When the
+    pre-write verdict is `trusted` or `inert`, `ConfigStore.withOperatorWrite` records the new
+    fingerprint only for the exact authorized mutation. A write to a previously unapproved or
+    changed workspace does not approve it. Production: `packages/kernel/src/config/config-store.ts`
+    and `packages/kernel/src/config/file-config-store.ts`; Test:
+    `packages/kernel/tests/integration/workspace-trust.test.ts`.
 42. **An agent name is one filename segment.** No separator, no drive/stream separator, no leading dot,
     no `..`, no `:`. Production `packages/kernel/src/config/config-service.ts`;
     pinned across all four name-taking methods at
@@ -1007,7 +864,7 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 
 57. **Skill helper execution is explicit, package-scoped and never automatic.** Only a root carrying
     host execution approval yields an `executionRoot`, the value exposed for one skill is that
-    skill's own directory, and selecting it contributes command review facts. Native mutations
+    skill's own directory. Native mutations
     are refused; a native sandbox mounts it read-only; an unsandboxed command retains normal host
     rights and is not mislabeled isolated. Production: `packages/skills/src/registry.ts`,
     `packages/loop/src/runtime/build-run-deps.ts`, `packages/tools/src/config.ts`, and
@@ -1065,23 +922,17 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 
 ## 6. Failure modes and degradation
 
-The [direct self-configuration flow](../hosts/self-configuration.md) uses a host-installed restricted
-writer within ordinary Host/Sandbox runs. Concrete effects consume shared authority review before
-mutation. Private credential/state paths, stable symlinks and hardlinked leaves are excluded.
-Authority is never inferred from skill content or a client consent nonce. Parent-directory TOCTOU
-and secret literals embedded in otherwise allowed documents remain explicit limits.
-Production: `createAuthoringMutationReview` and `prepareConfigurationFileMutation` in
-[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts) and
-[files.ts](../../packages/kernel/src/configuration/files.ts). Test:
-[file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts),
-[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
+The [self-configuration flow](../hosts/self-configuration.md) uses ordinary file tools. Host OS
+permissions or the configured native sandbox determine access. Configuration loaders validate
+documents when consumed; workspace trust still governs activation. Production: `dispatch` in
+[core.ts](../../packages/tools/src/core.ts) and `createFileConfigStore` in
+[file-config-store.ts](../../packages/kernel/src/config/file-config-store.ts). Test:
+[open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts) and
+[configuration-documents.test.ts](../../packages/kernel/tests/integration/configuration-documents.test.ts).
 
 | Condition | Handler | Outcome |
 | --- | --- | --- |
 | Ordinary external path unavailable to the selected environment | `resolveFilesystemPolicy` in `packages/tools/src/sandbox.ts` and OS access | `not_found` or `io_error`; no workspace `path_escape` |
-| Private or redirected classified configuration path | `resolveFileToolPath` in `packages/tools/src/lib/paths.ts` | `denied` or `path_escape`; no bytes exposed |
-| Pinned artifact replaced before open | `readRawFile` in `packages/tools/src/lib/files.ts` | `path_escape`; no replacement bytes exposed |
-| Native mutation below a selected skill execution root | `protectSkillPackages` in `packages/tools/src/core.ts` | `path_escape` before guard/handler; no mutation runs |
 | Unsafe or unsupported borrowed `userConfig` reference | `resolveBorrowedUserConfig` in `packages/kernel/src/plugins/plugin-manifest.ts` | only the affected MCP is withheld; safe sibling contributions survive |
 | Write target is a symlink | `packages/tools/src/lib/atomic.ts` | `ToolError("invalid_input")`, `"Refusing to write through a symlink"` |
 | Atomic write fails after creating a parent | `packages/tools/src/lib/atomic.ts` | the created directory is removed best-effort, then rethrow |
@@ -1166,13 +1017,10 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
 
 ## 8. Open questions
 
-- **Classified mutation parent-directory races remain open.** The host reviews the intended effect
-  and revalidates before commit, but path-based create, rename and delete operations can encounter a
-  changed parent afterward. Closing the race needs descriptor-relative mutation across all native
-  write handlers. Production: `applyOpsAtomic` in `packages/tools/src/lib/atomic.ts` and
-  `createAuthoringMutationReview` in `packages/kernel/src/configuration/authoring-mutations.ts`.
-  Test: `packages/kernel/tests/integration/file-tool-configuration.test.ts` exercises review
-  revalidation; it does not prove that the remaining race is closed.
+- **Path-based file mutation has a parent-directory replacement race.** Closing it requires
+  descriptor-relative mutation across native write handlers. Production: `applyOpsAtomic` in
+  `packages/tools/src/lib/atomic.ts`. Test: `packages/tools/tests/integration/atomic.test.ts`
+  covers atomic failure but does not prove that the parent-directory race is closed.
 - **Why `capability` executables inherit the whole kernel environment** while stdio MCP children get a
   fixed safe base. **Still open, but now visible at the implementation branch that makes the choice**: the divergence
   is recorded in `processEnvironment`'s own TSDoc, naming both counter-examples — the MCP child's
@@ -1216,19 +1064,3 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
   of workspace trust (36), the empty-array risk value (37), the "unreadable store means unapproved"
   degradation (39), the realpath trust key (40), the env-only log knobs (45), and the `internal`
   collapse of a non-`ToolError` throw (46).
-## Operator evidence and effect interpretation
-
-Workspace text, synthetic seeds, assistant output, commands and justification are never authority
-evidence. Only host-admitted operator input supplies evidence. The LLM interprets it within host
-effect descriptors; the host validates target coverage, exclusions and revision after interpretation.
-The execution ceiling and captured placement do not change when intent changes. Production:
-[operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts) and
-[effect-review.ts](../../packages/kernel/src/guard/effect-review.ts).
-Test: [effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
-The complete boundaries are in [effect review](../execution/effect-review.md).
-Host probes never attest a shell command, and a command is never classified by operation: the guard
-resolves its policy once and sends every remaining Auto `ask` to the call-local Judge reviewer. Only
-lookup/configuration roots are recaptured from the actual spawn, and arbitrary host variables are
-never forwarded to a probe. Production and tests:
-[command-guard.md](../execution/command-guard.md) and
-[effect review](../execution/effect-review.md).

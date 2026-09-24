@@ -104,7 +104,6 @@ function fakeCode(agentDefault?: string): FakeCodeStore {
     themeAt: () => ({}),
     effectiveTheme: () => ({}),
     agentDefault: () => agentDefault,
-    guardModeDefault: () => undefined,
     updateCheckEnabled: () => true,
     asciiEnabled: () => false,
     keyboardConfig: () => ({ version: 1, environments: {} }),

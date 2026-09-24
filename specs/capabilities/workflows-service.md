@@ -46,10 +46,9 @@ scheduling engine: `WorkflowCtx`, `LeaderSpec` and `LeaderResult` are what the s
 run (the `WorkflowCtx` construction in `createWorkflowsService`).
 
 The configuration document fixtures exercise a workflow document, its brief and its separate
-Admiral skill launcher. Ordinary reviewed file tools create authored
+Admiral skill launcher. Ordinary file tools create authored
 files; an ordinary manager run reloads definitions and requires its own workflow preflight.
-Production: `createAuthoringMutationReview` in
-[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts), and `readWorkflowDefs` in
+Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts), and `readWorkflowDefs` in
 [workflows-service.ts](../../packages/kernel/src/workflows/workflows-service.ts).
 Test: `creates a workflow in the ordinary conversation and runs it through Admiral with an independent preflight`
 and `loads the complete workflow, diagnoses broken briefs, and reloads workspace overrides` in
@@ -405,13 +404,7 @@ The schema is enforced, not decorative: the same single-property schema the call
    (`packages/workflows/src/artifact.ts`).
 8. `repeat.rounds` may only name round ids that exist (`packages/workflows/src/artifact.ts`).
 
-The reviewed configuration file route calls `validateWorkflowDocument` before it attests or mutates
-a canonical `workflows/<name>/WORKFLOW.md`. Because a workflow document resolves its brief files as
-part of compilation, those operational files must already exist. Production:
-`prepareConfigurationFileMutation` in
-[files.ts](../../packages/kernel/src/configuration/files.ts). Test:
-`validates prospective workflow definitions before previewing or writing them` in
-[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
+Workflow documents written through ordinary file tools are validated by `loadWorkflow` when consumed. Brief files must exist before compilation. Production: `loadWorkflow` and `validateWorkflowDocument` in [artifact.ts](../../packages/workflows/src/artifact.ts). Test: `loads the complete workflow, diagnoses broken briefs, and reloads workspace overrides` in [configuration-documents.test.ts](../../packages/kernel/tests/integration/configuration-documents.test.ts).
 
 ### 4.2 Reading a brief — `readBrief` (`packages/workflows/src/artifact.ts`)
 
@@ -511,7 +504,7 @@ without recursively granting the child the workflow capability
 4. `assembleLeader` (the `LeaderRequestAssembler` passed into `WorkflowCtx.assemble`) resolves the
    leader's agent as `spec.profile ?? resolveLeaderDefault(managerAgent) ?? managerAgent`
    (`packages/kernel/src/workflows/workflows-service.ts`, `assembleLeader`), forces `plans: "off"`
-   and `memory: "off"`, forwards `output_schema`, `guard_mode`, `guard_judge`, `task`,
+   and `memory: "off"`, forwards `output_schema`, `task`,
    `session_id` and cache TTL from the manager's own params when present. Without an explicit
    session, the manager's execution ID supplies the shared session. Each leader uses the child
    `runId` reserved by the scheduler for both `execution_id` and `agent_instance_id`; it never

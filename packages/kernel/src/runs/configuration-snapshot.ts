@@ -11,7 +11,7 @@ export type RunConfigurationSource = Pick<
  * Capture the effective, trust-filtered configuration for one admitted tree. Returned values are
  * independent copies because workflow assembly removes grants from the body it receives. This
  * snapshot contains neither a writable store nor subscription credentials and is never serialized
- * into the hosted discovery index. Live guard and extension revocation remain host-owned.
+ * into the hosted discovery index. Extension revocation remains host-owned.
  */
 export function snapshotRunConfiguration(source: RunConfigurationSource): RunConfigurationSource {
   const settings = source.readSettings();

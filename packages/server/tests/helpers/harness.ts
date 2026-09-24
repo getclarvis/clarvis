@@ -107,7 +107,6 @@ const TEST_LIMITS: McpServerLimits = {
   settleGraceMs: 2_000,
   elicitToolWaitMs: 30_000,
   elicitRelayMs: 5_000,
-  allowRemoteGuardApproval: false,
 };
 
 /** A connected client/server pair over an in-memory transport. */

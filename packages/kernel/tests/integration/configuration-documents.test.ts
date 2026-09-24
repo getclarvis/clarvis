@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { contentToText, loadEnv, NOOP_LOGGER } from "@clarvis/capability";
@@ -12,11 +12,6 @@ import { loadWorkflow, loadWorkflows } from "@clarvis/workflows/artifact";
 import { resolveWorkflowDefinitions } from "@clarvis/workflows";
 import { createAgentWorkflowPolicy } from "../../src/application/workflow-policy.ts";
 import { createFileConfigStore } from "../../src/config/file-config-store.ts";
-import {
-  prepareConfigurationFileMutation,
-  readConfigurationDocument,
-  type ConfigurationMutationRequest,
-} from "../../src/configuration/files.ts";
 import { createExtensionProfileManager } from "../../src/extension-profiles/extension-profile-manager.ts";
 import { createFileKernel } from "../../src/bootstrap.ts";
 import { createPluginContributions } from "../../src/plugins/plugin-contributions.ts";
@@ -35,16 +30,26 @@ function fixture() {
   const globalDir = join(home, "global");
   mkdirSync(workspaceRoot);
   const roots = configurationRoots({ home, workspaceRoot, globalDir });
-  const call = (request: ConfigurationMutationRequest) =>
-    prepareConfigurationFileMutation(roots, request).commit();
+  const call = (request: {
+    operation: "write" | "edit" | "delete";
+    root: ConfigurationRoot;
+    path: string;
+    content?: string;
+    old_text?: string;
+    new_text?: string;
+  }) => {
+    const target = join(roots[request.root], request.path);
+    mkdirSync(dirname(target), { recursive: true });
+    if (request.operation === "delete") unlinkSync(target);
+    else if (request.operation === "edit")
+      writeFileSync(
+        target,
+        readFileSync(target, "utf8").replace(request.old_text!, request.new_text!),
+      );
+    else writeFileSync(target, request.content!);
+  };
   const write = (name: keyof typeof EXAMPLES, root: ConfigurationRoot = "global_clarvis") =>
-    call({
-      operation: "write",
-      root,
-      path: EXAMPLES[name].path,
-      content: EXAMPLES[name].content,
-      expected_revision: null,
-    });
+    call({ operation: "write", root, path: EXAMPLES[name].path, content: EXAMPLES[name].content });
   const store = createFileConfigStore({ globalDir, workspaceRoot, logger: NOOP_LOGGER });
   const manager = (cliSelection?: string) => {
     const instance = createExtensionProfileManager({
@@ -63,7 +68,7 @@ function fixture() {
 
 describe("configuration documents against product loaders", () => {
   it.each(["model", "extensions", "mcp", "hooks", "capabilities"] as const)(
-    "%s: saves the documented settings through the native file tool and reads the effective block",
+    "%s: loads the documented settings written to disk",
     (name) => {
       const f = fixture();
       f.write(name);
@@ -180,7 +185,6 @@ describe("configuration documents against product loaders", () => {
         root: "global_clarvis",
         path: EXAMPLES.extensionProfile.path,
         content: JSON.stringify({ schema_version: 1, ...fields }),
-        expected_revision: null,
       });
       const result = await f.manager().service.get({ scope: "global", name: "review" });
       expect(result.status).toBe("invalid");
@@ -211,12 +215,10 @@ describe("configuration documents against product loaders", () => {
     f.write("workflowBrief", "workspace_clarvis");
     f.write("workflow", "workspace_clarvis");
     const path = EXAMPLES.workflowBrief.path;
-    const revision = readConfigurationDocument(f.roots, "workspace_clarvis", path)!.revision;
     f.call({
       operation: "edit",
       root: "workspace_clarvis",
       path,
-      expected_revision: revision,
       old_text: "Review {{args.scope}}",
       new_text: "Workspace review of {{args.scope}}",
     });
@@ -228,12 +230,10 @@ describe("configuration documents against product loaders", () => {
         (workflow) => workflow.name === "review-project",
       )?.rounds[0]?.brief,
     ).toStartWith("Workspace review");
-    const updated = readConfigurationDocument(f.roots, "workspace_clarvis", path)!;
     f.call({
       operation: "delete",
       root: "workspace_clarvis",
       path,
-      expected_revision: updated.revision,
     });
     const broken = loadWorkflows([globalRoot, workspaceRoot]);
     expect(broken.errors).toHaveLength(1);
@@ -322,21 +322,9 @@ describe("configuration documents against product loaders", () => {
       const configure = await kernel.runs.start({
         agent: "coder",
         messages: [{ role: "user", content: "Author the review-project workflow and its brief" }],
-        guard_mode: "on",
-      });
-      let configurationReviews = 0;
-      configure.onElicit((request) => {
-        configurationReviews++;
-        expect(request.kind).toBe("configuration_review");
-        void configure.respond({
-          id: request.id,
-          action: "accept",
-          content: { decision: "allow" },
-        });
       });
       expect(await configure.done).toMatchObject({ status: "completed" });
       expect(llm.calls).toHaveLength(3);
-      expect(configurationReviews).toBe(2);
       expect(await kernel.workflows.list()).toMatchObject({ items: [] });
       const manager = await kernel.runs.start({
         agent: "admiral",
@@ -366,7 +354,6 @@ describe("configuration documents against product loaders", () => {
         call.tools.some((tool) => tool.wireName === "run_workflow"),
       );
       expect(managerCalls.length).toBeGreaterThan(0);
-      expect(configurationReviews).toBe(2);
     } finally {
       await kernel.close();
     }

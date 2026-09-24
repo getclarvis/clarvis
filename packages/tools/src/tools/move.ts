@@ -1,12 +1,7 @@
 import { fs } from "../lib/environment-fs.ts";
 import path from "node:path";
 import { fsyncDir, renameWithRetry } from "@clarvis/paths";
-import {
-  isReviewedConfigurationPath,
-  reviewedConfigurationModes,
-} from "../guard/authoring-path.ts";
 import { ToolError, fsError } from "../errors.ts";
-import { readFileOptionsForPath, readRawFile } from "../lib/files.ts";
 import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { applyOpsAtomic, withFileLocks, assertNotSymlink } from "../lib/atomic.ts";
 import type { ToolDef } from "./types.ts";
@@ -26,8 +21,6 @@ import type { ToolDef } from "./types.ts";
  * source-unlink failure reports `commit_partial`. Both directories are fsynced. Passing the
  * same path for source and destination fails with `invalid_input`. The handler
  * returns a human-readable summary noting when an existing file was overwritten.
- * Reviewed configuration endpoints use the shared rollback transaction; a
- * configuration destination is staged with private file and directory modes.
  */
 export const move: ToolDef = {
   atomicMutation: true,
@@ -135,45 +128,7 @@ export const move: ToolDef = {
         await fsyncDir(path.dirname(absSrc));
         await fsyncDir(path.dirname(absDst));
       };
-      const protectedSource =
-        config.reviewMutation !== undefined &&
-        isReviewedConfigurationPath(absSrc, config.workspaceRoot, config.configurationRoots);
-      const modes = reviewedConfigurationModes(absDst, config);
-      if ((protectedSource || modes !== undefined) && config.reviewMutation !== undefined) {
-        const captured =
-          modes === undefined
-            ? undefined
-            : await readRawFile(
-                absSrc,
-                srcRel,
-                config.maxFileBytes,
-                undefined,
-                readFileOptionsForPath(config, absSrc),
-              );
-        if (captured !== undefined && !Buffer.from(captured.toString("utf8")).equals(captured))
-          throw new ToolError("invalid_input", "Configuration move requires UTF-8 text.");
-        try {
-          await applyOpsAtomic(
-            [
-              {
-                type: "rename",
-                path: absDst,
-                from: absSrc,
-                overwrite,
-                maxBytes: config.maxMutationBytes,
-                ...(captured === undefined ? {} : { content: captured.toString("utf8") }),
-                ...modes,
-              },
-            ],
-            config.reviewMutation,
-          );
-        } catch (error) {
-          if (error instanceof ToolError) throw error;
-          throw fsError(error as NodeJS.ErrnoException, dstRel);
-        }
-      } else if (config.reviewMutation !== undefined)
-        await config.reviewMutation([operation], commit);
-      else await commit();
+      await commit();
 
       const from = displayPath(absSrc, config.workspaceRoot);
       const to = displayPath(absDst, config.workspaceRoot);

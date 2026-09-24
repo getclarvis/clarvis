@@ -177,7 +177,7 @@ service on a host. Optional `GoalState.creation_intent` is an admitted formulati
 not a Goal and does not authorize implementation. A goal run's optional `progress` contains its latest bounded annotation, separate
 from checkpoint disposition and a completion candidate. Optional Steward DTO fields expose its
 compact status, pending clarification, bounded review history and separate consumption without importing domain runtime.
-They are host-owned audit data, never commands or operator authority. Lifecycle and mutation rules are specified in
+They are host-owned audit data, never commands. Lifecycle and mutation rules are specified in
 [sessions](../../specs/hosts/sessions.md#host-owned-conversation-transactions).
 
 `ExtensionProfileService` is the control plane for deterministic activation of already-installed
@@ -317,13 +317,6 @@ names `scheduled` versus `forced`; the terminal `compaction` event is durable an
 `fallback_reason` when summarization degraded to eviction. Clients must not reconstruct an active
 operation from replay because start signals are intentionally absent there.
 
-The terminal `tool_call` variant optionally carries `guard`, a strict
-`CommandGuardReview` with the final mode, allowed/denied outcome, and answerer.
-It is absent for older and unguarded calls and is part of replay when present.
-Its optional `reviewer_decision` records `allow`, `deny`, `unsure` or `failed` independently of the
-final outcome, including when Approval later answers a grey-zone ask. Auto does not use human
-fallback.
-
 ## Contract boundaries
 
 - Deep configuration blocks remain intentionally loose; the kernel owns schema
@@ -369,14 +362,6 @@ Run start carries `session_id` and `agent_instance_id`; the hosted session persi
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
-
-## Effect review presentation
-
-`effect_review` configures the shared reviewer. `GuardJudge.prompt` is deprecated additional
-guidance; `guidance` is its replacement. `ElicitationCommandDetail` optionally carries closed
-analysis, effect, authority and reviewer receipts; old details remain accepted. Shell review rows
-may retain effect, relation and failure kind. No evidence seed, controller epoch or authority ledger
-is part of public run input. See [effect review](../../specs/execution/effect-review.md).
 
 `Session.operator_intents` and `operator_sequence` are bounded host-owned submission receipts and
 the conversation's monotonic acceptance sequence. They are separate from admitted `turns`.

@@ -1,11 +1,8 @@
-import { createHostJudge } from "./guard/judge-host.ts";
 import { createNativeKernel } from "./native-kernel.ts";
-import { createAuthoringMutationReview } from "./configuration/authoring-mutations.ts";
+import { componentFloor, createComponentLoggers } from "./component-loggers.ts";
 import { reconcileSystemDocs, SYSTEM_DOCS_NAME } from "./skills/system-docs.ts";
 import { createSystemDocsProvider } from "./skills/system-docs-provider.ts";
-import type { RunServiceConfig } from "./runs/run-service.ts";
 import { extractEnvRefs, loadEnv, type EnvConfig } from "@clarvis/capability";
-import { configurationRoots } from "@clarvis/paths";
 import type { ConnectionEventSink } from "./connection-health.ts";
 import type { MemoryStore } from "@clarvis/memory";
 import {
@@ -15,7 +12,6 @@ import {
   type MemoryPluginPort,
 } from "@clarvis/memory/capability";
 import { createMemoryServerPort } from "./memory/memory-server-port.ts";
-import { componentFloor, createAuditLogger, createComponentLoggers } from "./component-loggers.ts";
 import { createTasksCapability } from "@clarvis/tasks/capability";
 import { createTaskServerPort } from "./tasks/task-server-port.ts";
 import { TaskProviderFactory } from "./tasks/task-provider-factory.ts";
@@ -43,7 +39,6 @@ import type {
   Logger,
   ProviderConfig,
 } from "@clarvis/loop";
-import type { GuardConfig } from "@clarvis/loop/host";
 import type { EventStreamOptions } from "./core/event-stream.ts";
 import { createFileConfigStore } from "./config/file-config-store.ts";
 import { DEFAULT_ENTRY_AGENT } from "./config/builtin-agents/index.ts";
@@ -68,12 +63,6 @@ export type WorkspaceHooksTrust =
   | { state: "trusted"; fingerprint: string }
   | { state: "unapproved"; fingerprint: string }
   | { state: "changed"; fingerprint: string; approved: string };
-import {
-  createGuardResolver,
-  type GuardResolverDeps,
-  type GuardSettings,
-} from "./guard/resolver.ts";
-import { createGuardSessionAllowlist } from "./guard/guard-elicit.ts";
 import type { InProcessKernel } from "./kernel.ts";
 import { createSandboxPolicyResolver, pinSandboxPolicy } from "./sandbox/policy.ts";
 import type { KernelOwnershipMode } from "./application/scope-policy.ts";
@@ -102,8 +91,6 @@ export type { RuntimePlacementNotice } from "./runtime/types.ts";
  * Options for {@link createFileKernel}: workspace root plus optional env, logging, paths, and key resolution.
  */
 export interface CreateFileKernelOptions {
-  /** Live controller identity supplied by process-owned hosting admission. */
-  operatorAuthorityFor?: RunServiceConfig["operatorAuthorityFor"];
   /** Absolute workspace root the kernel operates over. */
   workspaceRoot: string;
   /** Pre-loaded environment config; defaults to {@link loadEnv} over `process.env`. */
@@ -113,7 +100,6 @@ export interface CreateFileKernelOptions {
   /** Logger to use; defaults to one built from `CLARVIS_LOG_LEVEL`. */
   logger?: Logger;
   /** Persistent hosts bind shell session approval to current interactive control, not kernel lifetime. */
-  sessionAllowlistFor?: GuardResolverDeps["sessionAllowlistFor"];
   /** Project-host-owned physical model-call gate shared across workspace kernels. */
   modelCallAdmission?: HostModelCallAdmission;
   /** Project-host-owned physical capability/lifecycle gate shared across kernels. */
@@ -334,7 +320,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     env.CLARVIS_LOG,
     componentFloor(logger, env.CLARVIS_LOG_LEVEL),
   );
-  const auditLogger = createAuditLogger(logger, env.CLARVIS_LOG_AUDIT);
   const globalDir = opts.globalDir ?? globalRoot();
   let systemDocs: ReturnType<typeof createSystemDocsProvider> | undefined;
   try {
@@ -349,11 +334,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       "product configuration documentation is unavailable for this host",
     );
   }
-  const authoredRoots = configurationRoots({
-    workspaceRoot: opts.workspaceRoot,
-    globalDir,
-    ...(opts.configurationHome === undefined ? {} : { home: opts.configurationHome }),
-  });
   const bootStartedAt = Date.now();
   logger.info(
     {
@@ -494,27 +474,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     environment.values,
   );
   const runSandboxPolicy = pinSandboxPolicy(sandboxPolicy);
-
-  const loadGuardSettings = (): GuardSettings => {
-    const snapshot = configStore.readSettings();
-    const merged = snapshot.merged as Record<string, unknown>;
-    const operatorReview = snapshot.scopes.global?.effect_review ?? {};
-    const workspaceReview = snapshot.scopes.workspace?.effect_review;
-    return {
-      effect_review: resolveEffectReviewSettings(
-        operatorReview,
-        workspaceReview,
-        env.CLARVIS_DEFAULT_CALL_TIMEOUT_MS,
-        env.CLARVIS_DEFAULT_MAX_RETRIES,
-      ),
-      ...(merged.guard !== undefined ? { guard: merged.guard as GuardConfig } : {}),
-      sandbox: runSandboxPolicy(),
-      ...(Array.isArray(merged.providers)
-        ? { providers: merged.providers as ProviderConfig[] }
-        : {}),
-      defaultModel: typeof merged.default_model === "string" ? merged.default_model : defaultModel,
-    };
-  };
 
   /**
    * The run's hooks, re-read from settings on every run.
@@ -733,9 +692,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
           store: createFileSubscriptionStore({ dir: globalDir }),
           logger: componentLogger("subscriptions"),
         });
-  const defaultGuardAllowlist =
-    opts.sessionAllowlistFor === undefined ? createGuardSessionAllowlist() : undefined;
-  const sessionAllowlistFor = opts.sessionAllowlistFor ?? (() => defaultGuardAllowlist);
   const nativeRuntime = (): Extract<RuntimeStatus, { kind: "native" }> => ({
     kind: "native",
     host_platform: process.platform,
@@ -762,28 +718,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       reservedSystemSkillName: SYSTEM_DOCS_NAME,
       ...(systemDocs === undefined ? {} : { systemSkillProvider: systemDocs.provider }),
       skillBootstraps: pluginSkillBootstraps,
-      resolveGuard: async (ctx) => {
-        const resolution = await createGuardResolver({
-          loadSettings: loadGuardSettings,
-          logger: componentLogger("guard"),
-          audit: auditLogger,
-          sessionAllowlistFor,
-        })(ctx);
-        const ceiling = ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT;
-        if (opts.builtins?.tools === false || (ceiling !== "edit" && ceiling !== "exec"))
-          return resolution;
-        return {
-          ...resolution,
-          configurationRoots: authoredRoots,
-          reviewMutation: createAuthoringMutationReview(ctx, {
-            roots: authoredRoots,
-            store: configStore,
-            audit: auditLogger,
-            changed: () => extensionProfileManager.requestSkillRefresh(),
-            prepareSkillInclusion: (refs) => extensionProfileManager.prepareSkillInclusion(refs),
-          }),
-        };
-      },
       resolveSandbox: runSandboxPolicy,
       resolveSecretNames: loadSecretNames,
       resolveHooks: loadHooks,
@@ -814,13 +748,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
         : {}),
     },
     compose(built) {
-      const judgeHost = createHostJudge({
-        deps: built.deps,
-        physicalStore: built.resolved.store,
-        loadSettings: loadGuardSettings,
-        audit: auditLogger,
-        toolsEnabled: opts.builtins?.tools !== false,
-      });
       const memoryPluginPort: MemoryPluginPort = {
         locate: (plugin) =>
           pluginContributions.locateCapabilityExecutable(
@@ -873,10 +800,8 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
 
         decorateDeps: (base) => ({
           ...base,
-          operatorAuthority: createOperatorAuthorityRuntime,
           hostMetadata: () => ({ extension_profile: extensionProfileManager.runRef() }),
           capabilities: [
-            judgeHost.capability,
             ...(base.capabilities ?? []).filter(
               (capability) => capability.name !== MEMORY_CAPABILITY_NAME,
             ),
@@ -908,9 +833,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
             opts.executeRun ?? (async (args) => (await import("@clarvis/loop")).executeRun(args));
 
           return {
-            ...(opts.operatorAuthorityFor === undefined
-              ? {}
-              : { operatorAuthorityFor: opts.operatorAuthorityFor }),
             logger: componentLogger("kernel"),
             workspaceRoot: opts.workspaceRoot,
             project: gitWorkspace.project,
@@ -961,11 +883,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
               try {
                 await capabilityExecutables.close();
               } finally {
-                try {
-                  await subscriptionManager?.close();
-                } finally {
-                  await judgeHost.close();
-                }
+                await subscriptionManager?.close();
               }
             },
           };
@@ -998,5 +916,3 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     },
   });
 }
-import { createOperatorAuthorityRuntime } from "./guard/operator-authority.ts";
-import { resolveEffectReviewSettings } from "./config/effect-review-settings.ts";

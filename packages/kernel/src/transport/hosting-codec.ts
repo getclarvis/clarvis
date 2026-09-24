@@ -82,9 +82,7 @@ function validHostedQuestion(value: unknown): value is ElicitationRequest {
     !(typeof window === "number" && Number.isSafeInteger(window) && window > 0)
   )
     return false;
-  const detail = value.detail;
-  if (detail === undefined) return value.kind !== "guard_confirm";
-  return elicitationCommandDetailSchema.safeParse(detail).success;
+  return value.detail === undefined;
 }
 
 /** Reject malformed notification discriminants before allocating per-observation history. */
@@ -184,4 +182,3 @@ export function validHostedAttachment(
     )
   );
 }
-import { elicitationCommandDetailSchema } from "../guard/review-detail-schema.ts";

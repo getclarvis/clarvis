@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { recoverHostedDelivery, type HostedDeliveryRecovery } from "./delivery-recovery.ts";
-import type { RunServiceConfig } from "../runs/run-service.ts";
 import { boundPromise } from "@clarvis/loop/host";
 import {
   bestEffort,
@@ -24,7 +23,6 @@ import type {
   StartHostedTurnParams,
 } from "@clarvis/protocol";
 import { kernelError, toKernelError } from "../core/errors.ts";
-import { createGuardSessionAllowlist, type GuardSessionAllowlist } from "../guard/guard-elicit.ts";
 import {
   createHostedAdmission,
   type HostedAdmissionOptions,
@@ -75,7 +73,7 @@ export interface HostedTurnContinuation {
   stopped(reason: "revoked" | "superseded" | "failed"): Promise<void>;
 }
 
-/** Private host index; no prompts, provider credentials or volatile consent scopes enter it. */
+/** Private host index; no prompts, provider credentials  enter it. */
 export interface HostedRegistryState {
   schema_version: 1;
   host_generation: string;
@@ -111,7 +109,6 @@ export interface HostedRegistryOptions {
   prepare(
     input: StartHostedTurnParams,
     authority: {
-      scope: string;
       signal: AbortSignal;
       continuationOf?: string;
       conversation?: HostedConversationAuthority;
@@ -140,9 +137,9 @@ export interface HostedRegistryOptions {
   settlementReconciled?(run: HostedRunRef): Promise<boolean>;
   /** Repair canonical bookkeeping only from a durable physical-closure checkpoint; never replay execution. */
   recoverSettlement?(run: HostedRunRef, checkpoint: HostedSettlementRecovery): Promise<boolean>;
-  /** Prior process index. Only discovery metadata returns; no execution or consent is restored. */
+  /** Prior process index. Only discovery metadata returns; no execution is restored. */
   initialState?: HostedRegistryState;
-  limits?: Omit<HostedAdmissionOptions, "revokeInteractiveScope">;
+  limits?: HostedAdmissionOptions;
   maxRetainedRuns?: number;
   maxReceipts?: number;
   receiptLifetimeMs?: number;
@@ -169,10 +166,7 @@ export interface HostedRegistryConnection {
 
 /** Shared authority over all connections to one workspace/owner generation. */
 export interface HostedRegistry {
-  /** Live semantic-authority binding; retirement revokes its signal synchronously. */
-  operatorAuthorityFor: NonNullable<RunServiceConfig["operatorAuthorityFor"]>;
   connect(role: HostingPeer["role"]): HostedRegistryConnection;
-  guardAllowlistFor(run: { executionId: string; owner: string }): GuardSessionAllowlist | undefined;
   occupied(sessionId: string): boolean;
   /** Synchronous authority check for process-owned interactive callbacks, never a client claim. */
   controlsConversation(peerId: string, sessionId: string): boolean;
@@ -211,7 +205,6 @@ interface Entry {
   deliveries?: HostedDeliveryRecovery[];
   delivering?: Promise<boolean>;
   settlement?: HostedSettlementRecovery;
-  operatorInput?: boolean;
   input?: StartHostedTurnParams;
   steering?: Map<string, Promise<void>>;
   steeringDelivery?: Map<string, { promise: Promise<void>; resolve(): void }>;
@@ -295,19 +288,9 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
   );
   const entries = new Map<string, Entry>();
   const connections = new Map<string, ConnectionState>();
-  const allowlists = new Map<string, GuardSessionAllowlist>();
-  const authorityScopes = new Map<string, AbortController>();
   const receipts = new Map<string, { receipt: HostedRunReceipt; expires_at: number }>();
   const seenOperations = new Set<string>();
-  const admission = createHostedAdmission({
-    ...options.limits,
-    revokeInteractiveScope(scope) {
-      authorityScopes.get(scope)?.abort();
-      authorityScopes.delete(scope);
-      allowlists.get(scope)?.revoke();
-      allowlists.delete(scope);
-    },
-  });
+  const admission = createHostedAdmission(options.limits);
   let closing = false;
   let syncing: Promise<void> | undefined;
   let writes = 0;
@@ -895,8 +878,8 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       admission.disconnect(connection.peer);
     } catch {
       logger.warn(
-        { event: "hosting.consent.retirement_failed" },
-        "interactive consent cleanup failed after control retirement",
+        { event: "hosting.control.retirement_failed" },
+        "control cleanup failed after retirement",
       );
     }
     for (const [id, observation] of connection.observations)
@@ -1098,7 +1081,6 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     if (continuation === undefined && input.params.goal_intent !== undefined)
       admission.claimConversation(peer, input.session_id);
     const entry: Entry = {
-      operatorInput: continuation === undefined,
       input: structuredClone(input),
       occupancy,
       preparation: new AbortController(),
@@ -1128,7 +1110,6 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       entry.projection = await options.projection(input.params.execution_id);
       assertControl(connection, entry, control.epoch);
       entry.prepared = await options.prepare(input, {
-        scope: control.interactiveScope!,
         signal: entry.preparation.signal,
         conversation: admission.conversation(peer, input.session_id),
         ...(continuation === undefined ? {} : { continuationOf: continuation.executionId }),
@@ -1520,7 +1501,7 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
                 admission.closeSession(peer, entry.ref.session_id);
               } catch {
                 logger.warn(
-                  { event: "hosting.consent.retirement_failed" },
+                  { event: "hosting.control.retirement_failed" },
                   "handoff committed after interactive control retirement",
                 );
               }
@@ -1895,38 +1876,6 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     hasPendingContinuation: () =>
       [...entries.values()].some((entry) => entry.continuationAuthority !== undefined),
     sync,
-    guardAllowlistFor({ owner, executionId }) {
-      const entry = entries.get(executionId);
-      if (owner !== options.owner || entry?.occupancy === undefined) return undefined;
-      const scope = admission.control(entry.occupancy).interactiveScope;
-      if (scope === undefined) return undefined;
-      let allowlist = allowlists.get(scope);
-      if (allowlist === undefined) {
-        allowlist = createGuardSessionAllowlist();
-        allowlists.set(scope, allowlist);
-      }
-      return allowlist;
-    },
-    operatorAuthorityFor({ owner, executionId }) {
-      const entry = entries.get(executionId);
-      if (owner !== options.owner || entry?.occupancy === undefined) return undefined;
-      const scope = admission.control(entry.occupancy).interactiveScope;
-      if (scope === undefined) return undefined;
-      let controller = authorityScopes.get(scope);
-      if (controller === undefined) {
-        controller = new AbortController();
-        authorityScopes.set(scope, controller);
-      }
-      return {
-        captureInput: entry.operatorInput === true,
-        binding: {
-          owner_key_name: owner,
-          session_id: entry.ref.session_id,
-          controller_epoch: scope,
-        },
-        signal: controller.signal,
-      };
-    },
     occupied: (sessionId) => unresolvedSessions.has(sessionId) || admission.occupied(sessionId),
     controlsConversation: (peerId, sessionId) =>
       connections.has(peerId) &&

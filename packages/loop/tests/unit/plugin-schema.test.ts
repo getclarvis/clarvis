@@ -22,12 +22,6 @@ describe("pluginManifestSchema", () => {
     expect(pluginManifestSchema.safeParse(happy).success).toBe(true);
   });
 
-  it("rejects a guard (D3: a plugin must not be able to disarm the workspace guard)", () => {
-    const r = pluginManifestSchema.safeParse({ ...happy, guard: { type: "shell" } });
-    expect(r.success).toBe(false);
-    expect(r.success ? "" : r.error.issues[0]!.message).toContain("guard");
-  });
-
   it("rejects a name that could spoof a namespace or escape a directory", () => {
     for (const name of ["has:colon", "has/slash", "..", "Has-Upper", "has space", ""]) {
       expect(pluginManifestSchema.safeParse({ ...happy, name }).success).toBe(false);

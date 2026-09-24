@@ -63,7 +63,6 @@ export interface InteractionEffects {
   /** Open the isolation picker without changing Guard. */
   openIsolationPicker(): void;
   /** Open the Guard picker without changing isolation. */
-  openReviewPicker(): void;
   /** Open the session Memory picker without changing persisted settings. */
   openMemoryPicker(): void;
   /** Move to the next focus target without activating it or changing transcript selection. */
@@ -113,7 +112,6 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
   "agent.picker": [{ key: "shift+tab" }],
   "activity.toggle": [{ key: "<leader>s" }],
   "isolation.picker": [{ key: "<leader>i" }],
-  "review.picker": [{ key: "<leader>g" }],
   "memory.picker": [{ key: "<leader>m" }],
   "controls.open": [{ key: "<leader>r" }],
   "plan.open": [{ key: "<leader>p" }],
@@ -139,7 +137,6 @@ export const DEFAULT_WHEN: Record<string, string> = {
   "agent.picker": "overlay==none",
   "activity.toggle": "overlay==none",
   "isolation.picker": "overlay==none",
-  "review.picker": "overlay==none",
   "memory.picker": "overlay==none",
   "controls.open": "overlay==none",
   "plan.open": "overlay in (none, plan)",
@@ -720,9 +717,7 @@ export function createInteraction(
       enabled: () => effects.isRunActive(),
       bindings: vital
         .filter((binding) =>
-          ["agent.picker", "isolation.picker", "review.picker", "memory.picker"].includes(
-            String(binding.cmd),
-          ),
+          ["agent.picker", "isolation.picker", "memory.picker"].includes(String(binding.cmd)),
         )
         .map((binding) => ({ ...binding, cmd: () => {} })),
     });

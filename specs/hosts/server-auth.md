@@ -114,7 +114,6 @@ The bind/auth/owner-relevant subset, with the defaults the schema applies:
 | `CLARVIS_SERVER_SESSION_INIT_TIMEOUT_MS` | positive int | `30_000` | `packages/server/src/config/env.ts` |
 | `CLARVIS_SERVER_DRAIN_DELAY_MS` | non-negative int | `5_000` | `packages/server/src/config/env.ts` |
 | `CLARVIS_SERVER_SHUTDOWN_GRACE_MS` | positive int | `15_000` | `packages/server/src/config/env.ts` |
-| `CLARVIS_SERVER_ALLOW_REMOTE_GUARD_APPROVAL` | bool-from-env | `false` | `packages/server/src/config/env.ts` |
 | `CLARVIS_SERVER_ALLOW_PUBLIC_BIND` | bool-from-env | `false` | `packages/server/src/config/env.ts` |
 | `CLARVIS_SERVER_ALLOW_LAN_BIND` | bool-from-env | `false` | `packages/server/src/config/env.ts` |
 | `CLARVIS_SERVER_ALLOWED_ORIGINS` | CSV | `[]` | `packages/server/src/config/env.ts` |
@@ -182,7 +181,7 @@ same rule a request is held to (`packages/server/src/config/owner.ts`, consumed 
 | `createAuthLayer(opts): Promise<AuthLayer>` | `{ configDir, authFile?, publicUrl?, mcpPath, audit? }` | `packages/server/src/auth/bootstrap.ts`, opts |
 | `AuthConfig` | `{ issuer, resource, tokenTtlS, clients, roles }` | `packages/server/src/auth/auth-config.ts` |
 | `AuthClient` | `{ clientId, secretHash, owner, role, disabled }` | `packages/server/src/auth/auth-config.ts` |
-| `RolePermissions` | `{ agents, guardConfirmations, mayImpersonateOwner, maxRuns? }` | `packages/server/src/auth/auth-config.ts` |
+| `RolePermissions` | `{ agents, mayImpersonateOwner, maxRuns? }` | `packages/server/src/auth/auth-config.ts` |
 | `BUILT_IN_ROLES` | frozen `{ admin, user }` | `packages/server/src/auth/auth-config.ts` |
 | `parseAuthConfig(raw, defaults)` | validate + resolve defaults | `packages/server/src/auth/auth-config.ts` |
 | `readAuthConfig(file, defaults)` | bounded read + parse | `packages/server/src/auth/auth-config.ts` |
@@ -215,14 +214,6 @@ same rule a request is held to (`packages/server/src/config/owner.ts`, consumed 
 | `UNMATCHABLE_SECRET_HASH` | digest of 32 zero bytes | `packages/server/src/auth/secrets.ts` |
 | `MIN_CLIENT_SECRET_LENGTH` / `SECRET_HASH_PREFIX` | `32` / `"sha256:"` | `packages/server/src/auth/secrets.ts` |
 | `readBoundedUtf8Sync(file, maxBytes)` | fd-based bounded read | `packages/server/src/auth/bounded-file.ts` |
-
-Where this layer hands the elicitation posture to the MCP facade:
-`CLARVIS_SERVER_ALLOW_REMOTE_GUARD_APPROVAL` (`packages/server/src/config/env.ts`) becomes
-`McpServerLimits.allowRemoteGuardApproval` (`packages/server/src/http/serve.ts`), and the facade
-combines it with the role's own `guardConfirmations` — a guard confirmation is only relayed to a
-remote caller when *both* the server switch is on and `principal.permissions.guardConfirmations
-=== "relay"` (`packages/server/src/mcp/run-tool.ts`, resolved at
-`packages/server/src/mcp/elicitation.ts`).
 
 ### 2.6 HTTP surface
 
@@ -314,7 +305,6 @@ Field rules:
 | `owner` | `OWNER_RE`, 1–`OWNER_MAX_LENGTH` |
 | `secret_hash` | must satisfy `isClientSecretHash` |
 | `roles.<n>.agents` | `"*"` or 1–256 strings of 1–128 chars |
-| `roles.<n>.guard_confirmations` | `"relay" \| "deny"` |
 | `roles.<n>.may_impersonate_owner` | boolean |
 | `roles.<n>.max_runs` | coerced positive int |
 
@@ -323,10 +313,10 @@ Size ceilings: file ≤ 2 MiB (`MAX_AUTH_CONFIG_BYTES`), ≤ 4096 clients, ≤ 2
 **Role folding** (`packages/server/src/auth/auth-config.ts`): the result starts as a copy of
 `BUILT_IN_ROLES`; each declared role inherits from the built-in of the same name, or from `user`
 when there is none, and the declared fields overwrite field by field. `admin` is
-`{agents:"*", guardConfirmations:"relay", mayImpersonateOwner:true}` and `user` is
-`{agents:"*", guardConfirmations:"deny", mayImpersonateOwner:false}`
+`{agents:"*", mayImpersonateOwner:true}` and `user` is
+`{agents:"*", mayImpersonateOwner:false}`
 (`packages/server/src/auth/auth-config.ts`). Pinned at
-`packages/server/tests/unit/auth-config.test.ts` (narrowing `admin` keeps `relay`/`true`) (an undeclared-base role `service` comes out `deny`/`false`).
+`packages/server/tests/unit/auth-config.test.ts` (built-in and declared role inheritance).
 
 **Identity resolution** (`packages/server/src/auth/auth-config.ts`): `issuer` and `resource`
 come from the file, else from `publicUrl` (trailing slash trimmed) with `mcpPath` appended
@@ -1104,7 +1094,6 @@ removed — see §8 item 1.
 | Issuer throws for a reason of its own | `503 temporarily_unavailable`, `auth.token.rejected` audit; the internal message is not a field | `packages/server/src/http/auth-routes.ts`; test `packages/server/tests/integration/auth-edges.test.ts` |
 | Owner mode `fixed` while `auth.json` declares several owners | boots; `auth.owner_mode.ignores_enrolment` warn that data is commingled | `packages/server/src/bin.ts` |
 | Auth off + `header` mode + non-private bind | boots; `bind.owner_unauthenticated` warn | `packages/server/src/bin.ts` |
-| Guard active with no `guard.allowed_commands` | boots; `server.guard.no_allowlist` warn that every command will be denied | `packages/server/src/bin.ts` |
 | Empty `allowedOrigins`/`allowedHosts` | not enforced — "the deployment's network is the boundary" | `packages/server/src/http/guards.ts`, test `packages/server/tests/unit/http-guards.test.ts` |
 | Kernel not yet constructed when a request arrives | `resolveKernel` throws `"kernel is not ready"`; `/readyz` is 503 meanwhile | `packages/server/src/bin.ts`, `packages/server/src/http/serve.ts` |
 | Session initialization exceeds its deadline | `503 unavailable`; reservation released; a late kernel resolution is released in the background | `packages/server/src/http/serve.ts`, `packages/server/src/http/request-budget.ts` |
@@ -1175,7 +1164,7 @@ resolver raise it.
 
 | Consumer | What it takes | Forced by |
 | --- | --- | --- |
-| `src/mcp/run-tool.ts` | `Principal.permissions.agents`, `.guardConfirmations`, `.maxRuns` | `packages/server/src/mcp/run-tool.ts` |
+| `src/mcp/run-tool.ts` | `Principal.permissions.agents`, `.maxRuns` | `packages/server/src/mcp/run-tool.ts` |
 | `src/mcp/server.ts` | `McpServerLimits` assembled from `ServerEnv` | `packages/server/src/http/serve.ts` → `packages/server/src/http/sessions.ts` |
 | `src/host/run-host.ts` | `Principal` on `OwnerContext` and `ResolvedHost` | `packages/server/src/host/run-host.ts` |
 | `src/host/owner-scoping.ts` | passes `ctx.principal` through unchanged | `packages/server/src/host/owner-scoping.ts` |
@@ -1187,9 +1176,7 @@ The `Principal` reaches the tool handlers through `getPrincipal: () => principal
 lets `refreshPrincipal` narrow a live session's permissions between calls
 (`packages/server/src/http/sessions.ts`). Role-based tool refusal itself belongs to
 [hosts/server-mcp.md](server-mcp.md); the tests that cross the seam are
-`packages/server/tests/component/auth-role-enforcement.test.ts` (agent allowlist) (per-role run cap narrowing but never widening the server cap) and
-`packages/server/tests/unit/auth-role-posture.test.ts` (guard confirmations denied unless *both*
-the server switch and the role allow).
+`packages/server/tests/component/auth-role-enforcement.test.ts` (agent allowlist and per-role run cap narrowing without widening the server cap).
 
 ---
 

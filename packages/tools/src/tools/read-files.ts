@@ -1,5 +1,5 @@
 import { ToolError } from "../errors.ts";
-import { resolveReadableTextPath } from "../lib/state-artifacts.ts";
+import { resolveFileToolPath } from "../lib/paths.ts";
 import { bound } from "../lib/output.ts";
 import { renderNumberedSlice } from "../lib/render-lines.ts";
 import { splitLines } from "../lib/text.ts";
@@ -102,8 +102,8 @@ export const readFiles: ToolDef = {
 
       let section: string;
       try {
-        const { target, options } = resolveReadableTextPath(rel, config);
-        const text = (await readTextFile(target, rel, config.maxFileBytes, options)).content;
+        const target = resolveFileToolPath(rel, config);
+        const text = (await readTextFile(target, rel, config.maxFileBytes)).content;
         const header = `==> ${rel} <==`;
         if (text === "") {
           section = `${header}\n(empty file)`;

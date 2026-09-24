@@ -144,7 +144,7 @@ describe("host-owned goal session repository", () => {
           user_preview: "Continue",
           params: { execution_id: "run-1", messages: [{ role: "user", content: "Continue" }] },
         },
-        { scope: "scope", signal: new AbortController().signal },
+        { signal: new AbortController().signal },
       );
       await prepared.commitIntent();
       await f.control({ expected_revision: 2, operation_id: "cancel", action: { kind: "cancel" } });
@@ -220,7 +220,7 @@ describe("host-owned goal session repository", () => {
         user_preview: "Continue",
         params: { execution_id: "run-1", messages: [{ role: "user", content: "Continue" }] },
       },
-      { scope: "scope", signal: new AbortController().signal },
+      { signal: new AbortController().signal },
     );
     await prepared.commitIntent();
     const result: RunResult = { execution_id: "run-1", status: "cancelled" };
@@ -433,7 +433,7 @@ describe("host-owned goal session repository", () => {
         user_preview: "Continue",
         params: { execution_id: "run-1", messages: [{ role: "user", content: "Continue" }] },
       },
-      { scope: "scope", signal: new AbortController().signal },
+      { signal: new AbortController().signal },
     );
     const outcome = pending.then(
       () => "unexpected preparation",

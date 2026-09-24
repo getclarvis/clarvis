@@ -47,7 +47,7 @@ export const SETTINGS_ITEMS = [
   {
     id: "controls",
     label: "Run controls",
-    desc: "Safety, sandbox, guard, memory and plan retention for the next run",
+    desc: "Safety, sandbox, memory and plan retention for the next run",
     cmd: "controls.open",
   },
 ] as const;

@@ -1,8 +1,7 @@
 import { fs } from "../lib/environment-fs.ts";
 import path from "node:path";
-import { configurationRoots, configurationTarget } from "@clarvis/paths";
 import { fsError } from "../errors.ts";
-import { isAdmittedFileToolSearchPath, resolveFileToolPath } from "../lib/paths.ts";
+import { resolveFileToolPath } from "../lib/paths.ts";
 import { mapLimit, statDirectory, STAT_CONCURRENCY } from "../lib/files.ts";
 import type { ToolDef } from "./types.ts";
 
@@ -48,30 +47,10 @@ export const listDir: ToolDef = {
 
     const entries = [];
     let truncated = false;
-    const workspaceRoots = configurationRoots({ workspaceRoot: config.workspaceRoot });
-    const roots = config.configurationRoots ?? {
-      workspace_clarvis: workspaceRoots.workspace_clarvis,
-      workspace_agents: workspaceRoots.workspace_agents,
-    };
     try {
       const dir = await fs.opendir(target);
       try {
         for await (const entry of dir) {
-          const candidate = path.join(target, entry.name);
-          const classified = configurationTarget(roots, candidate);
-          const brokenLink =
-            entry.isSymbolicLink() &&
-            (await fs.stat(candidate).then(
-              () => false,
-              (error: NodeJS.ErrnoException) => error.code === "ENOENT",
-            ));
-          if (
-            classified?.kind === "secret" ||
-            classified?.kind === "reserved_unknown" ||
-            (classified !== undefined && entry.isSymbolicLink()) ||
-            (!brokenLink && !isAdmittedFileToolSearchPath(candidate, config))
-          )
-            continue;
           if (entries.length >= config.maxTraversalEntries) {
             truncated = true;
             break;

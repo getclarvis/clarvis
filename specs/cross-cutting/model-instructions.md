@@ -30,7 +30,7 @@ and user-authored extensions are not a fixed inventory.
 | Skill loading and resource reads | 2 | `loadSkillTool` and `readSkillResourceTool` in [skills/tool.ts](../../packages/skills/src/tool.ts) |
 | Public MCP run and controls | 4 | [server/mcp/tools.ts](../../packages/server/src/mcp/tools.ts) |
 | MCP resource listing and reading | 2 | [mcp-client/resources.ts](../../packages/mcp-client/src/resources.ts) |
-| Private Judge steps and workflow title | 2 | [run-capability.ts](../../packages/judge/src/run-capability.ts), [workflow-title.ts](../../packages/kernel/src/workflows/workflow-title.ts) |
+| Workflow title | 1 | [workflow-title.ts](../../packages/kernel/src/workflows/workflow-title.ts) |
 
 Prompt assembly also includes the five [built-in agents](../../packages/kernel/src/config/builtin-agents/index.ts),
 the three [built-in workflows](../../packages/workflows/src/builtin-workflows/index.ts),
@@ -40,8 +40,7 @@ the three [built-in workflows](../../packages/workflows/src/builtin-workflows/in
 [memory seed](../../packages/memory/src/seed.ts), [memory policy](../../packages/memory/src/capability.ts)
 and [indexer instructions](../../packages/memory/src/indexer/request.ts),
 [skill catalogs/bootstrap instructions](../../packages/skills/src/tool.ts),
-[MCP instructions](../../packages/loop/src/runtime/mcp-instructions.ts),
-the [host guard prompt](../../packages/code/src/adapters/guard-judge-prompt.ts) and workflow-title prompt.
+[MCP instructions](../../packages/loop/src/runtime/mcp-instructions.ts) and the workflow-title prompt.
 The [entry seed](../../packages/loop/src/runtime/entry-seed.ts) composes active capability sections;
 the [kernel config contract](../hosts/kernel-config.md) owns operator context and profile overrides.
 Hooks contribute configured lifecycle results under the [hooks contract](../execution/hooks.md),
@@ -93,8 +92,7 @@ may already have written files; workflow failure is not a workspace rollback.
 Memory keeps its existing scoped/on-demand guidance. Skills load a named or description-matching
 body through `load_skill`, then bundled files through `read_skill_resource`. Their write-authority,
 resource paths, pagination and bootstrap exceptions are load-bearing rather than removable
-verbosity. The same applies to guard decision isolation, Isolation Sandbox `require_escalated` /
-`host_command` review, resource data limits and human-question semantics; their handlers and
+verbosity. The same applies to native Sandbox isolation, resource data limits and human-question semantics; their handlers and
 authority contracts are unchanged by the instruction review.
 
 ## 5. Invariants
@@ -187,7 +185,7 @@ Reviewed without changing their contracts: memory [README](../../packages/memory
 [capability](../capabilities/memory-capability.md) and [indexer](../capabilities/memory-indexer.md);
 skills [README](../../packages/skills/README.md) and [spec](../execution/skills.md);
 MCP client [README](../../packages/mcp-client/README.md) and [spec](../foundations/mcp-client.md);
-[command guard](../execution/command-guard.md), [hooks](../execution/hooks.md),
+[sandbox](../execution/sandbox.md), [hooks](../execution/hooks.md),
 [security](security.md), [prompt cache](prompt-cache.md) and [known issues](../known-issues.md).
 Their scoped loading, trust and runtime contracts remain necessary; this is not a rewrite of every
 unchanged string. No new package or dependency edge is introduced. Public guides remain owned by

@@ -1,36 +1,14 @@
-import { randomUUID } from "node:crypto";
 import { workspaceStatePathsFromRoot } from "@clarvis/paths";
 import { dispatch } from "./core.ts";
 import { resolveConfig, type AgentToolsOptions } from "./config.ts";
 import { ToolError, parseToolError } from "./errors.ts";
-import type { FileOp } from "./lib/atomic.ts";
 import {
-  mutationDigest,
   parseFilesystemParentMessage,
   readFilesystemFrames,
   writeFilesystemFrame,
   type FilesystemChildMessage,
   type FilesystemWireContext,
 } from "./lib/filesystem-protocol.ts";
-
-const MUTATIONS = new Set([
-  "write_file",
-  "edit_file",
-  "multi_edit",
-  "replace",
-  "apply_patch",
-  "copy",
-  "move",
-  "mkdir",
-  "remove",
-]);
-
-interface PendingReview {
-  readonly id: string;
-  readonly digest: string;
-  resolve(route: "worker" | "classified-host"): void;
-  reject(error: Error): void;
-}
 
 /**
  * The only model-file executor in a native Sandbox. This entry is launched
@@ -39,41 +17,14 @@ interface PendingReview {
 export async function runFilesystemWorker(): Promise<void> {
   let policyIdentity: string | undefined;
   let initialized = false;
-  let closed = false;
   let writing = Promise.resolve();
   const controllers = new Map<string, AbortController>();
-  const reviews = new Map<string, PendingReview>();
   const send = (message: FilesystemChildMessage): Promise<void> => {
     writing = writing.then(() => writeFilesystemFrame(process.stdout, message));
     return writing;
   };
 
-  const reviewFor =
-    (id: string, phase: (next: "review" | "commit") => void) =>
-    async (operations: readonly FileOp[], commit: () => Promise<void>): Promise<void> => {
-      if (policyIdentity === undefined || closed)
-        throw new ToolError("aborted", "Filesystem service is closed");
-      const batchId = randomUUID();
-      const digest = mutationDigest(policyIdentity, id, operations);
-      phase("review");
-      const route = await new Promise<"worker" | "classified-host">((resolve, reject) => {
-        reviews.set(batchId, { id, digest, resolve, reject });
-        void send({ kind: "prepare", id, batchId, digest, operations }).catch((error: unknown) => {
-          reviews.delete(batchId);
-          reject(error instanceof Error ? error : new Error("Filesystem channel failed"));
-        });
-      });
-      if (route === "worker") {
-        phase("commit");
-        await commit();
-      }
-    };
-
-  const optionsFor = (
-    context: FilesystemWireContext,
-    id: string,
-    phase: (next: "review" | "commit") => void,
-  ): AgentToolsOptions => ({
+  const optionsFor = (context: FilesystemWireContext): AgentToolsOptions => ({
     workspaceRoot: context.workspaceRoot,
     statePaths: workspaceStatePathsFromRoot(context.workspaceRoot, context.stateRoot),
     temporaryRoots: context.temporaryRoots,
@@ -88,12 +39,6 @@ export async function runFilesystemWorker(): Promise<void> {
     maxToolMetaBytes: context.maxToolMetaBytes,
     regexScanBudgetMs: context.regexScanBudgetMs,
     probeRipgrep: () => context.ripgrepAvailable,
-    ...(context.configurationRoots === undefined
-      ? {}
-      : {
-          configurationRoots: context.configurationRoots,
-        }),
-    ...(context.reviewMutation ? { reviewMutation: reviewFor(id, phase) } : {}),
   });
 
   try {
@@ -108,33 +53,11 @@ export async function runFilesystemWorker(): Promise<void> {
       }
       if (!initialized) throw new Error("Filesystem service invoked before initialization");
       if (message.kind === "close") {
-        closed = true;
         for (const controller of controllers.values()) controller.abort();
-        for (const review of reviews.values())
-          review.reject(new Error("Filesystem service closed"));
-        reviews.clear();
         break;
       }
-      if (closed) throw new Error("Filesystem service is closed");
       if (message.kind === "cancel") {
         controllers.get(message.id)?.abort();
-        for (const [batchId, review] of reviews) {
-          if (review.id !== message.id) continue;
-          reviews.delete(batchId);
-          review.reject(new ToolError("aborted", "Filesystem operation cancelled"));
-        }
-        continue;
-      }
-      if (message.kind === "commit" || message.kind === "reject") {
-        const review = reviews.get(message.batchId);
-        if (review === undefined || review.id !== message.id)
-          throw new Error("Filesystem review receipt is unknown");
-        reviews.delete(message.batchId);
-        if (message.kind === "commit") {
-          if (review.digest !== message.digest)
-            throw new Error("Filesystem review receipt does not match the prepared batch");
-          review.resolve(message.route);
-        } else review.reject(new ToolError("denied", "Filesystem mutation was not approved"));
         continue;
       }
       if (controllers.has(message.id)) throw new Error("Filesystem request identity was reused");
@@ -143,9 +66,7 @@ export async function runFilesystemWorker(): Promise<void> {
       const controller = new AbortController();
       controllers.set(message.id, controller);
       void (async () => {
-        let phase: "prepare" | "review" | "commit" | "execute" = MUTATIONS.has(message.operation)
-          ? "prepare"
-          : "execute";
+        const phase = "execute" as const;
         const failure = (error: ToolError | undefined): FilesystemChildMessage => ({
           kind: "failure",
           version: 1,
@@ -176,11 +97,7 @@ export async function runFilesystemWorker(): Promise<void> {
             : {}),
         });
         try {
-          const config = resolveConfig(
-            optionsFor(message.context, message.id, (next) => {
-              phase = next;
-            }),
-          );
+          const config = resolveConfig(optionsFor(message.context));
           const result = await dispatch(message.operation, message.args, config, controller.signal);
           if (result.isError) {
             const part = result.content[0];
@@ -197,9 +114,7 @@ export async function runFilesystemWorker(): Promise<void> {
       });
     }
   } finally {
-    closed = true;
     for (const controller of controllers.values()) controller.abort();
-    for (const review of reviews.values()) review.reject(new Error("Filesystem channel closed"));
     await writing.catch(() => undefined);
   }
 }

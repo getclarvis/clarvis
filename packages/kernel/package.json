@@ -81,7 +81,6 @@
     "@clarvis/trace": "workspace:*",
     "@clarvis/workflows": "workspace:*",
     "yaml": "^2.9.0",
-    "zod": "^4.4.3",
-    "@clarvis/judge": "workspace:*"
+    "zod": "^4.4.3"
   }
 }

@@ -824,8 +824,7 @@ async function runDispatch(
        * A rewritten call is a **new object**: the provider's own call has
        * already been appended to the context, and mutating it would rewrite the
        * assistant message the model sent and break the request prefix. The
-       * replacement still meets the tool's schema and the command guard, both of
-       * which sit downstream of this point.
+       * replacement still meets the tool's schema downstream of this point.
        */
       const call: LLMToolCall =
         rewritten === undefined

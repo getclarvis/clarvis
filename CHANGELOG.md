@@ -7,6 +7,8 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Changed
 
+- Removed Shell Guard, Judge, command review and file-tool path admission. Shell and file tools now
+  follow host permissions or the configured native Sandbox policy.
 - Removed Docker and Podman execution, container images and runtime installers. Isolation now offers
   Host and Sandbox; remote SSH connections remain available. Release candidates use source identity
   and stable releases continue to publish portable binaries.
@@ -34,9 +36,6 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 - `/diff` and `Ctrl+X D` show the current Git working tree, including staged, unstaged and untracked
   files, instead of grouping transcript tool calls. The overlay opens on an empty conversation.
-- Isolation and command review are independent controls. `Ctrl+X I` selects Host or native Sandbox,
-  while `Ctrl+X G` selects Off, Approval or Auto review. Settings > Run controls and `Ctrl+X I`
-  expose the same choices.
 - `/background`, `/background list`, `/attach` and scoped cancellation let a local Host/Sandbox run
   continue after its TUI closes and return to the same execution later. SSH retains list, attach
   and cancel only while its current client connection is alive.
@@ -46,9 +45,6 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   open, with pause, resume, cancellation and bounded run counts.
 - `--remote` with `--remote-workspace` keeps the TUI local while an authenticated OpenSSH channel
   runs a process-owned Clarvis host on another machine.
-- Clarvis can author its own bounded configuration through the reviewed `configure_clarvis` writer.
-  `/clarvis-configure` loads the embedded guide in the current conversation without changing agent
-  or placement.
 - Composer `$name` mentions expand a unique user-invocable skill into the current turn without
   starting another run. Agent-backed skills, environment-shaped tokens and the reserved
   `$clarvis-configure` name stay literal.
@@ -76,18 +72,8 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Fixed
 
-- Auto command review never elicits a person. Dangerous matches, Judge denials and Judge
-  uncertainty are refused to the principal with the exact policy match; unsandbox is a Judge
-  decision. Approval (`on`) asks a human only for the grey zone that is neither allow-listed nor
-  dangerous, and denies forced removal of a credential file instead of prompting. Judge policy
-  now states that deny and unsure are closed refusals to the calling agent, not a handoff to a
-  person or TUI prompt.
 - Grok subscription catalogs keep `vision` unless the entitled payload omits image input, so persisted
   `tool_calling`-only rows can no longer strip composer images as if the model were blind.
-- Auto review denies uncertainty, model failures and malformed answers to the calling agent and
-  never selects human fallback.
-- `$clarvis-configure` remains literal despite the embedded guide intentionally having no agent
-  override, preserving explicit configuration disclosure.
 - SSH sessions no longer claim that a promoted run can survive TUI exit: the SSH stdio channel owns
   its remote Kernel and closes it when the connection ends.
 - `/model` can request an explicit context target through `runs.context` again; the optional field is
@@ -97,21 +83,10 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   plan mutation tools, and strict digest checks remain intact.
 - Agent and workflow counts appear only in the sidebar; the footer no longer repeats the roster.
 - Corrupt PNG tool results are refused before they can enter a later provider request.
-- Long accepted user prompts and slim follow-up turns now retain their authenticated conversation
-  scope for automatic command review instead of forcing manual approval through missing evidence.
-- Explicit non-forced current-branch pushes and bounded pull-request metadata/check observations now
-  reach automatic effect review with repository, branch and HEAD attestation instead of stopping as
-  partial evidence before a reviewer attempt.
 - POSIX local hosts now fall back to the private account-scoped namespace under `/tmp` when the
   operator environment's temporary root would make the Unix socket exceed its byte limit, preserving
   independent startup, discovery and reconnection without changing run scratch paths.
 - Settled Markdown no longer keeps a tall streaming height as blank rows above the run outcome.
-
-### Security
-
-- Review Auto evaluates attested effects and authenticated operator scope. Dangerous operations,
-  credentials and Approval-mode decisions remain human-only; review events persist no prompt,
-  response, command arguments or operator evidence payloads.
 
 ## [0.1.1] - 2026-09-04
 

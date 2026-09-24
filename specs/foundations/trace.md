@@ -177,14 +177,6 @@ bounded failure that scheduled the retry. Neither shape retains argument content
 `packages/loop/tests/unit/stream-delta-attribution.test.ts` and
 `packages/trace/tests/unit/trace-mapper-kinds.test.ts`.
 
-`ToolCallDetail.guard?: CommandGuardReview` is the final, persisted command
-review attached only to the terminal call. `mapEntry` preserves it in the
-persisted `TraceEvent`; `tool_call_started` and live output deltas do not carry
-an interim verdict. Production: `ToolCallDetail`/`CommandGuardReview` in
-`packages/capability/src/trace-kinds.ts` and the `tool_call` arm in
-`packages/trace/src/trace-mapper.ts`. Test: the tool projection case in
-`packages/trace/tests/unit/trace-mapper.test.ts`.
-
 `tool_control_released` is a live signal keyed by the original call and opaque stop token. It
 marks physical settlement of a yielded shell and is excluded from persisted traces; run settlement
 removes controls when a client restores historical events. Production: `ToolControlReleasedDetail`
@@ -1398,16 +1390,6 @@ Only two packages declare it: `@clarvis/loop` and `@clarvis/kernel` (their packa
   (`.github/workflows/ci.yml`). `process.kill(pid, 0)` (`packages/trace/src/journal-recovery.ts`) and the file-mode assertions
   (`packages/trace/src/json-trace-store.ts`; `packages/trace/src/journal.ts`) are POSIX-shaped; whether they behave as specified
   on Windows is unverified from this repository.
-## Transversal operator state
-
-`operator_authority_state` is a sanitized versioned `ExecutionRecord` field, not a tools capability
-slot. Only kernel binding validation may restore its active envelope. It is absent from public
-event projection and model context; missing recovery state fails closed. Production:
-[record-builder.ts](../../packages/trace/src/record-builder.ts) and
-[operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts).
-Test: [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).
-See [effect review](../execution/effect-review.md).
-
 ## Visibility views and physical identity
 
 `TraceStore` backends attest native filtering with `visibilityQueries: true`. Query methods accept

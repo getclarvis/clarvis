@@ -10,7 +10,7 @@ test("the engine has no reviewer configuration or product import", () => {
       /\b(?:guard_judge|effect_review|GuardJudgeConfig|EffectReviewConfig|JudgeCapability)\b|@clarvis\/judge/,
     );
   }
-  for (const file of ["api.ts", "operator-authority.ts", "index.ts"]) {
+  for (const file of ["api.ts", "index.ts"]) {
     const source = readFileSync(resolve(root, "../capability/src", file), "utf8");
     expect(source).not.toMatch(/\b(?:guard_judge|GuardJudgeConfig|EffectReviewConfig)\b/);
   }

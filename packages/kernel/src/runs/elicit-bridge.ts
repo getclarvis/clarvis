@@ -6,7 +6,6 @@ import type {
   ElicitationResponse,
   ElicitWindowPolicy,
 } from "@clarvis/protocol";
-import type { GuardElicitParams } from "../guard/guard-elicit.ts";
 import { kernelError } from "../core/errors.ts";
 
 /**
@@ -274,13 +273,11 @@ export function createElicitBridge(
     });
 
   const elicit: Elicit = (params, opts) => {
-    const { detail } = params as GuardElicitParams;
     return enqueue(
       {
         kind: params.kind ?? "ask_user",
         prompt: params.message,
         schema: params.requestedSchema as unknown as Record<string, unknown>,
-        ...(detail !== undefined ? { detail } : {}),
       },
       opts.signal,
       windowFor(options.policy, params),

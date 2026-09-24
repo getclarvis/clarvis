@@ -66,7 +66,6 @@ export {
   type SettingsFile,
 } from "./settings/settings-schema.ts";
 export { settingsServerToEngine } from "./settings/engine-server.ts";
-export { defaultGuardMode, type GuardConfig } from "./runtime/capabilities/tools-settings.ts";
 export type {
   ResolvedSandboxSettings,
   SandboxSettings,

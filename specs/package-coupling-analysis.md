@@ -23,18 +23,17 @@ The table and Mermaid source belong to the generator and must stay exactly as em
 
 <!-- prettier-ignore-start -->
 <!-- package-graph:start -->
-Packages: 20; internal edges: 55; optional edges: 3.
+Packages: 19; internal edges: 52; optional edges: 3.
 
 | Package | Role | Direct internal dependencies | Internal consumers |
 | --- | --- | --- | ---: |
-| `capability` | foundation | — | 15 |
+| `capability` | foundation | — | 14 |
 | `code` | application | `kernel`, `paths`, `protocol` | 0 |
 | `goal` | product-capability | `capability`, `loop` | 1 |
 | `hooks` | execution-service | `capability`, `tools` | 1 |
-| `judge` | product-capability | `capability`, `loop` | 1 |
-| `kernel` | host-implementation | `capability`, `goal`, `judge`, `llm`, `loop`, `mcp-client`, `memory`, `paths`, `plan`, `protocol`, `skills`, `tasks`, `tools`, `trace`, `workflows` | 2 |
+| `kernel` | host-implementation | `capability`, `goal`, `llm`, `loop`, `mcp-client`, `memory`, `paths`, `plan`, `protocol`, `skills`, `tasks`, `tools`, `trace`, `workflows` | 2 |
 | `llm` | execution-service | `capability` | 2 |
-| `loop` | engine | `capability`, `hooks` (optional), `llm`, `mcp-client`, `paths`, `skills` (optional), `supervision`, `tools` (optional), `trace` | 5 |
+| `loop` | engine | `capability`, `hooks` (optional), `llm`, `mcp-client`, `paths`, `skills` (optional), `supervision`, `tools` (optional), `trace` | 4 |
 | `mcp-client` | execution-service | `capability`, `paths` | 2 |
 | `memory` | product-capability | `capability`, `loop`, `paths` | 1 |
 | `paths` | foundation | — | 10 |
@@ -75,7 +74,6 @@ flowchart LR
   end
   subgraph role_product_capability["product capabilities"]
     goal["@clarvis/goal"]
-    judge["@clarvis/judge"]
     memory["@clarvis/memory"]
     plan["@clarvis/plan"]
     tasks["@clarvis/tasks"]
@@ -95,11 +93,8 @@ flowchart LR
   goal --> loop
   hooks --> capability
   hooks --> tools
-  judge --> capability
-  judge --> loop
   kernel --> capability
   kernel --> goal
-  kernel --> judge
   kernel --> llm
   kernel --> loop
   kernel --> mcp_client

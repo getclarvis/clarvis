@@ -19,16 +19,12 @@ import { ActivityDetail } from "../../src/views/overlays/ActivityDetail.tsx";
 import { WorktreeExitPrompt } from "../../src/views/overlays/WorktreeExitPrompt.tsx";
 import { AgentProfilePicker } from "../../src/views/overlays/AgentProfilePicker.tsx";
 import { IsolationPicker } from "../../src/views/overlays/IsolationPicker.tsx";
-import { ReviewPicker } from "../../src/views/overlays/ReviewPicker.tsx";
 import { CatalogPicker } from "../../src/views/config/CatalogPicker.tsx";
-import { ElicitBlock } from "../../src/views/ElicitBlock.tsx";
 import { HintToast } from "../../src/views/Footer.tsx";
 import { Sidebar } from "../../src/views/Sidebar.tsx";
 import { Splash } from "../../src/views/Splash.tsx";
 import type { ActivityStore } from "../../src/adapters/activity-store.ts";
-import type { ElicitRequestParams } from "../../src/adapters/elicit-types.ts";
 import type { AgentProfileView } from "../../src/adapters/agents.ts";
-import type { GuardModeStore } from "../../src/adapters/guard-mode.ts";
 import type { SettingsAdapter } from "../../src/adapters/settings.ts";
 import { createViewHost } from "../../src/views/config/view-host.tsx";
 import { WorkflowsHub } from "../../src/views/config/WorkflowsHub.tsx";
@@ -139,28 +135,11 @@ const catalogRows = Array.from({ length: 100 }, (_, index) => ({
 
 const safetySettings = {
   effective: () => ({
-    guard: { type: "shell", mode: "auto" as const },
     sandbox: { enabled: true },
   }),
   read: () => undefined,
   write: async () => {},
 } as unknown as SettingsAdapter;
-const safetyGuard = {
-  mode: () => "auto" as const,
-  setMode: () => {},
-  cycle: () => "auto" as const,
-} satisfies GuardModeStore;
-
-const guardRequest: ElicitRequestParams = {
-  kind: "guard_confirm",
-  message: "command requires approval\n\n$ bun test",
-  requestedSchema: {
-    type: "object",
-    properties: { decision: { type: "string", enum: ["deny", "allow", "allow_session"] } },
-    required: ["decision"],
-  },
-};
-
 const sidebarActivity = {
   subagents: Array.from({ length: 64 }, (_, index) => ({
     id: `worker-${index}`,
@@ -628,42 +607,6 @@ const cases: SoakCase[] = [
     ),
   },
   {
-    name: "review-picker-retained",
-    portal: true,
-    render: (open) => (
-      <SurfaceBoundary active={open} retention="retain-one">
-        {(lifecycle) => (
-          <ReviewPicker
-            interaction={fakeInteraction}
-            settings={safetySettings}
-            guard={safetyGuard}
-            scope={() => "global"}
-            runActive={() => false}
-            active={lifecycle.active}
-            notify={() => {}}
-            onClose={() => {}}
-            onApplied={() => {}}
-          />
-        )}
-      </SurfaceBoundary>
-    ),
-  },
-  {
-    name: "catalog-picker-100-rows",
-    portal: true,
-    render: (open) => (
-      <Show when={open()}>
-        <CatalogPicker
-          keymap={fakeInteraction.keymap}
-          title="Catalog benchmark"
-          rows={() => catalogRows}
-          onPick={() => {}}
-          onClose={() => {}}
-        />
-      </Show>
-    ),
-  },
-  {
     name: "catalog-picker-retained-100-rows",
     portal: true,
     warmupCycles: 220,
@@ -680,15 +623,6 @@ const cases: SoakCase[] = [
           />
         )}
       </SurfaceBoundary>
-    ),
-  },
-  {
-    name: "elicit-guard-confirm",
-    warmupCycles: 400,
-    render: (open) => (
-      <Show when={open()}>
-        <ElicitBlock interaction={fakeInteraction} request={guardRequest} onResolve={() => {}} />
-      </Show>
     ),
   },
   {
@@ -851,9 +785,7 @@ const PRODUCTION_CASES = new Set([
   "worktree-exit-prompt",
   "agent-profile-picker-retained-30-agents",
   "isolation-picker-retained",
-  "review-picker-retained",
   "catalog-picker-retained-100-rows",
-  "elicit-guard-confirm",
   "sidebar-drawer-retained-64-agents",
   "hint-toast",
   "splash",

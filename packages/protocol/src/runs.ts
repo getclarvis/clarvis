@@ -44,23 +44,6 @@ export interface Message {
   content: MessageContent;
 }
 
-/** Guard mode for a run. */
-export type GuardMode = "off" | "on" | "auto";
-
-/** Caller-owned judge configuration for guard confirmations. */
-export interface GuardJudge {
-  /** Data below the host's immutable safety policy. */
-  guidance?: string;
-  /** Model id the judge runs on; omitted defers to the kernel's default. */
-  model?: string;
-  /** Fallback verdict when the judge is not confident: prompt the user or deny. */
-  on_unsure?: "ask" | "deny";
-  /** Milliseconds to wait for the judge before falling back. */
-  timeout_ms?: number;
-  /** Independent reviewer retry budget. */
-  max_retries?: number;
-}
-
 /** Whether memory is engaged for a run. */
 export type MemoryMode = "on" | "off";
 
@@ -118,14 +101,11 @@ export interface StartRunParams {
    * How long a written prompt-cache prefix survives.
    *
    * @remarks Omit to let the kernel derive it: `"1h"` for a run that can park on
-   *   a human (an `ask_user` grant, a plan-review gate, or a guard mode that
-   *   routes bash confirmations to a person), `"5m"` otherwise. The longer
+   *   a human (an `ask_user` grant or a plan-review gate), `"5m"` otherwise. The longer
    *   lifetime costs more to write, so it is worth it only when a pause would
    *   otherwise expire the entry.
    */
   prompt_cache_ttl?: "5m" | "1h";
-  guard_mode?: GuardMode;
-  guard_judge?: GuardJudge;
   memory?: MemoryMode;
   plans?: PlansMode;
   /** Bind this run to one external task in the kernel's current workspace. */
@@ -400,26 +380,6 @@ interface Attributed {
   subagent_id?: string;
 }
 
-/** Durable final decision made by the command guard for one tool call. */
-export interface CommandGuardReview {
-  reviewer_decision?: "allow" | "deny" | "unsure" | "failed";
-  effect_id?: string;
-  relation?: "direct" | "bounded_prerequisite" | "none";
-  failure_kind?:
-    | "timeout"
-    | "auth"
-    | "quota"
-    | "rate_limit"
-    | "transport"
-    | "admission"
-    | "cancelled"
-    | "invalid_response"
-    | "unknown";
-  mode: "on" | "auto";
-  outcome: "allowed" | "denied";
-  answerer: "policy" | "human" | "judge" | "session_allowlist" | "unavailable";
-}
-
 /**
  * Opaque live control for one physical tool invocation.
  *
@@ -553,8 +513,6 @@ export type RunEvent =
       result?: string;
       error?: string;
       diff?: string;
-      /** Final command-review fact, persisted with the shell call for replay. */
-      guard?: CommandGuardReview;
       /**
        * Why this call ended without success when the operator interrupted it.
        *
@@ -859,38 +817,19 @@ export type RunEvent =
   /** Persisted run telemetry for MCPs omitted from an otherwise runnable pool; presentation is client-owned. */
   | { type: "mcp_degraded"; at: Timestamp; servers: { name: string; reason: string }[] };
 
-/** Structured command context on a `guard_confirm` elicitation. */
-export interface ElicitationCommandDetail extends EffectReviewDetail {
-  /** The literal command awaiting approval, exactly as the agent wants to run it. */
-  command: string;
-  /** Absolute directory the command would run in. */
-  cwd: string;
-  /** Why the guard is asking — clients must show it alongside the command. */
-  reason: string;
-  /** Analyzer caveat the approver must see (e.g. undecidable expansions). */
-  warning?: string;
-}
-
 /** Server → client question raised during a run. */
 export interface ElicitationRequest {
   id: string;
   execution_id: string;
   /**
-   * Why the run is asking: `ask_user` (a free question), `guard_confirm` (a
-   * command awaiting approval), `plan_review` (a proposed plan awaiting
+   * Why the run is asking: `ask_user` (a free question), `plan_review` (a proposed plan awaiting
    * approval), or `workflow_review` (an installed workflow preflight).
    * Open-ended (`string & {}`) so a kernel may add kinds without a
    * protocol bump.
    */
-  kind: "ask_user" | "guard_confirm" | "plan_review" | "workflow_review" | (string & {});
+  kind: "ask_user" | "plan_review" | "workflow_review" | (string & {});
   prompt: string;
   schema?: JsonSchema;
-  /**
-   * Structured command context for guard confirmations — clients render this
-   * directly (e.g. as highlighted code) and never parse `prompt`, which stays
-   * the human-readable fallback.
-   */
-  detail?: ElicitationCommandDetail;
   /**
    * Milliseconds this question stays open after a client confirms it is on
    * screen; omitted when no window policy applies to the request.
@@ -1097,4 +1036,3 @@ export interface RunService {
    */
   delete(execution_id: string): Promise<void>;
 }
-import type { EffectReviewDetail } from "./effect-review.ts";

@@ -226,7 +226,7 @@ The configuration document fixture demonstrates exact plugin versus standalone s
 nonempty definition. File authoring does not select that definition: activation still uses the
 preview-bound service and a new kernel snapshot. Workflow definitions themselves are independent
 of this selection; a standalone workflow launcher follows the normal skill allow-list.
-Production: `prepareSkillInclusion` in
+Production: `createExtensionProfileManager` in
 [extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts).
 Test: `authors a nonempty Extension Profile, previews selection, and activates the launcher on
 reconnect` in
@@ -443,23 +443,7 @@ only at an idle boundary and synchronously replace the exact skill catalog; expl
 refreshes the trust surface through the file-kernel adapter before recording consent, while ordinary
 settings reads reuse its cached process snapshot.
 
-New-skill creation through the writer prepares `prepareSkillInclusion` with the exact definition
-and selection revisions when a custom profile is selected. A workspace custom profile gains only
-that skill; a global profile is copied to a workspace definition and selected locally. Its plugin
-references and existing skill exclusions are preserved. The file and membership share one review;
-a conflict prevents the skill write. With `builtin:default`, `prepareSkillInclusion` has no
-membership to author: the default standalone discovery includes the new skill at the next safe
-catalog refresh. A standalone skill by itself is absent from `workspaceTrustFingerprint` and does
-not require workspace approval. The saved selection or refreshed default catalog is effective in
-the next idle generation and survives reopening.
-Production: `prepareSkillInclusion`, `standaloneCatalog`, `defaultStandaloneSelection`, and
-`flushSkillRefresh` in
-[extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts),
-and `workspaceExecutableSurface` in
-[workspace-trust.ts](../../packages/kernel/src/config/workspace-trust.ts). Test:
-`makes an agent-authored standalone skill available on the next run without workspace approval`
-and the custom-profile inclusion cases in
-[file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts).
+Standalone skills written through ordinary file tools are discovered at the next safe catalog refresh. A custom Extension Profile includes only its selected skill references; adding a skill file does not change that definition. The default standalone selection can discover a new skill without workspace trust approval when its content is otherwise admissible. Production: `standaloneCatalog`, `defaultStandaloneSelection`, and `flushSkillRefresh` in [extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts), and `workspaceExecutableSurface` in [workspace-trust.ts](../../packages/kernel/src/config/workspace-trust.ts). Test: exact standalone selection and builtin discovery cases in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts).
 
 - **Production:** `PluginContributions.pin`, `pinnedSkillRoots`,
   `PLUGIN_SKILL_RESOURCE_LIMITS`, `skillSurface`, `hashBoundedFile`, `snapshotPluginExecutables`,

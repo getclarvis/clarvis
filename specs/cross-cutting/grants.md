@@ -287,8 +287,7 @@ For each agent (entry or spawned), `createAgentToolsRunCapability.forAgent(scope
      (`packages/loop/src/runtime/tools/builtin/toolset.ts`).
    - Net effect per ceiling tier: `read` → the 9 read-only tools only; `edit` →
      read-only + the 9 members of `FILE_MUTATING_TOOL_NAMES`, with no `shell`
-     or `shell_session`; `exec` → all 20. Per-call host escalation is a `shell` field, not a
-     separate tool (`packages/tools/src/lib/sandbox-permissions.ts`).
+     or `shell_session`; `exec` → all 20.
 4. `dispatch(name, …)` on the built toolset rejects any call whose `name` is
    not in the filtered `names` set with `{ isError: true, text: "Tool '<name>'
    is not available to this agent." }`

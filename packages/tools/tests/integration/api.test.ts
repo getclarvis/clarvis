@@ -1,15 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createAgentTools, currentShellFlavor, systemTemporaryRoots } from "../../src/index.ts";
 import { configurationRoots } from "@clarvis/paths";
-import {
-  makeWorkspace,
-  cleanup,
-  write,
-  resultText,
-  posixShell,
-  mode,
-  modeBitsEnforced,
-} from "../helpers/fixtures.ts";
+import { makeWorkspace, cleanup, write, resultText, posixShell } from "../helpers/fixtures.ts";
 import { expectedToolNames } from "../helpers/tool-surface.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -53,346 +45,14 @@ describe("createAgentTools (library API)", () => {
     expect(existsSync(join(root, "~"))).toBe(false);
   });
 
-  it("reads generated configuration, but refuses edits and distinguishes unknown targets", async () => {
+  it("reads and writes configuration paths with host permissions", async () => {
     const roots = configurationRoots({ workspaceRoot: root });
-    write(roots.workspace_clarvis, ".gitignore", "plans/\n");
-    const t = createAgentTools({ workspaceRoot: root, probeRipgrep: () => false });
-    const generated = join(roots.workspace_clarvis, ".gitignore");
-    expect((await t.callTool("read_file", { path: generated })).isError).toBe(false);
-    expect(
-      JSON.parse(
-        resultText(
-          (
-            await t.callTool("write_file", {
-              path: generated,
-              content: "changed",
-            })
-          ).content,
-        ),
-      ),
-    ).toMatchObject({ error: "denied" });
-    expect(readFileSync(generated, "utf8")).toBe("plans/\n");
-    expect(
-      JSON.parse(
-        resultText(
-          (
-            await t.callTool("read_file", {
-              path: join(roots.workspace_clarvis, "harness-probe.txt"),
-            })
-          ).content,
-        ),
-      ),
-    ).toMatchObject({ error: "unrecognized_configuration_target" });
+    const target = join(roots.workspace_clarvis, "agents/helper.md");
+    const tools = createAgentTools({ workspaceRoot: root, probeRipgrep: () => false });
+    const written = await tools.callTool("write_file", { path: target, content: "open" });
+    expect(written.isError).toBe(false);
+    expect(readFileSync(target, "utf8")).toBe("open");
   });
-
-  it("requires the host mutation reviewer for protected configuration targets", async () => {
-    const roots = configurationRoots({ workspaceRoot: root });
-    write(roots.workspace_clarvis, "skills/existing/SKILL.md", "existing");
-    write(roots.workspace_agents, "skills/shared/SKILL.md", "shared");
-    const t = createAgentTools({ workspaceRoot: root, probeRipgrep: () => false });
-
-    for (const path of [
-      join(roots.workspace_clarvis, "skills/new/SKILL.md"),
-      join(roots.workspace_agents, "skills/new/SKILL.md"),
-    ]) {
-      const attempt = await t.callTool("write_file", { path, content: "blocked" });
-      expect(attempt.isError).toBe(true);
-      expect(JSON.parse(resultText(attempt.content))).toMatchObject({
-        error: "denied",
-        path,
-      });
-      expect(resultText(attempt.content)).toContain("host-mediated file review");
-    }
-
-    const read = await t.callTool("read_file", {
-      path: join(roots.workspace_clarvis, "skills/existing/SKILL.md"),
-    });
-    expect(read.isError).toBe(false);
-    expect(resultText(read.content)).toContain("existing");
-
-    const copy = await t.callTool("copy", {
-      source: join(roots.workspace_clarvis, "skills/existing/SKILL.md"),
-      destination: "copied-skill.md",
-    });
-    expect(copy.isError).toBe(false);
-
-    const copyIntoConfiguration = await t.callTool("copy", {
-      source: "copied-skill.md",
-      destination: join(roots.workspace_clarvis, "copied-skill.md"),
-    });
-    expect(copyIntoConfiguration.isError).toBe(true);
-    expect(JSON.parse(resultText(copyIntoConfiguration.content))).toMatchObject({
-      error: "unrecognized_configuration_target",
-    });
-
-    const patch = await t.callTool("apply_patch", {
-      patch: [
-        "*** Begin Patch",
-        `*** Update File: ${join(roots.workspace_clarvis, "skills/existing/SKILL.md")}`,
-        "@@",
-        "-existing",
-        "+changed",
-        "*** End Patch",
-      ].join("\n"),
-    });
-    expect(patch.isError).toBe(true);
-    expect(JSON.parse(resultText(patch.content))).toMatchObject({ error: "denied" });
-
-    const replaceConfiguration = await t.callTool("replace", {
-      path: roots.workspace_clarvis,
-      pattern: "existing",
-      replacement: "changed",
-      dry_run: false,
-    });
-    expect(replaceConfiguration.isError).toBe(true);
-    expect(resultText(replaceConfiguration.content)).toContain("host-mediated file review");
-
-    write(root, "ordinary.txt", "shared");
-    const replaceWorkspace = await t.callTool("replace", {
-      path: ".",
-      pattern: "shared",
-      replacement: "changed",
-      dry_run: false,
-    });
-    expect(replaceWorkspace.isError).toBe(false);
-    expect(readFileSync(join(root, "ordinary.txt"), "utf8")).toBe("changed");
-    expect(readFileSync(join(roots.workspace_agents, "skills/shared/SKILL.md"), "utf8")).toBe(
-      "shared",
-    );
-    expect(readFileSync(join(root, "copied-skill.md"), "utf8")).toBe("existing");
-    expect(readFileSync(join(roots.workspace_clarvis, "skills/existing/SKILL.md"), "utf8")).toBe(
-      "existing",
-    );
-  });
-
-  it("requires the host mutation reviewer even when generic guard approves", async () => {
-    const roots = configurationRoots({ workspaceRoot: root });
-    const authored = join(roots.workspace_clarvis, "agents/helper.md");
-    let reviews = 0;
-    const t = createAgentTools({
-      workspaceRoot: root,
-      probeRipgrep: () => false,
-      guard: () => ({
-        verdict: "ask",
-        effects: [
-          {
-            id: "clarvis.authoring.write",
-            class: "local_mutation",
-            inference: "bounded",
-            constraints: {},
-            attestation: "complete",
-            reviewability: "static",
-            analysis_issues: [],
-          },
-        ],
-      }),
-      elicit: () => {
-        reviews++;
-        return true;
-      },
-    });
-    const refused = await t.callTool("write_file", { path: authored, content: "bounded" });
-    expect(refused.isError).toBe(true);
-    expect(resultText(refused.content)).toContain("host-mediated file review");
-    expect(reviews).toBe(0);
-    expect(
-      (
-        await t.callTool("write_file", {
-          path: join(roots.workspace_clarvis, "settings.json"),
-          content: "{}",
-        })
-      ).isError,
-    ).toBe(true);
-    expect(reviews).toBe(0);
-
-    const writer = createAgentTools({
-      workspaceRoot: root,
-      probeRipgrep: () => false,
-      reviewMutation: (_operations, commit) => commit(),
-    });
-    const admitted = await writer.callTool("write_file", { path: authored, content: "bounded" });
-    expect(admitted.isError).toBe(false);
-    expect(readFileSync(authored, "utf8")).toBe("bounded");
-    expect(
-      (
-        await writer.callTool("write_file", {
-          path: join(roots.workspace_clarvis, "settings.json"),
-          content: "{}",
-        })
-      ).isError,
-    ).toBe(false);
-    expect(readFileSync(join(roots.workspace_clarvis, "settings.json"), "utf8")).toBe("{}");
-  });
-
-  it("keeps private configuration unreadable and reviews operational copy targets", async () => {
-    const roots = configurationRoots({ workspaceRoot: root });
-    write(roots.workspace_clarvis, "keys.json", '{"secret":"fixture"}');
-    write(root, "source.json", "{}\n");
-    const ordinary = createAgentTools({ workspaceRoot: root, probeRipgrep: () => false });
-    const read = await ordinary.callTool("read_file", {
-      path: join(roots.workspace_clarvis, "keys.json"),
-    });
-    expect(read.isError).toBe(true);
-    expect(resultText(read.content)).not.toContain("fixture");
-    const copyOut = await ordinary.callTool("copy", {
-      source: join(roots.workspace_clarvis, "keys.json"),
-      destination: "leaked.json",
-    });
-    expect(copyOut.isError).toBe(true);
-    const listed = await ordinary.callTool("list_dir", { path: roots.workspace_clarvis });
-    expect(resultText(listed.content)).not.toContain("keys.json");
-
-    let reviews = 0;
-    const writer = createAgentTools({
-      workspaceRoot: root,
-      probeRipgrep: () => false,
-      guard: () => ({ verdict: "deny", reason: "generic guard" }),
-      reviewMutation: (_operations, commit) => {
-        reviews++;
-        return commit();
-      },
-    });
-    const copied = await writer.callTool("copy", {
-      source: "source.json",
-      destination: join(roots.workspace_clarvis, "settings.json"),
-    });
-    expect(copied.isError).toBe(false);
-    expect(reviews).toBe(1);
-    expect(readFileSync(join(roots.workspace_clarvis, "settings.json"), "utf8")).toBe("{}\n");
-  });
-
-  it("admits only classified global file targets through the entry configuration roots", async () => {
-    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-file-roots-"));
-    try {
-      const roots = configurationRoots({ workspaceRoot: root, globalDir });
-      write(globalDir, "shared-agent.md", "Global fixture.\n");
-      write(globalDir, "keys.json", '{"secret":"fixture"}');
-      const t = createAgentTools({
-        workspaceRoot: root,
-        configurationRoots: roots,
-        reviewMutation: (_operations, commit) => commit(),
-        probeRipgrep: () => false,
-      });
-      const read = await t.callTool("read_file", { path: join(globalDir, "shared-agent.md") });
-      expect(read.isError).toBe(false);
-      expect(resultText(read.content)).toContain("Global fixture.");
-      const privateRead = await t.callTool("read_file", { path: join(globalDir, "keys.json") });
-      expect(privateRead.isError).toBe(true);
-      expect(resultText(privateRead.content)).not.toContain("fixture");
-      const listed = await t.callTool("list_dir", { path: globalDir });
-      expect(listed.isError).toBe(false);
-      expect(resultText(listed.content)).not.toContain("keys.json");
-      const found = await t.callTool("glob", { path: globalDir, pattern: "*.md" });
-      expect(found.isError).toBe(false);
-      expect(resultText(found.content)).toContain("shared-agent.md");
-      expect(resultText(found.content)).not.toContain("keys.json");
-      const searched = await t.callTool("grep", { path: globalDir, pattern: "fixture" });
-      expect(searched.isError).toBe(false);
-      expect(resultText(searched.content)).toContain("shared-agent.md");
-      expect(resultText(searched.content)).not.toContain("keys.json");
-      const exactSearch = await t.callTool("grep", {
-        path: join(globalDir, "shared-agent.md"),
-        pattern: "Global fixture",
-      });
-      expect(exactSearch.isError).toBe(false);
-      expect(resultText(exactSearch.content)).toContain("shared-agent.md");
-      const outside = await t.callTool("write_file", {
-        path: join(globalDir, "private.txt"),
-        content: "no",
-      });
-      expect(outside.isError).toBe(true);
-    } finally {
-      cleanup(globalDir);
-    }
-  });
-
-  it("defers reviewed configuration authoring past the generic guard", async () => {
-    const roots = configurationRoots({ workspaceRoot: root });
-    const authored = join(roots.workspace_clarvis, "agents/deferred.md");
-    let guarded = 0;
-    const writer = createAgentTools({
-      workspaceRoot: root,
-      probeRipgrep: () => false,
-      guard: () => {
-        guarded++;
-        return { verdict: "deny", reason: "generic guard" };
-      },
-      elicit: () => {
-        throw new Error("the generic elicit must not be consulted for a deferred authoring batch");
-      },
-      reviewMutation: (_operations, commit) => commit(),
-    });
-    const admitted = await writer.callTool("write_file", { path: authored, content: "deferred" });
-    expect(admitted.isError).toBe(false);
-    expect(readFileSync(authored, "utf8")).toBe("deferred");
-    expect(guarded).toBe(0);
-    const ordinary = await writer.callTool("write_file", {
-      path: join(root, "notes.md"),
-      content: "ordinary",
-    });
-    expect(ordinary.isError).toBe(true);
-    expect(guarded).toBe(1);
-  });
-
-  it.skipIf(!modeBitsEnforced)(
-    "uses private modes for reviewed writes, replacements and patches",
-    async () => {
-      const roots = configurationRoots({ workspaceRoot: root });
-      const target = join(roots.workspace_clarvis, "shared-agent.md");
-      const tools = createAgentTools({
-        workspaceRoot: root,
-        probeRipgrep: () => false,
-        reviewMutation: (_operations, commit) => commit(),
-      });
-      expect(
-        (await tools.callTool("write_file", { path: target, content: "Initial." })).isError,
-      ).toBe(false);
-      expect(mode(root, ".clarvis")).toBe(0o700);
-      expect(mode(root, ".clarvis/shared-agent.md")).toBe(0o600);
-      expect(
-        (
-          await tools.callTool("edit_file", {
-            path: target,
-            old_string: "Initial.",
-            new_string: "Changed.",
-          })
-        ).isError,
-      ).toBe(false);
-      expect(mode(root, ".clarvis/shared-agent.md")).toBe(0o600);
-      expect(
-        (
-          await tools.callTool("replace", {
-            path: target,
-            pattern: "Changed",
-            replacement: "Reviewed",
-            dry_run: false,
-          })
-        ).isError,
-      ).toBe(false);
-      expect(readFileSync(target, "utf8")).toBe("Reviewed.");
-      expect(mode(root, ".clarvis/shared-agent.md")).toBe(0o600);
-      const added = await tools.callTool("apply_patch", {
-        patch: `*** Begin Patch
-*** Add File: .clarvis/agents/reviewed.md
-+Review.
-*** End Patch`,
-      });
-      expect(added.isError).toBe(false);
-      expect(mode(root, ".clarvis/agents")).toBe(0o700);
-      expect(mode(root, ".clarvis/agents/reviewed.md")).toBe(0o600);
-      const renamed = await tools.callTool("apply_patch", {
-        patch: `*** Begin Patch
-*** Update File: .clarvis/agents/reviewed.md
-*** Move to: .clarvis/agents/renamed.md
-@@
--Review.
-+Review.
-*** End Patch`,
-      });
-      expect(renamed.isError).toBe(false);
-      expect(mode(root, ".clarvis/agents/renamed.md")).toBe(0o600);
-    },
-  );
 
   it("lets native tools read scratch created by shell inside the run-owned temporary root", async () => {
     const temporaryRoot = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-run-owned-")));
@@ -455,7 +115,7 @@ describe("createAgentTools (library API)", () => {
     },
   );
 
-  it("admits a selected package only as a command working directory", async () => {
+  it("allows host file tools to edit a selected package", async () => {
     const packageRoot = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-skill-package-")));
     try {
       write(packageRoot, "helper.txt", "packaged");
@@ -478,14 +138,14 @@ describe("createAgentTools (library API)", () => {
         path: join(packageRoot, "changed.txt"),
         content: "no",
       });
-      expect(writeAttempt.isError).toBe(true);
-      expect(JSON.parse(resultText(writeAttempt.content))).toMatchObject({ error: "path_escape" });
+      expect(writeAttempt.isError).toBe(false);
+      expect(readFileSync(join(packageRoot, "changed.txt"), "utf8")).toBe("no");
     } finally {
       cleanup(packageRoot);
     }
   });
 
-  it("protects a selected package under the workspace from native mutations", async () => {
+  it("allows workspace mutations inside a selected package", async () => {
     const packageRoot = join(root, ".agents", "skills", "demo");
     mkdirSync(packageRoot, { recursive: true });
     const t = createAgentTools({
@@ -498,8 +158,7 @@ describe("createAgentTools (library API)", () => {
       path: join(packageRoot, "changed.txt"),
       content: "no",
     });
-    expect(writeAttempt.isError).toBe(true);
-    expect(JSON.parse(resultText(writeAttempt.content))).toMatchObject({ error: "denied" });
+    expect(writeAttempt.isError).toBe(false);
 
     write(packageRoot, "protected.txt", "unchanged");
     const recursiveAttempt = await t.callTool("replace", {
@@ -509,11 +168,8 @@ describe("createAgentTools (library API)", () => {
       replacement: "changed",
       dry_run: false,
     });
-    expect(recursiveAttempt.isError).toBe(true);
-    expect(JSON.parse(resultText(recursiveAttempt.content))).toMatchObject({
-      error: "denied",
-    });
-    expect(readFileSync(join(packageRoot, "protected.txt"), "utf8")).toBe("unchanged");
+    expect(recursiveAttempt.isError).toBe(false);
+    expect(readFileSync(join(packageRoot, "protected.txt"), "utf8")).toBe("changed");
   });
 
   it.skipIf(!posixShell)(

@@ -153,82 +153,6 @@ describe("settingsSchema (infra)", () => {
     if (!r.success) expect(r.error.issues[0]!.message).toContain("pre_tool_use");
   });
 
-  it("accepts a guard config with type bash", () => {
-    expect(
-      settingsSchema.safeParse({
-        ...happyInfra,
-        guard: { type: "shell" },
-      }).success,
-    ).toBe(true);
-  });
-
-  it("accepts a guard config with allowed_commands", () => {
-    expect(
-      settingsSchema.safeParse({
-        ...happyInfra,
-        guard: { type: "shell", allowed_commands: ["echo", "ls"] },
-      }).success,
-    ).toBe(true);
-  });
-
-  it("accepts a guard config with denied_commands", () => {
-    expect(
-      settingsSchema.safeParse({
-        ...happyInfra,
-        guard: { type: "shell", allowed_commands: ["git"], denied_commands: ["rm -rf"] },
-      }).success,
-    ).toBe(true);
-  });
-
-  it("accepts a guard config with each mode value", () => {
-    for (const mode of ["off", "on", "auto"]) {
-      expect(
-        settingsSchema.safeParse({
-          ...happyInfra,
-          guard: { type: "shell", mode },
-        }).success,
-      ).toBe(true);
-    }
-  });
-
-  it("rejects a guard config with an invalid mode", () => {
-    const r = settingsSchema.safeParse({
-      ...happyInfra,
-      guard: { type: "shell", mode: "yes" },
-    });
-    expect(r.success).toBe(false);
-    expect(r.success ? "" : r.error.issues[0]!.message).toBe(
-      "guard.mode must be 'off', 'on' or 'auto'",
-    );
-  });
-
-  it("rejects an empty denied_commands entry", () => {
-    expect(
-      settingsSchema.safeParse({
-        ...happyInfra,
-        guard: { type: "shell", denied_commands: [""] },
-      }).success,
-    ).toBe(false);
-  });
-
-  it("rejects a guard config with an unknown type", () => {
-    expect(
-      infraCode({
-        ...happyInfra,
-        guard: { type: "network" },
-      }),
-    ).toBe("invalid_value");
-  });
-
-  it("rejects a guard config with unknown keys (strict)", () => {
-    expect(
-      infraCode({
-        ...happyInfra,
-        guard: { type: "shell", extra: true },
-      }),
-    ).toBe("unrecognized_keys");
-  });
-
   it("accepts an opt-in native sandbox", () => {
     expect(
       settingsSchema.safeParse({
@@ -257,12 +181,7 @@ describe("settingsSchema (infra)", () => {
     ).toBe(false);
   });
 
-  it("rejects adversarial guard, sandbox and MCP collection fanout", () => {
-    expect(
-      settingsSchema.safeParse({
-        guard: { type: "shell", allowed_commands: Array(257).fill("git status") },
-      }).success,
-    ).toBe(false);
+  it("rejects adversarial sandbox and MCP collection fanout", () => {
     expect(
       settingsSchema.safeParse({
         sandbox: { type: "native", pass_env: Array(257).fill("CI") },

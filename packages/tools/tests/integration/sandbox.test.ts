@@ -92,6 +92,21 @@ describe("sandboxCommand", () => {
     });
   });
 
+  it("reports an unavailable toolchain without invoking its entrypoint", () => {
+    const emptyPath = mkdtempSync(join(tmpdir(), "clarvis-empty-toolchain-"));
+    try {
+      expect(discoverToolchains(["node"], { PATH: emptyPath })).toEqual([
+        expect.objectContaining({
+          id: "node",
+          available: false,
+          error: expect.stringContaining("not found"),
+        }),
+      ]);
+    } finally {
+      rmSync(emptyPath, { recursive: true, force: true });
+    }
+  });
+
   it.skipIf(process.platform === "win32")(
     "preserves direct execution when sandbox is absent",
     () => {
@@ -202,22 +217,6 @@ describe("sandboxCommand", () => {
     ).toThrow("Native sandbox is required: no native backend");
   });
 
-  it("skips the native probe when forceBare is set", () => {
-    const spec = sandboxCommand({
-      command: "echo ok",
-      cwd: "/ws",
-      workspaceRoot: "/ws",
-      sandbox: { type: "native", availability: "required" },
-      forceBare: true,
-      probe: () => {
-        throw new Error("probe must not run for a bare host spawn");
-      },
-      shell: () => ({ flavor: "posix", file: "sh" }),
-    });
-    expect(spec.file).toBe("sh");
-    expect(spec.sandboxed).toBe(false);
-  });
-
   it.skipIf(process.platform === "win32")(
     "mounts a linked worktree's common Git directory with the workspace posture",
     () => {
@@ -241,7 +240,7 @@ describe("sandboxCommand", () => {
         probe: () => ({ backend: "bubblewrap", mode: "fresh-proc" }),
       });
       expect(writable.args.join("\0")).toContain(
-        ["--ro-bind", realpathSync(common), realpathSync(common)].join("\0"),
+        ["--bind", realpathSync(common), realpathSync(common)].join("\0"),
       );
 
       const readonly = sandboxCommand({
@@ -940,7 +939,7 @@ it.skipIf(process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1")(
 );
 
 it.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable")(
-  "keeps classified workspace documents read-only to sandboxed shell commands",
+  "allows workspace configuration writes inside a writable native sandbox",
   () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-shell-config-"));
     const workspace = join(root, "workspace");
@@ -966,17 +965,10 @@ it.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable")
       if (backend.mode === "unavailable") throw new Error(backend.reason);
       const spec = sandboxCommand({
         command:
-          `if cp '${source}' '${settings}' 2>/dev/null; then exit 41; fi; ` +
-          `if printf changed > '${settings}' 2>/dev/null; then exit 42; fi; ` +
-          `if mv '${source}' '${settings}' 2>/dev/null; then exit 43; fi; ` +
-          `if mkdir '${join(roots.workspace_agents, "skills")}' 2>/dev/null; then exit 44; fi; ` +
-          `if ln '${settings}' '${join(workspace, "linked.txt")}' 2>/dev/null; then exit 45; fi; ` +
-          `if printf changed > '${join(git, "config")}' 2>/dev/null; then exit 46; fi; ` +
-          `if mv '${roots.workspace_clarvis}' '${join(workspace, "renamed-clarvis")}' 2>/dev/null; then exit 47; fi; ` +
-          `if ln '${join(git, "config")}' '${join(workspace, "linked-git")}' 2>/dev/null; then exit 49; fi; ` +
-          `ln -s '${settings}' '${join(workspace, "symlinked-settings")}' && ` +
-          `if printf changed > '${join(workspace, "symlinked-settings")}' 2>/dev/null; then exit 48; fi; ` +
-          `printf ordinary > '${ordinary}'`,
+          `cp '${source}' '${settings}' && ` +
+          `mkdir -p '${join(roots.workspace_agents, "skills")}' && ` +
+          `printf ordinary > '${ordinary}' && ` +
+          `printf changed > '${join(git, "config")}'`,
         cwd: workspace,
         workspaceRoot: workspace,
         temporaryRoots: [scratch],
@@ -989,12 +981,10 @@ it.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable")
         timeout: 10_000,
       });
       expect(result.status, result.stderr).toBe(0);
-      expect(readFileSync(settings, "utf8")).toBe("original\n");
-      expect(readFileSync(join(git, "config"), "utf8")).toBe("original git\n");
+      expect(readFileSync(settings, "utf8")).toBe("replacement\n");
+      expect(readFileSync(join(git, "config"), "utf8")).toBe("changed");
       expect(readFileSync(ordinary, "utf8")).toBe("ordinary");
-      expect(existsSync(join(roots.workspace_agents, "skills"))).toBe(false);
-      expect(existsSync(join(workspace, "linked.txt"))).toBe(false);
-      expect(existsSync(join(workspace, "linked-git"))).toBe(false);
+      expect(existsSync(join(roots.workspace_agents, "skills"))).toBe(true);
 
       const redirected = join(roots.workspace_clarvis, "redirected");
       makeSymlink(ordinary, redirected);
@@ -1007,7 +997,7 @@ it.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable")
           sandbox: { type: "native", filesystem: "workspace-write", network: "none" },
           probe: () => backend,
         }),
-      ).toThrow("redirected");
+      ).not.toThrow();
       rmSync(redirected);
 
       linkSync(settings, join(workspace, "alias.txt"));
@@ -1020,7 +1010,7 @@ it.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable")
           sandbox: { type: "native", filesystem: "workspace-write", network: "none" },
           probe: () => backend,
         }),
-      ).toThrow("writable alias");
+      ).not.toThrow();
       rmSync(join(workspace, "alias.txt"));
       linkSync(join(git, "config"), join(workspace, "git-alias"));
       expect(() =>
@@ -1032,7 +1022,7 @@ it.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable")
           sandbox: { type: "native", filesystem: "workspace-write", network: "none" },
           probe: () => backend,
         }),
-      ).toThrow("writable alias");
+      ).not.toThrow();
       rmSync(join(workspace, "git-alias"));
       rmSync(git, { recursive: true });
       makeSymlink(scratch, git, "dir");
@@ -1045,7 +1035,7 @@ it.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable")
           sandbox: { type: "native", filesystem: "workspace-write", network: "none" },
           probe: () => backend,
         }),
-      ).toThrow("Git metadata root is redirected");
+      ).not.toThrow();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

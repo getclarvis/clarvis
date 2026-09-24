@@ -15,10 +15,7 @@ import {
   createHostExtensionAdmission,
   createHostModelCallAdmission,
 } from "../../src/runtime/build-run-deps.ts";
-import {
-  createAgentToolsCapability,
-  type GuardResolver,
-} from "../../src/runtime/capabilities/tools.ts";
+import { createAgentToolsCapability } from "../../src/runtime/capabilities/tools.ts";
 import { createAskUserCapability } from "../../src/runtime/capabilities/ask-user.ts";
 import { createHooksCapability } from "@clarvis/hooks/capability";
 import { createLogger } from "../../src/logger.ts";
@@ -40,11 +37,7 @@ function answerLLM(): MockLLM {
   });
 }
 
-function stubDeps(
-  llm: MockLLM,
-  traceStore: TraceStore,
-  resolveGuard?: GuardResolver,
-): ExecuteRunDeps {
+function stubDeps(llm: MockLLM, traceStore: TraceStore): ExecuteRunDeps {
   const env = loadEnv({ CLARVIS_MCP_CONNECT_TIMEOUT_MS: "2000", CLARVIS_LOG_LEVEL: "silent" });
   return {
     executionVisibility: "public",
@@ -58,10 +51,7 @@ function stubDeps(
     }),
     traceStore,
     workspaceRoot: process.cwd(),
-    capabilities: [
-      createAgentToolsCapability(resolveGuard !== undefined ? { resolveGuard } : undefined),
-      createAskUserCapability(),
-    ],
+    capabilities: [createAgentToolsCapability(), createAskUserCapability()],
   };
 }
 
@@ -772,48 +762,6 @@ describe("executeRun as the single entry contract", () => {
     });
     expect(response.status).toBe("completed");
     expect(seen).toContain("read_file");
-  });
-
-  it("forwards guard/guardElicit into the run (an `ask` verdict routes to guardElicit)", async () => {
-    const traceStore = createMemoryTraceStore();
-    const llm = new MockLLM({
-      script: [
-        { toolCalls: [{ name: "read_file", arguments: { path: "x.txt" } }] },
-        { text: "ok" },
-      ],
-    });
-    const seenGuard: string[] = [];
-    const seenElicit: string[] = [];
-    const deps = stubDeps(llm, traceStore, () => ({
-      guard: (ctx) => {
-        seenGuard.push(ctx.tool);
-        return { verdict: "ask", reason: "confirm this read" };
-      },
-      elicit: (r) => {
-        seenElicit.push(r.tool);
-        return false;
-      },
-    }));
-    const req: RunRequest = {
-      ...REQUEST,
-      profiles: [
-        {
-          name: "solo",
-          model: "anthropic/x",
-          tools: [],
-          grants: ["read_workspace"],
-          iteration_limit: 5,
-        },
-      ],
-    };
-    const { response } = await executeRun({
-      rawBody: req,
-      owner: "local",
-      deps,
-    });
-    expect(response.status).toBe("completed");
-    expect(seenGuard).toContain("read_file");
-    expect(seenElicit).toContain("read_file");
   });
 
   it("forwards a steer source whose drained message reaches the model", async () => {

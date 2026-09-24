@@ -1,7 +1,6 @@
 import {
   existsSync,
   lstatSync,
-  mkdirSync,
   readdirSync,
   readFileSync,
   readlinkSync,
@@ -13,7 +12,7 @@ import nodePath, { delimiter, dirname, isAbsolute, join, relative, resolve, sep 
 import { spawnSync, type SpawnOptions, type SpawnSyncReturns } from "node:child_process";
 import { createHash } from "node:crypto";
 import { ToolError } from "./errors.ts";
-import { configurationRoots, executableOnPath } from "@clarvis/paths";
+import { executableOnPath } from "@clarvis/paths";
 import { resolveShell, shellArgs, type ShellSpec } from "./shell.ts";
 import type { ToolsLogger } from "./lib/log.ts";
 import { systemExecutableRoots } from "./lib/system-executables.ts";
@@ -92,20 +91,12 @@ export function resolveFilesystemPolicy(input: {
   const protectedRoots = Object.freeze([
     ...new Set([
       ...(workspaceAccess === "read-only" ? [workspaceRoot, ...gitMetadataPaths] : []),
-      ...(input.placement === "sandbox"
-        ? [
-            ...gitMetadataPaths,
-            ...(workspaceAccess === "read-write" ? [resolve(workspaceRoot, ".git")] : []),
-          ]
-        : []),
       ...(sandbox?.readOnlyPaths ?? []),
     ]),
   ]);
   const writableRoots = Object.freeze([
     ...temporaryRoots,
-    ...(workspaceAccess === "read-write"
-      ? [workspaceRoot, ...(input.placement === "host" ? gitMetadataPaths : [])]
-      : []),
+    ...(workspaceAccess === "read-write" ? [workspaceRoot, ...gitMetadataPaths] : []),
   ]);
   const identity = createHash("sha256")
     .update(
@@ -630,11 +621,6 @@ export interface SandboxCommandArgs {
   /** Unused; accepted so existing callers that passed a fallback logger still typecheck. */
   logger?: ToolsLogger | undefined;
   /**
-   * Skip the native backend and return the bare host spawn. Used when a call
-   * requested `require_escalated` after command review.
-   */
-  forceBare?: boolean;
-  /**
    * Environment variable names holding credentials, subtracted from the
    * inherited environment on the unsandboxed path.
    *
@@ -692,39 +678,6 @@ function validatedReadOnlyPaths(sandbox: SandboxConfig, workspaceRoot: string): 
     if (existsSync(path)) validated.push(path);
   }
   return validated;
-}
-
-/** Keep shell processes out of the host-mediated workspace configuration writer. */
-function protectedWorkspaceConfigurationRoots(
-  workspaceRoot: string,
-  createMissing: boolean,
-): string[] {
-  const canonicalWorkspace = canonicalOrSelf(workspaceRoot);
-  const roots = configurationRoots({ workspaceRoot: canonicalWorkspace });
-  const paths = [roots.workspace_clarvis, roots.workspace_agents];
-  for (const path of paths) {
-    let stat;
-    try {
-      stat = lstatSync(path);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-        throw new ToolError("io_error", "Cannot inspect the protected workspace root.");
-    }
-    if (stat === undefined && createMissing && existsSync(canonicalWorkspace)) {
-      try {
-        mkdirSync(path, { mode: 0o700 });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST")
-          throw new ToolError("io_error", "Cannot prepare the protected workspace root.");
-      }
-      stat = lstatSync(path);
-    }
-    if (stat !== undefined) {
-      if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(path) !== path)
-        throw new ToolError("denied", "Protected workspace root is redirected.");
-    }
-  }
-  return paths;
 }
 
 /** Reject writable aliases to documents hidden behind a read-only sandbox mount. */
@@ -883,15 +836,14 @@ function appendBubblewrapMounts(args: string[], mounts: readonly BubblewrapMount
 /**
  * Whether this call commits to native containment or failure, without probing.
  *
- * Both required and legacy optional availability fail closed. Disabled settings,
- * an absent policy, and an explicitly reviewed bare spawn are not contained.
+ * Both required and legacy optional availability fail closed. Disabled settings
+ * and an absent policy are not contained.
  * A true result promises no host fallback, not successful backend availability.
  */
 export function sandboxWouldApply(
   sandbox: (SandboxConfig & { enabled?: boolean }) | undefined,
-  forceBare = false,
 ): sandbox is SandboxConfig {
-  return sandbox !== undefined && sandbox.enabled !== false && !forceBare;
+  return sandbox !== undefined && sandbox.enabled !== false;
 }
 
 /**
@@ -904,7 +856,7 @@ export function sandboxWouldApply(
  *   the native sandbox is unavailable; (`invalid_input`) when a read-only path is
  *   relative or {@link validateReadOnlyPath} rejects it.
  * @remarks
- * When `sandbox` is undefined or `forceBare` is set, the command runs through the
+ * When `sandbox` is undefined, the command runs through the
  * host shell with the host environment less
  * {@link SandboxCommandArgs.secretEnvNames | secretEnvNames}. A configured sandbox
  * whose backend is unavailable fails closed, including `availability: "optional"`.
@@ -915,14 +867,7 @@ export function sandboxWouldApply(
  */
 export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
   const policy = args_.filesystemPolicy;
-  const {
-    command,
-    cwd,
-    secretEnvNames,
-    probe = probeSandbox,
-    shell = resolveShell,
-    forceBare = false,
-  } = args_;
+  const { command, cwd, secretEnvNames, probe = probeSandbox, shell = resolveShell } = args_;
   const workspaceRoot = policy?.workspaceRoot ?? args_.workspaceRoot;
   const gitMetadataPaths = policy?.gitMetadataPaths ?? args_.gitMetadataPaths ?? [];
   const temporaryRoots = policy?.temporaryRoots ?? args_.temporaryRoots ?? [];
@@ -947,35 +892,21 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
       sandboxed: false,
     };
   };
-  if (!sandboxWouldApply(sandbox, forceBare)) return bare();
+  if (!sandboxWouldApply(sandbox)) return bare();
   const support = probe();
   if (support.mode === "unavailable") {
     throw new ToolError("io_error", `Native sandbox is required: ${support.reason}`);
   }
 
   const root = resolve(workspaceRoot);
-  const classifiedPaths =
-    sandbox.filesystem === "workspace-read-only"
-      ? []
-      : protectedWorkspaceConfigurationRoots(root, support.backend === "bubblewrap");
-  const gitPaths = [resolve(root, ".git"), ...gitMetadataPaths.map((path) => resolve(path))].filter(
-    (path) => {
-      try {
-        const stat = lstatSync(path);
-        if (stat.isSymbolicLink())
-          throw new ToolError("denied", "Git metadata root is redirected.");
-        return true;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-        if (error instanceof ToolError) throw error;
-        throw new ToolError("io_error", "Cannot inspect Git metadata root.");
-      }
-    },
-  );
-  assertUnaliasedProtectedEntries([...classifiedPaths, ...gitPaths]);
-  const readOnlyPaths = [...validatedReadOnlyPaths(sandbox, root), ...classifiedPaths, ...gitPaths];
+  const gitPaths = gitMetadataPaths.map((path) => resolve(path));
+  if (sandbox.filesystem === "workspace-read-only") assertUnaliasedProtectedEntries(gitPaths);
+  const readOnlyPaths = [
+    ...validatedReadOnlyPaths(sandbox, root),
+    ...(sandbox.filesystem === "workspace-read-only" ? gitPaths : []),
+  ];
   const protectedRoots = [
-    ...(sandbox.filesystem === "workspace-read-only" ? [root, ...gitMetadataPaths] : []),
+    ...(sandbox.filesystem === "workspace-read-only" ? [root, ...gitPaths] : []),
     ...readOnlyPaths,
   ].map(canonicalOrSelf);
   for (const temporaryRoot of resolvedTemporaryRoots) {
@@ -1046,7 +977,8 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
     },
     ...gitMetadataPaths.map((path) => ({
       path: canonicalOrSelf(path),
-      mode: "--ro-bind" as const,
+      mode:
+        sandbox.filesystem === "workspace-read-only" ? ("--ro-bind" as const) : ("--bind" as const),
       precedence: 1,
     })),
     ...readOnlyPaths.map((path) => ({

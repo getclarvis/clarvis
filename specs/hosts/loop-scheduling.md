@@ -148,7 +148,7 @@ draft, attachment, dialog and elicitation case in
 
 Bindings capture session id and live generation, owner, workspace, Agent Profile and a hash of the
 effective execution configuration. Runtime composition includes settings, resolved profiles and
-agent records; RunHost includes the current guard/judge, memory, plan provider/policy, task binding
+agent records; RunHost includes the current memory, plan provider/policy, task binding
 and Extension Profile identity. Only the fingerprint and a readable agent/model label are retained
 in the job. Current runtime permission checks still apply to every ordinary run.
 

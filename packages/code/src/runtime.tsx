@@ -63,13 +63,7 @@ import {
   type ModelsCatalog,
 } from "./adapters/models-catalog.ts";
 import { createCodeConfigStore, type CodeConfigStore } from "./adapters/code-config.ts";
-import {
-  createGuardModeStore,
-  type GuardMode,
-  type GuardModeStore,
-} from "./adapters/guard-mode.ts";
 import { createMemoryModeStore, type MemoryModeStore } from "./adapters/memory-mode.ts";
-import { loadGuardJudgePrompt } from "./adapters/guard-judge-prompt.ts";
 import { createTheme, createThemePreview, type ThemePreview } from "./theme/theme.ts";
 import type { ThemeConfig } from "./theme/model.ts";
 import { tokens } from "./theme/tokens.ts";
@@ -712,7 +706,6 @@ async function runApp(
   let agentFiles!: AgentsStore;
   let initialAgentFiles: AgentFile[] = [];
   let initialAgentConflicts: string[] = [];
-  let guard!: GuardModeStore;
   let memoryMode!: MemoryModeStore;
   let preview!: ThemePreview;
   const [modelsCatalog, setModelsCatalog] = createSignal<ModelsCatalog | null>(null);
@@ -738,15 +731,6 @@ async function runApp(
     } catch {
       return undefined;
     }
-  }
-
-  function judgePayloadFor(
-    runtimeDirs: ClarvisDirs,
-    mode: GuardMode,
-  ): { guardJudge?: { guidance: string } } {
-    if (mode !== "auto") return {};
-    const guidance = loadGuardJudgePrompt(runtimeDirs).guidance;
-    return guidance.length === 0 ? {} : { guardJudge: { guidance } };
   }
 
   const createRunClientCallbacks = (
@@ -975,7 +959,6 @@ async function runApp(
   const workspaceFiles = createWorkspaceFiles(runClient.files);
 
   interface WorkspaceAdaptersSnapshot {
-    guard: GuardModeStore;
     memoryMode: MemoryModeStore;
     agentFiles: AgentsStore;
     agents: ActiveAgentStore;
@@ -996,10 +979,6 @@ async function runApp(
     let snapshot!: Omit<WorkspaceAdaptersSnapshot, "activate" | "dispose">;
     let activate!: () => void;
     const dispose = createRoot((disposeRoot) => {
-      const nextGuard = createGuardModeStore({
-        code: input.code,
-        settingsGuard: () => input.settings.effective().guard,
-      });
       const nextMemoryMode = createMemoryModeStore({
         settingsMemory: () => input.settings.effective().memory,
       });
@@ -1060,7 +1039,6 @@ async function runApp(
         });
       };
       snapshot = {
-        guard: nextGuard,
         memoryMode: nextMemoryMode,
         agentFiles: nextAgentFiles,
         agents: nextAgents,
@@ -1072,7 +1050,6 @@ async function runApp(
   }
 
   const publishWorkspaceAdapters = (next: WorkspaceAdaptersSnapshot): void => {
-    guard = next.guard;
     memoryMode = next.memoryMode;
     agentFiles = next.agentFiles;
     agents = next.agents;
@@ -1134,8 +1111,6 @@ async function runApp(
       priceFor: (model) => priceForRuntime(input.catalog(), input.settings, model),
       activeProfile: () => input.adapters.agents.active(),
       setActiveProfile: (name) => input.adapters.agents.setActive(name),
-      guardMode: () => input.adapters.guard.mode(),
-      judgePayload: (mode) => judgePayloadFor(input.dirs, mode),
       memoryMode: () => input.adapters.memoryMode.mode(),
       plansMode: () => plansState(input.settings.effective()).mode,
       planProviderKey: () => knownPlanProviderKey(input.settings.effective().plans?.provider),
@@ -1617,9 +1592,6 @@ async function runApp(
     },
     get code() {
       return code;
-    },
-    get guard() {
-      return guard;
     },
     get memoryMode() {
       return memoryMode;

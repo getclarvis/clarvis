@@ -12,7 +12,6 @@ function baseInput(over: Partial<HeaderInput> = {}): HeaderInput {
     agentName: "coder",
     model: "openrouter/x-ai/grok-4.5",
     isolation: "sandbox",
-    review: "off",
     memoryConfigured: true,
     memory: "on",
     plans: { mode: "on", retention: "discard", configured: true },
@@ -46,7 +45,6 @@ test("header is one line carrying identity and the run's governing configuration
   expect(rows[0]).toContain("coder");
   expect(rows[0]).toContain("grok-4.5");
   expect(rows[0]).toContain("Isolation: Sandbox");
-  expect(rows[0]).toContain("Guard: Off");
   expect(rows[0]).toContain("Memory: on");
   expect(rows.join("\n")).toContain("v0.0.4-beta");
   expect(rows[0]).not.toContain("plans:");
@@ -67,7 +65,6 @@ test("the right-anchored version keeps its gutter when the configuration chips f
       agentName: "marshall",
       model: "chatgpt/gpt-5.6-terra",
       isolation: "sandbox",
-      review: "on",
       workspace: "/tmp/clarvis-development-temp/workspace-gAmvlw",
     }),
     120,

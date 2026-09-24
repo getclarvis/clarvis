@@ -32,8 +32,7 @@ export function createElicitSerializer(): <T>(job: () => Promise<T>) => Promise<
  *   `requestedSchema`, framed as a plain `ask_user` question and marked
  *   `origin: "external"`.
  * @remarks The relay is the trust boundary. Forwarding the server's object
- *   verbatim let it borrow host vocabulary — a question could arrive named
- *   `guard_confirm`, so a UI framed it as a command approval, or claim to be
+ *   verbatim let it borrow host vocabulary — a question could claim to be
  *   the engine's own `ask_user`, which is exactly the claim no host may trust.
  *   A relayed question keeps the operational wait bound and never receives an
  *   interactive question window.

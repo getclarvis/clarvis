@@ -24,8 +24,6 @@ import { App, type AppBackend, type AppFleet, type AppProps } from "../../src/vi
 import { createTranscriptStore } from "../../src/adapters/store.ts";
 import { createActivityStore } from "../../src/adapters/activity-store.ts";
 import { createPromptHistory } from "../../src/core/prompt-history.ts";
-import { createGuardModeStore } from "../../src/adapters/guard-mode.ts";
-import type { GuardConfig } from "@clarvis/kernel/policy";
 import { fakeDebugSession } from "../helpers/fake-debug-session.ts";
 import { createMemoryModeStore } from "../../src/adapters/memory-mode.ts";
 import type { Platform } from "../../src/adapters/platform.ts";
@@ -138,7 +136,6 @@ function fakePlatform(over: Partial<Platform> = {}): Platform {
 interface SettingsKnobs {
   defaultModel?: string;
   providersValid?: boolean;
-  guard?: GuardConfig;
   memoryEnabled?: boolean;
   memoryModel?: string;
   /** Drop the `memory:` block entirely — the pre-seed state, which also makes
@@ -163,10 +160,6 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
     return {
       providers: k.providers ?? HEALTHY_PROVIDERS,
       default_model: "defaultModel" in k ? k.defaultModel : HEALTHY_DEFAULT_MODEL,
-      // A host past first boot: the allow list, plans and memory have all been
-      // seeded, so mounting the shell does not fire a one-time seed
-      // notification into the footer these cases are asserting on.
-      guard: k.guard ?? { type: "shell", allowed_commands: ["git status"] },
       memory: k.memoryUnconfigured
         ? undefined
         : {
@@ -246,19 +239,12 @@ function baseFleet(
         read: () => ({}),
         agentDefault: () => undefined,
         clearAgentDefault: () => {},
-        guardModeDefault: () => undefined,
         effectiveTheme: () => ({}) as never,
         asciiEnabled: () => false,
         keySources: () => ({}),
         keySource: () => "auto",
         writeKeySource: () => {},
       } as never),
-    guard: createGuardModeStore({
-      code: {
-        guardModeDefault: () => undefined,
-      },
-      settingsGuard: () => settings.effective().guard as GuardConfig | undefined,
-    }),
     memoryMode: createMemoryModeStore({
       settingsMemory: () => settings.effective().memory,
     }),
@@ -1165,7 +1151,6 @@ test("a saved manual destination binding is active on first boot", async () => {
   });
   const code = {
     agentDefault: () => undefined,
-    guardModeDefault: () => undefined,
     effectiveTheme: () => ({}) as never,
     asciiEnabled: () => false,
     keyboardConfig: () => ({
@@ -1195,7 +1180,6 @@ test("Keyboard settings persists a profile and a normalized diagnostic for this 
   const writes: { id: string; value: unknown }[] = [];
   const code = {
     agentDefault: () => undefined,
-    guardModeDefault: () => undefined,
     effectiveTheme: () => ({}) as never,
     asciiEnabled: () => false,
     keyboardConfig: keyboard,
@@ -1689,11 +1673,11 @@ test("an in-flight elicitation replaces shell navigation with its real actions",
   let out = await captureUntil(t, "New task");
   expect(out).toContain("New task");
 
-  setElicit({ message: "allow this command?", kind: "guard_confirm" });
+  setElicit({ message: "Which command should I run?", kind: "ask_user" });
   await t.renderOnce();
   await t.renderOnce();
   out = t.captureCharFrame();
-  expect(out).toContain("[↵] confirm");
+  expect(out).toContain("[↵] send");
   expect(out).toContain("[esc] cancel");
   expect(out).toContain("[Ctrl+C] cancel / quit");
   expect(out).not.toContain("expand");
@@ -1822,23 +1806,6 @@ test("Ctrl+X I opens the isolation picker and Escape returns to the composer", a
   press(t, "escape");
   const back = await captureUntil(t, "New task");
   expect(back).not.toContain("Select isolation");
-  t.renderer.destroy();
-});
-
-test("Ctrl+X G opens command review without expanding the editor", async () => {
-  const t = await mountApp(defaultProps({}));
-  await captureUntil(t, "New task");
-
-  press(t, "x", { ctrl: true });
-  press(t, "g");
-  const picker = await captureUntil(t, "Select Guard");
-
-  expect(picker).toContain("Approval");
-  expect(picker).toContain("Auto");
-  expect(picker).not.toContain("Task editor");
-  press(t, "escape");
-  const back = await captureUntil(t, "New task");
-  expect(back).not.toContain("Select Guard");
   t.renderer.destroy();
 });
 
@@ -2420,7 +2387,6 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   expect(out).toContain("[Ctrl+X S] open / close sidebar");
   expect(out).toContain("send / steer");
   expect(out).toContain("isolation");
-  expect(out).toContain("Guard");
   expect(out).not.toContain("close activity");
   expect(out).not.toContain("Agents 1 · 1 running");
   expect(historyOpen!.width).toBeLessThan(historyWidthBefore!);
@@ -3153,23 +3119,14 @@ test("an elicitation returns an old reader to the live tail before hiding the co
 
   const recorder = new TestRecorder(t.renderer);
   recorder.rec();
-  setElicit({
-    message: "allow the pending write?",
-    kind: "guard_confirm",
-    detail: {
-      command: `bun run ${"long-command-segment ".repeat(8)}`,
-      cwd: "/home/user/project",
-      reason: "The command changes generated client files after a long running response.",
-      warning: "Review the complete command before allowing it.",
-    },
-  });
-  let question = await captureUntil(t, "The command changes generated client files");
+  setElicit({ message: "Which generated client files should I update?", kind: "ask_user" });
+  let question = await captureUntil(t, "Which generated client files should I update?");
   for (let pass = 0; pass < 20 && question.includes("Steer this run"); pass += 1) {
     await t.renderOnce();
     question = t.captureCharFrame();
   }
   recorder.stop();
-  expect(question).toContain("Command approval");
+  expect(question).toContain("Agent asks");
   expect(question).not.toContain("Steer this run");
   expect(t.renderer.root.findDescendantById("transcript-reader-indicator")).toBeUndefined();
   expect(recorder.recordedFrames.length).toBeGreaterThan(0);
@@ -3177,8 +3134,8 @@ test("an elicitation returns an old reader to the live tail before hiding the co
     const frame = recorded.frame;
     const retainedSurface =
       frame.includes("Steer this run") ||
-      frame.includes("Command approval") ||
-      frame.includes("The command changes generated client files");
+      frame.includes("Agent asks") ||
+      frame.includes("Which generated client files should I update?");
     if (!retainedSurface)
       throw new Error(
         `elicitation transition lost both surfaces at frame ${recorded.frameNumber}:\n${frame}`,
@@ -3194,8 +3151,8 @@ test("an elicitation returns an old reader to the live tail before hiding the co
   for (const recorded of recorder.recordedFrames) {
     const frame = recorded.frame;
     const retainedSurface =
-      frame.includes("Command approval") ||
-      frame.includes("The command changes generated client files") ||
+      frame.includes("Agent asks") ||
+      frame.includes("Which generated client files should I update?") ||
       frame.includes("Steer this run");
     if (!retainedSurface)
       throw new Error(
@@ -3826,8 +3783,8 @@ test("a pending elicitation dismisses a clean overlay so the question becomes vi
   await t.renderOnce();
   t.mockInput.pressEnter();
   await captureUntil(t, "Select Agent Profile");
-  setElicit({ message: "allow this command?", kind: "guard_confirm" });
-  const out = await captureUntil(t, "allow this command?");
+  setElicit({ message: "Which files should I update?", kind: "ask_user" });
+  const out = await captureUntil(t, "Which files should I update?");
   expect(out).not.toContain("Select Agent Profile");
   t.renderer.destroy();
 });
@@ -3852,11 +3809,11 @@ test("a pending elicitation does not discard an in-progress config edit", async 
   press(t, "x");
   await captureUntil(t, "Unsaved");
 
-  setElicit({ message: "allow this command?", kind: "guard_confirm" });
+  setElicit({ message: "Which files should I update?", kind: "ask_user" });
   const kept = await captureUntil(t, "the agent is waiting for an answer");
   expect(kept).toContain("Unsaved");
   expect(kept).toContain("contrast checker");
-  expect(kept).not.toContain("allow this command?");
+  expect(kept).not.toContain("Which files should I update?");
   // The question is not on screen, so its decision window must not have started.
   expect(presentations).toHaveLength(0);
 
@@ -3873,7 +3830,7 @@ test("a pending elicitation does not discard an in-progress config edit", async 
   press(t, "y");
   await captureUntil(t, "Run controls");
   press(t, "escape");
-  const answered = await captureUntil(t, "allow this command?");
+  const answered = await captureUntil(t, "Which files should I update?");
   expect(answered).not.toContain("contrast checker");
   // Only now that the block is really visible does the frontend confirm it, once.
   await t.renderOnce();
@@ -3998,7 +3955,6 @@ test("run configuration pickers stay closed during execution and return when idl
     await captureUntil(t, "Steer this run");
     for (const [key, mods] of [
       ["i", {}],
-      ["g", {}],
       ["m", {}],
       ["tab", { shift: true }],
     ] as const) {
@@ -4007,7 +3963,6 @@ test("run configuration pickers stay closed during execution and return when idl
       await t.renderOnce();
       const out = t.captureCharFrame();
       expect(out).not.toContain("Select isolation");
-      expect(out).not.toContain("Select Guard");
       expect(out).not.toContain("Select memory");
       expect(out).not.toContain("Select Agent Profile");
     }
@@ -4016,10 +3971,6 @@ test("run configuration pickers stay closed during execution and return when idl
     press(t, "x", { ctrl: true });
     press(t, "i");
     await captureUntil(t, "Select isolation");
-    press(t, "escape");
-    press(t, "x", { ctrl: true });
-    press(t, "g");
-    await captureUntil(t, "Select Guard");
     press(t, "escape");
     press(t, "x", { ctrl: true });
     press(t, "m");
@@ -4084,19 +4035,10 @@ test("legacy wire input opens leader pickers without consuming the draft and kee
     await t.mockInput.typeText("draft preserved");
     await t.renderOnce();
     const initial = t.captureCharFrame();
-    for (const text of [
-      "Isolation:",
-      "Guard:",
-      "Memory:",
-      "[I] isolation",
-      "[G] guard",
-      "[M] memory",
-      "[E] editor",
-    ])
+    for (const text of ["Isolation:", "Memory:", "[I] isolation", "[M] memory", "[E] editor"])
       expect(initial).toContain(text);
     for (const [key, title] of [
       ["i", "Select isolation"],
-      ["g", "Select Guard"],
       ["m", "Select memory"],
     ] as const) {
       press(t, "x", { ctrl: true });

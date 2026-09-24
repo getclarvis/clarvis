@@ -4,99 +4,9 @@ import { bound } from "./lib/output.ts";
 import { tools, getTool, selectSurface } from "./tools/registry.ts";
 import { textPart, type ContentPart, type ToolResult } from "./tools/content.ts";
 import type { ToolCallHooks } from "./tools/types.ts";
-import { buildGuardContext } from "./guard/context.ts";
-import type { ElicitRequest, GuardReview } from "./guard/types.ts";
 import type { RuntimeConfig } from "./config.ts";
-import { assertOutsideRoots } from "./lib/paths.ts";
-import { configurationRoots, configurationTarget } from "@clarvis/paths";
 import { isFileOperation, type AgentFilesystem } from "./agent-filesystem.ts";
 import { SandboxAgentFilesystem } from "./filesystem-service.ts";
-
-const NATIVE_MUTATION_TOOLS = new Set([
-  "write_file",
-  "edit_file",
-  "multi_edit",
-  "apply_patch",
-  "replace",
-  "move",
-  "copy",
-  "mkdir",
-  "remove",
-]);
-
-/** Refuse native mutations below host-selected skill directories before guard or handler work. */
-function protectSkillPackages(
-  name: string,
-  args: Record<string, unknown>,
-  config: RuntimeConfig,
-): void {
-  if (!NATIVE_MUTATION_TOOLS.has(name) || config.skillExecutionRoots.length === 0) return;
-  const context = buildGuardContext(name, args, config);
-  for (const fact of context.paths) {
-    assertOutsideRoots(fact.resolved, config.skillExecutionRoots, fact.raw, {
-      rejectAncestors: name === "replace",
-    });
-  }
-}
-
-/**
- * Admit classified workspace configuration only under the host mutation reviewer.
- *
- * @param name - the dispatched tool name; non-mutating tools are unaffected.
- * @param args - validated arguments, read for the paths the call touches.
- * @param config - the resolved run config; its `reviewMutation` port mediates prepared effects.
- * @param reviewed - whether the protected mutation is deferred to that host port.
- */
-function protectWorkspaceConfiguration(
-  name: string,
-  args: Record<string, unknown>,
-  config: RuntimeConfig,
-  reviewed = false,
-): void {
-  if (!NATIVE_MUTATION_TOOLS.has(name)) return;
-  const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
-  const selectedRoots = config.configurationRoots ?? roots;
-  const protectedRoots = Object.values(selectedRoots);
-  const context = buildGuardContext(name, args, config);
-  const targets = name === "copy" ? context.paths.slice(1) : context.paths;
-  for (const fact of targets) {
-    const target = configurationTarget(selectedRoots, fact.resolved);
-    if (
-      target !== undefined &&
-      (target.kind === "authoring" || target.kind === "operational") &&
-      reviewed
-    )
-      continue;
-    assertOutsideRoots(fact.resolved, protectedRoots, fact.raw, {
-      code: "denied",
-      message: `Configuration target requires host-mediated file review: ${fact.raw}.`,
-    });
-  }
-}
-
-/** Reject private configuration leaves before any file handler can read them. */
-function protectPrivateConfiguration(
-  name: string,
-  args: Record<string, unknown>,
-  config: RuntimeConfig,
-): void {
-  if (name === "shell" || name === "shell_session") return;
-  const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
-  const selectedRoots = config.configurationRoots ?? roots;
-  for (const fact of buildGuardContext(name, args, config).paths) {
-    const target = configurationTarget(selectedRoots, fact.resolved);
-    if (target?.kind === "secret")
-      throw new ToolError("denied", `Configuration target is secret: ${fact.raw}.`, {
-        path: fact.raw,
-      });
-    if (target?.kind === "reserved_unknown")
-      throw new ToolError(
-        "unrecognized_configuration_target",
-        `Configuration target is not recognized: ${fact.raw}.`,
-        { path: fact.raw },
-      );
-  }
-}
 
 const ajv = new Ajv({ allErrors: true, useDefaults: true, coerceTypes: true });
 const validators = new Map<string, ValidateFunction>();
@@ -113,7 +23,6 @@ export interface DispatchResult {
   isError: boolean;
   content: ContentPart[];
   meta?: Record<string, unknown>;
-  guard?: GuardReview;
 }
 
 function normalizeOutput(out: string | ToolResult): ToolResult {
@@ -207,107 +116,7 @@ export function listTools(config: RuntimeConfig): ToolInfo[] {
 }
 
 /**
- * Run the command-approval gate for one call.
- *
- * @returns The gate's optional denial plus its final review metadata. A `deny`
- *   verdict, or an `ask` with no elicit prompt or a rejected prompt, all deny.
- *   A throw inside the guard/elicit is caught and returned as an error result.
- */
-interface GuardGate {
-  denied?: DispatchResult;
-  review?: GuardReview;
-  /** Set only when the call was handed to the host configuration reviewer instead of the guard. */
-  configurationReviewed?: boolean;
-}
-
-function reviewDenialMessage(review: GuardReview | undefined, reason: string): string {
-  if (review?.reviewer_decision === "failed")
-    return `Command not executed: automatic review failed (${review.failure_kind ?? "unknown"}). This is a technical review failure, not a decision that operator authorization is missing. Do not request authorization again to resolve this failure.`;
-  if (review?.answerer === "judge") {
-    if (review.reviewer_decision === "deny")
-      return `Command not executed: automatic review denied this command. Static review trigger: ${reason}. This is a semantic denial, not a missing operator approval in the UI.`;
-    if (review.reviewer_decision === "unsure")
-      return `Command not executed: automatic review was unsure and the configured policy denied the command. Static review trigger: ${reason}. Repeating authorization does not change this result.`;
-    return `Command not executed: automatic review did not approve this command. Static review trigger: ${reason}. This is not a request to obtain UI approval.`;
-  }
-  if (review?.reviewer_decision === undefined) return `command review did not approve: ${reason}`;
-  return `command review did not approve: reviewer ${review.reviewer_decision}; static review trigger: ${reason}`;
-}
-
-async function applyGuard(
-  name: string,
-  args: Record<string, unknown>,
-  config: RuntimeConfig,
-): Promise<GuardGate> {
-  if (!config.guard) return {};
-  try {
-    const ctx = buildGuardContext(name, args, config);
-    const decision = await config.guard(ctx);
-    const review = (
-      outcome: GuardReview["outcome"],
-      answerer: GuardReview["answerer"],
-    ): GuardReview | undefined =>
-      decision.mode === undefined ? undefined : { mode: decision.mode, outcome, answerer };
-    if (decision.verdict === "allow") return { review: review("allowed", "policy") };
-    const reason = decision.reason ?? "blocked by guard";
-    if (decision.verdict === "deny")
-      return {
-        denied: errorResult(new ToolError("denied", reason)),
-        review: review("denied", "policy"),
-      };
-    if (!config.elicit)
-      return {
-        denied: errorResult(new ToolError("denied", reason)),
-        review: review("denied", "unavailable"),
-      };
-    const req: ElicitRequest = {
-      tool: name,
-      args:
-        decision.agent_justification === undefined || typeof ctx.args.justification !== "string"
-          ? ctx.args
-          : { ...ctx.args, justification: decision.agent_justification },
-      reason: decision.reason,
-      ...(decision.static_trigger === undefined ? {} : { static_trigger: decision.static_trigger }),
-      ...(decision.agent_justification === undefined
-        ? {}
-        : { agent_justification: decision.agent_justification }),
-      shell: ctx.shell,
-      ...(decision.analysis === undefined ? {} : { analysis: decision.analysis }),
-      ...(decision.effect === undefined ? {} : { effect: decision.effect }),
-      ...(decision.effects === undefined ? {} : { effects: decision.effects }),
-      ...(decision.matched !== undefined ? { matched: decision.matched } : {}),
-      ...(decision.placement !== undefined ? { placement: decision.placement } : {}),
-      ...(decision.network !== undefined ? { network: decision.network } : {}),
-      ...(decision.dangerous !== undefined ? { dangerous: decision.dangerous } : {}),
-      ...(decision.risk_findings !== undefined ? { risk_findings: decision.risk_findings } : {}),
-      ...(decision.within_workspace !== undefined
-        ? { within_workspace: decision.within_workspace }
-        : {}),
-      ...(decision.touches_outside !== undefined
-        ? { touches_outside: decision.touches_outside }
-        : {}),
-      ...(decision.escalate !== undefined ? { escalate: decision.escalate } : {}),
-    };
-    const answer = await config.elicit(req);
-    const allowed = answer === true || (typeof answer === "object" && answer.allowed === true);
-    const answerer = typeof answer === "object" ? answer.answerer : "human";
-    const finalReview = review(allowed ? "allowed" : "denied", answerer);
-    if (finalReview !== undefined && typeof answer === "object" && answer.review !== undefined) {
-      Object.assign(finalReview, answer.review);
-    }
-    return allowed
-      ? { review: finalReview }
-      : {
-          denied: errorResult(new ToolError("denied", reviewDenialMessage(finalReview, reason))),
-          review: finalReview,
-        };
-  } catch (err) {
-    return { denied: errorResult(err) };
-  }
-}
-
-/**
- * Validate, gate, and execute a single tool call, returning its result.
+ * Validate and execute a single tool call, returning its result.
  *
  * @param name - the tool to invoke.
  * @param args - the raw caller arguments; a clone is validated (and mutated by
@@ -318,7 +127,7 @@ async function applyGuard(
  * @param hooks - optional {@link ToolCallHooks} for live output.
  * @returns a {@link DispatchResult}; failures are reported in-band as
  *   `isError: true`, never thrown. Unknown tools yield `not_found`, schema
- *   violations `invalid_input`, a blocked guard `denied`, and a throwing
+ *   violations `invalid_input`, and a throwing
  *   handler its {@link serializeError} rendering.
  * @remarks Text parts of a non-`bounded` tool are clamped to
  *   {@link RuntimeConfig.maxOutputBytes}; a `bounded` tool's output passes
@@ -344,39 +153,7 @@ export async function dispatch(
     return errorResult(new ToolError("invalid_input", detail || "invalid arguments"));
   }
 
-  const configurationReviewer = config.reviewMutation !== undefined;
   try {
-    protectPrivateConfiguration(name, filled, config);
-    protectWorkspaceConfiguration(name, filled, config, configurationReviewer);
-    protectSkillPackages(name, filled, config);
-  } catch (error) {
-    return errorResult(error);
-  }
-
-  const deferredConfiguration =
-    tool.atomicMutation === true &&
-    configurationReviewer &&
-    buildGuardContext(name, filled, config).paths.some((fact) => {
-      const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
-      return (
-        configurationTarget(
-          config.configurationRoots ?? {
-            workspace_clarvis: roots.workspace_clarvis,
-            workspace_agents: roots.workspace_agents,
-          },
-          fact.resolved,
-        ) !== undefined
-      );
-    });
-  const gate: GuardGate = deferredConfiguration
-    ? { configurationReviewed: true }
-    : name === "shell_session"
-      ? {}
-      : await applyGuard(name, filled, config);
-  if (gate.denied) return { ...gate.denied, ...(gate.review ? { guard: gate.review } : {}) };
-
-  try {
-    protectWorkspaceConfiguration(name, filled, config, gate.configurationReviewed);
     if (isFileOperation(name)) {
       const filesystem =
         config.filesystemPolicy.placement === "sandbox"
@@ -386,7 +163,7 @@ export async function dispatch(
             )
           : localFilesystem;
       const result = await filesystem.execute({ operation: name, args: filled }, config, signal);
-      return { ...result, ...(gate.review ? { guard: gate.review } : {}) };
+      return result;
     }
     const { content, meta } = normalizeOutput(await tool.handler(filled, config, signal, hooks));
     const parts = typeof content === "string" ? [textPart(content)] : content;
@@ -394,10 +171,9 @@ export async function dispatch(
       isError: false,
       content: boundParts(parts, tool.bounded, config.maxOutputBytes),
       ...(meta ? { meta: boundMeta(meta, config.maxToolMetaBytes) } : {}),
-      ...(gate.review ? { guard: gate.review } : {}),
     };
   } catch (err) {
     const failed = errorResult(err);
-    return { ...failed, ...(gate.review ? { guard: gate.review } : {}) };
+    return failed;
   }
 }

@@ -271,7 +271,6 @@ export async function createGoalFileHostFixture(
         ],
         plans: { mode: options.plansMode ?? "on", retention: options.planRetention ?? "keep" },
         ...(options.memory === true ? { memory: { enabled: true } } : {}),
-        guard: { type: "shell", mode: "off" },
         ...(options.budgetTokenLimit === undefined
           ? {}
           : { budget: { on_exceed: "stop", total_token_limit: options.budgetTokenLimit } }),

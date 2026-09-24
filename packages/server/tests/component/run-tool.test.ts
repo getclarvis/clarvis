@@ -51,7 +51,6 @@ describe("tool surface", () => {
     expect(out.result).toBe("all done");
     expect(out.posture).toMatchObject({
       elicitation: "auto_decline",
-      guard_confirmations: "denied",
     });
     expect(out.stream).toMatchObject({ wedged: false });
     expect(host.started[0]).toMatchObject({ agent: "solo", execution_id: "run-a" });

@@ -69,7 +69,6 @@ therefore sees only the selected store; a hidden child delta does not rebuild Le
 | Export | Kind | Source |
 | --- | --- | --- |
 | `NodeStatus`, `TranscriptMessageNode`, `TranscriptNode`, `TranscriptPlanTask` | types | `packages/code/src/core/transcript/types.ts` |
-| `guardReviewLabel(node): string` | fn | `packages/code/src/core/transcript/guard-review.ts` |
 | `transcriptDisplayText(node): string`, `thinkingDisplayText(node): string`                                                                               | fn            | `packages/code/src/core/transcript/presenters.ts`   |
 | `planMetaText(node): string` | fn | `packages/code/src/core/transcript/presenters.ts` |
 | `compactionNoticeText`, `compactionSkippedNoticeText` | fn | `packages/code/src/core/transcript/presenters.ts` |
@@ -602,7 +601,7 @@ Exploration chrome is owned by `ExplorationRow`, not by an individual tool's rol
 Its folded header says `Exploring` while any member is pending or running, then `Explored` once every
 member is terminal; it reports member and failure counts without a separate active count.
 For a paginated group, showing the first failure selects its bounded member page; a single-page group
-does not render that redundant shortcut. Shell guards remain individually visible because shell calls
+does not render that redundant shortcut. Shell calls remain individually visible because they
 never group. Members retain their own header, bounded detail and explicit fold.
 Production: [ExplorationRow.tsx](../../packages/code/src/views/transcript/ExplorationRow.tsx).
 Test: [tool-groups-render.test.tsx](../../packages/code/tests/integration/tool-groups-render.test.tsx).
@@ -845,16 +844,6 @@ it never serializes the unbounded raw envelope. Every other kind yields nothing.
 `toolLabel` (not `toolDisplayLabel`) and prefers the resident `node.signature`. Pinned at
 `packages/code/tests/unit/transcript-markdown.test.ts`.
 
-For a settled shell node, `guardReviewLabel` renders the durable verdict as
-`approved|denied by <answerer>`. It deliberately omits the guard mode and internal review facts from
-transcript chrome. `ToolLine` appends that label to the header, and Markdown export reuses
-the same pure presenter. Production: `packages/code/src/core/transcript/guard-review.ts`,
-`ToolLine` in `packages/code/src/views/blocks.tsx`, and
-`renderTranscriptMarkdownChunks`. Tests: `"shell headers state the guard verdict and answerer
-without its mode"` in
-`packages/code/tests/integration/tool-destripe-render.test.tsx` and the guard
-case in `packages/code/tests/unit/transcript-markdown.test.ts`.
-
 ### 4.14 Spinner clock
 
 One module-level Solid signal drives every spinner and every elapsed-time read
@@ -907,7 +896,7 @@ the `thinking`/`working` phase in `LeadActivityLine`. `runStripText` separately 
 plus cumulative `Session` input/output, prompt-cache hit percentage and cost before and after
 settlement, prefixing a terminal outcome only after settlement; it never adds `Running`, elapsed
 time or iteration. Wide terminals show the Session token totals and cache percentage. `In`
-and cost are cumulative across ordinary runs, Goal stages, Guard reviews and Goal auxiliary work
+and cost are cumulative across ordinary runs, Goal stages and Goal auxiliary work
 after their host settlements. `In`
 subtracts the reported cache hit, while
 `Cache hit` divides cached tokens by gross input before that subtraction; the same projection helper

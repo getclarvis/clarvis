@@ -55,7 +55,6 @@ const baseServerEnvSchema = z.object({
   CLARVIS_SERVER_ELICIT_TOOL_WAIT_MS: positiveInt.default(120_000),
   CLARVIS_SERVER_ELICIT_RELAY_MS: positiveInt.default(600_000),
   CLARVIS_SERVER_ELICIT_BACKSTOP_MS: positiveInt.default(60_000),
-  CLARVIS_SERVER_ALLOW_REMOTE_GUARD_APPROVAL: boolFromEnv(false),
 
   CLARVIS_SERVER_ALLOW_PUBLIC_BIND: boolFromEnv(false),
   CLARVIS_SERVER_ALLOW_LAN_BIND: boolFromEnv(false),

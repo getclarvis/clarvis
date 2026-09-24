@@ -69,7 +69,7 @@ namespace collision risk, `packages/server/src/mcp/tools.ts`).
 | `elicitations` | `"auto_decline" \| "await"`, default `"auto_decline"` |  |
 | `elicitation_wait_ms` | `number`, 1,000–600,000, optional |  |
 
-Deliberately **absent**: `guard_mode`, `guard_judge`, `prompt_cache_key`, `session_id`, `agent_instance_id`,
+Deliberately **absent**: `prompt_cache_key`, `session_id`, `agent_instance_id`,
 `prompt_cache_ttl` (as caller input) — see Invariant 5 and the remark at
 `packages/server/src/mcp/tools.ts`. `task` is absent too — it names no field of
 `runInputShape` (`packages/server/src/mcp/tools.ts`), and
@@ -98,7 +98,6 @@ Deliberately **absent** from output: `active_task` — it names no field of
 | Field | Type |
 | --- | --- |
 | `elicitation` | `"relay" \| "tool" \| "auto_decline"` |
-| `guard_confirmations` | `"relayed" \| "denied"` |
 | `plans_effective` | `"off" \| "on" \| "review"`, optional |
 | `downgrades` | `string[]` |
 | `auto_answered` | non-negative integer |
@@ -339,7 +338,6 @@ checked for `{ truncated: true }`).
 
 ```ts
 { elicitation: "relay" | "tool" | "auto_decline",
-  guard_confirmations: "relayed" | "denied",
   plans_effective?: "off" | "on" | "review",
   prompt_cache_ttl?: "5m" | "1h",
   downgrades: string[],
@@ -689,13 +687,11 @@ only place `TOOL_NAMES` is declared.
 Test: `packages/server/tests/architecture/tool-surface.test.ts`.
 
 **Invariant 5 (INV-242).** The `clarvis_run` tool's input/output schemas omit
-every caller-controlled policy or local-only field: `guard_mode`,
-`guard_judge`, `prompt_cache_key`, `session_id`, `agent_instance_id`, `prompt_cache_ttl` (as input),
+every caller-controlled policy or local-only field: `prompt_cache_key`, `session_id`, `agent_instance_id`, `prompt_cache_ttl` (as input),
 `task` (input), and `active_task` (output) are all absent.
 Production: `runInputShape` (`packages/server/src/mcp/tools.ts`) and `runOutputShape`
 (`packages/server/src/mcp/tools.ts`) enumerate every field of each schema; none of the named
-fields appears. The remark at `packages/server/src/mcp/tools.ts` explains that guard policy and
-cache affinity belong to the host. Continuation reuses the owner-scoped persisted identities.
+fields appears. Cache affinity belongs to the host. Continuation reuses the owner-scoped persisted identities.
 Test: `packages/server/tests/architecture/tool-surface.test.ts`.
 
 **Invariant 5a.** The production executable's MCP `serverInfo.version` equals the single

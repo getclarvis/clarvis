@@ -47,7 +47,6 @@ describe("ExecutionSessionManager", () => {
       agent: config.sessionAgent,
       command,
       cwd: root,
-      forceBare: false,
       spawnChild: ((file: string, args: readonly string[], options: SpawnOptions) => {
         spawnCalls++;
         return spawn(file, args, options);
@@ -80,7 +79,6 @@ describe("ExecutionSessionManager", () => {
       agent: config.sessionAgent,
       command,
       cwd: root,
-      forceBare: false,
     });
     if (session.snapshot().phase === "starting")
       await new Promise<void>((resolve) => session.child.once("spawn", resolve));
@@ -114,7 +112,6 @@ describe("ExecutionSessionManager", () => {
         agent: config.sessionAgent,
         command,
         cwd: root,
-        forceBare: false,
       }),
     ).rejects.toThrow("post-spawn failure");
     expect(childPid).toBeDefined();
@@ -131,7 +128,6 @@ describe("ExecutionSessionManager", () => {
       agent: config.sessionAgent,
       command,
       cwd: root,
-      forceBare: false,
       spawnChild: ((file: string, args: readonly string[], options: SpawnOptions) => {
         const child = spawn(file, args, options);
         queueMicrotask(() => child.emit("error", new Error("asynchronous child error")));
@@ -167,7 +163,6 @@ describe("ExecutionSessionManager", () => {
         agent: config.sessionAgent,
         command,
         cwd: root,
-        forceBare: false,
         ...(trigger === "abort" ? { signal: controller.signal } : { timeoutMs: 25 }),
       });
       const stop = vi.spyOn(session, "stop").mockRejectedValueOnce(new Error("stop failed"));
@@ -232,7 +227,6 @@ describe("ExecutionSessionManager", () => {
       agent: config.sessionAgent,
       command,
       cwd: root,
-      forceBare: false,
     });
     await session.completed;
     const first = session.readStreams(undefined, 4096);
@@ -273,7 +267,6 @@ describe("ExecutionSessionManager", () => {
       agent: config.sessionAgent,
       command,
       cwd: root,
-      forceBare: false,
       readyWhen: /READY/,
     });
     expect(await session.waitReady(3000)).toBe(true);
@@ -293,7 +286,6 @@ describe("ExecutionSessionManager", () => {
       agent: config.sessionAgent,
       command,
       cwd: root,
-      forceBare: false,
       readyWhen: /READY/,
     });
     await expect(session.waitReady(3000)).rejects.toMatchObject({ code: "invalid_input" });
@@ -310,7 +302,6 @@ describe("ExecutionSessionManager", () => {
       agent: config.sessionAgent,
       command,
       cwd: root,
-      forceBare: false,
     });
     await session.waitForChange(undefined, 20);
     expect(session.readStreams(undefined, 16).stdout.text).toBe("");
@@ -328,7 +319,6 @@ describe("ExecutionSessionManager", () => {
       agent: config.sessionAgent,
       command,
       cwd: root,
-      forceBare: false,
     });
     await session.completed;
     expect(session.readStreams(undefined, 1).stdout).toMatchObject({ text: "é", nextOffset: 2 });
@@ -362,7 +352,6 @@ describe("ExecutionSessionManager", () => {
       agent: config.sessionAgent,
       command,
       cwd: root,
-      forceBare: false,
     });
     expect(await manager.close()).toBe(true);
     expect(session.running).toBe(false);

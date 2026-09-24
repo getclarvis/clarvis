@@ -220,7 +220,6 @@ Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL
 | `ListPickerVerb<T>` | shared `PanelVerbName` or one-off `{key,label,run,when?}` | `packages/code/src/views/overlays/ListPicker.tsx` |
 | `AgentProfilePicker(props)` | `ListPicker` of Agent Profiles + a nested default-scope `ListPicker` | `packages/code/src/views/overlays/AgentProfilePicker.tsx` |
 | `IsolationPicker(props)` | Lazy retained `ListPicker` over Host and native Sandbox, with armed confirmation before direct-host execution | `packages/code/src/views/overlays/IsolationPicker.tsx` (`IsolationPicker`) |
-| `ReviewPicker(props)` | Lazy retained `ListPicker` over Off, Approval and Auto Guard modes without changing isolation | `packages/code/src/views/overlays/ReviewPicker.tsx` (`ReviewPicker`) |
 | `Help(props)` | Full-page live-projected key/action/destination reference with stable indexed rows | `packages/code/src/views/overlays/Help.tsx` (`Help`) |
 | `DiffViewer(props)` | Full-screen changed-file tree and per-file reader for every mutation in the active transcript; an optional active accessor gates retained key layers | `packages/code/src/views/overlays/DiffViewer.tsx` (`DiffViewer`) |
 | `PlanOverlay(props)` | Full-screen current/latest-plan task/document viewer; an optional active accessor gates retained key layers and refreshes on reopen | `packages/code/src/views/overlays/PlanOverlay.tsx` (`PlanOverlay`) |
@@ -511,7 +510,7 @@ Ctrl+X E toggles a separate **expanded Task editor** state (`registerEditorToggl
 binding sits one priority above the managed textarea layer while preserving its Emacs-style Ctrl+E mapping, then swaps to
 `LAYER.OVERLAY` for the duration so the editor's own Escape binding takes priority while it is open.
 The draft text is untouched by the toggle — `onDock` exposes `expanded`/`closeEditor` explicitly so
-a caller can query or close it. Ctrl+X G is not an editor command; the shell reserves it for Review.
+a caller can query or close it.
 While expanded, Escape closes an open autocomplete popup first; only a second Escape (with no popup
 open) collapses the editor (`dismissAutocomplete`/the `escape` binding). Pinned:
 `packages/code/tests/integration/input-dock-submit.test.tsx` ("inline composition is height-bounded and
@@ -666,9 +665,9 @@ name, matching Settings > Agents (`packages/code/src/adapters/active-agent.ts`).
 `packages/code/tests/unit/active-agent.test.ts` (`"agent list uses the same canonical presentation
 order as the Agents window"`).
 
-### `IsolationPicker` and `ReviewPicker`
+### `IsolationPicker`
 
-The two quick pickers reuse `ListPicker` but never combine their state. `IsolationPicker` marks the
+The quick picker reuses `ListPicker`. `IsolationPicker` marks the
 effective Host/Sandbox boundary, persists the global choice through `applyIsolation`, and
 arms `useArmedConfirm` before Host removes containment.
 A placement choice keeps the picker modal while saving and reconnecting, names the current phase in
@@ -679,16 +678,13 @@ connection layer recovers that placement,
 and the standard navigation offers another choice or Escape without a competing footer. If restoring the setting itself fails, the error
 explicitly retains the pending reconnect state. Armed Host
 confirmation replaces the ordinary picker actions with `use host`/`keep isolation` and does not
-repeat its warning in the footer. `ReviewPicker` marks Off/Approval/Auto in native placement, writes through `applyReviewMode` at
-the current scope, preserves command policy and leaves Isolation untouched. Auto's visible detail
-states that an LLM reviews risk and never asks a person.
- Both are lazy `retain-one`
-portal boundaries, so neither module enters first boot and each native tree is reused after first
+repeat its warning in the footer. It is a lazy `retain-one`
+portal boundary, so its module does not enter first boot and its native tree is reused after first
 open. Production:
-`packages/code/src/features/run/isolation.ts`, `packages/code/src/features/run/review.ts`,
+`packages/code/src/features/run/isolation.ts`,
 `packages/code/src/views/overlays/IsolationPicker.tsx`,
 `packages/code/src/views/overlays/ListPicker.tsx`,
-`packages/code/src/views/overlays/ReviewPicker.tsx`, and `packages/code/src/views/App.tsx`. Test:
+and `packages/code/src/views/App.tsx`. Test:
 `packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
 
 ### `Help` (`views/overlays/Help.tsx`)
@@ -796,8 +792,8 @@ decision commands, while the outcome remains the kernel's to settle: the closure
 through `RunHandle.onElicitSettled`, `wireElicit` hands it to the host and `ElicitSlot.settle`
 removes exactly that question — no answer is sent for an id the kernel already retired, and a
 settlement naming another question or run leaves this block alone. The settled transcript annotation
-records an unanswered question as `no answer: …`, never as a human decision. Guard confirmations,
-plan/workflow reviews and any request without `window_ms`
+records an unanswered question as `no answer: …`, never as a human decision. Plan/workflow reviews
+and any request without `window_ms`
 render exactly as before — no countdown, no expired state. Production:
 `packages/code/src/adapters/elicit-slot.ts` (`ask`, `present`, `remaining`, `settle`),
 `packages/code/src/views/ElicitBlock.tsx` (`windowed`, `expired`),
@@ -978,7 +974,7 @@ settled turn's persisted continuation; an empty session reports that there is no
 28. **`fuzzyFieldMatch` ties go to the earlier-indexed field**, and a match spanning only the
     concatenation of two fields (neither field alone) is `null`. `packages/code/src/core/fuzzy.ts`. Pinned:
     `packages/code/tests/unit/fuzzy-positions.test.ts`.
-29. **A local `!` command never reaches the command guard or a `KernelClient` call.**
+29. **A local `!` command never reaches a `KernelClient` call.**
     `packages/code/src/adapters/local-shell.ts` (`runLocalBash`; the function's own body
     contains no such call). **Unpinned by an automated test** — this is an absence-of-a-call
     property, not directly assertable from the outside; verified here only from the function
@@ -1093,15 +1089,13 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/tests/integration/float-frame-render.test.tsx` (single navigation subtree and
     listener cleanup) and `packages/code/tooling/benchmarks/overlays.tsx` (retained Profile,
     Isolation, Review and Catalog picker cases).
-44. **Isolation, Review and Memory are independent lazy retained overlays over the same state
+44. **Isolation and Memory are independent lazy retained overlays over the same state
     contracts as Run Controls.** They mount only after their picker command opens them, reuse
     `ListPicker`, cannot own keys while inactive, and cannot implement settings merges that differ
     from those surfaces. Production: `packages/code/src/views/App.tsx`,
     `packages/code/src/views/overlays/IsolationPicker.tsx`,
-    `packages/code/src/views/overlays/ReviewPicker.tsx`,
     `packages/code/src/views/overlays/MemoryPicker.tsx`,
-    `packages/code/src/features/run/isolation.ts` (`applyIsolation`), and
-    `packages/code/src/features/run/review.ts` (`applyReviewMode`). Tests:
+    `packages/code/src/features/run/isolation.ts` (`applyIsolation`). Tests:
     `packages/code/tests/integration/app-shell-render.test.tsx`,
     `packages/code/tests/integration/isolation-review-picker-render.test.tsx`,
     `packages/code/tests/integration/run-controls-render.test.tsx`, and

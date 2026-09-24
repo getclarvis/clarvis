@@ -17,7 +17,6 @@ const LIMITS: McpServerLimits = {
   settleGraceMs: 10_000,
   elicitToolWaitMs: 10_000,
   elicitRelayMs: 10_000,
-  allowRemoteGuardApproval: false,
 };
 
 describe("run stream lifecycle", () => {

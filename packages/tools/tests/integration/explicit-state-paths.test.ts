@@ -3,7 +3,6 @@ import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { ensureWorkspaceLocalDir, workspaceStatePaths } from "@clarvis/paths";
 import { resolveConfig, StartupError } from "../../src/config.ts";
-import { readableStateArtifactPath } from "../../src/lib/state-artifacts.ts";
 import { callTool, cleanup, makeWorkspace } from "../helpers/fixtures.ts";
 
 describe("explicit machinery namespace", () => {
@@ -39,7 +38,7 @@ describe("explicit machinery namespace", () => {
     ).toThrow(StartupError);
   });
 
-  it("pins selected spills while Host access to another tree follows OS permissions", async () => {
+  it("reads selected and other state files through Host OS permissions", async () => {
     const selected = paths("selected");
     const sibling = paths("sibling");
     ensureWorkspaceLocalDir(selected);
@@ -61,10 +60,9 @@ describe("explicit machinery namespace", () => {
     const siblingRead = await callTool("read_file", { path: other }, config);
     expect(siblingRead.isError).toBe(false);
     expect(siblingRead.text).toContain("sibling result");
-    expect(readableStateArtifactPath(own, config.stateRoot)).toBe(own);
-    expect(readableStateArtifactPath(other, config.stateRoot)).toBeUndefined();
-    expect(readableStateArtifactPath(control, config.stateRoot)).toBeUndefined();
-    expect(readableStateArtifactPath(selected.localDir, config.stateRoot)).toBeUndefined();
+    const controlRead = await callTool("read_file", { path: control }, config);
+    expect(controlRead.isError).toBe(false);
+    expect(controlRead.text).toContain("private control record");
   });
 
   it("does not adopt persisted monitor controls from either namespace", async () => {

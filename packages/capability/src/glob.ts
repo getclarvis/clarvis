@@ -1,8 +1,7 @@
 /**
- * The `*`-only glob syntax shared by `@clarvis/kernel`'s shell guard allow/deny
- * lists and `@clarvis/hooks`' `match.tool` filters.
+ * The `*`-only glob syntax used by `@clarvis/hooks`' `match.tool` filters.
  *
- * @remarks Both patterns are security-relevant: an unanchored match would let
+ * @remarks Anchoring matters: an unanchored match would let
  * `github.*` also select `mygithub.internal`. Sharing one implementation
  * means the anchoring and escaping rules can only be right or wrong once.
  */

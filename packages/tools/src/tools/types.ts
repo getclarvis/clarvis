@@ -6,7 +6,7 @@ import type { ToolResult } from "./content.ts";
  * runs. Every field is opt-in and advisory.
  */
 export interface ToolCallHooks {
-  /** Called once by shell on successful spawn with abort listeners installed; never during review or after spawn failure. */
+  /** Called once by shell on successful spawn with abort listeners installed; never after spawn failure. */
   onExecutionStarted?: () => void;
   /**
    * Live, incremental output from a long-running tool, coalesced by the
@@ -44,7 +44,7 @@ export interface ToolDef {
    * text parts are truncated to that limit.
    */
   bounded?: boolean;
-  /** Every mutation passes its complete batch through the host review hook before committing. */
+  /** The handler commits a mutation batch atomically. */
   atomicMutation?: boolean;
 
   /**

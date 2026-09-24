@@ -635,7 +635,7 @@ test("done does not release the event pump before the protocol stream closes", a
   expect(closed).toBe(true);
 });
 
-test("startRun maps the complete guard and active-task request without workspace routing", async () => {
+test("startRun maps the complete active-task request without workspace routing", async () => {
   const ctrl = controllableHandle("exec_task");
   let captured: unknown;
   const { c } = client({
@@ -648,26 +648,13 @@ test("startRun maps the complete guard and active-task request without workspace
   const handle = c.startRun({
     executionId: "exec_task",
     messages: [],
-    guardJudge: {
-      guidance: "review writes",
-      model: "openai/judge",
-      onUnsure: "deny",
-      timeoutMs: 5_000,
-    },
     task: { id: "CLAR-42", provider_key: "provider-key", mode: "work" },
   });
   expect(captured).toMatchObject({
     execution_id: "exec_task",
-    guard_judge: {
-      guidance: "review writes",
-      model: "openai/judge",
-      on_unsure: "deny",
-      timeout_ms: 5_000,
-    },
     task: { id: "CLAR-42", provider_key: "provider-key", mode: "work" },
   });
   expect(captured).not.toHaveProperty("workspace");
-  expect(captured).not.toHaveProperty("guard_judge.prompt");
   ctrl.settle({ execution_id: "exec_task", status: "completed" });
   ctrl.close();
   await handle.done;
@@ -1091,41 +1078,6 @@ test("a lifecycle closure that rejects is recorded without rejecting physical ob
     level: "debug",
     details: { execution_id: "exec_c" },
   });
-});
-
-test("a guard_confirm's structured command detail reaches the UI params", async () => {
-  const ctrl = controllableHandle("exec_g");
-  let seen: unknown;
-  const { c } = client(
-    { start: async () => ctrl.handle },
-    {
-      onElicit: async (params) => {
-        seen = params;
-        return { action: "decline" };
-      },
-    },
-  );
-  await c.connect();
-  const handle = c.startRun({ messages: [], profile: "coder" });
-  await flushMicrotasks();
-
-  ctrl.fireElicit({
-    id: "exec_g:elicit:0",
-    execution_id: "exec_g",
-    kind: "guard_confirm",
-    prompt: "Allow `rm -rf dist`?",
-    detail: { command: "rm -rf dist", cwd: "/ws", reason: "no allowed commands list configured" },
-  });
-  await flushMicrotasks();
-
-  expect(seen).toMatchObject({
-    kind: "guard_confirm",
-    detail: { command: "rm -rf dist", cwd: "/ws", reason: "no allowed commands list configured" },
-  });
-
-  ctrl.settle({ execution_id: "exec_g", status: "completed" });
-  ctrl.close();
-  await handle.done;
 });
 
 test("getRun maps a stored run and returns null on not_found", async () => {

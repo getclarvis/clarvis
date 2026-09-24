@@ -11,7 +11,6 @@ import { createConnectionManager } from "@clarvis/mcp-client";
 import type { Logger } from "@clarvis/capability";
 import type { Elicit } from "../../src/runtime/tools/ask-user-tool.ts";
 import type { SkillsProvider } from "@clarvis/skills/capability";
-import type { Guard, Elicit as GuardElicit } from "../../src/runtime/tools/builtin/index.ts";
 import type { LifecycleHook, SteerSource } from "@clarvis/capability";
 import type { TraceEvent } from "@clarvis/capability";
 import type { ExecutionStatus, RunRequest, Trace } from "@clarvis/capability";
@@ -90,7 +89,7 @@ export interface HarnessOptions {
   traceStore?: TraceStore;
   elicit?: Elicit;
   steer?: SteerSource;
-  agentTools?: true | { guard?: Guard; guardElicit?: GuardElicit };
+  agentTools?: true;
   askUser?: true;
   skills?: {
     provider?: SkillsProvider;
@@ -143,19 +142,7 @@ export async function makeHarness(opts: HarnessOptions): Promise<TestHarness> {
   const capabilities: Capability[] = [...(opts.capabilities ?? [])];
   if (opts.agentTools !== undefined) {
     const { createAgentToolsCapability } = await import("../../src/runtime/capabilities/tools.ts");
-    const ports = opts.agentTools === true ? undefined : opts.agentTools;
-    capabilities.push(
-      createAgentToolsCapability(
-        ports !== undefined
-          ? {
-              resolveGuard: () => ({
-                ...(ports.guard !== undefined ? { guard: ports.guard } : {}),
-                ...(ports.guardElicit !== undefined ? { elicit: ports.guardElicit } : {}),
-              }),
-            }
-          : undefined,
-      ),
-    );
+    capabilities.push(createAgentToolsCapability());
   }
   if (opts.askUser === true) {
     const { createAskUserCapability } = await import("../../src/runtime/capabilities/ask-user.ts");

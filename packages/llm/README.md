@@ -110,7 +110,7 @@ rather than remaining silently active and filling the queue behind it.
 
 For a streaming call, that per-call timeout is an **inactivity** window.
 The typed `ModelCallInactivityError` belongs to `@clarvis/capability`, so auxiliary
-consumers such as Judge classify the same failure without depending on SDK implementation details.
+consumers classify the same failure without depending on SDK implementation details.
 Every provider part resets
 the window, so a large `write_file` argument may take longer than the configured timeout in total as
 long as deltas continue arriving. The hot path updates one timestamp; one timer checks it and re-arms
@@ -134,10 +134,9 @@ earlier progress was visible. A provider stream used only to assemble an interna
 consumer-visible partial turn, so a transient failure may also retry before its caller sees a result;
 compaction summaries rely on this distinction.
 
-ChatGPT subscription requests always use the adapter's streaming path, even for internal callers
-such as the command judge that do not consume live deltas. The pinned Codex Responses transport
-rejects `stream: false`; choosing one-shot generation for those callers turns an automatic command
-review into an immediate HTTP 400. Other providers still stream only when the caller supplies
+ChatGPT subscription requests always use the adapter's streaming path, including internal callers
+that do not consume live deltas. The pinned Codex Responses transport
+rejects `stream: false`. Other providers still stream only when the caller supplies
 `onStreamDelta`.
 
 Responses assistant text metadata is retained on both aggregate and streaming paths. A later call

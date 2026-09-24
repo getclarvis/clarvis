@@ -178,28 +178,18 @@ routes.
 | `EXT-07`  | Hooks and executables               | Contribution review, workspace approval, command execution, failure and diagnostic redaction preserve trust boundaries                                                                           |
 | `EXT-08`  | Workspace trust                     | Executable configuration is withheld until approval, recomposes after change, and revocation takes effect safely                                                                                 |
 | `EXT-09`  | Drift after admission               | After the documented asynchronous drift notice, affected skills or executable contributions are withdrawn, unaffected work remains usable, and reconnect captures changed bytes                  |
-| `SAFE-01` | Run control changes                 | Isolation and Review change independently, danger confirmation is explicit, next-run semantics are visible, and effective policy is preserved                                                    |
-| `SAFE-02` | Guard modes and policy              | Off/Approval/Auto, deny-first review including default denial on uncertainty, segment causes, attested effects, authority relation, typed failures and durable transcript annotation are correct |
-| `SAFE-03` | Native sandbox                      | Available/unavailable/degraded backends, containment refusal, diagnostics and host fallback match the active OS                                                                                  |
+| `SAFE-01` | Run control changes                 | Isolation danger confirmation, next-run semantics and effective policy are visible |
+| `SAFE-03` | Native sandbox                      | Available/unavailable backends, containment refusal and diagnostics match the active OS |
 | `SAFE-04` | Secret and path boundaries          | Keys, subscriptions, logs, storage, export, attachments, marketplace and tool output reveal no protected material or escape path                                                                 |
 | `SAFE-05` | Host temporary interoperability     | Cross-tool host-temp access, read-only overlap and non-owning cleanup are proved on the active OS                                                                                                |
-| `SAFE-06` | Absolute executable classification  | A platform/runtime absolute head is occurrence-local, keeps cross-platform policy identity, and never admits identical outside operands                                                          |
 | `SAFE-07` | Sandboxed DNS and package bootstrap | macOS DNS, real package execution, Apple Silicon Homebrew shims and denied-network behavior are proved                                                                                           |
-| `SAFE-08` | Isolation and review selectors      | Header chips, Run Controls, Ctrl+S/Ctrl+G, Alt/Option accelerators and Ctrl+E keep placement, command review and editor expansion independent                                                    |
+| `SAFE-08` | Isolation selector                  | Header, Run Controls and quick picker display and change the same effective placement |
 
 For `SAFE-05`, create a path through a host-native temporary API in `shell`, then reuse its absolute
-path through a later native coding tool without a guard denial. Repeat with a read-only workspace
+path through a later native coding tool. Repeat with a read-only workspace
 below the system temp root: the workspace must remain closed while exact run scratch remains
 writable. Teardown and fixture cleanup must stay distinct; Clarvis must never own or remove the
 system parent or unrelated children.
-
-For `SAFE-06`, compare the PATH and absolute spellings of the same system command. The absolute form
-must not receive an `outside_workspace` policy denial, and a denied command must remain denied under
-the absolute spelling. Add an absolute data operand outside the workspace in the same command and
-prove that operand is still refused. An executable outside the platform/runtime roots must also stay
-refused. Repeat the exact executable path later as a redirection or ordinary operand and require the
-operand occurrence to remain outside. On Windows, prove `.exe`, `.com`, `.bat`, and `.cmd` command
-heads match extensionless policy entries.
 
 For `SAFE-07`, do not use a raw IP or only a loopback socket: those miss the macOS resolver path.
 Resolve a registry hostname from the current built artifact and perform a bounded package bootstrap

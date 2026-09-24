@@ -1,11 +1,8 @@
 import { constants, promises as fs, type Stats } from "node:fs";
-import { lstatSync, realpathSync } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
 import picomatch from "picomatch";
 import { ToolError, fsError } from "../errors.ts";
-import { configurationRoots, configurationTarget, type ConfigurationRoot } from "@clarvis/paths";
-import type { RuntimeConfig } from "../config.ts";
 import { loadIgnore } from "./ignore.ts";
 import { isWithinRoots } from "./paths.ts";
 
@@ -15,52 +12,12 @@ export const STAT_CONCURRENCY = 32;
 /** Keep each allocation modest while still amortizing filesystem calls. */
 const READ_CHUNK_BYTES = 64 * 1024;
 
-/** Descriptor and classified-resource policy for {@link readRawFile}. */
+/** Descriptor safeguards for {@link readRawFile}. */
 export interface ReadFileOptions {
   /** Refuse a last-component symlink where the host exposes `O_NOFOLLOW`. */
   noFollow?: boolean;
-  /** Refuse aliases of a configuration document, including hardlinks. */
-  requireSingleLink?: boolean;
-  /** Exact filesystem object admitted before opening a state artifact. */
-  expectedIdentity?: { readonly dev: bigint; readonly ino: bigint };
-  /** Canonical parent required for an exact machine-state artifact read. */
-  expectedParent?: string;
   /** Host-owned workspace artifact root, verified against the opened descriptor. */
   expectedArtifactRoot?: string;
-  /** Classified configuration leaf to revalidate against the opened descriptor. */
-  expectedConfiguration?: {
-    readonly roots: Readonly<Record<ConfigurationRoot, string>>;
-    readonly root: ConfigurationRoot;
-    readonly path: string;
-    readonly canonicalRoot: string;
-  };
-}
-
-/** Read one admitted configuration leaf through its exact host root and descriptor checks. */
-export function readFileOptionsForPath(
-  config: Pick<RuntimeConfig, "workspaceRoot" | "configurationRoots">,
-  target: string,
-): ReadFileOptions {
-  const roots =
-    config.configurationRoots ?? configurationRoots({ workspaceRoot: config.workspaceRoot });
-  const classified = configurationTarget(roots, target);
-  if (classified === undefined) return {};
-  let canonicalRoot: string;
-  try {
-    if (lstatSync(roots[classified.root]).isSymbolicLink())
-      throw new ToolError("denied", `Configuration root contains a link: ${target}.`, {
-        path: target,
-      });
-    canonicalRoot = realpathSync.native(roots[classified.root]);
-  } catch (err) {
-    if (err instanceof ToolError) throw err;
-    throw fsError(err as NodeJS.ErrnoException, target);
-  }
-  return {
-    noFollow: true,
-    requireSingleLink: true,
-    expectedConfiguration: { roots, root: classified.root, path: classified.path, canonicalRoot },
-  };
 }
 
 /**
@@ -104,50 +61,6 @@ async function assertOpenedArtifact(
     throw new ToolError(
       "path_escape",
       `Artifact changed while it was being opened: ${relForError}.`,
-      {
-        path: relForError,
-      },
-    );
-}
-
-/** Bind an admitted configuration leaf to the descriptor after its path was opened. */
-async function assertOpenedConfiguration(
-  handle: FileHandle,
-  target: string,
-  relForError: string,
-  expected: NonNullable<ReadFileOptions["expectedConfiguration"]>,
-): Promise<void> {
-  let canonical: string;
-  let opened;
-  let current;
-  try {
-    canonical = await fs.realpath(target);
-    opened = await handle.stat({ bigint: true });
-    current = await fs.stat(canonical, { bigint: true });
-  } catch (err) {
-    throw fsError(err as NodeJS.ErrnoException, relForError);
-  }
-  let root: string;
-  try {
-    root = await fs.realpath(expected.roots[expected.root]);
-  } catch (err) {
-    throw fsError(err as NodeJS.ErrnoException, relForError);
-  }
-  const actual = configurationTarget({ [expected.root]: root }, canonical);
-  const comparable = (value: string) =>
-    process.platform === "win32" ? value.toLowerCase() : value;
-  if (
-    comparable(root) !== comparable(expected.canonicalRoot) ||
-    actual?.root !== expected.root ||
-    actual.path !== expected.path ||
-    actual.kind === "secret" ||
-    actual.kind === "reserved_unknown" ||
-    opened.dev !== current.dev ||
-    opened.ino !== current.ino
-  )
-    throw new ToolError(
-      "path_escape",
-      `Configuration path changed while opening: ${relForError}.`,
       {
         path: relForError,
       },
@@ -268,45 +181,8 @@ export async function readRawFile(
   try {
     const stat = await handle.stat();
     if (!stat.isFile()) throw notRegularFile(stat, relForError);
-    if (options.requireSingleLink && stat.nlink !== 1)
-      throw new ToolError("denied", `Configuration file has multiple links: ${relForError}.`, {
-        path: relForError,
-      });
-    if (options.expectedIdentity !== undefined) {
-      const opened = await handle.stat({ bigint: true });
-      if (
-        opened.dev !== options.expectedIdentity.dev ||
-        opened.ino !== options.expectedIdentity.ino
-      ) {
-        throw new ToolError(
-          "path_escape",
-          `Path changed while it was being opened: ${relForError}.`,
-          { path: relForError },
-        );
-      }
-    }
-    if (options.expectedParent !== undefined) {
-      const parent = await fs.realpath(path.dirname(target));
-      const current = await fs.lstat(target);
-      const comparable = (value: string) =>
-        process.platform === "win32" ? value.toLowerCase() : value;
-      if (
-        comparable(parent) !== comparable(options.expectedParent) ||
-        !current.isFile() ||
-        current.isSymbolicLink() ||
-        current.nlink !== 1
-      ) {
-        throw new ToolError(
-          "path_escape",
-          `State artifact path changed while it was being opened: ${relForError}.`,
-          { path: relForError },
-        );
-      }
-    }
     if (options.expectedArtifactRoot !== undefined)
       await assertOpenedArtifact(handle, target, relForError, options.expectedArtifactRoot);
-    if (options.expectedConfiguration !== undefined)
-      await assertOpenedConfiguration(handle, target, relForError, options.expectedConfiguration);
     if (stat.size > maxBytes) {
       throw tooLargeFile(relForError, stat.size, maxBytes, limitHint);
     }

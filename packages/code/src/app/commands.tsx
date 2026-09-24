@@ -14,7 +14,6 @@ import type { ClarvisDirs } from "../adapters/agents.ts";
 import type { KeysAdapter } from "../adapters/provider-secrets.ts";
 import type { CodeConfigStore } from "../adapters/code-config.ts";
 import type { MemoryModeStore } from "../adapters/memory-mode.ts";
-import type { GuardModeStore } from "../adapters/guard-mode.ts";
 import type { ThemePreview } from "../theme/theme.ts";
 import { DEFAULT_AGENT_NAME, type EnvView } from "../adapters/agent-files.ts";
 import type { AgentsStore } from "../adapters/agents-store.ts";
@@ -29,7 +28,6 @@ import {
 } from "../onboarding/doctor.ts";
 import { seedMemoryBlock } from "../onboarding/seed-memory.ts";
 import { seedPlansBlock } from "../onboarding/seed-plans.ts";
-import { seedDefaultAllowlist } from "../onboarding/seed-default-allowlist.ts";
 import type { ConnectionState, ReconnectMode } from "../adapters/connection-state.ts";
 import type { DebugSessionController } from "../adapters/debug-session.ts";
 import type { RunHost } from "../run-host.ts";
@@ -90,7 +88,6 @@ export interface AppCommandDeps {
     InteractionEffects,
     | "openAgentPicker"
     | "openIsolationPicker"
-    | "openReviewPicker"
     | "openMemoryPicker"
     | "openDiff"
     | "openPlan"
@@ -131,7 +128,6 @@ export interface AppCommandDeps {
   marketplaceDefaultUrls?: readonly string[];
   code: CodeConfigStore;
   memoryMode: MemoryModeStore;
-  guard: GuardModeStore;
   workflows: Pick<WorkflowsService, "list" | "get" | "delete">;
   workflowActivity?: Accessor<WorkflowActivity | null>;
   tasks: TasksController;
@@ -372,20 +368,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     hintPriority: 49,
     hintGroup: "navigation",
     run: () => effects.openIsolationPicker(),
-  });
-
-  commands.registerAction({
-    name: "review.picker",
-    enabled: () => !deps.runActive(),
-    title: "Guard",
-    desc: "Choose Off, Approval or Auto without changing isolation",
-    surface: "internal",
-    group: "navigate",
-    actionSurfaces: ["footer", "full-help"],
-    footerLabel: "guard",
-    hintPriority: 48,
-    hintGroup: "navigation",
-    run: () => effects.openReviewPicker(),
   });
 
   commands.registerAction({
@@ -695,7 +677,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerView({
     name: "controls.open",
     title: "Run controls",
-    desc: "Isolation, Guard, memory and plan retention for the next run",
+    desc: "Isolation, memory and plan retention for the next run",
     surface: "internal",
     group: "navigate",
     parent: "settings",
@@ -704,7 +686,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       return (host) =>
         RunControlsPanel(host, {
           settings: deps.settings,
-          guard: deps.guard,
           memory: deps.memoryMode,
           notify,
           runActive: deps.runActive,
@@ -1427,7 +1408,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       deps.memoryMode.refresh();
       deps.memoryMode.setMode("on");
     }
-    await seedDefaultAllowlist(deps.settings);
   }
 
   /** Finish an idempotent first-run setup and publish the resulting agent fleet live. */
@@ -1873,18 +1853,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           deps.memoryMode.setMode("on");
           notify(
             `memory: on (${outcome.scope} settings) ${glyph("emDash")} change it in Memory settings`,
-          );
-          recheck();
-        }),
-      (e) => notify(errorText(e), "warn"),
-    );
-    detachObserved(
-      "seed_default_allowlist",
-      () =>
-        seedDefaultAllowlist(deps.settings).then((outcome) => {
-          if (!outcome.seeded) return;
-          notify(
-            `guard: seeded ${outcome.count} allowed commands (${outcome.scope} settings) ${glyph("emDash")} edit them in settings`,
           );
           recheck();
         }),

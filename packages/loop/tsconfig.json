@@ -11,7 +11,6 @@
       "@clarvis/llm": ["../llm/src/index.ts"],
       "@clarvis/llm/adapter": ["../llm/src/adapter.ts"],
       "@clarvis/tools": ["../tools/src/index.ts"],
-      "@clarvis/tools/guard": ["../tools/src/guard/index.ts"],
       "@clarvis/tools/shell": ["../tools/src/shell-entry.ts"],
       "@clarvis/hooks": ["../hooks/src/index.ts"],
       "@clarvis/skills": ["../skills/src/index.ts"],

@@ -3,7 +3,6 @@ import {
   type Capability,
   type LLMProvider,
   type Logger,
-  type OperatorReviewContext,
   type OperatorReviewContextProvider,
   type TraceEvent,
 } from "@clarvis/capability";
@@ -63,10 +62,6 @@ import {
 /** Mandatory entry capability and finite request policy for one host-admitted stage. */
 export interface GoalExecutionPolicy {
   capability: Capability;
-  /** Exact operator-authored inputs that defined this Goal; inferred semantics never grant authority. */
-  authorityMessages: readonly Message[];
-  /** Complete persisted Goal definition supplied to reviewers separately from operator authority. */
-  reviewContext: OperatorReviewContext;
   observe(event: TraceEvent): void;
   /** Observe complete host inference accounting without trusting zero-filled guest totals. */
   trackModel(provider: LLMProvider): LLMProvider;
@@ -108,21 +103,6 @@ async function goalAuthorityMessages(
       }),
     });
   return messages;
-}
-
-function goalReviewContext(goal: GoalRecord): OperatorReviewContext {
-  return {
-    kind: "goal",
-    content: JSON.stringify({
-      objective: goal.objective,
-      criteria: goal.criteria.map(({ description, kind }) => ({ description, kind })),
-      constraints: goal.constraints,
-      exclusions: goal.exclusions,
-      assumptions: goal.assumptions,
-      normative_sources: goal.sources.map(({ path }) => ({ path })),
-      origin: goal.origin.kind,
-    }),
-  };
 }
 
 /**
@@ -585,8 +565,6 @@ export async function prepareHostedGoalTurn(options: {
   };
   const policy: GoalExecutionPolicy = {
     capability: createGoalCapability({ ...runtime, steward }),
-    authorityMessages,
-    reviewContext: goalReviewContext(goal),
     observe: (event) => {
       options.evidence.observe(event);
       steward?.observe(event);

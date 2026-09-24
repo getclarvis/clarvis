@@ -8,12 +8,9 @@
  *
  * Two authored files feed it — a personal one under the global root and a shared
  * one in the workspace — and they are **concatenated**, global first. That is a
- * deliberate departure from `guard-judge.md`, which takes the nearest scope
- * whole: a judging prompt is one complete instruction, so two of them would be
- * two rulings for one verdict, whereas "always keep the exact commands"
- * (personal, every project) and "record the migration traps" (this repo) are
- * both true at once. Shadowing would silently drop the personal half the moment
- * a project added one of its own.
+ * deliberate choice: "always keep the exact commands" (personal, every
+ * project) and "record the migration traps" (this repo) can both apply.
+ * Shadowing would silently drop the personal half when a project adds its own.
  *
  * **It governs _what_, never _where_.** The three levels are mechanism: the
  * finalize gate enforces closure over them, so a policy able to redefine the
@@ -58,8 +55,7 @@ function usable(text: string | undefined): string | undefined {
  * @param scopes - each scope's authored text; see {@link MemoryPolicyScopes}.
  * @returns the section to append to the pass's instruction, or `undefined` when
  *   neither scope says anything.
- * @remarks A file that exists but is blank counts as absent, matching how
- *   `guard-judge.md` treats one. The preamble restates the two limits inside the
+ * @remarks A file that exists but is blank counts as absent. The preamble restates the two limits inside the
  *   model's own context rather than trusting the operator to have observed them,
  *   because what follows is arbitrary prose that may well try to dictate a
  *   folder layout.
@@ -93,7 +89,7 @@ export interface MemoryPolicyFiles {
  * @returns the composed policy, or `undefined` when neither file says anything.
  * @remarks Absent, unreadable and blank are all the same outcome. Emptying a
  *   file is how an operator turns the override off, and that should not behave
- *   differently from deleting it — the rule `guard-judge.md` already follows.
+ *   differently from deleting it.
  *
  *   Reading lives here rather than in the host because it is the same contract
  *   as composing: a caller that read the files itself would have to reproduce

@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import path from "node:path";
-import { linkSync, mkdirSync, writeFileSync } from "node:fs";
-import { configurationRoots } from "@clarvis/paths";
+import { mkdirSync } from "node:fs";
 import { makeWorkspace, cleanup, makeSymlink } from "../helpers/fixtures.ts";
 import {
   resolvePath,
@@ -39,7 +38,7 @@ describe("resolvePath", () => {
   });
 });
 
-describe("file-tool configuration path identity", () => {
+describe("file-tool paths", () => {
   let root: string;
   beforeEach(() => {
     root = makeWorkspace();
@@ -47,47 +46,15 @@ describe("file-tool configuration path identity", () => {
   });
   afterEach(() => cleanup(root));
 
-  const config = (root: string) => ({
-    workspaceRoot: root,
-    stateRoot: path.join(root, "state"),
-    configurationRoots: configurationRoots({
-      home: root,
-      workspaceRoot: root,
-      globalDir: path.join(root, "global"),
-    }),
-  });
-
-  it("reports an unknown configuration document by its own class", () => {
-    expect(() => resolveFileToolPath(".clarvis/unrecognized.json", config(root))).toThrow(
-      "Configuration target is not recognized",
+  it("resolves configuration paths as ordinary workspace paths", () => {
+    expect(resolveFileToolPath(".clarvis/unrecognized.json", { workspaceRoot: root })).toBe(
+      path.join(root, ".clarvis", "unrecognized.json"),
     );
-  });
-
-  it("refuses an unresolved link beneath the configuration root", () => {
-    makeSymlink(path.join(root, "missing"), path.join(root, ".clarvis", "redirect"), "dir");
-    expect(() => resolveFileToolPath(".clarvis/redirect/file.txt", config(root))).toThrow(
-      "could not be safely resolved",
-    );
-  });
-
-  it("refuses an ordinary alias that resolves into configuration", () => {
     makeSymlink(path.join(root, ".clarvis"), path.join(root, "alias"), "dir");
-    expect(() => resolveFileToolPath("alias/settings.json", config(root))).toThrow(
-      "changed during resolution",
+    expect(resolveFileToolPath("alias/settings.json", { workspaceRoot: root })).toBe(
+      path.join(root, "alias", "settings.json"),
     );
   });
-
-  it.skipIf(process.platform === "win32")(
-    "refuses a configuration document with another hard-link name",
-    () => {
-      const settings = path.join(root, ".clarvis", "settings.json");
-      writeFileSync(settings, "{}");
-      linkSync(settings, path.join(root, "alias.json"));
-      expect(() => resolveFileToolPath(".clarvis/settings.json", config(root))).toThrow(
-        "contains a link",
-      );
-    },
-  );
 });
 
 describe("displayPath", () => {

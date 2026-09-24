@@ -1105,7 +1105,7 @@ shadows the four registration methods so everything it registers lands there (`p
 The render tree returned by `App` is, top to bottom: `KeymapProvider` →
 `HeaderRows` → a one-row top rule → the region box holding `OverlayRegion` with `TranscriptRegion` as
 its fallback → the floating pickers/readers (`AgentProfilePicker`, lazy `IsolationPicker`, lazy
-`ReviewPicker`, `ActivityDetail`, `WorktreeExitPrompt`) as
+`ActivityDetail`, `WorktreeExitPrompt`) as
 **siblings
 after** the region → `HintToast` → the bottom box (`LeadActivityLine`, `InputDock`, `Footer`) → the
 floor panel. Elicitation and the fixed reading runway remain final children

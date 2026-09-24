@@ -22,7 +22,7 @@ The package explicitly is **not** a sandbox: "This is credential hygiene, not a 
 the workspace and reaches the network; the one goal the environment filter pursues is that "the
 model-provider credentials this run is holding must not reach a subprocess that had no reason to
 see them" (`packages/hooks/src/env.ts`). Likewise a tool/argument `match` filter is "a scoping
-device, not a security boundary — the command guard is what enforces policy"
+device, not a security boundary"
 (`packages/hooks/src/types.ts`).
 
 The vocabulary a hook is validated and classified against — which events exist, which are gates,

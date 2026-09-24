@@ -1,182 +1,52 @@
 # Self configuration through file tools
 
-## Admission and ownership
+## Purpose and authority
 
-An eligible entry agent handles an operator's configuration request in the ordinary conversation
-with the same file tools it uses for other workspace work. The file kernel provides a host-owned
-`reviewMutation` port only when builtin tools are enabled, the run's immutable ceiling permits
-editing, and the selected placement is Host or Sandbox. Agent Profiles, skills, hooks and edited
-files cannot install that port or widen the ceiling.
-operator Settings, provider login and other administrative controls retain their own host APIs.
-There is no separate configuration tool or slash command. The product-owned `clarvis-docs`
-skill supplies a short catalog entry and loads its self-contained Markdown references on demand.
-The guide does not grant write authority, change the effective configuration, or replace the
-operator's request. Generic skills named by the user still follow normal discovery.
+An agent can edit configuration documents with the ordinary file tools available to its profile.
+Relative paths resolve from the workspace; absolute paths remain absolute. File calls do not enter a
+configuration approval path. The effective host filesystem permissions or configured native
+sandbox determine whether a path can be accessed. Configuration loaders still validate documents
+when the host consumes them, and workspace trust still controls activation of workspace-owned
+executable configuration.
 
-Production: `createFileKernel` in [file-kernel.ts](../../packages/kernel/src/file-kernel.ts),
-`createAgentToolsCapability` in
-[tools.ts](../../packages/loop/src/runtime/capabilities/tools.ts), and `dispatch` in
-[core.ts](../../packages/tools/src/core.ts). Test: model-facing inventory, configuration review,
-and denied paths in
-[file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts)
-and [api.test.ts](../../packages/tools/tests/integration/api.test.ts).
-The catalog, body/resource reads, absent slash route and dollar expansion are checked in
+Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts), `resolveToolPath` in
+[paths.ts](../../packages/tools/src/lib/paths.ts), `resolveFilesystemPolicy` in
+[sandbox.ts](../../packages/tools/src/sandbox.ts), and `createFileKernel` in
+[file-kernel.ts](../../packages/kernel/src/file-kernel.ts).
+Test: [no-isolation.test.ts](../../packages/tools/tests/integration/no-isolation.test.ts),
+[sandbox.test.ts](../../packages/tools/tests/integration/sandbox.test.ts), and
 [configuration-surface.test.ts](../../packages/kernel/tests/integration/configuration-surface.test.ts).
 
 ## Product documentation skill
 
-The maintained Markdown tree lives in
-[clarvis-docs](../../packages/kernel/assets/skills/.system/clarvis-docs/SKILL.md) and its
-`references` directory. `reconcileSystemDocs` in
-[system-docs.ts](../../packages/kernel/src/skills/system-docs.ts) publishes only that reserved
-subtree under the resolved global Clarvis skills directory. It verifies shipped release hashes,
-checks ownership and path types, and replaces complete revisions under a lease. An unowned or
-unsafe destination degrades the skill without changing user content. `createSystemDocsProvider` in
-[system-docs-provider.ts](../../packages/kernel/src/skills/system-docs-provider.ts) captures the
-installed body and resources for the current host generation without an execution directory.
-Package-local Kernel modules derive the product root from the package identity; the Code launcher
-passes the active product root explicitly to a bundled host. Source code does not resolve assets
-through a `dist` layout.
+The product-owned [clarvis-docs](../../packages/kernel/assets/skills/.system/clarvis-docs/SKILL.md)
+skill explains configuration paths and the active filesystem boundary. `reconcileSystemDocs` in
+[system-docs.ts](../../packages/kernel/src/skills/system-docs.ts) installs its verified asset tree
+under the global skills root. `createSystemDocsProvider` in
+[system-docs-provider.ts](../../packages/kernel/src/skills/system-docs-provider.ts) captures its
+body and resources for a host generation. The product reserves the skill name against workspace
+and plugin overrides; loading the skill itself grants no tool capability.
 
-The host reserves `clarvis-docs` from ordinary Extension Profile inventory and skill roots. A
-workspace or plugin skill with the same name cannot replace the product entry. Existing
-`use_skills` agents see it in the ordinary catalog. An entry agent without that grant receives a
-system-only view only when its immutable run ceiling and selected Host or Sandbox placement admit
-file editing and the host configuration-review port exists. Children and read-only agents receive no special view. The normal `load_skill` and `read_skill_resource` tools serve it;
-loading a skill never approves a subsequent file mutation.
-
-Production: `reconcileSystemDocs` in
-[system-docs.ts](../../packages/kernel/src/skills/system-docs.ts), `createSystemDocsProvider` in
-[system-docs-provider.ts](../../packages/kernel/src/skills/system-docs-provider.ts),
-`buildRunDeps` in [build-run-deps.ts](../../packages/loop/src/runtime/build-run-deps.ts), and
+Production: `reconcileSystemDocs` in [system-docs.ts](../../packages/kernel/src/skills/system-docs.ts),
+`createSystemDocsProvider` in
+[system-docs-provider.ts](../../packages/kernel/src/skills/system-docs-provider.ts), and
 `createSkillsCapability` in [capability.ts](../../packages/skills/src/capability.ts).
 Test: [system-docs-publication.test.ts](../../packages/kernel/tests/unit/system-docs-publication.test.ts),
-[system-docs-assets.test.ts](../../packages/kernel/tests/unit/system-docs-assets.test.ts),
-[configuration-surface.test.ts](../../packages/kernel/tests/integration/configuration-surface.test.ts),
-[system-docs-eligibility.test.ts](../../packages/kernel/tests/integration/system-docs-eligibility.test.ts),
-[system-skill-invocation.test.ts](../../packages/kernel/tests/integration/system-skill-invocation.test.ts),
-and [capability.test.ts](../../packages/skills/tests/component/capability.test.ts).
+[system-docs-assets.test.ts](../../packages/kernel/tests/unit/system-docs-assets.test.ts), and
+[configuration-surface.test.ts](../../packages/kernel/tests/integration/configuration-surface.test.ts).
 
-## Targets and file operations
+## Invariants and coupling
 
-`configurationRoots` identifies global and workspace `.clarvis` and `.agents` roots.
-`configurationPathClass` distinguishes `authoring`, `operational`, `secret`,
-`reserved_unknown`, and `generated_read_only` paths. File tools
-classify canonical paths, including both ends of moves and copies, before dispatch; one protected
-mutation sends the entire prepared batch to the host reviewer. Global access is limited to
-classified file handlers and does not become a general shell or workspace mount. Private state,
-credentials, trust records, symlinks, hardlinked leaves, special files, traversal and credential
-filenames are refused. The selected skill's captured execution directory remains read-only; its
-source can be changed through the reviewed route without changing the revision held by an active
-run. The portable parent-directory replacement race remains documented in
-[tools mutation](../execution/tools-mutation.md).
+The file tool dispatcher does not confer additional filesystem authority for configuration files.
+The selected native sandbox, when present, applies to the sandbox file service as it does to
+commands. Configuration and trust services remain responsible for loading and activating authored
+documents after the file operation. A run's captured skill content remains stable until the next
+catalog generation.
 
-The normal `read_file`, `list_dir`, search and file metadata tools inspect admitted documents.
-The normal `write_file`, `edit_file`, `multi_edit`, `apply_patch`, `replace`, `copy`, `move` and
-`remove` tools prepare mutations where their existing grants allow them. A protected write does
-not use shell approval as a substitute for configuration review. Validated documents are limited
-to 256 KiB and strict UTF-8. Settings use the kernel schema, Agent Profiles use frontmatter
-validation, skill manifests use the discovery parser, and workflows use their artifact parser.
-Other authored formats retain their loader and trust checks. Protected destinations use private
-file and directory modes. Existing documents bind to an exact captured revision; after review,
-all target revisions and authority are checked again before atomic commit. The authority check
-also runs inside the final write callback, so revocation while entering the operator write
-transaction cannot commit a previously approved batch. A failed, denied,
-cancelled or drifted document batch leaves no partial mutation. Removing an empty configuration
-directory has a separate reviewed `rmdir` commit: it rechecks emptiness and identity, and a
-parent-directory sync failure after removal reports `commit_partial` instead of claiming rollback.
-Production: `createAuthoringMutationReview` in
-[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts).
-Test: `Approval mode reviews an empty configuration directory before removal` in
-[authoring-mutations.test.ts](../../packages/kernel/tests/unit/authoring-mutations.test.ts).
-
-Production: `configurationTarget` in
-[configuration.ts](../../packages/paths/src/configuration.ts),
-`prepareConfigurationFileMutation` and `readConfigurationDocument` in
-[files.ts](../../packages/kernel/src/configuration/files.ts),
-`createAuthoringMutationReview` in
-[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts),
-and `applyOpsAtomic` in [atomic.ts](../../packages/tools/src/lib/atomic.ts).
-Test: document schema, four-root, revision and link cases in
-[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts),
-file-tool journeys in
-[file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts),
-post-review revocation in
-[authoring-mutations.test.ts](../../packages/kernel/tests/unit/authoring-mutations.test.ts),
-and rollback and private-mode cases in
-[atomic.test.ts](../../packages/tools/tests/integration/atomic.test.ts),
-[api.test.ts](../../packages/tools/tests/integration/api.test.ts),
-[copy.test.ts](../../packages/tools/tests/integration/copy.test.ts) and
-[move.test.ts](../../packages/tools/tests/integration/move.test.ts).
-
-In Sandbox, preparation happens inside the same isolated file service as ordinary file calls.
-The service sends the complete batch to the host reviewer; after approval, a classified batch
-commits through `commitClassified` on the host, including any ordinary workspace targets in a
-mixed patch. The host rechecks admission and protected roots. Children have no `reviewMutation` port and cannot request that host commit. Production:
-`SandboxAgentFilesystem` in
+Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts), `SandboxAgentFilesystem` in
 [filesystem-service.ts](../../packages/tools/src/filesystem-service.ts),
-`createAuthoringMutationReview` in
-[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts).
-Test: `commits reviewed global and workspace authoring documents through the Sandbox file service`
-in [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts).
-
-## Effect review and operator authority
-
-Configuration and shell commands use the same host-owned authority reader and Judge coordinator,
-with facts appropriate to each effect. The configuration path attests each destination, operation,
-document class and revision through `createHostEffectReview`. Skill prose and model arguments are
-untrusted context. Review Auto can allow an effect covered by authenticated operator evidence
-without a human prompt, including deletion of an authored skill file or its empty directory.
-Operational configuration deletion remains a human-only exception. Review On asks once for the
-complete batch. An identical technical failure is reused only while the document facts, authority,
-review context and environment remain unchanged. Review Off does not relax
-hard target or document validation. A generic command approval never authorizes a protected file
-write. A refusal binds to the exact proposal; corrected bytes require a fresh decision.
-
-A bounded complete review can offer `allow_session`. The prompt shows the effect, operation and
-canonical targets. This volatile grant is recorded only after commit and is tied to the current
-owner, session, controller epoch, outcome, authority revision and environment. A later batch must
-fit one entire grant and still pass preparation, authority and revision checks. A new target,
-effect or authenticated steer requires a new decision. Cancellation, run settlement and reconnect
-retire the grant. A one-time approval never creates it. Concurrent identical reviews may share a
-pending question, but a late answer cannot authorize an obsolete batch.
-
-Production: `createConfigurationReview` in
-[review.ts](../../packages/kernel/src/configuration/review.ts),
-`createHostEffectReview` in [effect-review.ts](../../packages/kernel/src/guard/effect-review.ts),
-and `grantConfigurationSession` and `configurationSessionCovers` in
-[operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts).
-Test: grant scope and revocation in
-[configuration-review.test.ts](../../packages/kernel/tests/unit/configuration-review.test.ts),
-file-tool prompt counts, refusal, drift and steer in
-[file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts),
-and Judge authority behavior in
-[effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
-
-## Catalog and activation
-
-A new skill joins a custom Extension Profile in the same reviewed transaction as its file; the
-builtin default discovers it at the next safe catalog refresh without a membership write or
-workspace approval for the standalone file alone.
-The manager validates the definition and selection revisions and rolls back both if application
-fails. Successful file writes request a coalesced catalog refresh; captured skill manifests and
-resources keep the current run's bytes. The next safe generation publishes the new skill without
-restarting the host. Saved provider, placement or Extension Profile settings that require a
-reconnect remain pending until the operator applies them; file writes never change the occupied
-runtime generation. Workspace trust carries only for the exact authorized bytes when all other
-executable inputs remain stable, and does not make an untrusted workspace trusted.
-
-Production: `prepareSkillInclusion`, `requestSkillRefresh` and `flushSkillRefresh` in
-[extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts),
-`captureSkillExecution` in
-[execution-snapshot.ts](../../packages/skills/src/execution-snapshot.ts), and
-`withOperatorWrite` in
-[file-config-store.ts](../../packages/kernel/src/config/file-config-store.ts).
-Test: membership, pending activation and subsequent skill use in
-[file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts),
-catalog refresh in
-[extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts),
-and captured resources in
+`createFileConfigStore` in [file-config-store.ts](../../packages/kernel/src/config/file-config-store.ts), and
+`captureSkillExecution` in [execution-snapshot.ts](../../packages/skills/src/execution-snapshot.ts).
+Test: [sandbox.test.ts](../../packages/tools/tests/integration/sandbox.test.ts),
+[configuration-documents.test.ts](../../packages/kernel/tests/integration/configuration-documents.test.ts), and
 [execution-snapshot.test.ts](../../packages/skills/tests/unit/execution-snapshot.test.ts).
-
-## Related contracts

@@ -489,7 +489,6 @@ describe("createFileKernel — guard settings loader", () => {
             },
           },
         ],
-        guard: { type: "shell", mode: "off" },
       }),
     );
     writeFileSync(

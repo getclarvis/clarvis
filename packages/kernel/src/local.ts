@@ -15,10 +15,6 @@ export type {
   ToolchainId,
 } from "@clarvis/tools/sandbox";
 export {
-  POSIX_DEFAULT_ALLOWED_COMMANDS,
-  WINDOWS_DEFAULT_ALLOWED_COMMANDS,
-} from "@clarvis/tools/guard";
-export {
   resolveShell,
   shellArgs,
   currentShellFlavor,

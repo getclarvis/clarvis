@@ -31,7 +31,6 @@ import {
 import { NOOP_TOOLS_LOGGER } from "../../src/lib/log.ts";
 import { contentText, type ContentPart, type ToolResult } from "../../src/tools/content.ts";
 import { workspaceStatePaths } from "@clarvis/paths";
-import type { GuardReview } from "../../src/guard/types.ts";
 import { ExecutionSessionManager } from "../../src/lib/execution-session.ts";
 import { resolveFilesystemPolicy } from "../../src/sandbox.ts";
 
@@ -125,7 +124,6 @@ export interface CallResult {
   content: ContentPart[];
 
   meta?: Record<string, unknown>;
-  guard?: GuardReview;
 }
 
 export function resultText(content: ContentPart[]): string {
@@ -156,7 +154,6 @@ export async function callTool(
     json,
     content: r.content,
     ...(r.meta ? { meta: r.meta } : {}),
-    ...(r.guard ? { guard: r.guard } : {}),
   };
 }
 

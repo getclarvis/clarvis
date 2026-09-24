@@ -19,7 +19,6 @@
     { "path": "packages/protocol/tsconfig.build.json" },
     { "path": "packages/loop/tsconfig.build.json" },
     { "path": "packages/workflows/tsconfig.build.json" },
-    { "path": "packages/judge/tsconfig.build.json" },
     { "path": "packages/kernel/tsconfig.build.json" },
     { "path": "packages/server/tsconfig.build.json" }
   ]

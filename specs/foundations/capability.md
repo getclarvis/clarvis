@@ -5,13 +5,6 @@
 
 ## 1. Purpose
 
-`OperatorInstructions` is neutral host-captured persistent instruction vocabulary, carried separately
-from direct evidence in `OperatorAuthoritySeed` and `OperatorAuthorityState`. Child projection keeps
-these records while retaining the parent's compiled ceiling; it cannot mint broader authority.
-Production: `OperatorInstructions` and `inheritOperatorAuthority` in
-[operator-authority.ts](../../packages/capability/src/operator-authority.ts).
-Test: [instruction-snapshot.test.ts](../../packages/kernel/tests/unit/instruction-snapshot.test.ts).
-
 `@clarvis/capability` is a package with one runtime dependency, `zod`
 (`packages/capability/package.json`), and no internal ones. It holds two things that the rest
 of the monorepo is written against.
@@ -293,7 +286,6 @@ re-arm a policy from there. `AgentProfile` is the full agent definition: `name`,
 | `elicit_wait_ms?` | `number` | bounds user elicitation |
 | `guard_escalation?` | `boolean` | whether a hard convergence-guard trip asks the user; off by default, deliberately not inferred from elicit-channel presence — a headless caller's auto-declining channel would otherwise add a prompt round-trip to every trip with no change in outcome |
 | `agents?` | `AgentsParam` | see below |
-| `guard_mode?` | `GuardMode` (`off \| on \| auto`) | — |
 | `hook_user_prompt_expansion?` | `{ command_name: string }` | host-derived context for the one user-invoked skill expansion that seeded the run; ordinary prompts and model-initiated skill loads omit it |
 
 `PromptCacheTtl`'s doc-comment states Anthropic bills a `5m` write at 1.25x base input and a `1h` write
@@ -315,7 +307,7 @@ exists follows from whether the run's entry agent can spawn at all: `buffer_line
 (feeds stagnation detection), optional `taskId`, optional `images`. `HookVerdict` is
 `pass | deny(message) | advise(message) | rewrite(arguments, message?)`; the doc-comment states
 `rewrite` is meaningful only for `beforeToolUse` and is safe because a rewrite happens *upstream* of
-both the tool's own schema validation and the command guard, and that the replacement is total, never a
+the tool's own schema validation. The replacement is total, never a
 merge. `LifecycleHook` bundles four verdict-returning gates
 (`beforeToolUse`, `afterToolUse`, `preFinalize`, `preDelegateTask`), eight `void` observers
 (`onRunStart`, `onRunEnd`, `onSubagentStart`, `onSubagentComplete`, `onPostCompact`,
@@ -1382,18 +1374,6 @@ widening of the contract, preferring a port over exposing an engine type
   `stop`/`escalate`).
 
 
-`SteerSource.onPending` replays pending admitted messages to a subscriber and reports new arrivals
-without acknowledging delivery. The engine's private authority writer consumes those arrivals only
-for a host-seeded entry run; tools receive the shared reader alone. Draining still delivers each
-message once to the normal loop, and closure removes the observer.
-Production: `SteerSource` in [api.ts](../../packages/capability/src/api.ts), `createSteerQueue` in
-[steer-queue.ts](../../packages/kernel/src/runs/steer-queue.ts), and `executeRun` in
-[execute-run.ts](../../packages/loop/src/runtime/execute-run.ts).
-Test: [steer-queue.test.ts](../../packages/kernel/tests/unit/steer-queue.test.ts) and the open-review
-steer case in [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts).
-
-`OperatorAuthorityState.denied_effects` stores bounded exact refusal identities, never evidence or grants. It is a detached reader projection of kernel-owned state; it is not accepted in an authority seed. Production: `OperatorAuthorityState` in [operator-authority.ts](../../packages/capability/src/operator-authority.ts) and `createOperatorAuthorityRuntime` in [operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts). Test: bounded, revision-fenced refusal storage and forged seed rejection in [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).
-
 ### Execution disclosure vocabulary
 
 `ExecutionVisibility` is the neutral `public | internal` discriminator required by `ExecutionRecord`.
@@ -1403,12 +1383,3 @@ Production: `ExecutionVisibility` and `ExecutionRecord` in
 [trace-events.ts](../../packages/capability/src/trace-events.ts).
 Test: both classes and invalid writes in
 [trace-store-conformance.ts](../../packages/trace/tests/contract/trace-store-conformance.ts).
-
-
-`OperatorAuthorityState.envelope_context_revision` is a host-owned bounded compilation binding,
-separate from evidence and model candidate fields. Its persistence, replacement and revocation
-contract belongs to [effect review](../execution/effect-review.md).
-Production: `OperatorAuthorityState` in
-[operator-authority.ts](../../packages/capability/src/operator-authority.ts).
-Test: the compile-context continuation/replacement case in
-[operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).

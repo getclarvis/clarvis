@@ -2,7 +2,6 @@ import type { Accessor } from "solid-js";
 import type { SandboxInspection, SubscriptionScheme, SubscriptionState } from "@clarvis/protocol";
 import { CLARVIS_DIR, globalPaths } from "@clarvis/paths";
 import type { Scope, SettingsAdapter } from "../adapters/settings.ts";
-import { resolvedGuardMode } from "../adapters/guard-mode.ts";
 import {
   deriveIsolation,
   memoryState,
@@ -368,9 +367,7 @@ export const GATES: Gate[] = [
       const selected = deriveIsolation(eff);
       const inspection = ctx.sandboxInspection();
       const isolation = inspection?.filesystem.placement ?? selected;
-      const reviewMode = resolvedGuardMode(eff.guard);
-      const review = reviewMode === "on" ? "approval" : reviewMode;
-      const posture = `${isolation} ${glyph("separator")} review ${review}`;
+      const posture = `${isolation} ${glyph("separator")} commands follow ${isolation === "host" ? "host permissions" : "sandbox policy"}`;
       if (isolation !== "host") {
         const a = inspection?.backend;
         if (!a) {
@@ -387,11 +384,11 @@ export const GATES: Gate[] = [
           };
         }
       }
-      if (isolation === "host" && reviewMode === "off") {
+      if (isolation === "host") {
         return {
           status: "warn",
           detail: posture,
-          hint: "commands run directly, unsandboxed and without approval; open Run controls to change",
+          hint: "commands run with host permissions; open Run controls to change isolation",
         };
       }
       return { status: "pass", detail: posture };

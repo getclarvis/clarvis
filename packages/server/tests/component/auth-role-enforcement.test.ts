@@ -15,7 +15,6 @@ function principal(role: string, permissions: Partial<RolePermissions> = {}): Pr
     role,
     permissions: {
       agents: "*",
-      guardConfirmations: "deny",
       mayImpersonateOwner: false,
       ...permissions,
     },

@@ -1,8 +1,8 @@
-import { ExecutionSessionManager, type MutationReview } from "@clarvis/tools";
+import { ExecutionSessionManager } from "@clarvis/tools";
 /**
  * The built-in coding toolset (@clarvis/tools) packaged as a capability:
  * per-run enablement via env, per-agent capability ceiling from grants, and
- * the guard/guard-elicit ports wired into each agent's toolset.
+ * the native sandbox policy wired into each agent's toolset.
  */
 import type {
   AgentCapability,
@@ -13,29 +13,18 @@ import type {
 import type { ToolHandler, HandlerVerdict } from "@clarvis/capability";
 import { handlerBaseOf, type HandlerBase } from "@clarvis/capability";
 export {
-  defaultGuardMode,
-  guardModeSchema,
-  AGENT_TOOLS_SETTINGS_FIELDS,
-  AGENT_TOOLS_REQUEST_PARAMS,
-  GUARD_PLUGIN_FIELDS,
-  agentToolsSettingsSpec,
   sandboxSettingsSpec,
-  type GuardConfig,
   type SandboxSettings,
   type ResolvedSandboxSettings,
 } from "./tools-settings.ts";
 import type { ConvergenceGuards } from "../guards/convergence-guards.ts";
 import type { ResolvedSandboxSettings } from "./tools-settings.ts";
-import { boundPromise } from "../support/bounded.ts";
 import {
   agentToolCaps,
   agentToolsActive,
   createAgentToolset,
   systemTemporaryRoots,
   type AgentToolset,
-  type Guard,
-  type Elicit as GuardElicit,
-  type GuardElicitAnswer,
 } from "../tools/builtin/index.ts";
 
 export { agentToolsActive };
@@ -45,31 +34,11 @@ import {
   workspaceStatePaths,
   type ShortTemporaryRoot,
   type WorkspaceStatePaths,
-  type ConfigurationRoot,
 } from "@clarvis/paths";
 
 /** Registry name of the built-in coding-tools capability. */
 export const AGENT_TOOLS_CAPABILITY_NAME = "tools";
 
-/** What a host's guard resolver yields for one run: the guard itself and,
- * optionally, the raw ask channel that answers its 'ask' verdicts. */
-export interface GuardResolution {
-  /** Host-owned prepared mutation reviewer, admitted only to the entry agent. */
-  reviewMutation?: MutationReview;
-  /** Host-owned roots used only by entry-agent file handlers. */
-  configurationRoots?: Readonly<Record<ConfigurationRoot, string>>;
-  guard?: Guard;
-  elicit?: GuardElicit;
-}
-
-/**
- * Host port: resolves the run's guard from the request and registered parameters,
- * the host's settings, and the client's elicit channel — all reachable through
- * the RunCapabilityContext. Return undefined to run unguarded.
- */
-export type GuardResolver = (
-  ctx: RunCapabilityContext,
-) => Promise<GuardResolution | undefined> | GuardResolution | undefined;
 /** Host port: resolves the run's sandbox policy from the request/settings.
  * Return undefined to run without a sandbox. */
 export type SandboxResolver = (ctx: RunCapabilityContext) => ResolvedSandboxSettings | undefined;
@@ -87,12 +56,11 @@ export type SecretNamesResolver = (ctx: RunCapabilityContext) => readonly string
 export type SkillExecutionRootsResolver = (ctx: RunCapabilityContext) => readonly string[];
 
 /** Host-supplied ports for the tools capability: how it resolves the run's
- * guard, sandbox and credential names. All optional; omitting one runs
- * unguarded / unsandboxed / without scrubbing. */
+ * sandbox and credential names. All optional; omitting one runs
+ * unsandboxed / without scrubbing. */
 export interface AgentToolsCapabilityOptions {
   /** Host-resolved workspace state paths shared by tools and run cleanup. */
   statePaths?: WorkspaceStatePaths;
-  resolveGuard?: GuardResolver;
   resolveSandbox?: SandboxResolver;
   resolveSecretNames?: SecretNamesResolver;
   resolveSkillExecutionRoots?: SkillExecutionRootsResolver;
@@ -101,40 +69,11 @@ export interface AgentToolsCapabilityOptions {
 }
 
 /**
- * Wrap a guard's raw ask channel so each `ask` resolves under the run's elicit
- * wait budget and abort signal.
- *
- * @returns A {@link GuardElicit} that resolves true only on an explicit
- *   approval; a timeout (when `waitMs` is finite), an abort, or a rejection all
- *   resolve to false (fail-closed).
- *
- * @remarks `waitMs: 0` means *never block on a human* — the documented meaning
- *   of the request's `elicit_wait_ms` — and so denies on the next macrotask
- *   rather than waiting forever. Treating `0` as "unbounded" made the guard the
- *   one ask site where blocking has no ceiling, which is the worst place for it:
- *   it holds a command approval. Only a non-finite `waitMs` is unbounded.
- */
-export function withGuardElicitWaitBound(
-  elicit: GuardElicit,
-  waitMs: number,
-  signal: AbortSignal | undefined,
-): GuardElicit {
-  return (req) =>
-    boundPromise<boolean | GuardElicitAnswer>(async () => await elicit(req), {
-      signal,
-      timeoutMs: Number.isFinite(waitMs) ? waitMs : undefined,
-      onTimeout: () => false,
-      onAbort: () => false,
-      mapRejection: () => false,
-    });
-}
-
-/**
  * Build the built-in coding-tools capability.
  *
- * @param opts - Optional host ports for guard and sandbox resolution.
+ * @param opts - Optional host ports for sandbox resolution.
  * @returns A {@link Capability} whose `forRun` returns null unless
- *   `CLARVIS_AGENT_TOOLS_ENABLED` is set; when active it resolves the guard and
+ *   `CLARVIS_AGENT_TOOLS_ENABLED` is set; when active it resolves the
  *   sandbox once per run (a sandbox explicitly `enabled: false` is dropped),
  *   allocates the run's own short scratch root, and hands each agent a toolset
  *   ceilinged by its grants.
@@ -148,9 +87,8 @@ export function withGuardElicitWaitBound(
 export function createAgentToolsCapability(opts?: AgentToolsCapabilityOptions): Capability {
   return {
     name: AGENT_TOOLS_CAPABILITY_NAME,
-    async forRun(ctx): Promise<RunCapability | null> {
+    forRun(ctx): RunCapability | null {
       if (!ctx.env.CLARVIS_AGENT_TOOLS_ENABLED) return null;
-      const resolution = await opts?.resolveGuard?.(ctx);
       const sandbox = opts?.resolveSandbox?.(ctx);
       const statePaths = opts?.statePaths ?? workspaceStatePaths(ctx.workspaceRoot);
       const scratch = allocateShortTemporaryRoot({
@@ -161,7 +99,6 @@ export function createAgentToolsCapability(opts?: AgentToolsCapabilityOptions): 
       const skillExecutionRoots = opts?.resolveSkillExecutionRoots?.(ctx) ?? [];
       return createAgentToolsRunCapability(
         ctx,
-        resolution,
         sandbox?.enabled === false ? undefined : sandbox,
         opts?.resolveSecretNames?.(ctx) ?? [],
         skillExecutionRoots,
@@ -177,13 +114,11 @@ export function createAgentToolsCapability(opts?: AgentToolsCapabilityOptions): 
  * Per-run tools activation. Each agent's grants set a capability ceiling
  * ({@link agentToolCaps} against `CLARVIS_AGENT_TOOLS_MAX_GRANT`); an agent that
  * cannot even read gets no toolset, otherwise `canMutate`/`canExec` are threaded
- * into a freshly built {@link AgentToolset} along with the guard, the
- * wait-bounded guard elicit, the resolved sandbox, and the credential names to
+ * into a freshly built {@link AgentToolset} along with the resolved sandbox and credential names to
  * withhold from spawned commands.
  */
 function createAgentToolsRunCapability(
   ctx: RunCapabilityContext,
-  resolution: GuardResolution | undefined,
   sandbox: ResolvedSandboxSettings | undefined,
   secretEnvNames: readonly string[],
   skillExecutionRoots: readonly string[],
@@ -191,7 +126,6 @@ function createAgentToolsRunCapability(
   statePaths: WorkspaceStatePaths,
   sessionManager: ExecutionSessionManager,
 ): RunCapability {
-  const elicitWaitMs = ctx.request.elicit_wait_ms ?? ctx.env.CLARVIS_DEFAULT_ELICIT_WAIT_MS;
   const temporaryRoot = scratch.path;
   const accessibleTemporaryRoots = [...new Set([temporaryRoot, ...systemTemporaryRoots()])];
   return {
@@ -206,16 +140,13 @@ function createAgentToolsRunCapability(
       if (!caps.canExec) return temporary;
       const filesystem =
         sandbox === undefined
-          ? "Host commands use the operating system's filesystem permissions; Guard reviews eligible commands."
+          ? "Host commands use the operating system's filesystem permissions."
           : `Sandbox commands can read host-visible files. ${sandbox.filesystem === "workspace-read-only" ? "The workspace and Git metadata are read-only; writes are limited to admitted temporary roots." : "Writes are limited to the workspace, admitted Git metadata, and temporary roots."} Reading a path never grants permission to execute or write there.`;
       return (
         temporary +
         "\n\n## Commands and Isolation\n\n" +
         "Commands follow the run Isolation. When Isolation is Sandbox, `shell` runs inside the native sandbox; `shell_session` only inspects or stops a session that this run already owns. " +
-        filesystem +
-        "\n\n" +
-        "If a command that is required to finish the user's request fails because the sandbox blocked filesystem, network, or host services, call the same tool again with `sandbox_permissions` set to `require_escalated` and a short `justification` requesting review of that one command on the host. Do not switch tools and do not rewrite the command as argv.\n\n" +
-        "Do not request escalation for routine workspace builds, tests, or git queries that work inside the sandbox."
+        filesystem
       );
     },
     async onRunEnd() {
@@ -246,19 +177,9 @@ function createAgentToolsRunCapability(
     forAgent(scope): AgentCapability | null {
       const caps = agentToolCaps(scope.grants, ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT);
       if (!caps.canRead) return null;
-      const guardElicit =
-        resolution?.elicit !== undefined
-          ? withGuardElicitWaitBound(resolution.elicit, elicitWaitMs, scope.signal)
-          : undefined;
       const toolset = createAgentToolset({
         statePaths,
         workspaceRoot: ctx.workspaceRoot,
-        ...(scope.entry && resolution?.reviewMutation !== undefined
-          ? { reviewMutation: resolution.reviewMutation }
-          : {}),
-        ...(resolution?.configurationRoots !== undefined
-          ? { configurationRoots: resolution.configurationRoots }
-          : {}),
         canMutate: caps.canMutate,
         canExec: caps.canExec,
         temporaryRoots: accessibleTemporaryRoots,
@@ -268,8 +189,6 @@ function createAgentToolsRunCapability(
         skillExecutionRoots,
         ...(ctx.logger !== undefined ? { logger: ctx.logger } : {}),
         ...(secretEnvNames.length > 0 ? { secretEnvNames } : {}),
-        ...(resolution?.guard !== undefined ? { guard: resolution.guard } : {}),
-        ...(guardElicit !== undefined ? { elicit: guardElicit } : {}),
         ...(sandbox !== undefined
           ? {
               sandbox: {
@@ -312,7 +231,7 @@ function createAgentToolsRunCapability(
 
 /**
  * Handler for the built-in coding toolset: executes a matching call through
- * {@link executeAgentToolCall} (guard checks, convergence guards, tracing) and
+ * {@link executeAgentToolCall} (convergence guards and tracing) and
  * wraps the outcome as a `Tool '<name>' result[ (error)]: …` verdict.
  *
  * @returns A {@link HandlerVerdict} whose `progress` is decided by `deps.progress`

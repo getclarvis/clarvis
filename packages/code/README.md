@@ -1,8 +1,5 @@
 # `@clarvis/code`
 
-The review-guidance loader and run adapter emit only `guidance` in reviewer configuration,
-with operator-global text before bounded workspace guidance.
-
 The flagship Clarvis terminal UI. It connects to an independently owned workspace host through
 `@clarvis/kernel` and renders runs with SolidJS and OpenTUI.
 
@@ -291,12 +288,10 @@ another project, start the binary from that directory or use the installed
 
 ## Configuration
 
-Configuration requests use the normal conversation and file tools. The host reviews exact
-mutations through the current policy and excludes credentials and private state.
+Configuration requests use the normal conversation and file tools.
 An eligible entry agent can load the product-owned `clarvis-docs` skill and its focused references
 through the ordinary skill tools; this guide supplies information, not a file-edit grant.
-Automatic authorization does not require a second activation prompt. Human review concerns the
-concrete operation. Skill catalog notifications refresh command listings without reconnecting;
+Skill catalog notifications refresh command listings without reconnecting;
 active resource users retain their captured revision until safe application.
 See [self-configuration.md](../../specs/hosts/self-configuration.md).
 
@@ -306,7 +301,6 @@ The app uses a file-backed kernel. Workspace configuration lives under
 ```text
 .clarvis/
 ├── settings.json
-├── guard-judge.md       # optional: the prompt that answers command prompts for you
 ├── memory-policy.md     # optional: what this project wants recorded
 ├── agents/              # optional: one file per agent you add or customize
 │   └── ...
@@ -453,7 +447,7 @@ benchmark's individual markers.
 On the first interactive launch, startup opens a branded Clarvis setup rather than Doctor or an
 empty conversation. Enter begins the focused provider/model picker; the flow makes the selected
 model the default and asks for its credential without ever rendering the secret. After saving,
-Clarvis seeds its ordinary planning, memory and command-review defaults, reloads the live Agent Profile
+Clarvis seeds its ordinary planning and memory defaults, reloads the live Agent Profile
 catalogue, selects `marshall`, and shows one Ready screen. No agent or workflow file is written at
 any point; the default fleet and workflow catalogue are built into the kernel. One **Escape** from
 either picker closes the bootstrap picker and returns to setup with the staged choice unsaved.
@@ -568,8 +562,7 @@ overlay and its cache together with the existing developer error surface.
 
 Prompt history is likewise a bounded convenience cache: at most 1,000 entries, 1 million
 characters per entry and 8 million resident characters. Startup reads only the newest 8 MiB of its
-JSONL file and compacts an older oversized file in the background. A custom guard-judge prompt is
-limited to 32 KiB and oversized guidance safely falls through to the next scope.
+JSONL file and compacts an older oversized file in the background.
 
 ### Navigation and keyboard environments
 
@@ -594,8 +587,8 @@ keeps the whole path too and names the open file's operation. Escape returns fro
 tree, then closes `/diff`; its footer omits
 the global Ctrl+C cancel/quit action like the Plan and Goal detail screens.
 
-isolation and Guard have separate persisted controls; Memory's quick control is session-only.
-Application actions use Ctrl+X: I for Isolation, G for Guard, M for Memory, R for Run controls,
+Memory's quick control is session-only.
+Application actions use Ctrl+X: I for Isolation, M for Memory, R for Run controls,
 P for Plan, O for Goal, W for Workflow, D for Diff, S for the activity Sidebar, K for block expansion, and E
 for the expanded editor. Ctrl+X Up/Down enter transcript-block focus; while a block is focused,
 plain Up/Down move between blocks and Tab returns to the composer. While a Ctrl+X prefix is pending,
@@ -607,7 +600,7 @@ binding that would really fire there. These defaults are identical
 on macOS, Windows and Linux: press Ctrl+X, release it, then press the second key.
 The prefix expires after two seconds; Escape clears it and retains normal back behavior. Manual overrides remain
 available in Keyboard settings. All shortcut labels spell out Ctrl and Shift instead of a caret.
-Isolation, Guard, Memory and Agent pickers are disabled while a run is active.
+Isolation, Memory and Agent pickers are disabled while a run is active.
 Clarvis keeps the terminal's native text path
 instead of requesting all-key escape reports, preserving dead-key and IME composition; a literal
 `ß` remains ordinary text. The three run-control pickers are loaded on first use and retained after their first
@@ -664,10 +657,7 @@ then `[2] do not run`, with no preselected UI answer.
 Numbered elicitation choices submit immediately with `1–9`, and `0` selects the tenth option. Arrow
 keys only move the highlighted choice and still require Enter. Number shortcuts deactivate while a
 text or numeric field owns input. Enter on an untouched workflow prompt cannot launch a workflow by
-enum order. Command and configuration approvals always present the affirmative decision first:
-`[1] allow once`, `[2] deny`; when a session grant exists the order is `[1] allow once`, `[2] allow
-for this session`, `[3] deny` for commands, and `[1] allow once`, `[2] allow these targets for this
-session`, `[3] deny` for configuration. Deny remains preselected, so untouched Enter stays fail-closed.
+enum order.
 
 Goal, Plan and Workflow detail screens share a 100-cell reading column, title/section styling,
 spacing and lifecycle colors. Their footers use the same lowercase action labels and group Escape
@@ -753,85 +743,13 @@ the pinned Croner dependency solely for calendar calculations; its bundled MIT l
 in [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md). The behavioral contract and test ownership
 are in [loop-scheduling.md](../../specs/hosts/loop-scheduling.md).
 
-### The command guard, and answering it automatically
+### Shell and file tools
 
-Before a shell command runs, the guard rules on it. Its mode lives in
-`settings.json` and defaults to `on`:
-
-```json
-{
-  "guard": {
-    "mode": "on",
-    "denied_commands": ["rm -rf /*", "git push --force*"],
-    "allowed_commands": ["bun test", "git status"]
-  }
-}
-```
-
-- **`off`** — no ruling at all.
-- **`on`** (default) — an `ask` verdict becomes a confirmation prompt for you.
-- **`auto`** — an LLM reviews each `ask`; deny and unsure refuse to the calling agent. Auto never
-  asks a person, including `on_unsure: "ask"`.
-
-On first setup, Clarvis writes a visible, editable starter `allowed_commands`
-list into global settings. It covers conventional inspection, build, test, lint
-and type-check commands across the common JavaScript/TypeScript, Python, Rust,
-Go, JVM, .NET, native, Ruby/PHP and additional language ecosystems. Generic
-interpreters and task runners plus install, publish, deploy and migration
-commands remain reviewable. Existing lists — including an intentionally empty
-one — are never expanded or replaced. For a low-interruption integrated posture with host
-containment, choose Isolation `Sandbox` and Review `Auto`. An allowlist is approval policy
-and does not make repository-controlled build or test code safe to run directly on the host.
-
-After a guarded shell call settles, its transcript header states the durable
-verdict and answerer, for example `approved by judge` or `denied by judge`; the
-guard mode and internal review facts do not occupy transcript chrome. The same
-annotation is included in Markdown export and survives reopening the run. Shell
-calls remain individual transcript rows, so each settled call retains its own
-verdict and answerer. A collapsed non-zero shell result keeps `exit <code>` in
-that same header immediately before the guard verdict instead of consuming a
-separate diagnostic row; longer non-exit diagnostics remain below the header.
-
-Changing Review preserves the effective `allowed_commands` and `denied_commands`, including when a
-workspace choice inherits the global policy. Changing Isolation leaves Review and its command policy
-stored. Selecting Host requires an explicit danger confirmation
-because it removes the containment boundary; turning Review off does not itself change isolation.
-With Review off, a Sandbox run that requests `sandbox_permissions: "require_escalated"` executes that
-one command on the host without a reviewer. The selected Host or Sandbox policy remains independent from Review.
-
-In Review on and auto, a **deny** is enforced before a reviewer; `denied_commands` wins
-over `allowed_commands`. An entry without `*` is a space-boundary prefix over the
-normalized command; an entry with `*` is an anchored glob. Turning the guard off
-is a persisted choice — write `"mode": "off"` rather than deleting the block, or
-it comes back on the next boot.
-
-**Auto needs a usable reviewer model.** The kernel resolves `effect_review.model` or the default
-model and always supplies its safety policy first. Optional workspace/global `guard-judge.md`
-files provide guidance below that policy, never authority. When both exist, Code preserves the
-operator-global guidance first and appends workspace guidance within the 32 KiB request bound.
-Code sends guidance only when present. An unsure, failed or malformed review is denied to the
-calling agent; Auto never sends that outcome to a person.
-
-It is plain prose — no frontmatter, no schema. Write the standing rules you would
-apply yourself:
-
-```markdown
-Approve read-only inspection freely: status, log, diff, ls, cat, test runs.
-
-Ask me about anything that pushes, publishes, deletes outside the working tree,
-or edits files under `infra/`.
-
-Never approve a command that pipes a network fetch into a shell.
-```
-
-The configuration reviewer uses host-attributed operator evidence and mechanically attested effects;
-the `shadow` and `local` stages validate effect-model allows against current grants. Every shell
-`ask` the allow/deny lists did not resolve instead uses the exact-call Judge in Auto: its payload separates
-segment source, executable, parameters and environment bindings, while deny-list and path rules retain precedence. Auto never asks a person: the Judge decides
-forced removal, privilege elevation, credential-file access and unsandbox, and refusals name the
-exact match. Approval asks a human only when the call is neither allow-listed nor dangerous. The prompt shows segment causes, effect identity and
-operational failure kind. See the [command-guard contract](../../specs/execution/command-guard.md)
-and the [effect-review contract](../../specs/execution/effect-review.md).
+Shell commands and file operations execute with the selected Isolation policy. When native
+Sandbox isolation is configured, its filesystem and network restrictions apply to both.
+Production: `packages/code/src/features/run/` (run configuration) and
+`packages/tools/src/sandbox.ts` (`sandboxCommand`). The behavior is specified in
+[sandbox.md](../../specs/execution/sandbox.md).
 
 `~/.clarvis` is `$CLARVIS_HOME` when that is set.
 
@@ -999,7 +917,7 @@ assets to load successfully.
 
 `-p/--print` runs without a terminal: it starts the kernel silently, streams
 the lead agent's reply to stdout and exits 0 on success or 1 on failure —
-suitable for scripts and CI. Interactive approvals (guard/ask_user) are
+suitable for scripts and CI. Interactive `ask_user` prompts are
 auto-denied with a note on stderr, so a headless run can never hang. Without
 `--agent`, it uses the same configured-default, runnable-`marshall`, runnable-Lead
 resolution as the TUI and fails clearly when no interactive entry agent exists. Its kernel, like
@@ -1168,7 +1086,7 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 - One transcript projection renders stable row IDs for composing, pending, running and terminal
   records. Results are sealed into bounded immutable copies without freezing live reactive nodes,
   then remain in the same row owner across later iterations and restored turns.
-  Explicit exploration groups exist from their first allowlisted read/search call; shell, mutations
+  Explicit exploration groups exist from their first read/search call; shell, mutations
   and unknown MCP tools stay individual. Each open group mounts one page of 20 members.
 - One native ScrollBox owns sticky follow, culling and semantic row anchors. Short projections mount
   at most 80 rows; long projections normally mount 40 with 20-row paging and an 80-row transition
@@ -1233,8 +1151,8 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   so the previous run cannot briefly appear twice while `run_started` is still in flight.
 - The canonical footer keeps gross Context plus cumulative `Session` input/output, prompt-cache hit
   percentage and cost available before and after a run settles (token totals and cache percentage
-  appear in the wide band). Goal stage cost includes Guard reviews after host settlement, while
-  ordinary runs and Goal auxiliary work accumulate in the same Session cost field. It does not repeat
+  appear in the wide band). Goal stages, ordinary runs and Goal auxiliary work accumulate in the same
+  Session cost field. It does not repeat
   `Running`, elapsed time or iteration there; those live-run facts sit beside `thinking`/`working`
   immediately above the composer, where the current phase leads and the details after it stay muted.
   When a full-region page (Plan, Diff, a view) owns the reading area, that activity line prefixes
@@ -1277,7 +1195,6 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   remaining pane width beside an explicitly opened split; the old 110-column reading cap no longer
   applies.
 - Session browsing and continuation.
-- Command guards and approval flows.
 - User elicitation during a run.
   A model-originated `ask_user` question arrives with a 30-second decision window (`window_ms`,
   declared by this frontend as `elicit_policy.ask_user_window_ms`): the block confirms its own
@@ -1290,7 +1207,7 @@ time; decision returned to the model.` and that question's form, choices and dec
   id, which removes the block without this frontend answering an already-settled id. Its settled
   transcript annotation reads `no answer: …`, never `answered:`. Typing, focus,
   remounting or reconnecting never extend the window, and no partial draft, default option or
-  synthetic answer is ever submitted. Guard confirmations, plan and workflow reviews and relayed MCP
+  synthetic answer is ever submitted. Plan and workflow reviews and relayed MCP
   questions declare no window and render no countdown. See
   [elicitation](../../specs/cross-cutting/elicitation.md) and
   [input and overlays](../../specs/hosts/code-input-and-overlays.md).
@@ -1560,9 +1477,9 @@ the notice is never written into transcript history. A selected plugin whose cap
 files drift receives the parallel `Plugin '<name>' changed executable files` warning while its
 runtime MCP/hook/capability projections are withheld.
 
-The workspace header reports stored Review and effective Isolation as separate chips. Settings >
+The workspace header reports effective Isolation. Settings >
 Run controls owns the persisted global Host or Sandbox choice alongside the `Ctrl+X I` quick picker.
-Host follows OS permissions with Guard review; Sandbox reads host-visible files but limits writes to
+Host follows OS permissions; Sandbox reads host-visible files but limits writes to
 its declared roots. `workspace-read-only` keeps the workspace read-only even below a writable
 temporary root. A Sandbox command may use an accessible directory outside the workspace as `cwd`.
 The panel's effective access line follows host inspection when an untrusted workspace requests a

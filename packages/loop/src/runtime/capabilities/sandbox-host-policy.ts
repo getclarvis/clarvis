@@ -2,7 +2,7 @@
  * Host-side resolution of the sandbox settings block into concrete filesystem
  * policy: validating operator-supplied extra paths and discovering the runtime
  * toolchain roots the sandbox must expose read-only. Lives on the host side of
- * the guard/sandbox seam (it touches the real filesystem and `@clarvis/tools`).
+ * the sandbox seam (it touches the real filesystem and `@clarvis/tools`).
  */
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";

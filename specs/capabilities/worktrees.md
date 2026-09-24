@@ -100,7 +100,7 @@ Test: `packages/code/tests/component/workspace-client-manager.test.ts`;
 `packages/code/tests/unit/workspace-runtime.test.ts`;
 `packages/kernel/tests/integration/file-kernel.test.ts`.
 
-## 5. Sandbox and host fallback
+## 5. Sandbox placement
 
 A linked checkout's `.git` is a pointer into the primary repository. The command sandbox therefore
 validates its worktree target and reciprocal backlink once while configuring the toolset, then pins
@@ -108,28 +108,16 @@ the canonical common Git directory. Commands mount that pinned directory read-wr
 workspace-write mode and read-only for workspace-read-only mode without re-reading mutable metadata.
 It does not mount the operator's home directory, credential files, or keyring.
 
-When the sandbox lacks a required host environment variable, credential channel, runtime, or
-service, the model retries the same `shell` command with
-`sandbox_permissions: "require_escalated"` and a short `justification`. Isolation Sandbox then
-spawns that one command on the host after approval: `on` asks a human; Auto uses the judge, with
-`allow` executing and `deny`, unsure, failed or malformed review refusing to the calling agent. An
-unavailable model refuses. Host-command asks never use session coverage or offer `allow_session`;
-clean exact-call judge memoization remains separate. Isolation Host already runs unsandboxed and the field leaves normal review intact.
-Mode `off` proceeds without a reviewer. Executable Git
-options (`--upload-pack`, `--receive-pack`, and `--exec`), custom transport-helper URLs,
-`git credential`, and `gh auth token` remain denied independently of command review.
+The configured native sandbox remains in force for every agent command. It does not offer a
+per-call host escape. A toolset configured for Host runs under OS permissions; a toolset
+configured for Sandbox fails the call if its native backend cannot be applied.
 
 Production: `packages/tools/src/config.ts` (`resolveConfig`);
 `packages/tools/src/sandbox.ts` (`discoverLinkedGitMetadataPaths`, `sandboxCommand`);
-`packages/tools/src/lib/sandbox-permissions.ts` (`resolveSandboxEscalation`);
-`packages/tools/src/lib/sensitive-commands.ts`;
-`packages/tools/src/core.ts` (`applyGuard`);
-`packages/kernel/src/guard/shell-guard.ts` (`createShellGuard`).
+`packages/tools/src/lib/execution-session.ts` (`ExecutionSessionManager.launch`).
 
 Test: `packages/tools/tests/integration/sandbox.test.ts`;
-`packages/tools/tests/integration/shell-escalation.test.ts`;
-`packages/tools/tests/unit/guard-context.test.ts`;
-`packages/kernel/tests/unit/guard.test.ts`.
+`packages/tools/tests/unit/sandbox-placement.test.ts`.
 
 ## 6. Invariants
 
@@ -181,13 +169,12 @@ Test: `packages/tools/tests/integration/sandbox.test.ts`;
 | `HEAD` names no commit and no `clarvis/<name>` branch exists to reuse | startup fails before preparing the destination; no branch, checkout, or nested directory is created |
 | Sandbox cannot validate linked Git metadata | no extra metadata mount is added |
 | Linked Git metadata changes after toolset configuration | commands retain the originally validated pinned mount |
-| `require_escalated` has no guard because command review is `off` | that one command proceeds on the host |
-| `shell` requests direct token output or hidden Git helper execution | call is denied without execution |
+| Native Sandbox backend is unavailable | command fails without a host fallback |
 | Exit cleanup observes pending changes or Git refuses removal | checkout and branch remain; a diagnostic records failure |
 
 ## 8. Dependency seams
 
 There is no `@clarvis/worktrees` package. Launch and confirmed-exit cleanup orchestration belong to
 Code, durable identity to Kernel, paths and ignore protection to `@clarvis/paths`, and process
-confinement and per-call host escalation to `@clarvis/tools`. Protocol carries only project/workspace
+confinement to `@clarvis/tools`. Protocol carries only project/workspace
 identity already needed by sessions and runs; it exposes no worktree lifecycle API.

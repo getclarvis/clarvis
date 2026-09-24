@@ -133,13 +133,12 @@ clarvis-server --auth required --owner-mode token --public-url https://clarvis.e
 | `owner`       | vhost                        |
 | `roles{}`     | permissions                  |
 
-Two roles exist without being declared: `admin` (every agent, may approve guarded commands, may act
-for another owner) and `user` (every agent, approves nothing, its own owner only). Declaring either
+Two roles exist without being declared: `admin` (every agent, may act
+for another owner) and `user` (every agent, its own owner only). Declaring either
 overrides it field by field; any other role name starts from `user`. A role that lists `agents`
 **requires** `clarvis_run` to name one. An omitted `agent` does resolve — to the shipped entry agent
 — which is exactly why a restricted role may not omit it: the default is not on anyone's allowlist,
-and silently entering it would make the restriction decorative. `guard_confirmations: "relay"` still needs
-`CLARVIS_SERVER_ALLOW_REMOTE_GUARD_APPROVAL=1` — the server switch is the ceiling.
+and silently entering it would make the restriction decorative.
 
 | Endpoint                                  | Auth                                  |
 | ----------------------------------------- | ------------------------------------- |
@@ -194,8 +193,7 @@ role.
 
 Two per-request knobs beyond the messages: `memory` (`on`/`off`) and `plans`
 (`off`/`on`/`review`). Nothing else is exposed — no config, secrets, files, plans, memory, sessions
-or cross-owner run listing. `guard_mode` is deliberately **not** accepted: a caller must not be able
-to switch off the server operator's command guard.
+or cross-owner run listing.
 
 The backing kernel boots with `builtins.tasks = false`. This is stronger than merely omitting
 control endpoints: agents running through `clarvis_run` receive no external-task tools or bindings,
@@ -230,7 +228,7 @@ transitions remain `debug` diagnostics.
 
 ## Questions the run asks
 
-A run can ask a human — `ask_user`, a command-guard confirmation, a plan-review gate, a soft budget
+A run can ask a human — `ask_user`, a plan-review gate, a soft budget
 breach. How they are answered is resolved once per run:
 
 | Posture        | When                                               | Behaviour                                              |
@@ -243,11 +241,6 @@ breach. How they are answered is resolved once per run:
 for the engine's elicit wait bound. Under `auto_decline` a requested `plans: "review"` is downgraded
 to `"on"`, because an unanswered review gate _cancels_ the run rather than merely skipping approval.
 Every applied constraint is reported back in the result's `posture` block.
-
-Guard confirmations are denied regardless of posture unless
-`CLARVIS_SERVER_ALLOW_REMOTE_GUARD_APPROVAL=1` **and** the caller's role allows it. The guard exists
-to protect the server from the model; letting a caller approve arbitrary commands would remove the
-only thing it does.
 
 ## Health
 

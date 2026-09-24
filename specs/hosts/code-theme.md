@@ -456,9 +456,9 @@ status line with `MEMORY_PRESSURE_STATUS_RESTORING` or `MEMORY_PRESSURE_STATUS_F
 
 ## 5. Invariants
 
-1. **INV-247 (owned).** Thirteen specifically named source files
-   (`src/adapters/code-config.ts`, `src/adapters/guard-mode.ts`, `src/adapters/session-store.ts`,
-   `src/adapters/settings.ts`, and ten config-view `.tsx` files —
+1. **INV-247 (owned).** Twelve specifically named source files
+   (`src/adapters/code-config.ts`, `src/adapters/session-store.ts`,
+   `src/adapters/settings.ts`, and nine config-view `.tsx` files —
    `AgentsPanel.tsx`, `DoctorView.tsx`, `MarketplaceBrowser.tsx`, `McpBrowser.tsx`,
    `RunControlsPanel.tsx`, `SandboxConfigPanel.tsx`, `ThemeView.tsx`,
    `WorkflowsHub.tsx`, `view-host.tsx`) contain **zero** non-ASCII characters (codepoint `> 0x7f`)

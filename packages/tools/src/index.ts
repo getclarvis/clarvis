@@ -85,59 +85,13 @@ export type { KillDeps, TaskkillRunner } from "./lib/process.ts";
 export { tools, readOnlyTools, getTool, selectSurface } from "./tools/registry.ts";
 export type { ToolDef, ToolCallHooks } from "./tools/types.ts";
 
-export {
-  analyzeShell,
-  posixDialect,
-  POSIX_DEFAULT_ALLOWED_COMMANDS,
-  WINDOWS_DEFAULT_ALLOWED_COMMANDS,
-  buildGuardContext,
-  resolveCandidate,
-  withinWorkspace,
-  touchesOutside,
-  isDangerousCommand,
-  commandRiskFindings,
-} from "./guard/index.ts";
-export type {
-  Verdict,
-  GuardDecision,
-  GuardPlacement,
-  GuardCallFacts,
-  GuardAnswerer,
-  GuardElicitAnswer,
-  GuardReview,
-  Segment,
-  ShellFacts,
-  ShellAnalysisIssue,
-  ShellAnalysisIssueKind,
-  ShellAnalysisImpact,
-  GuardReviewability,
-  GuardRiskKind,
-  GuardRiskOperandUncertainty,
-  GuardRiskFinding,
-  PathFact,
-  GuardContext,
-  Guard,
-  ElicitRequest,
-  Elicit,
-  ShellDialect,
-  Token,
-  PathCandidate,
-} from "./guard/index.ts";
 export type { ContentPart, TextPart, ImagePart, ToolResult } from "./tools/content.ts";
 export { contentText } from "./tools/content.ts";
 
 export { ToolError, serializeError, fsError } from "./errors.ts";
 export type { ErrorCode } from "./errors.ts";
-export {
-  scanSmallTree,
-  SMALL_TREE_MAX_ENTRIES,
-  SMALL_TREE_MAX_PATH_BYTES,
-} from "./lib/small-tree.ts";
-export type { SmallTreeSnapshot } from "./lib/small-tree.ts";
-
 export { setWarnSink, warn, NOOP_TOOLS_LOGGER } from "./lib/log.ts";
 export type { WarnSink, ToolsLogger, ToolsWarning } from "./lib/log.ts";
-export type { GuardEffectCallFact, EffectReviewDetail } from "./guard/effect-review.ts";
 
-export type { MutationReview, FileOp } from "./lib/atomic.ts";
+export type { FileOp } from "./lib/atomic.ts";
 export { applyOpsAtomic } from "./lib/atomic.ts";

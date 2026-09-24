@@ -12,13 +12,6 @@ const ASK = {
   schema: { type: "object", properties: { answer: { type: "string" } } },
 };
 
-const GUARD = {
-  id: "g1",
-  kind: "guard_confirm" as const,
-  prompt: "Run `rm -rf build`?",
-  detail: { command: "rm -rf build", cwd: "/w", reason: "cleanup" },
-};
-
 describe("elicitation — auto_decline (the no-stall guarantee)", () => {
   it("answers every question immediately when the client cannot be asked", async () => {
     const host = createFakeRunHost(() => ({ elicits: [ASK, { ...ASK, id: "q2" }] }));
@@ -39,19 +32,6 @@ describe("elicitation — auto_decline (the no-stall guarantee)", () => {
         (message) => (message.data as { type?: string }).type === "elicitation_pending",
       ),
     ).toBe(true);
-    await h.close();
-  });
-
-  it("denies a guard confirmation rather than leaving it hanging", async () => {
-    const host = createFakeRunHost(() => ({ elicits: [GUARD] }));
-    const h = await makeHarness({ host });
-
-    const out = payloadOf(
-      await h.client.callTool({ name: TOOL_NAMES.run, arguments: { prompt: "go" } }),
-    );
-
-    expect(out.status).toBe("completed");
-    expect(host.responses).toEqual([{ id: "g1", action: "decline" }]);
     await h.close();
   });
 });
@@ -93,24 +73,6 @@ describe("elicitation — relay", () => {
 
     expect(out.status).toBe("completed");
     expect(host.responses.map((r) => r.action)).toEqual(["decline"]);
-    await h.close();
-  });
-
-  it("auto-denies a guard confirmation before it ever reaches the client", async () => {
-    const host = createFakeRunHost(() => ({ elicits: [GUARD] }));
-    let clientWasAsked = false;
-    const h = await makeHarness({
-      host,
-      onElicit: () => {
-        clientWasAsked = true;
-        return Promise.resolve({ action: "accept" as const });
-      },
-    });
-
-    await h.client.callTool({ name: TOOL_NAMES.run, arguments: { prompt: "go" } });
-
-    expect(clientWasAsked).toBe(false);
-    expect(host.responses).toEqual([{ id: "g1", action: "decline" }]);
     await h.close();
   });
 });

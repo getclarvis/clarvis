@@ -98,16 +98,16 @@ Extension Profiles.
 only each selected skill's own directory as that skill's `executionRoot`; it never exposes the
 broader collection or package directory. Filesystem-backed `load_skill` identifies the skill directory for
 relative resource paths and emits the helper-execution hint only for this opted-in field. Execution
-still goes through the normal shell command guard and native sandbox policy.
+still goes through the normal shell tool and configured native sandbox policy.
 
 Host bridges mark tool-only disclosure with `resourceAccess: "remote"`. The catalog then advertises
 loading by name and resource reads through `read_skill_resource`; body disclosure advertises no
 mounted directory or execution root. Bundled helpers must first be read through all resource pages
 and prepared with their relative directory structure in the writable workspace, then invoked
-through the ordinary guarded shell. Remote locations are opaque locators.
+through the ordinary shell tool. Remote locations are opaque locators.
 
 `validateSkillDocument` exposes the same bounded-frontmatter parser used by discovery, so the
-host's reviewed file-tool route can validate a candidate before mutation.
+host's configuration loader can validate a candidate before activation.
 
 `captureSkillExecution` materializes a bounded catalog revision for a host that needs stable helper
 paths and resource bytes while the source is edited. It copies only enumerated resources and manifests,

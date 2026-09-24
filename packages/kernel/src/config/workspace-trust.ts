@@ -32,7 +32,7 @@ import type { SettingsData, WorkspaceTrustVerdict } from "@clarvis/protocol";
  * - `providers.subscription` attempts to attach global subscription credentials
  *   to a repository-chosen provider declaration or endpoint contract.
  *
- * Policy fields a repository might merely weaken (`guard`, `sandbox`) are
+ * Policy fields a repository might merely weaken (`sandbox`) are
  * deliberately absent: keeping the list short is what keeps the verdict `inert`
  * for the overwhelming majority of repositories, and a mechanism that prompts
  * about ordinary repositories teaches the answer "approve" and protects nobody.

@@ -214,31 +214,22 @@ export function createPluginContributions(opts: {
   const watchRuntimePath =
     opts.watchRuntimePath ??
     ((path: string, onChange: () => void): PluginRuntimeWatcher => {
-      const listener = (
-        current: {
-          mtimeMs: number;
-          ctimeMs: number;
-          size: number;
-          mode: number;
-          ino: number;
-          dev: number;
-        },
-        previous: {
-          mtimeMs: number;
-          ctimeMs: number;
-          size: number;
-          mode: number;
-          ino: number;
-          dev: number;
-        },
-      ): void => {
+      const baseline = statSync(path);
+      const listener = (current: {
+        mtimeMs: number;
+        ctimeMs: number;
+        size: number;
+        mode: number;
+        ino: number;
+        dev: number;
+      }): void => {
         if (
-          current.mtimeMs === previous.mtimeMs &&
-          current.ctimeMs === previous.ctimeMs &&
-          current.size === previous.size &&
-          current.mode === previous.mode &&
-          current.ino === previous.ino &&
-          current.dev === previous.dev
+          current.mtimeMs === baseline.mtimeMs &&
+          current.ctimeMs === baseline.ctimeMs &&
+          current.size === baseline.size &&
+          current.mode === baseline.mode &&
+          current.ino === baseline.ino &&
+          current.dev === baseline.dev
         )
           return;
         onChange();

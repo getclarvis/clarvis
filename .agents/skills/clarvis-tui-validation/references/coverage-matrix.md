@@ -100,15 +100,14 @@ states, Escape/back, persistence, status feedback, and scope where applicable.
 
 ### Current Settings panels
 
-| ID       | Panel        |
-| -------- | ------------ |
-| `SET-01` | Providers    |
-| `SET-03` | Agents       |
-| `SET-04` | Defaults     |
-| `SET-05` | Memory       |
-| `SET-07` | Theme        |
-| `SET-08` | Keyboard     |
-| `SET-09` | Updates      |
+| ID       | Panel     |
+| -------- | --------- |
+| `SET-01` | Providers |
+| `SET-03` | Agents    |
+| `SET-04` | Defaults  |
+| `SET-07` | Theme     |
+| `SET-08` | Keyboard  |
+| `SET-09` | Updates   |
 
 For every panel, verify global and workspace scopes, effective-value labeling, scope switching,
 revision conflicts, failed saves, stale responses, reset/inheritance behavior, and deep-link return
@@ -151,7 +150,7 @@ routes.
 | ID       | Scenario              | Minimum proof                                                                                                                                                                                            |
 | -------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `CAP-01` | Plans                 | Create/update/review/retain/delete paths, full-screen detail, conflicts and active-run projection are coherent                                                                                           |
-| `CAP-02` | Execution memory      | Enable/disable, policy, review/curation, indexing after run, failure, recovery and persistence are coherent                                                                                              |
+| `CAP-02` | Execution memory      | Fresh-install off, global Ctrl+X M choice across workspaces and restarts, policy, review/curation, run-model indexing, failure and recovery are coherent                                                 |
 | `CAP-03` | Subagents             | Three concurrent children share no transcript owners; Lead keeps two navigable markers; A→B→Lead invalidates stale restores and preserves independent anchors; background interactions remain accessible |
 | `CAP-04` | Workflows             | Built-in/custom precedence, manager tree, concurrency, cancellation, budget exhaustion, deletion and resume are correct                                                                                  |
 | `CAP-05` | Tasks board           | Availability, health, filters, detail, refresh, normalized/native state and claim semantics are honest                                                                                                   |
@@ -173,7 +172,7 @@ routes.
 | `EXT-07`  | Hooks and executables            | Contribution review, workspace approval, command execution, failure and diagnostic redaction preserve trust boundaries                                                          |
 | `EXT-08`  | Workspace trust                  | Executable configuration is withheld until approval, recomposes after change, and revocation takes effect safely                                                                |
 | `EXT-09`  | Drift after admission            | After the documented asynchronous drift notice, affected skills or executable contributions are withdrawn, unaffected work remains usable, and reconnect captures changed bytes |
-| `SAFE-01` | Run control changes              | Session Memory mode and completed-plan retention update the intended scope and show their effective state                                                                       |
+| `SAFE-01` | Memory and plan choices          | Global Memory on/off and completed-plan retention update their intended scopes and show their effective state                                                                   |
 | `SAFE-04` | Secret and path boundaries       | Keys, subscriptions, logs, storage, export, attachments, marketplace and tool output reveal no protected material or escape path                                                |
 | `SAFE-05` | Host temporary interoperability  | Cross-tool host-temp access and non-owning cleanup are proved on the active OS                                                                                                  |
 
@@ -201,4 +200,4 @@ never own or remove the system parent or unrelated children.
 | `PERF-04`   | Idle and active resource soak    | Diagnostics plus external process-tree RSS/PSS, CPU/redraw, listeners, owners, queues and child processes remain bounded                                                                                                                                                                                                |
 | `NATIVE-01` | Physical terminal                | Exact launcher and profile keyboard packets, rendering, Escape latency, paste, mouse and shutdown are exercised on target terminal hardware                                                                                                                                                                             |
 | `NATIVE-02` | Real provider/account            | Authorized provider stream, usage, tools, errors and continuation match deterministic behavior without exposing credentials                                                                                                                                                                                             |
-| `NATIVE-03` | Target platforms                 | Required macOS and Linux PTY/native canaries are reported independently; unavailable platforms remain unverified                                                                                                                                                                                               |
+| `NATIVE-03` | Target platforms                 | Required macOS and Linux PTY/native canaries are reported independently; unavailable platforms remain unverified                                                                                                                                                                                                        |

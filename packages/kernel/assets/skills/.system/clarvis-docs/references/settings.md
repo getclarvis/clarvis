@@ -4,6 +4,10 @@ Read the existing global and workspace settings before editing. The host validat
 
 Common supported fields are `default_model` (a `provider/model` token), `default_reasoning_effort`
 (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`), `providers` (an array), and `budget`.
+Execution Memory starts off in a fresh installation. The TUI's Ctrl+X M picker saves one
+on/off choice in global `memory.enabled`; it applies across workspaces and restarts. Workspace
+`memory` blocks may configure the wiki provider and budgets but cannot change activation.
+When Memory is on, its indexer uses the model selected by the run, with no separate memory model.
 A provider entry has a `name` using lowercase letters, digits, `_` or `-`, and a `kind`:
 `openai-compatible`, `openai`, `anthropic`, `google`, `openai-codex`, or `xai-grok`.
 An `openai-compatible` provider needs `base_url`; `api_key_env` names an environment variable,

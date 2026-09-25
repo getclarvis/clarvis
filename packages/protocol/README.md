@@ -76,7 +76,7 @@ adapter using the same RPC framing.
 
 ## Services
 
-File-tool configuration uses ordinary runs and concrete `configuration_review` elicitation when required.
+File-tool configuration uses ordinary runs; file calls have no configuration approval path.
 Host-owned authority is separate from model-provided parameters and saved transcript content.
 `LocalHostStatus.skills_revision` notifies attached clients when the host publishes a skill catalog
 generation, allowing command listings to refresh without reconnecting. See

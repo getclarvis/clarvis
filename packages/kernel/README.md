@@ -330,7 +330,7 @@ takeover retire it without releasing physical work. Pending controls/continuatio
 starts revalidate process authority after asynchronous preparation. `readRunTrace` is a host-only,
 owner-scoped evidence port and never enters the client protocol.
 `serveLocalFileKernel` composes a separately launched host with a private lease, credential,
-generation-aware discovery index and idle shutdown. Disabled workspace memory permits idle
+generation-aware discovery index and idle shutdown. Globally disabled Memory permits idle
 retirement even when the host supports memory; pending jobs and queue inspection failures still
 prevent automatic retirement. `connectOrLaunchLocalKernel` authenticates the
 discovered generation or launches the application-selected artifact without inheriting TUI stdio.

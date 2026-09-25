@@ -93,7 +93,7 @@ chooser and a validator cannot drift apart.
 ## Shape
 
 It has **no dependencies at all**, internal or external, so every writer of `.clarvis` — `tools`,
-`trace`, `mcp-client`, `skills`, `memory`, `plan`, `loop`, `kernel`, `server` and `code` — can
+`trace`, `mcp-client`, `skills`, `memory`, `plan`, `loop`, `kernel` and `code` — can
 depend on it without gaining an edge to anything else. It uses only `node:path`, `node:os`,
 `node:fs`, `node:fs/promises` and `node:crypto`, with no literal separators and no POSIX
 assumptions. It is the _filesystem_ leaf, which is why the atomic-write family lives here rather

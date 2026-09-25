@@ -2,7 +2,7 @@ import type { MemoryService } from "@clarvis/protocol";
 import { KernelException } from "../core/errors.ts";
 
 /**
- * Preserve a host while memory has executable work. A disabled workspace has no active memory
+ * Preserve a host while memory has executable work. Globally disabled Memory has no active memory
  * instance; other queue failures remain failures and must not authorize idle shutdown.
  */
 export async function memoryKeepsHostAlive(

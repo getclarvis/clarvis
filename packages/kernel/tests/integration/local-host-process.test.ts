@@ -142,7 +142,7 @@ describe("independent local kernel process", () => {
     await replacement.client.close();
   });
 
-  test("retires an idle memory-capable process with workspace memory disabled", async () => {
+  test("retires an idle memory-capable process with global memory disabled", async () => {
     const f = await fixture();
     const { client } = await connectOrLaunchLocalKernel(f.options);
     cleanups.push(() => client.close());

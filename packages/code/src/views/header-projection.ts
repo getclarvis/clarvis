@@ -79,7 +79,7 @@ function modelNames(model: string): { full: string; short: string } {
   return { full, short: slash === -1 ? full : full.slice(slash + 1) };
 }
 
-/** Memory as the rest of the product states it — `inert` is still configured, so it reads `on`. */
+/** Memory as the rest of the product states it — `inert` still reflects the selected On choice. */
 function memoryLabel(memory: MemoryState): string {
   return memory === "off" ? "off" : "on";
 }

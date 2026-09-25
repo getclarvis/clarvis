@@ -287,7 +287,7 @@ export interface AppSessionControls {
   usage?: () => { input: number; output: number; cached?: number } | null;
 }
 
-/** The workspace's configuration surfaces — agents, settings, memory mode, keys and the model catalog. */
+/** Configuration surfaces — agents, settings, global memory choice, keys and the model catalog. */
 export interface AppFleet {
   agents: ActiveAgentStore;
   agentFiles: AgentsStore;

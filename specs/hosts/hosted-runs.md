@@ -997,15 +997,15 @@ preservation of background execution after incompatible tool/default/ceiling rec
 
 The host normally exits after 60 seconds with no clients or physical work. The idle boundary includes
 preparation/runs, local activities, maintenance, disconnect cleanup, index commits, and the FileKernel's
-execution leases. Pending/running/retry memory jobs also keep it alive. A supported but disabled
-workspace memory capability does not keep an idle host alive: only `capability_disabled` with
+execution leases. Pending/running/retry memory jobs also keep it alive. A globally disabled
+Memory capability does not keep an idle host alive: only `capability_disabled` with
 `MEMORY_NOT_CONFIGURED` means no active memory instance. Other queue inspection failures prevent
 automatic retirement; they are not treated as an empty queue.
 Production: `memoryKeepsHostAlive` in
 [memory-activity.ts](../../packages/kernel/src/hosting/memory-activity.ts). Test:
 [host-memory-activity.test.ts](../../packages/kernel/tests/unit/host-memory-activity.test.ts)
 covers absent/disabled memory, job states and inspection errors; `retires an idle memory-capable
-process with workspace memory disabled` in
+process with global memory disabled` in
 [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts)
 verifies process discovery retirement with the real file host.
 Closing a client never invokes

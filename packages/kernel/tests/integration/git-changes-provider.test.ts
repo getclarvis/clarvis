@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
@@ -19,7 +20,7 @@ afterEach(() => {
 });
 
 function tempDir(prefix: string): string {
-  const dir = mkdtempSync(join("/tmp", prefix));
+  const dir = mkdtempSync(join(tmpdir(), prefix));
   roots.push(dir);
   return realpathSync(dir);
 }

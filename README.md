@@ -10,7 +10,7 @@ repository in front of you.
 
 > **Beta:** Clarvis is a pre-1.0 release. Interfaces and pre-1.0 state formats may change, and
 > the portable artifacts are not yet code-signed or notarized. Clarvis can read and change files and
-> run commands; review approval prompts and use source control.
+> run commands; review requested approvals and use source control.
 
 ![Clarvis first-run setup with the responsive splash in a terminal](.github/assets/clarvis-setup.svg)
 
@@ -74,11 +74,11 @@ On a clean installation:
 2. Connect a provider or local OpenAI-compatible endpoint and select a model.
 3. Enter the requested credential when the provider requires one. Clarvis stores credentials in
    the global user configuration, not in the project.
-4. Describe the work in the composer. Clarvis starts with the built-in `marshall` Lead and an
-   approval-oriented safety profile.
+4. Describe the work in the composer. Clarvis starts with the built-in `marshall` Lead.
 
-The current directory is the workspace boundary. Global configuration defaults to `~/.clarvis`;
-project-specific configuration lives in `<project>/.clarvis`.
+The current directory selects the workspace. File tools can also access absolute paths using the
+host process's permissions. Global configuration defaults to `~/.clarvis`; project-specific
+configuration lives in `<project>/.clarvis`.
 
 Essential controls:
 

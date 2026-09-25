@@ -428,9 +428,9 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   ];
 
   /**
-   * The run's merged `memory:` block, re-read per call so a settings edit takes
-   * effect live. An absent block uses the built-in wiki and budgets; each run
-   * must still explicitly request memory on.
+   * The merged `memory:` provider and budgets with the global on/off choice,
+   * re-read per call so a settings edit takes effect live. An absent block uses
+   * the built-in wiki and budgets; each run must still explicitly request memory on.
    *
    * @remarks Its providers are passed through exactly as configured. Nothing on
    * this path consults the model catalog: `prompt_cache` is resolved where a

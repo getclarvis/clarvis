@@ -354,8 +354,8 @@ parameter: verbosity is `CLARVIS_LOG_LEVEL` / `CLARVIS_LOG` only
 `CLARVIS_MEMORY_LOCK_WARN_MS` (default 5000).
 
 The index queue is durable and drains in the background, which is precisely what makes its failures
-invisible: nothing on a run's response path can see a retry, a give-up, or a workspace whose learning
-is only waiting for a model.
+invisible: nothing on a run's response path can see a retry, a give-up, or a job waiting for its
+indexer runtime to become available.
 
 | Level | `event`                              | Fields                                                                                                             |
 | ----- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |

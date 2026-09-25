@@ -1,5 +1,4 @@
 export { Help } from "./overlays/Help.tsx";
-export { TasksHub } from "./config/TasksHub.tsx";
 export { StorageView } from "./config/StorageView.tsx";
 export { SessionsHub } from "./config/SessionsHub.tsx";
 export { WorkflowsHub } from "./config/WorkflowsHub.tsx";
@@ -9,7 +8,6 @@ export { EffortView } from "./config/EffortView.tsx";
 export { DefaultsPanel } from "./config/DefaultsPanel.tsx";
 export { ExtensionProfileBrowser } from "./config/ExtensionProfileBrowser.tsx";
 export { WorkspaceTrustPrompt } from "./config/WorkspaceTrustPrompt.tsx";
-export { CapabilityProvidersPanel } from "./config/CapabilityProvidersPanel.tsx";
 export { MarketplaceBrowser } from "./config/MarketplaceBrowser.tsx";
 export { MemoryConfigPanel } from "./config/MemoryConfigPanel.tsx";
 export { SandboxConfigPanel } from "./config/SandboxConfigPanel.tsx";

@@ -42,9 +42,6 @@ export const WORKSPACE_RISK_FIELDS = [
   "mcpServers",
   "enabledPlugins",
   "marketplaces",
-  "memory.provider",
-  "plans.provider",
-  "tasks.provider",
   "providers.subscription",
 ] as const;
 
@@ -98,24 +95,8 @@ function declaresSomething(value: unknown): boolean {
  *   to surface `withheld` to the human, never to the model.
  */
 export function stripWorkspaceRiskFields(settings: SettingsData): StrippedWorkspaceSettings {
-  const executableProvider = (field: "memory" | "plans"): boolean => {
-    const block = settings[field];
-    if (typeof block !== "object" || block === null) return false;
-    const provider = (block as { provider?: { kind?: unknown } }).provider;
-    return provider?.kind === "executable" || provider?.kind === "plugin";
-  };
   const withheld = WORKSPACE_RISK_FIELDS.filter((field) => {
     if (field === "providers.subscription") return subscriptionProviders(settings).length > 0;
-    if (field === "memory.provider") return executableProvider("memory");
-    if (field === "plans.provider") return executableProvider("plans");
-    if (field === "tasks.provider") {
-      const block = settings.tasks;
-      return (
-        typeof block === "object" &&
-        block !== null &&
-        typeof (block as { provider?: unknown }).provider === "object"
-      );
-    }
     return declaresSomething(settings[field]);
   });
   if (withheld.length === 0) return { settings, withheld: [] };
@@ -127,21 +108,7 @@ export function stripWorkspaceRiskFields(settings: SettingsData): StrippedWorksp
       else delete kept.providers;
       continue;
     }
-    if (field === "tasks.provider") {
-      delete kept.tasks;
-      continue;
-    }
-    if (field === "memory.provider" || field === "plans.provider") {
-      const blockName = field.startsWith("memory") ? "memory" : "plans";
-      const block = kept[blockName];
-      if (typeof block === "object" && block !== null) {
-        const next = { ...(block as Record<string, unknown>) };
-        delete next.provider;
-        kept[blockName] = next;
-      }
-    } else {
-      delete kept[field];
-    }
+    delete kept[field];
   }
   return { settings: kept, withheld };
 }
@@ -262,27 +229,8 @@ function workspaceExecutableSurface(
       if (providers.length > 0) risky[field] = providers;
       continue;
     }
-    if (field === "tasks.provider") {
-      const block = settings?.tasks;
-      const provider =
-        typeof block === "object" && block !== null
-          ? (block as { provider?: unknown }).provider
-          : undefined;
-      if (typeof provider === "object" && provider !== null) risky[field] = provider;
-      continue;
-    }
-    if (field === "memory.provider" || field === "plans.provider") {
-      const blockName = field.startsWith("memory") ? "memory" : "plans";
-      const block = settings?.[blockName];
-      const provider =
-        typeof block === "object" && block !== null
-          ? (block as { provider?: { kind?: unknown } }).provider
-          : undefined;
-      if (provider?.kind === "executable" || provider?.kind === "plugin") risky[field] = provider;
-    } else {
-      const value = settings?.[field];
-      if (declaresSomething(value)) risky[field] = value;
-    }
+    const value = settings?.[field];
+    if (declaresSomething(value)) risky[field] = value;
   }
   const hasSettings = Object.keys(risky).length > 0;
   const hasAgents = agents.length > 0;

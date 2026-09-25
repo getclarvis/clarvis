@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentsPluginsDirs, globalPaths, workspacePaths } from "@clarvis/paths";
@@ -8,10 +8,7 @@ import {
   createPluginContributions,
   PLUGIN_SKILL_RESOURCE_LIMITS,
 } from "../../src/plugins/plugin-contributions.ts";
-import {
-  PLUGIN_EXECUTABLE_RESOURCE_LIMITS,
-  snapshotPluginExecutables,
-} from "../../src/plugins/plugin-executable-snapshot.ts";
+import { snapshotPluginExecutables } from "../../src/plugins/plugin-executable-snapshot.ts";
 import { PLUGIN_RESOURCE_LIMITS, type PluginManifest } from "@clarvis/loop/host";
 import { MAX_SKILL_FILE_CHARS } from "@clarvis/skills";
 import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";
@@ -374,230 +371,6 @@ describe("plugin contributions", () => {
     expect(loaded.skillRoots(refs("atlas"))).toHaveLength(1);
   });
 
-  it("locates an enabled selected capability executable captured by the snapshot", () => {
-    const dir = install(globalPaths(globalDir).pluginsDir, "speckit", {
-      capabilityExecutables: {
-        memory: {
-          command: "python3",
-          args: ["-B", "./providers/server.py", "memory"],
-          platforms: { win32: { command: "py", args: ["-3", "server.py", "memory"] } },
-        },
-      },
-    });
-    mkdirSync(join(dir, "providers"), { recursive: true });
-    writeFileSync(join(dir, "providers", "server.py"), "print('ready')\n");
-    const loaded = contributions();
-    expect(loaded.locateCapabilityExecutable([], "memory", "speckit")).toEqual({
-      error: "plugin 'speckit' is not enabled for this workspace",
-    });
-    expect(loaded.locateCapabilityExecutable(refs("speckit"), "memory", "speckit")).toEqual({
-      root: dir,
-      declaration: expect.objectContaining({ command: "python3" }),
-    });
-    expect(loaded.locateCapabilityExecutable(refs("speckit"), "plans", "speckit")).toEqual({
-      error: "plugin 'speckit' offers no capability executable 'plans'",
-    });
-  });
-
-  it("detects package-local process-file drift only in a fresh diagnostic snapshot", () => {
-    const dir = join(globalPaths(globalDir).pluginsDir, "runtime");
-    install(globalPaths(globalDir).pluginsDir, "runtime", {
-      mcpServers: {
-        docs: { command: "python3", args: ["./server.py"], cwd: dir },
-      },
-      hooks: [{ event: "run_start", command: `python3 "${join(dir, "hook.py")}"` }],
-      capabilityExecutables: {
-        memory: { command: "python3", args: ["./provider.py"] },
-      },
-    });
-    const files = ["server.py", "hook.py", "provider.py"];
-    for (const file of files) writeFileSync(join(dir, file), `${file}:v1\n`);
-
-    const cases = [
-      {
-        file: "server.py",
-        read: (loaded: ReturnType<typeof contributions>) => loaded.mcpServers(refs("runtime")),
-      },
-      {
-        file: "hook.py",
-        read: (loaded: ReturnType<typeof contributions>) => loaded.settingsScopes(refs("runtime")),
-      },
-      {
-        file: "provider.py",
-        read: (loaded: ReturnType<typeof contributions>) =>
-          loaded.locateCapabilityExecutable(refs("runtime"), "memory", "runtime"),
-      },
-    ];
-    for (const entry of cases) {
-      const loaded = contributions();
-      const pinnedDigest = loaded.pin(refs("runtime"))[0]!.digest;
-      writeFileSync(join(dir, entry.file), `${entry.file}:v2\n`);
-      expect(() => entry.read(loaded)).not.toThrow();
-      expect(loaded.snapshot(refs("runtime"))[0]!.digest).not.toBe(pinnedDigest);
-      writeFileSync(join(dir, entry.file), `${entry.file}:v1\n`);
-    }
-  });
-
-  it("withdraws drifted executable projections through the asynchronous runtime latch", () => {
-    const dir = join(globalPaths(globalDir).pluginsDir, "runtime-latch");
-    install(globalPaths(globalDir).pluginsDir, "runtime-latch", {
-      mcpServers: {
-        docs: { command: "python3", args: ["./server.py"], cwd: dir },
-      },
-      hooks: [{ event: "run_start", command: `python3 "${join(dir, "hook.py")}"` }],
-      capabilityExecutables: {
-        memory: { command: "python3", args: ["./provider.py"] },
-      },
-    });
-    for (const file of ["server.py", "hook.py", "provider.py"]) {
-      writeFileSync(join(dir, file), `${file}:v1\n`);
-    }
-    const changes = new Map<string, () => void>();
-    const notices: { plugin: string; path: string }[] = [];
-    const loaded = createPluginContributions({
-      globalDir,
-      home,
-      workspaceRoot,
-      onRuntimeDrift: (notice) => notices.push(notice),
-      watchRuntimePath: (path, onChange) => {
-        changes.set(path, onChange);
-        return { close: () => undefined };
-      },
-    });
-    loaded.pin(refs("runtime-latch"));
-    expect(loaded.mcpServers(refs("runtime-latch"))).toHaveLength(1);
-    expect(loaded.settingsScopes(refs("runtime-latch"))).toHaveLength(1);
-
-    changes.get(join(dir, "provider.py"))!();
-
-    expect(notices).toEqual([{ plugin: "runtime-latch", path: join(dir, "provider.py") }]);
-    expect(loaded.mcpServers(refs("runtime-latch"))).toEqual([]);
-    expect(loaded.settingsScopes(refs("runtime-latch"))).toEqual([]);
-    expect(
-      loaded.locateCapabilityExecutable(refs("runtime-latch"), "memory", "runtime-latch"),
-    ).toEqual({
-      error:
-        "plugin 'runtime-latch' changed on disk; its executable contributions are withheld until reconnect",
-    });
-    loaded.close();
-  });
-
-  it("contains a failing host notice after withdrawing a drifted plugin runtime", () => {
-    const dir = join(globalPaths(globalDir).pluginsDir, "runtime-notice");
-    install(globalPaths(globalDir).pluginsDir, "runtime-notice", {
-      capabilityExecutables: {
-        memory: { command: "python3", args: ["./provider.py"] },
-      },
-    });
-    writeFileSync(join(dir, "provider.py"), "v1\n");
-    let signalDrift!: () => void;
-    const logger = recordingLogger();
-    const loaded = createPluginContributions({
-      globalDir,
-      home,
-      workspaceRoot,
-      logger,
-      onRuntimeDrift: () => {
-        throw new Error("notice transport closed");
-      },
-      watchRuntimePath: (_path, onChange) => {
-        signalDrift = onChange;
-        return { close: () => undefined };
-      },
-    });
-    loaded.pin(refs("runtime-notice"));
-
-    expect(() => signalDrift()).not.toThrow();
-    expect(
-      loaded.locateCapabilityExecutable(refs("runtime-notice"), "memory", "runtime-notice"),
-    ).toEqual({
-      error:
-        "plugin 'runtime-notice' changed on disk; its executable contributions are withheld until reconnect",
-    });
-    expect(logger.events("kernel.plugin.runtime_drift_notice_failed")).toEqual([
-      expect.objectContaining({ plugin: "runtime-notice", cause: "notice transport closed" }),
-    ]);
-    loaded.close();
-  });
-
-  it("omits a plugin whose referenced process file exceeds the executable byte bound", () => {
-    const dir = install(globalPaths(globalDir).pluginsDir, "huge-runtime", {
-      capabilityExecutables: {
-        memory: { command: "python3", args: ["./provider.py"] },
-      },
-    });
-    writeFileSync(join(dir, "provider.py"), "x");
-    truncateSync(join(dir, "provider.py"), PLUGIN_EXECUTABLE_RESOURCE_LIMITS.fileBytes + 1);
-
-    const loaded = contributions();
-    expect(loaded.snapshot(refs("huge-runtime"))).toEqual([]);
-    expect(
-      loaded.locateCapabilityExecutable(refs("huge-runtime"), "memory", "huge-runtime"),
-    ).toEqual({ error: "plugin 'huge-runtime' has no readable manifest" });
-  });
-
-  it("fails a direct executable snapshot when the plugin root is absent", () => {
-    expect(
-      snapshotPluginExecutables(join(root, "missing"), { name: "missing" } as PluginManifest),
-    ).toMatchObject({
-      ok: false,
-      error: expect.stringContaining("plugin root could not be resolved"),
-    });
-  });
-
-  it("rejects an explicitly local executable path that is absent while pinning", () => {
-    const dir = install(globalPaths(globalDir).pluginsDir, "missing-runtime", {});
-
-    expect(
-      snapshotPluginExecutables(dir, {
-        name: "missing-runtime",
-        capabilityExecutables: {
-          memory: { command: "python3", args: ["./provider.py"], env: {}, timeout_ms: 30_000 },
-        },
-      } as PluginManifest),
-    ).toEqual({
-      ok: false,
-      error: "declared package-local executable './provider.py' is not a confined regular file",
-    });
-  });
-
-  it.skipIf(process.platform === "win32")(
-    "pins and watches the declared symlink name rather than only its resolved target",
-    () => {
-      const dir = install(globalPaths(globalDir).pluginsDir, "linked-runtime", {
-        capabilityExecutables: {
-          memory: { command: "python3", args: ["./provider.py"] },
-        },
-      });
-      writeFileSync(join(dir, "provider-v1.py"), "v1\n");
-      symlinkSync("provider-v1.py", join(dir, "provider.py"));
-      expect(
-        snapshotPluginExecutables(dir, {
-          name: "linked-runtime",
-          capabilityExecutables: {
-            memory: { command: "python3", args: ["./provider.py"], env: {}, timeout_ms: 30_000 },
-          },
-        } as PluginManifest),
-      ).toMatchObject({ ok: true, files: [{ path: "provider.py" }] });
-
-      const watched: string[] = [];
-      const loaded = createPluginContributions({
-        globalDir,
-        home,
-        workspaceRoot,
-        watchRuntimePath: (path) => {
-          watched.push(path);
-          return { close: () => undefined };
-        },
-      });
-      loaded.pin(refs("linked-runtime"));
-
-      expect(watched).toContain(join(dir, "provider.py"));
-      expect(watched).not.toContain(join(dir, "provider-v1.py"));
-      loaded.close();
-    },
-  );
-
   it("ignores process paths and working directories outside the package", () => {
     const dir = install(globalPaths(globalDir).pluginsDir, "confined", {});
     const outside = join(root, "outside.py");
@@ -615,65 +388,127 @@ describe("plugin contributions", () => {
     ).toEqual({ ok: true, files: [] });
   });
 
-  it("bounds the number of package-local process files", () => {
-    const dir = install(globalPaths(globalDir).pluginsDir, "many-runtime-files", {});
-    const args = Array.from(
-      { length: PLUGIN_EXECUTABLE_RESOURCE_LIMITS.files + 1 },
-      (_, index) => `./runtime-${String(index)}.js`,
+  it("withdraws a pinned MCP executable when its monitored path changes", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "monitored", {});
+    const program = join(dir, "server.sh");
+    writeFileSync(program, "#!/bin/sh\nexit 0\n");
+    writeFileSync(
+      join(dir, "plugin.json"),
+      JSON.stringify({
+        name: "monitored",
+        mcpServers: { local: { type: "stdio", command: "./server.sh", cwd: dir } },
+      }),
     );
-    for (const arg of args) writeFileSync(join(dir, arg), "");
-
-    expect(
-      snapshotPluginExecutables(dir, {
-        name: "many-runtime-files",
-        capabilityExecutables: {
-          memory: { command: "node", args, env: {}, timeout_ms: 30_000 },
-        },
-      } as PluginManifest),
-    ).toEqual({
-      ok: false,
-      error: `package executable surface exceeds the ${String(PLUGIN_EXECUTABLE_RESOURCE_LIMITS.files)}-file resource limit`,
-    });
-  });
-
-  it("bounds aggregate package-local process bytes", () => {
-    const dir = install(globalPaths(globalDir).pluginsDir, "large-runtime-surface", {});
-    const args = Array.from({ length: 5 }, (_, index) => `./runtime-${String(index)}.bin`);
-    for (const [index, arg] of args.entries()) {
-      const path = join(dir, arg);
-      writeFileSync(path, "");
-      truncateSync(
-        path,
-        index === args.length - 1 ? 1 : PLUGIN_EXECUTABLE_RESOURCE_LIMITS.fileBytes,
-      );
-    }
-
-    expect(
-      snapshotPluginExecutables(dir, {
-        name: "large-runtime-surface",
-        capabilityExecutables: {
-          memory: { command: "node", args, env: {}, timeout_ms: 30_000 },
-        },
-      } as PluginManifest),
-    ).toEqual({
-      ok: false,
-      error:
-        `package executable surface exceeds the ` +
-        `${String(PLUGIN_EXECUTABLE_RESOURCE_LIMITS.aggregateBytes)}-byte aggregate limit`,
-    });
-  });
-
-  it("returns per-skill policy only for an enabled plugin that declared it", () => {
-    install(globalPaths(globalDir).pluginsDir, "speckit", {
-      capabilityRunPolicies: {
-        plans: { skills: { "speckit-plan": "off", "speckit-implement": "review" } },
+    const events: string[] = [];
+    const logger = recordingLogger();
+    const watchers: { path: string; changed: () => void; closed: boolean }[] = [];
+    const loaded = createPluginContributions({
+      globalDir,
+      home,
+      workspaceRoot,
+      logger,
+      onRuntimeDrift: ({ path }) => {
+        events.push(path);
+        throw new Error("fixture drift observer failed");
+      },
+      watchRuntimePath: (path, changed) => {
+        const watcher = { path, changed, closed: false };
+        watchers.push(watcher);
+        return { close: () => (watcher.closed = true) };
       },
     });
-    const loaded = contributions();
-    expect(loaded.skillPlansMode([], "speckit", "speckit-plan")).toBeUndefined();
-    expect(loaded.skillPlansMode(refs("speckit"), "speckit", "speckit-plan")).toBe("off");
-    expect(loaded.skillPlansMode(refs("speckit"), "speckit", "speckit-implement")).toBe("review");
-    expect(loaded.skillPlansMode(refs("speckit"), "speckit", "unknown")).toBeUndefined();
+    try {
+      expect(loaded.pin(refs("monitored"))).toHaveLength(1);
+      expect(loaded.mcpServers(refs("monitored"))).toHaveLength(1);
+      expect(watchers.map((watcher) => watcher.path)).toEqual([program]);
+      watchers[0]!.changed();
+      watchers[0]!.changed();
+      expect(events).toEqual([program]);
+      expect(logger.events("kernel.plugin.runtime_drift_notice_failed")).toMatchObject([
+        { plugin: "monitored", cause: "fixture drift observer failed" },
+      ]);
+      expect(watchers[0]!.closed).toBeTrue();
+      expect(loaded.mcpServers(refs("monitored"))).toEqual([]);
+    } finally {
+      loaded.close();
+    }
+  });
+
+  it("observes a physical change to a pinned MCP executable", async () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "physical", {});
+    const program = join(dir, "server.sh");
+    writeFileSync(program, "#!/bin/sh\nexit 0\n");
+    writeFileSync(
+      join(dir, "plugin.json"),
+      JSON.stringify({
+        name: "physical",
+        mcpServers: { local: { type: "stdio", command: "./server.sh", cwd: dir } },
+      }),
+    );
+    let reportDrift: (() => void) | undefined;
+    const drift = new Promise<void>((resolve) => {
+      reportDrift = resolve;
+    });
+    const loaded = createPluginContributions({
+      globalDir,
+      home,
+      workspaceRoot,
+      onRuntimeDrift: () => reportDrift?.(),
+    });
+    try {
+      loaded.pin(refs("physical"));
+      expect(loaded.mcpServers(refs("physical"))).toHaveLength(1);
+      writeFileSync(program, "#!/bin/sh\nexit 1\n");
+      utimesSync(program, new Date(Date.now() + 2_000), new Date(Date.now() + 2_000));
+      let fuse: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          drift,
+          new Promise<never>((_, reject) => {
+            fuse = setTimeout(
+              () => reject(new Error("physical watcher did not report drift")),
+              5_000,
+            );
+          }),
+        ]);
+      } finally {
+        if (fuse !== undefined) clearTimeout(fuse);
+      }
+      expect(loaded.mcpServers(refs("physical"))).toEqual([]);
+    } finally {
+      loaded.close();
+    }
+  });
+
+  it("keeps a pinned MCP server available when live path monitoring cannot start", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "unwatched", {});
+    writeFileSync(join(dir, "server.sh"), "#!/bin/sh\nexit 0\n");
+    writeFileSync(
+      join(dir, "plugin.json"),
+      JSON.stringify({
+        name: "unwatched",
+        mcpServers: { local: { type: "stdio", command: "./server.sh", cwd: dir } },
+      }),
+    );
+    const logger = recordingLogger();
+    const loaded = createPluginContributions({
+      globalDir,
+      home,
+      workspaceRoot,
+      logger,
+      watchRuntimePath: () => {
+        throw new Error("fixture monitor unavailable");
+      },
+    });
+    try {
+      expect(loaded.pin(refs("unwatched"))).toHaveLength(1);
+      expect(loaded.mcpServers(refs("unwatched"))).toHaveLength(1);
+      expect(logger.events("kernel.plugin.runtime_watch_unavailable")).toMatchObject([
+        { plugin: "unwatched", cause: "fixture monitor unavailable" },
+      ]);
+    } finally {
+      loaded.close();
+    }
   });
 
   it("same-named installations never substitute for an exact reference", () => {
@@ -767,9 +602,6 @@ describe("plugin contributions", () => {
     expect(loaded.agents(refs("heavy"))).toEqual([]);
     expect(loaded.settingsScopes(refs("heavy"))).toEqual([]);
     expect(loaded.mcpServers(refs("heavy"))).toEqual([]);
-    expect(loaded.locateCapabilityExecutable(refs("heavy"), "plans", "heavy")).toEqual({
-      error: "plugin 'heavy' has no readable manifest",
-    });
   });
 
   it("omits the whole plugin when its install record exceeds its byte budget", () => {

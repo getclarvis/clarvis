@@ -27,8 +27,7 @@ folds revision operations, bumps the two counters, invalidates approval, re-vali
 schema and renders (`packages/plan/src/store.ts`). `PlanService` adds the control-plane policy the
 store does not have — refusing to delete a live plan (`packages/plan/src/service.ts`). How a *run*
 uses a plan (the session, the review gate, the five model tools, retention as run policy) belongs to
-**plan-capability-and-review**; the executable/external provider belongs to
-**capability-provider-executables**.
+the planning capability contract. The only provider is the built-in Markdown store.
 
 ## 2. Surface
 
@@ -728,9 +727,7 @@ No package outside `@clarvis/kernel` imports `@clarvis/plan` values
 (`rg "@clarvis/plan" packages/*/src` returns only the rows above).
 
 **Test-only coupling:** `packages/plan/tests/contract/plan-store.test.ts` drives the store
-conformance table against the *executable* provider harness as well as the two built-ins — so a change
-to `planStoreConformance()` also constrains `src/provider.ts` (that provider is
-**capability-provider-executables**'s scope).
+conformance table against Markdown and in-memory stores.
 
 ## 8. Open questions
 
@@ -829,5 +826,4 @@ to `planStoreConformance()` also constrains `src/provider.ts` (that provider is
   for *task transitions* (`sealedTransitionMessage`, used only at
   `packages/plan/src/capability/session.ts`), and retention as run policy → **plan-capability-and-review**.
   `src/provider.ts`, `src/provider-config.ts`, `src/settings.ts` and
-  `tests/architecture/settings-provider-boundary.test.ts` (INV-145) →
-  **capability-provider-executables**.
+  `tests/architecture/settings-provider-boundary.test.ts` (INV-145) own the built-in provider selection.

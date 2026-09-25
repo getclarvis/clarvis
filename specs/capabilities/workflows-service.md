@@ -520,13 +520,8 @@ without recursively granting the child the workflow capability
    [`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts)
    checks the manager and two leaders of one profile, composed keys in SDK-serialized requests,
    persisted identities and two continuations per leader in direct and prepared assembly.
-   The same `params.task` binding (an external Tasks-capability `{id, provider_key, mode}`) is also
-   forwarded, byte-identical, into the manager's own assembled body — so an external task bound at
-   workflow start reaches both the manager's own run and every leader it spawns, not only one or the
-   other (proven by
-   `packages/kernel/tests/integration/workflows-service.test.ts` in `forwards one external task
-   binding to both workflow manager and leaders`, asserting `assembled.map(p => p.task)` equals
-   `[task, task]`).
+   `params.task` remains a legacy request field in `StartRunParams`, but the removed Tasks capability
+   has no provider or model-facing tools. Workflow scheduling does not assign an external task.
 5. `execute(context)` (the body `createManagedRun` invokes):
    - Calls `auxiliaryWorkflowRunDeps(deps)` to remove the memory capability, then clones those deps
      with a logger bound to `{component: "workflows", workflow_id: managerRunId}` when a logger
@@ -885,14 +880,6 @@ Tests: `packages/kernel/tests/unit/workflows-service.test.ts` (`never attributes
 turns to the entry, regardless of arrival order`; `always attributes an agent:'lead' turn to the
 entry`); `packages/kernel/tests/integration/workflows-service.test.ts` (`reports a subagent-role
 leader's progress: its turns are not tagged 'lead'`).
-
-**INV-W8.** An external task binding (`params.task`) supplied to a manager run travels unchanged into
-both the manager's own assembled run body and every leader body `assembleLeader` produces — a
-workflow does not fragment a single bound task across the tree.
-Production: `assembleLeader` and the manager request assembly in `runManagerWorkflow`, both in
-`packages/kernel/src/workflows/workflows-service.ts`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`forwards one external task
-binding to both workflow manager and leaders`).
 
 **INV-W9.** Every coordinator transition is emitted live and the latest bounded state is persisted
 on the workflow record. Live and durable projections carry the same session, status, revision,

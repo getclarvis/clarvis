@@ -61,7 +61,7 @@ Extension Profile selection remains persisted and effective for Host/Sandbox.
 `KernelClient.extensionProfiles` exposes that service beside the other kernel services
 (`KernelClient.extensionProfiles`, `packages/protocol/src/client.ts`). The in-process kernel accepts an injected service and gives
 embedders an immutable builtin-only fallback (`createBuiltinExtensionProfileService` in
-`packages/kernel/src/kernel.ts`); the file kernel supplies the file-backed manager
+`packages/kernel/src/kernel.ts`, tested by `packages/kernel/tests/integration/kernel-service-overrides.test.ts`); the file kernel supplies the file-backed manager
 (`packages/kernel/src/file-kernel.ts`). The same fourteen operations are generated for local
 and remote clients by the shared operation catalog (`OPERATIONS.extensionProfiles` entries in
 `packages/kernel/src/transport/operations.ts`).
@@ -187,7 +187,7 @@ filters after manifest resolution, so precedence and manifest-name validation re
 (`skillRoots` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`;
 `normalizeInclude`, `packages/skills/src/config.ts`; `scanRoot`,
 `packages/skills/src/registry.ts`). Plugin skill roots are admitted only through active plugins,
-and a plugin's agents, MCP servers, capability executables, hooks, and skills are one activation
+and a plugin's agents, MCP servers, hooks, and skills are one activation
 unit (`pluginInventory` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`). Active
 plugin MCP servers are attached independently of authored agent tool lists and marked `auto_tools`;
 after each server opens, all tools it advertised join every effective per-run agent while the

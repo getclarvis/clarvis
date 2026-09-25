@@ -40,7 +40,6 @@ import { createRunHost, type RunHost } from "./run-host.ts";
 import { createLoopController, type LoopController } from "./features/loop/controller.ts";
 import { createBackgroundController } from "./features/background/controller.ts";
 import { createGoalController, type GoalBinding } from "./features/goal/controller.ts";
-import { knownPlanProviderKey } from "./adapters/capability-providers.ts";
 import {
   automaticAgentFallback,
   createActiveAgentStore,
@@ -92,7 +91,6 @@ import {
   type KernelRunClientCallbacks,
 } from "./adapters/kernel-run-client.ts";
 import { WorkspaceClientManager } from "./adapters/workspace-client-manager.ts";
-import { createTasksController } from "./features/tasks/controller.ts";
 import {
   createWorkspaceCallbackTarget,
   isActiveWorkspaceCallbackTarget,
@@ -1113,7 +1111,7 @@ async function runApp(
       setActiveProfile: (name) => input.adapters.agents.setActive(name),
       memoryMode: () => input.adapters.memoryMode.mode(),
       plansMode: () => plansState(input.settings.effective()).mode,
-      planProviderKey: () => knownPlanProviderKey(input.settings.effective().plans?.provider),
+      planProviderKey: () => "markdown",
       isManagerProfile: () => {
         const grants = input
           .profiles()
@@ -1315,13 +1313,6 @@ async function runApp(
     await agentFiles.reload();
     setProfiles(await runClient.listProfiles());
   }
-
-  const tasks = createTasksController({
-    service: runClient.tasks,
-    available: () => runClient.capabilities.tasks,
-    runActive: () => runHost.runActive() || runHost.bashActive(),
-    workOnTask: (ref, profile) => runHost.workOnTask(ref, profile),
-  });
 
   /**
    * A session's token counts as every surface states them: input the provider
@@ -1638,9 +1629,6 @@ async function runApp(
     },
     get skills() {
       return runClient.skills;
-    },
-    get tasks() {
-      return tasks;
     },
     get storage() {
       return runClient.storage;

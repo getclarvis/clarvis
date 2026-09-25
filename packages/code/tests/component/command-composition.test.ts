@@ -172,7 +172,6 @@ function harness(): {
       get: async () => null,
       delete: async () => {},
     } as never,
-    tasks: { available: () => false } as never,
     storage: {
       inspect: async () => ({
         generated_at: Date.now(),
@@ -232,13 +231,11 @@ const VIEW_CONTRACT = [
   ["agents.open", "Agents", "internal", "settings"],
   ["sessions.open", "Sessions", "slash", "sessions"],
   ["storage.open", "Storage", "slash", undefined],
-  ["tasks.open", "Tasks", "slash", undefined],
   ["workflows.open", "Workflows", "slash", undefined],
   ["controls.open", "Run controls", "internal", "settings"],
   ["defaults.open", "Defaults", "internal", "settings"],
   ["model.open", "Default model", "slash", undefined],
   ["effort.open", "Default effort", "slash", undefined],
-  ["capability-providers.open", "Feature backends", "internal", "settings"],
   ["marketplace.open", "Marketplace", "internal", "extensions"],
   ["memory.config", "Memory settings", "internal", "settings"],
   ["sandbox.config", "Sandbox", "internal", "settings"],

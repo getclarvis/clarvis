@@ -63,7 +63,7 @@ test("an empty profile exposes product documentation only to model tools", async
     env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" }),
     extensionProfileSelector: "global:empty",
     subscriptions: false,
-    builtins: { hooks: false, tasks: false },
+    builtins: { hooks: false },
     executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm } }),
   });
   try {

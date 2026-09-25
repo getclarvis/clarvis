@@ -172,7 +172,7 @@ describe("checkpoint composition", () => {
         planStoreFor: () => store,
         logger: NOOP_LOGGER,
         env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_AGENT_TOOLS_ENABLED: "0" }),
-        builtins: { tools: false, hooks: false, tasks: false },
+        builtins: { tools: false, hooks: false },
         executeRun: (args) =>
           executeRun({
             ...args,

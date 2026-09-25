@@ -145,7 +145,7 @@ async function fixture(
         CLARVIS_LOG_LEVEL: "silent",
         CLARVIS_AGENT_TOOLS_ENABLED: editable ? "1" : "0",
       }),
-      builtins: { tools: editable, hooks: false, tasks: false },
+      builtins: { tools: editable, hooks: false },
       async executeRun(args) {
         const request = args.rawBody as { execution_id: string };
         entered.push(request.execution_id);

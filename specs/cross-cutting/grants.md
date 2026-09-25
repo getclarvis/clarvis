@@ -68,13 +68,6 @@ grant mechanism. See [`agent-system-prompt.md`](../engine/agent-system-prompt.md
 | `run_commands` | engine (`BuiltinGrant`) | no | `packages/capability/src/api.ts` |
 | `use_skills` | `@clarvis/skills` | no | `packages/skills/src/capability.ts` |
 | `workflow` | `@clarvis/workflows` | **yes** | `packages/workflows/src/capability.ts` |
-| `tasks.read` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts`, registered `packages/tasks/src/capability.ts` |
-| `tasks.create` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts` |
-| `tasks.assign` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts` |
-| `tasks.comment` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts` |
-| `tasks.progress` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts` |
-| `tasks.review` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts` |
-| `tasks.complete` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts` |
 
 Only `workflow` sets `entryCanSpawn: true`
 (`packages/workflows/src/capability.ts`), which is what makes a
@@ -545,11 +538,9 @@ except for this one filtered field — carried `workflow`.
   did; this is what lets `workflow` (a package the loop treats as an optional
   capability) control whether the *engine's own* supervision registry exists,
   without the loop naming `@clarvis/workflows`.
-- **`@clarvis/skills`, `@clarvis/workflows` and
-  `@clarvis/tasks` each register their own grant(s) via `Capability.grants`**
+- **`@clarvis/skills` and `@clarvis/workflows` each register their own grant(s) via `Capability.grants`**
   (`packages/skills/src/capability.ts`,
-  `packages/workflows/src/capability.ts`,
-  `packages/tasks/src/capability.ts`) — a structural constraint of the
+  `packages/workflows/src/capability.ts`) — a structural constraint of the
   `Capability` interface itself (`packages/capability/src/contract.ts`),
   not a convention; nothing forces a capability author to declare grants
   through any other channel because none exists.
@@ -568,17 +559,14 @@ except for this one filtered field — carried `workflow`.
   (`packages/code/src/adapters/agents.ts`) is **not** a picker over every
   grant this document lists in §2.3: it holds exactly the four `BuiltinGrant`
   names plus a curated entry for two capability-owned grants (`use_skills`,
-  `workflow`) — six total — and has no entry at all for the
-  seven `tasks.*` grants `@clarvis/tasks` registers. Its own pinning test
+  `workflow`) — six total. Its own pinning test
   (`packages/code/tests/unit/agents.test.ts`) only checks that
   `GRANT_CATALOG` is a superset of `grantSchema.options`
   (`packages/loop/src/validation/request/profile-schemas.ts`), which is
   itself just `BUILTIN_GRANT_NAMES` — a "static UI discovery aid" per that
   schema's own remark, not the set of grants `requireKnownGrants` (§4.1) or
   `ConfigService.knownGrants()` (below) actually accepts on a real run. A
-  profile carrying a `tasks.*` grant therefore renders in the built-in editor
-  only through `grantBadges`' raw-id fallback, never as a selectable picker
-  row; see `code-domain-hubs.md` invariant 17 for the corrected claim.
+  unknown grants through `grantBadges`' raw-id fallback; see `code-domain-hubs.md` invariant 17.
 - **`@clarvis/kernel`'s own `ConfigService.knownGrants()` independently
   re-derives the same union** `executeRun` validates against, for UI-facing
   discovery: `[...BUILTIN_GRANT_NAMES, ...mergedRegistry.grants().map(g =>

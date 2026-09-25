@@ -42,7 +42,7 @@ the exact reason; an available but unattempted journey remains an incomplete req
 
 Inventory existing harnesses and already-valid evidence before running suites. Prefer repository
 fixtures for scripted streams, errors, elicitation, delayed/stale responses, state corruption,
-Tasks mutations, MCP pools, extension drift, and ownership races. Reuse compatible fixtures across
+MCP pools, extension drift, and ownership races. Reuse compatible fixtures across
 scenarios, preserving intentional persistence; reset when state would contaminate the next case.
 Implement a missing harness only within the task's authorization.
 

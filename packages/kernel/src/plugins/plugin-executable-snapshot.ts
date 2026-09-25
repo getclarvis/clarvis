@@ -12,7 +12,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { PluginManifest } from "@clarvis/loop/host";
 
 /** Resource bounds for package-local files that can enter a plugin process. */
-export const PLUGIN_EXECUTABLE_RESOURCE_LIMITS = Object.freeze({
+const PLUGIN_EXECUTABLE_RESOURCE_LIMITS = Object.freeze({
   files: 256,
   fileBytes: 8 * 1024 * 1024,
   aggregateBytes: 32 * 1024 * 1024,
@@ -166,9 +166,8 @@ function hashFile(path: string): PluginExecutableFileSnapshot | { error: string 
 /**
  * Resolve and hash every directly referenced package-local process file.
  *
- * @remarks Capability services execute with the plugin root as cwd. Portable MCP declarations
- * resolve their cwd to the plugin root and translated hooks carry absolute package paths. Those
- * three projections cover the executable bytes a later run can launch without hashing unrelated
+ * @remarks Portable MCP declarations resolve their cwd to the plugin root and translated hooks
+ * carry absolute package paths. Those projections cover executable bytes without hashing unrelated
  * repository content or a checkout's `.git` database. A newly appearing referenced file changes
  * the returned set just as a content or mode change changes an existing record.
  */
@@ -202,12 +201,6 @@ export function snapshotPluginExecutables(
         : undefined;
     add(base, server.command);
     for (const arg of server.args ?? []) add(base, arg);
-  }
-
-  for (const declaration of Object.values(manifest.capabilityExecutables ?? {})) {
-    const override = declaration.platforms?.[process.platform];
-    add(root, override?.command ?? declaration.command);
-    for (const arg of override?.args ?? declaration.args) add(root, arg);
   }
 
   for (const hook of manifest.hooks ?? []) {

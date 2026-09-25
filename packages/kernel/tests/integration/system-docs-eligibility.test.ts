@@ -134,7 +134,7 @@ test.each([
     logger: NOOP_LOGGER,
     env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", ...scenario.env }),
     subscriptions: false,
-    builtins: { hooks: false, tasks: false, ...scenario.builtins },
+    builtins: { hooks: false, ...scenario.builtins },
     executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm } }),
   });
   try {
@@ -187,7 +187,7 @@ test("an unowned reserved destination leaves boot available and the user data un
     },
     env: loadEnv({ CLARVIS_LOG_LEVEL: "warn" }),
     subscriptions: false,
-    builtins: { hooks: false, tasks: false },
+    builtins: { hooks: false },
   });
   try {
     expect(warnings).toContainEqual(

@@ -284,11 +284,7 @@ Scalar values (`string | number | boolean | null`) and `Error` are the dominant 
 sink-enforced shape: the backend is plain `pino` with no `formatters` and no `serializers`
 (`packages/loop/src/logger.ts`), so arrays and nested objects serialize verbatim. Most call
 sites flatten bounded collections — `@clarvis/workflows`'s `joinIds` turns an id list into one
-comma-joined scalar (`packages/workflows/src/log.ts`) — but the current vocabulary has
-intentional array-valued exceptions. `tasks.provider.invalid_response.zod_issues` carries at most the
-bounded, deduplicated **paths** that failed projection, never their values
-(`packages/tasks/src/mcp-provider.ts`; pinned at
-`packages/tasks/tests/component/tasks-observability.test.ts`).
+comma-joined scalar (`packages/workflows/src/log.ts`) — but the sink accepts arrays and objects.
 Consumers therefore must accept JSON field values;
 they cannot assume every non-error field is scalar.
 

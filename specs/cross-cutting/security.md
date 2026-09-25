@@ -316,13 +316,9 @@ when the complete TUI receives the verdict.
 | `mcpServers` | `declaresSomething` |
 | `enabledPlugins` | `declaresSomething` |
 | `marketplaces` | `declaresSomething` |
-| `memory.provider` | only when `provider.kind` is `"executable"` or `"plugin"` |
-| `plans.provider` | same predicate |
-| `tasks.provider` | any object-valued `tasks.provider` |
 | `providers.subscription` | provider entries whose kind attaches user subscription credentials |
 
-Stripping removes the whole key for the first four, deletes `tasks` entirely for `tasks.provider`,
-deletes only the `provider` sub-key for `memory`/`plans`, and removes only subscription-backed
+Stripping removes the whole key for the first four and removes only subscription-backed
 entries from `providers`. A `memory: { provider: { kind:
 "wiki" }, enabled: true }` survives untouched
 (`packages/kernel/tests/integration/workspace-trust.test.ts`).
@@ -490,7 +486,6 @@ denylist is derived from exactly this run's credentials"* (`packages/hooks/src/c
 | `shell` command | `withoutSecrets(process.env, secretEnvNames)` — a copy with the named keys deleted. | `packages/tools/src/sandbox.ts` (`withoutSecrets`, applied by `sandboxCommand`) |
 | stdio MCP child | `{ ...getDefaultEnvironment(), ...server.env }` — authored values are normally interpolated, but remain literal when a portable adapter sets `expandVariables: false`; the caller's environment is **never** the base | `buildTransport` in `packages/mcp-client/src/client.ts` |
 | remote MCP request headers | authored headers follow `expandVariables`; `bearer_token_env_var` and `env_http_headers` always resolve their explicitly named values and the resulting headers remain confined to the configured resource origin | `buildTransport` in `packages/mcp-client/src/client.ts`; `createMCPRemoteFetch` in `packages/mcp-client/src/remote-fetch.ts` |
-| capability executable (plans/memory/tasks provider) | `{ ...inherited, ...additions }` — the **whole** kernel environment plus the declaration's interpolated `env` | `packages/kernel/src/capability-executables/session-manager.ts` |
 
 `secretEnvNames` for the toolset comes from `resolveSecretNames(ctx)`
 (`packages/loop/src/runtime/capabilities/tools.ts`), which the file kernel binds to
@@ -995,7 +990,6 @@ real — a 64-hex project id and a full UUID both read as credentials, which is 
 | crash journal header | `sanitizeDeep` over `request` | `packages/trace/src/journal.ts` |
 | kernel wire errors | `sanitizeErrorMessage` (inside `terminalSafe`) + `sanitizeDeep` | `packages/kernel/src/transport/stdio.ts` |
 | kernel run/capability events | `sanitizeText` + `sanitizeDeep` | `packages/kernel/src/runs/map-events.ts` |
-| kernel task errors | `sanitizeErrorMessage`, `sanitizeDeep` | `packages/kernel/src/tasks/task-service.ts`; `packages/kernel/src/tasks/task-provider-factory.ts` |
 | loop run result mapping | `sanitizeErrorMessage`, `sanitizeDeep` | `packages/loop/src/runtime/run-response-mapping.ts` |
 | memory run snapshot | `sanitizeDeep(run, sanitizeText)` — **before** any bound or write | `packages/memory/src/jobs.ts`; indexer task `packages/memory/src/indexer/run.ts` |
 | memory tool results / seed / policy / health | `sanitizeText` | `packages/memory/src/tools.ts`; `packages/memory/src/seed.ts`; `packages/memory/src/recording-policy.ts`; `packages/memory/src/health.ts` |
@@ -1021,17 +1015,6 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
   descriptor-relative mutation across native write handlers. Production: `applyOpsAtomic` in
   `packages/tools/src/lib/atomic.ts`. Test: `packages/tools/tests/integration/atomic.test.ts`
   covers atomic failure but does not prove that the parent-directory race is closed.
-- **Why `capability` executables inherit the whole kernel environment** while stdio MCP children get a
-  fixed safe base. **Still open, but now visible at the implementation branch that makes the choice**: the divergence
-  is recorded in `processEnvironment`'s own TSDoc, naming both counter-examples — the MCP child's
-  fixed safe base and the hook's keep-list-then-denylist — and stating plainly that a configured
-  capability executable receives every credential the kernel holds, and that whether that is intended
-  is the owner's call (`packages/kernel/src/capability-executables/session-manager.ts`).
-  What has not changed is the behaviour or the absence of a test.
-  `packages/mcp-client/src/client.ts` argues at length for the MCP policy;
-  `packages/kernel/src/capability-executables/session-manager.ts` carries no rationale and no
-  test for its environment shape. This is a live divergence, not obviously a bug — a plans/memory
-  provider may need credentials — but nothing in the code says which.
 - ~~**A stale rationale in `packages/hooks/src/env.ts`.**~~ **Resolved.** The comment claimed the
   secret-name vocabulary was duplicated because the two sides "live on opposite sides of a dependency
   edge this package must not close", naming `@clarvis/loop`'s trace sanitizer. That edge does not

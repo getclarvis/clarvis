@@ -75,7 +75,6 @@
         "@clarvis/plan": "workspace:*",
         "@clarvis/protocol": "workspace:*",
         "@clarvis/skills": "workspace:*",
-        "@clarvis/tasks": "workspace:*",
         "@clarvis/tools": "workspace:*",
         "@clarvis/trace": "workspace:*",
         "@clarvis/workflows": "workspace:*",
@@ -176,13 +175,6 @@
     },
     "packages/supervision": {
       "name": "@clarvis/supervision",
-      "dependencies": {
-        "@clarvis/capability": "workspace:*",
-        "zod": "^4.4.3",
-      },
-    },
-    "packages/tasks": {
-      "name": "@clarvis/tasks",
       "dependencies": {
         "@clarvis/capability": "workspace:*",
         "zod": "^4.4.3",
@@ -318,8 +310,6 @@
     "@clarvis/skills": ["@clarvis/skills@workspace:packages/skills"],
 
     "@clarvis/supervision": ["@clarvis/supervision@workspace:packages/supervision"],
-
-    "@clarvis/tasks": ["@clarvis/tasks@workspace:packages/tasks"],
 
     "@clarvis/tools": ["@clarvis/tools@workspace:packages/tools"],
 

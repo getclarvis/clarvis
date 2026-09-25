@@ -143,12 +143,9 @@ Five packages export a `./testing` entry (from each `package.json` `exports` map
 | `@clarvis/memory` | `src/testing.ts` | in-memory adapter + `memoryStoreConformance()` case table (`packages/memory/src/testing.ts`) | `kernel` |
 | `@clarvis/plan` | `src/testing.ts` | in-memory repository + `planRepositoryConformance()` / `planStoreConformance()` (`packages/plan/src/testing.ts`) | `kernel` |
 | `@clarvis/trace` | `src/testing.ts` | `createMemoryTraceStore()` only (`packages/trace/src/testing.ts`) | `kernel`, `loop` |
-| `@clarvis/tasks` | `src/testing/provider-conformance.ts` | `assertTaskProviderConformance(fixture)` (`packages/tasks/src/testing/provider-conformance.ts`) | none |
 
 The consumer column is the set of packages that import the specifier `@clarvis/<pkg>/testing`
-anywhere under `packages/*/{src,tests}`; `tasks` is consumed only through a relative
-`../../src/testing.ts` import inside its own suite
-(`packages/tasks/tests/component/conformance.test.ts`).
+anywhere under `packages/*/{src,tests}`.
 
 `@clarvis/loop`'s is the most used entry of the five, and the doubles behind it are the substrate
 almost every engine test stands on, so what they can be *made to do* is worth stating rather than
@@ -401,7 +398,6 @@ floor without lowering a threshold.
 | server | 0.90 | 0.96 |
 | skills | 1.00 | 1.00 |
 | supervision | 0.98 | 1.00 |
-| tasks | 0.95 | 0.98 |
 | tools | 0.98 | 0.98 |
 | trace | 0.98 | 0.97 |
 | workflows | 1.00 | 1.00 |
@@ -434,7 +430,6 @@ records that a fourth, `GRANDFATHERED`, was never legitimate and no longer has a
 | server | – | – | 1 (`src/bin.ts`) | – |
 | skills | 1 | – | – | – |
 | supervision | – | 1 | – | – |
-| tasks | 2 | – | – | – |
 | tools | 4 | 1 (`src/shell-entry.ts`) | – | – |
 | trace | 1 | – | – | – |
 | workflows | 1 | 1 | – | – |
@@ -504,12 +499,11 @@ pass, as `… --coverage && bun run test:architecture`:
 | code | unit, component, integration | yes | 8 |
 | kernel | unit, component, contract, integration | yes | 5 |
 | paths | unit, component, contract, integration | yes | 3 |
-| tasks | unit, component | yes | 1 |
 | trace | unit, component, contract, integration | yes | 1 |
 | llm / server / workflows | …including architecture | no | 1 / 4 / 1 |
 
-19 of the 50 architecture test files therefore contribute no `SF:` records at all, which means in
-those six packages every `src` module must be reached from a *non*-architecture test or be
+Architecture tests run separately in those packages and contribute no `SF:` records, which means in
+those packages every `src` module must be reached from a *non*-architecture test or be
 allowlisted.
 
 `@clarvis/protocol` is the outlier: its `test`, `test:coverage` and `test:contract` are all
@@ -895,7 +889,6 @@ Four distinct shapes exist.
 | **case table as data** | `memoryStoreConformance(): readonly ConformanceCase[]` (`packages/memory/src/testing.ts`, `memoryStoreConformance`), 31 cases | `node:assert/strict` | a `for … of` that wraps each case in a `test()` (`packages/memory/tests/contract/store.test.ts`) |
 | same | `planRepositoryConformance()` (18 cases) + `planStoreConformance()` (10 cases) (`packages/plan/src/testing.ts`, `planRepositoryConformance` and `planStoreConformance`) | `node:assert/strict` | `packages/plan/tests/contract/repository.test.ts`, `plan-store.test.ts` |
 | **suite registrar** | `traceStoreConformance(name, createHarness)` (`packages/trace/tests/contract/trace-store-conformance.ts`), 16 `it()` blocks | `bun:test` `expect` | called twice, once per backend (`packages/trace/tests/contract/trace-store.test.ts`) |
-| **single async assertion** | `assertTaskProviderConformance(fixture)` (`packages/tasks/src/testing/provider-conformance.ts`) | zod `.parse` + a local `assert` throwing `Task provider conformance: …` | `packages/tasks/tests/component/conformance.test.ts` |
 
 The first two shapes live in `src/` and the third does not, and the source states why: memory's and
 plan's tables are "exposed as **data** rather than as `describe`/`test` calls, and assert through
@@ -1183,8 +1176,7 @@ only the owner-specific default").
 
 29. **The repository carries no tracked or unignored Python source.** `.py`, `.pyi` and `.pyw`
     paths are rejected case-insensitively; Bun/TypeScript remains the repository's implementation
-    and maintenance runtime. This does not constrain user-installed toolchains or language-neutral
-    capability executables. Production: `tooling/checks/bun-sources.ts`, invoked by
+    and maintenance runtime. This does not constrain user-installed toolchains. Production: `tooling/checks/bun-sources.ts`, invoked by
     `check:bun-sources` inside `lint:intent` (`package.json`, `scripts.lint:intent` and
     `scripts.check:bun-sources`). Test:
     `tooling/tests/unit/bun-sources.test.ts` pins accepted Bun/TypeScript paths, all three
@@ -1253,9 +1245,9 @@ lets these four repository-tooling modules import it from the repository root.
 - **Every package's `test:coverage` script**, which must write `coverage/lcov.info` where
   `readOwnSourceCoverage` expects it (`tooling/checks/coverage.ts`), i.e. the `coverageDir`
   setting in each package's `bunfig.toml` is part of this contract.
-- **Five packages' `./testing` exports**, which are consumed across package boundaries and therefore
+- **Four packages' `./testing` exports**, which are consumed across package boundaries and therefore
   ride the ordinary `exports`/dependency rules `package-graph.ts` enforces: `loop`, `memory`,
-  `plan`, `trace` and `tasks` each declare one (§2.5), and `kernel` and `memory` are the
+  `plan` and `trace` each declare one (§2.5), and `kernel` and `memory` are the
   actual cross-package importers of `@clarvis/loop/testing`. `kernel` and `workflows` declare no
   `./testing` export of their own — neither appears in either package's `exports` map.
 
@@ -1360,13 +1352,6 @@ already ends its own chain in `.catch(() => {})` (`packages/capability/src/tasks
    compares the complete generated block with the current serializer. A format change therefore
    requires regenerating the document in the same iteration, or `check:graph` fails
    (`tooling/lib/package-graph.ts`, `renderMarkdown` and `checkDocument`).
-
-9. ~~**`@clarvis/tasks/testing` has no cross-package consumer.**~~
-   **Resolved.** `@clarvis/tasks/testing` is a **provider conformance harness**, and its intended
-   consumer is outside this repository by design: a provider-neutral task domain means somebody else
-   writes the Jira or Trello or in-house provider, and this is how they find out whether it satisfies
-   the contract before Clarvis ever loads it. No in-repo importer is the *expected* state there, not
-   an unused export.
 
 10. ~~**The three `GRANDFATHERED` allowlist entries are undocumented individually.** The header says
     they are "real, executable, untested modules that predate this check"

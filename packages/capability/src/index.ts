@@ -390,28 +390,6 @@ export type {
   PersistedTraceProjector,
   PersistedTraceProjectorRegistry,
 } from "./trace.ts";
-export {
-  CAPABILITY_EXECUTABLE_PROTOCOL_VERSION,
-  capabilityExecutablePlatformSchema,
-  capabilityExecutableDeclarationSchema,
-  capabilityExecutablesSchema,
-  resolveCapabilityExecutable,
-  CapabilityExecutableRpcError,
-} from "./capability-executables.ts";
-export type {
-  CapabilityExecutablePlatform,
-  CapabilityExecutableDeclaration,
-  EffectiveCapabilityExecutable,
-  CapabilityExecutableInitialization,
-  CapabilityExecutableSession,
-  CapabilityExecutableSessionInput,
-  CapabilityExecutablePort,
-} from "./capability-executables.ts";
-export {
-  capabilitySkillPlansModeSchema,
-  capabilityRunPoliciesSchema,
-} from "./capability-run-policies.ts";
-export type { CapabilityRunPolicies, CapabilitySkillPlansMode } from "./capability-run-policies.ts";
 export type {
   OperatorReviewContext,
   OperatorReviewContextSnapshot,

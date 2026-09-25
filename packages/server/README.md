@@ -195,10 +195,8 @@ Two per-request knobs beyond the messages: `memory` (`on`/`off`) and `plans`
 (`off`/`on`/`review`). Nothing else is exposed — no config, secrets, files, plans, memory, sessions
 or cross-owner run listing.
 
-The backing kernel boots with `builtins.tasks = false`. This is stronger than merely omitting
-control endpoints: agents running through `clarvis_run` receive no external-task tools or bindings,
-even when a local agent definition carries the corresponding grants. Tasks remain a
-`KernelClient`/Code product surface and are not part of the public MCP facade in this release.
+The backing kernel has no external Tasks capability or service. The public MCP facade exposes no
+task controls or bindings.
 Worktrees are a Code launch-time choice, not a kernel capability or MCP surface.
 
 **Pass `resetTimeoutOnProgress: true` and a `progressToken`**, or a `timeout` at least as long as the

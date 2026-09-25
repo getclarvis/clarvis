@@ -301,7 +301,6 @@ alternative was a dependency edge nobody wanted:
 | `sanitize.ts`                                       | the secret-redaction rules, below                                                                                                                                                                    |
 | `errors.ts`                                         | the five-class `CodedError` hierarchy: its members split across the trace/engine boundary, so splitting the file would make `@clarvis/loop` import its own error's base class from the trace package |
 | `frontmatter-fence.ts` (`splitFrontmatterFence`)    | the `---` split shared by `@clarvis/skills` and `@clarvis/loop`'s agent definitions, below — a _string_ operation, so it lands here rather than in the filesystem leaf                               |
-| `capability-executables.ts`                         | the serializable declaration, platform/env resolver and narrow session port shared by hosts and language-neutral Memory/Plans adapters                                                               |
 
 Plus `tool-arguments.ts`, `call-envelope.ts` (`openCallEnvelope`), `handler-base.ts`
 (`handlerBaseOf`) and the hook vocabulary (`hooks-config.ts`) — the last because the settings block

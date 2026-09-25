@@ -247,13 +247,12 @@ not require another approval while that inventory remains unchanged.
 
 ### 3.6 `WORKSPACE_RISK_FIELDS` (`packages/kernel/src/config/workspace-trust.ts`)
 
-`["hooks", "mcpServers", "enabledPlugins", "marketplaces", "memory.provider", "plans.provider",
-"tasks.provider"]`. The first four are stripped when `declaresSomething` is true — i.e. absent, `[]`
-and `{}` do **not** count. `memory.provider` / `plans.provider` are stripped only when
-`provider.kind` is `"executable"` or `"plugin"`; `tasks.provider` is stripped (and takes
-the whole `tasks` block with it) whenever `tasks.provider` is an object. Pinned
-by `packages/kernel/tests/integration/workspace-trust.test.ts` (covers every field)
-(built-in `kind: "wiki"` / `kind: "markdown"` providers survive).
+`["hooks", "mcpServers", "enabledPlugins", "marketplaces", "providers.subscription"]`.
+The first four are stripped when `declaresSomething` is true; absent, `[]` and `{}` do not count.
+Subscription provider declarations are withheld from workspace settings. Built-in Memory and Plans
+provider selections survive. Production: `WORKSPACE_RISK_FIELDS` and `stripWorkspaceRiskFields`
+in `packages/kernel/src/config/workspace-trust.ts`. Test:
+`packages/kernel/tests/integration/workspace-trust.test.ts`.
 
 ### 3.7 The five shipped agents
 
@@ -920,7 +919,7 @@ no cross-host mutual exclusion from this lease.
 | `@clarvis/protocol` | type-only | `packages/kernel/src/config/config-service.ts`, `packages/kernel/src/config/config-store.ts`, `packages/kernel/src/config/agent-resolution.ts`, `packages/kernel/src/config/workspace-trust.ts` — all `import type` |
 | `@clarvis/loop/host` | **runtime value** | `agentFrontmatterSchema` (`packages/kernel/src/config/config-service.ts`, `packages/kernel/src/config/agent-overlay.ts`), `settingsSchemaFor` (`packages/kernel/src/config/capability-registry.ts`), `splitAgentFrontmatter` + `mergeSettings` (`packages/kernel/src/config/file-config-store.ts`, `packages/kernel/src/config/frontmatter.ts`), `readJsonFile` (`packages/kernel/src/config/workspace-trust.ts`) |
 | `@clarvis/capability` | **runtime value** | `createCapabilityRegistry` (`packages/kernel/src/config/capability-registry.ts`), `createRateLimiter`/`NOOP_LOGGER` (`packages/kernel/src/config/file-config-store.ts`) |
-| `@clarvis/memory/settings`, `@clarvis/plan/settings`, `@clarvis/workflows`, `@clarvis/tasks/settings` | **runtime value** | the four `register(...)` calls in `packages/kernel/src/config/capability-registry.ts` |
+| `@clarvis/memory/settings`, `@clarvis/plan/settings`, `@clarvis/workflows` | **runtime value** | the three `register(...)` calls in `packages/kernel/src/config/capability-registry.ts` |
 | `@clarvis/paths` | **runtime value** | `globalPaths`, `workspacePaths`, `ensureWorkspaceDir`, `writeFileAtomicSync`, `acquireLocalLeaseSync`, `CONTEXT_FILENAMES`, `globalRoot` (`packages/kernel/src/config/file-config-store.ts`, `packages/kernel/src/config/workspace-trust.ts`) |
 | `yaml` | **runtime value** | `stringifyYaml` in `writeAgent` (`packages/kernel/src/config/file-config-store.ts`) |
 | `zod` | **runtime value** | `workspaceTrustSchema` (`packages/kernel/src/config/workspace-trust.ts`) |
@@ -962,7 +961,7 @@ ceiling, the three failure kinds, and the `missing` flag.
 | `file-kernel.ts` | `createFileConfigStore`, `DEFAULT_ENTRY_AGENT`, `SettingsSnapshot` | `packages/kernel/src/file-kernel.ts` |
 | `runs/settings-assembler.ts` | `AgentRecord`, `ConfigStore`, `readEffectiveAgent` | `packages/kernel/src/runs/settings-assembler.ts` |
 | `application/workflow-policy.ts` | `resolveAgentsByName`, `ConfigStore` | `packages/kernel/src/application/workflow-policy.ts` |
-| `mcp/effective-servers.ts`, `sandbox/policy.ts`, `tasks/task-provider-factory.ts` | `ConfigStore`/`SettingsSnapshot` types | respectively |
+| `sandbox/policy.ts` | `ConfigStore`/`SettingsSnapshot` types | `packages/kernel/src/sandbox/policy.ts` |
 | `plugins/plugin-service.ts` | `parseAgentFrontmatter` | `packages/kernel/src/plugins/plugin-service.ts` |
 | `plugins/plugin-contributions.ts` | `AgentRecord` type | `packages/kernel/src/plugins/plugin-contributions.ts`; it also exposes `settingsScopes`/`agents`/`readAgent`, consumed at `packages/kernel/src/config/file-config-store.ts` |
 | `@clarvis/code` | `resolveAgentsByName`, `AgentSummary.overlay.shadowed` | `packages/code/src/adapters/kernel-run-client.ts`, `packages/code/src/adapters/agents-store.ts` |

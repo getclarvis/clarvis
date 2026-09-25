@@ -77,7 +77,6 @@ Source ownership:
 | `workflows.ts` | `WorkflowsService`, `WorkflowNode`, `WorkflowSequence`, `WorkflowSummary`/`WorkflowDetail` |
 | `skills.ts` | `SkillsService`, `SkillSummary`, `SkillProvenance`, `SkillPresentation`, `SkillToolDependency` |
 | `sessions.ts` | `SessionService`, `Session`, `SessionSummary`, `SessionTurn`, cache-detail-aware `SessionTotals`, Agent Profile binding, and Extension Profile snapshot identity |
-| `tasks.ts` | `TasksService`, all `Task*Dto` shapes, `ActiveTaskRequestDto`/`ActiveTaskBindingDto` |
 | `storage.ts` | `StorageService`, bounded inventory DTOs and cleanup request/result shapes |
 | `transport.ts` | `KernelTransport`, `KernelRequestOptions`, `KernelAbortSignal` |
 | `client.ts` | `KernelClient`, `KernelCapabilities`, `RuntimeStatus`, `ConnectOptions` |
@@ -180,11 +179,10 @@ optional hosted-run ownership and a close method:
 | `workflows` | `WorkflowsService` | `KernelClient.workflows` |
 | `skills` | `SkillsService` | `KernelClient.skills` |
 | `sessions` | `SessionService` | `KernelClient.sessions` |
-| `tasks` | `TasksService` | `KernelClient.tasks` |
 | `storage` | `StorageService` | `KernelClient.storage` |
 | `close(): Promise<void>` | method | `KernelClient.close` |
 
-`KernelCapabilities` has the four booleans `memory`, `skills`, `agent_tools`, and `tasks`, plus the
+`KernelCapabilities` has the three booleans `memory`, `skills`, and `agent_tools`, plus the
 optional host-reported `runtime` and `hosting.host_generation`. Native placement reports `kind`,
 `host_platform`, effective isolation and lifecycle.
 The runtime projection is informational, not a client-controlled launch input. Public compatibility remains the concrete
@@ -434,27 +432,6 @@ rate. Production: `packages/protocol/src/sessions.ts` (`SessionTotals`). Test:
 `StorageCleanupRequest.categories` is closed to `temporary | cache` and carries an explicit
 `dry_run`; see [`storage.md`](storage.md).
 
-#### `TasksService` (`packages/protocol/src/tasks.ts`)
-
-| Method | Signature | File |
-| --- | --- | --- |
-| `status` | `(options?: TaskCallOptions) => Promise<TaskProviderStatusDto>` | `packages/protocol/src/tasks.ts` |
-| `capabilities` | `(options?) => Promise<TaskProviderCapabilitiesDto>` | `packages/protocol/src/tasks.ts` |
-| `listContainers` | `(input: ListTaskContainersDto, options?) => Promise<TaskContainerPageDto>` | `packages/protocol/src/tasks.ts` |
-| `search` | `(input: SearchTasksDto, options?) => Promise<TaskPageDto>` | `packages/protocol/src/tasks.ts` |
-| `get` | `(ref: TaskRefDto, options?) => Promise<TaskDocumentDto>` | `packages/protocol/src/tasks.ts` |
-| `searchActors` | `(input: SearchTaskActorsDto, options?) => Promise<TaskActorPageDto>` | `packages/protocol/src/tasks.ts` |
-| `create` | `(input: CreateTaskDto, options?) => Promise<TaskDocumentDto>` | `packages/protocol/src/tasks.ts` |
-| `assign` | `(input: AssignTaskDto, options?) => Promise<TaskDocumentDto>` | `packages/protocol/src/tasks.ts` |
-| `previewTransition` | `(input: PreviewTaskTransitionDto, options?) => Promise<TaskTransitionPreviewDto>` | `packages/protocol/src/tasks.ts` |
-| `transition` | `(input: TransitionTaskDto, options?) => Promise<TaskDocumentDto>` | `packages/protocol/src/tasks.ts` |
-| `comment` | `(input: CommentTaskDto, options?) => Promise<TaskDocumentDto>` | `packages/protocol/src/tasks.ts` |
-| `attachArtifact` | `(input: AttachTaskArtifactDto, options?) => Promise<TaskDocumentDto>` | `packages/protocol/src/tasks.ts` |
-
-Every method except `status`/`capabilities` takes an `options?: TaskCallOptions` carrying only a
-`signal` (`packages/protocol/src/tasks.ts`) — the type's own comment: "cancellation is local transport metadata and
-is never serialized as params" (`packages/protocol/src/tasks.ts`).
-
 ### 2.4 `KernelTransport` — the seam a client sits on
 
 Defined at `packages/protocol/src/transport.ts`, not part of `KernelClient` itself:
@@ -468,8 +445,7 @@ Defined at `packages/protocol/src/transport.ts`, not part of `KernelClient` itse
 | `close` | `() => Promise<void>` | `packages/protocol/src/transport.ts` |
 
 `KernelRequestOptions` (`packages/protocol/src/transport.ts`) carries exactly one field, `signal`.
-It is local cancellation metadata; task operations explicitly keep it out of serialized parameters
-through `TaskCallOptions` (`packages/protocol/src/tasks.ts`).
+It is local cancellation metadata and stays out of serialized parameters.
 
 ## 3. Data and formats
 
@@ -625,7 +601,7 @@ in parallel. Production: `RunEvent` in `packages/protocol/src/runs.ts`. Test:
 | `prompt_cache_ttl?` | `"5m" \| "1h"` | forwarded only when provided (`packages/protocol/src/runs.ts`) |
 | `memory?` | `MemoryMode` | `"on" \| "off"` (`packages/protocol/src/runs.ts`) |
 | `plans?` | `PlansMode` | `"off" \| "on" \| "review"` (`packages/protocol/src/runs.ts`) |
-| `task?` | `ActiveTaskRequestDto` | binds one external task |
+| `task?` | `ActiveTaskRequestDto` | legacy request field; no Tasks provider is registered |
 | `skill?` | `{ name: string; task?: string }` | the `/skill` flow |
 | `output_schema?` | `JsonSchema` | structured-output request |
 
@@ -657,7 +633,6 @@ real types (not illustrative prose — every field below is copied from that fil
 // packages/protocol/tests/contract/public-contract.fixture.ts
 const capabilities = {
   memory: true, skills: true, agent_tools: true,
-  tasks: true,
 } satisfies KernelCapabilities;
 
 // packages/protocol/tests/contract/public-contract.fixture.ts
@@ -665,7 +640,6 @@ const startParams = {
   execution_id: "run-1",
   messages: [{ role: "user", content: "Inspect the workspace" }],
   plans: "review",
-  task: { id: "CLAR-42", provider_key: "tasks:mcp:v1:sha256:fixture", mode: "work" },
   output_schema: { type: "object" },
 } satisfies StartRunParams;
 
@@ -705,7 +679,7 @@ on the same part rather than separate variants.
 | `RunUsage` | `{ iterations; elapsed_ms; input_tokens?; output_tokens?; cached_tokens?; by_agent?: PerAgentUsage[]; warnings? }` | `packages/protocol/src/runs.ts` |
 | `RunResult` | `{ execution_id; status: RunStatus; result?; ended_reason?; usage?: RunUsage; error?: { code; message; kind?; retry_after_ms? } }` plus final disposition or `disposition: "checkpoint"` with separate `checkpoint: { summary, next_step }` | `packages/protocol/src/runs.ts` |
 | `RunSummary` | `{ execution_id; owner?; status; created_at; ended_at? }` | `packages/protocol/src/runs.ts` |
-| `RunDetail` (extends `RunSummary`) | `+ messages: Message[]; events: RunEvent[]; result?: RunResult; continue_from?; plan_ref?: PlanRef; active_task?: ActiveTaskBindingDto; extension_profile?: ExtensionProfileRunRef; recovery?: RunRecovery` | `packages/protocol/src/runs.ts` |
+| `RunDetail` (extends `RunSummary`) | `+ messages: Message[]; events: RunEvent[]; result?: RunResult; continue_from?; plan_ref?: PlanRef; extension_profile?: ExtensionProfileRunRef; recovery?: RunRecovery` | `packages/protocol/src/runs.ts` |
 
 `PerAgentUsage.role`'s `"vision"` member is not an agent: its own doc comment calls it "the engine's
 image-reading pre-pass, one completion on a model no agent runs on" (`packages/protocol/src/runs.ts`) — the same
@@ -810,28 +784,10 @@ vocabulary" (`packages/protocol/src/config.ts`).
 needs attention" (`packages/protocol/src/memory.ts`). `MemoryJobError.phase` names one of `generate`/`validate`/
 `apply`/`reindex`/`commit` (`packages/protocol/src/memory.ts`).
 
-### 3.13 `TasksService` DTO field lists (`tasks.ts`)
-
-| Type | Shape | File |
-| --- | --- | --- |
-| `TaskStageDto` | 8-value union: `backlog` \| `ready` \| `active` \| `blocked` \| `review` \| `done` \| `cancelled` \| `other` | `packages/protocol/src/tasks.ts` |
-| `TaskActorDto` | `{ id; label; kind: "human" \| "team" \| "agent" \| "service" \| "unknown" }` | `packages/protocol/src/tasks.ts` |
-| `TaskClaimDto` | `{ claimant: TaskActorDto; execution_id: string; claimed_at: string }` | `packages/protocol/src/tasks.ts` |
-| `TaskProviderCapabilitiesDto` | `{ protocol_version: 2; provider_instance_id; provider_kind; read: { containers; search; get; actors }; write: { create; assign; comment; attach_artifact; intents: TaskTransitionIntentDto[] }; concurrency: "none" \| "revision" \| "exclusive_claim" }` | `packages/protocol/src/tasks.ts` |
-| `TaskProviderStatusDto` | `{ state: "not_configured" \| "ready" \| "unavailable" \| "incompatible"; provider_key?; provider_kind?; server?; writes: "disabled" \| "enabled"; reason? }` | `packages/protocol/src/tasks.ts` |
-
-`TaskContainerPageDto` (`{ items: TaskContainerRefDto[]; next_cursor? }`, `packages/protocol/src/tasks.ts`) and
-`TaskPageDto` (`{ items: TaskSummaryDto[]; next_cursor? }`, `packages/protocol/src/tasks.ts`) are each a bespoke
-`items` + `next_cursor` shape — a third pagination idiom alongside the offset/limit `Page<T>` and the
-generic `CursorPage<T>` (§3.1), and structurally distinct from `PlansService`'s own bespoke
-`cursor`/`next_cursor` fields (`packages/protocol/src/plans.ts`) despite serving the same purpose.
-
 ### 3.14 `PluginService`, `SkillsService` and `ModelCatalogService` data shapes
 
 `PluginContributions` (`packages/protocol/src/plugins.ts`): `{ agents: string[]; broken_agents: string[]; skills:
-string[]; servers: string[]; hooks: number; capability_executables: PluginCapabilityExecutable[];
-capability_run_policies?: { plans?: { skills: Record<string, "off" | "on" | "review"> } };
-executables: string[] }` — `hooks` is "count of hook entries (not their names)" and `executables` are
+string[]; servers: string[]; hooks: number; executables: string[] }` — `hooks` is "count of hook entries (not their names)" and `executables` are
 "concrete commands this plugin would run... pre-formatted for display" (`packages/protocol/src/plugins.ts`).
 `PluginView.display_name`/`short_description` (`packages/protocol/src/plugins.ts`) are documented as "display data
 only. A plugin cannot widen what it is allowed to do by describing itself well: trust stays with the
@@ -880,21 +836,6 @@ attached to each method:
    overwritten in that case" (`packages/protocol/src/config.ts`). This is optimistic concurrency control expressed
    purely through the method signature and its doc comment — no implementation of the check lives in
    this package.
-5. `TasksService`'s `assign`, `transition`, `comment`, and `attachArtifact` DTOs each carry an optional
-   `expected_revision` (for example `AssignTaskDto.expected_revision?`,
-   `packages/protocol/src/tasks.ts`). `PlansService.setRetention` and `.delete` do not expose a
-   revision argument (`packages/protocol/src/plans.ts`); the protocol therefore does not claim
-   client-bound CAS for those two operations.
-6. `TasksService.transition`'s own DTO comment states it is "human control-plane transitions" that
-   "exclude `start`, which belongs to a bound run" (`packages/protocol/src/tasks.ts`) — i.e. the `TaskTransitionIntentDto`
-   union has a `"start"` member (`packages/protocol/src/tasks.ts`) that `TransitionTaskDto.intent` deliberately cannot
-   carry (`Exclude<TaskTransitionIntentDto, "start">`, `packages/protocol/src/tasks.ts`), forcing that transition to
-   happen only through a run's own binding.
-7. `PreviewTaskTransitionDto`/`TaskTransitionPreviewDto` (`packages/protocol/src/tasks.ts`) gate `complete`/`reopen`
-   behind a `confirmation_token` that `TransitionTaskDto.confirmation_token` is documented as
-   "required for complete/reopen and minted by previewTransition" (`packages/protocol/src/tasks.ts`) — the same
-   preview-token pattern, applied to exactly two transition intents.
-
 ### State implied by `PlanTaskStatus` (`packages/protocol/src/plans.ts`)
 
 | Status | Meaning | Closes the task? |
@@ -940,7 +881,7 @@ The following are derived directly from this package's own source and tests.
 
 3. **`KernelClient` aggregates exactly the required named services, not an ad-hoc subset.**
    Production: `packages/protocol/src/client.ts` — `runs`, `config`, `plugins`, `secrets`, `models`, `providerAuth`, `files`, `changes`, `memory`,
-   `plans`, `goals`, `workflows`, `skills`, `sessions`, `tasks`, `storage`, `extensionProfiles`
+   `plans`, `goals`, `workflows`, `skills`, `sessions`, `storage`, `extensionProfiles`
    (required fields, plus optional `hosting`/`localHost`, identity fields and `close()`).
    Test: `packages/protocol/tests/contract/public-contract.fixture.ts` constructs a literal
    `satisfies KernelClient` naming every required service plus `capabilities`/`project`/
@@ -965,14 +906,6 @@ The following are derived directly from this package's own source and tests.
    `packages/protocol/tests/contract/public-contract.fixture.ts`), but the kernel's exhaustive
    `RUN_EVENT_POLICY` makes a new discriminator fail typechecking until its source, durability,
    mapping and backpressure behavior are classified (`packages/kernel/src/runs/event-policy.ts`).
-
-5. **A `TransitionTaskDto` can never carry the `"start"` transition intent.**
-   Production: `TaskTransitionIntentDto` (`packages/protocol/src/tasks.ts`) includes `"start"`;
-   `TransitionTaskDto.intent` is typed `Exclude<TaskTransitionIntentDto, "start">` (`packages/protocol/src/tasks.ts`).
-   The type's own comment: "Human control-plane transitions exclude `start`, which belongs to a bound
-   run" (`packages/protocol/src/tasks.ts`). This is a compiler-enforced invariant (assigning `"start"` to that field is
-   a type error) with no runtime test in this package; **unpinned** at the `bun test` layer, enforced
-   only by `tsc`.
 
 6. **`PlansService.list`/`SessionService.listPage` use opaque-cursor paging; `RunService.list`/
    `WorkflowsService.list` use offset/limit paging — the two families are never interchanged.**
@@ -1073,7 +1006,7 @@ Nothing. `packages/protocol/package.json` has no `dependencies`/`devDependencies
 `optionalDependencies`/`peerDependencies` key at all (`packages/protocol/package.json`, read in
 full — no such key appears). Its own `.ts` files import nothing from any other package; every
 `import type` in the package points at a sibling module inside `packages/protocol/src/`
-(`packages/protocol/src/{client,config,extension-profiles,memory,models,plugins,runs,sessions,skills,tasks,workflows,workspace-changes}.ts`).
+(`packages/protocol/src/{client,config,extension-profiles,memory,models,plugins,runs,sessions,skills,workflows,workspace-changes}.ts`).
 The remaining eight modules import nothing; `index.ts` only type-reexports siblings. There is no
 cross-package source import in this package.
 

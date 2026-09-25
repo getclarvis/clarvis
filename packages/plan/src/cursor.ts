@@ -5,7 +5,7 @@
  * the string the next page is asked for — but it is no longer anonymous. Each
  * backend pages in a dialect of its own: the file adapter's payload is a
  * filename used as an exclusive descending lexical bound, the process-local
- * adapter's is a record id, and a provider's is whatever the remote mints. Fed
+ * adapter's is a record id. Fed
  * to the wrong backend, all three used to decode as *something* and silently
  * return the first page again, so a client paging across a backend change, or a
  * model repeating a stale cursor, looped instead of being told.
@@ -29,8 +29,6 @@ export const PLAN_CURSOR_TAGS = {
   file: "pf1",
   /** The process-local repository, whose payload is a plan id. */
   memory: "pm1",
-  /** A provider store, whose payload is the remote's own opaque cursor. */
-  provider: "pp1",
 } as const;
 
 /** One of the {@link PLAN_CURSOR_TAGS} values. */

@@ -114,7 +114,6 @@ interface KernelOver {
   deleteError?: unknown;
   compact?: KernelClient["runs"]["compact"];
   agents?: { name: string; scope: "workspace" | "global"; model?: string; description?: string }[];
-  tasks?: KernelClient["tasks"];
   capabilities?: Partial<KernelClient["capabilities"]>;
   approveWorkspace?: KernelClient["config"]["approveWorkspace"];
   revokeWorkspace?: KernelClient["config"]["revokeWorkspace"];
@@ -171,7 +170,6 @@ function fakeKernel(over: KernelOver): KernelClient {
           fingerprint: `sha256:${"0".repeat(64)}`,
         })),
     } as KernelClient["extensionProfiles"],
-    ...(over.tasks === undefined ? {} : { tasks: over.tasks }),
     ...(over.capabilities === undefined ? {} : { capabilities: over.capabilities }),
     ...(over.sessions === undefined ? {} : { sessions: over.sessions }),
     ...(over.hosting === undefined ? {} : { hosting: over.hosting }),
@@ -633,31 +631,6 @@ test("done does not release the event pump before the protocol stream closes", a
   ctrl.close();
   await handle.closed;
   expect(closed).toBe(true);
-});
-
-test("startRun maps the complete active-task request without workspace routing", async () => {
-  const ctrl = controllableHandle("exec_task");
-  let captured: unknown;
-  const { c } = client({
-    start: async (params) => {
-      captured = params;
-      return ctrl.handle;
-    },
-  });
-  await c.connect();
-  const handle = c.startRun({
-    executionId: "exec_task",
-    messages: [],
-    task: { id: "CLAR-42", provider_key: "provider-key", mode: "work" },
-  });
-  expect(captured).toMatchObject({
-    execution_id: "exec_task",
-    task: { id: "CLAR-42", provider_key: "provider-key", mode: "work" },
-  });
-  expect(captured).not.toHaveProperty("workspace");
-  ctrl.settle({ execution_id: "exec_task", status: "completed" });
-  ctrl.close();
-  await handle.done;
 });
 
 test("progress derives retries, plan revisions and non-successful run endings", async () => {
@@ -1124,46 +1097,6 @@ test("listProfiles projects the kernel's agents", async () => {
   ]);
 });
 
-test("Tasks control-plane methods stay thin pass-throughs to the kernel service", async () => {
-  const calls: string[] = [];
-  const tasks = new Proxy({} as KernelClient["tasks"], {
-    get: (_target, property) => async () => {
-      calls.push(String(property));
-      return {};
-    },
-  });
-  const { c } = client({ tasks });
-  await c.connect();
-
-  await c.tasks.status();
-  await c.tasks.capabilities();
-  await c.tasks.listContainers({});
-  await c.tasks.search({});
-  await c.tasks.get({ provider_key: "provider", id: "TASK-1" });
-  await c.tasks.searchActors({});
-  await c.tasks.create({} as never);
-  await c.tasks.assign({} as never);
-  await c.tasks.previewTransition({} as never);
-  await c.tasks.transition({} as never);
-  await c.tasks.comment({} as never);
-  await c.tasks.attachArtifact({} as never);
-
-  expect(calls).toEqual([
-    "status",
-    "capabilities",
-    "listContainers",
-    "search",
-    "get",
-    "searchActors",
-    "create",
-    "assign",
-    "previewTransition",
-    "transition",
-    "comment",
-    "attachArtifact",
-  ]);
-});
-
 test("plugin installs forward the selected inventory target to the kernel", async () => {
   let target: unknown;
   const kernel = Object.assign(fakeKernel({}), {
@@ -1382,28 +1315,28 @@ test("capabilities stays readable while reconnect is between kernels", async () 
   const c = createKernelRunClient({
     createKernel: async () => {
       if (builds++ > 0) await replacement;
-      return fakeKernel({ capabilities: { tasks: true } });
+      return fakeKernel({ capabilities: { memory: true } });
     },
     callbacks: { onEvent: () => {} },
   });
 
   await c.connect();
-  expect(c.capabilities.tasks).toBe(true);
+  expect(c.capabilities.memory).toBe(true);
 
   const reconnecting = c.reconnect();
   await flushMicrotasks();
 
   expect(() => c.capabilities).not.toThrow();
-  expect(c.capabilities).toMatchObject({ tasks: true });
+  expect(c.capabilities).toMatchObject({ memory: true });
 
   release();
   await reconnecting;
-  expect(c.capabilities).toMatchObject({ tasks: true });
+  expect(c.capabilities).toMatchObject({ memory: true });
   await c.dispose();
 });
 
 test("capabilities still refuses before the first connect", () => {
-  const { c } = client({ capabilities: { tasks: true } });
+  const { c } = client({ capabilities: { memory: true } });
   expect(() => c.capabilities).toThrow("kernel run client is not connected");
 });
 

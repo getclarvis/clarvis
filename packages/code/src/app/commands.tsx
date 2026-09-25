@@ -75,7 +75,6 @@ import {
 import { errorText } from "../adapters/errors.ts";
 import type { HintTone } from "../views/hint.ts";
 import type { SessionId, SessionMeta } from "../adapters/session-store.ts";
-import type { TasksController } from "../features/tasks/controller.ts";
 import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
 
 /** Dependencies for {@link registerAppCommands}: every adapter and effect the app-level commands close over. */
@@ -130,10 +129,8 @@ export interface AppCommandDeps {
   memoryMode: MemoryModeStore;
   workflows: Pick<WorkflowsService, "list" | "get" | "delete">;
   workflowActivity?: Accessor<WorkflowActivity | null>;
-  tasks: TasksController;
   storage: Pick<StorageService, "inspect" | "cleanup">;
   /** A transient host-level reason that blocks starting task work, such as the RSS fuse. */
-  taskWorkBlockedReason?: () => string | null;
   getRun: (id: string) => Promise<RunDetail | null>;
   runActive: () => boolean;
   hasAvailablePlan: () => boolean;
@@ -258,29 +255,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       );
     }),
   });
-  commands.registerView({
-    name: "tasks.open",
-    title: "Tasks",
-    desc: "Browse and work on external tasks in the current workspace",
-    slash: "/tasks",
-    surface: "slash",
-    group: "navigate",
-    enabled: deps.tasks.available,
-    view: lazyView(async () => {
-      const { TasksHub } = await import("../views/cold-surfaces.ts");
-      return (host) =>
-        TasksHub(host, {
-          controller: deps.tasks,
-          profiles: deps.agents.list,
-          defaultContainer: () => deps.settings.effective().tasks?.default_container,
-          ...(deps.taskWorkBlockedReason === undefined
-            ? {}
-            : { workBlockedReason: deps.taskWorkBlockedReason }),
-          onError: (message) => notify(message, "warn"),
-        });
-    }),
-  });
-
   /** Opens `childCmd` above the current view, or seeds `returnCmd` beneath a deep link. */
   function openWithReturn(childCmd: string, returnCmd: string, scope?: Scope): void {
     const factory = commands.viewFactory(childCmd);
@@ -1008,33 +982,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           },
           notify,
         });
-    }),
-  });
-
-  commands.registerView({
-    name: "capability-providers.open",
-    title: "Feature backends",
-    desc: "Select Memory, Plans and Tasks providers by scope",
-    surface: "internal",
-    group: "navigate",
-    parent: "settings",
-    view: lazyView(async () => {
-      const { CapabilityProvidersPanel } = await import("../views/cold-surfaces.ts");
-      return (host) => {
-        detachObserved(
-          "capability_provider_plugins_reload",
-          () => pluginsStore.reload(),
-          (e) => notify(errorText(e), "warn"),
-        );
-        return CapabilityProvidersPanel(host, {
-          settings: deps.settings,
-          plugins: pluginsStore.list,
-          tasks: deps.tasks,
-          notify,
-          openPlugins: () =>
-            openWithReturn("marketplace.open", "capability-providers.open", host.scope()),
-        });
-      };
     }),
   });
 

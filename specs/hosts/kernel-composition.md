@@ -147,12 +147,12 @@ Test: `packages/kernel/tests/integration/owner-isolation.test.ts`;
 ## 5. Capability composition
 
 The file kernel registers settings and grants before reading configuration. The loop receives tools,
-skills, hooks, memory, planning, workflows, and tasks only when their owning policy enables them.
+skills, hooks, memory, planning, and workflows only when their owning policy enables them.
 Optional package values do not enter the eager settings/import path contrary to the capability
 composition boundary.
 
 The Extension Profile manager narrows plugin contributions before settings, agents, MCP servers, hooks,
-capability executables, and plugin skill roots are composed. Standalone skill selection is passed as
+and plugin skill roots are composed. Standalone skill selection is passed as
 resolved `SkillRootInput` entries with exact `include` lists. The loop receives those roots and the
 opaque `{ id, fingerprint }` run metadata; it does not import Extension Profile policy.
 

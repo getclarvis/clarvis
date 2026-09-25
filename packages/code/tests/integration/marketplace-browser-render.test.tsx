@@ -44,15 +44,6 @@ function plugin(over: Partial<PluginView> = {}): PluginView {
       skills: ["deep-research"],
       servers: ["context7"],
       hooks: 1,
-      capabilityExecutables: [
-        {
-          capability: "plans",
-          command: "python3",
-          args: ["-B", "./providers/server.py", "plans"],
-          platformOverride: false,
-        },
-      ],
-      skillPlanPolicies: [{ skill: "deep-research", mode: "review" }],
       executables: ["python3"],
     },
     ...over,
@@ -183,8 +174,8 @@ test("installed inventory and full lifecycle details live in Marketplace", async
   mounted.press("return");
   await rendered.renderOnce();
   frame = rendered.captureCharFrame();
-  expect(frame).toContain("python3 -B ./providers/server.py plans");
-  expect(frame).toContain("plans:review");
+  expect(frame).toContain("MCP server context7");
+  expect(frame).toContain("skill      /deep-research");
   expect(frame).toContain("active with this plugin");
   mounted.press("e");
   expect(mounted.configured).toEqual(["demo-plugin"]);

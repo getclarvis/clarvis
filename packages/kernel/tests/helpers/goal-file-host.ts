@@ -328,7 +328,7 @@ export async function createGoalFileHostFixture(
               }),
         }),
         environment: createKernelEnvironment({ PATH: process.env.PATH }),
-        builtins: { tools: true, skills: false, hooks: false, tasks: false },
+        builtins: { tools: true, skills: false, hooks: false },
         planStoreFor: () => planStore,
       },
       hostGeneration: "generation",

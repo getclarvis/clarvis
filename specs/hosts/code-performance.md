@@ -252,7 +252,7 @@ Solid `lazy` and `Suspense`, caches each module promise, and lets the route owne
 subtree. Settings and Extensions list metadata lives in a lightweight module so rendering their
 menus does not import every child (`packages/code/src/views/config/lazy-view.tsx`,
 `packages/code/src/views/config/hub-items.ts`, `packages/code/src/app/commands.tsx`). The artifact
-contract scans representative markers from Help, Tasks, Storage, Sessions, Workflows and Doctor, as
+contract scans representative markers from Help, Storage, Sessions, Workflows and Doctor, as
 well as Diff and Plan (`packages/code/tooling/artifact/contract.ts`).
 
 ### 4.4 Transcript and session retention

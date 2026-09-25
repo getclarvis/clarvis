@@ -23,15 +23,15 @@ The table and Mermaid source belong to the generator and must stay exactly as em
 
 <!-- prettier-ignore-start -->
 <!-- package-graph:start -->
-Packages: 19; internal edges: 52; optional edges: 3.
+Packages: 18; internal edges: 50; optional edges: 3.
 
 | Package | Role | Direct internal dependencies | Internal consumers |
 | --- | --- | --- | ---: |
-| `capability` | foundation | — | 14 |
+| `capability` | foundation | — | 13 |
 | `code` | application | `kernel`, `paths`, `protocol` | 0 |
 | `goal` | product-capability | `capability`, `loop` | 1 |
 | `hooks` | execution-service | `capability`, `tools` | 1 |
-| `kernel` | host-implementation | `capability`, `goal`, `llm`, `loop`, `mcp-client`, `memory`, `paths`, `plan`, `protocol`, `skills`, `tasks`, `tools`, `trace`, `workflows` | 2 |
+| `kernel` | host-implementation | `capability`, `goal`, `llm`, `loop`, `mcp-client`, `memory`, `paths`, `plan`, `protocol`, `skills`, `tools`, `trace`, `workflows` | 2 |
 | `llm` | execution-service | `capability` | 2 |
 | `loop` | engine | `capability`, `hooks` (optional), `llm`, `mcp-client`, `paths`, `skills` (optional), `supervision`, `tools` (optional), `trace` | 4 |
 | `mcp-client` | execution-service | `capability`, `paths` | 2 |
@@ -42,7 +42,6 @@ Packages: 19; internal edges: 52; optional edges: 3.
 | `server` | application | `capability`, `kernel`, `paths`, `protocol` | 0 |
 | `skills` | execution-service | `capability`, `paths` | 2 |
 | `supervision` | execution-service | `capability` | 2 |
-| `tasks` | product-capability | `capability` | 1 |
 | `tools` | execution-service | `paths` | 3 |
 | `trace` | execution-service | `capability`, `paths` | 2 |
 | `workflows` | product-capability | `capability`, `loop`, `supervision` | 1 |
@@ -76,7 +75,6 @@ flowchart LR
     goal["@clarvis/goal"]
     memory["@clarvis/memory"]
     plan["@clarvis/plan"]
-    tasks["@clarvis/tasks"]
     workflows["@clarvis/workflows"]
   end
   subgraph role_host_implementation["host implementations"]
@@ -103,7 +101,6 @@ flowchart LR
   kernel --> plan
   kernel --> protocol
   kernel --> skills
-  kernel --> tasks
   kernel --> tools
   kernel --> trace
   kernel --> workflows
@@ -131,7 +128,6 @@ flowchart LR
   skills --> capability
   skills --> paths
   supervision --> capability
-  tasks --> capability
   tools --> paths
   trace --> capability
   trace --> paths

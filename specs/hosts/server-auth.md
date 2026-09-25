@@ -453,11 +453,11 @@ pins that `stopAccepting()` turns `/readyz` 503 while `/healthz` stays 200.
     probe would otherwise kill the server process (`packages/server/src/bin.ts`, repeated at
     `packages/server/src/http/serve.ts`).
 11. `server.boot.posture` logs the whole posture, including `owner_authenticated:
-    OWNER_MODE === "token"` and `builtins: "tasks=false"`
+    OWNER_MODE === "token"`
     (`packages/server/src/bin.ts`). The message ends "listening; the kernel is still
     starting" — the literal token the bind-gate test waits on
     (`packages/server/tests/architecture/bin-bind-gate.test.ts`).
-12. `createFileKernel` runs with `builtins: { tasks: false }`, `planStoreFor` /
+12. `createFileKernel` runs with `planStoreFor` /
     `memoryStoreFor` from step 9, `onOwnerRetired: (owner) => stores.evictOwner(owner)`,
     `defaultOwner: env.CLARVIS_SERVER_OWNER` and `ownershipMode: "multi"`
     (`packages/server/src/bin.ts`, the multi-owner fields in the composition call), `state.ready =

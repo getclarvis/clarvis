@@ -41,7 +41,6 @@ const PACKAGE_THRESHOLDS = {
   server: { functions: 0.9, lines: 0.96 },
   skills: { functions: 1, lines: 1 },
   supervision: { functions: 0.98, lines: 1 },
-  tasks: { functions: 0.95, lines: 0.98 },
   tools: { functions: 0.98, lines: 0.98 },
   trace: { functions: 0.98, lines: 0.97 },
   workflows: { functions: 1, lines: 1 },
@@ -179,11 +178,6 @@ const NO_COUNTER_ALLOWLIST = {
   supervision: [
     // Pure re-export barrel.
     "src/index.ts",
-  ],
-  tasks: [
-    // Type-only domain and narrow port contracts.
-    "src/provider.ts",
-    "src/server-port.ts",
   ],
   tools: [
     // Type-only.

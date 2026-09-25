@@ -8,7 +8,6 @@ import * as memory from "@clarvis/memory";
 import * as plans from "@clarvis/plan";
 import * as plugins from "../../src/plugins/plugin-contributions.ts";
 import * as pluginService from "../../src/plugins/plugin-service.ts";
-import * as tasks from "../../src/tasks/task-provider-factory.ts";
 import { SubscriptionManager } from "../../src/subscriptions/manager.ts";
 import { createFileSubscriptionStore } from "../../src/subscriptions/store.ts";
 import { createOperatorServices } from "../../src/config/operator-services.ts";
@@ -97,7 +96,6 @@ it("constructs administrative services without domains, MCP, plugins or network 
     spyOn(plans, "createFilePlanRepository"),
     spyOn(plugins, "createPluginContributions"),
     spyOn(pluginService, "createPluginService"),
-    spyOn(tasks, "TaskProviderFactory"),
     spyOn(SubscriptionManager.prototype, "resolve"),
     spyOn(SubscriptionManager.prototype, "startDevice"),
     spyOn(SubscriptionManager.prototype, "getEntitled"),

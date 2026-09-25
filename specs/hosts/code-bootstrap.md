@@ -304,7 +304,7 @@ do not implement runtime worktree switching:
 | `run`      | `AppRunControls` (`packages/code/src/views/App.tsx`)     | `packages/code/src/runtime.tsx` (`runControls`)     | submit/compact/context inspection/cancel/local-command controls; `switching` is always false                                                         |
 | `session`  | `AppSessionControls` (`packages/code/src/views/App.tsx`) | `packages/code/src/runtime.tsx` (`sessionControls`) | current-workspace list/catalog/resume/delete/clear/export/status/cost                                                                                |
 | `fleet`    | `AppFleet` (`packages/code/src/views/App.tsx`)           | `packages/code/src/runtime.tsx` (`fleet`)           | agents/settings/guard/memory/keys/catalog and refresh operations                                                                                     |
-| `backend`  | `AppBackend` (`packages/code/src/views/App.tsx`)         | `packages/code/src/runtime.tsx` (`backendConn`)     | client/current-plan reader/models/provider auth/workflows/plugins/tasks/storage/run lookup/reconnect                                                 |
+| `backend`  | `AppBackend` (`packages/code/src/views/App.tsx`)         | `packages/code/src/runtime.tsx` (`backendConn`)     | client/current-plan reader/models/provider auth/workflows/plugins/storage/run lookup/reconnect                                                 |
 
 ### 2.6 Environment variables read by this subsystem
 

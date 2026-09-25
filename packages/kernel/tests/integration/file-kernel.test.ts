@@ -101,7 +101,6 @@ describe("createFileKernel", () => {
         tools: false,
         skills: false,
         hooks: false,
-        tasks: false,
       },
     });
 
@@ -801,7 +800,6 @@ describe("kernel boot is no longer dark", () => {
         hooks: true,
         plans: true,
         memory: false,
-        tasks: true,
       });
       const ready = logger.events("kernel.boot.ready")[0];
       expect(typeof ready?.duration_ms).toBe("number");
@@ -819,7 +817,7 @@ describe("kernel boot is no longer dark", () => {
     const kernel = await createFileKernel({
       workspaceRoot: ws,
       globalDir: join(ws, "global"),
-      builtins: { tasks: false, hooks: false },
+      builtins: { hooks: false },
       logger,
     });
     try {
@@ -828,7 +826,6 @@ describe("kernel boot is no longer dark", () => {
           .events("kernel.capability.composed")
           .map((event) => [event.capability, [event.enabled, event.reason]]),
       );
-      expect(composed.tasks).toEqual([false, "host_disabled"]);
       expect(composed.hooks).toEqual([false, "host_disabled"]);
     } finally {
       await kernel.close();

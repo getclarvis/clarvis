@@ -325,7 +325,7 @@ export async function runCacheTrial(args: CacheTrialArgs): Promise<CacheTrial> {
         CLARVIS_AGENT_TOOLS_ENABLED: scenario === "C05" ? "1" : "0",
         CLARVIS_TIMEOUT_CEILING_MS: String(limits.durationMs),
       }),
-      builtins: { tools: scenario === "C05", hooks: false, tasks: false },
+      builtins: { tools: scenario === "C05", hooks: false },
       executeRun: (execution) => observe(execution),
     });
   let kernel: FileKernel | undefined;

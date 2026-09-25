@@ -61,7 +61,7 @@ async function fixture() {
       subscriptions: false,
       logger: NOOP_LOGGER,
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_AGENT_TOOLS_ENABLED: "0" }),
-      builtins: { tools: false, hooks: false, tasks: false },
+      builtins: { tools: false, hooks: false },
     },
   };
   const host = await serveRemoteFileKernelOverStdio(options);

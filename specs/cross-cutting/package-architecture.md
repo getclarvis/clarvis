@@ -68,7 +68,7 @@ Every workspace has one primary architectural role:
 | host contract | `protocol` | Transport-neutral DTOs and the `KernelClient` service contract | No internal package dependency |
 | execution service | `llm`, `mcp-client`, `supervision`, `trace`, `tools`, `hooks`, `skills` | Provider, transport, observation and machine-action implementations used by the engine or host | Foundations; a same-role edge only when one service genuinely builds on another, currently `hooks -> tools` |
 | engine | `loop` | Embeddable execution and orchestration policy | Foundations and execution services; `hooks`, `skills` and `tools` remain optional |
-| product capability | `memory`, `plan`, `goal`, `tasks`, `workflows` | Independently owned features composed by a host | Foundations; `goal`, `memory` and `workflows` may execute the loop, and `workflows` may use supervision |
+| product capability | `memory`, `plan`, `goal`, `workflows` | Independently owned features composed by a host | Foundations; `goal`, `memory` and `workflows` may execute the loop, and `workflows` may use supervision |
 | host implementation | `kernel` | Implements `protocol`, composes the engine and product capabilities, and owns local host policy | Host contract and any lower package it actually composes |
 | application | `code`, `server` | User-facing terminal application and MCP-over-HTTP facade | `kernel`, `protocol`, and only those foundations whose concerns the application itself owns |
 
@@ -231,7 +231,7 @@ must not import the engine back, including through tests or public subpaths. The
 the engine dependencies from its own manifest and scans both `src` and `tests`
 (`packages/loop/tests/architecture/optional-package-boundary.test.ts`,
 `optional package boundaries`). Memory
-and Workflows may depend on Loop because they execute runs; Plan and Tasks remain host-registered
+and Workflows may depend on Loop because they execute runs; Plan remains host-registered
 capabilities that do not need the engine. Kernel is where these branches are composed.
 
 ### 4.4 New package review
@@ -370,14 +370,14 @@ applications
 
 host implementation
   kernel
-      |-- product capabilities         goal, memory, plan, tasks, workflows
+      |-- product capabilities         goal, memory, plan, workflows
       |-- engine                       loop
       |-- execution services           only those it composes directly
       `-- foundations + protocol
 
 engine and capabilities
   goal, memory, workflows --> loop
-  plan, tasks --------> capability/paths only
+  plan --------------> capability/paths only
   loop ---------------> execution services + foundations
 
 leaves
@@ -385,8 +385,8 @@ leaves
 ```
 
 This permits multiple downward branches; it does not force every package into one numerical height.
-Topological depth and semantic role are different: Plan and Tasks sit low in the graph because their
-contracts are small, yet Kernel composes them as product capabilities beside Memory and Workflows.
+Topological depth and semantic role are different: Plan sits low in the graph because its
+contract is small, yet Kernel composes it as a product capability beside Memory and Workflows.
 
 ### 7.2 Enforced Code boundary
 

@@ -1373,33 +1373,6 @@ launch-time worktree fact.
 genuinely required, and the current condition is dead surface. For `git`, an architecture test over
 the client-side seam. Neither is a question about the outside world; both are simply not done.
 
-### No `clarvis.tasks.v2` server exists here, and the harness has never met the adapter
-
-`TASKS_PROTOCOL` is `"clarvis.tasks.v2"` (`packages/tasks/src/settings.ts`). No server implementing
-it exists in this repository, and Clarvis ships none by design: the provider is operator-owned. Every
-exercise of `createMcpTaskProvider` drives a hand-built `TaskServerPort` — `canonicalPort` at
-`packages/tasks/tests/component/mcp-provider.test.ts` is a stateless map of canned
-envelopes whose `callTool` returns `results[tool]` and records the call. The kernel side
-is fakes too (`packages/kernel/tests/component/task-server-port.test.ts`,
-`packages/kernel/tests/component/task-provider-factory.test.ts`).
-
-*The actionable part the report does not state.* The conformance harness has never been run against
-the MCP adapter. `assertTaskProviderConformance`
-(`packages/tasks/src/testing/provider-conformance.ts`) has exactly one consumer suite,
-`packages/tasks/tests/component/conformance.test.ts`, and all three providers it is handed are built
-by `makeProvider()` from
-`packages/tasks/tests/helpers/provider.ts` — an in-memory fake that shares no implementation with
-`packages/tasks/src/mcp-provider.ts`. So the adapter's snake_case field mapping, its projection of
-`available_intents` and its envelope forwarding are exercised only against assertions written beside
-them, never against the contract.
-
-*And the harness's own TSDoc is wrong.* `provider-conformance.ts` says "the four suites that do use
-it are this package's own". There is one.
-
-*What would settle it.* A real server, whose existence anywhere is outside this tree. The substitute
-available here is a stateful reference `TaskServerPort` behind `createMcpTaskProvider`, run through
-the harness — the only composition that would put the adapter and the contract on the same axis.
-
 ### `link()` atomicity and `fsync` durability are asserted by comment, and only one of them is stale
 
 **The `link()` half stands, and is worse than the report says.**
@@ -1747,8 +1720,7 @@ current `@clarvis/skills` tests contain nineteen `symlinkSync` call sites
 `packages/skills/tests/integration/diagnostics.test.ts`,
 `packages/skills/tests/integration/bounds.test.ts`,
 `packages/skills/tests/integration/paths.test.ts`, and
-`packages/skills/tests/integration/sidecar.test.ts`). Memory now probes file-symlink support
-before its guarded escape test (`packages/memory/tests/integration/file-provider.test.ts`);
+`packages/skills/tests/integration/sidecar.test.ts`).
 `packages/code/tests/integration/marketplace.test.ts` has three more, equally outside the
 Windows job. Several of the skills sites link a **file**, where the
 `"junction"` substitution that `packages/tools/tests/helpers/fixtures.ts` and
@@ -1852,8 +1824,8 @@ Four packages joined the Windows job after this record was written. Plan and Pat
 predicates in `packages/plan/tests/integration/file-repository.test.ts`,
 `packages/paths/tests/component/workspace-state.test.ts` and
 `packages/paths/tests/contract/atomic.test.ts` each declare their own local
-`modeBitsEnforced`; Memory now does the same in `packages/memory/tests/integration/file-store.test.ts`
-and probes file-symlink capability in `file-provider.test.ts`. None of those is wrong,
+`modeBitsEnforced`; Memory now does the same in `packages/memory/tests/integration/file-store.test.ts`.
+None of those is wrong,
 but none of them can distinguish a defect from an inapplicability the way a named predicate does. If
 a Windows defect is found in one of those packages, give it a named predicate there rather than an
 inline platform check.

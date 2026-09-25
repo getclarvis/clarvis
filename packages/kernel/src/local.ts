@@ -36,8 +36,3 @@ export type {
   PluginRepository,
   PreparedPlugin,
 } from "./ports/plugin-repository.ts";
-export {
-  createCapabilityExecutableSessionManager,
-  type CapabilityExecutableSessionManager,
-  type CapabilityExecutableSessionManagerOptions,
-} from "./capability-executables/session-manager.ts";

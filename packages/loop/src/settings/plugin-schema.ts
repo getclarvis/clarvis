@@ -1,10 +1,6 @@
 import { z } from "zod";
 import { editDistance, typoBudget } from "./typo-suggestion.ts";
-import {
-  capabilityExecutablesSchema,
-  capabilityRunPoliciesSchema,
-  type CapabilityRegistry,
-} from "@clarvis/capability";
+import { type CapabilityRegistry } from "@clarvis/capability";
 import { BUILTIN_SETTINGS_SPECS } from "../runtime/capabilities/settings-specs.ts";
 import { capabilityPluginFields } from "../runtime/capabilities/settings-specs.ts";
 import { mcpServerPluginSchema, pluginNameField, type SettingsFile } from "./settings-schema.ts";
@@ -90,19 +86,6 @@ export const pluginManifestSchema = z
           "is active. Executable: gated on enable. A manifest may also name a companion document " +
           "holding this map instead of writing it inline; the host resolves that before " +
           "validation, exactly as it does for hooks.",
-      ),
-    capabilityExecutables: capabilityExecutablesSchema
-      .optional()
-      .describe(
-        "Language-neutral JSON-RPC services this plugin offers by capability. A service is " +
-          "inert until the operator enables the plugin and selects it for that capability.",
-      ),
-    capabilityRunPolicies: capabilityRunPoliciesSchema
-      .optional()
-      .describe(
-        "Per-skill run policy for capabilities supplied by this plugin. The host applies a " +
-          "policy only when the skill and the selected capability provider both resolve to " +
-          "this plugin.",
       ),
     ...capabilityPluginFields,
   })

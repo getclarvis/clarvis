@@ -647,7 +647,7 @@ Its doc comment frames the module as replacing
 ## 5. Invariants
 
 **Invariant 1 (INV-237).** No file in `@clarvis/server`'s `src/` or `tests/`
-imports `@clarvis/loop`, `@clarvis/memory`, `@clarvis/plan`, or `@clarvis/tasks`;
+imports `@clarvis/loop`, `@clarvis/memory`, or `@clarvis/plan`;
 a `@clarvis/kernel` import is only ever one of the
 four sanctioned entrypoints (`.`, `./bootstrap`, `./config`, `./policy` — no
 `./local`).
@@ -659,7 +659,7 @@ Test: `packages/server/tests/architecture/dependency-boundary.test.ts`.
 
 **Invariant 2 (INV-238).** The server's own `package.json` and
 `tsconfig.build.json` name none of `@clarvis/loop`, `@clarvis/memory`,
-`@clarvis/plan`, or `@clarvis/tasks` at all — checked two
+or `@clarvis/plan` at all — checked two
 different ways for two different attack surfaces. `package.json` is scanned
 for the exact npm specifier string, e.g. `"@clarvis/loop"`
 (`packages/server/tests/architecture/dependency-boundary.test.ts`); `tsconfig.build.json` is scanned instead
@@ -669,8 +669,7 @@ project reference are different things, and neither file is checked for the
 other's pattern.
 Test: `packages/server/tests/architecture/dependency-boundary.test.ts`.
 
-**Invariant 3 (INV-240).** `bin.ts` boots its backing kernel with `builtins:
-{ tasks: false }`, disables subscription-backed providers, and never references `tasks.provider`.
+**Invariant 3 (INV-240).** `bin.ts` boots its backing kernel with subscription-backed providers disabled.
 Worktrees are no longer a separately composed kernel builtin, so there is no `worktrees` switch.
 Production evidence within this document's scope: neither `runInputShape`
 (`packages/server/src/mcp/tools.ts`) nor `runOutputShape` (`packages/server/src/mcp/tools.ts`) names

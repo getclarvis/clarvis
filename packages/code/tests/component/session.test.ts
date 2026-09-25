@@ -1,13 +1,5 @@
 import { expect, test } from "bun:test";
-import type {
-  ActiveTaskBindingDto,
-  Message,
-  PlanRef,
-  RunDetail,
-  RunEvent,
-  RunResult,
-  RunUsage,
-} from "@clarvis/protocol";
+import type { Message, PlanRef, RunDetail, RunEvent, RunResult, RunUsage } from "@clarvis/protocol";
 import {
   TURN_ERROR_MAX_CHARS,
   type SessionMeta,
@@ -152,7 +144,6 @@ function stored(
     events?: RunEvent[];
     planRef?: PlanRef;
     continueFrom?: string;
-    activeTask?: ActiveTaskBindingDto;
     extensionProfile?: { id: string; fingerprint: string };
   } = {},
 ): RunDetail {
@@ -166,7 +157,6 @@ function stored(
     messages: parts.messages ?? [],
     events: parts.events ?? [],
     ...(parts.planRef ? { plan_ref: parts.planRef } : {}),
-    ...(parts.activeTask ? { active_task: parts.activeTask } : {}),
     ...(parts.extensionProfile ? { extension_profile: parts.extensionProfile } : {}),
     result: {
       execution_id: execId,
@@ -618,11 +608,6 @@ test("resumeSession renders transcript-only runs without adding them to continua
     ],
     totals: { input: 0, output: 0, cached: 0 },
   };
-  const skillTask: ActiveTaskBindingDto = {
-    id: "SHOULD-NOT-BIND",
-    provider_key: "mcp:test:tasks",
-    mode: "work",
-  };
   const runs: Record<string, RunDetail> = {
     exec_a: stored("exec_a", "completed", [1, 1, 0], {
       messages: [{ role: "user", content: "q1" }],
@@ -631,7 +616,6 @@ test("resumeSession renders transcript-only runs without adding them to continua
     exec_skill: stored("exec_skill", "completed", [9, 9, 0], {
       messages: [{ role: "user", content: "internal skill prompt" }],
       result: "internal skill result",
-      activeTask: skillTask,
     }),
     exec_b: stored("exec_b", "completed", [1, 1, 0], {
       messages: [{ role: "user", content: "q2" }],
@@ -651,44 +635,11 @@ test("resumeSession renders transcript-only runs without adding them to continua
     { role: "user", content: "q2" },
     { role: "assistant", content: "a2" },
   ]);
-  expect(resumed.activeTask).toBeUndefined();
   expect(rendered).toEqual([
     { executionId: "exec_a", userContent: "q1" },
     { executionId: "exec_skill", userContent: "/explorer inspect" },
     { executionId: "exec_b", userContent: "q2" },
   ]);
-});
-
-test("resumeSession restores the newest persisted task binding", async () => {
-  const meta: SessionMeta = {
-    id: "sid-task",
-    title: "task",
-    workspace: "/ws",
-    owner: "clarvis",
-    createdAt: 1,
-    updatedAt: 2,
-    turns: [
-      { kind: "conversation", userPreview: "q1", executionId: "exec_a", status: "done" },
-      { kind: "conversation", userPreview: "q2", executionId: "exec_b", status: "done" },
-    ],
-    totals: { input: 0, output: 0, cached: 0 },
-  };
-  const binding: ActiveTaskBindingDto = {
-    id: "CLAR-42",
-    provider_key: "mcp:jira-work:tasks:abc",
-    mode: "work",
-  };
-
-  const resumed = await resumeSession(meta, {
-    getRun: async (id) =>
-      stored(id, "completed", [1, 1, 0], {
-        messages: [{ role: "user", content: id }],
-        ...(id === "exec_b" ? { activeTask: binding, continueFrom: "exec_a" } : {}),
-      }),
-    renderTurn: () => {},
-  });
-
-  expect(resumed.activeTask).toEqual(binding);
 });
 
 test("resumeSession: a full-wire retry turn replaces the accumulated history (authoritative)", async () => {

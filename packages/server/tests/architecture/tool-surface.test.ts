@@ -6,9 +6,8 @@ import { createFakeRunHost } from "../helpers/fake-run-host.ts";
 import { makeHarness } from "../helpers/harness.ts";
 
 describe("tool surface", () => {
-  it("boots the backing kernel with local-only capabilities disabled", () => {
+  it("boots the backing kernel with subscriptions disabled", () => {
     const source = readFileSync(join(import.meta.dir, "../../src/bin.ts"), "utf8");
-    expect(source).toMatch(/createFileKernel\(\{[\s\S]*?builtins:\s*\{\s*tasks:\s*false\s*\}/u);
     expect(source).toMatch(/createFileKernel\(\{[\s\S]*?subscriptions:\s*false/u);
     expect(source).not.toContain("tasks.provider");
   });

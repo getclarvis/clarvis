@@ -22,7 +22,6 @@
     "packages/kernel": {
       "entry": [
         "src/bin.ts",
-        "tests/helpers/capability-executable-fixture.ts",
         "tests/helpers/goal-live-worker.ts",
         "tests/fixtures/local-host-peer.ts",
         "tests/fixtures/local-host-process.ts"

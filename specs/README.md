@@ -56,9 +56,7 @@ put `Production:` / `Test:` evidence directly in their sections. The recurring s
 | 7 | **Coupling** | Who it depends on, who depends on it, and where the seams are |
 | 8 | **Open questions** | What this document deliberately leaves open, and what the implementation does not settle |
 
-The layouts are not mechanically identical. [`capabilities/tasks-domain.md`](capabilities/tasks-domain.md)
-inserts *State model* and shifts its remaining sections to 6–9;
-[`hosts/kernel-composition.md`](hosts/kernel-composition.md) and
+The layouts are not mechanically identical. [`hosts/kernel-composition.md`](hosts/kernel-composition.md) and
 [`hosts/subscription-providers.md`](hosts/subscription-providers.md) use nine domain-sequenced
 sections; [`hosts/storage.md`](hosts/storage.md) keeps its compact six-section contract unnumbered.
 Other documents may rename a recurring role, but still keep production and test evidence beside the
@@ -126,9 +124,6 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`workflows-scheduling.md`](capabilities/workflows-scheduling.md) | Manager-to-leader fan-out: the four spawn tools, wave scheduling and write-conflict separation, round barriers, the FIFO concurrency semaphore and the tree-wide token ledger | `workflows` |
 | [`workflows-service.md`](capabilities/workflows-service.md) | The non-live half: code-backed built-ins, optional `WORKFLOW.md` overrides, the three reusable result schemas, and the kernel's persisted workflow tree and routing | `workflows`, `kernel`, `code` |
 | [`worktrees.md`](capabilities/worktrees.md) | Launch-time Git worktrees: Git-owned identity and lifecycle, immutable process scope, and linked-checkout sandbox mounts | `code`, `kernel`, `paths`, `tools` |
-| [`tasks-domain.md`](capabilities/tasks-domain.md) | The vendor-neutral task model: stages, actors, claims, strict schemas, the stable error taxonomy, provider identity, the `clarvis.tasks.v2` MCP adapter and its conformance harness | `tasks` |
-| [`tasks-capability.md`](capabilities/tasks-capability.md) | Binding one run to one remote task: the ten tools, the four-way gate on what is offered, `task_outcome_unknown` handling, and the kernel's single provider factory | `tasks`, `kernel` |
-| [`provider-executables.md`](capabilities/provider-executables.md) | Replacing a capability's *content* without changing its vocabulary: memory/plan provider registries and the language-neutral JSON-RPC executable protocol | `capability`, `memory`, `plan`, `kernel`, `code` |
 
 ### `hosts/` — the kernel, the terminal UI and the HTTP facade
 
@@ -157,7 +152,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`code-transcript.md`](hosts/code-transcript.md) | How the Lead-only main transcript or one selected child transcript is filtered, grouped, folded and rendered, including tool-call identity and hard display ceilings | `code` |
 | [`code-transcript-stability.md`](hosts/code-transcript-stability.md) | Stable record and row identity, sealed content, explicit exploration, bounded native residence, semantic reader anchors and Lead/child replay equivalence | `code` |
 | [`code-input-and-overlays.md`](hosts/code-input-and-overlays.md) | The composer and its completion popup, the shared floating-card and windowed-list primitives, plan/history overlays, and the `!bash` escape hatch | `code` |
-| [`code-domain-hubs.md`](hosts/code-domain-hubs.md) | The six full-screen domain views (agents, tasks, workflows, sessions, memory, run controls) and the controller/adapter layering that keeps them thin | `code` |
+| [`code-domain-hubs.md`](hosts/code-domain-hubs.md) | The five full-screen domain views (agents, workflows, sessions, memory, run controls) and the controller/adapter layering that keeps them thin | `code` |
 | [`code-extensions.md`](hosts/code-extensions.md) | The five-step Extensions setup, unified exact catalog, capability review, preview-bound Extension Profile composition and retained-list performance contract | `code`, `kernel`, `protocol`, `skills` |
 | [`code-settings-panels.md`](hosts/code-settings-panels.md) | The configuration surface: the view host with its scope toggle and dirty latch, the single-slot field editor, and the provider/model and extension-browser screens | `code` |
 | [`code-keyboard.md`](hosts/code-keyboard.md) | Capability-gated key candidates over `@opentui/keymap`, and generating every footer segment, help row and hint from that one live declaration | `code` |
@@ -171,7 +166,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`package-architecture.md`](cross-cutting/package-architecture.md) | Package roles, dependency directions, the single product-version model, package-versus-subpath criteria, and the application/Protocol/Kernel boundary | root manifest, workspace manifests, graph tooling, all workspaces |
 | [`grants.md`](cross-cutting/grants.md) | The one string vocabulary a profile asks with, how capabilities contribute grants at boot, and how a profile's model/tools/grants resolve into the tools an agent actually sees | `loop`, `capability`, `kernel`, and the grant-contributing capability packages |
 | [`prompt-cache.md`](cross-cutting/prompt-cache.md) | What a provider's prefix cache charges for, the append-only rule that keeps it, the measured cost of breaking it, and the session-affinity and breakpoint mechanics | `loop`, `llm` |
-| [`model-instructions.md`](cross-cutting/model-instructions.md) | Owned prompt/tool inventory, compact role and harness handoffs, local schema guidance, recovery semantics and structural payload budgets | `kernel`, `loop`, `tools`, `plan`, `workflows`, `tasks`, `server`, instruction-contributing packages |
+| [`model-instructions.md`](cross-cutting/model-instructions.md) | Owned prompt/tool inventory, compact role and harness handoffs, local schema guidance, recovery semantics and structural payload budgets | `kernel`, `loop`, `tools`, `plan`, `workflows`, `server`, instruction-contributing packages |
 | [`elicitation.md`](cross-cutting/elicitation.md) | Every way a run asks a human — `ask_user`, budget escalation, MCP elicitation and workflow review — through one port, one per-run FIFO, one tree-wide mux and each host's own surface | `loop`, `kernel`, `server`, `code`, `workflows` |
 | [`security.md`](cross-cutting/security.md) | Environment filesystem policy, classified-path protection, the single redaction module and its two rule sets, subprocess environment filtering, and workspace trust | `tools`, `kernel`, `capability`, `hooks` |
 | [`observability.md`](cross-cutting/observability.md) | The one `Logger` port and its single backend, the event-name vocabulary, environment-only verbosity, the cost model at hot call sites, and the audit channel | `capability`, `kernel` (repo-wide) |

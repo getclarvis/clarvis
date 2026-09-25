@@ -143,7 +143,7 @@ Editing files and running builds, tests, typechecks, lint, and read-only Git com
 
 ## Repository map
 
-Clarvis is a pre-release Bun/TypeScript monorepo of 19 packages. The current package list and concise
+Clarvis is a pre-release Bun/TypeScript monorepo of 18 packages. The current package list and concise
 descriptions live in [`README.md`](README.md); the authoritative dependency graph is generated in
 [`specs/package-coupling-analysis.md`](specs/package-coupling-analysis.md).
 
@@ -154,7 +154,7 @@ foundation             capability · paths
 host contract          protocol
 execution service      llm · mcp-client · supervision · trace · tools · hooks · skills
 engine                 loop
-product capability     memory · plan · goal · tasks · workflows
+product capability     memory · plan · goal · workflows
 host implementation    kernel
 application            code (terminal UI) · server (MCP over HTTP)
 ```
@@ -164,7 +164,7 @@ Use the generated coupling report for exact edges. Three relationships are espec
 reverse:
 
 - `goal`, `memory` and `workflows` sit above `loop` and may execute runs; the loop does not name them.
-- `plan` and `tasks` are host-registered capabilities beside the loop.
+- `plan` is a host-registered capability beside the loop.
 - `protocol` is transport-agnostic. `code` and `server` consume the `KernelClient` contract, while
   `kernel` implements it over the loop.
 
@@ -184,7 +184,7 @@ The complete, maintained routing table is [`specs/README.md`](specs/README.md). 
 | Paths or filesystem ownership                         | [`specs/foundations/paths.md`](specs/foundations/paths.md)                                                                                                                    |
 | Tools, shell, guards, sandbox                         | [`specs/execution/tools-contract.md`](specs/execution/tools-contract.md), then the focused execution spec                                                                     |
 | Loop lifecycle, budgets, context, delegation          | the focused file under [`specs/engine/`](specs/README.md#engine--the-loop-itself)                                                                                             |
-| Memory, plans, tasks, workflows                       | the focused file under [`specs/capabilities/`](specs/README.md#capabilities--features-that-compose-onto-the-engine)                                                           |
+| Memory, plans, workflows                              | the focused file under [`specs/capabilities/`](specs/README.md#capabilities--features-that-compose-onto-the-engine)                                                           |
 | Kernel, protocol, server, or TUI                      | the focused file under [`specs/hosts/`](specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade)                                                                |
 | Package roles, dependency direction, or a new package | [`specs/cross-cutting/package-architecture.md`](specs/cross-cutting/package-architecture.md), then [`specs/package-coupling-analysis.md`](specs/package-coupling-analysis.md) |
 | Security, observability, prompt cache, tests, build   | the focused file under [`specs/cross-cutting/`](specs/README.md#cross-cutting--properties-no-single-package-owns)                                                             |

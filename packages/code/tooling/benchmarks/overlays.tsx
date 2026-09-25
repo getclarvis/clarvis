@@ -215,7 +215,6 @@ const extensionPlugins = Array.from({ length: 24 }, (_, index): PluginView => ({
     skills: [`skill-${String(index).padStart(3, "0")}`],
     servers: index % 3 === 0 ? [`server-${index}`] : [],
     hooks: index % 5 === 0 ? 2 : 0,
-    capabilityExecutables: [],
     executables: index % 3 === 0 ? [`node server-${index}.js`] : [],
   },
 }));
@@ -251,9 +250,6 @@ const extensionInventory: ExtensionProfileInventory = {
     skills: plugin.contributions.skills,
     mcp_servers: plugin.contributions.servers,
     hooks: { total: plugin.contributions.hooks },
-    capability_executables: plugin.contributions.capabilityExecutables.map(
-      (entry) => entry.capability,
-    ),
   })),
   standalone_skills: extensionSkills,
 };

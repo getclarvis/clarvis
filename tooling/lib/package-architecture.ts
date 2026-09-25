@@ -28,7 +28,6 @@ export const PACKAGE_ROLES = {
   "@clarvis/memory": "product-capability",
   "@clarvis/plan": "product-capability",
   "@clarvis/goal": "product-capability",
-  "@clarvis/tasks": "product-capability",
   "@clarvis/workflows": "product-capability",
   "@clarvis/kernel": "host-implementation",
   "@clarvis/code": "application",

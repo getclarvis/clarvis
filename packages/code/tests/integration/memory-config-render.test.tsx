@@ -170,7 +170,7 @@ test("creating a scoped block copies the effective provider, model and budgets",
     enabled: false,
     model: "openrouter/glm-5.2",
     budgets: { seed_chars: 900, digest_tokens: 800, max_index_ops: 4 },
-    provider: { kind: "file", paths: ["AGENTS.md"] },
+    provider: { kind: "wiki" },
   };
   const { host, controls, deps, press, writes } = mount({
     draftMemory: null,

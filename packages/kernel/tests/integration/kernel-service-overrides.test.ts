@@ -76,3 +76,83 @@ it("preserves override identity with ZERO default config, secret, plugin, model 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+it("exposes only the built-in Extension Profile in an in-process kernel", async () => {
+  const root = mkdtempSync(join(tmpdir(), "clarvis-builtin-profile-"));
+  try {
+    const env = loadEnv({ CLARVIS_LOG_LEVEL: "silent" });
+    const kernel = createInProcessKernel({
+      workspaceRoot: root,
+      globalConfigDir: join(root, "global"),
+      home: root,
+      ...kernelIdentity(root),
+      configStore: createMemoryConfigStore(),
+      deps: {
+        executionVisibility: "public",
+        env,
+        workspaceRoot: root,
+        llm: new MockLLM({ script: [] }),
+        traceStore: createMemoryTraceStore(),
+        connections: createConnectionManager({
+          workspace: root,
+          factory: defaultMCPClientFactory,
+          connectTimeoutMs: env.CLARVIS_MCP_CONNECT_TIMEOUT_MS,
+          callTimeoutMs: env.CLARVIS_MCP_TOOL_CALL_TIMEOUT_MS,
+        }),
+      },
+    });
+    try {
+      const builtin = { scope: "builtin" as const, name: "default" };
+      expect(await kernel.extensionProfiles.list()).toEqual([{ ref: builtin, immutable: true }]);
+      expect(await kernel.extensionProfiles.current()).toMatchObject({
+        ref: builtin,
+        status: "ready",
+      });
+      expect(await kernel.extensionProfiles.get(builtin)).toMatchObject({ ref: builtin });
+      expect(await kernel.extensionProfiles.inventory()).toEqual({
+        plugins: [],
+        standalone_skills: [],
+      });
+      expect(
+        await kernel.extensionProfiles.preview(builtin, { selection_scope: "global" }),
+      ).toMatchObject({
+        target: { ref: builtin },
+        delta: { plugins_entering: [], mcp_servers_entering: [] },
+        requires_workspace_trust: false,
+      });
+      await expect(
+        kernel.extensionProfiles.get({ scope: "global", name: "custom" }),
+      ).rejects.toMatchObject({ code: "unavailable" });
+      await expect(
+        kernel.extensionProfiles.preview(
+          { scope: "global", name: "custom" },
+          { selection_scope: "global" },
+        ),
+      ).rejects.toMatchObject({ code: "unavailable" });
+      await expect(kernel.extensionProfiles.previewClear("global")).rejects.toMatchObject({
+        code: "unavailable",
+      });
+      const custom = { scope: "global" as const, name: "custom" };
+      const definition = { schema_version: 1 as const, plugins: [], skills: [] };
+      for (const attempt of [
+        () =>
+          kernel.extensionProfiles.select(builtin, {
+            selection_scope: "global",
+            preview_token: "builtin",
+          }),
+        () => kernel.extensionProfiles.clearSelection("global", { preview_token: "builtin" }),
+        () => kernel.extensionProfiles.create({ ref: custom, definition }),
+        () =>
+          kernel.extensionProfiles.update({ ref: custom, definition, expected_revision: "old" }),
+        () => kernel.extensionProfiles.delete(custom, { expected_revision: "old" }),
+        () => kernel.extensionProfiles.clone(builtin, custom),
+      ]) {
+        await expect(attempt()).rejects.toMatchObject({ code: "unavailable" });
+      }
+    } finally {
+      await kernel.close();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -85,7 +85,6 @@ export interface ResolvedExtensionProfilePlugin {
   skills: string[];
   mcp_servers: string[];
   hooks: { total: number };
-  capability_executables: string[];
   error?: string;
 }
 

@@ -32,10 +32,9 @@ edit (`packages/memory/src/frontmatter.ts`, `packages/memory/src/reindex.ts`,
 *memory-indexer-and-jobs* (`packages/memory/src/file-store/jobs.ts`, `src/jobs.ts`, `src/drain.ts`,
 `src/worker.ts`, and conformance cases at `packages/memory/src/testing.ts`). The write
 policy and the seven model-facing tools belong to *memory-capability-and-tools*
-(`packages/memory/src/policy.ts`, `src/tools.ts`, `src/capability.ts`). Substitutable memory
-providers belong to *capability-provider-executables* (`packages/memory/src/provider-registry.ts`
-and friends). This document names those seams where they touch the store and does not re-describe
-them.
+(`packages/memory/src/policy.ts`, `src/tools.ts`, `src/capability.ts`). The built-in wiki is
+resolved by `packages/memory/src/provider-registry.ts`. This document names those seams where they
+touch the store and does not re-describe them.
 
 ---
 

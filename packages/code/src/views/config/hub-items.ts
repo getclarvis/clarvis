@@ -7,12 +7,6 @@ export const SETTINGS_ITEMS = [
     cmd: "providers.open",
   },
   {
-    id: "capability-providers",
-    label: "Feature backends",
-    desc: "Choose what powers Memory, Plans and Tasks",
-    cmd: "capability-providers.open",
-  },
-  {
     id: "agents",
     label: "Agents",
     desc: "Permissions, model, delegation and prompt",

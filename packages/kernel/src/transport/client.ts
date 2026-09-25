@@ -20,7 +20,6 @@ import type {
   RunService,
   SecretService,
   SessionService,
-  TasksService,
   SkillsService,
   StorageService,
   WorkflowsService,
@@ -648,7 +647,6 @@ export async function connectKernelClient(
   const memory = createServiceProxy<MemoryService>(transport, OPERATIONS.memory);
   const skills = createServiceProxy<SkillsService>(transport, OPERATIONS.skills);
   const sessions = createServiceProxy<SessionService>(transport, OPERATIONS.sessions);
-  const tasks = createServiceProxy<TasksService>(transport, OPERATIONS.tasks);
   const storage = createServiceProxy<StorageService>(transport, OPERATIONS.storage);
 
   return {
@@ -675,7 +673,6 @@ export async function connectKernelClient(
     workflows,
     skills,
     sessions,
-    tasks,
     storage,
     listAgents() {
       return transport.request<AgentSummary[]>(M.listAgents, {});

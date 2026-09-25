@@ -27,8 +27,7 @@ trace implementation.
 The package contract is split by responsibility: the wiki and store in
 [`memory-store.md`](../../specs/capabilities/memory-store.md), run composition and tools in
 [`memory-capability.md`](../../specs/capabilities/memory-capability.md), and finished-run indexing in
-[`memory-indexer.md`](../../specs/capabilities/memory-indexer.md). External providers are governed by
-[`provider-executables.md`](../../specs/capabilities/provider-executables.md).
+[`memory-indexer.md`](../../specs/capabilities/memory-indexer.md).
 
 ## Memory model
 
@@ -123,12 +122,9 @@ admission. The file kernel uses that seam for the same immutable Extension Profi
 runs, including durable retries that begin after the original run handle has closed; an embedder
 that omits it retains the direct loop executor.
 
-When the kernel selects an executable or plugin Memory provider, the same indexing policy runs over
-that provider's serializable tools. Writable providers receive indexing calls through their own
-session; read-only providers are skipped and never receive a queued job. Each queued job records the
-effective provider key. If selection changes before the job drains, Clarvis marks the old job skipped
-instead of applying it to another backend. Mutations and terminal `no_progress` outcomes are never
-replayed automatically.
+The built-in wiki is the only Memory store. Each queued job records its provider key so an old job
+cannot be applied to a different store identity. Mutations and terminal `no_progress` outcomes are
+never replayed automatically.
 
 ### Telling it what to record
 
@@ -250,8 +246,8 @@ The ordinary memory capability is replaced, not duplicated, by the pass form
 whose `onRunEnd` is disabled. Stateful source capabilities must preserve their
 catalog without inheriting source-work gates or lifecycle. The kernel replaces
 planning in place with its catalog projection: indexing neither waits for open
-plan tasks nor reconciles, finalizes or deletes the source plan. Other capabilities,
-including tasks, stay in registration order. The continuation carries host-registered
+plan tasks nor reconciles, finalizes or deletes the source plan. Other capabilities
+stay in registration order. The continuation carries host-registered
 capability request parameters on both initial and recovered passes, preserving
 source modes such as planning `off` or `review` without importing those packages.
 
@@ -268,8 +264,7 @@ test move time by hand.
 `start(owner)` or `poke(owner)`, and settlement subscriptions are keyed by both
 `owner` and `runId`; identical run IDs in different owner scopes cannot observe
 each other's jobs. `stop()` closes every worker and prevents the factory from
-creating another one. Tool-server providers are likewise bound through
-`serverPort.forOwner(owner)` before their model-facing tools are built.
+creating another one.
 
 Kernel construction does not call `start(owner)`. A host explicitly releases durable queue recovery
 after its first-paint or readiness boundary, so old index jobs cannot put model inference on the
@@ -283,7 +278,7 @@ all require owner, token **and a live expiry**; a worker that wakes after expiry
 settle its old claim before another worker gets a chance to reclaim it.
 
 Every indexer mutation is fenced under the same unit of work that serializes reclaim: a strict live
-check runs immediately before the wiki batch, external-provider write or `markIndexed`, and an
+check runs immediately before the wiki batch or `markIndexed`, and an
 owner/token refresh runs immediately afterward before releasing that unit of work. Only this paired
 post-effect refresh may cross the wall-clock expiry, because its successful pre-check already admitted
 the effect and the held unit of work made reclaim impossible while it ran. A reclaimed worker is
@@ -432,9 +427,7 @@ surfaces and are not duplicated here.
 
 Host and Sandbox runs retain that seven-tool surface when Memory is active.
 
-The read-only `file` provider accepts at most 64 declared paths, 1 MiB per
-document and 8 MiB across one call by default. Oversized inputs are not loaded
-and the answer explicitly says it is incomplete. Durable file-backed job scans
+Durable file-backed job scans
 visit at most 10,000 directory entries, read at most 1 MiB from a job record and
 retain a top page of at most 200 jobs; counts, next-due lookup and claims fold
 over the scan without collecting the queue.
@@ -484,16 +477,8 @@ and be pinned equal by a drift test; both now have one owner.
 package facade. `@clarvis/memory/settings` deliberately does not, so a host can map an ingest
 event without loading the wiki.
 
-A provider may be a built-in wiki/file/MCP backend, a direct executable, or an enabled plugin's
-`capabilityExecutables.memory` service. Direct services run from the workspace and plugin services
-from the installed plugin directory. Both speak the language-neutral JSON-RPC protocol described in
-[`specs/capabilities/provider-executables.md`](../../specs/capabilities/provider-executables.md); Memory receives only a
-narrow executable-session port and never imports provider code.
-
-The service declares whether it is writable during initialization. Clarvis continues to own tool
-schemas, write authorization, seed wrapping and sanitization, and indexing policy. A plugin offers a
-service but cannot select itself; installation, enablement and explicit provider selection authorize
-startup.
+`memory.provider` accepts only `{ "kind": "wiki" }`; omission selects the same built-in wiki.
+Memory owns its tool schemas, write authorization, seed wrapping, sanitization and indexing policy.
 
 ## Which model gate applies
 
@@ -511,7 +496,7 @@ learning, never its memory.**
 The suite is classified by the lowest boundary that can observe each behavior:
 
 - `tests/unit/` owns pure policy, parsers, tokenization, request decisions and bounded data transforms.
-- `tests/component/` composes memory capabilities, providers, drain/factory/job orchestration and
+- `tests/component/` composes memory capabilities, drain/factory/job orchestration and
   runtime tools exactly once over the in-memory store or explicit fakes; those suites do not open a
   filesystem merely to prove collaborator behavior.
 - `tests/contract/` has one `MemoryStore` conformance table for document, batch, revision, ledger and

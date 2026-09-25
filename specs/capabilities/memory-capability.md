@@ -2,7 +2,7 @@
 
 > Implemented at
 > `packages/memory/src/{capability,tools,toolset, tool-contract,handler,policy,settings,config,schemas,seed,review,types,index}.ts`
-> and `packages/kernel/src/memory/{memory-service,memory-errors,memory-server-port}.ts`. Every claim
+> and `packages/kernel/src/memory/{memory-service,memory-errors}.ts`. Every claim
 > below is anchored to a file and a named symbol or test. Open questions are collected in the final section.
 
 ## 1. Purpose
@@ -28,9 +28,8 @@ kernel-exposed control plane. `policy.ts` is the one rule table that keeps a mod
 from ever granting itself what only a human owner may grant: pinning a document or marking it
 `confirmed`. `settings.ts`/`schemas.ts` are the `memory:` block and the per-run `memory` request
 param the kernel's eager configuration path loads before any run exists. The kernel's
-`memory-service.ts`/`memory-errors.ts`/`memory-server-port.ts` are the non-model-facing control
-plane: health, reindex, job listing/retry over the protocol wire, and (for an `mcp`-kind provider)
-the bridge from a memory tool call to an MCP connection lease.
+`memory-service.ts`/`memory-errors.ts` are the non-model-facing control plane:
+health, reindex, and job listing/retry over the protocol wire.
 
 ## 2. Surface
 
@@ -164,29 +163,9 @@ The `memory:` settings block (`memoryConfigSchema`, packages/memory/src/schemas.
 | `enabled` | `boolean` | `MEMORY_DEFAULTS.enabled` = `true` (packages/memory/src/config.ts) |
 | `model` | `string` (optional) | none — hosts default to a cheap model |
 | `budgets` | `budgetsSchema.partial()` (optional) | merged over `DEFAULT_BUDGETS` |
-| `provider` | `memoryProviderSchema` (optional, discriminated on `kind`: `wiki`\|`file`\|`executable`\|`mcp`\|`plugin`) | absent = built-in wiki |
+| `provider` | `memoryProviderSchema` (optional; `{ kind: "wiki" }`) | absent = built-in wiki |
 
-`memoryProviderSchema` (packages/memory/src/schemas.ts) is a five-variant `z.discriminatedUnion("kind", …)`,
-each variant `.strict()` so an unrecognized kind is rejected here rather than at first use:
-- `{ kind: "wiki" }` — the built-in markdown wiki (packages/memory/src/schemas.ts).
-- `{ kind: "file", paths: string[] }` — one or more workspace-relative paths (`min(1)`, at least
-  one entry), concatenated into the entry block in order; read-only doctrine, not a wiki
-  (packages/memory/src/schemas.ts).
-- `{ kind: "executable", ... }` — extends `capabilityExecutableDeclarationSchema` with
-  `kind: z.literal("executable")`: a persistent language-neutral JSON-RPC provider process
-  (packages/memory/src/schemas.ts).
-- `{ kind: "mcp", server: string, tools: {...}, seed_tool?: string }` — `server` names an entry in
-  the host's `mcpServers`; `tools` is a `.strict()` object requiring the four read operation names
-  (`list_memories`/`read_memory`/`grep_memories`/`query_memories`) and declaring each of the three
-  write mappings optional; `seed_tool` names the server tool producing the entry block, omitted for
-  a provider with none (packages/memory/src/schemas.ts). The schema accepts a partial write
-  mapping, but `createMcpMemoryProvider` rejects it during provider construction: all three write
-  mappings or none are required (packages/memory/src/mcp-provider.ts).
-- `{ kind: "plugin", plugin: string }` — an installed and enabled plugin offering a selected
-  provider (packages/memory/src/schemas.ts).
-
-This shape governs whether the write tools even exist for a non-wiki provider — see §4.2's
-`provider.writeTools === undefined` branch.
+`memoryProviderSchema` accepts only `{ kind: "wiki" }`. Unknown kinds and fields are rejected during settings validation. Production: `packages/memory/src/schemas.ts` (`memoryProviderSchema`). Test: `packages/memory/tests/component/factory.test.ts`.
 
 `budgetsSchema` (packages/memory/src/schemas.ts): `seed_chars: number.min(500)`, `digest_tokens:
 number.min(500)`, `max_index_ops: number.min(1).max(50)`. Defaults (packages/memory/src/config.ts):
@@ -241,15 +220,6 @@ editing and revision history are not control-plane methods at all. The protocol'
 says why the surface stops at health/reindex/jobs: those are "left with the memory browser they
 existed to draw — the wiki is markdown on disk, and the only thing that writes it is the agent"
 (`packages/protocol/src/memory.ts`).
-
-`createMemoryServerPort(deps: MemoryServerPortDeps): MemoryServerPortResolver`
-(`packages/kernel/src/memory/memory-server-port.ts`) is the bridge an `mcp`-kind provider calls
-through: `forOwner(owner).callTool(server, tool, args, signal)` looks the named server up in the
-host's declared `mcpServers` (re-read per call, packages/kernel/src/memory/memory-server-port.ts), acquires a pooled
-connection lease scoped to `owner`, calls the tool, converts the result with `contentToText`, and
-always releases the lease in a `finally` via `bestEffort` (packages/kernel/src/memory/memory-server-port.ts). Every
-failure — unknown server, a failed `callTool`, a thrown error — is returned as `{ isError: true }`
-rather than thrown (packages/kernel/src/memory/memory-server-port.ts).
 
 ## 3. Data and formats
 
@@ -660,11 +630,6 @@ constructs a provider whose tool descriptors differ from canonical and asserts t
 | Unknown tool name reaches `dispatch` | `{ isError: true, text: "unknown memory tool '<name>'" }` | packages/memory/src/toolset.ts |
 | No `MemoryFactory` configured, at the kernel control plane | Every `MemoryService` method throws `MEMORY_NOT_CONFIGURED` (`capability_disabled`) | packages/kernel/src/memory/memory-service.ts |
 | A package error carries `code: "memory_recovery_required"` / `"memory_path_invalid"` | Mapped to `MEMORY_RECOVERY_REQUIRED` (`unavailable`) / `MEMORY_INVALID_PATH` (`invalid_request`) | packages/kernel/src/memory/memory-errors.ts |
-| `mcp`-kind provider: named server not in current `mcpServers` | `{ text: "no MCP server named '<server>' is configured", isError: true }` | packages/kernel/src/memory/memory-server-port.ts |
-| `mcp`-kind provider: only some write mappings are declared | Provider construction throws a `partial write half` error; provider resolution catches it and returns an unavailable-provider failure rather than advertising a partial write vocabulary | packages/memory/src/mcp-provider.ts, packages/memory/src/provider-registry.ts |
-| `mcp`-kind provider: `callTool` reports `!ok` | `{ text: res.error?.message ?? "'<tool>' failed", isError: true }` | packages/kernel/src/memory/memory-server-port.ts |
-| `mcp`-kind provider: any thrown error during the call | `{ text: <message>, isError: true }` | packages/kernel/src/memory/memory-server-port.ts |
-| `mcp`-kind provider: lease release throws | Swallowed via `bestEffort` (`operation: "memory_mcp_lease_release"`) | packages/kernel/src/memory/memory-server-port.ts |
 
 Nothing in this subsystem retries a failed write or a failed tool call itself; retry policy for the
 durable index job queue is out of scope here (delegated to [capabilities/memory-indexer.md](memory-indexer.md)).
@@ -678,7 +643,7 @@ durable index job queue is out of scope here (delegated to [capabilities/memory-
 - `@clarvis/capability` — `Capability`/`RunCapability`/`RunCapabilityContext`/`ToolEffect` types and
   `handlerBaseOf` value (`packages/memory/src/capability.ts`); `sanitizeText` (packages/memory/src/tools.ts, packages/memory/src/seed.ts); `openCallEnvelope`/
   `HandlerBase`/`HandlerVerdict`/`ToolHandler` (packages/memory/src/handler.ts); `NamespacedTool` type (packages/memory/src/toolset.ts);
-  `capabilityExecutableDeclarationSchema` (packages/memory/src/schemas.ts). This is a **hard, non-optional** dependency
+  This is a **hard, non-optional** dependency
   of `@clarvis/memory` (a leaf package `@clarvis/loop` itself depends on).
 - `./ingest.ts` (`enqueueFinishedRun`, `MemoryIngestNotice` type), `./factory.ts` (`MemoryFactory`
   type), `./run-snapshot.ts` (`firstUserText`), `./handler.ts`, `./settings.ts`, `./toolset.ts`,
@@ -696,13 +661,6 @@ durable index job queue is out of scope here (delegated to [capabilities/memory-
   translator between the package's domain shapes and the protocol's wire DTOs; `@clarvis/protocol`
   itself has **no** dependency on `@clarvis/memory` (memory.ts is self-contained, only importing
   `Timestamp` from `./common.ts`).
-- `packages/kernel/src/memory/memory-server-port.ts` imports `MemoryServerPort`/
-  `MemoryServerPortResolver` from `@clarvis/memory/capability` (packages/kernel/src/memory/memory-server-port.ts) and
-  `bestEffort`/`contentToText`/`McpServerConfig` from `@clarvis/capability` (packages/kernel/src/memory/memory-server-port.ts)
-  — it is deliberately built in the kernel rather than the memory package "because nothing on the
-  engine's eager configuration path may reach it" and because this module is "the only place that
-  knows both" the memory package's structural port and the kernel's MCP connection pool
-  (packages/kernel/src/memory/memory-server-port.ts doc comment).
 **Forces the direction:**
 - `packages/memory/tests/architecture/settings-ownership.test.ts` fails the build if `settings.ts` ever value-imports
   `./factory.ts`, `./capability.ts`, or a `Logger` — this is what keeps the kernel's eager
@@ -766,12 +724,6 @@ defines.
   document's tool bodies but their *implementation* (the file store, the batch/journal machinery) is
   explicitly delegated to [capabilities/memory-store.md](memory-store.md) — only the type declarations needed to describe
   `tools.ts`'s call sites are in scope here, not the store's internals.
-- **Whether a provider other than the built-in wiki is ever exercised against this document's write
-  policy in production** (i.e., whether `checkWrite`'s `"agent_tool"`/`"indexer"` intents are ever
-  invoked over an `mcp`/`file`/`executable`/`plugin`-kind provider's own write tools) is not visible
-  from this document's scope — `provider.ts`'s `MEMORY_WRITE_TOOL_NAMES` is optional per provider, and
-  whether e.g. an `mcp`-kind provider ever supplies `write_memory` in practice is a
-  [capabilities/provider-executables.md](provider-executables.md) question.
 - **The exact wording threshold for INV-108's "user asking" phrase** is matched by the test as the
   substring `"when the user asks"` (packages/memory/tests/architecture/write-policy.test.ts), which appears in the production text
   as `"write only when the user asks you to remember, record or correct something"`

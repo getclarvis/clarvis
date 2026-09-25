@@ -594,7 +594,6 @@ const CHANGED_WORKSPACE_EXTENSION_PROFILE: ResolvedExtensionProfile = {
       skills: ["docs"],
       mcp_servers: ["context7:docs"],
       hooks: { total: 1 },
-      capability_executables: [],
     },
   ],
   standalone_skills: [],

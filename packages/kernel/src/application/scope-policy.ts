@@ -10,7 +10,6 @@ import type {
   SessionService,
   SkillsService,
   StorageService,
-  TasksService,
   WorkspaceService,
   WorkspaceChangesService,
   WorkflowsService,
@@ -69,8 +68,6 @@ export interface OwnerServices {
   readonly sessions: SessionService;
   /** Owner-keyed workflow execution and records. */
   readonly workflows: WorkflowsService;
-  /** Owner-bound external task provider/control plane. */
-  readonly tasks: TasksService;
 }
 
 /** Declared data scope of every concrete kernel service. */
@@ -80,7 +77,6 @@ export interface KernelScopePolicy {
   readonly plans: "owner" | "workspace";
   readonly sessions: "owner";
   readonly workflows: "owner";
-  readonly tasks: readonly ["owner", "workspace", "connection"];
   readonly goals: readonly ["owner", "workspace", "connection"];
   readonly config: readonly ["operator", "workspace"];
   readonly secrets: "operator";
@@ -102,7 +98,6 @@ export function createKernelScopePolicy(mode: KernelOwnershipMode): KernelScopeP
     plans: mode === "multi" ? "owner" : "workspace",
     sessions: "owner",
     workflows: "owner",
-    tasks: ["owner", "workspace", "connection"] as const,
     goals: ["owner", "workspace", "connection"] as const,
     config: ["operator", "workspace"] as const,
     secrets: "operator",

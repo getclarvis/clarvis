@@ -149,7 +149,6 @@ separate measured change moves it.
 | `@clarvis/skills` | `.`, `./catalog`, `./capability` | — |
 | `@clarvis/memory` | `.`, `./schemas`, `./capability`, `./settings`, `./testing` | — |
 | `@clarvis/plan` | `.`, `./schemas`, `./testing`, `./capability`, `./settings` | — |
-| `@clarvis/tasks` | `.`, `./capability`, `./settings`, `./testing` | — |
 | `@clarvis/protocol` | `.` | — |
 | `@clarvis/loop` | `.`, `./capabilities/tools`, `./host`, `./workflows`, `./testing` | — |
 | `@clarvis/workflows` | `.`, `./schemas`, `./artifact` | — |
@@ -176,7 +175,7 @@ bins: kernel and server point at built `dist/bin.js`, `code` points at TypeScrip
 
 | Profile | Packages | Evidence |
 | --- | --- | --- |
-| Extends `tsconfig.base.json` | 14: capability, hooks, llm, loop, mcp-client, memory, paths, plan, skills, supervision, tasks, tools, trace, workflows | `grep -l tsconfig.base.json packages/*/tsconfig.json` → 14 |
+| Extends `tsconfig.base.json` | 13: capability, hooks, llm, loop, mcp-client, memory, paths, plan, skills, supervision, tools, trace, workflows | `rg -l tsconfig.base.json packages/*/tsconfig.json` → 13 |
 | Standalone | 4: `protocol`, `kernel`, `server`, `code` | none of those four contains `extends` |
 
 `tsconfig.base.json` fixes `module`/`moduleResolution` = `NodeNext`,
@@ -319,9 +318,8 @@ NOT add a `schedule:` or `push:` trigger".
 
 Every `tsconfig.build.json` is `composite`, emits to `dist/`, roots at `src`, and keeps its
 incremental state **inside** the output directory as `dist/.tsbuildinfo`
-(`packages/capability/tsconfig.build.json`; identical in all 17 emitting packages). All set
-`declaration: true` and `declarationMap: true`; `tasks` additionally re-states `sourceMap: true`
-(`packages/tasks/tsconfig.build.json`). All exclude `tests`
+(`packages/capability/tsconfig.build.json`; identical in all emitting packages). All set
+`declaration: true` and `declarationMap: true`. All exclude `tests`
 (`packages/capability/tsconfig.build.json`).
 
 So a library's shipped shape is:
@@ -466,7 +464,7 @@ even during an otherwise source-mapped, non-build `tsc -p tsconfig.json` typeche
   onto sibling **sources** (e.g. `packages/loop/tsconfig.json`, `packages/kernel/tsconfig.json`),
   but each package's map omits some of its own declared dependencies: `kernel`'s 18-entry map
   (`packages/kernel/tsconfig.json`) excludes `@clarvis/capability`, `@clarvis/paths` and
-  `@clarvis/tasks` even though `kernel` depends on all three (`packages/kernel/package.json`);
+  even though `kernel` depends on both (`packages/kernel/package.json`);
   `loop`'s 11-entry map (`packages/loop/tsconfig.json`) excludes `@clarvis/paths`,
   `@clarvis/supervision`, `@clarvis/trace` and `@clarvis/mcp-client` despite depending on all four
   (`packages/loop/package.json`); `skills`'s single-entry map
@@ -480,12 +478,12 @@ even during an otherwise source-mapped, non-build `tsc -p tsconfig.json` typeche
   the asymmetry §4.3's "build precedes typecheck" rule exists to paper over.
 - The **build** `tsconfig.build.json` either clears the mapping (`"paths": {}`, e.g.
   `packages/loop/tsconfig.build.json`) so resolution goes through the emitted `dist/*.d.ts`, or
-  remaps explicitly onto `dist/*.d.ts` — `kernel` does this for `protocol`, `plan` and `tasks` (+2
-  subpaths) (`packages/kernel/tsconfig.build.json`), and `server`
+  remaps explicitly onto `dist/*.d.ts` — `kernel` does this for `protocol` and `plan`
+  (`packages/kernel/tsconfig.build.json`), and `server`
   for `protocol` and four `kernel` entrypoints (`packages/server/tsconfig.build.json`).
 
 Project references mirror the runtime dependency edges. `packages/kernel/tsconfig.build.json`
-lists eleven; `packages/loop/tsconfig.build.json` lists nine (including the three optional
+lists its referenced packages; `packages/loop/tsconfig.build.json` lists nine (including the three optional
 packages `tools`, `hooks`, `skills`); leaves list one or two.
 
 `@clarvis/code` is typechecked separately by `tsc --noEmit` (`packages/code/package.json`) using
@@ -987,13 +985,9 @@ lockfile.
 
 **BUILD-27.** The tracked Clarvis repository contains no Python source (`.py`, `.pyi`, or `.pyw`);
 test executables and maintenance automation use the pinned Bun runtime. This does not restrict the
-language-neutral executable-provider contract or the sandbox's support for user-installed
-toolchains.
+the sandbox's support for user-installed toolchains.
 Production: `tooling/checks/bun-sources.ts`, invoked by `check:bun-sources` inside `lint:intent`.
-Test: `tooling/tests/unit/bun-sources.test.ts` pins the accepted and rejected extensions;
-`packages/kernel/tests/integration/capability-executable-session-manager.test.ts` exercises its real
-subprocess fixture through `process.execPath` and
-`packages/kernel/tests/helpers/capability-executable-fixture.ts`.
+Test: `tooling/tests/unit/bun-sources.test.ts` pins the accepted and rejected extensions.
 
 **BUILD-28.** Every tracked relative module specifier that targets a TypeScript source names the
 source's actual `.ts`, `.tsx`, `.mts` or `.cts` extension. Runtime extensions remain valid only for

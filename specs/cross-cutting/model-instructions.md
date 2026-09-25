@@ -25,7 +25,6 @@ and user-authored extensions are not a fixed inventory.
 | Human question and structured completion | 2 | [ask-user-tool.ts](../../packages/loop/src/runtime/tools/ask-user-tool.ts), [submit-result-tool.ts](../../packages/loop/src/runtime/tools/submit-result-tool.ts) |
 | Plans | 5 | [plan/tools.ts](../../packages/plan/src/tools.ts) |
 | Memory | 7 | `MEMORY_TOOL_CONTRACTS` in [tool-contract.ts](../../packages/memory/src/tool-contract.ts) |
-| External tasks | 10 | `TASK_TOOLS` in [toolset.ts](../../packages/tasks/src/toolset.ts) |
 | Workflow spawning and sequence control | 6 | [tool.ts](../../packages/workflows/src/tool.ts), [work-items.ts](../../packages/workflows/src/work-items.ts), [run-round.ts](../../packages/workflows/src/run-round.ts), [run-workflow.ts](../../packages/workflows/src/run-workflow.ts) |
 | Skill loading and resource reads | 2 | `loadSkillTool` and `readSkillResourceTool` in [skills/tool.ts](../../packages/skills/src/tool.ts) |
 | Public MCP run and controls | 4 | [server/mcp/tools.ts](../../packages/server/src/mcp/tools.ts) |
@@ -131,12 +130,9 @@ handoff cases in [builtin-agents.test.ts](../../packages/kernel/tests/component/
    checks finding identity, read-only limits and synthesis semantics; `schemas.test.ts` and the
    round tests cover validation/aggregation. The full three-definition JSON ceiling is 11,000
    characters; profiles, round structure, fanout and predicates are not changed to meet that bound.
-5. **Cross-field requirements are visible before the first call.** Task review needs evidence,
-   artifacts or `no_evidence_reason`; requesting publication fallback does not bypass its human
-   gate. Installed workflow names carry their own required argument keys, not an ambiguous union.
-   Production: `taskToolInputSchemas`/`TASK_TOOLS` in `packages/tasks/src/toolset.ts` and
-   `buildRunWorkflowTool` in `packages/workflows/src/run-workflow.ts`. Test:
-   `packages/tasks/tests/unit/tool-guidance.test.ts`, the task capability component suite, and
+5. **Cross-field requirements are visible before the first call.** Requesting publication fallback
+   does not bypass its human gate. Installed workflow names carry their own required argument keys.
+   Production: `buildRunWorkflowTool` in `packages/workflows/src/run-workflow.ts`. Test:
    `packages/workflows/tests/unit/run-workflow.test.ts`.
 6. **Compaction preserves authority and continuity without executing transcript instructions.**
    Production: `DEFAULT_COMPACTION_PROMPT` and `COMPACTION_UPDATE_INSTRUCTION` in
@@ -172,14 +168,14 @@ bounds do not semantically certify third-party content or grant extra authority.
 The owning package READMEs reviewed and updated for these changes are [kernel](../../packages/kernel/README.md),
 [loop](../../packages/loop/README.md), [tools](../../packages/tools/README.md),
 [plan](../../packages/plan/README.md), [workflows](../../packages/workflows/README.md),
-[tasks](../../packages/tasks/README.md) and [server](../../packages/server/README.md).
+and [server](../../packages/server/README.md).
 Focused owners are [kernel config](../hosts/kernel-config.md), [tool dispatch](../engine/tool-dispatch.md),
 [delegation](../engine/delegation-and-subagents.md), [compaction](../engine/context-compaction.md),
 [vision](../engine/vision-routing.md), [tool surface](../execution/tools-contract.md),
 [reads/search](../execution/tools-read-and-search.md), [mutation](../execution/tools-mutation.md),
 [shell/session](../execution/tools-shell-and-sessions.md), [planning](../capabilities/plan-capability.md),
 [workflow scheduling](../capabilities/workflows-scheduling.md), [workflow service](../capabilities/workflows-service.md),
-[tasks](../capabilities/tasks-capability.md) and [MCP facade](../hosts/server-mcp.md).
+and [MCP facade](../hosts/server-mcp.md).
 
 Reviewed without changing their contracts: memory [README](../../packages/memory/README.md),
 [capability](../capabilities/memory-capability.md) and [indexer](../capabilities/memory-indexer.md);

@@ -259,7 +259,7 @@ optional `prepareReconnect`, and `callbacks`.
 | `getRun(executionId)` | `Promise<RunDetail \| null>` | impl |
 | `deleteRun(executionId)` | `Promise<boolean>` | impl |
 | `plans` | current-plan `read` only; no retained-plan administration | `packages/code/src/adapters/kernel-run-client.ts` (`KernelRunClient.plans`, `plans`) |
-| `workflows` `skills` `config` `secrets` `models` `providerAuth` `files` `sessions` `plugins` `extensionProfiles` `tasks` `storage` | thin per-method pass-throughs to `requireKernel()` | `packages/code/src/adapters/kernel-run-client.ts` (`createKernelRunClient`) |
+| `workflows` `skills` `config` `secrets` `models` `providerAuth` `files` `sessions` `plugins` `extensionProfiles` `storage` | thin per-method pass-throughs to `requireKernel()` | `packages/code/src/adapters/kernel-run-client.ts` (`createKernelRunClient`) |
 | `currentExtensionProfile()` | the process-pinned `{id, fingerprint}` captured during `connect()` and refreshed after idle trust recomposition | `packages/code/src/adapters/kernel-run-client.ts` (`connect`, `mutateTrust`, `currentExtensionProfile`) |
 
 `KernelRunClientCallbacks` : `onEvent(event, source, executionId)`, optional
@@ -555,25 +555,6 @@ while a run is already active").
    `packages/code/tests/component/run-host.test.ts` ("submitSkillRun: starts a run on the skill's
    agent, appends its digest, and settles") and `packages/code/tests/component/session.test.ts`
    ("transcript-only runs are canonical without becoming continuation context").
-
-### 4.4 `workOnTask` (`packages/code/src/run-host.ts`)
-
-1. Refuses when `runActive() || bashActive()` or when `profile.trim().length === 0`, each with its own status message.
-2. Calls `clearSession()` **unconditionally** — every existing session, its turns and any
-   folded-prefix notice are discarded before the task-bound run starts; there is no path that preserves
-   prior session state alongside a task run.
-3. `deps.setActiveProfile(profile)`, bumps `loadEpoch`, sets `sessionTask = {id: ref.id, provider_key:
-   ref.provider_key, mode: "work"}`, and creates a fresh `Session` with `{ agentProfile: profile }`.
-4. Mints `executionId` and a **fixed** instruction message — `` `Work on task ${ref.id} in the current
-   workspace. Read the active task context, call start_task explicitly when that tool is available and
-   you are ready to begin, and keep every review or completion transition explicit.` `` — displayed as
-   `` `Work on task ${ref.id}` ``, pinned by
-   `packages/code/tests/component/run-host.test.ts` ("Work on task starts a fresh current-workspace
-   run with only task identity and provider key").
-5. `sess.beginTurn`, `rememberResidentTurn`, arms `workflowRunId`/`workflowActivity` exactly as
-   `submitTurn` does, then runs through `runManaged` sending the session's full message
-   chain (`sess.messages()`) plus `task: sessionTask`. `afterRun`/`onStored`/`onError`
-   mirror `submitTurn`'s `reconcile`/`releaseHistory` handling.
 
 ### 4.5 Cancellation
 
@@ -1152,15 +1133,6 @@ The following are derived directly from this document's own source and its tests
 
 15. **A manager run always sends its complete message chain, never a `continue_from` delta.** The
     ternary at `packages/code/src/run-host.ts` sends full whenever `isManager`. Pinned:
-    `packages/code/tests/component/run-host.test.ts`.
-
-16. **`Work on task` carries only `{id, provider_key, mode}` — never a workspace or repository.**
-    `packages/code/src/run-host.ts`, and `toStartParams` passes `task` through verbatim (`packages/code/src/adapters/kernel-run-client.ts`). Pinned:
-    `packages/code/tests/component/run-host.test.ts`.
-
-17. **The resumed active-task binding survives a continuation fallback.** `sessionTask` is set from
-    `resumed.activeTask` (`packages/code/src/run-host.ts`) and spread into both the continuation
-    and full-start paths. Pinned:
     `packages/code/tests/component/run-host.test.ts`.
 
 18. **`residentTurns` never exceeds 20, and every successful structural fold produces exactly one

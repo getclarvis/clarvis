@@ -136,7 +136,6 @@ function HubMenu(host, deps: { title; items; openChild(cmd: string): void })    
 | id | label | cmd |
 | --- | --- | --- |
 | `providers` | Providers | `providers.open` |
-| `capability-providers` | Feature backends | `capability-providers.open` |
 | `agents` | Agents | `agents.open` |
 | `defaults` | Defaults | `defaults.open` |
 | `memory` | Memory | `memory.config` |
@@ -1571,11 +1570,11 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
   `defaults.open`, `extension-profiles.open`, `plugins.open`, `hooks.open`, `marketplace.open`, `mcp.browse`, `settings.open`, `extensions.open`.
 - `views/overlay-host.ts` depends on `ViewHostControls`' exact shape — `runSave`, `scopeBound`,
   `escape`, `dispose` (`packages/code/src/views/overlay-host.ts`).
-- `CapabilityProvidersPanel`, `AgentsPanel`, `RunControlsPanel`, `MemoryConfigPanel`,
-  `SandboxConfigPanel`, `TasksHub`, `WorkflowsHub`, `SessionsHub`, `ThemeView`,
+- `AgentsPanel`, `RunControlsPanel`, `MemoryConfigPanel`,
+  `SandboxConfigPanel`, `WorkflowsHub`, `SessionsHub`, `ThemeView`,
   `KeyboardView`, `DoctorView`, `ModelView`, `EffortView` all consume `view-host.tsx`'s toolkit; they
   belong to sibling documents ([hosts/code-domain-hubs.md](code-domain-hubs.md), [hosts/model-catalog.md](model-catalog.md),
-  [execution/sandbox.md](../execution/sandbox.md), [capabilities/provider-executables.md](../capabilities/provider-executables.md)).
+  [execution/sandbox.md](../execution/sandbox.md)).
 
 ### 7.4 Delegated out
 

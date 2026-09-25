@@ -8,11 +8,17 @@
 import type { JsonSchema, Pagination, Page, Timestamp } from "./common.ts";
 import type { PlanRef, PlanRetention, PlanStatus, PlanTaskDto } from "./plans.ts";
 import type { MemoryIngestDetail } from "./memory.ts";
-import type { ActiveTaskBindingDto, ActiveTaskRequestDto } from "./tasks.ts";
 import type { ExtensionProfileRunRef } from "./extension-profiles.ts";
 
 /** Speaker role on a message. */
 export type Role = "user" | "assistant";
+
+/** Legacy run binding retained for workflow request compatibility. */
+export interface ActiveTaskRequestDto {
+  id: string;
+  provider_key?: string;
+  mode?: "inspect" | "work";
+}
 
 /** Plain-text content part. */
 export interface TextPart {
@@ -108,7 +114,7 @@ export interface StartRunParams {
   prompt_cache_ttl?: "5m" | "1h";
   memory?: MemoryMode;
   plans?: PlansMode;
-  /** Bind this run to one external task in the kernel's current workspace. */
+  /** Legacy binding accepted by workflow requests; no Tasks provider is registered. */
   task?: ActiveTaskRequestDto;
   /**
    * Start this run from a skill: the kernel loads it by `name` and seeds the run
@@ -315,8 +321,6 @@ export interface RunDetail extends RunSummary {
    */
   continue_from?: string;
   plan_ref?: PlanRef;
-  /** Task identity recovered from the task capability's minimal persisted run state. */
-  active_task?: ActiveTaskBindingDto;
   /** Extension Profile snapshot under which this run started. */
   extension_profile?: ExtensionProfileRunRef;
   /**

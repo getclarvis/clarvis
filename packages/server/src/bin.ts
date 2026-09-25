@@ -279,7 +279,6 @@ async function main(argv: string[]): Promise<void> {
       owner_authenticated: env.CLARVIS_SERVER_OWNER_MODE === "token",
       auth: env.CLARVIS_SERVER_AUTH,
       memory: env.CLARVIS_SERVER_MEMORY,
-      builtins: "tasks=false",
       max_runs: env.CLARVIS_SERVER_MAX_RUNS,
       max_runs_per_owner: env.CLARVIS_SERVER_MAX_RUNS_PER_OWNER,
       max_sessions: env.CLARVIS_SERVER_MAX_SESSIONS,
@@ -307,8 +306,6 @@ async function main(argv: string[]): Promise<void> {
     defaultOwner: env.CLARVIS_SERVER_OWNER,
     ownershipMode: "multi",
     // The HTTP facade executes only in its configured checkout. Its callers and
-    // models cannot bind external task providers; that remains a local Code surface.
-    builtins: { tasks: false },
     globalDir: configDir,
     traceDir: globalPaths(configDir).tracesDir,
   });

@@ -1,5 +1,4 @@
 import type {
-  ActiveTaskRequestDto,
   Message,
   PlansMode,
   RunCompactionResult,
@@ -42,8 +41,6 @@ export interface StartRunInput {
   sessionId?: string;
   memory?: "on" | "off";
   plans?: PlansMode;
-  /** Optional external task bound to this run; the current workspace stays implicit. */
-  task?: ActiveTaskRequestDto;
   skill?: { name: string; task?: string };
   /** Ask the host to expose Goal creation to this ordinary main-agent turn. */
   goalIntent?: { kind: "create"; seed: string };

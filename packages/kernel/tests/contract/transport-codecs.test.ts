@@ -28,7 +28,6 @@ const HELLO = {
     memory: false,
     skills: false,
     agent_tools: true,
-    tasks: false,
   },
   project: { id: "prj_test", label: "Test project" },
   workspace: {
@@ -1060,45 +1059,5 @@ describe("remote run codec", () => {
     await Promise.resolve();
     expect(saturatedTransport.requests.some(({ method }) => method === "runs.cancel")).toBeTrue();
     await saturatedClient.close();
-  });
-});
-
-describe("remote Tasks codec", () => {
-  it("preserves a create request id and its pinned provider selection", async () => {
-    const transport = new FakeTransport();
-    transport.onRequest = () => ({});
-    const client = await connectKernelClient(transport);
-    const input = {
-      request_id: "create-stable",
-      provider_key: "tasks:mcp:v2:sha256:provider-a",
-      container_id: "CLAR",
-      title: "Pinned create",
-    };
-
-    await client.tasks.create(input);
-
-    expect(transport.requests.at(-1)).toEqual({
-      method: "tasks.create",
-      params: { input },
-    });
-    await client.close();
-  });
-
-  it("preserves opaque cursors and forwards cancellation as transport metadata", async () => {
-    const transport = new FakeTransport();
-    transport.onRequest = (method) =>
-      method === OPERATIONS.tasks.search.method ? { items: [], next_cursor: "opaque==" } : {};
-    const client = await connectKernelClient(transport);
-    const controller = new AbortController();
-
-    await expect(
-      client.tasks.search({ cursor: "opaque==", limit: 25 }, { signal: controller.signal }),
-    ).resolves.toEqual({ items: [], next_cursor: "opaque==" });
-    expect(transport.requests.at(-1)).toEqual({
-      method: "tasks.search",
-      params: { input: { cursor: "opaque==", limit: 25 } },
-      options: { signal: controller.signal },
-    });
-    await client.close();
   });
 });

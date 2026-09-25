@@ -315,7 +315,7 @@ describe("configuration documents against product loaders", () => {
       logger: NOOP_LOGGER,
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
       subscriptions: false,
-      builtins: { hooks: false, tasks: false },
+      builtins: { hooks: false },
       executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm } }),
     });
     try {

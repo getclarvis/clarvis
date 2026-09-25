@@ -41,7 +41,6 @@ function resolved(ref: ExtensionProfileRef, current = false): ResolvedExtensionP
             skills: ["browse"],
             mcp_servers: ["browser:server"],
             hooks: { total: 1 },
-            capability_executables: [],
           },
         ]
       : [],
@@ -109,7 +108,6 @@ test("renders diagnostics and previews the exact delta before selecting", async 
         skills: index === 0 ? ["browse"] : [],
         mcp_servers: index === 0 ? ["browser:server"] : [],
         hooks: { total: index === 0 ? 1 : 0 },
-        capability_executables: [],
       })),
       standalone_skills: [],
     }),

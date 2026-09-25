@@ -22,7 +22,6 @@ import { engineMessagesToProto } from "./map-message.ts";
 import { engineEventToProto } from "./map-events.ts";
 import { RUN_EVENT_POLICY } from "./event-policy.ts";
 import { planRefFromCapabilityState } from "./plan-ref.ts";
-import { taskBindingFromCapabilityState } from "./task-binding.ts";
 import type { KernelException } from "../core/errors.ts";
 
 /** Validate the Extension Profile identity carried in opaque host metadata. */
@@ -216,7 +215,6 @@ export function storedToDetail(s: StoredExecution, logger: Logger = NOOP_LOGGER)
     cached_tokens: s.total_cached_tokens,
   };
   const planRef = planRefFromCapabilityState(s.capability_state);
-  const activeTask = taskBindingFromCapabilityState(s.capability_state);
   const extensionProfile = extensionProfileFromHostMetadata(s.host_metadata);
   return {
     execution_id: s.id,
@@ -225,7 +223,6 @@ export function storedToDetail(s: StoredExecution, logger: Logger = NOOP_LOGGER)
     ended_at: s.ended_at,
     ...(s.request.continue_from !== undefined ? { continue_from: s.request.continue_from } : {}),
     ...(planRef !== undefined ? { plan_ref: planRef } : {}),
-    ...(activeTask !== undefined ? { active_task: activeTask } : {}),
     ...(extensionProfile !== undefined ? { extension_profile: extensionProfile } : {}),
     ...(s.recovery !== undefined ? { recovery: s.recovery } : {}),
     messages: engineMessagesToProto(s.request.messages),

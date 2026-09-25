@@ -70,7 +70,6 @@ states, Escape/back, persistence, status feedback, and scope where applicable.
 | ID       | Surface                                                                                                                                                                                |
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `CMD-01` | `/help`                                                                                                                                                                                |
-| `CMD-02` | `/tasks`                                                                                                                                                                               |
 | `CMD-03` | `/agent`                                                                                                                                                                               |
 | `CMD-04` | `/compact [request]` while active and settled                                                                                                                                          |
 | `CMD-05` | `/debug`, `/debug off`, and valid/invalid levels                                                                                                                                       |
@@ -104,7 +103,6 @@ states, Escape/back, persistence, status feedback, and scope where applicable.
 | ID       | Panel            |
 | -------- | ---------------- |
 | `SET-01` | Providers        |
-| `SET-02` | Feature backends |
 | `SET-03` | Agents           |
 | `SET-04` | Defaults         |
 | `SET-05` | Memory           |
@@ -161,7 +159,6 @@ routes.
 | `CAP-05` | Tasks board               | Availability, health, filters, detail, refresh, normalized/native state and claim semantics are honest                                                                                                   |
 | `CAP-06` | Task mutations            | Supported write, conflict, provider failure and unknown outcome never render as a successful empty board                                                                                                 |
 | `CAP-07` | Work on task              | Current workspace and selected agent are used; opening does not mutate; return refreshes source of truth                                                                                                 |
-| `CAP-08` | Feature backend selection | Namespaced server, protocol/capability probe, writes policy, default container and unavailable state are correct                                                                                         |
 | `CAP-09` | MCP tools and prompts     | Inventory, refresh, duplicate names, invocation, errors, degraded pools and prompt injection are visible and bounded                                                                                     |
 | `CAP-10` | OAuth-pending MCP         | Browser flow remains background, other work runs, bounds are retained, no duplicate browser, later reuse works when authorized                                                                           |
 

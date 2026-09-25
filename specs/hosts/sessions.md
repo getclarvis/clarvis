@@ -687,7 +687,7 @@ runs it:
      (accumulated if it carried `continue_from`, or replacing the chain outright if it did not)
      plus its assistant content, to the returned `messages`.
    - A transcript turn is rendered from its canonical `userPreview` and events when resident, but
-     never contributes its internal run messages, assistant result or `active_task` to continuation.
+     never contributes its internal run messages or assistant result to continuation.
    - A turn outside the render window (`collapsed = idx < windowStart`) is still rendered (with
      `collapsed: true` and no events) but is counted in `resumed.collapsed`, never in `degraded`.
    - A turn that was `visited` (a fetch was attempted) but has no projection (`getRun` returned
@@ -699,11 +699,6 @@ runs it:
      and the reset point already terminated the backward walk) is simply `collapsed` — never
      `degraded` — because collapsing is a display choice about turns known to be intact
      (the `resumeSession` remarks distinguish `collapsed` from `degraded`).
-6. `newestActiveTask` tracks the highest-index **conversation** turn whose
-   `RunDetail.active_task` is defined and is returned as `resumed.activeTask` —
-   used so a continued run can recover which external task was bound even if that turn's own
-   history was not retained.
-
 **Invariant proven by test, not merely asserted in a comment:** a `collapsed` turn and a `degraded`
 turn are mutually exclusive and their counts never overlap —
 `packages/code/tests/component/session.test.ts` ("resumeSession counts a folded-but-pruned
@@ -1093,7 +1088,7 @@ continuation base.
 20. **Every persisted turn has an explicit continuation role; stale undiscriminated turns are
     rejected.** `kind: "conversation"` is the only variant that can rebuild or advance provider
     continuation. `kind: "transcript"` remains canonical for display, export, status and totals but
-    never contributes its internal prompt/result or active-task binding to model history. Missing or
+    never contributes its internal prompt/result to model history. Missing or
     unknown `kind` throws during `sessionToMeta` rather than receiving a legacy default.
     Production: `packages/protocol/src/sessions.ts` (`SessionTurnKind`, `SessionTurn`),
     `packages/code/src/adapters/session-store.ts` (`persistedTurnKind`, `metaToSession`,

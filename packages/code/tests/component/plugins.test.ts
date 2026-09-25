@@ -20,14 +20,6 @@ function protoView(over: Partial<ProtoPluginView> = {}): ProtoPluginView {
       skills: ["guide"],
       servers: ["git"],
       hooks: 1,
-      capability_executables: [
-        {
-          capability: "memory",
-          command: "python3",
-          args: ["-B", "server.py", "memory"],
-          platform_override: false,
-        },
-      ],
       executables: ["$ demo:git  git-mcp"],
     },
     ...(over.error !== undefined ? { error: over.error } : {}),
@@ -67,38 +59,12 @@ function fakeService(seed: ProtoPluginView[] = []): PluginService & { calls: str
   };
 }
 
-test("toPluginView maps executable declarations and installation metadata", () => {
+test("toPluginView carries plugin metadata without capability services", () => {
   const view = toPluginView(protoView());
   expect(view.source).toBe("clarvis");
   expect(view.installSource).toContain("demo.git");
   expect(view.revision).toBe("abc123");
   expect(view.contributions.brokenAgents).toEqual(["bad"]);
-  expect(view.contributions.capabilityExecutables).toEqual([
-    {
-      capability: "memory",
-      command: "python3",
-      args: ["-B", "server.py", "memory"],
-      platformOverride: false,
-    },
-  ]);
-});
-
-test("toPluginView projects sorted per-skill Plans policies", () => {
-  const view = toPluginView(
-    protoView({
-      contributions: {
-        ...protoView().contributions,
-        capability_run_policies: {
-          plans: { skills: { zebra: "review", alpha: "on" } },
-        },
-      },
-    }),
-  );
-
-  expect(view.contributions.skillPlanPolicies).toEqual([
-    { skill: "alpha", mode: "on" },
-    { skill: "zebra", mode: "review" },
-  ]);
 });
 
 test("toPluginView carries complete publisher and display metadata without inventing any", () => {

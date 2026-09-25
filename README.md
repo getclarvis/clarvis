@@ -16,7 +16,7 @@ repository in front of you.
 
 ## Why Clarvis
 
-- **One project-aware TUI:** sessions, transcript, plans, memory, tasks, and run activity stay in one
+- **One project-aware TUI:** sessions, transcript, plans, memory, and run activity stay in one
   discoverable interface.
 - **Bring your model:** configure API providers, OpenAI-compatible local endpoints, or the beta
   ChatGPT and Grok subscription flows for eligible accounts. Availability is provider-controlled and
@@ -233,7 +233,6 @@ units and are not published independently.
 | [`@clarvis/memory`](packages/memory)           | product capability  | `packages/memory`      | Markdown memory wiki, search, and indexing.                           |
 | [`@clarvis/plan`](packages/plan)               | product capability  | `packages/plan`        | Provider-neutral plans and review gates.                              |
 | [`@clarvis/goal`](packages/goal)               | product capability  | `packages/goal`        | Semantic formulation, persistent objectives and bounded continuation. |
-| [`@clarvis/tasks`](packages/tasks)             | product capability  | `packages/tasks`       | External task-management adapters and tools.                          |
 | [`@clarvis/workflows`](packages/workflows)     | product capability  | `packages/workflows`   | Multi-agent workflow scheduling and records.                          |
 | [`@clarvis/kernel`](packages/kernel)           | host implementation | `packages/kernel`      | Composition root and isolated-runtime model/MCP authority.            |
 | [`@clarvis/code`](packages/code)               | application         | `packages/code`        | The `clarvis` terminal UI, including conversation prompt scheduling.  |

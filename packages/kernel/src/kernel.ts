@@ -33,7 +33,6 @@ import type {
   ExtensionProfileService,
   ExtensionProfilePluginRef,
   ResolvedExtensionProfile,
-  TasksService,
   SandboxInspection,
   WorkspaceService,
   WorkspaceChangesService,
@@ -91,8 +90,6 @@ import {
 } from "./application/scope-policy.ts";
 import { createAgentWorkflowPolicy } from "./application/workflow-policy.ts";
 import { globalRoot } from "@clarvis/paths";
-import { createTasksService } from "./tasks/task-service.ts";
-import type { TaskProviderFactory } from "./tasks/task-provider-factory.ts";
 import { kernelError } from "./core/errors.ts";
 import { createUnavailableProviderAuthService } from "./subscriptions/unavailable.ts";
 import { createStorageService } from "./storage/storage-service.ts";
@@ -178,8 +175,6 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
   readonly extensionProfiles: ExtensionProfileService;
   /** Operator-owned generated-state inventory and disposable cleanup. */
   readonly storage: StorageService;
-  /** Default owner's external task control plane. */
-  readonly tasks: TasksService;
   /**
    * The owner-scoped services for `owner`, memoized for the kernel's lifetime.
    *
@@ -322,10 +317,6 @@ export interface CreateKernelOptions {
   environment?: Readonly<Record<string, string | undefined>>;
   /** Host-owned workspace-changes service; defaults to the Git adapter. */
   changesService?: WorkspaceChangesService;
-  /** Shared settings-sensitive provider selector used by runs and control plane. */
-  taskProviderFactory?: TaskProviderFactory;
-  /** Builtin gate for both Tasks run and control-plane surfaces. */
-  tasksEnabled?: boolean;
   /** Host lease acquired for each live run in this workspace. */
   acquireRunLease?: () => () => void;
   /** Skill-catalog lease released when model execution and its tools settle. */
@@ -341,7 +332,6 @@ export const DEFAULT_KERNEL_CAPABILITIES: KernelCapabilities = {
   memory: false,
   skills: false,
   agent_tools: true,
-  tasks: false,
   runtime: {
     kind: "native",
     host_platform: process.platform,
@@ -623,11 +613,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
         logger: runLogger,
       }),
       workflows,
-      tasks: createTasksService({
-        ...(opts.taskProviderFactory === undefined ? {} : { factory: opts.taskProviderFactory }),
-        owner: scope.owner,
-        enabled: opts.tasksEnabled !== false && opts.taskProviderFactory !== undefined,
-      }),
     };
     return {
       services,
@@ -1008,7 +993,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     ...DEFAULT_KERNEL_CAPABILITIES,
     memory: opts.memoryFactory !== undefined,
     skills: opts.skillsProvider !== undefined,
-    tasks: opts.tasksEnabled !== false && opts.taskProviderFactory !== undefined,
     ...opts.capabilities,
   };
   const operatorServices: OperatorServices = {
@@ -1045,7 +1029,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     plugins,
     extensionProfiles,
     storage,
-    tasks: scoped.tasks,
     goals: unavailableGoalService(),
     forOwner,
     acquireOwner,

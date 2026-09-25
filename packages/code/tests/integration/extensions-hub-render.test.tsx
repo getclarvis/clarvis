@@ -66,7 +66,6 @@ function installedPlugin(source: "agents" | "clarvis" = "agents"): PluginView {
       skills: ["context7-docs"],
       servers: ["context7"],
       hooks: 1,
-      capabilityExecutables: [],
       executables: ["npx -y @upstash/context7-mcp"],
     },
   };
@@ -129,7 +128,6 @@ function resolveDraft(
           skills: [],
           mcp_servers: [],
           hooks: { total: 0 },
-          capability_executables: [],
           error: "missing",
         }
       : { ...installed, active: installed.valid };

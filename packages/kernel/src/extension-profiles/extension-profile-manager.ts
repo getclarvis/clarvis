@@ -1023,7 +1023,6 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
                 .map((name) => `${plugin.name}:${name}`)
                 .sort(),
         hooks: { total: hooks.length },
-        capability_executables: Object.keys(manifest?.capabilityExecutables ?? {}).sort(),
         ...(resolved.error === undefined ? {} : { error: resolved.error }),
       };
       return { view };
@@ -1140,7 +1139,6 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
               skills: snapshot.skills,
               mcp_servers: snapshot.mcpServers,
               hooks: snapshot.hooks,
-              capability_executables: snapshot.capabilityExecutables,
             };
           }
           const installed = unresolvedInstalled.get(pluginRefId(ref));
@@ -1159,7 +1157,6 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
               skills: [],
               mcp_servers: [],
               hooks: { total: 0 },
-              capability_executables: [],
               error: "not installed",
             };
           }

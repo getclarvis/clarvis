@@ -9,7 +9,6 @@ import {
 } from "./core/loop-schedule.ts";
 import type {
   HostedHandoffFailureDetails,
-  ActiveTaskRequestDto,
   HostedActivityLease,
   HostedRunReceipt,
   HostedRunRef,
@@ -17,7 +16,6 @@ import type {
   Message,
   MessageContent,
   PlansMode,
-  TaskRefDto,
 } from "@clarvis/protocol";
 import type {
   RunDetail,
@@ -233,8 +231,6 @@ export interface RunHost {
   ): void;
   /** Run a skill that names an agent as a run of its own, on that agent. */
   submitSkillRun(name: string, task: string, agent: string): Promise<void>;
-  /** Start a fresh session bound to one provider-neutral task in this workspace. */
-  workOnTask(ref: TaskRefDto, profile: string): Promise<void>;
   runBangCommand(cmd: string): boolean;
   clearSession(opts?: { flush?: boolean }): void;
   loadSessionMeta(meta: SessionMeta): Promise<void>;
@@ -415,7 +411,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   let runOwnershipEpoch = 0;
   let cancelRequested = false;
   let session: Session | undefined;
-  let sessionTask: ActiveTaskRequestDto | undefined;
   const [runActive, setRunActive] = createSignal(false);
   const [interactiveControl, setInteractiveControl] = createSignal(true);
   const [disconnectPolicy, setDisconnectPolicy] =
@@ -484,7 +479,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
             deps.memoryMode(),
             deps.plansMode?.(),
             deps.planProviderKey?.(),
-            sessionTask,
             client.currentExtensionProfile?.(),
           ]),
         )
@@ -1381,7 +1375,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           : {}),
         ...(goalIntent === undefined ? {} : { goalIntent }),
         ...(sessionId ? { sessionId } : {}),
-        ...(sessionTask === undefined ? {} : { task: sessionTask }),
         ...requestOptions,
       });
     };
@@ -1425,7 +1418,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
                   : {}),
                 ...(goalIntent === undefined ? {} : { goalIntent }),
                 ...(sessionId ? { sessionId } : {}),
-                ...(sessionTask === undefined ? {} : { task: sessionTask }),
                 ...requestOptions,
               })
             : startFull(isManager ? await fullRequestMessages() : undefined);
@@ -1579,74 +1571,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       onError: (e) => {
         sess.endTranscriptTurn(undefined);
         setStatus([`/${name} failed: ${errorText(e)}`]);
-      },
-    });
-    adoptCanonicalTurn(executionId);
-  }
-
-  async function workOnTask(ref: TaskRefDto, profile: string): Promise<void> {
-    if (scheduledReserved()) {
-      setStatus(["busy ", { mark: "emDash" }, " finish the scheduled turn first"]);
-      return;
-    }
-    const settlement = currentSettlement;
-    if (!runActive() && settlement !== undefined) await settlement.promise;
-    if (runActive() || bashActive()) {
-      setStatus(["busy ", { mark: "emDash" }, " finish the current run or command first"]);
-      return;
-    }
-    if (profile.trim().length === 0) {
-      setStatus(["choose an agent before working on a task"]);
-      return;
-    }
-    clearSession();
-    deps.setActiveProfile(profile);
-    loadEpoch += 1;
-    sessionTask = { id: ref.id, provider_key: ref.provider_key, mode: "work" };
-    session = createSession(boundSessionDeps, { agentProfile: profile });
-    const sess = session;
-    const executionId = "exec_" + crypto.randomUUID();
-    const message =
-      `Work on task ${ref.id} in the current workspace. Read the active task context, ` +
-      "call start_task explicitly when that tool is available and you are ready to begin, and keep every review or completion transition explicit.";
-    const display = `Work on task ${ref.id}`;
-    const hostedSession = await prepareHostedSession(sess, display);
-    if (session !== sess) return;
-    const userKey = store.appendUserMessage(message, display, executionId);
-    sess.beginTurn(message, executionId);
-    rememberResidentTurn({ userKey });
-    const sessionId = sess.meta()?.id;
-    const memoryMode = deps.memoryMode();
-    workflowRunId = executionId;
-    setWorkflowActivity(null);
-    await runManaged({
-      sess,
-      executionId,
-      initialStatus: [`working on ${ref.id}`, { mark: "ellipsis" }],
-      run: (setHandle) => {
-        const handle = client.startRun({
-          ...(hostedSession === undefined
-            ? {}
-            : { session: { ...hostedSession, kind: "conversation", user_preview: display } }),
-          messages: [...sess.messages()],
-          profile,
-          executionId,
-          task: sessionTask,
-          ...(sessionId ? { sessionId } : {}),
-          ...(memoryMode === "off" ? { memory: memoryMode } : {}),
-        });
-        setHandle(handle);
-        return handle.done;
-      },
-      afterRun: (envelope) => sess.endTurn(envelope),
-      onStored: (_envelope, stored, sink) => {
-        sess.reconcile(stored);
-        replayRunEvents(sink, stored);
-        if (stored !== null) sess.releaseHistory();
-      },
-      onError: (error) => {
-        sess.endTurn(undefined);
-        setStatus([`task run failed: ${errorText(error)}`]);
       },
     });
     adoptCanonicalTurn(executionId);
@@ -1849,7 +1773,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     setSessionLoading(false);
     if (opts?.flush !== false) session?.flush();
     session = undefined;
-    sessionTask = undefined;
     store.clear();
     activity.clear();
     foldedTurnCount = 0;
@@ -2117,7 +2040,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     setSessionLoading(true);
     session?.flush();
     session = undefined;
-    sessionTask = undefined;
     store.clear();
     activity.clear();
     foldedTurnCount = 0;
@@ -2181,7 +2103,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       throw error;
     }
     if (epoch !== loadEpoch) return;
-    sessionTask = resumed.activeTask;
     canonicalTurnIds = meta.turns.map(turnIdentity);
     session = createSession(boundSessionDeps, {
       meta,
@@ -2560,7 +2481,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     scheduledBusy,
     submitPromptTurn,
     submitSkillRun,
-    workOnTask,
     runBangCommand,
     clearSession,
     loadSessionMeta,

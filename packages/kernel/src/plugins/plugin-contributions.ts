@@ -12,12 +12,7 @@ import {
   type SettingsScope,
   type SkillRootInput,
 } from "@clarvis/loop/host";
-import {
-  NOOP_LOGGER,
-  type CapabilityExecutableDeclaration,
-  type CapabilitySkillPlansMode,
-  type Logger,
-} from "@clarvis/capability";
+import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import {
   agentsPluginsDirs,
   globalPaths,
@@ -111,18 +106,6 @@ export interface PluginContributions {
   agents(enabled: PluginSelection): AgentRecord[];
   /** Resolve one `<plugin>:<agent>` record, or null if the plugin is not enabled. */
   readAgent(enabled: PluginSelection, qualifiedName: string): AgentRecord | null;
-  /** Locate one executable an installed + enabled + selected plugin offers. */
-  locateCapabilityExecutable(
-    enabled: PluginSelection,
-    capability: string,
-    plugin: string,
-  ): { root: string; declaration: CapabilityExecutableDeclaration } | { error: string };
-  /** Trusted Plans mode declared for one skill packaged by the selected plugin. */
-  skillPlansMode(
-    enabled: PluginSelection,
-    plugin: string,
-    skill: string,
-  ): CapabilitySkillPlansMode | undefined;
   /** Return captured skills whose bytes no longer match the exact process-pinned contribution. */
   verifyPinnedSkillCatalog(skills: readonly SkillContent[]): readonly SkillContent[];
   /** Release asynchronous executable-file monitors owned by this contribution snapshot. */
@@ -139,7 +122,6 @@ export interface PluginContributionSnapshot {
   skills: string[];
   mcpServers: string[];
   hooks: { total: number };
-  capabilityExecutables: string[];
 }
 
 /** One plugin MCP declaration after the host has assigned its collision-free name. */
@@ -584,7 +566,6 @@ export function createPluginContributions(opts: {
         .map((name) => effectivePluginMcpName(plugin.name, name))
         .sort(),
       hooks: { total: hooks.length },
-      capabilityExecutables: Object.keys(plugin.manifest.capabilityExecutables ?? {}).sort(),
     };
     if (skills.some((skill) => "unavailable" in skill)) {
       unavailableSkillSnapshots.add(snapshot);
@@ -879,35 +860,6 @@ export function createPluginContributions(opts: {
       const expected = `${agentName}.md`;
       const file = l.agentFiles.files.find((candidate) => candidate.name === expected);
       return file === undefined ? null : toAgentRecord(plugin, agentName, file.content);
-    },
-
-    locateCapabilityExecutable(enabled, capability, plugin) {
-      assertPinnedSelection(enabled);
-      const ref = enabled.find((candidate) => candidate.name === plugin);
-      if (ref === undefined) {
-        return { error: `plugin '${plugin}' is not enabled for this workspace` };
-      }
-      const l = loadables(enabled).find((candidate) => refId(candidate.ref) === refId(ref));
-      if (l === undefined) return { error: `plugin '${plugin}' has no readable manifest` };
-      if (!runtimeAvailable(l)) {
-        return {
-          error: `plugin '${plugin}' changed on disk; its executable contributions are withheld until reconnect`,
-        };
-      }
-      const declared = l.manifest.capabilityExecutables?.[capability];
-      if (declared === undefined) {
-        return { error: `plugin '${plugin}' offers no capability executable '${capability}'` };
-      }
-      return { root: l.dir, declaration: declared };
-    },
-
-    skillPlansMode(enabled, plugin, skill) {
-      assertPinnedSelection(enabled);
-      const ref = enabled.find((candidate) => candidate.name === plugin);
-      if (ref === undefined) return undefined;
-      const loadable = loadables(enabled).find((candidate) => refId(candidate.ref) === refId(ref));
-      if (loadable === undefined || !runtimeAvailable(loadable)) return undefined;
-      return loadable.manifest.capabilityRunPolicies?.plans?.skills[skill];
     },
 
     verifyPinnedSkillCatalog(skills) {

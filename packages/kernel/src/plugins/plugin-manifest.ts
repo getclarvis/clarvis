@@ -274,14 +274,7 @@ export interface PluginManifestSource {
  * old alphabetical accident instead of selecting the document that actually
  * describes what the plugin does here.
  */
-const MANIFEST_CONTRIBUTION_KEYS = [
-  "skills",
-  "mcpServers",
-  "hooks",
-  "bootstrapSkill",
-  "capabilityExecutables",
-  "capabilityRunPolicies",
-] as const;
+const MANIFEST_CONTRIBUTION_KEYS = ["skills", "mcpServers", "hooks", "bootstrapSkill"] as const;
 
 /** Whether a directive carries anything rather than an empty placeholder. */
 function carriesContribution(value: unknown): boolean {

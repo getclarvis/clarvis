@@ -15,7 +15,7 @@ import { sanitizeErrorMessage } from "@clarvis/capability";
 /**
  * Character ceiling for one logged failure reason.
  *
- * @remarks The same 500 `@clarvis/tasks` caps a provider-authored refusal at,
+ * @remarks The 500 character cap bounds a provider-authored refusal,
  * which is `@clarvis/trace`'s `SUMMARY_MAX` — the bound this repository already
  * puts on a short degradation reason. The value is restated rather than
  * imported because `@clarvis/plan` depends on the capability contract alone.

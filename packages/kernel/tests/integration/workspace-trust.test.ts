@@ -59,18 +59,17 @@ describe("stripWorkspaceRiskFields", () => {
       mcpServers: { server: { command: "server" } },
       enabledPlugins: [{ scope: "global", source: "clarvis", name: "plugin" }],
       marketplaces: ["https://example.invalid/catalog.git"],
-      memory: { provider: { kind: "executable", command: "memory-server" }, enabled: true },
-      plans: { provider: { kind: "plugin", plugin: "plans-plugin" }, mode: "review" },
-      tasks: {
-        provider: { kind: "mcp", server: "jira:tasks", protocol: "clarvis.tasks.v2" },
-        writes: "enabled",
-      },
+      memory: { provider: { kind: "wiki" }, enabled: true },
+      plans: { provider: { kind: "markdown" }, mode: "review" },
       providers: [{ name: "chatgpt", kind: "openai-codex" }],
     };
     const out = stripWorkspaceRiskFields(settings);
 
     expect([...out.withheld]).toEqual([...WORKSPACE_RISK_FIELDS]);
-    expect(out.settings).toEqual({ memory: { enabled: true }, plans: { mode: "review" } });
+    expect(out.settings).toEqual({
+      memory: { provider: { kind: "wiki" }, enabled: true },
+      plans: { provider: { kind: "markdown" }, mode: "review" },
+    });
   });
 
   it("keeps built-in provider selections from untrusted workspaces", () => {

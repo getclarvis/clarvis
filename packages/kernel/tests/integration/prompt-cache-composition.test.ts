@@ -173,7 +173,7 @@ describe("kernel prompt-cache composition through the real SDK transport", () =>
       subscriptions: false,
       logger: NOOP_LOGGER,
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_AGENT_TOOLS_ENABLED: "1" }),
-      builtins: { tools: true, hooks: false, tasks: false },
+      builtins: { tools: true, hooks: false },
       executeRun: (args) => {
         const execution = {
           ...args,
@@ -465,7 +465,7 @@ describe("kernel prompt-cache composition through the real SDK transport", () =>
         planStoreFor: () => store,
         logger: NOOP_LOGGER,
         env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_AGENT_TOOLS_ENABLED: "0" }),
-        builtins: { tools: false, hooks: false, tasks: false },
+        builtins: { tools: false, hooks: false },
         executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm: adapter } }),
       });
     let kernel = await open();

@@ -28,7 +28,6 @@ import { createFileMemory } from "@clarvis/memory";
 import { createMemoryCapability, type MemoryFactory } from "@clarvis/memory/capability";
 import { memorySettingsSpec } from "@clarvis/memory/settings";
 import { plansSettingsSpec } from "@clarvis/plan/settings";
-import { tasksSettingsSpec } from "@clarvis/tasks/settings";
 import { createAskUserCapability, executeRun, type ExecuteRunDeps } from "@clarvis/loop";
 import { managerLiveChildrenFloor } from "@clarvis/workflows";
 import type { RunEvent } from "@clarvis/protocol";
@@ -1216,68 +1215,6 @@ describe("WorkflowsService", () => {
     expect(detail.sequence?.next_round_id).toBeUndefined();
     expect(detail.sequence?.next_pass).toBeUndefined();
     await kernel.close();
-  });
-
-  it("forwards one external task binding to both workflow manager and leaders", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-task-"));
-    const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-task-global-"));
-    const storeDir = mkdtempSync(join(tmpdir(), "clarvis-wf-task-store-"));
-    const deps = buildDeps(
-      ws,
-      [],
-      [
-        {
-          name: "manager",
-          when: IS_MANAGER,
-          script: [
-            {
-              toolCalls: [
-                {
-                  name: "run_leader",
-                  arguments: { title: "Implement task", prompt: "implement it" },
-                },
-              ],
-            },
-            { toolCalls: [{ name: "await_agents", arguments: {} }] },
-            { text: "manager synthesis" },
-          ],
-        },
-        { name: "leader", when: () => true, script: [{ text: "leader result" }] },
-      ],
-    );
-    const capabilityRegistry = createCapabilityRegistry({ specs: [tasksSettingsSpec] });
-    const runDeps = { ...deps, capabilityRegistry };
-    const baseAssembler = createSettingsRunAssembler(seededConfig());
-    const assembled: Parameters<typeof baseAssembler>[0][] = [];
-    const workflows = createWorkflowsService({
-      deps: runDeps,
-      owner: "kernel-test",
-      workspace: ws,
-      globalConfigDir,
-      assembleRunRequest: (params) => {
-        assembled.push(structuredClone(params));
-        return baseAssembler(params);
-      },
-      store: createWorkflowStore({ dir: storeDir, owner: "kernel-test" }),
-      readSettings: () => ({ max_concurrency: 2, max_total_leaders: 32, budget_tokens: null }),
-      resolveLeaderDefault: () => "leader",
-    });
-    const task = {
-      id: "CLAR-42",
-      provider_key: "tasks:mcp:v1:sha256:test",
-      mode: "work" as const,
-    };
-
-    const result = await workflows.runManagerWorkflow({
-      messages: [{ role: "user", content: "work on the bound task" }],
-      agent: "manager",
-      task,
-    }).done;
-
-    expect(result).toMatchObject({ status: "completed" });
-    expect(assembled).toHaveLength(2);
-    expect(assembled.map((params) => params.task)).toEqual([task, task]);
-    await deps.connections.closeAll();
   });
 
   it.each([false, true])(

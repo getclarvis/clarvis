@@ -102,7 +102,6 @@ function contributionSummary(plugin: PluginView): string {
     [contributions.skills.length, "skills"],
     [contributions.servers.length, "MCP servers"],
     [contributions.hooks, "hooks"],
-    [contributions.capabilityExecutables.length, "services"],
   ] as const;
   return (
     parts
@@ -789,21 +788,6 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
         </For>
         <For each={contributions.servers}>
           {(name) => <text fg={tokens.warn}>{`MCP server ${name}`}</text>}
-        </For>
-        <For each={contributions.capabilityExecutables}>
-          {(service) => (
-            <text
-              fg={tokens.warn}
-              wrapMode="word"
-            >{`service    ${service.capability}: ${[service.command, ...service.args].join(" ")}`}</text>
-          )}
-        </For>
-        <For each={contributions.skillPlanPolicies ?? []}>
-          {(policy) => (
-            <text
-              fg={policy.mode === "review" ? tokens.warn : tokens.muted}
-            >{`policy     /${policy.skill} ${glyph("arrowRight")} plans:${policy.mode}`}</text>
-          )}
         </For>
         <DetailHeading>Security</DetailHeading>
         <text fg={tokens.muted}>{`hooks      ${contributions.hooks} active with this plugin`}</text>

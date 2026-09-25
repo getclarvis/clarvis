@@ -30,7 +30,6 @@ import type {
   SkillsService,
   StartRunParams,
   StorageService,
-  TasksService,
   WorkflowsService,
   WorkspaceService,
   WorkspaceChangesService,
@@ -147,8 +146,6 @@ export interface KernelRunClient {
   readonly extensionProfiles: ExtensionProfileService;
   /** Process-pinned Extension Profile identity used to stamp newly started session turns. */
   currentExtensionProfile(): ExtensionProfileRunRef | undefined;
-  /** Provider-neutral external task control plane. */
-  readonly tasks: TasksService;
   readonly storage: StorageService;
   dispose(): Promise<void>;
 }
@@ -194,7 +191,6 @@ function toStartParams(input: StartRunInput, executionId: string): StartRunParam
     ...(input.sessionId ? { session_id: input.sessionId } : {}),
     ...(input.memory ? { memory: input.memory } : {}),
     ...(input.plans ? { plans: input.plans } : {}),
-    ...(input.task ? { task: input.task } : {}),
     ...(input.skill ? { skill: input.skill } : {}),
     ...(input.goalIntent ? { goal_intent: input.goalIntent } : {}),
     ...(input.intent ? { intent: input.intent } : {}),
@@ -761,20 +757,6 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     delete: (ref, options) => requireKernel().extensionProfiles.delete(ref, options),
     clone: (source, target) => requireKernel().extensionProfiles.clone(source, target),
   };
-  const tasks: TasksService = {
-    status: (options) => requireKernel().tasks.status(options),
-    capabilities: (options) => requireKernel().tasks.capabilities(options),
-    listContainers: (input, options) => requireKernel().tasks.listContainers(input, options),
-    search: (input, options) => requireKernel().tasks.search(input, options),
-    get: (ref, options) => requireKernel().tasks.get(ref, options),
-    searchActors: (input, options) => requireKernel().tasks.searchActors(input, options),
-    create: (input, options) => requireKernel().tasks.create(input, options),
-    assign: (input, options) => requireKernel().tasks.assign(input, options),
-    previewTransition: (input, options) => requireKernel().tasks.previewTransition(input, options),
-    transition: (input, options) => requireKernel().tasks.transition(input, options),
-    comment: (input, options) => requireKernel().tasks.comment(input, options),
-    attachArtifact: (input, options) => requireKernel().tasks.attachArtifact(input, options),
-  };
   const storage: StorageService = {
     inspect: () => requireKernel().storage.inspect(),
     cleanup: (request) => requireKernel().storage.cleanup(request),
@@ -827,7 +809,6 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     plugins,
     extensionProfiles,
     currentExtensionProfile: () => lastExtensionProfile,
-    tasks,
     storage,
     dispose,
   };

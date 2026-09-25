@@ -290,6 +290,14 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
+      "mechanism": "timer",
+      "file": "packages/kernel/tests/integration/plugin-contributions.test.ts",
+      "identity": "timer|describe:plugin contributions/it:observes a physical change to a pinned MCP executable|setTimeout( () => reject(new Error(\"physical watcher did not report drift\")), 5_000, )|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "Timeout is a fuse for the physical fs.watchFile notification; the test awaits the observed drift event."
+    },
+    {
       "mechanism": "subprocess",
       "file": "packages/kernel/tests/integration/plugin-service.test.ts",
       "identity": "subprocess|runGit|spawnSync(\"git\", args, { cwd, encoding: \"utf8\", env: withoutGitRepositoryEnvironment(process.env), })|0",
@@ -616,14 +624,6 @@
       "package_owner": "@clarvis/server",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/tasks/tests/component/capability.test.ts",
-      "identity": "timer|describe:Tasks agent tools/it:serializes writes from agents sharing one run runtime|setTimeout(resolve, 5)|0",
-      "package_owner": "@clarvis/tasks",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
       "mechanism": "subprocess",

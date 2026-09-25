@@ -76,7 +76,6 @@
     "@clarvis/plan": "workspace:*",
     "@clarvis/protocol": "workspace:*",
     "@clarvis/skills": "workspace:*",
-    "@clarvis/tasks": "workspace:*",
     "@clarvis/tools": "workspace:*",
     "@clarvis/trace": "workspace:*",
     "@clarvis/workflows": "workspace:*",

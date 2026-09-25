@@ -355,7 +355,7 @@ ignored.
 `storedToDetail` (`packages/kernel/src/runs/map-result.ts`) builds the detail from a `StoredExecution`:
 `result` from `engineResultToProto`, then usage token totals **overwritten** from the stored row's
 `total_input_tokens`/`total_output_tokens`/`total_cached_tokens`, `plan_ref` from
-`capability_state` (delegated; `packages/kernel/src/runs/plan-ref.ts`), `active_task` likewise (`packages/kernel/src/runs/task-binding.ts`),
+`capability_state` (delegated; `packages/kernel/src/runs/plan-ref.ts`),
 `extension_profile` validated from opaque `host_metadata.extension_profile`, `recovery` forwarded verbatim when
 present, `messages` via `engineMessagesToProto`, and `events` via `rehydrateEvents`. That last step
 maps only recognized events and retains only entries whose mapped protocol type is `persisted` in
@@ -1054,7 +1054,7 @@ type. Production: `rehydrateEvents` in `packages/kernel/src/runs/map-result.ts` 
 | capability event with no `wire` projection | `packages/kernel/src/runs/map-events.ts` | dropped; `reason: "no_wire_projection"` |
 | capability detail too large, cyclic, or with throwing accessors | `packages/kernel/src/runs/map-events.ts` | bounded and truncated, never thrown; unserializable becomes the literal `"[unserializable capability event]"` |
 | rehydration maps an unknown entry or encounters a mapped live-only breadcrumb | `rehydrateEvents` in `packages/kernel/src/runs/map-result.ts` | the entry is omitted from `RunDetail.events`; `runs.rehydrated` reports total/mapped/dropped counts |
-| plan or task slot in `capability_state` malformed | `packages/kernel/src/runs/plan-ref.ts`, `packages/kernel/src/runs/task-binding.ts` (delegated) | field omitted from `RunDetail`, no throw; pinned at `packages/kernel/tests/unit/map-result.test.ts` |
+| plan slot in `capability_state` malformed | `packages/kernel/src/runs/plan-ref.ts` (delegated) | field omitted from `RunDetail`, no throw; pinned at `packages/kernel/tests/unit/map-result.test.ts` |
 | Extension Profile slot in `host_metadata` malformed | `extensionProfileFromHostMetadata` in `packages/kernel/src/runs/map-result.ts` | `extension_profile` omitted from `RunDetail`; other run data still hydrates |
 
 ## 7. Coupling
@@ -1074,7 +1074,7 @@ the loop registry continues to settle only its authoritative live-invocation sta
 | `@clarvis/memory/settings` | `packages/kernel/src/runs/map-events.ts` | `MEMORY_CAPABILITY_NAME` and `MEMORY_INGEST_EVENT` — the one capability with a typed, kernel-validated projection |
 | `@clarvis/workflows` | `packages/kernel/src/runs/map-events.ts` | `isWorkflowPersistedTraceEvent` is the first gate in `engineEventToProto`; the workflows package owns its own trace guard |
 | `@clarvis/plan/settings` | `packages/kernel/src/runs/settings-assembler.ts` | `PLANS_DEFAULTS` for the materialized `mode` and `retention` |
-| `@clarvis/plan`, `@clarvis/tasks/*` | `packages/kernel/src/runs/plan-ref.ts`, `packages/kernel/src/runs/task-binding.ts` | capability-state slot names and schema (delegated documents) |
+| `@clarvis/plan` | `packages/kernel/src/runs/plan-ref.ts` | capability-state slot names and schema (delegated document) |
 | `@clarvis/trace` | `packages/kernel/src/runs/run-service.ts`, `packages/kernel/src/runs/pagination.ts` | runtime `generateExecutionId` plus `MAX_TRACE_LIST_LIMIT`/`MAX_TRACE_LIST_OFFSET`; nothing under `runs/` names the `TraceStore` type — `packages/kernel/src/runs/run-service.ts` takes the store off `deps.traceStore` |
 | kernel-internal | `core/event-stream.ts`, `core/errors.ts`, `core/bounded-json.ts`, `application/lifecycle.ts`, `config/config-store.ts`, `guard/resolver.ts`, `skills/render-skill-prompt.ts` | see the per-file imports cited above |
 
@@ -1168,7 +1168,7 @@ store owns the full schema".
   (`transport/run-event-codec.ts`) go to [hosts/kernel-transport.md](kernel-transport.md); `compaction-queue.ts` to
   [engine/context-compaction.md](../engine/context-compaction.md); `memory-ingest-phase.ts`'s job semantics (as opposed to its use as a
   close-grace predicate) to [capabilities/memory-indexer.md](../capabilities/memory-indexer.md); `plan-ref.ts` to [capabilities/plan-capability.md](../capabilities/plan-capability.md);
-  `task-binding.ts` to [capabilities/tasks-capability.md](../capabilities/tasks-capability.md); `elicit-bridge.ts` to
+  `elicit-bridge.ts` to
   [cross-cutting/elicitation.md](../cross-cutting/elicitation.md); `core/event-stream.ts` itself to
   [hosts/kernel-composition.md](kernel-composition.md) (cited here only where the runs policy plugs into it); the
   workflows manager path to [capabilities/workflows-service.md](../capabilities/workflows-service.md).

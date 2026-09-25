@@ -134,32 +134,7 @@ function executablesOf(name: string, manifest: PluginManifest | undefined): stri
     const spec = s.type === "stdio" ? [s.command, ...(s.args ?? [])].join(" ") : s.url;
     out.push(`$ ${name}:${server}  ${spec}`);
   }
-  for (const [capability, declaration] of Object.entries(manifest?.capabilityExecutables ?? {})) {
-    const override = declaration.platforms?.[process.platform];
-    const argv = [
-      override?.command ?? declaration.command,
-      ...(override?.args ?? declaration.args),
-    ];
-    out.push(`$ ${name}:${capability}  ${argv.join(" ")}`);
-  }
   return out;
-}
-
-/** Capability executable declarations projected for provider selection. */
-function capabilityExecutablesOf(
-  manifest: PluginManifest | undefined,
-): PluginContributions["capability_executables"] {
-  return Object.entries(manifest?.capabilityExecutables ?? {})
-    .map(([capability, declaration]) => {
-      const override = declaration.platforms?.[process.platform];
-      return {
-        capability,
-        command: override?.command ?? declaration.command,
-        args: [...(override?.args ?? declaration.args)],
-        platform_override: override !== undefined,
-      };
-    })
-    .sort((a, b) => a.capability.localeCompare(b.capability));
 }
 
 /**
@@ -282,10 +257,6 @@ function contributionsOf(
       .map((server) => effectivePluginMcpName(name, server))
       .sort(),
     hooks: manifest?.hooks?.length ?? 0,
-    capability_executables: capabilityExecutablesOf(manifest),
-    ...(manifest?.capabilityRunPolicies !== undefined
-      ? { capability_run_policies: manifest.capabilityRunPolicies }
-      : {}),
     executables: executablesOf(name, manifest),
   };
 }

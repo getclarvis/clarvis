@@ -258,7 +258,6 @@ function baseDeps(
       get: async () => null,
       delete: async () => {},
     } as never,
-    tasks: { available: () => false } as never,
     storage: {
       inspect: async () => ({
         generated_at: Date.now(),
@@ -468,7 +467,6 @@ test("Marketplace install atomically activates the plugin and stays active after
       skills: ["context7"],
       servers: ["context7"],
       hooks: 1,
-      capability_executables: [],
       executables: ["npx -y @upstash/context7-mcp"],
     },
   });
@@ -507,7 +505,6 @@ test("Marketplace install atomically activates the plugin and stays active after
               skills: ["context7"],
               mcp_servers: ["context7:context7"],
               hooks: { total: 1 },
-              capability_executables: [],
             },
           ]
         : [],
@@ -974,7 +971,7 @@ test("every top-level command carries a canonical /token (no bare-title rows)", 
 test("non-aliased hub children and folded toggles stay off the slash surface", () => {
   const { commands, dispose } = harness();
   const byName = new Map(commands.entries().map((e) => [e.name, e]));
-  for (const name of ["controls.open", "capability-providers.open", "sandbox.config"]) {
+  for (const name of ["controls.open", "sandbox.config"]) {
     expect([name, byName.get(name)?.slashes]).toEqual([name, []]);
     expect([name, byName.get(name)?.parent]).toEqual([
       name,
@@ -1019,20 +1016,6 @@ test("/settings <child> deep-links to that editor with a mounted parent route", 
   dispose();
 });
 
-test("settings children prefer workspace scope when workspace settings exist", () => {
-  const settings = fakeSettings();
-  settings.read = ((scope: string) =>
-    scope === "workspace" ? { plans: {} } : {}) as SettingsAdapter["read"];
-  const mounted = harness({ settings });
-  expect(mounted.commands.route("settings.open", "capability-providers")).toBe(true);
-  expect(mounted.opened.at(-1)).toEqual({
-    name: "capability-providers.open",
-    scope: "workspace",
-    parent: "settings.open",
-  });
-  mounted.dispose();
-});
-
 const DISPOSITION: [string, { surface: string; group: string; parent?: string }][] = [
   ["agent.picker", { surface: "slash", group: "navigate" }],
   ["isolation.picker", { surface: "internal", group: "navigate" }],
@@ -1048,7 +1031,6 @@ const DISPOSITION: [string, { surface: string; group: string; parent?: string }]
   ["catalog.refresh", { surface: "slash", group: "actions", parent: "inspect" }],
   ["controls.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["providers.open", { surface: "internal", group: "navigate", parent: "settings" }],
-  ["capability-providers.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["agents.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["defaults.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["model.open", { surface: "slash", group: "navigate" }],
@@ -1331,7 +1313,6 @@ const FACTORY_SMOKES = [
   "defaults.open",
   "model.open",
   "effort.open",
-  "capability-providers.open",
   "marketplace.open",
   "memory.config",
   "sandbox.config",

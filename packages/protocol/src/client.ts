@@ -19,7 +19,6 @@ import type { PlansService } from "./plans.ts";
 import type { WorkflowsService } from "./workflows.ts";
 import type { SkillsService } from "./skills.ts";
 import type { SessionService } from "./sessions.ts";
-import type { TasksService } from "./tasks.ts";
 import type { ProviderAuthService } from "./provider-auth.ts";
 import type { StorageService } from "./storage.ts";
 import type { ExtensionProfileService } from "./extension-profiles.ts";
@@ -35,8 +34,6 @@ export interface KernelCapabilities {
   skills: boolean;
   /** Whether agent-tool surfaces are available. */
   agent_tools: boolean;
-  /** Whether this host wires the external Tasks capability/control plane. */
-  tasks: boolean;
   /** True only when this connection has persistent conversation goal controls. */
   goals?: boolean;
   /** Generation of an authenticated local host that owns runs beyond this connection. */
@@ -116,8 +113,6 @@ export interface KernelClient {
   readonly skills: SkillsService;
   /** Conversation/session index over runs. */
   readonly sessions: SessionService;
-  /** Provider-neutral external task control plane. */
-  readonly tasks: TasksService;
   /** Metadata-only local storage inventory and disposable-artifact cleanup. */
   readonly storage: StorageService;
 

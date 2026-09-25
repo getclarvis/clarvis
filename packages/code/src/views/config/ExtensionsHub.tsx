@@ -411,7 +411,6 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
           skills: [],
           mcp_servers: [],
           hooks: { total: 0 },
-          capability_executables: [],
           error: "selected installation is missing",
         },
       });
@@ -1121,9 +1120,6 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     const hooks = plugins
       .filter((plugin) => plugin.hooks.total > 0)
       .map((plugin) => `${pluginId(plugin.ref)} ${plugin.hooks.total} hooks`);
-    const executables = plugins.flatMap((plugin) =>
-      plugin.capability_executables.map((capability) => `${plugin.ref.name}:${capability}`),
-    );
     return (
       <>
         <text fg={tokens.accent2} flexShrink={0} wrapMode="word">
@@ -1142,7 +1138,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
             <text fg={extensionProfile.status === "ready" ? tokens.add : tokens.warn}>
               {`${tone(extensionProfile.status === "ready" ? "ok" : "warn").glyph} ${extensionProfile.status} ${glyph("separator")} ${summary(extensionProfile)}`}
             </text>
-            <Show when={mcp.length + hooks.length + executables.length > 0}>
+            <Show when={mcp.length + hooks.length > 0}>
               <text fg={tokens.warn} wrapMode="word" paddingTop={1}>
                 {`${glyph("warning")} This draft carries executable capabilities. Selecting each plugin approves its complete contribution.`}
               </text>
@@ -1156,7 +1152,6 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
             {valueSection("Standalone skills", standalone)}
             {valueSection("MCP servers", mcp, tokens.warn)}
             {valueSection("Hooks", hooks, tokens.warn)}
-            {valueSection("Capability executables", executables, tokens.warn)}
             <Show when={extensionProfile.issues.length > 0}>
               <SectionHeader label={`Issues (${extensionProfile.issues.length})`} />
               <For each={extensionProfile.issues}>

@@ -108,10 +108,6 @@ Coordinate work carefully, preserve unrelated changes, and report validation evi
         "max_completion_reviews_per_attempt": 1}
     }
   },
-  "tasks": {
-    "provider": {"kind": "mcp", "server": "tasks", "protocol": "clarvis.tasks.v2"},
-    "writes": "disabled"
-  },
   "workflows": {"max_concurrency": 2, "max_total_leaders": 8, "budget_tokens": 100000},
   "agents": {"max_live_children": 8}
 }`,

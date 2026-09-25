@@ -74,7 +74,6 @@ import {
 import type { SessionId, SessionMeta } from "../adapters/session-store.ts";
 import type { PromptHistory } from "../core/prompt-history.ts";
 import type { McpStartupNotice, RunHost } from "../run-host.ts";
-import type { TasksController } from "../features/tasks/controller.ts";
 import type { SessionCatalogItem } from "./config/SessionsHub.tsx";
 import { createInteraction, type InteractionEffects } from "../keys/interaction.ts";
 import { commandKeyLabel, LAYER } from "../keys/keyspec.ts";
@@ -331,7 +330,6 @@ export interface AppBackend {
   plugins: PluginService;
   extensionProfiles: ExtensionProfileService;
   skills: SkillsService;
-  tasks: TasksController;
   storage: StorageService;
   /** Host-reported execution placement and effective isolation policy. */
   runtime?: () => RuntimeStatus | undefined;
@@ -1066,9 +1064,7 @@ export function App(props: AppProps): JSX.Element {
     plugins: props.backend.plugins,
     extensionProfiles: props.backend.extensionProfiles,
     skills: props.backend.skills,
-    tasks: props.backend.tasks,
     storage: props.backend.storage,
-    taskWorkBlockedReason: pressureBlockedReason,
     onSubmitPrompt: (messages, display, skill) => {
       submitFromLeadTail(() => props.run.submitPrompt(messages, display, skill));
     },

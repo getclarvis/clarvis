@@ -320,7 +320,7 @@ The onboarding and configuration views can configure providers and secrets, sele
 memory, inspect MCP tool servers, and manage extensions. `/extensions` is the only public extension
 route. It uses the same guided decision pattern as first boot: choose workspace/global selection
 scope, choose or stage an Extension Profile, search exact plugin and standalone-skill inventory, review
-every resulting agent/skill/MCP/hook/executable contribution, then apply one preview-bound delta and
+every resulting agent/skill/MCP/hook contribution, then apply one preview-bound delta and
 reconnect. Each decision exposes one key per outcome: Enter advances or applies and Escape finishes
 the multi-select or walks back, asking before an edited draft is discarded. Install, exact
 resolution and Apply use the shared footer-right spinner, show elapsed time, advance through their
@@ -331,9 +331,7 @@ continue. Large catalogs use bounded retained rows, review bodies scroll indepen
 decisions, and the optional splash disappears on compact terminals. Internal Extension Profiles, Plugins
 and MCP children remain available through that home's footer and return to it with Escape. The home
 body omits the step preview and duplicate child-shortcut legend; they are not nested
-slash commands. `/tasks` remains a standalone workspace surface.
-Capability services display their effective argv and packaged per-skill Plans policy in the
-plugin/provider panels, and start only when selected.
+slash commands.
 
 The Plugins browser uses the shared bounded detail layout and section styles. Its root shows
 compact counts and collections; the footer owns search/open hints, and detail pages retain
@@ -979,25 +977,6 @@ Transcript exports pass the raw owner id to `@clarvis/paths`; the export
 directory builder encodes it at the path boundary, so an owner id cannot select
 a directory outside the global `exports/` tree.
 
-### Tasks
-
-`/tasks` opens the provider-backed Tasks hub. It offers a normalized-stage board and list, current
-provider health, container/search filters, task detail, explicit supported mutations and a manual
-refresh. Native state, assignee and an active Clarvis claim remain separate; `concurrency: none` is
-shown as `claim not enforced`. A provider failure, conflict or unknown mutation outcome is never
-rendered as an empty board.
-
-`Work on task` opens the ordinary Agent Profile picker and starts a run in the current workspace with
-only the external task ID and provider key. It never follows a task URL, changes worktree, or accepts
-a repository/path from provider data. Returning from a run refreshes from the external source of
-truth. Opening a task in work mode does not itself mutate the backend: the agent must call
-`start_task` explicitly when that tool is available.
-
-The provider setup remains separate from plugin installation and enablement. Settings select one
-effective namespaced MCP server, fixed protocol `clarvis.tasks.v2`, optional default container and
-writes policy; the test action probes capabilities only. `@clarvis/code` uses `KernelClient.tasks`
-and never imports `@clarvis/tasks` or a Jira/Trello SDK.
-
 ## Main features
 
 - One Lead-only main transcript plus one explicitly selected, isolated sub-agent transcript. Each
@@ -1475,7 +1454,7 @@ withheld until reconnect and Code shows `Skill '<name>' changed on disk and was 
 until reconnect` as a transient warning. The user message and the next run continue normally, and
 the notice is never written into transcript history. A selected plugin whose captured executable
 files drift receives the parallel `Plugin '<name>' changed executable files` warning while its
-runtime MCP/hook/capability projections are withheld.
+runtime MCP/hook projections are withheld.
 
 The workspace header reports effective Isolation. Settings >
 Run controls owns the persisted global Host or Sandbox choice alongside the `Ctrl+X I` quick picker.

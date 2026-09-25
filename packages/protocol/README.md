@@ -103,19 +103,18 @@ services:
 | `runs`              | Start, stream, steer, compact live or settled context, inspect and delete runs.        |
 | `config`            | Settings, agent documents and context documents.                                       |
 | `extensionProfiles` | Exact inventory, definition, composition preview and selection of active extensions.   |
-| `plugins`           | Installed plugins, atomic contributions, capability services and lifecycle operations. |
+| `plugins`           | Installed plugins, atomic contributions and lifecycle operations.                      |
 | `secrets`           | Server-side provider secret names and writes.                                          |
 | `models`            | Model metadata and pricing catalog.                                                    |
 | `providerAuth`      | Token-free local subscription status, device login and disconnect control.             |
 | `files`             | Read-only workspace file and image access.                                             |
 | `changes`           | Read-only workspace change inventory and unified patch detail.                         |
 | `memory`            | Owner-facing execution-memory review and curation.                                     |
-| `plans`             | History from the workspace's selected plan provider.                                   |
+| `plans`             | History from the built-in Markdown plan store.                                         |
 | `workflows`         | Agentic workflows: a manager run fanning out leaders.                                  |
 | `skills`            | Skill listing and prompt rendering.                                                    |
 | `sessions`          | Workspace-scoped conversation/session records.                                         |
 | `goals`             | Availability, durable goal state, authenticated controls and operation receipts.       |
-| `tasks`             | Provider-neutral external task discovery, mutation and transition previews.            |
 | `storage`           | Metadata-only local inventory and confirmed cleanup of disposable artifacts.           |
 
 `ModelCatalog.source` can be `cache`, `bundle`, or `projection`. The last denotes immutable logical
@@ -324,9 +323,6 @@ operation from replay because start signals are intentionally absent there.
 - Secret values may be sent to the kernel but are never returned by list calls.
 - Workspace paths are server-side concerns for remote kernels.
 - Plan refs identify their backend through `provider_key`; `path` is display-only and optional.
-- Task refs identify their backend through `provider_key`; they never carry a repository or path.
-- Task mutation DTOs carry a caller request ID, while the authenticated kernel derives owner,
-  actor, execution identity and the provider idempotency key.
 - Optional features are announced through `KernelCapabilities`.
 
 ## Runtime projection

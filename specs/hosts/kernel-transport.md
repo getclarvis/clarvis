@@ -214,8 +214,8 @@ whole DTO vocabulary each method carries belongs to **protocol-kernel-contract**
 
 Ordinary operations' individual `access`/`sensitivity` pairing is declared by
 `OPERATIONS` in `packages/kernel/src/transport/operations.ts`.
-Six service groups carry a `sensitivity` tag on every operation (`plugins`, `extensionProfiles`,
-`secrets`, `providerAuth`, `files`, `tasks`). Extension Profiles deliberately shares the `plugins`
+Five service groups carry a `sensitivity` tag on every operation (`plugins`, `extensionProfiles`,
+`secrets`, `providerAuth`, `files`). Extension Profiles deliberately shares the `plugins`
 sensitivity because selecting or editing one changes the active executable extension set. Models uses `provider_auth` only for its two entitled-catalog
 operations; `hosting`, `runs`, `config`, `memory`, `plans`, `workflows`, `skills`,
 `sessions` and `storage` carry access metadata without a sensitivity tag:
@@ -292,18 +292,6 @@ operations; `hosting`, `runs`, `config`, `memory`, `plans`, `workflows`, `skills
 | sessions | `sessions.delete` | write | — |
 | storage | `storage.inspect` | read | — |
 | storage | `storage.cleanup` | write | — |
-| tasks | `tasks.status` | read | `tasks` |
-| tasks | `tasks.capabilities` | read | `tasks` |
-| tasks | `tasks.listContainers` | read | `tasks` |
-| tasks | `tasks.search` | read | `tasks` |
-| tasks | `tasks.get` | read | `tasks` |
-| tasks | `tasks.searchActors` | read | `tasks` |
-| tasks | `tasks.create` | write | `tasks` |
-| tasks | `tasks.assign` | write | `tasks` |
-| tasks | `tasks.previewTransition` | read | `tasks` |
-| tasks | `tasks.transition` | write | `tasks` |
-| tasks | `tasks.comment` | write | `tasks` |
-| tasks | `tasks.attachArtifact` | write | `tasks` |
 
 ### 2.4 Notifications
 
@@ -1105,19 +1093,6 @@ descriptor as the NDJSON wire.
 Production: `refuseLoggerOnWire` `packages/kernel/src/serve.ts`, called first at `packages/kernel/src/serve.ts`.
 Test: `packages/kernel/tests/integration/serve.test.ts` — `describe("serveFileKernelOverStdio refuses a logger
 bound to its own wire", …)`. The composition around it belongs to the kernel-bootstrap document.
-
-**INV-T21.** A Tasks operation's client-supplied `AbortSignal` is extracted by the operation's own
-`requestOptions`, not by widening the parameter envelope: `taskRequestOptions` turns a caller's
-`{ signal }` into the transport `request`'s third argument, wired on every operation under
-`OPERATIONS.tasks` in `packages/kernel/src/transport/operations.ts`.
-This is distinct from INV-218's mechanism, under which `sessions.listPage`/`workflows.list` thread a
-signal into `invoke` server-side with no client-side `requestOptions` involved at all. Opaque
-cursor/id fields inside a Tasks operation's `input` (e.g. `next_cursor`) pass through the wire
-unmodified.
-Production: `taskRequestOptions` in `packages/kernel/src/transport/operations.ts`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts` — `tasks.create`'s `request_id`/
-`provider_key` round-trip byte-for-byte, and `tasks.search` both preserves an opaque `next_cursor`
-and forwards a caller's `AbortSignal` as `options: { signal }` on the wire request.
 
 **INV-T22.** Every Extension Profile service method is an ordinary operation and is classified with
 `sensitivity: "plugins"`; observation methods are reads, while selection and definition mutations

@@ -1,5 +1,4 @@
 import type {
-  ActiveTaskBindingDto,
   ExtensionProfileRunRef,
   Message,
   MessageContent,
@@ -423,8 +422,6 @@ interface DegradedTurn {
 export interface ResumedSession {
   messages: Message[];
   degraded: DegradedTurn[];
-  /** Most recent persisted task binding, used if continuation falls back to full history. */
-  activeTask?: ActiveTaskBindingDto;
   /**
    * How many turns rendered as collapsed placeholders because they fell outside
    * the render window.
@@ -594,7 +591,6 @@ export async function resumeSession(
 
   const projected = new Map<number, ResumedRunProjection | null>();
   const visited = new Set<number>();
-  let newestActiveTask: { index: number; binding: ActiveTaskBindingDto } | undefined;
   let historyPayloadChars = 0;
   let historyMessages = 0;
   let resetIdx = 0;
@@ -640,12 +636,6 @@ export async function resumeSession(
         projected.set(index, null);
         continue;
       }
-      if (
-        turn?.kind === "conversation" &&
-        detail.active_task !== undefined &&
-        (newestActiveTask === undefined || index > newestActiveTask.index)
-      )
-        newestActiveTask = { index, binding: detail.active_task };
       const messages = detail.messages;
       const keepHistory = turn?.kind === "conversation" && retainHistory && !foundReset;
       const assistant = keepHistory
@@ -743,12 +733,10 @@ export async function resumeSession(
     }
   }
 
-  const activeTask = newestActiveTask?.binding;
   return {
     messages: rehydrated,
     degraded,
     collapsed: collapsedCount,
-    ...(activeTask === undefined ? {} : { activeTask }),
   };
 }
 

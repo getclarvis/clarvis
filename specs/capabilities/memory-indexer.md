@@ -548,12 +548,6 @@ The refusal handler matches every wire name outside
 (`packages/memory/src/capability.ts`). It refuses at **dispatch**, never by withholding a tool from the
 advertised array (`packages/memory/src/capability.ts`).
 
-For an external provider, writes are wrapped so the queue fence spans the remote call: the wrapper
-takes `store.exclusive`, checks `fence.before`, executes, checks `fence.after`, and returns
-`LOST_INDEX_CLAIM` as an error result if either check fails (`packages/memory/src/indexer/capability.ts`). The test
-pins the exact call order `["fence:before", "provider:write_memory", "fence:after"]`
-(`packages/memory/tests/component/indexing-pass-capability.test.ts`).
-
 ### 4.9 Pyramid closure
 
 `pyramidIssue(touched)` (`packages/memory/src/indexer/pyramid.ts`):

@@ -1216,7 +1216,7 @@ break" the lazy-entry walk (`packages/llm/src/openai-compatible-request.ts`).
 | `@clarvis/loop` | runtime, static, hard dependency | `packages/loop/package.json` (`workspace:*`), and the value imports at `packages/loop/src/runtime/build-run-deps.ts` and `packages/loop/src/runtime/execute-run.ts` |
 
 That is the only `@clarvis/*` package importing it. `packages/capability/src/env-interpolate.ts`,
-`packages/capability/src/env-ref.ts`, `packages/tasks/src/trace.ts` and
+`packages/capability/src/env-ref.ts` and
 `packages/code/src/adapters/stream-metrics.ts` mention `@clarvis/llm` only inside TSDoc prose —
 no import. `@clarvis/code` carries its **own** copy of the stream-metrics sink;
 `packages/llm/src/stream-metrics.ts` records that "the packages do not share a dependency edge,

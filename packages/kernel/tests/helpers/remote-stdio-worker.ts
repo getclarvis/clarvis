@@ -11,7 +11,7 @@ const host = await serveRemoteFileKernelOverStdio({
     subscriptions: false,
     logger: NOOP_LOGGER,
     env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_AGENT_TOOLS_ENABLED: "0" }),
-    builtins: { tools: false, hooks: false, tasks: false },
+    builtins: { tools: false, hooks: false },
   },
 });
 await host.closed;

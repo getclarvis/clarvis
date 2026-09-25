@@ -306,7 +306,7 @@ capability touches its own module and this one file" contract stated in the modu
 comment (`packages/loop/src/runtime/capabilities/settings-specs.ts`).
 
 `settingsSchemaFor(registry?)` (`packages/loop/src/settings/capability-settings.ts`) is how a **host-registered**
-spec (memory/plan/workflows/tasks — delegated to [kernel-config-and-agents](../hosts/kernel-config.md)) is admitted
+spec (memory/plan/workflows — delegated to [kernel-config-and-agents](../hosts/kernel-config.md)) is admitted
 into the schema **without the engine's built-in set changing**: it `.extend()`s `settingsSchema`
 with one optional key per registered spec, throwing if a registered `key` collides with a built-in
 block (`packages/loop/src/settings/capability-settings.ts`) or if it declares unsupported plugin

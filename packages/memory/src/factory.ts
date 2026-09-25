@@ -9,22 +9,12 @@ import type { Memory } from "./memory-contract.ts";
 import { createIndexWorker, type MemoryIndexWorker } from "./worker.ts";
 
 import { parseModelRef, sanitizeErrorMessage } from "@clarvis/capability";
-import type {
-  CapabilityExecutablePort,
-  LLMProvider,
-  ProviderKind,
-  ModelExecutionResolver,
-} from "@clarvis/capability";
+import type { LLMProvider, ProviderKind, ModelExecutionResolver } from "@clarvis/capability";
 import type { ExecuteRunArgs, ExecuteRunDeps, ExecuteRunOutcome } from "@clarvis/loop";
 import type { Logger } from "@clarvis/capability";
 import type { ProviderConfig } from "@clarvis/capability";
 import { translateDrainSettlement, type MemoryIngestListener } from "./ingest.ts";
-import {
-  resolveMemoryProvider,
-  type MemoryPluginPort,
-  type ProviderResolution,
-} from "./provider-registry.ts";
-import type { MemoryServerPortResolver } from "./mcp-provider.ts";
+import { resolveMemoryProvider, type ProviderResolution } from "./provider-registry.ts";
 import { DEFAULT_BUDGETS } from "./config.ts";
 
 /** How the host's settings map into the factory: the parsed `memory:` block
@@ -107,25 +97,6 @@ export interface CreateMemoryFactoryOptions {
    * application rewrite another's facts and be seeded with them.
    */
   storeFor?: (owner: string) => MemoryStore;
-  /**
-   * The host's tool-server seam, handed to an `mcp` memory provider.
-   *
-   * @remarks Optional: a host with no tool servers simply reports an `mcp`
-   * declaration unavailable, which is the posture everywhere else — report,
-   * never substitute. Declared as the narrow {@link MemoryServerPort} so this
-   * package never acquires a dependency on the MCP client. The resolver binds
-   * each provider to its owner before any model-facing tool is constructed.
-   */
-  serverPort?: MemoryServerPortResolver;
-  /**
-   * How a plugin-offered memory provider is located, when the host has plugins.
-   *
-   * @remarks Declared structurally, like {@link serverPort}: this package knows
-   * nothing about plugin installation, trust or marketplaces.
-   */
-  pluginPort?: MemoryPluginPort;
-  /** Kernel-owned persistent executable sessions. */
-  executablePort?: CapabilityExecutablePort;
 }
 
 /** A per-process factory that hands back cached, settings-aware memory instances. */
@@ -470,18 +441,9 @@ export function createMemoryFactory(opts: CreateMemoryFactoryOptions): MemoryFac
   async function resolveProviderFor(owner: string): Promise<ProviderResolution | undefined> {
     const settings = providerConfig();
     if (settings === undefined) return undefined;
-    const declared = settings.config.config.provider;
-    const wiki =
-      declared === undefined || declared.kind === "wiki" ? resolve(owner, false) : undefined;
-    return resolveMemoryProvider(declared, {
-      workspaceRoot: opts.workspaceRoot,
-      ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
-      ...(wiki !== undefined ? { wiki } : {}),
+    return resolveMemoryProvider(settings.config.config.provider, {
+      wiki: resolve(owner, false),
       seedMaxChars: settings.config.config.budgets?.seed_chars ?? DEFAULT_BUDGETS.seed_chars,
-      ...(opts.serverPort !== undefined ? { serverPort: opts.serverPort.forOwner(owner) } : {}),
-      ...(opts.pluginPort !== undefined ? { pluginPort: opts.pluginPort } : {}),
-      ...(opts.executablePort !== undefined ? { executablePort: opts.executablePort } : {}),
-      owner,
     });
   }
 

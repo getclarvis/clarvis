@@ -188,7 +188,6 @@ describe("PluginService", () => {
       skills: ["demo-review"],
       servers: ["demo:git"],
       hooks: 1,
-      capability_executables: [],
       executables: ["$ x", "$ demo:git  git-mcp"],
     });
   });
@@ -220,31 +219,6 @@ describe("PluginService", () => {
       "epsilon",
       "gamma",
       "zeta",
-    ]);
-  });
-
-  it("projects every capability executable in sorted capability order", async () => {
-    writePlugin(workspace, "services", {
-      name: "services",
-      capabilityExecutables: {
-        plans: { command: "python3", args: ["server.py", "plans"] },
-        memory: { command: "python3", args: ["server.py", "memory"] },
-      },
-    });
-    const [view] = await svc().list();
-    expect(view!.contributions.capability_executables).toEqual([
-      {
-        capability: "memory",
-        command: "python3",
-        args: ["server.py", "memory"],
-        platform_override: false,
-      },
-      {
-        capability: "plans",
-        command: "python3",
-        args: ["server.py", "plans"],
-        platform_override: false,
-      },
     ]);
   });
 

@@ -1,6 +1,5 @@
 import type {
   ConfigService,
-  CreateTaskDto,
   ExtensionProfileService,
   KernelCapabilities,
   KernelClient,
@@ -22,7 +21,6 @@ import type {
   SkillsService,
   StartRunParams,
   StorageService,
-  TasksService,
   WorkspaceRef,
   WorkspaceService,
   WorkspaceChangesService,
@@ -35,7 +33,6 @@ const capabilities = {
   memory: true,
   skills: true,
   agent_tools: true,
-  tasks: true,
 } satisfies KernelCapabilities;
 
 const unknownCacheSessionTotals = {
@@ -56,7 +53,6 @@ const startParams = {
   execution_id: "run-1",
   messages: [{ role: "user", content: "Inspect the workspace" }],
   plans: "review",
-  task: { id: "CLAR-42", provider_key: "tasks:mcp:v1:sha256:fixture", mode: "work" },
   output_schema: { type: "object" },
 } satisfies StartRunParams;
 
@@ -88,13 +84,6 @@ const repairPlan = {
   action: "strip",
   dropped: ["providers.invalid"],
 } satisfies SettingsRepairPlan;
-
-const createTask = {
-  request_id: "create-stable",
-  provider_key: "tasks:mcp:v2:sha256:provider-a",
-  container_id: "CLAR",
-  title: "Pinned create",
-} satisfies CreateTaskDto;
 
 const runDetail = {
   execution_id: "run-1",
@@ -231,7 +220,6 @@ declare const plans: PlansService;
 declare const workflows: WorkflowsService;
 declare const skills: SkillsService;
 declare const sessions: SessionService;
-declare const tasks: TasksService;
 declare const storage: StorageService;
 declare const goals: KernelClient["goals"];
 
@@ -253,7 +241,6 @@ const client = {
   workflows,
   skills,
   sessions,
-  tasks,
   storage,
   goals,
   async close() {},
@@ -261,7 +248,6 @@ const client = {
 
 void client;
 void repairPlan;
-void createTask;
 void transport;
 void unknownCacheSessionTotals;
 void workflowDetail;

@@ -9,20 +9,8 @@ import {
   loadMemoryPolicy,
   MEMORY_CAPABILITY_NAME,
   type MemoryFactorySettings,
-  type MemoryPluginPort,
 } from "@clarvis/memory/capability";
-import { createMemoryServerPort } from "./memory/memory-server-port.ts";
-import { createTasksCapability } from "@clarvis/tasks/capability";
-import { createTaskServerPort } from "./tasks/task-server-port.ts";
-import { TaskProviderFactory } from "./tasks/task-provider-factory.ts";
-import { effectiveMcpServers } from "./mcp/effective-servers.ts";
-import { createCapabilityExecutableSessionManager } from "./capability-executables/session-manager.ts";
-import {
-  PLANS_CAPABILITY_NAME,
-  type PlanPluginPort,
-  type PlanProviderConfig,
-  type PlanStore,
-} from "@clarvis/plan";
+import type { PlanProviderConfig, PlanStore } from "@clarvis/plan";
 import type { ExtensionProfilePluginRef, RunEvent, RuntimeStatus } from "@clarvis/protocol";
 import {
   hooksEffective,
@@ -49,7 +37,6 @@ import {
   type PluginContributions,
 } from "./plugins/plugin-contributions.ts";
 import { createFileSecretStore } from "./secrets/secret-store.ts";
-import type { SettingsAssemblerOptions } from "./runs/settings-assembler.ts";
 /**
  * The trust verdict for what this workspace's own `.clarvis/` declares.
  *
@@ -165,7 +152,6 @@ export interface CreateFileKernelOptions {
     tools?: boolean;
     skills?: boolean;
     hooks?: boolean;
-    tasks?: boolean;
   };
   /** Reports an extension contribution withdrawn by asynchronous drift monitoring. */
   onExtensionProfileDrift?: (notice: ExtensionProfileDriftNotice) => void;
@@ -427,11 +413,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     secretStore.read().values,
     opts.keySources ?? {},
   );
-  const capabilityExecutables = createCapabilityExecutableSessionManager({
-    environment: environment.values,
-    logger,
-  });
-
   /**
    * Every environment variable name this host manages as a credential.
    *
@@ -628,23 +609,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   const pluginSkillBootstraps = (): PluginBootstrapSkill[] =>
     pluginContributions.skillBootstraps(activePluginRefs());
 
-  /**
-   * Bind a packaged skill's Plans override to the plugin the operator selected
-   * as the Plans provider. A workspace skill with the same name has source
-   * `clarvis`, not `plugin:<name>`, and therefore cannot inherit this authority.
-   */
-  const skillPlansMode: NonNullable<SettingsAssemblerOptions["skillPlansMode"]> = (skill) => {
-    const merged = configStore.readSettings().merged as Record<string, unknown>;
-    const plans = merged.plans;
-    if (typeof plans !== "object" || plans === null) return undefined;
-    const provider = (plans as { provider?: unknown }).provider;
-    if (typeof provider !== "object" || provider === null) return undefined;
-    const selected = provider as { kind?: unknown; plugin?: unknown };
-    if (selected.kind !== "plugin" || typeof selected.plugin !== "string") return undefined;
-    if (skill.source !== `plugin:${selected.plugin}`) return undefined;
-    return pluginContributions.skillPlansMode(activePluginRefs(), selected.plugin, skill.name);
-  };
-
   /** Provider selection is operator configuration and is re-read per resolution. */
   const loadPlanProvider = (): PlanProviderConfig | undefined => {
     const merged = configStore.readSettings().merged as Record<string, unknown>;
@@ -655,16 +619,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   };
 
   /** Trusted location of the plans module independently selected by settings. */
-  const planPluginPort: PlanPluginPort = {
-    locate: (plugin) =>
-      pluginContributions.locateCapabilityExecutable(
-        activePluginRefs(),
-        PLANS_CAPABILITY_NAME,
-        plugin,
-      ),
-  };
-
-  const tasksEnabled = opts.builtins?.tasks !== false;
   const hooksEnabled = hooksEffective(opts.builtins?.hooks, env.CLARVIS_HOOKS_ENABLED, loadHooks);
   reportCapability(
     logger,
@@ -705,8 +659,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       env,
       logger: componentLogger("plan"),
       loadProvider: loadPlanProvider,
-      pluginPort: planPluginPort,
-      executablePort: capabilityExecutables,
       ...(opts.planStoreFor !== undefined ? { storeFor: opts.planStoreFor } : {}),
     },
     loop: {
@@ -748,32 +700,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
         : {}),
     },
     compose(built) {
-      const memoryPluginPort: MemoryPluginPort = {
-        locate: (plugin) =>
-          pluginContributions.locateCapabilityExecutable(
-            activePluginRefs(),
-            MEMORY_CAPABILITY_NAME,
-            plugin,
-          ),
-      };
-
-      const memoryServerPort = createMemoryServerPort({
-        servers: () => effectiveMcpServers(configStore),
-        connections: built.deps.connections,
-      });
-      const taskServerPort = createTaskServerPort({
-        connections: built.deps.connections,
-      });
-      reportCapability(logger, "plans", true, loadPlanProvider()?.kind ?? "markdown");
-      const tasksLogger = componentLogger("tasks");
-      const taskProviderFactory = new TaskProviderFactory({
-        configStore,
-        serverPort: taskServerPort,
-        pluginContributions,
-        environment: environment.values,
-        enabled: tasksEnabled,
-        logger: tasksLogger,
-      });
+      reportCapability(logger, "plans", true, "markdown");
 
       extensionProfileManager.onSkillRootsChanged(() => opts.onSkillsChanged?.());
       return {
@@ -791,9 +718,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
                     workspace: workspacePaths(opts.workspaceRoot).memoryPolicyFile,
                   }),
                 ...(opts.memoryStoreFor !== undefined ? { storeFor: opts.memoryStoreFor } : {}),
-                serverPort: memoryServerPort,
-                pluginPort: memoryPluginPort,
-                executablePort: capabilityExecutables,
               },
             }
           : {}),
@@ -808,11 +732,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
             ...(base.capabilities ?? []).filter(
               (capability) => capability.name === MEMORY_CAPABILITY_NAME,
             ),
-            createTasksCapability({
-              resolver: taskProviderFactory,
-              enabled: tasksEnabled,
-              logger: tasksLogger,
-            }),
           ],
         }),
 
@@ -822,12 +741,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
             MEMORY_CAPABILITY_NAME,
             memoryFactory !== undefined,
             opts.memory === true ? "host_enabled" : "host_disabled",
-          );
-          reportCapability(
-            logger,
-            "tasks",
-            tasksEnabled,
-            tasksEnabled ? "host_default" : "host_disabled",
           );
           const nativeExecuteRun: RunExecutor =
             opts.executeRun ?? (async (args) => (await import("@clarvis/loop")).executeRun(args));
@@ -846,7 +759,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
               defaultIterationLimit: env.CLARVIS_DEFAULT_ITERATION_LIMIT,
               fallbackTokenLimit: env.CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT,
               fallbackOnExceed: env.CLARVIS_DEFAULT_ON_EXCEED,
-              skillPlansMode,
               pluginMcpServerNames: () =>
                 pluginContributions
                   .mcpServers(activePluginRefs())
@@ -869,8 +781,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
             ...(opts.eventBuffer !== undefined ? { eventBuffer: opts.eventBuffer } : {}),
             ownershipMode,
             environment: environment.values,
-            taskProviderFactory,
-            tasksEnabled,
             acquireSkillCatalogLease: acquireExtensionProfileRunLease,
             executeRun: nativeExecuteRun,
             capabilities: {
@@ -880,11 +790,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
               systemDocs?.close();
               extensionProfileManager.close();
               pluginContributions.close();
-              try {
-                await capabilityExecutables.close();
-              } finally {
-                await subscriptionManager?.close();
-              }
+              await subscriptionManager?.close();
             },
           };
         },
@@ -894,7 +800,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     systemDocs?.close();
     extensionProfileManager.close();
     pluginContributions.close();
-    await Promise.allSettled([capabilityExecutables.close(), subscriptionManager?.close()]);
+    await subscriptionManager?.close();
     throw error;
   });
   const kernel = native.kernel;

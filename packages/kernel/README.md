@@ -10,7 +10,7 @@ adapter is Git and never writes to the repository.
 
 Workspace dependencies: `@clarvis/protocol` (the contract it implements), `@clarvis/loop` (the engine),
 `@clarvis/capability`, `@clarvis/goal`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
-`@clarvis/tools`, `@clarvis/trace`, `@clarvis/tasks` and `@clarvis/workflows`. It injects
+`@clarvis/tools`, `@clarvis/trace` and `@clarvis/workflows`. It injects
 host-owned capabilities into runs, so the engine never imports those product layers.
 Clients remain independent of the engine through seven deliberately bounded public entrypoints. Each
 public symbol has one thematic owner; the root is not a compatibility barrel for lower packages.
@@ -411,20 +411,11 @@ kernel cache, worktree registry, switching transaction, or occupancy lease.
 Completed hosted projections unlink their files/segments and prune only an empty generation directory; sibling
 projections keep that directory alive and cleanup never treats a directory as a regular file.
 
-As part of that bootstrap, the kernel constructs one provider-aware planning runtime. The plans
-capability and owner-scoped `PlansService` resolve through the exact same `PlanFactory`. Markdown is
-the default and uses `planStoreFor`; operator settings may instead select a direct language-neutral
-executable or an enabled plugin offering `capabilityExecutables.plans`.
+As part of that bootstrap, the kernel constructs one planning runtime. The plans capability and
+owner-scoped `PlansService` resolve through the exact same `PlanFactory`. It uses the built-in
+Markdown store from `planStoreFor`.
 The service projects controlled plan fields and preserved extra sections into `PlanDocumentDto`,
 alongside canonical Markdown, so clients do not reparse provider storage.
-
-The Tasks composition follows the same single-runtime rule. One `TaskProviderFactory` resolves both
-the run capability and owner-scoped `TasksService`, qualifies plugin MCP servers once, enforces
-workspace trust, and binds every MCP lease to the authenticated owner. The external provider stays
-authoritative; the kernel persists only the task/provider binding in run capability state. Tasks
-protocol v2 also pins a remote `provider_instance_id`, invalidates private caches when referenced
-secrets rotate, and shares one bounded/single-flight capability probe path between runs and the
-control plane.
 
 ```ts
 import { createFileKernel } from "@clarvis/kernel/bootstrap";
@@ -495,7 +486,7 @@ separate workspace-trust approval for the skill file alone. If any
 packaged skill in a plugin cannot be captured within its bounds, that plugin's entire skill-root
 surface is withheld while its independently valid non-skill contributions remain.
 `PluginContributions.observeRuntimeFiles` applies the same asynchronous latch to captured
-package-local MCP, hook, and capability executable files. An explicitly local executable declaration
+package-local MCP and hook executable files. An explicitly local executable declaration
 must resolve to a confined regular file at pin time; symlinks are monitored by their declaration path,
 and later replacement withdraws the executable projections without a run-admission rehash.
 Workspace-trust transitions recompose the extension snapshot and atomically replace the loop's exact
@@ -597,15 +588,7 @@ modes outside that bounded cleanup. Production: `createStorageService` in
 bootstrap also sweeps inactive workspace spill/run scratch state and repairs recognized spill modes
 to `0600` on POSIX.
 
-The kernel owns the persistent subprocess pool for capability executables. It resolves direct
-argv from workspace settings or selected declarations from installed plugins, initializes JSON-RPC
-sessions lazily, multiplexes calls, and closes every child with the kernel lifecycle. Services run
-outside the Clarvis process and may be written in any language; see
-[`specs/capabilities/provider-executables.md`](../../specs/capabilities/provider-executables.md).
-
-Packaged capability services are authorized by installation, Extension Profile selection and provider
-selection. A selected plugin is one atomic extension unit: its agents, skills, MCP servers, hook
-declarations and capability executables become eligible together. Installing from Code's focused
+Installing from Code's focused
 Marketplace is the explicit consent action, so a globally installed plugin needs no additional
 workspace approval when a workspace Extension Profile selects it. Workspace trust remains a separate
 exact-snapshot gate for the complete inventory of executable plugin content inherited from
@@ -681,11 +664,6 @@ capped by `MAX_SKILL_RESOURCE_FILE_BYTES` at 8 MiB per resource and
 `MAX_SKILL_RESOURCE_SNAPSHOT_BYTES` at 32 MiB aggregate. The aggregate is per plugin for packaged
 skills (`PLUGIN_SKILL_RESOURCE_LIMITS`) and per skill for standalone Extension Profile inventory
 (`standaloneCatalog`).
-
-Plugins may also package a per-skill Plans mode. The kernel applies it only when the skill originates
-from the enabled plugin and that plugin is the selected Plans provider; explicit run parameters take
-precedence. This lets authoring skills run with Plans off and implementation skills enter review
-without a client-side settings workaround.
 
 ## Remote-ready transport
 
@@ -1104,7 +1082,7 @@ The suite is classified by its primary boundary while the architecture migration
 - `tests/unit/` owns pure mapping, event policy and state-machine decisions,
   prompt-cache configuration, workflow routing policy and other deterministic request projections.
 - `tests/component/` owns kernel services and assembly over typed fakes or in-memory collaborators:
-  memory, skills, planning, the memory MCP port, settings-to-run assembly and executable facade
+  memory, skills, planning and settings-to-run assembly
   composition.
 - `tests/contract/` applies shared configuration-service behavior to its interchangeable stores.
 - `tests/integration/` owns real filesystem, process, git, loop, plan, stdio and loopback boundaries,

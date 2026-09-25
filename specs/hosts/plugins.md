@@ -7,8 +7,7 @@
 ## 1. Purpose
 
 A **plugin** is a directory on disk carrying a `plugin.json` manifest, and optionally an `agents/`
-tree, a `skills/` tree, a hooks document, MCP server declarations and capability-executable
-declarations. This subsystem locates that directory, reads the manifest, translates whatever it
+tree, a `skills/` tree, a hooks document and MCP server declarations. This subsystem locates that directory, reads the manifest, translates whatever it
 expresses in another agent host's dialect, and projects the result into two different shapes: a
 `PluginView` for the operator's panel (`packages/kernel/src/plugins/plugin-service.ts`) and the
 run-time contributions a run consumes (`packages/kernel/src/plugins/plugin-contributions.ts`).
@@ -49,7 +48,7 @@ name-only reader, source fallback, or workspace-over-global substitution exists.
 listing uses the process-pinned `active_plugins` snapshot, or the same already-exact builtin list in
 a minimal embedder, so its enabled badge cannot disagree with the contributions that run
 (`enabledKeys` in `packages/kernel/src/plugins/plugin-service.ts`).
-A selected plugin remains an atomic contribution unit: agents, MCP servers, capability executables,
+A selected plugin remains an atomic contribution unit: agents, MCP servers,
 skills, and eligible hooks follow the same plugin reference; there is no independent per-hook
 approval projection. Its MCP servers do not require an authored agent profile to opt in: the kernel
 attaches each active plugin namespace with `auto_tools`, and the loop admits the tools successfully
@@ -108,7 +107,6 @@ imports `marketplaceSchema` (`packages/code/src/adapters/marketplace.ts`).
 | `agents` | `(selection) => AgentRecord[]` | — |
 | `readAgent` | `(selection, qualifiedName) => AgentRecord \| null` | — |
 | `locateCapabilityExecutable` | `(selection, capability, plugin) => { root, declaration } \| { error }` | — |
-| `skillPlansMode` | `(selection, plugin, skill) => CapabilitySkillPlansMode \| undefined` | — |
 
 ### 2.3 Protocol / wire
 
@@ -121,16 +119,7 @@ imports `marketplaceSchema` (`packages/code/src/adapters/marketplace.ts`).
 `path` and optional `expected_name`; npm carries `package`, optional `version`/`registry`, and optional
 `expected_name`.
 
-`PluginCapabilityExecutable` (4 fields):
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `capability` | `string` | the capability name the executable answers |
-| `command` | `string` | the resolved command (platform override already applied) |
-| `args` | `string[]` | the resolved argv |
-| `platform_override` | `boolean` | whether the current platform's override, rather than the base declaration, supplied `command`/`args` |
-
-`PluginContributions` (8 fields):
+`PluginContributions`:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -139,9 +128,7 @@ imports `marketplaceSchema` (`packages/code/src/adapters/marketplace.ts`).
 | `skills` | `string[]` | skill names the panel's scan found |
 | `servers` | `string[]` | namespaced MCP server names (`<plugin>:<server>`) |
 | `hooks` | `number` | count of hook entries, not their names |
-| `capability_executables` | `PluginCapabilityExecutable[]` | declared capability services, sorted by capability name |
-| `capability_run_policies?` | `{ plans?: { skills: Record<string, "off"\|"on"\|"review"> } }` | trusted per-skill Plans policy the plugin declares, for operator display |
-| `executables` | `string[]` | pre-formatted `$ ...` lines: one per hook command, MCP server and capability executable |
+| `executables` | `string[]` | pre-formatted `$ ...` lines: one per hook command or MCP server |
 
 `PluginView` (own fields plus `contributions`):
 
@@ -242,11 +229,7 @@ invalid. `marketplaces` continues to affect discovery only.
 `toPluginView` (`packages/code/src/adapters/plugins.ts`) is a one-way, field-by-field
 snake_case→camelCase rename with no identity inference: `display_name`→`displayName`,
 `short_description`→`shortDescription`, `install_source`→`installSource`, and inside `contributions`,
-`broken_agents`→`brokenAgents`. `capability_executables` entries are remapped one field at a time
-(`platform_override`→`platformOverride`). `capability_run_policies?.plans` is **not**
-carried across verbatim: it is flattened from `{ skills: Record<name, mode> }` into a sorted
-`skillPlanPolicies: { skill, mode }[]` array (`Object.entries(...).map(...).sort(...)`),
-present only when the plugin declares a Plans policy. Every other optional `PluginView` field is
+`broken_agents`→`brokenAgents`. Every other optional `PluginView` field is
 copied only when defined, via a spread guard.
 
 ## 3. Data and formats
@@ -303,8 +286,6 @@ linked into the shared .agents inventory" and "refuses a linked Git checkout").
 | `author` | string or `{ name, email?, url? }.loose()`, normalized to that publisher object without replacing its identity | `authorField` |
 | `homepage`, `repository`, `license`, `keywords` | bounded publisher/discovery metadata, optional | `pluginManifestSchema` |
 | `mcpServers` | `record(string, mcpServerPluginSchema)` — or a path string, resolved before validation | `packages/loop/src/settings/plugin-schema.ts` |
-| `capabilityExecutables` | `capabilityExecutablesSchema` | `packages/loop/src/settings/plugin-schema.ts` |
-| `capabilityRunPolicies` | `capabilityRunPoliciesSchema` | `packages/loop/src/settings/plugin-schema.ts` |
 | `hooks` | `array(hookSchema).max(64)` (spread from `capabilityPluginFields`) | `packages/loop/src/runtime/capabilities/hooks.ts` |
 | `bootstrapSkill` | `string().min(1)` | `packages/loop/src/runtime/capabilities/skills-settings.ts` |
 | `guard`, `sandbox` | `z.undefined()` with an explanatory error — **forbidden** | `packages/loop/src/runtime/capabilities/tools-settings.ts` |
@@ -451,8 +432,8 @@ repository replacement and removal failures` and the bounded-record cases in
 ### 3.5 No per-hook approval state
 
 Plugin hooks have no independent persisted approval document. A selected plugin contributes its
-normalized hook definitions as part of the same atomic extension unit as its agents, skills, MCP
-servers, and capability executables. The manifest and companion bytes, including hooks, participate
+normalized hook definitions as part of the same atomic extension unit as its agents, skills and MCP
+servers. The manifest and companion bytes, including hooks, participate
 in the Extension Profile content digest; a change therefore produces a different snapshot fingerprint
 rather than mutating eligibility under an unchanged identity (`contributionSnapshot` and
 `settingsScopes` in `packages/kernel/src/plugins/plugin-contributions.ts`; snapshot consumption in
@@ -498,8 +479,7 @@ A real foreign-dialect catalog is committed at
    its author explicitly targeted Clarvis.
 3. Otherwise the root `plugin.json` and every name-sorted `.<host>-plugin/plugin.json` candidate are
    read. The candidate with the greatest count of non-empty Clarvis-supported contribution keys is
-   selected: `skills`, `mcpServers`, `hooks`, `bootstrapSkill`, `capabilityExecutables` and
-   `capabilityRunPolicies` (`MANIFEST_CONTRIBUTION_KEYS` and `manifestContributionScore`).
+   selected: `skills`, `mcpServers`, `hooks` and `bootstrapSkill` (`MANIFEST_CONTRIBUTION_KEYS` and `manifestContributionScore`).
    Root-then-sorted-host order breaks ties, and documents are never merged.
 
 Every probe uses `readBoundedPluginText`. A missing location is ordinary. An unreadable root is
@@ -886,11 +866,6 @@ file framing, manifest limits, sidecar metadata, pinned projections, and fresh d
   with `scope: "plugin"` (`toAgentRecord`).
 - **`readAgent`** requires the plugin to be in `enabled` and matches the file by exact
   `<agent>.md` name.
-- **`locateCapabilityExecutable`** checks enablement, then installation, then the
-  manifest, then the named capability — four distinct error strings.
-- **`skillPlansMode`** returns `manifest.capabilityRunPolicies?.plans?.skills[skill]`
-  for an enabled plugin only.
-
 ### 4.9 Merging plugin settings
 
 `createFileConfigStore`'s `snapshot()` (`packages/kernel/src/config/file-config-store.ts`):
@@ -913,7 +888,7 @@ plugin hooks, then truncates to `MAX_HOOKS_PER_RUN = 128`
 plus every built-in settings spec marked `pluginContributable`. Across the whole repository exactly
 one spec sets it `true` — `hooksSettingsSpec`
 (`packages/loop/src/runtime/capabilities/hooks.ts`). The built-in `agentTools`, `sandbox` and
-`agents` specs set it `false`; the host-registered Memory, Plans, Tasks and Workflows specs likewise
+`agents` specs set it `false`; the host-registered Memory, Plans and Workflows specs likewise
 declare `false` and cannot add plugin contributions. The Kernel supplies their registered
 prohibitions to the generic manifest parser.
 
@@ -1026,24 +1001,7 @@ compared on — listed in the panel, absent from the model's catalog, with nothi
 
 `partitionAgents` splits agent files into `agents` and `broken_agents` by whether the
 leniently-parsed frontmatter satisfies `agentFrontmatterSchema`. `executablesOf`
- renders one `$ ` line per hook command, per MCP server (stdio argv or URL) and per
-capability executable (with the current platform's override applied).
-
-#### 4.12.1 Capability-executable projection — `capabilityExecutablesOf`
-
-`capabilityExecutablesOf` (`packages/kernel/src/plugins/plugin-service.ts`) is the machine-readable twin of the
-`executablesOf` display lines: for each entry of `manifest.capabilityExecutables`, it selects
-`declaration.platforms?.[process.platform]` as the current-platform override (falling back to the
-declaration's own `command`/`args` when there is none), and maps the result to
-`{ capability, command, args, platform_override }`. The output is **sorted by capability name**
-(`.sort((a, b) => a.capability.localeCompare(b.capability))`), independent of manifest
-authoring order. `executablesOf` performs the identical override selection for its `$` lines
- rather than reusing `capabilityExecutablesOf`'s result. `contributionsOf`
-folds the sorted array into the wire `PluginContributions.capability_executables`, and copies
-`manifest.capabilityRunPolicies` verbatim into `.capability_run_policies` when present. The sort is
-pinned directly: `packages/kernel/tests/integration/plugin-service.test.ts`, "projects every
-capability executable in sorted capability order" — two capabilities declared as `plans` then
-`memory` in the manifest come back `memory` then `plans`.
+ renders one `$ ` line per hook command, per MCP server (stdio argv or URL).
 
 ### 4.13 Marketplace reading (`@clarvis/code`)
 
@@ -1373,8 +1331,7 @@ All of the following are derived directly from this document's own source and te
     captured identity with the process pin. Capture-window or later drift withdraws the skill through
     a memory latch and publishes the informational host notice. `observeRuntimeFiles` separately
     monitors package-local executable declarations; once one
-    changes, `settingsScopes`/`mcpServers` omit that plugin's executable declarations and capability
-    location returns an informational unavailable result until reconnect. Neither path rescans or
+    changes, `settingsScopes`/`mcpServers` omit that plugin's executable declarations until reconnect. Neither path rescans or
     rejects a run. A plugin whose skill surface cannot be captured initially still withholds that
     whole surface. Production: `PluginContributions.pin`, `pinnedSkillRoots`,
     `observeRuntimeFiles`, `verifyPinnedSkillCatalog`, and `runtimeAvailable` in
@@ -1388,8 +1345,8 @@ All of the following are derived directly from this document's own source and te
     `packages/loop/tests/integration/execute-run-entrypoints.test.ts`.
 
 44a. **Every directly referenced package-local process file is part of the plugin snapshot.**
-    `snapshotPluginExecutables` resolves confined regular files from MCP stdio argv/cwd, the current
-    platform capability argv, and translated absolute hook words; it hashes content and executable
+    `snapshotPluginExecutables` resolves confined regular files from MCP stdio argv/cwd and
+    translated absolute hook words; it hashes content and executable
     mode under bounded file, count, and aggregate budgets. An explicitly local declaration that is
     absent or does not resolve to a confined regular file rejects that plugin snapshot. The runtime
     monitor binds the declaration path rather than only its resolved target and compares inode/device
@@ -1398,6 +1355,7 @@ All of the following are derived directly from this document's own source and te
     `packages/kernel/src/plugins/plugin-executable-snapshot.ts` and `contributionSnapshot` in
     `packages/kernel/src/plugins/plugin-contributions.ts`. Test: the process-file fingerprint and
     drift cases in
+    `packages/kernel/tests/component/plugin-executable-snapshot.test.ts`,
     `packages/kernel/tests/integration/extension-profile-manager.test.ts` and
     `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
@@ -1465,8 +1423,7 @@ All of the following are derived directly from this document's own source and te
 
 50. **Plugin MCP provenance carries version and resolved revision, never the manifest version alone
     as identity.** `revisionOf` prefers the install record and falls back to `git rev-parse HEAD`
-    (`packages/kernel/src/plugins/plugin-contributions.ts`). Consumed as the Tasks provider's plugin identity
-    (`packages/kernel/src/tasks/task-provider-factory.ts`). Pinned by `qualifies same-named MCP
+    (`packages/kernel/src/plugins/plugin-contributions.ts`).  Pinned by `qualifies same-named MCP
     servers once and preserves provider provenance` in
     `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
@@ -1482,20 +1439,6 @@ All of the following are derived directly from this document's own source and te
     identity actually carries. No test in this document's scope exercises both readers against the
     same manually-advanced checkout; **why the two are asymmetric on purpose (display-freshness versus
     pinned provenance identity) is resolved in §8.**
-
-51. **A capability executable requires installation, enablement *and* operator selection.**
-    `locateCapabilityExecutable` refuses an unenabled plugin (`packages/kernel/src/plugins/plugin-contributions.ts`), and
-    the kernel reaches it only through a `provider.kind === "plugin"` selection in settings
-    (`packages/kernel/src/file-kernel.ts`). The docstring: "the plugin cannot
-    select itself" (`packages/kernel/src/file-kernel.ts`). Pinned:
-    `locates an enabled selected capability executable captured by the snapshot` in
-    `packages/kernel/tests/integration/plugin-contributions.test.ts` and
-    `packages/kernel/tests/integration/plugin-skills-install.test.ts`.
-
-52. **A packaged skill's Plans policy applies only while its own plugin is the selected Plans
-    provider.** `skillPlansMode` requires `skill.source === "plugin:" + selected.plugin`
-    (`packages/kernel/src/file-kernel.ts`). Pinned: `packages/kernel/tests/integration/plugin-skills-install.test.ts`, which flips the provider
-    to `markdown` and asserts `plansMode` becomes `undefined`.
 
 53. **Install refuses a name already installed.** `packages/kernel/src/adapters/filesystem/plugin-repository.ts`. Pinned by
     `install: refuses when a plugin of that name is already installed` in
@@ -1832,8 +1775,6 @@ translated from".
 | `packages/kernel/src/file-kernel.ts` | constructs `PluginContributions` and hands it to the config store |
 | `packages/kernel/src/config/file-config-store.ts` | `settingsScopes` folded into the settings merge |
 | `packages/kernel/src/file-kernel.ts` | `skillRoots`/`skillBootstraps` into `buildExecuteRunDeps` |
-| `packages/kernel/src/file-kernel.ts` | `skillPlansMode`, `locateCapabilityExecutable` for Plans and Memory plugin providers |
-| `packages/kernel/src/tasks/task-provider-factory.ts` | `mcpServers` for provider identity |
 | `packages/kernel/src/kernel.ts` | `createPluginService` |
 | `OPERATIONS.plugins` in `packages/kernel/src/transport/operations.ts` | the five wire methods |
 | `packages/code/src/app/commands.tsx` (`pluginsStore`, plugin/marketplace/extension view registrations, `installAndActivatePlugin`) | the store, the three browsers and the adapter |
@@ -1940,8 +1881,7 @@ duplicated behavior tests rather than by a direct drift lock.
   own comment states the opposite goal: "Resolve the installed snapshot **without treating the
   manifest version as source identity**" — its caller needs a value that stays **pinned** to
   what Clarvis itself installed/recorded, because it becomes the run's MCP-provenance identity
-  (`packages/kernel/src/tasks/task-provider-factory.ts`, threading `resolvedRevision` into a
-  `taskProviderKey`) — a value that must not silently change between two runs just because someone
+  — a value that must not silently change between two runs just because someone
   ran `git pull` in the plugin's checkout in between. So: the panel optimizes for "what is checked out
   now" (display), `revisionOf` optimizes for "what was installed" (stable per-run identity) — two
   different purposes for two different consumers, each stated in its own local comment, even though
@@ -1970,8 +1910,7 @@ duplicated behavior tests rather than by a direct drift lock.
   payload dialect ([execution/hooks.md](../execution/hooks.md)); `SKILL.md` parsing, grouping, precedence and the
   `MAX_SKILL_ROOTS` refusal itself ([execution/skills.md](../execution/skills.md)); the ownership and content of
   `EXTERNAL_HOOK_EVENT_NAMES` / `EXTERNAL_TOOL_NAMES` / `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` as an
-  interop contract ([cross-cutting/agent-interop.md](../cross-cutting/agent-interop.md)); the capability-executable subprocess
-  protocol, session manager and provider registries ([capabilities/provider-executables.md](../capabilities/provider-executables.md)); settings
+  interop contract ([cross-cutting/agent-interop.md](../cross-cutting/agent-interop.md)); settings
   merge order, CAS revisions and workspace trust as a whole ([hosts/kernel-config.md](kernel-config.md)); the config
   view-host, navigation and level-key primitives the three browsers are built on
   ([hosts/code-settings-panels.md](code-settings-panels.md)).

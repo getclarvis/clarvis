@@ -79,6 +79,9 @@ closing the host connection. Offline compaction uses the host's separate mainten
 `--resume` and `--continue` check for hosted work before reconstructing historical traces. Print mode
 also uses hosted turn admission and waits for physical closure. The host must remain alive for
 execution to continue; restarting an interrupted host does not replay tools or restore a live run.
+When a different local artifact encounters active work in the previous host, the boot screen offers
+`[t] stop previous runs and start`. This explicitly cancels and drains that host's work before a new
+generation opens; `[r] retry` leaves the previous work running.
 See [hosted runs](../../specs/hosts/hosted-runs.md) for authority and recovery boundaries.
 
 `/goal` shows the conversation's objective, semantic definition, origin, compact budget and Goal

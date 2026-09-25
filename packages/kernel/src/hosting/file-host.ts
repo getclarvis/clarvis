@@ -431,6 +431,11 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
         exclusive(async () => {
           restartRequested = true;
         }),
+      requestShutdown: async () => {
+        if (closing !== undefined) throw kernelError("unavailable", "host is closing");
+        await options.assertAuthority?.();
+        restartRequested = true;
+      },
     });
     const ownedOperator = operator;
     const servicesFor = (

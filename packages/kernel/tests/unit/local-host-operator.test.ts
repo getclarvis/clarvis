@@ -17,6 +17,9 @@ function fixture() {
     requestRestart: async () => {
       operations.push("restart");
     },
+    requestShutdown: async () => {
+      operations.push("shutdown");
+    },
     now: () => now,
     browserTimeoutMs: 30_000,
   });
@@ -129,7 +132,8 @@ describe("local host operator authority", () => {
           code: "invalid_request",
         });
       await client.requestRestart();
-      expect(f.operations).toEqual(["restart"]);
+      await client.requestShutdown();
+      expect(f.operations).toEqual(["restart", "shutdown"]);
     } finally {
       f.operator.close();
     }

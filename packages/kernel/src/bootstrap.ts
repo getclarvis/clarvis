@@ -19,7 +19,11 @@ export type {
   OperatorServices,
   CreateOperatorServicesOptions,
 } from "./config/operator-services.ts";
-export { connectOrLaunchLocalKernel, parseLocalHostArguments } from "./hosting/launcher.ts";
+export {
+  connectOrLaunchLocalKernel,
+  requestLocalHostReplacement,
+  parseLocalHostArguments,
+} from "./hosting/launcher.ts";
 export type { LocalKernelLaunchOptions, ConnectedLocalKernel } from "./hosting/launcher.ts";
 export type {
   FileKernel,

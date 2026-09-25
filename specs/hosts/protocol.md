@@ -131,6 +131,8 @@ It is advertised only to an authenticated local operator. `LocalHostStatus` carr
 sequenced notices and restart state; `LocalHostBrowserRequest` carries a claimed URL with an id and
 expiry. The service uses the same kernel operation catalog and never serializes application callbacks
 or provider credentials. Runtime retry and restart remain explicit operations.
+`requestShutdown` is a separate operator-only action for an explicitly confirmed replacement: it
+stops new admission and retires the old generation after cancelling and draining hosted work.
 
 Production: `LocalHostService` in [local-host.ts](../../packages/protocol/src/local-host.ts),
 `OPERATIONS.localHost` in [operations.ts](../../packages/kernel/src/transport/operations.ts),
@@ -138,7 +140,8 @@ Production: `LocalHostService` in [local-host.ts](../../packages/protocol/src/lo
 and `createFileRunHost` in [file-host.ts](../../packages/kernel/src/hosting/file-host.ts).
 Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts)
 checks the shared catalog facade; authenticated role checks are exercised by
-[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts), and
+physical replacement by [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts).
 Its DTOs describe an atomic snapshot/tail observation and independent handoff receipts; a lost
 connection rejects the observation rather than manufacturing an execution result.
 Production: [hosting.ts](../../packages/protocol/src/hosting.ts), `KernelClient` in

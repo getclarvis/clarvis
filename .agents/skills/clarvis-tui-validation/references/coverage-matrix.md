@@ -26,7 +26,7 @@ passing lower-level suite does not establish execution of its E2E requirements.
 | `BOOT-03` | Early draft without a runnable provider/agent | Accepted or unsent text becomes the complete composer's exact draft rather than disappearing                                     |
 | `BOOT-04` | Resume and continue boot                      | Startup input stays locked until the saved session is restored; unknown or absent sessions fail before taking the terminal       |
 | `BOOT-05` | Shutdown during foundation load               | No late run admission or complete-app mount; raw mode and alternate screen restore once                                          |
-| `BOOT-06` | Fatal boot and retry                          | Visible cause, bounded retry, correct Ctrl+C ownership, no orphan work                                                           |
+| `BOOT-06` | Fatal boot and retry                          | Visible cause, bounded retry, Ctrl+C ownership; explicit old-host stop drains work before replacement; retry preserves it        |
 | `BOOT-07` | First paint across size classes               | Wide, narrow, single-column and below-layout-floor behavior is legible and non-crashing; refresh thresholds from `app/layout.ts` |
 | `BOOT-08` | Final bundle boot                             | `bun run build:code` and `bun run smoke` pass; source-critical checkpoints repeat without `CLARVIS_CODE_SOURCE`                  |
 | `ONB-01`  | First-run welcome to Ready                    | Provider, model, credential, default seeding, agent selection and final state succeed without rendering the secret               |

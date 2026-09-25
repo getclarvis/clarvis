@@ -962,6 +962,11 @@ through its authenticated local control and only while idle. The new launcher re
 waits for the prior generation to retire, and then starts its selected artifact. Active physical work
 refuses the transition and remains owned by the prior process. A wire mismatch still requires the
 original compatible installation because the new client cannot assume control-protocol compatibility.
+For a same-wire incompatible artifact with active work, the launcher returns the exact prior host
+generation as a replacement offer. Only an operator choosing the boot-screen termination action
+may authenticate to that generation and call `requestShutdown`. The host closes new admission,
+cancels and drains its hosted runs, retires its lease, and preserves their durable history before
+the new generation starts. A changed generation or matching artifact refuses that action.
 A timeout reports unconfirmed startup. `bin.ts` accepts the strict private `--local-host` bootstrap
 mode while preserving ordinary stdio serving. Selecting and retaining the installed artifact is the
 application composition's responsibility, not authority supplied over RPC.
@@ -971,18 +976,23 @@ non-secret loop projection and the enabled/confine/grant tool policy; raw enviro
 credentials, owner and diagnostics are excluded. Equivalent environment spellings compare equally.
 Both narrower and wider policy refuse reuse, preserving admitted work and the original generation.
 The operator reconnects with the original policy, requests an idle host restart, then launches with
-the desired policy. The launcher never silently mutates policy or restarts an active host.
+the desired policy. When an idle restart was already requested, the launcher checks that retiring
+host through authenticated read-only control and waits for its exit before starting the desired
+policy; a live host without that request still refuses the mismatch. The launcher never silently
+mutates policy or restarts an active host.
 Production: `localKernelPolicyIdentity` in
 [policy-identity.ts](../../packages/kernel/src/hosting/policy-identity.ts),
 `localHostEndpointRootCandidates` and `resolveLocalHostIdentity` in
 [local-state.ts](../../packages/kernel/src/hosting/local-state.ts),
-`connectOrLaunchLocalKernel` in [launcher.ts](../../packages/kernel/src/hosting/launcher.ts), and
+`connectOrLaunchLocalKernel` and `requestLocalHostReplacement` in
+[launcher.ts](../../packages/kernel/src/hosting/launcher.ts), and
 `serveLocalFileKernel` in [serve-local.ts](../../packages/kernel/src/hosting/serve-local.ts).
 Test: [host-policy-identity.test.ts](../../packages/kernel/tests/unit/host-policy-identity.test.ts),
 [local-host-state.test.ts](../../packages/kernel/tests/integration/local-host-state.test.ts) for
 snapshot precedence and identity stability, and the independent process tests for long-temp fallback,
-same-generation reconnection and preservation of background execution after incompatible
-tool/default/ceiling reconnect attempts in
+same-generation reconnection, explicit old-run cancellation before a new generation, changed Sandbox
+policy after a requested idle restart, and
+preservation of background execution after incompatible tool/default/ceiling reconnect attempts in
 [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts).
 
 The host normally exits after 60 seconds with no clients or physical work. The idle boundary includes

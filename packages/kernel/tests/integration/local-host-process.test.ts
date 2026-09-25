@@ -5,7 +5,10 @@ import { tmpdir } from "node:os";
 import { globalPaths } from "@clarvis/paths";
 import { isAlive, killTree } from "@clarvis/tools/shell";
 
-import { connectOrLaunchLocalKernel } from "../../src/hosting/launcher.ts";
+import {
+  connectOrLaunchLocalKernel,
+  requestLocalHostReplacement,
+} from "../../src/hosting/launcher.ts";
 import {
   localHostEndpointRootCandidates,
   readLocalHostConnection,
@@ -89,6 +92,78 @@ async function fixture(environmentOverrides: Readonly<Record<string, string | un
 }
 
 describe("independent local kernel process", () => {
+  test("explicit replacement cancels an old hosted run before launching a new generation", async () => {
+    const f = await fixture();
+    const peer = Bun.spawn(
+      [
+        process.execPath,
+        join(import.meta.dir, "../fixtures/local-host-peer.ts"),
+        f.workspaceRoot,
+        f.globalDir,
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const errors = new Response(peer.stderr).text();
+    expect(await peer.exited, await errors).toBe(0);
+    await until(async () =>
+      access(join(f.workspaceRoot, "entered.json")).then(
+        () => true,
+        () => false,
+      ),
+    );
+    const prior = (await readLocalHostConnection(f.identity))!;
+    const nextOptions = { ...f.options, artifactId: "replacement-fixture" };
+    await expect(connectOrLaunchLocalKernel(nextOptions)).rejects.toMatchObject({
+      code: "conflict",
+      details: { replacement_available: true, host_generation: prior.host_generation },
+    });
+    await expect(
+      requestLocalHostReplacement(nextOptions, "different-generation"),
+    ).rejects.toMatchObject({
+      code: "conflict",
+    });
+    await expect(
+      requestLocalHostReplacement(f.options, prior.host_generation),
+    ).rejects.toMatchObject({
+      code: "conflict",
+    });
+    await requestLocalHostReplacement(nextOptions, prior.host_generation);
+    const replacement = await connectOrLaunchLocalKernel(nextOptions);
+    cleanups.push(() => replacement.client.close());
+    expect(replacement.client.capabilities.hosting!.host_generation).not.toBe(
+      prior.host_generation,
+    );
+    expect(
+      await access(join(f.workspaceRoot, "after-exit.json")).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false);
+    await replacement.client.close();
+  });
+
+  test("an idle requested restart admits a changed Sandbox policy", async () => {
+    const f = await fixture();
+    const first = await connectOrLaunchLocalKernel(f.options);
+    cleanups.push(() => first.client.close());
+    const previousGeneration = first.client.capabilities.hosting!.host_generation;
+    const settingsFile = globalPaths(f.globalDir).settingsFile;
+    const settings = JSON.parse(await readFile(settingsFile, "utf8"));
+    await writeFile(
+      settingsFile,
+      JSON.stringify({
+        ...settings,
+        sandbox: { type: "native", enabled: false, availability: "required" },
+      }),
+    );
+    await first.client.localHost!.requestRestart();
+    await first.client.close();
+    const replacement = await connectOrLaunchLocalKernel(f.options);
+    cleanups.push(() => replacement.client.close());
+    expect(replacement.client.capabilities.hosting!.host_generation).not.toBe(previousGeneration);
+    await replacement.client.close();
+  });
+
   test.skipIf(process.platform === "win32")(
     "falls back from a long temp snapshot and reconnects to the same generation",
     async () => {

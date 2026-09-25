@@ -67,6 +67,7 @@ interface WorkspaceConnectionPlan {
   readonly destination: WorkspaceDestination;
   readonly defaultOwner: string;
   readonly connectHost: () => Promise<WorkspaceConnection>;
+  readonly localLaunch?: LocalKernelLaunchOptions;
 }
 
 function selectedDestination(options: WorkspaceClientOptions): WorkspaceDestination {
@@ -96,7 +97,7 @@ async function connectionPlan(
       }),
     };
     const connect = deps.connectHost ?? connectLocalKernel;
-    return { destination, defaultOwner, connectHost: () => connect(launch) };
+    return { destination, defaultOwner, connectHost: () => connect(launch), localLaunch: launch };
   }
   const payload = encodeRemoteKernelArguments({
     workspaceRoot: destination.workspace,
@@ -196,6 +197,18 @@ export class WorkspaceClientManager {
     }
     if (plan.destination.kind === "local") manager.schedule();
     return manager;
+  }
+
+  /** Explicit boot recovery for the exact incompatible local generation shown to the operator. */
+  static async replacePreviousHost(
+    options: WorkspaceClientOptions,
+    expectedGeneration: string,
+  ): Promise<void> {
+    const plan = await connectionPlan(options, {});
+    if (plan.destination.kind !== "local" || plan.localLaunch === undefined)
+      throw new Error("local host replacement is unavailable for this destination");
+    const { requestLocalHostReplacement } = await import("@clarvis/kernel/bootstrap");
+    await requestLocalHostReplacement(plan.localLaunch, expectedGeneration);
   }
 
   get project() {

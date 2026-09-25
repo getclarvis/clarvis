@@ -19,6 +19,8 @@ Wire DTOs, service interfaces, capability advertisement, and the transport seam 
 [`hosts/protocol.md`](../../specs/hosts/protocol.md). The concrete Clarvis wire and codecs belong to
 the kernel and are specified separately in
 [`hosts/kernel-transport.md`](../../specs/hosts/kernel-transport.md).
+The authenticated local operator service exposes separate idle restart and explicit shutdown
+requests; shutdown retires the old host's work before a replacement connects.
 
 ## The client contract
 

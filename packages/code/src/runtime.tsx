@@ -558,22 +558,34 @@ async function runApp(
     sequence: number;
     message: string;
   } | null>(null);
+  const workspaceManagerOptions = () => ({
+    ...workspaceClientTarget(),
+    globalDir: globalRoot(),
+    ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
+    ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
+    logger: diagnostics?.logger ?? createLogger("silent"),
+    openMcpAuthorizationUrl: openPublicUrl,
+  });
   const connectWorkspaceManager = (): Promise<WorkspaceClientManager> =>
     diagnosticAsync("boot.workspace-manager", () =>
-      WorkspaceClientManager.create({
-        ...workspaceClientTarget(),
-        globalDir: globalRoot(),
-        ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
-        ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
-        logger: diagnostics?.logger ?? createLogger("silent"),
-        openMcpAuthorizationUrl: openPublicUrl,
-      }),
+      WorkspaceClientManager.create(workspaceManagerOptions()),
     );
   let connectedWorkspaceManager: WorkspaceClientManager | undefined;
   try {
     connectedWorkspaceManager = await (preparedWorkspaceManager ?? connectWorkspaceManager());
   } catch (error) {
     diagnosticEvent("boot.failed", { phase: "workspace-manager", error, attempt: 1 }, "error");
+    const details =
+      typeof error === "object" && error !== null && "details" in error ? error.details : null;
+    const replacementGeneration =
+      typeof details === "object" &&
+      details !== null &&
+      "replacement_available" in details &&
+      details.replacement_available === true &&
+      "host_generation" in details &&
+      typeof details.host_generation === "string"
+        ? details.host_generation
+        : undefined;
     let attempt = 1;
     const connect = async (): Promise<void> => {
       attempt += 1;
@@ -592,6 +604,21 @@ async function runApp(
       renderer,
       error,
       retry: connect,
+      ...(replacementGeneration === undefined
+        ? {}
+        : {
+            resolution: {
+              key: "t",
+              label: "stop previous runs and start",
+              run: async () => {
+                await WorkspaceClientManager.replacePreviousHost(
+                  workspaceManagerOptions(),
+                  replacementGeneration,
+                );
+                await connect();
+              },
+            },
+          }),
       quit: () => {
         releaseBootRendererLifecycle();
         platform.shutdown("boot-failed").catch(() => undefined);

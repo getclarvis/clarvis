@@ -114,7 +114,8 @@ unmanaged destination. The launcher embeds the absolute checkout and Bun paths, 
 caller's current directory, exports `CLARVIS_CODE_SOURCE=1`, and executes `src/cli.ts`.
 Reinstallation updates only the marked launcher and `--uninstall` removes only that file. The
 local host replaces a same-wire prior artifact only after an idle restart; active physical work
-preserves the prior generation. Production: `dev-install.sh`,
+preserves the prior generation until the operator explicitly chooses the boot-screen termination
+action. Production: `dev-install.sh`,
 `packages/code/tooling/development-install.ts` (`installDevelopmentLauncher`,
 `developmentLauncherSource`, `uninstallDevelopmentLauncher`), and
 `packages/kernel/src/hosting/launcher.ts` (`connectOrLaunchLocalKernel`). Test:
@@ -274,7 +275,7 @@ member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard 
 | `packages/code/src/app/commands.tsx`                    | `registerAppCommands`                                                                              | `(deps: AppCommandDeps) => AppCommandWiring`                                                                                     |
 | `packages/code/src/views/App.tsx`                       | `AppShell` / `AppRunControls` / `AppSessionControls` / `AppFleet` / `AppBackend` / `AppProps`      | see §2.5                                                                                                                         |
 | `packages/code/src/views/App.tsx`                       | `App`                                                                                              | `(props: AppProps) => JSX.Element`                                                                                               |
-| `packages/code/src/views/FatalBoot.tsx`                 | `runFatalBoot`                                                                                     | `({ renderer, error, retry, quit }) => Promise<boolean>`; `true` means retry recovery, `false` means terminal renderer teardown  |
+| `packages/code/src/views/FatalBoot.tsx`                 | `runFatalBoot`                                                                                     | `({ renderer, error, retry, resolution?, quit }) => Promise<boolean>`; `true` means recovery, `false` means terminal renderer teardown  |
 | `packages/code/src/views/Splash.tsx`                    | `BANNER`                                                                                           | `string[]`, 8 rows of ASCII art                                                                                                  |
 | `packages/code/src/views/Splash.tsx`                    | `FIRST_RUN_SPLASH_MIN_COLUMNS` / `FIRST_RUN_SPLASH_MIN_ROWS`                                       | `76` / `24`                                                                                                                      |
 | `packages/code/src/views/Splash.tsx`                    | `firstRunSplashFits`                                                                               | `(width: number, height: number) => boolean`                                                                                     |
@@ -809,6 +810,7 @@ straight off the renderer".
 | State                                       | Key           | Effect                                                                                                                  | Production symbol                                                   |
 | ------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | idle                                        | `r`           | consume the key, `setBusy(true)`, call `retry()`                                                                        | `runFatalBoot` (`onKey`)                                            |
+| idle with a typed resolution                | supplied key  | consume the key, run the explicit resolution, and keep the screen until it settles                                       | `runFatalBoot` (`onKey`)                                            |
 | idle                                        | `ctrl+c`      | call `quit()` (expected to exit); `q`, Escape and all other keys are ignored                                            | `runFatalBoot` (`onKey`)                                            |
 | idle                                        | anything else | ignored                                                                                                                 | `runFatalBoot` (`onKey`)                                            |
 | busy                                        | `ctrl+c`      | prevent propagation and remain on the retry screen                                                                      | `runFatalBoot` (`onKey`)                                            |
@@ -832,6 +834,18 @@ Workspace-manager boot failure uses the same screen before foundation loading. O
 reconnects the selected local or SSH destination. Production: `packages/code/src/runtime.tsx`
 (`connectWorkspaceManager`) and `packages/code/src/adapters/workspace-client-manager.ts`
 (`connectionPlan`).
+When the local launcher reports that an incompatible old artifact still has physical work, the
+screen also offers `[t] stop previous runs and start`. That action is available only for the exact
+host generation in the typed conflict. It asks the authenticated operator service to stop admission,
+cancel and drain the old hosted work, waits for lease retirement, then connects the selected artifact.
+Retry leaves old work alone; other boot failures do not offer termination. Production:
+`packages/code/src/runtime.tsx` (`connectWorkspaceManager`),
+`packages/code/src/adapters/workspace-client-manager.ts` (`replacePreviousHost`), and
+`packages/code/src/views/FatalBoot.tsx` (`runFatalBoot`). Test:
+`packages/code/tests/integration/fatal-boot-render.test.tsx` (`fatal boot: offers and runs explicit
+previous-run termination`) and
+`packages/kernel/tests/integration/local-host-process.test.ts` (`explicit replacement cancels an old
+hosted run before launching a new generation`).
 
 `packages/code/tests/integration/fatal-boot-render.test.tsx` ("fatal boot: disposes its root on
 success so the App mounts alone") additionally pins that the root is disposed on success — after

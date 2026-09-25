@@ -268,6 +268,14 @@
     {
       "mechanism": "subprocess",
       "file": "packages/kernel/tests/integration/local-host-process.test.ts",
+      "identity": "subprocess|describe:independent local kernel process/test:explicit replacement cancels an old hosted run before launching a new generation|Bun.spawn( [ process.execPath, join(import.meta.dir, \"../fixtures/local-host-peer.ts\"), f.workspaceRoot, f.globalDir, ], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "an independent client process and host are required to prove explicit cancellation, physical retirement, and replacement"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/kernel/tests/integration/local-host-process.test.ts",
       "identity": "subprocess|describe:independent local kernel process/test:finishes after its launching client exits and reconnects to the same execution|Bun.spawn( [ process.execPath, join(import.meta.dir, \"../fixtures/local-host-peer.ts\"), f.workspaceRoot, f.globalDir, ], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
       "package_owner": "@clarvis/kernel",
       "classification": "boundary-canary",

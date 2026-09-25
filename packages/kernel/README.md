@@ -3,6 +3,10 @@
 The in-process implementation of `@clarvis/protocol` over `@clarvis/loop`.
 It is the Clarvis server core: applications can use it directly or consume the same typed services
 through its RPC transports, including the independently owned local workspace host.
+The local launcher admits a changed operator execution policy after an authenticated idle restart
+has been requested and the previous generation has retired.
+An incompatible artifact with active hosted work requires the operator's explicit replacement
+choice; the old host then cancels and drains that work before releasing its lease.
 `KernelClient.changes` is a VCS-agnostic read-only inventory of the bound workspace; the first
 adapter is Git and never writes to the repository.
 

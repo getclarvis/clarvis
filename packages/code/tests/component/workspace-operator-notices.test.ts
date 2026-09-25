@@ -31,6 +31,7 @@ function peer(generation = "generation") {
         calls.browser.push([id, opened]);
       },
       requestRestart: async () => {},
+      requestShutdown: async () => {},
     },
     async close() {
       calls.close++;

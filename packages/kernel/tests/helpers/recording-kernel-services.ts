@@ -32,6 +32,7 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
       takeBrowserRequest: record("localHost.takeBrowserRequest"),
       respondBrowser: record("localHost.respondBrowser"),
       requestRestart: record("localHost.requestRestart"),
+      requestShutdown: record("localHost.requestShutdown"),
     },
     hosting: {
       list: record("hosting.list"),

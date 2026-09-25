@@ -220,6 +220,12 @@ export const OPERATIONS = {
       encode: () => ({}),
       invoke: (services) => requireLocalHost(services).requestRestart(),
     },
+    requestShutdown: {
+      method: "localHost.requestShutdown",
+      metadata: write(),
+      encode: () => ({}),
+      invoke: (services) => requireLocalHost(services).requestShutdown(),
+    },
   }),
   hosting: serviceOperations<HostingService, "start" | "attach">({
     resumePending: {

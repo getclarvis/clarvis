@@ -3,7 +3,6 @@ import { createMemo, createSignal, For, Show } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/solid";
 import type { PluginSource } from "@clarvis/protocol";
-import { AGENTS_DIR, AGENTS_PLUGINS_DIR, CLARVIS_DIR } from "@clarvis/paths";
 import type { MarketplaceListing, MarketplaceSource } from "../../adapters/marketplace.ts";
 import type { PluginView } from "../../adapters/plugins.ts";
 import { errorText } from "../../adapters/errors.ts";
@@ -102,7 +101,6 @@ function contributionSummary(plugin: PluginView): string {
     [contributions.skills.length, "skills"],
     [contributions.servers.length, "MCP servers"],
     [contributions.hooks, "hooks"],
-    [contributions.capabilityExecutables.length, "services"],
   ] as const;
   return (
     parts
@@ -294,27 +292,11 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
     });
 
   const openGitInstall = (): void =>
-    editor.startPick(
-      "install inventory",
-      [
-        {
-          label: `${AGENTS_DIR}/${AGENTS_PLUGINS_DIR}`,
-          value: "agents",
-          detail: "recommended shared Agent Plugin inventory",
-        },
-        {
-          label: `${CLARVIS_DIR}/${AGENTS_PLUGINS_DIR}`,
-          value: "clarvis",
-          detail: "Clarvis-native inventory",
-        },
-      ],
-      (source) =>
-        editor.start("plugin Git URL", "", (url) => {
-          if (url.trim() !== "") {
-            run("Installing plugin", () => deps.installUrl(url.trim(), source as PluginSource));
-          }
-        }),
-    );
+    editor.start("plugin Git URL", "", (url) => {
+      if (url.trim() !== "") {
+        run("Installing plugin", () => deps.installUrl(url.trim(), "agents"));
+      }
+    });
 
   const changeCollection = (delta: number): void => {
     const count = collections().length;
@@ -790,21 +772,6 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
         <For each={contributions.servers}>
           {(name) => <text fg={tokens.warn}>{`MCP server ${name}`}</text>}
         </For>
-        <For each={contributions.capabilityExecutables}>
-          {(service) => (
-            <text
-              fg={tokens.warn}
-              wrapMode="word"
-            >{`service    ${service.capability}: ${[service.command, ...service.args].join(" ")}`}</text>
-          )}
-        </For>
-        <For each={contributions.skillPlanPolicies ?? []}>
-          {(policy) => (
-            <text
-              fg={policy.mode === "review" ? tokens.warn : tokens.muted}
-            >{`policy     /${policy.skill} ${glyph("arrowRight")} plans:${policy.mode}`}</text>
-          )}
-        </For>
         <DetailHeading>Security</DetailHeading>
         <text fg={tokens.muted}>{`hooks      ${contributions.hooks} active with this plugin`}</text>
         <For each={contributions.executables}>
@@ -886,7 +853,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
         </text>
         <DetailHeading>Expected content</DetailHeading>
         <text fg={tokens.muted} wrapMode="word">
-          The repository must publish marketplace.json or .agents/marketplace.json.
+          The repository must publish .agents/plugins/marketplace.json.
         </text>
         <text fg={tokens.muted} wrapMode="word">
           Enter starts the source field. Use g when you already have one direct plugin Git URL.

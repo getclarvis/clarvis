@@ -37,17 +37,6 @@ describe("runs.event.unmapped", () => {
     });
   });
 
-  it("silently keeps kernel-owned reviewer accounting outside the protocol", () => {
-    const logger = recordingLogger();
-    const event = {
-      type: "guard_reviewer_model_call",
-      reviewer: "judge",
-      status: "completed",
-    } as unknown as TraceEvent;
-    expect(engineEventToProto(event, logger)).toBeNull();
-    expect(logger.events("runs.event.unmapped")).toEqual([]);
-  });
-
   it("reports a capability event carrying no wire projection", () => {
     const logger = recordingLogger();
     const event: CapabilityEvent = { capability: "plans", kind: "plan_created" };

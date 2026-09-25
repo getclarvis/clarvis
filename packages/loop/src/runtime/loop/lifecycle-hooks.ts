@@ -94,7 +94,7 @@ type ObserverMethod =
  * channel that does work, because the capability is not missing: a
  * `pre_tool_use` hook matching either child-spawn tool replaces its brief and
  * profile through the ordinary tool dispatch, where the replacement is validated
- * by the tool's own schema, met by the command guard, reported to the model as
+ * by the tool's own schema, reported to the model as
  * an `[advisor]` line, and carried beside the arguments the model actually sent
  * rather than over them.
  */

@@ -144,7 +144,6 @@ function fakeCode(): CodeConfigStore {
     themeAt: () => ({}),
     effectiveTheme: () => ({}),
     agentDefault: () => undefined,
-    guardModeDefault: () => undefined,
     updateCheckEnabled: () => true,
     asciiEnabled: () => false,
     keyboardConfig: () => ({ version: 1, environments: {} }),
@@ -175,7 +174,6 @@ function baseDeps(
     effects: {
       openAgentPicker: () => calls.push("agent-picker"),
       openIsolationPicker: () => calls.push("isolation-picker"),
-      openReviewPicker: () => calls.push("review-picker"),
       openMemoryPicker: () => calls.push("memory-picker"),
       openDiff: () => calls.push("diff"),
       openPlan: () => calls.push("plan"),
@@ -260,7 +258,6 @@ function baseDeps(
       get: async () => null,
       delete: async () => {},
     } as never,
-    tasks: { available: () => false } as never,
     storage: {
       inspect: async () => ({
         generated_at: Date.now(),
@@ -277,12 +274,6 @@ function baseDeps(
         throw new Error("not implemented in command registration test");
       },
     },
-    guard: {
-      mode: () => "off",
-      setMode: (m: string) => calls.push("guard:" + m),
-      setDefault: () => {},
-      cycle: () => "on",
-    } as never,
     getRun: async () => null,
     runActive: () => false,
     hasAvailablePlan: () => false,
@@ -385,12 +376,12 @@ test("plugin lifecycle recomposes only an exact selected Extension Profile contr
   const selected = {
     id: "global:research",
     status: "ready",
-    plugins: [{ ref: { scope: "global", source: "clarvis", name: "browser" } }],
+    plugins: [{ ref: { scope: "global", source: "agents", name: "browser" } }],
   } as never;
   const recomposed = {
     id: "global:research",
     status: "degraded",
-    plugins: [{ ref: { scope: "global", source: "clarvis", name: "browser" } }],
+    plugins: [{ ref: { scope: "global", source: "agents", name: "browser" } }],
   } as never;
   let reads = 0;
   let reconnects = 0;
@@ -404,7 +395,7 @@ test("plugin lifecycle recomposes only an exact selected Extension Profile contr
     async () => {
       reloads += 1;
     },
-    { scope: "global", source: "clarvis", name: "browser" },
+    { scope: "global", source: "agents", name: "browser" },
   );
   expect(result).toContain("recomposed global:research");
   expect(result).toContain("degraded");
@@ -418,7 +409,7 @@ test("plugin lifecycle recomposes only an exact selected Extension Profile contr
     async () => {
       throw new Error("must not reload");
     },
-    { scope: "workspace", source: "clarvis", name: "browser" },
+    { scope: "workspace", source: "agents", name: "browser" },
   );
   expect(unrelated).toBeUndefined();
 
@@ -428,14 +419,14 @@ test("plugin lifecycle recomposes only an exact selected Extension Profile contr
     async () => {
       throw new Error("must not reload after a failed reconnect");
     },
-    { scope: "global", source: "clarvis", name: "browser" },
+    { scope: "global", source: "agents", name: "browser" },
   );
   expect(deferred).toContain("takes effect after /reconnect reload (run in progress)");
 
   expect(
     await selectedPluginLifecycleBlock({ current: async () => selected }, () => true, {
       scope: "global",
-      source: "clarvis",
+      source: "agents",
       name: "browser",
     }),
   ).toContain("finish the active run");
@@ -447,7 +438,7 @@ test("plugin lifecycle recomposes only an exact selected Extension Profile contr
         },
       },
       () => false,
-      { scope: "global", source: "clarvis", name: "browser" },
+      { scope: "global", source: "agents", name: "browser" },
     ),
   ).toBeUndefined();
 });
@@ -476,7 +467,6 @@ test("Marketplace install atomically activates the plugin and stays active after
       skills: ["context7"],
       servers: ["context7"],
       hooks: 1,
-      capability_executables: [],
       executables: ["npx -y @upstash/context7-mcp"],
     },
   });
@@ -515,7 +505,6 @@ test("Marketplace install atomically activates the plugin and stays active after
               skills: ["context7"],
               mcp_servers: ["context7:context7"],
               hooks: { total: 1 },
-              capability_executables: [],
             },
           ]
         : [],
@@ -532,12 +521,8 @@ test("Marketplace install atomically activates the plugin and stays active after
   };
   const settings: SettingsAdapter = {
     ...fakeSettings(),
-    read: (scope) =>
-      scope === "global"
-        ? ({ guard: { type: "shell", allowed_commands: ["git status"] }, enabledPlugins } as never)
-        : undefined,
+    read: (scope) => (scope === "global" ? ({ enabledPlugins } as never) : undefined),
     effective: () => ({
-      guard: { type: "shell", allowed_commands: ["git status"] },
       enabledPlugins,
     }),
     write: async (_scope, patch) => {
@@ -560,8 +545,6 @@ test("Marketplace install atomically activates the plugin and stays active after
   });
   await waitForFrame(rendered, "No plugins in this collection");
   marketplace.press("g");
-  await rendered.renderOnce();
-  marketplace.press("return");
   await rendered.renderOnce();
   await rendered.mockInput.typeText("https://example.invalid/context7.git");
   marketplace.press("return");
@@ -957,7 +940,6 @@ test("every top-level command carries a canonical /token (no bare-title rows)", 
     "app.quit": ["/quit"],
     "agent.picker": ["/agent"],
     "isolation.picker": [],
-    "review.picker": [],
     "memory.picker": [],
     "transcript.diff": ["/diff"],
     "plan.toggleReview": ["/plan"],
@@ -987,16 +969,13 @@ test("every top-level command carries a canonical /token (no bare-title rows)", 
 test("non-aliased hub children and folded toggles stay off the slash surface", () => {
   const { commands, dispose } = harness();
   const byName = new Map(commands.entries().map((e) => [e.name, e]));
-  for (const name of ["controls.open", "capability-providers.open", "sandbox.config"]) {
+  for (const name of ["controls.open", "sandbox.config"]) {
     expect([name, byName.get(name)?.slashes]).toEqual([name, []]);
     expect([name, byName.get(name)?.parent]).toEqual([
       name,
       name.includes("plugin") || name === "mcp.browse" ? "extensions" : "settings",
     ]);
   }
-  // Review opens an explicit picker; the old blind guard-cycle action is gone.
-  expect(byName.get("review.picker")!.surface).toBe("internal");
-  expect(byName.get("guard.cycle")).toBeUndefined();
   expect(byName.get("memory.cycle")).toBeUndefined();
   dispose();
 });
@@ -1035,24 +1014,9 @@ test("/settings <child> deep-links to that editor with a mounted parent route", 
   dispose();
 });
 
-test("settings children prefer workspace scope when workspace settings exist", () => {
-  const settings = fakeSettings();
-  settings.read = ((scope: string) =>
-    scope === "workspace" ? { plans: {} } : {}) as SettingsAdapter["read"];
-  const mounted = harness({ settings });
-  expect(mounted.commands.route("settings.open", "capability-providers")).toBe(true);
-  expect(mounted.opened.at(-1)).toEqual({
-    name: "capability-providers.open",
-    scope: "workspace",
-    parent: "settings.open",
-  });
-  mounted.dispose();
-});
-
 const DISPOSITION: [string, { surface: string; group: string; parent?: string }][] = [
   ["agent.picker", { surface: "slash", group: "navigate" }],
   ["isolation.picker", { surface: "internal", group: "navigate" }],
-  ["review.picker", { surface: "internal", group: "navigate" }],
   ["memory.picker", { surface: "internal", group: "navigate" }],
   ["sessions.open", { surface: "slash", group: "navigate", parent: "sessions" }],
   ["workflows.open", { surface: "slash", group: "navigate" }],
@@ -1065,7 +1029,6 @@ const DISPOSITION: [string, { surface: string; group: string; parent?: string }]
   ["catalog.refresh", { surface: "slash", group: "actions", parent: "inspect" }],
   ["controls.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["providers.open", { surface: "internal", group: "navigate", parent: "settings" }],
-  ["capability-providers.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["agents.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["defaults.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["model.open", { surface: "slash", group: "navigate" }],
@@ -1102,7 +1065,6 @@ test("thin action commands dispatch through their injected application effects",
   const contract = [
     ["agent.picker", "agent-picker"],
     ["isolation.picker", "isolation-picker"],
-    ["review.picker", "review-picker"],
     ["memory.picker", "memory-picker"],
     ["transcript.diff", "diff"],
     ["plan.open", "plan"],
@@ -1310,9 +1272,7 @@ test("onMount seeds the planning block once settings exist and it is unconfigure
       corrupt: () => null,
       planRepair: () => null,
       applyRepair: async () => {},
-      // A host past first boot: with an allow list already present the one-time
-      // guard seed is a no-op, so `writes` holds only what this case triggers.
-      effective: () => ({ guard: { type: "shell", allowed_commands: ["git status"] } }),
+      effective: () => ({}),
       origin: () => undefined,
       effectiveProviders: () => [],
       knownGrants: () => undefined,
@@ -1351,7 +1311,6 @@ const FACTORY_SMOKES = [
   "defaults.open",
   "model.open",
   "effort.open",
-  "capability-providers.open",
   "marketplace.open",
   "memory.config",
   "sandbox.config",

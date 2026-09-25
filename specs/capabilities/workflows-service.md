@@ -11,7 +11,7 @@ retains the manager's already assembled body, including a skill seed, and fixes 
 fan-out settings, selectable leaders and default leader for the whole tree. Later file edits affect
 future preparations. They do not change a leader spawned by an already admitted manager or grant
 an expired interactive permission. The scheduler and physical tree use the native workflow service
-and lifecycle; Docker/Podman does not compose a workflow bridge.
+and lifecycle.
 
 Production: `PreparedWorkflowExecution`, `runManagerWorkflow` and `assembleLeader` in
 [workflows-service.ts](../../packages/kernel/src/workflows/workflows-service.ts), and
@@ -46,10 +46,9 @@ scheduling engine: `WorkflowCtx`, `LeaderSpec` and `LeaderResult` are what the s
 run (the `WorkflowCtx` construction in `createWorkflowsService`).
 
 The configuration document fixtures exercise a workflow document, its brief and its separate
-Admiral skill launcher. Ordinary reviewed file tools create authored
+Admiral skill launcher. Ordinary file tools create authored
 files; an ordinary manager run reloads definitions and requires its own workflow preflight.
-Production: `createAuthoringMutationReview` in
-[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts), and `readWorkflowDefs` in
+Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts), and `readWorkflowDefs` in
 [workflows-service.ts](../../packages/kernel/src/workflows/workflows-service.ts).
 Test: `creates a workflow in the ordinary conversation and runs it through Admiral with an independent preflight`
 and `loads the complete workflow, diagnoses broken briefs, and reloads workspace overrides` in
@@ -58,14 +57,10 @@ See [self-configuration.md](../hosts/self-configuration.md) for the writer's aut
 
 ## 2. Surface
 
-Workflow execution is available in Host, Sandbox and Container. Container keeps manager, leaders,
+Workflow execution is available in Host and Sandbox. The native host keeps manager, leaders,
 registry and execution in its Kernel, persists records in the canonical owner-scoped host directory
 shared with Host/Sandbox, and uses frozen projected definitions. Plugin
 definitions remain unavailable; no subset or host bridge substitutes for the workflow.
-
-Production: `createContainerNativeKernel` in
-`packages/kernel/src/hosting/container-native.ts`. Test:
-`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 ### `@clarvis/workflows` — `./artifact` entry
 
@@ -409,13 +404,7 @@ The schema is enforced, not decorative: the same single-property schema the call
    (`packages/workflows/src/artifact.ts`).
 8. `repeat.rounds` may only name round ids that exist (`packages/workflows/src/artifact.ts`).
 
-The reviewed configuration file route calls `validateWorkflowDocument` before it attests or mutates
-a canonical `workflows/<name>/WORKFLOW.md`. Because a workflow document resolves its brief files as
-part of compilation, those operational files must already exist. Production:
-`prepareConfigurationFileMutation` in
-[files.ts](../../packages/kernel/src/configuration/files.ts). Test:
-`validates prospective workflow definitions before previewing or writing them` in
-[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
+Workflow documents written through ordinary file tools are validated by `loadWorkflow` when consumed. Brief files must exist before compilation. Production: `loadWorkflow` and `validateWorkflowDocument` in [artifact.ts](../../packages/workflows/src/artifact.ts). Test: `loads the complete workflow, diagnoses broken briefs, and reloads workspace overrides` in [configuration-documents.test.ts](../../packages/kernel/tests/integration/configuration-documents.test.ts).
 
 ### 4.2 Reading a brief — `readBrief` (`packages/workflows/src/artifact.ts`)
 
@@ -515,7 +504,7 @@ without recursively granting the child the workflow capability
 4. `assembleLeader` (the `LeaderRequestAssembler` passed into `WorkflowCtx.assemble`) resolves the
    leader's agent as `spec.profile ?? resolveLeaderDefault(managerAgent) ?? managerAgent`
    (`packages/kernel/src/workflows/workflows-service.ts`, `assembleLeader`), forces `plans: "off"`
-   and `memory: "off"`, forwards `output_schema`, `guard_mode`, `guard_judge`, `task`,
+   and `memory: "off"`, forwards `output_schema`, `task`,
    `session_id` and cache TTL from the manager's own params when present. Without an explicit
    session, the manager's execution ID supplies the shared session. Each leader uses the child
    `runId` reserved by the scheduler for both `execution_id` and `agent_instance_id`; it never
@@ -531,13 +520,8 @@ without recursively granting the child the workflow capability
    [`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts)
    checks the manager and two leaders of one profile, composed keys in SDK-serialized requests,
    persisted identities and two continuations per leader in direct and prepared assembly.
-   The same `params.task` binding (an external Tasks-capability `{id, provider_key, mode}`) is also
-   forwarded, byte-identical, into the manager's own assembled body — so an external task bound at
-   workflow start reaches both the manager's own run and every leader it spawns, not only one or the
-   other (proven by
-   `packages/kernel/tests/integration/workflows-service.test.ts` in `forwards one external task
-   binding to both workflow manager and leaders`, asserting `assembled.map(p => p.task)` equals
-   `[task, task]`).
+   `params.task` remains a legacy request field in `StartRunParams`, but the removed Tasks capability
+   has no provider or model-facing tools. Workflow scheduling does not assign an external task.
 5. `execute(context)` (the body `createManagedRun` invokes):
    - Calls `auxiliaryWorkflowRunDeps(deps)` to remove the memory capability, then clones those deps
      with a logger bound to `{component: "workflows", workflow_id: managerRunId}` when a logger
@@ -634,13 +618,6 @@ schedules another attempt, and terminal `flush()` still persists a complete snap
 handle settles.
 
 ### 4.8 Semantic title generation — `generateWorkflowTitle` (`packages/kernel/src/workflows/workflow-title.ts`)
-
-The title argument validator is created on first use, after the standalone Kernel installs its
-bundled Ajv modules. Importing workflow-title code must not resolve Ajv before that installation.
-Production: `titleArgumentValidator` in `packages/kernel/src/workflows/workflow-title.ts` and
-`installBundledAjvModules` in `tooling/runtime/kernel-entry.ts`. Test:
-`packages/kernel/tests/unit/workflow-title.test.ts` and
-`packages/kernel/tests/integration/container-kernel.e2e.test.ts`.
 
 1. Find the manager's own profile (`request.profiles.find(p => p.name === request.entry)`) and the
    most recent `role: "user"` message's text; if either is missing, return `null` immediately with
@@ -904,14 +881,6 @@ turns to the entry, regardless of arrival order`; `always attributes an agent:'l
 entry`); `packages/kernel/tests/integration/workflows-service.test.ts` (`reports a subagent-role
 leader's progress: its turns are not tagged 'lead'`).
 
-**INV-W8.** An external task binding (`params.task`) supplied to a manager run travels unchanged into
-both the manager's own assembled run body and every leader body `assembleLeader` produces — a
-workflow does not fragment a single bound task across the tree.
-Production: `assembleLeader` and the manager request assembly in `runManagerWorkflow`, both in
-`packages/kernel/src/workflows/workflows-service.ts`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`forwards one external task
-binding to both workflow manager and leaders`).
-
 **INV-W9.** Every coordinator transition is emitted live and the latest bounded state is persisted
 on the workflow record. Live and durable projections carry the same session, status, revision,
 round/pass and cumulative leader fields. Production: `WorkflowCtx.onSequenceState` construction in
@@ -1118,7 +1087,6 @@ is signalled through `WorkflowCtx.onBudgetExhausted` by `runLeader`, `buildRunLe
 `runOne`. Test: `packages/kernel/tests/unit/workflows-service.test.ts` (`finalWorkflowStatus` and
 `reconcileRunningWorkflowRecord`) and `packages/kernel/tests/integration/workflows-service.test.ts`
 (`flushes one coalesced terminal snapshot before done and closed settle`).
-
 
 ## 6. Failure modes and degradation
 

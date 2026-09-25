@@ -65,8 +65,21 @@ describe("shell and shell_session", () => {
       ).toBe("not_found");
       const first = await callTool("shell_session", { action: "poll", session_id: id }, owner);
       expect(first.json.stdout).toContain("READY");
-      expect(first.json.stderr).toContain("warning");
-      const cursor = first.json.next_cursor as string;
+      const stderrPage =
+        typeof first.json.stderr === "string" && first.json.stderr.includes("warning")
+          ? first
+          : await callTool(
+              "shell_session",
+              {
+                action: "poll",
+                session_id: id,
+                cursor: first.json.next_cursor as string,
+                yield_time_ms: 1000,
+              },
+              owner,
+            );
+      expect(stderrPage.json.stderr).toContain("warning");
+      const cursor = stderrPage.json.next_cursor as string;
       const replay = await callTool("shell_session", { action: "poll", session_id: id }, owner);
       expect(replay.json.next_cursor).toBe(cursor);
       const stopped = await callTool("shell_session", { action: "stop", session_id: id }, owner);

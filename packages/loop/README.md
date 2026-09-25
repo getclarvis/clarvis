@@ -14,7 +14,7 @@ registered settings specs can declare `referencedModels(view)` for generic provi
 Selective shell interruption waits up to two seconds for executor settlement and bounded partial
 stdout/stderr. Global cancellation can preempt that wait. A noncooperative executor instead returns
 an explicit unconfirmed-termination error, never a falsely confirmed operator terminal. Live control
-is published after successful shell spawn, not while command review is pending; late callbacks
+is published after successful shell spawn; late callbacks
 cannot reopen a settled tool. See [tool dispatch](../../specs/engine/tool-dispatch.md).
 
 Spawn preparation does not claim tasks or publish child creation. Those effects follow semaphore
@@ -261,16 +261,14 @@ The public settled-context helpers can estimate a persisted snapshot, run the sa
 compaction without another agent iteration, or mechanically fit it to a smaller model window.
 Mechanical fitting preserves retained entries byte-for-byte, including opaque provider metadata;
 the caller owns the explicit persisted replacement and its cache-breaking consequences.
-The host chooses which capabilities reach a run. Container builds this loop with native tools,
-Plans, Memory, Workflows and Goals, an injected logical model provider and an empty connection
-manager. Skills, MCP, Hooks, plugins and external Tasks remain absent; the loop does not create a
-fallback or host bridge for an omitted capability.
+The host chooses which capabilities reach a run. Omitted capabilities have no fallback or
+implicit host bridge.
 
 Built-ins cover:
 
-- coding tools and command guards, including Isolation guidance so an exec-capable agent can retry a
-  blocked `shell` with `sandbox_permissions: "require_escalated"` instead of a
-  second tool. Isolated container guests set `allowHostEscalation: false` so that retry is refused;
+- coding tools. The host-selected placement and run identity produce one frozen filesystem policy
+  shared by each agent's command sessions and file service. Sandbox runs file calls in one isolated run-owned child, reads host-visible files and limits writes to declared roots;
+  the File Kernel applies the enabled global Sandbox as a floor when workspace settings are not trusted;
 - one owner-only scratch root per run, allocated by `@clarvis/paths` as a short, exclusive,
   account-owned directory and advertised as `TMPDIR`, `TEMP` and `TMP`, plus the host's existing system
   temporary roots pre-authorized across command and native tools. Shortness is what keeps a tool's own
@@ -372,12 +370,9 @@ stale empty legacy run containers left by a crash. Production: `createAgentTools
 `ExecutionSessionManager` in `packages/tools/src/lib/execution-session.ts`,
 `allocateShortTemporaryRoot` and `collectAbandonedShortTemporaryRoots` in
 `packages/paths/src/short-temporaries.ts`. Tests: `packages/loop/tests/integration/tools.test.ts`,
-`packages/loop/tests/integration/command-guard-wiring.test.ts`
 and `packages/paths/tests/integration/short-temporaries.test.ts`.
 
-The doom-loop guard counts only genuine tool execution failures. A command or path refused by
-policy/human review is still returned and traced as a tool error, but it is a `denied` dispatch — it
-breaks the active execution-failure streak instead of advancing it. Results are folded in the order
+The doom-loop guard counts genuine tool execution failures. Results are folded in the order
 the model declared its calls. Crossing a threshold inside a multi-call dispatch therefore remains
 provisional until the loop checks the guard after the batch: a later successful call resets the
 streak, while an observed trip remains latched until explicit guard escalation resets it.
@@ -398,8 +393,7 @@ The resolver admits only exact catalog pairs with empty request `providers`, sup
 entry/delegated profiles, vision and compaction without fabricating native transport configuration.
 When catalog metadata omits a maximum output size, delegated profiles use the context window as a
 conservative per-call ceiling so aggregate Workflow budgets cannot exceed host broker admission.
-Without it, native provider resolution remains unchanged. These are generic embedding ports, not a
-claim that the Container runtime uses them. See [composition](../../specs/engine/capability-composition.md)
+Without it, native provider resolution remains unchanged. These are generic embedding ports. See [composition](../../specs/engine/capability-composition.md)
 and [request validation](../../specs/engine/request-and-settings-schema.md).
 
 A host supplies or builds:
@@ -472,7 +466,7 @@ so many individually valid data URLs cannot multiply into an unbounded continuat
 
 Profiles and transport descriptors are bounded before they become retained run state: profile prose
 shares an 8 MiB aggregate character budget, individual base prompts cap at 256 KiB, and tool/grant/
-spawn lists have finite fanout. MCP argv, header/env maps, command-guard patterns and sandbox path
+spawn lists have finite fanout. MCP argv, header/env maps and sandbox path
 lists likewise have per-item and collection ceilings in both `settings.json` and direct requests.
 One child-spawn brief is limited to 32,768 Unicode characters in both advertised tool schemas and
 the programmatic handler. A tracked exit condition shares that same final prompt budget, so task
@@ -511,7 +505,7 @@ The list below is the whole of `package.json`'s `exports` map:
 - `@clarvis/loop` — stable engine and host-facing types, including `VERSION` sourced from the root
   Clarvis product manifest, and `createToolArgValidator`: the engine's own rule for a tool call's
   arguments, for a host that rules on one itself (a workflow title's `set_title` call).
-- `@clarvis/loop/capabilities/tools` — coding tools and guard integration.
+- `@clarvis/loop/capabilities/tools` — coding tools integration.
 - `@clarvis/loop/host` — the narrow host-composition surface for config,
   provider, plugin and sandbox policy that `@clarvis/kernel` programs against, including dependency
   construction, logger/version bindings, request message ceilings and their host-facing types
@@ -568,10 +562,6 @@ hooks or summary-model work. The durable outcome stays `compaction` or `compacti
 eviction produced only because an attempted summary failed or did not shrink the span carries
 `fallback_reason`. Summary calls use a 120-second default timeout so large contexts are not silently
 downgraded by the shorter ordinary-control timeout.
-
-For guarded coding tools, the terminal `tool_call` also carries the final review
-metadata returned by the dispatcher. This is execution history, not a diagnostic:
-it is persisted and later projected to clients alongside the shell result.
 
 Every record carries a stable `event` field; the message is prose that names the consequence and is
 free to change. Three correlation scopes are bound with `bind()`: the run
@@ -641,26 +631,3 @@ Direct runs persist missing session/agent identities before inference; continuat
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
-
-## Host operator authority
-
-`ExecuteRunArgs.operatorAuthoritySeed` is private host input, separate from `rawBody`.
-`ExecuteRunDeps.operatorAuthority` creates one runtime before capability activation. The loop
-prepublishes its reader, admits root steers and accepted entry-agent `ask_user` answers through
-private hooks, and persists
-`operator_authority_state` separately from capability slots. It never reconstructs evidence from
-`final_context`. The host evidence validator reuses this package's exported request message ceilings,
-so accepted user input does not encounter a smaller authority-only text limit. A later host-admitted
-turn may carry settled evidence only through that separately persisted ledger; it never treats model
-context as authority. An `ask_user` question is retained separately as untrusted context for the
-authenticated answer; other elicitation kinds and non-accepted outcomes create no evidence. See
-[effect review](../../specs/execution/effect-review.md).
-
-The Host/Sandbox guard resolution may supply a prepared `reviewMutation` callback. Tools transport it only to the entry agent within the captured editing ceiling. It is an in-process host port, never a profile option or container projection; the optional tools boundary remains type-only on composition paths.
-
-`ExecuteRunDeps.executionVisibility` is required host-owned persistence classification. It is
-validated before capability activation and copied into the journal header and final record.
-`buildExecuteRunDeps` explicitly selects `public` and a public trace view for ordinary host composition;
-its resolved physical store remains available for maintenance. ID reservations use the shared physical
-namespace across views. The model request
-cannot select visibility.

@@ -3,12 +3,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show }
 import type { InputRenderable } from "@opentui/core";
 import { PLAN_REVIEW_ELICIT_KIND } from "../adapters/elicit-types.ts";
 import { ELICIT_NO_RESPONSE_TEXT, elicitCountdownText } from "../adapters/elicit-types.ts";
-import { effectReviewExplanation } from "../core/transcript/effect-review.ts";
-import type {
-  ElicitCommandDetail,
-  ElicitRequestParams,
-  ElicitResult,
-} from "../adapters/elicit-types.ts";
+import type { ElicitRequestParams, ElicitResult } from "../adapters/elicit-types.ts";
 import type { PlanActivity } from "../adapters/plan-projection.ts";
 import { tokens } from "../theme/tokens.ts";
 import { borderChars, glyph } from "../theme/glyphs.ts";
@@ -17,7 +12,6 @@ import type { Interaction } from "../keys/interaction.ts";
 import { LAYER } from "../ui/patterns/level-keys.ts";
 import { uiCommand } from "../keys/actions.ts";
 import { ChoiceRows } from "./overlays/ChoiceRows.tsx";
-import { ClampedCode } from "./tools/registry.tsx";
 import {
   acceptResult,
   CANCEL_RESULT,
@@ -38,14 +32,10 @@ function fieldLabel(name: string, title: string): string {
 }
 
 /**
- * Renders one pending elicitation as a modal-style block: a guard confirmation,
- * a plan-review approval, a URL notice, or a generic agent question with
+ * Renders one pending elicitation as a modal-style block: a plan-review approval,
+ * a URL notice, or a generic agent question with
  * text/number/select/boolean fields.
  *
- * @remarks
- * A guard's structured command renders as highlighted code — the user is
- * approving THIS text — with the guard's reason (and any analyzer warning)
- * above it; the prose message is only the unstructured fallback.
  */
 export function ElicitBlock(props: {
   interaction: Interaction;
@@ -73,20 +63,13 @@ export function ElicitBlock(props: {
 }): JSX.Element {
   const form = parseElicitForm(props.request);
   const fields = form.fields;
-  const isGuard = props.request.kind === "guard_confirm";
-  const isConfiguration = props.request.kind === "configuration_review";
   const isPlanReview = props.request.kind === PLAN_REVIEW_ELICIT_KIND;
   const isWorkflowReview = props.request.kind === "workflow_review";
-  const accent = (): string =>
-    isGuard || isConfiguration
-      ? tokens.warn
-      : isPlanReview || isWorkflowReview
-        ? tokens.accent2
-        : tokens.accent;
+  const accent = (): string => (isPlanReview || isWorkflowReview ? tokens.accent2 : tokens.accent);
   const windowLeft = (): number | null => props.remaining?.() ?? null;
   /** Whether this question's decision window is really running on screen: the
-   * request declares one and the kernel has projected what is left of it. Guard
-   * confirmations, plan/workflow reviews, relayed MCP questions and headless
+   * request declares one and the kernel has projected what is left of it.
+   * Plan/workflow reviews, relayed MCP questions and headless
    * runs declare no window, and a confirmation that never reached the kernel
    * projects nothing — neither renders a countdown, because this block never
    * invents a remaining time. */
@@ -267,21 +250,18 @@ export function ElicitBlock(props: {
         }),
         uiCommand({
           id: "elicit.accept",
-          title: isGuard
-            ? "Confirm command decision"
-            : isPlanReview
-              ? "Confirm plan decision"
-              : isWorkflowReview
-                ? "Confirm workflow decision"
-                : "Send answer",
-          description: isGuard
-            ? "Confirm the selected decision for this exact command"
-            : isPlanReview || isWorkflowReview
+          title: isPlanReview
+            ? "Confirm plan decision"
+            : isWorkflowReview
+              ? "Confirm workflow decision"
+              : "Send answer",
+          description:
+            isPlanReview || isWorkflowReview
               ? "Confirm the selected decision"
               : "Send the current answer",
           category: "primary",
           surfaces: form.mode === "url" ? ["internal"] : ["footer"],
-          footerLabel: isGuard || isPlanReview || isWorkflowReview ? "confirm" : "send",
+          footerLabel: isPlanReview || isWorkflowReview ? "confirm" : "send",
           hintPriority: 100,
           hintGroup: "primary",
           essential: true,
@@ -306,15 +286,11 @@ export function ElicitBlock(props: {
           : []),
         uiCommand({
           id: "elicit.decline",
-          title: isGuard
-            ? "Deny command"
-            : isWorkflowReview
-              ? "Do not run workflow"
-              : "Decline request",
-          description: isGuard ? "Deny this exact command" : "Decline without cancelling the run",
+          title: isWorkflowReview ? "Do not run workflow" : "Decline request",
+          description: "Decline without cancelling the run",
           category: "mutation",
           surfaces: ["footer"],
-          footerLabel: isGuard ? "deny" : isWorkflowReview ? "do not run" : "decline",
+          footerLabel: isWorkflowReview ? "do not run" : "decline",
           hintPriority: 80,
           hintGroup: "mutation",
           enabled: () => !expired(),
@@ -370,15 +346,11 @@ export function ElicitBlock(props: {
       backgroundColor={tokens.bg}
     >
       <text fg={accent()} flexShrink={0}>
-        {isGuard
-          ? glyph("warning") + " Command approval"
-          : isConfiguration
-            ? "Configuration review"
-            : isPlanReview
-              ? "Plan approval required"
-              : isWorkflowReview
-                ? "Workflow approval required"
-                : "Agent asks"}
+        {isPlanReview
+          ? "Plan approval required"
+          : isWorkflowReview
+            ? "Workflow approval required"
+            : "Agent asks"}
       </text>
       <Show when={windowed()}>
         <text fg={tokens.muted} flexShrink={0}>
@@ -394,30 +366,10 @@ export function ElicitBlock(props: {
         )}
       </Show>
       <box paddingTop={1} flexDirection="column" flexShrink={0}>
-        <Show
-          when={form.detail}
-          keyed
-          fallback={
-            <Show when={!suppressProse()}>
-              <text fg={tokens.fg} wrapMode="word">
-                {form.message}
-              </text>
-            </Show>
-          }
-        >
-          {(detail: ElicitCommandDetail) => (
-            <box flexDirection="column" flexShrink={0}>
-              <text fg={tokens.fg}>{detail.reason}</text>
-              <For each={effectReviewExplanation(detail)}>
-                {(line) => <text fg={tokens.warn}>{line}</text>}
-              </For>
-              <Show when={detail.warning} keyed>
-                {(warning: string) => <text fg={tokens.warn}>{warning}</text>}
-              </Show>
-              <ClampedCode content={detail.command} filetype="bash" full wrap="char" />
-              <text fg={tokens.muted}>{"in " + detail.cwd}</text>
-            </box>
-          )}
+        <Show when={!suppressProse()}>
+          <text fg={tokens.fg} wrapMode="word">
+            {form.message}
+          </text>
         </Show>
       </box>
       <Show when={form.mode === "url"}>

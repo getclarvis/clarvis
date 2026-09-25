@@ -100,8 +100,7 @@ policy still applies before the loop accepts the stage. The external event spell
 - **`rewrite` replaces the pending call's arguments wholesale** — never a merge, so a hook's effect
   cannot depend on which keys the model happened to send. It is honoured only on `pre_tool_use`;
   asked for anywhere else it is bad output, never a silent no-op. Replacement arguments are still
-  validated against the tool's own schema and still meet the command guard, both of which sit
-  downstream, and the model is told what actually ran.
+  validated against the tool's own schema downstream, and the model is told what actually ran.
 - **exit code** — non-zero is a failure even when stdout parsed cleanly, with one exception: **exit
   2 at a gate is a denial**, with the reason taken from stderr. It is the blocking form a shell
   script reaches for when writing JSON is inconvenient.
@@ -126,12 +125,6 @@ plugin hook additionally receives `PLUGIN_ROOT`/`PLUGIN_DATA` and the
 `CODEX_PLUGIN_ROOT`/`CODEX_PLUGIN_DATA` compatibility aliases, without adding credential material.
 That is credential hygiene, **not a sandbox** — a hook command runs with the operator's own
 privileges, which is the point of it being installed/operator-authored config.
-
-Hooks are composed only for native Host/Sandbox. The complete Docker/Podman Container Kernel does not construct or
-invoke host lifecycle callbacks, command hooks, HTTP/SSE Hook MCP or guest stdio Hook MCP; configured
-Hooks remain persisted but inactive for that placement. No event context, command, environment or
-Hook declaration crosses the private runtime. See the
-[isolated runtime contract](../../specs/hosts/isolated-agent-runtime.md).
 
 ## Usage
 
@@ -216,4 +209,4 @@ arguments it was matched against.
 - **Argument rewriting is sequential and selection-stable.** Every matching hook is selected against
   the model's original call. A successful `pre_tool_use` rewrite replaces the entire argument object
   seen by later selected hooks; it never re-runs selection, so one hook cannot silence another. The
-  final replacement still passes the tool schema and command guard before dispatch.
+  final replacement still passes the tool schema before dispatch.

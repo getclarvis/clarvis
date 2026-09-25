@@ -136,7 +136,6 @@ function HubMenu(host, deps: { title; items; openChild(cmd: string): void })    
 | id | label | cmd |
 | --- | --- | --- |
 | `providers` | Providers | `providers.open` |
-| `capability-providers` | Feature backends | `capability-providers.open` |
 | `agents` | Agents | `agents.open` |
 | `defaults` | Defaults | `defaults.open` |
 | `memory` | Memory | `memory.config` |
@@ -168,6 +167,24 @@ four panels named above. Test: `packages/code/tests/integration/defaults-panel-r
 `packages/code/tests/integration/sandbox-config-render.test.tsx`, and
 `packages/code/tests/integration/run-controls-render.test.tsx`.
 
+The Sandbox overview renders `SandboxInspection.filesystem` so the selected read scope and write
+posture remain visible beside backend status. That host observation wins in the effective access
+line when an untrusted workspace requests weaker settings than the global Sandbox; editable rows
+continue to show the requested values. Run controls and Doctor use the same observation for
+effective placement, and the quick picker marks that placement as current. The Isolation picker states Host OS access, Sandbox
+host-visible reads with declared writes. Production:
+`SandboxConfigPanel` in
+[SandboxConfigPanel.tsx](../../packages/code/src/views/config/SandboxConfigPanel.tsx) and
+`isolationPlacementLines` in
+[isolation.ts](../../packages/code/src/features/run/isolation.ts). Test:
+[sandbox-config-render.test.tsx](../../packages/code/tests/integration/sandbox-config-render.test.tsx)
+(`host inspection wins when an untrusted workspace requests weaker Sandbox access`)
+and [run-controls-render.test.tsx](../../packages/code/tests/integration/run-controls-render.test.tsx)
+(`run controls follow host Sandbox inspection over a weaker workspace merge`).
+The quick picker is tested by
+[isolation-review-picker-render.test.tsx](../../packages/code/tests/integration/isolation-review-picker-render.test.tsx)
+(`the isolation picker marks the host-inspected Sandbox as current`).
+
 `MemoryConfigPanel` adopts the same overview shape as `Sandbox`: the effective summary line, then
 one row per control, with no intermediate `settings (<scope>)` / `session (this client)` headings —
 the rows already name their own origin, and the headings spent the height a short terminal needed.
@@ -182,30 +199,16 @@ carries the reason a disabled, unresolved or session-overridden state cannot lea
 rows without intermediate scope headings"), with
 `packages/code/tests/integration/sandbox-config-render.test.tsx` as the shared-primitive sentinel.
 
-`RunControlsPanel` is the sole Settings screen for Host, Sandbox, Docker or Podman placement. Itwrites through shared `applyIsolation`; native Sandbox fields remain under `sandbox.config`.
-Workspace settings cannot contribute a runtime. Docker/Podman copy states
-that the full native Kernel, including Plans, Memory, Workflows and Goals, runs in the Container;
-skills, MCP, hooks, plugins, Tasks, external capability providers and Guard remain
-unavailable. It also names the writable workspace, outbound consequences, read-only Git metadata and
-fail-closed startup with no native fallback. Review renders `Not applicable in Container`, native
-capability settings remain visible, and unavailable extensions are marked as such; persisted settings
-are not overwritten. An active operation blocks the isolation transition until it stops. Production:
-`packages/code/src/features/run/isolation.ts` (`isolationPlacementLines`), and
-`packages/code/src/views/config/RunControlsPanel.tsx`. An idle save immediately requests a workspace
-connection reload, so the header reflects the newly admitted Kernel placement; a failed reload leaves
-the saved choice explicitly pending instead of reporting it as active. Any committed host-side
-settings, Agent, context or model-catalog change for an active Container generation also keeps a
-`reconnect pending` warning in the header until a successful generation replacement clears it.
-Production: `WorkspaceClientManager.invalidate` in
-`packages/code/src/adapters/workspace-client-manager.ts`, `urgentField` in
-`packages/code/src/views/header-projection.ts`, and
-the `reload` callbacks in `packages/code/src/views/overlays/IsolationPicker.tsx`,
-`packages/code/src/views/config/RunControlsPanel.tsx`. Test:
-`packages/code/tests/unit/isolation.test.ts`,
+`RunControlsPanel` is the Settings screen for Host or Sandbox placement. It writes through
+shared `applyIsolation`; native Sandbox fields remain under `sandbox.config`. An active operation
+keeps the saved setting for the next run. An idle save requests a workspace connection reload; a
+failed reload leaves the saved choice explicitly pending rather than reporting it as active.
+Production: `packages/code/src/features/run/isolation.ts` (`isolationPlacementLines`) and
+`packages/code/src/views/config/RunControlsPanel.tsx`.
+Test: `packages/code/tests/unit/isolation.test.ts`,
 `packages/code/tests/integration/isolation-review-picker-render.test.tsx`, and
 `packages/code/tests/integration/run-controls-render.test.tsx`; connection reselection is pinned by
-`packages/code/tests/component/workspace-client-manager.test.ts`, and the persistent warning by
-`packages/code/tests/unit/header-projection.test.ts`.
+`packages/code/tests/component/workspace-client-manager.test.ts`.
 
 The `Ctrl+X M` Memory picker mirrors Run controls' `on`/`off` choice but changes only the
 session `MemoryModeStore`; persisted Memory settings remain under `MemoryConfigPanel`. Production:
@@ -1567,11 +1570,11 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
   `defaults.open`, `extension-profiles.open`, `plugins.open`, `hooks.open`, `marketplace.open`, `mcp.browse`, `settings.open`, `extensions.open`.
 - `views/overlay-host.ts` depends on `ViewHostControls`' exact shape — `runSave`, `scopeBound`,
   `escape`, `dispose` (`packages/code/src/views/overlay-host.ts`).
-- `CapabilityProvidersPanel`, `AgentsPanel`, `RunControlsPanel`, `MemoryConfigPanel`,
-  `SandboxConfigPanel`, `TasksHub`, `WorkflowsHub`, `SessionsHub`, `ThemeView`,
+- `AgentsPanel`, `RunControlsPanel`, `MemoryConfigPanel`,
+  `SandboxConfigPanel`, `WorkflowsHub`, `SessionsHub`, `ThemeView`,
   `KeyboardView`, `DoctorView`, `ModelView`, `EffortView` all consume `view-host.tsx`'s toolkit; they
   belong to sibling documents ([hosts/code-domain-hubs.md](code-domain-hubs.md), [hosts/model-catalog.md](model-catalog.md),
-  [execution/sandbox.md](../execution/sandbox.md), [capabilities/provider-executables.md](../capabilities/provider-executables.md)).
+  [execution/sandbox.md](../execution/sandbox.md)).
 
 ### 7.4 Delegated out
 
@@ -1742,15 +1745,6 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
     provider currently owns it (`packages/code/src/views/config/providers/list-level.tsx`) — and
     that first-run setup is the one flow that still stages it alongside a provider
     (`packages/code/src/features/providers/controller.ts`).
-## Reviewer model readiness
-
-`guardAutoResolves` considers `effect_review.model` before the default model. Code forwards actual
-reviewer overrides and optional guidance; kernel owns the first safety policy. Selecting a model
-does not widen effect authority. Production:
-[guard-mode.ts](../../packages/code/src/adapters/guard-mode.ts) and
-[kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts).
-The review contract is [effect review](../execution/effect-review.md).
-
 Agent Profile documents with unknown frontmatter keys remain listable with an invalid marker. The editor does not promote `base_prompt` from invalid metadata; writes use the same closed schema as execution admission.
 Production: `docToAgentFile` and `normalizeAgentWrite` in [agent-files.ts](../../packages/code/src/adapters/agent-files.ts).
 Test: unknown-key rejection and unchecked-prompt isolation in [agent-files.test.ts](../../packages/code/tests/unit/agent-files.test.ts).

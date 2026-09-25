@@ -1,9 +1,7 @@
 # `@clarvis/plan`
 
-Execution-plan contracts, orchestration and persistence providers for Clarvis. The built-in provider
-remains workspace-local Markdown — **the Markdown document IS the plan**, not an export of one — but
-an operator may select a persistent language-neutral executable directly or through an enabled
-plugin. The adapter preserves the same `PlanStore` contract.
+Execution-plan contracts, orchestration and workspace-local Markdown persistence for Clarvis.
+**The Markdown document IS the plan**, not an export of one.
 
 Dependencies: `@clarvis/capability`, `@clarvis/paths`, `zod` and `yaml`.
 
@@ -15,8 +13,6 @@ Dependencies: `@clarvis/capability`, `@clarvis/paths`, `zod` and `yaml`.
 The Markdown format, revisions, compare-and-swap, and repository are specified in
 [`plan-store.md`](../../specs/capabilities/plan-store.md). Sessions, tools, review gates, and
 retention are specified in [`plan-capability.md`](../../specs/capabilities/plan-capability.md).
-External providers are governed by
-[`provider-executables.md`](../../specs/capabilities/provider-executables.md).
 
 Model guidance names tools conditionally and takes mutation revisions from the current plan state,
 not guesses. Review restrictions do not grant otherwise unavailable tools. A delegated task's return
@@ -27,14 +23,12 @@ The finalization note does not ask for invented evidence or early completion; se
 The active capability publishes a run-scoped reviewer context containing only the Plan's
 substantive title, objective, context, task title/detail/exit fields and validation list. Status,
 progress, outcomes, assignees, revisions, timestamps, paths and digests are excluded, so ordinary
-task progress does not churn Auto Guard input. The Judge receives this stable projection beside any
-Goal definition when deciding whether a routine bounded prerequisite belongs to the requested work.
-The snapshot carries a host-owned semantic revision; reviewer results are refused if that revision
-changes during inference, and stale compiled envelopes or cached decisions are not reused.
+task progress does not churn the Goal's semantic context. The Goal capability can receive this
+stable projection beside its definition. The snapshot carries a host-owned semantic revision.
 
 `read_plan` accepts an omitted or null ID for the active plan. `list_plans` accepts omitted or null
 options for the first page, default limit and absent status/retention filters. Non-null IDs and
-cursors must be nonempty; later pages use only provider-issued cursors. Shared read/list schemas
+cursors must be nonempty; later pages use only store-issued cursors. Shared read/list schemas
 generate the advertised catalog and normalize null to absence before the typed provider call.
 
 ## Entry points
@@ -43,8 +37,8 @@ generate the advertised catalog and normalize null to absence before the typed p
 | -------------------------- | --------------------------------------------------------------------------- |
 | `@clarvis/plan`            | provider/factory contracts, stores, service, format, transitions, revisions |
 | `@clarvis/plan/schemas`    | the zod schemas and `DEFAULT_PLAN_RETENTION`                                |
-| `@clarvis/plan/testing`    | repository and provider-facing `PlanStore` conformance suites               |
-| `@clarvis/plan/capability` | the provider-aware planning capability                                      |
+| `@clarvis/plan/testing`    | repository and `PlanStore` conformance suites                               |
+| `@clarvis/plan/capability` | the planning capability                                                     |
 | `@clarvis/plan/settings`   | the light `plans:` settings contract                                        |
 
 `createPlansCatalogCapability`, exported by the capability entry, lets a host retain
@@ -209,11 +203,8 @@ When the engine requests `preserveState` for an interrupted continuing activity,
 retains the current plan instead of changing its status. A later final result follows the ordinary
 task-closure and retention rules. This behavior does not grant review approval or continuation authority.
 
-Plans is available to Host, Sandbox and Container Kernels. Container uses the native Markdown
-provider, tools, review, CAS, continuation and retention callbacks, with documents persisted in its
-canonical workspace plan directory shared with Host/Sandbox. An active external provider is incompatible; disabled Plans does not resolve
-a provider. The placement contract belongs to
-[`isolated-agent-runtime.md`](../../specs/hosts/isolated-agent-runtime.md).
+Plans is available to native Host and Sandbox runs. The selected provider owns documents,
+review, CAS, continuation and retention through the canonical workspace plan directory.
 
 The default is defined once as `DEFAULT_PLAN_RETENTION` in `src/schemas.ts` and mirrored by
 `PLANS_DEFAULTS` in `src/settings.ts`. The component test in
@@ -247,22 +238,13 @@ touches `record.source` or the `renderPlan` path.
 `PlansService` over the protocol. Clients read documents through it, never from the local filesystem,
 so a remote kernel needs no client change.
 
-The capability and control plane resolve through one `PlanFactory`. The factory re-reads the
-operator's provider selection per operation, initializes a kernel-owned JSON-RPC session lazily,
-and memoizes one authoritative store per effective declaration and owner. A live `PlanSession` never
-changes stores mid-run.
+The capability and control plane resolve through one `PlanFactory`. It memoizes one authoritative
+Markdown store per owner. A live `PlanSession` never changes stores mid-run.
 
 ## Providers
 
-`plans.provider` accepts built-in Markdown, a direct executable declaration, or a plugin selection.
-Absent means Markdown. Provider selection is configuration-only: a plugin may offer a service but
-cannot select itself, and the selection is stripped from the per-run `plans` parameter.
-
-Services speak JSON-RPC 2.0 over JSON Lines and may be written in any language. Clarvis applies
-callbacks, revision operations, schemas, transitions and approval rules locally before sending a
-serializable document plus expected CAS to `plans/write`. A configured service that cannot initialize
-fails explicitly and never falls back to Markdown. See
-[`specs/capabilities/provider-executables.md`](../../specs/capabilities/provider-executables.md).
+`plans.provider` accepts only `{ "kind": "markdown" }`; omission selects the same built-in store.
+Provider selection stays in configuration and is stripped from the per-run `plans` parameter.
 
 Plan identity is `(provider_key, id)`. `path` is an optional display locator only; `read_plan` and
 the control plane address plans by `id`.
@@ -279,7 +261,7 @@ The test suite is physically split by responsibility:
 
 `planRepositoryConformance` owns repository semantics and runs against the file and in-memory
 adapters. `planStoreConformance` owns the complete store data-plane semantics and runs against the
-executable, Markdown and in-memory stores. File layout, permissions, confinement, atomic writes,
+Markdown and in-memory stores. File layout, permissions, confinement, atomic writes,
 lock contention, corruption and external-edit reconciliation remain real integration/contract tests;
 sessions, runtime tools and orchestration compose in-memory stores and contract-shaped fakes.
 

@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import path from "node:path";
-import { chmodSync, mkdirSync } from "node:fs";
-import { makeWorkspace, cleanup, write, makeSymlink } from "../helpers/fixtures.ts";
-import { resolvePath, displayPath, assertWithinWorkspace } from "../../src/lib/paths.ts";
+import { mkdirSync } from "node:fs";
+import { makeWorkspace, cleanup, makeSymlink } from "../helpers/fixtures.ts";
+import {
+  resolvePath,
+  resolveFileToolPath,
+  displayPath,
+  isWithinRoots,
+} from "../../src/lib/paths.ts";
 
 describe("resolvePath", () => {
   let root: string;
@@ -11,31 +16,44 @@ describe("resolvePath", () => {
   });
   afterEach(() => cleanup(root));
 
-  it("resolves a relative path against an existing workspace with confine", () => {
-    const result = resolvePath("nested/file.txt", root, true);
+  it("resolves a relative path against the workspace base", () => {
+    const result = resolvePath("nested/file.txt", root);
     expect(result).toBe(path.join(root, "nested", "file.txt"));
-  });
-
-  it("canonicalizes an existing confined target that has no missing path segments", () => {
-    write(root, "here.txt", "x");
-    const result = resolvePath("here.txt", root, true);
-    expect(result).toBe(path.join(root, "here.txt"));
   });
 
   it("normalizes an absolute input and returns it unchanged", () => {
     const abs = path.join(root, "abs.txt");
-    expect(resolvePath(abs, root, false)).toBe(abs);
+    expect(resolvePath(abs, root)).toBe(abs);
   });
 
   it("resolves against a workspace root that does not exist yet", () => {
     const ghostRoot = path.join(root, "ghost", "sub");
-    const result = resolvePath("file.txt", ghostRoot, true);
+    const result = resolvePath("file.txt", ghostRoot);
     expect(result).toBe(path.join(ghostRoot, "file.txt"));
   });
 
-  it("throws when a confined path escapes the workspace root", () => {
+  it("resolves a parent traversal without treating the base as an access rule", () => {
     const outside = path.resolve(root, "..", "escapee.txt");
-    expect(() => resolvePath(outside, root, true)).toThrow(/escapes the workspace root/);
+    expect(resolvePath("../escapee.txt", root)).toBe(outside);
+  });
+});
+
+describe("file-tool paths", () => {
+  let root: string;
+  beforeEach(() => {
+    root = makeWorkspace();
+    mkdirSync(path.join(root, ".clarvis"));
+  });
+  afterEach(() => cleanup(root));
+
+  it("resolves configuration paths as ordinary workspace paths", () => {
+    expect(resolveFileToolPath(".clarvis/unrecognized.json", { workspaceRoot: root })).toBe(
+      path.join(root, ".clarvis", "unrecognized.json"),
+    );
+    makeSymlink(path.join(root, ".clarvis"), path.join(root, "alias"), "dir");
+    expect(resolveFileToolPath("alias/settings.json", { workspaceRoot: root })).toBe(
+      path.join(root, "alias", "settings.json"),
+    );
   });
 });
 
@@ -60,20 +78,14 @@ describe("displayPath", () => {
   });
 });
 
-describe("assertWithinWorkspace — case folding", () => {
+describe("Guard location facts — case folding", () => {
   // The drive-letter shape (`C:\Proj\a` against root `c:\proj`) cannot be
   // asserted here: `path.sep` is a host constant, so on a POSIX host the prefix
   // test builds `c:\proj/` and would fail for the wrong reason. That case belongs
   // to the Windows job. The case-folding property itself is testable with
   // host-native paths, which is what these cover.
-  const accepts = (abs: string, root: string, caseInsensitive: boolean): boolean => {
-    try {
-      assertWithinWorkspace(abs, root, abs, caseInsensitive);
-      return true;
-    } catch {
-      return false;
-    }
-  };
+  const accepts = (abs: string, root: string, caseInsensitive: boolean): boolean =>
+    isWithinRoots(abs, [root], caseInsensitive);
 
   it("accepts a differently-cased child when the filesystem ignores case", () => {
     expect(accepts("/Ws/A", "/ws", true)).toBe(true);
@@ -100,11 +112,8 @@ describe("assertWithinWorkspace — case folding", () => {
 });
 
 /**
- * A workspace reached through a symlinked ancestor is the ordinary case on
- * macOS, where every temp directory lives under `/var` -> `/private/var`, and is
- * reachable anywhere a user's project path crosses a link. It is built
- * explicitly here so the guarantee is asserted on Linux CI too, rather than only
- * on the hosts that happen to supply the link for free.
+ * A workspace reached through a symlinked ancestor is ordinary on macOS.
+ * Guard location facts follow the canonical target without granting access.
  *
  * The link is created *inside* a temp parent and torn down by {@link cleanup}
  * rather than removed on its own. On Windows {@link makeSymlink} produces a
@@ -112,7 +121,7 @@ describe("assertWithinWorkspace — case folding", () => {
  * `EFAULT`; the recursive sweep handles it, which is how the equivalent fixture
  * in `list-dir` already disposes of a junction on that platform.
  */
-describe("confinement through a symlinked workspace root", () => {
+describe("Guard facts through a symlinked workspace root", () => {
   let parent: string;
   let real: string;
   let link: string;
@@ -125,43 +134,20 @@ describe("confinement through a symlinked workspace root", () => {
   });
   afterEach(() => cleanup(parent));
 
-  it("admits a child that cannot be realpathed, so its own error surfaces", () => {
-    const locked = path.join(real, "locked");
-    mkdirSync(locked);
-    chmodSync(locked, 0o000);
-    try {
-      expect(() => resolvePath("locked", link, true)).not.toThrow();
-    } finally {
-      chmodSync(locked, 0o755);
-    }
+  it("recognizes a not-yet-created child of the linked root", () => {
+    expect(isWithinRoots(resolvePath("new/file.txt", link), [link])).toBe(true);
   });
 
-  it("admits a not-yet-created child of the linked root", () => {
-    expect(() => resolvePath("new/file.txt", link, true)).not.toThrow();
-  });
-
-  it("still rejects a genuine escape reached through the link", () => {
+  it("reports a genuine escape reached through the link", () => {
     const outside = path.resolve(real, "..", "escapee.txt");
-    expect(() => resolvePath(outside, link, true)).toThrow(/escapes the workspace root/);
+    expect(isWithinRoots(outside, [link])).toBe(false);
   });
 
-  /**
-   * The dangerous half of tolerating an unresolvable path. `realpath` needs read
-   * permission on a directory, while creating a file inside it needs only search
-   * and write — so a link out of the workspace whose target is mode `0o311`
-   * cannot be resolved yet can be written through. Admitting a path merely
-   * because it would not resolve hands `write_file` a way out of the workspace.
-   */
-  it("rejects a symlink out of the workspace whose target cannot be realpathed", () => {
+  it("reports a symlink out of the workspace as outside", () => {
     const target = path.join(parent, "outside", "dir");
     mkdirSync(target, { recursive: true });
     const escape = path.join(real, "sub");
     makeSymlink(target, escape, "dir");
-    chmodSync(target, 0o311);
-    try {
-      expect(() => resolvePath("sub/new.txt", link, true)).toThrow(/escapes the workspace root/);
-    } finally {
-      chmodSync(target, 0o755);
-    }
+    expect(isWithinRoots(resolvePath("sub/new.txt", link), [link])).toBe(false);
   });
 });

@@ -72,9 +72,6 @@ function fakeEffects(overrides: Partial<InteractionEffects> = {}): InteractionEf
     openIsolationPicker: () => {
       calls.push("openIsolationPicker");
     },
-    openReviewPicker: () => {
-      calls.push("openReviewPicker");
-    },
     openMemoryPicker: () => {
       calls.push("openMemoryPicker");
     },
@@ -244,20 +241,15 @@ test("Ctrl+X P toggles the plan on every profile", () => {
   expect(DEFAULT_WHEN["memory.cycle"]).toBeUndefined();
 });
 
-test("Isolation, Guard and Memory share leader sequences across profiles", () => {
+test("Isolation and Memory share leader sequences across profiles", () => {
   expect(portable()["isolation.picker"]).toBe("<leader>i");
   expect(enhanced()["isolation.picker"]).toBe("<leader>i");
-  expect(portable()["review.picker"]).toBe("<leader>g");
-  expect(enhanced()["review.picker"]).toEqual("<leader>g");
   expect(portable()["memory.picker"]).toBe("<leader>m");
   expect(enhanced()["memory.picker"]).toBe("<leader>m");
   const legacy = { ...environmentFor("portable"), protocol: "legacy" as const };
   const legacyBindings = resolvedVitalBindings("linux", legacy);
   expect(legacyBindings["isolation.picker"]).toBe("<leader>i");
-  expect(legacyBindings["review.picker"]).toBe("<leader>g");
   expect(legacyBindings["memory.picker"]).toBe("<leader>m");
-  const enhancedLegacy = { ...environmentFor("enhanced"), protocol: "legacy" as const };
-  expect(resolvedVitalBindings("linux", enhancedLegacy)["review.picker"]).toEqual("<leader>g");
   for (const binding of find(buildVitalBindings(enhanced(), DEFAULT_WHEN), "isolation.picker"))
     expect(binding.when).toBe("overlay==none");
 });
@@ -281,14 +273,14 @@ test("background commands are gated to overlay==none so the active window owns i
     expect(b?.when).toBe("overlay==none");
   }
   expect(find(vital, "run.cancel")[0]?.when).toBeUndefined();
-  for (const cmd of ["agent.picker", "isolation.picker", "review.picker", "memory.picker"])
+  for (const cmd of ["agent.picker", "isolation.picker", "memory.picker"])
     expect(find(vital, cmd)[0]?.when).toBe("overlay==none");
   expect(find(vital, "plan.open")[0]?.when).toBe("overlay in (none, plan)");
 });
 
 test("a pending modal keeps scrolling, suspend and cancel, and withholds the rest", () => {
   // The modal's own layer owns navigation and mutation keys and projects its own
-  // actions, but a user answering a guard prompt still has to be able to scroll
+  // actions, but a user answering a prompt still has to be able to scroll
   // back to what the agent asked about, suspend, and get out.
   const vital = buildVitalBindings(enhanced(), DEFAULT_WHEN);
   const modalOf = (cmd: string): unknown => find(vital, cmd)[0]?.modal;
@@ -306,7 +298,6 @@ test("a pending modal keeps scrolling, suspend and cancel, and withholds the res
     "app.escape",
     "agent.picker",
     "isolation.picker",
-    "review.picker",
     "memory.picker",
     "goal.toggle",
     "transcript.diff",
@@ -528,14 +519,6 @@ test("createInteraction: leader picker sequences dispatch while Tab retains focu
         run: () => effects.openIsolationPicker(),
       }),
       uiCommand({
-        id: "review.picker",
-        title: "Guard",
-        description: "Open the Guard picker",
-        category: "navigation",
-        surfaces: [],
-        run: () => effects.openReviewPicker(),
-      }),
-      uiCommand({
         id: "memory.picker",
         title: "Memory",
         description: "Open the Memory picker",
@@ -555,18 +538,11 @@ test("createInteraction: leader picker sequences dispatch while Tab retains focu
   press(t.renderer, "x", { ctrl: true });
   press(t.renderer, "i");
   press(t.renderer, "x", { ctrl: true });
-  press(t.renderer, "g");
-  press(t.renderer, "x", { ctrl: true });
   press(t.renderer, "m");
   press(t.renderer, "tab");
   await settle();
 
-  expect(effects.calls).toEqual([
-    "openIsolationPicker",
-    "openReviewPicker",
-    "openMemoryPicker",
-    "focusNext",
-  ]);
+  expect(effects.calls).toEqual(["openIsolationPicker", "openMemoryPicker", "focusNext"]);
   off();
   interaction.dispose();
   t.renderer.destroy();

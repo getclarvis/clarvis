@@ -2,7 +2,6 @@ import {
   NOOP_LOGGER,
   sharedFallback,
   type Capability,
-  type CapabilityExecutablePort,
   type EnvConfig,
   type Logger,
 } from "@clarvis/capability";
@@ -11,7 +10,6 @@ import {
   createPlanFactory,
   createPlanStore,
   type PlanFactory,
-  type PlanPluginPort,
   type PlanProviderConfig,
   type PlanStore,
 } from "@clarvis/plan";
@@ -40,8 +38,6 @@ export function createPlanningRuntime(options: {
   env: EnvConfig;
   storeFor?: (owner: string) => PlanStore;
   loadProvider: () => PlanProviderConfig | undefined;
-  pluginPort?: PlanPluginPort;
-  executablePort?: CapabilityExecutablePort;
   logger?: Logger;
 }): PlanningRuntime {
   const logger = options.logger ?? NOOP_LOGGER;
@@ -54,11 +50,8 @@ export function createPlanningRuntime(options: {
       }),
     );
   const planFactory = createPlanFactory({
-    workspaceRoot: options.workspaceRoot,
     loadProvider: options.loadProvider,
     markdownStoreFor,
-    ...(options.pluginPort === undefined ? {} : { pluginPort: options.pluginPort }),
-    ...(options.executablePort === undefined ? {} : { executablePort: options.executablePort }),
   });
   return {
     planFactory,

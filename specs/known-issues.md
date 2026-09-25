@@ -161,83 +161,22 @@ would fit. Closing this also removed two assertions in
 and were in fact pinning the same discontinuity — the identical shell at 200 columns showed both
 hints on the unchanged code.
 
-## Workspace-confined writes are still vulnerable to a parent-directory TOCTOU
+## Path-based native writes retain a parent-directory TOCTOU
 
-**Status: open; security boundary, native cross-platform primitive required.** Re-verified against the
-current tree. Nothing in the diagnosis below has moved: `packages/tools/src/lib/atomic.ts` and
-`packages/tools/src/lib/files.ts` are byte-identical to their state when this was first written, and
-the only change to `packages/tools/src/lib/paths.ts` since then is comment-only. What did change is
-recorded at the end.
+**Status: open; path-based mutation limitation.** The workspace root no longer confines ordinary
+file tools. Host follows OS permissions; Sandbox enforces its environment policy.
+A concurrent process can replace a parent directory after `resolveFileToolPath` resolves a path
+and before `applyOpsAtomic` performs `mkdir`, staging, or `rename` by pathname. Native sandbox
+containment remains the environment boundary when configured; the file tool itself does not pin
+the parent inode.
 
-`resolvePath(..., confineToWorkspace: true)` (`packages/tools/src/lib/paths.ts`) proves that a
-pathname resolves below the workspace at one instant. The mutating tools later pass that same pathname
-string to `mkdir`, staging, backup and `rename` operations. A process running concurrently can rename
-an already-validated parent directory and replace it with a symlink (or a Windows junction) to an
-outside directory in between. The final component may remain an ordinary file, so
-`assertNotSymlink(target)` (`packages/tools/src/lib/atomic.ts`) passes while the subsequent
-path-based operation follows the replaced parent and mutates outside the workspace.
-
-The mechanism is visible in the function's return: `resolvePath` computes `abs` lexically
-(`packages/tools/src/lib/paths.ts`), calls `assertWithinWorkspace` for its boolean verdict only,
-and returns `abs` — never the canonical form the check ran against.
-Threading that canonical form through would not have helped; the gap is that nothing re-establishes
-confinement after the check, not that the wrong string is carried.
-
-This affects the mutation shape used by `write_file`, `edit_file`/`multi_edit`, `apply_patch` and
-`replace`; `copy`, `move`, `remove` and `mkdir` use the same path-based boundary and belong in the same
-eventual fix. Concretely, every one of them still ends at a pathname:
-`packages/tools/src/lib/atomic.ts` stages with `fs.mkdir` then `fs.open(tmp, "wx")`;
-`writeAtomic` does `fs.mkdir` then `writeFileDurable(target, …)`;
-`commitWithRollback` renames by path. The tools reach those through
-`packages/tools/src/tools/write-file.ts`, `edit-file.ts` (`editFileLocked`, which
-`multi-edit.ts` also uses), `apply-patch.ts`, `replace.ts`, `remove.ts`,
-`copy.ts`, `move.ts` and `mkdir.ts`. The in-process locks in
-`packages/tools/src/lib/atomic.ts` (the map, `withFileLock`, `withFileLocks`)
-serialize Clarvis calls by pathname, but do not pin a filesystem object and cannot coordinate with a
-shell command or another process. Staging beside the destination makes replacement atomic for
-observers; it does not make the destination confined.
-
-Descriptor-backed file-content reads have a narrower primitive available: open the file, canonicalize
-the live path, compare its exact `dev`/`ino` identity with the opened descriptor, and then read from
-that descriptor. That is `assertOpenedFileConfined` (`packages/tools/src/lib/files.ts`, the
-identity comparison), reached from `readRawFile` whenever `readFileOptions`
- supplies the roots. It closes this file-open window on POSIX and Windows while keeping
-legitimate in-workspace symlinks. `write_file` also propagates a `path_escape` (and every other
-non-binary/non-size failure) from its optional prior-content read instead of treating the failure as
-merely "no diff" — `packages/tools/src/tools/write-file.ts`, whose `catch` re-throws anything
-that is not `is_binary` or `too_large`. A third piece of the same reasoning lives on the
-read side of grep: a confined directory search always uses the in-process scanner even when ripgrep is
-installed, because handing a mutable directory pathname to a subprocess would reopen this window
-(`packages/tools/src/lib/rg.ts`, reasoning). Those are real local fixes, but
-none of them secures the later mutation.
-
-Adding another `realpath`/`lstat` immediately before `rename` is not a fix. There is always one last
-gap between the final check and the path-based mutation; a post-write check detects the escape only
-after an outside file may already have been replaced. Rollback is path-based too and has the same race.
-Do not add such a recheck while claiming the boundary is closed.
-
-The durable fix needs a filesystem abstraction anchored to a trusted opened directory: on POSIX,
-descriptor-relative resolution and mutation (`openat`/`renameat`, preferably with the platform's
-beneath/no-symlink resolution guarantees); on Windows, the corresponding directory-handle-relative
-operations with reparse-point controls. Node/Bun's ordinary path-based `fs` API does not expose one
-portable primitive that supplies those guarantees, so this likely needs a small audited native layer
-and a shared implementation used by every mutating tool. Until then, `confineToWorkspace` must not be
-described as a strong write sandbox against a concurrently mutating workspace.
-
-**What has moved since this was first recorded.** Two things, neither of them behavioural.
-First, the decision is now readable beside the implementation: `resolvePath`'s `@remarks`
-(`packages/tools/src/lib/paths.ts`) carries the exposure, the read-side asymmetry and the
-rejected mitigations in the source itself, so an agent editing that function meets the threat model
-without opening this file. Second, the write-side race has one pinning test — `"aborts write_file when
-its prior read detects a parent-link race"`
-(`packages/tools/tests/integration/no-isolation.test.ts`), which swaps the validated parent for an
-outside symlink from inside the `fs.open` call and asserts `path_escape` with both the workspace file
-and the outside file untouched; its siblings pin the same race for `read_file` and
-`grep`. That test covers the prior *read*, not the write: `mkdir`, `remove`, `move` and `copy` call no
-`readFileOptions` at all, and **the residual write-side exposure remains unpinned by any test**. No
-descriptor- or handle-relative primitive was added anywhere in the monorepo — a search for
-`openat`/`renameat`/`dirfd`/`RESOLVE_BENEATH` across every package returns only the prose reference
-inside that TSDoc.
+The durable fix requires descriptor-relative mutation for all write handlers, with platform-specific
+handling of symlinks and Windows reparse points. Another `realpath` before a pathname-based rename
+would leave a final gap. Production: `resolveFileToolPath` in
+`packages/tools/src/lib/paths.ts` and `applyOpsAtomic` in `packages/tools/src/lib/atomic.ts`.
+Test: `packages/tools/tests/integration/atomic.test.ts` covers native mutation behavior;
+it does not close this race. Ordinary external writes remain governed by their placement and OS
+permissions.
 
 ---
 
@@ -814,9 +753,6 @@ shipped in [Bun 1.4](https://bun.com/blog/bun-v1.4). Clarvis is now
 pinned to 1.4.0, but an upstream merge is not evidence that the exact GitHub-runner signature is
 gone. `packages/code/tests/helpers/tree-sitter-preload.ts` records the historical attribution
 at the one place in the tree that acts on it.
-
-**The earlier attribution to JSC GC thread suspension (oven-sh/bun#31832) was wrong** — that issue
-is `docker exec`-specific and lists 1.3.11 as *good*. Do not re-file it there.
 
 The fault address varies run to run — `0xFFFFFFFFFFFFFFF8` in 16 of the 26, plus `0x0`, `0x18`,
 `0xC`, `0x2E64F3C3A68` — which is the tell for heap corruption rather than one bad pointer. Most
@@ -1437,33 +1373,6 @@ launch-time worktree fact.
 genuinely required, and the current condition is dead surface. For `git`, an architecture test over
 the client-side seam. Neither is a question about the outside world; both are simply not done.
 
-### No `clarvis.tasks.v2` server exists here, and the harness has never met the adapter
-
-`TASKS_PROTOCOL` is `"clarvis.tasks.v2"` (`packages/tasks/src/settings.ts`). No server implementing
-it exists in this repository, and Clarvis ships none by design: the provider is operator-owned. Every
-exercise of `createMcpTaskProvider` drives a hand-built `TaskServerPort` — `canonicalPort` at
-`packages/tasks/tests/component/mcp-provider.test.ts` is a stateless map of canned
-envelopes whose `callTool` returns `results[tool]` and records the call. The kernel side
-is fakes too (`packages/kernel/tests/component/task-server-port.test.ts`,
-`packages/kernel/tests/component/task-provider-factory.test.ts`).
-
-*The actionable part the report does not state.* The conformance harness has never been run against
-the MCP adapter. `assertTaskProviderConformance`
-(`packages/tasks/src/testing/provider-conformance.ts`) has exactly one consumer suite,
-`packages/tasks/tests/component/conformance.test.ts`, and all three providers it is handed are built
-by `makeProvider()` from
-`packages/tasks/tests/helpers/provider.ts` — an in-memory fake that shares no implementation with
-`packages/tasks/src/mcp-provider.ts`. So the adapter's snake_case field mapping, its projection of
-`available_intents` and its envelope forwarding are exercised only against assertions written beside
-them, never against the contract.
-
-*And the harness's own TSDoc is wrong.* `provider-conformance.ts` says "the four suites that do use
-it are this package's own". There is one.
-
-*What would settle it.* A real server, whose existence anywhere is outside this tree. The substitute
-available here is a stateful reference `TaskServerPort` behind `createMcpTaskProvider`, run through
-the harness — the only composition that would put the adapter and the contract on the same axis.
-
 ### `link()` atomicity and `fsync` durability are asserted by comment, and only one of them is stale
 
 **The `link()` half stands, and is worse than the report says.**
@@ -1569,7 +1478,7 @@ server image ran a version neither of them qualified.
 The active contract is now exact Bun 1.4.0 for executable pins and `>=1.4.0` for every manifest.
 `tooling/checks/bun-version.ts` derives the canonical version from `mise.toml` and checks all
 three CI setup steps and their version/revision evidence, the crash-canary default and its evidence,
-both Docker stages, all workspaces discovered from the root manifest, `@types/bun`, and both the
+all workspaces discovered from the root manifest, `@types/bun`, and both the
 declared and resolved lockfile entries. It runs inside `lint:intent` (`package.json`), and the nine
 cases in `tooling/tests/unit/bun-version.test.ts` make every drift class fail independently.
 
@@ -1811,8 +1720,7 @@ current `@clarvis/skills` tests contain nineteen `symlinkSync` call sites
 `packages/skills/tests/integration/diagnostics.test.ts`,
 `packages/skills/tests/integration/bounds.test.ts`,
 `packages/skills/tests/integration/paths.test.ts`, and
-`packages/skills/tests/integration/sidecar.test.ts`). Memory now probes file-symlink support
-before its guarded escape test (`packages/memory/tests/integration/file-provider.test.ts`);
+`packages/skills/tests/integration/sidecar.test.ts`).
 `packages/code/tests/integration/marketplace.test.ts` has three more, equally outside the
 Windows job. Several of the skills sites link a **file**, where the
 `"junction"` substitution that `packages/tools/tests/helpers/fixtures.ts` and
@@ -1842,10 +1750,10 @@ has ever run on.
 `packages/tools/src/lib/files.ts` returns early on `win32` with Node's portable `"r"` mode,
 dropping both `O_NONBLOCK` and `O_NOFOLLOW`. Losing `O_NONBLOCK` is harmless and the TSDoc says why — Windows filesystem paths expose no FIFOs. Losing `O_NOFOLLOW` is a real
 reduction: `noFollow` becomes advisory there. The generic spill reader compensates with a pinned
-inode check and post-open confinement in `packages/tools/src/lib/files.ts`; `file_stat` in
+inode and parent check in `packages/tools/src/lib/files.ts`; `file_stat` in
 `packages/tools/src/tools/file-stat.ts` still requires its own native Windows qualification. The TSDoc's
-"descriptor metadata remains the authority on every platform" is true only where a
-`confinement` is supplied.
+"descriptor metadata remains the authority on every platform" applies to descriptor-bound reads;
+classified configuration reads also recheck their canonical class.
 
 `packages/plan/src/file-repository.ts` composes the same flag word opens with it.
 The compensating controls are the `lstat` in `confined` and the `entry.isFile()` filter in
@@ -1854,7 +1762,7 @@ root-escape check is written *for* Windows and gated on a capability probe
 (`packages/plan/tests/integration/file-repository.test.ts`, used with `"junction"`) — so the gap report's "was not run on Windows" is half stale: it is written for Windows and
 has simply not executed since the triggers were disarmed.
 
-The fix is a handle-relative open — the same `openat`-shaped remedy the write-side TOCTOU entry above
+The fix is a handle-relative open — the same `openat`-shaped remedy the classified write-side TOCTOU entry above
 demands — and specifically **not** an `lstat` pre-check on Windows, which would convert a known
 absence into a believed protection. What *is* available from a POSIX host today is an assertion on
 the real read path that the flag word carries the bit. A pure test of the flag *arithmetic* proves
@@ -1862,29 +1770,13 @@ nothing: measured during the investigation pass and not re-run here, extracting 
 composition into a helper and asserting both arms left `@clarvis/plan` green at 266 passing while the
 call site was reduced to `constants.O_RDONLY`.
 
-### The separator half of the path checks belongs to the runner
+### Guard location facts on Windows need a native runner
 
-`assertWithinWorkspace` folds case only where the host filesystem ignores it —
-`caseInsensitive` defaults to `process.platform === "win32"`
-(`packages/tools/src/lib/paths.ts`) and `forCompare` applies it. The **fold
-itself is pinned** from Linux, because the parameter is injectable:
-`packages/tools/tests/integration/paths.test.ts` asserts both directions. What is not
-pinnable here is the drive-letter shape, and the reason is structural rather than neglect: the prefix
-test at `packages/tools/src/lib/paths.ts` uses `path.sep`, a host constant, so on a POSIX host the comparison builds
-`c:\proj/` and would pass or fail for the wrong reason. The test says so at
-`packages/tools/tests/integration/paths.test.ts`, and
-`packages/tools/tests/unit/powershell-dialect.test.ts` ("still extracts the paths a command
-touches") says the same about `PathFact.withinWorkspace`.
-
-Threading a path flavour through `canonicalizeAllowingMissing`
-(`packages/tools/src/lib/paths.ts`) and `resolvePath` to make this testable was considered
-and rejected: it replaces a host truth with a parameter
-across a confinement boundary, and a caller who could supply `caseInsensitive: false` on Windows
-would have the mirror of the escape `packages/tools/src/lib/paths.ts` already records. The honest position is that
-this one needs the runner.
-
-The gap report groups the `apply_patch` errno with these as runner-blocked. It is not, any more —
-see its own entry above.
+`isWithinRoots` folds case on Windows for Guard risk facts. Linux tests can exercise the injected
+case-fold comparison, but cannot prove Windows drive and separator behavior with the host `path.sep`.
+The tool-access decision itself belongs to the Host OS or native Sandbox, not to
+that Guard location fact. Production: `isWithinRoots` in `packages/tools/src/lib/paths.ts`.
+Test: `packages/tools/tests/integration/paths.test.ts`; native Windows qualification remains open.
 
 ### `backgroundSettleIsMeasurable` — the measurement, not the behaviour
 
@@ -1932,19 +1824,18 @@ Four packages joined the Windows job after this record was written. Plan and Pat
 predicates in `packages/plan/tests/integration/file-repository.test.ts`,
 `packages/paths/tests/component/workspace-state.test.ts` and
 `packages/paths/tests/contract/atomic.test.ts` each declare their own local
-`modeBitsEnforced`; Memory now does the same in `packages/memory/tests/integration/file-store.test.ts`
-and probes file-symlink capability in `file-provider.test.ts`. None of those is wrong,
+`modeBitsEnforced`; Memory now does the same in `packages/memory/tests/integration/file-store.test.ts`.
+None of those is wrong,
 but none of them can distinguish a defect from an inapplicability the way a named predicate does. If
 a Windows defect is found in one of those packages, give it a named predicate there rather than an
 inline platform check.
 
 ---
 
-## Two CI flakes that were diagnosed and fixed, recorded so they are not re-diagnosed
+## A diagnosed and fixed CI flake
 
-Both predate the change that found them and both were reproduced from `main`'s own history, not
-from a branch. Neither is a Bun runtime death, so neither belongs with the entries above; both were
-tests whose timing assumptions were wrong.
+This test failure predates the change that found it and was reproduced from `main`'s own history,
+not from a branch. It was a timing assumption in the test, not a Bun runtime failure.
 
 **`@clarvis/plan` — `plan store > independent stores contending on the on-disk lock all succeed`,
 red on the Windows runner.** Last seen on `main` in run `30777232473`. The lockfile wait budget was
@@ -1973,29 +1864,6 @@ iteration count. And recovery is two-part rather than mtime alone: `reclaimLocal
 (`packages/paths/src/local-lease.ts`). A live writer keeps itself young through
 `LOCK_HEARTBEAT_MS` (5s, `packages/plan/src/file-repository.ts`). The budget-under-the-ceiling
 rule is therefore still the constraint to preserve when either number is touched.
-
-**`@clarvis/server` — `bin: fail-closed bind-address gate`, exit `137` where `1` was expected.**
-Last seen on `main` in run `30770028108`. `readUntilSettled` broke out of its read loop as soon as a
-gate marker reached stderr and then called `proc.kill("SIGKILL")` unconditionally. But the marker
-means the bin has *decided* to exit, not that it has exited — so on a loaded runner the kill landed
-first and the refusal reported `128 + 9` instead of the `1` the gate's contract names. The helper now
-gives a refusal a bounded grace period to exit on its own and keeps the kill for the "passes the
-gate and keeps serving" case it was written for.
-
-The helper stands as described: `readUntilSettled` at
-`packages/server/tests/architecture/bin-bind-gate.test.ts` still ends its read loop on a
-`GATE_MARKERS` hit, but a stderr containing `"refusing a"` now races `proc.exited` against
-a 5000ms timer and returns the natural exit code when it wins
-(`packages/server/tests/architecture/bin-bind-gate.test.ts`); the unconditional
-`proc.kill("SIGKILL")` survives only as the fall-through. `spawnBin`'s `timeout: 10_000` /
-`killSignal: "SIGKILL"` is documented in place as the last-resort net for a run that settles on no
-marker at all, not as the reaper for the ordinary path. The two named refusal cases assert that
-`code` is `1`.
-
-Neither reproduces locally with any useful frequency: 12 consecutive runs of the server case and 6
-of the plan case were green on a Linux workstation while both were failing on CI. That is the same
-lesson as the `code` signal death above — a local run is not evidence about a CI flake — and it is
-why both were diagnosed from the failure's own shape rather than by trying to reproduce them.
 
 **One thing that has changed about the guard rather than the fix.** The `windows` job still runs
 `bun --filter @clarvis/plan test`, and push/pull-request triggers were restored. A
@@ -2175,21 +2043,3 @@ A runtime nudge that requests a result before completion creates the same bad ch
 
 If it is ever added it must read _close the task or state why you cannot_, never _mark it done_, and
 must not fire while the agent is still producing file writes.
-
----
-
-## Hosted Podman runner compatibility
-
-The candidate runtime workflow on Ubuntu 24.04 reached real container execution: the ARM64 Docker
-canaries passed, but Podman rejected the required volume mount with `subpath: invalid mount option`.
-GitHub restored distribution-provided Podman 4.9 on that runner; its
-[runner announcement](https://github.com/actions/runner-images/issues/14642) recommends Ubuntu 26.04
-with Podman 5.7 for workflows requiring Podman 5.x. Container qualification therefore selects native
-Ubuntu 26.04 amd64/arm64 runners. It preserves the existing mount policy and uses the same pinned
-Debian image inputs. The independent AMD64 attempt received HTTP 500 from GHCR during a carrier
-push; that registry failure is separate from engine compatibility.
-
-Evidence: [candidate workflow run](https://github.com/getclarvis/clarvis/actions/runs/34135887115).
-The owning contract remains [isolated agent runtime](hosts/isolated-agent-runtime.md). Availability
-and runner image versions are external evidence; workflow source alone does not prove an engine
-canary passed. Do not infer native Windows/macOS container qualification from these Linux runners.

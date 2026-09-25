@@ -29,10 +29,10 @@ afterEach(() => {
 describe("plugin installation records", () => {
   it("bounds install metadata and exercises repository replacement and removal failures", async () => {
     const globalDir = fixture();
-    const repository = createFilePluginRepository({ globalDir });
+    const repository = createFilePluginRepository({ globalDir, home: globalDir });
     const oversized = fixture();
     await expect(
-      repository.install(oversized, "oversized", "clarvis", {
+      repository.install(oversized, "oversized", "agents", {
         root: oversized,
         origin: "x".repeat(PLUGIN_RESOURCE_LIMITS.installRecordBytes),
         dispose: () => {},
@@ -40,14 +40,14 @@ describe("plugin installation records", () => {
     ).rejects.toMatchObject({ code: "invalid_request" });
 
     const replacement = fixture();
-    const missing = { scope: "global" as const, source: "clarvis" as const, name: "missing" };
+    const missing = { scope: "global" as const, source: "agents" as const, name: "missing" };
     await expect(repository.replace(replacement, missing, undefined)).rejects.toMatchObject({
       code: "not_found",
     });
     expect(await repository.remove(missing)).toBe(false);
     const workspaceRef = {
       scope: "workspace" as const,
-      source: "clarvis" as const,
+      source: "agents" as const,
       name: "workspace-plugin",
     };
     await expect(repository.replace(fixture(), workspaceRef, undefined)).rejects.toMatchObject({
@@ -63,8 +63,8 @@ describe("plugin installation records", () => {
       join(installed, ".codex-plugin", "plugin.json"),
       JSON.stringify({ name: "removable", version: "1.0.0" }),
     );
-    await repository.install(installed, "removable", "clarvis", undefined);
-    expect(await repository.remove({ scope: "global", source: "clarvis", name: "removable" })).toBe(
+    await repository.install(installed, "removable", "agents", undefined);
+    expect(await repository.remove({ scope: "global", source: "agents", name: "removable" })).toBe(
       true,
     );
   });

@@ -768,7 +768,6 @@ catalog case).
 | TUI: authenticated subscription effort lookup is pending | Render a loading status and withhold the unpublished-level claim until the request settles | `packages/code/src/views/config/EffortView.tsx` (`entitledLoading`); pinned by `packages/code/tests/integration/effort-view-render.test.tsx` |
 | TUI: catalog fetch (`client.models.get()`) fails, or answers with zero providers | `diagnosticEvent("catalog.unavailable", ..., "warn")`; the picker just renders empty (`catalogReady` is `false`) | `packages/code/src/runtime.tsx` (`ensureModelsCatalog`); `catalog-pick.ts:catalogReady` |
 | `configuredModelRows`/`configuredModelCapabilities` given a capability filter or a model the catalog never saw | Treated as "not known", never as "unsupported" — the model is still offered/its capabilities read as `undefined` | `packages/code/src/views/config/catalog-pick.ts` (doc-comment) |
-| Effect review has no model or its provider cannot resolve | Returns a structured admission failure and refuses the calling agent in Auto | `packages/kernel/src/guard/effect-review.ts` |
 
 ## 7. Coupling
 
@@ -822,18 +821,6 @@ catalog case).
   `packages/loop/src/runtime/vision-prepass.ts`,
   `packages/loop/src/runtime/subagents/subagent-profiles.ts` all call `resolveProvider` — request
   validation and per-agent provider resolution inside the loop, outside this document's scope.
-- `createHostJudge` supplies the model binding to the private Judge run, which uses the ordinary
-  Loop validation/model-resolution path; the effect adapter does not resolve providers itself.
-- Container model calls also use the same resolver on the host's captured provider registry, after
-  exact logical provider/model admission, so raw settings never masquerade as resolved adapter
-  configuration. Production: `createContainerModelBroker` in
-  [`model-broker-host.ts`](../../packages/kernel/src/runtime/model-broker-host.ts).
-  Test: exact profile/vision model admission and host-stream behavior in
-  [`container-model-stream.test.ts`](../../packages/kernel/tests/integration/container-model-stream.test.ts),
-  plus provider-routing-only guest projection in
-  [`container-projection.test.ts`](../../packages/kernel/tests/unit/container-projection.test.ts).
-  The wire boundary is owned by [isolated-agent-runtime](isolated-agent-runtime.md).
-
 ## 8. Open questions
 
 - **Where `settings-assembler.ts`'s "no model resolves → invalid_request" throw is pinned by test**

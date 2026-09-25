@@ -2,8 +2,8 @@
  * The operator's recording policy: composition, and where it is allowed to land.
  *
  * @remarks Two properties here are decisions rather than behaviour, and both are
- * invisible to a type-checker. The scopes **concatenate** instead of shadowing,
- * unlike `guard-judge.md` — a personal "always keep the exact commands" and a
+ * invisible to a type-checker. The scopes **concatenate** instead of shadowing:
+ * a personal "always keep the exact commands" and a
  * repository's "record the migration traps" are both true at once, and
  * shadowing would drop the personal half the moment a project added its own. And
  * the composed text reaches only the two places that cost no prompt cache: the

@@ -19,8 +19,6 @@ export interface HostedOccupancy {
 export interface HostedControl {
   readonly epoch: number;
   readonly peerId?: string;
-  /** Volatile consent scope, available only while a controlling TUI owns this conversation. */
-  readonly interactiveScope?: string;
 }
 
 /** Host-only continuation authority captured from the real controller of one admitted execution. */
@@ -38,14 +36,11 @@ export interface HostedConversationAuthority {
   readonly signal: AbortSignal;
 }
 
-/** Host-wide admission and interactive authority limits. */
+/** Host-wide admission limits. */
 export interface HostedAdmissionOptions {
   maxConnections?: number;
   maxRuns?: number;
   maxActivities?: number;
-  maxSessionScopes?: number;
-  /** Synchronously revoke operator authority and command grants for this one scope. */
-  revokeInteractiveScope(scope: string): void;
 }
 
 /**
@@ -86,12 +81,11 @@ export interface HostedAdmission {
   /** Retire a conversation instance on switch/resume even when the same TUI connection survives. */
   closeSession(peer: HostingPeer, sessionId: string): void;
   occupied(sessionId: string): boolean;
-  stats(): { connections: number; runs: number; activities: number; consent_scopes: number };
+  stats(): { connections: number; runs: number; activities: number };
 }
 
 interface PeerState {
   peer: HostingPeer;
-  scopes: Map<string, string>;
 }
 
 interface OccupancyState {
@@ -118,11 +112,10 @@ function identifier(value: string, name: string): void {
 }
 
 /** Create one bounded authority for a canonical workspace and authenticated data owner. */
-export function createHostedAdmission(options: HostedAdmissionOptions): HostedAdmission {
+export function createHostedAdmission(options: HostedAdmissionOptions = {}): HostedAdmission {
   const maxConnections = limit(options.maxConnections ?? 4, "maxConnections");
   const maxRuns = limit(options.maxRuns ?? 2, "maxRuns");
   const maxActivities = limit(options.maxActivities ?? 4, "maxActivities");
-  const maxSessionScopes = limit(options.maxSessionScopes ?? 64, "maxSessionScopes");
   const peers = new Map<string, PeerState>();
   const work = new Map<string, OccupancyState>();
   const sessions = new Map<string, HostedOccupancy>();
@@ -149,16 +142,6 @@ export function createHostedAdmission(options: HostedAdmissionOptions): HostedAd
     return state;
   };
 
-  const scopeFor = (state: PeerState, sessionId: string): string => {
-    const existing = state.scopes.get(sessionId);
-    if (existing !== undefined) return existing;
-    if (state.scopes.size >= maxSessionScopes)
-      throw kernelError("resource_exhausted", "too many open interactive conversations");
-    const scope = randomUUID();
-    state.scopes.set(sessionId, scope);
-    return scope;
-  };
-
   const revokeContinuation = (sessionId: string, reason = "revoked"): void => {
     const pending = continuations.get(sessionId);
     if (pending === undefined) return;
@@ -173,10 +156,6 @@ export function createHostedAdmission(options: HostedAdmissionOptions): HostedAd
       controller.abort.abort();
     }
     if (continuations.get(sessionId)?.peer === state.peer) revokeContinuation(sessionId);
-    const scope = state.scopes.get(sessionId);
-    if (scope === undefined) return;
-    state.scopes.delete(sessionId);
-    options.revokeInteractiveScope(scope);
   };
 
   const releaseControl = (state: OccupancyState): void => {
@@ -193,7 +172,7 @@ export function createHostedAdmission(options: HostedAdmissionOptions): HostedAd
     kind: HostedOccupancy["kind"],
     executionId?: string,
   ): HostedOccupancy => {
-    const state = peerState(peer, true);
+    peerState(peer, true);
     identifier(sessionId, "session id");
     if (controllers.has(sessionId) && controllers.get(sessionId)!.peer !== peer)
       throw kernelError(
@@ -209,7 +188,6 @@ export function createHostedAdmission(options: HostedAdmissionOptions): HostedAd
       throw kernelError("conflict", "conversation still owns physical work");
     if (kind === "run" ? runs >= maxRuns : activities >= maxActivities)
       throw kernelError("resource_exhausted", "workspace activity limit reached");
-    const scope = scopeFor(state, sessionId);
     revokeContinuation(sessionId, "superseded");
     const occupancy: HostedOccupancy = Object.freeze({
       id: randomUUID(),
@@ -219,7 +197,7 @@ export function createHostedAdmission(options: HostedAdmissionOptions): HostedAd
     });
     work.set(occupancy.id, {
       occupancy,
-      control: { epoch: 1, peerId: peer.id, interactiveScope: scope },
+      control: { epoch: 1, peerId: peer.id },
     });
     sessions.set(sessionId, occupancy);
     if (kind === "run") runs += 1;
@@ -232,7 +210,7 @@ export function createHostedAdmission(options: HostedAdmissionOptions): HostedAd
     sessionId: string,
     takeover = false,
   ): HostedConversationAuthority => {
-    const state = peerState(peer, true);
+    peerState(peer, true);
     identifier(sessionId, "session id");
     const physical = sessions.get(sessionId);
     if (physical !== undefined && workState(physical).control.peerId !== peer.id)
@@ -242,10 +220,8 @@ export function createHostedAdmission(options: HostedAdmissionOptions): HostedAd
       if (existing.peer === peer) return existing.authority;
       if (!takeover)
         throw kernelError("conflict", "conversation controller must be taken over explicitly");
-      scopeFor(state, sessionId);
       retire(peerState(existing.peer), sessionId);
     }
-    scopeFor(state, sessionId);
     const abort = new AbortController();
     const authority = Object.freeze({ sessionId, peerId: peer.id, signal: abort.signal });
     controllers.set(sessionId, { peer, authority, abort });
@@ -259,7 +235,7 @@ export function createHostedAdmission(options: HostedAdmissionOptions): HostedAd
       if (peers.size >= maxConnections)
         throw kernelError("resource_exhausted", "local host client limit reached");
       const peer: HostingPeer = Object.freeze({ id: randomUUID(), role });
-      peers.set(peer.id, { peer, scopes: new Map() });
+      peers.set(peer.id, { peer });
       return peer;
     },
     disconnect(peer) {
@@ -273,24 +249,12 @@ export function createHostedAdmission(options: HostedAdmissionOptions): HostedAd
         }
       for (const [sessionId, pending] of continuations)
         if (pending.peer === peer) revokeContinuation(sessionId);
-      const scopes = [...state.scopes.values()];
-      state.scopes.clear();
       const owned: HostedOccupancy[] = [];
       for (const item of work.values()) {
         if (item.control.peerId !== peer.id) continue;
         owned.push(item.occupancy);
         releaseControl(item);
       }
-      const errors: unknown[] = [];
-      for (const scope of scopes) {
-        try {
-          options.revokeInteractiveScope(scope);
-        } catch (error) {
-          errors.push(error);
-        }
-      }
-      if (errors.length > 0)
-        throw new AggregateError(errors, "interactive consent retirement failed");
       return owned;
     },
     reserve,
@@ -357,16 +321,15 @@ export function createHostedAdmission(options: HostedAdmissionOptions): HostedAd
     },
     control: (occupancy) => ({ ...workState(occupancy).control }),
     acquire(peer, occupancy, takeover = false) {
-      const owner = peerState(peer, true);
+      peerState(peer, true);
       const state = workState(occupancy);
       if (state.control.peerId === peer.id) return { ...state.control };
       if (state.control.peerId !== undefined && !takeover) {
         throw kernelError("conflict", "another TUI controls this conversation");
       }
-      const scope = scopeFor(owner, occupancy.sessionId);
       const conversationControlled = controllers.has(occupancy.sessionId);
       releaseControl(state);
-      state.control = { epoch: state.control.epoch, peerId: peer.id, interactiveScope: scope };
+      state.control = { epoch: state.control.epoch, peerId: peer.id };
       if (conversationControlled) claimConversation(peer, occupancy.sessionId);
       return { ...state.control };
     },
@@ -393,7 +356,6 @@ export function createHostedAdmission(options: HostedAdmissionOptions): HostedAd
       connections: peers.size,
       runs,
       activities,
-      consent_scopes: [...peers.values()].reduce((sum, peer) => sum + peer.scopes.size, 0),
     }),
   };
 }

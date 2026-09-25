@@ -38,7 +38,7 @@ function workspacePackageNames(): string[] {
 describe("package architecture policy", () => {
   it("assigns every workspace package exactly one role", () => {
     const packages = workspacePackageNames();
-    expect(packages).toHaveLength(20);
+    expect(packages).toHaveLength(17);
     expect(packageRoleRegistryErrors(packages)).toEqual([]);
     expect(Object.keys(PACKAGE_ROLES).sort()).toEqual(packages);
     for (const packageName of packages) expect(packageRoleOf(packageName)).toBeDefined();
@@ -52,12 +52,6 @@ describe("package architecture policy", () => {
 
   it("allows only the explicitly owned application dependencies", () => {
     expect(allowedInternalDependenciesFor("@clarvis/code")).toEqual([
-      "@clarvis/kernel",
-      "@clarvis/paths",
-      "@clarvis/protocol",
-    ]);
-    expect(allowedInternalDependenciesFor("@clarvis/server")).toEqual([
-      "@clarvis/capability",
       "@clarvis/kernel",
       "@clarvis/paths",
       "@clarvis/protocol",
@@ -90,9 +84,6 @@ describe("package architecture policy", () => {
     expect(packageDependencyViolation("@clarvis/plan", "@clarvis/loop")).toContain(
       "may not depend",
     );
-    expect(packageDependencyViolation("@clarvis/tasks", "@clarvis/tools")).toContain(
-      "may not depend",
-    );
   });
 
   it("reports missing and stale registry assignments", () => {
@@ -100,7 +91,7 @@ describe("package architecture policy", () => {
       "architecture role missing for @clarvis/new-package",
     );
     expect(packageRoleRegistryErrors(["@clarvis/code"])).toContain(
-      "architecture role references unknown workspace package @clarvis/server",
+      "architecture role references unknown workspace package @clarvis/workflows",
     );
   });
 
@@ -138,7 +129,6 @@ describe("package architecture policy", () => {
       "packages/code/src/cli-args.ts",
       "packages/loop/src/version.ts",
       "packages/mcp-client/src/version.ts",
-      "packages/server/src/version.ts",
     ]);
     for (const sourceFile of PRODUCT_VERSION_IMPORTERS) {
       expect(productManifestImportViolation(sourceFile)).toBeUndefined();

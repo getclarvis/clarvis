@@ -81,7 +81,6 @@ function fakeKeys(): KeysAdapter & { saved: Record<string, string> } {
 function fakeCode(): CodeConfigStore {
   const [map, setMap] = createSignal<Record<string, KeySource>>({});
   return {
-    guardModeDefault: () => undefined,
     updateCheckEnabled: () => true,
     asciiEnabled: () => false,
     keyboardConfig: () => ({ version: 1, environments: {} }),

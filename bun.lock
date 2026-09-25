@@ -9,8 +9,6 @@
         "@types/bun": "1.4.0",
         "@types/node": "^26.1.0",
         "@types/picomatch": "^4.0.3",
-        "ajv": "^8.20.0",
-        "ajv-formats": "^3.0.1",
         "eslint": "^10.6.0",
         "globals": "^17.7.0",
         "knip": "^6.27.0",
@@ -61,14 +59,6 @@
         "@clarvis/tools": "workspace:*",
       },
     },
-    "packages/judge": {
-      "name": "@clarvis/judge",
-      "dependencies": {
-        "@clarvis/capability": "workspace:*",
-        "@clarvis/loop": "workspace:*",
-        "zod": "^4.4.3",
-      },
-    },
     "packages/kernel": {
       "name": "@clarvis/kernel",
       "bin": {
@@ -77,7 +67,6 @@
       "dependencies": {
         "@clarvis/capability": "workspace:*",
         "@clarvis/goal": "workspace:*",
-        "@clarvis/judge": "workspace:*",
         "@clarvis/llm": "workspace:*",
         "@clarvis/loop": "workspace:*",
         "@clarvis/mcp-client": "workspace:*",
@@ -86,7 +75,6 @@
         "@clarvis/plan": "workspace:*",
         "@clarvis/protocol": "workspace:*",
         "@clarvis/skills": "workspace:*",
-        "@clarvis/tasks": "workspace:*",
         "@clarvis/tools": "workspace:*",
         "@clarvis/trace": "workspace:*",
         "@clarvis/workflows": "workspace:*",
@@ -161,21 +149,6 @@
     "packages/protocol": {
       "name": "@clarvis/protocol",
     },
-    "packages/server": {
-      "name": "@clarvis/server",
-      "bin": {
-        "clarvis-server": "dist/bin.js",
-      },
-      "dependencies": {
-        "@clarvis/capability": "workspace:*",
-        "@clarvis/kernel": "workspace:*",
-        "@clarvis/paths": "workspace:*",
-        "@clarvis/protocol": "workspace:*",
-        "@modelcontextprotocol/sdk": "^1.29.0",
-        "jose": "^6.2.3",
-        "zod": "^4.4.3",
-      },
-    },
     "packages/skills": {
       "name": "@clarvis/skills",
       "dependencies": {
@@ -187,13 +160,6 @@
     },
     "packages/supervision": {
       "name": "@clarvis/supervision",
-      "dependencies": {
-        "@clarvis/capability": "workspace:*",
-        "zod": "^4.4.3",
-      },
-    },
-    "packages/tasks": {
-      "name": "@clarvis/tasks",
       "dependencies": {
         "@clarvis/capability": "workspace:*",
         "zod": "^4.4.3",
@@ -308,8 +274,6 @@
 
     "@clarvis/hooks": ["@clarvis/hooks@workspace:packages/hooks"],
 
-    "@clarvis/judge": ["@clarvis/judge@workspace:packages/judge"],
-
     "@clarvis/kernel": ["@clarvis/kernel@workspace:packages/kernel"],
 
     "@clarvis/llm": ["@clarvis/llm@workspace:packages/llm"],
@@ -326,13 +290,9 @@
 
     "@clarvis/protocol": ["@clarvis/protocol@workspace:packages/protocol"],
 
-    "@clarvis/server": ["@clarvis/server@workspace:packages/server"],
-
     "@clarvis/skills": ["@clarvis/skills@workspace:packages/skills"],
 
     "@clarvis/supervision": ["@clarvis/supervision@workspace:packages/supervision"],
-
-    "@clarvis/tasks": ["@clarvis/tasks@workspace:packages/tasks"],
 
     "@clarvis/tools": ["@clarvis/tools@workspace:packages/tools"],
 

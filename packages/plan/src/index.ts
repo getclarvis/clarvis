@@ -61,12 +61,7 @@ export {
   PlanProviderMismatchError,
   createPlanFactory,
 } from "./provider.ts";
-export type {
-  PlanPluginPort,
-  ResolvedPlanStore,
-  PlanFactory,
-  CreatePlanFactoryOptions,
-} from "./provider.ts";
+export type { ResolvedPlanStore, PlanFactory, CreatePlanFactoryOptions } from "./provider.ts";
 export {
   PlanNotFoundError,
   PlanConflictError,

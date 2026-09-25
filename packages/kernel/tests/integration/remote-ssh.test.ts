@@ -36,7 +36,6 @@ describe("remote SSH kernel connection", () => {
           { name: "fixture", kind: "openai-compatible", base_url: "http://127.0.0.1:1/v1" },
         ],
         budget: { total_token_limit: 1000, on_exceed: "stop" },
-        runtime: { backend: "native" },
         plans: { mode: "off" },
       }),
     );

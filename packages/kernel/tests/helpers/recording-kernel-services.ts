@@ -32,6 +32,7 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
       takeBrowserRequest: record("localHost.takeBrowserRequest"),
       respondBrowser: record("localHost.respondBrowser"),
       requestRestart: record("localHost.requestRestart"),
+      requestShutdown: record("localHost.requestShutdown"),
     },
     hosting: {
       list: record("hosting.list"),
@@ -159,20 +160,6 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
       get: record("sessions.get"),
       save: record("sessions.save"),
       delete: record("sessions.delete"),
-    },
-    tasks: {
-      status: record("tasks.status"),
-      capabilities: record("tasks.capabilities"),
-      listContainers: record("tasks.listContainers"),
-      search: record("tasks.search"),
-      get: record("tasks.get"),
-      searchActors: record("tasks.searchActors"),
-      create: record("tasks.create"),
-      assign: record("tasks.assign"),
-      previewTransition: record("tasks.previewTransition"),
-      transition: record("tasks.transition"),
-      comment: record("tasks.comment"),
-      attachArtifact: record("tasks.attachArtifact"),
     },
     storage: {
       inspect: record("storage.inspect"),

@@ -79,17 +79,17 @@ describe("settingsSchemaFor", () => {
   it("refuses a registered key that collides with a built-in settings block", () => {
     // zod's .extend() is last-wins, so without this guard the registered schema
     // would REPLACE the engine's block for the whole host.
-    expect(() => settingsSchemaFor(registryOf(spec("guard", { schema: z.any() })))).toThrow(
-      "capability settings key 'guard' collides with a built-in settings block",
+    expect(() => settingsSchemaFor(registryOf(spec("sandbox", { schema: z.any() })))).toThrow(
+      "capability settings key 'sandbox' collides with a built-in settings block",
     );
   });
 
   it("would otherwise have let a registered block widen the engine's own validation", () => {
-    // The value the collision would have bought: `guard` is rejected by the
-    // engine's schema, and a permissive registered `guard` block would have made
+    // The value the collision would have bought: invalid sandbox data is rejected by the
+    // engine's schema, and a permissive registered `sandbox` block would have made
     // it pass. Proving the engine still rejects it is what makes the throw above
     // a fix rather than a formality.
-    expect(() => settingsSchema.parse({ guard: { mode: "totally-not-a-mode" } })).toThrow();
+    expect(() => settingsSchema.parse({ sandbox: { mode: "totally-not-a-mode" } })).toThrow();
   });
 
   it("refuses a registered spec that asks to be plugin-contributable", () => {

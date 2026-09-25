@@ -84,7 +84,7 @@ their ancestry. External approving reviews are not required for the single-maint
 this does not replace the owner's review of the change.
 
 Prepare the final root version on `release/<major.minor.patch>` before its first push. Open a PR from that branch to `main`; only its open PR head receives the next signed `v<version>-rc.<number>` source-candidate tag.
-Candidates publish qualified runtime images and a source-repository prerelease; they do not publish stable installers. Promote through a merge PR from that branch to `main`; after
+Candidates publish a source-repository prerelease; they do not publish stable installers. Promote through a merge PR from that branch to `main`; after
 CI passes on the exact merge commit, automation signs and pushes `v<version>`, which publishes the
 real release. Direct `develop` promotions do not trigger this automation. Hotfix work starts from
 the latest published tag; stage its qualified patch on `release/<patch-version>` for the same
@@ -143,7 +143,7 @@ Editing files and running builds, tests, typechecks, lint, and read-only Git com
 
 ## Repository map
 
-Clarvis is a pre-release Bun/TypeScript monorepo of 20 packages. The current package list and concise
+Clarvis is a pre-release Bun/TypeScript monorepo of 17 packages. The current package list and concise
 descriptions live in [`README.md`](README.md); the authoritative dependency graph is generated in
 [`specs/package-coupling-analysis.md`](specs/package-coupling-analysis.md).
 
@@ -154,9 +154,9 @@ foundation             capability · paths
 host contract          protocol
 execution service      llm · mcp-client · supervision · trace · tools · hooks · skills
 engine                 loop
-product capability     memory · plan · goal · judge · tasks · workflows
+product capability     memory · plan · goal · workflows
 host implementation    kernel
-application            code (terminal UI) · server (MCP over HTTP)
+application            code (terminal UI)
 ```
 
 Roles are architectural ownership, not a literal dependency chain or physical directory nesting.
@@ -164,8 +164,8 @@ Use the generated coupling report for exact edges. Three relationships are espec
 reverse:
 
 - `goal`, `memory` and `workflows` sit above `loop` and may execute runs; the loop does not name them.
-- `plan` and `tasks` are host-registered capabilities beside the loop.
-- `protocol` is transport-agnostic. `code` and `server` consume the `KernelClient` contract, while
+- `plan` is a host-registered capability beside the loop.
+- `protocol` is transport-agnostic. `code` consumes the `KernelClient` contract, while
   `kernel` implements it over the loop.
 
 The root manifest owns the sole Clarvis product version. The owner started the first public beta at
@@ -184,8 +184,8 @@ The complete, maintained routing table is [`specs/README.md`](specs/README.md). 
 | Paths or filesystem ownership                         | [`specs/foundations/paths.md`](specs/foundations/paths.md)                                                                                                                    |
 | Tools, shell, guards, sandbox                         | [`specs/execution/tools-contract.md`](specs/execution/tools-contract.md), then the focused execution spec                                                                     |
 | Loop lifecycle, budgets, context, delegation          | the focused file under [`specs/engine/`](specs/README.md#engine--the-loop-itself)                                                                                             |
-| Memory, plans, tasks, workflows                       | the focused file under [`specs/capabilities/`](specs/README.md#capabilities--features-that-compose-onto-the-engine)                                                           |
-| Kernel, protocol, server, or TUI                      | the focused file under [`specs/hosts/`](specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade)                                                                |
+| Memory, plans, workflows                              | the focused file under [`specs/capabilities/`](specs/README.md#capabilities--features-that-compose-onto-the-engine)                                                           |
+| Kernel, protocol, or TUI                      | the focused file under [`specs/hosts/`](specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade)                                                                |
 | Package roles, dependency direction, or a new package | [`specs/cross-cutting/package-architecture.md`](specs/cross-cutting/package-architecture.md), then [`specs/package-coupling-analysis.md`](specs/package-coupling-analysis.md) |
 | Security, observability, prompt cache, tests, build   | the focused file under [`specs/cross-cutting/`](specs/README.md#cross-cutting--properties-no-single-package-owns)                                                             |
 
@@ -305,7 +305,7 @@ bun --filter @clarvis/code start
   `bun test` and is exempt. Package `bunfig.toml` files keep the shared preload and
   `coveragePathIgnorePatterns = ["../**"]`. `bun run check:harness` enforces both.
 - Bun is pinned exactly by `mise.toml`; `bun run check:bun-version` enforces the same runtime across
-  CI, the crash canary, Docker, all manifests, `@types/bun`, and the lockfile.
+  CI, the crash canary, all manifests, `@types/bun`, and the lockfile.
 - Coverage authority is `tooling/checks/coverage.ts` over LCOV counters, including source-file
   presence. Do not infer package coverage from Bun's averaged `All files` row or lower a floor to pass.
 - Keep the pre-commit phases sequential and in their current order. Each phase already fans out.

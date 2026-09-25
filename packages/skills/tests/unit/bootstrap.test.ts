@@ -66,7 +66,7 @@ describe("resolveBootstrapSkills", () => {
     const { logger, warnings } = recordingLogger();
     const admitted = resolveBootstrapSkills({
       refs: [ref()],
-      loadSkill: () => content({ root: "/home/.clarvis/skills", source: "clarvis" }),
+      loadSkill: () => content({ root: "/home/.clarvis/skills", source: "agents" }),
       logger,
     });
     expect(admitted).toEqual([]);

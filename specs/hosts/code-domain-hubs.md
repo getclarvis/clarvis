@@ -1,19 +1,19 @@
-# Agents, tasks, workflows, sessions, memory and run-control screens
+# Agents, workflows, sessions, memory and run-control screens
 
 > Implemented at `packages/code/src/**` and `packages/code/tests/**`. Every claim below is anchored
 > to a file and line. Open questions are collected in the final section.
 
 ## 1. Purpose
 
-`@clarvis/code` renders six full-screen "domain hub" views on top of the kernel's protocol
+`@clarvis/code` renders five full-screen "domain hub" views on top of the kernel's protocol
 services. Each one owns one domain the terminal user manipulates directly: authoring Agent Profiles
-(`AgentsPanel`), browsing and acting on external tasks (`TasksHub`), inspecting a workflow's manager→leader tree and each node's result
+(`AgentsPanel`), inspecting a workflow's manager→leader tree and each node's result
 (`WorkflowsHub`), resuming or deleting saved sessions (`SessionsHub`), configuring the workspace
 memory block (`MemoryConfigPanel`), and setting the safety/guard/memory/plan-retention posture for
 the next run (`RunControlsPanel`). Planning review itself is toggled by `/plan`, outside this hub.
 
 The views are thin. Everything that is not painting is pushed either into a **feature controller**
-(`src/features/{agents,tasks}/controller.ts`) — pure orchestration with no presentation
+(`src/features/agents/controller.ts`) — pure orchestration with no presentation
 imports (`packages/code/tests/architecture/architecture-boundary.test.ts`) — or into an
 **adapter** (`src/adapters/{agent-files,agents-store,agents,memory-mode,effort-levels}.ts`) which may
 not import `ui/` or `views/` at all
@@ -24,12 +24,11 @@ sit beside them: `features/issues.ts` (validation issue projection), `features/d
 `core/run-status.ts` into glyph-rendered strings. The deleted compatibility re-export
 `features/notice.ts` is recorded in §8 item 8.
 
-All six views reach their data through `@clarvis/protocol` service interfaces or through
+All five views reach their data through `@clarvis/protocol` service interfaces or through
 `@clarvis/kernel`'s six sanctioned entrypoints; none of them touches the filesystem or the engine.
 `WorkflowsHub`'s own doc comment states the rule: "It reads everything through the kernel's
 workflows/runs services, never the local filesystem, so a remote kernel needs no change"
-(`packages/code/src/views/config/WorkflowsHub.tsx`). `TasksHub` states the same: "All reads and
-writes cross `KernelClient.tasks`" (`packages/code/src/views/config/TasksHub.tsx`).
+(`packages/code/src/views/config/WorkflowsHub.tsx`).
 
 ## 2. Surface
 
@@ -41,18 +40,16 @@ Every hub is registered as a *view* command. The name/title/surface/parent tuple
 | Command | Title | Slash | Surface | Parent | Registered at |
 | --- | --- | --- | --- | --- | --- |
 | `agents.open` | Agents | — | `internal` | `settings` | `packages/code/src/features/agents/commands.ts` |
-| `tasks.open` | Tasks | `/tasks` | `slash` | — | `packages/code/src/app/commands.tsx` |
 | `sessions.open` | Sessions | `/sessions` | `slash` | `sessions` | `packages/code/src/app/commands.tsx` |
 | `workflows.open` | Workflows | `/workflow` | `slash` | — | `packages/code/src/app/commands.tsx` |
 | `controls.open` | Run controls | — | `internal` | `settings` | `packages/code/src/app/commands.tsx` (`controls.open`) |
 | `memory.config` | Memory settings | — | `internal` | `settings` | `packages/code/src/app/commands.tsx` (`memory.config`) |
 
-`tasks.open` alone carries `enabled: deps.tasks.available` (`packages/code/src/app/commands.tsx`);
-the other five are unconditionally registered.
+The five commands are unconditionally registered.
 
 ### 2.2 View entry points
 
-All six follow the same signature shape `(host: ViewHost, deps) => JSX.Element`. `ViewHost` is
+All five follow the same signature shape `(host: ViewHost, deps) => JSX.Element`. `ViewHost` is
 declared at `packages/code/src/keys/commands.ts` and supplies `scope()`/`toggleScope()`/
 `bindScope()`, `dirty()`/`markDirty()`/`onSave()`, `level.push/pop/depth`, `confirm()`, `close()` and
 `dispatch()`.
@@ -60,11 +57,10 @@ declared at `packages/code/src/keys/commands.ts` and supplies `scope()`/`toggleS
 | Export | Deps interface | Source |
 | --- | --- | --- |
 | `AgentsPanel` | `AgentsDeps` = `{ agents: AgentsStore; settings: SettingsAdapter; catalog: ModelsCatalog\|null; code: CodeConfigStore; env: EnvView; notify; controller? }` | `packages/code/src/views/config/AgentsPanel.tsx` |
-| `TasksHub` | `TasksHubDeps` = `{ controller: TasksController; profiles; defaultContainer; workBlockedReason?; onError }` | `packages/code/src/views/config/TasksHub.tsx` |
 | `WorkflowsHub` | `WorkflowsHubDeps` = `{ list; get; getRun; delete?; now; live?; openAgentPicker?; pollMs?; refreshSlowMs? }` | `packages/code/src/views/config/WorkflowsHub.tsx` |
 | `SessionsHub` | `SessionsHubDeps` = `{ sessions; catalog?; now; statusLine; resume; resumeCatalog?; delete? }` plus `SessionCatalogItem` | `packages/code/src/views/config/SessionsHub.tsx` |
 | `MemoryConfigPanel` | `MemoryConfigDeps` = `{ settings: SettingsAdapter; memoryMode: MemoryModeStore; notify }` | `packages/code/src/views/config/MemoryConfigPanel.tsx` |
-| `RunControlsPanel` | inline deps `{ settings; guard: GuardModeStore; memory: MemoryModeStore; notify; runActive; openSandbox }` | `packages/code/src/views/config/RunControlsPanel.tsx` (`RunControlsPanel`) |
+| `RunControlsPanel` | inline deps `{ settings; memory: MemoryModeStore; notify; runActive; reload; openSandbox }` | `packages/code/src/views/config/RunControlsPanel.tsx` (`RunControlsPanel`) |
 
 `refreshSlowMs` on `WorkflowsHubDeps` is explicitly documented as an internal test seam for the
 pending-operation warning (`packages/code/src/views/config/WorkflowsHub.tsx`).
@@ -89,7 +85,6 @@ and [background-commands.test.tsx](../../packages/code/tests/integration/backgro
 | `SaveOutcome` | `"saved" \| "blocked" \| "fork-needed" \| "no-draft" \| "error"` | `packages/code/src/features/agents/controller.ts` |
 | `presentAgentsEvent(event: AgentsEvent): Notice` | total switch over 13 event variants | `packages/code/src/features/agents/events.ts` |
 | `registerAgentsCommands(commands, deps)` | registers `agents.open` | `packages/code/src/features/agents/commands.ts` |
-| `createTasksController(deps): TasksController` | read passthroughs + four idempotency-guarded mutations + `workBlocked`/`workOnTask` | `packages/code/src/features/tasks/controller.ts` |
 | `presentStatusLine`, `memoryNoticeText`, `progressStatusText`, `liveRunStatusLine`, `RunStripInput`, `runOutcomeLabel`, `runStripText` | run-status glyph projections | `packages/code/src/features/run/status-presenter.ts` |
 
 ### 2.4 Adapters owned by this document
@@ -231,29 +226,6 @@ Thirteen variants (`packages/code/src/features/agents/events.ts`): `save_blocked
 a `Notice { message, tone }` where tone ∈ `info|success|warn|error`
 (`packages/code/src/ui/notice.ts`).
 
-### 3.7 Tasks replay records
-
-`createMutationExecutor` keys a reserved provider input by
-`JSON.stringify([operation, ...fields])` (`packages/code/src/features/tasks/controller.ts`). The
-field lists are fixed per operation:
-
-| Operation | Key fields | Source |
-| --- | --- | --- |
-| `create` | `provider_key`, `container_id`, `title`, `description`, `acceptance_criteria`, `priority`, `assignee_id`, `labels` | `packages/code/src/features/tasks/controller.ts` |
-| `assign` | `ref.provider_key`, `ref.id`, `assignee_id` | `packages/code/src/features/tasks/controller.ts` |
-| `transition` | `ref.provider_key`, `ref.id`, `intent`, `reason` | `packages/code/src/features/tasks/controller.ts` |
-| `comment` | `ref.provider_key`, `ref.id`, `body` | `packages/code/src/features/tasks/controller.ts` |
-
-Each record is `{ input: TaskMutationDto; uncertain: boolean; pending?: Promise }`. `request_id` is minted once per record with `crypto.randomUUID()` and replayed
-verbatim on retry. `MAX_UNCERTAIN_MUTATIONS = 32`.
-
-### 3.8 Task board vocabulary
-
-`PRIMARY_STAGES = ["backlog","ready","active","blocked","review","done"]`; `EXTRA_STAGES =
-["cancelled","other"]`; `STAGE_LABELS` title-cases each
-(`packages/code/src/views/config/TasksHub.tsx`). The internal screen enum is
-`"tasks"|"detail"|"profiles"|"containers"|"intents"` and the view mode `"board"|"list"`. `FaultKind = "fault"|"conflict"|"outcome_unknown"`.
-
 ### 3.9 Workflow result Markdown
 
 `formatStructuredWorkflowResult` emits a recursive projection without a generic format heading
@@ -386,71 +358,6 @@ Refuses when `isBuiltinAgent(name)` or the name already exists in the target sco
 (`packages/code/src/adapters/agents-store.ts`). `resolveAgentFiles` drops `scope === "plugin"`
 summaries, resolves precedence via `resolveAgentsByName` and sorts with `compareAgentDisplayOrder`. `write`/`remove`/`rename` each `await reload()`. `read` maps a
 kernel `not_found` to `null` and rethrows everything else.
-
-### 4.3 Tasks
-
-**Load (`reload`, `packages/code/src/views/config/TasksHub.tsx`).** An `AbortController` is
-stored in `refreshAbort`; the previous one is aborted first. If
-`deps.controller.available()` is false the hub synthesizes
-`{ state: "not_configured", writes: "disabled", reason: "Tasks are disabled in this host." }` and
-clears everything without touching the service. Otherwise it fetches `status()`; a non-`ready`
-state clears capabilities/containers/rows and sets a fault unless the state is `not_configured`. On `ready` it fetches `capabilities()` and `listContainers({ limit: 100 })` in parallel,
-prefers the currently selected container or `deps.defaultContainer()` when the provider still lists it, then `search()`. Every write to state is gated on `isCurrentRefresh(controller)`.
-
-**Search ** remembers the selected `ref.id`, requests `limit: 100` with optional
-`container_id`/`query`, and restores the selection index by id, falling back to `0`.
-
-**Write gating.** Four independent predicates each require `status().writes === "enabled"` *and* the
-provider's advertised capability: `canCreate`, `canAssign`, `canComment`, `canTransition`. `canTransition` additionally requires at least one advertised intent other than `start`.
-
-**Create / assign / comment.** `createTask` refuses before ever prompting when no
-`provider_key` is on the current `status()` ("refresh Tasks before creating against this provider")
-or no container is chosen — the picked `containerId()` or `deps.defaultContainer()` ("choose a
-container before creating a task") — then prompts a title and discards a blank/whitespace-only one
-(`title.trim()`). `assignTask` prompts an assignee id seeded from the task's current
-assignee, where a blank value is sent as `assignee_id: null` (unassign), and attaches
-`expected_revision` whenever the task carries a `revision`. `commentTask` is the same
-revision-attachment shape over a multiline prompt, discarding a blank body. All three are pinned
-end-to-end by `packages/code/tests/integration/tasks-hub-render.test.tsx` ("root actions create,
-assign and comment with revision-bound requests").
-
-**Root verbs (`rootVerbs`).** `r` refresh, `b` toggle board/list, `/` search
-(`editSearch`), `o` switch container (when any container is loaded), `x` show/hide extra stages,
-`w` work (when a row is selected), `c` create (when `canCreate`), `a` assign (selected row +
-`canAssign`), `t` transition (selected row + `canTransition`, opens `openIntents`), `m` comment
-(selected row + `canComment`). The container-switch, extra-stage-toggle and search behaviour are
-pinned together at `packages/code/tests/integration/tasks-hub-render.test.tsx` ("filters,
-containers, extra stages and blocking stay explicit").
-
-**Transition ** is the only two-phase write. For `complete` and `reopen` it first calls
-`previewTransition`, then `host.confirm` showing the previewed stage and native state, marks `reopen`
-as `danger`, and carries the preview's `confirmation_token` into the real call.
-`expected_revision` is attached whenever the document carries a `revision`. `block` first
-prompts for a reason and refuses an empty one. `start` is filtered out of `legalIntents`
-entirely.
-
-**Work on task (`beginWork`).** Checks `deps.workBlockedReason?.()` then
-`controller.workBlocked()`; pre-selects the first profile holding `tasks.read` or
-`tasks.progress`; pushes the `profiles` screen. `chooseProfile` **re-checks both
-gates** before `host.close()` and `controller.workOnTask(task.ref, profile.name)`.
-
-**Failure folding (`fail`).** If the error's `details.current_task` looks like a task document
-it is written back into the board and detail via `replaceSnapshot` *before* the fault is recorded
-(`taskFromFailure`). `faultOf` classifies `details.outcome_unknown === true`
-as `outcome_unknown` with the fixed sentence "outcome unknown — the task was re-read; inspect it
-before trying again", `code === "conflict"` as `conflict`, everything else as `fault`.
-
-**Idempotent mutations (`createMutationExecutor`,
-`packages/code/src/features/tasks/controller.ts`).** The record is inserted *before* dispatch so
-concurrent writes cannot overflow the bound. A record already carrying `pending` returns that
-same promise, so two identical actions share one attempt. On success the record is deleted. On failure the record is retained — and marked `uncertain` — when
-`outcomeIsUnknown(error)` (`details.outcome_unknown === true` or `code === "task_outcome_unknown"`), when `retryFailureIsTransient(error)` (`task_provider_unavailable`, `task_cancelled`,
-`cancelled`, `unavailable`), or when the record was *already* uncertain; otherwise the
-record is released.
-
-**Layout.** The board packs stage columns 6/3/1 per row at widths ≥132 / ≥88 / below
-(`packages/code/src/views/config/TasksHub.tsx`), and `stageRows` chunks the stage list to that
-width.
 
 ### 4.5 Workflows
 
@@ -591,34 +498,14 @@ host-global placement choice and always writes global settings; memory remains s
 
 | Row | Choices | Write |
 | --- | --- | --- |
-| Isolation | `Host`, `Sandbox`, `Docker`, `Podman` | shared `applyIsolation`, global |
-| Guard | `Off`, `Approval`, `Auto` | shared `applyReviewMode`, selected scope |
+| Isolation | `Host`, `Sandbox` | shared `applyIsolation`, global |
 | Memory | `on`, `off` | `applyMemory` — **session store only** |
 | Completed plans | `keep` / `discard` labelled "Keep plans" / "Delete after success" | `applyPlanRetention` |
 
 Run Controls and the `Ctrl+X I` quick picker share `applyIsolation`. Host requires an explicit
-danger confirmation; Sandbox enables a required native boundary; Docker and Podman write the minimal
-global runtime choice and connect a complete Kernel before the workspace client is returned. Both
-fail closed if the engine cannot start; neither invokes native Sandbox/Host. Container renders
-Guard as not applicable while native Memory/Plans controls target the guest. Run Controls and the
-`Ctrl+X G` quick picker separately share `applyReviewMode`. It preserves local
-allow/deny lists and, for a workspace without local lists, carries the global policy forward so the
-last-wins guard block does not shadow it. Auto without a resolvable judge degrades to persisted
-Approval. Neither path changes the other axis.
+danger confirmation; Sandbox enables a required native boundary.
 Run Controls and the `Ctrl+X M` Memory picker both write only `MemoryModeStore`; they never persist
 settings. All application shortcuts use the shared Ctrl+X family.
-
-`applyGuard` degrades `auto` to `on` when `guardAutoResolves(settings)` is false, writes the
-degraded value and says why. It uses the same `scopedGuardPolicy` preservation path.
-
-The Guard row's `Source` value comes from `guardSource()` : it reads as the
-scope that actually supplied the persisted value (`settingSource("guard")`, itself
-`deps.settings.origin?.(key) ?? "product default"`) *unless* the live `deps.guard.mode()`
-has since diverged from that persisted value, in which case it reads `"session"` — the same
-inherited-scope-vs-session-override distinction the memory panel's `Source` badge makes (invariant
-47), applied here to the guard mode instead of the memory block. Pinned by
-`packages/code/tests/integration/run-controls-render.test.tsx` ("command review separates an
-inherited scoped value from a session override").
 
 `applyMemory` never writes settings. It sets the session mode and then reports one of three
 outcomes computed from `memoryState(effective, mode)`: `inert` → memory will not learn; still `off` →
@@ -646,9 +533,7 @@ generic `@clarvis/code` architecture rules that bind this scope and are restated
 specific to these files.
 
 1. **No `features/**/controller.ts` in this document imports `theme/`, `ui/`, `views/` or any `.tsx`.**
-   Holds for `features/agents/controller.ts` and `features/tasks/controller.ts` — verify by their import blocks
-   (`packages/code/src/features/agents/controller.ts`,
-   `packages/code/src/features/tasks/controller.ts`).
+   Holds for `features/agents/controller.ts` (`packages/code/src/features/agents/controller.ts`).
    Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts`.
    Note the rule is scoped to the filename `controller.ts`: `features/agents/events.ts` does import
    `theme/glyphs.ts` (`packages/code/src/features/agents/events.ts`) and `features/agents/commands.ts`
@@ -663,7 +548,7 @@ specific to these files.
    Production: `packages/code/src/views/config/AgentsPanel.tsx`,
    `packages/code/src/views/config/RunControlsPanel.tsx`.
    Pinned: `packages/code/tests/architecture/ascii-source-boundary.test.ts`.
-   `WorkflowsHub.tsx` is also in the swept list. `TasksHub`, `SessionsHub`,
+   `WorkflowsHub.tsx` is also in the swept list. `SessionsHub`,
    `MemoryConfigPanel` is **not** — see §8.
 
 4. **A frontmatter parse failure never seals an agent runnable.** `agentReadiness` short-circuits on
@@ -733,16 +618,10 @@ specific to these files.
 17. **`GRANT_CATALOG` covers every *engine-owned* grant (the four `BuiltinGrant` names retained on
     `grantSchema.options` as a static discovery aid), plus a curated entry for two
     capability-owned grants (`use_skills`, `workflow`) — six total — with unique
-    ids and non-empty label/detail. It does NOT cover every grant the kernel actually accepts on a
-    run: the seven `tasks.*` grants `@clarvis/tasks` registers (`packages/tasks/src/toolset.ts`)
-    are real, semantically valid grants once that capability is wired in — accepted by
-    `requireKnownGrants` and enumerated by `ConfigService.knownGrants()`
-    (`packages/kernel/src/kernel.ts`) — yet have no `GrantSpec` row here at all, so the
-    picker never offers them; a profile carrying one renders only via `grantBadges`' raw-id
-    fallback. `grantSchema` itself (the zod schema, not its `.options` aid) syntactically accepts
+    ids and non-empty label/detail. `grantSchema` itself (the zod schema, not its `.options` aid) syntactically accepts
     any non-empty string, so "covers every grant `grantSchema` accepts" is true of neither the
     schema's syntax nor the run-time known-grant set — only of the four-name discovery list. See
-    `specs/cross-cutting/grants.md` §2.3 for the full 14-grant inventory.
+    `specs/cross-cutting/grants.md` §2.3 for the grant inventory.
     Production: `packages/code/src/adapters/agents.ts`.
     Pinned: `packages/code/tests/unit/agents.test.ts` (checks only that `GRANT_CATALOG` is a
     superset of `grantSchema.options`, the four built-ins — not of every registrable grant) (unique ids and non-empty label/detail; asserts uniqueness, not completeness).
@@ -755,53 +634,6 @@ specific to these files.
 19. **`askUserGranted` stays `"unknown"` when grants are unknown rather than defaulting to `false`.**
     Production: `packages/code/src/adapters/agents.ts`.
     Pinned: `packages/code/tests/unit/agents.test.ts`.
-
-20. **A tasks mutation whose outcome may be unknown keeps its exact request id, revision and
-    confirmation token for replay; only success releases it.**
-    Production: `packages/code/src/features/tasks/controller.ts`.
-    Pinned: `packages/code/tests/unit/tasks-controller.test.ts`.
-
-21. **An uncertain mutation record is never evicted to admit a new intention; the 33rd distinct
-    uncertain action is refused with "Too many unresolved task mutations".**
-    Production: `packages/code/src/features/tasks/controller.ts`.
-    Pinned: `packages/code/tests/unit/tasks-controller.test.ts`.
-
-22. **A definitive (non-transient, non-unknown) mutation failure releases the key, so the next
-    attempt mints a fresh `request_id`.**
-    Production: `packages/code/src/features/tasks/controller.ts`.
-    Pinned: `packages/code/tests/unit/tasks-controller.test.ts`.
-
-23. **Two concurrent identical task actions share one physical attempt.**
-    Production: `packages/code/src/features/tasks/controller.ts`.
-    Pinned: `packages/code/tests/unit/tasks-controller.test.ts`.
-
-24. **Every Tasks write is doubly gated: settings-level `writes === "enabled"` and the provider's
-    advertised capability.** Production: `packages/code/src/views/config/TasksHub.tsx`.
-    Pinned: `packages/code/tests/integration/tasks-hub-render.test.tsx`.
-
-25. **`complete` and `reopen` require a preview-derived `confirmation_token` and an explicit human
-    confirmation.** Production: `packages/code/src/views/config/TasksHub.tsx`.
-    Pinned: `packages/code/tests/integration/tasks-hub-render.test.tsx`.
-
-26. **The `start` intent is never offered to the human.**
-    Production: `packages/code/src/views/config/TasksHub.tsx`.
-    Unpinned as an explicit assertion; `packages/code/tests/integration/tasks-hub-render.test.tsx`
-    exercises the filtered list indirectly.
-
-27. **"Work on task" re-checks both the host block and the run block *after* the agent picker
-    opens.** Production: `packages/code/src/views/config/TasksHub.tsx`.
-    Pinned: `packages/code/tests/integration/tasks-hub-render.test.tsx` ("rechecks the memory fuse
-    after the agent picker opens"), and the first gate.
-
-28. **A superseded task read can never replace current state.** Detail, intent-lookup and board
-    refresh each compare their `AbortController` identity, the current screen and the current
-    selection before committing.
-    Production: `packages/code/src/views/config/TasksHub.tsx`.
-    Pinned: `packages/code/tests/integration/tasks-hub-render.test.tsx`.
-
-29. **When the host disables Tasks, the hub synthesizes a `not_configured` status without calling the
-    service at all.** Production: `packages/code/src/views/config/TasksHub.tsx`.
-    Pinned: `packages/code/tests/integration/tasks-hub-render.test.tsx`.
 
 30. **Workflow polling is single-flight, coalesces ticks into one trailing refresh, and stops on
     teardown.** Production: `packages/code/src/views/config/WorkflowsHub.tsx`.
@@ -877,17 +709,6 @@ specific to these files.
     Production: `packages/code/src/views/config/RunControlsPanel.tsx` (`applyMemory`).
     Pinned: `packages/code/tests/integration/run-controls-render.test.tsx`.
 
-46. **A Review write preserves the effective allow/deny policy; a workspace with no local lists
-    carries forward the global lists, and Isolation remains untouched.** Production:
-    `packages/code/src/features/run/review.ts` (`applyReviewMode`, `scopedGuardPolicy`) and
-    `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`). Pinned:
-    `packages/code/tests/integration/run-controls-render.test.tsx` and
-    `packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
-
-47. **`auto` without a resolvable judge model persists `on`, not a misleading `auto`.**
-    Production: `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`).
-    Pinned: `packages/code/tests/integration/run-controls-render.test.tsx`.
-
 48. **Run Controls contains no planning-mode selector; completed-plan retention is its only editable
     plan row.** Planning review belongs to `/plan`. Production:
     `packages/code/src/views/config/RunControlsPanel.tsx` (`activate`, `body`). Pinned:
@@ -901,16 +722,12 @@ specific to these files.
     `packages/code/tests/integration/run-controls-render.test.tsx` (global/provider and workspace
     preservation cases).
 
-50. **Isolation, Review and Memory have separate vocabularies and shared application paths
-    across Run Controls and the quick pickers. Host confirmation cannot change Review; Review
-    cannot change runtime or Sandbox. Docker and Podman persist only the minimal global runtime selector and
-    request no engine work before the next run. Memory changes only the session store and never
+50. **Isolation and Memory have separate vocabularies and shared application paths
+    across Run Controls and the quick pickers. Memory changes only the session store and never
     persists settings.** Production:
     `packages/code/src/features/run/isolation.ts` (`ISOLATION_CHOICES`, `isolationConfirmation`,
-    `applyIsolation`), `packages/code/src/features/run/review.ts` (`REVIEW_CHOICES`,
-    `applyReviewMode`), `packages/code/src/views/config/RunControlsPanel.tsx`,
-    `packages/code/src/views/overlays/IsolationPicker.tsx`, and
-    `packages/code/src/views/overlays/ReviewPicker.tsx`,
+    `applyIsolation`), `packages/code/src/views/config/RunControlsPanel.tsx`,
+    `packages/code/src/views/overlays/IsolationPicker.tsx`,
     `packages/code/src/views/overlays/MemoryPicker.tsx`, and
     `packages/code/src/adapters/memory-mode.ts`. Pinned:
     `packages/code/tests/unit/isolation.test.ts`,
@@ -944,7 +761,7 @@ specific to these files.
     Pinned: `packages/code/tests/unit/agents-events.test.ts` — the file names it an
     "exhaustiveness canary".
 
-57. **The six hubs' command metadata (name, title, surface, parent) is a pinned contract and each
+57. **The five hubs' command metadata (name, title, surface, parent) is a pinned contract and each
     has exactly one registered factory.**
     Production: the registration sites in §2.1.
     Pinned: `packages/code/tests/component/command-composition.test.ts`, asserted.
@@ -960,13 +777,6 @@ specific to these files.
 | Agent delete fails | `packages/code/src/features/agents/controller.ts` | emits `delete_failed` **and rethrows**, so the panel's caller does not pop the level (`packages/code/src/views/config/AgentsPanel.tsx`) |
 | Any agent save/fork/create/rename write throws | `packages/code/src/features/agents/controller.ts` | draft body/frontmatter and controller state are left exactly as before the call — no discard, no `markDirty(false)`; a retry is a plain re-call. Pinned at `packages/code/tests/unit/agents-controller.test.ts` |
 | Controller torn down mid-operation | `packages/code/src/features/dispose-guard.ts` | event is dropped; the operation still completes |
-| Tasks host capability off | `packages/code/src/views/config/TasksHub.tsx` | synthetic `not_configured` status; no service call |
-| Tasks provider not `ready` | `packages/code/src/views/config/TasksHub.tsx` | board cleared; `not_configured` shows no fault, any other state shows `status.reason` or `provider <state>` |
-| Tasks error carrying `details.current_task` | `packages/code/src/views/config/TasksHub.tsx` | the returned document is written into board and detail before the fault is shown |
-| `details.outcome_unknown === true` | `packages/code/src/views/config/TasksHub.tsx` | fault kind `outcome_unknown` with a fixed instruction to inspect before retrying; the replay record is retained (`packages/code/src/features/tasks/controller.ts`) |
-| Tasks error `code === "conflict"` | `packages/code/src/views/config/TasksHub.tsx` | fault kind `conflict`; the replay record is **released** (not in the transient list at `packages/code/src/features/tasks/controller.ts`) |
-| >32 unresolved task mutations | `packages/code/src/features/tasks/controller.ts` | a *new* intention is refused with an actionable message; retrying an existing one still works |
-| Task create with no provider key or container | `packages/code/src/views/config/TasksHub.tsx` | refused with "refresh Tasks before creating against this provider" / "choose a container before creating a task" |
 | Workflow list/tree/node fetch fails | `packages/code/src/views/config/WorkflowsHub.tsx` | `loadError` is set and rendered above the body; the previous data is retained |
 | Workflow refresh never settles | `packages/code/src/views/config/WorkflowsHub.tsx` | "Refresh is still pending; the backend may be unavailable"; still one in-flight request |
 | Workflow result cannot be stringified | `packages/code/src/views/config/WorkflowsHub.tsx` | "(unserializable result)". Pinned at `packages/code/tests/integration/workflows-hub-render.test.tsx` |
@@ -992,22 +802,16 @@ request that has been superseded by a queued one (`packages/code/src/views/confi
 | `adapters/agents-store.ts` | `@clarvis/kernel/config` (`compareAgentDisplayOrder`, `resolveAgentsByName`), `solid-js` | `packages/code/src/adapters/agents-store.ts` |
 | `features/agents/controller.ts` | `solid-js` | `packages/code/src/features/agents/controller.ts` |
 | `views/config/AgentsPanel.tsx` | `solid-js` | `packages/code/src/views/config/AgentsPanel.tsx` |
-| `adapters/guard-mode.ts` | `@clarvis/kernel/policy` (`defaultGuardMode`) | `packages/code/src/adapters/guard-mode.ts` (`defaultGuardMode` import) |
 | `adapters/agents.ts` | `@clarvis/paths` (types only) | `packages/code/src/adapters/agents.ts` |
-| `views/config/{TasksHub,WorkflowsHub}.tsx`, `features/tasks/controller.ts` | `@clarvis/protocol` — **type-only** | `packages/code/src/views/config/TasksHub.tsx`, `packages/code/src/views/config/WorkflowsHub.tsx`, `packages/code/src/features/tasks/controller.ts` |
 
 Only the six kernel entrypoints appear (INV-251) — full statement owned by
 [hosts/code-bootstrap.md](code-bootstrap.md) §5.
-
-`features/tasks/controller.ts` imports only types from `@clarvis/protocol`, so it holds no runtime
-edge to the kernel. `TasksController` is a structural `ReturnType<>` alias
-(`packages/code/src/features/tasks/controller.ts`).
 
 ### 7.2 Inbound
 
 | Consumer | What it needs | Site |
 | --- | --- | --- |
-| `src/app/commands.tsx` | five of the six views + their deps | `packages/code/src/app/commands.tsx`; Agents is registered by `src/features/agents/commands.ts` |
+| `src/app/commands.tsx` | four of the five views + their deps | `packages/code/src/app/commands.tsx`; Agents is registered by `src/features/agents/commands.ts` |
 | `src/features/agents/commands.ts` | `AgentsPanel` | `packages/code/src/features/agents/commands.ts` |
 | `src/views/App.tsx` | `SessionCatalogItem` (type) | `packages/code/src/views/App.tsx` |
 | `src/views/App.tsx` | `runStripText` | `packages/code/src/views/App.tsx` |
@@ -1030,22 +834,20 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
 ### 7.4 Explicit delegations
 
 - Sandbox semantics, `SandboxConfigPanel`, `probeSandbox` → [execution/sandbox.md](../execution/sandbox.md).
-- `CapabilityProvidersPanel` → [capabilities/provider-executables.md](../capabilities/provider-executables.md).
 - `DoctorView`, `KeyboardView` → their own documents.
 - `execution-safety.ts` (`deriveRunControls`, `deriveIsolation`, `memoryState`,
   `planRetentionDescription`, `safetyDescription`, `memoryDescription`),
-  `guard-mode.ts`, `session-store.ts`, `workflow-projection.ts`, `settings.ts` →
+  `session-store.ts`, `workflow-projection.ts`, `settings.ts` →
   [hosts/code-run-host.md](code-run-host.md) / [hosts/code-settings-panels.md](code-settings-panels.md).
-- The domain semantics behind each hub — the tasks provider contract, workflow
+- The domain semantics behind each hub — workflow
   documents, memory wiki, plan documents, the shipped agent fleet and overlay resolution — belong to
   the capability documents and to [hosts/kernel-config.md](kernel-config.md).
 
 ## 8. Open questions
 
-1. **Why `TasksHub.tsx`, `SessionsHub.tsx` and `MemoryConfigPanel.tsx` are
+1. **Why `SessionsHub.tsx` and `MemoryConfigPanel.tsx` are
    outside the ASCII sweep.** `packages/code/tests/architecture/ascii-source-boundary.test.ts`
-   lists fourteen files; these four are not among them, and all four *do* render literal non-ASCII
-   characters — `·` throughout `TasksHub.tsx` (e.g.), a literal
+   lists fourteen files; these views render literal non-ASCII characters — a literal
    `${"—"}` in `packages/code/src/views/config/SessionsHub.tsx`, em-dashes in eight `MemoryConfigPanel.tsx` status strings. Whether the sweep list is
    an intentional subset or has simply not caught up is not stated anywhere in the code.
 
@@ -1071,8 +873,7 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
 
 6. **`AgentsStore.reload`'s epoch guard (invariant 16) is unpinned.** No test in
    `packages/code/tests` interleaves two reloads. Likewise unpinned: the custom-sandbox confirmation
-   branch in `RunControlsPanel.applyIsolationChoice` (invariant 50), and the `start`-intent exclusion
-   (invariant 26) as a direct assertion.
+   branch in `RunControlsPanel.applyIsolationChoice` (invariant 50).
 
 7. **`GrantId` is a closed union in `packages/code/src/adapters/agents.ts`, but the panel writes it through
    `patchFm({ grants })` onto an `AgentFrontmatter`** whose grant vocabulary is the kernel's open
@@ -1080,12 +881,7 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
    stored on a profile are preserved and rendered by their raw id", and `grantBadges` does fall back
    to the raw id — but `toggleGrant` only ever receives a `GrantId`
    (`packages/code/src/features/agents/controller.ts`), so how an unknown grant reaches the
-   toggle path, if ever, is not determinable from this package. The seven `tasks.*` grants
-   (`specs/cross-cutting/grants.md` §2.3) are a concrete, real-world instance of exactly such an
-   "unknown grant" from this package's point of view — `GRANT_CATALOG`/`ALL_GRANTS` has no row for
-   any of them (invariant 17) — but whether a profile carrying one is reachable through this editor
-   at all, short of hand-editing the underlying file outside `code`, is not settled by this
-   package's source.
+   toggle path, if ever, is not determinable from this package.
 
 8. ~~**`features/notice.ts` is a type re-export** whose header calls it a "Compatibility
    surface for feature presenters".~~ **Resolved — deleted.** What it was compatible
@@ -1095,11 +891,6 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
    implied is contradicted two files over — `features/run/status-presenter.ts` and
    `features/providers/request-params.ts` both import from `ui/` directly, and no architecture test
    forbids it. The two consumers now import from `../../ui/notice.ts` like everything else.
-
-9. **Task provider concurrency wording.** `TasksHub.concurrency()` maps
-   `exclusive_claim|revision|none` onto prose and colours `none` as a warning
-   (`packages/code/src/views/config/TasksHub.tsx`). The consequence of `none` for a user
-   is not spelled out anywhere in `code`; it belongs to [capabilities/tasks-domain.md](../capabilities/tasks-domain.md).
 
 10. **`WorkflowsHubDeps.refreshSlowMs` is described in-source as an internal test seam** but is also
     the only way to shorten the slow-operation warning. Whether

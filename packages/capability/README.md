@@ -1,7 +1,6 @@
 # @clarvis/capability
 
-Reviewer configuration types belong to the owning Judge package. Neutral `RunRequest` carries no
-reviewer field; consumers use the generic capability request view. Authority vocabulary stays here.
+Neutral `RunRequest` carries capability parameters through the generic request view.
 
 The **capability contract**: what a cross-cutting loop feature is written against, and the machinery
 that composes a list of them. A dependency-free leaf of the graph — its only external dependency is
@@ -296,13 +295,12 @@ alternative was a dependency edge nobody wanted:
 
 | Module                                              | Why not elsewhere                                                                                                                                                                                    |
 | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model-ref.ts` (`parseModelRef`, `resolveProvider`) | read by the request schema, the memory factory, subagent profiles and the kernel's guard judge — none of which should depend on a provider implementation                                            |
+| `model-ref.ts` (`parseModelRef`, `resolveProvider`) | read by the request schema, the memory factory and subagent profiles — none of which should depend on a provider implementation |
 | `reasoning-budget.ts` (`reasoningOutputFloor`)      | pure arithmetic needed by both the engine's hot loop and the adapter; leaving it in `@clarvis/llm` would make `runtime/loop/` import the provider layer                                              |
 | `message-content.ts` (`contentToText`)              | shared by the engine and the memory adapter                                                                                                                                                          |
 | `sanitize.ts`                                       | the secret-redaction rules, below                                                                                                                                                                    |
 | `errors.ts`                                         | the five-class `CodedError` hierarchy: its members split across the trace/engine boundary, so splitting the file would make `@clarvis/loop` import its own error's base class from the trace package |
 | `frontmatter-fence.ts` (`splitFrontmatterFence`)    | the `---` split shared by `@clarvis/skills` and `@clarvis/loop`'s agent definitions, below — a _string_ operation, so it lands here rather than in the filesystem leaf                               |
-| `capability-executables.ts`                         | the serializable declaration, platform/env resolver and narrow session port shared by hosts and language-neutral Memory/Plans adapters                                                               |
 
 Plus `tool-arguments.ts`, `call-envelope.ts` (`openCallEnvelope`), `handler-base.ts`
 (`handlerBaseOf`) and the hook vocabulary (`hooks-config.ts`) — the last because the settings block
@@ -356,11 +354,7 @@ and the guard kills the run faster than the bug it is reporting.
 this package's only external dependency `zod`. Supplying a `schema` with **no** `validate` throws:
 the alternative is a validation boundary failing open in silence.
 
-`ToolCallDetail.guard` is the durable final command-review fact for a guarded
-call. It records mode, allowed/denied outcome, and answerer on the terminal
-`tool_call`; progress events deliberately do not carry an interim verdict.
-Optional `reviewer_decision` preserves `allow`, `deny`, `unsure` or `failed` separately from the
-final Guard outcome. `OperatorInstructions` carries host-captured persistent instructions in the
+`OperatorInstructions` carries host-captured persistent instructions in the
 authority seed/state; child inheritance preserves them without widening the parent's ceiling.
 
 ### `frontmatter-fence.ts` splits; it does not parse
@@ -438,38 +432,12 @@ The typed `PromptCacheIdentity` and `composePromptCacheKey` compose a persisted 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
 
-## Operator authority vocabulary
-
-`operator-authority.ts` exports host evidence, binding, effect classes, compiled envelope and
-versioned state, plus `OPERATOR_AUTHORITY_PORT` and its read-only reader. `inheritOperatorAuthority`
-projects a compiled parent intersection without promoting leader briefs. Kernel owns the writer and
-semantic policy; the loop transports this substrate. See [effect review](../../specs/execution/effect-review.md).
-
-`OperatorElicitationContext` carries an accepted entry-agent `ask_user` question and answer to that
-private writer. The answer is authenticated operator text; the model-authored question remains
-separate, untrusted context. It is not a capability service and does not itself grant an effect.
-
-`OperatorAuthorityState.denied_effects` carries bounded identities of concrete refused batches at the current evidence revision. It grants no authority; the kernel owns recording and validation, and fresh host-admitted evidence invalidates these exact-review identities. See [self-configuration](../../specs/hosts/self-configuration.md).
-
-`OperatorReviewContext` carries bounded host-attested Goal or Plan JSON beside, never inside,
-`OperatorEvidence`. `PLANS_REVIEW_CONTEXT_PORT` lets Plans publish an atomically revisioned current
-semantic definition without access to the authority writer. Reviewers use these definitions as the
-operator's semantic objective and intended implementation path for routine bounded prerequisites;
-they do not authorize human-only effects, publication, deployment, destructive work, credential
-access or external contact. Goal context is inherited only with already-fenced run authority, while
-Plan context is read live and revalidated after inference; a changed revision makes the decision
-unsure and prevents stale cache or envelope reuse. Terminal `tool_call` trace
-vocabulary likewise carries an optional `result_digest`, minted before result-text retention caps, and
-a bounded `tool_evidence` receipt captured at the producer boundary. Hosts can attest complete bytes
-and classify terminal command/content status without retaining the omitted display text. The owning contracts are
-[command guard](../../specs/execution/command-guard.md) and
-[trace](../../specs/foundations/trace.md).
+Terminal `tool_call` trace vocabulary carries an optional `result_digest`, minted before
+result-text retention caps, and a bounded `tool_evidence` receipt captured at the producer
+boundary. See [trace](../../specs/foundations/trace.md).
 
 `ExecutionRecord.visibility` is the required neutral `ExecutionVisibility` discriminator (`public` or
 `internal`). The host supplies it explicitly; Trace owns storage, validation and query semantics.
 
-The authority ledger retains `envelope_context_revision` beside the installed envelope. This
-host-owned binding survives a validated checkpoint and is replaced atomically with compilation;
-revocation or settlement clears it. Reviewers compare it with the current live Plans revision,
-including disappearance, instead of maintaining a separate compile cache. It is not model-authored
-candidate data or operator evidence. See [effect review](../../specs/execution/effect-review.md).
+The authority ledger retains `envelope_context_revision` beside an installed envelope.
+Revocation or settlement clears it. It is host state, not model-authored content.

@@ -17,6 +17,7 @@
     "dev": "bun --preload @opentui/solid/preload --watch src/index.tsx",
     "build": "bun run tooling/artifact/build.ts",
     "build:install": "bun run tooling/artifact/build.ts --install",
+    "clean": "bun -e \"await import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
     "smoke": "bun run tooling/artifact/smoke.ts",
     "release:package": "bun run tooling/release/package.ts",
     "release:smoke": "bun run tooling/release/smoke.ts",

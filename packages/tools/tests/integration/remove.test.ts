@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
+import { mkdirSync, promises as fs } from "node:fs";
 import path from "node:path";
 import {
   makeWorkspace,
@@ -22,7 +22,10 @@ describe("remove", () => {
     root = makeWorkspace();
     config = makeConfig(root);
   });
-  afterEach(() => cleanup(root));
+  afterEach(() => {
+    vi.restoreAllMocks();
+    cleanup(root);
+  });
 
   it("deletes a file", async () => {
     write(root, "a.txt", "x");
@@ -38,22 +41,89 @@ describe("remove", () => {
     expect(r.json.error).toBe("not_found");
   });
 
-  it("errors not_a_file when the path is a directory", async () => {
-    mkdirSync(path.join(root, "d"));
-    const r = await callTool("remove", { path: "d" }, config);
-    expect(r.isError).toBe(true);
-    expect(r.json.error).toBe("not_a_file");
-    expect(exists(root, "d")).toBe(true);
+  it("refuses recursive cleanup when the selected path is a file", async () => {
+    write(root, "plain.txt", "keep");
+    const result = await callTool("remove", { path: "plain.txt", recursive: true }, config);
+    expect(result.json.error).toBe("invalid_input");
+    expect(exists(root, "plain.txt")).toBe(true);
   });
 
-  it("refuses to delete through a symlink and reports invalid_input", async () => {
+  it("reports an OS refusal when recursive tree removal cannot start", async () => {
+    mkdirSync(path.join(root, "blocked"));
+    const target = path.join(root, "blocked");
+    const realRm = fs.rm.bind(fs);
+    vi.spyOn(fs, "rm").mockImplementation((selected, options) =>
+      selected === target
+        ? Promise.reject(Object.assign(new Error("denied"), { code: "EACCES" }))
+        : realRm(selected, options),
+    );
+    const result = await callTool("remove", { path: "blocked", recursive: true }, config);
+    expect(result.json.error).toBe("io_error");
+    expect(exists(root, "blocked")).toBe(true);
+  });
+
+  it("reports a directory that gains an entry after the emptiness check", async () => {
+    mkdirSync(path.join(root, "raced"));
+    const target = path.join(root, "raced");
+    const realRmdir = fs.rmdir.bind(fs);
+    vi.spyOn(fs, "rmdir").mockImplementation((selected) =>
+      selected === target
+        ? Promise.reject(Object.assign(new Error("not empty"), { code: "ENOTEMPTY" }))
+        : realRmdir(selected),
+    );
+    const result = await callTool("remove", { path: "raced" }, config);
+    expect(result.json.error).toBe("invalid_input");
+    expect(exists(root, "raced")).toBe(true);
+  });
+
+  it("removes an empty directory", async () => {
+    mkdirSync(path.join(root, "d"));
+    const r = await callTool("remove", { path: "d" }, config);
+    expect(r.isError).toBe(false);
+    expect(r.text).toBe("Removed empty directory d.");
+    expect(exists(root, "d")).toBe(false);
+  });
+
+  it("recursively removes an empty directory", async () => {
+    mkdirSync(path.join(root, "empty"));
+    const result = await callTool("remove", { path: "empty", recursive: true }, config);
+    expect(result.isError).toBe(false);
+    expect(result.text).toBe("Removed tree empty.");
+    expect(exists(root, "empty")).toBe(false);
+  });
+
+  it("refuses a nonempty directory without changing its entries", async () => {
+    write(root, "d/a.txt", "x");
+    const r = await callTool("remove", { path: "d" }, config);
+    expect(r.isError).toBe(true);
+    expect(r.json.error).toBe("invalid_input");
+    expect(exists(root, "d")).toBe(true);
+    expect(exists(root, "d/a.txt")).toBe(true);
+  });
+
+  it("removes a recursive tree without an approval callback", async () => {
+    write(root, "tree/skill/SKILL.md", "selected");
+    const result = await callTool("remove", { path: "tree", recursive: true }, config);
+    expect(result.isError).toBe(false);
+    expect(exists(root, "tree")).toBe(false);
+  });
+
+  it("deletes a symlink entry without changing its destination", async () => {
     write(root, "real.txt", "x");
     makeSymlink(path.join(root, "real.txt"), path.join(root, "link.txt"));
     const r = await callTool("remove", { path: "link.txt" }, config);
-    expect(r.json.error).toBe("invalid_input");
-    expect(String(r.json.message)).toContain("symlink");
+    expect(r.isError).toBe(false);
     expect(exists(root, "real.txt")).toBe(true);
-    expect(exists(root, "link.txt")).toBe(true);
+    expect(exists(root, "link.txt")).toBe(false);
+  });
+
+  it("recursive cleanup refuses a symlink entry even when its target is a directory", async () => {
+    write(root, "real/a.txt", "x");
+    makeSymlink(path.join(root, "real"), path.join(root, "link"), "dir");
+    const result = await callTool("remove", { path: "link", recursive: true }, config);
+    expect(result.json.error).toBe("invalid_input");
+    expect(exists(root, "link")).toBe(true);
+    expect(exists(root, "real/a.txt")).toBe(true);
   });
 
   it.skipIf(!modeBitsEnforced)(
@@ -72,9 +142,9 @@ describe("remove", () => {
     },
   );
 
-  it("rejects a path escaping the workspace with path_escape", async () => {
+  it("reports a missing parent-relative path using the OS error", async () => {
     const r = await callTool("remove", { path: "../a.txt" }, config);
-    expect(r.json.error).toBe("path_escape");
+    expect(r.json.error).toBe("not_found");
   });
 
   it("ignores out-of-schema extra fields", async () => {

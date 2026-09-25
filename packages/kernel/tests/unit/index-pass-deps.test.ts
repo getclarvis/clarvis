@@ -37,7 +37,6 @@ function baseDeps(): ExecuteRunDeps {
     capabilities: [
       named("tools"),
       named(HOOKS_CAPABILITY_NAME),
-      named("judge"),
       named("agents"),
       named(MEMORY_CAPABILITY_NAME),
       named("tasks"),
@@ -99,20 +98,6 @@ describe("composeIndexPassDeps", () => {
     expect(names(composeIndexPassDeps(baseDeps(), undefined))).not.toContain(HOOKS_CAPABILITY_NAME);
   });
 
-  it("removes Judge even when its admission predicate would require activation", () => {
-    const deps = baseDeps();
-    deps.capabilities!.push({
-      name: "judge",
-      requiredFor: () => {
-        throw new Error("Memory must not evaluate Judge admission");
-      },
-      forRun: () => {
-        throw new Error("Memory must not instantiate Judge");
-      },
-    });
-    expect(names(composeIndexPassDeps(deps, undefined))).not.toContain("judge");
-  });
-
   it("keeps every other capability, in the order the host registered them", () => {
     expect(names(composeIndexPassDeps(baseDeps(), undefined)).slice(0, 3)).toEqual([
       "tools",
@@ -153,7 +138,6 @@ describe("composeIndexPassDeps", () => {
     expect(names(deps)).toEqual([
       "tools",
       HOOKS_CAPABILITY_NAME,
-      "judge",
       "agents",
       MEMORY_CAPABILITY_NAME,
       "tasks",

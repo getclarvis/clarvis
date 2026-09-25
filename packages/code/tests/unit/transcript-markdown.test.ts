@@ -5,7 +5,6 @@ import {
   transcriptMarkdownHeader,
 } from "../../src/views/transcript-markdown.ts";
 import type { TranscriptNode } from "../../src/adapters/store.ts";
-import { effectReviewExplanation } from "../../src/core/transcript/effect-review.ts";
 
 test("renderTranscriptMarkdown: prose, quoted reasoning, tool signature (builtin label), run rule", () => {
   const nodes: TranscriptNode[] = [
@@ -32,60 +31,6 @@ test("renderTranscriptMarkdown: prose, quoted reasoning, tool signature (builtin
   expect(md).toContain("_(completed)_");
   expect(transcriptMarkdownHeader("T") + [...renderTranscriptMarkdownChunks(nodes)].join("")).toBe(
     md,
-  );
-});
-
-test("renderTranscriptMarkdown: records guard verdict and answerer without review internals", () => {
-  const shell = (outcome: "allowed" | "denied"): TranscriptNode => ({
-    key: outcome,
-    kind: "tool_call",
-    status: outcome === "allowed" ? "ok" : "error",
-    text: "",
-    toolName: "shell",
-    args: { command: "bun test" },
-    guard: {
-      mode: "auto",
-      outcome,
-      answerer: "judge",
-      effect_id: "clarvis.operational_config.write",
-      relation: "direct",
-      failure_kind: "timeout",
-    },
-  });
-  const md = renderTranscriptMarkdown([shell("allowed"), shell("denied")]);
-  expect(md).toContain("approved by judge");
-  expect(md).toContain("denied by judge");
-  expect(md).not.toContain("auto-guard");
-  expect(md).not.toContain("clarvis.operational_config.write · direct · timeout");
-});
-
-test("effect receipt presentation uses closed facts, one-based segments and bounded diagnostics", () => {
-  expect(effectReviewExplanation({})).toEqual([]);
-  expect(
-    effectReviewExplanation({
-      effect: {
-        id: "clarvis.operational_config.write\nforged instruction",
-        class: "authority_change",
-        attestation: "complete",
-      },
-      analysis: {
-        reviewability: "judgeable",
-        issues: [
-          { segmentIndex: -1, kind: "command_substitution", impact: "value" },
-          { segmentIndex: 1, kind: "dynamic_path", impact: "path" },
-        ],
-      },
-      authority: { revision: 1, relation: "bounded_prerequisite", within_scope: true },
-      reviewer: { status: "unsure", attempts: 2 },
-    }),
-  ).toEqual([
-    "unknown · complete attestation",
-    "Segment 2: dynamic path · path",
-    "Within authorized outcome · bounded prerequisite",
-    "Reviewer unsure after 2 attempts",
-  ]);
-  expect(effectReviewExplanation({ reviewer: { status: "failed", failure_kind: "auth" } })).toEqual(
-    ["Reviewer auth"],
   );
 });
 

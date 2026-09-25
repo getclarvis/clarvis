@@ -1,12 +1,10 @@
 import { createTraceVisibilityView } from "@clarvis/trace";
 import { releaseRunLeases } from "./runs/run-lease.ts";
-import type { RunServiceConfig } from "./runs/run-service.ts";
 import { type ExecuteRunDeps, type SkillsProvider } from "@clarvis/loop";
 import type { MemoryFactory } from "@clarvis/memory/capability";
 import { BUILTIN_GRANT_NAMES, readCapabilitySettings } from "@clarvis/loop/host";
 import {
   detachObserved,
-  composePersistedTraceProjectors,
   suppressSecondaryRejection,
   levelEnabled,
   NOOP_LOGGER,
@@ -18,7 +16,6 @@ import {
 } from "@clarvis/capability";
 import { ownerFromWorkspace, workspaceScopeKey } from "@clarvis/paths";
 import { composeKernelCapabilityRegistry } from "./config/capability-registry.ts";
-import { guardReviewerModelCallProjector } from "./guard/reviewer-trace.ts";
 import { WORKFLOW_GRANT, WORKFLOWS_DEFAULTS, workflowsSettingsSpec } from "@clarvis/workflows";
 import type {
   AgentSummary,
@@ -36,7 +33,6 @@ import type {
   ExtensionProfileService,
   ExtensionProfilePluginRef,
   ResolvedExtensionProfile,
-  TasksService,
   SandboxInspection,
   WorkspaceService,
   WorkspaceChangesService,
@@ -94,8 +90,6 @@ import {
 } from "./application/scope-policy.ts";
 import { createAgentWorkflowPolicy } from "./application/workflow-policy.ts";
 import { globalRoot } from "@clarvis/paths";
-import { createTasksService } from "./tasks/task-service.ts";
-import type { TaskProviderFactory } from "./tasks/task-provider-factory.ts";
 import { kernelError } from "./core/errors.ts";
 import { createUnavailableProviderAuthService } from "./subscriptions/unavailable.ts";
 import { createStorageService } from "./storage/storage-service.ts";
@@ -181,8 +175,6 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
   readonly extensionProfiles: ExtensionProfileService;
   /** Operator-owned generated-state inventory and disposable cleanup. */
   readonly storage: StorageService;
-  /** Default owner's external task control plane. */
-  readonly tasks: TasksService;
   /**
    * The owner-scoped services for `owner`, memoized for the kernel's lifetime.
    *
@@ -241,8 +233,6 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
  * Clarvis dir (see {@link createInProcessKernel}).
  */
 export interface CreateKernelOptions {
-  /** Authenticated host controller binding, separate from protocol run parameters. */
-  operatorAuthorityFor?: RunServiceConfig["operatorAuthorityFor"];
   /** Loop execution deps the run service drives (built by `buildExecuteRunDeps`). */
   deps: ExecuteRunDeps;
   /** Absolute workspace root the kernel operates over. */
@@ -327,10 +317,6 @@ export interface CreateKernelOptions {
   environment?: Readonly<Record<string, string | undefined>>;
   /** Host-owned workspace-changes service; defaults to the Git adapter. */
   changesService?: WorkspaceChangesService;
-  /** Shared settings-sensitive provider selector used by runs and control plane. */
-  taskProviderFactory?: TaskProviderFactory;
-  /** Builtin gate for both Tasks run and control-plane surfaces. */
-  tasksEnabled?: boolean;
   /** Host lease acquired for each live run in this workspace. */
   acquireRunLease?: () => () => void;
   /** Skill-catalog lease released when model execution and its tools settle. */
@@ -346,7 +332,6 @@ export const DEFAULT_KERNEL_CAPABILITIES: KernelCapabilities = {
   memory: false,
   skills: false,
   agent_tools: true,
-  tasks: false,
   runtime: {
     kind: "native",
     host_platform: process.platform,
@@ -484,9 +469,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     executionVisibility: "public",
     traceStore: createTraceVisibilityView(opts.deps.traceStore, "public"),
     capabilityRegistry: mergedRegistry,
-    persistedTraceProjectors: composePersistedTraceProjectors(opts.deps.persistedTraceProjectors, [
-      guardReviewerModelCallProjector,
-    ]),
   };
   const executeRun: RunExecutor =
     opts.executeRun ?? (async (args) => (await import("@clarvis/loop")).executeRun(args));
@@ -580,16 +562,12 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       ...(opts.executeRun === undefined ? {} : { executeRun: opts.executeRun }),
     });
     const baseRuns = createRunService({
-      ...(opts.operatorAuthorityFor === undefined
-        ? {}
-        : { operatorAuthorityFor: opts.operatorAuthorityFor }),
       deps: runDeps,
       owner: scope.owner,
       assembleRunRequest,
       eventBuffer,
       isManagerRun: (params) => workflowPolicy.isManagerRun(params),
-      runManagerWorkflow: (params, seed, signal) =>
-        workflows.runManagerWorkflow(params, undefined, seed, signal),
+      runManagerWorkflow: (params) => workflows.runManagerWorkflow(params),
       lifecycle,
       logger: runLogger,
       ...(opts.executeRun === undefined ? {} : { executeRun: opts.executeRun }),
@@ -635,11 +613,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
         logger: runLogger,
       }),
       workflows,
-      tasks: createTasksService({
-        ...(opts.taskProviderFactory === undefined ? {} : { factory: opts.taskProviderFactory }),
-        owner: scope.owner,
-        enabled: opts.tasksEnabled !== false && opts.taskProviderFactory !== undefined,
-      }),
     };
     return {
       services,
@@ -665,8 +638,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
                 throw kernelError("unavailable", "prepared run owner generation was retired");
               return entry.services.runs.start(request, prepared);
             },
-            startWorkflow: (request, prepared, seed, signal) =>
-              workflows.runManagerWorkflow(request, prepared, seed, signal),
+            startWorkflow: (request, prepared) => workflows.runManagerWorkflow(request, prepared),
           },
           goal,
           goalCreation,
@@ -1021,7 +993,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     ...DEFAULT_KERNEL_CAPABILITIES,
     memory: opts.memoryFactory !== undefined,
     skills: opts.skillsProvider !== undefined,
-    tasks: opts.tasksEnabled !== false && opts.taskProviderFactory !== undefined,
     ...opts.capabilities,
   };
   const operatorServices: OperatorServices = {
@@ -1058,7 +1029,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     plugins,
     extensionProfiles,
     storage,
-    tasks: scoped.tasks,
     goals: unavailableGoalService(),
     forOwner,
     acquireOwner,

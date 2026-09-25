@@ -5,23 +5,59 @@ import { warn } from "./lib/log.ts";
  * Codes are stable identifiers a client can branch on, independent of the
  * human-readable message.
  */
-export type ErrorCode =
-  | "invalid_input"
-  | "not_found"
-  | "not_a_file"
-  | "is_binary"
-  | "not_an_image"
-  | "no_match"
-  | "ambiguous_match"
-  | "patch_failed"
-  | "io_error"
-  | "timeout"
-  | "aborted"
-  | "too_large"
-  | "path_escape"
-  | "denied"
-  | "too_many_sessions"
-  | "internal";
+export const ERROR_CODES = [
+  "invalid_input",
+  "not_found",
+  "not_a_file",
+  "is_binary",
+  "not_an_image",
+  "no_match",
+  "ambiguous_match",
+  "patch_failed",
+  "io_error",
+  "cross_device",
+  "commit_partial",
+  "revision_conflict",
+  "timeout",
+  "aborted",
+  "too_large",
+  "path_escape",
+  "denied",
+  "too_many_sessions",
+  "internal",
+] as const;
+
+export type ErrorCode = (typeof ERROR_CODES)[number];
+
+/** Validate a serialized tool failure without trusting its worker-provided code. */
+export function isErrorCode(value: unknown): value is ErrorCode {
+  return typeof value === "string" && ERROR_CODES.some((code) => code === value);
+}
+
+/** Recover only public error fields from an in-band worker result. */
+export function parseToolError(text: unknown): ToolError | undefined {
+  if (typeof text !== "string" || text.length > 4096) return undefined;
+  try {
+    const value: unknown = JSON.parse(text);
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const error = value as Record<string, unknown>;
+    if (!isErrorCode(error.error) || typeof error.message !== "string") return undefined;
+    if (error.message.length === 0 || error.message.length > 1024) return undefined;
+    const path = error.path;
+    const partial = error.error === "commit_partial";
+    return new ToolError(error.error, error.message, {
+      ...(typeof path === "string" && path.length <= 1024 ? { path } : {}),
+      ...(partial && typeof error.source_exists === "boolean"
+        ? { source_exists: error.source_exists }
+        : {}),
+      ...(partial && typeof error.destination_committed === "boolean"
+        ? { destination_committed: error.destination_committed }
+        : {}),
+    });
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * A tool failure carrying a stable {@link ErrorCode} plus optional structured
@@ -100,6 +136,10 @@ export function fsError(err: NodeJS.ErrnoException, path: string): ToolError {
     return new ToolError("not_a_file", `Path is a directory: ${path}`, { path });
   if (err.code === "ENOTDIR")
     return new ToolError("not_a_file", `Not a directory: ${path}`, { path });
+  if (err.code === "EXDEV")
+    return new ToolError("cross_device", `Cross-filesystem move requires a copy: ${path}`, {
+      path,
+    });
   warn(`clarvis-tools: unmapped filesystem error at ${path}: ${err.code ?? "EIO"}\n`, {
     event: "tools.fs_error_unmapped",
     level: "debug",

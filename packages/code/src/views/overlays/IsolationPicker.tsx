@@ -1,11 +1,10 @@
 import type { Accessor, JSX } from "solid-js";
-import { createSignal, Show } from "solid-js";
+import { createSignal, onMount, Show } from "solid-js";
 import type { SettingsAdapter } from "../../adapters/settings.ts";
 import { deriveIsolation } from "../../adapters/execution-safety.ts";
 import {
   applyIsolation,
   isolationConfirmation,
-  isContainerIsolation,
   ISOLATION_CHOICES,
   type IsolationChoice,
   type IsolationConfirmation,
@@ -42,6 +41,14 @@ export function IsolationPicker(props: {
   onApplied: () => void;
 }): JSX.Element {
   const [applyState, setApplyState] = createSignal<IsolationApplyState>();
+  const [observedNative, setObservedNative] = createSignal<"host" | "sandbox">();
+  onMount(() => {
+    if (typeof props.settings.inspectSandbox !== "function") return;
+    void props.settings
+      .inspectSandbox()
+      .then((inspection) => setObservedNative(inspection.filesystem.placement))
+      .catch(() => undefined);
+  });
   const applying = (): boolean => {
     const state = applyState();
     return state?.phase === "saving" || state?.phase === "reconnecting";
@@ -50,7 +57,10 @@ export function IsolationPicker(props: {
     const state = applyState();
     return state?.phase === "failed" ? state : undefined;
   };
-  const current = () => deriveIsolation(props.settings.effective());
+  const current = () => {
+    const configured = deriveIsolation(props.settings.effective());
+    return observedNative() ?? configured;
+  };
 
   const apply = async (isolation: IsolationChoice["value"]): Promise<void> => {
     if (applying()) return;
@@ -195,14 +205,8 @@ export function IsolationPicker(props: {
                     {[
                       choice.value === "host"
                         ? `${glyph("warning")} No containment boundary.`
-                        : isContainerIsolation(choice.value)
-                          ? "Full native Kernel; extensions and external capability providers are unavailable."
-                          : "Uses the native host sandbox.",
-                      choice.value === "docker"
-                        ? "If Docker cannot start, Clarvis reports the failure and does not run natively."
-                        : choice.value === "podman"
-                          ? "If Podman cannot start, Clarvis reports the failure and does not run natively."
-                          : choice.detail,
+                        : "Uses the native host sandbox.",
+                      choice.detail,
                     ].join(" ")}
                   </text>
                 }

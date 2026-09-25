@@ -1,9 +1,7 @@
-import { promises as fs } from "node:fs";
+import { fs } from "../lib/environment-fs.ts";
 import { ToolError, fsError } from "../errors.ts";
-import { readFileOptionsForPath } from "../lib/files.ts";
 import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { writeAtomic, withFileLock } from "../lib/atomic.ts";
-import { reviewedConfigurationModes } from "../guard/authoring-path.ts";
 import { readTextFile } from "../lib/textfile.ts";
 import { unifiedDiff } from "../lib/unified-diff.ts";
 import type { ToolDef } from "./types.ts";
@@ -71,12 +69,7 @@ export const writeFile: ToolDef = {
       let before: string | undefined;
       if (existed) {
         try {
-          const prior = await readTextFile(
-            target,
-            relPath,
-            config.maxFileBytes,
-            readFileOptionsForPath(config, target),
-          );
+          const prior = await readTextFile(target, relPath, config.maxFileBytes);
           if (prior.encoding === "utf8") before = prior.content;
         } catch (err) {
           if (
@@ -89,13 +82,7 @@ export const writeFile: ToolDef = {
       }
 
       try {
-        await writeAtomic(
-          target,
-          content,
-          config.reviewMutation,
-          "write",
-          reviewedConfigurationModes(target, config),
-        );
+        await writeAtomic(target, content);
       } catch (err) {
         if (err instanceof ToolError) throw err;
         throw fsError(err as NodeJS.ErrnoException, relPath);

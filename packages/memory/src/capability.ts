@@ -58,13 +58,6 @@ export {
 } from "./tool-contract.ts";
 export type { MemoryToolDef, MemoryToolResult } from "./types.ts";
 export { wikiMemoryProvider, WIKI_PROVIDER_KIND } from "./wiki-provider.ts";
-export type { MemoryServerPort, MemoryServerPortResolver } from "./mcp-provider.ts";
-export type { MemoryPluginPort } from "./provider-registry.ts";
-export {
-  createExecutableMemoryProvider,
-  EXECUTABLE_MEMORY_PROVIDER_KIND,
-  type ExecutableMemoryProviderOptions,
-} from "./executable-provider.ts";
 export {
   composeMemoryPolicy,
   loadMemoryPolicy,

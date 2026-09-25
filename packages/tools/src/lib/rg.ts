@@ -1,15 +1,14 @@
-import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { ToolError, fsError } from "../errors.ts";
 import { isBinary } from "../lib/binary.ts";
-import { listFiles, readFileOptionsForPath, readRawFile, type FileListing } from "../lib/files.ts";
+import { listFiles, readRawFile, type FileListing } from "../lib/files.ts";
 import { decodeText, splitLines, type DecodedText } from "../lib/text.ts";
 import { readTextBuffer } from "../lib/textfile.ts";
 import { createScanBudget } from "../lib/scan-budget.ts";
 import type { RuntimeConfig } from "../config.ts";
-import { configurationTarget, resolveCommand } from "@clarvis/paths";
-import { isAdmittedFileToolSearchPath, resolveFileToolPath } from "./paths.ts";
+import { resolveCommand } from "@clarvis/paths";
+import { resolveFileToolPath } from "./paths.ts";
 
 /** A single grep request over a file or directory tree. */
 export interface GrepParams {
@@ -118,10 +117,9 @@ const RG_JSON_OVERHEAD = 8;
  *   single file that is over the size limit or detected as binary. Output is
  *   capped at `config.maxOutputBytes`; the ripgrep path allows a larger raw JSON
  *   stream (by {@link RG_JSON_OVERHEAD}) before killing the child and reporting
- *   `truncated`. The `.git` directory is always excluded. A confined directory
- *   always uses the in-process scanner even when ripgrep is installed: the JS
- *   walker opens and validates each file, whereas handing a mutable directory
- *   pathname to a subprocess would reopen the parent-link TOCTOU window.
+ *   `truncated`. The `.git` directory is always excluded. Directory searches
+ *   use the in-process scanner; single files can use ripgrep
+ *   against an already-bounded descriptor snapshot.
  *
  *   The in-process path additionally spends at most
  *   `config.regexScanBudgetMs` of regular-expression time (see
@@ -151,46 +149,41 @@ export async function grepSearch(params: GrepParams, config: RuntimeConfig): Pro
         params.searchRoot,
         config.maxFileBytes,
         undefined,
-        readFileOptionsForPath(config, params.searchRoot),
       );
       if (isBinary(singleFile)) {
         return { matches: [], truncated: false, budgetExhausted: false, walkCapped: false };
       }
     } catch (err) {
-      if (err instanceof ToolError && err.code === "path_escape") throw err;
+      if (err instanceof ToolError && (err.code === "path_escape" || err.code === "denied"))
+        throw err;
       return { matches: [], truncated: false, budgetExhausted: false, walkCapped: false };
     }
   }
 
-  const useRipgrep =
-    config.ripgrepAvailable &&
-    (!isDir || (!config.confineToWorkspace && config.configurationRoots === undefined));
+  const useRipgrep = config.ripgrepAvailable && !isDir && singleFile !== undefined;
   config.logger.debug(
     {
       event: "tools.grep_path",
       engine: useRipgrep ? "ripgrep" : "in_process",
       is_dir: isDir,
-      confined: config.confineToWorkspace,
     },
     "a grep chose its engine; the two do not share regex semantics, so which one ran decides what a pattern means",
   );
-  return useRipgrep
-    ? ripgrepSearch(params, isDir, config, singleFile)
-    : inProcessSearch(
-        params,
-        config,
-        isDir,
-        singleFile === undefined ? undefined : decodeText(singleFile),
-      );
+  if (useRipgrep && singleFile !== undefined) return ripgrepSearch(params, config, singleFile);
+  return inProcessSearch(
+    params,
+    config,
+    isDir,
+    singleFile === undefined ? undefined : decodeText(singleFile),
+  );
 }
 
 /**
- * Run ripgrep over a directory or an already-bounded single-file snapshot.
+ * Run ripgrep over an already-bounded single-file snapshot.
  *
  * @param params - the normalized search request.
- * @param isDir - whether the search root is a directory.
  * @param config - output/file ceilings and host capability flags.
- * @param singleFile - descriptor-bound bytes when the target is one file.
+ * @param singleFile - descriptor-bound bytes for the target file.
  * @returns parsed matches plus truncation state.
  * @remarks A single file is searched through stdin so ripgrep never reopens its
  *   pathname after validation; reopening would reintroduce a TOCTOU window and
@@ -198,9 +191,8 @@ export async function grepSearch(params: GrepParams, config: RuntimeConfig): Pro
  */
 function ripgrepSearch(
   params: GrepParams,
-  isDir: boolean,
   config: RuntimeConfig,
-  singleFile?: Buffer,
+  singleFile: Buffer,
 ): Promise<GrepResult> {
   const args = ["--no-config", "--json", "--hidden", "-g", "!.git"];
   args.push("--max-filesize", String(config.maxFileBytes));
@@ -209,56 +201,8 @@ function ripgrepSearch(
   if (params.before > 0) args.push("-B", String(params.before));
   if (params.after > 0) args.push("-A", String(params.after));
 
-  let cwd: string;
-  let searchArg: string;
-  if (isDir) {
-    cwd = params.searchRoot;
-    searchArg = ".";
-    if (params.glob) args.push("-g", params.glob);
-  } else {
-    cwd = path.dirname(params.searchRoot);
-    searchArg = "-";
-  }
-  args.push("--", params.pattern, searchArg);
-
-  if (singleFile !== undefined) {
-    return ripgrepSnapshotSearch(params, config, args, cwd, singleFile);
-  }
-
-  return new Promise((resolve, reject) => {
-    const child = spawn(resolveCommand("rg"), args, {
-      stdio: ["ignore", "pipe", "pipe"],
-      cwd,
-    });
-    let out = "";
-    let errOut = "";
-    let truncated = false;
-    const streamCap = config.maxOutputBytes * RG_JSON_OVERHEAD;
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (d) => {
-      if (truncated) return;
-      out += d;
-      if (out.length > streamCap) {
-        truncated = true;
-        child.kill("SIGKILL");
-      }
-    });
-    child.stderr.on("data", (d) => (errOut += d));
-    child.on("error", (e) => reject(new ToolError("io_error", `Failed to run rg: ${e.message}`)));
-    child.on("close", (code) => {
-      const matches = parseRipgrepMatches(out, (filePath) => path.resolve(cwd, filePath));
-
-      if (matches.length === 0 && code === 2 && !truncated) {
-        reject(
-          new ToolError("invalid_input", `ripgrep error: ${errOut.trim()}`, {
-            pattern: params.pattern,
-          }),
-        );
-        return;
-      }
-      resolve({ matches, truncated, budgetExhausted: false, walkCapped: false });
-    });
-  });
+  args.push("--", params.pattern, "-");
+  return ripgrepSnapshotSearch(params, config, args, path.dirname(params.searchRoot), singleFile);
 }
 
 /**
@@ -389,7 +333,7 @@ async function inProcessSearch(
     const decoded =
       singleFile !== undefined && !isDir
         ? singleFile
-        : await readTextBuffer(file, config.maxFileBytes, readFileOptionsForPath(config, file));
+        : await readTextBuffer(file, config.maxFileBytes);
     if (!decoded) continue;
 
     const lines = splitLines(decoded.content);
@@ -542,13 +486,8 @@ async function gatherFiles(params: GrepParams, config: RuntimeConfig): Promise<F
     : "**/*";
   const listing = await listFiles(params.searchRoot, config.workspaceRoot, {
     pattern,
-    respectGitignore:
-      config.configurationRoots === undefined ||
-      configurationTarget(config.configurationRoots, params.searchRoot)?.root.startsWith(
-        "global_",
-      ) !== true,
+    respectGitignore: true,
     maxEntries: config.maxTraversalEntries,
-    admit: (candidate) => isAdmittedFileToolSearchPath(candidate, config),
   });
   listing.files.sort();
   return listing;

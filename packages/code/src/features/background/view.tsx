@@ -127,7 +127,7 @@ export function BackgroundView(
                       message: "Confirm all physical work has stopped?",
                       confirmLabel: "verify and archive",
                       detail: [
-                        "Verify that every process and container from this old host has stopped before confirming.",
+                        "Verify that every process from this old host has stopped before confirming.",
                         `Host: ${ref.host_generation} | run: ${ref.execution_id}`,
                         "The recorded outcome is preserved. This conversation will be archived; new work requires a new conversation.",
                         "Saved history and the operator confirmation are retained. No action is repeated.",
@@ -156,7 +156,7 @@ export function BackgroundView(
                         message: "Confirm all physical work has stopped?",
                         confirmLabel: "verify and continue",
                         detail: [
-                          "Verify that every process and container from this old host has stopped before confirming.",
+                          "Verify that every process from this old host has stopped before confirming.",
                           `Host: ${ref.host_generation} | run: ${ref.execution_id}`,
                           "The recorded outcome is preserved. This conversation stays open and can start a successor.",
                           "The interrupted turn is kept as the base that successor continues from. No action is repeated.",
@@ -242,7 +242,7 @@ export function BackgroundView(
             >{`Agent: ${ref().config.agent} | model: ${ref().config.model ?? "configured"} | ${ref().config.runtime?.kind ?? "runtime unavailable"}`}</text>
             <text fg={tokens.muted}>
               {ref().execution_state === "unknown"
-                ? "Verify the old host's processes and containers have stopped, then archive recovery."
+                ? "Verify the old host's processes have stopped, then archive recovery."
                 : ref().recovery_resolution !== undefined
                   ? "Physical closure was confirmed. Saved history is retained and the conversation is archived."
                   : ref().execution_state === "closed"

@@ -66,15 +66,13 @@ describe("env loader", () => {
     ).toBe(300_000_000);
   });
 
-  it("defaults the tools flags on and coerces their booleans", () => {
+  it("defaults tool enablement on and coerces its boolean", () => {
     const env = loadEnv({});
     expect(env.CLARVIS_AGENT_TOOLS_ENABLED).toBe(true);
-    expect(env.CLARVIS_AGENT_TOOLS_CONFINE).toBe(true);
     expect(loadEnv({ CLARVIS_AGENT_TOOLS_ENABLED: "0" }).CLARVIS_AGENT_TOOLS_ENABLED).toBe(false);
     expect(loadEnv({ CLARVIS_AGENT_TOOLS_ENABLED: "false" }).CLARVIS_AGENT_TOOLS_ENABLED).toBe(
       false,
     );
-    expect(loadEnv({ CLARVIS_AGENT_TOOLS_CONFINE: "off" }).CLARVIS_AGENT_TOOLS_CONFINE).toBe(false);
   });
 
   it("coerces numeric strings to numbers", () => {

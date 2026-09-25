@@ -2,7 +2,6 @@ import type { JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/solid";
-import { AGENTS_DIR, AGENTS_PLUGINS_DIR, CLARVIS_DIR } from "@clarvis/paths";
 import type {
   ExtensionProfileCompositionInput,
   ExtensionProfileCompositionPreview,
@@ -69,7 +68,7 @@ export interface ExtensionsHubDeps {
   sources: () => readonly MarketplaceSource[];
   loading: () => boolean;
   loadError: () => string | undefined;
-  install: (listing: MarketplaceListing, source: "agents" | "clarvis") => Promise<PluginView>;
+  install: (listing: MarketplaceListing, source: "agents") => Promise<PluginView>;
   refresh: (inventory?: boolean) => Promise<void>;
   reconnect: () => Promise<{ ok: boolean; message: string }>;
   runActive: () => boolean;
@@ -411,7 +410,6 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
           skills: [],
           mcp_servers: [],
           hooks: { total: 0 },
-          capability_executables: [],
           error: "selected installation is missing",
         },
       });
@@ -555,7 +553,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     if (replaced !== undefined) deps.notify(`replaced ${skillId(replaced)} with ${skillId(ref)}`);
   };
 
-  const installAndStage = (listing: MarketplaceListing, source: "agents" | "clarvis"): void => {
+  const installAndStage = (listing: MarketplaceListing, source: "agents"): void => {
     if (busy() !== undefined) return;
     const ownerGeneration = draftGeneration;
     setPicker(null);
@@ -598,25 +596,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
       deps.notify(listing.notes[0] ?? `${listing.name} cannot be installed by this host`, "warn");
       return;
     }
-    setPicker({
-      title: `Extensions setup ${glyph("separator")} Step 3 of 5 ${glyph("separator")} Install location`,
-      rows: () => [
-        {
-          id: "agents",
-          label: `${AGENTS_DIR}/${AGENTS_PLUGINS_DIR}`,
-          haystack: "agents shared standard compatible",
-          detail: "recommended · shared Agent Plugins convention",
-        },
-        {
-          id: "clarvis",
-          label: `${CLARVIS_DIR}/${AGENTS_PLUGINS_DIR}`,
-          haystack: "clarvis native",
-          detail: "Clarvis-native global inventory",
-        },
-      ],
-      onPick: (source) => installAndStage(listing, source as "agents" | "clarvis"),
-      onClose: openExtensionPicker,
-    });
+    installAndStage(listing, "agents");
   };
 
   const chooseExtension = (id: string): void => {
@@ -1121,9 +1101,6 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     const hooks = plugins
       .filter((plugin) => plugin.hooks.total > 0)
       .map((plugin) => `${pluginId(plugin.ref)} ${plugin.hooks.total} hooks`);
-    const executables = plugins.flatMap((plugin) =>
-      plugin.capability_executables.map((capability) => `${plugin.ref.name}:${capability}`),
-    );
     return (
       <>
         <text fg={tokens.accent2} flexShrink={0} wrapMode="word">
@@ -1142,7 +1119,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
             <text fg={extensionProfile.status === "ready" ? tokens.add : tokens.warn}>
               {`${tone(extensionProfile.status === "ready" ? "ok" : "warn").glyph} ${extensionProfile.status} ${glyph("separator")} ${summary(extensionProfile)}`}
             </text>
-            <Show when={mcp.length + hooks.length + executables.length > 0}>
+            <Show when={mcp.length + hooks.length > 0}>
               <text fg={tokens.warn} wrapMode="word" paddingTop={1}>
                 {`${glyph("warning")} This draft carries executable capabilities. Selecting each plugin approves its complete contribution.`}
               </text>
@@ -1156,7 +1133,6 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
             {valueSection("Standalone skills", standalone)}
             {valueSection("MCP servers", mcp, tokens.warn)}
             {valueSection("Hooks", hooks, tokens.warn)}
-            {valueSection("Capability executables", executables, tokens.warn)}
             <Show when={extensionProfile.issues.length > 0}>
               <SectionHeader label={`Issues (${extensionProfile.issues.length})`} />
               <For each={extensionProfile.issues}>

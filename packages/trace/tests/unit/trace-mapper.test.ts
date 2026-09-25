@@ -103,7 +103,6 @@ describe("trace-mapper — tool projection", () => {
             excerpt: "Replaced 1 occurrence in a.ts.",
             truncated: false,
           },
-          guard: { mode: "auto", outcome: "allowed", answerer: "judge" },
         },
       },
     ];
@@ -112,7 +111,6 @@ describe("trace-mapper — tool projection", () => {
     expect(ev.result_digest).toBe(
       createHash("sha256").update("Replaced 1 occurrence in a.ts.").digest("hex"),
     );
-    expect(ev.guard).toEqual({ mode: "auto", outcome: "allowed", answerer: "judge" });
     expect(ev.tool_evidence).toEqual({
       kind: "content",
       status: "succeeded",

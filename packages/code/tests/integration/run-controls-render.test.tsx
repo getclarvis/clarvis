@@ -3,7 +3,6 @@ import { createSignal } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
 import type { Interaction } from "../../src/keys/interaction.ts";
 import type { SettingsAdapter } from "../../src/adapters/settings.ts";
-import type { GuardModeStore } from "../../src/adapters/guard-mode.ts";
 import type { MemoryModeStore } from "../../src/adapters/memory-mode.ts";
 import { createViewHost } from "../../src/views/config/view-host.tsx";
 import { RunControlsPanel } from "../../src/views/config/RunControlsPanel.tsx";
@@ -19,17 +18,19 @@ function mount(
     /** Per-scope `plans` blocks, so a test can distinguish the merged view from
      * the file the panel actually writes back to. */
     plans?: { global?: Record<string, unknown>; workspace?: Record<string, unknown> };
-    /** Per-scope `guard` blocks already on disk, to prove a write merges
-     * rather than clobbers them. */
-    guard?: { global?: Record<string, unknown>; workspace?: Record<string, unknown> };
-    /** The session guard mode `deriveRunControls` sees; defaults to "off". */
-    guardMode?: "off" | "on" | "auto";
     /** The current per-client memory override; defaults to "on". */
     memoryMode?: "on" | "off";
     memoryEnabled?: boolean;
-    /** Optional container runtime used to exercise its effective descriptions. */
-    runtime?: { backend: "docker" };
-    sandboxInspection?: { available: boolean; degraded: boolean; reason?: string } | Error;
+    sandboxInspection?:
+      | {
+          available: boolean;
+          degraded: boolean;
+          reason?: string;
+          placement?: "host" | "sandbox";
+          network?: "host" | "none";
+        }
+      | Error;
+    effectiveSandboxEnabled?: boolean;
     runActive?: boolean;
     reloadResult?: { ok: boolean; message: string };
     writeError?: Error;
@@ -46,26 +47,24 @@ function mount(
     memory: { enabled: opts.memoryEnabled ?? true },
     default_model: "openrouter/glm-5.2",
     providers: opts.resolvable === false ? [] : [{ name: "openrouter", kind: "openai-compatible" }],
-    ...(opts.runtime === undefined ? {} : { runtime: opts.runtime }),
     ...(opts.sandboxInspection === undefined
       ? {}
-      : { sandbox: { type: "native", enabled: true, availability: "optional" } }),
+      : {
+          sandbox: {
+            type: "native",
+            enabled: opts.effectiveSandboxEnabled ?? true,
+            availability: "optional",
+          },
+        }),
     ...((scoped.workspace ?? scoped.global) ? { plans: scoped.workspace ?? scoped.global } : {}),
-    ...((opts.guard?.workspace ?? opts.guard?.global)
-      ? { guard: opts.guard?.workspace ?? opts.guard?.global }
-      : {}),
   };
   const writes: { scope: string; patch: unknown }[] = [];
+  let inspectionCalls = 0;
   const settings = {
     version: () => 0,
     effective: () => effective,
-    read: (scope: "global" | "workspace") =>
-      scoped[scope] || opts.guard?.[scope]
-        ? { plans: scoped[scope], guard: opts.guard?.[scope] }
-        : undefined,
+    read: (scope: "global" | "workspace") => (scoped[scope] ? { plans: scoped[scope] } : undefined),
     origin: (key: string) => {
-      if (key === "guard")
-        return opts.guard?.workspace ? "workspace" : opts.guard?.global ? "global" : undefined;
       if (key === "plans")
         return scoped.workspace ? "workspace" : scoped.global ? "global" : undefined;
       return undefined;
@@ -77,8 +76,19 @@ function mount(
     },
     validateProviders: () => ({ ok: opts.resolvable !== false }),
     inspectSandbox: async () => {
+      inspectionCalls++;
       if (opts.sandboxInspection instanceof Error) throw opts.sandboxInspection;
+      const placement =
+        opts.sandboxInspection?.placement ??
+        (opts.sandboxInspection === undefined ? "host" : "sandbox");
       return {
+        effective_network: opts.sandboxInspection?.network ?? "host",
+        filesystem: {
+          placement,
+          reads: "host-visible",
+          writes: placement === "sandbox" ? "declared-roots" : "host-os",
+          workspace: "read-write",
+        },
         backend: {
           type: "bubblewrap",
           mode: "fresh-proc",
@@ -87,11 +97,6 @@ function mount(
       };
     },
   } as unknown as SettingsAdapter;
-  const guardSetModeCalls: string[] = [];
-  const guard = {
-    mode: () => opts.guardMode ?? "off",
-    setMode: (m: string) => guardSetModeCalls.push(m),
-  } as unknown as GuardModeStore;
   const [memoryMode, setMemoryMode] = createSignal<"on" | "off">(opts.memoryMode ?? "on");
   const memorySetModeCalls: string[] = [];
   const memory = {
@@ -108,7 +113,6 @@ function mount(
   const sandboxOpened: true[] = [];
   const deps = {
     settings,
-    guard,
     memory,
     notify: (m: string) => {
       notes.push(m);
@@ -123,9 +127,9 @@ function mount(
     press,
     notes,
     writes,
-    guardSetModeCalls,
     memorySetModeCalls,
     sandboxOpened,
+    inspectionCalls: () => inspectionCalls,
   };
 }
 
@@ -143,57 +147,19 @@ async function selectOption(
   await tick();
 }
 
-async function activateGuard(
-  press: (key: string) => void,
-  render: () => Promise<void>,
-  index: 0 | 1 | 2,
-): Promise<void> {
-  await selectOption(
-    press,
-    render,
-    1,
-    Array.from({ length: index }, () => "down"),
-  );
-}
-
 async function activateMemoryOn(
   press: (key: string) => void,
   render: () => Promise<void>,
 ): Promise<void> {
-  await selectOption(press, render, 2, ["up"]);
+  await selectOption(press, render, 1, ["up"]);
 }
 
 async function activateMemoryOff(
   press: (key: string) => void,
   render: () => Promise<void>,
 ): Promise<void> {
-  await selectOption(press, render, 2, ["down"]);
+  await selectOption(press, render, 1, ["down"]);
 }
-
-test("the isolation row opens sandbox details and persists minimal lazy Docker", async () => {
-  const { host, deps, press, notes, writes, guardSetModeCalls, sandboxOpened } = mount();
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await t.renderOnce();
-
-  press("b");
-  expect(sandboxOpened).toEqual([true]);
-  await selectOption(press, () => t.renderOnce(), 0, ["down", "down"]);
-
-  expect(writes).toEqual([
-    {
-      scope: "global",
-      patch: {
-        runtime: { backend: "docker" },
-      },
-    },
-  ]);
-  expect(guardSetModeCalls).toEqual([]);
-  expect(notes).toEqual(["isolation: docker (global)"]);
-  t.renderer.destroy();
-});
 
 test("an isolation change during a run is saved for the next run without reconnecting", async () => {
   const { host, deps, press, notes, writes } = mount({ runActive: true });
@@ -202,9 +168,9 @@ test("an isolation change during a run is saved for the next run without reconne
     height: 40,
   });
   await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 0, ["down", "down"]);
+  await selectOption(press, () => t.renderOnce(), 0, ["down"]);
   expect(writes).toHaveLength(1);
-  expect(notes).toEqual(["isolation: docker (global) — applies to the next run"]);
+  expect(notes).toEqual(["isolation: sandbox (global) — applies to the next run"]);
   t.renderer.destroy();
 });
 
@@ -217,7 +183,7 @@ test("an isolation reconnect refusal reports that the saved setting is pending",
     height: 40,
   });
   await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 0, ["down", "down"]);
+  await selectOption(press, () => t.renderOnce(), 0, ["down"]);
   expect(writes).toHaveLength(1);
   expect(notes).toEqual(["isolation saved, pending reconnect: run still owns the host"]);
   t.renderer.destroy();
@@ -232,7 +198,7 @@ test("an isolation write failure is surfaced without claiming a change", async (
     height: 40,
   });
   await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 0, ["down", "down"]);
+  await selectOption(press, () => t.renderOnce(), 0, ["down"]);
   expect(writes).toEqual([]);
   expect(notes).toEqual(["disk is read-only"]);
   t.renderer.destroy();
@@ -256,36 +222,27 @@ test("the native sandbox detail reports a healthy available backend", async () =
   t.renderer.destroy();
 });
 
-test("the Docker consequences remain complete in a narrow Run controls viewport", async () => {
-  const { host, deps, press } = mount({ runtime: { backend: "docker" } });
+test("run controls follow host Sandbox inspection over a weaker workspace merge", async () => {
+  const { host, deps, press } = mount({
+    effectiveSandboxEnabled: false,
+    sandboxInspection: { available: true, degraded: false, placement: "sandbox" },
+  });
   const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 72,
+    width: 110,
     height: 40,
   });
+  await tick();
   await t.renderOnce();
   press("i");
   await t.renderOnce();
-
-  const frame = t.captureCharFrame();
-  const prose = frame.replaceAll(/\s+/gu, " ");
-  expect(prose).toContain(
-    "The selected workspace is mounted directly; changes appear on the host immediately.",
+  expect(t.captureCharFrame()).toContain(
+    "Bubblewrap is available; an incompatible host fails closed.",
   );
-  expect(prose).toContain(
-    "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
-  );
-  expect(prose).toContain("Outbound network access is enabled and may cause remote effects");
-  expect(prose).toContain("Commands run without Guard.");
-  expect(prose).toContain("Git metadata is read-only; use Sandbox or Host for commits.");
-  expect(prose).toContain(
-    "Docker stays cold until the first run and fails closed if it cannot start.",
-  );
-  expect(frame.split("\n").every((line) => line.length <= 72)).toBe(true);
   t.renderer.destroy();
 });
 
-test("Host isolation requires confirmation and leaves command review untouched", async () => {
-  const { host, deps, press, notes, writes, guardSetModeCalls } = mount({
+test("Host isolation requires confirmation", async () => {
+  const { host, deps, press, notes, writes } = mount({
     sandboxInspection: { available: true, degraded: false },
   });
   const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
@@ -309,7 +266,6 @@ test("Host isolation requires confirmation and leaves command review untouched",
     {
       scope: "global",
       patch: {
-        runtime: { backend: "native" },
         sandbox: {
           type: "native",
           enabled: false,
@@ -321,65 +277,7 @@ test("Host isolation requires confirmation and leaves command review untouched",
       },
     },
   ]);
-  expect(guardSetModeCalls).toEqual([]);
   expect(notes).toEqual(["isolation: host (global)"]);
-  t.renderer.destroy();
-});
-
-test("Auto review preserves the scope's allow and deny policy", async () => {
-  const { host, deps, press, writes } = mount({
-    guard: {
-      global: {
-        type: "shell",
-        allowed_commands: ["bun run test:coverage"],
-        denied_commands: ["git push --force*"],
-      },
-    },
-  });
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await t.renderOnce();
-  await activateGuard(press, () => t.renderOnce(), 2);
-  expect(writes[0]).toMatchObject({
-    scope: "global",
-    patch: {
-      guard: {
-        type: "shell",
-        mode: "auto",
-        allowed_commands: ["bun run test:coverage"],
-        denied_commands: ["git push --force*"],
-      },
-    },
-  });
-  t.renderer.destroy();
-});
-
-test("workspace Auto review carries forward the global command policy", async () => {
-  const { host, deps, press, writes } = mount({
-    guard: {
-      global: { type: "shell", allowed_commands: ["bun test"], denied_commands: ["rm -rf *"] },
-    },
-  });
-  host.toggleScope();
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await t.renderOnce();
-  await activateGuard(press, () => t.renderOnce(), 2);
-  expect(writes[0]).toMatchObject({
-    scope: "workspace",
-    patch: {
-      guard: {
-        type: "shell",
-        mode: "auto",
-        allowed_commands: ["bun test"],
-        denied_commands: ["rm -rf *"],
-      },
-    },
-  });
   t.renderer.destroy();
 });
 
@@ -435,7 +333,6 @@ test("the memory detail explains the effective session behavior", async () => {
   });
   await t.renderOnce();
   press("down");
-  press("down");
   press("i");
   await t.renderOnce();
   const frame = t.captureCharFrame();
@@ -460,132 +357,6 @@ test("enabling session memory reports when global memory is disabled", async () 
     "memory remains off — enable it in Settings > Memory before the next run",
   ]);
   t.renderer.destroy();
-});
-
-test("the guard-mode row writes settings.guard.mode at scope and syncs the session store", async () => {
-  const { host, deps, press, notes, writes, guardSetModeCalls } = mount();
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await t.renderOnce();
-  await activateGuard(press, () => t.renderOnce(), 1);
-  expect(writes).toEqual([{ scope: "global", patch: { guard: { type: "shell", mode: "on" } } }]);
-  expect(notes).toEqual(["Guard: approval (global settings)"]);
-  expect(guardSetModeCalls).toEqual(["on"]);
-  t.renderer.destroy();
-});
-
-test("a guard write failure is surfaced without changing the session mode", async () => {
-  const { host, deps, press, notes, guardSetModeCalls } = mount({
-    writeError: new Error("guard settings unavailable"),
-  });
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await t.renderOnce();
-  await activateGuard(press, () => t.renderOnce(), 1);
-  expect(guardSetModeCalls).toEqual([]);
-  expect(notes).toEqual(["guard settings unavailable"]);
-  t.renderer.destroy();
-});
-
-test("the guard-mode row merges onto an existing guard block instead of clobbering it", async () => {
-  const { host, deps, press, writes } = mount({
-    guard: { global: { type: "shell", allowed_commands: ["git status"] } },
-  });
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await t.renderOnce();
-  await activateGuard(press, () => t.renderOnce(), 2);
-  expect(writes).toEqual([
-    {
-      scope: "global",
-      patch: { guard: { type: "shell", allowed_commands: ["git status"], mode: "auto" } },
-    },
-  ]);
-  t.renderer.destroy();
-});
-
-test("guard 'auto' without a resolvable model falls back to writing 'on', not a misleading 'auto'", async () => {
-  const { host, deps, press, notes, writes, guardSetModeCalls } = mount({ resolvable: false });
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await t.renderOnce();
-  await activateGuard(press, () => t.renderOnce(), 2);
-  expect(writes).toEqual([{ scope: "global", patch: { guard: { type: "shell", mode: "on" } } }]);
-  expect(guardSetModeCalls).toEqual(["on"]);
-  expect(notes).toHaveLength(1);
-  expect(notes[0]).toContain("Guard: approval (global settings)");
-  expect(notes[0]).toContain("Auto needs a usable default_model");
-  t.renderer.destroy();
-});
-
-test("isolation and review remain separately visible for a noncanonical legacy pair", async () => {
-  const { host, deps } = mount({
-    guardMode: "auto",
-    sandboxInspection: { available: true, degraded: false },
-  });
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await t.renderOnce();
-  const out = t.captureCharFrame();
-  expect(out).toContain("Isolation  sandbox");
-  expect(out).toContain("Guard  auto");
-  expect(out).not.toContain("custom");
-  t.renderer.destroy();
-});
-
-test("command review separates an inherited scoped value from a session override", async () => {
-  const inherited = mount({
-    guard: { global: { type: "shell", mode: "auto" } },
-    guardMode: "auto",
-  });
-  await inherited.host.toggleScope();
-  const first = await openRender(
-    (() => RunControlsPanel(inherited.host, inherited.deps)) as never,
-    {
-      width: 110,
-      height: 40,
-    },
-  );
-  await first.renderOnce();
-  inherited.press("down");
-  await first.renderOnce();
-  inherited.press("i");
-  await first.renderOnce();
-  const inheritedFrame = first.captureCharFrame();
-  expect(inheritedFrame).toContain("Configured: inherit");
-  expect(inheritedFrame).toContain("Effective: auto");
-  expect(inheritedFrame).toContain("Source: global");
-  first.renderer.destroy();
-
-  const overridden = mount({
-    guard: { global: { type: "shell", mode: "auto" } },
-    guardMode: "off",
-  });
-  await overridden.host.toggleScope();
-  const second = await openRender(
-    (() => RunControlsPanel(overridden.host, overridden.deps)) as never,
-    { width: 110, height: 40 },
-  );
-  await second.renderOnce();
-  overridden.press("down");
-  await second.renderOnce();
-  overridden.press("i");
-  await second.renderOnce();
-  const overriddenFrame = second.captureCharFrame();
-  expect(overriddenFrame).toContain("Configured: inherit");
-  expect(overriddenFrame).toContain("Effective: off");
-  expect(overriddenFrame).toContain("Source: session");
-  second.renderer.destroy();
 });
 
 test("Run controls exposes retention without a planning-mode control", async () => {
@@ -615,7 +386,6 @@ test("an explicit discard policy is named consistently in overview and detail", 
   });
   await t.renderOnce();
   expect(t.captureCharFrame()).toContain("Completed plans  delete after success");
-  press("down");
   press("down");
   press("down");
   press("i");

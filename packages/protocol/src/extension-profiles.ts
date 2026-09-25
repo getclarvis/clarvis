@@ -4,7 +4,7 @@
  * An Extension Profile never installs an extension and never carries ordinary Clarvis
  * settings. A custom definition is a complete allow-list of plugin installations
  * and standalone skills; the immutable `builtin:default` resolves the configured
- * `enabledPlugins` plus four-root skill discovery behavior.
+ * `enabledPlugins` plus user and workspace skill discovery behavior.
  */
 
 import type { Scope } from "./common.ts";
@@ -26,7 +26,7 @@ export type ExtensionProfilePluginRef = PluginRef;
 /** Exact standalone skill selected from one of Clarvis's standard roots. */
 export interface ExtensionProfileSkillRef {
   scope: "user" | "workspace";
-  source: "agents" | "clarvis";
+  source: "agents";
   name: string;
 }
 
@@ -85,7 +85,6 @@ export interface ResolvedExtensionProfilePlugin {
   skills: string[];
   mcp_servers: string[];
   hooks: { total: number };
-  capability_executables: string[];
   error?: string;
 }
 

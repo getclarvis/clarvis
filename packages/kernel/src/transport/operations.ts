@@ -11,8 +11,6 @@ import type {
   SessionService,
   SkillsService,
   StorageService,
-  TaskCallOptions,
-  TasksService,
   WorkspaceService,
   WorkspaceChangesService,
   WorkflowsService,
@@ -41,7 +39,6 @@ export type KernelServices = Pick<
   | "workflows"
   | "skills"
   | "sessions"
-  | "tasks"
   | "storage"
   | "hosting"
   | "localHost"
@@ -66,7 +63,7 @@ export interface KernelOperationMetadata {
   /** Whether the operation only observes state or may change it. */
   readonly access: "read" | "write";
   /** Security-sensitive service group, when the host may want a stricter policy. */
-  readonly sensitivity?: "files" | "plugins" | "secrets" | "provider_auth" | "tasks";
+  readonly sensitivity?: "files" | "plugins" | "secrets" | "provider_auth";
 }
 
 /** One stateless request/response operation in the kernel transport catalog. */
@@ -129,14 +126,6 @@ const write = (sensitivity?: KernelOperationMetadata["sensitivity"]): KernelOper
   access: "write",
   ...(sensitivity !== undefined ? { sensitivity } : {}),
 });
-
-const taskOptions = (signal?: AbortSignal): TaskCallOptions =>
-  signal === undefined ? {} : { signal };
-
-const taskRequestOptions = (
-  options: TaskCallOptions | undefined,
-): Parameters<KernelTransport["request"]>[2] =>
-  options?.signal === undefined ? undefined : { signal: options.signal };
 
 /** File-backed sessions consume transport cancellation without widening the wire page DTO. */
 type SignalAwareSessionListPage = (
@@ -230,6 +219,12 @@ export const OPERATIONS = {
       metadata: write(),
       encode: () => ({}),
       invoke: (services) => requireLocalHost(services).requestRestart(),
+    },
+    requestShutdown: {
+      method: "localHost.requestShutdown",
+      metadata: write(),
+      encode: () => ({}),
+      invoke: (services) => requireLocalHost(services).requestShutdown(),
     },
   }),
   hosting: serviceOperations<HostingService, "start" | "attach">({
@@ -954,129 +949,6 @@ export const OPERATIONS = {
       invoke: (services, p) => services.sessions.delete(p.id as string),
     },
   }),
-  tasks: serviceOperations<TasksService>({
-    status: {
-      method: "tasks.status",
-      metadata: read("tasks"),
-      encode: () => ({}),
-      requestOptions: (options) => taskRequestOptions(options),
-      invoke: (services, _p, signal) => services.tasks.status(taskOptions(signal)),
-    },
-    capabilities: {
-      method: "tasks.capabilities",
-      metadata: read("tasks"),
-      encode: () => ({}),
-      requestOptions: (options) => taskRequestOptions(options),
-      invoke: (services, _p, signal) => services.tasks.capabilities(taskOptions(signal)),
-    },
-    listContainers: {
-      method: "tasks.listContainers",
-      metadata: read("tasks"),
-      encode: (input) => ({ input }),
-      requestOptions: (_input, options) => taskRequestOptions(options),
-      invoke: (services, p, signal) =>
-        services.tasks.listContainers(
-          p.input as Parameters<TasksService["listContainers"]>[0],
-          taskOptions(signal),
-        ),
-    },
-    search: {
-      method: "tasks.search",
-      metadata: read("tasks"),
-      encode: (input) => ({ input }),
-      requestOptions: (_input, options) => taskRequestOptions(options),
-      invoke: (services, p, signal) =>
-        services.tasks.search(
-          p.input as Parameters<TasksService["search"]>[0],
-          taskOptions(signal),
-        ),
-    },
-    get: {
-      method: "tasks.get",
-      metadata: read("tasks"),
-      encode: (ref) => ({ ref }),
-      requestOptions: (_ref, options) => taskRequestOptions(options),
-      invoke: (services, p, signal) =>
-        services.tasks.get(p.ref as Parameters<TasksService["get"]>[0], taskOptions(signal)),
-    },
-    searchActors: {
-      method: "tasks.searchActors",
-      metadata: read("tasks"),
-      encode: (input) => ({ input }),
-      requestOptions: (_input, options) => taskRequestOptions(options),
-      invoke: (services, p, signal) =>
-        services.tasks.searchActors(
-          p.input as Parameters<TasksService["searchActors"]>[0],
-          taskOptions(signal),
-        ),
-    },
-    create: {
-      method: "tasks.create",
-      metadata: write("tasks"),
-      encode: (input) => ({ input }),
-      requestOptions: (_input, options) => taskRequestOptions(options),
-      invoke: (services, p, signal) =>
-        services.tasks.create(
-          p.input as Parameters<TasksService["create"]>[0],
-          taskOptions(signal),
-        ),
-    },
-    assign: {
-      method: "tasks.assign",
-      metadata: write("tasks"),
-      encode: (input) => ({ input }),
-      requestOptions: (_input, options) => taskRequestOptions(options),
-      invoke: (services, p, signal) =>
-        services.tasks.assign(
-          p.input as Parameters<TasksService["assign"]>[0],
-          taskOptions(signal),
-        ),
-    },
-    previewTransition: {
-      method: "tasks.previewTransition",
-      metadata: read("tasks"),
-      encode: (input) => ({ input }),
-      requestOptions: (_input, options) => taskRequestOptions(options),
-      invoke: (services, p, signal) =>
-        services.tasks.previewTransition(
-          p.input as Parameters<TasksService["previewTransition"]>[0],
-          taskOptions(signal),
-        ),
-    },
-    transition: {
-      method: "tasks.transition",
-      metadata: write("tasks"),
-      encode: (input) => ({ input }),
-      requestOptions: (_input, options) => taskRequestOptions(options),
-      invoke: (services, p, signal) =>
-        services.tasks.transition(
-          p.input as Parameters<TasksService["transition"]>[0],
-          taskOptions(signal),
-        ),
-    },
-    comment: {
-      method: "tasks.comment",
-      metadata: write("tasks"),
-      encode: (input) => ({ input }),
-      requestOptions: (_input, options) => taskRequestOptions(options),
-      invoke: (services, p, signal) =>
-        services.tasks.comment(
-          p.input as Parameters<TasksService["comment"]>[0],
-          taskOptions(signal),
-        ),
-    },
-    attachArtifact: {
-      method: "tasks.attachArtifact",
-      metadata: write("tasks"),
-      encode: (input) => ({ input }),
-      requestOptions: (_input, options) => taskRequestOptions(options),
-      invoke: (services, p, signal) =>
-        services.tasks.attachArtifact(
-          p.input as Parameters<TasksService["attachArtifact"]>[0],
-          taskOptions(signal),
-        ),
-    },
-  }),
   storage: serviceOperations<StorageService>({
     inspect: {
       method: "storage.inspect",
@@ -1139,7 +1011,6 @@ export const ORDINARY_OPERATIONS: readonly AnyOperation[] = [
   ...Object.values(OPERATIONS.workflows),
   ...Object.values(OPERATIONS.skills),
   ...Object.values(OPERATIONS.sessions),
-  ...Object.values(OPERATIONS.tasks),
   ...Object.values(OPERATIONS.storage),
 ];
 

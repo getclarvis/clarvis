@@ -12,9 +12,8 @@ export type { BuiltinAgent } from "./types.ts";
  *
  * @remarks Clarvis has no scaffolding step: these are not templates copied into
  *   the user's configuration on first run, they are the agents. A host that has
- *   never written a file still has all five, which is what lets `@clarvis/code`
- *   reach its first prompt — and `@clarvis/server` serve a request — against an
- *   empty configuration directory.
+ *   never written a file still has all five, which lets `@clarvis/code`
+ *   reach its first prompt against an empty configuration directory.
  *
  *   The order is deliberate and is the product's, not the alphabet's:
  *   {@link MARSHALL} is the general-purpose entry and the default, then the

@@ -40,7 +40,6 @@ async function fixture() {
         { name: "fixture", kind: "openai-compatible", base_url: "http://127.0.0.1:1/v1" },
       ],
       budget: { total_token_limit: 1000, on_exceed: "stop" },
-      runtime: { backend: "native" },
       plans: { mode: "off" },
     }),
   );
@@ -62,7 +61,7 @@ async function fixture() {
       subscriptions: false,
       logger: NOOP_LOGGER,
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_AGENT_TOOLS_ENABLED: "0" }),
-      builtins: { tools: false, hooks: false, tasks: false },
+      builtins: { tools: false, hooks: false },
     },
   };
   const host = await serveRemoteFileKernelOverStdio(options);

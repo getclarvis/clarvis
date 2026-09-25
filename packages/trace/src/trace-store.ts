@@ -93,9 +93,8 @@ export interface TraceStore {
    * @remarks Asynchronous because the filesystem implementation lands at the
    *   most expensive moment of a run — a whole trace serialized, then written,
    *   `fsync`ed, renamed and `fsync`ed again. Doing that synchronously stalled
-   *   the event loop, which in a process serving several runs at once (the
-   *   `@clarvis/server` case) meant every other session stopped with it. The
-   *   `await` does not make the work cheaper — `JSON.stringify` and
+   *   the event loop, which in a process serving several runs at once meant
+   *   every other session stopped with it. The `await` does not make the work cheaper — `JSON.stringify` and
    *   {@link sanitizeDeep} are still synchronous CPU — it only stops the I/O
    *   from blocking everyone else.
    */

@@ -32,10 +32,8 @@ const nonnegativeInt = z.coerce.number().int().nonnegative();
  * @returns a schema that treats `"false"`, `"0"`, `"no"`, `"off"` and the empty
  *   string (case-insensitive, trimmed) as `false` and any other string as
  *   `true`; non-string values fall back to `Boolean(v)`.
- * @remarks The false-value list is a decision that can drift between hosts, so
- *   this is the one authoritative source; `@clarvis/server`'s `loadServerEnv`
- *   imports it rather than keeping its own copy. `positiveInt`/`nonnegativeInt`
- *   stay unexported and duplicated in each host on purpose - they are zod idiom
+ * @remarks The false-value list is shared by hosts through this authoritative
+ *   source. `positiveInt`/`nonnegativeInt` stay unexported and duplicated in each host on purpose - they are zod idiom
  *   with exactly one correct spelling, and extracting them would widen this
  *   package's public surface to save one line each.
  */
@@ -108,7 +106,6 @@ const baseEnvSchema = z.object({
 
   CLARVIS_OWNER: z.string().min(1).optional(),
   CLARVIS_AGENT_TOOLS_ENABLED: boolFromEnv(true),
-  CLARVIS_AGENT_TOOLS_CONFINE: boolFromEnv(true),
   CLARVIS_AGENT_TOOLS_MAX_GRANT: z.enum(["none", "read", "edit", "exec"]).default("edit"),
   CLARVIS_SKILLS_ENABLED: boolFromEnv(true),
   CLARVIS_HOOKS_ENABLED: boolFromEnv(true),
@@ -186,12 +183,12 @@ const baseEnvSchema = z.object({
    */
   CLARVIS_LOG: z.string().optional(),
   /**
-   * Whether audit records — authentication and command-guard decisions — are
+   * Whether authentication audit records are
    * emitted regardless of the active level.
    *
    * @remarks Its own knob because `CLARVIS_LOG_LEVEL=warn` is a legitimate
    *   production setting and would otherwise silence every authentication
-   *   success and every guard verdict. Environment only: a run that could write
+   *   success. Environment only: a run that could write
    *   this through settings could silence the record of what it did.
    */
   CLARVIS_LOG_AUDIT: boolFromEnv(true),

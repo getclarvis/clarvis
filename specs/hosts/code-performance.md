@@ -252,7 +252,7 @@ Solid `lazy` and `Suspense`, caches each module promise, and lets the route owne
 subtree. Settings and Extensions list metadata lives in a lightweight module so rendering their
 menus does not import every child (`packages/code/src/views/config/lazy-view.tsx`,
 `packages/code/src/views/config/hub-items.ts`, `packages/code/src/app/commands.tsx`). The artifact
-contract scans representative markers from Help, Tasks, Storage, Sessions, Workflows and Doctor, as
+contract scans representative markers from Help, Storage, Sessions, Workflows and Doctor, as
 well as Diff and Plan (`packages/code/tooling/artifact/contract.ts`).
 
 ### 4.4 Transcript and session retention
@@ -335,7 +335,7 @@ The floating family is larger than the two historically measured entry points:
 | Surface | Mount path | Variable allocation risk | Current evidence |
 | ------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | agent picker and default-scope picker | `App` -> retained `AgentProfilePicker` -> `ListPicker` -> `FloatFrame` | windowed agent rows, preview and optional second picker | remount +12.71; retained -0.23 MiB PSS/100 |
-| isolation and review pickers | `App` -> lazy retained `IsolationPicker` / `ReviewPicker` -> `ListPicker` -> `FloatFrame` | Isolation has four fixed rows (Host/Sandbox/Docker/Podman) and an armed Host confirmation; Review has three | Isolation +2.12/+1.23; Review +1.82/+1.34 MiB RSS/100 at 120x32/80x24; zero owner deltas. Isolation numbers are historical three-row evidence |
+| isolation picker | `App` -> lazy retained `IsolationPicker` -> `ListPicker` -> `FloatFrame` | two fixed rows (Host/Sandbox) and an armed Host confirmation | validate with the current isolated benchmark |
 | provider/model/enum picker | config view -> retained `CatalogPicker` -> `ListPicker` -> `FloatFrame` | windowed rows, fuzzy-highlight spans, optional input, and a fixed nine-row first-run splash intro only when 76×24 fits | remount +14.26; retained -1.49 MiB PSS/100 (pre-intro measurement) |
 | activity detail | `App` -> retained `ActivityDetail` -> `FloatFrame` | Markdown block count and parser-native renderables; payload is cleared on close | -16.92 MiB PSS/100 in the 200-section remount case; no confirmed slope |
 | clean-worktree exit prompt | `App` -> retained `WorktreeExitPrompt` -> `FloatFrame` | fixed, small body | +0.44 MiB PSS/100 in the remount case; no confirmed slope |
@@ -500,10 +500,10 @@ maintenance is silent; the footer shows `Restoring the interface…` only while 
     `packages/code/tests/integration/autocomplete-popup-render.test.tsx`, and
     `packages/code/tests/unit/overlay-host.test.ts`.
 
-12. **PERF-12: Diff, Plan, Isolation Picker and Review Picker stay outside the first-load JavaScript
+12. **PERF-12: Diff, Plan and Isolation Picker stay outside the first-load JavaScript
     entrypoint.**
     Production: `packages/code/src/views/app/OverlayRegion.tsx` (`lazy`),
-    `packages/code/src/views/App.tsx` (`IsolationPicker`, `ReviewPicker`),
+    `packages/code/src/views/App.tsx` (`IsolationPicker`),
     `packages/code/tooling/artifact/contract.ts` (`assertLazySurfaceArtifact`), and
     `packages/code/tooling/artifact/build.ts` (`assertLazyProviderChunk`).
     Test: `packages/code/tests/architecture/artifact-contract.test.ts` ("cold full-page and floating
@@ -520,13 +520,12 @@ maintenance is silent; the footer shows `Restoring the interface…` only while 
     `SurfacePortal`, `useSurfaceFocus`, `useSurfaceActivationGuard`),
     `packages/code/src/views/overlays/FloatFrame.tsx` (`FloatFrame`), and
     `packages/code/src/views/overlays/ListPicker.tsx` (`ListPicker`), including the lazy retained
-    `IsolationPicker` and `ReviewPicker` hosts in `packages/code/src/views/App.tsx`.
+    `IsolationPicker` host in `packages/code/src/views/App.tsx`.
     Test: `packages/code/tests/integration/surface-lifecycle-render.test.tsx`,
     `packages/code/tests/integration/float-frame-render.test.tsx` (single responsive navigation
     subtree and listener cleanup), and `packages/code/tests/integration/list-picker-render.test.tsx`
     ("a retained picker keeps one key layer registration and gates it while inactive"), plus
-    `packages/code/tooling/benchmarks/overlays.tsx` (`isolation-picker-retained`,
-    `review-picker-retained`).
+    `packages/code/tooling/benchmarks/overlays.tsx` (`isolation-picker-retained`).
 
 14. **PERF-14: retained inactive configuration pages do not keep periodic background work alive.**
     Workflow polling and provider authorization countdowns run only while their owning view is
@@ -546,7 +545,7 @@ maintenance is silent; the footer shows `Restoring the interface…` only while 
     Production: `packages/code/src/runtime.tsx` (`ensureModelsCatalog`),
     `packages/code/src/views/config/lazy-view.tsx`, and
     `packages/code/src/app/commands.tsx` (dynamic route factories), plus
-    `packages/code/src/views/App.tsx` (lazy `IsolationPicker`, `ReviewPicker`).
+    `packages/code/src/views/App.tsx` (lazy `IsolationPicker`).
     Test: `packages/code/tests/integration/app-commands.test.tsx`,
     `packages/code/tests/architecture/artifact-contract.test.ts`, and
     `packages/code/tooling/artifact/smoke.ts`.
@@ -1094,16 +1093,6 @@ The correction followed the attribution order and was widened beyond F1:
     positive PSS endpoint was elicitation at +2.85 MiB/100 on 120x32 and +1.17 MiB/100 on 80x24;
     every case returned live renderables, lifecycle passes and key layers to baseline. Negative
     endpoints mean warm-up memory was collected, not that closing a surface "saved" that amount.
-11. The retired combined `SafetyPresetPicker` passed its focused soak, but those numbers
-    are historical evidence only. The replacement Isolation and Review
-    pickers passed their own macOS native-render production-policy soaks under Bun 1.4.0 and OpenTUI
-    0.5.9. Those Isolation samples used the then three-row Host/Sandbox/Docker picker; the current
-    picker also includes Podman. Across 100 measured cycles after ten warm-up cycles, Isolation
-    measured +2.12 MiB RSS/100
-    at 120x32 and +1.23 at 80x24; Review measured +1.82 and +1.34, respectively. All four cases had
-    zero renderable, lifecycle-pass, live-key-layer and cumulative-registration deltas. PSS and
-    private-dirty are unavailable on macOS, so the harness enforced its RSS fallback ceiling.
-
 The final 120x32 native-render matrix used ten warm-up cycles and 100 measured cycles per fresh
 process. These are endpoint PSS changes after forced collection, not amounts of memory "saved" when
 negative:
@@ -1160,8 +1149,7 @@ Run every row below independently so one surface cannot inherit another's retain
 | controls | no overlay; draft mutation with Splash held either mounted or unmounted; empty `HintToast` lifecycle |
 | `FloatFrame` primitive | empty fixed-size frame; frame with fixed row counts of 1, 10 and 30 |
 | `AgentProfilePicker` | primary agent list; default-scope second step; empty and maximum practical lists |
-| `IsolationPicker` | four-row retained picker (Host/Sandbox/Docker/Podman); direct-host armed-confirmation path |
-| `ReviewPicker` | three-row retained picker; Off/Approval/Auto changes with Isolation held constant |
+| `IsolationPicker` | two-row retained picker (Host/Sandbox); direct-host armed-confirmation path |
 | `CatalogPicker` | compact enum; filtered provider/model catalog; empty/manual row; maximum visible window |
 | `ActivityDetail` | short plain text; long Markdown with code blocks and lists |
 | `WorktreeExitPrompt` | cancel path, using an isolated disposable clean-worktree fixture |
@@ -1188,7 +1176,7 @@ outer card is insufficient if variable children are still destroyed on every cyc
 
 1. The former Context Help was windowed by visible rows before the product surface was retired; it
    is no longer a production consumer or required soak case.
-2. Move both `AgentProfilePicker` stages, `IsolationPicker`, `ReviewPicker`, and every `CatalogPicker` caller onto the
+2. Move both `AgentProfilePicker` stages, `IsolationPicker`, and every `CatalogPicker` caller onto the
    persistent host. Keep a fixed number of row slots and update their cells/previews rather than
    recreating native rows.
 3. Give `ActivityDetail` a bounded Markdown projection or a full-page reader if Markdown blocks

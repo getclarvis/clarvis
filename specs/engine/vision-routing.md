@@ -40,17 +40,6 @@ family, capability gating).
 
 ## 2. Surface
 
-Container placement preserves the same capability gate through `ModelExecutionResolver`. The guest
-uses frozen logical model metadata for vision routing, while the host broker reconstructs real
-provider configuration only after admission. Original image parts remain in the guest context and
-only inline admitted media crosses the broker. Production: `createContainerModelBroker` in
-[`model-broker-host.ts`](../../packages/kernel/src/runtime/model-broker-host.ts).
-Test: vision request filtering and unchanged source-prefix cases in
-[`vision-prepass.test.ts`](../../packages/loop/tests/unit/vision-prepass.test.ts), plus admitted
-Container vision-model routing in
-[`container-model-stream.test.ts`](../../packages/kernel/tests/integration/container-model-stream.test.ts).
-The private seam belongs to [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
-
 The prepass prompt requests visible details relevant to the task, exact readable text when needed,
 and explicit limits for hidden or illegible content. Images are data, not instructions. Production:
 `VISION_SYSTEM_PROMPT` in `packages/loop/src/runtime/vision-prepass.ts`. Test:
@@ -456,16 +445,12 @@ from the other).
     `packages/code/src/core/attachments.ts`; pinned by "rejects empty, fifth,
     oversized and aggregate-overflow images" (`packages/code/tests/unit/attachments.test.ts`)
     and "rejected images never enter reactive composer state".
-The full composer image budget is transferable through local-host and Container stdio.
+The full composer image budget is transferable through local-host and SSH stdio.
     Their common logical JSON limit is 64 MiB, including base64, context and envelopes; physical
     fragments remain bounded and excess local messages cannot terminate another run. Production:
     `createJsonMessageWriter` in [json-message.ts](../../packages/kernel/src/core/json-message.ts).
     Test: `transfers the full composer image budget and isolates oversized requests and results`
-    in [stdio-codec.test.ts](../../packages/kernel/tests/contract/stdio-codec.test.ts) and
-    bounded Container lane transfer in
-    [container-channel.test.ts](../../packages/kernel/tests/contract/container-channel.test.ts)
-    and stream preservation in
-    [container-model-stream.test.ts](../../packages/kernel/tests/integration/container-model-stream.test.ts).
+    in [stdio-codec.test.ts](../../packages/kernel/tests/contract/stdio-codec.test.ts).
 20. **A staged attachment's declared `size` cannot understate its real payload.** `attachmentBytes`
     takes the larger of the declared size and `base64DecodedBytes(data)`, so a `size: 1` attachment
     whose `data` actually decodes to 32 bytes still reports 32 — admission checks bytes actually
@@ -503,7 +488,7 @@ The full composer image budget is transferable through local-host and Container 
 | No `usage` at all (call never returned any) | `packages/loop/src/runtime/vision-prepass.ts` | ledger/`accounting.vision.current` are simply left unset — no charge, no usage row |
 | `read_image` given a non-image / unsupported format | `packages/tools/src/tools/read-image.ts` | `ToolError("not_an_image", ...)` |
 | `read_image` given an oversized file | via `readRawFile`, `config.maxImageBytes` | `too_large` (`packages/tools/tests/integration/read-image.test.ts`) |
-| `read_image` given a missing path or one outside both the workspace and admitted temporary roots | via `resolvePath`/`readRawFile` | `not_found` / `path_escape` |
+| `read_image` given a missing or environment-inaccessible path | via `resolveFileToolPath`/`readRawFile` | `not_found` / `io_error`; private classified configuration remains `denied` |
 | Code: `@mention` load throws | `packages/code/src/core/attachments.ts` | `MentionImageLoadError`; `submitTurn` catches it, restores the draft, reports the message — the turn is **not** sent |
 | Code: `@mention`/staged image exceeds a budget | `checkImageAdmission` | `MentionImageAdmissionError` (mention path) or a rejected `AttachmentAdmission` (`ok: false`, composer path) — the composer never even retains the rejected item |
 | Code: `@mention`ed path not found | `loadMentionImages` | silently skipped — the mention text stays literal, no error |

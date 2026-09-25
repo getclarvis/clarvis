@@ -30,10 +30,9 @@ compare-and-swap write against the plan store.
 
 The capability also publishes `PLANS_REVIEW_CONTEXT_PORT`. Its atomically revisioned snapshot contains only stable
 Plan substance: title, objective, context, task title/detail/exit fields and validation. It excludes
-status, assignees, progress, outcomes, revisions, timestamps, paths and digests. Auto Guard can
-therefore interpret routine bounded prerequisites against the intended implementation path without
-turning task transitions into changing reviewer context. Auto Guard rechecks the snapshot revision
-after inference and refuses stale decisions. Production: `planReviewContext` and
+status, assignees, progress, outcomes, revisions, timestamps, paths and digests. Goal orchestration
+can consume the stable Plan context without treating task progress as a revised objective.
+Production: `planReviewContext` and
 `createPlansCapability` in `packages/plan/src/capability/`. Test: `createPlansCapability — reviewer
 context` in `packages/plan/tests/component/plan-capability-gating.test.ts`.
 
@@ -57,19 +56,6 @@ Production: `createPlansCatalogCapability` in `packages/plan/src/capability/inde
 `packages/plan/tests/component/plan-catalog.test.ts` compares the ordinary and projected
 surfaces and refuses execution; `packages/kernel/tests/integration/goal-file-host-memory.test.ts`
 proves a paused goal's open discard plan remains unchanged after indexing.
-
-That claim is about grants, not about every path into `mode`: a trusted plugin can still declare
-`capabilityRunPolicies.plans.skills[skill]` (`packages/capability/src/capability-run-policies.ts`)
-for a skill it packages, and when a run is entered through that skill *and* the operator has selected
-that same plugin as the Plans provider, the kernel folds the declared mode over the settings block's
-`mode` for that one run — `skillPlansMode` (`packages/kernel/src/file-kernel.ts`,
-`packages/kernel/src/plugins/plugin-contributions.ts`) is read in the settings assembler
-(`packages/kernel/src/runs/settings-assembler.ts`) and only ever loses to an explicit
-`plans` param on the run request itself, never to the settings block. This bypasses `pluginContributable:
-false` on `plansSettingsSpec` (`packages/plan/src/settings.ts`) entirely, because it never goes
-through the settings merge that flag governs. The mechanism, its parsing and its precedence belong to
-[`../hosts/plugins.md`](../hosts/plugins.md) and [`../hosts/kernel-runs.md`](../hosts/kernel-runs.md),
-not to this document.
 
 ---
 
@@ -111,15 +97,7 @@ export function createPlansCapability(options: PlansCapabilityOptions): Capabili
 | `defaultElicitWaitMs` | `number` | fallback human-wait bound for the review gate |
 | `logger?` | `Logger` | resolved to `NOOP_LOGGER` once per capability |
 
-`PlanFactory`/`createPlanFactory` (`packages/plan/src/provider.ts`) memoize one store resolution per
-owner and select the provider (Markdown, a direct executable, or a plugin-hosted one). This
-mechanism is pinned by `packages/plan/tests/component/provider.test.ts`, an in-scope file otherwise
-undiscussed here: `storeFor` memoizes per owner and a second call for the same owner returns the
-same store; `evictOwner` drops one owner's resolution without touching a peer's; a direct executable provider runs from the workspace with raw argv; a
-plugin provider runs from the plugin's own root and cannot select itself; a plugin
-revision change rebuilds the session adapter while `key` (the provider identity) stays stable; and an unavailable executable provider throws `PlanProviderUnavailableError` rather
-than silently falling back to Markdown. The document format and digest machinery
-`PlanFactory` sits beside remain delegated to **plan-document-and-store** (§7.4).
+`PlanFactory`/`createPlanFactory` (`packages/plan/src/provider.ts`) memoize the built-in Markdown store per owner. `storeFor` returns the same store for the same owner, and `evictOwner` drops one owner without touching peers. Production: `packages/plan/src/provider.ts` (`createPlanFactory`). Test: `packages/plan/tests/component/provider.test.ts`. The document format and digest machinery remain delegated to the plan store spec.
 
 The returned `Capability` declares:
 
@@ -728,18 +706,7 @@ Two hooks, in this order (`packages/capability/src/contract.ts` explains why bot
    Returns immediately for checkpoint disposition, or unless `record.status === "completed"` **and** `ref.retention === "discard"`. Deletes through `bestEffort`, logs `plan.retention.discarded` with `deleted: boolean`
    at `info` either way, and emits `plan_removed` only when a document was actually removed.
 
-Plans is native in Host, Sandbox and Container. Container admits the Markdown provider and keeps
-the native plan service, tools, CAS, approval, continuation and retention lifecycle in its Kernel.
-An active external+external provider is rejected during projection; an inactive inherited setting
-does not start that provider. Plan documents and locks persist in the canonical workspace stores
-shared with Host/Sandbox.
-
-Production: `projectContainerConfiguration` in
-[`container-projection.ts`](../../packages/kernel/src/config/container-projection.ts) and
-`createContainerNativeKernel` in
-[`container-native.ts`](../../packages/kernel/src/hosting/container-native.ts). Test:
-[`container-projection.test.ts`](../../packages/kernel/tests/unit/container-projection.test.ts) and
-[`container-kernel-host.test.ts`](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
+Plans is native in Host and Sandbox. The built-in Markdown store owns plan service, tools, CAS, approval, continuation and retention through the canonical workspace directory.
 
 The `lifecycle.onRunStart` hook exists only for a continuation (`packages/plan/src/capability/index.ts`): it reconciles,
 emits `plan_removed` if the continuation plan was gone (and returns), else emits
@@ -1038,14 +1005,12 @@ Numbered; each carries production evidence and the pinning test.
 40. **Provider selection is settings-only and never a request param.** `plansRunConfigSchema` is
     `.strict()` and omits `provider` — `packages/plan/src/settings.ts`; the spec is
     `pluginContributable: false` — `packages/plan/src/settings.ts`.
-    Pinned: `packages/plan/tests/unit/settings.test.ts` (all three provider kinds parse in
-    the block and are refused in the param).
+    Pinned: `packages/plan/tests/unit/settings.test.ts` (only Markdown parses in the block; provider is refused in the param).
 
-41. **The settings entry never reaches executable-provider code.**
+41. **The settings entry does not import the store implementation.**
     `packages/plan/src/settings.ts` imports `./provider-config.ts` and nothing else local, and
     that file pulls in neither `./provider.ts` nor `node:fs`
-    (`packages/plan/src/provider-config.ts`) — full statement owned by
-    [capabilities/provider-executables.md](provider-executables.md) §5.
+    (`packages/plan/src/provider-config.ts`).
     Pinned: `packages/plan/tests/architecture/settings-provider-boundary.test.ts`.
 
 42. **The stable spec block is byte-identical across task transitions.**
@@ -1115,10 +1080,6 @@ Numbered; each carries production evidence and the pinning test.
     Pinned: `packages/plan/tests/component/plan-service.test.ts` (a write racing the delete between the read and the
     store's own `delete` call surfaces as `PlanConflictError`, and the racing write's effect
     survives).
-
-56. **Under the server's `auto_decline` posture, `plans: "review"` is downgraded to `"on"`,** and the
-    downgrade is reported — `packages/server/src/mcp/elicitation.ts`. **Unpinned** in
-    this document's scope.
 
 57. **The plan capability never turns independent spawning into a planning requirement.**
     `spawn_subagent` remains independent and has no `task_id`. The plan-owned `delegate_task`

@@ -44,11 +44,6 @@ already authorizes that use within the task. Check session authorization before 
 Keep required host credentials outside the guest, logs, and evidence; remove any test-owned copies
 after use. Preserve unrelated user state.
 
-For Docker, inspect the effective engine/context, immutable image ID, generation, network policy,
-and workspace mount. The header alone does not prove placement. Sandbox fallback is a distinct
-result and cannot pass a Docker checkpoint. Match development versus installed runtime resolution
-to the artifact being tested; use a workspace shared by the configured macOS engine.
-
 For `--remote`, record local and remote artifact identities, the destination form without private
 host data, absolute remote workspace, OpenSSH executable/config posture, host-key verification and
 the authentication mechanism without key material. Verify port, agent and X11 forwarding stay
@@ -95,7 +90,5 @@ reproduction and recovery, distinguish environmental failures using known issues
 evidence. For a focused task, a compact handoff is enough; the full report template is for audits.
 
 Quit normally and verify exit plus owned child-process/listener cleanup. Use bounded forced cleanup
-only if normal shutdown fails, recording which path was tested. Docker cleanup must remove only the
-test container generation; report intentionally retained mise caches and never delete an operator's
-cache. Retain named evidence, remove test-owned credentials and disposable state, and follow the
+only if normal shutdown fails, recording which path was tested. Retain named evidence, remove test-owned credentials and disposable state, and follow the
 repository handoff contract.

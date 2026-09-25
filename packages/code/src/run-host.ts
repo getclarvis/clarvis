@@ -9,7 +9,6 @@ import {
 } from "./core/loop-schedule.ts";
 import type {
   HostedHandoffFailureDetails,
-  ActiveTaskRequestDto,
   HostedActivityLease,
   HostedRunReceipt,
   HostedRunRef,
@@ -17,7 +16,6 @@ import type {
   Message,
   MessageContent,
   PlansMode,
-  TaskRefDto,
 } from "@clarvis/protocol";
 import type {
   RunDetail,
@@ -50,7 +48,6 @@ import { formatBashObservation, runLocalBash } from "./adapters/local-shell.ts";
 import type { ActivityStore } from "./adapters/activity-store.ts";
 import { promptMessagesToContent, type PromptMessage } from "./adapters/mcp-capabilities.ts";
 import type { ElicitSlot } from "./adapters/elicit-slot.ts";
-import type { GuardMode } from "./adapters/guard-mode.ts";
 import type { MemoryMode } from "./adapters/memory-mode.ts";
 import type { PlanMode } from "./adapters/execution-safety.ts";
 import type { CatalogCost } from "./adapters/models-catalog.ts";
@@ -102,15 +99,11 @@ export interface RunHostDeps {
   project: string;
   workspaceId: string;
   workspace: string;
-  /** Process placement owning the current Kernel connection. */
-  runtimeKind?: () => "native" | "container" | undefined;
   /** True only when a confirmed hosted handoff survives closing this client connection. */
   backgroundHandoffSurvivesExit: () => boolean;
   priceFor: (model: string) => CatalogCost | undefined;
   activeProfile: () => string;
   setActiveProfile: (name: string) => void;
-  guardMode: () => GuardMode;
-  judgePayload: (mode: GuardMode) => { guardJudge?: { guidance?: string } };
   memoryMode: () => MemoryMode;
   /** The planning policy the next run will use, so the shell can warn about an
    * approval gate before the run starts. Optional; headless hosts omit it. */
@@ -238,8 +231,6 @@ export interface RunHost {
   ): void;
   /** Run a skill that names an agent as a run of its own, on that agent. */
   submitSkillRun(name: string, task: string, agent: string): Promise<void>;
-  /** Start a fresh session bound to one provider-neutral task in this workspace. */
-  workOnTask(ref: TaskRefDto, profile: string): Promise<void>;
   runBangCommand(cmd: string): boolean;
   clearSession(opts?: { flush?: boolean }): void;
   loadSessionMeta(meta: SessionMeta): Promise<void>;
@@ -420,7 +411,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   let runOwnershipEpoch = 0;
   let cancelRequested = false;
   let session: Session | undefined;
-  let sessionTask: ActiveTaskRequestDto | undefined;
   const [runActive, setRunActive] = createSignal(false);
   const [interactiveControl, setInteractiveControl] = createSignal(true);
   const [disconnectPolicy, setDisconnectPolicy] =
@@ -486,18 +476,14 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           JSON.stringify([
             configuration?.fingerprint,
             profile,
-            deps.guardMode(),
-            deps.judgePayload(deps.guardMode()),
             deps.memoryMode(),
             deps.plansMode?.(),
             deps.planProviderKey?.(),
-            sessionTask,
             client.currentExtensionProfile?.(),
           ]),
         )
         .digest("hex"),
-      configLabel:
-        configuration?.label ?? `review ${deps.guardMode()} · memory ${deps.memoryMode()}`,
+      configLabel: configuration?.label ?? `memory ${deps.memoryMode()}`,
     };
   }
 
@@ -1311,11 +1297,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const continueFrom = sess.beginTurn(msg, executionId);
     rememberResidentTurn({ userKey });
     const sessionId = sess.meta()?.id;
-    const guardMode = deps.guardMode();
     const memoryMode = deps.memoryMode();
-    const guardArgs = {
-      guardMode,
-      ...deps.judgePayload(guardMode),
+    const requestOptions = {
       ...(memoryMode === "off" ? { memory: memoryMode } : {}),
     };
     const pending = sess.takePending();
@@ -1392,8 +1375,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           : {}),
         ...(goalIntent === undefined ? {} : { goalIntent }),
         ...(sessionId ? { sessionId } : {}),
-        ...(sessionTask === undefined ? {} : { task: sessionTask }),
-        ...guardArgs,
+        ...requestOptions,
       });
     };
     await runManaged({
@@ -1436,8 +1418,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
                   : {}),
                 ...(goalIntent === undefined ? {} : { goalIntent }),
                 ...(sessionId ? { sessionId } : {}),
-                ...(sessionTask === undefined ? {} : { task: sessionTask }),
-                ...guardArgs,
+                ...requestOptions,
               })
             : startFull(isManager ? await fullRequestMessages() : undefined);
         attach(handle);
@@ -1559,7 +1540,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const sessionId = sess.meta()?.id;
     sess.beginTranscriptTurn(label, executionId);
     rememberResidentTurn({ userKey });
-    const skillGuardMode = deps.guardMode();
     const skillMemoryMode = deps.memoryMode();
     await runManaged({
       sess,
@@ -1574,8 +1554,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           executionId,
           profile,
           ...(sessionId ? { sessionId } : {}),
-          guardMode: skillGuardMode,
-          ...deps.judgePayload(skillGuardMode),
           ...(skillMemoryMode === "off" ? { memory: skillMemoryMode } : {}),
         });
         setHandle(handle);
@@ -1598,84 +1576,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     adoptCanonicalTurn(executionId);
   }
 
-  async function workOnTask(ref: TaskRefDto, profile: string): Promise<void> {
-    if (scheduledReserved()) {
-      setStatus(["busy ", { mark: "emDash" }, " finish the scheduled turn first"]);
-      return;
-    }
-    const settlement = currentSettlement;
-    if (!runActive() && settlement !== undefined) await settlement.promise;
-    if (runActive() || bashActive()) {
-      setStatus(["busy ", { mark: "emDash" }, " finish the current run or command first"]);
-      return;
-    }
-    if (profile.trim().length === 0) {
-      setStatus(["choose an agent before working on a task"]);
-      return;
-    }
-    clearSession();
-    deps.setActiveProfile(profile);
-    loadEpoch += 1;
-    sessionTask = { id: ref.id, provider_key: ref.provider_key, mode: "work" };
-    session = createSession(boundSessionDeps, { agentProfile: profile });
-    const sess = session;
-    const executionId = "exec_" + crypto.randomUUID();
-    const message =
-      `Work on task ${ref.id} in the current workspace. Read the active task context, ` +
-      "call start_task explicitly when that tool is available and you are ready to begin, and keep every review or completion transition explicit.";
-    const display = `Work on task ${ref.id}`;
-    const hostedSession = await prepareHostedSession(sess, display);
-    if (session !== sess) return;
-    const userKey = store.appendUserMessage(message, display, executionId);
-    sess.beginTurn(message, executionId);
-    rememberResidentTurn({ userKey });
-    const sessionId = sess.meta()?.id;
-    const guardMode = deps.guardMode();
-    const memoryMode = deps.memoryMode();
-    workflowRunId = executionId;
-    setWorkflowActivity(null);
-    await runManaged({
-      sess,
-      executionId,
-      initialStatus: [`working on ${ref.id}`, { mark: "ellipsis" }],
-      run: (setHandle) => {
-        const handle = client.startRun({
-          ...(hostedSession === undefined
-            ? {}
-            : { session: { ...hostedSession, kind: "conversation", user_preview: display } }),
-          messages: [...sess.messages()],
-          profile,
-          executionId,
-          task: sessionTask,
-          ...(sessionId ? { sessionId } : {}),
-          guardMode,
-          ...deps.judgePayload(guardMode),
-          ...(memoryMode === "off" ? { memory: memoryMode } : {}),
-        });
-        setHandle(handle);
-        return handle.done;
-      },
-      afterRun: (envelope) => sess.endTurn(envelope),
-      onStored: (_envelope, stored, sink) => {
-        sess.reconcile(stored);
-        replayRunEvents(sink, stored);
-        if (stored !== null) sess.releaseHistory();
-      },
-      onError: (error) => {
-        sess.endTurn(undefined);
-        setStatus([`task run failed: ${errorText(error)}`]);
-      },
-    });
-    adoptCanonicalTurn(executionId);
-  }
-
   function runBangCommand(cmd: string): boolean {
-    if (deps.runtimeKind?.() === "container") {
-      setStatus([
-        "! commands are unavailable in Isolation Container; use the agent shell tool inside the Container",
-      ]);
-      return false;
-    }
     if (scheduledReserved() || humanSubmissions() > 0 || sessionLoading()) return false;
     if (currentSettlement !== undefined || compactionCalls() > 0 || physicalRunCount() > 0)
       return false;
@@ -1872,7 +1773,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     setSessionLoading(false);
     if (opts?.flush !== false) session?.flush();
     session = undefined;
-    sessionTask = undefined;
     store.clear();
     activity.clear();
     foldedTurnCount = 0;
@@ -2140,7 +2040,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     setSessionLoading(true);
     session?.flush();
     session = undefined;
-    sessionTask = undefined;
     store.clear();
     activity.clear();
     foldedTurnCount = 0;
@@ -2204,7 +2103,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       throw error;
     }
     if (epoch !== loadEpoch) return;
-    sessionTask = resumed.activeTask;
     canonicalTurnIds = meta.turns.map(turnIdentity);
     session = createSession(boundSessionDeps, {
       meta,
@@ -2583,7 +2481,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     scheduledBusy,
     submitPromptTurn,
     submitSkillRun,
-    workOnTask,
     runBangCommand,
     clearSession,
     loadSessionMeta,

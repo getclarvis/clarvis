@@ -63,7 +63,7 @@ test("an empty profile exposes product documentation only to model tools", async
     env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" }),
     extensionProfileSelector: "global:empty",
     subscriptions: false,
-    builtins: { hooks: false, tasks: false },
+    builtins: { hooks: false },
     executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm } }),
   });
   try {
@@ -98,15 +98,7 @@ test("an empty profile exposes product documentation only to model tools", async
     await systemStart.closed;
     const run = await kernel.runs.start({
       agent: "editor",
-      guard_mode: "on",
       messages: [{ role: "user", content: "$clarvis-docs inspect settings" }],
-    });
-    let reviews = 0;
-    run.onElicit((request) => {
-      reviews++;
-      expect(request.kind).toBe("configuration_review");
-      expect(request.prompt).toContain(target);
-      void run.respond({ id: request.id, action: "accept", content: { decision: "allow" } });
     });
     const events = Array.fromAsync(run.events);
     expect(await run.done).toMatchObject({ status: "completed" });
@@ -126,7 +118,6 @@ test("an empty profile exposes product documentation only to model tools", async
     expect(
       llm.calls[3]!.messages.map((message) => contentToText(message.content)).join("\n"),
     ).toContain("default_model");
-    expect(reviews).toBe(1);
     expect(readFileSync(target, "utf8")).toBe(valid);
     expect(rendered).not.toContain("# Configure Clarvis");
   } finally {

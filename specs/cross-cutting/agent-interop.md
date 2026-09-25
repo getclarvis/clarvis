@@ -54,8 +54,7 @@ degrade rather than guess.
 Ownership is component-specific. Clarvis does not mutate standalone `.agents/skills` or a
 `marketplace.json`, but its managed global plugin lifecycle may atomically create, replace, or
 remove one exact directory below `~/.agents/plugins`. Workspace `.agents/plugins` is discovered as
-repository-owned inventory, exactly like workspace `.clarvis/plugins`; Code does not manage either
-workspace tree. The architecture test admits direct mutation through
+repository-owned inventory; Code does not manage that workspace tree. The architecture test admits direct mutation through
 `agentsPluginsDir(s)` only in the filesystem plugin repository and keeps every other `.agents`
 accessor read-only (`packages/paths/tests/architecture/agents-read-only.test.ts`).
 An inventory entry may also link to a directory in a shared store; only the outer link is followed,
@@ -186,24 +185,21 @@ different key of the same manifest; behavior is in §4.6.
 
 ## 3. Data and formats
 
-### 3.1 The four skill roots, in ascending precedence
+### 3.1 The two skill roots, in ascending precedence
 
-`clarvisSkillRoots` (`packages/skills/src/preset.ts`) builds exactly four roots, pairing two
-sources (`agents` = `.agents/skills`, `clarvis` = `.clarvis/skills`) across two scopes (`user` = under
-`home`, `workspace` = under the resolved workspace):
+`clarvisSkillRoots` (`packages/skills/src/preset.ts`) builds exactly two shared roots across the
+`user` and `workspace` scopes:
 
 ```
 1. { path: <home>/.agents/skills,      scope: "user",      source: "agents" }   // lowest
 2. { path: <workspace>/.agents/skills, scope: "workspace", source: "agents" }
-3. { path: globalPaths(home).skillsDir,  scope: "user",      source: "clarvis" }
-4. { path: workspacePaths(ws).skillsDir, scope: "workspace", source: "clarvis" } // highest
 ```
 
 Pinned verbatim by `packages/skills/tests/unit/preset.test.ts`, which asserts this exact array for
 `clarvisSkillRoots({ home: "/home/u", cwd: "/tmp", workspace: "/work" })`.
 
 That preset is the complete input for `builtin:default`. A custom
-[Extension Profile](../hosts/extension-profiles.md) still derives candidates from these same four
+[Extension Profile](../hosts/extension-profiles.md) still derives candidates from these same two
 locations, but passes only selected roots with exact `include` name lists through the host-owned
 `skillRoots` seam; roots with no selected skill are omitted. The skills package remains unaware of
 Extension Profile definitions and applies the same root order and collision rules to whatever exact set it
@@ -215,11 +211,11 @@ and `packages/skills/tests/integration/discovery.test.ts` ("admits only exact ma
 root allowlist").
 
 `SkillRootInput`/`SkillRoot` (`packages/skills/src/types.ts`) carry `scope: "user" | "workspace"`
-and `source: string` (free-form — `"agents"`, `"clarvis"`, or a plugin/marketplace name) purely as
+and `source: string` (free-form — `"agents"` or a plugin/marketplace name) purely as
 provenance tags. `scan.ts`'s traversal functions (`listSkillDirs`, `packages/skills/src/scan.ts`;
 `findSkillFile`, `packages/skills/src/scan.ts`) take only a `root` path and are root-agnostic:
-nothing in either function branches on whether a root's `source` is `"agents"` or `"clarvis"`. The
-precedence is entirely a property of **which order the four roots are listed in and folded**, not of
+nothing in either function branches on the root's `source`. The
+precedence is entirely a property of **which order the two roots are listed in and folded**, not of
 any different scanning behavior applied to one kind of root.
 
 ### 3.2 A plugin's hooks document, as read by `hook-dialects.ts`
@@ -493,15 +489,14 @@ This is pinned together by `packages/hooks/tests/component/capability.test.ts` a
 
 ### 4.8 Skill precedence merge (delegated mechanism, cited for context)
 
-For `builtin:default`, `clarvisSkillRoots` (§3.1) hands its four roots, in ascending order, to `buildRegistry`
+For `builtin:default`, `clarvisSkillRoots` (§3.1) hands its two roots, in ascending order, to `buildRegistry`
 (`packages/skills/src/registry.ts`), which scans and merges in one pass: the roots are folded **in
 the order given**, so a same-named skill from a later root always displaces an earlier one
 through `mergeWinner`, and the loser is recorded on the winner's `shadowed` chain
 (projected by `toShadowed`). Because
-`clarvisSkillRoots` places both `.agents` roots before both `.clarvis` roots, this is the concrete
-mechanism by which "`.agents` always loses to `.clarvis`" holds — but the fold itself is source-
-agnostic (`packages/skills/tests/integration/discovery.test.ts` exercises it with roots merely
-labeled `"lower"`/`"upper"`, not `"agents"`/`"clarvis"`). The deeper registry/catalog mechanics this
+the workspace `.agents` root follows the user `.agents` root, workspace skills win same-name
+collisions. The fold itself is source-agnostic (`packages/skills/tests/integration/discovery.test.ts`
+also exercises it with roots merely labeled `"lower"`/`"upper"`). The deeper registry/catalog mechanics this
 composes with are owned by the [execution/skills.md](../execution/skills.md) document.
 
 ## 5. Invariants
@@ -553,16 +548,15 @@ keeps authored accessors away from filesystem mutators, and asserts that the plu
 the sole direct plugin-root writer. The separate literal sweep in
 `packages/paths/tests/architecture/invariant.test.ts` catches a newly hand-spelled `.agents` path.
 
-**AIN-05** (derived). The four standard skill roots are produced in a fixed order — `.agents/skills`
-(user, then workspace) below `.clarvis/skills` (user, then workspace) — and, for whichever roots and
+**AIN-05** (derived). The two standard skill roots are produced in a fixed order — `.agents/skills`
+(user, then workspace) — and, for whichever roots and
 exact-name filters the host admits, that order is exactly the merge precedence because
 `buildRegistry` folds the roots in the order it is given them and later always displaces earlier.
 Production: `packages/skills/src/preset.ts`; fold order at
 `packages/skills/src/registry.ts`.
-Test: `packages/skills/tests/unit/preset.test.ts` pins the exact four-element array;
-`packages/skills/tests/integration/discovery.test.ts` pins last-root-wins in the abstract, composes the two into one end-to-end "`.agents` skill shadowed by `.clarvis` skill of the same
-name" scenario — the winner is the workspace `.clarvis` definition, with `clarvis:user`,
-`agents:workspace` and `agents:user` retained on its `shadowed` chain in that order.
+Test: `packages/skills/tests/unit/preset.test.ts` pins the exact two-element array;
+`packages/skills/tests/integration/discovery.test.ts` pins last-root-wins and verifies that a
+workspace `.agents` skill wins over a user `.agents` skill while obsolete roots are ignored.
 
 **AIN-06** (derived). A refused or unusable piece of a foreign hooks document never widens what a hook
 matches or which events it can act on: an unrepresentable alternative is retained only as a note when
@@ -640,9 +634,9 @@ MCP entries (`packages/kernel/src/plugins/plugin-manifest.ts`).
 - **`@clarvis/paths` → nothing** (leaf). `AGENTS_DIR` and its accessors are pure path arithmetic with
   no dependency of their own (confirmed by the package-level leaf status this document did not need to
   re-derive; `packages/paths/src/constants.ts` imports nothing).
-- **`@clarvis/skills` → `@clarvis/paths`**, statically: `preset.ts` imports `agentsSkillsDirs`,
-  `globalPaths`, `workspacePaths` directly (`packages/skills/src/preset.ts`). This is what forces
-  `.agents/skills` and `.clarvis/skills` to be resolved through the one owner of the directory
+- **`@clarvis/skills` → `@clarvis/paths`**, statically: `preset.ts` imports `agentsSkillsDirs`
+  directly (`packages/skills/src/preset.ts`). This is what forces
+  `.agents/skills` to be resolved through the one owner of the directory
   vocabulary rather than a second hand-written path.
 - **`@clarvis/capability` has no dependency on either `@clarvis/hooks` or `@clarvis/kernel`.** The two
   correspondence tables live in `hooks-config.ts`, which imports only `zod`
@@ -685,8 +679,8 @@ MCP entries (`packages/kernel/src/plugins/plugin-manifest.ts`).
   purpose — the correspondence table is written by hand and only *checked* against the registry by a
   test, so a renamed tool would not fail until that architecture test runs (a compile-time-adjacent, not
   a runtime, coupling).
-- **`@clarvis/skills`'s `scan.ts` has no dependency on the concept of source ("agents" vs "clarvis")** —
-  see §3.1 and §4.7. The `.agents`-vs-`.clarvis` precedence is entirely a property of what
+- **`@clarvis/skills`'s `scan.ts` has no dependency on the concept of source** —
+  see §3.1 and §4.7. The user-versus-workspace precedence is a property of what
   `packages/skills/src/preset.ts` and its caller in the kernel pass in as the ordered root list, not of any
   branch inside the scanner itself. This is a design choice a reader of `scan.ts` alone would not see:
   it only becomes visible by also reading `preset.ts`.

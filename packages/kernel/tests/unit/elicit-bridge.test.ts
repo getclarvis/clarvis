@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ElicitParams } from "@clarvis/capability";
 import type { ElicitationRequest } from "@clarvis/protocol";
-import type { GuardElicitParams } from "../../src/guard/guard-elicit.ts";
 import {
   createElicitBridge,
   MAX_ELICIT_WINDOW_MS,
@@ -179,7 +178,7 @@ test("only the model's own ask_user receives a window; provenance and naming are
   const cases: ElicitParams[] = [
     { ...modelAskUser(), origin: "external" },
     { ...modelAskUser(), origin: undefined },
-    { ...modelAskUser(), kind: "guard_confirm" },
+    { ...modelAskUser(), kind: "custom_review" },
     { ...modelAskUser(), kind: undefined },
   ];
   const results = cases.map((params) => bridge.elicit(params, {}));
@@ -195,7 +194,7 @@ test("only the model's own ask_user receives a window; provenance and naming are
   expect(requests.map((request) => request.kind)).toEqual([
     "ask_user",
     "ask_user",
-    "guard_confirm",
+    "custom_review",
     "ask_user",
   ]);
   for (const request of requests) {
@@ -275,25 +274,6 @@ test("an elicitation raised before onElicit registration is delivered when the h
   expect(request?.prompt).toBe("Approve?");
   bridge.respond({ id: request!.id, action: "accept", content: { answer: "yes" } });
   expect(await result).toEqual({ action: "accept", content: { answer: "yes" } });
-});
-
-test("structured guard detail rides the elicitation request to the client", async () => {
-  const bridge = createElicitBridge("exec_guard");
-  const params: GuardElicitParams = {
-    message: "Approve?\n\n$ rm -rf build",
-    kind: "guard_confirm",
-    requestedSchema: { type: "object", properties: {}, required: [] },
-    detail: { command: "rm -rf build", cwd: "/ws", reason: "Approve?" },
-  };
-  const result = bridge.elicit(params, {});
-  let request: ElicitationRequest | undefined;
-  bridge.onElicit((value) => {
-    request = value;
-  });
-
-  expect(request?.detail).toEqual({ command: "rm -rf build", cwd: "/ws", reason: "Approve?" });
-  bridge.respond({ id: request!.id, action: "accept", content: { decision: "allow" } });
-  expect(await result).toEqual({ action: "accept", content: { decision: "allow" } });
 });
 
 test("an aborted pending elicitation resolves as a cancellation", async () => {

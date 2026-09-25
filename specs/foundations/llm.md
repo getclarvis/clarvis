@@ -820,7 +820,7 @@ Test: **unpinned** — no test asserts `callArgs.maxRetries === 0`.
 permanent `client` fault. On a streaming path the deadline resets on every provider part; generation
 has no progress signal and remains absolutely bounded.
 The error subtype is owned by `packages/capability/src/llm-port.ts`; the adapter, retry wrapper,
-timeout bridge and consumers such as Judge import that same contract directly, without compatibility
+timeout bridge and consumers import that same contract directly, without compatibility
 re-exports or a second timeout timer.
 Production: `timeoutAbort` and both timeout branches in `AiSdkAdapter.call`.
 Test: `packages/llm/tests/component/ai-sdk-adapter.test.ts` (generate) and
@@ -1191,22 +1191,6 @@ logger is defaulted to `NOOP_LOGGER` at construction rather than optionally chai
 
 ## 7. Coupling
 
-The Container Kernel consumes a generic `LLMProvider` implemented by its model client. The host
-broker resolves admitted provider/model configuration, reconstructs capabilities, applies retry and
-token ceilings, and preserves typed `ProviderError` recovery/accounting fields over the private
-channel. Physical requests still pass through this package's admission and retry decorators. The
-wire schema and bounded queue belong to
-[isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
-Production: `createContainerModelBroker` in
-[`model-broker-host.ts`](../../packages/kernel/src/runtime/model-broker-host.ts),
-`createContainerModelProvider` in
-[`model-broker-client.ts`](../../packages/kernel/src/runtime/model-broker-client.ts), and error mapping in
-[`provider-error.ts`](../../packages/kernel/src/runtime/provider-error.ts).
-Test: admitted model pairs and streamed host-broker behavior in
-[`container-model-stream.test.ts`](../../packages/kernel/tests/integration/container-model-stream.test.ts),
-plus broker admission tests in
-[`container-model-broker.test.ts`](../../packages/kernel/tests/unit/container-model-broker.test.ts).
-
 ### 7.1 What this package depends on
 
 | Dependency | Kind | What forces it |
@@ -1232,7 +1216,7 @@ break" the lazy-entry walk (`packages/llm/src/openai-compatible-request.ts`).
 | `@clarvis/loop` | runtime, static, hard dependency | `packages/loop/package.json` (`workspace:*`), and the value imports at `packages/loop/src/runtime/build-run-deps.ts` and `packages/loop/src/runtime/execute-run.ts` |
 
 That is the only `@clarvis/*` package importing it. `packages/capability/src/env-interpolate.ts`,
-`packages/capability/src/env-ref.ts`, `packages/tasks/src/trace.ts` and
+`packages/capability/src/env-ref.ts` and
 `packages/code/src/adapters/stream-metrics.ts` mention `@clarvis/llm` only inside TSDoc prose —
 no import. `@clarvis/code` carries its **own** copy of the stream-metrics sink;
 `packages/llm/src/stream-metrics.ts` records that "the packages do not share a dependency edge,

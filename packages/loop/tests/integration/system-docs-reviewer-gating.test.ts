@@ -11,7 +11,7 @@ import {
 import type { SkillsProvider } from "@clarvis/skills/capability";
 import { buildExecuteRunDeps } from "../../src/runtime/build-run-deps.ts";
 
-test("file tools without a host mutation reviewer do not expose system-only documentation", async () => {
+test("file tools expose system documentation without a mutation reviewer", async () => {
   const root = mkdtempSync(join(tmpdir(), "clarvis-system-reviewer-gate-"));
   const env = loadEnv({ CLARVIS_SKILLS_ENABLED: "false", CLARVIS_AGENT_TOOLS_MAX_GRANT: "edit" });
   const system: SkillsProvider = {
@@ -55,7 +55,7 @@ test("file tools without a host mutation reviewer do not expose system-only docu
         entryGrants: ["edit_workspace"],
         request: { servers: [] },
       } as unknown as RunCapabilityContext;
-      expect(await skills!.forRun(context)).toBeNull();
+      expect(await skills!.forRun(context)).not.toBeNull();
     } finally {
       await built.dispose();
     }

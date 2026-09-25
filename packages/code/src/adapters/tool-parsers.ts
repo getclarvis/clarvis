@@ -33,8 +33,8 @@ function tryJson(s: string): Record<string, unknown> | undefined {
  *   parse, and the engine reports the same sentence as both the result the model
  *   was handed and the error — so echoing `result` into `stdout` alongside
  *   `error` in `stderr` printed it twice, once in body text and once in red.
- *   That is what a truncated tool payload, a rejected argument schema and a
- *   guard denial all looked like. When the two texts are the same string there
+ *   That is what a truncated tool payload and a rejected argument schema look like.
+ *   When the two texts are the same string there
  *   is only one thing to say, and it belongs in `stderr`.
  *
  *   **Being JSON is not the same as being a shell envelope.** A `ToolError`
@@ -42,7 +42,7 @@ function tryJson(s: string): Record<string, unknown> | undefined {
  *   then satisfies none of the field reads below — yielding a `parsed: true`
  *   envelope with an empty `stdout`, an empty `stderr` and no exit code. The
  *   renderer's success path then printed the status word `done` and no body, so
- *   a guard denial read as a command that ran and produced no output: the error
+ *   a rejected tool call read as a command that ran and produced no output: the error
  *   text appeared *zero* times, where the defect this function was written for
  *   showed it twice. {@link isShellEnvelope} is what keeps the two apart.
  */

@@ -169,12 +169,8 @@ For an owner-scoped `SessionService` built with `dir`/`owner`, files live under:
 path segment, or falls back to `h_<sha256hex>` past a 200-byte encoded length
 (`packages/paths/src/roots.ts`) — so an owner or session id of unbounded length
 or containing `/`/`.`/`..` cannot escape the owner directory or collide with a sibling segment.
-For a local Container placement the launcher bind mounts this exact owner directory into the guest;
-Host/Sandbox and Container therefore list and continue the same sessions, including embedded Goal
-state and persisted conversation context, without exposing sibling owners or the global config root.
-Production: `prepareContainerDomainMounts` in
-`packages/kernel/src/runtime/container-mounts.ts`. Test:
-`packages/kernel/tests/unit/runtime-mounts.test.ts`.
+Host and remote clients use the same canonical owner directory without exposing sibling owners
+or the global config root.
 
 The canonical session uses `writeFileDurableSync`: staged payload synchronization, atomic rename
 and directory synchronization. The rebuildable summary uses `writeFileAtomicSync`. The old sidecar
@@ -691,7 +687,7 @@ runs it:
      (accumulated if it carried `continue_from`, or replacing the chain outright if it did not)
      plus its assistant content, to the returned `messages`.
    - A transcript turn is rendered from its canonical `userPreview` and events when resident, but
-     never contributes its internal run messages, assistant result or `active_task` to continuation.
+     never contributes its internal run messages or assistant result to continuation.
    - A turn outside the render window (`collapsed = idx < windowStart`) is still rendered (with
      `collapsed: true` and no events) but is counted in `resumed.collapsed`, never in `degraded`.
    - A turn that was `visited` (a fetch was attempted) but has no projection (`getRun` returned
@@ -703,11 +699,6 @@ runs it:
      and the reset point already terminated the backward walk) is simply `collapsed` — never
      `degraded` — because collapsing is a display choice about turns known to be intact
      (the `resumeSession` remarks distinguish `collapsed` from `degraded`).
-6. `newestActiveTask` tracks the highest-index **conversation** turn whose
-   `RunDetail.active_task` is defined and is returned as `resumed.activeTask` —
-   used so a continued run can recover which external task was bound even if that turn's own
-   history was not retained.
-
 **Invariant proven by test, not merely asserted in a comment:** a `collapsed` turn and a `degraded`
 turn are mutually exclusive and their counts never overlap —
 `packages/code/tests/component/session.test.ts` ("resumeSession counts a folded-but-pruned
@@ -887,21 +878,12 @@ belong here rather than only in §3:
   cache-write tokens at its `cache_write` rate (falling back to `input`) — so a cached token is never
   billed at both the input and cache-read rate. `uncachedInput(totals)` is the display-side
   counterpart: it subtracts only a complete numeric cached total; otherwise it returns gross input.
-  For an ordinary hosted run, `guardReviewerUsage` validates private persisted Guard call events;
-  the coordinator folds those tokens and their model prices into the same Session totals once at
-  reconciliation or physical recovery. An unknown cache split adds only confirmed tokens and
-  leaves pricing absent. A Goal stage already includes those calls in its host measurement and is
-  never charged again through this ordinary-run path. The file host loads model prices before
-  recovery and refreshes them before each new execution, so a recovered ordinary run can price
-  its Guard calls.
+  The file host loads model prices before recovery and refreshes them before each new execution.
   Production: [usage.ts](../../packages/kernel/src/sessions/usage.ts) (`addRunUsage`),
-  [reviewer-trace.ts](../../packages/kernel/src/guard/reviewer-trace.ts) (`guardReviewerUsage`),
-  [sessions.ts](../../packages/kernel/src/hosting/sessions.ts) (`addGuardUsage`),
   [file-host.ts](../../packages/kernel/src/hosting/file-host.ts) (`refreshPrices`),
   `packages/code/src/adapters/session-store.ts` (`addUsageToTotals`, `uncachedInput`) and
   `packages/code/src/adapters/session.ts` (`finishTurn`, `reconcile`). Tests:
   [session-usage.test.ts](../../packages/kernel/tests/unit/session-usage.test.ts) and
-  [reviewer-trace.test.ts](../../packages/kernel/tests/unit/reviewer-trace.test.ts) and
   [hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts) (ordinary settlement and recovery) and
   `packages/code/tests/component/session-store.test.ts` (per-agent sums, flat unknown split, net/gross
   display and cost cases) and `packages/code/tests/component/session.test.ts` (missing split at live
@@ -1106,7 +1088,7 @@ continuation base.
 20. **Every persisted turn has an explicit continuation role; stale undiscriminated turns are
     rejected.** `kind: "conversation"` is the only variant that can rebuild or advance provider
     continuation. `kind: "transcript"` remains canonical for display, export, status and totals but
-    never contributes its internal prompt/result or active-task binding to model history. Missing or
+    never contributes its internal prompt/result to model history. Missing or
     unknown `kind` throws during `sessionToMeta` rather than receiving a legacy default.
     Production: `packages/protocol/src/sessions.ts` (`SessionTurnKind`, `SessionTurn`),
     `packages/code/src/adapters/session-store.ts` (`persistedTurnKind`, `metaToSession`,

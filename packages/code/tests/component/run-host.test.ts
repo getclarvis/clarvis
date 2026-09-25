@@ -738,8 +738,6 @@ function mount(over: Partial<RunHostDeps> = {}): {
       priceFor: () => undefined,
       activeProfile: () => "coder",
       setActiveProfile: () => {},
-      guardMode: () => "on",
-      judgePayload: () => ({}),
       memoryMode: () => "on",
       ...over,
       project: over.project ?? "prj_test",
@@ -2728,94 +2726,6 @@ test("switching to a manager rebuilds history that an earlier non-manager releas
   ]);
   runs[1]!.resolve(completed(runs[1]!.handle.executionId));
   await second;
-  dispose();
-});
-
-test("Work on task starts a fresh current-workspace run with only task identity and provider key", async () => {
-  const profiles: string[] = [];
-  const { host, runs, dispose } = mount({ setActiveProfile: (name) => profiles.push(name) });
-  const working = host.workOnTask(
-    { provider_key: "tasks:mcp:v1:sha256:abc", id: "CLAR-42" },
-    "task-coder",
-  );
-  await flush();
-
-  expect(runs).toHaveLength(1);
-  expect(runs[0]!.input.task).toEqual({
-    provider_key: "tasks:mcp:v1:sha256:abc",
-    id: "CLAR-42",
-    mode: "work",
-  });
-  expect(runs[0]!.input).not.toHaveProperty("continueFrom");
-  expect(runs[0]!.input.task).not.toHaveProperty("workspace");
-  expect(runs[0]!.input.task).not.toHaveProperty("repository");
-  expect(runs[0]!.input.messages?.at(-1)?.content).toContain(
-    "call start_task explicitly when that tool is available",
-  );
-  expect(profiles).toEqual(["task-coder"]);
-
-  runs[0]!.resolve(completed(runs[0]!.handle.executionId));
-  await working;
-  dispose();
-});
-
-test("resumed task binding survives continuation fallback without session-side persistence", async () => {
-  const client = fakeClient();
-  client.getRunImpl.fn = () =>
-    Promise.resolve<RunDetail>({
-      execution_id: "exec_task_old",
-      status: "completed",
-      created_at: 1,
-      ended_at: 2,
-      messages: [{ role: "user", content: "work on it" }],
-      events: [],
-      active_task: {
-        provider_key: "tasks:mcp:v1:sha256:abc",
-        id: "CLAR-42",
-        mode: "work",
-      },
-      result: completed("exec_task_old"),
-    });
-  const { host, dispose } = mount({ client: client.client });
-  const meta: SessionMeta = {
-    id: "session-task",
-    title: "task",
-    workspace: "ws_test",
-    owner: "test-owner",
-    createdAt: 1,
-    updatedAt: 2,
-    turns: [
-      {
-        kind: "conversation",
-        userPreview: "work on it",
-        executionId: "exec_task_old",
-        status: "done",
-      },
-    ],
-    totals: { input: 0, output: 0, cached: 0 },
-  };
-  await host.loadSessionMeta(meta);
-
-  const turn = host.submitTurn("continue");
-  await flush();
-  expect(client.runs).toHaveLength(1);
-  expect(client.runs[0]!.input.continueFrom).toBe("exec_task_old");
-  expect(client.runs[0]!.input.task).toEqual({
-    provider_key: "tasks:mcp:v1:sha256:abc",
-    id: "CLAR-42",
-    mode: "work",
-  });
-  client.runs[0]!.resolve({
-    execution_id: client.runs[0]!.handle.executionId,
-    status: "failed",
-    error: { code: "continuation_unavailable", message: "trace pruned" },
-  });
-  await flush();
-  expect(client.runs).toHaveLength(2);
-  expect(client.runs[1]!.input.continueFrom).toBeUndefined();
-  expect(client.runs[1]!.input.task).toEqual(client.runs[0]!.input.task);
-  client.runs[1]!.resolve(completed(client.runs[1]!.handle.executionId));
-  await turn;
   dispose();
 });
 

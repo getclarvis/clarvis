@@ -19,7 +19,7 @@ describe("malformed and duplicate skills", () => {
   beforeEach(() => {
     home = makeHome();
     ws = makeWorkspace();
-    root = skillsRoot(ws, "clarvis");
+    root = skillsRoot(ws, "agents");
   });
 
   afterEach(() => {

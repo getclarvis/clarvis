@@ -30,12 +30,9 @@ mise install
 ./dev-install.sh
 ```
 
-The development installer performs the frozen dependency install, configures `.githooks`, builds the
-version-independent local Container base (`clarvis-base:local`) plus one matching Linux Kernel
-artifact for each of Docker and Podman that is installed, and
+The development installer performs the frozen dependency install, configures `.githooks`, and
 creates a managed `clarvis-develop` launcher in
-`${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. A missing engine is skipped, so a
-Docker-only or Podman-only host still completes. It records this checkout and Bun binary,
+`${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. It records this checkout and Bun binary,
 so the command can be run from another project's directory while loading the current Clarvis
 TypeScript sources instead of a release or stale bundle:
 
@@ -93,7 +90,7 @@ Promotions into `main` and synchronization back into `develop` use merge commits
 ancestry. Do not squash or rebase those PRs. A `release/<major.minor.patch>` branch stabilizes each version while `develop` advances.
 Prepare and commit its final product version before the first push. Open its PR into `main` to start candidates. Every new commit while that PR is open gets
 the next signed source-candidate tag (`v0.2.0-rc.1`, `v0.2.0-rc.2`, and so on); retries reuse the
-same commit tag. Candidates publish qualified runtime images and a source-repository prerelease; they do not publish stable installers. Use `hotfix/<version>` from the latest published tag for an urgent
+same commit tag. Candidates publish a source-repository prerelease; they do not publish stable installers. Use `hotfix/<version>` from the latest published tag for an urgent
 patch, target `main`, and include only the patch and its release preparation. Hotfixes must also reach
 `develop` and any active release branch. Follow [RELEASING.md](RELEASING.md) for version preparation,
 qualification, and explicitly authorized publication. Merging a release-branch PR into `main`

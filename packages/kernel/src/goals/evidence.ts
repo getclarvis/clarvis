@@ -213,7 +213,7 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
     };
   }
   let commandEvidence: Observation["commandEvidence"];
-  let successful = event.error === null && event.guard?.outcome !== "denied";
+  let successful = event.error === null;
   const receipt = event.tool_evidence;
   if (event.tool_name === "" && (tool === "shell" || tool === "host_exec")) {
     let command:
@@ -356,7 +356,7 @@ export function createGoalEvidenceSource(options: {
         MAX_ARTIFACT_BYTES,
         undefined,
         {
-          confinement: { workspaceRoot: options.workspaceRoot },
+          expectedArtifactRoot: options.workspaceRoot,
         },
       );
     });

@@ -22,7 +22,7 @@ The package explicitly is **not** a sandbox: "This is credential hygiene, not a 
 the workspace and reaches the network; the one goal the environment filter pursues is that "the
 model-provider credentials this run is holding must not reach a subprocess that had no reason to
 see them" (`packages/hooks/src/env.ts`). Likewise a tool/argument `match` filter is "a scoping
-device, not a security boundary — the command guard is what enforces policy"
+device, not a security boundary"
 (`packages/hooks/src/types.ts`).
 
 The vocabulary a hook is validated and classified against — which events exist, which are gates,
@@ -34,16 +34,7 @@ plugin / request schemas) even when the optional `@clarvis/hooks` package itself
 
 ## 2. Surface
 
-Hooks are a native Host/Sandbox capability. Docker/Podman does not construct external hook
-callbacks, connect Hook MCP or invoke Plugin Hooks. Inherited Hook configuration stays on the host;
-an explicit profile dependency is refused during the frozen Container projection. Internal native
-capability lifecycle callbacks remain active inside the complete Kernel.
-
-Production: `projectContainerConfiguration` in
-`packages/kernel/src/config/container-projection.ts` and `createContainerNativeKernel` in
-`packages/kernel/src/hosting/container-native.ts`. Test:
-`packages/kernel/tests/unit/container-projection.test.ts` and
-`packages/kernel/tests/integration/container-kernel-host.test.ts`.
+Hooks are a native Host/Sandbox capability.
 
 ### 2.1 `@clarvis/hooks` entrypoint `.` (`src/index.ts`)
 
@@ -481,19 +472,6 @@ into the transcript. Production: `scheduleBackground` and `run` in
 `packages/hooks/src/runner.ts`. Test: async, SessionEnd and plugin-environment cases in
 `packages/hooks/tests/component/runner.test.ts`.
 
-An `mcp_tool` hook calls the run-scoped `MCP_HOOK_TOOL_PORT` in native Host/Sandbox after the MCP pool
-opens. It does not traverse the model's tool dispatcher and therefore cannot recursively fire tool
-hooks. MCP absence, tool failure, cancellation and timeout become ordinary `HookResult` failures;
-schema policy makes them fail open. Portable SessionEnd MCP entries are skipped during dialect
-conversion. Container constructs neither Hooks nor this port and starts no MCP transport.
-Production: `MCP_HOOK_TOOL_PORT` in `packages/capability/src/hooks-config.ts`, its native provider in
-`packages/loop/src/runtime/orchestrator.ts`, `createWorkspaceHooksCapability` in
-`packages/hooks/src/capability.ts`, and `convertHooksDocument` in
-`packages/kernel/src/plugins/hook-dialects.ts`. Test: direct MCP cases in
-`packages/hooks/tests/component/runner.test.ts`, conversion cases in
-`packages/kernel/tests/integration/plugin-manifest.test.ts`, and Container absence in
-`packages/kernel/tests/integration/container-kernel-host.test.ts`.
-
 ### 4.4 `runHookCommand` — spawn/bound/kill state machine
 
 Injectable deps (`spawn`, `killTree`, `ownProcessGroup`, `resolveShell`, `shellArgs`, `timers`,
@@ -842,12 +820,6 @@ The following invariants govern the behaviour covered above.
     `createHookRunner`. Test: direct MCP cases in
     `packages/hooks/tests/component/runner.test.ts`.
 
-28. **Container executes no external Hook callback or Hook MCP transport.** Configured Hooks stay on
-    the host and create no host command, HTTP/SSE connection or guest stdio process. Production:
-    `projectContainerConfiguration` in
-    [`packages/kernel/src/config/container-projection.ts`](../../packages/kernel/src/config/container-projection.ts).
-    Test: [`packages/kernel/tests/unit/container-projection.test.ts`](../../packages/kernel/tests/unit/container-projection.test.ts).
-
 ## 6. Failure modes and degradation
 
 | Condition | Classification | Where | Resolution |
@@ -910,8 +882,7 @@ statically or dynamically — the name occurs there only in TSDoc prose
 production consumer anywhere in the repository** — its only importers are this package's own
 integration tests (`packages/hooks/tests/integration/bun-spawn.test.ts`,
 `packages/hooks/tests/integration/real-subprocess.test.ts`) and one type-only import in the
-engine's suite (`packages/loop/tests/architecture/logger-drift.test.ts`). `@clarvis/kernel`,
-`@clarvis/server` and `@clarvis/code` never reach `@clarvis/hooks` at all, statically or
+engine's suite (`packages/loop/tests/architecture/logger-drift.test.ts`). `@clarvis/kernel` and `@clarvis/code` never reach `@clarvis/hooks` at all, statically or
 dynamically — the closest any of them comes is naming it in a TSDoc remark; the kernel's
 plugin-manifest reader
 (`packages/kernel/src/plugins/hook-dialects.ts`, delegated to [plugins-and-marketplace](../hosts/plugins.md)) inverts

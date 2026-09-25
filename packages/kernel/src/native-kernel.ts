@@ -25,7 +25,7 @@ type MemoryOptions = Omit<
 /** Explicit host ports around the shared native execution and owner-service lifetime. */
 export interface NativeKernelComposition {
   memory?: MemoryOptions;
-  /** File-only authority and capabilities may be appended here; Container supplies no such ports. */
+  /** File-only authority and capabilities may be appended here. */
   decorateDeps?(deps: ExecuteRunDeps): ExecuteRunDeps;
   kernel(
     deps: ExecuteRunDeps,

@@ -55,6 +55,114 @@ describe("applyOpsAtomic — committing operations", () => {
   });
 });
 
+describe("applyOpsAtomic — cross-filesystem outcomes", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = makeWorkspace();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    cleanup(root);
+  });
+
+  function classifyDestinationAsAnotherDevice(): void {
+    const realStat = fsp.stat.bind(fsp);
+    vi.spyOn(fsp, "stat").mockImplementation((async (...args: unknown[]) => {
+      const stat = (await (realStat as (...args: unknown[]) => Promise<unknown>)(...args)) as {
+        dev: number | bigint;
+      };
+      if (args[0] === root && typeof stat.dev === "bigint") stat.dev += 1n;
+      return stat;
+    }) as unknown as typeof fsp.stat);
+  }
+
+  it("commits a cross-device content rename as one file", async () => {
+    write(root, "source.txt", "old");
+    classifyDestinationAsAnotherDevice();
+    await applyOpsAtomic([
+      {
+        type: "rename",
+        from: path.join(root, "source.txt"),
+        path: path.join(root, "destination.txt"),
+        content: "replacement",
+      },
+    ]);
+    expect(exists(root, "source.txt")).toBe(false);
+    expect(read(root, "destination.txt")).toBe("replacement");
+  });
+
+  it("refuses a cross-device content rename inside a larger batch", async () => {
+    write(root, "source.txt", "old");
+    classifyDestinationAsAnotherDevice();
+    const error = (await catchErr(
+      applyOpsAtomic([
+        {
+          type: "rename",
+          from: path.join(root, "source.txt"),
+          path: path.join(root, "destination.txt"),
+          content: "replacement",
+        },
+        { type: "create", path: path.join(root, "other.txt"), content: "other" },
+      ]),
+    )) as ToolError;
+    expect(error.code).toBe("cross_device");
+    expect(read(root, "source.txt")).toBe("old");
+    expect(exists(root, "destination.txt")).toBe(false);
+    expect(exists(root, "other.txt")).toBe(false);
+  });
+
+  it("reports both endpoint states when the destination commits but source unlink fails", async () => {
+    write(root, "source.txt", "original bytes");
+    const source = path.join(root, "source.txt");
+    const destination = path.join(root, "destination.txt");
+    classifyDestinationAsAnotherDevice();
+    const realUnlink = fsp.unlink.bind(fsp);
+    vi.spyOn(fsp, "unlink").mockImplementation((file) => {
+      if (file === source)
+        return Promise.reject(
+          Object.assign(new Error("source removal failed"), { code: "EACCES" }),
+        );
+      return realUnlink(file);
+    });
+    const error = (await catchErr(
+      applyOpsAtomic([{ type: "rename", from: source, path: destination }]),
+    )) as ToolError;
+    expect(error).toMatchObject({
+      code: "commit_partial",
+      fields: { source_exists: true, destination_committed: true },
+    });
+    expect(read(root, "source.txt")).toBe("original bytes");
+    expect(read(root, "destination.txt")).toBe("original bytes");
+  });
+
+  it("rejects a cross-filesystem batch before committing either operation", async () => {
+    write(root, "source.txt", "original bytes");
+    classifyDestinationAsAnotherDevice();
+    const error = (await catchErr(
+      applyOpsAtomic([
+        {
+          type: "rename",
+          from: path.join(root, "source.txt"),
+          path: path.join(root, "destination.txt"),
+        },
+        { type: "create", path: path.join(root, "other.txt"), content: "other" },
+      ]),
+    )) as ToolError;
+    expect(error.code).toBe("cross_device");
+    expect(read(root, "source.txt")).toBe("original bytes");
+    expect(exists(root, "destination.txt")).toBe(false);
+    expect(exists(root, "other.txt")).toBe(false);
+  });
+
+  it("rejects directory operations outside the reviewed remove path", async () => {
+    const error = (await catchErr(
+      applyOpsAtomic([{ type: "rmdir", path: path.join(root, "directory") }]),
+    )) as ToolError;
+    expect(error.code).toBe("invalid_input");
+  });
+});
+
 describe("applyOpsAtomic — target validation", () => {
   let root: string;
 

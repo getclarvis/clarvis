@@ -17,7 +17,6 @@ import type {
 import { rawToolArguments } from "../adapters/store.ts";
 import {
   IncrementalMarkdownSegmenter,
-  guardReviewLabel,
   planMetaText,
   projectTranscriptToolDisplay,
   TRANSCRIPT_TOOL_DISPLAY_SHORTENED_NOTICE,
@@ -341,7 +340,6 @@ function ToolLine(props: {
           props.node.inputStreamChars,
         ),
   );
-  const guardLabel = createMemo<string>(() => guardReviewLabel(props.node));
   return (
     <box
       flexDirection="column"
@@ -406,16 +404,6 @@ function ToolLine(props: {
             <Show when={inlineExitSummary().length > 0}>
               <span style={{ fg: tokens.muted }}>{`  ${glyph("separator")} `}</span>
               <span style={{ fg: tokens.del }}>{inlineExitSummary()}</span>
-            </Show>
-            <Show when={guardLabel().length > 0}>
-              <span style={{ fg: tokens.muted }}>{`  ${glyph("separator")} `}</span>
-              <span
-                style={{
-                  fg: props.node.guard?.outcome === "allowed" ? tokens.add : tokens.del,
-                }}
-              >
-                {guardLabel()}
-              </span>
             </Show>
           </text>
         </box>

@@ -8,12 +8,6 @@ import { shellSessionView } from "./shell-session.ts";
 import type { RuntimeConfig } from "../config.ts";
 import type { ToolDef } from "./types.ts";
 import { currentShellFlavor } from "../shell.ts";
-import { denySensitiveShellCommand } from "../lib/sensitive-commands.ts";
-import {
-  resolveSandboxEscalation,
-  SANDBOX_PERMISSION_CONDITION,
-  SANDBOX_PERMISSION_PROPERTIES,
-} from "../lib/sandbox-permissions.ts";
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const MAX_YIELD_MS = 30_000;
@@ -105,25 +99,13 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
           type: "string",
           description: "Optional readiness regex scanned across bounded output windows.",
         },
-        ...SANDBOX_PERMISSION_PROPERTIES,
       },
       required: ["command"],
-      ...SANDBOX_PERMISSION_CONDITION,
     },
     async handler(args, config, signal, hooks) {
       const command = args.command as string;
-      denySensitiveShellCommand(command);
-      const { forceBare } = resolveSandboxEscalation(args, config);
       const cwdArg = args.cwd as string | undefined;
-      const cwd = cwdArg
-        ? resolvePath(
-            cwdArg,
-            config.workspaceRoot,
-            config.confineToWorkspace,
-            [...config.temporaryRoots, ...config.skillExecutionRoots],
-            config.logger,
-          )
-        : config.workspaceRoot;
+      const cwd = cwdArg ? resolvePath(cwdArg, config.workspaceRoot) : config.workspaceRoot;
       const requestedTimeoutMs = (args.timeout_ms as number | undefined) || config.shellTimeoutMs;
       const timeoutMs = Math.min(requestedTimeoutMs, config.shellTimeoutMaxMs, MAX_TIMER_DELAY_MS);
       const yieldMs = args.yield_time_ms as number | undefined;
@@ -139,7 +121,6 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
         signal,
         finalize,
         hooks?.onOutput,
-        forceBare,
         hooks?.onExecutionStarted,
         dependencies.spawn,
         yieldMs,
@@ -161,7 +142,6 @@ async function runCommand(
   signal?: AbortSignal,
   finalize?: (result: SessionResult) => Promise<{ stdout: string; stderr: string }>,
   onOutput?: (chunk: string) => void,
-  forceBare = false,
   onExecutionStarted?: () => void,
   spawnChild: typeof spawn = spawn,
   yieldMs?: number,
@@ -176,7 +156,6 @@ async function runCommand(
     agent: config.sessionAgent,
     command,
     cwd,
-    forceBare,
     timeoutMs,
     readyWhen,
     signal,

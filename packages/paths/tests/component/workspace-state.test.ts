@@ -16,6 +16,7 @@ import {
   TOOL_OUTPUT_SUFFIX,
   workspacePaths,
   workspaceStatePaths,
+  workspaceStatePathsFromRoot,
   WORKSPACE_ENV,
 } from "../../src/index.ts";
 
@@ -122,6 +123,23 @@ describe("workspaceStatePaths", () => {
   test("the global root override moves the whole tree", () => {
     const elsewhere = workspaceStatePaths(WS, { env: { [HOME_ENV]: "/srv/c" } });
     expect(elsewhere.root.startsWith(resolve("/srv/c"))).toBe(true);
+  });
+
+  test("rebuilds all state paths and builders from the host-selected root", () => {
+    const stateRoot = join(tempDir(), "chosen", "workspace-state");
+    const rebuilt = workspaceStatePathsFromRoot(WS, stateRoot);
+    expect(rebuilt.root).toBe(stateRoot);
+    expect(rebuilt.workspaceRoot).toBe(resolve(WS));
+    expect(rebuilt.localDir).toBe(join(stateRoot, "local"));
+    expect(rebuilt.memoryMachineryRootForOwner("a/b")).toBe(
+      join(stateRoot, "owners", ownerSegment("a/b"), "memory"),
+    );
+    expect(rebuilt.plansLockDirForOwner("a/b")).toBe(
+      join(stateRoot, "owners", ownerSegment("a/b"), "plans"),
+    );
+    expect(rebuilt.toolOutputSpill("token")).toBe(
+      join(stateRoot, "local", `${TOOL_OUTPUT_PREFIX}token${TOOL_OUTPUT_SUFFIX}`),
+    );
   });
 
   test("no builder emits a hardcoded separator", () => {

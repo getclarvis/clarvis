@@ -208,7 +208,7 @@ export interface SettingsSnapshot {
   merged: SettingsData;
   /**
    * Effective trust-filtered operator settings before Plugin fragments are applied.
-   * Container admission uses this provenance-preserving view so inactive guest extensions cannot
+   * The host uses this provenance-preserving view so inactive extensions cannot
    * influence models, prompts, budgets, hooks, servers, or another request field.
    */
   operator_merged?: SettingsData;

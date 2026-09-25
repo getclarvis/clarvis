@@ -2,7 +2,7 @@
  * Host-side resolution of the sandbox settings block into concrete filesystem
  * policy: validating operator-supplied extra paths and discovering the runtime
  * toolchain roots the sandbox must expose read-only. Lives on the host side of
- * the guard/sandbox seam (it touches the real filesystem and `@clarvis/tools`).
+ * the sandbox seam (it touches the real filesystem and `@clarvis/tools`).
  */
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
@@ -90,11 +90,14 @@ export function resolveSandboxPath(
  */
 export function discoverSandboxToolchains(
   settings: SandboxSettings | undefined,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
 ): DiscoveredToolchain[] {
   const toolchains = settings?.toolchains;
   if (toolchains?.mode === "manual") return [];
   const excluded = new Set(toolchains?.exclude ?? []);
-  return discoverToolchains(toolchains?.include).filter((item) => !excluded.has(item.id));
+  return discoverToolchains(toolchains?.include, environment).filter(
+    (item) => !excluded.has(item.id),
+  );
 }
 
 /**

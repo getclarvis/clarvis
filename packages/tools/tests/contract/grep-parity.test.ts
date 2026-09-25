@@ -17,7 +17,7 @@ describe("grep parity CI guard", () => {
   });
 });
 
-describe.skipIf(!rgAvailable)("grep ripgrep/in-process parity", () => {
+describe.skipIf(!rgAvailable)("grep engine and directory-path parity", () => {
   let root: string;
 
   beforeEach(() => {
@@ -32,14 +32,22 @@ describe.skipIf(!rgAvailable)("grep ripgrep/in-process parity", () => {
     cleanup(root);
   });
 
-  const withRg = () => makeConfig(root, { ripgrepAvailable: true, confineToWorkspace: false });
-  const withoutRg = () => makeConfig(root, { ripgrepAvailable: false, confineToWorkspace: false });
+  const withRg = () => makeConfig(root, { ripgrepAvailable: true });
+  const withoutRg = () => makeConfig(root, { ripgrepAvailable: false });
   const norm = (s: string) => s.split("\n").sort();
 
   for (const mode of ["files_with_matches", "count", "content"] as const) {
     it(`agrees in ${mode} mode`, async () => {
-      const a = await callTool("grep", { pattern: "foo", output_mode: mode }, withRg());
-      const b = await callTool("grep", { pattern: "foo", output_mode: mode }, withoutRg());
+      const a = await callTool(
+        "grep",
+        { pattern: "foo", path: "a.txt", output_mode: mode },
+        withRg(),
+      );
+      const b = await callTool(
+        "grep",
+        { pattern: "foo", path: "a.txt", output_mode: mode },
+        withoutRg(),
+      );
       expect(norm(a.text)).toEqual(norm(b.text));
     });
   }
@@ -74,8 +82,16 @@ describe.skipIf(!rgAvailable)("grep ripgrep/in-process parity", () => {
     "a\\.b",
   ]) {
     it(`agrees on regex metacharacters: ${pattern}`, async () => {
-      const a = await callTool("grep", { pattern, output_mode: "content" }, withRg());
-      const b = await callTool("grep", { pattern, output_mode: "content" }, withoutRg());
+      const a = await callTool(
+        "grep",
+        { pattern, path: "a.txt", output_mode: "content" },
+        withRg(),
+      );
+      const b = await callTool(
+        "grep",
+        { pattern, path: "a.txt", output_mode: "content" },
+        withoutRg(),
+      );
       expect(a.text).toBe(b.text);
     });
   }
@@ -196,12 +212,10 @@ describe.skipIf(!rgAvailable)("grep ripgrep/in-process parity", () => {
     write(root, "big.txt", `foo ${"a".repeat(4096)}`);
     const cfgRg = makeConfig(root, {
       ripgrepAvailable: true,
-      confineToWorkspace: false,
       maxFileBytes: 1024,
     });
     const cfgJs = makeConfig(root, {
       ripgrepAvailable: false,
-      confineToWorkspace: false,
       maxFileBytes: 1024,
     });
 
@@ -238,13 +252,9 @@ describe.skipIf(!rgAvailable)("grep ripgrep/in-process parity", () => {
   });
 });
 
-// Which engine runs is not a caller-visible parameter, but it is caller-
-// CONTROLLED: `packages/tools/src/lib/rg.ts` sends a confined directory to the
-// in-process JavaScript scanner and everything else to ripgrep. Under the
-// production defaults (`ripgrepAvailable: true`, `confineToWorkspace: true`)
-// that makes the `path` argument alone decide which regex grammar a pattern is
-// read in. These two tests pin that reach; `regex-dialect.test.ts` enumerates
-// what the two grammars disagree about.
+// Directory scans use JavaScript so each candidate receives classified-path
+// admission. Single-file searches can use ripgrep on a descriptor snapshot.
+// These tests pin the resulting regex dialect difference.
 describe("the engine choice reaches the regex dialect", () => {
   let root: string;
 
@@ -258,7 +268,7 @@ describe("the engine choice reaches the regex dialect", () => {
     callTool("grep", { pattern: "\\Afoo", output_mode: "content", ...extra }, config);
 
   it("with no ripgrep there is one engine, so `path` cannot change the answer", async () => {
-    const config = makeConfig(root, { ripgrepAvailable: false, confineToWorkspace: true });
+    const config = makeConfig(root, { ripgrepAvailable: false });
     const dir = await grep(config);
     const file = await grep(config, { path: "s.txt" });
     expect(dir.text).toBe("s.txt:2:Afoo");
@@ -268,7 +278,7 @@ describe("the engine choice reaches the regex dialect", () => {
   it.skipIf(!rgAvailable)(
     "under production defaults `path` alone selects the dialect (\\A: literal vs anchor)",
     async () => {
-      const config = makeConfig(root, { ripgrepAvailable: true, confineToWorkspace: true });
+      const config = makeConfig(root, { ripgrepAvailable: true });
       const dir = await grep(config);
       const file = await grep(config, { path: "s.txt" });
       expect(dir.text).toBe("s.txt:2:Afoo");
@@ -280,7 +290,7 @@ describe("the engine choice reaches the regex dialect", () => {
   it.skipIf(!rgAvailable)(
     "under production defaults `path` alone decides whether a pattern is refused",
     async () => {
-      const config = makeConfig(root, { ripgrepAvailable: true, confineToWorkspace: true });
+      const config = makeConfig(root, { ripgrepAvailable: true });
       const dirOnly = await callTool(
         "grep",
         { pattern: "foo(?=bar)", output_mode: "content" },

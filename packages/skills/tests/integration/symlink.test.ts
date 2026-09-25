@@ -70,7 +70,7 @@ describe("symlinked skills (the shared .agents store)", () => {
   });
 
   it("does not hang on a resource directory that symlinks back into the skill", () => {
-    const dir = writeSkill(skillsRoot(ws, "clarvis"), "loopy", {
+    const dir = writeSkill(skillsRoot(ws, "agents"), "loopy", {
       resources: { "references/a.md": "a" },
     });
     symlinkSync(dir, path.join(dir, "references", "back")); // references/back -> the skill dir
@@ -104,7 +104,7 @@ describe("symlinked skills (the shared .agents store)", () => {
   });
 
   it("skips a skill whose SKILL.md is a dangling symlink", () => {
-    const root = skillsRoot(ws, "clarvis");
+    const root = skillsRoot(ws, "agents");
     const skillDir = path.join(root, "brokenlink");
     mkdirSync(skillDir, { recursive: true });
     symlinkSync(path.join(store, "nope.md"), path.join(skillDir, "SKILL.md"));

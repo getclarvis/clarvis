@@ -1,7 +1,7 @@
-import { promises as fs } from "node:fs";
+import { fs } from "../lib/environment-fs.ts";
 import path from "node:path";
 import { fsError } from "../errors.ts";
-import { resolvePath, displayPath } from "../lib/paths.ts";
+import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { mapLimit, statDirectory, STAT_CONCURRENCY } from "../lib/files.ts";
 import { loadIgnore, type Matcher } from "../lib/ignore.ts";
 import type { RuntimeConfig } from "../config.ts";
@@ -175,8 +175,8 @@ async function walk(
 }
 
 /**
- * The `tree` tool: print a directory as an indented box-drawing tree, confined
- * to the workspace.
+ * The `tree` tool: print a directory as an indented box-drawing tree within
+ * the selected environment's readable filesystem.
  *
  * @remarks
  * The root defaults to the workspace root. `depth` bounds how many levels are
@@ -222,13 +222,7 @@ export const tree: ToolDef = {
   },
   async handler(args, config) {
     const rel = (args.path as string | undefined) ?? ".";
-    const target = resolvePath(
-      rel,
-      config.workspaceRoot,
-      config.confineToWorkspace,
-      config.temporaryRoots,
-      config.logger,
-    );
+    const target = resolveFileToolPath(rel, config);
     const requestedDepth = (args.depth as number | undefined) || DEFAULT_TREE_DEPTH;
     const maxDepth = Math.min(requestedDepth, MAX_TREE_DEPTH);
     const respectGitignore = args.respect_gitignore as boolean;

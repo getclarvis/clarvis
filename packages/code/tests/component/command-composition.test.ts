@@ -81,7 +81,6 @@ function fakeCode(): CodeConfigStore {
     themeAt: () => ({}),
     effectiveTheme: () => ({}),
     agentDefault: () => undefined,
-    guardModeDefault: () => undefined,
     updateCheckEnabled: () => true,
     asciiEnabled: () => false,
     keyboardConfig: () => ({ version: 1, environments: {} }),
@@ -130,7 +129,6 @@ function harness(): {
     effects: {
       openAgentPicker: () => calls.push("agent-picker"),
       openIsolationPicker: () => calls.push("isolation-picker"),
-      openReviewPicker: () => calls.push("review-picker"),
       openMemoryPicker: () => calls.push("memory-picker"),
       openDiff: () => calls.push("diff"),
       openPlan: () => calls.push("plan"),
@@ -174,7 +172,6 @@ function harness(): {
       get: async () => null,
       delete: async () => {},
     } as never,
-    tasks: { available: () => false } as never,
     storage: {
       inspect: async () => ({
         generated_at: Date.now(),
@@ -191,12 +188,6 @@ function harness(): {
         throw new Error("not implemented in composition test");
       },
     },
-    guard: {
-      mode: () => "off",
-      setMode: () => {},
-      setDefault: () => {},
-      cycle: () => "on",
-    } as never,
     getRun: async () => null,
     runActive: () => false,
     hasAvailablePlan: () => false,
@@ -240,13 +231,11 @@ const VIEW_CONTRACT = [
   ["agents.open", "Agents", "internal", "settings"],
   ["sessions.open", "Sessions", "slash", "sessions"],
   ["storage.open", "Storage", "slash", undefined],
-  ["tasks.open", "Tasks", "slash", undefined],
   ["workflows.open", "Workflows", "slash", undefined],
   ["controls.open", "Run controls", "internal", "settings"],
   ["defaults.open", "Defaults", "internal", "settings"],
   ["model.open", "Default model", "slash", undefined],
   ["effort.open", "Default effort", "slash", undefined],
-  ["capability-providers.open", "Feature backends", "internal", "settings"],
   ["marketplace.open", "Marketplace", "internal", "extensions"],
   ["memory.config", "Memory settings", "internal", "settings"],
   ["sandbox.config", "Sandbox", "internal", "settings"],

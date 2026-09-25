@@ -18,9 +18,9 @@ contributions remain atomic. (`ExtensionProfileDefinition` in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`.)
 
 The immutable virtual `builtin:default` activates the exact `{ scope, source, name }` references in
-`enabledPlugins`; plugin skills follow those active plugins, and standalone skills use all four
+`enabledPlugins`; plugin skills follow those active plugins, and standalone skills use both
 standard roots with their ordinary last-root-wins precedence. A same-name install in another scope
-or filesystem convention is never substituted. (`defaultStandaloneSelection` and the builtin
+is never substituted. (`defaultStandaloneSelection` and the builtin
 branches in `resolved`, `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; exact inventory
 cases in `packages/kernel/tests/integration/extension-profile-manager.test.ts`.)
 
@@ -39,18 +39,7 @@ than an Extension Profile domain object. (`skillRoots` in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `ExecuteRunDeps.hostMetadata` in
 `packages/loop/src/runtime/execute-run.ts`.)
 
-Extension Profile selection remains persisted and effective for Host/Sandbox, but all of its Plugin
-and standalone-Skill contributions are inactive in Container. The guest exposes one immutable
-`builtin:container` profile with no extensions, while the host operator services retain the original
-selection for Host/Sandbox. Container projects builtin/global/workspace agent data without plugin
-origins and marks profiles with external grants nonselectable.
-
-Production: `SettingsSnapshot.operator_merged` in `packages/kernel/src/config/config-store.ts`,
-`configuredRuntime` in `packages/kernel/src/file-kernel.ts`, and
-`createContainerExtensionProfileService` in
-`packages/kernel/src/config/container-extension-profile.ts`. Test:
-`packages/kernel/tests/unit/container-extension-profile.test.ts` and
-`packages/kernel/tests/integration/container-kernel-host.test.ts`.
+Extension Profile selection remains persisted and effective for Host/Sandbox.
 
 ## 2. Surface
 
@@ -60,8 +49,8 @@ Production: `SettingsSnapshot.operator_merged` in `packages/kernel/src/config/co
 | Type or method | Contract |
 | --- | --- |
 | `ExtensionProfileRef` | Definition identity: `builtin`, `global`, or `workspace` plus name. |
-| `ExtensionProfilePluginRef` | Exact installed plugin: `global | workspace`, `agents | clarvis`, plus name. |
-| `ExtensionProfileSkillRef` | Exact standalone source: `user | workspace`, `agents | clarvis`, plus name. |
+| `ExtensionProfilePluginRef` | Exact installed plugin: `global | workspace`, `agents`, plus name. |
+| `ExtensionProfileSkillRef` | Exact standalone source: `user | workspace`, `agents`, plus name. |
 | `ExtensionProfileDefinition` | Version-one description and complete `plugins` / `skills` allow-lists. |
 | `ResolvedExtensionProfile` | Immutable resolution snapshot, status, fingerprint, resolved contributions, issues, and counts. |
 | `ExtensionProfileInventory` | Every exact installed plugin and discovered standalone skill, projected inactive for composition. |
@@ -72,23 +61,10 @@ Production: `SettingsSnapshot.operator_merged` in `packages/kernel/src/config/co
 `KernelClient.extensionProfiles` exposes that service beside the other kernel services
 (`KernelClient.extensionProfiles`, `packages/protocol/src/client.ts`). The in-process kernel accepts an injected service and gives
 embedders an immutable builtin-only fallback (`createBuiltinExtensionProfileService` in
-`packages/kernel/src/kernel.ts`); the file kernel supplies the file-backed manager
+`packages/kernel/src/kernel.ts`, tested by `packages/kernel/tests/integration/kernel-service-overrides.test.ts`); the file kernel supplies the file-backed manager
 (`packages/kernel/src/file-kernel.ts`). The same fourteen operations are generated for local
 and remote clients by the shared operation catalog (`OPERATIONS.extensionProfiles` entries in
 `packages/kernel/src/transport/operations.ts`).
-
-The injectable `createContainerExtensionProfileService` provides only `builtin:container`, with a
-stable fingerprint of the no-external-extension policy. `current`, `get` of that exact reference,
-and `list` return defensive in-memory snapshots; `inventory` is empty. All previews, selections
-and mutations fail with `unsupported`, while an unknown `get` is `not_found`. It constructs no
-file-backed manager or discovery service. It is a composition primitive, not evidence that the
-Container launcher or guest composition has been integrated.
-
-Production: `createContainerExtensionProfileService` in
-[container-extension-profile.ts](../../packages/kernel/src/config/container-extension-profile.ts).
-Test: [container-extension-profile.test.ts](../../packages/kernel/tests/unit/container-extension-profile.test.ts)
-checks native preparation reads, snapshot isolation, stable identity and exhaustive service-method
-refusal.
 
 Code exposes the surface under Extensions as **Extension Profile**, explicitly distinct from the
 **Agent Profile** that selects an agent definition for a run. The
@@ -129,10 +105,10 @@ catalog contributes no definitions and is not created as a read side effect. Bot
   "description": "Research with browser and documentation",
   "plugins": [
     { "scope": "global", "source": "agents", "name": "browser" },
-    { "scope": "global", "source": "clarvis", "name": "github" }
+    { "scope": "global", "source": "agents", "name": "github" }
   ],
   "skills": [
-    { "scope": "user", "source": "clarvis", "name": "deep-research" }
+    { "scope": "user", "source": "agents", "name": "deep-research" }
   ]
 }
 ```
@@ -195,8 +171,8 @@ is invalid, it remains the selected invalid definition and does not fall through
 (`does not let an invalid workspace definition fall through a bare CLI selector` in
 `packages/kernel/tests/integration/extension-profile-manager.test.ts`).
 
-Resolution inventories all four plugin roots — global/workspace crossed with
-`.agents/plugins`/`.clarvis/plugins` — and matches every Extension Profile reference exactly
+Resolution inventories both plugin roots — global and workspace `.agents/plugins` — and matches
+every Extension Profile reference exactly
 (`pluginInventory` and the `getInstalledPlugin` lookup in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`). No scope or source shadows, falls back
 to, or substitutes for another. Selecting two distinct installations with the same runtime name is
@@ -204,14 +180,14 @@ invalid because their agents and MCP namespaces would collide. Missing or invali
 in the resolved view as inactive issues; no extension outside the allow-list enters a custom
 Extension Profile.
 
-Standalone skills are inventoried separately in the four established roots. Builtin and custom
+Standalone skills are inventoried separately in the two established roots. Builtin and custom
 Extension Profiles emit only active, atomically captured winners with exact `include` filters; invalid or
 inactive skills never re-enter through a broad root. `@clarvis/skills` normalizes that list and
 filters after manifest resolution, so precedence and manifest-name validation remain unchanged
 (`skillRoots` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`;
 `normalizeInclude`, `packages/skills/src/config.ts`; `scanRoot`,
 `packages/skills/src/registry.ts`). Plugin skill roots are admitted only through active plugins,
-and a plugin's agents, MCP servers, capability executables, hooks, and skills are one activation
+and a plugin's agents, MCP servers, hooks, and skills are one activation
 unit (`pluginInventory` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`). Active
 plugin MCP servers are attached independently of authored agent tool lists and marked `auto_tools`;
 after each server opens, all tools it advertised join every effective per-run agent while the
@@ -250,7 +226,7 @@ The configuration document fixture demonstrates exact plugin versus standalone s
 nonempty definition. File authoring does not select that definition: activation still uses the
 preview-bound service and a new kernel snapshot. Workflow definitions themselves are independent
 of this selection; a standalone workflow launcher follows the normal skill allow-list.
-Production: `prepareSkillInclusion` in
+Production: `createExtensionProfileManager` in
 [extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts).
 Test: `authors a nonempty Extension Profile, previews selection, and activates the launcher on
 reconnect` in
@@ -422,7 +398,7 @@ only the installed inventory. Plugin lifecycle remains on `PluginService`.
 - **Production:** `pluginInventory` in
   `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `ExtensionProfileService` in
   `packages/protocol/src/extension-profiles.ts` has no install operation.
-- **Test:** `packages/kernel/tests/integration/extension-profile-manager.test.ts` constructs all four
+- **Test:** `packages/kernel/tests/integration/extension-profile-manager.test.ts` constructs both
   inventories before exact activation and proves an unrelated install stays inactive.
 
 ### INV-315 — Custom definitions are complete allow-lists with exact installation identity
@@ -433,7 +409,7 @@ reference silently means another scope or source.
 - **Production:** custom branches and the exact `contributionByRef` / `unresolvedInstalled` lookups in `resolved` in
   `packages/kernel/src/extension-profiles/extension-profile-manager.ts`.
 - **Test:** `packages/kernel/tests/integration/extension-profile-manager.test.ts` proves exact global
-  `.agents`/`.clarvis` selection despite same-named alternatives and proves unselected installs are
+  `.agents` scope selection despite same-named alternatives and proves unselected installs are
   absent.
 
 ### INV-316 — Invalid state fails closed
@@ -467,23 +443,7 @@ only at an idle boundary and synchronously replace the exact skill catalog; expl
 refreshes the trust surface through the file-kernel adapter before recording consent, while ordinary
 settings reads reuse its cached process snapshot.
 
-New-skill creation through the writer prepares `prepareSkillInclusion` with the exact definition
-and selection revisions when a custom profile is selected. A workspace custom profile gains only
-that skill; a global profile is copied to a workspace definition and selected locally. Its plugin
-references and existing skill exclusions are preserved. The file and membership share one review;
-a conflict prevents the skill write. With `builtin:default`, `prepareSkillInclusion` has no
-membership to author: the default standalone discovery includes the new skill at the next safe
-catalog refresh. A standalone skill by itself is absent from `workspaceTrustFingerprint` and does
-not require workspace approval. The saved selection or refreshed default catalog is effective in
-the next idle generation and survives reopening.
-Production: `prepareSkillInclusion`, `standaloneCatalog`, `defaultStandaloneSelection`, and
-`flushSkillRefresh` in
-[extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts),
-and `workspaceExecutableSurface` in
-[workspace-trust.ts](../../packages/kernel/src/config/workspace-trust.ts). Test:
-`makes an agent-authored standalone skill available on the next run without workspace approval`
-and the custom-profile inclusion cases in
-[file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts).
+Standalone skills written through ordinary file tools are discovered at the next safe catalog refresh. A custom Extension Profile includes only its selected skill references; adding a skill file does not change that definition. The default standalone selection can discover a new skill without workspace trust approval when its content is otherwise admissible. Production: `standaloneCatalog`, `defaultStandaloneSelection`, and `flushSkillRefresh` in [extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts), and `workspaceExecutableSurface` in [workspace-trust.ts](../../packages/kernel/src/config/workspace-trust.ts). Test: exact standalone selection and builtin discovery cases in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts).
 
 - **Production:** `PluginContributions.pin`, `pinnedSkillRoots`,
   `PLUGIN_SKILL_RESOURCE_LIMITS`, `skillSurface`, `hashBoundedFile`, `snapshotPluginExecutables`,

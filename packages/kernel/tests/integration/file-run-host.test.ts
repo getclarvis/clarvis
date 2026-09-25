@@ -116,7 +116,6 @@ async function fixture(
           base_url: `http://127.0.0.1:${String(provider.port)}/v1`,
         },
       ],
-      runtime: { backend: "native" },
       plans: { mode: "off" },
     }),
   );
@@ -146,7 +145,7 @@ async function fixture(
         CLARVIS_LOG_LEVEL: "silent",
         CLARVIS_AGENT_TOOLS_ENABLED: editable ? "1" : "0",
       }),
-      builtins: { tools: editable, hooks: false, tasks: false },
+      builtins: { tools: editable, hooks: false },
       async executeRun(args) {
         const request = args.rawBody as { execution_id: string };
         entered.push(request.execution_id);
@@ -857,9 +856,9 @@ describe("file kernel behind the hosted RPC", () => {
 
   test("runtime preparation notices reach operator inspection as bounded sequenced data", async () => {
     const f = await fixture();
-    f.host.runtimeNotice("Preparing Docker environment: test");
+    f.host.runtimeNotice("Preparing workspace: test");
     const first = (await f.client.localHost!.inspect()).runtime_notice!;
-    expect(first.message).toBe("Preparing Docker environment: test");
+    expect(first.message).toBe("Preparing workspace: test");
     f.host.runtimeNotice("preparing ".repeat(600));
     const next = (await f.client.localHost!.inspect()).runtime_notice!;
     expect(next.message.length).toBe(4096);
@@ -990,7 +989,7 @@ describe("file kernel behind the hosted RPC", () => {
     expect(f.entered).toEqual([]);
   });
 
-  test("delivers a concrete configuration review across hosted transport without dropping the connection", async () => {
+  test("writes configuration across hosted transport without dropping the connection", async () => {
     const f = await fixture(
       undefined,
       [
@@ -1011,25 +1010,12 @@ describe("file kernel behind the hosted RPC", () => {
       true,
     );
     const input = await f.input("configuration-review");
-    input.params.guard_mode = "on";
     input.params.messages = [{ role: "user", content: "Set workspace budget to 200000 tokens" }];
     const started = await f.client.hosting!.start(input);
-    let reviews = 0;
-    started.handle.onElicit((request) => {
-      reviews++;
-      expect(request.kind).toBe("configuration_review");
-      expect(request.prompt).toContain("200000");
-      void started.handle.respond({
-        id: request.id,
-        action: "accept",
-        content: { decision: "allow" },
-      });
-    });
     const events = Array.fromAsync(started.handle.events);
     f.released.resolve();
     expect(await started.handle.done).toMatchObject({ status: "completed" });
     await events;
-    expect(reviews).toBe(1);
     expect(await f.client.config.getSettings()).toMatchObject({
       merged: { budget: { total_token_limit: 200000 } },
     });

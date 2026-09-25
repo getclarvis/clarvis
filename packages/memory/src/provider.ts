@@ -8,8 +8,7 @@
  * workspace swap its memory without rewriting a prompt, moving a grant, or
  * changing anything an agent profile says.
  *
- * See `specs/capabilities/provider-executables.md` for why the substitutable unit is the whole
- * provider rather than an individual tool call.
+ * The built-in wiki supplies this contract.
  */
 import type { MemoryProvider, MemoryToolDef } from "./types.ts";
 export type { MemoryProvider } from "./types.ts";

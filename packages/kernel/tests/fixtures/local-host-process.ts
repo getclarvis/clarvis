@@ -13,7 +13,7 @@ const host = await serveLocalFileKernel({
     memory: true,
     subscriptions: false,
     logger: NOOP_LOGGER,
-    builtins: { tools: process.env.CLARVIS_TEST_SESSION === "1", hooks: false, tasks: false },
+    builtins: { tools: process.env.CLARVIS_TEST_SESSION === "1", hooks: false },
     env: loadEnv(process.env),
     async executeRun(args) {
       const executionId = (args.rawBody as { execution_id: string }).execution_id;

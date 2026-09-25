@@ -148,7 +148,7 @@ draft, attachment, dialog and elicitation case in
 
 Bindings capture session id and live generation, owner, workspace, Agent Profile and a hash of the
 effective execution configuration. Runtime composition includes settings, resolved profiles and
-agent records; RunHost includes the current guard/judge, memory, plan provider/policy, task binding
+agent records; RunHost includes the current memory, plan provider/policy
 and Extension Profile identity. Only the fingerprint and a readable agent/model label are retained
 in the job. Current runtime permission checks still apply to every ordinary run.
 
@@ -160,7 +160,7 @@ in the job. Current runtime permission checks still apply to every ordinary run.
 | Cancel with `--running` | End registration and record cancellation request/ACK/failure | Request cancellation only of its owned execution; await physical closure |
 | Switch or reopen conversation | Pause old registrations and invalidate callbacks; show them paused on return | Normal RunHost teardown |
 | Clear/delete conversation | Cancel its registrations, including an inactive conversation's jobs | Normal RunHost teardown for the selected conversation |
-| Agent/configuration or task binding changes | Pause with a visible reason; resume explicitly | Existing run retains normal ownership |
+| Agent/configuration changes | Pause with a visible reason; resume explicitly | Existing run retains normal ownership |
 | Connection or runtime safety gate fails | Pause; reconnect alone does not resume | Unknown result requires inspection |
 | Failure, budget exhaustion, cancellation or unknown reconciliation/closure | Pause; no automatic retry of possible partial effects | Normal run lifecycle |
 | TUI closes | Stop wakeups, invalidate and forget registrations | Normal application teardown |
@@ -196,7 +196,7 @@ aggregation in [loop-controller.test.ts](../../packages/code/tests/unit/loop-con
 unavailable reconciliation/usage in [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
 
 This feature belongs to `@clarvis/code`. It adds no kernel/protocol scheduling service, persisted
-session schema or path, agent scheduling tool, workflow scheduler, external-task dispatcher or
+session schema or path, agent scheduling tool, workflow scheduler or
 cross-process exclusion. Two independent TUIs can independently schedule equivalent prompts. The
 normal contracts remain [code-run-host.md](code-run-host.md), [sessions.md](sessions.md),
 [protocol.md](protocol.md), [code-input-and-overlays.md](code-input-and-overlays.md),

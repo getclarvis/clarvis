@@ -4,7 +4,6 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSettingsRunAssembler } from "../../src/runs/settings-assembler.ts";
-import { seedRunInstructions } from "../../src/runs/instruction-snapshot.ts";
 import { createConfigService } from "../../src/config/config-service.ts";
 import { createFileConfigStore } from "../../src/config/file-config-store.ts";
 import { createMemoryConfigStore } from "../../src/config/memory-config-store.ts";
@@ -47,8 +46,8 @@ async function assemblerWith(
 }
 
 describe("settings run assembler", () => {
-  it("shares exact global and workspace contexts with Judge using per-scope filename precedence", () => {
-    const workspaceRoot = mkdtempSync(join(tmpdir(), "judge-contexts-"));
+  it("assembles global and workspace instructions with per-scope filename precedence", () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "instruction-contexts-"));
     const globalDir = join(workspaceRoot, "global");
     const store = createFileConfigStore({ workspaceRoot, globalDir });
     store.writeSettings("global", { default_model: "openrouter/m" });
@@ -56,22 +55,15 @@ describe("settings run assembler", () => {
     for (const root of [globalDir, workspaceRoot])
       writeFileSync(join(root, "AGENTS.md"), `fallback ${root}`);
     const assemble = createSettingsRunAssembler(store);
-    const seed = {
-      binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
-      evidence: [],
-    };
     for (const preferred of [false, true]) {
       if (preferred)
         for (const root of [globalDir, workspaceRoot])
           writeFileSync(join(root, "CLARVIS.md"), `preferred ${root}`);
       const body = assemble({ agent: "lead", execution_id: "run", messages: [] }) as RawBody;
-      const instructions = seedRunInstructions(seed, body)!.instructions!;
-      expect(instructions.map((entry) => entry.scope)).toEqual(["global", "workspace"]);
-      expect(instructions.map((entry) => entry.source)).toEqual(
-        Array(2).fill(preferred ? "CLARVIS.md" : "AGENTS.md"),
-      );
-      for (const instruction of instructions)
-        expect(body.profiles[0]!.base_prompt).toContain(instruction.content);
+      for (const root of [globalDir, workspaceRoot])
+        expect(body.profiles[0]!.base_prompt).toContain(
+          `${preferred ? "preferred" : "fallback"} ${root}`,
+        );
       if (preferred) expect(body.profiles[0]!.base_prompt).not.toContain("fallback");
     }
   });
@@ -815,51 +807,15 @@ describe("settings run assembler · prompt cache", () => {
     expect(body.prompt_cache_ttl).toBe("5m");
   });
 
-  it("omits both when the caller sets neither and no guard parks on a human", async () => {
-    const assemble = await assemblerWith(SOLO, { guard: { mode: "off" } });
+  it("does not invent a prompt cache TTL when the caller sets none", async () => {
+    const assemble = await assemblerWith(SOLO);
     const body = assemble({ ...START, execution_id: "e" }) as CacheBody;
     expect(body.session_id).toBeUndefined();
     expect(body.prompt_cache_ttl).toBeUndefined();
   });
 
-  // The guard is on unless the user turned it off, so an unconfigured host parks
-  // on a human by default and earns the long TTL — the conversation sits idle
-  // while someone decides. Asserting the empty case pins that the posture and
-  // the cache policy agree.
-  it("derives 1h from an unconfigured host, because the guard defaults to on", async () => {
-    const assemble = await assemblerWith(SOLO);
-    const body = assemble({ ...START, execution_id: "e" }) as CacheBody;
-    expect(body.prompt_cache_ttl).toBe("1h");
-  });
-
-  it("derives 1h from a guard mode that asks a human", async () => {
-    expect(await ttlFor({ guard: { mode: "on" } })).toBe("1h");
-    expect(await ttlFor({}, { guard_mode: "on" })).toBe("1h");
-  });
-
-  it("does not park Auto on a human when the reviewer provider cannot resolve by default", async () => {
-    expect(await ttlFor({}, { guard_mode: "auto" })).toBeUndefined();
-    expect(
-      await ttlFor({}, { guard_mode: "auto", guard_judge: { model: "openrouter/m" } }),
-    ).toBeUndefined();
-  });
-
-  it("does not park Auto on a human when unresolved review explicitly selects ask", async () => {
-    expect(
-      await ttlFor(
-        {},
-        { guard_mode: "auto", guard_judge: { model: "openrouter/m", on_unsure: "ask" } },
-      ),
-    ).toBeUndefined();
-  });
-
-  it("leaves the TTL to the loop when the guard is off", async () => {
-    expect(await ttlFor({ guard: { mode: "off" } })).toBeUndefined();
-    expect(await ttlFor({}, { guard_mode: "off" })).toBeUndefined();
-  });
-
-  it("lets an explicit request param override the guard-derived default", async () => {
-    expect(await ttlFor({ guard: { mode: "on" } }, { prompt_cache_ttl: "5m" })).toBe("5m");
+  it("preserves an explicit prompt cache TTL", async () => {
+    expect(await ttlFor({}, { prompt_cache_ttl: "5m" })).toBe("5m");
   });
 });
 

@@ -20,8 +20,8 @@ import type {
   PluginRepository,
 } from "../../src/ports/plugin-repository.ts";
 import {
+  agentsPluginsDir,
   agentsPluginsDirs,
-  globalPaths,
   HOME_ENV,
   WORKSPACE_ENV,
   workspacePaths,
@@ -30,20 +30,11 @@ import { PLUGIN_RESOURCE_LIMITS } from "@clarvis/loop/host";
 import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
 import { environmentFixture } from "../helpers/process-fixtures.ts";
 
-/** Write a fixture file, creating the scope subdirectory it now lives in. */
 /**
- * Install a fixture plugin under `base`'s plugins dir.
- *
- * @param base - a global root, or a workspace *config* dir; `scope` says which.
- *   Only the global scope nests under a lifetime group.
+ * Install a fixture plugin under `base`'s shared plugins dir.
  */
-function writePlugin(
-  base: string,
-  name: string,
-  manifest: object | string,
-  scope: "global" | "workspace" = "workspace",
-): string {
-  const root = scope === "global" ? globalPaths(base).pluginsDir : workspacePaths(base).pluginsDir;
+function writePlugin(base: string, name: string, manifest: object | string): string {
+  const root = agentsPluginsDir(base);
   return writePluginAt(root, name, manifest);
 }
 
@@ -61,7 +52,7 @@ function writePluginAt(root: string, name: string, manifest: object | string): s
 function pluginRef(
   name: string,
   scope: PluginRef["scope"] = "global",
-  source: PluginRef["source"] = "clarvis",
+  source: PluginRef["source"] = "agents",
 ): PluginRef {
   return { scope, source, name };
 }
@@ -114,7 +105,7 @@ describe("PluginService", () => {
   function svc(environment = environmentFixture({ ...process.env })) {
     return createPluginService({
       globalDir: global,
-      home: join(workspace, "home"),
+      home: global,
       workspaceRoot: workspace,
       enabledPlugins: () => enabled,
       environment: { ...environment, [HOME_ENV]: undefined, [WORKSPACE_ENV]: undefined },
@@ -166,7 +157,7 @@ describe("PluginService", () => {
     const [view] = await svc().list();
     expect(view!.name).toBe("demo");
     expect(view!.scope).toBe("workspace");
-    expect(view!.source).toBe("clarvis");
+    expect(view!.source).toBe("agents");
     expect(view!.enabled).toBe(true);
     expect(view!.version).toBe("1.2.0");
     expect(view).toMatchObject({
@@ -188,7 +179,6 @@ describe("PluginService", () => {
       skills: ["demo-review"],
       servers: ["demo:git"],
       hooks: 1,
-      capability_executables: [],
       executables: ["$ x", "$ demo:git  git-mcp"],
     });
   });
@@ -223,61 +213,37 @@ describe("PluginService", () => {
     ]);
   });
 
-  it("projects every capability executable in sorted capability order", async () => {
-    writePlugin(workspace, "services", {
-      name: "services",
-      capabilityExecutables: {
-        plans: { command: "python3", args: ["server.py", "plans"] },
-        memory: { command: "python3", args: ["server.py", "memory"] },
-      },
-    });
-    const [view] = await svc().list();
-    expect(view!.contributions.capability_executables).toEqual([
-      {
-        capability: "memory",
-        command: "python3",
-        args: ["server.py", "memory"],
-        platform_override: false,
-      },
-      {
-        capability: "plans",
-        command: "python3",
-        args: ["server.py", "plans"],
-        platform_override: false,
-      },
-    ]);
-  });
-
   it("list: retains both exact installs when scopes carry the same plugin name", async () => {
-    writePlugin(global, "demo", { name: "demo", version: "1.0.0", description: "g" }, "global");
+    writePlugin(global, "demo", { name: "demo", version: "1.0.0", description: "g" });
     writePlugin(workspace, "demo", { name: "demo", version: "2.0.0", description: "w" });
     const views = await svc().list();
     expect(views).toHaveLength(2);
     expect(views.find((view) => view.scope === "workspace")).toMatchObject({
-      source: "clarvis",
+      source: "agents",
       version: "2.0.0",
     });
     expect(views.find((view) => view.scope === "global")).toMatchObject({
-      source: "clarvis",
+      source: "agents",
       version: "1.0.0",
     });
   });
 
-  it("list: discovers .agents and .clarvis inventories at both scopes without substitution", async () => {
-    const agents = agentsPluginsDirs({ home: join(workspace, "home"), cwd: workspace, env: {} });
+  it("list: ignores obsolete plugin inventories at both scopes", async () => {
+    const agents = agentsPluginsDirs({ home: global, cwd: workspace, env: {} });
     writePluginAt(agents.user, "same", { name: "same", version: "agents-global" });
-    writePlugin(global, "same", { name: "same", version: "clarvis-global" }, "global");
+    writePluginAt(join(global, "plugins"), "same", { name: "same", version: "clarvis-global" });
     writePluginAt(agents.workspace, "same", { name: "same", version: "agents-workspace" });
-    writePlugin(workspace, "same", { name: "same", version: "clarvis-workspace" });
+    writePluginAt(join(workspacePaths(workspace).clarvisDir, "plugins"), "same", {
+      name: "same",
+      version: "clarvis-workspace",
+    });
 
     const views = await svc().list();
 
-    expect(views).toHaveLength(4);
+    expect(views).toHaveLength(2);
     expect(views.map((view) => `${view.scope}/${view.source}:${view.version}`).sort()).toEqual([
       "global/agents:agents-global",
-      "global/clarvis:clarvis-global",
       "workspace/agents:agents-workspace",
-      "workspace/clarvis:clarvis-workspace",
     ]);
   });
 
@@ -288,16 +254,19 @@ describe("PluginService", () => {
         name: "foreign",
         version: "leak",
       });
-      const agents = agentsPluginsDirs({ home: join(workspace, "home"), cwd: workspace, env: {} });
+      const agents = agentsPluginsDirs({ home: global, cwd: workspace, env: {} });
       writePluginAt(agents.user, "same", { name: "same", version: "agents-global" });
-      writePlugin(global, "same", { name: "same", version: "clarvis-global" }, "global");
+      writePluginAt(join(global, "plugins"), "same", { name: "same", version: "clarvis-global" });
       writePluginAt(agents.workspace, "same", { name: "same", version: "agents-workspace" });
-      writePlugin(workspace, "same", { name: "same", version: "clarvis-workspace" });
+      writePluginAt(join(workspacePaths(workspace).clarvisDir, "plugins"), "same", {
+        name: "same",
+        version: "clarvis-workspace",
+      });
 
       const views = await svc(
         environmentFixture({ ...process.env, [WORKSPACE_ENV]: foreign }),
       ).list();
-      expect(views).toHaveLength(4);
+      expect(views).toHaveLength(2);
       expect(views.map((view) => view.name)).not.toContain("foreign");
     } finally {
       rmSync(foreign, { recursive: true, force: true });
@@ -307,7 +276,7 @@ describe("PluginService", () => {
   it.skipIf(process.platform === "win32")(
     "list: discovers a plugin linked into the shared .agents inventory",
     async () => {
-      const agents = agentsPluginsDirs({ home: join(workspace, "home"), cwd: workspace, env: {} });
+      const agents = agentsPluginsDirs({ home: global, cwd: workspace, env: {} });
       const shared = writePluginAt(join(workspace, "shared-plugins"), "linked", {
         name: "linked",
         version: "1.0.0",
@@ -330,7 +299,7 @@ describe("PluginService", () => {
   it.skipIf(process.platform === "win32")(
     "update: refuses a linked Git checkout without mutating its external worktree",
     async () => {
-      const agents = agentsPluginsDirs({ home: join(workspace, "home"), cwd: workspace, env: {} });
+      const agents = agentsPluginsDirs({ home: global, cwd: workspace, env: {} });
       const external = makeGitRepo({ name: "linked-git", version: "1.0.0", description: "d" });
       try {
         mkdirSync(agents.user, { recursive: true });
@@ -352,7 +321,7 @@ describe("PluginService", () => {
   );
 
   it("list: applies Agent Plugin skill discovery and validation rules inside .agents", async () => {
-    const agents = agentsPluginsDirs({ home: join(workspace, "home"), cwd: workspace, env: {} });
+    const agents = agentsPluginsDirs({ home: global, cwd: workspace, env: {} });
     const dir = writePluginAt(agents.workspace, "portable", {
       $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       name: "portable",
@@ -385,7 +354,7 @@ describe("PluginService", () => {
   });
 
   it("list: activates only the exact qualified installation", async () => {
-    writePlugin(global, "demo", { name: "demo", version: "1.0.0" }, "global");
+    writePlugin(global, "demo", { name: "demo", version: "1.0.0" });
     writePlugin(workspace, "demo", { name: "demo", version: "2.0.0" });
     enabled = [pluginRef("demo")];
 
@@ -522,7 +491,7 @@ describe("PluginService", () => {
 
   it("list: refuses an excessive install-root fanout without returning a partial catalog", async () => {
     for (let index = 0; index <= PLUGIN_RESOURCE_LIMITS.installRootEntries; index += 1) {
-      mkdirSync(join(workspacePaths(workspace).pluginsDir, `p-${String(index)}`), {
+      mkdirSync(join(agentsPluginsDir(workspace), `p-${String(index)}`), {
         recursive: true,
       });
     }
@@ -801,14 +770,16 @@ describe("PluginService", () => {
       }
     });
 
-    it("installs into .agents by default and into .clarvis only when explicitly selected", async () => {
+    it("installs into the shared inventory and rejects the obsolete target", async () => {
       const repo = makeGitRepo({ name: "dual", version: "1.0.0", description: "d" });
       try {
         const s = svc();
         const shared = await s.install(`file://${repo}`);
-        const native = await s.install(`file://${repo}`, undefined, { source: "clarvis" });
+        await expect(
+          s.install(`file://${repo}`, undefined, { source: "clarvis" } as never),
+        ).rejects.toMatchObject({ code: "invalid_request" });
         const agents = agentsPluginsDirs({
-          home: join(workspace, "home"),
+          home: global,
           cwd: workspace,
           env: {},
         });
@@ -818,12 +789,7 @@ describe("PluginService", () => {
           source: "agents",
           dir: join(agents.user, "dual"),
         });
-        expect(native).toMatchObject({
-          scope: "global",
-          source: "clarvis",
-          dir: join(globalPaths(global).pluginsDir, "dual"),
-        });
-        expect(await s.list()).toHaveLength(2);
+        expect(await s.list()).toHaveLength(1);
       } finally {
         rmSync(repo, { recursive: true, force: true });
       }
@@ -843,12 +809,7 @@ describe("PluginService", () => {
     });
 
     it("update: refuses a plugin that was not installed from git", async () => {
-      writePlugin(
-        global,
-        "manual",
-        { name: "manual", version: "1.0.0", description: "d" },
-        "global",
-      );
+      writePlugin(global, "manual", { name: "manual", version: "1.0.0", description: "d" });
       await expect(svc().update(pluginRef("manual"))).rejects.toMatchObject({
         code: "invalid_request",
       });

@@ -89,7 +89,6 @@ describe("host-owned continuation admission", () => {
       await until(() => !f.registry.occupied("session-1"));
       expect(prepared).toEqual(["run-1", "run-2"]);
       expect(stopped).toEqual([]);
-      expect(new Set(f.scopes).size).toBe(1);
       expect(f.registry.stats()).toMatchObject({ connections: 1, runs: 0 });
       expect(f.results.map((result) => result.execution_id)).toEqual(["run-1", "run-2", "run-3"]);
     } finally {

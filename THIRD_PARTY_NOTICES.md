@@ -99,10 +99,3 @@ identifiers. Complete license files shipped by those packages remain within thei
 Because the closure can differ by target and dependency version, the generated archive inventory is
 the authority for a particular portable binary. Review it together with this static notice before
 publishing.
-
-The isolated-runtime carrier preserves every license, licence, copying, and notice file found in the
-frozen build install under `/licenses/npm`, retaining each package-relative path. This set is
-deliberately conservative: it covers the complete build install rather than guessing which legal
-notices a standalone compiler retained. `runtime-release.json` binds the carrier to the exact source
-commit and root lockfile history; review that preserved set together with this notice before
-publishing the OCI artifact.

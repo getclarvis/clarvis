@@ -99,8 +99,7 @@ named surface rather than a barrel.
 
 Not exported from any entrypoint: `isDroppableRunEvent` and `DEFAULT_RUN_EVENT_BUFFER*`
 (`packages/kernel/src/runs/coalesce-events.ts`) — `packages/kernel/src/transport/client.ts` imports
-`isDroppableRunEvent` by relative path, while `@clarvis/server` re-derives the same verdict from the
-exported table (`packages/server/src/mcp/notify.ts`).
+`isDroppableRunEvent` by relative path.
 
 Also internal: `createManagedRunWithRuntime`, `ManagedRunRuntime`, `ManagedRunTimer`
 (`packages/kernel/src/runs/managed-run.ts`), marked `@internal` with the stated reason that "hosts configure policy
@@ -210,8 +209,8 @@ holds its own catalog lease while it can use skills. Production: `releaseRunLeas
 | `entry` | resolved agent name |
 | `budget` | entry-agent frontmatter `budget`, else `merged.budget`, else the fallback, with `on_exceed` completed |
 | `vision_model` | `merged.default_vision_model`, only when a string |
-| `execution_id`, `continue_from`, `session_id`, `agent_instance_id`, `output_schema`, `guard_mode`, `guard_judge`, `memory`, `task` | straight passthrough, present only when the param is |
-| `prompt_cache_ttl` | request value, else `"1h"` when `guardParksOnHuman(...)`, else absent |
+| `execution_id`, `continue_from`, `session_id`, `agent_instance_id`, `output_schema`, `memory`, `task` | straight passthrough, present only when the param is |
+| `prompt_cache_ttl` | request value when provided, else absent |
 | `hook_user_prompt_expansion` | only for a resolved user-invoked skill; `{ command_name }` is bare for operator/workspace skills and `<plugin>:<skill>` for plugin skills |
 | `plans` | request value, else settings block with the skill-mode override, else settings block, else absent |
 | `agents` | present only when `merged.agents` is a non-null object |
@@ -355,7 +354,7 @@ ignored.
 `storedToDetail` (`packages/kernel/src/runs/map-result.ts`) builds the detail from a `StoredExecution`:
 `result` from `engineResultToProto`, then usage token totals **overwritten** from the stored row's
 `total_input_tokens`/`total_output_tokens`/`total_cached_tokens`, `plan_ref` from
-`capability_state` (delegated; `packages/kernel/src/runs/plan-ref.ts`), `active_task` likewise (`packages/kernel/src/runs/task-binding.ts`),
+`capability_state` (delegated; `packages/kernel/src/runs/plan-ref.ts`),
 `extension_profile` validated from opaque `host_metadata.extension_profile`, `recovery` forwarded verbatim when
 present, `messages` via `engineMessagesToProto`, and `events` via `rehydrateEvents`. That last step
 maps only recognized events and retains only entries whose mapped protocol type is `persisted` in
@@ -474,12 +473,10 @@ ten numeric fields, `AGENTS_FIELDS` : `buffer_lines`, `buffer_bytes`,
 `max_retained_children`, `max_notices_per_iteration`, `max_consecutive_failed_children`,
 `finish_nudges` — each carried through only when it is a non-negative integer.
 
-`prompt_cache_ttl` derivation: an explicit request value wins; otherwise
-`guardParksOnHuman(params.guard_mode, merged.guard, params.guard_judge !== undefined)`
-(`packages/kernel/src/guard/resolver.ts`) yields `"1h"`, and nothing is emitted when it is
-false. The guard predicate returns true for mode `on` and for mode `auto` with no judge
-(`packages/kernel/src/guard/resolver.ts`). `packages/kernel/tests/component/settings-assembler.test.ts` pins all four cases, including that an
-unconfigured host derives `"1h"` because the guard defaults to on.
+`prompt_cache_ttl` is forwarded only when the request supplies it; the kernel does not
+invent a fallback. Production: `packages/kernel/src/runs/settings-assembler.ts`
+(`createSettingsRunAssembler`). Test: `packages/kernel/tests/component/settings-assembler.test.ts`
+(`does not invent a prompt cache TTL when the caller sets none`).
 
 ### 4.3 Managed-run construction (`packages/kernel/src/runs/managed-run.ts`)
 
@@ -604,12 +601,6 @@ Notable renames and derivations inside the switch: `mcp_name` becomes `server` a
 but `completed`/`cancelled` to `failed`. `mcp_degraded` drops each
 server's `transport`. `delegation_completed`/`delegation_failed` put the engine's `result`
 through `terminalLabel` — sanitized and capped at 256 code points — as `summary`.
-
-The `tool_call` projection copies `ev.guard` unchanged when present, so live and
-rehydrated runs expose the same final command-review fact. Production: the
-`tool_call` arm of `engineEventToProto` in
-`packages/kernel/src/runs/map-events.ts`; Test: the first tool-call mapping case
-in `packages/kernel/tests/unit/map-events.test.ts`.
 
 Two builtin types are refused **explicitly** rather than by the default arm: `convergence_warning`
 and `guard_escalation`. They shared one comment that explained only the first, which left the second
@@ -873,18 +864,6 @@ closing" through `done` rather than through `start`.
 Production `packages/kernel/src/runs/managed-run.ts`. Test `packages/kernel/tests/unit/managed-run.test.ts`,
 `packages/kernel/tests/integration/run-service.smoke.test.ts`.
 
-**INV-R22.** Steering is acknowledged only when the loop drains the message. If the run closes
-before that drain, or steering begins after settlement, `steer` throws `not_found`; `compact` also
-throws `not_found` after settlement. A protocol success therefore cannot mean only that a transient
-queue accepted data.
-Production: `packages/kernel/src/runs/steer-queue.ts` (`push`, `drain`, `close`),
-`packages/kernel/src/runs/managed-run.ts` (`RunHandle.steer`, `RunHandle.compact`), and
-`packages/kernel/src/runs/compaction-queue.ts` (`push`). Tests:
-`packages/kernel/tests/unit/run-control-queues.test.ts` (drain acknowledgement and close refusal) and
-`packages/kernel/tests/unit/managed-run.test.ts` (close-before-drain and post-settlement refusal).
-Container exposes these controls through the same public `RunHandle`; no second queue or execution
-RPC exists outside its Kernel. Test: `packages/kernel/tests/integration/container-kernel-host.test.ts`.
-
 Both queues also expose `undrained()`, which inspects queued-but-not-yet-drained messages without
 consuming them (`packages/kernel/src/runs/steer-queue.ts`; `packages/kernel/src/runs/compaction-queue.ts`). The handle's `compact`
 also wraps its argument before pushing: `compaction.push(request === undefined ? {} : { request })`
@@ -985,10 +964,9 @@ spawned child takes its own frontmatter first.
 Production `packages/kernel/src/runs/settings-assembler.ts`. Test
 `packages/kernel/tests/component/settings-assembler.test.ts`.
 
-**INV-R38.** `prompt_cache_ttl` defaults to `"1h"` exactly when the effective guard mode parks on a
-human, and an explicit request param always wins.
-Production `packages/kernel/src/runs/settings-assembler.ts`; predicate `packages/kernel/src/guard/resolver.ts`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts`.
+**INV-R38.** `prompt_cache_ttl` is absent unless the request supplies it.
+Production: `packages/kernel/src/runs/settings-assembler.ts` (`createSettingsRunAssembler`).
+Test: `packages/kernel/tests/component/settings-assembler.test.ts`.
 
 **INV-R39.** `completeBudget` fills in exactly one field: a declared budget missing `on_exceed` gets
 the fallback's `on_exceed` (`{...declared, on_exceed: fallback.on_exceed }`). It never supplies a
@@ -1075,7 +1053,7 @@ type. Production: `rehydrateEvents` in `packages/kernel/src/runs/map-result.ts` 
 | capability event with no `wire` projection | `packages/kernel/src/runs/map-events.ts` | dropped; `reason: "no_wire_projection"` |
 | capability detail too large, cyclic, or with throwing accessors | `packages/kernel/src/runs/map-events.ts` | bounded and truncated, never thrown; unserializable becomes the literal `"[unserializable capability event]"` |
 | rehydration maps an unknown entry or encounters a mapped live-only breadcrumb | `rehydrateEvents` in `packages/kernel/src/runs/map-result.ts` | the entry is omitted from `RunDetail.events`; `runs.rehydrated` reports total/mapped/dropped counts |
-| plan or task slot in `capability_state` malformed | `packages/kernel/src/runs/plan-ref.ts`, `packages/kernel/src/runs/task-binding.ts` (delegated) | field omitted from `RunDetail`, no throw; pinned at `packages/kernel/tests/unit/map-result.test.ts` |
+| plan slot in `capability_state` malformed | `packages/kernel/src/runs/plan-ref.ts` (delegated) | field omitted from `RunDetail`, no throw; pinned at `packages/kernel/tests/unit/map-result.test.ts` |
 | Extension Profile slot in `host_metadata` malformed | `extensionProfileFromHostMetadata` in `packages/kernel/src/runs/map-result.ts` | `extension_profile` omitted from `RunDetail`; other run data still hydrates |
 
 ## 7. Coupling
@@ -1095,7 +1073,7 @@ the loop registry continues to settle only its authoritative live-invocation sta
 | `@clarvis/memory/settings` | `packages/kernel/src/runs/map-events.ts` | `MEMORY_CAPABILITY_NAME` and `MEMORY_INGEST_EVENT` — the one capability with a typed, kernel-validated projection |
 | `@clarvis/workflows` | `packages/kernel/src/runs/map-events.ts` | `isWorkflowPersistedTraceEvent` is the first gate in `engineEventToProto`; the workflows package owns its own trace guard |
 | `@clarvis/plan/settings` | `packages/kernel/src/runs/settings-assembler.ts` | `PLANS_DEFAULTS` for the materialized `mode` and `retention` |
-| `@clarvis/plan`, `@clarvis/tasks/*` | `packages/kernel/src/runs/plan-ref.ts`, `packages/kernel/src/runs/task-binding.ts` | capability-state slot names and schema (delegated documents) |
+| `@clarvis/plan` | `packages/kernel/src/runs/plan-ref.ts` | capability-state slot names and schema (delegated document) |
 | `@clarvis/trace` | `packages/kernel/src/runs/run-service.ts`, `packages/kernel/src/runs/pagination.ts` | runtime `generateExecutionId` plus `MAX_TRACE_LIST_LIMIT`/`MAX_TRACE_LIST_OFFSET`; nothing under `runs/` names the `TraceStore` type — `packages/kernel/src/runs/run-service.ts` takes the store off `deps.traceStore` |
 | kernel-internal | `core/event-stream.ts`, `core/errors.ts`, `core/bounded-json.ts`, `application/lifecycle.ts`, `config/config-store.ts`, `guard/resolver.ts`, `skills/render-skill-prompt.ts` | see the per-file imports cited above |
 
@@ -1110,8 +1088,6 @@ store owns the full schema".
 | `packages/kernel/src/kernel.ts` | `createRunService`, `createSettingsRunAssembler` | the composition root; supplies `isManagerRun` and `runManagerWorkflow` from `createAgentWorkflowPolicy` and `createWorkflowsService` (`packages/kernel/src/kernel.ts`) |
 | `packages/kernel/src/workflows/workflows-service.ts` | `createManagedRun` | `runManagerWorkflow` is the second producer of a `RunHandle`, with `observe` and `settle` |
 | `packages/kernel/src/transport/client.ts` | `coalesceRunEvents`, `isDroppableRunEvent`, `sizeOfRunEvent`, `DEFAULT_RUN_EVENT_BUFFER*` | the remote client re-applies the same backpressure policy locally |
-| `packages/server/src/mcp/notify.ts` | `RUN_EVENT_POLICY`, `coalesceRunEvents`, `sizeOfRunEvent` | MCP notification fan-out reuses the table rather than re-listing droppable types |
-| `packages/server/src/mcp/event-view.ts` | `RUN_EVENT_POLICY`, `coalesceRunEvents` | the coalesce class is read from the table rather than restated |
 | `packages/code/src/adapters/event-span.ts` | `deriveRunEventSpan` | the TUI groups its transcript by the kernel's span ids |
 | `packages/kernel/src/index.ts`, focused subpath modules, and `packages/kernel/package.json` | the exported surface | pinned to six entrypoints by `packages/kernel/tests/architecture/public-surface.test.ts` |
 
@@ -1121,7 +1097,7 @@ store owns the full schema".
   mappers here are that something, and both are pure functions with no store or transport access
   (`packages/kernel/src/runs/map-events.ts`).
 - `event-policy.ts` importing only `type { RunEvent }` is what lets `coalesce-events.ts`,
-  `transport/client.ts` and `@clarvis/server` all key off one table without pulling in the run service.
+  `transport/client.ts` key off one table without pulling in the run service.
 - `run-service.ts` never imports the workflows package; it receives `isManagerRun` and
   `runManagerWorkflow` as optional injected functions, which is what keeps a host that
   wires no workflows (the docstring's "absent for hosts that do not wire workflows") on the
@@ -1134,8 +1110,7 @@ store owns the full schema".
 ## 8. Open questions
 
 - **`sources`, `durability` and `mapper` have no runtime reader at all.** The only fields anything
-  reads are `coalesce` (`packages/kernel/src/runs/coalesce-events.ts`, `packages/server/src/mcp/event-view.ts`) and
-  `droppable` (`packages/kernel/src/runs/coalesce-events.ts`, `packages/server/src/mcp/notify.ts`). The other three
+  reads are `coalesce` and `droppable` (`packages/kernel/src/runs/coalesce-events.ts`). The other three
   exist as documentation-as-data pinned by `packages/kernel/tests/unit/event-policy.test.ts`. Nothing in the
   code cross-checks them against the mappers — nothing would fail if `plan_created` were marked
   `mapper: "engine"` while `capabilityEventToProto` still produced it.
@@ -1189,7 +1164,7 @@ store owns the full schema".
   (`transport/run-event-codec.ts`) go to [hosts/kernel-transport.md](kernel-transport.md); `compaction-queue.ts` to
   [engine/context-compaction.md](../engine/context-compaction.md); `memory-ingest-phase.ts`'s job semantics (as opposed to its use as a
   close-grace predicate) to [capabilities/memory-indexer.md](../capabilities/memory-indexer.md); `plan-ref.ts` to [capabilities/plan-capability.md](../capabilities/plan-capability.md);
-  `task-binding.ts` to [capabilities/tasks-capability.md](../capabilities/tasks-capability.md); `elicit-bridge.ts` to
+  `elicit-bridge.ts` to
   [cross-cutting/elicitation.md](../cross-cutting/elicitation.md); `core/event-stream.ts` itself to
   [hosts/kernel-composition.md](kernel-composition.md) (cited here only where the runs policy plugs into it); the
   workflows manager path to [capabilities/workflows-service.md](../capabilities/workflows-service.md).

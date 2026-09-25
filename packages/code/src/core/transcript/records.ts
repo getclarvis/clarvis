@@ -43,7 +43,6 @@ export function snapshotTranscriptNode(
       ...(display.result === undefined ? {} : { result: display.result }),
       ...(display.diff === undefined ? {} : { diff: display.diff }),
       ...(display.error === undefined ? {} : { error: display.error }),
-      guard: node.guard === undefined ? undefined : { ...node.guard },
       mutation:
         node.mutation === undefined || node.mutation === null
           ? node.mutation

@@ -8,6 +8,7 @@ export {
   probeSandbox,
   sandboxCommand,
   sandboxWouldApply,
+  resolveFilesystemPolicy,
   systemTemporaryRoots,
   discoverLinkedGitMetadataPaths,
   discoverToolchains,
@@ -16,6 +17,7 @@ export {
 } from "./sandbox.ts";
 export type {
   SandboxConfig,
+  ResolvedFilesystemPolicy,
   NativeSandbox,
   SandboxProbe,
   SandboxProbeDeps,

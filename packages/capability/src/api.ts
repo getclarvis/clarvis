@@ -430,7 +430,7 @@ export interface AgentProfile {
  * trace; `session_id` and `agent_instance_id` name the persisted conversation
  * and agent instance; `prompt_cache_ttl` sets how long a written cache prefix
  * survives; `output_schema` constrains the agent's result;
- * `elicit_wait_ms` bounds user elicitation; and `agents`, `guard_mode`,
+ * `elicit_wait_ms` bounds user elicitation; and `agents`,
  * registered parameters toggle or tune the corresponding capabilities for this run.
  *
  * A capability shipped in its own package takes its per-run param through a
@@ -497,7 +497,6 @@ export interface RunRequest {
    */
   guard_escalation?: boolean;
   agents?: AgentsParam;
-  guard_mode?: GuardMode;
   /**
    * Host-derived context for a user-invoked skill command.
    *
@@ -538,9 +537,6 @@ export interface AgentsParam {
   max_consecutive_failed_children?: number;
   finish_nudges?: number;
 }
-
-/** Command review: `off` skips this guard, `on` asks a human, and `auto` uses the host reviewer. */
-export type GuardMode = "off" | "on" | "auto";
 
 /**
  * The result of handling one tool call.
@@ -583,9 +579,7 @@ export type GateVerdict =
  * `rewrite` is meaningful only where the host offers a rewritable action, which
  * today is `beforeToolUse` alone. It is safe there because of where hooks sit in
  * the dispatch: a rewrite happens **upstream** of both the tool's own schema
- * validation and the command guard, so replacement arguments are validated like
- * any others and still meet the guard. A hook cannot use it to get around
- * policy; it can only change what policy is asked about.
+ * validation, so replacement arguments are validated like any others.
  *
  * The replacement is total, not a merge — a partial object would make a hook's
  * effect depend on which keys the model happened to send.

@@ -99,7 +99,7 @@ async function fixture(overrides: Partial<HostedSessionOptions> = {}) {
       occupied = value;
     },
     prepareTurn: (value = input(), signal = new AbortController().signal) =>
-      coordinator.prepare(value, { scope: "host-consent", signal }),
+      coordinator.prepare(value, { signal }),
   };
 }
 
@@ -143,23 +143,6 @@ describe("host-owned conversation transactions", () => {
       redact: (text) => text,
       now: () => 30,
       priceFor: () => ({ input: 2, output: 4, cache_read: 1 }),
-      guardUsageFor: () => ({
-        cacheUnknown: false,
-        usage: {
-          iterations: 0,
-          elapsed_ms: 0,
-          by_agent: [
-            {
-              role: "subagent",
-              model: "priced",
-              input_tokens: 10,
-              output_tokens: 2,
-              cached_tokens: 5,
-              cache_write_tokens: 0,
-            },
-          ],
-        },
-      }),
       async prepareExecution() {
         throw new Error("recovery must not execute");
       },
@@ -180,8 +163,8 @@ describe("host-owned conversation transactions", () => {
       expect(await restarted.recoverSettlement(recoveryRow(), recoveryCheckpoint)).toBe(true);
       const stored = (await f.base.get("conversation"))!;
       expect(stored.turns[0]).toMatchObject({ status: "done", ended_at: 30 });
-      expect(stored.totals).toMatchObject({ input: 27, output: 5, cached: 7 });
-      expect(stored.totals.cost_usd).toBeCloseTo(0.000023);
+      expect(stored.totals).toMatchObject({ input: 17, output: 3, cached: 2 });
+      expect(stored.totals.cost_usd).toBeUndefined();
       expect(write).toHaveBeenCalledTimes(1);
       expect(f.starts()).toBe(0);
     } finally {
@@ -806,23 +789,6 @@ describe("host-owned conversation transactions", () => {
     const f = await fixture({
       priceFor: (model) =>
         model === "priced" ? { input: 2, output: 4, cache_read: 1, cache_write: 3 } : undefined,
-      guardUsageFor: () => ({
-        cacheUnknown: false,
-        usage: {
-          iterations: 0,
-          elapsed_ms: 0,
-          by_agent: [
-            {
-              role: "subagent",
-              model: "priced",
-              input_tokens: 500,
-              output_tokens: 20,
-              cached_tokens: 300,
-              cache_write_tokens: 0,
-            },
-          ],
-        },
-      }),
     });
     const before = (await f.sessions.get("conversation"))!;
     expect(before.revision).toBe(1);
@@ -873,8 +839,8 @@ describe("host-owned conversation transactions", () => {
     const after = (await f.sessions.get("conversation"))!;
     expect(after.revision).toBe(3);
     expect(after.turns.at(-1)).toMatchObject({ status: "done", ended_at: 10 });
-    expect(after.totals).toMatchObject({ input: 1800, output: 270, cached: 700 });
-    expect(after.totals.cost_usd).toBeCloseTo(0.00348);
+    expect(after.totals).toMatchObject({ input: 1300, output: 250, cached: 400 });
+    expect(after.totals.cost_usd).toBeCloseTo(0.0027);
     await prepared.reconcile(result);
     expect(await f.sessions.get("conversation")).toEqual(after);
     await expect(f.sessions.save({ ...before, title: "Stale title" })).rejects.toMatchObject({
@@ -887,26 +853,9 @@ describe("host-owned conversation transactions", () => {
     expect((await f.sessions.get("conversation"))!.revision).toBe(4);
   });
 
-  test("keeps Guard tokens without pricing an unknown cache breakdown", async () => {
+  test("does not add reviewer tokens to an ordinary run", async () => {
     const f = await fixture({
       priceFor: () => ({ input: 2, output: 4, cache_read: 1 }),
-      guardUsageFor: () => ({
-        cacheUnknown: true,
-        usage: {
-          iterations: 0,
-          elapsed_ms: 0,
-          by_agent: [
-            {
-              role: "subagent",
-              model: "priced",
-              input_tokens: 500,
-              output_tokens: 20,
-              cached_tokens: 300,
-              cache_write_tokens: 0,
-            },
-          ],
-        },
-      }),
     });
     const prepared = await f.prepareTurn();
     await prepared.commitIntent();
@@ -915,8 +864,7 @@ describe("host-owned conversation transactions", () => {
     await prepared.reconcile(completed);
 
     const totals = (await f.sessions.get("conversation"))!.totals;
-    expect(totals).toMatchObject({ input: 500, output: 20 });
-    expect(totals.cached).toBeUndefined();
+    expect(totals).toMatchObject({ input: 0, output: 0 });
     expect(totals.cost_usd).toBeUndefined();
   });
 
@@ -1022,7 +970,6 @@ describe("host-owned conversation transactions", () => {
         },
       });
       const prepared = await coordinator.prepare(input(), {
-        scope: "scope",
         signal: new AbortController().signal,
       });
       await expect(prepared.commitIntent()).rejects.toThrow("injected disk failure");

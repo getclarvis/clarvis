@@ -71,13 +71,10 @@ function toolset(
 describe("createAgentToolset policy", () => {
   it("publishes the adapter definitions and forwards the complete options once", () => {
     const adapter = fakeAdapter();
-    const guard = async () => ({ verdict: "allow" as const });
     const options = {
       workspaceRoot: "/workspace",
       canMutate: false,
       canExec: true,
-      confineToWorkspace: false,
-      guard,
       secretEnvNames: ["TOKEN"],
     } satisfies AgentToolsetOptions;
 

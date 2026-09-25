@@ -1,11 +1,10 @@
-import { containerGuestPaths, withoutGitRepositoryEnvironment } from "@clarvis/paths";
+import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
 import type { ProjectRef, WorkspaceRef } from "@clarvis/protocol";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { realpath } from "node:fs/promises";
-import { basename, join, posix, resolve, win32 } from "node:path";
+import { basename, resolve } from "node:path";
 import { promisify } from "node:util";
-import type { RuntimeProtectedMount } from "./runtime/types.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -15,66 +14,6 @@ export interface GitWorkspaceContext {
   worktreeRoot: string;
   gitDir?: string;
   commonDir?: string;
-}
-
-/** Map one linked-worktree Git directory beneath the fixed guest common-directory mount. */
-export function containerGitDirectoryTarget(
-  gitDir: string,
-  commonDir: string,
-  hostPlatform: NodeJS.Platform = process.platform,
-): string {
-  const paths = hostPlatform === "win32" ? win32 : posix;
-  const child = paths.relative(commonDir, gitDir);
-  if (
-    child === "" ||
-    child === ".." ||
-    child.startsWith(`..${paths.sep}`) ||
-    paths.isAbsolute(child)
-  )
-    throw new Error("linked worktree Git directory is outside its common directory");
-  return `${containerGuestPaths.gitCommonRoot}/${child.split(paths.sep).join("/")}`;
-}
-
-/** Project host-discovered Git metadata onto the exact read-only runtime mounts. */
-export function runtimeGitMetadataMounts(
-  context: GitWorkspaceContext,
-): readonly RuntimeProtectedMount[] {
-  if (context.gitDir === undefined || context.commonDir === undefined) return [];
-  if (context.workspace.kind !== "external_worktree") {
-    return [
-      {
-        source: context.gitDir,
-        target: "/workspace/.git",
-        type: "directory",
-        readOnly: true,
-      },
-    ];
-  }
-  const gitTarget = containerGitDirectoryTarget(context.gitDir, context.commonDir);
-  return [
-    {
-      source: join(context.worktreeRoot, ".git"),
-      target: "/workspace/.git",
-      type: "file",
-      readOnly: true,
-    },
-    ...(context.commonDir === context.gitDir
-      ? []
-      : [
-          {
-            source: context.commonDir,
-            target: containerGuestPaths.gitCommonRoot,
-            type: "directory" as const,
-            readOnly: true as const,
-          },
-        ]),
-    {
-      source: context.gitDir,
-      target: gitTarget,
-      type: "directory",
-      readOnly: true,
-    },
-  ];
 }
 
 function digest(value: string): string {

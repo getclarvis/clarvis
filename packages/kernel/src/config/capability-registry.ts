@@ -1,12 +1,9 @@
-import { judgeSettingsSpec, type EffectReviewConfig } from "@clarvis/judge/settings";
 import { createCapabilityRegistry, type CapabilityRegistry } from "@clarvis/capability";
 import { settingsSchemaFor, type SettingsFile as LoopSettingsFile } from "@clarvis/loop/host";
 import { memorySettingsSpec, type MemorySettingsBlock } from "@clarvis/memory/settings";
 import { goalsSettingsSpec, type GoalsSettingsBlock } from "@clarvis/goal/settings";
 import { plansSettingsSpec, type PlansSettingsBlock } from "@clarvis/plan/settings";
 import { workflowsSettingsSpec, type WorkflowsSettingsBlock } from "@clarvis/workflows";
-import { tasksSettingsSpec, type TasksSettingsBlock } from "@clarvis/tasks/settings";
-import { runtimeSettingsSpec, type RuntimeSettingsBlock } from "../runtime/settings.ts";
 
 /**
  * The capabilities this kernel hosts that declare their own `settings.json`
@@ -17,17 +14,13 @@ import { runtimeSettingsSpec, type RuntimeSettingsBlock } from "../runtime/setti
  *   parsed is not in the schema, so its key reads as an unrecognized one and the
  *   file is rejected. The engine's own blocks are not here — those are spread
  *   statically into `settingsSchema`, which is what keeps zod's inference exact.
- *   Product capabilities own their blocks; the host additionally owns runtime
- *   placement settings.
+ *   Product capabilities own their blocks.
  */
 export const kernelCapabilityRegistry: CapabilityRegistry = createCapabilityRegistry();
-kernelCapabilityRegistry.register(judgeSettingsSpec);
 kernelCapabilityRegistry.register(memorySettingsSpec);
 kernelCapabilityRegistry.register(plansSettingsSpec);
 kernelCapabilityRegistry.register(goalsSettingsSpec);
 kernelCapabilityRegistry.register(workflowsSettingsSpec);
-kernelCapabilityRegistry.register(tasksSettingsSpec);
-kernelCapabilityRegistry.register(runtimeSettingsSpec);
 
 /**
  * Compose the kernel's schema authority with host extensions for every owned
@@ -67,11 +60,8 @@ export const kernelSettingsSchema = settingsSchemaFor(kernelCapabilityRegistry);
  * so it is the right place to compose the two.
  */
 export type KernelSettingsFile = LoopSettingsFile & {
-  effect_review?: EffectReviewConfig;
   memory?: MemorySettingsBlock;
   plans?: PlansSettingsBlock;
   goals?: GoalsSettingsBlock;
   workflows?: WorkflowsSettingsBlock;
-  tasks?: TasksSettingsBlock;
-  runtime?: RuntimeSettingsBlock;
 };

@@ -39,62 +39,21 @@ function remote(runtime: unknown) {
   return createLocalHostClient(transport, "host").inspect();
 }
 
-const container: RuntimeStatus = {
-  kind: "container",
-  engine: "docker",
-  host_platform: "linux",
-  guest_platform: "linux",
-  network: "none",
-  generation: "019c9ca0-64af-7c11-9c4a-1ccf84a51a10",
-  image_digest: `sha256:${"a".repeat(64)}`,
-  artifact_digest: `sha256:${"b".repeat(64)}`,
-  base_abi: "clarvis-linux-glibc-v1",
-  broker_version: 1,
-  channel_version: 1,
-  state_namespace: "c".repeat(64),
-  lifecycle: "ready",
-};
-
-test("disk and local-host transport share every runtime variant and lifecycle", async () => {
+test("disk and local-host transport accept only native Host and Sandbox status", async () => {
   const values: RuntimeStatus[] = [
     { kind: "native", host_platform: "linux", isolation: "host", lifecycle: "ready" },
     { kind: "native", host_platform: "linux", isolation: "sandbox", lifecycle: "ready" },
-    ...(
-      [
-        "cold",
-        "inspecting",
-        "preparing",
-        "starting",
-        "ready",
-        "stopping",
-        "stopped",
-        "disconnected",
-        "failed",
-      ] as const
-    ).flatMap((lifecycle) =>
-      (["docker", "podman"] as const).map((engine) => ({ ...container, engine, lifecycle })),
-    ),
   ];
   for (const runtime of values) {
     expect(persisted(runtime)).toEqual(runtime);
     expect((await remote(runtime)).runtime).toEqual(runtime);
   }
   for (const invalid of [
-    { ...container, lifecycle: "running" },
-    { ...container, secret: "extra" },
-    { ...container, guest_platform: "windows" },
+    { kind: "unsupported", lifecycle: "ready" },
     { kind: "native", host_platform: "linux", isolation: "sandbox", lifecycle: "fallback" },
+    { ...values[0], secret: "extra" },
   ]) {
     expect(() => persisted(invalid)).toThrow("host state index is invalid");
     await expect(remote(invalid)).rejects.toThrow("invalid local host status");
   }
-});
-
-test("runtime boundaries retain their distinct identifier and text limits", async () => {
-  const longIdentifier = { ...container, generation: "g".repeat(257) };
-  expect(() => persisted(longIdentifier)).toThrow();
-  await expect(remote(longIdentifier)).rejects.toThrow();
-  const longText = { ...container, engine_version: "v".repeat(4_097) };
-  expect(persisted(longText)).toEqual(longText);
-  await expect(remote(longText)).rejects.toThrow();
 });

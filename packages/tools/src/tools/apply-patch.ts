@@ -1,9 +1,7 @@
 import type { RuntimeConfig } from "../config.ts";
-import { promises as fs } from "node:fs";
+import { fs } from "../lib/environment-fs.ts";
 import { applyPatch, parsePatch, type StructuredPatch } from "diff";
 import { ToolError, fsError } from "../errors.ts";
-import { reviewedConfigurationModes } from "../guard/authoring-path.ts";
-import { readFileOptionsForPath, type ReadFileOptions } from "../lib/files.ts";
 import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { applyOpsAtomic, withFileLocks, type FileOp } from "../lib/atomic.ts";
 import { encodeText, reencode, type Eol, type DecodedText } from "../lib/text.ts";
@@ -45,7 +43,7 @@ function cleanName(name: string | undefined): string | undefined {
  * @param target - absolute path of the file.
  * @param rel - the caller-facing path, echoed in errors.
  * @param maxBytes - the size ceiling from the server configuration.
- * @param options - descriptor and post-open confinement policy.
+ * @param options - descriptor and classified target policy.
  * @returns the decoded text with its detected encoding, EOL, and BOM.
  * @throws {@link ToolError} `is_binary` when the file does not decode as UTF-8,
  *   since applying the patch would rewrite it as UTF-8 and corrupt it.
@@ -54,9 +52,8 @@ async function readEditableFile(
   target: string,
   rel: string,
   maxBytes: number,
-  options: ReadFileOptions,
 ): Promise<DecodedText> {
-  const decoded = await readTextFile(target, rel, maxBytes, options);
+  const decoded = await readTextFile(target, rel, maxBytes);
   if (decoded.encoding !== "utf8") {
     throw new ToolError(
       "is_binary",
@@ -384,7 +381,7 @@ export const applyPatchTool: ToolDef = {
  * locks are held.
  *
  * @param parsed - the diff blocks, one per file (or rename pair).
- * @param config - workspace root, size ceiling, and confinement flag.
+ * @param config - relative-path base, size ceiling, and classified-path policy.
  * @returns a human-readable summary listing each change with its
  *   `A`/`M`/`D`/`R` verb and `(+adds -dels)` counts.
  * @throws {@link ToolError} `invalid_input` when two blocks target the same file,
@@ -399,16 +396,7 @@ export const applyPatchTool: ToolDef = {
  */
 async function applyParsed(
   parsed: ParsedPatch[],
-  config: Pick<
-    RuntimeConfig,
-    | "workspaceRoot"
-    | "maxFileBytes"
-    | "reviewMutation"
-    | "confineToWorkspace"
-    | "temporaryRoots"
-    | "logger"
-    | "configurationRoots"
-  >,
+  config: Pick<RuntimeConfig, "workspaceRoot" | "stateRoot" | "maxFileBytes">,
 ): Promise<string> {
   const ops: FileOp[] = [];
   const summary: string[] = [];
@@ -441,12 +429,7 @@ async function applyParsed(
         claim(absFrom, relFrom);
         claim(absTo, relTo);
 
-        const decoded = await readEditableFile(
-          absFrom,
-          relFrom,
-          config.maxFileBytes,
-          readFileOptionsForPath(config, absFrom),
-        );
+        const decoded = await readEditableFile(absFrom, relFrom, config.maxFileBytes);
         const applied = applyParsedPatch(decoded.content, p);
         if (applied.result === false) {
           throw new ToolError("patch_failed", `Hunk did not apply cleanly in ${relFrom}`, {
@@ -457,10 +440,9 @@ async function applyParsed(
         const result = applied.result;
 
         const { adds, dels } = countChanges(p);
-        const destinationModes = reviewedConfigurationModes(absTo, config);
         const unchanged =
           (p.hunks.length === 0 && (p.modelHunks?.length ?? 0) === 0) || result === decoded.content;
-        if (unchanged && destinationModes === undefined) {
+        if (unchanged) {
           ops.push({
             type: "rename",
             path: absTo,
@@ -473,7 +455,6 @@ async function applyParsed(
             path: absTo,
             from: absFrom,
             content: reencode(result, decoded),
-            ...destinationModes,
           });
           summary.push(`  R ${relFrom} -> ${relTo} (+${adds} -${dels})`);
         }
@@ -495,12 +476,7 @@ async function applyParsed(
     let bom = false;
     let decoded: DecodedText | null = null;
     if (!isCreate) {
-      decoded = await readEditableFile(
-        absTarget,
-        relTarget,
-        config.maxFileBytes,
-        readFileOptionsForPath(config, absTarget),
-      );
+      decoded = await readEditableFile(absTarget, relTarget, config.maxFileBytes);
       source = decoded.content;
       eol = decoded.eol;
       bom = decoded.bom;
@@ -548,7 +524,6 @@ async function applyParsed(
         type: "create",
         path: absTarget,
         content: encodeText(result, { eol, bom }),
-        ...reviewedConfigurationModes(absTarget, config),
       });
       summary.push(`  A ${rel} (+${adds} -${dels})`);
     } else {
@@ -558,14 +533,13 @@ async function applyParsed(
         path: absTarget,
         content,
         intent: "edit",
-        ...reviewedConfigurationModes(absTarget, config),
       });
       summary.push(`  M ${rel} (+${adds} -${dels})`);
     }
   }
 
   try {
-    await applyOpsAtomic(ops, config.reviewMutation);
+    await applyOpsAtomic(ops);
   } catch (err) {
     if (err instanceof ToolError) throw err;
     throw new ToolError("io_error", `Failed to apply patch: ${(err as Error).message}`);

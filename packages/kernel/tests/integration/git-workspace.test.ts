@@ -4,12 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { containerGuestPaths, withoutGitRepositoryEnvironment } from "@clarvis/paths";
-import {
-  containerGitDirectoryTarget,
-  discoverGitWorkspace,
-  runtimeGitMetadataMounts,
-} from "../../src/git-workspace.ts";
+import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
+import { discoverGitWorkspace } from "../../src/git-workspace.ts";
 
 const roots: string[] = [];
 
@@ -58,41 +54,6 @@ describe("discoverGitWorkspace", () => {
     expect(a.commonDir).toBe(a.gitDir);
     expect(b.commonDir).toBe(a.commonDir);
     expect(b.gitDir).not.toBe(b.commonDir);
-    expect(runtimeGitMetadataMounts(a)).toEqual([
-      {
-        source: a.gitDir,
-        target: "/workspace/.git",
-        type: "directory",
-        readOnly: true,
-      },
-    ]);
-    expect(runtimeGitMetadataMounts(b)).toEqual([
-      {
-        source: join(linked, ".git"),
-        target: "/workspace/.git",
-        type: "file",
-        readOnly: true,
-      },
-      {
-        source: b.commonDir,
-        target: containerGuestPaths.gitCommonRoot,
-        type: "directory",
-        readOnly: true,
-      },
-      {
-        source: b.gitDir,
-        target: `${containerGuestPaths.gitCommonRoot}/worktrees/linked`,
-        type: "directory",
-        readOnly: true,
-      },
-    ]);
-    expect(
-      containerGitDirectoryTarget(
-        String.raw`C:\repo\.git\worktrees\linked`,
-        String.raw`C:\repo\.git`,
-        "win32",
-      ),
-    ).toBe(`${containerGuestPaths.gitCommonRoot}/worktrees/linked`);
   });
 
   it("falls back deterministically outside Git", async () => {
@@ -103,6 +64,5 @@ describe("discoverGitWorkspace", () => {
     expect(second).toEqual(first);
     expect(first.workspace.kind).toBe("primary");
     expect(first.workspace.path).toBe(root);
-    expect(runtimeGitMetadataMounts(first)).toEqual([]);
   });
 });

@@ -68,13 +68,6 @@ grant mechanism. See [`agent-system-prompt.md`](../engine/agent-system-prompt.md
 | `run_commands` | engine (`BuiltinGrant`) | no | `packages/capability/src/api.ts` |
 | `use_skills` | `@clarvis/skills` | no | `packages/skills/src/capability.ts` |
 | `workflow` | `@clarvis/workflows` | **yes** | `packages/workflows/src/capability.ts` |
-| `tasks.read` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts`, registered `packages/tasks/src/capability.ts` |
-| `tasks.create` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts` |
-| `tasks.assign` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts` |
-| `tasks.comment` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts` |
-| `tasks.progress` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts` |
-| `tasks.review` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts` |
-| `tasks.complete` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts` |
 
 Only `workflow` sets `entryCanSpawn: true`
 (`packages/workflows/src/capability.ts`), which is what makes a
@@ -89,7 +82,6 @@ this document covers only the grant string that gates them.
 | Symbol | Signature | File |
 | --- | --- | --- |
 | `CLARVIS_AGENT_TOOLS_ENABLED` | boolean, default `true` | `packages/capability/src/env.ts` |
-| `CLARVIS_AGENT_TOOLS_CONFINE` | boolean, default `true` | `packages/capability/src/env.ts` |
 | `CLARVIS_AGENT_TOOLS_MAX_GRANT` | `"none" \| "read" \| "edit" \| "exec"`, default `"edit"` at the loop/env-schema level | `packages/capability/src/env.ts` |
 | `agentToolCaps(grants, ceiling)` | `(grants: readonly string[] \| undefined, ceiling: GrantCeiling) => { canRead, canMutate, canExec }` | `packages/loop/src/runtime/tools/builtin/grants.ts` |
 | `agentToolsActive(env, grants)` | `boolean` — true iff `CLARVIS_AGENT_TOOLS_ENABLED` and the grants clear the `read` ceiling | `packages/loop/src/runtime/tools/builtin/grants.ts` |
@@ -102,18 +94,8 @@ this document covers only the grant string that gates them.
 `process.env.CLARVIS_AGENT_TOOLS_MAX_GRANT ??= "exec"`),
 above the loop's own schema default of `"edit"` (`packages/capability/src/env.ts`).
 
-Container applies a frozen native capability policy. Shipped builtin profiles keep every native
-grant, including Workflow, and lose only `use_skills`. Operator profiles remain intact and are
-marked incompatible when they require Tasks, skills, plugins, MCP or another external provider;
-selection then fails before inference. Tool enable receives the projected enabled/confinement policy and
-`allowHostEscalation` remains false.
-
-Production: `projectContainerConfiguration` in
-[`container-projection.ts`](../../packages/kernel/src/config/container-projection.ts) and
-`createContainerNativeKernel` in
-[`container-native.ts`](../../packages/kernel/src/hosting/container-native.ts). Test:
-[`container-projection.test.ts`](../../packages/kernel/tests/unit/container-projection.test.ts) and
-[`container-kernel-host.test.ts`](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
+Host and Sandbox apply the resolved capability policy. Shipped builtin and operator profiles
+retain their admitted grants.
 
 ### 2.5 Built-in agent profiles' grant/spawn arrays
 
@@ -298,8 +280,7 @@ For each agent (entry or spawned), `createAgentToolsRunCapability.forAgent(scope
      (`packages/loop/src/runtime/tools/builtin/toolset.ts`).
    - Net effect per ceiling tier: `read` → the 9 read-only tools only; `edit` →
      read-only + the 9 members of `FILE_MUTATING_TOOL_NAMES`, with no `shell`
-     or `shell_session`; `exec` → all 20. Per-call host escalation is a `shell` field, not a
-     separate tool (`packages/tools/src/lib/sandbox-permissions.ts`).
+     or `shell_session`; `exec` → all 20.
 4. `dispatch(name, …)` on the built toolset rejects any call whose `name` is
    not in the filtered `names` set with `{ isError: true, text: "Tool '<name>'
    is not available to this agent." }`
@@ -557,11 +538,9 @@ except for this one filtered field — carried `workflow`.
   did; this is what lets `workflow` (a package the loop treats as an optional
   capability) control whether the *engine's own* supervision registry exists,
   without the loop naming `@clarvis/workflows`.
-- **`@clarvis/skills`, `@clarvis/workflows` and
-  `@clarvis/tasks` each register their own grant(s) via `Capability.grants`**
+- **`@clarvis/skills` and `@clarvis/workflows` each register their own grant(s) via `Capability.grants`**
   (`packages/skills/src/capability.ts`,
-  `packages/workflows/src/capability.ts`,
-  `packages/tasks/src/capability.ts`) — a structural constraint of the
+  `packages/workflows/src/capability.ts`) — a structural constraint of the
   `Capability` interface itself (`packages/capability/src/contract.ts`),
   not a convention; nothing forces a capability author to declare grants
   through any other channel because none exists.
@@ -580,17 +559,14 @@ except for this one filtered field — carried `workflow`.
   (`packages/code/src/adapters/agents.ts`) is **not** a picker over every
   grant this document lists in §2.3: it holds exactly the four `BuiltinGrant`
   names plus a curated entry for two capability-owned grants (`use_skills`,
-  `workflow`) — six total — and has no entry at all for the
-  seven `tasks.*` grants `@clarvis/tasks` registers. Its own pinning test
+  `workflow`) — six total. Its own pinning test
   (`packages/code/tests/unit/agents.test.ts`) only checks that
   `GRANT_CATALOG` is a superset of `grantSchema.options`
   (`packages/loop/src/validation/request/profile-schemas.ts`), which is
   itself just `BUILTIN_GRANT_NAMES` — a "static UI discovery aid" per that
   schema's own remark, not the set of grants `requireKnownGrants` (§4.1) or
   `ConfigService.knownGrants()` (below) actually accepts on a real run. A
-  profile carrying a `tasks.*` grant therefore renders in the built-in editor
-  only through `grantBadges`' raw-id fallback, never as a selectable picker
-  row; see `code-domain-hubs.md` invariant 17 for the corrected claim.
+  unknown grants through `grantBadges`' raw-id fallback; see `code-domain-hubs.md` invariant 17.
 - **`@clarvis/kernel`'s own `ConfigService.knownGrants()` independently
   re-derives the same union** `executeRun` validates against, for UI-facing
   discovery: `[...BUILTIN_GRANT_NAMES, ...mergedRegistry.grants().map(g =>

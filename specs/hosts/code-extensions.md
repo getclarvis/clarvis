@@ -123,8 +123,7 @@ executables, revision, and path.
 
 An available listing's second Enter is one composed intent:
 
-1. install a marketplace checkout into the shared `.agents/plugins` inventory, while direct Git
-   installation keeps the explicit `.agents/plugins` or `.clarvis/plugins` choice;
+1. install a marketplace or direct Git checkout into the shared `.agents/plugins` inventory;
 2. add that exact returned ref to the current custom Extension Profile, or to the builtin selection
    settings that define `builtin:default`;
 3. reconnect at an idle boundary;
@@ -165,9 +164,10 @@ change mutates it.
 
 The official Clarvis marketplace is virtual and precedes configured and discovered sources. Adding
 a marketplace writes only its URL to global settings and refreshes catalogs. It installs no plugin.
-The Add Marketplace collection accepts a Git repository that publishes `marketplace.json` or
-`<marketplace-root>/.agents/marketplace.json`. `g` remains the explicit direct-plugin Git path and asks which compatible
-inventory convention owns the checkout.
+The Add Marketplace collection accepts a Git repository that publishes
+`<marketplace-root>/.agents/plugins/marketplace.json`. The product-owned official catalog may
+publish root `marketplace.json`. `g` remains the direct-plugin Git path and installs into
+`.agents/plugins`.
 
 Marketplace entries may resolve to Git (including subdirectory plus ref/SHA selectors), a confined
 local directory, or npm (optional version and credential-free HTTPS registry). The browser carries

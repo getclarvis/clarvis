@@ -20,7 +20,6 @@ import type {
   RunService,
   SecretService,
   SessionService,
-  TasksService,
   SkillsService,
   StorageService,
   WorkflowsService,
@@ -276,19 +275,6 @@ export async function connectKernelClient(
     if (run.resultReceived) clientRuns.delete(execution_id);
   });
   /**
-   * Check an elicitation's `detail` against the closed {@link ElicitationCommandDetail} shape.
-   *
-   * @remarks
-   * The request around it is deliberately left open — `kind` is `(string & {})` so a kernel may add
-   * kinds without a protocol bump, and `schema` is passed through opaquely — so neither can be key
-   * checked. `detail` shares neither property: it is a fully closed interface, and it is what a
-   * human reads when approving a command. A `detail` whose `command` is absent or not a string
-   * would reach an approval dialog as `undefined`, and the approval would then be given for a
-   * command nobody was shown, which is the one failure this transport must not pass on silently.
-   */
-  const isCommandDetail = (value: unknown): boolean =>
-    elicitationCommandDetailSchema.safeParse(value).success;
-  /**
    * A published decision window is a positive whole number of milliseconds or absent.
    *
    * @remarks The countdown a frontend renders and the confirmation it sends back both
@@ -307,9 +293,8 @@ export async function connectKernelClient(
       typeof params.request.execution_id !== "string" ||
       typeof params.request.kind !== "string" ||
       typeof params.request.prompt !== "string" ||
-      (params.request.detail !== undefined && !isCommandDetail(params.request.detail)) ||
       (params.request.window_ms !== undefined && !isWindowMs(params.request.window_ms)) ||
-      (params.request.kind === "guard_confirm" && !isCommandDetail(params.request.detail))
+      params.request.detail !== undefined
     ) {
       protocolViolation("invalid run.elicitation notification");
       return;
@@ -383,69 +368,11 @@ export async function connectKernelClient(
   const validRuntime =
     runtime === undefined ||
     (isRecord(runtime) &&
-      ((runtime.kind === "native" &&
-        hasOnly(runtime, ["kind", "host_platform", "isolation", "lifecycle"]) &&
-        typeof runtime.host_platform === "string" &&
-        (runtime.isolation === "host" || runtime.isolation === "sandbox") &&
-        runtime.lifecycle === "ready") ||
-        (runtime.kind === "container" &&
-          hasOnly(runtime, [
-            "kind",
-            "generation",
-            "engine",
-            "engine_version",
-            "host_platform",
-            "guest_platform",
-            "image_digest",
-            "artifact_digest",
-            "base_abi",
-            "broker_version",
-            "channel_version",
-            "state_namespace",
-            "network",
-            "lifecycle",
-          ]) &&
-          (runtime.engine === "podman" || runtime.engine === "docker") &&
-          typeof runtime.host_platform === "string" &&
-          runtime.guest_platform === "linux" &&
-          (runtime.generation === undefined ||
-            (typeof runtime.generation === "string" &&
-              /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
-                runtime.generation,
-              ))) &&
-          (runtime.engine_version === undefined || typeof runtime.engine_version === "string") &&
-          (runtime.image_digest === undefined ||
-            (typeof runtime.image_digest === "string" &&
-              /^sha256:[a-f0-9]{64}$/u.test(runtime.image_digest))) &&
-          (runtime.artifact_digest === undefined ||
-            (typeof runtime.artifact_digest === "string" &&
-              /^sha256:[a-f0-9]{64}$/u.test(runtime.artifact_digest))) &&
-          (runtime.base_abi === undefined || typeof runtime.base_abi === "string") &&
-          (runtime.broker_version === undefined || runtime.broker_version === 1) &&
-          (runtime.channel_version === undefined || runtime.channel_version === 1) &&
-          (runtime.state_namespace === undefined ||
-            (typeof runtime.state_namespace === "string" &&
-              /^[a-f0-9]{64}$/u.test(runtime.state_namespace))) &&
-          (runtime.lifecycle !== "ready" ||
-            (typeof runtime.generation === "string" &&
-              typeof runtime.image_digest === "string" &&
-              typeof runtime.artifact_digest === "string" &&
-              typeof runtime.base_abi === "string" &&
-              typeof runtime.broker_version === "number" &&
-              typeof runtime.channel_version === "number" &&
-              typeof runtime.state_namespace === "string")) &&
-          ["none", "outbound"].includes(String(runtime.network)) &&
-          [
-            "cold",
-            "inspecting",
-            "preparing",
-            "starting",
-            "ready",
-            "stopping",
-            "stopped",
-            "disconnected",
-            "failed",
-          ].includes(String(runtime.lifecycle)))));
+      runtime.kind === "native" &&
+      hasOnly(runtime, ["kind", "host_platform", "isolation", "lifecycle"]) &&
+      typeof runtime.host_platform === "string" &&
+      (runtime.isolation === "host" || runtime.isolation === "sandbox") &&
+      runtime.lifecycle === "ready");
   if (
     !isRecord(hello) ||
     !hasOnly(hello, ["wire_version", "capabilities", "project", "workspace", "principal"]) ||
@@ -720,7 +647,6 @@ export async function connectKernelClient(
   const memory = createServiceProxy<MemoryService>(transport, OPERATIONS.memory);
   const skills = createServiceProxy<SkillsService>(transport, OPERATIONS.skills);
   const sessions = createServiceProxy<SessionService>(transport, OPERATIONS.sessions);
-  const tasks = createServiceProxy<TasksService>(transport, OPERATIONS.tasks);
   const storage = createServiceProxy<StorageService>(transport, OPERATIONS.storage);
 
   return {
@@ -747,7 +673,6 @@ export async function connectKernelClient(
     workflows,
     skills,
     sessions,
-    tasks,
     storage,
     listAgents() {
       return transport.request<AgentSummary[]>(M.listAgents, {});
@@ -762,4 +687,3 @@ export async function connectKernelClient(
     },
   };
 }
-import { elicitationCommandDetailSchema } from "../guard/review-detail-schema.ts";

@@ -20,12 +20,7 @@ const SRC = join(import.meta.dir, "..", "..", "src");
 const registry = readFileSync(join(SRC, "provider-registry.ts"), "utf8");
 
 /** Implementation modules that must never be reachable statically from the registry. */
-const IMPLEMENTATIONS = [
-  "./wiki-provider.ts",
-  "./file-provider.ts",
-  "./mcp-provider.ts",
-  "./executable-provider.ts",
-];
+const IMPLEMENTATIONS = ["./wiki-provider.ts"];
 
 /**
  * Every specifier reached by a **value** import.

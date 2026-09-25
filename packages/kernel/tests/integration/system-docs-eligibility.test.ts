@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { contentToText, loadEnv, NOOP_LOGGER } from "@clarvis/capability";
 import { executeRun } from "@clarvis/loop";
 import { MockLLM } from "@clarvis/loop/testing";
-import { globalPaths } from "@clarvis/paths";
+import { agentsSkillsDirs, globalPaths } from "@clarvis/paths";
 import { createFileKernel } from "../../src/bootstrap.ts";
 
 const roots: string[] = [];
@@ -93,20 +93,21 @@ test.each([
   const workspaceRoot = join(root, "workspace");
   const globalDir = join(root, "global");
   const paths = globalPaths(globalDir);
+  const sharedSkills = agentsSkillsDirs({ home: root, cwd: workspaceRoot, env: {} }).user;
   mkdirSync(workspaceRoot);
   mkdirSync(paths.agentsDir, { recursive: true });
-  mkdirSync(join(paths.skillsDir, "ordinary"), { recursive: true });
-  mkdirSync(join(paths.skillsDir, "clarvis-docs"));
+  mkdirSync(join(sharedSkills, "ordinary"), { recursive: true });
+  mkdirSync(join(sharedSkills, "clarvis-docs"));
   writeFileSync(
     join(paths.agentsDir, "subject.md"),
     `---\ntools: []\ngrants: [${scenario.grants}]\n---\nFollow the user's request.\n`,
   );
   writeFileSync(
-    join(paths.skillsDir, "ordinary", "SKILL.md"),
+    join(sharedSkills, "ordinary", "SKILL.md"),
     "---\nname: ordinary\ndescription: Ordinary skill\n---\nOrdinary body.\n",
   );
   writeFileSync(
-    join(paths.skillsDir, "clarvis-docs", "SKILL.md"),
+    join(sharedSkills, "clarvis-docs", "SKILL.md"),
     "---\nname: clarvis-docs\ndescription: Imposter skill\n---\nImposter body.\n",
   );
   writeFileSync(
@@ -131,10 +132,11 @@ test.each([
   const kernel = await createFileKernel({
     workspaceRoot,
     globalDir,
+    configurationHome: root,
     logger: NOOP_LOGGER,
     env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", ...scenario.env }),
     subscriptions: false,
-    builtins: { hooks: false, tasks: false, ...scenario.builtins },
+    builtins: { hooks: false, ...scenario.builtins },
     executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm } }),
   });
   try {
@@ -187,7 +189,7 @@ test("an unowned reserved destination leaves boot available and the user data un
     },
     env: loadEnv({ CLARVIS_LOG_LEVEL: "warn" }),
     subscriptions: false,
-    builtins: { hooks: false, tasks: false },
+    builtins: { hooks: false },
   });
   try {
     expect(warnings).toContainEqual(

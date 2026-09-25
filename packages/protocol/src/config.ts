@@ -21,67 +21,17 @@ export interface WorkspaceTrustVerdict {
  * in this draft — the kernel remains the authority on the real schema.
  */
 export interface SettingsData {
-  /** Operator-owned shared effect reviewer; workspace values may only narrow limits. */
-  effect_review?: EffectReviewConfig;
   default_model?: string;
   /**
    * Provider list (each entry carries its own `name`) — mirrors the engine’s shape.
    */
   providers?: ProviderConfig[];
   mcp_servers?: Record<string, McpServerConfig>;
-  guard?: GuardConfig;
   sandbox?: SandboxConfig;
-  runtime?: RuntimeConfig;
   memory?: MemoryConfig;
   budget?: unknown;
   /** Forward-compatible: the kernel owns the exhaustive schema. */
   [block: string]: unknown;
-}
-
-/** Host execution placement; absence is native and never probes an OCI engine. */
-export type RuntimeConfig =
-  | { backend: "native" }
-  | {
-      backend: "docker";
-      /** Advanced override. Omission selects the matching managed release image lazily. */
-      image_digest?: string;
-      /** Omission selects ordinary routable outbound access, which may also reach host/LAN peers. */
-      network?: "none" | "internet" | "outbound";
-      limits?: Partial<RuntimeLimitsConfig>;
-      executable?: string;
-      connection?: string;
-      /** Optional operator-owned, content-addressed first-use image customization. */
-      recipe?: RuntimeRecipeConfig;
-    }
-  | {
-      backend: "podman";
-      /** Advanced override. Omission selects the matching managed release image lazily. */
-      image_digest?: string;
-      /** Omission selects ordinary routable outbound access, which may also reach host/LAN peers. */
-      network?: "none" | "internet" | "outbound";
-      limits?: Partial<RuntimeLimitsConfig>;
-      executable?: string;
-      /** Omission selects the local Podman connection at launch. */
-      connection?: string;
-    };
-
-/** Advanced container ceilings; omitted fields use product defaults. */
-export interface RuntimeLimitsConfig {
-  cpu_count: number;
-  memory_bytes: number;
-  process_count: number;
-  output_bytes: number;
-  storage_bytes: number;
-}
-
-/** Operator-owned Docker image customization captured and run only by the host. */
-export interface RuntimeRecipeConfig {
-  /** Stable, filesystem-safe label used only for operator diagnostics. */
-  name: string;
-  /** Absolute host path under the operator's global runtime recipe directory. */
-  script: string;
-  /** Network available only while building the derived image. */
-  network?: "none" | "outbound";
 }
 
 /** One configured LLM / completion provider. */
@@ -110,23 +60,6 @@ export interface McpServerConfig {
   [k: string]: unknown;
 }
 
-/** Guard / command-approval settings block. */
-export interface GuardConfig {
-  mode?: "off" | "on" | "auto";
-  allowed_commands?: string[];
-  denied_commands?: string[];
-  [k: string]: unknown;
-}
-
-/** Protocol projection of the operator-owned shared reviewer settings. */
-export interface EffectReviewConfig {
-  model?: string;
-  timeout_ms?: number;
-  max_retries?: number;
-  on_unsure?: "ask" | "deny";
-  rollout?: "shadow" | "local";
-}
-
 /**
  * Sandbox settings block. `native` selects Bubblewrap on Linux and Seatbelt on
  * macOS. The kernel resolves this into the concrete jail for command execution;
@@ -137,7 +70,7 @@ export interface SandboxConfig {
   /** Platform-native sandbox selection. */
   type: "native";
   enabled?: boolean;
-  /** `required` fails a run when the sandbox is unavailable; `optional` runs unsandboxed instead. */
+  /** Both `required` and legacy `optional` fail closed when the native backend is unavailable. */
   availability?: "required" | "optional";
   /** Whether the workspace mount is writable or read-only inside the jail. */
   filesystem?: "workspace-write" | "workspace-read-only";
@@ -153,7 +86,7 @@ export interface SandboxConfig {
     include?: string[];
     /** Toolchain ids to exclude. */
     exclude?: string[];
-    /** Extra host directories to expose read-only inside the jail. */
+    /** Extra host directories to keep read-only for writes inside the jail. */
     extra_paths?: string[];
     /** Entries from {@link extra_paths} to suppress (e.g. one inherited from another scope). */
     excluded_paths?: string[];
@@ -213,6 +146,15 @@ export interface SandboxPathStatus {
  * `PATH` a sandboxed run would see.
  */
 export interface SandboxInspection {
+  /** Host-resolved access posture shown even when native Sandbox is disabled. */
+  filesystem: {
+    placement: "host" | "sandbox";
+    reads: "host-visible";
+    writes: "host-os" | "declared-roots";
+    workspace: "read-write" | "read-only";
+  };
+  /** Network access after the host applies the selected placement and global policy floor. */
+  effective_network: "host" | "none";
   backend: {
     /** Backend selected for this host, even when it is unavailable. */
     type: "bubblewrap" | "seatbelt" | "unsupported";

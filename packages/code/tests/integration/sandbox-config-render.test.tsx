@@ -8,8 +8,22 @@ import { SandboxConfigPanel } from "../../src/views/config/SandboxConfigPanel.ts
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 
 const fakeKeymap = createFakeKeymap;
+const FILESYSTEM: SandboxInspection["filesystem"] = {
+  placement: "sandbox",
+  reads: "host-visible",
+  writes: "declared-roots",
+  workspace: "read-write",
+};
+const HOST_FILESYSTEM: SandboxInspection["filesystem"] = {
+  placement: "host",
+  reads: "host-visible",
+  writes: "host-os",
+  workspace: "read-write",
+};
 
 const INSPECTION: SandboxInspection = {
+  effective_network: "host",
+  filesystem: FILESYSTEM,
   backend: { type: "bubblewrap", available: true, mode: "fresh-proc", degraded: false },
   toolchains: [],
   extra_paths: [],
@@ -19,6 +33,8 @@ const INSPECTION: SandboxInspection = {
 const SANDBOX: NonNullable<SettingsFile["sandbox"]> = { type: "native", enabled: true };
 
 const UNAVAILABLE_INSPECTION: SandboxInspection = {
+  effective_network: "host",
+  filesystem: FILESYSTEM,
   backend: {
     type: "bubblewrap",
     available: false,
@@ -32,6 +48,8 @@ const UNAVAILABLE_INSPECTION: SandboxInspection = {
 };
 
 const DEGRADED_INSPECTION: SandboxInspection = {
+  effective_network: "host",
+  filesystem: FILESYSTEM,
   backend: {
     type: "bubblewrap",
     available: true,
@@ -83,7 +101,15 @@ function mount(
     },
     inspectSandbox: (o?: { refresh?: boolean }) => {
       inspections.push(o?.refresh ?? false);
-      return opts.inspect ? opts.inspect(o?.refresh) : Promise.resolve(INSPECTION);
+      return opts.inspect
+        ? opts.inspect(o?.refresh)
+        : Promise.resolve({
+            ...INSPECTION,
+            filesystem:
+              effectiveSandbox?.enabled === false || effectiveSandbox === undefined
+                ? HOST_FILESYSTEM
+                : FILESYSTEM,
+          });
     },
   } as unknown as SettingsAdapter;
   const deps = { settings, notify: (m: string) => notes.push(m) };
@@ -109,6 +135,8 @@ function bigInspection(count: number): SandboxInspection {
     "swift",
   ];
   return {
+    effective_network: "host",
+    filesystem: FILESYSTEM,
     backend: { type: "bubblewrap", available: true, mode: "fresh-proc", degraded: false },
     toolchains: ids.slice(0, count).map((id, i) => ({
       id,
@@ -222,12 +250,31 @@ test("effective policy, host diagnosis, and toolchain inventory have distinct ow
   await t.renderOnce();
   const overview = t.captureCharFrame();
   expect(overview).toContain("effective");
+  expect(overview).toContain("host-visible");
+  expect(overview).toContain("declared-roots");
   expect(overview).not.toContain("Toolchains on kernel host");
   press("i");
   await t.renderOnce();
   const detail = t.captureCharFrame();
   expect(detail.indexOf("host")).toBeLessThan(detail.indexOf("Toolchains on kernel host"));
   expect(detail).toContain("Tool       Manager   Source     State");
+  t.renderer.destroy();
+});
+
+test("host inspection wins when an untrusted workspace requests weaker Sandbox access", async () => {
+  const { host, deps } = mount({
+    effectiveSandbox: { type: "native", enabled: false },
+    inspect: async () => INSPECTION,
+  });
+  const t = await openRender((() => SandboxConfigPanel(host, deps)) as never, {
+    width: 110,
+    height: 30,
+  });
+  await tick();
+  await t.renderOnce();
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("on — read host-visible files");
+  expect(frame).toContain("workspace read-write");
   t.renderer.destroy();
 });
 
@@ -295,7 +342,7 @@ test("no sandbox block: enabling creates a default block and warns when native i
   const { host, deps, press, notes } = mount({
     readSandbox: null,
     effectiveSandbox: null,
-    inspect: () => Promise.resolve(UNAVAILABLE_INSPECTION),
+    inspect: () => Promise.resolve({ ...UNAVAILABLE_INSPECTION, filesystem: HOST_FILESYSTEM }),
   });
   const t = await openRender((() => SandboxConfigPanel(host, deps)) as never, {
     width: 110,
@@ -573,7 +620,9 @@ test("effective status: optional availability is treated as required", async () 
   });
   await tick();
   await t.renderOnce();
-  expect(t.captureCharFrame()).toContain("(optional is treated as required)");
+  expect(t.captureCharFrame().replace(/\s+/g, " ")).toMatch(
+    /\(\s*optional is treated as required\)/,
+  );
   t.renderer.destroy();
 });
 

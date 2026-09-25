@@ -15,12 +15,9 @@
     { "path": "packages/memory/tsconfig.build.json" },
     { "path": "packages/plan/tsconfig.build.json" },
     { "path": "packages/goal/tsconfig.build.json" },
-    { "path": "packages/tasks/tsconfig.build.json" },
     { "path": "packages/protocol/tsconfig.build.json" },
     { "path": "packages/loop/tsconfig.build.json" },
     { "path": "packages/workflows/tsconfig.build.json" },
-    { "path": "packages/judge/tsconfig.build.json" },
-    { "path": "packages/kernel/tsconfig.build.json" },
-    { "path": "packages/server/tsconfig.build.json" }
+    { "path": "packages/kernel/tsconfig.build.json" }
   ]
 }

@@ -53,7 +53,7 @@ export function createAgentTools(options: AgentToolsOptions): AgentTools {
 export { dispatch, listTools } from "./core.ts";
 export type { DispatchResult, ToolInfo } from "./core.ts";
 export { readRawFile } from "./lib/files.ts";
-export type { ReadFileOptions, ReadConfinement } from "./lib/files.ts";
+export type { ReadFileOptions } from "./lib/files.ts";
 
 export {
   resolveConfig,
@@ -85,52 +85,13 @@ export type { KillDeps, TaskkillRunner } from "./lib/process.ts";
 export { tools, readOnlyTools, getTool, selectSurface } from "./tools/registry.ts";
 export type { ToolDef, ToolCallHooks } from "./tools/types.ts";
 
-export {
-  analyzeShell,
-  posixDialect,
-  POSIX_DEFAULT_ALLOWED_COMMANDS,
-  WINDOWS_DEFAULT_ALLOWED_COMMANDS,
-  buildGuardContext,
-  resolveCandidate,
-  withinWorkspace,
-  touchesOutside,
-  isDangerousCommand,
-  commandRiskFindings,
-} from "./guard/index.ts";
-export type {
-  Verdict,
-  GuardDecision,
-  GuardPlacement,
-  GuardCallFacts,
-  GuardAnswerer,
-  GuardElicitAnswer,
-  GuardReview,
-  Segment,
-  ShellFacts,
-  ShellAnalysisIssue,
-  ShellAnalysisIssueKind,
-  ShellAnalysisImpact,
-  GuardReviewability,
-  GuardRiskKind,
-  GuardRiskOperandUncertainty,
-  GuardRiskFinding,
-  PathFact,
-  GuardContext,
-  Guard,
-  ElicitRequest,
-  Elicit,
-  ShellDialect,
-  Token,
-  PathCandidate,
-} from "./guard/index.ts";
 export type { ContentPart, TextPart, ImagePart, ToolResult } from "./tools/content.ts";
 export { contentText } from "./tools/content.ts";
 
 export { ToolError, serializeError, fsError } from "./errors.ts";
 export type { ErrorCode } from "./errors.ts";
-
 export { setWarnSink, warn, NOOP_TOOLS_LOGGER } from "./lib/log.ts";
 export type { WarnSink, ToolsLogger, ToolsWarning } from "./lib/log.ts";
-export type { GuardEffectCallFact, EffectReviewDetail } from "./guard/effect-review.ts";
 
-export type { MutationReview, FileOp } from "./lib/atomic.ts";
+export type { FileOp } from "./lib/atomic.ts";
+export { applyOpsAtomic } from "./lib/atomic.ts";

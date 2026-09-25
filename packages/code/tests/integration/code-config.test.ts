@@ -291,23 +291,6 @@ test("clearAgentDefault removes only the selected scope and restores inheritance
   });
 });
 
-test("guardModeDefault: workspace wins, invalid strings coerce to undefined", () => {
-  createRoot((dispose) => {
-    const dirs = tmpDirs();
-    seed(dirs.global.codeConfigFile, { guard: { mode: "on" } });
-    seed(dirs.state.codeConfigFile, { guard: { mode: "auto" } });
-    expect(createCodeConfigStore(dirs).guardModeDefault()).toBe("auto");
-
-    const dirs2 = tmpDirs();
-    seed(dirs2.global.codeConfigFile, { guard: { mode: "yes" } });
-    expect(createCodeConfigStore(dirs2).guardModeDefault()).toBeUndefined();
-
-    const dirs3 = tmpDirs();
-    expect(createCodeConfigStore(dirs3).guardModeDefault()).toBeUndefined();
-    dispose();
-  });
-});
-
 test("keySources: workspace wins per var; writeKeySource round-trips and 'auto' prunes", () => {
   createRoot((dispose) => {
     const dirs = tmpDirs();

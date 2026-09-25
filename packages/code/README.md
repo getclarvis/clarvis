@@ -1,8 +1,5 @@
 # `@clarvis/code`
 
-The review-guidance loader and run adapter emit only `guidance` in reviewer configuration,
-with operator-global text before bounded workspace guidance.
-
 The flagship Clarvis terminal UI. It connects to an independently owned workspace host through
 `@clarvis/kernel` and renders runs with SolidJS and OpenTUI.
 
@@ -24,7 +21,7 @@ and delegates token/cache/pricing accumulation to Kernel’s `addRunUsage` throu
 the companion `local-host` entry and owns its connection, while the host owns execution and history.
 
 On a local Host or Sandbox connection, `/background` confirms that the current hosted run may
-continue, then closes the TUI. Container and SSH Kernels are owned by the current client channel, so
+continue, then closes the TUI. SSH Kernels are owned by the current client channel, so
 they refuse an exit-surviving handoff; list, attach and cancel remain available while that
 connection is alive. A failed or uncertain handoff leaves the interface open.
 An explicitly classified pre-admission refusal clears that attempt and permits a fresh handoff
@@ -41,14 +38,14 @@ After confirmation, that observation gains interactive questions and normal fore
 acknowledgement; it does not replay the snapshot or retire the conversation.
 
 For an old run whose physical state is unknown, `/background list` offers `archive recovery`.
-First verify that every process and container from that host has stopped, then explicitly confirm
+First verify that every process from that host has stopped, then explicitly confirm
 the displayed host/run identity. The host records this operator verification in the saved session
 before releasing its physical-work block. The conversation is archived and new work requires a new
 conversation; existing history and any known result remain. Failed confirmation or persistence keeps
 the recovery pending. The application does not infer physical closure from a missing host process.
 After attachment through a local Host/Sandbox connection, the activity line says `continues after
 exit` for a promoted run. `/quit` closes that TUI without asking about losing the run or cancelling
-it; a new turn defaults to ordinary exit policy. Container and SSH attachments never show that
+it; a new turn defaults to ordinary exit policy. SSH attachments never show that
 promise. Unsaved settings still require confirmation, and Ctrl+C still requests run cancellation.
 A Goal turn whose intent has committed also carries the host's continuation policy immediately.
 Connection loss pauses its future automatic stages but preserves the current physical work and its
@@ -64,7 +61,7 @@ durable queue, and the replacement Kernel recovers it without spending an attemp
 leaves a healthy connection available. Provider
 credential saves and extension activation request that same reload path; connection recovery alone
 does not activate a saved Extension Profile.
-For an idle Host/Sandbox/Container selection change, reload resolves the saved placement again,
+For an idle Host/Sandbox selection change, reload resolves the saved placement again,
 retires the previous connection, and publishes the replacement Kernel's effective runtime to the
 header before another run can start. If the replacement cannot be admitted, the picker restores the
 previous isolation through the host administrative config service before the manager recovers that
@@ -74,14 +71,6 @@ workspace lease is retired before the replacement starts. That expected closure 
 a connection failure. Closing the TUI or SSH stream also closes that remote host, cancels its
 physical runs under the hosted disconnect policy and pauses future Goal continuations. Saved history
 remains available, but `/background` cannot make work survive the channel.
-If interactive Container startup finds another live Clarvis generation for the same namespace, the
-fatal boot screen offers an explicit `t` action to terminate that exact registered Container and
-retry. Ordinary retry remains non-destructive, headless commands never choose termination, and
-unconfirmed ownership stays closed.
-Other interactive Container boot failures offer an explicit `h` action that saves Host and boots
-through the normal native connection, so an unavailable selected engine does not trap startup even
-when the native Sandbox is unavailable.
-
 User-typed `!` commands remain owned by the TUI and cannot be put in background. They reserve the
 conversation in the host before spawning, persist their observation under that reservation, and
 release it after physical completion. Normal exit cancels and drains local shell work before
@@ -90,6 +79,9 @@ closing the host connection. Offline compaction uses the host's separate mainten
 `--resume` and `--continue` check for hosted work before reconstructing historical traces. Print mode
 also uses hosted turn admission and waits for physical closure. The host must remain alive for
 execution to continue; restarting an interrupted host does not replay tools or restore a live run.
+When a different local artifact encounters active work in the previous host, the boot screen offers
+`[t] stop previous runs and start`. This explicitly cancels and drains that host's work before a new
+generation opens; `[r] retry` leaves the previous work running.
 See [hosted runs](../../specs/hosts/hosted-runs.md) for authority and recovery boundaries.
 
 `/goal` shows the conversation's objective, semantic definition, origin, compact budget and Goal
@@ -151,7 +143,7 @@ blocks to history navigation even if they are not yet resident. They cannot rema
 after a newer completion; scrolling or revealing an earlier checkpoint loads its retained history.
 Hosts without goal authority report explicit unavailability. The
 [goal contract](../../specs/capabilities/goals.md) owns these boundaries; complete local/remote,
-container, real-provider and installed-artifact qualification requires separate journey evidence.
+real-provider and installed-artifact qualification requires separate journey evidence.
 
 Its three workspace dependencies are `@clarvis/kernel`, `@clarvis/protocol` and
 `@clarvis/paths` — the last only to locate the workspace and global roots before a
@@ -219,7 +211,7 @@ bun --filter @clarvis/code setup
 clarvis
 ```
 
-To test a published source candidate and its Container artifact, use:
+To test a published source candidate, use:
 
 ```bash
 ./dev-install.sh --candidate                 # newest published RC among the latest 100 releases
@@ -227,30 +219,22 @@ To test a published source candidate and its Container artifact, use:
 clarvis-develop
 ```
 
-This requires Git and the candidate's pinned Bun version. The installer
-verifies the source prerelease and its `runtime-candidate.json`, checks out the exact tag commit
-under `${XDG_DATA_HOME:-$HOME/.local/share}/clarvis-candidates/`, installs frozen dependencies and
-checks the CLI version before replacing the managed launcher. Candidate runtime resolution downloads
-the target-specific tar archive on the host, verifies its release manifest and digest, and transfers
-it to the selected engine only when Container is used. The launcher pins the RC and source revision.
-The ordinary `./dev-install.sh` selects the working checkout, builds `clarvis-base:local` in each
-installed Docker/Podman store, and compiles one matching Linux artifact through an available engine.
-A missing engine is skipped; when every installed engine fails to build, installation fails closed.
-Candidate installation
-does not install a container engine, alter the working checkout, or replace the stable `clarvis`
-command.
-Update a candidate by rerunning `--candidate`; `clarvis --update` remains a portable-release command.
-Previous candidate checkouts and downloaded artifacts are retained; `--uninstall` removes only the
-launcher. Older image-only RCs without the `source-v1` installation marker are refused.
+This requires Git and the candidate's pinned Bun version. The installer verifies the source
+prerelease and its `source-candidate.json`, checks out the exact tag commit under
+`${XDG_DATA_HOME:-$HOME/.local/share}/clarvis-candidates/`, installs frozen dependencies and
+checks the CLI version before replacing the managed launcher. The launcher pins the RC and source
+revision. The ordinary `./dev-install.sh` selects the working checkout. Candidate installation
+does not alter that checkout or replace the stable `clarvis` command. Update a candidate by
+rerunning `--candidate`; `clarvis --update` remains a portable-release command. Previous candidate
+checkouts are retained; `--uninstall` removes only the launcher. Older RCs without the `source-v1`
+installation marker are refused.
 
 For end users, the public installers in the repository root download portable artifacts from the
 binary-only [`getclarvis/clarvis-releases`](https://github.com/getclarvis/clarvis-releases)
 repository. A portable archive includes the exact Bun runtime, the map-free split artifact, its
 package-owned assets, and the native OpenTUI closure for one of six targets: GNU/glibc Linux, macOS,
 or Windows on x64 or arm64. Alpine and other musl-only Linux distributions are not portable-release
-targets for this beta. Neither stable installer probes or requires Docker or Podman; the installed
-application defaults to the native runtime, and a container engine is needed only if the operator
-later selects container isolation. The bundled Bun executable is installed as `runtime/clarvis` on
+targets for this beta. The installed application uses native Host or Sandbox isolation. The bundled Bun executable is installed as `runtime/clarvis` on
 POSIX and `runtime/clarvis.exe` on Windows, so operating-system process viewers attribute the
 foreground process and its CPU and memory use to Clarvis rather than Bun. Developer source commands
 still run under their explicitly invoked Bun executable. Archives retain `runtime/bun` or `runtime/bun.exe`
@@ -307,12 +291,10 @@ another project, start the binary from that directory or use the installed
 
 ## Configuration
 
-Configuration requests use the normal conversation and file tools. The host reviews exact
-mutations through the current policy and excludes credentials and private state.
+Configuration requests use the normal conversation and file tools.
 An eligible entry agent can load the product-owned `clarvis-docs` skill and its focused references
 through the ordinary skill tools; this guide supplies information, not a file-edit grant.
-Automatic authorization does not require a second activation prompt. Human review concerns the
-concrete operation. Skill catalog notifications refresh command listings without reconnecting;
+Skill catalog notifications refresh command listings without reconnecting;
 active resource users retain their captured revision until safe application.
 See [self-configuration.md](../../specs/hosts/self-configuration.md).
 
@@ -322,7 +304,6 @@ The app uses a file-backed kernel. Workspace configuration lives under
 ```text
 .clarvis/
 ├── settings.json
-├── guard-judge.md       # optional: the prompt that answers command prompts for you
 ├── memory-policy.md     # optional: what this project wants recorded
 ├── agents/              # optional: one file per agent you add or customize
 │   └── ...
@@ -342,7 +323,7 @@ The onboarding and configuration views can configure providers and secrets, sele
 memory, inspect MCP tool servers, and manage extensions. `/extensions` is the only public extension
 route. It uses the same guided decision pattern as first boot: choose workspace/global selection
 scope, choose or stage an Extension Profile, search exact plugin and standalone-skill inventory, review
-every resulting agent/skill/MCP/hook/executable contribution, then apply one preview-bound delta and
+every resulting agent/skill/MCP/hook contribution, then apply one preview-bound delta and
 reconnect. Each decision exposes one key per outcome: Enter advances or applies and Escape finishes
 the multi-select or walks back, asking before an edited draft is discarded. Install, exact
 resolution and Apply use the shared footer-right spinner, show elapsed time, advance through their
@@ -353,9 +334,7 @@ continue. Large catalogs use bounded retained rows, review bodies scroll indepen
 decisions, and the optional splash disappears on compact terminals. Internal Extension Profiles, Plugins
 and MCP children remain available through that home's footer and return to it with Escape. The home
 body omits the step preview and duplicate child-shortcut legend; they are not nested
-slash commands. `/tasks` remains a standalone workspace surface.
-Capability services display their effective argv and packaged per-skill Plans policy in the
-plugin/provider panels, and start only when selected.
+slash commands.
 
 The Plugins browser uses the shared bounded detail layout and section styles. Its root shows
 compact counts and collections; the footer owns search/open hints, and detail pages retain
@@ -392,10 +371,9 @@ with its own contributors. The guided flow obtains the complete exact
 inventory from `ExtensionProfileService.inventory()` and commits a definition plus local selection only
 through `previewComposition`/`applyComposition`; a changed definition, selection document, or
 resolved contribution invalidates the review before either write. Its immutable `builtin:default` uses exact
-`enabledPlugins` refs and four-root skill behavior; custom Extension Profiles are complete allow-lists of
-exact `{ scope, source, name }` plugins and standalone skills. `.agents/plugins` and
-`.clarvis/plugins` participate equally; the install picker defaults to the shared `.agents` global
-inventory. Definitions may be shared from `.clarvis/extension-profiles`, but the active workspace
+`enabledPlugins` refs and two-root skill behavior; custom Extension Profiles are complete allow-lists of
+exact `{ scope, source, name }` plugins and standalone skills. Plugins install into the shared global
+`.agents/plugins` inventory. Definitions may be shared from `.clarvis/extension-profiles`, but the active workspace
 selection is always local machine state. The Extension Profile browser shows resolution status, routes
 creation/customization into the guided composer, retains direct selection/clear diagnostics, and
 can revision-safely delete an inactive custom definition. A process-local `--extension-profile`
@@ -446,11 +424,8 @@ application chunk and workspace foundation load concurrently. At 60 columns by 1
 the first paint shows the same complete eight-row Clarvis banner as an empty, untouched run; a
 narrower or shorter frame uses the shared one-line wordmark, and an extremely short frame retains
 only the branded header. The banner reserves all eight physical rows, followed by a blank separator
-and a non-shrinking status row, so reactive progress cannot paint over the final banner line. During
-Container startup that status follows the connector's
-engine inspection, runtime resolution, workspace isolation, artifact/state preparation and Kernel
-start phases. It remains startup-specific instead of claiming an agent, model or complete-app
-shortcut before those values exist. In `run` mode the user can type
+and a non-shrinking status row, so reactive progress cannot paint over the final banner line. During startup that status reports the local or SSH Kernel connection. It remains startup-specific
+instead of claiming an agent, model or complete-app shortcut before those values exist. In `run` mode the user can type
 immediately; Enter stores the exact submission outside renderer ownership. As soon as the run host
 exists with a runnable active Agent Profile, that queued task starts before complete-app hydration, and the
 resulting store/events survive the root handoff. The state continuously captures the draft and does
@@ -472,7 +447,7 @@ benchmark's individual markers.
 On the first interactive launch, startup opens a branded Clarvis setup rather than Doctor or an
 empty conversation. Enter begins the focused provider/model picker; the flow makes the selected
 model the default and asks for its credential without ever rendering the secret. After saving,
-Clarvis seeds its ordinary planning, memory and command-review defaults, reloads the live Agent Profile
+Clarvis seeds its ordinary planning and memory defaults, reloads the live Agent Profile
 catalogue, selects `marshall`, and shows one Ready screen. No agent or workflow file is written at
 any point; the default fleet and workflow catalogue are built into the kernel. One **Escape** from
 either picker closes the bootstrap picker and returns to setup with the staged choice unsaved.
@@ -587,8 +562,7 @@ overlay and its cache together with the existing developer error surface.
 
 Prompt history is likewise a bounded convenience cache: at most 1,000 entries, 1 million
 characters per entry and 8 million resident characters. Startup reads only the newest 8 MiB of its
-JSONL file and compacts an older oversized file in the background. A custom guard-judge prompt is
-limited to 32 KiB and oversized guidance safely falls through to the next scope.
+JSONL file and compacts an older oversized file in the background.
 
 ### Navigation and keyboard environments
 
@@ -613,8 +587,8 @@ keeps the whole path too and names the open file's operation. Escape returns fro
 tree, then closes `/diff`; its footer omits
 the global Ctrl+C cancel/quit action like the Plan and Goal detail screens.
 
-isolation and Guard have separate persisted controls; Memory's quick control is session-only.
-Application actions use Ctrl+X: I for Isolation, G for Guard, M for Memory, R for Run controls,
+Memory's quick control is session-only.
+Application actions use Ctrl+X: I for Isolation, M for Memory, R for Run controls,
 P for Plan, O for Goal, W for Workflow, D for Diff, S for the activity Sidebar, K for block expansion, and E
 for the expanded editor. Ctrl+X Up/Down enter transcript-block focus; while a block is focused,
 plain Up/Down move between blocks and Tab returns to the composer. While a Ctrl+X prefix is pending,
@@ -626,8 +600,7 @@ binding that would really fire there. These defaults are identical
 on macOS, Windows and Linux: press Ctrl+X, release it, then press the second key.
 The prefix expires after two seconds; Escape clears it and retains normal back behavior. Manual overrides remain
 available in Keyboard settings. All shortcut labels spell out Ctrl and Shift instead of a caret.
-Isolation, Guard, Memory and Agent pickers are disabled while a run is active.
-Under Container, Guard reads `Not applicable` and preserves the stored native value.
+Isolation, Memory and Agent pickers are disabled while a run is active.
 Clarvis keeps the terminal's native text path
 instead of requesting all-key escape reports, preserving dead-key and IME composition; a literal
 `ß` remains ordinary text. The three run-control pickers are loaded on first use and retained after their first
@@ -684,10 +657,7 @@ then `[2] do not run`, with no preselected UI answer.
 Numbered elicitation choices submit immediately with `1–9`, and `0` selects the tenth option. Arrow
 keys only move the highlighted choice and still require Enter. Number shortcuts deactivate while a
 text or numeric field owns input. Enter on an untouched workflow prompt cannot launch a workflow by
-enum order. Command and configuration approvals always present the affirmative decision first:
-`[1] allow once`, `[2] deny`; when a session grant exists the order is `[1] allow once`, `[2] allow
-for this session`, `[3] deny` for commands, and `[1] allow once`, `[2] allow these targets for this
-session`, `[3] deny` for configuration. Deny remains preselected, so untouched Enter stays fail-closed.
+enum order.
 
 Goal, Plan and Workflow detail screens share a 100-cell reading column, title/section styling,
 spacing and lifecycle colors. Their footers use the same lowercase action labels and group Escape
@@ -773,89 +743,13 @@ the pinned Croner dependency solely for calendar calculations; its bundled MIT l
 in [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md). The behavioral contract and test ownership
 are in [loop-scheduling.md](../../specs/hosts/loop-scheduling.md).
 
-### The command guard, and answering it automatically
+### Shell and file tools
 
-Before a shell command runs, the guard rules on it. Its mode lives in
-`settings.json` and defaults to `on`:
-
-```json
-{
-  "guard": {
-    "mode": "on",
-    "denied_commands": ["rm -rf /*", "git push --force*"],
-    "allowed_commands": ["bun test", "git status"]
-  }
-}
-```
-
-- **`off`** — no ruling at all.
-- **`on`** (default) — an `ask` verdict becomes a confirmation prompt for you.
-- **`auto`** — an LLM reviews each `ask`; deny and unsure refuse to the calling agent. Auto never
-  asks a person, including `on_unsure: "ask"`.
-
-On first setup, Clarvis writes a visible, editable starter `allowed_commands`
-list into global settings. It covers conventional inspection, build, test, lint
-and type-check commands across the common JavaScript/TypeScript, Python, Rust,
-Go, JVM, .NET, native, Ruby/PHP and additional language ecosystems. Generic
-interpreters and task runners plus install, publish, deploy and migration
-commands remain reviewable. Existing lists — including an intentionally empty
-one — are never expanded or replaced. For a low-interruption integrated posture with host
-containment, choose Isolation `Sandbox` and Review `Auto`; Docker/Podman is a separate complete-Kernel
-placement which executes ordinary commands without Command Review. An allowlist is approval policy
-and does not make repository-controlled build or test code safe to run directly on the host.
-
-After a guarded shell call settles, its transcript header states the durable
-verdict and answerer, for example `approved by judge` or `denied by judge`; the
-guard mode and internal review facts do not occupy transcript chrome. The same
-annotation is included in Markdown export and survives reopening the run. Shell
-calls remain individual transcript rows, so each settled call retains its own
-verdict and answerer. A collapsed non-zero shell result keeps `exit <code>` in
-that same header immediately before the guard verdict instead of consuming a
-separate diagnostic row; longer non-exit diagnostics remain below the header.
-
-Changing Review preserves the effective `allowed_commands` and `denied_commands`, including when a
-workspace choice inherits the global policy. Changing Isolation leaves Review and its command policy
-stored, but Docker/Podman makes it inactive. Selecting Host requires an explicit danger confirmation
-because it removes the containment boundary; turning Review off does not itself change isolation.
-With Review off, a Sandbox run that requests `sandbox_permissions: "require_escalated"` executes that
-one command on the host without a reviewer. Container always rejects that request and has no host or
-fallback channel. Its safety explanation states native Container capabilities, no Review, writable workspace and outbound
-consequences, plus read-only Git metadata.
-
-In Review on and auto, a **deny** is enforced before a reviewer; `denied_commands` wins
-over `allowed_commands`. An entry without `*` is a space-boundary prefix over the
-normalized command; an entry with `*` is an anchored glob. Turning the guard off
-is a persisted choice — write `"mode": "off"` rather than deleting the block, or
-it comes back on the next boot.
-
-**Auto needs a usable reviewer model.** The kernel resolves `effect_review.model` or the default
-model and always supplies its safety policy first. Optional workspace/global `guard-judge.md`
-files provide guidance below that policy, never authority. When both exist, Code preserves the
-operator-global guidance first and appends workspace guidance within the 32 KiB request bound.
-Code sends guidance only when present. An unsure, failed or malformed review is denied to the
-calling agent; Auto never sends that outcome to a person. Docker/Podman runs do not run
-Auto Guard; an explicit Review `on` or `auto` request is incompatible with those placements.
-
-It is plain prose — no frontmatter, no schema. Write the standing rules you would
-apply yourself:
-
-```markdown
-Approve read-only inspection freely: status, log, diff, ls, cat, test runs.
-
-Ask me about anything that pushes, publishes, deletes outside the working tree,
-or edits files under `infra/`.
-
-Never approve a command that pipes a network fetch into a shell.
-```
-
-The configuration reviewer uses host-attributed operator evidence and mechanically attested effects;
-the `shadow` and `local` stages validate effect-model allows against current grants. Every shell
-`ask` the allow/deny lists did not resolve instead uses the exact-call Judge in Auto: its payload separates
-segment source, executable, parameters and environment bindings, while deny-list and path rules retain precedence. Auto never asks a person: the Judge decides
-forced removal, privilege elevation, credential-file access and unsandbox, and refusals name the
-exact match. Approval asks a human only when the call is neither allow-listed nor dangerous. The prompt shows segment causes, effect identity and
-operational failure kind. See the [command-guard contract](../../specs/execution/command-guard.md)
-and the [effect-review contract](../../specs/execution/effect-review.md).
+Shell commands and file operations execute with the selected Isolation policy. When native
+Sandbox isolation is configured, its filesystem and network restrictions apply to both.
+Production: `packages/code/src/features/run/` (run configuration) and
+`packages/tools/src/sandbox.ts` (`sandboxCommand`). The behavior is specified in
+[sandbox.md](../../specs/execution/sandbox.md).
 
 `~/.clarvis` is `$CLARVIS_HOME` when that is set.
 
@@ -1023,13 +917,12 @@ assets to load successfully.
 
 `-p/--print` runs without a terminal: it starts the kernel silently, streams
 the lead agent's reply to stdout and exits 0 on success or 1 on failure —
-suitable for scripts and CI. Interactive approvals (guard/ask_user) are
+suitable for scripts and CI. Interactive `ask_user` prompts are
 auto-denied with a note on stderr, so a headless run can never hang. Without
 `--agent`, it uses the same configured-default, runnable-`marshall`, runnable-Lead
 resolution as the TUI and fails clearly when no interactive entry agent exists. Its kernel, like
-the interactive path, is opened through `WorkspaceClientManager`; a selected Docker or Podman
-destination is connected before submission. Runtime release/artifact acquisition observes the
-initialization cancellation and bounded preparation deadline.
+the interactive path, is opened through `WorkspaceClientManager` for the selected local or SSH
+destination.
 
 `--resume` with an unknown id and `--continue` in a workspace with no sessions
 fail fast with exit 1 before the terminal is taken; `--continue` only ever
@@ -1085,25 +978,6 @@ operations, so a slow resume cannot replace a newer session.
 Transcript exports pass the raw owner id to `@clarvis/paths`; the export
 directory builder encodes it at the path boundary, so an owner id cannot select
 a directory outside the global `exports/` tree.
-
-### Tasks
-
-`/tasks` opens the provider-backed Tasks hub. It offers a normalized-stage board and list, current
-provider health, container/search filters, task detail, explicit supported mutations and a manual
-refresh. Native state, assignee and an active Clarvis claim remain separate; `concurrency: none` is
-shown as `claim not enforced`. A provider failure, conflict or unknown mutation outcome is never
-rendered as an empty board.
-
-`Work on task` opens the ordinary Agent Profile picker and starts a run in the current workspace with
-only the external task ID and provider key. It never follows a task URL, changes worktree, or accepts
-a repository/path from provider data. Returning from a run refreshes from the external source of
-truth. Opening a task in work mode does not itself mutate the backend: the agent must call
-`start_task` explicitly when that tool is available.
-
-The provider setup remains separate from plugin installation and enablement. Settings select one
-effective namespaced MCP server, fixed protocol `clarvis.tasks.v2`, optional default container and
-writes policy; the test action probes capabilities only. `@clarvis/code` uses `KernelClient.tasks`
-and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 
 ## Main features
 
@@ -1193,7 +1067,7 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 - One transcript projection renders stable row IDs for composing, pending, running and terminal
   records. Results are sealed into bounded immutable copies without freezing live reactive nodes,
   then remain in the same row owner across later iterations and restored turns.
-  Explicit exploration groups exist from their first allowlisted read/search call; shell, mutations
+  Explicit exploration groups exist from their first read/search call; shell, mutations
   and unknown MCP tools stay individual. Each open group mounts one page of 20 members.
 - One native ScrollBox owns sticky follow, culling and semantic row anchors. Short projections mount
   at most 80 rows; long projections normally mount 40 with 20-row paging and an 80-row transition
@@ -1258,8 +1132,8 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   so the previous run cannot briefly appear twice while `run_started` is still in flight.
 - The canonical footer keeps gross Context plus cumulative `Session` input/output, prompt-cache hit
   percentage and cost available before and after a run settles (token totals and cache percentage
-  appear in the wide band). Goal stage cost includes Guard reviews after host settlement, while
-  ordinary runs and Goal auxiliary work accumulate in the same Session cost field. It does not repeat
+  appear in the wide band). Goal stages, ordinary runs and Goal auxiliary work accumulate in the same
+  Session cost field. It does not repeat
   `Running`, elapsed time or iteration there; those live-run facts sit beside `thinking`/`working`
   immediately above the composer, where the current phase leads and the details after it stay muted.
   When a full-region page (Plan, Diff, a view) owns the reading area, that activity line prefixes
@@ -1302,7 +1176,6 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   remaining pane width beside an explicitly opened split; the old 110-column reading cap no longer
   applies.
 - Session browsing and continuation.
-- Command guards and approval flows.
 - User elicitation during a run.
   A model-originated `ask_user` question arrives with a 30-second decision window (`window_ms`,
   declared by this frontend as `elicit_policy.ask_user_window_ms`): the block confirms its own
@@ -1315,7 +1188,7 @@ time; decision returned to the model.` and that question's form, choices and dec
   id, which removes the block without this frontend answering an already-settled id. Its settled
   transcript annotation reads `no answer: …`, never `answered:`. Typing, focus,
   remounting or reconnecting never extend the window, and no partial draft, default option or
-  synthetic answer is ever submitted. Guard confirmations, plan and workflow reviews and relayed MCP
+  synthetic answer is ever submitted. Plan and workflow reviews and relayed MCP
   questions declare no window and render no countdown. See
   [elicitation](../../specs/cross-cutting/elicitation.md) and
   [input and overlays](../../specs/hosts/code-input-and-overlays.md).
@@ -1376,9 +1249,8 @@ Changing `/model` while a run is active is refused until that run settles. If th
 safe context limit is smaller than the latest persisted continuation, the picker shows the estimated
 current size and new limit and requires explicit confirmation. Acceptance mechanically evicts older
 context first and saves the model only after the replacement fits; cancellation or fitting failure
-leaves both model and context unchanged. On a Container connection, a successful save immediately
-requests an idle generation reload so the next run uses the selected model. A refused reload keeps
-the committed save visible as pending reconnect instead of claiming that it is active.
+leaves both model and context unchanged. A successful save requests an idle generation reload so the next run uses the selected model.
+A refused reload keeps the committed save visible as pending reconnect instead of claiming that it is active.
 
 Most features go through `KernelClient`. Local shell commands, marketplace
 catalog cloning and platform diagnostics remain client-side seams because the
@@ -1460,11 +1332,9 @@ bun --filter @clarvis/code dev
 
 For testing this checkout from arbitrary project directories without rebuilding after source
 edits, use `./dev-install.sh`. It requires the exact Bun version from `mise.toml`, performs
-`bun install --frozen-lockfile`, installs the repository hook, builds `clarvis-base:local` for each
-Docker/Podman engine on `PATH`, builds the target Linux Kernel archive once, and atomically writes a managed
+`bun install --frozen-lockfile`, installs the repository hook, and atomically writes a managed
 `clarvis-develop` launcher to
-`${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. A host with neither engine still
-installs the launcher for native use. Re-running it updates that owned launcher;
+`${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. Re-running it updates that owned launcher;
 an unrelated file, directory, or symlink at the destination is refused. `./dev-install.sh
 --uninstall` removes only the launcher.
 
@@ -1488,6 +1358,7 @@ TSX source directly and nothing is emitted for consumers — but it **does** hav
 `bun --filter @clarvis/code build` (`packages/code/tooling/artifact/build.ts`) produces the distributable bundle. From the
 repository root, `bun run build` runs the TypeScript library graph and then this bundle; use
 `bun run build:code` when only the TUI changed.
+`bun run clean` removes package build outputs, including the Code bundle, before a fresh build.
 
 **That bundle is what `clarvis` runs.** `bin` points at `src/cli.ts`, which
 is a launcher: it answers `--help`/`--version` itself and otherwise loads
@@ -1585,52 +1456,22 @@ withheld until reconnect and Code shows `Skill '<name>' changed on disk and was 
 until reconnect` as a transient warning. The user message and the next run continue normally, and
 the notice is never written into transcript history. A selected plugin whose captured executable
 files drift receives the parallel `Plugin '<name>' changed executable files` warning while its
-runtime MCP/hook/capability projections are withheld.
+runtime MCP/hook projections are withheld.
 
-The workspace header reports stored Review and effective Isolation as separate chips. A configured
-Docker or Podman choice connects that destination before constructing the workspace client. There is
-no fallback chip or rewrite to Sandbox. `WorkspaceClientManager` supplies the selected engine through
-a dynamic `@clarvis/kernel/local` import; native startup neither loads those adapters nor probes an engine.
+The workspace header reports effective Isolation. Settings >
+Run controls owns the persisted global Host or Sandbox choice alongside the `Ctrl+X I` quick picker.
+Host follows OS permissions; Sandbox reads host-visible files but limits writes to
+its declared roots. `workspace-read-only` keeps the workspace read-only even below a writable
+temporary root. A Sandbox command may use an accessible directory outside the workspace as `cwd`.
+The panel's effective access line follows host inspection when an untrusted workspace requests a
+weaker Sandbox than the global policy; Run controls, Doctor and the quick picker use the same
+observation for effective placement, while editable rows still show the requested settings. When
+idle, selecting a placement reloads the workspace connection. The picker shows its save/reconnect
+phase until admission completes. Host selection requires the explicit danger confirmation.
 
-Settings > Run controls owns persisted global placement alongside the `Ctrl+X I` quick picker.
-Docker/Podman runs native Plans, Memory, Workflows and Goals inside the Container. Skills,
-MCPs, Hooks, Plugins, external Tasks and host process capabilities are unavailable; commands run
-without Command Review; workspace writes and outbound network remain enabled; Git metadata is
-read-only. Review reads `Not applicable in Container`. When idle, selecting a placement immediately
-reloads the workspace connection and the header reflects the admitted Kernel. The picker remains
-modal and shows its save/reconnect phase until admission completes; a refused transition remains
-open, restores the previous isolation setting and reports the admitted connection that was kept. Its
-bounded detail area wraps the failure while the standard picker navigation retains the available
-actions. Host confirmation projects the established
-`y`/`n` actions and renders its warning once. Settings, Agent, prompt and model-catalog writes remain
-host-side; `/model` immediately attempts the idle reload, while other saves notify that the active
-immutable Container projection is pending and keep a
-`reconnect pending` warning in the header until a new generation is admitted. They take effect only
-in that new generation. Profiles supplied by Plugins, carrying external grants or naming an unavailable delegate
-are marked as requiring Sandbox/Host, and `$` completion lists no Skills. An explicit Task or Skill is
-refused by the adapter before submission; the kernel still revalidates stale/external requests and
-returns the named `unsupported` failure before model work. No elicitation changes placement.
-
-Container mounts the selected workspace read-write at `/workspace`, so changes appear on the host
-immediately and there is no Clarvis-owned copy/apply prompt. A private content volume covers
-`.clarvis`, then exact writable overlays share Plans, Memory, sessions, Goals, workflow records,
-persisted conversation context and traces with Host/Sandbox. Container-only registry and home state
-remain private. `.agents` is masked and Git metadata is overlaid read-only for primary and linked
-worktrees. A nonce preflight proves the engine sees the same workspace before persistent volumes are
-prepared. The safety promise
-covers the host outside the selected workspace, not workspace destruction or outbound remote effects.
-
-The simple selection persists only `{ "backend": "docker" }` or `{ "backend": "podman" }`; advanced
-settings may override executable, Docker context/Podman connection, digest, network and resource
-ceilings. Docker additionally accepts an operator-owned image recipe under global
-`runtime-recipes/`; the TUI has no script editor and the guest cannot mutate it. Recipe content,
-builder policy and exact base form a local cache identity. Failure is visible and remains Container;
-Clarvis does not use an uncustomized image or native fallback. Recipe scripts are not a secret
-channel: their bytes reach the engine and material written into image layers/build output may persist.
-
-Agents with `run_commands` can use `mise` for missing toolchains in the engine-owned namespace
-partitioned `/mise` cache. The guest receives no `expose_port`, engine socket, host shell or host
-credential helper. Engine correction or selecting Sandbox/Host always requires a new connection with no active work.
+Local and SSH destinations remain available through `WorkspaceClientManager`. Their settings,
+Agent, prompt and model-catalog writes stay with the selected host; `/model` attempts an idle reload
+so the next run uses the saved configuration. No elicitation changes placement.
 
 `bun run bench:code-overlays` runs the renderer lifecycle soak. Every named case and default
 120x32/80x24 size gets a fresh process, warm-up, forced-GC batch samples and RSS/PSS/private-dirty plus live renderable, renderer

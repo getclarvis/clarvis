@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { constants, promises as fs } from "node:fs";
 import { bestEffort } from "./tasks.ts";
 import path from "node:path";
 import { TMP_GLOB, fsyncDir, renameWithRetry, tmpPathFor, writeFileDurable } from "@clarvis/paths";
@@ -60,12 +60,6 @@ export function withFileLocks<T>(paths: string[], fn: () => Promise<T>): Promise
   const sorted = [...new Set(paths)].sort();
   return sorted.reduceRight<() => Promise<T>>((acc, p) => () => withFileLock(p, acc), fn)();
 }
-
-/** Host review of a fully prepared batch before staging or changing any target. */
-export type MutationReview = (
-  operations: readonly FileOp[],
-  commit: () => Promise<void>,
-) => Promise<void>;
 
 interface Staged {
   tmp: string;
@@ -139,21 +133,15 @@ export async function assertNotSymlink(target: string): Promise<void> {
  * @remarks Atomic staging, retry, cleanup, payload fsync, and directory fsync
  * are owned by `@clarvis/paths`. This wrapper preserves the behavior specific
  * to coding tools: refusing a symlink, retaining an existing file's mode or
- * applying explicit reviewed configuration modes, using the host umask for an
+ * using the host umask for an
  * ordinary new file/directory, and removing a parent directory this call
  * created if the write fails.
  */
 export async function writeAtomic(
   target: string,
   content: string,
-  review?: MutationReview,
-  intent: "write" | "edit" = "write",
   modes?: { mode: number; dirMode: number },
 ): Promise<void> {
-  if (review !== undefined)
-    return review([{ type: "modify", path: target, content, intent }], () =>
-      writeAtomic(target, content, undefined, intent, modes),
-    );
   await assertNotSymlink(target);
   const dir = path.dirname(target);
   const createdDir = await fs.mkdir(dir, {
@@ -174,30 +162,36 @@ export async function writeAtomic(
 }
 
 /**
- * One filesystem mutation in an all-or-nothing batch passed to
- * {@link applyOpsAtomic}.
+ * One prepared filesystem mutation. File operations enter the all-or-nothing
+ * {@link applyOpsAtomic} batch; directory removals use separate commits.
  *
  * @remarks `content` is the new file body for `create`/`modify` (and for a
  *   `rename` that also rewrites the file). `from` is the source path for a
  *   `rename` and is ignored otherwise.
  */
 export interface FileOp {
-  /** The kind of mutation: create a new file, overwrite an existing one, delete it, or move it. */
-  type: "create" | "modify" | "delete" | "rename";
+  /** File create/modify/delete/rename, or a separate directory removal. */
+  type: "create" | "modify" | "delete" | "rename" | "rmdir" | "rmtree";
   /** The destination/target path this op acts on. */
   path: string;
   /** The source path for a `rename`; unused by other op types. */
   from?: string;
   /** The new file body for `create`/`modify`, or an optional rewrite alongside a `rename`. */
   content?: string;
-  /** Host review distinguishes a file edit from a full replacement write. */
+  /** Distinguishes a file edit from a full replacement write. */
   intent?: "write" | "edit";
-  /** Explicit permission bits for a reviewed configuration destination. */
+  /** Explicit permission bits for a destination. */
   mode?: number;
-  /** Directory mode for a newly created protected parent. */
+  /** Directory mode for a newly created parent. */
   dirMode?: number;
   /** A rename may replace a destination only when its caller explicitly allowed it. */
   overwrite?: boolean;
+  /** Bound for a cross-filesystem rename staged as a copy. */
+  maxBytes?: number;
+  /** Bounded preview for a recursive directory removal. */
+  treeEntries?: readonly string[];
+  /** Captured identity of every previewed entry. */
+  treeRevision?: string;
 }
 
 interface Committed {
@@ -205,6 +199,88 @@ interface Committed {
   backup: string | undefined;
   fromBackup?: string;
   renamed?: boolean;
+  crossDevice?: boolean;
+}
+
+interface CrossStage {
+  readonly tmp: string;
+  readonly source: { dev: bigint; ino: bigint; size: bigint; mtimeNs: bigint; ctimeNs: bigint };
+}
+
+async function assertSourceUnchanged(from: string, source: CrossStage["source"]): Promise<void> {
+  let current;
+  try {
+    current = await fs.lstat(from, { bigint: true });
+  } catch {
+    throw new ToolError("revision_conflict", "Move source changed before commit.");
+  }
+  if (
+    !current.isFile() ||
+    current.dev !== source.dev ||
+    current.ino !== source.ino ||
+    current.size !== source.size ||
+    current.mtimeNs !== source.mtimeNs ||
+    current.ctimeNs !== source.ctimeNs
+  )
+    throw new ToolError("revision_conflict", "Move source changed before commit.");
+}
+
+async function stageCrossDevice(op: FileOp): Promise<CrossStage | undefined> {
+  const from = op.from!;
+  const to = op.path;
+  await assertNotSymlink(from);
+  try {
+    await fs.stat(from);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      throw new ToolError("not_found", `Rename source does not exist: ${from}`, { path: from });
+    throw error;
+  }
+  const source = await fs.open(
+    from,
+    constants.O_RDONLY | (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0),
+  );
+  try {
+    const snapshot = await source.stat({ bigint: true });
+    if (!snapshot.isFile()) throw new ToolError("not_a_file", "Move source is not a regular file.");
+    const destination = await fs.stat(path.dirname(to), { bigint: true });
+    if (snapshot.dev === destination.dev) return undefined;
+    const maxBytes = op.maxBytes ?? 64 * 1024 * 1024;
+    if (snapshot.size > BigInt(maxBytes))
+      throw new ToolError("too_large", `Cross-filesystem move exceeds ${maxBytes} bytes.`);
+    const tmp = tmpPathFor(to);
+    const target = await fs.open(tmp, "wx", op.mode ?? Number(snapshot.mode & 0o777n));
+    try {
+      const buffer = Buffer.allocUnsafe(64 * 1024);
+      let total = 0n;
+      for (;;) {
+        const { bytesRead } = await source.read(buffer, 0, buffer.length, null);
+        if (bytesRead === 0) break;
+        total += BigInt(bytesRead);
+        if (total > BigInt(maxBytes))
+          throw new ToolError("too_large", `Cross-filesystem move exceeds ${maxBytes} bytes.`);
+        let offset = 0;
+        while (offset < bytesRead) {
+          const written = await target.write(buffer, offset, bytesRead - offset);
+          if (written.bytesWritten === 0)
+            throw new ToolError("io_error", "Cross-device staging stopped writing.");
+          offset += written.bytesWritten;
+        }
+      }
+      await target.sync();
+      await assertSourceUnchanged(from, snapshot);
+      return { tmp, source: snapshot };
+    } catch (error) {
+      await bestEffort("atomic_cross_stage_cleanup", () =>
+        fs.rm(tmp, { force: true, ...RM_RETRY }),
+      );
+      throw error;
+    } finally {
+      await target.close();
+    }
+  } finally {
+    await source.close();
+  }
 }
 
 async function cleanupStaged(staged: Map<string, string>): Promise<void> {
@@ -215,8 +291,9 @@ async function cleanupStaged(staged: Map<string, string>): Promise<void> {
 async function stageAll(
   ops: FileOp[],
   createdDirs: (string | undefined)[],
-): Promise<Map<string, string>> {
+): Promise<{ staged: Map<string, string>; cross: Map<string, CrossStage> }> {
   const staged = new Map<string, string>();
+  const cross = new Map<string, CrossStage>();
   try {
     for (const op of ops) {
       if (op.type === "create" || op.type === "modify") {
@@ -240,6 +317,19 @@ async function stageAll(
           );
           staged.set(op.path, tmp);
           createdDirs.push(createdDir);
+          await assertNotSymlink(op.from!);
+          const source = await fs.lstat(op.from!, { bigint: true });
+          if (!source.isFile())
+            throw new ToolError("not_a_file", "Move source is not a regular file.");
+          const destination = await fs.stat(path.dirname(op.path), { bigint: true });
+          if (source.dev !== destination.dev) {
+            if (ops.length !== 1)
+              throw new ToolError(
+                "cross_device",
+                "Cross-filesystem rename requires a single-file operation.",
+              );
+            cross.set(op.path, { tmp, source });
+          }
         } else {
           createdDirs.push(
             await fs.mkdir(path.dirname(op.path), {
@@ -247,6 +337,16 @@ async function stageAll(
               ...(op.dirMode === undefined ? {} : { mode: op.dirMode }),
             }),
           );
+          const copied = await stageCrossDevice(op);
+          if (copied !== undefined) {
+            staged.set(op.path, copied.tmp);
+            if (ops.length !== 1)
+              throw new ToolError(
+                "cross_device",
+                "Cross-filesystem rename requires a single-file operation.",
+              );
+            cross.set(op.path, copied);
+          }
         }
       }
     }
@@ -254,7 +354,7 @@ async function stageAll(
     await cleanupStaged(staged);
     throw err;
   }
-  return staged;
+  return { staged, cross };
 }
 
 /**
@@ -310,10 +410,10 @@ async function validateTargets(ops: FileOp[]): Promise<Map<string, number | unde
       modes.set(to, stFrom.mode & 0o777);
       continue;
     }
-    await assertNotSymlink(op.path);
+    if (op.type !== "delete") await assertNotSymlink(op.path);
     let st;
     try {
-      st = await fs.stat(op.path);
+      st = op.type === "delete" ? await fs.lstat(op.path) : await fs.stat(op.path);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
       modes.set(op.path, undefined);
@@ -322,6 +422,10 @@ async function validateTargets(ops: FileOp[]): Promise<Map<string, number | unde
     if (st.isDirectory()) {
       throw new ToolError("not_a_file", `Path is a directory: ${op.path}`, { path: op.path });
     }
+    if (op.type === "delete" && !st.isFile() && !st.isSymbolicLink())
+      throw new ToolError("not_a_file", `Path is not a file or symlink: ${op.path}`, {
+        path: op.path,
+      });
     modes.set(op.path, st.mode & 0o777);
   }
   return modes;
@@ -346,6 +450,7 @@ async function commitWithRollback(
   ops: FileOp[],
   staged: Map<string, string>,
   modes: Map<string, number | undefined>,
+  cross: Map<string, CrossStage>,
 ): Promise<Committed[]> {
   const committed: Committed[] = [];
   try {
@@ -353,6 +458,9 @@ async function commitWithRollback(
       if (op.type === "rename") {
         const from = op.from!;
         const to = op.path;
+        const crossStage = cross.get(to);
+        if (crossStage !== undefined) await assertSourceUnchanged(from, crossStage.source);
+        await assertNotSymlink(to);
         const mode = op.mode ?? modes.get(to);
         const rec: Committed = { op, backup: undefined };
         committed.push(rec);
@@ -365,9 +473,11 @@ async function commitWithRollback(
         }
         const tmp = staged.get(to);
         if (tmp !== undefined) {
-          const fromBkp = tmpPathFor(from);
-          await renameForTools(from, fromBkp);
-          rec.fromBackup = fromBkp;
+          if (crossStage === undefined) {
+            const fromBkp = tmpPathFor(from);
+            await renameForTools(from, fromBkp);
+            rec.fromBackup = fromBkp;
+          } else rec.crossDevice = true;
           if (mode !== undefined) await fs.chmod(tmp, mode);
           await renameForTools(tmp, to);
         } else {
@@ -413,7 +523,9 @@ async function rollbackCommitted(
       if (op.type === "rename") {
         const from = op.from!;
         const to = op.path;
-        if (rec.fromBackup !== undefined) {
+        if (rec.crossDevice) {
+          await fs.rm(to, { force: true, ...RM_RETRY });
+        } else if (rec.fromBackup !== undefined) {
           await fs.rm(to, { force: true, ...RM_RETRY });
           await renameForTools(rec.fromBackup, from);
         } else if (rec.renamed) {
@@ -445,24 +557,27 @@ async function rollbackCommitted(
 }
 
 /**
- * Apply a batch of {@link FileOp}s as a single all-or-nothing transaction: either
- * every op lands or the filesystem is restored to its pre-batch state.
+ * Apply a batch of {@link FileOp}s with staged writes and rollback before
+ * publication. Cross-filesystem moves use a single-operation copy and unlink
+ * path with an explicit partial outcome after the destination is committed.
  *
  * @param ops - the create/modify/delete/rename operations to apply, in order.
  * @throws {@link ToolError} from validation (see {@link validateTargets}) or an
- *   `io_error` when a rollback could not fully restore an original; any other
- *   error from staging or committing propagates after cleanup.
+ *   `io_error` when a rollback could not fully restore an original, or
+ *   `commit_partial` when a cross-filesystem destination landed but source
+ *   removal or durability could not be confirmed.
  * @remarks New content is staged to temp files and targets validated before any
  *   original is touched, so most failures abort with nothing changed. During
  *   commit each displaced original is kept as a backup and restored on failure;
  *   on success every affected directory is `fsync`ed and the backups/temps are
  *   removed. Permission bits of overwritten files are preserved.
  */
-export async function applyOpsAtomic(ops: FileOp[], review?: MutationReview): Promise<void> {
-  if (review !== undefined) return review(ops, () => applyOpsAtomic(ops));
+export async function applyOpsAtomic(ops: FileOp[]): Promise<void> {
+  if (ops.some((op) => op.type === "rmdir" || op.type === "rmtree"))
+    throw new ToolError("invalid_input", "Directory removal uses the remove tool.");
   const createdDirs: (string | undefined)[] = [];
   try {
-    const staged = await stageAll(ops, createdDirs);
+    const { staged, cross } = await stageAll(ops, createdDirs);
 
     let modes: Map<string, number | undefined>;
     try {
@@ -472,7 +587,7 @@ export async function applyOpsAtomic(ops: FileOp[], review?: MutationReview): Pr
       throw err;
     }
 
-    const committed = await commitWithRollback(ops, staged, modes);
+    const committed = await commitWithRollback(ops, staged, modes, cross);
 
     const dirs = new Set<string>();
     for (const op of ops) {
@@ -483,6 +598,26 @@ export async function applyOpsAtomic(ops: FileOp[], review?: MutationReview): Pr
       for (const dir of dirs) await fsyncDir(dir);
     } catch (error) {
       await rollbackCommitted(committed, staged, error);
+    }
+
+    for (const [to, stagedSource] of cross) {
+      const from = ops.find((op) => op.path === to)?.from;
+      if (from === undefined) throw new Error("Cross-device move lost its source identity.");
+      try {
+        await assertSourceUnchanged(from, stagedSource.source);
+        await fs.unlink(from);
+        await fsyncDir(path.dirname(from));
+      } catch {
+        const sourceExists = await fs.lstat(from).then(
+          () => true,
+          () => false,
+        );
+        throw new ToolError(
+          "commit_partial",
+          "Destination was committed, but source removal could not be confirmed.",
+          { source_exists: sourceExists, destination_committed: true },
+        );
+      }
     }
 
     for (const { backup, fromBackup } of committed) {

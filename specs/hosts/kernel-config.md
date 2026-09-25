@@ -29,13 +29,12 @@ runs unchanged (`packages/kernel/src/config/agent-overlay.ts`).
 ## 2. Surface
 
 Agent-driven edits in the ordinary conversation use the
-[direct self-configuration contract](self-configuration.md): shared effect review, authored-file
-classification and revision-bound file mutations. The host reviewer does not expose credential,
-trust or private-state stores, and does not replace the operator-facing config service below.
-Production: `prepareConfigurationFileMutation` in
-[files.ts](../../packages/kernel/src/configuration/files.ts) and `createAuthoringMutationReview` in
-[authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts). Test:
-[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
+[direct self-configuration contract](self-configuration.md): ordinary file tools write configuration
+documents under host permissions or the configured native sandbox. The config service below still
+validates documents when it reads them. Production: `dispatch` in
+[core.ts](../../packages/tools/src/core.ts) and `createFileConfigStore` in
+[file-config-store.ts](../../packages/kernel/src/config/file-config-store.ts). Test:
+[configuration-surface.test.ts](../../packages/kernel/tests/integration/configuration-surface.test.ts).
 
 ### 2.1 Public exports (`packages/kernel/src/config.ts`, the `./config` entrypoint)
 
@@ -138,7 +137,7 @@ silently weakening the service's concurrency guarantee" (`packages/kernel/src/co
 ### 2.5 Settings schema composition
 
 `kernelCapabilityRegistry` registers `memorySettingsSpec`, `plansSettingsSpec`, `goalsSettingsSpec`,
-`workflowsSettingsSpec`, `tasksSettingsSpec` and `runtimeSettingsSpec` at module load. There is no
+`workflowsSettingsSpec` and `tasksSettingsSpec` at module load. There is no
 worktree settings block: worktrees are a launch-time Code choice rather than a kernel capability.
 `kernelSettingsSchema =
 settingsSchemaFor(kernelCapabilityRegistry)`, which extends the engine's `settingsSchema` with
@@ -248,13 +247,12 @@ not require another approval while that inventory remains unchanged.
 
 ### 3.6 `WORKSPACE_RISK_FIELDS` (`packages/kernel/src/config/workspace-trust.ts`)
 
-`["hooks", "mcpServers", "enabledPlugins", "marketplaces", "memory.provider", "plans.provider",
-"tasks.provider"]`. The first four are stripped when `declaresSomething` is true — i.e. absent, `[]`
-and `{}` do **not** count. `memory.provider` / `plans.provider` are stripped only when
-`provider.kind` is `"executable"` or `"plugin"`; `tasks.provider` is stripped (and takes
-the whole `tasks` block with it) whenever `tasks.provider` is an object. Pinned
-by `packages/kernel/tests/integration/workspace-trust.test.ts` (covers every field)
-(built-in `kind: "wiki"` / `kind: "markdown"` providers survive).
+`["hooks", "mcpServers", "enabledPlugins", "marketplaces", "providers.subscription"]`.
+The first four are stripped when `declaresSomething` is true; absent, `[]` and `{}` do not count.
+Subscription provider declarations are withheld from workspace settings. Built-in Memory and Plans
+provider selections survive. Production: `WORKSPACE_RISK_FIELDS` and `stripWorkspaceRiskFields`
+in `packages/kernel/src/config/workspace-trust.ts`. Test:
+`packages/kernel/tests/integration/workspace-trust.test.ts`.
 
 ### 3.7 The five shipped agents
 
@@ -277,7 +275,7 @@ agent and per attempt: the lead's counter and each child's counter are separate,
 retry starts a fresh one while the Goal's consumption and global limits keep accumulating
 ([budgets-and-guards.md](../engine/budgets-and-guards.md)). 512 is also
 `CLARVIS_DEFAULT_ITERATION_LIMIT` and `CLARVIS_ITERATION_CEILING`, and the same test asserts every
-shipped value fits under the default ceiling — the Container image's own ceiling has to admit it too
+shipped value fits under the default ceiling
 ([build-and-ci.md](../cross-cutting/build-and-ci.md)).
 
 The bodies are deliberately limited to role, effective harness surface and runtime constraints. The
@@ -578,15 +576,6 @@ unchanged, `AGENTS.md` is used as the fallback, and seeding both candidates puts
 the assembled entry profile. The lower-level empty-scope and oversized-file cases remain covered by
 `packages/kernel/tests/integration/file-config-store.test.ts`.
 
-The same captured records, global then workspace, also supply Judge's persistent operator
-instructions and the hosted Goal Steward's normative evaluation context; no second filesystem read
-can diverge from the assembled work-agent snapshot.
-Production: `captureRunInstructions` in
-[instruction-snapshot.ts](../../packages/kernel/src/runs/instruction-snapshot.ts) and
-`createSettingsRunAssembler` in [settings-assembler.ts](../../packages/kernel/src/runs/settings-assembler.ts).
-Test: `shares exact global and workspace contexts with Judge using per-scope filename precedence`
-in [settings-assembler.test.ts](../../packages/kernel/tests/component/settings-assembler.test.ts).
-
 ## 5. Invariants
 
 Each entry: **rule** — production anchor — test anchor.
@@ -763,8 +752,7 @@ Each entry: **rule** — production anchor — test anchor.
 26a. **Trust carry is limited to the exact authorized target revision.** Every other settings,
     agent and Extension Profile input must match the pre-write snapshot, and the trust record uses
     the fingerprint from the verified post-write snapshot. Production:
-    `packages/kernel/src/config/file-config-store.ts` and
-    `packages/kernel/src/configuration/authoring-mutations.ts`. Pinned by the concurrent
+    `packages/kernel/src/config/file-config-store.ts`. Pinned by the concurrent
     executable-change case in `packages/kernel/tests/integration/workspace-trust.test.ts`.
 
 27. **Settings mutation is serialized by a local lease and derives its input from the bytes whose
@@ -931,7 +919,7 @@ no cross-host mutual exclusion from this lease.
 | `@clarvis/protocol` | type-only | `packages/kernel/src/config/config-service.ts`, `packages/kernel/src/config/config-store.ts`, `packages/kernel/src/config/agent-resolution.ts`, `packages/kernel/src/config/workspace-trust.ts` — all `import type` |
 | `@clarvis/loop/host` | **runtime value** | `agentFrontmatterSchema` (`packages/kernel/src/config/config-service.ts`, `packages/kernel/src/config/agent-overlay.ts`), `settingsSchemaFor` (`packages/kernel/src/config/capability-registry.ts`), `splitAgentFrontmatter` + `mergeSettings` (`packages/kernel/src/config/file-config-store.ts`, `packages/kernel/src/config/frontmatter.ts`), `readJsonFile` (`packages/kernel/src/config/workspace-trust.ts`) |
 | `@clarvis/capability` | **runtime value** | `createCapabilityRegistry` (`packages/kernel/src/config/capability-registry.ts`), `createRateLimiter`/`NOOP_LOGGER` (`packages/kernel/src/config/file-config-store.ts`) |
-| `@clarvis/memory/settings`, `@clarvis/plan/settings`, `@clarvis/workflows`, `@clarvis/tasks/settings` | **runtime value** | the four `register(...)` calls in `packages/kernel/src/config/capability-registry.ts` |
+| `@clarvis/memory/settings`, `@clarvis/plan/settings`, `@clarvis/workflows` | **runtime value** | the three `register(...)` calls in `packages/kernel/src/config/capability-registry.ts` |
 | `@clarvis/paths` | **runtime value** | `globalPaths`, `workspacePaths`, `ensureWorkspaceDir`, `writeFileAtomicSync`, `acquireLocalLeaseSync`, `CONTEXT_FILENAMES`, `globalRoot` (`packages/kernel/src/config/file-config-store.ts`, `packages/kernel/src/config/workspace-trust.ts`) |
 | `yaml` | **runtime value** | `stringifyYaml` in `writeAgent` (`packages/kernel/src/config/file-config-store.ts`) |
 | `zod` | **runtime value** | `workspaceTrustSchema` (`packages/kernel/src/config/workspace-trust.ts`) |
@@ -973,7 +961,7 @@ ceiling, the three failure kinds, and the `missing` flag.
 | `file-kernel.ts` | `createFileConfigStore`, `DEFAULT_ENTRY_AGENT`, `SettingsSnapshot` | `packages/kernel/src/file-kernel.ts` |
 | `runs/settings-assembler.ts` | `AgentRecord`, `ConfigStore`, `readEffectiveAgent` | `packages/kernel/src/runs/settings-assembler.ts` |
 | `application/workflow-policy.ts` | `resolveAgentsByName`, `ConfigStore` | `packages/kernel/src/application/workflow-policy.ts` |
-| `mcp/effective-servers.ts`, `sandbox/policy.ts`, `tasks/task-provider-factory.ts` | `ConfigStore`/`SettingsSnapshot` types | respectively |
+| `sandbox/policy.ts` | `ConfigStore`/`SettingsSnapshot` types | `packages/kernel/src/sandbox/policy.ts` |
 | `plugins/plugin-service.ts` | `parseAgentFrontmatter` | `packages/kernel/src/plugins/plugin-service.ts` |
 | `plugins/plugin-contributions.ts` | `AgentRecord` type | `packages/kernel/src/plugins/plugin-contributions.ts`; it also exposes `settingsScopes`/`agents`/`readAgent`, consumed at `packages/kernel/src/config/file-config-store.ts` |
 | `@clarvis/code` | `resolveAgentsByName`, `AgentSummary.overlay.shadowed` | `packages/code/src/adapters/kernel-run-client.ts`, `packages/code/src/adapters/agents-store.ts` |
@@ -1061,11 +1049,3 @@ type-only import plus an injected `opts.plugins` object.
     (`packages/kernel/src/config/file-config-store.ts`) asserts "the shared primitive additionally proves that its
     same-host process is dead", which `packages/kernel/tests/integration/file-config-store.test.ts` / demonstrate but do not
     explain.
-## Effect reviewer ownership
-
-The file kernel resolves `effect_review` model and rollout from operator/global settings. Workspace
-settings can reduce timeout/retry bounds and require deny-on-unsure. The block scopes the
-transactional configuration reviewer; the command guard reads no rollout stage. Configuration changes affect
-future captured runs; authenticated intent can change within the current execution ceiling.
-Production: `loadGuardSettings` in [file-kernel.ts](../../packages/kernel/src/file-kernel.ts).
-See [effect review](../execution/effect-review.md) for the trust and compiler contracts.

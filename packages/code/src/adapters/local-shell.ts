@@ -68,14 +68,9 @@ function collector(maxBytes: number): Collector {
  * Run a command through the host shell, outside the kernel entirely.
  *
  * @remarks
- * **This deliberately bypasses the command guard.** The call path is the `!`
- * prefix in the input dock, so the command is something the user typed and
- * submitted themselves rather than something an agent proposed - there is no
- * approval to obtain from the person who is already asking for it. No
- * `KernelClient` call, no `GuardContext`, and no shell analysis happen anywhere
- * on this path. That is a property worth stating explicitly, because it is
- * invisible from the call site and would be easy to reintroduce as a hole while
- * believing the guard covered it.
+ * The call path is the `!` prefix in the input dock, so the command is
+ * something the user typed and submitted themselves. It does not call
+ * `KernelClient` or the agent tool dispatcher.
  *
  * The shell comes from the same resolver the kernel's tools use, so `!` speaks
  * PowerShell on Windows, never diverging from what the agent's own commands

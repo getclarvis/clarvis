@@ -14,7 +14,6 @@ import { DEFAULT_BUDGETS } from "../../src/config.ts";
 import { drainIndexJobs } from "../../src/drain.ts";
 import { indexRun } from "../../src/indexer/run.ts";
 import { MemoryRecoveryRequiredError } from "../../src/journal.ts";
-import { createMcpMemoryProvider } from "../../src/mcp-provider.ts";
 import { planReindex } from "../../src/reindex.ts";
 import { createInMemoryMemoryStore, createTestClock } from "../../src/testing.ts";
 import type { IndexerRuntime, MemoryStore } from "../../src/types.ts";
@@ -402,60 +401,6 @@ describe("memory.index.pass", () => {
 
     expect(report.skipped).toBe(true);
     expect(log.one("memory.index.pass").fields).toMatchObject({ written: 0, deleted: 0 });
-  });
-});
-
-describe("memory.seed.provider_failed", () => {
-  const mapping = {
-    list_memories: "list",
-    read_memory: "read",
-    grep_memories: "grep",
-    query_memories: "query",
-  };
-
-  it("says a seed the provider threw on left the run looking like an empty wiki", async () => {
-    const log = recordingLogger();
-    const provider = createMcpMemoryProvider({
-      server: "kb",
-      tools: mapping,
-      seedTool: "seed",
-      port: { callTool: () => Promise.reject(new Error("connection refused")) },
-      logger: log.logger,
-    });
-
-    expect(await provider.seed("task")).toBeNull();
-    const failed = log.one("memory.seed.provider_failed");
-    expect(failed.level).toBe("warn");
-    expect(failed.fields).toMatchObject({ provider: "mcp" });
-    expect(failed.fields.cause).toContain("connection refused");
-  });
-
-  it("says the same for a seed tool that answered with an error result", async () => {
-    const log = recordingLogger();
-    const provider = createMcpMemoryProvider({
-      server: "kb",
-      tools: mapping,
-      seedTool: "seed",
-      port: { callTool: () => Promise.resolve({ text: "nope", isError: true }) },
-      logger: log.logger,
-    });
-
-    expect(await provider.seed()).toBeNull();
-    expect(log.one("memory.seed.provider_failed").fields.cause).not.toContain("nope");
-  });
-
-  it("says nothing when the provider simply has nothing to seed with", async () => {
-    const log = recordingLogger();
-    const provider = createMcpMemoryProvider({
-      server: "kb",
-      tools: mapping,
-      seedTool: "seed",
-      port: { callTool: () => Promise.resolve({ text: "   ", isError: false }) },
-      logger: log.logger,
-    });
-
-    expect(await provider.seed()).toBeNull();
-    expect(log.of("memory.seed.provider_failed")).toHaveLength(0);
   });
 });
 

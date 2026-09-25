@@ -1,4 +1,4 @@
-# Reading, listing, globbing, grepping and diffing a workspace
+# Reading, listing, globbing, grepping and diffing files
 
 > Implemented at `packages/tools/src/**` and `packages/tools/tests/**`. Every claim below is
 > anchored to a file and a named symbol or test. Open questions are collected in the final section.
@@ -11,22 +11,20 @@ the library those tools and their mutating siblings share. Each is declared in o
 `readOnly` bit (`packages/tools/src/tools/registry.ts`), and the read-only surface is *derived*
 from that bit rather than maintained separately (`packages/tools/src/tools/registry.ts`).
 
-The problem the subsystem solves is bounded, confined observation. Every answer a tool returns is
-bounded in bytes, in files touched, in directory entries retained, and — for the in-process regex
-scanner — in regular-expression CPU time. When confinement is enabled, every path is proven to stay
-under the workspace or an explicitly configured temporary root; `read_file` and `read_files`
-also admit an exact generic tool-result spill in the current workspace's local state
-(`packages/tools/src/lib/state-artifacts.ts`). Content reads routed
-through `readRawFile` re-establish that proof against the *open descriptor* rather than trusting only
-the pathname (`packages/tools/src/lib/files.ts`).
+The subsystem bounds bytes, retained entries, and in-process regex CPU time. `workspaceRoot`
+anchors relative paths; absolute paths remain absolute. Host OS permissions or Sandbox native
+policy control access, including configuration and machine-state paths. Production:
+`resolveToolPath` in `packages/tools/src/lib/paths.ts` and `grepSearch` in
+`packages/tools/src/lib/rg.ts`. Test: `packages/tools/tests/integration/open-authority.test.ts`,
+`packages/tools/tests/integration/explicit-state-paths.test.ts`, and
+`packages/tools/tests/unit/observability.test.ts`.
 
-The subsystem also owns a **ripgrep-parity contract**: `grep` has two engines — an out-of-process `rg`
-child and an in-process JavaScript scanner — and a conformance suite asserts they produce the same
-tool output for the same request (`packages/tools/tests/contract/grep-parity.test.ts`). Which engine
-runs is decided by confinement, not by preference: a confined *directory* search always takes the
-in-process path (`packages/tools/src/lib/rg.ts`).
+`grep` uses JavaScript for directory scans so each candidate receives bounded descriptor reads.
+A single-file search may use ripgrep on a bounded descriptor snapshot. The regex dialect table
+records the difference between those two engines. Test:
+`packages/tools/tests/contract/regex-dialect.test.ts`.
 
-Dispatch, argument validation, guard gating, the `RuntimeConfig` shape and its limit resolution belong
+Dispatch, argument validation, the `RuntimeConfig` shape and its limit resolution belong
 to **tools-contract-and-dispatch**; mutation (`write_file`, `edit_file`, `multi_edit`, `apply_patch`,
 `replace`, `move`, `copy`, `mkdir`, `remove`) belongs to **tools-mutation-and-patching**; how an image
 part reaches a model belongs to **vision-prepass-and-image-routing**.
@@ -69,7 +67,6 @@ reachable only by deep path (which is what tests do).
 | `listFiles(base, workspaceRoot, opts): Promise<FileListing>` | bounded glob walk | `packages/tools/src/lib/files.ts` |
 | `createGlobTool(listFilesImpl = listFiles): ToolDef` / `globTool` | DI factory for the `glob` handler, and the default instance built from it | `packages/tools/src/tools/glob.ts` |
 | `readRawFile(target, relForError, maxBytes, limitHint?, options?)` | descriptor-bounded byte read | `packages/tools/src/lib/files.ts` |
-| `readFileOptions(config, alsoAllow?)` | derives post-open confinement policy | `packages/tools/src/lib/files.ts` |
 | `openReadHandle(target, noFollow?)` | non-blocking (`O_NONBLOCK`), optionally `O_NOFOLLOW`, open | `packages/tools/src/lib/files.ts` |
 | `statDirectory(absPath, relForError)` | stat + assert directory | `packages/tools/src/lib/files.ts` |
 | `mapLimit(items, limit, fn)` / `STAT_CONCURRENCY = 32` | order-preserving bounded fan-out | `packages/tools/src/lib/files.ts` |
@@ -81,7 +78,7 @@ reachable only by deep path (which is what tests do).
 | `unifiedDiff(rel, before, after, maxInputBytes?)`; `DEFAULT_DIFF_TIMEOUT_MS = 2000` | unified patch | `packages/tools/src/lib/unified-diff.ts` |
 | `sniffImageMime(buf): string \| null` | magic-byte image detection | `packages/tools/src/lib/image.ts` |
 | `findCascadeMatch(text, oldString)` / `scanLineBlocks` / `trimEnds` | four-tier fuzzy block locator | `packages/tools/src/lib/match-cascade.ts` |
-| `resolvePath` / `displayPath` / `assertWithinWorkspace` | path resolution and confinement | `packages/tools/src/lib/paths.ts` |
+| `resolveToolPath` / `displayPath` | relative resolution and display | `packages/tools/src/lib/paths.ts` |
 | `bound(text, maxBytes)` | head truncation with a marker | `packages/tools/src/lib/output.ts` |
 
 `match-cascade.ts` has **no consumer among the read tools** — its only production importer is
@@ -105,9 +102,8 @@ Resolution and validation belong to tools-contract-and-dispatch; the fields cons
 | `maxDiffInputBytes` | `8 * 1024 * 1024` (`packages/tools/src/config.ts`) | `diff` combined operand size (`packages/tools/src/tools/diff.ts`) |
 | `regexScanBudgetMs` | `5000` (`packages/tools/src/config.ts`) | in-process grep (`packages/tools/src/lib/rg.ts`), replace, and shell readiness; this document covers grep |
 | `ripgrepAvailable` | probed by `rg --version` (`packages/tools/src/config.ts`) | grep engine choice (`packages/tools/src/lib/rg.ts`) |
-| `confineToWorkspace` | `true` (`packages/tools/src/config.ts`) | path confinement **and** grep engine choice |
 | `stateRoot` | `workspaceStatePaths(workspaceRoot).root` (`packages/tools/src/config.ts`) | identifies the current workspace's exact generic spill allowance for `read_file`/`read_files` |
-| `temporaryRoots` | `[]` (`resolveConfig`) | extra confined roots admitted by all nine tools; the product loop pre-seeds run scratch plus host system temp roots |
+| `temporaryRoots` | `[]` (`resolveConfig`) | selected run scratch and host temp roots in the environment policy |
 | `readOnly` | `false` (`packages/tools/src/config.ts`) | selects the nine-tool surface (`packages/tools/src/core.ts`) |
 
 ## 3. Data and formats
@@ -124,6 +120,7 @@ Each row is a six-wide right-padded 1-based line number, a tab, then the content
      2	beta
      3	gamma
 ```
+
 (`packages/tools/tests/integration/read-file.test.ts`)
 
 Sentinels and footers:
@@ -134,7 +131,7 @@ Sentinels and footers:
 | more lines remain | `[... 2 of 5 lines shown; continue with offset=4 ...]` | `packages/tools/src/tools/read-file.ts`, pinned at `packages/tools/tests/integration/read-file.test.ts` |
 | single line over `MAX_LINE` (2000 chars) | ` [... line truncated ...]` appended | `packages/tools/src/lib/render-lines.ts` |
 | `read_files` per-file header | `==> a.txt <==` | `packages/tools/src/tools/read-files.ts` |
-| `read_files` per-entry failure | `==> ../secret — path_escape: … <==` | `packages/tools/src/tools/read-files.ts`, pinned at `packages/tools/tests/integration/read-files.test.ts` |
+| `read_files` per-entry failure | `==> ../secret — not_found: … <==` | `packages/tools/src/tools/read-files.ts`, pinned at `packages/tools/tests/integration/read-files.test.ts` |
 | `read_files` file cut by shared budget | `[... N of M lines shown; use read_file for the rest ...]` | `packages/tools/src/tools/read-files.ts`, appended |
 | `read_files` budget spent | `[... N more file(s) not shown; call read_files with fewer paths ...]` | `packages/tools/src/tools/read-files.ts`, appended |
 
@@ -154,6 +151,7 @@ sub/
 a.txt	2
 b.txt	3
 ```
+
 (`packages/tools/tests/integration/list-dir.test.ts`)
 
 `tree` prints the root's display path, then box-drawing rows with `├── `/`└── ` connectors and
@@ -166,6 +164,7 @@ as `name@` (`packages/tools/src/tools/tree.ts`). Pinned example:
 │   └── a.ts	2
 └── b.txt	1
 ```
+
 (`packages/tools/tests/integration/tree.test.ts`)
 
 Sentinels: `(empty directory)` (`packages/tools/src/tools/list-dir.ts`), `(no entries)`
@@ -185,16 +184,22 @@ Truncation footer: `[search incomplete: traversal stopped at N entries]`
 
 ### 3.4 `grep`
 
-An entry agent with host configuration roots may point `glob` or `grep` at an admitted global
-configuration directory or file while workspace confinement remains enabled. Recursive walks apply
-canonical path admission before descending or reading, so private state and credential leaves are
-omitted. Configuration directory grep stays in process and opens admitted files through the
-descriptor-bound read path; it does not give a subprocess access to the global root. Production:
-`resolveFileToolPath` and `isAdmittedFileToolSearchPath` in
-[paths.ts](../../packages/tools/src/lib/paths.ts), `listFiles` and `readFileOptionsForPath` in
+`glob` and `grep` accept a directory or file reachable under host permissions or the configured
+native sandbox. Recursive walks have no configuration-specific path admission. Directory grep
+uses the in-process scanner; a single file may use ripgrep against a bounded descriptor snapshot.
+In Sandbox, the file service runs inside the selected native policy. Production:
+`resolveFileToolPath` in [paths.ts](../../packages/tools/src/lib/paths.ts), `listFiles` in
 [files.ts](../../packages/tools/src/lib/files.ts), and `grepSearch` in
-[rg.ts](../../packages/tools/src/lib/rg.ts). Test: global search and private exclusion in
-[api.test.ts](../../packages/tools/tests/integration/api.test.ts).
+[rg.ts](../../packages/tools/src/lib/rg.ts). Test: absolute-path access in
+[open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts).
+
+The same file-service placement applies to `read_file`, `read_files`, `read_image`, `file_stat`,
+`list_dir`, `glob`, `grep`, `tree` and `diff`. Search helpers, descriptor reads and output bounds
+run inside the selected environment. Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts),
+`runFilesystemWorker` in
+[filesystem-worker.ts](../../packages/tools/src/filesystem-worker.ts), and `grepSearch` in
+[rg.ts](../../packages/tools/src/lib/rg.ts). Test: the nine-family read case in
+[filesystem-service.test.ts](../../packages/tools/tests/integration/filesystem-service.test.ts).
 
 Three renderings selected by `output_mode`:
 
@@ -216,6 +221,7 @@ b.txt-1-before
 b.txt:2:MATCH
 b.txt-3-after
 ```
+
 (`packages/tools/tests/integration/grep.test.ts`)
 
 Footers, mutually exclusive, in the order `composeResult` tests them
@@ -241,6 +247,7 @@ A JSON string, not prose. Four shapes, decided by `lstat` then by the opened des
 {"path":"d","type":"directory","size":…,"mtime":"…","mode":"…"}
 {"path":"s.sock","type":"other","size":…,"mtime":"…","mode":"…"}
 ```
+
 (`packages/tools/src/tools/file-stat.ts`; pinned in
 `packages/tools/tests/integration/file-stat.test.ts` by "reports a regular text file",
 "reports the descriptor type when a regular pathname changes during open", "reports a symlink
@@ -273,71 +280,37 @@ dropped — which is how a non-UTF-8 filename disappears from the result
 
 ## 4. Behavior
 
-### 4.1 The shared prologue every read tool runs
+### 4.1 The shared path prologue
 
-1. `resolvePath(input, workspaceRoot, confineToWorkspace, alsoAllow, logger)` normalises the argument
-   (absolute kept, relative joined to the root) and, when confined, calls `assertWithinWorkspace`
-   (`packages/tools/src/lib/paths.ts`).
-2. `assertWithinWorkspace` canonicalises *both* sides through `canonicalizeAllowingMissing`, folds
-   case on Windows only, and accepts on equality or on a `root + path.sep` prefix
-   (`packages/tools/src/lib/paths.ts`). The trailing separator is what stops `C:\Projects\x`
-   passing as a child of `C:\Proj`.
-3. `canonicalizeAllowingMissing` walks up until `realpathSync.native` succeeds, then re-appends the
-   unresolved tail; if a *skipped* segment is itself a symlink it returns `undefined` and the caller
-   refuses (`packages/tools/src/lib/paths.ts`).
-4. On refusal a `debug` record `tools.path_refused` is emitted with `input`, `reason`
-   (`unresolvable` | `outside_root`) and `allow_roots_count`, then a `path_escape` `ToolError` is
-   thrown (`packages/tools/src/lib/paths.ts`).
+Each handler resolves relative paths from `workspaceRoot` and keeps absolute paths absolute.
+The dispatcher does not classify configuration or state paths as protected. Host OS permissions
+or the run's native Sandbox policy determine whether each file can be read.
 
-Every read tool passes `config.temporaryRoots` to `resolvePath`; `read_file` and `read_files`
-add only an exact generic spill path from `resolveReadableTextPath`, then bind the opened file's
-identity through `readRawFile` (`packages/tools/src/lib/state-artifacts.ts`,
-`packages/tools/src/lib/files.ts`, `packages/tools/src/tools/read-file.ts`, and
-`packages/tools/src/tools/read-files.ts`). A standalone caller
-that supplies one exact run root still refuses its parent; the product loop deliberately also
-configures the environment-selected system temp and POSIX `/tmp`, allowing host-native temp output
-without learning a path from an earlier result (`packages/tools/tests/integration/api.test.ts`,
-"lets native tools read scratch created by shell inside the run-owned temporary root" and "reuses a
-bare mktemp result from the host temp root in a later native tool").
+Production: `resolveToolPath` in `packages/tools/src/lib/paths.ts` and `dispatch` in
+`packages/tools/src/core.ts`. Test: `packages/tools/tests/integration/open-authority.test.ts`
+and `packages/tools/tests/integration/explicit-state-paths.test.ts`.
 
 ### 4.2 `readRawFile` — the descriptor-bound read
 
-Order matters and is explicit in the code
-(`packages/tools/src/lib/files.ts`):
+`readRawFile` opens one descriptor non-blocking, checks that it refers to a regular file, applies
+the caller's byte ceiling, reads at most one byte beyond it to detect growth, and closes the
+descriptor. A close failure is surfaced only when no earlier failure occurred. Host consumers
+can supply expected root or identity options for their own artifact checks; model-facing file
+handlers do not add a classified-path policy.
 
-| Step | Call | Failure |
-| --- | --- | --- |
-| 1 | `openReadHandle(target, noFollow)` — `O_RDONLY\|O_NONBLOCK` on POSIX, `"r"` on Windows | `fsError` |
-| 2 | `handle.stat()`; refuse a non-regular file | `not_a_file` |
-| 3 | if confinement is on, `assertOpenedFileConfined` | `path_escape` |
-| 4 | size vs `maxBytes` | `too_large` |
-| 5 | `readHandleBounded(handle, maxBytes)` — reads at most `maxBytes + 1` from the descriptor cursor | — |
-| 6 | if more than `maxBytes` came back, re-`stat` the descriptor and report the larger figure | `too_large` |
-| 7 | close; a close error is surfaced only when nothing failed earlier | — |
+Production: `readRawFile` and `openReadHandle` in `packages/tools/src/lib/files.ts`.
+Test: `packages/tools/tests/integration/bounded-read.test.ts` and
+`packages/tools/tests/integration/read-file.test.ts`.
 
-`assertOpenedFileConfined` re-`realpath`s the target, stats the *open handle* with `bigint: true`,
-stats the canonical path, asserts containment, then compares `dev`/`ino`; a mismatch is
-`path_escape` with the message "Path changed while it was being opened"
-(`packages/tools/src/lib/files.ts`).
+`readTextFile` rejects binary content, with a UTF-16 BOM exemption. `readTextBuffer` is its
+best-effort variant, returning `null` on ordinary read failures. A single-file ripgrep search
+uses the bounded descriptor snapshot instead of reopening a pathname.
 
-Step 5's extra byte and step 6's re-stat are pinned directly:
-`readRawFile` requests exactly `[9]` bytes for `maxBytes = 8`, stats twice, closes once, and reports
-`size: 32` from the second stat (`packages/tools/tests/integration/bounded-read.test.ts`).
+Production: `readTextFile` and `readTextBuffer` in `packages/tools/src/lib/textfile.ts`,
+and `grepSearch` in `packages/tools/src/lib/rg.ts`. Test:
+`packages/tools/tests/integration/textfile.test.ts` and
+`packages/tools/tests/integration/grep.test.ts`.
 
-The root `@clarvis/tools` entry also exports this reader and its policy types for trusted host
-composition. Goal artifact verification supplies only the selected workspace as confinement and
-a 16 MiB byte ceiling; it does not inherit tool spill or temporary-root exceptions. Missing,
-non-regular, oversized or escaping artifacts cannot produce valid goal evidence.
-Production: `readRawFile` in [files.ts](../../packages/tools/src/lib/files.ts), re-exported by
-[index.ts](../../packages/tools/src/index.ts), and `createGoalEvidenceSource` in
-[evidence.ts](../../packages/kernel/src/goals/evidence.ts).
-Test: `refuses outside workspace artifacts, including directory links, and unavailable bytes` in
-[goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts).
-
-`readTextFile` layers a binary rejection on top: a UTF-16 BOM exempts the buffer, otherwise a NUL
-anywhere in the scan windows is `is_binary` (`packages/tools/src/lib/textfile.ts`).
-`readTextBuffer` is the best-effort twin — every failure collapses to `null` **except** `path_escape`,
-which is re-thrown (`packages/tools/src/lib/textfile.ts`).
 
 ### 4.3 `read_file`
 
@@ -449,27 +422,16 @@ selection:
   `limit` (§4.3) — rather than being rejected or treated as "zero results". Pinned by "treats
   head_limit 0 as unlimited (no rejection)" (`packages/tools/tests/integration/grep.test.ts`).
 
-**Engine selection** (`packages/tools/src/lib/rg.ts`):
-
-1. `fs.stat(searchRoot)`; failure → `fsError`.
-2. Not a directory and not a regular file → empty result.
-3. A single-file target is pre-read into a `Buffer` via `readRawFile`, and a binary one returns empty. Any other throw returns empty **except** `path_escape`, which propagates.
-4. `useRipgrep = config.ripgrepAvailable && (!isDir || !config.confineToWorkspace)`.
-5. A `debug` record `tools.grep_path` names the chosen engine.
-
-| `ripgrepAvailable` | target | `confineToWorkspace` | engine |
-| --- | --- | --- | --- |
-| false | any | any | in-process |
-| true | file | any | ripgrep (stdin snapshot) |
-| true | directory | true | **in-process** |
-| true | directory | false | ripgrep (child in `cwd = searchRoot`) |
+**Engine selection** (`packages/tools/src/lib/rg.ts`): after target `stat`, a directory
+always uses the in-process scanner; a regular single file may use ripgrep when available and
+is fed through a bounded descriptor snapshot. `tools.grep_path` records the chosen engine.
+Production: `grepSearch` in `packages/tools/src/lib/rg.ts`. Test:
+`packages/tools/tests/unit/observability.test.ts` and
+`packages/tools/tests/contract/regex-dialect.test.ts`.
 
 **Ripgrep path** (`packages/tools/src/lib/rg.ts`): argv is
 `--no-config --json --hidden -g !.git --max-filesize <maxFileBytes>`, plus `-i`, `--multiline
---multiline-dotall`, `-B n`, `-A n` as requested, then `-- <pattern> <target>`. For a
-directory the child runs with `cwd = searchRoot` and searches `.` (so the caller's process cwd is
-irrelevant — pinned at `packages/tools/tests/contract/grep-parity.test.ts`, whose glob cases assert
-agreement "regardless of process cwd"). For a single file the target is `-` and the pre-read snapshot is handed to
+--multiline-dotall`, `-B n`, `-A n` as requested, then `-- <pattern> <target>`. For a single file the target is `-` and the pre-read snapshot is handed to
 `Bun.spawn` as a `Blob` stdin, so ripgrep never reopens the pathname. Both
 variants abort at `maxOutputBytes * 8` raw JSON bytes, `SIGKILL` the child and set `truncated`. Exit code `2` with zero parsed matches and no truncation becomes
 `invalid_input` carrying ripgrep's stderr; a spawn failure is `io_error`.
@@ -558,8 +520,8 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 | # | Rule | Production | Pinned by |
 | --- | --- | --- | --- |
 | **INV-041** | Ripgrep must be installed wherever this suite runs. A missing `rg` is a CI *environment* gap, not a grep-vs-ripgrep behavioural difference: the parity suite `skipIf`s itself away without it, so a missing binary would silently delete the entire parity contract instead of failing it. Under `process.env.CI` the guard asserts `rg` is present. | engine choice at `packages/tools/src/lib/rg.ts`; probe at `packages/tools/src/config.ts` | `packages/tools/tests/contract/grep-parity.test.ts` ("ripgrep must be installed in CI (TEST-01)") |
-| **RS-1 (INV-300)** | For the same request, the ripgrep engine and the in-process engine return the **same tool output** — across all three output modes, glob forms, regex metacharacters, `ignore_case`, symmetric and asymmetric context, multiline (dot-all, `^`/`$` anchors, coalescing, pagination), `maxFileBytes` skipping, and hidden/`.git`/nested/parent `.gitignore` handling. | `packages/tools/src/lib/rg.ts` | `packages/tools/tests/contract/grep-parity.test.ts` |
-| **RS-2** (the precondition INV-300 depends on) | A **confined directory** grep never spawns ripgrep, however available `rg` is. (Consequence: the parity suite can only compare the two engines with `confineToWorkspace: false`.) | `packages/tools/src/lib/rg.ts` | ~~indirectly — every parity case builds `withRg()` as `{ ripgrepAvailable: true, confineToWorkspace: false }` (`packages/tools/tests/contract/grep-parity.test.ts`); no test asserts the refusal directly (**partially unpinned**)~~ **pinned**: `packages/tools/tests/unit/observability.test.ts` asserts the chosen engine on the `tools.grep_path` diagnostic across all four combinations of `ripgrepAvailable` × `confineToWorkspace`, plus the single-confined-file case where ripgrep *is* used |
+| **RS-1 (INV-300)** | On a single file, the ripgrep and JavaScript paths agree on the sampled shared regex patterns and all three output modes; directory cases compare the same in-process behavior with the ripgrep probe enabled and disabled. Regex dialect differences are separately enumerated. | `grepSearch` in `packages/tools/src/lib/rg.ts` | `packages/tools/tests/contract/grep-parity.test.ts`; `packages/tools/tests/contract/regex-dialect.test.ts` |
+| **RS-2** | Directory grep always scans in process to admit each candidate; ripgrep is limited to descriptor snapshots of a single file. | `grepSearch` in `packages/tools/src/lib/rg.ts` | `packages/tools/tests/unit/observability.test.ts` |
 | **RS-3** | The read-only tool surface is exactly nine tools, derived from the single `readOnly` bit in `toolDescriptors` — never a second list. | `packages/tools/src/tools/registry.ts` | `packages/tools/tests/component/tool-surface.test.ts`; `packages/tools/tests/component/read-only.test.ts` |
 | **RS-4** | A tool hidden by the read-only surface and a name that never existed fail identically (`not_found`), so the surface leaks no information about what was withheld. | `packages/tools/src/core.ts` | `packages/tools/tests/component/read-only.test.ts` |
 | **RS-5** | A read-only session leaves the workspace byte-identical. | the nine handlers perform no write syscall | `packages/tools/tests/component/read-only.test.ts` |
@@ -568,9 +530,9 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 | **RS-8** | A truncated *scan* always reports incompleteness even when the page is non-empty, and it is never combined with the pagination footer. | `packages/tools/src/tools/grep.ts` | `packages/tools/tests/integration/grep.test.ts` (asserts the `offset` hint is absent) |
 | **RS-9** | An exhausted regex budget, a capped directory walk and a hit output cap produce **three different** warnings; the budget warning names the pattern and never says "output cap", and the walk warning says narrowing the pattern will not help. | `packages/tools/src/tools/grep.ts` | `packages/tools/tests/integration/rg.test.ts`, `packages/tools/tests/integration/grep.test.ts` |
 | **RS-10** | The regex budget charges elapsed time only around regex applications — never a `stat`, a read, the directory walk, or delay between applications. Scheduler time during an in-flight application is charged. | `packages/tools/src/lib/scan-budget.ts` (`createScanBudget`); charge sites in `packages/tools/src/lib/rg.ts` | `packages/tools/tests/unit/scan-budget.test.ts` (`charges only the work handed to it, not the time around it`, `accumulates across calls rather than measuring each one alone`); `packages/tools/tests/integration/rg.test.ts` |
-| **RS-11** | Neither `budgetExhausted` nor `walkCapped` is ever set on the ripgrep path, nor on a single-file search — neither walks a tree, and ripgrep is linear-time and out of process. | `packages/tools/src/lib/rg.ts` | unpinned (asserted only implicitly, by the budget suite forcing `ripgrepAvailable: false` — `packages/tools/tests/integration/rg.test.ts`) |
-| **RS-12** | A single-file grep target that is oversized, binary, a FIFO, or unreadable yields `(no matches)` rather than an error — but a `path_escape` from that pre-read still propagates. A FIFO is caught by the earlier `!stat.isFile()` guard and never enters the `readRawFile` try/catch at all; only the oversized/binary/unreadable cases actually call `readRawFile`. | non-regular-file (incl. FIFO) branch: `packages/tools/src/lib/rg.ts`; oversized/binary/unreadable branch (calls `readRawFile`): | `packages/tools/tests/integration/grep.test.ts` (four cases, FIFO); the `path_escape` re-throw is **unpinned** |
-| **RS-13** | `readTextBuffer` collapses every ordinary failure to `null` but re-throws `path_escape`, so a confinement race cannot masquerade as an empty search result. | `packages/tools/src/lib/textfile.ts` | `packages/tools/tests/integration/textfile.test.ts` covers the `null` half; the re-throw is **unpinned** |
+| **RS-11** | Single-file ripgrep does not walk a tree or charge the in-process regex budget. | `grepSearch` in `packages/tools/src/lib/rg.ts` | `packages/tools/tests/unit/observability.test.ts` |
+| **RS-12** | A single-file grep target that is oversized, binary, a FIFO, or unreadable yields `(no matches)` rather than an error. A FIFO is caught by the earlier `!stat.isFile()` check and never enters the `readRawFile` try/catch. | `packages/tools/src/lib/rg.ts` | `packages/tools/tests/integration/grep.test.ts` |
+| **RS-13** | `readTextBuffer` collapses ordinary read failures to `null`. | `readTextBuffer` in `packages/tools/src/lib/textfile.ts` | `packages/tools/tests/integration/textfile.test.ts` |
 | **RS-14 (INV-301)** | Both grep engines search hidden files, never `.git`, and honour `.gitignore` at, below, and **above** the workspace root. | `rg -g !.git` at `packages/tools/src/lib/rg.ts`; `.git` component rule at `packages/tools/src/lib/ignore.ts`; ignore root walk | `packages/tools/tests/integration/grep.test.ts`; `packages/tools/tests/contract/grep-parity.test.ts` |
 | **RS-15** | A `glob` argument to `grep` without a `/` matches at any depth (`**/<name>`), matching ripgrep's semantics. | `packages/tools/src/lib/rg.ts` | `packages/tools/tests/integration/grep.test.ts`; `packages/tools/tests/contract/grep-parity.test.ts` |
 | **RS-16** | `grep` pagination units are files in `files_with_matches`/`count` and match anchors in `content`; context rows never count, and the unit set is independent of the context settings. | `packages/tools/src/tools/grep.ts` | `packages/tools/tests/integration/grep.test.ts` |
@@ -580,12 +542,7 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 | **RS-20** | A per-entry failure in `read_files` degrades that entry only; a non-`ToolError` throw fails the whole call. | `packages/tools/src/tools/read-files.ts` | `packages/tools/tests/integration/read-files.test.ts`; the rethrow branch is **unpinned** |
 | **RS-21** | A UTF-16 BOM exempts a buffer from the binary rejection, so a UTF-16LE/BE file reads as text. | `packages/tools/src/lib/textfile.ts`; detection at `packages/tools/src/lib/binary.ts` | `packages/tools/tests/integration/read-file.test.ts`; `packages/tools/tests/unit/binary.test.ts` |
 | **RS-22** | The binary heuristic scans only the first and last 8000 bytes, so a NUL buried in the middle of a larger file is **not** detected. | `packages/tools/src/lib/binary.ts` | `packages/tools/tests/unit/binary.test.ts` (asserts the miss explicitly) |
-| **RS-23** | A confined `readRawFile` proves the opened descriptor is the same filesystem object the canonical path names (`dev` + `ino`); a mismatch is `path_escape`, not a silent redirect. | `packages/tools/src/lib/files.ts` | **unpinned** in `@clarvis/tools` |
 | **RS-24** | `readRawFile` reads at most `maxBytes + 1` bytes from one handle and detects growth after the initial stat. | `packages/tools/src/lib/files.ts` | `packages/tools/tests/integration/bounded-read.test.ts` |
-| **RS-25** | Only `read_file` and `read_files` admit an exact generic spill in the current workspace's local state; every read tool separately admits the configured `temporaryRoots`. A state directory itself is never an extra read root. | `resolveReadableTextPath` in `packages/tools/src/lib/state-artifacts.ts`, `packages/tools/src/tools/read-file.ts`, and `packages/tools/src/tools/read-files.ts` | `packages/tools/tests/unit/read-confinement-allowance.test.ts` pins exact spill admission and state-directory refusal; `packages/tools/tests/integration/api.test.ts` pins scratch and system-temp configurations |
-| **RS-26** | The `path_escape` refusal never tells the model how to lift the boundary; it states the boundary is fixed before the run. | `packages/tools/src/lib/paths.ts` | `packages/tools/tests/architecture/no-bypass-hints.test.ts` (which proves the detector recognises the old wording) |
-| **RS-27** | Confinement folds case on Windows only, compares canonicalised forms on both sides, and requires a `root + sep` prefix so a sibling whose name merely starts with the root's is refused. | `packages/tools/src/lib/paths.ts` | `packages/tools/tests/integration/paths.test.ts` |
-| **RS-28** | A path that cannot be canonicalised *because a skipped segment is a symlink* is refused, not admitted — otherwise a `0o311` link out of the workspace would be writable. | `packages/tools/src/lib/paths.ts` | `packages/tools/tests/integration/paths.test.ts` |
 | **RS-29** | `displayPath` is always forward-slashed, including on Windows, because it is model-facing text and not a filesystem argument. | `packages/tools/src/lib/paths.ts` | `packages/tools/tests/integration/paths.test.ts` |
 | **RS-30** | A `tree` level that hit its dirent cap marks the output incomplete but does **not** stop the walk; only the global entry/byte budget does. | `packages/tools/src/tools/tree.ts` | `packages/tools/tests/integration/tree.test.ts` |
 | **RS-31** | A directory holding exactly `maxTraversalEntries` is not reported as truncated; one extra dirent is consumed solely to tell the two apart. | `packages/tools/src/tools/tree.ts` | `packages/tools/tests/integration/tree.test.ts` |
@@ -605,7 +562,7 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 | **RS-45** | `blockSpan` extends a matched span to swallow the following line's newline when `oldString` itself ends in `\n` — except when the matched block is the text's final line, where there is no following newline to swallow. | `packages/tools/src/lib/match-cascade.ts` | `packages/tools/tests/unit/match-cascade.test.ts` ("extends the span to include the trailing newline") ("does not over-extend when old ends in newline but the block is the final line") |
 | **RS-46** | `scanLineBlocks` treats a sparse-array hole in either the haystack window or the needle as an empty string (`eq(hay[i+j] ?? "", need[j] ?? "")`), rather than skipping it or throwing. | `packages/tools/src/lib/match-cascade.ts` | `packages/tools/tests/unit/match-cascade.test.ts` ("treats a hole in the haystack window as an empty line") ("treats a hole in the needle as an empty line") |
 | **RS-47 (INV-302)** | Both grep engines apply `maxFileBytes` identically **and in both directions**: a file over the ceiling is skipped in a directory search (a small sibling still matches), and naming that same oversized file directly yields `(no matches)` on both paths rather than an error. | `packages/tools/src/lib/rg.ts` (`--max-filesize`) (the single-file `readRawFile` bound, whose failure resolves to an empty result rather than a throw) | `packages/tools/tests/contract/grep-parity.test.ts` |
-| **RS-48** | Temporary observation follows configuration, not tool history: a standalone exact run root leaves its parent as `path_escape`, while the product loop pre-authorizes host system temp parents so a bare native `mktemp` result is immediately searchable. A command-created `mktemp -d` directory remains the command's cleanup responsibility. | `packages/tools/src/config.ts`; `packages/tools/src/sandbox.ts` (`systemTemporaryRoots`); `packages/loop/src/runtime/capabilities/tools.ts` (`accessibleTemporaryRoots`); all nine handlers' `resolvePath` calls; `packages/tools/src/lib/files.ts` | `packages/tools/tests/integration/api.test.ts`, "lets native tools read scratch created by shell inside the run-owned temporary root", "reuses a bare mktemp result from the host temp root in a later native tool", and "does not adopt a temporary directory created by a shell command"; `packages/tools/tests/integration/guard-dispatch.test.ts`, "treats the configured run temporary root as confined without widening generic /tmp"; `packages/loop/tests/integration/command-guard-wiring.test.ts`, "preauthorizes the host temp across shell and native tools without owning its parent" |
+| **RS-48** | Host temporary files follow OS permissions and the selected Sandbox policy; run scratch is owned and removed only after physical command termination. | `resolveFilesystemPolicy` in `packages/tools/src/sandbox.ts`; `createAgentToolsCapability` in `packages/loop/src/runtime/capabilities/tools.ts` | `packages/tools/tests/integration/api.test.ts`; `packages/loop/tests/integration/tools.test.ts` |
 
 ## 6. Failure modes and degradation
 
@@ -625,7 +582,6 @@ out of `dispatch`.
 | `not_an_image` | `packages/tools/src/tools/read-image.ts` | magic bytes match no supported format |
 | `too_large` | `packages/tools/src/lib/files.ts`, `packages/tools/src/tools/diff.ts` | file over `maxFileBytes`/`maxImageBytes`, or diff inputs over `maxDiffInputBytes` |
 | `invalid_input` | `packages/tools/src/tools/read-file.ts`/`packages/tools/src/tools/glob.ts`, `packages/tools/src/lib/rg.ts`// | offset 0 / past EOF, unusable glob pattern, ripgrep usage error, uncompilable JS regex |
-| `path_escape` | `packages/tools/src/lib/paths.ts`, `packages/tools/src/lib/files.ts` | target outside every permitted root, or the opened object is not the one the path named |
 | `timeout` | `packages/tools/src/tools/diff.ts` | `createTwoFilesPatch` returned `undefined` at 2000 ms |
 | `io_error` | `packages/tools/src/errors.ts` | any errno the mapping does not recognise |
 
@@ -657,9 +613,6 @@ error"}` with the real stack going to the warn sink (`packages/tools/src/errors.
 
 ### 6.3 What fails hard
 
-- A confinement violation, at resolve time or after `open` — `path_escape`, and it propagates even out
-  of the otherwise-swallowing `readTextBuffer` and single-file grep pre-scan
-  (`packages/tools/src/lib/textfile.ts`, `packages/tools/src/lib/rg.ts`).
 - `statDirectory` on a non-directory for `list_dir`, `glob`, `tree` (`packages/tools/src/lib/files.ts`).
 - A non-`ToolError` thrown by a `read_files` entry (`packages/tools/src/tools/read-files.ts`).
 - A ripgrep spawn failure — `io_error`, not a fallback to the in-process engine
@@ -716,7 +669,7 @@ declarations; this affects TypeScript checking, not the package's runtime closur
 | --- | --- | --- |
 | `@clarvis/loop` → `READ_ONLY_TOOL_NAMES` | runtime, static | `packages/loop/src/runtime/tools/builtin/names.ts` — the loop's read/edit split is *derived* from `readOnlyTools` rather than restated, so a tool's `readOnly` bit here decides which agents may call it |
 | `@clarvis/loop` → `AGENT_TOOL_NAMES`, `EDIT_TOOL_NAMES` | runtime, static | `packages/loop/src/runtime/tools/builtin/names.ts` |
-| `@clarvis/loop` tool spill | runtime | `packages/loop/src/runtime/context/tool-spill.ts` names `RuntimeConfig`'s state-root allowance in its own doc comment — the read tools' `alsoAllow` is what lets the model read a spilled result back |
+| `@clarvis/loop` tool spill | runtime | `createToolSpill` in `packages/loop/src/runtime/context/tool-spill.ts` writes a named output artifact; file tools read its path under Host OS permissions or the configured native sandbox |
 | `@clarvis/kernel` | runtime, static | `packages/kernel/src/file-kernel.ts`, `packages/kernel/src/local.ts` import `@clarvis/tools` |
 
 The direction is one-way and structural: `@clarvis/tools` imports nothing from `loop`, `kernel`,
@@ -727,9 +680,9 @@ The direction is one-way and structural: `@clarvis/tools` imports nothing from `
 - `lib/rg.ts` is the only module that reaches all of `binary`, `files`, `text`, `textfile` and
   `scan-budget` at once (`packages/tools/src/lib/rg.ts`); it is the integration point of the
   library.
-- `lib/files.ts` imports `lib/ignore.ts` and `lib/paths.ts`, so the glob walker and the
-  confinement re-check are not separable from the ignore semantics.
-- The read tools reach the library only through `resolvePath`/`displayPath`, `readFileOptions`,
+- `lib/files.ts` imports `lib/ignore.ts` and `lib/paths.ts`, so the glob walker and
+  path resolution share the ignore walk.
+- The read tools reach the library through `resolveToolPath`/`displayPath`,
   `readTextFile`/`readRawFile`, `renderNumberedSlice`, `statDirectory`/`mapLimit`/`listFiles`,
   `loadIgnore`, `grepSearch`, `isBinary`, `sniffImageMime` — none of them touch `node:fs` for content
   except `list_dir`/`tree`/`glob`/`file_stat`, which need `opendir`/`lstat`/`stat` directly.
@@ -740,17 +693,11 @@ The direction is one-way and structural: `@clarvis/tools` imports nothing from `
    their tail, while a shell session can expire older bytes from its bounded window.
    Production: `packages/tools/src/tools/read-file.ts`, `packages/tools/src/tools/grep.ts`,
    and `packages/tools/src/tools/shell.ts`. Test: `packages/tools/tests/component/core.test.ts`.
-2. **RS-2 is only pinned by construction.** No test asserts that a *confined* directory grep refuses
-   ripgrep; the parity suite merely disables confinement so it can compare the engines
-   (`packages/tools/tests/contract/grep-parity.test.ts`). A regression that started spawning `rg`
-   for confined directories would keep the whole suite green.
-3. The generic spill read allowance admits only an exact regular non-link artifact in the
-   current workspace's local state. Other state files and state directories remain refused.
-   Production: `resolveReadableTextPath` in `packages/tools/src/lib/state-artifacts.ts` and
-   `readRawFile` in `packages/tools/src/lib/files.ts`. Test:
-   `packages/tools/tests/unit/read-confinement-allowance.test.ts`.
+2. Directory and single-file engine selection is pinned by the `tools.grep_path` diagnostic in
+   `packages/tools/tests/unit/observability.test.ts`; regex differences are recorded in
+   `packages/tools/tests/contract/regex-dialect.test.ts`.
 4. ~~**The `tools.grep_path` debug record is untested.** `packages/tools/tests/unit/observability.test.ts`
-   pins `tools.path_refused` and `tools.fs_error_unmapped`, but not the engine
+   pins `tools.fs_error_unmapped`, but not the engine
    record at `packages/tools/src/lib/rg.ts`, whose message claims "the two do not share regex
    semantics, so which one ran decides what a pattern means".~~ **Resolved.** The record is
    now pinned in that same file — and it turned out to be the right instrument for RS-2 above, since
@@ -759,7 +706,7 @@ The direction is one-way and structural: `@clarvis/tools` imports nothing from `
    dialects overlap is not, and the code itself says so.**~~ **Resolved, by measuring
    rather than by reasoning.** The engine half was never ambiguous: `useRipgrep`
    (`packages/tools/src/lib/rg.ts`) is a pure function of `config.ripgrepAvailable`, `isDir` and
-   `config.confineToWorkspace`, which is RS-2. The grammar half was, and the entry was right that
+   target kind, which is RS-2. The grammar half was, and the entry was right that
    settling it from source alone is impossible — a full JS `RegExp` versus Rust `regex` grammar diff
    is knowledge external to this repository. So it was settled the other way, by running both
    engines through the real tool and writing down what each returned:

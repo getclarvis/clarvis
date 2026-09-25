@@ -1,9 +1,8 @@
-import { promises as fs } from "node:fs";
+import { fs } from "../lib/environment-fs.ts";
 import { ToolError } from "../errors.ts";
-import { displayPath, isAdmittedFileToolSearchPath, resolveFileToolPath } from "../lib/paths.ts";
+import { displayPath, resolveFileToolPath } from "../lib/paths.ts";
 import { listFiles, mapLimit, statDirectory, STAT_CONCURRENCY } from "../lib/files.ts";
 import type { ToolDef } from "./types.ts";
-import { configurationTarget } from "@clarvis/paths";
 
 type ListFiles = typeof listFiles;
 
@@ -59,12 +58,7 @@ export function createGlobTool(listFilesImpl: ListFiles = listFiles): ToolDef {
       const pattern = args.pattern as string;
       const baseRel = (args.path as string | undefined) ?? ".";
       const base = resolveFileToolPath(baseRel, config);
-      const globalConfiguration =
-        config.configurationRoots === undefined
-          ? false
-          : configurationTarget(config.configurationRoots, base)?.root.startsWith("global_") ===
-            true;
-      const respectGitignore = (args.respect_gitignore as boolean) && !globalConfiguration;
+      const respectGitignore = args.respect_gitignore as boolean;
 
       await statDirectory(base, baseRel);
 
@@ -75,7 +69,6 @@ export function createGlobTool(listFilesImpl: ListFiles = listFiles): ToolDef {
           pattern,
           respectGitignore,
           maxEntries: config.maxTraversalEntries,
-          admit: (candidate) => isAdmittedFileToolSearchPath(candidate, config),
         });
         files = listing.files;
         truncated = listing.truncated;

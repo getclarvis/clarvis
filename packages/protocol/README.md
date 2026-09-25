@@ -19,6 +19,8 @@ Wire DTOs, service interfaces, capability advertisement, and the transport seam 
 [`hosts/protocol.md`](../../specs/hosts/protocol.md). The concrete Clarvis wire and codecs belong to
 the kernel and are specified separately in
 [`hosts/kernel-transport.md`](../../specs/hosts/kernel-transport.md).
+The authenticated local operator service exposes separate idle restart and explicit shutdown
+requests; shutdown retires the old host's work before a replacement connects.
 
 ## The client contract
 
@@ -103,19 +105,18 @@ services:
 | `runs`              | Start, stream, steer, compact live or settled context, inspect and delete runs.        |
 | `config`            | Settings, agent documents and context documents.                                       |
 | `extensionProfiles` | Exact inventory, definition, composition preview and selection of active extensions.   |
-| `plugins`           | Installed plugins, atomic contributions, capability services and lifecycle operations. |
+| `plugins`           | Installed plugins, atomic contributions and lifecycle operations.                      |
 | `secrets`           | Server-side provider secret names and writes.                                          |
 | `models`            | Model metadata and pricing catalog.                                                    |
 | `providerAuth`      | Token-free local subscription status, device login and disconnect control.             |
 | `files`             | Read-only workspace file and image access.                                             |
 | `changes`           | Read-only workspace change inventory and unified patch detail.                         |
 | `memory`            | Owner-facing execution-memory review and curation.                                     |
-| `plans`             | History from the workspace's selected plan provider.                                   |
+| `plans`             | History from the built-in Markdown plan store.                                         |
 | `workflows`         | Agentic workflows: a manager run fanning out leaders.                                  |
 | `skills`            | Skill listing and prompt rendering.                                                    |
 | `sessions`          | Workspace-scoped conversation/session records.                                         |
 | `goals`             | Availability, durable goal state, authenticated controls and operation receipts.       |
-| `tasks`             | Provider-neutral external task discovery, mutation and transition previews.            |
 | `storage`           | Metadata-only local inventory and confirmed cleanup of disposable artifacts.           |
 
 `ModelCatalog.source` can be `cache`, `bundle`, or `projection`. The last denotes immutable logical
@@ -177,13 +178,13 @@ service on a host. Optional `GoalState.creation_intent` is an admitted formulati
 not a Goal and does not authorize implementation. A goal run's optional `progress` contains its latest bounded annotation, separate
 from checkpoint disposition and a completion candidate. Optional Steward DTO fields expose its
 compact status, pending clarification, bounded review history and separate consumption without importing domain runtime.
-They are host-owned audit data, never commands or operator authority. Lifecycle and mutation rules are specified in
+They are host-owned audit data, never commands. Lifecycle and mutation rules are specified in
 [sessions](../../specs/hosts/sessions.md#host-owned-conversation-transactions).
 
 `ExtensionProfileService` is the control plane for deterministic activation of already-installed
 extensions. Custom definitions are complete allow-lists of exact `{ scope, source, name }` plugin
 installations and standalone skills; `builtin:default` is immutable builtin activation behavior.
-`.agents/plugins` and `.clarvis/plugins` are equally representable. Selection and clear
+Only `.agents/plugins` is representable as an installed plugin inventory. Selection and clear
 mutations require scope-bound delta previews. Guided composition reads the qualified installed
 inventory, resolves a complete draft, and applies its definition plus selection through one
 single-use preview token; the service still never installs anything. Global operator-owned plugins
@@ -289,7 +290,7 @@ the concrete transport decides how to interrupt the request without serializing 
 wire parameters.
 
 The opening hello requires the exact `CLARVIS_WIRE_VERSION` declared by the kernel's
-[`wire.ts`](../kernel/src/transport/wire.ts), independently of the private Container channel revision.
+[`wire.ts`](../kernel/src/transport/wire.ts).
 Unknown versions and malformed or extra envelope fields fail closed. Stdio uses strict
 newline-delimited frames capped at 8 MiB and a
 serialized bounded writer; malformed JSON, oversized frames and stalled/backpressured output close
@@ -317,13 +318,6 @@ names `scheduled` versus `forced`; the terminal `compaction` event is durable an
 `fallback_reason` when summarization degraded to eviction. Clients must not reconstruct an active
 operation from replay because start signals are intentionally absent there.
 
-The terminal `tool_call` variant optionally carries `guard`, a strict
-`CommandGuardReview` with the final mode, allowed/denied outcome, and answerer.
-It is absent for older and unguarded calls and is part of replay when present.
-Its optional `reviewer_decision` records `allow`, `deny`, `unsure` or `failed` independently of the
-final outcome, including when Approval later answers a grey-zone ask. Auto does not use human
-fallback.
-
 ## Contract boundaries
 
 - Deep configuration blocks remain intentionally loose; the kernel owns schema
@@ -331,28 +325,15 @@ fallback.
 - Secret values may be sent to the kernel but are never returned by list calls.
 - Workspace paths are server-side concerns for remote kernels.
 - Plan refs identify their backend through `provider_key`; `path` is display-only and optional.
-- Task refs identify their backend through `provider_key`; they never carry a repository or path.
-- Task mutation DTOs carry a caller request ID, while the authenticated kernel derives owner,
-  actor, execution identity and the provider idempotency key.
 - Optional features are announced through `KernelCapabilities`.
 
 ## Runtime projection
 
-The optional handshake runtime projection reports effective native or Container placement. Native
-status identifies Host versus Sandbox. Container status reports the selected Docker/Podman engine,
-Linux guest, effective network and lifecycle. A ready projection also requires generation, base
-image digest, artifact digest, base ABI, broker/channel versions and state namespace. It has no
-fallback origin/status. This projection is informational only; launch authority remains in Kernel.
-
-`SettingsData.runtime` accepts a simple Docker `{ "backend": "docker" }` or Podman
-`{ "backend": "podman" }` input plus advanced overrides. Omitted fields receive host-owned defaults;
-an omitted network selects ordinary routable `outbound` access. Neither engine has a fallback field;
-Podman has no recipe. The optional Docker `recipe` DTO carries only a safe name, an absolute script
-path under the global operator recipe directory and optional `none`/`outbound` build networking; it
-is operator configuration, not a guest grant or image-build protocol operation.
-`RuntimeStatus.network` is never omitted for a Container because it reports the effective policy;
-`outbound` may reach host/LAN peers and must not be presented as public-only internet access. Private
-broker and channel revisions remain outside this type-only package except for their status fields.
+`SandboxInspection.filesystem` reports Host or Sandbox placement, host-visible read scope,
+the write boundary, and the effective workspace posture; `effective_network` reports the enforced
+network mode. The kernel resolves this doctor snapshot and the UI presents it alongside backend
+availability. The optional handshake runtime projection identifies native Host or Sandbox placement
+and a ready lifecycle. It is informational; the selected Kernel host owns execution policy.
 
 ## Development
 
@@ -379,14 +360,6 @@ Run start carries `session_id` and `agent_instance_id`; the hosted session persi
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
-
-## Effect review presentation
-
-`effect_review` configures the shared reviewer. `GuardJudge.prompt` is deprecated additional
-guidance; `guidance` is its replacement. `ElicitationCommandDetail` optionally carries closed
-analysis, effect, authority and reviewer receipts; old details remain accepted. Shell review rows
-may retain effect, relation and failure kind. No evidence seed, controller epoch or authority ledger
-is part of public run input. See [effect review](../../specs/execution/effect-review.md).
 
 `Session.operator_intents` and `operator_sequence` are bounded host-owned submission receipts and
 the conversation's monotonic acceptance sequence. They are separate from admitted `turns`.

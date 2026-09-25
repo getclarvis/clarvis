@@ -1,4 +1,3 @@
-import type { RuntimeConfig } from "@clarvis/protocol";
 import type { SettingsAdapter, SettingsFile } from "../../adapters/settings.ts";
 import { deriveIsolation, type IsolationMode } from "../../adapters/execution-safety.ts";
 
@@ -10,28 +9,13 @@ export interface IsolationChoice {
 }
 
 export const ISOLATION_CHOICES: readonly IsolationChoice[] = [
-  { value: "host", label: "Host", detail: "direct host execution; fastest and least isolated" },
+  { value: "host", label: "Host", detail: "host filesystem permissions" },
   {
     value: "sandbox",
     label: "Sandbox",
-    detail: "native Seatbelt or Bubblewrap; host access is requested per command",
-  },
-  {
-    value: "docker",
-    label: "Docker",
-    detail: "native Kernel; no extensions or external providers",
-  },
-  {
-    value: "podman",
-    label: "Podman",
-    detail: "native Kernel; no extensions or external providers",
+    detail: "read host-visible files; write only workspace and admitted temp roots",
   },
 ];
-
-/** True when isolation selects a Container Kernel rather than native host or sandbox. */
-export function isContainerIsolation(isolation: IsolationMode): isolation is "docker" | "podman" {
-  return isolation === "docker" || isolation === "podman";
-}
 
 export interface IsolationConfirmation {
   message: string;
@@ -49,7 +33,6 @@ export function isolationConfirmation(
   return {
     message: "Run agent tools directly on this host?",
     danger: true,
-    detail: ["Guard remains a separate control and does not create a containment boundary."],
     confirmLabel: "use host",
     cancelLabel: "keep isolation",
   };
@@ -70,54 +53,28 @@ function nativeSandbox(
   };
 }
 
-function runtimeFor(isolation: IsolationMode): RuntimeConfig {
-  return isContainerIsolation(isolation) ? { backend: isolation } : { backend: "native" };
-}
-
-/** Placement-only copy for Isolation settings; Guard stays a separate control. */
+/** Explain the selected execution placement. */
 export function isolationPlacementLines(isolation: IsolationMode): string[] {
   switch (isolation) {
     case "host":
-      return [
-        "No containment boundary.",
-        "Guard remains a separate control and does not create isolation.",
-      ];
+      return ["Commands use the host's filesystem permissions."];
     case "sandbox":
       return [
-        "Uses the native Seatbelt or Bubblewrap boundary as the default for commands.",
-        "A blocked command can ask to run that one command on the host; Isolation Host is the whole session.",
+        "Commands may read host-visible files; writes are limited to the workspace and admitted temporary roots.",
+        "Workspace-read-only forbids workspace writes even when the workspace is inside a writable temporary root.",
         "Open Sandbox settings for filesystem, network and toolchains.",
-      ];
-    case "docker":
-      return [
-        "The full native Kernel runs inside Docker; Plans, Memory, Workflows and Goals remain available.",
-        "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
-        "Commands run without Guard; workspace writes and outbound network remain enabled.",
-        "Git metadata is read-only; use Sandbox or Host for commits.",
-        "Docker is selected before connecting and fails closed if the engine cannot start.",
-      ];
-    case "podman":
-      return [
-        "The full native Kernel runs inside Podman; Plans, Memory, Workflows and Goals remain available.",
-        "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
-        "Commands run without Guard; workspace writes and outbound network remain enabled.",
-        "Git metadata is read-only; use Sandbox or Host for commits.",
-        "Podman is selected before connecting and fails closed if the engine cannot start.",
       ];
   }
 }
 
-/** Persist one isolation axis globally; Container engines select a full-Kernel connection. */
+/** Persist the native isolation choice globally. */
 export async function applyIsolation(
   isolation: IsolationChoice["value"],
   settings: SettingsAdapter,
 ): Promise<IsolationMode> {
   const current = settings.effective();
   await settings.write("global", {
-    runtime: runtimeFor(isolation),
-    ...(isContainerIsolation(isolation)
-      ? {}
-      : { sandbox: nativeSandbox(current.sandbox, isolation === "sandbox") }),
+    sandbox: nativeSandbox(current.sandbox, isolation === "sandbox"),
   });
   return deriveIsolation(settings.effective());
 }

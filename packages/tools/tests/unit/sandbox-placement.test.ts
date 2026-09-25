@@ -35,20 +35,14 @@ describe("sandboxWouldApply", () => {
     },
   );
 
-  it("never calls a disabled or explicitly bare policy contained and never probes it", () => {
+  it("never calls an absent or disabled policy contained and never probes it", () => {
     const disabled = { type: "native" as const, enabled: false };
-    const sandbox = { type: "native" as const };
     const probe = (): never => {
       throw new Error("must not probe");
     };
     expect(sandboxWouldApply(undefined)).toBe(false);
     expect(sandboxWouldApply(disabled)).toBe(false);
-    expect(sandboxWouldApply(sandbox, true)).toBe(false);
-    for (const policy of [
-      { sandbox: undefined },
-      { sandbox: disabled },
-      { sandbox, forceBare: true },
-    ]) {
+    for (const policy of [{ sandbox: undefined }, { sandbox: disabled }]) {
       expect(sandboxCommand({ ...base, ...policy, probe }).sandboxed).toBe(false);
     }
   });

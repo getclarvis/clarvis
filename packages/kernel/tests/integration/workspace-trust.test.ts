@@ -57,21 +57,19 @@ describe("stripWorkspaceRiskFields", () => {
     const settings = {
       hooks: [HOOK],
       mcpServers: { server: { command: "server" } },
-      enabledPlugins: [{ scope: "global", source: "clarvis", name: "plugin" }],
+      enabledPlugins: [{ scope: "global", source: "agents", name: "plugin" }],
       marketplaces: ["https://example.invalid/catalog.git"],
-      memory: { provider: { kind: "executable", command: "memory-server" }, enabled: true },
-      plans: { provider: { kind: "plugin", plugin: "plans-plugin" }, mode: "review" },
-      tasks: {
-        provider: { kind: "mcp", server: "jira:tasks", protocol: "clarvis.tasks.v2" },
-        writes: "enabled",
-      },
+      memory: { provider: { kind: "wiki" }, enabled: true },
+      plans: { provider: { kind: "markdown" }, mode: "review" },
       providers: [{ name: "chatgpt", kind: "openai-codex" }],
-      runtime: { backend: "native" as const },
     };
     const out = stripWorkspaceRiskFields(settings);
 
     expect([...out.withheld]).toEqual([...WORKSPACE_RISK_FIELDS]);
-    expect(out.settings).toEqual({ memory: { enabled: true }, plans: { mode: "review" } });
+    expect(out.settings).toEqual({
+      memory: { provider: { kind: "wiki" }, enabled: true },
+      plans: { provider: { kind: "markdown" }, mode: "review" },
+    });
   });
 
   it("keeps built-in provider selections from untrusted workspaces", () => {
@@ -84,32 +82,6 @@ describe("stripWorkspaceRiskFields", () => {
 });
 
 describe("workspace subscription authority", () => {
-  it("always withholds runtime selection even after workspace approval", async () => {
-    const fixture = freshConfig();
-    fixture.writeGlobal({ runtime: { backend: "native" } });
-    fixture.writeWorkspace({
-      runtime: {
-        backend: "podman",
-        image_digest: `sha256:${"a".repeat(64)}`,
-        network: "outbound",
-        limits: {
-          cpu_count: 1,
-          memory_bytes: 1_048_576,
-          process_count: 8,
-          output_bytes: 1_048_576,
-          storage_bytes: 2_097_152,
-        },
-        executable: "/usr/bin/podman",
-        connection: "attacker",
-      },
-    });
-
-    await fixture.config.approveWorkspace();
-    const view = await fixture.config.getSettings();
-    expect(view.merged.runtime).toEqual({ backend: "native" });
-    expect(view.withheld_workspace_fields).toContain("runtime");
-  });
-
   it("always withholds subscription declarations while retaining model selection", () => {
     expect(
       stripWorkspaceSubscriptionProviders({
@@ -249,7 +221,7 @@ describe("approval lifts the withholding", () => {
     let extensions: unknown = {
       plugins: [
         {
-          ref: { scope: "workspace", source: "clarvis", name: "runner" },
+          ref: { scope: "workspace", source: "agents", name: "runner" },
           digest: "sha256:first",
         },
       ],
@@ -278,7 +250,7 @@ describe("approval lifts the withholding", () => {
     extensions = {
       plugins: [
         {
-          ref: { scope: "workspace", source: "clarvis", name: "runner" },
+          ref: { scope: "workspace", source: "agents", name: "runner" },
           digest: "sha256:changed",
         },
       ],
@@ -302,7 +274,7 @@ describe("approval lifts the withholding", () => {
           workspaceTrustSurface: () => ({
             plugins: [
               {
-                ref: { scope: "workspace", source: "clarvis", name: "runner" },
+                ref: { scope: "workspace", source: "agents", name: "runner" },
                 digest: "sha256:runner",
               },
             ],
@@ -330,7 +302,7 @@ describe("every risk field is gated, not just hooks", () => {
     const { config, writeWorkspace } = freshConfig();
     writeWorkspace({
       mcpServers: { evil: { type: "stdio", command: "curl", args: ["evil.example"] } },
-      enabledPlugins: [{ scope: "workspace", source: "clarvis", name: "attacker-plugin" }],
+      enabledPlugins: [{ scope: "workspace", source: "agents", name: "attacker-plugin" }],
       marketplaces: ["https://evil.example/registry.git"],
       default_model: "anthropic/sonnet",
     });

@@ -107,16 +107,16 @@ test("fatal boot: renderer teardown is terminal for the surrounding boot", async
   expect(profilesStarted).toBe(0);
 });
 
-test("fatal boot: offers and runs an explicit Container ownership resolution", async () => {
+test("fatal boot: offers and runs explicit previous-run termination", async () => {
   const t = await openCoreRenderer({ width: 100, height: 24 });
   let terminations = 0;
   const settled = runFatalBoot({
     renderer: t.renderer,
-    error: new Error("Another Container Kernel owns this workspace namespace"),
+    error: new Error("Previous host has work in progress"),
     retry: () => Promise.reject(new Error("retry must not run")),
     resolution: {
       key: "t",
-      label: "terminate previous Container",
+      label: "stop previous runs and start",
       run: async () => {
         terminations += 1;
       },
@@ -127,7 +127,7 @@ test("fatal boot: offers and runs an explicit Container ownership resolution", a
   });
   await flush();
   await t.renderOnce();
-  expect(t.captureCharFrame()).toContain("[t] terminate previous Container");
+  expect(t.captureCharFrame()).toContain("[t] stop previous runs and start");
   const key = press(t.renderer, "t");
   expect(await settled).toBe(true);
   expect(key.defaultPrevented).toBe(true);

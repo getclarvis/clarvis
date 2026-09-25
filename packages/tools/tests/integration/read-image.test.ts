@@ -73,10 +73,10 @@ describe("read_image", () => {
     expect(r.json.error).toBe("not_found");
   });
 
-  it("errors path_escape for a path outside the workspace", async () => {
+  it("reports not_found for a missing parent-relative image", async () => {
     const r = await callTool("read_image", { path: "../outside.png" }, config);
     expect(r.isError).toBe(true);
-    expect(r.json.error).toBe("path_escape");
+    expect(r.json.error).toBe("not_found");
   });
 
   it("is available in the read-only surface", async () => {

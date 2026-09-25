@@ -252,7 +252,7 @@ describe("createSkillsService", () => {
           description: "d",
           userInvocable: true,
           scope: "user",
-          source: "clarvis",
+          source: "agents",
           metadata: {},
         },
       ]),
@@ -263,7 +263,7 @@ describe("createSkillsService", () => {
       source: "agents",
       author: "github-spec-kit",
     });
-    expect(byName.get("mine")!.provenance).toEqual({ scope: "user", source: "clarvis" });
+    expect(byName.get("mine")!.provenance).toEqual({ scope: "user", source: "agents" });
     expect(byName.get("mine")!.provenance).not.toHaveProperty("author");
   });
 

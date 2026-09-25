@@ -42,7 +42,7 @@ export interface OperatorServices {
   readonly configStore: ConfigStore;
   /** Host-only value lookup used while constructing provider SDK calls. */
   resolveRegistryKey(name: string): string | undefined;
-  /** Host-only subscription request authority; its token never crosses the Container channel. */
+  /** Host-only subscription request authority. */
   resolveSubscription: SubscriptionManager["resolve"] | undefined;
   /** Observe credential authority changes after the host store commits them. */
   onAuthorityChanged(

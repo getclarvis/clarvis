@@ -15,9 +15,9 @@ import { ownerSegment, workspaceRoot, type RootOptions } from "./roots.ts";
  *
  * @remarks
  * **Everything reachable from here is content a human authors or reads.** The
- * workspace's own configuration — `settings.json`, `agents/`, `skills/`,
- * `workflows/`, `plugins/`, `extension-profiles/`, `shared-agent.md`,
- * `guard-judge.md`, `memory-policy.md` — belongs in its history, and the
+ * workspace's own configuration — `settings.json`, `agents/`,
+ * `workflows/`, `extension-profiles/`, `shared-agent.md`,
+ * `memory-policy.md` — belongs in its history, and the
  * two generated trees, {@link WorkspacePaths.plansRoot} and
  * {@link WorkspacePaths.memoryRoot}, hold Markdown the user is expected to open
  * mid-run.
@@ -42,12 +42,8 @@ export interface WorkspacePaths {
   settingsFile: string;
   /** Directory of file-based agent profiles. */
   agentsDir: string;
-  /** Workspace skill directory. */
-  skillsDir: string;
   /** Directory of authored workflow definitions. */
   workflowsDir: string;
-  /** Clarvis-native installed plugin directory. */
-  pluginsDir: string;
   /** Shared Extension Profile definitions authored for this workspace. */
   extensionProfilesDir: string;
   /**
@@ -57,8 +53,6 @@ export interface WorkspacePaths {
    * applies to every agent rather than overlaying one profile.
    */
   sharedAgentPromptFile: string;
-  /** Workspace-authored guard-judge prompt override. */
-  guardJudgeFile: string;
   /**
    * Workspace-authored memory editorial policy — what is worth recording here.
    *
@@ -66,8 +60,7 @@ export interface WorkspacePaths {
    * leaves an authored file at the `.clarvis` root in the repository's history,
    * so this one is the team's convention. The per-person equivalent is the
    * global file of the same name, and the two are **concatenated** rather than
-   * shadowing each other — unlike `guard-judge.md`, which is one complete
-   * judging prompt and so takes the nearest scope whole.
+   * shadowing each other.
    */
   memoryPolicyFile: string;
   /** Shared plan documents. */
@@ -117,12 +110,9 @@ export function workspacePaths(root?: string, opts?: RootOptions): WorkspacePath
     clarvisDir,
     settingsFile: join(clarvisDir, "settings.json"),
     agentsDir,
-    skillsDir: join(clarvisDir, "skills"),
     workflowsDir: join(clarvisDir, "workflows"),
-    pluginsDir: join(clarvisDir, "plugins"),
     extensionProfilesDir: join(clarvisDir, "extension-profiles"),
     sharedAgentPromptFile: join(clarvisDir, "shared-agent.md"),
-    guardJudgeFile: join(clarvisDir, "guard-judge.md"),
     memoryPolicyFile: join(clarvisDir, "memory-policy.md"),
     plansRoot: join(clarvisDir, "plans"),
     memoryRoot: join(clarvisDir, "memory"),
@@ -186,8 +176,8 @@ export function agentsPluginsDirs(opts: RootOptions = {}): { user: string; works
  *   working tree, or a checkout Clarvis has fetched.
  * @returns the absolute path to that root's marketplace document.
  *
- * @remarks
- * Always *below* the marketplace document a source publishes at its own root.
+ * @remarks External Git catalogs use this path inside their checkout. The
+ * product-owned official catalog may publish its document at the checkout root.
  */
 export function agentsMarketplaceFile(root: string): string {
   return join(agentsPluginsDir(root), MARKETPLACE_FILE);

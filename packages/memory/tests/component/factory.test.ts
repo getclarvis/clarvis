@@ -583,7 +583,6 @@ describe("createMemoryFactory — providerFor", () => {
     config: Record<string, unknown>,
     over: {
       workspaceRoot?: string;
-      serverPort?: Parameters<typeof createMemoryFactory>[0]["serverPort"];
     } = {},
   ) => {
     const { llm, logger } = makeFactoryDeps();
@@ -592,7 +591,6 @@ describe("createMemoryFactory — providerFor", () => {
       logger,
       workspaceRoot: over.workspaceRoot ?? tempWorkspace(),
       loadSettings: () => ({ config: config as never, providers: [] }),
-      ...(over.serverPort !== undefined ? { serverPort: over.serverPort } : {}),
     });
   };
 
@@ -629,70 +627,5 @@ describe("createMemoryFactory — providerFor", () => {
     const res = await factoryOf(CONFIG).providerFor!("o");
     expect(res?.ok).toBe(true);
     if (res?.ok) expect(res.provider.kind).toBe("wiki");
-  });
-
-  it("resolves a declared file provider, and never builds the wiki for it", async () => {
-    const ws = tempWorkspace();
-    const res = await factoryOf(
-      { enabled: true, provider: { kind: "file", paths: ["DOCTRINE.md"] } },
-      { workspaceRoot: ws },
-    ).providerFor!("o");
-    expect(res?.ok).toBe(true);
-    if (res?.ok) {
-      expect(res.provider.kind).toBe("file");
-      expect(res.provider.writeTools).toBeUndefined();
-    }
-  });
-
-  it("reports an mcp declaration unavailable when the host wired no server port", async () => {
-    const res = await factoryOf({
-      enabled: true,
-      provider: {
-        kind: "mcp",
-        server: "acme",
-        tools: {
-          list_memories: "a",
-          read_memory: "b",
-          grep_memories: "c",
-          query_memories: "d",
-        },
-      },
-    }).providerFor!("o");
-    expect(res?.ok).toBe(false);
-    if (res !== undefined && !res.ok) {
-      expect(res.failure.reason).toContain("cannot reach tool servers");
-    }
-  });
-
-  it("hands an mcp provider the host's port when there is one", async () => {
-    const calls: string[] = [];
-    const res = await factoryOf(
-      {
-        enabled: true,
-        provider: {
-          kind: "mcp",
-          server: "acme",
-          tools: {
-            list_memories: "kb_list",
-            read_memory: "kb_get",
-            grep_memories: "kb_grep",
-            query_memories: "kb_search",
-          },
-        },
-      },
-      {
-        serverPort: {
-          forOwner: (owner) => ({
-            callTool: (server, tool) => {
-              calls.push(`${owner}:${server}:${tool}`);
-              return Promise.resolve({ text: "", isError: false });
-            },
-          }),
-        },
-      },
-    ).providerFor!("o");
-    expect(res?.ok).toBe(true);
-    if (res?.ok) await res.provider.readTools[0]!.execute({});
-    expect(calls).toEqual(["o:acme:kb_list"]);
   });
 });

@@ -274,14 +274,7 @@ export interface PluginManifestSource {
  * old alphabetical accident instead of selecting the document that actually
  * describes what the plugin does here.
  */
-const MANIFEST_CONTRIBUTION_KEYS = [
-  "skills",
-  "mcpServers",
-  "hooks",
-  "bootstrapSkill",
-  "capabilityExecutables",
-  "capabilityRunPolicies",
-] as const;
+const MANIFEST_CONTRIBUTION_KEYS = ["skills", "mcpServers", "hooks", "bootstrapSkill"] as const;
 
 /** Whether a directive carries anything rather than an empty placeholder. */
 function carriesContribution(value: unknown): boolean {
@@ -433,7 +426,7 @@ export function readPluginManifestSource(dir: string): PluginManifestSource | { 
  *
  * Confinement is lexical. A symlink *inside* the plugin that points outside it is
  * still followed, which is the same open parent-directory weakness recorded for
- * workspace-confined writes; closing it needs descriptor-relative reads rather
+ * classified configuration writes; closing it needs descriptor-relative reads rather
  * than a stricter path check.
  */
 function companionPath(dirs: PluginDirs, declared: string): string | undefined {

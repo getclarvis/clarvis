@@ -7,39 +7,6 @@ export type { PreparedKernelRun } from "./runs/prepare-run.ts";
 export type { KernelRunService, PreparedRunExecution } from "./runs/run-service.ts";
 export type { ConnectionEvent, ConnectionEventSink } from "./connection-health.ts";
 
-export {
-  RuntimeLaunchError,
-  type RuntimeAvailability,
-  type RuntimeKind,
-  type RuntimeLifecycleState,
-  type RuntimeLimits,
-  type RuntimeNetworkMode,
-  type RuntimeProtectedMount,
-  type RuntimeUnavailableReason,
-  type ContainerKernelBackend,
-  type ContainerKernelLaunchSpec,
-  type ContainerProcessLifecycle,
-} from "./runtime/types.ts";
-export {
-  createPodmanKernelBackend,
-  type PodmanAttachedProcess,
-  type PodmanCommandResult,
-  type PodmanControl,
-} from "./runtime/podman-backend.ts";
-export {
-  createDockerKernelBackend,
-  type DockerAttachedProcess,
-  type DockerCommandResult,
-  type DockerControl,
-  type DockerRunOptions,
-} from "./runtime/docker-backend.ts";
-export {
-  runtimeSettingsSchema,
-  runtimeSettingsSpec,
-  type RuntimeSettingsBlock,
-  type RuntimeSettingsInput,
-} from "./runtime/settings.ts";
-
 export { createRunService } from "./runs/run-service.ts";
 export type { RunExecutor, RunServiceConfig, RunRequestAssembler } from "./runs/run-service.ts";
 export { createMemoryService } from "./memory/memory-service.ts";

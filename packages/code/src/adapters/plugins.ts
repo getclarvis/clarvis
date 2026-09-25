@@ -10,14 +10,6 @@ import type {
 /** Where a plugin is installed from. */
 export type PluginScope = "global" | "workspace";
 
-/** An external executable offered to a capability. */
-export interface PluginCapabilityExecutable {
-  capability: string;
-  command: string;
-  args: string[];
-  platformOverride: boolean;
-}
-
 /** What a plugin contributes to the workspace, by kind. */
 export interface PluginContributions {
   agents: string[];
@@ -25,8 +17,6 @@ export interface PluginContributions {
   skills: string[];
   servers: string[];
   hooks: number;
-  capabilityExecutables: PluginCapabilityExecutable[];
-  skillPlanPolicies?: { skill: string; mode: "off" | "on" | "review" }[];
   executables: string[];
 }
 
@@ -110,19 +100,6 @@ export function toPluginView(p: ProtoPluginView): PluginView {
       skills: p.contributions.skills,
       servers: p.contributions.servers,
       hooks: p.contributions.hooks,
-      capabilityExecutables: p.contributions.capability_executables.map((entry) => ({
-        capability: entry.capability,
-        command: entry.command,
-        args: entry.args,
-        platformOverride: entry.platform_override,
-      })),
-      ...(p.contributions.capability_run_policies?.plans !== undefined
-        ? {
-            skillPlanPolicies: Object.entries(p.contributions.capability_run_policies.plans.skills)
-              .map(([skill, mode]) => ({ skill, mode }))
-              .sort((left, right) => left.skill.localeCompare(right.skill)),
-          }
-        : {}),
       executables: p.contributions.executables,
     },
   };

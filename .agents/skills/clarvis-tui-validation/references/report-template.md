@@ -24,7 +24,6 @@ incomplete; partial proof does not count as a pass.
 | Bundle build command, flavor, identity, and launch                                        |       |
 | Bun/OpenTUI, OS/architecture, terminal/profile, sizes                                     |       |
 | Isolated home, workspaces, fixture revisions/configuration                                |       |
-| For Docker: engine/context, image ID, generation, effective placement/policy              |       |
 | For remote: local/remote artifact, SSH executable/auth posture, host-key proof, workspace |       |
 
 | Check | Command / named test | Input/artifact identity | Exit / outcome | Evidence | Reused evidence and why still valid |
@@ -67,6 +66,6 @@ tooling's limits. Reuse the same sample across applicable scenario rows.
 
 - Required account/integration/platform/hardware paths unavailable, exact blocker, and alternatives attempted
 - Synthetic boundaries, unattempted available work, interrupted checks, and remaining risks
-- Owned PTYs, processes, listeners, Docker generations, workspace roots, and credential copies removed
+- Owned PTYs, processes, listeners, workspace roots, and credential copies removed
 - Retained evidence/cache/state paths, ownership, and reason; normal versus forced shutdown evidence
 - Documentation disposition and any publication action actually authorized and performed

@@ -51,7 +51,7 @@ The whole thing runs sequentially, fail-fast, from one npm script: `check:pre-co
 | `knip` | `knip` | `package.json` (`scripts.knip`) |
 | `test:coverage` | `bun --workspaces --sequential --if-present test:coverage && bun run coverage:check` | `package.json` (`scripts.test:coverage`) |
 | `coverage:check` | `bun run tooling/checks/coverage.ts` | `package.json` (`scripts.coverage:check`) |
-| `test` | `test:tooling` followed by 18 package tests chained with `&&`, in dependency order | `package.json` (`scripts.test`) |
+| `test` | `test:tooling` followed by 17 package tests chained with `&&`, in dependency order | `package.json` (`scripts.test`) |
 | `hooks:install` | `git config core.hooksPath .githooks` | `package.json` (`scripts.hooks:install`) |
 | `smoke` | `bun --filter @clarvis/code smoke` | `package.json` (`scripts.smoke`) |
 | `release:prepare` | `bun run tooling/release/prepare.ts <version>` | `package.json` (`scripts.release:prepare`) |
@@ -139,16 +139,13 @@ Five packages export a `./testing` entry (from each `package.json` `exports` map
 
 | Package | Target | Shape | Cross-package consumers |
 | --- | --- | --- | --- |
-| `@clarvis/loop` | `src/testing/index.ts` | `MockLLM`, `mockMCPFactory`, fresh real-loop MCP/trace infrastructure, and `validateBody` (`packages/loop/src/testing/index.ts`, exports) | `kernel`, `memory`, `judge` |
+| `@clarvis/loop` | `src/testing/index.ts` | `MockLLM`, `mockMCPFactory`, fresh real-loop MCP/trace infrastructure, and `validateBody` (`packages/loop/src/testing/index.ts`, exports) | `kernel`, `memory` |
 | `@clarvis/memory` | `src/testing.ts` | in-memory adapter + `memoryStoreConformance()` case table (`packages/memory/src/testing.ts`) | `kernel` |
 | `@clarvis/plan` | `src/testing.ts` | in-memory repository + `planRepositoryConformance()` / `planStoreConformance()` (`packages/plan/src/testing.ts`) | `kernel` |
 | `@clarvis/trace` | `src/testing.ts` | `createMemoryTraceStore()` only (`packages/trace/src/testing.ts`) | `kernel`, `loop` |
-| `@clarvis/tasks` | `src/testing/provider-conformance.ts` | `assertTaskProviderConformance(fixture)` (`packages/tasks/src/testing/provider-conformance.ts`) | none |
 
 The consumer column is the set of packages that import the specifier `@clarvis/<pkg>/testing`
-anywhere under `packages/*/{src,tests}`; `tasks` is consumed only through a relative
-`../../src/testing.ts` import inside its own suite
-(`packages/tasks/tests/component/conformance.test.ts`).
+anywhere under `packages/*/{src,tests}`.
 
 `@clarvis/loop`'s is the most used entry of the five, and the doubles behind it are the substrate
 almost every engine test stands on, so what they can be *made to do* is worth stating rather than
@@ -314,7 +311,7 @@ the bound URL. The package-local `tempRoot` fixtures do not create a runtime pac
 dependency.
 
 Test: `packages/memory/tests/integration/file-store-observability.test.ts`,
-`packages/paths/tests/contract/local-lease.test.ts`, `packages/server/tests/unit/sessions.test.ts`,
+`packages/paths/tests/contract/local-lease.test.ts`,
 `tooling/tests/unit/coverage.test.ts` and the Code render suites exercise temporary spies, explicit
 mtimes and observable settling without changing production defaults.
 
@@ -342,24 +339,11 @@ Production: `packages/mcp-client/src/client.ts` (`createMCPClientFactory`),
 `packages/code/tests/helpers/process-fixtures.ts`, the package-local `process-fixtures.ts` helpers,
 `packages/code/tests/unit/process-fixtures.test.ts` and the environment/platform integration suites.
 
-Shell, Git, native-sandbox and container canaries separate admission from execution. An absent opt-in
-gate is `skipped`; once a gate is enabled, a missing executable/backend is `unavailable`, malformed
-digest or context is `misconfigured`, and a failure after successful admission is `failed`. None of
-those outcomes is reported as a pass. Docker and Podman use distinct gates and explicit contexts or
-connections; enabling both in one test process is invalid. Container images must use a complete
-`sha256:` digest, non-network scenarios select `network: "none"`, and cleanup targets only names,
-volumes and generations recorded by that case. Shell/Git policy tests use synthetic argv or local
-repositories; physical adapter canaries retain the real executable and an explicit disposable cwd
-and environment.
-
-Production: the process, sandbox and container adapters remain unchanged. Test:
-`packages/kernel/tests/helpers/native-canary.ts` owns the test-only admission/verdict vocabulary;
-`packages/kernel/tests/unit/native-canary.test.ts` pins skip versus pass, listener denial versus bind
-failure, executable absence versus policy denial, engine absence versus admitted-container failure,
-and expected network denial versus an accidental download failure. The gated container journeys in
-`packages/kernel/tests/integration` consume the admission helper, while
-`packages/tools/tests/integration/sandbox.test.ts` supplies the offline native-sandbox proof with
-synthetic sentinels.
+Shell, Git and native-sandbox canaries separate admission from execution. An absent opt-in gate
+is `skipped`; once enabled, a missing executable/backend is `unavailable`, malformed configuration
+is `misconfigured`, and a failure after successful admission is `failed`. None is reported as a
+pass. Shell/Git policy tests use synthetic argv or local repositories; physical adapter canaries
+retain the real executable and an explicit disposable cwd and environment.
 
 ### 3.2 The LCOV subset `coverage.ts` consumes
 
@@ -411,15 +395,13 @@ floor without lowering a threshold.
 | paths | 1.00 | 1.00 |
 | plan | 0.95 | 0.97 |
 | protocol | 1.00 | 1.00 |
-| server | 0.90 | 0.96 |
 | skills | 1.00 | 1.00 |
 | supervision | 0.98 | 1.00 |
-| tasks | 0.95 | 0.98 |
 | tools | 0.98 | 0.98 |
 | trace | 0.98 | 0.97 |
 | workflows | 1.00 | 1.00 |
 
-Three packages share the lowest function floor at 0.90: `mcp-client`, `memory` and `server`.
+Two packages share the lowest function floor at 0.90: `mcp-client` and `memory`.
 
 Output line format is fixed (`tooling/checks/coverage.ts`):
 
@@ -444,10 +426,8 @@ records that a fourth, `GRANDFATHERED`, was never legitimate and no longer has a
 | kernel | 5 | – | 1 (`src/bin.ts`) | – |
 | loop | – | 4 (`host`, `lib`, `workflows`, `workspace`) | – | – (former `src/version.ts` and `src/settings/marketplace-schema.ts` entries removed) |
 | memory | 4 | – | – | – |
-| server | – | – | 1 (`src/bin.ts`) | – |
 | skills | 1 | – | – | – |
 | supervision | – | 1 | – | – |
-| tasks | 2 | – | – | – |
 | tools | 4 | 1 (`src/shell-entry.ts`) | – | – |
 | trace | 1 | – | – | – |
 | workflows | 1 | 1 | – | – |
@@ -480,13 +460,6 @@ named re-export does not.
 Five packages have **no** key at all and fall through `?? []` (`tooling/checks/coverage.ts`):
 `llm`, `mcp-client`, `paths`, `plan`, `protocol`. No `GRANDFATHERED` entries remain; see §8 item 10.
 
-The `server/src/bin.ts` entry carries the longest justification in the file
-(`tooling/checks/coverage.ts`): its behaviour *is* tested, by real subprocess tests, but
-"Bun's coverage instrumentation only sees code running inside the `bun test` process itself, so a
-subprocess contributes no counters here no matter how thoroughly it is tested". The same
-cross-reference is written from the other side, in the test:
-`packages/server/tests/architecture/bin-bind-gate.test.ts`.
-
 `TYPE_ONLY_PACKAGES` is a separate one-member set, `{"protocol"}`
 (`tooling/checks/coverage.ts`).
 
@@ -517,12 +490,11 @@ pass, as `… --coverage && bun run test:architecture`:
 | code | unit, component, integration | yes | 8 |
 | kernel | unit, component, contract, integration | yes | 5 |
 | paths | unit, component, contract, integration | yes | 3 |
-| tasks | unit, component | yes | 1 |
 | trace | unit, component, contract, integration | yes | 1 |
-| llm / server / workflows | …including architecture | no | 1 / 4 / 1 |
+| llm / workflows | …including architecture | no | 1 / 1 |
 
-19 of the 50 architecture test files therefore contribute no `SF:` records at all, which means in
-those six packages every `src` module must be reached from a *non*-architecture test or be
+Architecture tests run separately in those packages and contribute no `SF:` records, which means in
+those packages every `src` module must be reached from a *non*-architecture test or be
 allowlisted.
 
 `@clarvis/protocol` is the outlier: its `test`, `test:coverage` and `test:contract` are all
@@ -881,7 +853,7 @@ The event sink records package, attempt, start/end, duration and result. The CLI
 crash annotations and a summary of completed attempts. Executor/clock/cancellation fakes establish
 the supervisor's ordering; small actual subprocess fixtures qualify the pinned Bun script/signal
 boundary and observable-readiness cancellation. These fixtures do not substitute for complete
-remote coverage, floors, sandbox, smoke, Docker, Windows or macOS.
+remote coverage, floors, sandbox, smoke, Windows or macOS.
 
 Production: [coverage library](../../tooling/lib/ci-coverage.ts), `runCiCoverage`,
 `executeCoverageCommand`, `normalizeCoverageExit`;
@@ -908,7 +880,6 @@ Four distinct shapes exist.
 | **case table as data** | `memoryStoreConformance(): readonly ConformanceCase[]` (`packages/memory/src/testing.ts`, `memoryStoreConformance`), 31 cases | `node:assert/strict` | a `for … of` that wraps each case in a `test()` (`packages/memory/tests/contract/store.test.ts`) |
 | same | `planRepositoryConformance()` (18 cases) + `planStoreConformance()` (10 cases) (`packages/plan/src/testing.ts`, `planRepositoryConformance` and `planStoreConformance`) | `node:assert/strict` | `packages/plan/tests/contract/repository.test.ts`, `plan-store.test.ts` |
 | **suite registrar** | `traceStoreConformance(name, createHarness)` (`packages/trace/tests/contract/trace-store-conformance.ts`), 16 `it()` blocks | `bun:test` `expect` | called twice, once per backend (`packages/trace/tests/contract/trace-store.test.ts`) |
-| **single async assertion** | `assertTaskProviderConformance(fixture)` (`packages/tasks/src/testing/provider-conformance.ts`) | zod `.parse` + a local `assert` throwing `Task provider conformance: …` | `packages/tasks/tests/component/conformance.test.ts` |
 
 The first two shapes live in `src/` and the third does not, and the source states why: memory's and
 plan's tables are "exposed as **data** rather than as `describe`/`test` calls, and assert through
@@ -1042,7 +1013,7 @@ only the owner-specific default").
 
 10. **INV-306 (own-source half) — only `src/`-relative `SF:` records enter a package's ratios; a
     workspace dependency's source cannot.** Rule: `tooling/checks/coverage.ts`, reinforced by
-    `coveragePathIgnorePatterns = ["../**"]` in all 18 package bunfigs. ~~**Unpinned.**~~
+    `coveragePathIgnorePatterns = ["../**"]` in all 17 package bunfigs. ~~**Unpinned.**~~
     **Pinned on its reinforcement half:** `checkPackageHarness` fails any package bunfig
     whose `[test] coveragePathIgnorePatterns` omits `"../**"`, naming the consequence — "workspace
     dependencies enter this package's ratios" (`tooling/lib/test-harness.ts`, over
@@ -1147,8 +1118,8 @@ only the owner-specific default").
     `tooling/lib/package-graph.ts`. Pinned by `tooling/tests/unit/package-graph.test.ts`.
 
 23. **Every package's `tsconfig.json` includes its `tests` tree**, so the gate's `typecheck` phase
-    type-checks test sources. Verified by reading all 18: fourteen use
-    `["src/**/*.ts","tests/**/*.ts"]`, and `code`, `kernel`, `protocol`, `server` use
+    type-checks test sources. Verified by reading all 17: fourteen use
+    `["src/**/*.ts","tests/**/*.ts"]`, and `code`, `kernel`, `protocol` use
     `["src","tests"]` (e.g. `packages/protocol/tsconfig.json`, `packages/kernel/tsconfig.json`).
     **Unpinned.**
 
@@ -1196,8 +1167,7 @@ only the owner-specific default").
 
 29. **The repository carries no tracked or unignored Python source.** `.py`, `.pyi` and `.pyw`
     paths are rejected case-insensitively; Bun/TypeScript remains the repository's implementation
-    and maintenance runtime. This does not constrain user-installed toolchains or language-neutral
-    capability executables. Production: `tooling/checks/bun-sources.ts`, invoked by
+    and maintenance runtime. This does not constrain user-installed toolchains. Production: `tooling/checks/bun-sources.ts`, invoked by
     `check:bun-sources` inside `lint:intent` (`package.json`, `scripts.lint:intent` and
     `scripts.check:bun-sources`). Test:
     `tooling/tests/unit/bun-sources.test.ts` pins accepted Bun/TypeScript paths, all three
@@ -1266,9 +1236,9 @@ lets these four repository-tooling modules import it from the repository root.
 - **Every package's `test:coverage` script**, which must write `coverage/lcov.info` where
   `readOwnSourceCoverage` expects it (`tooling/checks/coverage.ts`), i.e. the `coverageDir`
   setting in each package's `bunfig.toml` is part of this contract.
-- **Five packages' `./testing` exports**, which are consumed across package boundaries and therefore
+- **Four packages' `./testing` exports**, which are consumed across package boundaries and therefore
   ride the ordinary `exports`/dependency rules `package-graph.ts` enforces: `loop`, `memory`,
-  `plan`, `trace` and `tasks` each declare one (§2.5), and `kernel`, `memory` and `judge` are the
+  `plan` and `trace` each declare one (§2.5), and `kernel` and `memory` are the
   actual cross-package importers of `@clarvis/loop/testing`. `kernel` and `workflows` declare no
   `./testing` export of their own — neither appears in either package's `exports` map.
 
@@ -1330,7 +1300,7 @@ already ends its own chain in `.catch(() => {})` (`packages/capability/src/tasks
    `component` from `integration`. The one observable regularity is the `architecture` idiom
    (§4.10) and the `contract` idiom (§4.9); the other four are conventional only.
 
-3. **`e2e` is a declared level with zero members.** No `tests/e2e` directory exists in any of the 18
+3. **`e2e` is a declared level with zero members.** No `tests/e2e` directory exists in any of the 17
    packages. It is pinned as *accepted* by `tooling/tests/unit/source-policy.test.ts`, so it is live
    vocabulary, but nothing uses it.
 
@@ -1373,13 +1343,6 @@ already ends its own chain in `.catch(() => {})` (`packages/capability/src/tasks
    compares the complete generated block with the current serializer. A format change therefore
    requires regenerating the document in the same iteration, or `check:graph` fails
    (`tooling/lib/package-graph.ts`, `renderMarkdown` and `checkDocument`).
-
-9. ~~**`@clarvis/tasks/testing` has no cross-package consumer.**~~
-   **Resolved.** `@clarvis/tasks/testing` is a **provider conformance harness**, and its intended
-   consumer is outside this repository by design: a provider-neutral task domain means somebody else
-   writes the Jira or Trello or in-house provider, and this is how they find out whether it satisfies
-   the contract before Clarvis ever loads it. No in-repo importer is the *expected* state there, not
-   an unused export.
 
 10. ~~**The three `GRANDFATHERED` allowlist entries are undocumented individually.** The header says
     they are "real, executable, untested modules that predate this check"
@@ -1432,7 +1395,7 @@ already ends its own chain in `.catch(() => {})` (`packages/capability/src/tasks
 13. **Delegated to sibling documents.** The individual rules the 50 `tests/architecture/` files
     enforce belong to their owning subsystems (the `.clarvis`/`.agents` vocabulary to *paths*, the
     optional-package boundary and the eager-import closure to *loop*, the entrypoint-ownership and
-    external-name tables to *kernel*, the bind gate and tool surface to *server*, and so on); this
+    external-name tables to *kernel*, and so on); this
     document describes only the level's shared idiom. CI job layout, the Bun version pin, the
     `code` bundle/smoke contract and interactive PTY validation belong to
     *build-tooling-ci-and-platform* and to the `code` host document.

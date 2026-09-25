@@ -13,7 +13,7 @@ const operator = (settings: SettingsFile): SettingsScope => ({ origin: "operator
 const plugin = (settings: SettingsFile): SettingsScope => ({ origin: "plugin", settings });
 const pluginRef = (name: string) => ({
   scope: "global" as const,
-  source: "clarvis" as const,
+  source: "agents" as const,
   name,
 });
 
@@ -72,15 +72,6 @@ describe("mergeSettings", () => {
     expect(merged.budget).toEqual({ on_exceed: "stop", total_token_limit: 2 });
   });
 
-  it("a lastWins block falls back to the earlier scope when the later declares none", () => {
-    const global: SettingsFile = { guard: { type: "shell", mode: "on" } };
-    expect(mergeSettings([operator(global), operator({ providers: [] })]).guard).toEqual(
-      global.guard,
-    );
-    const workspace: SettingsFile = { guard: { type: "shell", mode: "off" } };
-    expect(mergeSettings([operator(global), operator(workspace)]).guard).toEqual(workspace.guard);
-  });
-
   it("falls back to an earlier scope's default_model when a later one declares none", () => {
     const merged = mergeSettings([
       operator({ default_model: "anthropic/g" }),
@@ -100,34 +91,26 @@ describe("mergeSettings", () => {
     );
   });
 
-  it("carries an earlier scope's hooks and guard through when a later one declares none", () => {
+  it("carries an earlier scope's hooks through when a later one declares none", () => {
     const global: SettingsFile = {
       hooks: [{ event: "pre_tool_use", command: "echo hi" }],
-      guard: { type: "shell", allowed_commands: ["echo"] },
     };
     const merged = mergeSettings([operator(global), operator({ providers: [] })]);
     expect(merged.hooks).toEqual([{ event: "pre_tool_use", command: "echo hi" }]);
-    expect(merged.guard).toEqual({ type: "shell", allowed_commands: ["echo"] });
   });
 
-  it("concatenates operator hooks in scope order and lets the later guard win", () => {
+  it("concatenates operator hooks in scope order", () => {
     const global: SettingsFile = {
       hooks: [{ event: "pre_tool_use", command: "global" }],
-      guard: { type: "shell", allowed_commands: ["global"] },
     };
     const workspace: SettingsFile = {
       hooks: [{ event: "post_tool_use", command: "workspace" }],
-      guard: { type: "shell", allowed_commands: ["workspace"] },
     };
     const merged = mergeSettings([operator(global), operator(workspace)]);
     expect(merged.hooks).toEqual([
       { event: "pre_tool_use", command: "global" },
       { event: "post_tool_use", command: "workspace" },
     ]);
-    expect(merged.guard).toEqual({
-      type: "shell",
-      allowed_commands: ["workspace"],
-    });
   });
 
   it("merges sandbox scalars last-wins and unions scoped toolchain paths", () => {
@@ -202,12 +185,10 @@ describe("mergeSettings — plugin scopes (D7)", () => {
     const merged = mergeSettings([
       plugin({
         default_model: "anthropic/plugin",
-        guard: { type: "shell", allowed_commands: ["plugin"] },
       }),
       operator({ default_model: "anthropic/operator" }),
     ]);
     expect(merged.default_model).toBe("anthropic/operator");
-    expect(merged.guard).toEqual({ type: "shell", allowed_commands: ["plugin"] });
   });
 });
 

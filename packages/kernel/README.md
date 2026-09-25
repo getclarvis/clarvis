@@ -1,33 +1,20 @@
 # `@clarvis/kernel`
 
-Reviewer configuration is owned by `@clarvis/judge/settings` and registered before host parsing.
-Technical Judge failures never trigger operator questions, including when `on_unsure` is `ask`.
-Judge calls inherit `CLARVIS_DEFAULT_CALL_TIMEOUT_MS` unless explicitly overridden. The shared
-provider owns inactivity timing and transport retries, without a separate Judge wall deadline.
-Workspace timeout overrides may only lower the operator limit or effective runtime default.
-Retries likewise inherit `CLARVIS_DEFAULT_MAX_RETRIES` under `CLARVIS_RETRY_CEILING`; workspace
-settings can only lower the operator or runtime value. Typed provider inactivity, not an inferred
-child abort, determines timeout classification. Review integration tests use the production Judge
-and Loop; no test-only reviewer implementation or policy is retained.
-Malformed candidates may be corrected before authority installation; installation remains single-use
-and fenced by the captured authority and context. Semantic uncertainty retains its configured policy.
-Command and configuration review read its typed overrides through the generic request view.
-The host manifest parser enforces the same registered operator-only prohibition for plugins.
-
-Reviewer overrides accept bounded `guidance` as additional context. Unknown configuration fields
-are rejected by the strict request schema; guidance never replaces host policy or operator evidence.
-
 The in-process implementation of `@clarvis/protocol` over `@clarvis/loop`.
 It is the Clarvis server core: applications can use it directly or consume the same typed services
 through its RPC transports, including the independently owned local workspace host.
+The local launcher admits a changed operator execution policy after an authenticated idle restart
+has been requested and the previous generation has retired.
+An incompatible artifact with active hosted work requires the operator's explicit replacement
+choice; the old host then cancels and drains that work before releasing its lease.
 `KernelClient.changes` is a VCS-agnostic read-only inventory of the bound workspace; the first
 adapter is Git and never writes to the repository.
 
 `@clarvis/code` uses this package as its backend, and it is the only backend.
 
 Workspace dependencies: `@clarvis/protocol` (the contract it implements), `@clarvis/loop` (the engine),
-`@clarvis/capability`, `@clarvis/goal`, `@clarvis/judge`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
-`@clarvis/tools`, `@clarvis/trace`, `@clarvis/tasks` and `@clarvis/workflows`. It injects
+`@clarvis/capability`, `@clarvis/goal`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
+`@clarvis/tools`, `@clarvis/trace` and `@clarvis/workflows`. It injects
 host-owned capabilities into runs, so the engine never imports those product layers.
 Clients remain independent of the engine through seven deliberately bounded public entrypoints. Each
 public symbol has one thematic owner; the root is not a compatibility barrel for lower packages.
@@ -37,7 +24,7 @@ public symbol has one thematic owner; the root is not a compatibility barrel for
 | `@clarvis/kernel`             | in-process kernel, kernel services/errors, client/server/transports and wire metadata                                         |
 | `@clarvis/kernel/bootstrap`   | file-backed construction, authenticated local host/launcher, owner-scoped stores, stdio hosting, bootstrap logger/environment |
 | `@clarvis/kernel/config`      | config stores/schemas, agents, models, plugins, workflows and settings composition                                            |
-| `@clarvis/kernel/policy`      | guard, sanitization, tool identity, event mapping/policy/spans and ingest state                                               |
+| `@clarvis/kernel/policy`      | sanitization, tool identity, event mapping/policy/spans and ingest state                                                      |
 | `@clarvis/kernel/local`       | shell/process/executable helpers and local filesystem/git adapters                                                            |
 | `@clarvis/kernel/logger`      | logger constructor and types without loading file-kernel bootstrap                                                            |
 | `@clarvis/kernel/system-docs` | verified publication of the product-owned Markdown skill for installers and source launchers                                  |
@@ -143,32 +130,6 @@ their package READMEs. Shared-prompt resolution, workspace trust for `shared-age
 independence from agent overlays are specified in
 [`agent-system-prompt.md`](../../specs/engine/agent-system-prompt.md).
 
-## Container channel infrastructure
-
-`src/hosting/container-channel.ts` supplies three bounded virtual stream pairs over one process
-pipe pair. `createContainerChannel` checks the binary prefix and headers, lazily slices outbound
-writes with round-robin arbitration, and applies aggregate inbound backpressure. Each stream pair
-uses the existing stdio codec, including its large-message fragmentation; the channel does not parse
-JSON or authorize methods. The stdio client/server additionally accept opt-in `strictDirection` for
-peers that must reject frames travelling in the wrong direction. Existing SSH callers retain their
-current behavior. This transport primitive alone does not select a placement or construct a Kernel.
-The optional server connection callback `responseSent` runs after a successful, non-cancelled
-response finishes its local stream write. It is not an acknowledgement of peer processing; failed
-writes omit it, and callback failure disconnects without a second response. See
-[kernel transport](../../specs/hosts/kernel-transport.md).
-
-The private `container-contract` validator admits only the fixed bootstrap identity, a canonical
-configuration digest and a bounded logical model lease; configuration and total-envelope limits
-remain separate. `createContainerModelBroker` and `createContainerModelProvider` supply a
-model-only reverse channel with host-owned ceilings, sequenced native callbacks and no provider
-configuration in the guest DTO. Successful calls release reservation surplus only after complete
-usage accounting and a successful local terminal write; unknown outcomes retain the reserve.
-`createContainerExtensionProfileService` supplies the immutable `builtin:container` snapshot
-without discovery: native preparation can read `current`, while every selection and mutation is
-unsupported. `createContainerModelCatalog` exposes the same frozen logical pairs as a resolver
-and a catalog with `source: "projection"`, without endpoints, auth, SDKs or refresh access.
-These primitives do not themselves wire a Container launcher or establish domain qualification.
-
 Operator administration offers synchronous, host-only credential fences: `onSecretChanged`
 receives a name after a successful secret-store mutation; subscription `onAuthorityRevoked`
 receives a scheme and reason before authority replacement/removal or remote revocation. Disconnect
@@ -176,34 +137,19 @@ commits local removal before contacting the provider and preserves a concurrentl
 The caller binds these ports to leases; construction alone neither creates a lease nor runs a domain.
 See [subscription providers](../../specs/hosts/subscription-providers.md).
 
-`createFileRunHost` accepts a discriminated construction: omitted/`file` preserves FileKernel;
-`container` uses `createContainerNativeKernel` over the immutable projection and injected inference,
-without FileKernel, SDK/MCP construction or file-backed secrets/plugins. Its hosted hello advertises
-native goal controls without `localHost`. Local and SSH bootstrap APIs remain File-only.
-This internal graph constructor is not a launcher: it does not establish mounts, process leases,
-artifact admission or the Container handshake. See
-[kernel composition](../../specs/hosts/kernel-composition.md) for the boundary and construction-test
-scope; complete domain/engine qualification is separate from this primitive.
-
 ## Hosted observation infrastructure
 
-The settings assembler captures effective global and workspace context for the work agent and
-Judge: `CLARVIS.md`, falling back to `AGENTS.md` independently per scope. Host-only request identity
+The settings assembler captures effective global and workspace context for the work agent:
+`CLARVIS.md`, falling back to `AGENTS.md` independently per scope. Host-only request identity
 preserves this snapshot through preparation and workflow admission. Persistent instructions inform
-authorization below direct operator restrictions; arbitrary request fields cannot supply them.
-See [operator authority](../../specs/execution/effect-review.md) for lifetime and inheritance.
+the run but arbitrary request fields cannot replace them. See
+[model instructions](../../specs/cross-cutting/model-instructions.md).
 Hosted Goal preparation gives the tool-free Steward only the bounded Goal definition and execution
 receipts. It has no repository instructions or file-reading context and does not reread context
 files during evaluation.
 
 `src/hosting/admission.ts` separates physical conversation occupancy from interactive control and
-revokes volatile consent scopes on disconnect, takeover or conversation close.
-Native Host/Sandbox guard decisions use the current interactive command allowlist. Container guests
-receive no guard policy, approval bridge, reviewer or operator authority. Retired native scopes
-reject late answers, including one-time approval, and configuration review caches only host-validated final
-decisions. Configuration mutations consume the same host-owned authority reader and revocation
-signal as command review. `createFileKernel` binds the protected file-tool reviewer into admitted editable
-Host/Sandbox runs; the ordinary agent and placement remain in use.
+retires conversation control on disconnect, takeover or conversation close.
 `src/hosting/projection.ts` provides bounded append-only observation storage with immutable,
 byte-paginated snapshots over private 64 MiB segments, without a default lifetime history quota.
 It uses the existing run event coalescer and keeps structural events; append/sync failures prevent
@@ -272,12 +218,6 @@ continuation or the complete product journey.
 atomic turn/goal intent, revision-fenced terminal evidence and the internal continuation policy.
 Goal start and resume previews include the complete current objective after
 `Work toward the persistent goal:`; this display text does not change the model input.
-Its command-review authority never comes from the synthetic Goal start or continuation message.
-Literal Goals contribute their complete user-declared definition; guided Goals contribute their
-exact seed after the exact source-execution user messages; auto Goals contribute only those exact
-source messages. The complete persisted definition is supplied separately as host-attested reviewer
-context, so the judge can assess relevance without treating model-formulated semantics as operator
-authority or inferred human approval.
 Evidence validation releases the session lock so user controls remain available; the terminal write
 rechecks those controls and charges usage once. The host also checks the persisted absolute deadline
 before every physical model call. An already-started call may finish and remains chargeable, while
@@ -290,11 +230,10 @@ creation turn shares that settlement and policy, so a checkpoint or a recoverabl
 stage starts exactly one bounded successor. `createFileRunHost` registers that policy through ordinary immutable run preparation
 and exposes connection-scoped `goals` controls over the existing RPC catalog. Creation and resume
 persist an operation receipt with the reserved execution ID before the internal hosted start; replay
-returns that receipt without another run. Native and compatible container hosts expose this surface;
+returns that receipt without another run. Native hosts expose this surface;
 headless hosts return explicit unavailability. The IPC integration test
 performs creation, checkpoint continuation and completion through the real FileKernel. Code's
-`/goal` commands observe these host-owned stages through the same service. The guest bridge runs the
-canonical capability against closed host operations; real engine, complete local/remote,
+`/goal` commands observe these host-owned stages through the same service. Complete local/remote,
 real-provider and installed-artifact qualification require separate evidence.
 Production: `prepareHostedGoalTurn` and `goalAuthorityMessages` in
 [hosted-turn.ts](src/goals/hosted-turn.ts), consumed by `createRunService` in
@@ -347,8 +286,7 @@ rather than a transport fault.
 Session accounting and
 Goal Steward state settle atomically, separately from the unchanged pursuit allowance. Compatible
 evaluations continue their private persisted prefix; observation failure degrades monitoring while
-final failure prevents completion. The same native graph runs in the Container Kernel using its
-injected model broker, without receiving host provider credentials.
+final failure prevents completion.
 Production: [runtime-port.ts](src/goals/runtime-port.ts) and
 [hosted-turn.ts](src/goals/hosted-turn.ts). Test:
 [goal-runtime-port.test.ts](tests/integration/goal-runtime-port.test.ts) and
@@ -405,7 +343,7 @@ still requires the original compatible installation. The kernel binary accepts
 the private `--local-host` bootstrap mode; ordinary stdio hosting remains available. New generations
 retain terminal discovery metadata and mark previously live references unknown without restoring
 execution or consent. An operator can explicitly resolve an old unknown entry after verifying all
-of its processes and containers stopped. The host first archives the canonical conversation with
+of its processes stopped. The host first archives the canonical conversation with
 an audit receipt, then publishes physical closure without inventing a run outcome. A failed write
 retains uncertainty. Acknowledgement removes discovery/projection state while preserving the session
 audit; maintenance can proceed once all physical work is resolved. New inference requires a new
@@ -474,120 +412,14 @@ ordinary remote composition uses the unavailable implementation. The authenticat
 identities directly from Git and owns that canonical workspace until close. There is no project-level
 kernel cache, worktree registry, switching transaction, or occupancy lease.
 
-The package also exposes the complete Container Kernel connector. `connectLocalContainerKernel`
-resolves one immutable base and product artifact, proves the selected workspace bind, prepares the
-private data volumes, starts exactly one Kernel server through Docker or Podman and returns the
-ordinary public `KernelClient`. Process control remains below `@clarvis/kernel/local`; the Container
-Kernel never receives an engine socket or a host process port. The owning contract is
-[`isolated-agent-runtime`](../../specs/hosts/isolated-agent-runtime.md).
-
-The connector admits the exact local base image ID, ABI and revision before any preflight or
-preparer executes. Data, artifact and mise preparers use deterministic names, are inspected for
-their complete effective policy before start, and reconcile cancellation or a lost create response
-by exact ID. Their cleanup has its own bound so an aborted ten-minute preparation cannot strand a
-privileged helper silently.
-
-The strict `runtime` block is global-only. Docker and Podman accept simple `{ "backend": "docker" }`
-or `{ "backend": "podman" }`, with product-owned positive resource limits and `outbound` network.
-Executable/context/connection, image digest, network and limits are advanced overrides. Docker alone
-supports an operator-owned recipe under global `runtime-recipes/`. Neither engine has a native
-fallback: admission, acquisition, recipe, image, mount, policy, handshake, channel or guest failure
-stays a Container failure. The operator must explicitly select Sandbox/Host and start a new run.
-
-The host freezes a strict `ContainerConfiguration` before startup. The guest constructs the same
-native Plans, Memory, Workflows, Goals, sessions, files and storage services as a File Kernel, while
-plugins, skills, hooks, generic MCP and external capability providers remain absent. Tasks is
-explicitly unavailable because its current provider is MCP; internal plan tasks remain available.
-Builtin agents retain their native grants, including Workflow, with only `use_skills` removed.
-Incompatible operator profiles fail before inference instead of losing grants silently.
-Every Container run also receives a required system section through the existing capability seam.
-It names the Container placement, admitted Docker/Podman engine, network mode and guest workspace
-root. It does not reveal the host source path of the workspace bind; host-brokered model requests are
-identified separately from network authority available to guest tools.
-
-One private three-lane stdio channel carries the public Kernel transport, bootstrap control and a
-closed model broker. Real endpoints, SDKs, credentials and subscription state stay on the host. The
-guest sends only a logical provider/model pair and bounded `LLMCallParams`; it cannot dispatch
-configuration, URLs, files or host processes through the broker. Public wire revision 10, broker
-revision 1 and channel revision 1 are negotiated before the client is returned.
-The closed model DTO preserves the native `NamespacedTool` convention: builtin tools use an empty
-`mcpName`, while `fullName`, `wireName` and `toolName` remain nonempty and bounded. This marker does
-not enable MCP discovery or dispatch in the Container.
-
-The selected workspace is the only general host bind mounted read-write at `/workspace` and a
-preflight nonce proves that the selected engine sees the same directory. Private content and state
-volumes cover `/workspace/.clarvis` and `/var/lib/clarvis`; empty read-only masks cover `.agents`
-control roots. Exact writable overlays then connect canonical Plans, Memory, owner-scoped sessions,
-workflow records and traces to the same stores used by Host/Sandbox. Goals and persisted
-conversation context follow sessions. Container-only home, hosted registry and lifecycle state stay
-in the private volume, and no settings, credential or extension directory is mounted. A one-time
-bounded preparer marks legacy private domain data as retired after validating the canonical mounts;
-the host stores always win and legacy divergence cannot block boot. Normal and linked-worktree Git
-metadata is mounted through an exact read-only list;
-the launcher rewrites a linked worktree's host-native `.git` indirection to fixed POSIX guest paths,
-including when the host paths use Windows syntax.
-Docker/Podman effective inspect rejects a missing, additional or writable protected bind. Because
-the supported engines create missing nested mount targets in the host bind, `.clarvis` and `.agents`
-must already be directories; a non-Git workspace also supplies an empty `.git` directory. Admission
-fails before engine create when any target is absent, so bootstrap never changes the host workspace.
-Ordinary workspace mutation and outbound remote effects remain possible; the promise is host
-integrity outside the selected workspace, not workspace safety or network hermeticity. `/mise`
-remains an engine-owned cache volume partitioned by owner/project/workspace and exact base image rather than a
-host-path bind.
-
-Root filesystem read-only, `cap-drop ALL`, no-new-privileges, resource bounds, non-executable tmpfs,
-no engine socket/host credentials and immutable image labels remain. The base image contains only
-the Linux environment and stable artifact preparer. The compiled Bun artifact is transferred to an
-immutable content-addressed volume and mounted read-only at `/opt/clarvis`; changing Clarvis does not
-rebuild the base. The real-engine qualifier writes explicit scenario evidence so a skipped test
-cannot be reported as passing. A failed artifact-cache verification permits recreation only after
-the engine proves zero Container consumers and confirms removal of that exact volume name.
-The standalone entry statically installs the loop's lazy Ajv modules before serving the Kernel, so
-the compiled executable never falls back to `node_modules` when a run first constructs tool
-validators. Artifact qualification must instantiate that validation path; a successful hello alone
-does not prove the executable's dependency closure.
-Workflow title validation is also created on first use, after that installation, rather than during
-module import.
-
-Effective inspection accepts only the engine's exact representation. Podman must report the precise
-effective and bounding capability sets, its explicit no-new-privileges value, and the canonical
-`rprivate`/`tmpcopyup` additions to the otherwise fixed tmpfs options. Policy drift is rejected before
-start, while cleanup uses the independently verified generation labels and exact Container ID.
-
-One host lease and exact engine registry own each namespace generation. Normal close revokes model
-authority, drains the Kernel, confirms physical exit, removes only the disposable Container and
-retains state, artifact and mise volumes. Startup reconciliation inspects the exact recorded ID and
-labels. A dead same-host launcher lease is recoverable after a one-second freshness bound; its exact
-registered Container is stopped and removed before the new generation starts. A live launcher PID,
-unreachable engine or unconfirmed identity remains a conflict. Loss of either the attached process
-or physical channel starts the same idempotent cleanup. One absolute boot deadline covers channel
-readiness, private initialization and public hello.
-The connector emits typed host-side progress before engine inspection, runtime resolution,
-workspace inspection, workspace/artifact/state preparation and Kernel start. This callback carries
-only phase identity and gives interactive clients honest startup feedback without exposing engine
-output or configuration.
-An interactive caller may explicitly resolve a live-owner conflict by terminating the exact
-registry ID after its namespace, generation and Clarvis labels are confirmed. The backend requests
-a graceful stop, uses its bounded kill fallback and waits for the owning launcher to confirm removal
-and release its host lease before another generation can start. Ambiguous registry or engine
-evidence remains a conflict.
 Completed hosted projections unlink their files/segments and prune only an empty generation directory; sibling
 projections keep that directory alive and cleanup never treats a directory as a regular file.
 
-As part of that bootstrap, the kernel constructs one provider-aware planning runtime. The plans
-capability and owner-scoped `PlansService` resolve through the exact same `PlanFactory`. Markdown is
-the default and uses `planStoreFor`; operator settings may instead select a direct language-neutral
-executable or an enabled plugin offering `capabilityExecutables.plans`.
+As part of that bootstrap, the kernel constructs one planning runtime. The plans capability and
+owner-scoped `PlansService` resolve through the exact same `PlanFactory`. It uses the built-in
+Markdown store from `planStoreFor`.
 The service projects controlled plan fields and preserved extra sections into `PlanDocumentDto`,
 alongside canonical Markdown, so clients do not reparse provider storage.
-
-The Tasks composition follows the same single-runtime rule. One `TaskProviderFactory` resolves both
-the run capability and owner-scoped `TasksService`, qualifies plugin MCP servers once, enforces
-workspace trust, and binds every MCP lease to the authenticated owner. The external provider stays
-authoritative; the kernel persists only the task/provider binding in run capability state. Tasks
-protocol v2 also pins a remote `provider_instance_id`, invalidates private caches when referenced
-secrets rotate, and shares one bounded/single-flight capability probe path between runs and the
-control plane.
 
 ```ts
 import { createFileKernel } from "@clarvis/kernel/bootstrap";
@@ -611,10 +443,10 @@ Clarvis directory. The kernel owns validation and persistence; clients use the
 services defined by `@clarvis/protocol`.
 
 Before composing extensions, the file kernel resolves one process-pinned Extension Profile. The immutable
-`builtin:default` activates the exact plugin references in `enabledPlugins` and applies four-root
+`builtin:default` activates the exact plugin references in `enabledPlugins` and applies two-root
 standalone-skill discovery; a custom definition is a complete qualified allow-list and never
 inherits that builtin activation list. Plugin identity is always `{ scope, source, name }`, where
-`source` distinguishes `.agents/plugins` from `.clarvis/plugins`; no same-name install shadows or
+`source` is `agents` for installed plugins; no same-name install across scopes shadows or
 substitutes for another. Workspace
 definitions are shareable authored files, selections stay machine-local, and selection/definition
 changes require reconnect. Global plugins live in operator-owned inventories and need no additional
@@ -652,14 +484,13 @@ physical runs still hold their own catalog leases. The host stream lease remains
 `closed`. Invalid replacements retain the last catalog and its monitors. Root watchers also detect
 new skills.
 Plugin drift retains its explicit trust boundary. Builtin and custom standalone roots carry exact
-`include` lists for the captured generation. New skills authored through reviewed file tools
-join custom profiles in a reviewed membership delta: global profiles are copied and selected
-locally. The builtin default discovers standalone skills at the next safe refresh, without a
+`include` lists for the captured generation. New skills authored through file tools are discovered
+at the next safe refresh. The builtin default discovers standalone skills without a
 separate workspace-trust approval for the skill file alone. If any
 packaged skill in a plugin cannot be captured within its bounds, that plugin's entire skill-root
 surface is withheld while its independently valid non-skill contributions remain.
 `PluginContributions.observeRuntimeFiles` applies the same asynchronous latch to captured
-package-local MCP, hook, and capability executable files. An explicitly local executable declaration
+package-local MCP and hook executable files. An explicitly local executable declaration
 must resolve to a confined regular file at pin time; symlinks are monitored by their declaration path,
 and later replacement withdraws the executable projections without a run-admission rehash.
 Workspace-trust transitions recompose the extension snapshot and atomically replace the loop's exact
@@ -743,8 +574,7 @@ An embedding that isolates filesystem fixtures may pass `home` to relocate only 
 and use the operator's normal home; `globalConfigDir` continues to own `.clarvis` independently.
 
 The package exports constructors for individual services, file and in-memory
-configuration stores, secret storage, model catalogs, guard resolution and
-engine-to-protocol mapping.
+configuration stores, secret storage, model catalogs and engine-to-protocol mapping.
 
 The operator-scoped `StorageService` walks Clarvis-owned roots with entry/depth bounds, reports
 logical category totals without exposing persisted content, paths or credential sizes, and applies
@@ -762,15 +592,7 @@ modes outside that bounded cleanup. Production: `createStorageService` in
 bootstrap also sweeps inactive workspace spill/run scratch state and repairs recognized spill modes
 to `0600` on POSIX.
 
-The kernel owns the persistent subprocess pool for capability executables. It resolves direct
-argv from workspace settings or selected declarations from installed plugins, initializes JSON-RPC
-sessions lazily, multiplexes calls, and closes every child with the kernel lifecycle. Services run
-outside the Clarvis process and may be written in any language; see
-[`specs/capabilities/provider-executables.md`](../../specs/capabilities/provider-executables.md).
-
-Packaged capability services are authorized by installation, Extension Profile selection and provider
-selection. A selected plugin is one atomic extension unit: its agents, skills, MCP servers, hook
-declarations and capability executables become eligible together. Installing from Code's focused
+Installing from Code's focused
 Marketplace is the explicit consent action, so a globally installed plugin needs no additional
 workspace approval when a workspace Extension Profile selects it. Workspace trust remains a separate
 exact-snapshot gate for the complete inventory of executable plugin content inherited from
@@ -802,8 +624,8 @@ runner does not impose this policy; each Git-owning adapter applies it before in
 `GIT_CEILING_DIRECTORIES` is removed as well so a parent cannot stop discovery before the selected
 repository root.
 
-A symbolic link may contribute an external checkout to any `.agents/plugins` or
-`.clarvis/plugins` inventory, but Clarvis treats that entry as discovery-only. It does not advertise
+A symbolic link may contribute an external checkout to a global or workspace `.agents/plugins`
+inventory, but Clarvis treats that entry as discovery-only. It does not advertise
 an install source or run managed update against the linked target; the repository and Git adapters
 both refuse replacement/update so Clarvis cannot discard edits in a checkout it does not own.
 
@@ -847,11 +669,6 @@ capped by `MAX_SKILL_RESOURCE_FILE_BYTES` at 8 MiB per resource and
 skills (`PLUGIN_SKILL_RESOURCE_LIMITS`) and per skill for standalone Extension Profile inventory
 (`standaloneCatalog`).
 
-Plugins may also package a per-skill Plans mode. The kernel applies it only when the skill originates
-from the enabled plugin and that plugin is the selected Plans provider; explicit run parameters take
-precedence. This lets authoring skills run with Plans off and implementation skills enter review
-without a client-side settings workaround.
-
 ## Remote-ready transport
 
 The goal facade validates availability, receipts and bounded conversation state on the wire,
@@ -863,7 +680,7 @@ these invalidations without transferring execution authority. Registrations are 
 per connection and 128 per host, and pending installations are released on disconnect.
 See [kernel transport](../../specs/hosts/kernel-transport.md) for response validation and disposal.
 
-Public stdio and each virtual Container channel share a 64 MiB logical JSON limit. Larger-than-frame
+Public stdio transport uses a 64 MiB logical JSON limit. Larger-than-frame
 messages use contiguous 256 KiB binary fragments, canonical base64 and a 30-second transfer deadline;
 the physical frame limits remain 8 MiB and 4 MiB respectively. Serialized queued data is bounded at
 128 MiB per direction. Oversized or unserializable local requests fail before sending bytes and
@@ -894,8 +711,7 @@ The stdio, local IPC and loopback transports implement the connection lifecycle.
 
 The independent file host additionally advertises operator-only `localHost` controls through that
 same catalog: bounded runtime/profile state, claimed browser handoffs, explicit runtime retry and
-quiescent restart. These operations belong to the authenticated application channel; the private
-container execution RPC never exposes them. Code supplies the companion application's composition.
+quiescent restart. These operations belong to the authenticated application channel. Code supplies the companion application's composition.
 Preparation failures enter the durable run index as sanitized plain error DTOs, so an invalid
 request does not poison later admissions with an unserializable exception object.
 
@@ -914,7 +730,7 @@ the hosted `hosting.present`, and keeps the operational `elicit_wait_ms` ceiling
 for a question nobody ever presented. Only a request the engine marked
 `origin: "model"` with `kind: "ask_user"` receives a window, and only for a
 duration a host timer can hold (`MAX_ELICIT_WINDOW_MS`); a relayed MCP
-question, a guard confirmation, a plan or workflow review and the soft-budget ask
+question, a plan or workflow review and the soft-budget ask
 keep their existing policies. See
 [elicitation](../../specs/cross-cutting/elicitation.md).
 
@@ -928,8 +744,8 @@ first-call promise and one shared repeat promise. On acceptance, the first recei
 pending repeats receive `already_requested`. A 30-second absolute deadline settles requests still
 awaiting a subscriber as `not_running`, but rejects stalled delivered requests as `unavailable`;
 repeats do not renew it. Closing the run settles pending requests as `not_running`.
-Container delivery failures, malformed receipts and private-channel disconnection instead reject
-with bounded, sanitized errors, without asserting that a shell stopped. Timers and queued deliveries
+Delivery failures and malformed receipts reject with bounded, sanitized errors, without asserting
+that a shell stopped. Timers and queued deliveries
 are released on settlement; late responses cannot settle a newer request for the same token.
 
 Managed and remote run handles expose their bounded event stream's current item, estimated-byte and
@@ -949,116 +765,25 @@ live-only run event. The persisted terminal event records the applied operation 
 summary-to-eviction `fallback_reason`; replay therefore retains what happened without reviving an
 already-finished spinner.
 
-## Guards and control plane
+## Control plane and isolation
 
-The kernel owns command-approval policy through `createGuardResolver` and
-`createShellGuard`. It also provides first-class services for configuration,
-plugins, secrets, models, provider authentication, files, memory, plans, workflows, skills,
-sessions, tasks, storage, Extension Profiles and runs — the fifteen `KernelClient` services. These are control-plane APIs rather
-than model-callable MCP tools.
+The kernel provides services for configuration, plugins, secrets, models, provider
+authentication, files, memory, plans, workflows, skills, sessions, tasks, storage,
+Extension Profiles and runs. These are control-plane APIs rather than model-callable
+MCP tools. The tools capability executes shell and file calls under the configured
+native sandbox; it offers no per-call escape. Production:
+`packages/kernel/src/file-kernel.ts` (`createFileKernel`) and
+`packages/tools/src/sandbox.ts` (`sandboxCommand`). Test:
+`packages/kernel/tests/integration/file-kernel.test.ts` and
+`packages/tools/tests/integration/sandbox.test.ts`. See the
+[sandbox contract](../../specs/execution/sandbox.md).
 
-A run's effective mode is the per-run `guard_mode` param, else the `guard.mode`
-settings block, else `on` (`resolveGuardMode`). The three modes differ only in
-what happens to an **ask** verdict — `off` skips the ruling, `on` relays it to a
-human, `auto` has an LLM answer it. In `on` and `auto`, a **deny** is enforced before
-review, and `denied_commands` outranks `allowed_commands`. Mode `off` supplies no command guard;
-independent filesystem, credential, capability and runtime boundaries remain active.
-
-The kernel supplies nonreplaceable policies for command review and for the transactional
-configuration review. Auto resolves its model from
-operator-owned `effect_review` settings or the default model; `guard_judge` supplies optional
-overrides and guidance. Code no longer supplies a complete system prompt. Workspace guidance
-cannot grant authority. The [command-guard contract](../../specs/execution/command-guard.md)
-owns the single deterministic policy and the one review path: every Auto `ask` that applicable
-session consent does not cover reaches `createCommandReview` with the complete call, and no effect
-classification, operation rule or probe sits between the policy and the Judge. The
-[effect-review contract](../../specs/execution/effect-review.md)
-owns the host evidence ledger, effect registry and validated effect path, which now scope the
-protected file-tool configuration writes through `reviewMutation`. Hosted Goal runs supply their complete persisted definition, and
-the active Plans capability supplies only its stable substantive specification, as separate
-host-attested review context. The reviewer treats those definitions as the operator's semantic
-objective and implementation path, so a necessary bounded prerequisite such as installing declared
-dependencies can be approved. It cannot infer publication, deployment,
-destruction, credential access or external contact from that context. A verdict is valid only for the exact call and installs no
-descriptor, envelope grant or session permission. The evidence is chronological: a fresh publication
-instruction can refer to the authenticated implementation scope from earlier turns, while an old
-publication instruction alone cannot authorize a changed outcome. Accepted entry-agent `ask_user`
-answers join that evidence before the next review; their model-authored questions are labeled
-untrusted context, and decline, cancel or another elicitation kind grants nothing.
-Command review obtains `JUDGE_PORT` lazily and executes the private Judge run through the
-work run's effective base provider. The child owns its `judge` identity, resolved TTL, fixed policy,
-canonical snapshot breakpoint and separate volatile case. The configuration compiler and decision use the same private execution boundary. Both retain canonical session affinity and recheck
-live Plans context before accepting a result. Plan progress fields are excluded from its projection.
-The command adapter coalesces concurrent identical Auto reviews without caching refusals as
-consent. Missing Judge composition and architecture faults propagate; retirement never asks a human.
-Each real command-review or configuration-review provider invocation also records one kernel-owned
-`guard_reviewer_model_call` event through `RUN_TRACE_PORT`. It totals winning and retried usage,
-retains unknown usage/cache flags, and reports a cache-read ratio only when cache counters are
-complete. Verdict memoization emits nothing. The persisted event contains identity, timing, status,
-attempts, token counters and bounded authority/effect identifiers only; it is deliberately dropped
-before protocol projection and never enters run usage totals or context.
-Auto reuses eligible exact human session approvals before invoking the reviewer, while deny-list
-matches and explicit Host escalation retain their precedence. Historical target exclusions survive
-configuration reviews of other targets without
-authorizing grants for those historical targets.
-
-The resolver snapshots host-owned placement once per run: enabled native sandbox means
-contained-or-fail-closed, including legacy optional availability; Docker/Podman guests also count
-as contained. Host and disabled native policies do not. Explicit per-call unsandbox is reviewed as
-Host, with native network restrictions omitted; Auto may judge it, while `on` requires a human.
-The policy is the only classifier: it decides `allow`, `deny` or `ask`, and Auto sends every
-remaining `ask` to the call-local reviewer, including
-options, wrappers, dynamic arguments, environment prefixes and a command whose operation name once
-carried its own rule — an explicit push, a pull-request edit, a rerun or a release publishes no
-operation-specific refusal before review.
-Review `on` (Approval) asks a human only for the grey zone that is neither allow-listed nor
-dangerous; a dangerous match, including forced removal of a credential file, denies to the
-principal with the exact segment. Auto never elicits a
-person: the Judge decides forced removal, privilege elevation, credential-file asks and unsandbox,
-and both deny and unsure refuse to the principal. A nonempty deny list rejects undecidable commands
-before any reviewer. No unmatched contained silent-allow rule is installed.
-
-POSIX Git presentation globals normalize for matching, while validated `cd <in-workspace>` and
-Git `-C` directory operands receive comparison-only handling for straight `&&` chains.
-Environment prefixes and assignment-only `NAME=value` segments prevent static allow-list approval,
-including wildcard entries. In Auto, the call-local payload separates each binding at its first `=`,
-labels the effective executable and parameters, and retains the exact segment source; other modes
-keep the human review. Bare normalized commands remain visible to deny matching. Sequential literal `$NAME`
-bindings are still inlined for path analysis without authorizing their environment effects. Session
-approval keys keep their original normalized identities; unsupported control flow and PowerShell
-retain ordinary matching. Paths still participate in denial.
-
-Operator evidence is captured before synthetic message assembly and transported outside the public
-request. The configuration reviewer reads the live revisioned ledger, and does not derive grants from
-assistant text, child briefs, command arguments, justification or role-filtered final context. Its
-seed accepts the same message-count and character envelope as validated run input, including the
-separator overhead of extracted multipart text, so a valid long operator prompt does not silently
-disable Auto review. When a new authenticated operator turn continues the same host controller after
-the previous run settled, the host carries its authenticated evidence into a fresh outcome without
-reviving the prior envelope or refusals. Synthetic continuations and controller
-changes cannot reactivate settled evidence.
-
-A resolved judge reports which channel ultimately answered. An `allow` or `deny` is attributed to
-the judge; `unsure`, a provider failure, a malformed response, or an unavailable reviewer denies to
-the calling agent. Auto never routes those outcomes to a person, including `on_unsure: "ask"`.
-Failed and malformed attempts are not memoized, so fixing a transient provider problem restores
-automatic review without restarting the session.
-
-A `shell` call with `sandbox_permissions: "require_escalated"` under Isolation
-Sandbox is a `host_command` ask, after deny-list matches and undecidability with a nonempty deny
-list are rejected. The resolver passes `allowHostJudge: true` to `createShellGuard` only in Auto;
-otherwise this ask carries `escalate: "human"`. Auto's judge may allow or deny the host effect;
-unsure, failed and malformed responses refuse to the calling agent. An absent usable model refuses.
-Host-command asks bypass volatile session coverage and never offer `allow_session`; clean exact-call
-judge memoization remains separate. Isolation Host already runs unsandboxed, so the field does not add
-a second prompt. Mode `off` supplies no guard and proceeds without command review, honoring the
-operator's explicit choice. Isolated container guests reject the field instead of forwarding it to
-the host.
-
-The resolver returns the final answer together with its answerer, and the kernel
-projects the resulting `tool_call.guard` unchanged to `RunEvent`. This makes the
-auto-guard verdict visible after replay rather than leaving it only in audit logs.
-
+The hosted generation identity includes the effective Sandbox settings and resolved roots, not only
+environment flags. Runs use the startup Sandbox snapshot; a settings change that would alter it
+requires an idle host restart before another run can use it. Inspection reports host-visible reads,
+the selected workspace/write posture and effective network without exposing credential values.
+An untrusted workspace cannot weaken an enabled global Sandbox: the host retains its read-only,
+network, environment, toolchain and protected-path floor when resolving runs and inspection.
 ## The settings schema
 
 The kernel publishes exactly one, `kernelSettingsSchema`: the engine's blocks
@@ -1093,9 +818,8 @@ owner and derives the effective per-child buffer slice; the kernel does not mate
 
 `createSettingsRunAssembler` optionally accepts a `modelExecutionResolver`: it checks exact entry,
 delegated, vision and explicit reviewer targets against that closed catalog and emits empty
-`providers`, keeping transport declarations outside the request. Reviewer availability for the
-guard-derived cache TTL uses the same catalog. Without this option, native provider declarations
-and resolution are preserved. This assembler seam alone does not integrate a Container runtime.
+`providers`, keeping transport declarations outside the request. Without this option, native provider declarations
+and resolution are preserved.
 
 Every settings source exposes an exact-byte revision. Ordinary saves and settings repair are kernel
 compare-and-swap operations under the same local-filesystem, same-host process lease: a client
@@ -1111,38 +835,21 @@ state. The lease is not a distributed-lock claim for NFS or multi-host storage.
 
 ## File-tool configuration
 
-An editing entry agent uses ordinary file tools for admitted global and workspace
-authoring and operational configuration when the run carries the host-owned `reviewMutation` port;
-without it — a Container guest, a ceiling other than `edit`/`exec`, or disabled builtin tools — the
-file tool refuses the protected target before the guard runs, and a generic command approval never
-becomes configuration approval.
-`createAuthoringMutationReview` prepares the complete batch, validates each recognized document,
-captures every target and exact revision, reviews it once through the host-owned authority reader
-and shared Judge coordinator, and commits all or none. Private targets and selected skill execution
-snapshots do not enter that route. The global roots are passed only to entry-agent file handlers and
-do not widen shell mounts or unrelated workspace confinement.
-`createFileKernel` resolves the shared user root from the host home by default; its optional
-`configurationHome` input lets an isolated host use a separate home for that root.
-For a complete bounded batch, human review can grant the displayed operation and targets for the
-current session. The grant is recorded only after a successful commit, does not cover new targets or
-effect classes, and is invalidated by steer or run settlement. One-time approval creates no grant.
-Standalone skill changes request a coalesced refresh after captured users settle, without changing
-the host process. Skill snapshots keep resource and helper bytes together. See
-[self-configuration.md](../../specs/hosts/self-configuration.md).
-
-Configuration requests need no special skill, slash command or additional tool schema. Skill
-discovery, `$name` mentions and slash invocation retain their generic behavior for installed skills.
-Credentials, workspace trust, UI preferences, provider login, Extension Profile selection and
-background controls retain their operator interfaces. Workflow files are loaded on the next manager
-run; changes to pinned placement or providers need an explicit idle reconnect.
+Entry agents use ordinary file tools to edit workspace and global configuration when
+allowed by the selected execution environment and OS permissions. The host configuration
+service validates known document semantics when it subsequently loads those files. Tool
+calls do not use a separate configuration review port. Production:
+`packages/tools/src/lib/paths.ts` (`resolveFileToolPath`) and
+`packages/kernel/src/config/file-config-store.ts` (`createFileConfigStore`).
+See [self-configuration](../../specs/hosts/self-configuration.md).
 
 ## The agent fleet ships as data
 
 Clarvis ships five agents — `marshall`, `admiral`, `coder`, `explorer`, `planner` — as TypeScript in
 `src/config/builtin-agents/`. They are not templates copied into a user's configuration on first
 run: there is no scaffolding step, and a host whose configuration directory is empty already has all
-five. That is what lets `@clarvis/code` reach its first prompt, and `@clarvis/server` serve a
-request, against a directory nothing has ever written to. `DEFAULT_ENTRY_AGENT` (`marshall`) is what
+five. That lets `@clarvis/code` reach its first prompt against a directory nothing has ever
+written to. `DEFAULT_ENTRY_AGENT` (`marshall`) is what
 `createFileKernel` hands the run assembler, so a request naming no agent still resolves.
 
 The two shipped leaders, `marshall` and `admiral`, each declare a 256-iteration soft session limit;
@@ -1232,7 +939,7 @@ Plan documents are deliberately not in the trace at all: the record's `plan_ref`
 names the file, and clients read it back through `PlansService`.
 
 The internal transport negotiates the exact `CLARVIS_WIRE_VERSION` declared in
-[`wire.ts`](src/transport/wire.ts). This is independent of the private Container channel revision. Hello is
+[`wire.ts`](src/transport/wire.ts). Hello is
 mandatory before every read, control or mutation even for in-process/default-owner connections;
 request envelopes reject unknown fields, physical stdio frames are capped at 8 MiB, and logical
 messages are capped at 64 MiB. The serialized writer has bounded count/bytes plus a 30-second
@@ -1311,23 +1018,13 @@ and traversal segments are rejected before filesystem access.
 
 `createFileKernel` builds one logger (`opts.logger`, else `createLogger(CLARVIS_LOG_LEVEL, { service:
 "@clarvis/kernel" })`) and hands `componentLogger(<component>)` to every collaborator it constructs —
-`config`, `guard`, `plugins`, `plan`, `memory`, `tasks`, `trace`, `kernel`.
+`config`, `plugins`, `plan`, `memory`, `tasks`, `trace`, `kernel`.
 `CLARVIS_LOG=config=debug` therefore turns one subsystem on without
 raising the global level. `createInProcessKernel` takes a `logger` of its own and passes it to the
 plugin service, the model catalog and each owner's runs/sessions with `{ owner }` bound.
 
-**The audit channel is a second logger, not a level.** `createAuditLogger(root, env.CLARVIS_LOG_AUDIT)`
-derives a child pinned at `info` over the same destination, and only command-guard decisions use it.
-`CLARVIS_LOG_LEVEL=warn` is a legitimate production setting and must not silence the record of what a
-run was allowed to execute. It is configurable by environment only — never `settings.json`, whose
-workspace scope is a file inside the agent's own working tree.
-
 | Level | `event`                                                        | Fields                                                                                          |
 | ----- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| info  | `guard.decision` _(audit)_                                     | `verdict`, `matched`, `mode`, `tool`, `reason`, `escalate`, `command_digest`, `run_id`, `owner` |
-| info  | `guard.resolved` _(audit)_                                     | `mode`, `source`, `judge_configured`, `human_channel`                                           |
-| info  | `guard.elicit.answered` _(audit)_                              | `answer`, `answerer`                                                                            |
-| warn  | `guard.escalation.no_channel` _(audit)_                        | `run_id`                                                                                        |
 | info  | `kernel.boot.started`                                          | `workspace_root`, `global_dir`, `ownership_mode`, `memory_enabled`, `default_model`             |
 | info  | `kernel.config.scopes`                                         | `global_present`, `workspace_present`, `workspace_trust`, `plugin_scopes`, `enabled_plugins`    |
 | error | `kernel.config.rejected`                                       | `scope`, `path`, `at`, `message`, `schema`                                                      |
@@ -1351,17 +1048,8 @@ workspace scope is a file inside the agent's own working tree.
 | warn  | `lifecycle.late_close_failed`                                  | `operation`, `cause`                                                                            |
 | warn  | `capexec.session.failed`                                       | `capability`, `cause`                                                                           |
 
-Six properties are load-bearing rather than incidental:
+The diagnostic properties below are load-bearing:
 
-- **`guard.decision` never carries the command.** It carries the first 16 hex of its SHA-256, which
-  is enough to tell "the same command was approved twice" from "two different commands were" and
-  nothing more. A command line routinely holds a token or a private path, and this record is the one
-  designed to be durable. The guard itself stays a pure function: `createShellGuard` takes an
-  `onDecision` observer that cannot change a verdict, and `createGuardResolver` — which already holds
-  the run's identity — does the binding.
-- **`matched` is the machine contract, not `reason`.** The six-way rule vocabulary
-  (`deny_list`/`allow_list`/`undecidable`/`outside_workspace`/`credential_file`/`non_bash`/`default`)
-  is greppable; the sentence beside it is prose and free to change.
 - **`kernel.config.rejected` is the diagnostic that already existed and had no channel.** The precise
   `invalid <path>: <at>: <message>` was built and attached as `SettingsSource.error`, visible only to
   a client that called `config.getSettings()` — which is why a `settings.json` this schema refuses
@@ -1385,7 +1073,7 @@ Six properties are load-bearing rather than incidental:
   serve proceeds exactly as before.
 - **The nine `process.emitWarning` call sites are gone.** No package installs a
   `process.on("warning")` handler, so those records reached the host's raw stderr — over the terminal
-  a TUI owns, and interleaved as non-JSON lines with pino JSON in a container. Every
+  a TUI owns, and interleaved as non-JSON lines with pino JSON in a host process. Every
   `detachObserved`/`bestEffort` observer now goes through `observationSink(logger, event)`.
 
 **There is no `logging:` settings block, and there will not be one.** Every boot event above happens
@@ -1395,10 +1083,10 @@ before or during the settings read, so a block could not configure the logging o
 
 The suite is classified by its primary boundary while the architecture migration proceeds:
 
-- `tests/unit/` owns pure mapping, event policy and state-machine decisions, guard policy,
+- `tests/unit/` owns pure mapping, event policy and state-machine decisions,
   prompt-cache configuration, workflow routing policy and other deterministic request projections.
 - `tests/component/` owns kernel services and assembly over typed fakes or in-memory collaborators:
-  memory, skills, planning, the memory MCP port, settings-to-run assembly and executable facade
+  memory, skills, planning and settings-to-run assembly
   composition.
 - `tests/contract/` applies shared configuration-service behavior to its interchangeable stores.
 - `tests/integration/` owns real filesystem, process, git, loop, plan, stdio and loopback boundaries,
@@ -1428,10 +1116,6 @@ remote run codec; its complete service fake records calls without implementing a
 service's CRUD semantics. `tests/contract/stdio-codec.test.ts` owns NDJSON framing, error envelopes
 and EOF. Loopback and stdio integrations each retain a representative real-kernel flow, while service
 behavior remains with the service/component suites.
-
-Guard units begin at the `ShellFacts`/`PathFact` boundary the kernel actually consumes. POSIX and
-PowerShell parsing/canonicalization belong to `@clarvis/tools`; this package keeps one integration per
-dialect to prove analyzer facts cross into kernel deny policy without replaying either parser matrix.
 
 `tests/integration/memory-capability.test.ts` proves only the kernel-owned join: the kernel registry
 accepts the memory run parameter, the deps-level capability reaches an ordinary run, and its
@@ -1472,7 +1156,7 @@ is therefore visible after an ordinary tool batch without model polling, while t
 may still checkpoint and settle. SDK composition tests preserve the preceding request prefix, tool
 exchange, catalog and cache identity through that transition.
 
-Hosted session preparation persists the leader instance before the first call. The same session and instance fields cross native and Container connections. `@clarvis/kernel/bootstrap` exposes host subscription manager/adapter construction for bounded transport observation; credentials remain under host authority. Kernel integration tests compose the real plan, loop and SDK through persisted continuation.
+Hosted session preparation persists the leader instance before the first call. The same session and instance fields cross local and SSH connections. `@clarvis/kernel/bootstrap` exposes host subscription manager/adapter construction for bounded transport observation; credentials remain under host authority. Kernel integration tests compose the real plan, loop and SDK through persisted continuation.
 For a goal stage, the host observes its provider port directly, including child, compaction and
 retry consumption. A pending call, a cancelled call without usage, or an unreported attempt leaves
 accounting unknown and prevents continuation. A failed stage with confirmed exhausted goal spend
@@ -1481,8 +1165,7 @@ pause/cancel controls still prevail. Missing cache detail alone counts the full 
 conservatively. Zero-initialized loop totals cannot override that observation.
 The [goal-file-host.test.ts](tests/integration/goal-file-host.test.ts) integration suite exercises IPC, the actual file host, SDK and HTTP
 with controlled responses: two automatic continuations with a delegated plan, prefix/identity
-preservation, pause/resume, cancellation and absent usage. It is separate from live-provider,
-container-engine and installed-artifact qualification.
+preservation, pause/resume, cancellation and absent usage. It is separate from live-provider and installed-artifact qualification.
 The companion [plan review test](tests/integration/goal-file-host-plan.test.ts) answers actual IPC
 elicitations: approval permits delegated work and two checkpoints; cancellation or requested changes
 prevents workspace writes and preserves the unapproved plan even with discard retention.
@@ -1490,14 +1173,11 @@ The [compaction test](tests/integration/goal-file-host-compaction.test.ts) queue
 the active hosted handle. The real SDK summary call is included in goal/session consumption; one
 rolling anchor, current goal and plan survive into automatic continuation. SDK requests preserve the
 historical prefix before and after the deliberate compaction boundary.
-Goal/Workflow qualification runs through the complete Container Kernel as well as native
-Host/Sandbox. The Container canary proves persisted domain control and the negative external
-capability boundary.
 Workflow leaders retain the manager's session identity and use their reserved child execution ID
 as their own persisted agent instance. Two leaders of the same profile therefore have distinct
 cache keys, separate from the manager, in both direct and prepared host assembly.
 The captured SDK requests also cover transport retry, two same-profile children, physical-call
-cancellation, guard-policy resume and the actual indexing pass. Restricting indexing dispatch
+cancellation and the actual indexing pass. Restricting indexing dispatch
 preserves the complete advertised catalog while rejecting inherited workspace tools.
 Memory passes receive the same composed capability registry as foreground runs and
 carry the source's registered request parameters. Planning is replaced in place by
@@ -1514,73 +1194,19 @@ provider import to the kernel.
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
 
-`createAuthoringMutationReview` binds ordinary file-tool batches to the same
-`createConfigurationReview` and authority reader. It validates each
-recognized configuration document, captures every target, reviews one complete batch (including local skill
-membership), rechecks revisions, and carries trust only after the asynchronous transaction succeeds.
-Concurrent changes to other executable inputs withhold trust. Profile definition/selection leases
-remain held through async file mutation and rollback companion changes on failure. The port is the
-only route for file-tool configuration mutation: without it the tool refuses a protected target before
-the command guard is consulted.
-
-Concrete configuration refusals live in the shared authority ledger. Identical before/after bytes cannot trigger another prompt merely by switching edit and write; corrected bytes receive their own decision. The bounded ledger persists only under the validated authority binding and is invalidated by fresh admitted evidence. See [self-configuration](../../specs/hosts/self-configuration.md).
-
 Goal formulation and Steward executions capture provider usage, including retries, through the
 same usage tracker. Once-only auxiliary settlement applies model prices to session cost totals
 when usage and cache measurements are known. Partial observation reads do not attest complete
 artifacts; completion still requires complete current reads for every cited artifact.
-Goal stage settlement prices the host-observed calls, including Guard reviews absent from the
-run's per-agent detail. It persists that priced subtotal with the stage measurement and credits
+Goal stage settlement prices the host-observed calls. It persists that priced subtotal with the stage measurement and credits
 the Session cost total once, beside ordinary run and auxiliary costs. A later measurement revision
 credits only the difference.
-Ordinary hosted runs also add measured Guard review calls from their private trace to the same
-Session totals once; Goal stages already include those calls in their host measurement. The file
+The file
 host loads model prices before recovery and refreshes them before new runs.
 
 The Kernel composes a public trace view for ordinary execution and run services. Internal records
 are absent from run lookup, listing, context, compaction, continuation and deletion by ID. Their IDs
 remain reserved across the physical store. Native recovery and retention cover both classes.
-
-### Private Judge trace projection
-
-The host-owned `createJudgeTraceStore` factory composes internal visibility with strict projections
-of journal headers/events, final records and context replacements. It retains operational identity,
-status and accounting while removing prompts, model/provider prose, arguments/results and private
-state. Known live-only events are discarded; unknown shapes fail closed without raw fallback.
-`createHostJudge` binds this store once in native FileKernel composition, together with empty MCP
-machinery and the work run's effective base provider. Its pure eligibility predicate includes
-editing/execution profiles in Auto and guard-off mode (automatic configuration review), and excludes
-explicit human-only mode and disabled tools. Memory indexing removes the capability.
-Actual private calls emit one payload-free parent event with `judge_execution_id`; cache reuse emits
-none, and child usage does not enter the parent execution ledger. Real JSON integration tests verify
-private visibility and removal of case/model prose. Command and configuration consumers use this binding. See the [Judge contract](../../specs/capabilities/judge.md).
-
-The authority ledger retains `envelope_context_revision` beside the installed envelope. This
-host-owned binding survives a validated checkpoint and is replaced atomically with compilation;
-revocation or settlement clears it. Reviewers compare it with the current live Plans revision,
-including disappearance, instead of maintaining a separate compile cache. It is not model-authored
-candidate data or operator evidence. See [effect review](../../specs/execution/effect-review.md).
-
-Effect compilation uses `createAuthorityReviewTransaction`: it captures host authority and context
-before inference, validates the candidate against registered descriptors, and installs once through
-the ledger. The resulting case-bound transition distinguishes the compiler's own revision change
-from an external change, including envelope replacement at the same revision. Validation lives in
-`authority-validation.ts`; the Judge package never receives the authority writer.
-
-Native human guard approval coalesces identical pending questions within the current controller's
-allowlist scope, using canonical full request identity. Settlement removes the pending entry; human
-consent is not memoized. A replacement scope gets its own question, and late answers from the old
-scope remain denied.
-
-Configuration review applies the same pending-only rule across file-tool authoring consumers in
-one run. Its identity includes the complete prepared change and authority binding;
-distinct proposals do not share a question, and settlement, channel failure or cancellation cannot
-leave reusable human consent.
-
-Effect review audit starts are emitted by the native inference binding, once per actual call, using
-its private stage/consumer descriptor. The adapter records bounded typed failures and semantic
-completion; compilation records the installed authority revision. Cache reuse emits no start, and
-usage remains in the single parent model-call event rather than being counted again from audit logs.
 
 Operator submissions persist their identity, input and sequence in the existing session before
 waiting for physical closure. Repeating an accepted identity reattaches to its execution; it cannot

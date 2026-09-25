@@ -25,7 +25,7 @@ describe("root discovery and shadowing", () => {
     cleanup(workspace);
   });
 
-  it("applies the complete Clarvis root order and retains every shadowed origin", () => {
+  it("prefers workspace skills and ignores old Clarvis roots", () => {
     writeSkill(skillsRoot(home, "agents"), "demo", { body: "user agents" });
     writeSkill(skillsRoot(workspace, "agents"), "demo", { body: "workspace agents" });
     writeSkill(userSkillsRoot(home), "demo", { body: "user clarvis" });
@@ -43,13 +43,11 @@ describe("root discovery and shadowing", () => {
 
     const winner = registry.get("demo");
     expect(winner).toMatchObject({
-      body: "workspace clarvis",
+      body: "workspace agents",
       scope: "workspace",
-      source: "clarvis",
+      source: "agents",
     });
     expect(winner?.shadowed?.map(({ source, scope }) => `${source}:${scope}`)).toEqual([
-      "clarvis:user",
-      "agents:workspace",
       "agents:user",
     ]);
     expect(registry.size).toBe(1);

@@ -108,8 +108,7 @@ with these top-level fields: `execution_id?`, `continue_from?`, `session_id?`, `
 `prompt_cache_ttl?`, `messages`, `servers`, `profiles`, `entry`, `providers`, `vision_model?`,
 `budget`, `elicit_wait_ms?`, `guard_escalation?`, `output_schema?`, plus
 `...capabilityRequestParamFields` (`packages/loop/src/validation/request/request-schema.ts`) — a
-static spread of every **built-in** capability's own request params (for example `guard_mode`
-from tools). Product parameters are supplied by the host's `CapabilityRegistry` and read through
+static spread of every **built-in** capability's own request params. Product parameters are supplied by the host's `CapabilityRegistry` and read through
 `CapabilityRequestView.requestParam`; their owners remain outside the engine.
 
 The hooks capability contributes `hook_user_prompt_expansion?: { command_name: string }`. It is a
@@ -566,7 +565,7 @@ scope defining the key as a `SettingsValueScope`, then either takes the last one
 "lastWins"`) or calls the spec's own custom fold function.
 
 The concatenated `enabledPlugins` result feeds only `builtin:default`. Each entry is the strict
-object `{ scope: "global"|"workspace", source: "agents"|"clarvis", name }`; strings and partially
+object `{ scope: "global"|"workspace", source: "agents", name }`; strings and partially
 qualified references are rejected. Extension Profile resolution happens after the operator settings
 layers are read and before plugin settings fragments are folded; no Extension Profile data is introduced
 into this schema or merge table.
@@ -593,21 +592,6 @@ error. `agentPromptOf(basePrompt, body)`
 falls back to `basePrompt` only when the body is empty/whitespace-only.
 
 ### 4.11 Ajv construction and its two consumers
-
-`build(opts)` in `packages/loop/src/validation/ajv.ts` is the one place that actually instantiates
-an Ajv instance and registers `ajv-formats`; both public factories call it. `load()` normally
-resolves those CommonJS modules only on first use. The Container Kernel's standalone composition
-instead calls `installBundledAjvModules` from `tooling/runtime/kernel-entry.ts` before serving the
-Kernel, so Bun can close the modules into one executable without changing the native host's lazy
-path. `createAjv()` (`{ strict: false, allErrors: true }`) and `createStrictAjv()` (the same plus
-`strictSchema: true`) differ by exactly that one option, but serve two different
-purposes at two unrelated call sites: `createAjv` is the **only** call in
-`packages/loop/src/runtime/tools/tool-arg-validator.ts`, validating a tool call's arguments against that tool's
-own declared schema (fail-open by design, per that module's own doc comment); `createStrictAjv` is
-the **only** call in `packages/loop/src/runtime/tools/result-contract.ts`, vetting a caller-supplied
-`output_schema`'s own well-formedness before a run starts. Both call sites are outside this document's
-`src/validation/**`/`src/settings/**` scope, but are the sole production consumers of the two
-factories.
 
 ## 5. Invariants
 
@@ -646,18 +630,6 @@ topology must each be unique/resolvable: duplicate server or profile names are r
 `default_spawn` falls outside its own `can_spawn`.
 Production: `packages/loop/src/validation/request/identity-rules.ts`. Test:
 `packages/loop/tests/unit/request-identity-rules.test.ts`.
-
-**INV-073.** `src/validation/ajv.ts` calls `require("ajv")`/`require("ajv-formats")` only from inside
-the `load()` function, deferred past module evaluation, never at the top level — so an ordinary host
-that merely reaches this module (e.g. the terminal UI, through delegation, on its boot path) does
-not pay the cost unless a validator is actually built. The only eager alternative is explicit
-composition: the standalone Container Kernel entry statically imports both modules, installs them
-with `installBundledAjvModules`, and only then calls `serveContainerKernel`.
-Production: `load` and `installBundledAjvModules` in
-`packages/loop/src/validation/ajv.ts`; `tooling/runtime/kernel-entry.ts`. Test:
-`packages/loop/tests/architecture/eager-validator-boundary.test.ts` (walks the TypeScript AST and
-asserts every fallback `require(...)` call is nested inside a function) and
-`tooling/tests/architecture/container-native-composition.test.ts` (pins the standalone composition).
 
 **INV-RS-01.** The built-in request schema and the hand-authored `RunRequest` type both carry the
 same optional prompt-expansion context, while the kernel adds it only for a successfully resolved,
@@ -797,7 +769,7 @@ schema at settings-read time, a third, uncoded shape the two-way framing above d
   behind these consts is owned by other documents (hooks-execution, grants-and-tool-exposure,
   `@clarvis/supervision`'s `agentsSettingsSpec`).
 - `ajv` / `ajv-formats` — lazy fallback resolution for ordinary hosts; statically supplied only by
-  the standalone Container Kernel composition root (INV-073).
+  the optional validation path.
 
 **Depended on by** (all runtime, via the package's export map — never a raw `src/` path from outside
 the package):
@@ -836,10 +808,6 @@ is a compile-time-only edge with zero runtime cost.
   time; a host-registered capability cannot be named there without the engine depending on it, which
   is the registry's whole purpose. So it is not two mechanisms for one job — it is the type boundary
   between what the engine knows statically and what a host adds.
-- Registered model references participate in provider validation without becoming profile entries
-  or contributing to the engine's running-agent budgets. Their execution/accounting policy belongs
-  to their owning capability. See [Judge](../capabilities/judge.md) and
-  [command guard](../execution/command-guard.md).
 
 - **`typo-suggestion.ts`'s `editDistance`/`typoBudget` have no call site inside this document's own
   scope** (`settings-schema.ts`, `settings-merge.ts`, `capability-settings.ts`, `engine-server.ts`,
@@ -853,22 +821,3 @@ is a compile-time-only edge with zero runtime cost.
   used at `packages/loop/src/validation/request/provider-rules.ts`) is out of this document's scope
   (owned by `@clarvis/capability`); what is verified is only that `rejectProviderMapIssues` calls it to
   reject any leftover `${` after stripping every well-formed match.
-## Shared reviewer settings
-
-`effect_review` is a non-plugin cross-cutting settings block. It carries model, timeout, retry,
-uncertainty fallback and the operator rollout stage (`shadow` or `local`), which scopes the
-transactional configuration reviewer. A settings document written before the `ci_retry` stage was
-withdrawn still loads — that spelling normalizes to `local` — because a schema-invalid document is
-discarded whole, which would silently drop every unrelated setting stored beside it; any other
-unknown value still fails closed. Kernel scope resolution admits only reductions from
-workspace configuration. Command authorization reads neither the block's rollout stage nor a
-per-operation effect: it is one deterministic policy plus one Judge review path. `guard_judge` accepts optional `guidance` and explicit overrides; additional guidance is not required.
-Unknown keys are rejected rather than converted to guidance. Authority seeds remain absent from the strict
-public request schema. Production:
-[settings.ts](../../packages/judge/src/settings.ts),
-[tools-settings.ts](../../packages/loop/src/runtime/capabilities/tools-settings.ts), and
-[run-service.ts](../../packages/kernel/src/runs/run-service.ts). Test: the withdrawn-stage upgrade
-regression in
-[file-config-store.test.ts](../../packages/kernel/tests/integration/file-config-store.test.ts) and the
-schema cases in [settings.test.ts](../../packages/judge/tests/unit/settings.test.ts). The complete
-contract is [effect review](../execution/effect-review.md).

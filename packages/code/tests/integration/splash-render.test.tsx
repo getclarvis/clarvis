@@ -19,7 +19,6 @@ import {
   firstRunSplashFits,
   Splash,
 } from "../../src/views/Splash.tsx";
-import { containerConnectionStatus } from "../../src/startup-foundation.ts";
 
 const TEST_VERSION = "0.0.4-beta";
 
@@ -158,9 +157,9 @@ test("the startup composer shares the responsive Clarvis splash on first paint",
   narrow.renderer.destroy();
 });
 
-test("the startup banner reserves every art row above live Container progress", async () => {
+test("the startup banner reserves every art row above live progress", async () => {
   const state = createStartupComposerState();
-  state.setStatus("starting Container Kernel");
+  state.setStatus("connecting to workspace host");
   const t = await openRender(
     () => <StartupComposer state={state} acceptsInput version={TEST_VERSION} />,
     { width: 180, height: 48 },
@@ -168,7 +167,7 @@ test("the startup banner reserves every art row above live Container progress", 
   await t.renderOnce();
   const rows = t.captureCharFrame().split("\n");
   const finalBannerRow = rows.findIndex((row) => row.includes(BANNER.at(-1)!.trim()));
-  const progressRow = rows.findIndex((row) => row.includes("starting Container Kernel"));
+  const progressRow = rows.findIndex((row) => row.includes("connecting to workspace host"));
   expect(finalBannerRow).toBeGreaterThan(-1);
   expect(progressRow).toBeGreaterThan(finalBannerRow);
   t.renderer.destroy();
@@ -181,21 +180,15 @@ test("reactive startup progress keeps a blank row below the complete banner", as
     { width: 120, height: 17 },
   );
   await t.renderOnce();
-  state.setStatus("preparing Container state");
+  state.setStatus("connecting to workspace host");
   await t.renderOnce();
   const rows = t.captureCharFrame().split("\n");
   const finalBannerRow = rows.findIndex((row) => row.includes(BANNER.at(-1)!.trim()));
-  const statusRow = rows.findIndex((row) => row.includes("preparing Container state"));
+  const statusRow = rows.findIndex((row) => row.includes("connecting to workspace host"));
   expect(finalBannerRow).toBeGreaterThan(-1);
   expect(rows[finalBannerRow + 1]?.trim()).toBe("");
   expect(statusRow).toBe(finalBannerRow + 2);
   t.renderer.destroy();
-});
-
-test("Container connection phases have concrete startup feedback", () => {
-  expect(containerConnectionStatus("inspecting_engine")).toBe("inspecting Container engine");
-  expect(containerConnectionStatus("preparing_artifact")).toBe("preparing Kernel artifact");
-  expect(containerConnectionStatus("starting_kernel")).toBe("starting Container Kernel");
 });
 
 test("the startup composer preserves an unsent draft and keeps resume locked", async () => {

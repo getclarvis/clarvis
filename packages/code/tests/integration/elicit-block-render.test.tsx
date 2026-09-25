@@ -186,125 +186,6 @@ test("Ctrl+P opens the plan overlay from the approval gate", async () => {
   t.renderer.destroy();
 });
 
-const GUARD_CONFIRM: ElicitRequestParams = {
-  message: "no allowed commands list configured\n\n$ rm -rf build",
-  kind: "guard_confirm",
-  requestedSchema: {
-    type: "object",
-    properties: { decision: { type: "string", enum: ["deny", "allow"] } },
-    required: ["decision"],
-  },
-};
-
-test("effect review shows segment value position and a distinct timeout receipt", async () => {
-  const out = await frame(() => (
-    <ElicitBlock
-      interaction={stubInteraction}
-      request={{
-        ...GUARD_CONFIRM,
-        detail: {
-          command: "git commit -m message",
-          cwd: "/workspace",
-          reason: "Review requires an answer",
-          analysis: {
-            reviewability: "judgeable",
-            issues: [{ segmentIndex: 1, kind: "command_substitution", impact: "value" }],
-          },
-          effect: {
-            id: "clarvis.operational_config.write",
-            class: "authority_change",
-            attestation: "complete",
-          },
-          reviewer: { status: "failed", failure_kind: "timeout", attempts: 1 },
-        },
-      }}
-      onResolve={() => {}}
-    />
-  ));
-  expect(out).toContain("clarvis.operational config.write");
-  expect(out).toContain("Segment 2: command substitution");
-  expect(out).toContain("argument value");
-  expect(out).toContain("Reviewer timed out after 1 attempt");
-  expect(out).not.toContain("undecidable expansions");
-});
-
-test("a guard confirmation is framed as a command approval, not a neutral question", async () => {
-  const out = await frame(() => (
-    <ElicitBlock interaction={stubInteraction} request={GUARD_CONFIRM} onResolve={() => {}} />
-  ));
-  expect(out).toContain("Command approval");
-  expect(out).not.toContain("Agent asks");
-  expect(out).toContain("no allowed commands list configured");
-  expect(out).toContain("rm -rf build");
-  expect(out).toMatch(/\[1\]\s+allow once/);
-  expect(out).toMatch(/\(◉\)\s+\[2\]\s+deny/);
-});
-
-const GUARD_SESSION: ElicitRequestParams = {
-  message: "no allowed commands list configured\n\n$ bun test tests/plan.test.ts",
-  kind: "guard_confirm",
-  detail: {
-    command: "bun test tests/plan.test.ts",
-    cwd: "/work/repo",
-    reason: "no allowed commands list configured",
-  },
-  requestedSchema: {
-    type: "object",
-    properties: { decision: { type: "string", enum: ["deny", "allow", "allow_session"] } },
-    required: ["decision"],
-  },
-};
-
-test("a structured guard shows the reason and the command as code with its cwd", async () => {
-  const out = await frame(() => (
-    <ElicitBlock interaction={stubInteraction} request={GUARD_SESSION} onResolve={() => {}} />
-  ));
-  expect(out).toContain("no allowed commands list configured");
-  expect(out).toContain("bun test tests/plan.test.ts");
-  expect(out).toContain("in /work/repo");
-  expect(out).not.toContain("$ bun test");
-});
-
-test("a structured guard surfaces the analyzer's undecidable-expansions warning", async () => {
-  const undecidable: ElicitRequestParams = {
-    ...GUARD_SESSION,
-    detail: {
-      command: "echo $(whoami)",
-      cwd: "/work/repo",
-      reason: "command contains dynamic expansions that cannot be analyzed",
-      warning: "Warning: this command contains undecidable expansions.",
-    },
-    requestedSchema: {
-      type: "object",
-      properties: { decision: { type: "string", enum: ["deny", "allow"] } },
-      required: ["decision"],
-    },
-  };
-  const out = await frame(() => (
-    <ElicitBlock interaction={stubInteraction} request={undecidable} onResolve={() => {}} />
-  ));
-  expect(out).toContain("Warning: this command contains undecidable expansions.");
-});
-
-test("allow_session is the second positive choice and deny remains the safe default", async () => {
-  const out = await frame(() => (
-    <ElicitBlock interaction={stubInteraction} request={GUARD_SESSION} onResolve={() => {}} />
-  ));
-  expect(out).toMatch(/\[1\]\s+allow once/);
-  expect(out).toMatch(/\[2\]\s+allow for this session/);
-  expect(out).toMatch(/\(◉\)\s+\[3\]\s+deny/);
-
-  const untouched = await mountKeyed(GUARD_SESSION);
-  untouched.press("return");
-  expect(untouched.resolved).toEqual([{ action: "accept", content: { decision: "deny" } }]);
-  untouched.t.renderer.destroy();
-
-  const session = await mountKeyed(GUARD_SESSION);
-  session.press("2");
-  expect(session.resolved).toEqual([{ action: "accept", content: { decision: "allow_session" } }]);
-  session.t.renderer.destroy();
-});
-
 async function mountKeyed(request: ElicitRequestParams): Promise<{
   t: Awaited<ReturnType<typeof openRender>>;
   press: (key: string) => void;
@@ -407,27 +288,6 @@ test("numbered-choice commands deactivate while a text field is active", async (
   t.renderer.destroy();
 });
 
-test("guard: an arrow never silently flips allow/deny — escape still denies", async () => {
-  const { t, press, resolved } = await mountKeyed(GUARD_CONFIRM);
-  press("down");
-  press("escape");
-  expect(resolved).toEqual([{ action: "cancel" }]);
-  t.renderer.destroy();
-});
-
-test("guard: enter commits exactly the highlighted option", async () => {
-  const first = await mountKeyed(GUARD_CONFIRM);
-  first.press("return");
-  expect(first.resolved).toEqual([{ action: "accept", content: { decision: "deny" } }]);
-  first.t.renderer.destroy();
-
-  const second = await mountKeyed(GUARD_CONFIRM);
-  second.press("up");
-  second.press("return");
-  expect(second.resolved).toEqual([{ action: "accept", content: { decision: "allow" } }]);
-  second.t.renderer.destroy();
-});
-
 test("the prior model message stays visible ABOVE the inline elicitation (the core fix)", async () => {
   const prior: TranscriptNode = {
     key: "m0",
@@ -475,43 +335,6 @@ test("a superseding request REMOUNTS the form (the App's keyed <Show> pattern)",
   expect(out).toContain("SECOND QUESTION");
   expect(out).not.toContain("Approve the plan");
   t.renderer.destroy();
-});
-
-const LONG_TAIL = "&& touch DANGER_MARKER_THE_USER_MUST_SEE.txt";
-const LONG_COMMAND = `git log --oneline --decorate --graph --all --abbrev-commit --no-merges --first-parent -n 1 ${LONG_TAIL}`;
-
-const GUARD_LONG: ElicitRequestParams = {
-  message: `command not in the allowed commands list\n\n$ ${LONG_COMMAND}`,
-  kind: "guard_confirm",
-  detail: {
-    command: LONG_COMMAND,
-    cwd: "/work/repo",
-    reason: "command not in the allowed commands list",
-  },
-  requestedSchema: {
-    type: "object",
-    properties: { decision: { type: "string", enum: ["deny", "allow", "allow_session"] } },
-    required: ["decision"],
-  },
-};
-
-test("a command wider than the frame is shown whole, never clipped at the border", async () => {
-  const out = await frame(() => (
-    <ElicitBlock interaction={stubInteraction} request={GUARD_LONG} onResolve={() => {}} />
-  ));
-  // The tail is what decides the approval. Clipped, `&& touch DANGER…` and
-  // `&& rm -rf ~` are the same screen.
-  expect(out).toContain("DANGER_MARKER_THE_USER_MUST_SEE.txt");
-  expect(out).toContain("command not in the allowed commands list");
-  expect(out).toContain("in /work/repo");
-});
-
-test("the decision rows survive a command that wraps over several lines", async () => {
-  const out = await frame(() => (
-    <ElicitBlock interaction={stubInteraction} request={GUARD_LONG} onResolve={() => {}} />
-  ));
-  expect(out).toContain("deny");
-  expect(out).toContain("allow once");
 });
 
 test("an elicitation can fill the transcript side of a split layout", async () => {
@@ -594,27 +417,4 @@ test("an elapsed window stops offering the controls and returns the decision", a
   expect(out).toContain("No response in time; decision returned to the model.");
   expect(out).not.toContain("staging-box");
   expect(out).not.toContain("production-box");
-});
-
-test("a guard confirmation never counts down, even with a stale projection", async () => {
-  const out = await frame(() => (
-    <ElicitBlock
-      interaction={stubInteraction}
-      request={{
-        message: "Run bun test?",
-        kind: "guard_confirm",
-        detail: { command: "bun test", cwd: "/work/repo", reason: "no allowed commands list" },
-        requestedSchema: {
-          type: "object",
-          properties: { decision: { type: "string", enum: ["deny", "allow", "allow_session"] } },
-          required: ["decision"],
-        },
-      }}
-      remaining={() => 0}
-      onResolve={() => {}}
-    />
-  ));
-  expect(out).not.toContain("The model decides");
-  expect(out).not.toContain("No response in time");
-  expect(out).toContain("allow for this session");
 });

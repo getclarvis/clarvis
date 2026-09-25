@@ -4,9 +4,9 @@ import { join, resolve } from "node:path";
 import {
   candidateVersion,
   CANDIDATE_REPOSITORY,
-  parseRuntimeCandidate,
-  type RuntimeCandidate,
-} from "../src/adapters/runtime-candidate.ts";
+  parseSourceCandidate,
+  type SourceCandidate,
+} from "../src/adapters/source-candidate.ts";
 import { installDevelopmentLauncher } from "./development-install.ts";
 import { publishSelectedSystemDocs } from "../src/bootstrap/system-docs-cli.ts";
 
@@ -50,7 +50,7 @@ export async function candidateJson(
   return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
 }
 
-/** Select only published prereleases carrying the required image identity sidecar. */
+/** Select only published prereleases carrying the required source identity sidecar. */
 export function selectCandidateRelease(value: unknown, requested?: string): string {
   const releases = Array.isArray(value) ? value : [value];
   const tags: string[] = [];
@@ -71,7 +71,7 @@ export function selectCandidateRelease(value: unknown, requested?: string): stri
           typeof asset === "object" &&
           asset !== null &&
           "name" in asset &&
-          asset.name === "runtime-candidate.json",
+          asset.name === "source-candidate.json",
       )
     )
       continue;
@@ -93,7 +93,7 @@ export function selectCandidateRelease(value: unknown, requested?: string): stri
   });
   const selected = requested === undefined ? tags[0] : tags.find((tag) => tag === requested);
   if (selected === undefined)
-    throw new Error("no published candidate with a runtime manifest was found");
+    throw new Error("no published candidate with a source manifest was found");
   return selected;
 }
 
@@ -111,7 +111,7 @@ function execute(argv: readonly string[], cwd: string): string {
   return result.stdout.trim();
 }
 
-/** Install an exact published source snapshot; Container assets resolve lazily from its release. */
+/** Install an exact published source snapshot. */
 export async function installCandidate(input: {
   tag?: string;
   installRoot: string;
@@ -123,7 +123,7 @@ export async function installCandidate(input: {
   run?: (argv: readonly string[], cwd: string) => string;
 }): Promise<{
   launcher: string;
-  manifest: RuntimeCandidate;
+  manifest: SourceCandidate;
   checkout: string;
 }> {
   if (input.tag !== undefined) candidateVersion(input.tag);
@@ -133,9 +133,9 @@ export async function installCandidate(input: {
     input.fetcher,
   );
   const tag = selectCandidateRelease(metadata, input.tag);
-  const manifest = parseRuntimeCandidate(
+  const manifest = parseSourceCandidate(
     await candidateJson(
-      `https://github.com/${CANDIDATE_REPOSITORY}/releases/download/${tag}/runtime-candidate.json`,
+      `https://github.com/${CANDIDATE_REPOSITORY}/releases/download/${tag}/source-candidate.json`,
       input.fetcher,
     ),
     tag,
@@ -179,7 +179,6 @@ export async function installCandidate(input: {
       repository: checkout,
       bun: input.bun,
       binDirectory: input.binDirectory,
-      candidate: { tag, revision: commit },
     });
     activated = true;
     return { launcher, manifest, checkout };

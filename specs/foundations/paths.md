@@ -23,8 +23,7 @@ came to look for files no writer ever produced." (`packages/paths/src/index.ts`)
 narrower problem is durability: the atomic-write family "replaces seven hand-rolled tmp-and-rename
 copies that had already diverged on the property that matters — one of them raced two processes
 onto a single temp name" (`packages/paths/src/index.ts`; see also
-`packages/paths/src/atomic.ts`, naming `@clarvis/server`'s signing key as the concrete instance: "written to a
-bare `<file>.tmp`, so two boots racing the same key file collided on one temp path"). A third,
+`packages/paths/src/atomic.ts`, whose temporary-name contract prevents two writers from colliding on one path. A third,
 narrower reason covers the **resolve** family (`expandHome`, `resolveAgainst`,
 `resolveWorkspaceDir`, §2.11): those three functions "were forked verbatim between the engine and
 an optional feature package that is structurally forbidden from importing it," so this
@@ -36,34 +35,6 @@ under the user's **global** root, keyed per workspace. That split is enforced by
 system*, not by convention: `WorkspacePaths` (`packages/paths/src/workspace.ts`) simply has no
 key for any of that machinery, so writing it into a repository is a compile error rather than a
 possibility to remember to avoid (`packages/paths/src/workspace.ts`).
-
-### Container path vocabulary
-
-`containerLaunchPaths(namespace, globalDir?)` places only the host launch lease (`launch.lock`) and
-process registry (`registry.json`) under `<global>/state/container-hosts/<namespace>`. It does not
-create directories, publish an endpoint or resolve credentials. `containerDataVolumeNames` returns
-`clarvis-data-v1-<namespace>-content` and `clarvis-data-v1-<namespace>-state`;
-`containerArtifactVolumeName` returns `clarvis-artifact-v1-<archive-sha256>`. Both identities must be
-full, bare lowercase SHA-256 hashes; truncation, digest prefixes and path syntax are rejected.
-No generation, product version or engine parameter participates in these name builders.
-
-`containerGuestPaths` is immutable Linux-guest vocabulary: workspace `/workspace`, private content
-under its Clarvis directory, the shared-agent mask under its agents directory, global root
-`/var/lib/clarvis`, home `/var/lib/clarvis/home`, Git metadata
-`/var/lib/clarvis/git-metadata` with common root beneath it, artifact `/opt/clarvis` and its
-`bin/clarvis-kernel` entry, payload subpath `payload`, mise `/mise` and temporary root `/tmp`.
-These virtual names use POSIX composition, never the launcher's native Windows path syntax.
-Kernel owns namespace derivation and validation of volume labels, ownership and lifecycle; these
-pure helpers do not authorize any mount or data deletion.
-
-Production: `containerLaunchPaths`, `containerDataVolumeNames`, `containerArtifactVolumeName` and
-`containerGuestPaths` in [container.ts](../../packages/paths/src/container.ts).
-Test: [container.test.ts](../../packages/paths/tests/unit/container.test.ts) checks exact names,
-role separation, canonical identity refusal and fixed guest paths independently of host separators.
-The Kernel's `containerGitDirectoryTarget` maps a host-native linked-worktree path beneath this
-fixed common root and `prepareRuntimeMounts` writes the guest-only `.git` indirection. Test:
-[runtime-mounts.test.ts](../../packages/kernel/tests/unit/runtime-mounts.test.ts) and
-[git-workspace.test.ts](../../packages/kernel/tests/integration/git-workspace.test.ts).
 
 ## 2. Surface
 
@@ -158,14 +129,11 @@ chose it — is the first thing every other path in this package is derived from
 | `keysFile` | `<global>/keys.json` | `packages/paths/src/global.ts` |
 | `subscriptionsFile` | `<global>/subscriptions.json` | `packages/paths/src/global.ts` |
 | `mcpOAuthFile` | `<global>/state/mcp-oauth.json` | `packages/paths/src/global.ts` |
-| `pluginsDir` | `<global>/plugins` | `packages/paths/src/global.ts` |
 | `extensionProfilesDir` | `<global>/extension-profiles` | `packages/paths/src/global.ts` |
-| `runtimeRecipesDir` | `<global>/runtime-recipes` | `GlobalPaths.runtimeRecipesDir`, `globalPaths` |
 | `workspaceTrustFile` | `<global>/workspace-trust.json` | `packages/paths/src/global.ts` |
 | `skillsDir` | `<global>/skills` | `packages/paths/src/global.ts` |
 | `workflowsDir` | `<global>/workflows` | `packages/paths/src/global.ts` |
 | `sharedAgentPromptFile` | `<global>/shared-agent.md` | `packages/paths/src/global.ts` |
-| `guardJudgeFile` | `<global>/guard-judge.md` | `packages/paths/src/global.ts` |
 | `memoryPolicyFile` | `<global>/memory-policy.md` | `packages/paths/src/global.ts` |
 | `authFile` | `<global>/auth.json` | `packages/paths/src/global.ts` |
 | `authKeyFile` | `<global>/auth-key.json` | `packages/paths/src/global.ts` |
@@ -176,8 +144,6 @@ chose it — is the first thing every other path in this package is derived from
 | `codeConfigFile` | `<global>/state/code.json` | `packages/paths/src/global.ts` |
 | `modelsCacheFile` | `<global>/cache/models-dev.json` | `packages/paths/src/global.ts` |
 | `updateCheckCacheFile` | `<global>/cache/update-check.json` | `packages/paths/src/global.ts` |
-| `runtimeRecipeStateDir` | `<global>/state/runtime-recipes` | `GlobalPaths.runtimeRecipeStateDir`, `globalPaths` |
-| `runtimeRecipeLeaseFile(identity)` | `<global>/state/runtime-recipes/<ownerSegment(identity)>.lock` | `GlobalPaths.runtimeRecipeLeaseFile`, `globalPaths` |
 | `contextCandidates` | `<global>/{CLARVIS.md,AGENTS.md}` | `packages/paths/src/global.ts` |
 | `exportsDirForOwner(owner)` | `<global>/exports/<ownerSegment(owner)>` | `packages/paths/src/global.ts` |
 | `agentFile(name)` | `<agentsDir>/<name>.md` | `packages/paths/src/global.ts` |
@@ -187,17 +153,6 @@ a `config/` subdirectory" — burying it "made the global tree disagree with the
 (`packages/paths/src/global.ts`). What is nested under `state`/`cache` is what a user never edits: `state` is
 "generated and recoverable but costly to lose", `cache` "may be deleted at any moment without
 consequence" (`packages/paths/src/global.ts`).
-
-`runtimeRecipesDir` is the operator-authored root for Docker customization scripts. Keeping it
-outside workspace roots prevents an isolated agent from turning a later cold launch into an
-operator-authorized build. `runtimeRecipeLeaseFile` is host-only coordination for one
-content-addressed Docker image build. It lives under generated state rather than cache so an
-operator cache cleanup cannot delete a live cross-process lease; the acquired file itself is
-removed on release. The identity is encoded by the same `ownerSegment` boundary as every other
-untrusted dynamic path component. Production: `GlobalPaths.runtimeRecipesDir`,
-`GlobalPaths.runtimeRecipeStateDir`, `GlobalPaths.runtimeRecipeLeaseFile`, and `globalPaths` in
-`packages/paths/src/global.ts`. Test: `globalPaths > names the generated state and the cache` in
-`packages/paths/tests/component/paths.test.ts`.
 
 ### 2.4.1 Local host namespaces
 
@@ -233,12 +188,9 @@ builder tests do not qualify native IPC behavior.
 | `clarvisDir` | `<ws>/.clarvis` | `packages/paths/src/workspace.ts` |
 | `settingsFile` | `<ws>/.clarvis/settings.json` | `packages/paths/src/workspace.ts` |
 | `agentsDir` | `<ws>/.clarvis/agents` | `packages/paths/src/workspace.ts` |
-| `skillsDir` | `<ws>/.clarvis/skills` | `packages/paths/src/workspace.ts` |
 | `workflowsDir` | `<ws>/.clarvis/workflows` | `packages/paths/src/workspace.ts` |
-| `pluginsDir` | `<ws>/.clarvis/plugins` | `packages/paths/src/workspace.ts` |
 | `extensionProfilesDir` | `<ws>/.clarvis/extension-profiles` | `packages/paths/src/workspace.ts` |
 | `sharedAgentPromptFile` | `<ws>/.clarvis/shared-agent.md` | `packages/paths/src/workspace.ts` |
-| `guardJudgeFile` | `<ws>/.clarvis/guard-judge.md` | `packages/paths/src/workspace.ts` |
 | `memoryPolicyFile` | `<ws>/.clarvis/memory-policy.md` | `packages/paths/src/workspace.ts` |
 | `plansRoot` | `<ws>/.clarvis/plans` | `packages/paths/src/workspace.ts` |
 | `memoryRoot` | `<ws>/.clarvis/memory` | `packages/paths/src/workspace.ts` |
@@ -247,9 +199,7 @@ builder tests do not qualify native IPC behavior.
 | `memoryRootForOwner(owner)` | `<ws>/.clarvis/owners/<seg>/memory` | `packages/paths/src/workspace.ts` |
 | `agentFile(name)` | `<agentsDir>/<name>.md` | `packages/paths/src/workspace.ts` |
 
-`agentsWorkspaceDir(root?)` returns the complete `<ws>/.agents` control root. Container mount policy
-uses this root together with `workspacePaths(root).clarvisDir`; it does not reconstruct either
-literal or enumerate their children outside `@clarvis/paths`.
+`agentsWorkspaceDir(root?)` returns the complete `<ws>/.agents` control root.
 
 Interface doc: "Machinery is deliberately **absent from this type**… The keys are removed rather
 than deprecated so that writing generated bookkeeping into someone's working tree is a compile
@@ -290,13 +240,21 @@ record (`packages/paths/src/workspace-state.ts`) rooted at `<global>/state/works
 | `plansLockDirForOwner(owner)` | `<root>/owners/<seg>/plans` | `packages/paths/src/workspace-state.ts` |
 | `toolOutputSpill(token)` | `<localDir>/toolout-<token>.txt` | `packages/paths/src/workspace-state.ts` |
 
+`workspaceStatePathsFromRoot(workspaceRoot, stateRoot)` reconstructs the full record from the
+host-selected roots when a process boundary carries only data. It resolves every field and the
+owner/spill builder methods under that exact state root; the caller owns the association between
+the workspace and state roots. Production: `workspaceStatePathsFromRoot` in
+`packages/paths/src/workspace-state.ts` and `runFilesystemWorker` in
+`packages/tools/src/filesystem-worker.ts`. Test: `rebuilds all state paths and builders from the
+host-selected root` in `packages/paths/tests/component/workspace-state.test.ts`.
+
 The `isSpillFile(name)` predicate is paired with `toolOutputSpill(token)` in `packages/paths/src/workspace-state.ts`. Command sessions have no persisted path builder.
 
 The `.agents` accessors do not share one blanket write policy. Standalone skills and marketplace
 documents are read-only authored inputs. The managed global plugin lifecycle may mutate exactly one
 directory below a global `agentsPluginsDir`, while both workspace plugin inventories are
 repository-owned. Persistent portable-plugin data is source-qualified below `pluginDataRoot`, never
-written into `.agents/plugins` or `.clarvis/plugins`. Production:
+written into `.agents/plugins`. Production:
 `packages/kernel/src/adapters/filesystem/plugin-repository.ts` and
 `packages/kernel/src/plugins/plugin-runtime.ts`. Test:
 `packages/paths/tests/architecture/agents-read-only.test.ts` and
@@ -363,7 +321,7 @@ pipes are not filesystem paths and are never measured by it. Production:
 `assertPrivateHostDirectory` in `packages/kernel/src/hosting/private-files.ts`. Tests:
 `packages/paths/tests/unit/short-temporaries.test.ts`,
 `packages/paths/tests/integration/short-temporaries.test.ts`,
-`packages/loop/tests/integration/command-guard-wiring.test.ts` and
+`packages/loop/tests/integration/tools.test.ts` and
 `packages/code/tests/unit/artifact-isolation.test.ts`.
 
 ### 2.7 Ensure functions and the workspace `.gitignore` (`packages/paths/src/ensure.ts`)
@@ -491,19 +449,9 @@ confirmed by the absence of `zod` from its dependencies (`package.json`, section
 ### 3.1 The two working-tree trees
 
 `<ws>/.clarvis` top level, exhaustively enumerated by the allow-list a kernel test drives every
-real writer against: `.gitignore`, `settings.json`, `agents`, `skills`, `workflows`, `plugins`,
-`extension-profiles`, `guard-judge.md`, `plans`, `memory`, `owners`, `worktrees`
+real writer against: `.gitignore`, `settings.json`, `agents`, `workflows`,
+`extension-profiles`, `plans`, `memory`, `owners`, `worktrees`
 (`packages/kernel/tests/architecture/workspace-surface.test.ts`, INV-192).
-
-That writer inventory is not a Container visibility allow-list. Docker/Podman covers
-`<ws>/.clarvis` with its private persistent content volume, overlays only the canonical Plans and
-Memory directories read-write, and covers `<ws>/.agents` with an empty read-only mask. Exact
-owner-scoped session, workflow and trace directories plus workspace machinery are overlaid below
-the private state volume so Host/Sandbox and Container use one durable domain history. Mask sources are host-created outside the selected workspace and removed after
-launch failure or teardown. Production:
-`agentsWorkspaceDir` in `packages/paths/src/workspace.ts` and `prepareRuntimeMounts` in
-`packages/kernel/src/runtime/container-mounts.ts`. Test:
-`packages/kernel/tests/unit/runtime-mounts.test.ts`.
 
 `WORKSPACE_GITIGNORE` content, seeded verbatim (`packages/paths/src/ensure.ts`):
 ```
@@ -524,12 +472,18 @@ hand-edited file with the seeded template. Production: `ensureWorkspaceDir` and 
 ### 3.2 The global tree
 
 `<global>` = `$CLARVIS_HOME` or `<home>/.clarvis` (`packages/paths/src/roots.ts`). Beneath it:
-operator-authored files at the root (`settings.json`, `agents/`, `keys.json`, `plugins/`, `extension-profiles/`,
-`workspace-trust.json`, `skills/`, `workflows/`, `guard-judge.md`,
+operator-authored files at the root (`settings.json`, `agents/`, `keys.json`, `extension-profiles/`,
+`workspace-trust.json`, `workflows/`,
 `memory-policy.md`, `auth.json`, `auth-key.json`), and generated state under `state/`
 (`sessions/`, `traces/`, `workflows/` [records], `extension-profile.json`, `code.json`, private remote-MCP OAuth credentials)
-and `cache/` (`models-dev.json`, `update-check.json`)
-— see the table in §2.4.
+and `cache/` (`models-dev.json`, `update-check.json`). The product-owned documentation skill remains
+under `<global>/skills/.system/`; externally authored skills are read only from `.agents/skills`.
+Existing `.clarvis/skills` and `.clarvis/plugins` trees are neither scanned nor migrated. Production:
+`clarvisSkillRoots` in `packages/skills/src/preset.ts`, `listInstalledPlugins` in
+`packages/kernel/src/adapters/filesystem/plugin-repository.ts`, and `configurationPathClass` in
+`packages/paths/src/configuration.ts`. Test: `packages/skills/tests/integration/discovery.test.ts`,
+`packages/kernel/tests/integration/plugin-service.test.ts`, and
+`packages/paths/tests/unit/configuration.test.ts`. See the table in §2.4.
 
 ### 3.3 Per-workspace machine state tree
 
@@ -876,17 +830,19 @@ synchronous persistence APIs that cannot yield while holding their transaction."
 `configurationRoots` exposes `global_clarvis`, `workspace_clarvis`, `global_agents` and
 `workspace_agents` without creating or authorizing their directories. The kernel supplies its
 resolved global directory and workspace; shared global content uses the user home. Production:
-[configuration.ts](../../packages/paths/src/configuration.ts). Test: all-four-root operations in
-[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
-`configurationPathClass` classifies relative targets as authoring, operational or private. Only
+[configuration.ts](../../packages/paths/src/configuration.ts). Test: configuration root fixtures in
+[configuration-documents.test.ts](../../packages/kernel/tests/integration/configuration-documents.test.ts).
+`configurationPathClass` classifies relative targets as `authoring`, `operational`, `secret`,
+`reserved_unknown`, or `generated_read_only`. Only
 canonical agent, skill and workflow Markdown names enter authoring; settings, executable declarations
-and other admitted configuration remain operational. Private trees, credential-like names and
-malformed relative paths never become inferred writes. The classifier performs no filesystem I/O:
+and other admitted configuration remain operational. Credential and trust records are `secret`;
+unknown names are `reserved_unknown`; the generated workspace ignore file is readable but
+`generated_read_only`. Malformed relative paths never become inferred writes. The classifier performs no filesystem I/O:
 consumers still resolve actual targets and enforce links, confinement and revisions.
 Production: `configurationPathClass` in [configuration.ts](../../packages/paths/src/configuration.ts).
-Test: `configuration classes share a closed authoring, operational and private vocabulary` in
+Test: configuration classification cases in
 [configuration.test.ts](../../packages/paths/tests/unit/configuration.test.ts).
-Effect review is owned by [self-configuration.md](../hosts/self-configuration.md).
+Configuration activation is owned by [self-configuration.md](../hosts/self-configuration.md).
 
 **INV-001.** No package outside `@clarvis/paths` may spell the literal directory names `.clarvis`
 or `.agents`, or the temp-file prefix `.clarvis-tmp-`, in executable source under any package's
@@ -967,8 +923,8 @@ evidence the owner is dead. Test: `packages/paths/tests/contract/local-lease.tes
 
 **INV-192.** Driving every writer that touches a workspace (plan repository listing, two memory
 batch writes, `markIndexed`) leaves `<ws>/.clarvis`'s top level containing only entries from the
-fixed allowed set (`.gitignore`, `settings.json`, `agents`, `skills`, `workflows`, `plugins`,
-`guard-judge.md`, `plans`, `memory`, `owners`, `worktrees`), and every file found under the workspace root is
+fixed allowed set (`.gitignore`, `settings.json`, `agents`, `workflows`,
+`plans`, `memory`, `owners`, `worktrees`), and every file found under the workspace root is
 inside `.clarvis/`. Test:
 `packages/kernel/tests/architecture/workspace-surface.test.ts`.
 
@@ -1100,16 +1056,12 @@ root — a **runtime** (environment-variable) coupling, not an import.
 - **Worktree launch semantics** are explicitly out of scope here and belong to the
   [launch-worktrees](../capabilities/worktrees.md) document; this package owns only the canonical
   checkout path.
-- **The TOCTOU threat model for workspace-confined writes** (what happens if a parent directory is
-  swapped for a symlink between validation and mutation) is explicitly delegated to the
-  [security-confinement-and-redaction](../cross-cutting/security.md) document and is not analyzed here, even though
-  `ensureWorkspaceSubdir`'s confinement check (`packages/paths/src/ensure.ts`) is a `@clarvis/paths` function;
-  this document describes only what that function does, not whether it is sufficient against a
-  concurrent adversary. **Recorded, in `@clarvis/tools` rather than here**: the threat
-  model, the read/write asymmetry and the rejected partial mitigations are now stated in
-  `resolvePath`'s `@remarks` (`packages/tools/src/lib/paths.ts`). It is written there because that is
-  the function whose return value discards the canonical form — this package's own check is not the
-  one the race turns on. The defect remains open.
+- **The TOCTOU threat model for classified configuration writes** is owned by
+  [security](../cross-cutting/security.md). `ensureWorkspaceSubdir` in
+  `packages/paths/src/ensure.ts` has its own confinement contract; this document does not claim
+  that pathname checks close concurrent parent replacement. Ordinary model file tools follow their
+  selected environment policy, with `workspaceRoot` as a relative base.
+
 - **`memory`'s and `trace`'s own on-disk layouts** beneath the roots this package hands them
   (`memoryMachineryRoot`, `tracesDir`, etc.) are delegated to [memory-wiki-store](../capabilities/memory-store.md) and
   [trace-recording-and-persistence](trace.md) respectively, per this document's scope statement, and are not

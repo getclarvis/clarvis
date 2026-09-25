@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { fsError, serializeError, ToolError } from "../../src/errors.ts";
+import { fsError, parseToolError, serializeError, ToolError } from "../../src/errors.ts";
 
 function errno(code: string | undefined, message: string): NodeJS.ErrnoException {
   return Object.assign(new Error(message), { code }) as NodeJS.ErrnoException;
@@ -63,5 +63,58 @@ describe("serializeError", () => {
   it("collapses a non-Error throwable via String() coercion", () => {
     const s = serializeError("just a string");
     expect(JSON.parse(s)).toEqual({ error: "internal", message: "internal error" });
+  });
+});
+
+describe("parseToolError", () => {
+  it("recovers only bounded public fields from a worker failure", () => {
+    const parsed = parseToolError(
+      JSON.stringify({
+        error: "commit_partial",
+        message: "Destination committed",
+        path: "/workspace/source.txt",
+        source_exists: true,
+        destination_committed: true,
+        stack: "private worker stack",
+      }),
+    );
+    expect(parsed).toBeInstanceOf(ToolError);
+    expect(parsed).toMatchObject({
+      code: "commit_partial",
+      message: "Destination committed",
+      fields: {
+        path: "/workspace/source.txt",
+        source_exists: true,
+        destination_committed: true,
+      },
+    });
+    expect(parsed?.fields).not.toHaveProperty("stack");
+  });
+
+  it("rejects malformed worker failures and strips partial-state flags from other errors", () => {
+    for (const value of [
+      undefined,
+      "x".repeat(4097),
+      "{",
+      "null",
+      "[]",
+      "{}",
+      JSON.stringify({ error: "unknown", message: "bad" }),
+      JSON.stringify({ error: "io_error", message: 7 }),
+      JSON.stringify({ error: "io_error", message: "" }),
+      JSON.stringify({ error: "io_error", message: "x".repeat(1025) }),
+    ]) {
+      expect(parseToolError(value)).toBeUndefined();
+    }
+    const ordinary = parseToolError(
+      JSON.stringify({
+        error: "io_error",
+        message: "failed",
+        path: "x".repeat(1025),
+        source_exists: true,
+        destination_committed: true,
+      }),
+    );
+    expect(ordinary?.fields).toEqual({});
   });
 });

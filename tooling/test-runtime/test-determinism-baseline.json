@@ -194,14 +194,6 @@
       "reason": "the diagnostic test proves the real slow-operation timer emits its pending event"
     },
     {
-      "mechanism": "subprocess",
-      "file": "packages/code/tests/unit/runtime-image.test.ts",
-      "identity": "subprocess|test:source mode validates an explicit local archive without consulting a release|Bun.spawn([\"tar\", \"-czf\", archive, \"-C\", stage, \"manifest.json\"], { stdin: \"ignore\", stdout: \"ignore\", stderr: \"pipe\", })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "boundary-canary",
-      "reason": "physical archive, engine, or ownership subprocess is required by this boundary test"
-    },
-    {
       "mechanism": "positive-wait",
       "file": "packages/hooks/tests/integration/bun-spawn.test.ts",
       "identity": "positive-wait|waitGone|Bun.sleep(10)|0",
@@ -226,49 +218,9 @@
       "reason": "bounded polling observes physical grandchild exit before temporary-root removal"
     },
     {
-      "mechanism": "subprocess",
-      "file": "packages/kernel/tests/integration/container-kernel.e2e.test.ts",
-      "identity": "subprocess|artifactSelection|Bun.spawn([\"tar\", \"-xOzf\", path, \"manifest.json\"], { stdin: \"ignore\", stdout: \"pipe\", stderr: \"pipe\", })|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "boundary-canary",
-      "reason": "physical archive, engine, or ownership subprocess is required by this boundary test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/kernel/tests/integration/container-kernel.e2e.test.ts",
-      "identity": "subprocess|inspectBaseImageId|Bun.spawn([engine!, \"image\", \"inspect\", reference], { stdin: \"ignore\", stdout: \"pipe\", stderr: \"pipe\", })|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "boundary-canary",
-      "reason": "physical base image identity inspection is required by this real-engine boundary test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/kernel/tests/integration/container-kernel.e2e.test.ts",
-      "identity": "subprocess|removeVolume|Bun.spawn([engine!, \"volume\", \"inspect\", name], { stdin: \"ignore\", stdout: \"ignore\", stderr: \"ignore\", })|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "boundary-canary",
-      "reason": "physical archive, engine, or ownership subprocess is required by this boundary test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/kernel/tests/integration/container-kernel.e2e.test.ts",
-      "identity": "subprocess|removeVolume|Bun.spawn([engine!, \"volume\", \"rm\", name], { stdin: \"ignore\", stdout: \"ignore\", stderr: \"pipe\", })|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "boundary-canary",
-      "reason": "physical archive, engine, or ownership subprocess is required by this boundary test"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/kernel/tests/integration/container-launcher.test.ts",
-      "identity": "timer|describe:Container Kernel process connection/test:uses one deadline across prefix, initialization and public hello/transform|setTimeout(() => callback(null, chunk), 30)|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "boundary-canary",
-      "reason": "controlled stream latency proves one absolute boot deadline spans every handshake phase"
-    },
-    {
       "mechanism": "timer",
       "file": "packages/kernel/tests/integration/file-kernel.test.ts",
-      "identity": "timer|describe:createFileKernel — skills roots from plugins/it:withdraws plugin skill drift without rejecting the next run|setTimeout(() => reject(new Error(\"skill drift watcher did not fire\")), 10_000)|0",
+      "identity": "timer|describe:createFileKernel \u2014 skills roots from plugins/it:withdraws plugin skill drift without rejecting the next run|setTimeout(() => reject(new Error(\"skill drift watcher did not fire\")), 10_000)|0",
       "package_owner": "@clarvis/kernel",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -316,26 +268,18 @@
     {
       "mechanism": "subprocess",
       "file": "packages/kernel/tests/integration/local-host-process.test.ts",
+      "identity": "subprocess|describe:independent local kernel process/test:explicit replacement cancels an old hosted run before launching a new generation|Bun.spawn( [ process.execPath, join(import.meta.dir, \"../fixtures/local-host-peer.ts\"), f.workspaceRoot, f.globalDir, ], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "an independent client process and host are required to prove explicit cancellation, physical retirement, and replacement"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/kernel/tests/integration/local-host-process.test.ts",
       "identity": "subprocess|describe:independent local kernel process/test:finishes after its launching client exits and reconnects to the same execution|Bun.spawn( [ process.execPath, join(import.meta.dir, \"../fixtures/local-host-peer.ts\"), f.workspaceRoot, f.globalDir, ], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
       "package_owner": "@clarvis/kernel",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/kernel/tests/integration/node-container-control.test.ts",
-      "identity": "positive-wait|describe:Node container engine controls|Bun.sleep(5)|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/kernel/tests/integration/node-container-control.test.ts",
-      "identity": "positive-wait|describe:Node container engine controls|Bun.sleep(50)|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
       "mechanism": "positive-wait",
@@ -352,6 +296,14 @@
       "package_owner": "@clarvis/kernel",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
+    },
+    {
+      "mechanism": "timer",
+      "file": "packages/kernel/tests/integration/plugin-contributions.test.ts",
+      "identity": "timer|describe:plugin contributions/it:observes a physical change to a pinned MCP executable|setTimeout( () => reject(new Error(\"physical watcher did not report drift\")), 5_000, )|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "Timeout is a fuse for the physical fs.watchFile notification; the test awaits the observed drift event."
     },
     {
       "mechanism": "subprocess",
@@ -402,30 +354,6 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
-      "mechanism": "subprocess",
-      "file": "packages/kernel/tests/unit/container-volumes.test.ts",
-      "identity": "subprocess|scriptFixture/run|Bun.spawn([\"/bin/sh\", \"-euc\", script, \"fixture\", \"1000:1000\"], { env: { PATH: `${bin}:/usr/bin:/bin`, TEST_LOG: log, TEST_OWNER: owner }, stdout: \"pipe\", stderr: \"pipe\", })|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "boundary-canary",
-      "reason": "physical archive, engine, or ownership subprocess is required by this boundary test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/kernel/tests/unit/container-volumes.test.ts",
-      "identity": "subprocess|test:canonical host state wins over divergent legacy domain bytes|Bun.spawn( [\"/bin/bash\", \"-euc\", script, \"fixture\", args[scriptIndex + 2]!, args[scriptIndex + 3]!], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "boundary-canary",
-      "reason": "physical shell execution verifies the fixed migration program against real filesystem state"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/kernel/tests/unit/container-volumes.test.ts",
-      "identity": "subprocess|test:canonical host state wins over divergent legacy domain bytes|Bun.spawn( [\"/bin/bash\", \"-euc\", script, \"fixture\", args[scriptIndex + 2]!, args[scriptIndex + 3]!], { stdout: \"pipe\", stderr: \"pipe\" }, )|1",
-      "package_owner": "@clarvis/kernel",
-      "classification": "boundary-canary",
-      "reason": "physical shell execution verifies conflict refusal without replacing canonical data"
-    },
-    {
       "mechanism": "timer",
       "file": "packages/kernel/tests/unit/observability.test.ts",
       "identity": "timer|describe:observationSink/it:stamps an event name on a detached failure and reaches the logger|setTimeout(resolve, 5)|0",
@@ -444,7 +372,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter — streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|0",
+      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|0",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -452,7 +380,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter — streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|1",
+      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|1",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -460,7 +388,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter — streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|0",
+      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|0",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -468,7 +396,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter — streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|1",
+      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|1",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -476,7 +404,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter — streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|2",
+      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|2",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -508,7 +436,7 @@
     {
       "mechanism": "positive-wait",
       "file": "packages/loop/tests/integration/host-capability.test.ts",
-      "identity": "positive-wait|describe:executeRun — capability run-end/it:awaits every capability's durable run-end work before resolving|Bun.sleep(5)|0",
+      "identity": "positive-wait|describe:executeRun \u2014 capability run-end/it:awaits every capability's durable run-end work before resolving|Bun.sleep(5)|0",
       "package_owner": "@clarvis/loop",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -516,7 +444,7 @@
     {
       "mechanism": "positive-wait",
       "file": "packages/loop/tests/integration/host-capability.test.ts",
-      "identity": "positive-wait|describe:executeRun — capability run-end/it:stops waiting once the run-end budget elapses, and says so|Bun.sleep(400)|0",
+      "identity": "positive-wait|describe:executeRun \u2014 capability run-end/it:stops waiting once the run-end budget elapses, and says so|Bun.sleep(400)|0",
       "package_owner": "@clarvis/loop",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -683,38 +611,6 @@
     },
     {
       "mechanism": "subprocess",
-      "file": "packages/server/tests/architecture/bin-bind-gate.test.ts",
-      "identity": "subprocess|spawnBin|Bun.spawn([process.execPath, binPath, ...args], { env: binEnv(), stdout: \"ignore\", stderr: \"pipe\", stdin: \"ignore\", timeout: 10_000, killSignal: \"SIGKILL\", })|0",
-      "package_owner": "@clarvis/server",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/server/tests/architecture/bin-bind-gate.test.ts",
-      "identity": "timer|readUntilSettled|setTimeout(() => resolve(false), 5_000)|0",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/server/tests/architecture/product-version.test.ts",
-      "identity": "subprocess|describe:server CLI product version/it:reports the root-owned version and exits before boot|Bun.spawn([process.execPath, binPath, \"--version\"], { env: { ...globalThis.process.env, CLARVIS_LOG_LEVEL: \"silent\" }, stdout: \"pipe\", stderr: \"pipe\", })|0",
-      "package_owner": "@clarvis/server",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/tasks/tests/component/capability.test.ts",
-      "identity": "timer|describe:Tasks agent tools/it:serializes writes from agents sharing one run runtime|setTimeout(resolve, 5)|0",
-      "package_owner": "@clarvis/tasks",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "subprocess",
       "file": "packages/tools/tests/contract/grep-parity.test.ts",
       "identity": "subprocess|module|spawnSync(\"rg\", [\"--version\"], { stdio: \"ignore\" })|0",
       "package_owner": "@clarvis/tools",
@@ -876,6 +772,14 @@
     {
       "mechanism": "subprocess",
       "file": "packages/tools/tests/integration/sandbox.test.ts",
+      "identity": "subprocess|module|spawnSync(spec.file, spec.args, { ...spec.options, encoding: \"utf8\", timeout: 10_000, })|0",
+      "package_owner": "@clarvis/tools",
+      "classification": "boundary-canary",
+      "reason": "A real Bubblewrap process must reject classified writes while an ordinary workspace write succeeds."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/tools/tests/integration/sandbox.test.ts",
       "identity": "subprocess|module|spawnSync(spec.file, spec.args, spec.options)|0",
       "package_owner": "@clarvis/tools",
       "classification": "boundary-canary",
@@ -900,7 +804,7 @@
     {
       "mechanism": "subprocess",
       "file": "packages/trace/tests/integration/json-trace-store.test.ts",
-      "identity": "subprocess|describe:json-trace-store — delete/it:rejects a cross-process insert while the new generation is still being deleted|Bun.spawn( [process.execPath, DELETE_INSERT_WORKER, dir, readyPath, startPath, resultPath], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
+      "identity": "subprocess|describe:json-trace-store \u2014 delete/it:rejects a cross-process insert while the new generation is still being deleted|Bun.spawn( [process.execPath, DELETE_INSERT_WORKER, dir, readyPath, startPath, resultPath], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
       "package_owner": "@clarvis/trace",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
@@ -932,18 +836,10 @@
     {
       "mechanism": "subprocess",
       "file": "tooling/tests/unit/distribution-workflows.test.ts",
-      "identity": "subprocess|test:distribution workflows separate candidate and stable publication and gate real engine qualification|Bun.spawnSync([\"bash\", \"-n\"], { stdin: Buffer.from(step.run), stderr: \"pipe\", })|0",
+      "identity": "subprocess|test:candidate and stable workflows publish source tags and verified installers|Bun.spawnSync([\"bash\", \"-n\"], { stdin: Buffer.from(step.run), stderr: \"pipe\", })|0",
       "package_owner": "tooling",
       "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "tooling/tests/unit/distribution-workflows.test.ts",
-      "identity": "subprocess|expectWorkflowJsonWriters|Bun.spawnSync([\"bun\", \"-e\", snippet], { cwd: directory, env, stderr: \"pipe\" })|0",
-      "package_owner": "tooling",
-      "classification": "boundary-canary",
-      "reason": "Executes each real workflow Bun snippet so shell and JavaScript escaping must produce parseable JSON at the physical process boundary."
+      "reason": "Bash syntax checking runs each workflow script through the real shell parser."
     },
     {
       "mechanism": "subprocess",

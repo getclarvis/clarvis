@@ -28,7 +28,6 @@ const HELLO = {
     memory: false,
     skills: false,
     agent_tools: true,
-    tasks: false,
   },
   project: { id: "prj_test", label: "Test project" },
   workspace: {
@@ -333,7 +332,7 @@ describe("wire handshake", () => {
         ...HELLO,
         capabilities: {
           ...HELLO.capabilities,
-          runtime: { kind: "container", engine: "podman", generation: "forged" },
+          runtime: { kind: "unknown" },
         },
       },
     ]) {
@@ -346,37 +345,18 @@ describe("wire handshake", () => {
     }
   });
 
-  it("preserves a complete effective runtime status", async () => {
-    for (const engine of ["podman", "docker"] as const) {
+  it("preserves native Host and Sandbox runtime status", async () => {
+    for (const isolation of ["host", "sandbox"] as const) {
       const transport = new FakeTransport();
       transport.helloResult = {
         ...HELLO,
         capabilities: {
           ...HELLO.capabilities,
-          runtime: {
-            kind: "container",
-            generation: "00000000-0000-4000-8000-000000000001",
-            engine,
-            engine_version: "5.4.0",
-            host_platform: "linux",
-            guest_platform: "linux",
-            image_digest: `sha256:${"a".repeat(64)}`,
-            artifact_digest: `sha256:${"b".repeat(64)}`,
-            base_abi: "clarvis-linux-glibc-v1",
-            broker_version: 1,
-            channel_version: 1,
-            state_namespace: "c".repeat(64),
-            network: "none",
-            lifecycle: "ready",
-          },
+          runtime: { kind: "native", host_platform: "linux", isolation, lifecycle: "ready" },
         },
       };
       const client = await connectKernelClient(transport);
-      expect(client.capabilities.runtime).toMatchObject({
-        kind: "container",
-        engine,
-        guest_platform: "linux",
-      });
+      expect(client.capabilities.runtime).toMatchObject({ kind: "native", isolation });
       await client.close();
     }
   });
@@ -512,7 +492,7 @@ describe("transport operation descriptors", () => {
 });
 
 describe("remote run codec", () => {
-  it("preserves the terminal shell auto-guard verdict", () => {
+  it("rejects removed command-review metadata on terminal tool calls", () => {
     const event = {
       type: "tool_call",
       at: 12,
@@ -521,16 +501,9 @@ describe("remote run codec", () => {
       tool: "shell",
       server: "",
       ok: true,
-      guard: { mode: "auto", outcome: "allowed", answerer: "judge" },
     } as const;
     expect(decodeRunEvent(event)).toEqual(event);
-    for (const reviewer_decision of ["allow", "deny", "unsure", "failed"] as const) {
-      const reviewed = { ...event, guard: { ...event.guard, reviewer_decision } };
-      expect(decodeRunEvent(reviewed)).toEqual(reviewed);
-    }
-    expect(
-      decodeRunEvent({ ...event, guard: { ...event.guard, reviewer_decision: "invented" } }),
-    ).toBeNull();
+    expect(decodeRunEvent({ ...event, guard: { mode: "auto", outcome: "allowed" } })).toBeNull();
   });
 
   it("preserves live shell interrupt control and rejects interruption with ok true", () => {
@@ -943,65 +916,6 @@ describe("remote run codec", () => {
     await client.close();
   });
 
-  it("delivers a well-formed guard_confirm detail", async () => {
-    const transport = new FakeTransport();
-    const client = await connectKernelClient(transport);
-    const handle = await client.runs.start({ execution_id: "exec-detail-ok", messages: [] });
-    let seen: unknown;
-    handle.onElicit((request) => {
-      seen = request.detail;
-    });
-
-    transport.emit("run.elicitation", {
-      request: {
-        id: "exec-detail-ok:elicit:0",
-        execution_id: "exec-detail-ok",
-        kind: "guard_confirm",
-        prompt: "Approve?",
-        schema: { type: "object", properties: {} },
-        detail: { command: "rm -rf /", cwd: "/ws", reason: "destructive", warning: "undecidable" },
-      },
-    });
-
-    expect(seen).toEqual({
-      command: "rm -rf /",
-      cwd: "/ws",
-      reason: "destructive",
-      warning: "undecidable",
-    });
-    expect(transport.closeCount).toBe(0);
-    await client.close();
-  });
-
-  it.each([
-    ["not a record", "rm -rf /"],
-    ["a missing command", { cwd: "/ws", reason: "destructive" }],
-    ["a non-string command", { command: 12, cwd: "/ws", reason: "destructive" }],
-    ["a non-string warning", { command: "ls", cwd: "/ws", reason: "x", warning: 7 }],
-    ["an unknown key", { command: "ls", cwd: "/ws", reason: "x", extra: true }],
-  ])("closes fail-closed on a guard_confirm detail with %s", async (_label, detail) => {
-    const transport = new FakeTransport();
-    const client = await connectKernelClient(transport);
-    const handle = await client.runs.start({ execution_id: "exec-detail-bad", messages: [] });
-
-    transport.emit("run.elicitation", {
-      request: {
-        id: "exec-detail-bad:elicit:0",
-        execution_id: "exec-detail-bad",
-        kind: "guard_confirm",
-        prompt: "Approve?",
-        detail,
-      },
-    });
-
-    expect(await handle.done).toMatchObject({
-      status: "failed",
-      error: { code: "unavailable", message: expect.stringContaining("protocol violation") },
-    });
-    expect(transport.closeCount).toBe(1);
-    await client.close();
-  });
-
   it("leaves an unknown elicitation kind and an opaque schema alone", async () => {
     const transport = new FakeTransport();
     const client = await connectKernelClient(transport);
@@ -1145,45 +1059,5 @@ describe("remote run codec", () => {
     await Promise.resolve();
     expect(saturatedTransport.requests.some(({ method }) => method === "runs.cancel")).toBeTrue();
     await saturatedClient.close();
-  });
-});
-
-describe("remote Tasks codec", () => {
-  it("preserves a create request id and its pinned provider selection", async () => {
-    const transport = new FakeTransport();
-    transport.onRequest = () => ({});
-    const client = await connectKernelClient(transport);
-    const input = {
-      request_id: "create-stable",
-      provider_key: "tasks:mcp:v2:sha256:provider-a",
-      container_id: "CLAR",
-      title: "Pinned create",
-    };
-
-    await client.tasks.create(input);
-
-    expect(transport.requests.at(-1)).toEqual({
-      method: "tasks.create",
-      params: { input },
-    });
-    await client.close();
-  });
-
-  it("preserves opaque cursors and forwards cancellation as transport metadata", async () => {
-    const transport = new FakeTransport();
-    transport.onRequest = (method) =>
-      method === OPERATIONS.tasks.search.method ? { items: [], next_cursor: "opaque==" } : {};
-    const client = await connectKernelClient(transport);
-    const controller = new AbortController();
-
-    await expect(
-      client.tasks.search({ cursor: "opaque==", limit: 25 }, { signal: controller.signal }),
-    ).resolves.toEqual({ items: [], next_cursor: "opaque==" });
-    expect(transport.requests.at(-1)).toEqual({
-      method: "tasks.search",
-      params: { input: { cursor: "opaque==", limit: 25 } },
-      options: { signal: controller.signal },
-    });
-    await client.close();
   });
 });

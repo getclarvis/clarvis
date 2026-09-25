@@ -14,7 +14,7 @@ import { createFilePlanRepository } from "@clarvis/plan";
  * @remarks The rule this file exists to hold: a working tree carries what a
  * human authors or reads, plus the explicitly ignored Git-owned checkout root,
  * and nothing else. `settings.json`, `agents/`,
- * `skills/`, `workflows/`, `plugins/`, `extension-profiles/` and `guard-judge.md` are a workspace's own
+ * `workflows/` and `extension-profiles/` are a workspace's own
  * configuration and belong in its history; `plans/` and `memory/` are generated
  * Markdown the user is expected to open mid-run. Every byte of machinery —
  * monitor sidecars, output spills, prompt history, the memory wiki's journal and
@@ -36,12 +36,9 @@ const ALLOWED_TOP_LEVEL = new Set([
   ".gitignore",
   "settings.json",
   "agents",
-  "skills",
   "workflows",
-  "plugins",
   "extension-profiles",
   "shared-agent.md",
-  "guard-judge.md",
   "plans",
   "memory",
   "owners",

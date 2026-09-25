@@ -16,7 +16,6 @@ import { join, relative, sep } from "node:path";
 import { z } from "zod";
 import {
   acquireLocalLeaseSync,
-  configurationRoots,
   DIR_MODE,
   globalPaths,
   workspacePaths,
@@ -74,19 +73,6 @@ import type {
 import { pluginSkillScanRoots, resolvePluginManifest } from "../plugins/plugin-manifest.ts";
 import { pluginDataDir } from "../plugins/plugin-runtime.ts";
 
-import {
-  prepareConfigurationFileMutation,
-  type ConfigurationMutationRequest,
-} from "../configuration/files.ts";
-import type { ConfigurationMutationFacts } from "../guard/effects/configuration.ts";
-
-/** Host-prepared membership delta reviewed together with a newly authored skill. */
-export interface PreparedSkillInclusion {
-  facts: readonly ConfigurationMutationFacts[];
-  review: unknown;
-  apply<T>(write: () => T): T;
-}
-
 const BUILTIN_REF: ExtensionProfileRef = { scope: "builtin", name: "default" };
 const MAX_EXTENSION_PROFILE_BYTES = 1024 * 1024;
 const MAX_EXTENSION_PROFILES_PER_SCOPE = 128;
@@ -104,14 +90,14 @@ const nameSchema = z.string().regex(NAME_RE, "must be a safe Extension Profile i
 const pluginRefSchema = z
   .object({
     scope: z.enum(["global", "workspace"]),
-    source: z.enum(["agents", "clarvis"]),
+    source: z.literal("agents"),
     name: nameSchema,
   })
   .strict();
 const skillRefSchema = z
   .object({
     scope: z.enum(["user", "workspace"]),
-    source: z.enum(["agents", "clarvis"]),
+    source: z.literal("agents"),
     name: nameSchema,
   })
   .strict();
@@ -572,9 +558,6 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
   skillAvailable(skill: SkillInfo): boolean;
   onSkillRootsChanged(listener: (retainOnFailure?: boolean) => void): () => void;
   requestSkillRefresh(): void;
-  prepareSkillInclusion(
-    ref: ExtensionProfileSkillRef | readonly ExtensionProfileSkillRef[],
-  ): PreparedSkillInclusion | undefined;
   flushSkillRefresh(): void;
   runRef(): ExtensionProfileRunRef;
   workspaceTrustSurface(options?: { refresh?: boolean }): unknown;
@@ -855,7 +838,7 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
           if (info.name === SYSTEM_DOCS_NAME || parts.includes(".system")) continue;
           const ref: ExtensionProfileSkillRef = {
             scope: root.scope ?? "workspace",
-            source: root.source === "agents" ? "agents" : "clarvis",
+            source: "agents",
             name: info.name,
           };
           out.push({
@@ -1040,7 +1023,6 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
                 .map((name) => `${plugin.name}:${name}`)
                 .sort(),
         hooks: { total: hooks.length },
-        capability_executables: Object.keys(manifest?.capabilityExecutables ?? {}).sort(),
         ...(resolved.error === undefined ? {} : { error: resolved.error }),
       };
       return { view };
@@ -1157,7 +1139,6 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
               skills: snapshot.skills,
               mcp_servers: snapshot.mcpServers,
               hooks: snapshot.hooks,
-              capability_executables: snapshot.capabilityExecutables,
             };
           }
           const installed = unresolvedInstalled.get(pluginRefId(ref));
@@ -1176,7 +1157,6 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
               skills: [],
               mcp_servers: [],
               hooks: { total: 0 },
-              capability_executables: [],
               error: "not installed",
             };
           }
@@ -2206,157 +2186,6 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
     );
   };
 
-  /** Prepare a skill-only membership change without applying or approving any plugin contribution. */
-  const prepareSkillInclusion = (
-    raw: ExtensionProfileSkillRef | readonly ExtensionProfileSkillRef[],
-  ): PreparedSkillInclusion | undefined => {
-    const refs = (Array.isArray(raw) ? raw : [raw]).map((ref) => skillRefSchema.parse(ref));
-    if (refs.length === 0 || refs.length > 128)
-      throw kernelError("invalid_request", "Invalid skill inclusion batch");
-    const current = authoredProfile ?? pinned;
-    if (current === undefined)
-      throw kernelError("unavailable", "Extension Profile has not been resolved");
-    if (current.ref.scope === "builtin") return undefined;
-    const source = readDefinition(current.ref);
-    if (source.definition === undefined || source.revision !== current.definition_revision)
-      throw kernelError(
-        "conflict",
-        "The active Extension Profile changed; retry after its catalog refresh",
-      );
-    const additions = refs.filter(
-      (ref, index) =>
-        !source.definition!.skills.some(
-          (skill) =>
-            skill.scope === ref.scope && skill.source === ref.source && skill.name === ref.name,
-        ) &&
-        refs.findIndex(
-          (skill) =>
-            skill.scope === ref.scope && skill.source === ref.source && skill.name === ref.name,
-        ) === index,
-    );
-    if (additions.length === 0) return undefined;
-    if (options.cliSelection !== undefined && current.ref.scope !== "workspace")
-      throw kernelError(
-        "conflict",
-        "The command-line Extension Profile cannot include a local skill; select a workspace profile for this operation",
-      );
-    const target: { scope: Scope; name: string } =
-      current.ref.scope === "workspace"
-        ? { scope: "workspace", name: current.ref.name }
-        : {
-            scope: "workspace",
-            name: `local-${current.ref.name.slice(0, 32)}-${randomUUID().slice(0, 8)}`,
-          };
-    const definition = {
-      ...source.definition,
-      skills: [...source.definition.skills, ...additions],
-    };
-    const proposed = compositionDefinition({
-      ref: target,
-      definition,
-      expected_revision: null,
-      selection_scope: "workspace",
-    });
-    const replacing = current.ref.scope === "workspace";
-    const expected = replacing ? source.revision! : null;
-    const selections = selectionRevisions();
-    const beforeSelection = readBounded(
-      selectionPath("workspace"),
-      "workspace Extension Profile selection",
-    );
-    if (!replacing && beforeSelection.raw === undefined && beforeSelection.missing !== true)
-      throw kernelError("unavailable", "The workspace selection could not be captured");
-    const selectionContent = `${JSON.stringify({ schema_version: 1, extension_profile: target }, null, 2)}\n`;
-    const roots = configurationRoots({
-      workspaceRoot: options.workspaceRoot,
-      globalDir: options.globalDir,
-      home: options.home,
-    });
-    const profileWrite: ConfigurationMutationRequest = {
-      operation: "write",
-      root: "workspace_clarvis",
-      path: `extension-profiles/${target.name}.json`,
-      content: proposed.serialized,
-      expected_revision: expected?.slice(7) ?? null,
-    };
-    const preparedProfile = prepareConfigurationFileMutation(roots, profileWrite);
-    const profileFact = preparedProfile.facts;
-    const facts: ConfigurationMutationFacts[] = [
-      { ...profileFact, fieldClass: "extension_profile.skills" },
-    ];
-    if (!replacing)
-      facts.push({
-        canonicalPath: selectionPath("workspace"),
-        root: "workspace_clarvis",
-        expectedRevision: beforeSelection.revision?.slice(7) ?? null,
-        nextRevision: documentRevision(Buffer.from(selectionContent)).slice(7),
-        bytes: Buffer.byteLength(selectionContent),
-        operation: "write",
-        fieldClass: "extension_profile.selection",
-        surface: "operational",
-      });
-    return {
-      facts,
-      review: {
-        operation: "include_new_skill",
-        skills: additions,
-        profile: target,
-        previous_profile: current.ref,
-        definition,
-        selection_scope: "workspace",
-      },
-      apply(write) {
-        return withDefinitionMutation(target, expected, (beforeDefinition, _path) =>
-          underSelectionLeases(["global", "workspace"], () => {
-            const now = selectionRevisions();
-            if (
-              now.global !== selections.global ||
-              now.workspace !== selections.workspace ||
-              readDefinition(current.ref).revision !== source.revision
-            )
-              throw kernelError("conflict", "Extension Profile changed during authoring review");
-            let definitionWritten = false;
-            let selectionWritten = false;
-            try {
-              preparedProfile.commit();
-              definitionWritten = true;
-              if (!replacing) {
-                writeSelection(target, "workspace");
-                selectionWritten = true;
-              }
-              const finish = <T>(result: T): T => {
-                authoredProfile = {
-                  ...current,
-                  id: extensionProfileId(target),
-                  ref: target,
-                  immutable: false,
-                  selection_origin: replacing ? current.selection_origin : "workspace",
-                  definition,
-                  definition_revision: proposed.view.revision,
-                };
-                requestSkillRefresh();
-                return result;
-              };
-              const rollback = (error: unknown): never => {
-                if (selectionWritten) restoreSelection("workspace", beforeSelection);
-                if (definitionWritten) restoreDefinition(target, beforeDefinition);
-                throw error;
-              };
-              const result = write();
-              return result instanceof Promise
-                ? (result.then(finish, rollback) as typeof result)
-                : finish(result);
-            } catch (error) {
-              if (selectionWritten) restoreSelection("workspace", beforeSelection);
-              if (definitionWritten) restoreDefinition(target, beforeDefinition);
-              throw error;
-            }
-          }),
-        );
-      },
-    };
-  };
-
   const service: ExtensionProfileService = {
     list,
     async current() {
@@ -2634,7 +2463,6 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
     skillAvailable,
     onSkillRootsChanged,
     requestSkillRefresh,
-    prepareSkillInclusion,
     flushSkillRefresh,
     runRef() {
       if (pinned === undefined)

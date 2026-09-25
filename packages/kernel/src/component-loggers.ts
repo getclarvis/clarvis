@@ -87,8 +87,7 @@ export function createComponentLoggers(
  *   `info`, or {@link NOOP_LOGGER} when the host has none or audit is off.
  * @remarks Pinned rather than inherited, over the same destination, because
  *   `CLARVIS_LOG_LEVEL=warn` is a legitimate production setting and would
- *   otherwise silence every authentication success, every config reload and
- *   every guard verdict — the records an operator is least able to reconstruct
+ *   otherwise silence every authentication success and config reload — records an operator is least able to reconstruct
  *   after the fact. See `specs/cross-cutting/observability.md` §4.3.
  *
  *   `silent` is the one level it does not override, because `silent` is not a
@@ -96,7 +95,7 @@ export function createComponentLoggers(
  *   boots every kernel at `silent` because its stdout and stderr are a rendered
  *   canvas, and a pino child's level wins over its parent in **both** directions,
  *   so pinning audit at `info` there wrote a raw JSON line over the frame on
- *   every guarded tool call. Audit bypasses a level that would *filter* it, never
+ *   audited event. Audit bypasses a level that would *filter* it, never
  *   a host that cannot receive it.
  */
 export function createAuditLogger(root: Logger | undefined, enabled: boolean): Logger {

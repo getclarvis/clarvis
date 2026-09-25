@@ -60,8 +60,8 @@ const URL_SPAN = /\b(?:[a-z][a-z0-9+.-]*:\/\/|mailto:|data:|urn:)[^\s<>"'`]+/gi;
 const FILE_EXTENSION =
   "(?:jsonl|json|tsx|mts|cts|jsx|mjs|cjs|toml|yaml|yml|mdx|vue|java|ts|js|sh|ps1|md|svg|rs|go|py|cs)";
 const SOURCE_FILE = String.raw`(?:\.{1,2}\/)?(?:[A-Za-z0-9_.@+-]+\/)*[A-Za-z0-9_.@+-]+\.${FILE_EXTENSION}`;
-const ROOT_FILE = String.raw`(?:AGENTS\.md|README\.md|SECURITY\.md|CHANGELOG\.md|package\.json|bunfig\.toml|mise\.toml|bun\.lock|tsconfig(?:\.[A-Za-z0-9_-]+)?\.json|eslint\.config\.base\.js|\.gitattributes|\.gitignore|\.prettierignore|\.dockerignore|Dockerfile|Containerfile|Makefile)`;
-const EXTENSIONLESS_REPOSITORY_PATH = String.raw`(?:\.githooks\/[A-Za-z0-9_.@/+-]+|(?:packages|tooling|third-party)\/(?:[A-Za-z0-9_.@+-]+\/)*(?:Dockerfile|Containerfile|Makefile))`;
+const ROOT_FILE = String.raw`(?:AGENTS\.md|README\.md|SECURITY\.md|CHANGELOG\.md|package\.json|bunfig\.toml|mise\.toml|bun\.lock|tsconfig(?:\.[A-Za-z0-9_-]+)?\.json|eslint\.config\.base\.js|\.gitattributes|\.gitignore|\.prettierignore|Makefile)`;
+const EXTENSIONLESS_REPOSITORY_PATH = String.raw`(?:\.githooks\/[A-Za-z0-9_.@/+-]+|(?:packages|tooling|third-party)\/(?:[A-Za-z0-9_.@+-]+\/)*Makefile)`;
 const REFERENCE_FILE = `(?:${SOURCE_FILE}|${EXTENSIONLESS_REPOSITORY_PATH}|${ROOT_FILE})`;
 const LINE_QUALIFIED_REFERENCE = new RegExp(
   `(?<![A-Za-z0-9_./:@+-])(${REFERENCE_FILE})(?::\\s*\\d+(?:[-\\u2013]\\d+)?(?:\\s*,\\s*:?\\s*\\d+(?:[-\\u2013]\\d+)?)*|#L\\d+(?:-L?\\d+)?)\\b`,

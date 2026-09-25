@@ -46,8 +46,6 @@ export function fixture(
 ) {
   const contexts = new Map<string, ManagedRunContext>();
   const endings = new Map<string, (value: RunResult) => void>();
-  const scopes: string[] = [];
-  const retired: string[] = [];
   const commits: HostedRegistryState[] = [];
   const results: RunResult[] = [];
   const removed: string[] = [];
@@ -61,7 +59,6 @@ export function fixture(
     maxRetainedRuns: overrides.maxRetainedRuns,
     continuationTimeoutMs: overrides.continuationTimeoutMs,
     async prepare(value, authority) {
-      scopes.push(authority.scope);
       await overrides.prepare?.();
       authority.signal.throwIfAborted();
       return {
@@ -76,13 +73,6 @@ export function fixture(
         },
         async start() {
           starts++;
-          const admitted = registry.operatorAuthorityFor({
-            owner: "owner",
-            executionId: value.params.execution_id,
-          });
-          admitted?.signal?.addEventListener("abort", () => retired.push(authority.scope), {
-            once: true,
-          });
           const handle = createManagedRun({
             executionId: value.params.execution_id,
             execute(context) {
@@ -142,8 +132,6 @@ export function fixture(
     registry,
     contexts,
     endings,
-    scopes,
-    retired,
     commits,
     results,
     removed,

@@ -49,8 +49,7 @@ function asObject(value: unknown): object {
  * @remarks The supervision kinds are engine-internal on purpose: they exist so a
  *   run's own trace explains what a parent did to its children, and no wire
  *   {@link TraceEvent} stands for them. Minting one would propagate through
- *   `@clarvis/protocol`, `@clarvis/kernel`, `@clarvis/code` and
- *   `@clarvis/server`'s exhaustive event view — which is exactly the reach the
+ *   `@clarvis/protocol`, `@clarvis/kernel` and `@clarvis/code` — the reach the
  *   agent-supervision work leaves for the later human-facing surface.
  */
 export function mapEntry(
@@ -164,7 +163,6 @@ function mapEntryRaw(
       if (d.call_id !== undefined) event.call_id = d.call_id;
       if (d.diff !== undefined) event.diff = d.diff;
       if (d.tool_evidence !== undefined) event.tool_evidence = d.tool_evidence;
-      if (d.guard !== undefined) event.guard = d.guard;
       if (d.interruption !== undefined) event.interruption = d.interruption;
       if (d.control !== undefined) event.control = d.control;
       return event;

@@ -8,7 +8,7 @@
 import type { Scope } from "./common.ts";
 
 /** Filesystem convention that owns one installed plugin. */
-export type PluginSource = "agents" | "clarvis";
+export type PluginSource = "agents";
 
 /** Exact identity of one installed plugin across scope and filesystem convention. */
 export interface PluginRef {
@@ -41,14 +41,6 @@ export type PluginInstallSource =
       expected_name?: string;
     };
 
-/** One external executable a plugin offers to a named capability. */
-export interface PluginCapabilityExecutable {
-  capability: string;
-  command: string;
-  args: string[];
-  platform_override: boolean;
-}
-
 /** What a plugin contributes, classified for display. */
 export interface PluginContributions {
   agents: string[];
@@ -58,12 +50,6 @@ export interface PluginContributions {
   servers: string[];
   /** Count of hook entries (not their names); the concrete commands are in {@link executables}. */
   hooks: number;
-  /** Declared language-neutral capability services. */
-  capability_executables: PluginCapabilityExecutable[];
-  /** Trusted per-skill Plans policy declared by this plugin, for operator display. */
-  capability_run_policies?: {
-    plans?: { skills: Record<string, "off" | "on" | "review"> };
-  };
   /**
    * Concrete commands this plugin would run — hook commands and MCP stdio/url
    * specs, pre-formatted for display — so the plugin view shows exactly what
@@ -83,7 +69,7 @@ export interface PluginAuthor {
 export interface PluginView {
   name: string;
   scope: Scope;
-  /** Shared `.agents` inventory or Clarvis-native `.clarvis` inventory. */
+  /** Shared `.agents` inventory. */
   source: PluginSource;
   /** Absolute install directory (display + "open" affordance). */
   dir: string;

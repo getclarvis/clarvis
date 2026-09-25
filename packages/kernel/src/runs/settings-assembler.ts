@@ -19,15 +19,12 @@ import { resolveStoreSharedPrompt, stampedSharedPrompt } from "../config/shared-
 import { dollarSkillSeeds, userMessagesText } from "../skills/dollar-mentions.ts";
 import { renderSkillPrompt, skillEntryAgent } from "../skills/render-skill-prompt.ts";
 import { protoMessagesToEngine } from "./map-message.ts";
-import { guardParksOnHuman } from "../guard/resolver.ts";
 import type { RunRequestAssembler } from "./run-service.ts";
-import { captureRunInstructions } from "./instruction-snapshot.ts";
 import type { PlansMode } from "@clarvis/protocol";
 
 /** The subset of merged config settings this assembler reads when building a run
  * request; deliberately loose, since the config store owns the full schema. */
 interface EngineSettings {
-  effect_review?: { model?: string; on_unsure?: "ask" | "deny" };
   default_model?: string;
   default_vision_model?: string;
   default_reasoning_effort?: string;
@@ -36,8 +33,6 @@ interface EngineSettings {
   budget?: unknown;
   plans?: unknown;
   agents?: unknown;
-  /** Read only to decide whether the run parks on a human for guard confirmations. */
-  guard?: Parameters<typeof guardParksOnHuman>[1];
 }
 
 /** Defaults applied when agent frontmatter or merged settings omit model/limits/entry agent. */
@@ -438,7 +433,6 @@ export function createSettingsRunAssembler(
     const settings = store.readSettings();
     const merged = settings.merged as unknown as EngineSettings;
     requireCatalogModel(merged.default_vision_model, options.modelExecutionResolver);
-    requireCatalogModel(params.guard_judge?.model, options.modelExecutionResolver);
     const contexts = (["global", "workspace"] as const).flatMap((scope) => {
       const context = store.readContext(scope);
       return context === null ? [] : [context];
@@ -504,86 +498,67 @@ export function createSettingsRunAssembler(
     const agentBudget =
       typeof entryBudget === "object" && entryBudget !== null ? entryBudget : undefined;
 
-    return captureRunInstructions(
-      {
-        messages: [
-          ...protoMessagesToEngine(params.messages),
-          ...mentionSeeds.map((content) => ({ role: "user" as const, content })),
-          ...(skillRun !== undefined ? [{ role: "user" as const, content: skillRun.seed }] : []),
-        ],
-        providers: options.modelExecutionResolver === undefined ? (merged.providers ?? []) : [],
-        servers,
-        profiles,
-        entry: agentName,
-        shared_prompt: sharedPrompt,
-        budget: completeBudget(
-          (agentBudget ?? merged.budget) as Record<string, unknown> | undefined,
-          fallbackBudget,
-        ),
-        ...(typeof merged.default_vision_model === "string"
-          ? { vision_model: merged.default_vision_model }
-          : {}),
-        ...(params.execution_id !== undefined ? { execution_id: params.execution_id } : {}),
-        ...(params.continue_from !== undefined ? { continue_from: params.continue_from } : {}),
-        ...(params.session_id !== undefined ? { session_id: params.session_id } : {}),
-        ...(params.agent_instance_id !== undefined
-          ? { agent_instance_id: params.agent_instance_id }
-          : {}),
-        ...(params.prompt_cache_ttl !== undefined
-          ? { prompt_cache_ttl: params.prompt_cache_ttl }
-          : guardParksOnHuman(
-                params.guard_mode,
-                merged.guard,
-                reviewerResolves(
-                  params.guard_judge?.model ??
-                    merged.effect_review?.model ??
-                    merged.default_model ??
-                    options.defaultModel,
-                  merged.providers,
-                  options.modelExecutionResolver,
-                ),
-                params.guard_judge?.on_unsure ?? merged.effect_review?.on_unsure,
-              )
-            ? { prompt_cache_ttl: "1h" as const }
-            : {}),
-        ...(params.output_schema !== undefined ? { output_schema: params.output_schema } : {}),
-        ...(params.guard_mode !== undefined ? { guard_mode: params.guard_mode } : {}),
-        ...(params.guard_judge !== undefined ? { guard_judge: params.guard_judge } : {}),
-        ...(params.skill !== undefined && skillRun !== undefined
+    return {
+      messages: [
+        ...protoMessagesToEngine(params.messages),
+        ...mentionSeeds.map((content) => ({ role: "user" as const, content })),
+        ...(skillRun !== undefined ? [{ role: "user" as const, content: skillRun.seed }] : []),
+      ],
+      providers: options.modelExecutionResolver === undefined ? (merged.providers ?? []) : [],
+      servers,
+      profiles,
+      entry: agentName,
+      shared_prompt: sharedPrompt,
+      budget: completeBudget(
+        (agentBudget ?? merged.budget) as Record<string, unknown> | undefined,
+        fallbackBudget,
+      ),
+      ...(typeof merged.default_vision_model === "string"
+        ? { vision_model: merged.default_vision_model }
+        : {}),
+      ...(params.execution_id !== undefined ? { execution_id: params.execution_id } : {}),
+      ...(params.continue_from !== undefined ? { continue_from: params.continue_from } : {}),
+      ...(params.session_id !== undefined ? { session_id: params.session_id } : {}),
+      ...(params.agent_instance_id !== undefined
+        ? { agent_instance_id: params.agent_instance_id }
+        : {}),
+      ...(params.prompt_cache_ttl !== undefined
+        ? { prompt_cache_ttl: params.prompt_cache_ttl }
+        : {}),
+      ...(params.output_schema !== undefined ? { output_schema: params.output_schema } : {}),
+      ...(params.skill !== undefined && skillRun !== undefined
+        ? {
+            hook_user_prompt_expansion: {
+              command_name: hookCommandName(params.skill, skillRun.source),
+            },
+          }
+        : {}),
+      ...(params.memory !== undefined ? { memory: params.memory } : {}),
+      ...(params.task !== undefined ? { task: params.task } : {}),
+      ...(params.plans !== undefined
+        ? { plans: params.plans }
+        : skillPlansMode !== undefined
           ? {
-              hook_user_prompt_expansion: {
-                command_name: hookCommandName(params.skill, skillRun.source),
+              plans: {
+                ...plansBlockToParam(
+                  typeof merged.plans === "object" && merged.plans !== null
+                    ? (merged.plans as Record<string, unknown>)
+                    : {},
+                ),
+                mode: skillPlansMode,
               },
             }
-          : {}),
-        ...(params.memory !== undefined ? { memory: params.memory } : {}),
-        ...(params.task !== undefined ? { task: params.task } : {}),
-        ...(params.plans !== undefined
-          ? { plans: params.plans }
-          : skillPlansMode !== undefined
-            ? {
-                plans: {
-                  ...plansBlockToParam(
-                    typeof merged.plans === "object" && merged.plans !== null
-                      ? (merged.plans as Record<string, unknown>)
-                      : {},
-                  ),
-                  mode: skillPlansMode,
-                },
-              }
-            : typeof merged.plans === "object" && merged.plans !== null
-              ? { plans: plansBlockToParam(merged.plans as Record<string, unknown>) }
-              : {}),
-        ...(typeof merged.agents === "object" && merged.agents !== null
-          ? { agents: agentsBlockToParam(merged.agents as Record<string, unknown>) }
-          : {}),
-      },
-      contexts,
-    );
+          : typeof merged.plans === "object" && merged.plans !== null
+            ? { plans: plansBlockToParam(merged.plans as Record<string, unknown>) }
+            : {}),
+      ...(typeof merged.agents === "object" && merged.agents !== null
+        ? { agents: agentsBlockToParam(merged.agents as Record<string, unknown>) }
+        : {}),
+    };
   };
 }
 
-/** Prompt presence is independent of whether the configured reviewer provider can run. */
+/** Check whether a model is present in the execution catalog. */
 function reviewerResolves(
   model: string | undefined,
   providers: unknown[] | undefined,

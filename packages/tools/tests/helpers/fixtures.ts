@@ -31,8 +31,8 @@ import {
 import { NOOP_TOOLS_LOGGER } from "../../src/lib/log.ts";
 import { contentText, type ContentPart, type ToolResult } from "../../src/tools/content.ts";
 import { workspaceStatePaths } from "@clarvis/paths";
-import type { GuardReview } from "../../src/guard/types.ts";
 import { ExecutionSessionManager } from "../../src/lib/execution-session.ts";
+import { resolveFilesystemPolicy } from "../../src/sandbox.ts";
 
 const fixtureGlobals = new Map<string, string>();
 
@@ -74,7 +74,7 @@ export function fixtureStatePaths(root: string) {
 
 export function makeConfig(root: string, overrides: Partial<ServerConfig> = {}): ServerConfig {
   const statePaths = overrides.statePaths ?? fixtureStatePaths(root);
-  return {
+  const base = {
     workspaceRoot: root,
     logger: NOOP_TOOLS_LOGGER,
     maxOutputBytes: DEFAULT_MAX_OUTPUT_BYTES,
@@ -92,7 +92,6 @@ export function makeConfig(root: string, overrides: Partial<ServerConfig> = {}):
     ripgrepAvailable: false,
     skillExecutionRoots: [],
     readOnly: false,
-    confineToWorkspace: true,
     stateRoot: statePaths.root,
     statePaths,
     temporaryRoots: [],
@@ -100,6 +99,19 @@ export function makeConfig(root: string, overrides: Partial<ServerConfig> = {}):
     sessionManager: new ExecutionSessionManager(),
     gitMetadataPaths: [],
     ...overrides,
+  };
+  return {
+    ...base,
+    filesystemPolicy:
+      overrides.filesystemPolicy ??
+      resolveFilesystemPolicy({
+        runId: "test-run",
+        placement: base.sandbox === undefined ? "host" : "sandbox",
+        workspaceRoot: base.workspaceRoot,
+        temporaryRoots: base.temporaryRoots,
+        gitMetadataPaths: base.gitMetadataPaths,
+        ...(base.sandbox === undefined ? {} : { sandbox: base.sandbox }),
+      }),
   };
 }
 
@@ -112,7 +124,6 @@ export interface CallResult {
   content: ContentPart[];
 
   meta?: Record<string, unknown>;
-  guard?: GuardReview;
 }
 
 export function resultText(content: ContentPart[]): string {
@@ -143,7 +154,6 @@ export async function callTool(
     json,
     content: r.content,
     ...(r.meta ? { meta: r.meta } : {}),
-    ...(r.guard ? { guard: r.guard } : {}),
   };
 }
 

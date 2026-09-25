@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
-import { workspacePaths } from "@clarvis/paths";
 import {
   makeWorkspace,
   cleanup,
@@ -50,40 +49,6 @@ describe("move", () => {
       await callTool("move", { source: "s.sh", destination: "bin/s.sh" }, config);
       expect(mode(root, "bin/s.sh")).toBe(0o755);
     });
-
-    it.skipIf(!modeBitsEnforced)(
-      "keeps a reviewed configuration destination private across overwrite",
-      async () => {
-        write(root, "source.md", "Initial.\n");
-        chmod(root, "source.md", 0o644);
-        const destination = workspacePaths(root).sharedAgentPromptFile;
-        let reviews = 0;
-        const reviewed = makeConfig(root, {
-          reviewMutation: async (operations, commit) => {
-            reviews++;
-            expect(operations).toMatchObject([
-              { type: "rename", path: destination, mode: 0o600, dirMode: 0o700 },
-            ]);
-            await commit();
-          },
-        });
-        const created = await callTool("move", { source: "source.md", destination }, reviewed);
-        expect(created.isError).toBe(false);
-        expect(mode(root, path.relative(root, destination))).toBe(0o600);
-        expect(mode(root, path.relative(root, workspacePaths(root).clarvisDir))).toBe(0o700);
-        write(root, "replacement.md", "Replacement.\n");
-        chmod(root, "replacement.md", 0o644);
-        const replaced = await callTool(
-          "move",
-          { source: "replacement.md", destination, overwrite: true },
-          reviewed,
-        );
-        expect(replaced.isError).toBe(false);
-        expect(read(root, path.relative(root, destination))).toBe("Replacement.\n");
-        expect(mode(root, path.relative(root, destination))).toBe(0o600);
-        expect(reviews).toBe(2);
-      },
-    );
   });
 
   describe("overwrite", () => {
@@ -180,10 +145,16 @@ describe("move", () => {
       },
     );
 
-    it("rejects a path escaping the workspace with path_escape", async () => {
+    it("moves outside the workspace when Host OS access permits", async () => {
       write(root, "a.txt", "x");
-      const r = await callTool("move", { source: "a.txt", destination: "../b.txt" }, config);
-      expect(r.json.error).toBe("path_escape");
+      const destination = path.join(root, "..", `${path.basename(root)}-move.txt`);
+      try {
+        const r = await callTool("move", { source: "a.txt", destination }, config);
+        expect(r.isError).toBe(false);
+        expect(readFileSync(destination, "utf8")).toBe("x");
+      } finally {
+        rmSync(destination, { force: true });
+      }
     });
 
     it("ignores out-of-schema extra fields", async () => {

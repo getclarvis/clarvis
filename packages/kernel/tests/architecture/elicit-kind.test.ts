@@ -52,14 +52,13 @@ describe("the plan-review elicit kind has one value across every package", () =>
           lines
             .slice(index, index + 12)
             .join("\n")
-            .includes('"guard_confirm"'),
+            .includes(`"${PLAN_REVIEW_ELICIT_KIND}"`),
       );
       expect(start).toBeGreaterThanOrEqual(0);
       const declaration = lines
         .slice(start, start + 12)
         .join("\n")
         .split(";")[0];
-      expect(declaration).toContain('"guard_confirm"');
       expect(declaration).toContain(`"${PLAN_REVIEW_ELICIT_KIND}"`);
     },
   );

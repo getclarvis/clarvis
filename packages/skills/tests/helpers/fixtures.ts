@@ -25,7 +25,7 @@ export function cleanup(dir: string): void {
 
 export function skillsRoot(base: string, source: "agents" | "clarvis"): string {
   if (source === "agents") return agentsSkillsDirs({ env: {}, home: base, cwd: base }).user;
-  return workspacePaths(base).skillsDir;
+  return path.join(workspacePaths(base).clarvisDir, "skills");
 }
 
 /** The user-scope `.clarvis` skills root, which the global layout nests differently. */

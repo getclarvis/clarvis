@@ -13,6 +13,7 @@ import { join } from "node:path";
 import {
   acquireLocalLeaseSync,
   agentsPluginsDirs,
+  agentsSkillsDirs,
   DIR_MODE,
   globalPaths,
   workspacePaths,
@@ -56,7 +57,7 @@ function definition(
 function pluginRef(
   name: string,
   scope: PluginRef["scope"] = "global",
-  source: PluginRef["source"] = "clarvis",
+  source: PluginRef["source"] = "agents",
 ): PluginRef {
   return { scope, source, name };
 }
@@ -81,11 +82,13 @@ describe("Extension Profile manager", () => {
   let root: string;
   let globalDir: string;
   let workspaceRoot: string;
+  let home: string;
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "clarvis-extension-profile-"));
     globalDir = join(root, "global");
     workspaceRoot = join(root, "workspace");
+    home = join(root, "home");
     mkdirSync(globalDir, { recursive: true });
     mkdirSync(workspaceRoot, { recursive: true });
   });
@@ -100,10 +103,10 @@ describe("Extension Profile manager", () => {
     return createExtensionProfileManager({
       globalDir,
       workspaceRoot,
-      home: join(root, "home"),
+      home: home,
       pluginContributions: createPluginContributions({
         globalDir,
-        home: join(root, "home"),
+        home: home,
         workspaceRoot,
         ...(logger === undefined ? {} : { logger }),
       }),
@@ -122,10 +125,22 @@ describe("Extension Profile manager", () => {
   }
 
   it("keeps builtin:default virtual, immutable, and exactly qualified", async () => {
-    installPlugin(globalPaths(globalDir).pluginsDir, "same", { version: "1.0.0" });
-    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "same", { version: "2.0.0" });
-    writeSkill(globalPaths(globalDir).skillsDir, "extension-profile-global-skill");
-    writeSkill(workspacePaths(workspaceRoot).skillsDir, "extension-profile-workspace-skill");
+    installPlugin(agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user, "same", {
+      version: "1.0.0",
+    });
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "same",
+      { version: "2.0.0" },
+    );
+    writeSkill(
+      agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user,
+      "extension-profile-global-skill",
+    );
+    writeSkill(
+      agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "extension-profile-workspace-skill",
+    );
     const target = manager();
 
     const current = target.resolveActive([pluginRef("same", "workspace")], TRUSTED);
@@ -171,7 +186,7 @@ describe("Extension Profile manager", () => {
   });
 
   it("activates a configured .agents plugin in builtin:default without a custom Extension Profile", () => {
-    const agents = agentsPluginsDirs({ home: join(root, "home"), cwd: workspaceRoot, env: {} });
+    const agents = agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} });
     installPlugin(agents.user, "portable", { version: "agent-v1" });
     const selected = pluginRef("portable", "global", "agents");
     const target = manager();
@@ -185,32 +200,27 @@ describe("Extension Profile manager", () => {
     expect(target.activePlugins()).toEqual([selected]);
   });
 
-  it("inventories all four scope/source plugin roots independently", async () => {
-    const agents = agentsPluginsDirs({ home: join(root, "home"), cwd: workspaceRoot, env: {} });
-    installPlugin(globalPaths(globalDir).pluginsDir, "global-native");
+  it("inventories global and workspace shared plugin roots independently", async () => {
+    const agents = agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} });
     installPlugin(agents.user, "global-shared");
-    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "workspace-native");
     installPlugin(agents.workspace, "workspace-shared");
 
     const target = manager();
     target.resolveActive([], TRUSTED);
     const inventory = await target.service.inventory();
 
-    expect(inventory.plugins).toHaveLength(4);
+    expect(inventory.plugins).toHaveLength(2);
   });
 
   it("returns every exact plugin and standalone skill origin to the composer", async () => {
-    const agents = agentsPluginsDirs({ home: join(root, "home"), cwd: workspaceRoot, env: {} });
-    installPlugin(globalPaths(globalDir).pluginsDir, "same", { version: "global-clarvis" });
+    const agents = agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} });
     installPlugin(agents.user, "same", { version: "global-agents" });
-    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "same", {
-      version: "workspace-clarvis",
-    });
     installPlugin(agents.workspace, "same", { version: "workspace-agents" });
-    writeSkill(globalPaths(globalDir).skillsDir, "same-skill");
-    writeSkill(join(root, "home", ".agents", "skills"), "same-skill");
-    writeSkill(workspacePaths(workspaceRoot).skillsDir, "same-skill");
-    writeSkill(join(workspaceRoot, ".agents", "skills"), "same-skill");
+    writeSkill(agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user, "same-skill");
+    writeSkill(
+      agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "same-skill",
+    );
     const target = manager();
     target.resolveActive([], TRUSTED);
 
@@ -220,25 +230,24 @@ describe("Extension Profile manager", () => {
       inventory.plugins.map((plugin) => [plugin.ref.scope, plugin.ref.source, plugin.version]),
     ).toEqual([
       ["global", "agents", "global-agents"],
-      ["global", "clarvis", "global-clarvis"],
       ["workspace", "agents", "workspace-agents"],
-      ["workspace", "clarvis", "workspace-clarvis"],
     ]);
     expect(inventory.plugins.every((plugin) => !plugin.active)).toBeTrue();
     expect(inventory.standalone_skills.map((skill) => skill.ref)).toEqual([
       { scope: "user", source: "agents", name: "same-skill" },
       { scope: "workspace", source: "agents", name: "same-skill" },
-      { scope: "user", source: "clarvis", name: "same-skill" },
-      { scope: "workspace", source: "clarvis", name: "same-skill" },
     ]);
     expect(inventory.standalone_skills.every((skill) => skill.found && !skill.active)).toBeTrue();
   });
 
   it("keeps system directories and the reserved product skill out of standalone selection", async () => {
-    const globalSkills = globalPaths(globalDir).skillsDir;
+    const globalSkills = agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user;
     writeSkill(join(globalSkills, ".system"), "clarvis-docs");
     writeSkill(join(globalSkills, ".system"), "other-system");
-    writeSkill(workspacePaths(workspaceRoot).skillsDir, "clarvis-docs");
+    writeSkill(
+      agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "clarvis-docs",
+    );
     writeSkill(globalSkills, "ordinary");
     const target = manager();
     target.resolveActive([], TRUSTED);
@@ -249,8 +258,11 @@ describe("Extension Profile manager", () => {
   });
 
   it("keeps builtin standalone skill shadowing identical to four-root discovery", async () => {
-    writeSkill(globalPaths(globalDir).skillsDir, "same-skill");
-    writeSkill(workspacePaths(workspaceRoot).skillsDir, "same-skill");
+    writeSkill(agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user, "same-skill");
+    writeSkill(
+      agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "same-skill",
+    );
     const target = manager();
 
     const current = target.resolveActive([], TRUSTED);
@@ -258,18 +270,28 @@ describe("Extension Profile manager", () => {
     expect((await target.service.inventory()).standalone_skills).toHaveLength(2);
     expect(current.standalone_skills).toEqual([
       expect.objectContaining({
-        ref: { scope: "workspace", source: "clarvis", name: "same-skill" },
+        ref: { scope: "workspace", source: "agents", name: "same-skill" },
         active: true,
       }),
     ]);
   });
 
   it("uses exact qualified plugin installs and a custom allowlist never inherits default enablement", async () => {
-    const agents = agentsPluginsDirs({ home: join(root, "home"), cwd: workspaceRoot, env: {} });
-    installPlugin(globalPaths(globalDir).pluginsDir, "same", { version: "1.0.0" });
+    const agents = agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} });
+    installPlugin(agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user, "same", {
+      version: "1.0.0",
+    });
     installPlugin(agents.user, "same", { version: "agent-v1" });
-    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "same", { version: "2.0.0" });
-    installPlugin(globalPaths(globalDir).pluginsDir, "default-only", { version: "3.0.0" });
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "same",
+      { version: "2.0.0" },
+    );
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user,
+      "default-only",
+      { version: "3.0.0" },
+    );
     const setup = manager();
     await create(
       setup,
@@ -292,8 +314,10 @@ describe("Extension Profile manager", () => {
   });
 
   it("fails closed when exact installs collide on one plugin namespace", () => {
-    const agents = agentsPluginsDirs({ home: join(root, "home"), cwd: workspaceRoot, env: {} });
-    installPlugin(globalPaths(globalDir).pluginsDir, "same", { version: "clarvis-v1" });
+    const agents = agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} });
+    installPlugin(agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user, "same", {
+      version: "clarvis-v1",
+    });
     installPlugin(agents.user, "same", { version: "agents-v1" });
     const target = manager();
     const current = target.resolveActive(
@@ -313,7 +337,10 @@ describe("Extension Profile manager", () => {
   });
 
   it("degrades an installed plugin whose manifest cannot enter the atomic snapshot", async () => {
-    const pluginDir = join(globalPaths(globalDir).pluginsDir, "broken");
+    const pluginDir = join(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user,
+      "broken",
+    );
     mkdirSync(pluginDir, { recursive: true });
     writeFileSync(join(pluginDir, "plugin.json"), "{ not json");
     const setup = manager();
@@ -345,7 +372,11 @@ describe("Extension Profile manager", () => {
     await create(setup, { scope: "global", name: "minimal" }, definition());
     for (let index = 0; index < 64; index += 1) {
       const name = `inactive-${String(index).padStart(2, "0")}`;
-      const dir = installPlugin(globalPaths(globalDir).pluginsDir, name, { skills: "./skills" });
+      const dir = installPlugin(
+        agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user,
+        name,
+        { skills: "./skills" },
+      );
       writeSkill(join(dir, "skills"), `${name}-skill`);
     }
     const logger = recordingLogger();
@@ -361,12 +392,20 @@ describe("Extension Profile manager", () => {
   });
 
   it("counts installed plugin skills separately from the active atomic contribution", async () => {
-    const activeDir = installPlugin(globalPaths(globalDir).pluginsDir, "active", {
-      skills: "./skills",
-    });
-    const inactiveDir = installPlugin(globalPaths(globalDir).pluginsDir, "inactive", {
-      skills: "./skills",
-    });
+    const activeDir = installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user,
+      "active",
+      {
+        skills: "./skills",
+      },
+    );
+    const inactiveDir = installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user,
+      "inactive",
+      {
+        skills: "./skills",
+      },
+    );
     writeSkill(join(activeDir, "skills"), "active-skill");
     writeSkill(join(inactiveDir, "skills"), "inactive-skill");
     const setup = manager();
@@ -388,8 +427,8 @@ describe("Extension Profile manager", () => {
   });
 
   it("selects only exact standalone skills and passes exact include filters to @clarvis/skills", async () => {
-    writeSkill(globalPaths(globalDir).skillsDir, "only-global");
-    writeSkill(globalPaths(globalDir).skillsDir, "not-selected");
+    writeSkill(agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user, "only-global");
+    writeSkill(agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user, "not-selected");
     writeSkill(join(workspaceRoot, ".agents", "skills"), "only-workspace-agents");
     const setup = manager();
     await create(
@@ -397,7 +436,7 @@ describe("Extension Profile manager", () => {
       { scope: "workspace", name: "skills" },
       definition({
         skills: [
-          { scope: "user", source: "clarvis", name: "only-global" },
+          { scope: "user", source: "agents", name: "only-global" },
           { scope: "workspace", source: "agents", name: "only-workspace-agents" },
         ],
       }),
@@ -412,29 +451,33 @@ describe("Extension Profile manager", () => {
     ]);
     expect(target.skillRoots()).toEqual([
       {
-        path: join(workspaceRoot, ".agents", "skills"),
+        path: agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user,
+        scope: "user",
+        source: "agents",
+        include: ["only-global"],
+      },
+      {
+        path: agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
         scope: "workspace",
         source: "agents",
         include: ["only-workspace-agents"],
-      },
-      {
-        path: globalPaths(globalDir).skillsDir,
-        scope: "user",
-        source: "clarvis",
-        include: ["only-global"],
       },
     ]);
   });
 
   it("degrades on missing inventory without falling back to builtin extensions", async () => {
-    installPlugin(globalPaths(globalDir).pluginsDir, "default-only", {});
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user,
+      "default-only",
+      {},
+    );
     const setup = manager();
     await create(
       setup,
       { scope: "global", name: "missing" },
       definition({
-        plugins: [pluginRef("default-only", "global", "agents")],
-        skills: [{ scope: "user", source: "clarvis", name: "absent" }],
+        plugins: [pluginRef("missing-plugin", "global", "agents")],
+        skills: [{ scope: "user", source: "agents", name: "absent" }],
       }),
     );
     const target = manager("global:missing");
@@ -448,7 +491,11 @@ describe("Extension Profile manager", () => {
   });
 
   it("fails closed for an invalid persisted selection", () => {
-    installPlugin(globalPaths(globalDir).pluginsDir, "default-only", {});
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user,
+      "default-only",
+      {},
+    );
     const selection = workspaceStatePaths(workspaceRoot, {
       env: { CLARVIS_HOME: globalDir },
     }).extensionProfileSelectionFile;
@@ -659,10 +706,10 @@ describe("Extension Profile manager", () => {
   });
 
   it("previews and applies one exact definition plus selection transaction", async () => {
-    installPlugin(globalPaths(globalDir).pluginsDir, "context7", {
+    installPlugin(agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user, "context7", {
       mcpServers: { docs: { command: "context7" } },
     });
-    writeSkill(globalPaths(globalDir).skillsDir, "research");
+    writeSkill(agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user, "research");
     const target = manager();
     const pinned = target.resolveActive([], TRUSTED);
     const input = {
@@ -671,7 +718,7 @@ describe("Extension Profile manager", () => {
       selection_scope: "workspace" as const,
       definition: definition({
         plugins: [pluginRef("context7")],
-        skills: [{ scope: "user" as const, source: "clarvis" as const, name: "research" }],
+        skills: [{ scope: "user" as const, source: "agents" as const, name: "research" }],
       }),
     };
 
@@ -711,9 +758,13 @@ describe("Extension Profile manager", () => {
   });
 
   it("rejects composition drift before writing either definition or selection", async () => {
-    const plugin = installPlugin(globalPaths(globalDir).pluginsDir, "mutable", {
-      version: "one",
-    });
+    const plugin = installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user,
+      "mutable",
+      {
+        version: "one",
+      },
+    );
     const target = manager();
     target.resolveActive([], TRUSTED);
     const input = {
@@ -770,7 +821,7 @@ describe("Extension Profile manager", () => {
   });
 
   it("activates an operator-installed global plugin without approving its workspace Extension Profile", async () => {
-    installPlugin(globalPaths(globalDir).pluginsDir, "context7", {
+    installPlugin(agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user, "context7", {
       mcpServers: { docs: { command: "context7" } },
     });
     const setup = manager();
@@ -807,11 +858,15 @@ describe("Extension Profile manager", () => {
   });
 
   it("fingerprints every repository plugin for one workspace-wide approval before selection", () => {
-    const first = installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner", {
-      version: "one",
-    });
+    const first = installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "runner",
+      {
+        version: "one",
+      },
+    );
     installPlugin(
-      agentsPluginsDirs({ home: join(root, "home"), cwd: workspaceRoot, env: {} }).workspace,
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
       "browser",
       { version: "one" },
     );
@@ -835,12 +890,16 @@ describe("Extension Profile manager", () => {
   });
 
   it("keeps global plugins active while a workspace-owned sibling awaits approval", async () => {
-    installPlugin(globalPaths(globalDir).pluginsDir, "context7", {
+    installPlugin(agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user, "context7", {
       mcpServers: { docs: { command: "context7" } },
     });
-    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner", {
-      mcpServers: { files: { command: "runner" } },
-    });
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "runner",
+      {
+        mcpServers: { files: { command: "runner" } },
+      },
+    );
     const setup = manager();
     const ref = { scope: "workspace" as const, name: "mixed" };
     await create(
@@ -881,7 +940,11 @@ describe("Extension Profile manager", () => {
   });
 
   it("restores definition and selection bytes when composition trust approval fails", async () => {
-    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner", {});
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "runner",
+      {},
+    );
     const target = manager();
     target.bindRuntime({
       readWorkspaceTrust: () => ({ state: "unapproved" }),
@@ -957,7 +1020,11 @@ describe("Extension Profile manager", () => {
   });
 
   it("does not approve an unchanged untrusted workspace target shadowing a global composition", async () => {
-    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner", {});
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "runner",
+      {},
+    );
     const setup = manager();
     const local = { scope: "workspace" as const, name: "local" };
     await create(setup, local, definition({ plugins: [pluginRef("runner", "workspace")] }));
@@ -997,7 +1064,11 @@ describe("Extension Profile manager", () => {
   });
 
   it("previews a global write through workspace selection precedence", async () => {
-    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner", {});
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "runner",
+      {},
+    );
     const setup = manager();
     const operator = { scope: "global" as const, name: "operator" };
     const local = { scope: "workspace" as const, name: "local" };
@@ -1108,9 +1179,13 @@ describe("Extension Profile manager", () => {
   });
 
   it("previews workspace executable trust, records it in the surface, and approves explicitly", async () => {
-    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner", {
-      mcpServers: { files: { command: "runner" } },
-    });
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "runner",
+      {
+        mcpServers: { files: { command: "runner" } },
+      },
+    );
     const setup = manager();
     const ref = { scope: "workspace" as const, name: "project" };
     await create(setup, ref, definition({ plugins: [pluginRef("runner", "workspace")] }));
@@ -1157,9 +1232,13 @@ describe("Extension Profile manager", () => {
   });
 
   it("recomposes selected workspace plugins when trust changes at an idle boundary", async () => {
-    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner", {
-      mcpServers: { files: { command: "runner" } },
-    });
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "runner",
+      {
+        mcpServers: { files: { command: "runner" } },
+      },
+    );
     const setup = manager();
     const ref = { scope: "workspace" as const, name: "project" };
     await create(setup, ref, definition({ plugins: [pluginRef("runner", "workspace")] }));
@@ -1195,18 +1274,17 @@ describe("Extension Profile manager", () => {
     expect(revoked.plugins[0]).toMatchObject({ active: false });
   });
 
-  it("fingerprints resolved companion MCP, plugin skill, and process-file bytes", async () => {
-    const dir = installPlugin(globalPaths(globalDir).pluginsDir, "atlas", {
-      mcpServers: "./.mcp.json",
-      skills: "./skills",
-      capabilityExecutables: {
-        memory: { command: "python3", args: ["./provider.py"] },
+  it("fingerprints resolved companion MCP and plugin skill bytes", async () => {
+    const dir = installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user,
+      "atlas",
+      {
+        mcpServers: "./.mcp.json",
+        skills: "./skills",
       },
-    });
+    );
     const companion = join(dir, ".mcp.json");
-    const provider = join(dir, "provider.py");
     writeFileSync(companion, JSON.stringify({ mcpServers: { docs: { command: "atlas-v1" } } }));
-    writeFileSync(provider, "print('v1')\n");
     writeSkill(join(dir, "skills"), "atlas-guide");
     const setup = manager();
     const ref = { scope: "global" as const, name: "atlas" };
@@ -1220,16 +1298,13 @@ describe("Extension Profile manager", () => {
       "---\nname: atlas-guide\ndescription: changed\n---\n\nUse changed guidance.\n",
     );
     const afterSkill = manager("global:atlas").resolveActive([], TRUSTED);
-    writeFileSync(provider, "print('v2')\n");
-    const afterProcess = manager("global:atlas").resolveActive([], TRUSTED);
 
     expect(afterMcp.fingerprint).not.toBe(before.fingerprint);
     expect(afterSkill.fingerprint).not.toBe(afterMcp.fingerprint);
-    expect(afterProcess.fingerprint).not.toBe(afterSkill.fingerprint);
   });
 
   it("refreshes a drifted standalone skill without withdrawing the captured execution revision", () => {
-    const root = globalPaths(globalDir).skillsDir;
+    const root = agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user;
     writeSkill(root, "research");
     const resource = join(root, "research", "reference.md");
     writeFileSync(resource, "version one\n");
@@ -1273,7 +1348,7 @@ describe("Extension Profile manager", () => {
     });
     target.resolveActive([], TRUSTED);
     target.observeSkillCatalog([]);
-    const root = workspacePaths(workspaceRoot).skillsDir;
+    const root = agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace;
     expect(callbacks.has(root)).toBeTrue();
     let generations = 0;
     target.onSkillRootsChanged(() => {
@@ -1291,6 +1366,34 @@ describe("Extension Profile manager", () => {
     target.close();
   });
 
+  it("retains the prior skill generation when an idle subscriber rejects replacement", async () => {
+    const skillRoot = agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace;
+    writeSkill(skillRoot, "original");
+    const logger = recordingLogger();
+    const callbacks = new Map<string, () => void>();
+    const target = manager(undefined, logger, {
+      watchSkillPath: (path, callback) => {
+        callbacks.set(path, callback);
+        return { close: () => callbacks.delete(path) };
+      },
+    });
+    const before = target.resolveActive([], TRUSTED);
+    const skills = createAgentSkills({ workspace: workspaceRoot, roots: target.skillRoots() });
+    target.observeSkillCatalog(
+      skills.listSkills().flatMap((skill) => skills.loadSkill(skill.name) ?? []),
+    );
+    target.onSkillRootsChanged(() => {
+      throw new Error("catalog replacement failed");
+    });
+    writeSkill(skillRoot, "created");
+    target.requestSkillRefresh();
+    target.flushSkillRefresh();
+    expect((await target.service.current()).fingerprint).toBe(before.fingerprint);
+    expect(logger.events("kernel.extension_profile.skill_recomposition_failed")).toHaveLength(1);
+    expect(callbacks.size).toBeGreaterThan(0);
+    target.close();
+  });
+
   it("observes a newly created empty directory before its manifest arrives", () => {
     const callbacks = new Map<string, () => void>();
     const target = manager(undefined, undefined, {
@@ -1305,7 +1408,7 @@ describe("Extension Profile manager", () => {
     });
     target.resolveActive([], TRUSTED);
     target.observeSkillCatalog([]);
-    const root = workspacePaths(workspaceRoot).skillsDir;
+    const root = agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace;
     mkdirSync(join(root, "delayed"), { recursive: true });
     callbacks.get(root)!();
     target.flushSkillRefresh();
@@ -1321,7 +1424,7 @@ describe("Extension Profile manager", () => {
   });
 
   it("verifies pinned skill bytes after arming their asynchronous monitors", () => {
-    const skillRoot = globalPaths(globalDir).skillsDir;
+    const skillRoot = agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user;
     writeSkill(skillRoot, "research");
     const manifest = join(skillRoot, "research", "SKILL.md");
     let armed = false;
@@ -1356,7 +1459,10 @@ describe("Extension Profile manager", () => {
   });
 
   it("includes effective sidecar bytes in post-watch plugin skill verification", () => {
-    const pluginDir = installPlugin(globalPaths(globalDir).pluginsDir, "atlas");
+    const pluginDir = installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user,
+      "atlas",
+    );
     const skillRoot = join(pluginDir, "skills");
     writeSkill(skillRoot, "atlas-guide");
     const sidecar = join(skillRoot, "atlas-guide", "agents", "openai.yaml");
@@ -1391,7 +1497,7 @@ describe("Extension Profile manager", () => {
   });
 
   it("refreshes standalone skills without invoking the obsolete withdrawal notice", () => {
-    const root = globalPaths(globalDir).skillsDir;
+    const root = agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user;
     writeSkill(root, "research");
     let signalDrift!: () => void;
     const logger = recordingLogger();
@@ -1416,7 +1522,7 @@ describe("Extension Profile manager", () => {
   });
 
   it("keeps a skill available when its asynchronous monitor cannot start", () => {
-    const root = globalPaths(globalDir).skillsDir;
+    const root = agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user;
     writeSkill(root, "research");
     const logger = recordingLogger();
     const target = manager(undefined, logger, {
@@ -1439,7 +1545,7 @@ describe("Extension Profile manager", () => {
   });
 
   it("withholds a standalone skill whose resources exceed the aggregate snapshot bound", () => {
-    const root = globalPaths(globalDir).skillsDir;
+    const root = agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user;
     writeSkill(root, "huge-snapshot");
     const resources = join(root, "huge-snapshot", "assets");
     mkdirSync(resources, { recursive: true });
@@ -1463,7 +1569,7 @@ describe("Extension Profile manager", () => {
   });
 
   it("fingerprints standalone sidecar presentation while keeping pinned roots stable", () => {
-    const root = globalPaths(globalDir).skillsDir;
+    const root = agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user;
     writeSkill(root, "presented");
     const agents = join(root, "presented", "agents");
     mkdirSync(agents, { recursive: true });
@@ -1482,7 +1588,7 @@ describe("Extension Profile manager", () => {
   });
 
   it("fingerprints standalone MCP dependencies while keeping pinned roots stable", () => {
-    const root = globalPaths(globalDir).skillsDir;
+    const root = agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user;
     writeSkill(root, "dependent");
     const agents = join(root, "dependent", "agents");
     mkdirSync(agents, { recursive: true });
@@ -1501,7 +1607,7 @@ describe("Extension Profile manager", () => {
   });
 
   it("returns exact builtin roots that exclude a standalone skill that was not captured", () => {
-    const root = globalPaths(globalDir).skillsDir;
+    const root = agentsSkillsDirs({ home: home, cwd: workspaceRoot, env: {} }).user;
     writeSkill(root, "valid");
     writeSkill(root, "broken");
     const broken = join(root, "broken", "SKILL.md");
@@ -1535,8 +1641,16 @@ describe("Extension Profile manager", () => {
   });
 
   it("uses one workspace approval when switching between repository-plugin Extension Profiles", async () => {
-    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner-a", {});
-    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner-b", {});
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "runner-a",
+      {},
+    );
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "runner-b",
+      {},
+    );
     const setup = manager();
     const first = { scope: "workspace" as const, name: "first" };
     const second = { scope: "workspace" as const, name: "second" };
@@ -1569,7 +1683,11 @@ describe("Extension Profile manager", () => {
   });
 
   it("restores the prior selection when workspace approval fails", async () => {
-    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner", {});
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "runner",
+      {},
+    );
     const setup = manager();
     const ref = { scope: "workspace" as const, name: "project" };
     await create(setup, ref, definition({ plugins: [pluginRef("runner", "workspace")] }));
@@ -1599,8 +1717,16 @@ describe("Extension Profile manager", () => {
   });
 
   it("rejects unsafe authored combinations and supports cloning builtin:default", async () => {
-    installPlugin(globalPaths(globalDir).pluginsDir, "global-plugin", {});
-    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "workspace-plugin", {});
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user,
+      "global-plugin",
+      {},
+    );
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).workspace,
+      "workspace-plugin",
+      {},
+    );
     const target = manager();
     target.resolveActive([pluginRef("global-plugin")], TRUSTED);
 
@@ -1626,7 +1752,7 @@ describe("Extension Profile manager", () => {
         definition: definition({
           skills: [
             { scope: "user", source: "agents", name: "same-skill" },
-            { scope: "workspace", source: "clarvis", name: "same-skill" },
+            { scope: "workspace", source: "agents", name: "same-skill" },
           ],
         }),
       }),
@@ -1643,7 +1769,11 @@ describe("Extension Profile manager", () => {
   });
 
   it("clones builtin:default rather than the currently selected custom Extension Profile", async () => {
-    installPlugin(globalPaths(globalDir).pluginsDir, "legacy", {});
+    installPlugin(
+      agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user,
+      "legacy",
+      {},
+    );
     const setup = manager();
     await create(setup, { scope: "global", name: "custom" }, definition());
     const target = manager("global:custom");
@@ -1803,6 +1933,28 @@ describe("Extension Profile manager", () => {
     });
   });
 
+  it("rejects an oversized catalog even when its entries are not definitions", async () => {
+    const dir = globalPaths(globalDir).extensionProfilesDir;
+    mkdirSync(dir, { recursive: true });
+    for (let index = 0; index <= 256; index += 1) {
+      writeFileSync(join(dir, `entry-${String(index).padStart(3, "0")}.txt`), "fixture\n");
+    }
+    const target = manager();
+    const listed = await target.service.list();
+    expect(listed).toContainEqual(
+      expect.objectContaining({
+        ref: { scope: "global", name: "invalid-directory" },
+        error: expect.stringContaining("256-entry resource limit"),
+      }),
+    );
+    await expect(
+      target.service.create({
+        ref: { scope: "global", name: "new" },
+        definition: definition(),
+      }),
+    ).rejects.toMatchObject({ code: "resource_exhausted" });
+  });
+
   it("never replaces an existing definition entry it cannot read safely", async () => {
     const path = join(globalPaths(globalDir).extensionProfilesDir, "occupied.json");
     mkdirSync(path, { recursive: true });
@@ -1819,7 +1971,9 @@ describe("Extension Profile manager", () => {
 
   it("activates plugin hooks atomically with their Extension Profile membership", async () => {
     const hook = { event: "run_start" as const, command: "echo ready" };
-    installPlugin(globalPaths(globalDir).pluginsDir, "hooked", { hooks: [hook] });
+    installPlugin(agentsPluginsDirs({ home: home, cwd: workspaceRoot, env: {} }).user, "hooked", {
+      hooks: [hook],
+    });
     const setup = manager();
     await create(
       setup,

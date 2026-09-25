@@ -1,10 +1,10 @@
 import { homedir } from "node:os";
 import { join, resolve, relative, isAbsolute, sep } from "node:path";
-import { AGENTS_DIR, MARKETPLACE_FILE } from "./constants.ts";
+import { AGENTS_DIR } from "./constants.ts";
 import { globalPaths } from "./global.ts";
 import { workspacePaths } from "./workspace.ts";
 
-/** The four configuration scopes; each mutation requires independent effect admission. */
+/** The four configuration scopes. */
 export type ConfigurationRoot =
   "global_clarvis" | "workspace_clarvis" | "global_agents" | "workspace_agents";
 
@@ -25,19 +25,11 @@ export function configurationRoots(options: {
 const CLARVIS_FILES = new Set([
   "settings.json",
   "shared-agent.md",
-  "guard-judge.md",
   "memory-policy.md",
   "CLARVIS.md",
   "AGENTS.md",
 ]);
-const CLARVIS_DIRS = new Set([
-  "agents",
-  "skills",
-  "plugins",
-  "workflows",
-  "extension-profiles",
-  "runtime-recipes",
-]);
+const CLARVIS_DIRS = new Set(["agents", "workflows", "extension-profiles"]);
 const SHARED_DIRS = new Set(["skills", "plugins"]);
 const PRIVATE_COMPONENT =
   /^(?:keys?|subscriptions?|auth(?:-key)?|credentials?|secrets?|tokens?|workspace-trust)(?:[.-]|$)|^\.env(?:[.-]|$)|\.(?:pem|key|p12|pfx)$/i;
@@ -45,13 +37,17 @@ const PRIVATE_COMPONENT =
 /**
  * Classify a relative configuration target without granting access or touching disk.
  * Callers still resolve actual targets and enforce confinement and link protections.
- * Unknown/private trees and malformed relative paths never become inferred writes.
+ * Unknown trees and malformed relative paths never become inferred writes.
  */
 export function configurationPathClass(
   root: ConfigurationRoot,
   path: string,
-): "authoring" | "operational" | "private" {
+): "authoring" | "operational" | "secret" | "reserved_unknown" | "generated_read_only" {
   const parts = path === "" ? [] : path.split("/");
+  if (parts.some((part) => PRIVATE_COMPONENT.test(part))) return "secret";
+  if (parts.some((part) => [".git", "node_modules", "state", "cache"].includes(part.toLowerCase())))
+    return "secret";
+  if (root.endsWith("_clarvis") && path === ".gitignore") return "generated_read_only";
   if (
     path.length > 1024 ||
     [...path].some(
@@ -64,19 +60,17 @@ export function configurationPathClass(
         part === "." ||
         part === ".." ||
         /[. ]$/.test(part) ||
-        /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part) ||
-        PRIVATE_COMPONENT.test(part) ||
-        [".git", "node_modules", "state", "cache"].includes(part.toLowerCase()),
+        /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part),
     )
   )
-    return "private";
+    return "reserved_unknown";
   const head = parts[0];
   if (head === undefined) return "operational";
   const shared = root.endsWith("_agents");
   const admitted = shared
-    ? SHARED_DIRS.has(head) || (parts.length === 1 && head === MARKETPLACE_FILE)
+    ? SHARED_DIRS.has(head)
     : CLARVIS_DIRS.has(head) || (parts.length === 1 && CLARVIS_FILES.has(head));
-  if (!admitted) return "private";
+  if (!admitted) return "reserved_unknown";
   if (
     /^skills\/[a-z0-9][a-z0-9_-]*\/SKILL\.md$/.test(path) ||
     (!shared &&

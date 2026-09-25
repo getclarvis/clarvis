@@ -31,6 +31,7 @@ function peer(generation = "generation") {
         calls.browser.push([id, opened]);
       },
       requestRestart: async () => {},
+      requestShutdown: async () => {},
     },
     async close() {
       calls.close++;
@@ -94,11 +95,11 @@ describe("workspace operator notices", () => {
       expect(notices).toHaveLength(1);
       expect(drifts).toEqual(["review"]);
       host.status({
-        runtime_notice: { sequence: 1, message: "Preparing Podman environment" },
+        runtime_notice: { sequence: 1, message: "Preparing workspace" },
         extension_drift: { sequence: 2, kind: "plugin_runtime", name: "tracker" },
       });
       await until(() => notices.length === 2);
-      expect(notices[1]!.message).toBe("Preparing Podman environment");
+      expect(notices[1]!.message).toBe("Preparing workspace");
       expect(drifts).toEqual(["review", "tracker"]);
       expect(notices).toHaveLength(2);
       offRuntime();

@@ -9,7 +9,7 @@ import {
   type GoalCriterion,
   type GoalRecord,
 } from "@clarvis/goal";
-import { executeRun, type ExecuteRunArgs, type RunRequest } from "@clarvis/loop";
+import { executeRun, type RunRequest } from "@clarvis/loop";
 import { MockLLM, type MockLLMScriptStep } from "@clarvis/loop/testing";
 import { AiSdkAdapter } from "@clarvis/llm/adapter";
 import { createConnectionManager, defaultMCPClientFactory } from "@clarvis/mcp-client";
@@ -99,7 +99,6 @@ async function fixture(
   const closedIndex = Array.from({ length: 4 }, () => Promise.withResolvers<void>());
   const started = Array.from({ length: 4 }, () => Promise.withResolvers<RunHandle>());
   const bounded: RunRequest[] = [];
-  const authoritySeeds: Array<ExecuteRunArgs["operatorAuthoritySeed"]> = [];
   const writes: Session[] = [];
   const base = createSessionService({
     dir: root,
@@ -167,10 +166,8 @@ async function fixture(
           bounded.push(body);
           const service = createRunService({
             owner: "owner",
-            operatorAuthorityFor: (run) => registry.operatorAuthorityFor(run),
             assembleRunRequest: () => body,
             async executeRun(args) {
-              authoritySeeds.push(args.operatorAuthoritySeed);
               return executeRun({
                 ...args,
               });
@@ -359,32 +356,12 @@ async function fixture(
     control,
     wire,
     bounded,
-    authoritySeeds,
     writes,
     state: () => repository.read("session"),
   };
 }
 
 describe("goals through real hosted continuation, loop and SDK", () => {
-  it("seeds command-review authority from the literal Goal instead of the synthetic start", async () => {
-    const f = await fixture({ script: [candidate, { text: "Done" }] });
-    const first = await f.start();
-    expect(await first.handle.done).toMatchObject({ status: "completed" });
-    await first.handle.closed;
-    const evidence = f.authoritySeeds[0]?.evidence;
-    expect(evidence).toHaveLength(1);
-    expect(JSON.parse(evidence![0]!.text)).toMatchObject({
-      objective: "Complete the synthetic stages",
-      criteria: [],
-    });
-    expect(JSON.parse(f.authoritySeeds[0]!.review_context!.content)).toMatchObject({
-      objective: "Complete the synthetic stages",
-      criteria: [],
-      origin: "literal",
-    });
-    expect(evidence![0]!.text).not.toContain("Start the bounded goal");
-  });
-
   it("settles a concurrent completion conflict and verifies a fresh candidate in one successor", async () => {
     let readsAfterEvidence = 0;
     const f = await fixture({
@@ -444,19 +421,6 @@ describe("goals through real hosted continuation, loop and SDK", () => {
     } finally {
       concurrent.mockRestore();
     }
-  });
-
-  it("seeds guided command review from the exact user seed, not inferred Goal semantics", async () => {
-    const seed = "Implement every requirement in @DESIGN.md";
-    const f = await fixture({ guidedSeed: seed, script: [candidate, { text: "Done" }] });
-    const first = await f.start();
-    expect(await first.handle.done).toMatchObject({ status: "completed" });
-    await first.handle.closed;
-    expect(f.authoritySeeds[0]?.evidence.map((entry) => entry.text)).toEqual([seed]);
-    expect(JSON.parse(f.authoritySeeds[0]!.review_context!.content)).toMatchObject({
-      objective: "Complete the synthetic stages",
-      origin: "guided",
-    });
   });
 
   it("stops new SDK calls when the absolute goal deadline expires within a stage", async () => {

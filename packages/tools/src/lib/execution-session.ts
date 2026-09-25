@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { ToolError } from "../errors.ts";
 import type { RuntimeConfig } from "../config.ts";
 import { sandboxCommand } from "../sandbox.ts";
+import type { AgentFilesystem } from "../agent-filesystem.ts";
 import { resolveShell, type ShellSpec } from "../shell.ts";
 import { ownProcessGroup } from "./process.ts";
 import { ownedTreeRunning, stopOwnedProcess } from "./process-owner.ts";
@@ -19,7 +20,6 @@ interface LaunchRequest {
   readonly agent: object;
   readonly command: string;
   readonly cwd: string;
-  readonly forceBare: boolean;
   readonly shell?: ShellSpec;
   readonly timeoutMs?: number;
   readonly readyWhen?: RegExp;
@@ -50,6 +50,19 @@ export interface SessionResult {
   readonly aborted: boolean;
 }
 
+export type SessionPhase =
+  "starting" | "running" | "exited_pending_status" | "exited_draining" | "closed";
+
+export interface SessionSnapshot {
+  readonly phase: SessionPhase;
+  readonly running: boolean;
+  readonly terminationConfirmed: boolean;
+  readonly exitCode: number | null;
+  readonly signal: NodeJS.Signals | null;
+  readonly ready: boolean;
+  readonly timedOut: boolean;
+}
+
 export interface ExecutionSession {
   readonly id: string;
   readonly agent: object;
@@ -65,6 +78,7 @@ export interface ExecutionSession {
   readonly signal: NodeJS.Signals | null;
   readonly timedOut: boolean;
   readonly aborted: boolean;
+  snapshot(): SessionSnapshot;
   readStreams(cursor: string | undefined, limit: number): SessionPage;
   waitForChange(cursor: string | undefined, timeoutMs: number, signal?: AbortSignal): Promise<void>;
   waitReady(timeoutMs: number, signal?: AbortSignal): Promise<boolean>;
@@ -106,6 +120,7 @@ class LiveSession implements ExecutionSession {
   private didTimeOut = false;
   private wasAborted = false;
   private stopConfirmed = false;
+  private spawned = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private drainTimer: ReturnType<typeof setTimeout> | undefined;
   private abortListener: (() => void) | undefined;
@@ -131,7 +146,30 @@ class LiveSession implements ExecutionSession {
   }
 
   get running(): boolean {
-    return !this.stopConfirmed && this.child.exitCode === null && this.child.signalCode === null;
+    return this.snapshot().running;
+  }
+
+  snapshot(): SessionSnapshot {
+    const statusKnown = this.child.exitCode !== null || this.child.signalCode !== null;
+    const terminationConfirmed = this.stopConfirmed || (this.spawned && !this.treeRunning());
+    const phase: SessionPhase = this.settled
+      ? "closed"
+      : statusKnown
+        ? "exited_draining"
+        : terminationConfirmed
+          ? "exited_pending_status"
+          : this.spawned
+            ? "running"
+            : "starting";
+    return {
+      phase,
+      running: phase === "running" || phase === "starting",
+      terminationConfirmed,
+      exitCode: this.child.exitCode,
+      signal: this.child.signalCode,
+      ready: this.readyMatched,
+      timedOut: this.didTimeOut,
+    };
   }
 
   get ready(): boolean {
@@ -139,7 +177,7 @@ class LiveSession implements ExecutionSession {
   }
 
   get terminationConfirmed(): boolean {
-    return this.stopConfirmed || !this.treeRunning();
+    return this.snapshot().terminationConfirmed;
   }
 
   get exitCode(): number | null {
@@ -227,6 +265,7 @@ class LiveSession implements ExecutionSession {
     });
     this.child.on("close", (code, exitSignal) => void this.finish(code, exitSignal, signal));
     this.child.once("spawn", () => {
+      this.spawned = true;
       if (!this.settled && !signal?.aborted) onExecutionStarted?.();
     });
   }
@@ -377,9 +416,23 @@ class LiveSession implements ExecutionSession {
 /** One run-local authority for shell processes and their bounded output. */
 export class ExecutionSessionManager {
   private readonly sessions = new Map<string, LiveSession>();
+  private filesystem: { identity: string; service: AgentFilesystem } | undefined;
   private closed = false;
 
   constructor(private readonly afterSpawn?: (child: ChildProcess) => void) {}
+
+  /** Admit exactly one filesystem service under the run's pinned policy. */
+  acquireFilesystem(identity: string, create: () => AgentFilesystem): AgentFilesystem {
+    if (this.closed) throw new ToolError("aborted", "Process admission is closed");
+    if (this.filesystem !== undefined) {
+      if (this.filesystem.identity !== identity)
+        throw new ToolError("denied", "Filesystem policy changed within the run");
+      return this.filesystem.service;
+    }
+    const service = create();
+    this.filesystem = { identity, service };
+    return service;
+  }
 
   async launch(request: LaunchRequest): Promise<ExecutionSession> {
     if (this.closed) throw new ToolError("aborted", "Process admission is closed");
@@ -401,9 +454,9 @@ export class ExecutionSessionManager {
       temporaryRoots: request.config.temporaryRoots,
       sandbox: request.config.sandbox,
       secretEnvNames: request.config.secretEnvNames,
+      filesystemPolicy: request.config.filesystemPolicy,
       shell: () => resolvedShell,
       logger: request.config.logger,
-      forceBare: request.forceBare,
     });
     const detached = ownProcessGroup();
     request.config.logger.debug(
@@ -474,9 +527,10 @@ export class ExecutionSessionManager {
   async close(budgetMs = 1_200): Promise<boolean> {
     this.closed = true;
     const deadline = Date.now() + budgetMs;
-    const outcomes = await Promise.all(
-      [...this.sessions.values()].map((session) => session.stop(deadline)),
-    );
+    const outcomes = await Promise.all([
+      ...[...this.sessions.values()].map((session) => session.stop(deadline)),
+      ...(this.filesystem === undefined ? [] : [this.filesystem.service.close(deadline)]),
+    ]);
     return outcomes.every(Boolean);
   }
 }

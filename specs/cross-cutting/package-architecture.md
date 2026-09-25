@@ -3,8 +3,7 @@
 > The physical workspace is declared in the root `package.json`; semantic roles and allowed edges
 > are owned by `tooling/lib/package-architecture.ts`; package and module edges are derived by
 > `tooling/lib/package-graph.ts`; application boundaries are enforced by
-> `packages/code/tests/architecture/dependency-boundary.test.ts` and
-> `packages/server/tests/architecture/dependency-boundary.test.ts`. This document owns the semantic
+> `packages/code/tests/architecture/dependency-boundary.test.ts`. This document owns the semantic
 > package roles, the allowed dependency directions, the client/kernel boundary, and the review
 > rules. [`package-coupling-analysis.md`](../package-coupling-analysis.md) remains the
 > generated record of the graph that exists now.
@@ -31,18 +30,16 @@ The intended product flow is:
 ```text
 applications                   host implementation              composed graph
 
-@clarvis/code ────┐
-                  ├──> @clarvis/kernel ──┬──> product capabilities
-@clarvis/server ──┘                      ├──> @clarvis/loop ──> execution services
-                                         └──> foundations + @clarvis/protocol
+@clarvis/code ─────> @clarvis/kernel ──┬──> product capabilities
+                                       ├──> @clarvis/loop ──> execution services
+                                       └──> foundations + @clarvis/protocol
 
 additional direct application-owned edges
 
 @clarvis/code ─────> @clarvis/protocol, @clarvis/paths
-@clarvis/server ───> @clarvis/protocol, @clarvis/paths, @clarvis/capability
 ```
 
-This is deliberately not `code/server -> kernel -> every symbol`. The kernel is the local host
+This is deliberately not `code -> kernel -> every symbol`. The kernel is the local host
 implementation and composition root, not a generic barrel. Clients and the implementation both
 depend on the transport-neutral protocol; applications may also depend directly on a foundation
 when they own the corresponding concern. The kernel publishes seven owned entrypoints today
@@ -68,13 +65,12 @@ Every workspace has one primary architectural role:
 | host contract | `protocol` | Transport-neutral DTOs and the `KernelClient` service contract | No internal package dependency |
 | execution service | `llm`, `mcp-client`, `supervision`, `trace`, `tools`, `hooks`, `skills` | Provider, transport, observation and machine-action implementations used by the engine or host | Foundations; a same-role edge only when one service genuinely builds on another, currently `hooks -> tools` |
 | engine | `loop` | Embeddable execution and orchestration policy | Foundations and execution services; `hooks`, `skills` and `tools` remain optional |
-| product capability | `memory`, `plan`, `goal`, `judge`, `tasks`, `workflows` | Independently owned features composed by a host | Foundations; `goal`, `judge`, `memory` and `workflows` may execute the loop, and `workflows` may use supervision |
+| product capability | `memory`, `plan`, `goal`, `workflows` | Independently owned features composed by a host | Foundations; `goal`, `memory` and `workflows` may execute the loop, and `workflows` may use supervision |
 | host implementation | `kernel` | Implements `protocol`, composes the engine and product capabilities, and owns local host policy | Host contract and any lower package it actually composes |
-| application | `code`, `server` | User-facing terminal application and MCP-over-HTTP facade | `kernel`, `protocol`, and only those foundations whose concerns the application itself owns |
+| application | `code` | User-facing terminal application | `kernel`, `protocol`, and only those foundations whose concerns the application itself owns |
 
-The current manifests instantiate the two application rows exactly: Code declares only Kernel,
-Paths and Protocol (`packages/code/package.json`, `dependencies`); Server declares Capability,
-Kernel, Paths and Protocol (`packages/server/package.json`, `dependencies`). Kernel declares its
+The current manifest instantiates the application row: Code declares only Kernel,
+Paths and Protocol (`packages/code/package.json`, `dependencies`). Kernel declares its
 composition dependencies directly rather than hiding them behind a lower barrel
 (`packages/kernel/package.json`, `dependencies`). Loop declares its execution services and keeps
 Hooks, Skills and Tools optional (`packages/loop/package.json`, `optionalDependencies`). Protocol
@@ -211,17 +207,16 @@ exports, dynamic imports, `require` and import types (`tooling/lib/package-graph
 
 ### 4.2 Application boundaries
 
-`code` and `server` may both construct a local kernel, while their service-facing logic programs
-against `KernelClient`. Neither application imports Loop or a product capability directly. Their
-package boundary tests derive exact manifest allowlists from `allowedInternalDependenciesFor`,
-validate every imported workspace package with `packageDependencyViolation`, and separately pin the
+`code` constructs a local kernel, while its service-facing logic programs
+against `KernelClient`. It does not import Loop or a product capability directly. Its
+package boundary test derives the exact manifest allowlist from `allowedInternalDependenciesFor`,
+validates every imported workspace package with `packageDependencyViolation`, and separately pins the
 owned Kernel entrypoints (`packages/code/tests/architecture/dependency-boundary.test.ts`,
-`code dependency boundary`; `packages/server/tests/architecture/dependency-boundary.test.ts`,
-`server dependency boundary`).
+`code dependency boundary`).
 
-An application may depend directly on a foundation only for an application-owned concern. Examples
-today are Code resolving its launch and state paths and Server using the shared Logger port and
-authentication roots. Routing those types through Kernel would make the composition root a facade,
+An application may depend directly on a foundation only for an application-owned concern.
+Code resolves its launch and state paths directly. Routing those types through Kernel would make
+the composition root a facade,
 not reduce coupling.
 
 ### 4.3 Engine and capability direction
@@ -231,7 +226,7 @@ must not import the engine back, including through tests or public subpaths. The
 the engine dependencies from its own manifest and scans both `src` and `tests`
 (`packages/loop/tests/architecture/optional-package-boundary.test.ts`,
 `optional package boundaries`). Memory
-and Workflows may depend on Loop because they execute runs; Plan and Tasks remain host-registered
+and Workflows may depend on Loop because they execute runs; Plan remains host-registered
 capabilities that do not need the engine. Kernel is where these branches are composed.
 
 ### 4.4 New package review
@@ -297,16 +292,6 @@ Production: `packages/code/src/index.tsx`, `packages/code/src/runtime.tsx`,
 Test: `packages/code/tests/architecture/architecture-boundary.test.ts`
 (`confines concrete kernel imports to composition and adapter boundaries`).
 
-**INV-PA6. Server's only Clarvis dependencies are Capability, Kernel, Paths and Protocol, and its
-build references mirror those dependencies.**
-
-Production: `tooling/lib/package-architecture.ts` (`APPLICATION_FOUNDATIONS` and role matrix);
-`packages/server/package.json` (`dependencies`); `packages/server/tsconfig.build.json`
-(`references`).
-
-Test: `packages/server/tests/architecture/dependency-boundary.test.ts`
-(`server dependency boundary`).
-
 **INV-PA7. Kernel exposes only its seven owned entrypoints and its root is not a generic re-export
 barrel for lower packages. Protocol remains dependency-free.**
 
@@ -363,21 +348,21 @@ The package-level policy is:
 
 ```text
 applications
-  code, server
+  code
       |-- protocol                     contract used by clients and implementation
       |-- kernel                       local implementation and composition
-      `-- owned foundation concerns    paths; capability ports where justified
+      `-- owned foundation concerns    paths where justified
 
 host implementation
   kernel
-      |-- product capabilities         goal, memory, plan, tasks, workflows
+      |-- product capabilities         goal, memory, plan, workflows
       |-- engine                       loop
       |-- execution services           only those it composes directly
       `-- foundations + protocol
 
 engine and capabilities
   goal, memory, workflows --> loop
-  plan, tasks --------> capability/paths only
+  plan --------------> capability/paths only
   loop ---------------> execution services + foundations
 
 leaves
@@ -385,8 +370,8 @@ leaves
 ```
 
 This permits multiple downward branches; it does not force every package into one numerical height.
-Topological depth and semantic role are different: Plan and Tasks sit low in the graph because their
-contracts are small, yet Kernel composes them as product capabilities beside Memory and Workflows.
+Topological depth and semantic role are different: Plan sits low in the graph because its
+contract is small, yet Kernel composes it as a product capability beside Memory and Workflows.
 
 ### 7.2 Enforced Code boundary
 
@@ -412,7 +397,7 @@ the composition modules (`index.tsx`, `runtime.tsx`, `startup-foundation.ts`), `
 (`packages/code/tests/architecture/architecture-boundary.test.ts`,
 `confines concrete kernel imports to composition and adapter boundaries`). Model parsing and cache
 policy enter presentation through `adapters/model-policy.ts`; plan and guard defaults through
-`adapters/settings.ts` and `adapters/guard-mode.ts`; provider request constraints through
+`adapters/settings.ts`; provider request constraints through
 `adapters/provider-request-policy.ts`; and shipped-agent identity through `adapters/agent-files.ts`.
 Local construction remains explicit behind `packages/code/src/adapters/workspace-client-manager.ts`
 (`connectLocalKernel`); `startup-foundation.ts` may begin it concurrently with the dynamically
@@ -423,14 +408,6 @@ dependency-free type contract (`packages/protocol/package.json`). Prefer returni
 value through `KernelClient`, deriving a presentation value in Code, or injecting a narrow function.
 Extract a client-runtime package only if the remaining implementation is cohesive, has multiple
 consumers and belongs below all of them under the criteria in section 2.3.
-
-### 7.3 Enforced Server boundary
-
-Server remains a thin host adapter. Bootstrap may construct Kernel; request handling uses Protocol
-services; Capability supplies host ports such as Logger; Paths supplies authentication and state
-roots. Server never imports engine or product-capability implementations. Its boundary test derives
-the exact application allowlist from the central policy and checks matching project references
-(`packages/server/tests/architecture/dependency-boundary.test.ts`, `server dependency boundary`).
 
 ### 7.4 Kernel boundary
 

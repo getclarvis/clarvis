@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   chmodSync,
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -12,7 +13,9 @@ import {
 import { spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { configurationRoots } from "@clarvis/paths";
 import { makeSymlink } from "../helpers/fixtures.ts";
+import { callTool, makeConfig } from "../helpers/fixtures.ts";
 import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 import {
   discoverLinkedGitMetadataPaths,
@@ -21,6 +24,7 @@ import {
   probeSandbox,
   probeSeatbelt,
   resolverMounts,
+  resolveFilesystemPolicy,
   sandboxCommand,
   systemTemporaryRoots,
   TOOLCHAIN_COMMANDS,
@@ -47,6 +51,36 @@ function withEnvironment<T>(values: Record<string, string | undefined>, callback
 }
 
 describe("sandboxCommand", () => {
+  it("freezes a run policy and changes identity when its effective access changes", () => {
+    const input = {
+      runId: "run-one",
+      placement: "sandbox" as const,
+      workspaceRoot: "/workspace",
+      temporaryRoots: ["/tmp/run"],
+      gitMetadataPaths: ["/git/common"],
+      sandbox: { type: "native" as const, filesystem: "workspace-read-only" as const },
+    };
+    const policy = resolveFilesystemPolicy(input);
+    expect(policy).toMatchObject({
+      placement: "sandbox",
+      readScope: "host-visible",
+      writeScope: "declared-roots",
+      workspaceAccess: "read-only",
+      protectedRoots: [resolve("/workspace"), resolve("/git/common")],
+    });
+    expect(Object.isFrozen(policy)).toBe(true);
+    expect(Object.isFrozen(policy.temporaryRoots)).toBe(true);
+    expect(Object.isFrozen(policy.sandbox)).toBe(true);
+    expect(
+      resolveFilesystemPolicy({
+        ...input,
+        sandbox: { type: "native", filesystem: "workspace-write" },
+      }).identity,
+    ).not.toBe(policy.identity);
+    expect(resolveFilesystemPolicy({ ...input, runId: "run-two" }).identity).not.toBe(
+      policy.identity,
+    );
+  });
   it("includes the extended language toolchain catalog", () => {
     expect(TOOLCHAIN_COMMANDS).toMatchObject({
       deno: ["deno"],
@@ -56,6 +90,21 @@ describe("sandboxCommand", () => {
       kotlin: ["kotlin", "kotlinc"],
       swift: ["swift", "swiftc"],
     });
+  });
+
+  it("reports an unavailable toolchain without invoking its entrypoint", () => {
+    const emptyPath = mkdtempSync(join(tmpdir(), "clarvis-empty-toolchain-"));
+    try {
+      expect(discoverToolchains(["node"], { PATH: emptyPath })).toEqual([
+        expect.objectContaining({
+          id: "node",
+          available: false,
+          error: expect.stringContaining("not found"),
+        }),
+      ]);
+    } finally {
+      rmSync(emptyPath, { recursive: true, force: true });
+    }
   });
 
   it.skipIf(process.platform === "win32")(
@@ -115,8 +164,8 @@ describe("sandboxCommand", () => {
         TEMP: temporaryRoot,
         TMP: temporaryRoot,
       });
-      expect(isolated.args).toContain(temporaryRoot);
-      expect(isolated.args).toContain(compatibleRoot);
+      expect(isolated.args).toContain(realpathSync(temporaryRoot));
+      expect(isolated.args).toContain(realpathSync(compatibleRoot));
     } finally {
       rmSync(temporaryRoot, { recursive: true, force: true });
     }
@@ -166,22 +215,6 @@ describe("sandboxCommand", () => {
         shell: () => ({ flavor: "posix", file: "sh" }),
       }),
     ).toThrow("Native sandbox is required: no native backend");
-  });
-
-  it("skips the native probe when forceBare is set", () => {
-    const spec = sandboxCommand({
-      command: "echo ok",
-      cwd: "/ws",
-      workspaceRoot: "/ws",
-      sandbox: { type: "native", availability: "required" },
-      forceBare: true,
-      probe: () => {
-        throw new Error("probe must not run for a bare host spawn");
-      },
-      shell: () => ({ flavor: "posix", file: "sh" }),
-    });
-    expect(spec.file).toBe("sh");
-    expect(spec.sandboxed).toBe(false);
   });
 
   it.skipIf(process.platform === "win32")(
@@ -252,8 +285,9 @@ describe("sandboxCommand", () => {
             availability: "required",
             filesystem: "workspace-read-only",
             network: "none",
-            passEnv: ["CI"],
+            passEnv: ["OPENAI_API_KEY", "CI"],
           },
+          secretEnvNames: ["OPENAI_API_KEY"],
           probe: () => ({ backend: "bubblewrap", mode: "fresh-proc" }),
         });
         expect(spec.file).toBe("bwrap");
@@ -322,7 +356,7 @@ describe("sandboxCommand", () => {
           expect(sandboxEntries).toContain("/usr/bin");
           expect(sandboxEntries).toContain("/bin");
           expect(sandboxEntries).not.toContain("/private/not-mounted");
-          expect(spec.args).toContain(root);
+          expect(spec.args).toContain(realpathSync(root));
         });
       } finally {
         rmSync(root, { recursive: true, force: true });
@@ -451,15 +485,29 @@ describe("sandboxCommand", () => {
       sandbox: { type: "native", readOnlyPaths: [sdk] },
       probe: () => ({ backend: "bubblewrap", mode: "fresh-proc" }),
     });
-    expect(spec.args.indexOf(workspace)).toBeLessThan(spec.args.indexOf(sdk));
+    expect(spec.args.indexOf(realpathSync(workspace))).toBeLessThan(
+      spec.args.indexOf(realpathSync(sdk)),
+    );
   });
 
-  it("keeps a temp-contained read-only workspace closed while nested run scratch stays writable", () => {
+  it("keeps a temp-contained read-only workspace closed and rejects scratch nested inside it", () => {
     const compatibleTemporaryRoot = mkdtempSync(join(tmpdir(), "clarvis-temp-policy-"));
     const workspace = join(compatibleTemporaryRoot, "workspace");
-    const scratch = join(workspace, "run-scratch");
+    const scratch = join(compatibleTemporaryRoot, "run-scratch");
+    const nestedScratch = join(workspace, "nested-scratch");
     mkdirSync(scratch, { recursive: true });
+    mkdirSync(nestedScratch, { recursive: true });
     try {
+      expect(() =>
+        sandboxCommand({
+          command: "true",
+          cwd: workspace,
+          workspaceRoot: workspace,
+          temporaryRoots: [nestedScratch, compatibleTemporaryRoot],
+          sandbox: { type: "native", filesystem: "workspace-read-only" },
+          probe: () => ({ backend: "bubblewrap", mode: "fresh-proc" }),
+        }),
+      ).toThrow("Writable temporary root is inside a protected sandbox path");
       const bubblewrap = sandboxCommand({
         command: "true",
         cwd: workspace,
@@ -468,10 +516,12 @@ describe("sandboxCommand", () => {
         sandbox: { type: "native", filesystem: "workspace-read-only" },
         probe: () => ({ backend: "bubblewrap", mode: "fresh-proc" }),
       });
-      expect(bubblewrap.args.indexOf(compatibleTemporaryRoot)).toBeLessThan(
-        bubblewrap.args.indexOf(workspace),
+      expect(bubblewrap.args.indexOf(realpathSync(compatibleTemporaryRoot))).toBeLessThan(
+        bubblewrap.args.indexOf(realpathSync(workspace)),
       );
-      expect(bubblewrap.args.indexOf(workspace)).toBeLessThan(bubblewrap.args.indexOf(scratch));
+      expect(bubblewrap.args.indexOf(realpathSync(workspace))).toBeLessThan(
+        bubblewrap.args.indexOf(realpathSync(scratch)),
+      );
 
       const seatbelt = sandboxCommand({
         command: "true",
@@ -529,22 +579,10 @@ describe("sandboxCommand", () => {
     const profileIndex = spec.args.indexOf("-p");
     const profile = spec.args[profileIndex + 1]!;
     expect(spec.file).toBe("/usr/bin/sandbox-exec");
-    expect(profile).toContain(
-      "(deny file-read* file-test-existence file-map-executable file-write*)",
-    );
+    expect(profile).toContain("(deny file-write*)");
+    expect(profile).toContain("(allow file-read* file-test-existence file-map-executable)");
     expect(profile).toContain("(allow signal (target same-sandbox))");
     expect(profile).toContain("(allow process-info* (target same-sandbox))");
-    expect(profile).toContain('(literal "/etc")');
-    expect(profile).toContain('(subpath "/etc")');
-    expect(profile).toContain('(literal "/var")');
-    expect(profile).toContain('(subpath "/var/db")');
-    expect(profile).toContain('(subpath "/private/var/db")');
-    expect(profile).toContain('(subpath "/var/select")');
-    expect(profile).toContain('(subpath "/private/var/select")');
-    expect(profile).toContain('(subpath "/opt/homebrew")');
-    expect(profile).toContain('(allow file-read-metadata file-test-existence (literal "/opt")');
-    const systemReadRule = profile.split("\n").find((line) => line.startsWith("(allow file-read*"));
-    expect(systemReadRule).not.toContain('(literal "/opt")');
     expect(profile).toContain("(deny network*)");
     expect(profile).not.toContain('(literal "/var/run/mDNSResponder")');
     expect(profile).not.toContain('(literal "/private/var/run/mDNSResponder")');
@@ -582,8 +620,7 @@ describe("sandboxCommand", () => {
       shell: () => ({ flavor: "posix", file: "sh" }),
     });
     const hostProfile = hostNetwork.args[hostNetwork.args.indexOf("-p") + 1]!;
-    expect(hostProfile).toContain('(literal "/var/run/mDNSResponder")');
-    expect(hostProfile).toContain('(literal "/private/var/run/mDNSResponder")');
+    expect(hostProfile).toContain("(allow file-read* file-test-existence file-map-executable)");
   });
 
   it.skipIf(process.platform === "win32")(
@@ -767,7 +804,7 @@ it.skipIf(process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1")(
     const outside = join(root, "outside");
     const declaredReadOnly = join(root, "declared-read-only");
     const nestedReadOnly = join(workspace, "vendor", "sdk");
-    const scratch = join(workspace, ".tmp");
+    const scratch = join(root, "scratch");
     mkdirSync(nestedReadOnly, { recursive: true });
     mkdirSync(outside);
     mkdirSync(declaredReadOnly);
@@ -777,25 +814,21 @@ it.skipIf(process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1")(
     const outsideLink = join(workspace, "outside-link");
     const declaredFile = join(declaredReadOnly, "toolchain.txt");
     const nestedFile = join(nestedReadOnly, "nested.txt");
+    const hardLink = join(nestedReadOnly, "outside-hard-link.txt");
     writeFileSync(outsideSecret, "sentinel\n");
+    linkSync(outsideSecret, hardLink);
     makeSymlink(outside, outsideLink);
     writeFileSync(declaredFile, "toolchain\n");
     writeFileSync(nestedFile, "nested\n");
     try {
       const backend = probeSandbox();
       if (backend.mode === "unavailable") throw new Error(backend.reason);
-      const processInspection =
-        backend.mode === "host-proc"
-          ? ""
-          : `if /bin/ps -p ${process.pid} -o pid= 2>/dev/null | /usr/bin/grep -q '[0-9]'; then exit 48; fi && `;
       const filesystem = sandboxCommand({
         command:
           `printf inside > inside.txt && ` +
-          `if kill -0 ${process.pid} 2>/dev/null; then exit 40; fi && ` +
-          processInspection +
-          `if /bin/cat "${outsideSecret}" >/dev/null 2>&1; then exit 41; fi && ` +
+          `test "$(/bin/cat "${outsideSecret}")" = sentinel && ` +
           `if printf escaped > "${outsideWrite}" 2>/dev/null; then exit 42; fi && ` +
-          `if /bin/cat "${outsideLink}/secret.txt" >/dev/null 2>&1; then exit 46; fi && ` +
+          `test "$(/bin/cat "${outsideLink}/secret.txt")" = sentinel && ` +
           `if printf escaped > "${outsideLink}/linked.txt" 2>/dev/null; then exit 47; fi`,
         cwd: workspace,
         workspaceRoot: workspace,
@@ -839,8 +872,10 @@ it.skipIf(process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1")(
         command:
           `test "$(/bin/cat "${declaredFile}")" = toolchain && ` +
           `test "$(/bin/cat "${nestedFile}")" = nested && ` +
+          `test "$(/bin/cat "${hardLink}")" = sentinel && ` +
           `if printf denied > "${declaredFile}" 2>/dev/null; then exit 44; fi && ` +
-          `if printf denied > "${nestedFile}" 2>/dev/null; then exit 45; fi`,
+          `if printf denied > "${nestedFile}" 2>/dev/null; then exit 45; fi && ` +
+          `if printf denied > "${hardLink}" 2>/dev/null; then exit 46; fi`,
         cwd: workspace,
         workspaceRoot: workspace,
         temporaryRoots: [scratch],
@@ -860,6 +895,7 @@ it.skipIf(process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1")(
       expect(declaredResult).toMatchObject({ status: 0 });
       expect(readFileSync(declaredFile, "utf8")).toBe("toolchain\n");
       expect(readFileSync(nestedFile, "utf8")).toBe("nested\n");
+      expect(readFileSync(outsideSecret, "utf8")).toBe("sentinel\n");
 
       const listener = Bun.listen({
         hostname: "127.0.0.1",
@@ -902,15 +938,187 @@ it.skipIf(process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1")(
   },
 );
 
+it.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable")(
+  "allows workspace configuration writes inside a writable native sandbox",
+  () => {
+    const root = mkdtempSync(join(tmpdir(), "clarvis-shell-config-"));
+    const workspace = join(root, "workspace");
+    const scratch = join(root, "scratch");
+    mkdirSync(workspace);
+    mkdirSync(scratch);
+    const roots = configurationRoots({
+      workspaceRoot: workspace,
+      globalDir: join(root, "global"),
+      home: root,
+    });
+    mkdirSync(roots.workspace_clarvis);
+    const settings = join(roots.workspace_clarvis, "settings.json");
+    const source = join(scratch, "source.txt");
+    const ordinary = join(workspace, "ordinary.txt");
+    const git = join(workspace, ".git");
+    mkdirSync(git);
+    writeFileSync(join(git, "config"), "original git\n");
+    writeFileSync(settings, "original\n");
+    writeFileSync(source, "replacement\n");
+    try {
+      const backend = probeSandbox();
+      if (backend.mode === "unavailable") throw new Error(backend.reason);
+      const spec = sandboxCommand({
+        command:
+          `cp '${source}' '${settings}' && ` +
+          `mkdir -p '${join(roots.workspace_agents, "skills")}' && ` +
+          `printf ordinary > '${ordinary}' && ` +
+          `printf changed > '${join(git, "config")}'`,
+        cwd: workspace,
+        workspaceRoot: workspace,
+        temporaryRoots: [scratch],
+        sandbox: { type: "native", filesystem: "workspace-write", network: "none" },
+        probe: () => backend,
+      });
+      const result = spawnSync(spec.file, spec.args, {
+        ...spec.options,
+        encoding: "utf8",
+        timeout: 10_000,
+      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(readFileSync(settings, "utf8")).toBe("replacement\n");
+      expect(readFileSync(join(git, "config"), "utf8")).toBe("changed");
+      expect(readFileSync(ordinary, "utf8")).toBe("ordinary");
+      expect(existsSync(join(roots.workspace_agents, "skills"))).toBe(true);
+
+      const redirected = join(roots.workspace_clarvis, "redirected");
+      makeSymlink(ordinary, redirected);
+      expect(() =>
+        sandboxCommand({
+          command: "true",
+          cwd: workspace,
+          workspaceRoot: workspace,
+          temporaryRoots: [scratch],
+          sandbox: { type: "native", filesystem: "workspace-write", network: "none" },
+          probe: () => backend,
+        }),
+      ).not.toThrow();
+      rmSync(redirected);
+
+      linkSync(settings, join(workspace, "alias.txt"));
+      expect(() =>
+        sandboxCommand({
+          command: "true",
+          cwd: workspace,
+          workspaceRoot: workspace,
+          temporaryRoots: [scratch],
+          sandbox: { type: "native", filesystem: "workspace-write", network: "none" },
+          probe: () => backend,
+        }),
+      ).not.toThrow();
+      rmSync(join(workspace, "alias.txt"));
+      linkSync(join(git, "config"), join(workspace, "git-alias"));
+      expect(() =>
+        sandboxCommand({
+          command: "true",
+          cwd: workspace,
+          workspaceRoot: workspace,
+          temporaryRoots: [scratch],
+          sandbox: { type: "native", filesystem: "workspace-write", network: "none" },
+          probe: () => backend,
+        }),
+      ).not.toThrow();
+      rmSync(join(workspace, "git-alias"));
+      rmSync(git, { recursive: true });
+      makeSymlink(scratch, git, "dir");
+      expect(() =>
+        sandboxCommand({
+          command: "true",
+          cwd: workspace,
+          workspaceRoot: workspace,
+          temporaryRoots: [scratch],
+          sandbox: { type: "native", filesystem: "workspace-write", network: "none" },
+          probe: () => backend,
+        }),
+      ).not.toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+it.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable")(
+  "uses the same broad-read write-limited policy for shell and shell_session with an external cwd",
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), "clarvis-shell-policy-"));
+    const workspace = join(root, "workspace");
+    const outside = join(root, "outside");
+    const scratch = join(root, "scratch");
+    mkdirSync(workspace);
+    mkdirSync(outside);
+    mkdirSync(scratch);
+    const marker = join(outside, "marker.txt");
+    const denied = join(outside, "denied.txt");
+    writeFileSync(marker, "outside\n");
+    const config = makeConfig(workspace, {
+      sandbox: { type: "native", filesystem: "workspace-write", network: "none" },
+      temporaryRoots: [scratch],
+    });
+    try {
+      const direct = await callTool(
+        "shell",
+        {
+          command: `test "$(cat '${marker}')" = outside && if printf denied > '${denied}'; then exit 71; fi && pwd`,
+          cwd: outside,
+        },
+        config,
+      );
+      expect(direct.isError).toBe(false);
+      expect(direct.json.exit_code).toBe(0);
+      expect(String(direct.json.stdout).trim()).toBe(outside);
+      expect(existsSync(denied)).toBe(false);
+
+      const started = await callTool(
+        "shell",
+        {
+          command: "printf 'READY\\n'; sleep 10",
+          cwd: outside,
+          ready_when: "READY",
+          yield_time_ms: 5000,
+        },
+        config,
+      );
+      expect(started.json).toMatchObject({ running: true, ready: true });
+      const sessionId = started.json.session_id as string;
+      const polled = await callTool(
+        "shell_session",
+        { action: "poll", session_id: sessionId },
+        config,
+      );
+      expect(String(polled.json.stdout)).toContain("READY");
+      const stopped = await callTool(
+        "shell_session",
+        { action: "stop", session_id: sessionId },
+        config,
+      );
+      expect(stopped.json.termination_confirmed).toBe(true);
+
+      const fileRead = await callTool("read_file", { path: marker }, config);
+      expect(fileRead.isError).toBe(false);
+      expect(fileRead.text).toContain("outside");
+      const fileWrite = await callTool("write_file", { path: denied, content: "denied" }, config);
+      expect(fileWrite.isError).toBe(true);
+      expect(existsSync(denied)).toBe(false);
+    } finally {
+      await config.sessionManager.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
 it.skipIf(process.platform === "win32" || process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1")(
   "exposes host-native temp roots without reopening a temp-contained read-only workspace",
   () => {
     const workspace = mkdtempSync(join(tmpdir(), "clarvis-native-temp-workspace-"));
     const externalTemporary = mkdtempSync(join(tmpdir(), "clarvis-native-compatible-temp-"));
-    const scratch = join(workspace, "run-scratch");
+    const scratch = mkdtempSync(join(tmpdir(), "clarvis-native-run-scratch-"));
     const externalFile = join(externalTemporary, "generated.txt");
     const workspaceFile = join(workspace, "denied.txt");
-    mkdirSync(scratch);
     try {
       const backend = probeSandbox();
       if (backend.mode === "unavailable") throw new Error(backend.reason);
@@ -938,6 +1146,7 @@ it.skipIf(process.platform === "win32" || process.env.CLARVIS_NATIVE_SANDBOX_CAN
     } finally {
       rmSync(workspace, { recursive: true, force: true });
       rmSync(externalTemporary, { recursive: true, force: true });
+      rmSync(scratch, { recursive: true, force: true });
     }
   },
 );

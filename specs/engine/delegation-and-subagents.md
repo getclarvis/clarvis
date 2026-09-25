@@ -1038,7 +1038,7 @@ See [generic execution ports](capability-composition.md).
    both child-spawn tools are dispatched through the ordinary tool loop, so a
    `beforeToolUse`/`pre_tool_use` hook matching either one already replaces the brief *and* the
    profile, upstream of the spawn's own
-   validation and of the command guard — and does it non-silently, which `preDelegateTask` could
+   validation — and does it non-silently, which `preDelegateTask` could
    not: the replacement travels as a new call object so the assistant message already in context
    keeps what the model sent (`packages/loop/src/runtime/loop/loop.ts`), the model is told
    through the `[advisor]` channel, and a dispatch that writes a tool-call record carries

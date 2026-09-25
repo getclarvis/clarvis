@@ -41,12 +41,10 @@ The three built-in definitions have an 11,000-character serialized regression ce
 
 ## The workflow tools
 
-Workflow scheduling is native in Host, Sandbox and Container. Container keeps the manager scheduler,
-workflow registry, leaders and shared budget inside the same Kernel and persists their state in its
-canonical owner-scoped host state shared with Host/Sandbox. Projected builtin/global/workspace definitions are frozen for that generation;
-plugin definitions remain absent. The root entry exposes `workflowContextOf`,
-`workflowOutputBudgetOf` and `createLeaderOutputBudgetCapability` for every native composition. The
-[isolated runtime spec](../../specs/hosts/isolated-agent-runtime.md) owns the Container boundary.
+Workflow scheduling is native in Host and Sandbox. The Kernel keeps the manager scheduler,
+workflow registry, leaders and shared budget together and persists their state in its
+canonical owner-scoped host state. The root entry exposes `workflowContextOf`,
+`workflowOutputBudgetOf` and `createLeaderOutputBudgetCapability` for every native composition.
 
 In ascending order of how much structure they assume:
 
@@ -175,11 +173,11 @@ is diagnosed and contributes no override, leaving a same-named built-in availabl
 
 `validateWorkflowDocument(raw, { directory })` compiles prospective `WORKFLOW.md` bytes through the
 same bounds, schema, name, selector, acceptance, repetition and brief rules as the filesystem loader.
-The referenced briefs must already exist below `directory`. The reviewed file-tool route uses this entry
-before effect review or mutation, so a malformed workflow cannot replace valid bytes or reach a
-prepared authoring prompt.
+The referenced briefs must already exist below `directory`. Configuration consumers use this
+validation when loading an authored workflow; ordinary file tools can write the document before
+it is validated.
 
-The ordinary reviewed file tools can create a workflow, its brief and a separate skill launcher;
+The ordinary file tools can create a workflow, its brief and a separate skill launcher;
 an ordinary manager turn loads and executes them under the workflow's own preflight. Workflows are
 independent of Extension Profile selection, while a standalone launcher must be selected by a custom
 profile. See [self-configuration.md](../../specs/hosts/self-configuration.md) for coverage and limits.
@@ -446,10 +444,3 @@ bun --filter @clarvis/workflows format:check
 ```
 
 The package requires Bun 1.4.0 or newer.
-
-## Operator evidence across leaders
-
-The capability resolves `OPERATOR_AUTHORITY_PORT` at attach time. `runLeader` passes a bounded
-compiled intersection and parent reader separately from its model-visible brief. Parent revision
-changes invalidate inherited authority. Independent leaders do not inherit single-attempt CI retry
-grants. See [effect review](../../specs/execution/effect-review.md).

@@ -27,8 +27,8 @@ The subsystem solves three distinct problems with one mechanism:
   (`packages/capability/src/env.ts`). It is `CLARVIS_LOG_AUDIT` alone whose comment states the
   silencing rationale explicitly: "Environment only: a run that could write this through settings
   could silence the record of what it did" (`packages/capability/src/env.ts`).
-- **An audit channel that survives an operator turning verbosity down.** Command-guard rulings and
-  (per `@clarvis/server`, delegated elsewhere) authentication decisions are logged through a
+- **An audit channel that survives an operator turning verbosity down.** Authentication decisions
+  and host audit events are logged through a
   level-pinned sibling of the diagnostic logger so `CLARVIS_LOG_LEVEL=warn` — "a legitimate production
   setting" — cannot silence them (`packages/kernel/src/component-loggers.ts`).
 
@@ -38,17 +38,22 @@ is not the terminal" (`packages/tools/tests/architecture/logging-channel.test.ts
 reach `process.stdout`, `process.stderr` or `console.*` directly for a diagnostic; a terminal host
 (`@clarvis/code`) owns the terminal as a rendered canvas, and a stray raw write corrupts the frame
 mid-string rather than merely being noisy (`packages/code/src/adapters/terminal-guard.ts`).
+The native filesystem worker writes framed protocol data to its owned stdout pipe, not a diagnostic;
+`STREAM_PLUMBING` in `packages/paths/tests/architecture/one-diagnostic-channel.test.ts`
+classifies that endpoint explicitly. Production: `runFilesystemWorker` in
+`packages/tools/src/filesystem-worker.ts`. Test: `no package writes to a terminal channel directly`
+in `packages/paths/tests/architecture/one-diagnostic-channel.test.ts`.
 
 ### 1.1 The trace-versus-log rule
 
 This document's scope names "the trace-versus-log rule" as its own (trace *persistence itself* is the
-sibling [foundations/trace.md](../foundations/trace.md) document's). None of the six files this document reads —
+sibling [foundations/trace.md](../foundations/trace.md) document's). None of the source modules this document reads —
 `packages/capability/src/{ports,log,env}.ts`, `packages/kernel/src/component-loggers.ts`,
 `packages/loop/src/logger.ts`, and the per-package `log.ts` modules in `tools`, `skills`,
-`workflows`, `plan`, `server` — states the general principle in one place; they assume it. `§6`'s
+`workflows` and `plan` — states the general principle in one place; they assume it. `§6`'s
 compaction-summarizer row is the only place in the document the distinction is worked through
 concretely, and its citation (`packages/loop/src/runtime/context/llm-compaction.ts`) is
-outside this document's own scope. Stated plainly, from what the six in-scope files show by
+outside this document's own scope. Stated plainly, from what the in-scope files show by
 construction rather than by comment: **a trace entry is part of the persisted record of what a run
 did and is read back on rehydration** (`TracePort.record`, `packages/capability/src/ports.ts`);
 **a log record is Clarvis's own machinery narrating itself, is never parsed back, and has no
@@ -58,14 +63,6 @@ none of them touches `TracePort`. No in-scope file states this contrast better t
 example already cited in §6; that example remains the illustration, not a restatement of a principle
 this document can source more directly.
 
-Kernel reviewer accounting is a durable trace, not a diagnostic log: one
-`guard_reviewer_model_call` event survives in `ExecutionRecord.trace` for each actual provider call,
-while `engineEventToProto` deliberately drops that contributed discriminator without an unmapped-event
-warning. The event contains bounded operational counters and identifiers only, never reviewer input
-or output. Production: `callReviewerWithTrace` in
-`packages/kernel/src/guard/reviewer-trace.ts` and `engineEventToProto` in
-`packages/kernel/src/runs/map-events.ts`. Test: `packages/kernel/tests/unit/reviewer-trace.test.ts`
-and `packages/kernel/tests/unit/observability.test.ts`.
 
 Goal Steward keeps its own ordinary execution trace and provider purpose `goal`. Its operational
 `goal.steward.failed` and `goal.steward.settled` records contain execution identity, mode, disposition
@@ -85,8 +82,7 @@ model call.
 
 Production: formulation diagnostics in
 [service.ts](../../packages/kernel/src/goals/service.ts), purpose propagation in
-[execute-run.ts](../../packages/loop/src/runtime/execute-run.ts), and the Container purpose codec in
-[container-model-contract.ts](../../packages/kernel/src/hosting/container-model-contract.ts).
+[execute-run.ts](../../packages/loop/src/runtime/execute-run.ts).
 Test: [agent-run.test.ts](../../packages/goal/tests/unit/agent-run.test.ts) verifies `callPurpose`,
 while [goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts)
 verifies the separate persisted execution and receipt replay.
@@ -179,19 +175,6 @@ modules instead hold logging *helpers*:
 | `@clarvis/plan` | `packages/plan/src/log.ts` | `boundedPlanReason(error)` | normalizes, redacts and caps (500 chars) a plan read/parse failure before it may be logged |
 | `@clarvis/plan` | `packages/plan/src/log.ts` | `MAX_PLAN_LOG_REASON_CHARS` | `500` |
 
-### 2.5 `@clarvis/server`'s logging module
-
-| Symbol | Location | Role |
-| --- | --- | --- |
-| `ServerLoggers` | `packages/server/src/logging.ts` | `{log, audit, child(bindings)}` — the pair every collaborator threads |
-| `createServerLoggers(log, audit)` | `packages/server/src/logging.ts` | pairs a diagnostic logger with an audit logger, `child` re-pairs both bound |
-| `SILENT_SERVER_LOGGERS` | `packages/server/src/logging.ts` | the fallback pair, both `NOOP_LOGGER` |
-| `ownerFields(owner, mode)` | `packages/server/src/logging.ts` | `{owner, owner_authenticated: mode === "token"}` |
-| `RequestLogMode` | `packages/server/src/logging.ts` | `"off" \| "errors" \| "all"` |
-| `logHttpRequest(logger, mode, fields)` | `packages/server/src/logging.ts` | writes `event: "http.request"` at `info`, gated by `mode` |
-| `REQUEST_ID_HEADER` | `packages/server/src/logging.ts` | `"x-clarvis-request-id"` |
-| `newRequestId()` / `newInstanceId()` | `packages/server/src/logging.ts` | both mint a 12-hex-digit id via `shortId()` |
-
 ### 2.6 Environment variables (all from `packages/capability/src/env.ts`)
 
 | Variable | Type / default | Effect |
@@ -211,8 +194,6 @@ is deliberately open, "the way `TraceKind` is" — and never mentions silencing 
 
 ### 2.7 CLI flags observed wiring these variables
 
-- `@clarvis/server`'s `bin.ts` maps a `--log-level` flag onto `CLARVIS_LOG_LEVEL`
-  (`packages/server/src/bin.ts`) before constructing its loggers.
 - `@clarvis/kernel`'s `serveFileKernelOverStdio` accepts `opts.logger` directly (no flag), and refuses
   to start when that logger shares a file descriptor with the stdio wire — see §6.
 
@@ -224,8 +205,7 @@ decides how a logger reaches each shape:
 - A **function parameter** takes `logger: Logger = NOOP_LOGGER`.
 - An **options-bag interface property** cannot carry a default in TypeScript, so it stays
   `logger?: Logger` and is normalized once, at construction (`options.logger ?? NOOP_LOGGER`). Every
-  site below that point calls it unconditionally — `@clarvis/server`'s `SILENT_SERVER_LOGGERS`
-  (`packages/server/src/logging.ts`) is the pattern.
+  site below that point calls it unconditionally.
 - A field on a hot internal config object may be made **required** and filled by its resolver.
   `@clarvis/tools` did that with `RuntimeConfig.logger` rather than pay ~30 optional-chained sites
   against a 0.98 function floor.
@@ -260,28 +240,7 @@ logger.info(
 );
 ```
 
-```ts
-// packages/kernel/src/guard/resolver.ts
-audit.info(
-  {
-    event: "guard.decision",
-    verdict: decision.verdict,
-    matched: decision.matched,
-    mode,
-    tool: decision.tool,
-    ...
-  },
-  "the command guard ruled on a tool call; an 'ask' still needs an answer before the call runs",
-);
-```
 
-```ts
-// packages/server/src/logging.ts
-logger.info(
-  { event: "http.request", ...fields },
-  "an HTTP request was answered; the status is what the caller saw",
-);
-```
 
 ```ts
 // packages/tools/src/config.ts (via tools.config_resolved, observed in
@@ -292,7 +251,7 @@ logger.info(
   sandbox_mode: "native",
   sandbox_availability: "optional",
   read_only: true,
-  confined: false,
+  skill_execution_roots: 0,
   platform: process.platform,
 }
 ```
@@ -302,11 +261,7 @@ Scalar values (`string | number | boolean | null`) and `Error` are the dominant 
 sink-enforced shape: the backend is plain `pino` with no `formatters` and no `serializers`
 (`packages/loop/src/logger.ts`), so arrays and nested objects serialize verbatim. Most call
 sites flatten bounded collections — `@clarvis/workflows`'s `joinIds` turns an id list into one
-comma-joined scalar (`packages/workflows/src/log.ts`) — but the current vocabulary has
-intentional array-valued exceptions. `tasks.provider.invalid_response.zod_issues` carries at most the
-bounded, deduplicated **paths** that failed projection, never their values
-(`packages/tasks/src/mcp-provider.ts`; pinned at
-`packages/tasks/tests/component/tasks-observability.test.ts`).
+comma-joined scalar (`packages/workflows/src/log.ts`) — but the sink accepts arrays and objects.
 Consumers therefore must accept JSON field values;
 they cannot assume every non-error field is scalar.
 
@@ -334,19 +289,6 @@ bindLevelled(root, { component: "audit", audit: true }, "info")
 
 Pinned to `"info"` on purpose, over the same destination as the diagnostic logger, so
 `CLARVIS_LOG_LEVEL=warn` cannot silence it (`packages/kernel/src/component-loggers.ts`).
-Guard-specific audit records observed:
-
-| `event` | Level | Fields (beyond `event`) | Source |
-| --- | --- | --- | --- |
-| `guard.resolved` | info | `mode, source, judge_configured, human_channel` | `packages/kernel/src/guard/resolver.ts` |
-| `guard.decision` | info | `verdict, matched, mode, tool, reason?, escalate?, command_digest?` | `packages/kernel/src/guard/resolver.ts` |
-| `guard.elicit.answered` | info | `answer: "allow"\|"allow_session"\|"deny", answerer: "human"\|"judge"\|"session_allowlist"` | `packages/kernel/src/guard/resolver.ts` |
-| `guard.escalation.no_channel` | warn | `run_id` | `packages/kernel/src/guard/resolver.ts` |
-
-Note the deliberate absence of the raw shell command from `guard.decision`: it carries
-`command_digest` (16 hex characters, per test) rather than the text, and the pinned test asserts the
-whole serialized record never contains the workspace path or the command
-(`packages/kernel/tests/unit/guard-audit.test.ts`: `expect(JSON.stringify(decision)).not.toContain("/tmp/x")`).
 Redaction mechanics themselves (`sanitizeErrorMessage`, `sanitizeToolPayload`, `sanitizeDeep`,
 `packages/capability/src/sanitize.ts`) belong to the sibling
 [cross-cutting/security.md](security.md) document; this document only records that the audit and diagnostic paths
@@ -367,20 +309,10 @@ rules, all pinned by test (`packages/capability/tests/unit/log.test.ts`):
   `mcp=debug,mcp.connect=error` resolves `mcp.connect.retry` to `error` and `mcp.pool` to `debug`;
   `mcpclient` does **not** match `mcp=debug` (no dot boundary).
 
-### 3.4 Identifiers
-
-- `newRequestId()` / `newInstanceId()`: 12 hex characters, from `crypto.randomUUID()` with hyphens
-  stripped and truncated (`packages/server/src/logging.ts`). Deliberately shorter
-  than a full UUID and never caller-supplied — "an id a caller chooses is an id a caller can collide
-  with".
-- `command_digest` on a `guard.decision` record: 16 hex characters (test-asserted regex
-  `/^[0-9a-f]{16}$/`, `packages/kernel/tests/unit/guard-audit.test.ts`); the digest algorithm
-  itself is not read in this document (it lives behind `createShellGuard`, out of this document's scope).
-
 ### 3.5 What is never logged, at any level
 
 An `Authorization` header, a bearer token, a `secret_hash`, a JWK, `auth.json` contents, resolved MCP
-`env`/`headers` **values** (only the `${VAR}` names), a command's text (a digest instead), a memory
+`env`/`headers` **values** (only the `${VAR}` names), a memory
 document body, a skill body, a plan document, a tool's arguments or result, or a model prompt/response.
 
 `packages/capability/src/sanitize.ts` covers key-shaped strings and is the single owner of the rules;
@@ -402,11 +334,6 @@ Order of operations in `createFileKernel` (`packages/kernel/src/file-kernel.ts`)
     — "nothing serves a request until it reports ready".
 6. Pass `componentLogger("worktrees")`, `componentLogger("guard")` etc. to each collaborator as it is
    built, and pass `auditLogger` into `createGuardResolver({..., audit: auditLogger})`.
-
-`@clarvis/server`'s `bin.ts` follows the identical shape at the process level
-(`packages/server/src/bin.ts`): build `root` via `createLogger`, bind an `instance_id`, derive
-`components` and pick `components("server")`, derive `audit` via `createAuditLogger`, and pair both
-into one `ServerLoggers` via `createServerLoggers`.
 
 Four correlation scopes exist, and each is bound by the layer that owns it: **service**
 (`{service, instance_id}`, bound by the factory), **component** (`{component}`, bound where the kernel
@@ -449,23 +376,6 @@ preference — it is a host saying it has no channel"; pinning audit at `"info"`
 silenced `@clarvis/code` root would again paint raw JSON over the terminal frame "on every guarded
 tool call."
 
-### 4.4 Guard resolution and the audit trail — `createGuardResolver`
-
-`packages/kernel/src/guard/resolver.ts` (abbreviated):
-
-1. Read live `GuardSettings`; compute `guardMode = resolveGuardMode(request.guard_mode, settings.guard)`.
-2. Derive a run-bound audit child: `auditRoot.child?.({run_id, owner}) ?? auditRoot`.
-3. Build the shell guard with `recordDecision(audit, mode, decision)` as its `onDecision` callback
-    — every ruling the guard makes writes `guard.decision`.
-4. Choose the elicit channel: human for `mode==="on"`, judge-then-human-fallback for `mode==="auto"`,
-   none for `mode==="off"`.
-5. Emit one `guard.resolved` record per run, naming whether the mode came from the
-   request or from settings, whether a judge is configured, and whether a human channel exists.
-6. On an escalated `ask` with no human channel, `noHumanChannel` denies and warns
-   (`guard.escalation.no_channel`) — "the one denial a user can neither see nor answer."
-7. Every answered `ask` calls `answered()`, which reads the session allowlist **before**
-   and **after** the answer to distinguish a fresh `allow` from an `allow_session`, then calls
-   `recordAnswer` (`guard.elicit.answered`).
 
 ### 4.5 Refusing a logger bound to the kernel's own wire — `serveFileKernelOverStdio`
 
@@ -521,8 +431,7 @@ not: `createComponentLoggers` and `createAuditLogger` both short-circuit to `NOO
 - Production: `packages/kernel/src/component-loggers.ts` (component factory),
   `packages/kernel/src/component-loggers.ts` (audit).
 - Test: `packages/kernel/tests/unit/component-loggers.test.ts` ("a silent root" — "is not
-  overridden by a CLARVIS_LOG scope"); `packages/kernel/tests/unit/guard-audit.test.ts`
-  ("is silent when the host's own logger is silent").
+  overridden by a CLARVIS_LOG scope").
 
 **INV-OBS-2** (derived). `CLARVIS_LOG_AUDIT` and `CLARVIS_LOG` cannot be set through `settings.json`
 or a run request — both are declared only in the environment schema
@@ -569,13 +478,6 @@ then every power of two thereafter, and this is per-instance (two samplers never
   calls is exactly `[1,2,3,4,5,6,7,8,16,32]`, and that two independent `createSampler()` instances do
   not share state.
 
-**INV-OBS-7** (derived). No log call anywhere in this document's scope carries a value that is not a
-scalar, `Error`, or (for `guard.decision`'s optional fields) `undefined`-omitted; specifically no raw
-shell command ever reaches an audit record.
-- Production: `packages/kernel/src/guard/resolver.ts` (`command_digest`, never `command`).
-- Test: `packages/kernel/tests/unit/guard-audit.test.ts` —
-  `expect(JSON.stringify(decision)).not.toContain("/tmp/x")` where `/tmp/x` was the path embedded in
-  the denied command.
 
 **INV-OBS-8** (derived). Both `createSampler` and `createRateLimiter` bound their key-tracking `Map`
 by the same mechanism: `evictOldest` (`packages/capability/src/log.ts`), gated by
@@ -607,16 +509,14 @@ LRU-by-insertion-order structure rather than merely a size-capped one.
 | A file/directory handle fails to close in `@clarvis/skills` | Logged at `debug` (not surfaced as an error, not thrown) — "the failure is genuinely not actionable by the caller" | `packages/skills/src/lib/log.ts` |
 | A plan file's read/parse error would otherwise be logged verbatim | Routed through `boundedPlanReason`: whitespace-collapsed, sanitized, then capped at 500 chars — because the `yaml` package's own errors "quote the offending source lines" | `packages/plan/src/log.ts` |
 | A scheduled compaction summarizer throws or returns an oversized summary | Recorded as a **log** (`compaction.summarizer_failed`, `warn`), never as a trace entry, because "the actor is the host's summarizer, not the agent, and omitting it does not make the persisted record a false account of the conversation" | `packages/loop/src/runtime/context/llm-compaction.ts` |
-| An escalated guard `ask` has no human channel configured | Denied, and the denial itself is loud: `guard.escalation.no_channel` at `warn`, because this is "the one denial a user can neither see nor answer" | `packages/kernel/src/guard/resolver.ts` |
-| No audit logger is supplied to `createGuardResolver` at all | Guard resolution still functions (falls back to `NOOP_LOGGER` internally via `deps.audit ?? NOOP_LOGGER`); nothing is recorded, and the call still resolves and permits normally | `packages/kernel/src/guard/resolver.ts`; test `packages/kernel/tests/unit/guard-audit.test.ts` |
 
 ## 7. Coupling
 
 - **`@clarvis/capability` is the sole owner of `Logger`/`LogFn`/`LOG_LEVELS` and everything derived
   from them.** Every other package in this document's scope imports the type from there rather than
   redeclaring it: `packages/loop/src/logger.ts`, `packages/kernel/src/component-loggers.ts`,
-  `packages/skills/src/lib/log.ts`, `packages/workflows/src/log.ts`,
-  `packages/server/src/logging.ts`. This is a static, compile-time import edge in every case.
+  `packages/skills/src/lib/log.ts` and `packages/workflows/src/log.ts`.
+  This is a static, compile-time import edge in every case.
 - **`componentLogger`/`bindLevelled` live in `@clarvis/capability` because two layers need them and
   neither can import the other**: "`@clarvis/kernel` derives a component logger for each collaborator
   it constructs, and `@clarvis/loop` does the same for the three subsystems it wires directly"
@@ -635,11 +535,7 @@ LRU-by-insertion-order structure rather than merely a size-capped one.
   already-built `Logger` value rather than constructing one.
 - **`@clarvis/kernel`'s `component-loggers.ts` depends only on `@clarvis/capability`**
   (`packages/kernel/src/component-loggers.ts`) — it does not import pino or `@clarvis/loop`
-  directly, so it composes over whatever `Logger` a host (kernel's own `createFileKernel`, or
-  `@clarvis/server`'s `bin.ts`) hands it.
-- **`@clarvis/server` reaches `createAuditLogger`/`createComponentLoggers` by importing them from
-  `@clarvis/kernel`** (`packages/server/src/bin.ts`), not by re-implementing them — a single owner
-  for the silence/audit-pinning logic that both hosts need identically.
+  directly, so it composes over the `Logger` supplied by its host.
 - **`@clarvis/tools`, `@clarvis/skills` (and, outside this document's direct scope,
   `@clarvis/paths` and `@clarvis/hooks`) each declare their own minimal structural logger port**
   (`ToolsLogger`, `SkillDiagnostics.logger`, `PathsLogger`, and `HookLogger` at
@@ -697,18 +593,13 @@ LRU-by-insertion-order structure rather than merely a size-capped one.
   terminal outright — so adding a file means claiming one of those, and a companion test fails when a
   named exemption stops needing to be one. The survey behind it also corrected the reading above:
   `@clarvis/workflows` and `@clarvis/plan` hold **none**; `@clarvis/skills`' single write *is* its own
-  sanctioned sink, the same shape as `@clarvis/tools`'; and `@clarvis/server`'s are in `bin.ts`, which
-  the standard already carves out for an operator at a shell. The rule was held everywhere — only one
+  sanctioned sink, the same shape as `@clarvis/tools`'. The rule was held everywhere — only one
   package proved it.
 - ~~**INV-OBS-2** (settings/request cannot set `CLARVIS_LOG`/`CLARVIS_LOG_AUDIT`) is argued from the
   *absence* of the field from the environment-only schema location, not from a positive test that
   attempts and rejects such a write. No such rejection test was found in this document's scope.~~
   **Resolved** — see INV-OBS-2 above for where, and for the one thing the tests had to be
   careful not to overstate.
-- **The exact digest algorithm behind `command_digest`** (16 hex chars on a `guard.decision` record) is
-  implemented in `createShellGuard`, which is outside this document's primary scope (guard/command
-  policy belongs to a different document); this document only records the field's presence, shape and the
-  test that pins the raw command's absence.
 - **Whether any capability outside this document's scope writes an `event` name that collides with
   another package's** is not checked by anything this document found; the vocabulary is stated to be
   deliberately open (`packages/capability/src/log.ts`), so a collision would not be caught

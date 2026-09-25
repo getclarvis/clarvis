@@ -42,8 +42,7 @@ let tmpCounter = 0;
  * property the copies this replaces had already lost: the pid separates two
  * processes, the counter separates two writers *inside* one process, and the
  * UUID makes the whole name collision-free even across a fork that inherits the
- * counter. `@clarvis/server`'s signing key was written to a bare `<file>.tmp`,
- * so two boots racing the same key file collided on one temp path.
+ * counter. A bare `<file>.tmp` would make two concurrent writers collide.
  *
  * Paired with {@link isTmpFile}: a sweeper must never re-spell the convention.
  */

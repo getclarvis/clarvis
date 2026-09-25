@@ -10,7 +10,7 @@ import { globalPaths, workspaceStatePaths } from "@clarvis/paths";
 import { listenLocalKernel, type LocalKernelListener } from "../transport/local.ts";
 import { createFileRunHost, type FileRunHost, type FileRunHostOptions } from "./file-host.ts";
 import { memoryKeepsHostAlive } from "./memory-activity.ts";
-import { localKernelPolicyIdentity } from "./policy-identity.ts";
+import { localHostPolicyIdentity } from "./policy-identity.ts";
 import {
   acquireLocalHostState,
   localHostEndpointRootCandidates,
@@ -20,7 +20,7 @@ import {
 
 /** Process composition. None of these inputs are accepted from a connecting RPC peer. */
 export interface ServeLocalFileKernelOptions {
-  kernel: Extract<FileRunHostOptions, { composition?: { kind: "file" } }>["kernel"];
+  kernel: FileRunHostOptions["kernel"];
   artifactId: string;
   /** Idle duration measured with a monotonic clock. Defaults to one minute. */
   idleTimeoutMs?: number;
@@ -65,12 +65,13 @@ export async function serveLocalFileKernel(
       : { endpointRootCandidates: localHostEndpointRootCandidates(environment) }),
   });
   const env = options.kernel.env ?? loadEnv(environment);
-  const state = await acquireLocalHostState(
-    identity,
-    options.artifactId,
-    localKernelPolicyIdentity(env),
-    logger,
-  );
+  const policyId = localHostPolicyIdentity({
+    env,
+    workspaceRoot: identity.workspaceRoot,
+    globalDir: identity.globalDir,
+    environment,
+  });
+  const state = await acquireLocalHostState(identity, options.artifactId, policyId, logger);
   if (state === null) return null;
   let host: FileRunHost | undefined;
   let listener: LocalKernelListener | undefined;
@@ -94,6 +95,15 @@ export async function serveLocalFileKernel(
       authenticate: (token) => state.authenticate(token),
       assertAuthority: () => state.lease.assertOwned(),
     });
+    if (
+      localHostPolicyIdentity({
+        env,
+        workspaceRoot: identity.workspaceRoot,
+        globalDir: identity.globalDir,
+        environment,
+      }) !== policyId
+    )
+      throw kernelError("conflict", "Sandbox policy changed during host startup");
     const ownedHost = host;
     await host.sync();
     listener = await listenLocalKernel(host.server, identity.paths.endpoint, { logger });

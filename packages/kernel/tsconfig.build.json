@@ -13,10 +13,7 @@
       "@clarvis/llm": ["../llm/dist/index.d.ts"],
       "@clarvis/goal": ["../goal/dist/index.d.ts"],
       "@clarvis/mcp-client": ["../mcp-client/dist/index.d.ts"],
-      "@clarvis/plan": ["../plan/dist/index.d.ts"],
-      "@clarvis/tasks": ["../tasks/dist/index.d.ts"],
-      "@clarvis/tasks/capability": ["../tasks/dist/capability.d.ts"],
-      "@clarvis/tasks/settings": ["../tasks/dist/settings.d.ts"]
+      "@clarvis/plan": ["../plan/dist/index.d.ts"]
     }
   },
   "references": [
@@ -57,13 +54,7 @@
       "path": "../workflows/tsconfig.build.json"
     },
     {
-      "path": "../tasks/tsconfig.build.json"
-    },
-    {
       "path": "../skills/tsconfig.build.json"
-    },
-    {
-      "path": "../judge/tsconfig.build.json"
     }
   ],
   "include": ["src"]

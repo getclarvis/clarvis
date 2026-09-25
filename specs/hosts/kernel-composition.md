@@ -14,16 +14,10 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
 
 ## 2. Construction
 
-Native FileKernel composes one host-bound Judge capability and projected private trace store.
-Its eligibility covers automatic command/configuration review; Memory indexing removes it, and the
-Container graph does not invoke this factory. Work-run providers and parent observation remain host
-bindings. The [Judge contract](../capabilities/judge.md#native-host-composition) owns this boundary
-and the current consumer-cutover limit.
-Production: `createHostJudge` in [judge-host.ts](../../packages/kernel/src/guard/judge-host.ts),
-`createFileKernel` and `composeIndexPassDeps`.
-Test: [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts) and
-[index-pass-deps.test.ts](../../packages/kernel/tests/unit/index-pass-deps.test.ts).
-
+Native FileKernel composes the loop and host services. Work-run providers and parent observation
+remain host bindings. Production: `createFileKernel` in
+[file-kernel.ts](../../packages/kernel/src/file-kernel.ts). Test:
+[file-kernel.test.ts](../../packages/kernel/tests/integration/file-kernel.test.ts).
 
 The in-process facade exposes an unavailable `GoalService`; authenticated conversation hosting
 supplies the live service per connection. `InProcessKernel.prepareRun` accepts a host-only goal
@@ -38,18 +32,9 @@ Production: [kernel.ts](../../packages/kernel/src/kernel.ts) and
 Test: [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts)
 checks headless unavailability and an authenticated goal through actual kernel execution.
 
-`createFileRunHost` selects construction through `composition`: omitted or `kind: "file"` uses
-FileKernel; `kind: "container"` uses `createContainerNativeKernel` and never constructs FileKernel.
-Both feed the hosted registry, session coordinator and authenticated server of the existing kernel
-RPC. The Container branch accepts admitted projection, inference port and explicit identity/roots;
-it excludes file-only adapter options and refuses local machine controls. Its immutable config,
-logical model catalog and Extension Profile replace file-backed administration; secrets/plugins
-use unavailable services without constructing their defaults. Plans and Memory use explicit content
-and lock/machinery roots. Workflow definitions come from the frozen projection, not guest files.
-
-Construction is not a launcher or isolation proof: the process owner must establish mounts, leases,
-artifact admission, pipe authentication and boot sequencing separately. The local and SSH bootstrap
-APIs retain File-only options. The hosted graph accepts owner-provided projection/index storage and
+`createFileRunHost` composes the native FileKernel and feeds the hosted registry, session
+coordinator and authenticated kernel RPC. The local and SSH bootstrap APIs use the same
+FileKernel options. The hosted graph accepts owner-provided projection/index storage and
 an authentication callback. Client disconnect retires observation/control and applies the run's explicit
 disconnect policy; only its process owner calls the host's `close`. `InProcessKernel.prepareRun`
 captures effective root/leader configuration without inference, and its single-use start still enters
@@ -57,18 +42,6 @@ the existing execution-id, owner and Extension Profile leases. `serveLocalFileKe
 lease/discovery record, authenticated listener and independent idle lifecycle;
 `connectOrLaunchLocalKernel` discovers or launches its application-selected artifact. Code adoption
 and installed-artifact retention remain separate composition work.
-
-Production: `createContainerNativeKernel` in
-[container-native.ts](../../packages/kernel/src/hosting/container-native.ts) delegates the common
-graph to `createNativeKernel` in [native-kernel.ts](../../packages/kernel/src/native-kernel.ts).
-Test: [container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
-checks the discriminated construction and public hello, counts zero SDK/MCP/plugin/secret-store/
-FileKernel construction, and verifies withheld local controls. Its deterministic native journeys
-also execute a compatible logical model without endpoint configuration, complete Plans tasks using
-CAS, and recreate the Kernel graph over retained plan/session data. Wiki tests retain documents and
-pending jobs without an indexing model (zero attempts), then exercise the injected indexing model,
-writable wiki tools and the pyramid finalization gate. These graph-level tests do not establish
-physical Container placement, process-crash durability or the complete native-domain matrix.
 
 Native construction owns its housekeeping, trace cleanup, host disposal and built Loop resources
 through the existing Kernel lifecycle. One failed disposal does not prevent the other resources
@@ -163,7 +136,7 @@ An owner handle is acquired lazily and cached only within this one kernel. Closi
 new acquisitions, settles owners/resources, and attempts every close even when one fails. Concurrent
 close calls share the current attempt. Failed resources remain registered in `closing` state, and a
 later close retries them without repeating successful resources or reopening admission. The file
-host closes its other dependencies even when container removal fails.
+host closes its other dependencies even when one disposal fails.
 
 Production: `packages/kernel/src/kernel.ts` (`InProcessKernel`, `createInProcessKernel`);
 `packages/kernel/src/application/scope-policy.ts`.
@@ -174,48 +147,22 @@ Test: `packages/kernel/tests/integration/owner-isolation.test.ts`;
 ## 5. Capability composition
 
 The file kernel registers settings and grants before reading configuration. The loop receives tools,
-skills, hooks, memory, planning, workflows, and tasks only when their owning policy enables them.
+skills, hooks, memory, planning, and workflows only when their owning policy enables them.
 Optional package values do not enter the eager settings/import path contrary to the capability
 composition boundary.
 
 The Extension Profile manager narrows plugin contributions before settings, agents, MCP servers, hooks,
-capability executables, and plugin skill roots are composed. Standalone skill selection is passed as
+and plugin skill roots are composed. Standalone skill selection is passed as
 resolved `SkillRootInput` entries with exact `include` lists. The loop receives those roots and the
 opaque `{ id, fingerprint }` run metadata; it does not import Extension Profile policy.
 
-Container calls the same `createNativeKernel` composition with a frozen configuration store, local
-Plans/Memory/Workflows/Goals, an injected logical model provider and an empty MCP connection manager.
-Only external extension and capability providers are absent. Registration of a native capability
-does not grant access to host administration.
-
-Production: `createNativeKernel` in `packages/kernel/src/native-kernel.ts` and
-`createContainerNativeKernel` in `packages/kernel/src/hosting/container-native.ts`. Test:
-`packages/kernel/tests/integration/container-kernel-host.test.ts` and
-`packages/kernel/tests/integration/kernel-service-overrides.test.ts`.
-
-The tools capability receives the selected workspace, sandbox policy, guard resolver, and secret
-environment names. It creates the run-owned scratch and appends host system temporary access inside
-the optional tools capability. The kernel guard makes Isolation Sandbox `require_escalated` an `ask`
-matched `host_command`: mode `on` uses `escalate: "human"`, while Auto may use the judge to allow
-or deny. Inconclusive, failed or malformed Auto review refuses to the calling agent; an unavailable
-model refuses. Host-command asks bypass session coverage and never offer `allow_session`; clean
-exact-call judge memoization is separate. Mode `off` returns no guard, so that one command proceeds without command review.
-Isolated container guests reject the field instead of forwarding it to the host.
-
-Production: `createGuardResolver` in `packages/kernel/src/guard/resolver.ts` and `createShellGuard`
-in `packages/kernel/src/guard/shell-guard.ts`. Test:
-`packages/kernel/tests/integration/guard-auto-review.test.ts` and
-`packages/kernel/tests/unit/guard.test.ts`.
-
-`CreateFileKernelOptions.sessionAllowlistFor` can bind command consent to a persistent host's current
-interactive controller. Without it, the guard keeps its ordinary resolver-local lifetime. The
-host owns the shared operator authority reader and revokes it with the interactive scope. Direct
-configuration and command review consume that same reader; no separate configuration consent
-lifecycle exists. Production: `createFileKernel` in
-[file-kernel.ts](../../packages/kernel/src/file-kernel.ts) and `createHostedRegistry` in
-[registry.ts](../../packages/kernel/src/hosting/registry.ts).
-Test: [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts)
-and the controller-lifetime cases in [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts).
+The tools capability receives the selected workspace, sandbox policy, and secret environment names.
+It creates run-owned scratch and appends host system temporary access inside the optional tools
+capability. File and shell calls use the configured native sandbox without a per-call bypass.
+Production: `packages/kernel/src/file-kernel.ts` (`createFileKernel`),
+`packages/tools/src/sandbox.ts` (`sandboxCommand`). Test:
+`packages/kernel/tests/integration/file-kernel.test.ts` and
+`packages/tools/tests/integration/sandbox.test.ts`.
 
 Workflow leaders are separate auxiliary runs. `auxiliaryWorkflowRunDeps` removes the memory
 capability and leader assembly forces `memory: "off"`; the primary manager remains the workflow's
@@ -244,7 +191,7 @@ in [memory indexing](../capabilities/memory-indexer.md) and
 
 Production: `packages/kernel/src/config/capability-registry.ts`;
 `packages/kernel/src/file-kernel.ts`; `packages/kernel/src/extension-profiles/extension-profile-manager.ts`;
-`packages/kernel/src/guard/resolver.ts`.
+`packages/tools/src/sandbox.ts`.
 
 Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
 `packages/kernel/tests/integration/builtin-fleet.test.ts`.
@@ -288,7 +235,7 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
    Production: `packages/kernel/src/kernel.ts`; `packages/kernel/src/application/lifecycle.ts`;
    `packages/kernel/src/file-kernel.ts`.
    Test: `packages/kernel/tests/unit/lifecycle.test.ts`;
-   `packages/kernel/tests/integration/file-kernel.test.ts` (`retries failed container removal through
+   `packages/kernel/tests/integration/file-kernel.test.ts` (`retries failed disposal through
    the public kernel close path`).
 
 5. **The kernel exposes no worktree lifecycle service or cross-workspace kernel cache.**
@@ -299,7 +246,7 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
    applies once to resident owners plus every later owner generation.**
    Production: `InProcessKernel.startMemoryRecovery`, `buildOwner`, and `residentOwner` in
    `packages/kernel/src/kernel.ts`; host calls in `packages/code/src/runtime.tsx`,
-   `packages/kernel/src/serve.ts`, and `packages/server/src/bin.ts`.
+   `packages/kernel/src/serve.ts`.
    Test: `packages/kernel/tests/integration/owner-isolation.test.ts` (`starts durable memory recovery
    only after the host releases boot`).
 

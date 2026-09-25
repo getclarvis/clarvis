@@ -168,6 +168,82 @@ describe("manifest location", () => {
 });
 
 describe("Agent Plugins v1 package", () => {
+  it("isolates invalid portable MCP entries without discarding a valid peer", () => {
+    const data = join(root, "runtime-data");
+    mkdirSync(data, { recursive: true });
+    write("plugin.json", { $schema: AGENT_PLUGIN_SCHEMA, name: "portable.plugin" });
+    const cases: { name: string; entry: unknown; reason: string }[] = [
+      {
+        name: "escaped_cwd",
+        entry: { type: "stdio", command: "node", cwd: "../outside" },
+        reason: "cwd is not confined",
+      },
+      {
+        name: "reserved_env",
+        entry: { type: "stdio", command: "node", env: { PLUGIN_ROOT: "other" } },
+        reason: "env may not define",
+      },
+      {
+        name: "credential_url",
+        entry: { type: "streamable-http", url: "https://user:pass@example.test/mcp" },
+        reason: "url violates",
+      },
+      {
+        name: "public_http",
+        entry: { type: "streamable-http", url: "http://example.test/mcp" },
+        reason: "url violates",
+      },
+      {
+        name: "duplicate_header",
+        entry: {
+          type: "streamable-http",
+          url: "https://example.test/mcp",
+          headers: { "X-Token": "one", "x-token": "two" },
+        },
+        reason: "headers contain",
+      },
+      { name: "malformed", entry: { type: "unsupported" }, reason: "not contributed" },
+    ];
+    for (const sample of cases) {
+      write("mcp.json", {
+        $schema: AGENT_MCP_SCHEMA,
+        mcpServers: {
+          good: { type: "stdio", command: "node" },
+          [sample.name]: sample.entry,
+        },
+      });
+      const result = resolveAgentPlugin(data);
+      expect(result.error).toBeUndefined();
+      expect(Object.keys(result.manifest?.mcpServers ?? {})).toEqual(["good"]);
+      expect(result.notes.join(" ")).toContain(sample.reason);
+    }
+  });
+
+  it("keeps a portable plugin usable when its MCP document is unreadable or malformed", () => {
+    const data = join(root, "runtime-data");
+    mkdirSync(data, { recursive: true });
+    write("plugin.json", { $schema: AGENT_PLUGIN_SCHEMA, name: "portable.plugin" });
+
+    write("mcp.json", "{invalid");
+    const invalidJson = resolveAgentPlugin(data);
+    expect(invalidJson.error).toBeUndefined();
+    expect(invalidJson.manifest?.mcpServers).toBeUndefined();
+    expect(invalidJson.notes.join(" ")).toContain("invalid JSON");
+
+    write("mcp.json", "[]");
+    const invalidRoot = resolveAgentPlugin(data);
+    expect(invalidRoot.error).toBeUndefined();
+    expect(invalidRoot.manifest?.mcpServers).toBeUndefined();
+    expect(invalidRoot.notes.join(" ")).toContain("root is not an object");
+
+    write("mcp.json", "x");
+    truncateSync(join(root, "mcp.json"), PLUGIN_RESOURCE_LIMITS.manifestBytes + 1);
+    const oversized = resolveAgentPlugin(data);
+    expect(oversized.error).toBeUndefined();
+    expect(oversized.manifest?.mcpServers).toBeUndefined();
+    expect(oversized.notes.join(" ")).toContain("resource limit");
+  });
+
   it("loads the fixed skills tree and normalizes portable stdio and streamable HTTP servers", () => {
     const data = join(root, "runtime-data");
     mkdirSync(join(data, "work"), { recursive: true });
@@ -885,7 +961,7 @@ describe("MCP server entries a manifest carries", () => {
     write(".mcp.json", {
       mcpServers: {
         grafana: {
-          command: "docker",
+          command: "external-tool",
           env: {
             GRAFANA_URL: "${user_config.grafana_url}",
             GRAFANA_SERVICE_ACCOUNT_TOKEN: "${user_config.grafana_token}",

@@ -29,7 +29,7 @@ Extension Profile selection. `createSkillsCapability` in `packages/skills/src/ca
 serves it through the existing load and resource tools. An agent with `use_skills` sees it in the
 normal catalog. The eligible entry agent without that grant receives only the product guide, even
 if ordinary skills are disabled; this exception does not propagate to child agents. The host
-determines eligibility from the selected placement, editing ceiling and configuration reviewer,
+determines eligibility from the selected placement and editing ceiling,
 as specified in [self-configuration](../hosts/self-configuration.md). `renderSkillCatalog` in
 `packages/skills/src/catalog/index.ts` prioritizes the host-attested `productOwned` marker, which
 untrusted frontmatter cannot set. `buildRegistry` in `packages/skills/src/registry.ts` makes every
@@ -437,21 +437,19 @@ removals from disk").
 
 ### 4.2 Root order
 
-`clarvisSkillRoots` returns four roots in **ascending precedence**
+`clarvisSkillRoots` returns two roots in **ascending precedence**
 (`packages/skills/src/preset.ts`):
 
 | # | Path | scope | source |
 | --- | --- | --- | --- |
 | 1 | `<home>/.agents/skills` | `user` | `agents` |
 | 2 | `<workspace>/.agents/skills` | `workspace` | `agents` |
-| 3 | `<global>/skills` (`globalPaths`) | `user` | `clarvis` |
-| 4 | `<workspace>/.clarvis/skills` | `workspace` | `clarvis` |
 
-The `.agents` half of this ordering is an interop rule — see
+This shared ordering is an interop rule — see
 [`specs/cross-cutting/agent-interop.md`](../cross-cutting/agent-interop.md).
-The engine prepends any host-supplied `extraSkillRoots` **before** these four, so plugin roots sit at
+The engine prepends any host-supplied `extraSkillRoots` **before** these two, so plugin roots sit at
 the lowest precedence of all. A host-supplied `skillRoots` is instead an exact resolved set and
-suppresses automatic appending of the standard four roots
+suppresses automatic appending of the standard two roots
 (`packages/loop/src/runtime/build-run-deps.ts`). The two options are mutually exclusive. Plugin root
 construction belongs to [`specs/hosts/plugins.md`](../hosts/plugins.md); what
 matters here is only that they arrive as `SkillRootInput[]` with `source: "plugin:<name>"`
@@ -698,7 +696,7 @@ when the catalog is empty" in `packages/skills/tests/integration/sidecar.test.ts
 
 Both operations first use `openCallEnvelope` with their own declared schema and the host-injected
 validator. An invalid call is reported as a failed `tool_call`; it never records
-`tool_call_started`, reads a provider or crosses the container bridge.
+`tool_call_started`, reads a provider.
 
 1. **Body operation:** `handleLoadSkillCall` accepts only `{name}`, starts the trace call, and invokes
    `loadSkill(name)`. A throw becomes `could not load skill '<name>'`; `undefined` becomes `unknown
@@ -716,14 +714,14 @@ validator. An invalid call is reported as a failed `tool_call`; it never records
    `packages/skills/tests/unit/call.test.ts` and
    `packages/skills/tests/integration/call-resource.test.ts`.
 3. A filesystem body result identifies `Skill directory: <dir>` as the base for bundled relative
-   paths. It adds `Package execution root: <executionRoot>` and guarded-shell/native-sandbox guidance
+   paths. It adds `Package execution root: <executionRoot>` and shell/native-sandbox guidance
    only when the host-approved field exists, then renders the body and resource listing. Production:
    `handleLoadSkillCall` in `packages/skills/src/call.ts`. Test:
-   `packages/skills/tests/unit/call.test.ts` (`shows the guarded helper hint only for a host-approved
+   `packages/skills/tests/unit/call.test.ts` (`shows the helper hint only for a host-approved
    execution root`).
    A remote result (`resourceAccess: "remote"`) advertises no mounted skill directory and suppresses
    execution-root hints. It requires complete resource-page reads and preparation of helpers with
-   their relative directory structure in a writable workspace directory before guarded shell use.
+   their relative directory structure in a writable workspace directory before shell use.
    Production: `formatSkillBody` in [disclosure.ts](../../packages/skills/src/disclosure.ts).
    Test: remote helper preparation and suppressed host execution roots in
    [call.test.ts](../../packages/skills/tests/unit/call.test.ts).
@@ -853,16 +851,6 @@ The one `SkillsProvider` the host builds is threaded three ways by `createInProc
 `skills: opts.skillsProvider !== undefined` (`packages/kernel/src/kernel.ts`) — rather than
 leaving it at `DEFAULT_KERNEL_CAPABILITIES.skills`'s static `false`.
 
-Container placement receives no Skill catalog, bootstrap body, tool, host root or broker. Explicit
-`skill`, a resolvable `$skill`, Plugin Agent, or operator profile with `use_skills` is refused during
-projection. Shipped builtin profiles lose only their builtin `use_skills`; operator profiles are
-never silently rewritten.
-
-Production: `projectContainerConfiguration` in
-`packages/kernel/src/config/container-projection.ts`. Test:
-`packages/kernel/tests/unit/container-projection.test.ts` and
-`packages/kernel/tests/integration/container-kernel-host.test.ts`.
-
 ---
 
 ## 5. Invariants
@@ -880,8 +868,8 @@ to this document.
    `packages/skills/tests/integration/scan.test.ts`.
 4. **Cross-root precedence is last-root-wins, and the loser chain is retained in full on the
    winner.** `packages/skills/src/registry.ts`. Pinned:
-   `packages/skills/tests/integration/discovery.test.ts` (four roots, three shadowed origins in
-   descending precedence) (two arbitrary roots, last-root-wins).
+   `packages/skills/tests/integration/discovery.test.ts` (workspace precedence, ignored old roots,
+   and two arbitrary roots with last-root-wins precedence).
 5. **Intra-root duplicates are first-seen-wins (directory-sort order) and are resolved before any
    cross-root merge.** `packages/skills/src/registry.ts`. Pinned:
    `packages/skills/tests/integration/malformed.test.ts`.
@@ -1088,11 +1076,6 @@ to this document.
     `parseSkillFrontmatterWithDefaults` and `parseSkillWithDefaults` in
     `packages/skills/src/parse.ts`. Test: `packages/skills/tests/integration/discovery.test.ts`
     ("applies Agent Skills identity validation only to roots that request it").
-53. **Container placement discloses no Skill content or root.** An explicit Skill and any operator
-    `use_skills` profile are incompatible; inactive configured Skills do not block an independent
-    run. Production: `projectContainerConfiguration` in
-    `packages/kernel/src/config/container-projection.ts`. Test:
-    `packages/kernel/tests/unit/container-projection.test.ts`.
 
 ---
 
@@ -1287,5 +1270,5 @@ by `packages/loop/tests/architecture/builtin-capability-names.test.ts` and owned
    (e.g. `packages/skills/tests/integration/symlink.test.ts`).
 
 The host may observe directories visited by `listSkillDirs`, including empty candidates, to arm catalog monitors. Observation follows the existing discovery budgets and does not traverse resource subtrees as additional skills. Prospective manifests use `validateSkillDocument` with the owning root validation mode, preserving the distinction between Clarvis naming defaults and shared Agent Skills requirements.
-Production: `listSkillDirs` in [scan.ts](../../packages/skills/src/scan.ts), `validateSkillDocument` in [registry.ts](../../packages/skills/src/registry.ts), and `configurationSkillRef` in [files.ts](../../packages/kernel/src/configuration/files.ts).
-Test: delayed manifest discovery in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts), root validation in [execution-snapshot.test.ts](../../packages/skills/tests/unit/execution-snapshot.test.ts), and metadata-name membership in [file-tool-configuration.test.ts](../../packages/kernel/tests/integration/file-tool-configuration.test.ts).
+Production: `listSkillDirs` in [scan.ts](../../packages/skills/src/scan.ts) and `validateSkillDocument` in [registry.ts](../../packages/skills/src/registry.ts).
+Test: delayed manifest discovery in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts) and root validation in [execution-snapshot.test.ts](../../packages/skills/tests/unit/execution-snapshot.test.ts).

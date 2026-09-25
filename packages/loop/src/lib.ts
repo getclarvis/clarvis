@@ -39,11 +39,7 @@ export type {
 } from "./runtime/build-run-deps.ts";
 export type { PluginBootstrapSkill } from "./runtime/capabilities/skills-settings.ts";
 export type { ResolvedTraceStore } from "@clarvis/trace";
-export type {
-  AgentToolsCapabilityOptions,
-  GuardResolution,
-  GuardResolver,
-} from "./runtime/capabilities/tools.ts";
+export type { AgentToolsCapabilityOptions } from "./runtime/capabilities/tools.ts";
 export {
   CONTEXT_HOOK_EVENTS,
   GATE_HOOK_EVENTS,
@@ -147,7 +143,6 @@ export type {
   BudgetMode,
   BudgetConfig,
   Grant,
-  GuardMode,
   ReasoningSummary,
   ReasoningEffort,
   CompactionConfigInput,
@@ -171,19 +166,6 @@ export type {
   LifecycleHook,
   HandlerResult,
 } from "@clarvis/capability";
-
-export type {
-  Guard,
-  Elicit as GuardElicit,
-  GuardContext,
-  GuardDecision,
-  GuardElicitAnswer,
-  GuardReview,
-  ShellFacts,
-  PathFact,
-  ElicitRequest,
-  Verdict,
-} from "./runtime/tools/builtin/index.ts";
 
 export type {
   RunResponse,

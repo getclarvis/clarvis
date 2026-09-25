@@ -33,9 +33,6 @@ const repoRoot = resolve(import.meta.dir, "..", "..", "..", "..");
 const CARRIERS: Readonly<Record<string, string>> = {
   "packages/capability/src/llm-port.ts": "declares the caller-supplied field on LLMCallParams",
   "packages/llm/src/ai-sdk/request-options.ts": "translates a supplied choice for the AI SDK",
-  "packages/kernel/src/hosting/container-model-contract.ts":
-    "carries the field across the Container model contract",
-  "packages/kernel/src/runtime/model-broker-host.ts": "forwards the field to the provider",
 };
 
 /** A decision to force a call, rather than a value passed through. */

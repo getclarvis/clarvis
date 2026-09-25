@@ -77,7 +77,6 @@ Source ownership:
 | `workflows.ts` | `WorkflowsService`, `WorkflowNode`, `WorkflowSequence`, `WorkflowSummary`/`WorkflowDetail` |
 | `skills.ts` | `SkillsService`, `SkillSummary`, `SkillProvenance`, `SkillPresentation`, `SkillToolDependency` |
 | `sessions.ts` | `SessionService`, `Session`, `SessionSummary`, `SessionTurn`, cache-detail-aware `SessionTotals`, Agent Profile binding, and Extension Profile snapshot identity |
-| `tasks.ts` | `TasksService`, all `Task*Dto` shapes, `ActiveTaskRequestDto`/`ActiveTaskBindingDto` |
 | `storage.ts` | `StorageService`, bounded inventory DTOs and cleanup request/result shapes |
 | `transport.ts` | `KernelTransport`, `KernelRequestOptions`, `KernelAbortSignal` |
 | `client.ts` | `KernelClient`, `KernelCapabilities`, `RuntimeStatus`, `ConnectOptions` |
@@ -132,6 +131,8 @@ It is advertised only to an authenticated local operator. `LocalHostStatus` carr
 sequenced notices and restart state; `LocalHostBrowserRequest` carries a claimed URL with an id and
 expiry. The service uses the same kernel operation catalog and never serializes application callbacks
 or provider credentials. Runtime retry and restart remain explicit operations.
+`requestShutdown` is a separate operator-only action for an explicitly confirmed replacement: it
+stops new admission and retires the old generation after cancelling and draining hosted work.
 
 Production: `LocalHostService` in [local-host.ts](../../packages/protocol/src/local-host.ts),
 `OPERATIONS.localHost` in [operations.ts](../../packages/kernel/src/transport/operations.ts),
@@ -139,7 +140,8 @@ Production: `LocalHostService` in [local-host.ts](../../packages/protocol/src/lo
 and `createFileRunHost` in [file-host.ts](../../packages/kernel/src/hosting/file-host.ts).
 Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts)
 checks the shared catalog facade; authenticated role checks are exercised by
-[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts), and
+physical replacement by [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts).
 Its DTOs describe an atomic snapshot/tail observation and independent handoff receipts; a lost
 connection rejects the observation rather than manufacturing an execution result.
 Production: [hosting.ts](../../packages/protocol/src/hosting.ts), `KernelClient` in
@@ -180,17 +182,13 @@ optional hosted-run ownership and a close method:
 | `workflows` | `WorkflowsService` | `KernelClient.workflows` |
 | `skills` | `SkillsService` | `KernelClient.skills` |
 | `sessions` | `SessionService` | `KernelClient.sessions` |
-| `tasks` | `TasksService` | `KernelClient.tasks` |
 | `storage` | `StorageService` | `KernelClient.storage` |
 | `close(): Promise<void>` | method | `KernelClient.close` |
 
-`KernelCapabilities` has the four booleans `memory`, `skills`, `agent_tools`, and `tasks`, plus the
+`KernelCapabilities` has the three booleans `memory`, `skills`, and `agent_tools`, plus the
 optional host-reported `runtime` and `hosting.host_generation`. Native placement reports `kind`,
 `host_platform`, effective isolation and lifecycle.
-Container placement additionally reports generation, selected Docker/Podman engine and version,
-host/guest platform, local immutable base image digest, artifact digest, base ABI, broker/channel
-versions, state namespace, effective network grant and lifecycle. This is an informational
-projection, not a client-controlled launch input. Public compatibility remains the concrete
+The runtime projection is informational, not a client-controlled launch input. Public compatibility remains the concrete
 transport's `CLARVIS_WIRE_VERSION` handshake (`packages/kernel/src/transport/wire.ts`).
 
 Production: `KernelCapabilities` and `RuntimeStatus` in `packages/protocol/src/client.ts`;
@@ -328,17 +326,9 @@ TLS plus at-rest protection" (`packages/protocol/src/secrets.ts`).
 | `refreshEntitled` | `(scheme: SubscriptionScheme) => Promise<CatalogProvider>` | `packages/protocol/src/models.ts` |
 
 `ModelCatalog.source` distinguishes `cache`, `bundle`, and `projection`. A projection is immutable
-logical execution metadata, not a downloaded cache or provider configuration. The Container catalog
-adapter supplies no endpoint, credential name or fake URL; it marks logical entries as not requiring
-URL configuration in the guest. Refresh and subscription-entitlement operations are `unsupported`
-there; operator administration remains a separate host service.
+logical execution metadata, not a downloaded cache or provider configuration.
 
-Production: `ModelCatalog` in [models.ts](../../packages/protocol/src/models.ts) and
-`createContainerModelCatalog` in
-[container-model-catalog.ts](../../packages/kernel/src/config/container-model-catalog.ts).
-Test: the guest catalog case in
-[container-projection.test.ts](../../packages/kernel/tests/unit/container-projection.test.ts)
-checks compatible/subscription aliases, closed resolution, defensive snapshots and refresh refusal.
+Production: `ModelCatalog` in [models.ts](../../packages/protocol/src/models.ts).
 
 #### `WorkspaceService` (`packages/protocol/src/workspace.ts`)
 
@@ -445,27 +435,6 @@ rate. Production: `packages/protocol/src/sessions.ts` (`SessionTotals`). Test:
 `StorageCleanupRequest.categories` is closed to `temporary | cache` and carries an explicit
 `dry_run`; see [`storage.md`](storage.md).
 
-#### `TasksService` (`packages/protocol/src/tasks.ts`)
-
-| Method | Signature | File |
-| --- | --- | --- |
-| `status` | `(options?: TaskCallOptions) => Promise<TaskProviderStatusDto>` | `packages/protocol/src/tasks.ts` |
-| `capabilities` | `(options?) => Promise<TaskProviderCapabilitiesDto>` | `packages/protocol/src/tasks.ts` |
-| `listContainers` | `(input: ListTaskContainersDto, options?) => Promise<TaskContainerPageDto>` | `packages/protocol/src/tasks.ts` |
-| `search` | `(input: SearchTasksDto, options?) => Promise<TaskPageDto>` | `packages/protocol/src/tasks.ts` |
-| `get` | `(ref: TaskRefDto, options?) => Promise<TaskDocumentDto>` | `packages/protocol/src/tasks.ts` |
-| `searchActors` | `(input: SearchTaskActorsDto, options?) => Promise<TaskActorPageDto>` | `packages/protocol/src/tasks.ts` |
-| `create` | `(input: CreateTaskDto, options?) => Promise<TaskDocumentDto>` | `packages/protocol/src/tasks.ts` |
-| `assign` | `(input: AssignTaskDto, options?) => Promise<TaskDocumentDto>` | `packages/protocol/src/tasks.ts` |
-| `previewTransition` | `(input: PreviewTaskTransitionDto, options?) => Promise<TaskTransitionPreviewDto>` | `packages/protocol/src/tasks.ts` |
-| `transition` | `(input: TransitionTaskDto, options?) => Promise<TaskDocumentDto>` | `packages/protocol/src/tasks.ts` |
-| `comment` | `(input: CommentTaskDto, options?) => Promise<TaskDocumentDto>` | `packages/protocol/src/tasks.ts` |
-| `attachArtifact` | `(input: AttachTaskArtifactDto, options?) => Promise<TaskDocumentDto>` | `packages/protocol/src/tasks.ts` |
-
-Every method except `status`/`capabilities` takes an `options?: TaskCallOptions` carrying only a
-`signal` (`packages/protocol/src/tasks.ts`) — the type's own comment: "cancellation is local transport metadata and
-is never serialized as params" (`packages/protocol/src/tasks.ts`).
-
 ### 2.4 `KernelTransport` — the seam a client sits on
 
 Defined at `packages/protocol/src/transport.ts`, not part of `KernelClient` itself:
@@ -479,8 +448,7 @@ Defined at `packages/protocol/src/transport.ts`, not part of `KernelClient` itse
 | `close` | `() => Promise<void>` | `packages/protocol/src/transport.ts` |
 
 `KernelRequestOptions` (`packages/protocol/src/transport.ts`) carries exactly one field, `signal`.
-It is local cancellation metadata; task operations explicitly keep it out of serialized parameters
-through `TaskCallOptions` (`packages/protocol/src/tasks.ts`).
+It is local cancellation metadata and stays out of serialized parameters.
 
 ## 3. Data and formats
 
@@ -559,16 +527,9 @@ distinguishing fields:
 | `iteration_started` | `iteration`, `model?` | `packages/protocol/src/runs.ts` |
 | `iteration_completed` | `iteration`, `model?`, `response`, `response_phase?: "commentary"\|"final_answer"`, `input_tokens`, `output_tokens`, `cached_tokens?` | `packages/protocol/src/runs.ts` |
 | `tool_call_started` | `call_id`, `tool`, `server`, `arguments?`, `control?` | `packages/protocol/src/runs.ts`; `control` is present only while the invocation is interruptible |
-| `tool_call` | `call_id?`, `tool`, `server`, `arguments?`, `ok`, `result?`, `error?`, `diff?`, `guard?`, `interruption?` | `packages/protocol/src/runs.ts`; `interruption` implies `ok: false` and is operator-only |
+| `tool_call` | `call_id?`, `tool`, `server`, `arguments?`, `ok`, `result?`, `error?`, `diff?`, `interruption?` | `packages/protocol/src/runs.ts`; `interruption` implies `ok: false` and is operator-only |
 | `tool_output_delta` | `call_id`, `chunk` | `packages/protocol/src/runs.ts` |
 
-`guard`, when present, is the strict `CommandGuardReview` object with mode,
-allowed/denied outcome, and answerer. The run-event codec accepts exactly those
-fields and enum values. Production: `CommandGuardReview`/the `tool_call` variant
-in `packages/protocol/src/runs.ts` and `commandGuardReview` in
-`packages/kernel/src/transport/run-event-codec.ts`. Test: `"preserves the
-terminal shell auto-guard verdict"` in
-`packages/kernel/tests/contract/transport-codecs.test.ts`.
 | `tool_call_announced` | `call_id`, `tool`, non-negative `iteration`, positive `attempt`; no arguments | `RunEvent` in `packages/protocol/src/runs.ts` |
 | `tool_input_delta` | `call_id`, `tool`, `chars`, `stream_chars?`, `complete?: true` | `packages/protocol/src/runs.ts` (`RunEvent`) |
 | `reasoning` | `iteration`, `text` | `packages/protocol/src/runs.ts` |
@@ -640,12 +601,10 @@ in parallel. Production: `RunEvent` in `packages/protocol/src/runs.ts`. Test:
 | `agent?` | `string` | Agent Profile id; "the kernel translates it to the engine's profile/entry concept" (`packages/protocol/src/runs.ts`) |
 | `continue_from?` | `string` | resume / steer-after-end |
 | `session_id?` / `agent_instance_id?` | `string` | persisted conversation and entry-agent instance |
-| `prompt_cache_ttl?` | `"5m" \| "1h"` | kernel derives it when omitted (`packages/protocol/src/runs.ts`) |
-| `guard_mode?` | `GuardMode` | `"off" \| "on" \| "auto"` (`packages/protocol/src/runs.ts`) |
-| `guard_judge?` | `GuardJudge` | caller-owned judge guidance/model/timeout |
+| `prompt_cache_ttl?` | `"5m" \| "1h"` | forwarded only when provided (`packages/protocol/src/runs.ts`) |
 | `memory?` | `MemoryMode` | `"on" \| "off"` (`packages/protocol/src/runs.ts`) |
 | `plans?` | `PlansMode` | `"off" \| "on" \| "review"` (`packages/protocol/src/runs.ts`) |
-| `task?` | `ActiveTaskRequestDto` | binds one external task |
+| `task?` | `ActiveTaskRequestDto` | legacy request field; no Tasks provider is registered |
 | `skill?` | `{ name: string; task?: string }` | the `/skill` flow |
 | `output_schema?` | `JsonSchema` | structured-output request |
 
@@ -677,7 +636,6 @@ real types (not illustrative prose — every field below is copied from that fil
 // packages/protocol/tests/contract/public-contract.fixture.ts
 const capabilities = {
   memory: true, skills: true, agent_tools: true,
-  tasks: true,
 } satisfies KernelCapabilities;
 
 // packages/protocol/tests/contract/public-contract.fixture.ts
@@ -685,7 +643,6 @@ const startParams = {
   execution_id: "run-1",
   messages: [{ role: "user", content: "Inspect the workspace" }],
   plans: "review",
-  task: { id: "CLAR-42", provider_key: "tasks:mcp:v1:sha256:fixture", mode: "work" },
   output_schema: { type: "object" },
 } satisfies StartRunParams;
 
@@ -725,7 +682,7 @@ on the same part rather than separate variants.
 | `RunUsage` | `{ iterations; elapsed_ms; input_tokens?; output_tokens?; cached_tokens?; by_agent?: PerAgentUsage[]; warnings? }` | `packages/protocol/src/runs.ts` |
 | `RunResult` | `{ execution_id; status: RunStatus; result?; ended_reason?; usage?: RunUsage; error?: { code; message; kind?; retry_after_ms? } }` plus final disposition or `disposition: "checkpoint"` with separate `checkpoint: { summary, next_step }` | `packages/protocol/src/runs.ts` |
 | `RunSummary` | `{ execution_id; owner?; status; created_at; ended_at? }` | `packages/protocol/src/runs.ts` |
-| `RunDetail` (extends `RunSummary`) | `+ messages: Message[]; events: RunEvent[]; result?: RunResult; continue_from?; plan_ref?: PlanRef; active_task?: ActiveTaskBindingDto; extension_profile?: ExtensionProfileRunRef; recovery?: RunRecovery` | `packages/protocol/src/runs.ts` |
+| `RunDetail` (extends `RunSummary`) | `+ messages: Message[]; events: RunEvent[]; result?: RunResult; continue_from?; plan_ref?: PlanRef; extension_profile?: ExtensionProfileRunRef; recovery?: RunRecovery` | `packages/protocol/src/runs.ts` |
 
 `PerAgentUsage.role`'s `"vision"` member is not an agent: its own doc comment calls it "the engine's
 image-reading pre-pass, one completion on a model no agent runs on" (`packages/protocol/src/runs.ts`) — the same
@@ -751,58 +708,28 @@ serializing a definition, settings, or secrets (`packages/protocol/src/extension
 
 | Type | Shape | Declaration |
 | --- | --- | --- |
-| `ElicitationCommandDetail` | `{ command: string; cwd: string; reason: string; warning? }` | `ElicitationCommandDetail` |
-| `ElicitationRequest` | `{ id; execution_id; kind; prompt; schema?: JsonSchema; detail?: ElicitationCommandDetail }` | `ElicitationRequest` |
+| `ElicitationRequest` | `{ id; execution_id; kind; prompt; schema?: JsonSchema; window_ms?: number }` | `ElicitationRequest` |
 | `ElicitationResponse` | `{ id; action: "accept" \| "decline" \| "cancel"; content? }` | `ElicitationResponse` |
 
-`ElicitationRequest.kind` includes `"ask_user"` (a free question), `"guard_confirm"` (a
-command awaiting approval), `"plan_review"` (a proposed plan awaiting approval), `"workflow_review"`
+`ElicitationRequest.kind` includes `"ask_user"` (a free question), `"plan_review"` (a proposed plan awaiting approval), `"workflow_review"`
 (an installed workflow preflight) — plus a deliberately open `(string & {})` escape, "so a kernel may
 add kinds without a protocol bump" (`ElicitationRequest.kind` in `packages/protocol/src/runs.ts`).
 This is structurally the same open/closed pattern already noted for `capability_event` in §5
 invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
-`ElicitationCommandDetail` exists so a client "render[s] this directly
-(e.g. as highlighted code) and never parse[s] `prompt`, which stays the human-readable fallback"
-(`ElicitationCommandDetail` in `packages/protocol/src/runs.ts`).
 
 ### 3.10 `ConfigService` data shapes I: settings and sandbox (`config.ts`)
 
 | Type | Shape | File |
 | --- | --- | --- |
 | `WorkspaceTrustVerdict` | `{ state: "inert" \| "unapproved" \| "trusted" \| "changed"; fingerprint?; approved? }` | `packages/protocol/src/config.ts` |
-| `SettingsData` | `{ default_model?; providers?: ProviderConfig[]; mcp_servers?: Record<string, McpServerConfig>; guard?: GuardConfig; sandbox?: SandboxConfig; runtime?: RuntimeConfig; memory?: MemoryConfig; budget?; [block: string]: unknown }` | `SettingsData` in `packages/protocol/src/config.ts` |
-| `RuntimeConfig` | native, or simple/advanced Docker or Podman; Docker may add an optional `recipe`; neither engine has fallback placement | `RuntimeConfig`, `RuntimeRecipeConfig` in `packages/protocol/src/config.ts` |
+| `SettingsData` | `{ default_model?; providers?: ProviderConfig[]; mcp_servers?: Record<string, McpServerConfig>; guard?: GuardConfig; sandbox?: SandboxConfig; memory?: MemoryConfig; budget?; [block: string]: unknown }` | `SettingsData` in `packages/protocol/src/config.ts` |
 | `ProviderConfig` | `{ name; kind?; base_url?; api_key_env?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 | `McpServerConfig` | `{ command?; args?; url?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 | `GuardConfig` | `{ mode?: "off" \| "on" \| "auto"; allowed_commands?; denied_commands?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 | `MemoryConfig` | `{ enabled?; model?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 | `SandboxConfig` | `{ type: "native"; enabled?; availability?: "required" \| "optional"; filesystem?; network?; pass_env?; toolchains?: { mode?: "auto" \| "manual"; include?; exclude?; extra_paths?; excluded_paths? } }` | `packages/protocol/src/config.ts` (`SandboxConfig`) |
 | `SandboxToolchainScope` | `"system" \| "auto" \| "global" \| "workspace"` | `packages/protocol/src/config.ts` |
-| `SandboxInspection` | `{ backend: { type: "bubblewrap" \| "seatbelt" \| "unsupported"; available; mode: "fresh-proc" \| "host-proc" \| "seatbelt" \| "unavailable"; degraded; reason? }; toolchains: SandboxToolchainStatus[]; extra_paths: SandboxPathStatus[]; effective_path: string[] }` | `packages/protocol/src/config.ts` (`SandboxInspection`) |
-
-`RuntimeConfig` is the host-operator input, not a run grant. A simple Docker or Podman object may
-omit image, executable, connection and limits; the kernel fills product-owned defaults. Omitting a
-container `network` selects
-the kernel's ordinary routable `outbound` default; this may reach host and LAN peers as well as the
-public internet. Podman has no `recipe` field. `RuntimeStatus.network` in `client.ts` is required for
-container placement because it reports the effective value after the kernel has resolved defaults.
-Neither type calls `outbound` internet-only, and the protocol exposes no host-port or engine-argument
-mutation method. Docker and Podman have no fallback field: either engine reports its own bounded
-failure and changing to Sandbox/Host requires a new explicit selection and run. The private
-Container framing and model broker are revision 1 and remain kernel-private. Channel 1 carries this
-same public Kernel protocol at wire revision 10; channel 2 admits only initialization/shutdown and
-channel 3 only logical model calls/deltas. There is no parallel execution/capability/checkpoint
-protocol.
-Docker's optional `RuntimeRecipeConfig` contains only `{name, script, network?}`: a safe diagnostic
-name, an absolute path under the global operator recipe directory and `none`/`outbound` build
-networking. It is persisted operator input;
-the protocol exposes no operation that executes, edits, publishes or delegates a recipe to a guest.
-
-Production: `RuntimeConfig` and `SettingsData` in `packages/protocol/src/config.ts`;
-`RuntimeStatus` in `packages/protocol/src/client.ts`; `runtimeSettingsSchema` in
-`packages/kernel/src/runtime/settings.ts`. Test: `runtime settings` in
-`packages/kernel/tests/unit/runtime-settings.test.ts`; `runtime status` coverage in
-`packages/kernel/tests/contract/transport-codecs.test.ts`.
+| `SandboxInspection` | `{ filesystem: { placement: "host" \| "sandbox"; reads: "host-visible"; writes: "host-os" \| "declared-roots"; workspace: "read-write" \| "read-only" }; effective_network: "host" \| "none"; backend: { type: "bubblewrap" \| "seatbelt" \| "unsupported"; available; mode: "fresh-proc" \| "host-proc" \| "seatbelt" \| "unavailable"; degraded; reason? }; toolchains: SandboxToolchainStatus[]; extra_paths: SandboxPathStatus[]; effective_path: string[] }` | `packages/protocol/src/config.ts` (`SandboxInspection`) |
 
 `SandboxInspection.backend` identifies what the host actually probed: Bubblewrap uses `fresh-proc`
 or degraded `host-proc`, Seatbelt uses `seatbelt`, and an unavailable selected/unsupported backend
@@ -811,6 +738,13 @@ values name where a discovered toolchain (or read-only path) originates: `"syste
 host `PATH`), `"auto"` (found by discovery), or the `"global"` / `"workspace"` settings scope that
 declared it (`packages/protocol/src/config.ts`). This is the return shape behind `ConfigService.inspectSandbox`,
 whose §2.3 table row names only the method signature.
+`SandboxInspection.filesystem` separately describes Host versus Sandbox, host-visible reads,
+the write boundary and workspace posture. `effective_network` reports the enforced network mode;
+backend availability does not itself grant access.
+Production: `SandboxInspection` in `packages/protocol/src/config.ts` and
+`createSandboxPolicyResolver.inspect` in `packages/kernel/src/sandbox/policy.ts`. Test:
+`packages/kernel/tests/integration/sandbox-policy.test.ts` (`reports effective host-visible reads
+and the selected write posture`) and `packages/kernel/tests/contract/config-service.test.ts`.
 
 ### 3.11 `ConfigService` data shapes II: repair plan and agents (`config.ts`)
 
@@ -853,28 +787,10 @@ vocabulary" (`packages/protocol/src/config.ts`).
 needs attention" (`packages/protocol/src/memory.ts`). `MemoryJobError.phase` names one of `generate`/`validate`/
 `apply`/`reindex`/`commit` (`packages/protocol/src/memory.ts`).
 
-### 3.13 `TasksService` DTO field lists (`tasks.ts`)
-
-| Type | Shape | File |
-| --- | --- | --- |
-| `TaskStageDto` | 8-value union: `backlog` \| `ready` \| `active` \| `blocked` \| `review` \| `done` \| `cancelled` \| `other` | `packages/protocol/src/tasks.ts` |
-| `TaskActorDto` | `{ id; label; kind: "human" \| "team" \| "agent" \| "service" \| "unknown" }` | `packages/protocol/src/tasks.ts` |
-| `TaskClaimDto` | `{ claimant: TaskActorDto; execution_id: string; claimed_at: string }` | `packages/protocol/src/tasks.ts` |
-| `TaskProviderCapabilitiesDto` | `{ protocol_version: 2; provider_instance_id; provider_kind; read: { containers; search; get; actors }; write: { create; assign; comment; attach_artifact; intents: TaskTransitionIntentDto[] }; concurrency: "none" \| "revision" \| "exclusive_claim" }` | `packages/protocol/src/tasks.ts` |
-| `TaskProviderStatusDto` | `{ state: "not_configured" \| "ready" \| "unavailable" \| "incompatible"; provider_key?; provider_kind?; server?; writes: "disabled" \| "enabled"; reason? }` | `packages/protocol/src/tasks.ts` |
-
-`TaskContainerPageDto` (`{ items: TaskContainerRefDto[]; next_cursor? }`, `packages/protocol/src/tasks.ts`) and
-`TaskPageDto` (`{ items: TaskSummaryDto[]; next_cursor? }`, `packages/protocol/src/tasks.ts`) are each a bespoke
-`items` + `next_cursor` shape — a third pagination idiom alongside the offset/limit `Page<T>` and the
-generic `CursorPage<T>` (§3.1), and structurally distinct from `PlansService`'s own bespoke
-`cursor`/`next_cursor` fields (`packages/protocol/src/plans.ts`) despite serving the same purpose.
-
 ### 3.14 `PluginService`, `SkillsService` and `ModelCatalogService` data shapes
 
 `PluginContributions` (`packages/protocol/src/plugins.ts`): `{ agents: string[]; broken_agents: string[]; skills:
-string[]; servers: string[]; hooks: number; capability_executables: PluginCapabilityExecutable[];
-capability_run_policies?: { plans?: { skills: Record<string, "off" | "on" | "review"> } };
-executables: string[] }` — `hooks` is "count of hook entries (not their names)" and `executables` are
+string[]; servers: string[]; hooks: number; executables: string[] }` — `hooks` is "count of hook entries (not their names)" and `executables` are
 "concrete commands this plugin would run... pre-formatted for display" (`packages/protocol/src/plugins.ts`).
 `PluginView.display_name`/`short_description` (`packages/protocol/src/plugins.ts`) are documented as "display data
 only. A plugin cannot widen what it is allowed to do by describing itself well: trust stays with the
@@ -886,7 +802,7 @@ of `{ kind: "git", url, subdir?, ref?, sha?, expected_name? }`,
 `{ kind: "local", path, expected_name? }`, and
 `{ kind: "npm", package, version?, registry?, expected_name? }`; source interpretation therefore crosses the wire
 without asking the kernel to re-parse a marketplace dialect.
-`PluginRef` is the strict `{ scope: "global"|"workspace", source: "agents"|"clarvis", name }`
+`PluginRef` is the strict `{ scope: "global"|"workspace", source: "agents", name }`
 identity shared by lifecycle, activation, and Extension Profile DTOs; `PluginView.source`
 reports the same filesystem convention and `install_source` is separately reserved for Git origin.
 
@@ -923,21 +839,6 @@ attached to each method:
    overwritten in that case" (`packages/protocol/src/config.ts`). This is optimistic concurrency control expressed
    purely through the method signature and its doc comment — no implementation of the check lives in
    this package.
-5. `TasksService`'s `assign`, `transition`, `comment`, and `attachArtifact` DTOs each carry an optional
-   `expected_revision` (for example `AssignTaskDto.expected_revision?`,
-   `packages/protocol/src/tasks.ts`). `PlansService.setRetention` and `.delete` do not expose a
-   revision argument (`packages/protocol/src/plans.ts`); the protocol therefore does not claim
-   client-bound CAS for those two operations.
-6. `TasksService.transition`'s own DTO comment states it is "human control-plane transitions" that
-   "exclude `start`, which belongs to a bound run" (`packages/protocol/src/tasks.ts`) — i.e. the `TaskTransitionIntentDto`
-   union has a `"start"` member (`packages/protocol/src/tasks.ts`) that `TransitionTaskDto.intent` deliberately cannot
-   carry (`Exclude<TaskTransitionIntentDto, "start">`, `packages/protocol/src/tasks.ts`), forcing that transition to
-   happen only through a run's own binding.
-7. `PreviewTaskTransitionDto`/`TaskTransitionPreviewDto` (`packages/protocol/src/tasks.ts`) gate `complete`/`reopen`
-   behind a `confirmation_token` that `TransitionTaskDto.confirmation_token` is documented as
-   "required for complete/reopen and minted by previewTransition" (`packages/protocol/src/tasks.ts`) — the same
-   preview-token pattern, applied to exactly two transition intents.
-
 ### State implied by `PlanTaskStatus` (`packages/protocol/src/plans.ts`)
 
 | Status | Meaning | Closes the task? |
@@ -975,15 +876,14 @@ The following are derived directly from this package's own source and tests.
    `import \{[^}]*\} from "@clarvis/protocol";` (a *value*-form brace import, as opposed to
    `import type { ... }`) across every `packages/*/src` and `packages/*/tests` tree returns **zero**
    matches, while the same search restricted to `import type` returns matches in every consumer
-   (`code`, `kernel`, `server`). All three consumer tsconfigs enable `verbatimModuleSyntax`
-   (`packages/code/tsconfig.json`, `packages/kernel/tsconfig.json`,
-   `packages/server/tsconfig.json`), so their normal typechecks reject a future bare
+   (`code`, `kernel`). Both consumer tsconfigs enable `verbatimModuleSyntax`
+   (`packages/code/tsconfig.json`, `packages/kernel/tsconfig.json`), so their normal typechecks reject a future bare
    value-form import of an interface or alias. There is no separate architecture assertion that
    enumerates this property; compiler enforcement is the pin.
 
 3. **`KernelClient` aggregates exactly the required named services, not an ad-hoc subset.**
    Production: `packages/protocol/src/client.ts` — `runs`, `config`, `plugins`, `secrets`, `models`, `providerAuth`, `files`, `changes`, `memory`,
-   `plans`, `goals`, `workflows`, `skills`, `sessions`, `tasks`, `storage`, `extensionProfiles`
+   `plans`, `goals`, `workflows`, `skills`, `sessions`, `storage`, `extensionProfiles`
    (required fields, plus optional `hosting`/`localHost`, identity fields and `close()`).
    Test: `packages/protocol/tests/contract/public-contract.fixture.ts` constructs a literal
    `satisfies KernelClient` naming every required service plus `capabilities`/`project`/
@@ -1008,14 +908,6 @@ The following are derived directly from this package's own source and tests.
    `packages/protocol/tests/contract/public-contract.fixture.ts`), but the kernel's exhaustive
    `RUN_EVENT_POLICY` makes a new discriminator fail typechecking until its source, durability,
    mapping and backpressure behavior are classified (`packages/kernel/src/runs/event-policy.ts`).
-
-5. **A `TransitionTaskDto` can never carry the `"start"` transition intent.**
-   Production: `TaskTransitionIntentDto` (`packages/protocol/src/tasks.ts`) includes `"start"`;
-   `TransitionTaskDto.intent` is typed `Exclude<TaskTransitionIntentDto, "start">` (`packages/protocol/src/tasks.ts`).
-   The type's own comment: "Human control-plane transitions exclude `start`, which belongs to a bound
-   run" (`packages/protocol/src/tasks.ts`). This is a compiler-enforced invariant (assigning `"start"` to that field is
-   a type error) with no runtime test in this package; **unpinned** at the `bun test` layer, enforced
-   only by `tsc`.
 
 6. **`PlansService.list`/`SessionService.listPage` use opaque-cursor paging; `RunService.list`/
    `WorkflowsService.list` use offset/limit paging — the two families are never interchanged.**
@@ -1116,7 +1008,7 @@ Nothing. `packages/protocol/package.json` has no `dependencies`/`devDependencies
 `optionalDependencies`/`peerDependencies` key at all (`packages/protocol/package.json`, read in
 full — no such key appears). Its own `.ts` files import nothing from any other package; every
 `import type` in the package points at a sibling module inside `packages/protocol/src/`
-(`packages/protocol/src/{client,config,extension-profiles,memory,models,plugins,runs,sessions,skills,tasks,workflows,workspace-changes}.ts`).
+(`packages/protocol/src/{client,config,extension-profiles,memory,models,plugins,runs,sessions,skills,workflows,workspace-changes}.ts`).
 The remaining eight modules import nothing; `index.ts` only type-reexports siblings. There is no
 cross-package source import in this package.
 
@@ -1127,15 +1019,10 @@ Every consumer reaches it **only as a type import**, verified directly (§5, inv
 | Consumer | Value imports | Type imports | Forcing mechanism |
 | --- | --- | --- | --- |
 | `@clarvis/kernel` | 0 | 91 source/test files currently import the public barrel, all with `import type` | `packages/kernel/tsconfig.json` maps `@clarvis/protocol` to the package's own **source**, so `tsc` checks the implementation directly against these interfaces |
-| `@clarvis/server` | 0 | 15 source/test files currently import the public barrel, all with `import type` | `packages/server/tests/architecture/dependency-boundary.test.ts` fixture-tests that the type import is an allowed boundary |
 | `@clarvis/code` | 0 | 110 source/test files currently import the public barrel, all with `import type` | `packages/code/tests/architecture/dependency-boundary.test.ts` pins `code`'s Clarvis-namespaced manifest dependencies to `@clarvis/kernel`, `@clarvis/paths`, and `@clarvis/protocol` |
 
-Both `code`'s and `server`'s dependency-boundary tests explicitly *permit* `@clarvis/protocol` (both
-derive an allowlist from `allowedInternalDependenciesFor` in `tooling/lib/package-architecture.ts` and
-compare it to their manifest — `packages/code/tests/architecture/dependency-boundary.test.ts`,
-`packages/server/tests/architecture/dependency-boundary.test.ts`) while forbidding `@clarvis/loop`
-and every engine-layer package — i.e. the test suite encodes "may depend on protocol, may not depend
-on the engine" as one design, not two.
+`code`'s dependency-boundary test permits `@clarvis/protocol` while forbidding
+`@clarvis/loop` and every engine-layer package.
 
 ### 7.3 What forces the type-only property, structurally
 
@@ -1159,8 +1046,7 @@ on the engine" as one design, not two.
   mutation — the reasoning is asserted in a comment, not shown.
 - **A remote HTTP/WebSocket `KernelTransport` remains unimplemented.** The current kernel exports an
   in-process client, `createLoopbackTransport`, `createStdioTransport`, and
-  `serveKernelOverStdio` (`packages/kernel/src/index.ts`). The HTTP-facing `@clarvis/server` exposes
-  MCP rather than a `KernelTransport`; `Principal` and `ConnectOptions.auth` therefore remain
+  `serveKernelOverStdio` (`packages/kernel/src/index.ts`). `Principal` and `ConnectOptions.auth` remain
   forward-compatible hosted-kernel shapes rather than a transport exercised in this repository.
 - **The exact set of `KernelErrorCode` values a given method can actually return** is not enumerated
   per-method anywhere in this package outside the handful of doc-comment mentions captured in §6 —
@@ -1187,19 +1073,6 @@ on the engine" as one design, not two.
   `coverage.ts` deliberately exempts such a package: its `test:coverage`
   writes no LCOV, so whatever file exists can never be refreshed and the warning would be permanent
   noise.
-## Effect review detail
-
-`ElicitationCommandDetail` adds optional closed analysis, effect, authority and reviewer fields.
-Legacy command/cwd/reason details remain valid. `CommandGuardReview` carries optional effect ID,
-relation, failure kind and `reviewer_decision` (`allow`, `deny`, `unsure`, `failed`) for replay.
-The reviewer result is distinct from the final outcome after fallback. `GuardJudge` accepts optional guidance and explicit retries;
-guidance is data, never a system-policy replacement. Public run requests contain no
-operator evidence seed or controller binding. Production:
-[runs.ts](../../packages/protocol/src/runs.ts) and
-[review-detail-schema.ts](../../packages/kernel/src/guard/review-detail-schema.ts).
-Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
-See [effect review](../execution/effect-review.md).
-
 Host-owned `Session.operator_intents` retains bounded accepted submissions separately from executed
 turns, and `operator_sequence` survives pruning of admitted receipts. Client saves cannot modify
 these fields. `GoalReceipt.resume_pending` denotes durable recovery work, not a successful launch.

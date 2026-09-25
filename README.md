@@ -16,16 +16,15 @@ repository in front of you.
 
 ## Why Clarvis
 
-- **One project-aware TUI:** sessions, transcript, plans, memory, tasks, and run activity stay in one
+- **One project-aware TUI:** sessions, transcript, plans, memory, and run activity stay in one
   discoverable interface.
 - **Bring your model:** configure API providers, OpenAI-compatible local endpoints, or the beta
   ChatGPT and Grok subscription flows for eligible accounts. Availability is provider-controlled and
   does not imply provider endorsement of Clarvis.
 - **Agent workflows:** use a built-in Lead, delegate to focused Sub-agents, or run the packaged
   `audit`, `implement`, and `research` workflows.
-- **Controlled tool use:** path-based workspace confinement, independent command review, native
-  sandboxing on Linux and macOS, lazy Docker or Podman isolation, and explicit workspace trust are
-  separate safeguards.
+- **Tool use:** Shell and file tools follow Host OS permissions or the configured native Sandbox
+  policy on Linux and macOS. Workspace trust still governs activation of workspace configuration.
 - **Extensible:** add MCP servers, plugins, hooks, Agent Skills, custom agents, and workflows.
 - **Interactive or headless:** use the full TUI or run a prompt from scripts with `clarvis -p`.
 
@@ -99,29 +98,14 @@ Essential controls:
 | `/model`   | Choose the default model                                                 |
 | `/effort`  | Choose the default reasoning effort supported by that model              |
 | `/goal`    | Create, inspect and control a persistent bounded objective               |
-| `Ctrl+X I` | Choose Host, native Sandbox, Docker, or Podman isolation                 |
-| `Ctrl+X G` | Choose Off, Approval, or automatic LLM command review                    |
+| `Ctrl+X I` | Choose Host or native Sandbox isolation                                  |
 
 Other shortcuts depend on the terminal keyboard profile and appear in the footer and `/help`; the
 README does not duplicate a keymap that the application generates dynamically.
 
-Settings > Run controls exposes the same Isolation choice as `Ctrl+X I`; both write the one global
-Host/Sandbox/Docker/Podman selection. Docker or Podman connects before a Kernel is created; the simple
-TUI choice uses product-owned limits and ordinary outbound networking. Container runs the complete
-native Kernel with Plans, Memory, Workflows and Goals. Command Review, plugins, skills, hooks, generic
-MCP and external capability providers remain unavailable; Tasks is unavailable because its current
-provider is MCP. Any acquisition, engine, base, artifact, policy, mount or handshake failure remains
-in Container; Clarvis never replays it in Sandbox/Host.
-
-An isolated container mounts the already-selected workspace read-write at `/workspace`, so guest
-changes appear on the host immediately. Start Clarvis in a Git worktree when you want that mount to
-be a separate checkout; Clarvis does not commit, merge, or remove it. The real `.clarvis` is covered
-by a private persistent content volume and `.agents` by an empty read-only mask. Git metadata is mounted read-only, so
-status/diff/log/show remain available but staging or committing requires Sandbox/Host. The guest has
-no engine socket, host shell, credentials or port-preview bridge. Agents with command access can
-install missing toolchains through the private engine-owned `/mise` cache.
-The nested `.clarvis` and `.agents` mount targets must already exist. A non-Git workspace also needs
-an empty `.git` directory; Clarvis refuses an absent target before the engine can create it on the host.
+Settings > Run controls exposes the same Host or Sandbox Isolation choice as `Ctrl+X I`.
+Both persist the native Sandbox setting globally. The local or SSH Kernel uses the selected
+workspace; remote SSH connections remain available through `--remote`.
 
 ## Common commands
 
@@ -153,22 +137,14 @@ remote terminals, and current accessibility limits.
 
 ## Security model
 
-Clarvis is local-first, but it is not an offline application and neither its native nor container
-isolation is a complete security boundary:
+Clarvis is local-first, but it is not an offline application and native Sandbox
+is not a complete security boundary:
 
 - prompts and selected context are sent to the model provider you configure;
 - enabled MCP servers, plugins, hooks, task providers, and commands have their own trust boundaries;
 - file tools reject paths outside the workspace by default, but this path-based check is not a strong
   write sandbox against a concurrent symlink or junction swap; host execution and user-approved
   operations can also reach beyond a sandboxed process;
-- Docker or Podman isolation leaves the selected workspace writable and enables ordinary outbound
-  networking by default. A guest can therefore modify that checkout and transmit readable workspace
-  content or reach host/LAN services; use `network: "none"` when the run must be offline;
-- Container isolation keeps provider configuration, credentials and API requests on the host. Plans,
-  Memory, Workflows and Goals are native inside the Container; Skills, generic MCP, Hooks, Plugins,
-  Tasks and preview remain absent. A closed model broker crosses the stdio boundary without exposing
-  provider credentials. Isolation protects the host outside the selected workspace; it does not
-  protect workspace contents or prevent outbound remote effects;
 - credentials saved through the managed API-key and subscription flows stay in global files. POSIX
   installs apply owner-only mode bits; Windows relies on the user's profile access controls. Literal
   provider or MCP headers can be authored in workspace settings, so use `${NAME}` references and
@@ -223,19 +199,17 @@ To install a source-only command from this checkout after Bun is available, run:
 ./dev-install.sh
 ```
 
-That one-time machine setup installs dependencies, configures the repository hook, builds the local
-runtime base for each installed Docker/Podman engine, builds the Linux Kernel artifact, and creates
-`clarvis-develop` in `${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. A host with neither
-engine still gets the launcher for native use. Run the command
+That one-time machine setup installs dependencies, configures the repository hook, and creates
+`clarvis-develop` in `${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. Run the command
 from any project to test the current checkout without building or downloading a release. Use
 `clarvis-develop --empty-workspace` to open every test in a new directory under
 `/tmp/clarvis-development-temp/`. `clarvis-develop --clear` removes the effective global state and
 all managed temporary workspaces and exits; workspace-local `.clarvis` data outside that temporary
 root is not removed. Combine both flags to clear first and then open a newly allocated workspace.
 
-To install a published source RC together with its target Container artifact, use `./dev-install.sh --candidate`
+To install a published source RC, use `./dev-install.sh --candidate`
 or `./dev-install.sh --candidate <rc-tag>`. This selects an isolated checkout and requires Git,
-the RC's pinned Bun version, and an engine when Container is selected. See the
+the RC's pinned Bun version. See the
 [Code candidate installation guide](packages/code/README.md) for prerequisites and lifecycle.
 
 ## Packages
@@ -259,12 +233,9 @@ units and are not published independently.
 | [`@clarvis/memory`](packages/memory)           | product capability  | `packages/memory`      | Markdown memory wiki, search, and indexing.                           |
 | [`@clarvis/plan`](packages/plan)               | product capability  | `packages/plan`        | Provider-neutral plans and review gates.                              |
 | [`@clarvis/goal`](packages/goal)               | product capability  | `packages/goal`        | Semantic formulation, persistent objectives and bounded continuation. |
-| [`@clarvis/judge`](packages/judge)             | product capability  | `packages/judge`       | Semantic reviewer configuration and isolated review capability.       |
-| [`@clarvis/tasks`](packages/tasks)             | product capability  | `packages/tasks`       | External task-management adapters and tools.                          |
 | [`@clarvis/workflows`](packages/workflows)     | product capability  | `packages/workflows`   | Multi-agent workflow scheduling and records.                          |
 | [`@clarvis/kernel`](packages/kernel)           | host implementation | `packages/kernel`      | Composition root and isolated-runtime model/MCP authority.            |
 | [`@clarvis/code`](packages/code)               | application         | `packages/code`        | The `clarvis` terminal UI, including conversation prompt scheduling.  |
-| [`@clarvis/server`](packages/server)           | application         | `packages/server`      | Authenticated MCP-over-HTTP facade, currently source-only.            |
 
 The [architecture overview](https://clarvis.dev/explanation/how-clarvis-works) explains the product
 model. The generated

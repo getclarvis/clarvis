@@ -177,14 +177,6 @@ bounded failure that scheduled the retry. Neither shape retains argument content
 `packages/loop/tests/unit/stream-delta-attribution.test.ts` and
 `packages/trace/tests/unit/trace-mapper-kinds.test.ts`.
 
-`ToolCallDetail.guard?: CommandGuardReview` is the final, persisted command
-review attached only to the terminal call. `mapEntry` preserves it in the
-persisted `TraceEvent`; `tool_call_started` and live output deltas do not carry
-an interim verdict. Production: `ToolCallDetail`/`CommandGuardReview` in
-`packages/capability/src/trace-kinds.ts` and the `tool_call` arm in
-`packages/trace/src/trace-mapper.ts`. Test: the tool projection case in
-`packages/trace/tests/unit/trace-mapper.test.ts`.
-
 `tool_control_released` is a live signal keyed by the original call and opaque stop token. It
 marks physical settlement of a yielded shell and is excluded from persisted traces; run settlement
 removes controls when a client restores historical events. Production: `ToolControlReleasedDetail`
@@ -428,16 +420,6 @@ Test: visibility cases in [trace-store-conformance.ts](../../packages/trace/test
 and [journal-recovery.test.ts](../../packages/trace/tests/unit/journal-recovery.test.ts).
 
 ### 3b. On-disk layout
-
-Rooted at `resolve(opts.dir)` (`packages/trace/src/json-trace-store.ts`); `resolveTraceStore` defaults it to
-`globalPaths().tracesDir` (`packages/trace/src/trace-store-factory.ts`). A caller may supply a
-separate lock root while retaining that record root. Local workspace hosts use
-`workspaceStatePaths(...).traceLocksDir`; the Container launcher mounts the exact owner record
-directory and this lock root so placement changes preserve replay without exposing sibling trace
-records. Production: `resolveTraceStore` in `packages/trace/src/trace-store-factory.ts`,
-`createJsonTraceStore` in `packages/trace/src/json-trace-store.ts` and
-`prepareContainerDomainMounts` in `packages/kernel/src/runtime/container-mounts.ts`. Test:
-`packages/kernel/tests/unit/runtime-mounts.test.ts`.
 
 ```
 <dir>/                                  mode 0700  (packages/trace/src/json-trace-store.ts)
@@ -1408,16 +1390,6 @@ Only two packages declare it: `@clarvis/loop` and `@clarvis/kernel` (their packa
   (`.github/workflows/ci.yml`). `process.kill(pid, 0)` (`packages/trace/src/journal-recovery.ts`) and the file-mode assertions
   (`packages/trace/src/json-trace-store.ts`; `packages/trace/src/journal.ts`) are POSIX-shaped; whether they behave as specified
   on Windows is unverified from this repository.
-## Transversal operator state
-
-`operator_authority_state` is a sanitized versioned `ExecutionRecord` field, not a tools capability
-slot. Only kernel binding validation may restore its active envelope. It is absent from public
-event projection and model context; missing recovery state fails closed. Production:
-[record-builder.ts](../../packages/trace/src/record-builder.ts) and
-[operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts).
-Test: [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).
-See [effect review](../execution/effect-review.md).
-
 ## Visibility views and physical identity
 
 `TraceStore` backends attest native filtering with `visibilityQueries: true`. Query methods accept

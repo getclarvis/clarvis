@@ -1,11 +1,10 @@
 import { parseModelRef, PLANS_DEFAULTS } from "@clarvis/kernel/config";
 import type { SettingsFile } from "./settings.ts";
-import type { GuardMode } from "./guard-mode.ts";
 import type { MemoryMode } from "./memory-mode.ts";
 import type { RuntimeStatus } from "@clarvis/protocol";
 
-/** User-facing execution boundary, independent from Guard. */
-export type IsolationMode = "host" | "sandbox" | "docker" | "podman";
+/** User-facing execution boundary. */
+export type IsolationMode = "host" | "sandbox";
 
 /** Actual active native placement overrides next-run preferences; an idle native host does not. */
 export function effectiveRunIsolation(
@@ -14,7 +13,6 @@ export function effectiveRunIsolation(
   active: boolean,
 ): IsolationMode {
   if (runtime?.kind === "native" && active) return runtime.isolation;
-  if (runtime?.kind === "container") return runtime.engine;
   return configured;
 }
 
@@ -25,7 +23,6 @@ export interface RunControlsState {
   sandboxRequired: boolean;
   filesystem: "workspace-write" | "workspace-read-only";
   network: "host" | "none" | "internet" | "outbound";
-  guardMode: GuardMode;
   memory: MemoryState;
   plans: PlansState;
 }
@@ -112,91 +109,46 @@ export function memoryState(settings: SettingsFile, sessionMode: MemoryMode = "o
   return modelResolves(memory.model ?? settings.default_model, settings) ? "on" : "inert";
 }
 
-/** Resolve the configured execution boundary without folding Guard into it. */
+/** Resolve the configured execution boundary. */
 export function deriveIsolation(settings: SettingsFile): IsolationMode {
-  if (settings.runtime?.backend === "docker") return "docker";
-  if (settings.runtime?.backend === "podman") return "podman";
   const sandbox = settings.sandbox;
   return sandbox !== undefined && sandbox.enabled !== false ? "sandbox" : "host";
 }
 
 /**
  * Derives the full {@link RunControlsState} from workspace settings plus the
- * session's current guard/memory mode.
+ * session's current memory mode.
  */
 export function deriveRunControls(
   settings: SettingsFile,
-  guardMode: GuardMode,
   memoryMode: MemoryMode,
 ): RunControlsState {
   const sandbox = settings.sandbox;
   const sandboxEnabled = sandbox !== undefined && sandbox.enabled !== false;
   const isolation = deriveIsolation(settings);
-  const runtimeNetwork =
-    settings.runtime?.backend === "docker" || settings.runtime?.backend === "podman"
-      ? (settings.runtime.network ?? "outbound")
-      : undefined;
-
   return {
     isolation,
     sandboxEnabled,
     sandboxRequired: sandboxEnabled,
     filesystem: sandbox?.filesystem ?? "workspace-write",
-    network: runtimeNetwork ?? sandbox?.network ?? "host",
-    guardMode,
+    network: sandbox?.network ?? "host",
     memory: memoryState(settings, memoryMode),
     plans: plansState(settings),
   };
 }
 
-/** Plain-language lines describing what the current sandbox/guard state means for a run. */
+/** Plain-language lines describing the current isolation policy. */
 export function safetyDescription(state: RunControlsState): string[] {
-  const lines: string[] = [];
-  if (state.isolation === "docker" || state.isolation === "podman") {
-    lines.push("The full native Kernel runs inside the Container.");
-    lines.push(
-      "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
-    );
-    lines.push(
-      "The selected workspace is mounted directly; changes appear on the host immediately.",
-    );
-    lines.push(
-      state.network === "none"
-        ? "Container network access is disabled."
-        : "Outbound network access is enabled and may cause remote effects or expose workspace content.",
-    );
-    lines.push("Commands run without Guard.");
-    lines.push("Git metadata is read-only; use Sandbox or Host for commits.");
-    return lines;
-  }
-  if (state.sandboxEnabled) {
-    lines.push(
-      state.guardMode === "off"
-        ? "Commands run autonomously inside the native sandbox."
-        : state.guardMode === "auto"
-          ? "Commands stay contained; a blocked command can ask to run that one command on the host."
-          : "Risky actions ask first; approved commands remain contained. A blocked command can ask to run on the host.",
-    );
-    lines.push(
-      state.filesystem === "workspace-read-only"
-        ? "Shell commands see the workspace read-only."
-        : "Shell commands may change this workspace.",
-    );
-    lines.push(
-      state.network === "none"
-        ? "Shell network access is disabled."
-        : "Host network access is enabled.",
-    );
-  } else {
-    lines.push(
-      state.guardMode === "off"
-        ? "Commands run directly without approval."
-        : state.guardMode === "auto"
-          ? "Commands run directly on the host after model review; uncertain actions ask you."
-          : "Risky actions ask before running directly on the host.",
-    );
-  }
-  return lines;
+  if (!state.sandboxEnabled) return ["Commands run with the host process's permissions."];
+  return [
+    "Commands run inside the native sandbox.",
+    state.filesystem === "workspace-read-only"
+      ? "Shell commands see the workspace read-only."
+      : "Shell commands may change this workspace.",
+    state.network === "none"
+      ? "Shell network access is disabled."
+      : "Host network access is enabled.",
+  ];
 }
 
 /** A plain-language line describing what the current memory state means for a run. */

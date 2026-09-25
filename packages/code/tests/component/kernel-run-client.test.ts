@@ -114,7 +114,6 @@ interface KernelOver {
   deleteError?: unknown;
   compact?: KernelClient["runs"]["compact"];
   agents?: { name: string; scope: "workspace" | "global"; model?: string; description?: string }[];
-  tasks?: KernelClient["tasks"];
   capabilities?: Partial<KernelClient["capabilities"]>;
   approveWorkspace?: KernelClient["config"]["approveWorkspace"];
   revokeWorkspace?: KernelClient["config"]["revokeWorkspace"];
@@ -171,7 +170,6 @@ function fakeKernel(over: KernelOver): KernelClient {
           fingerprint: `sha256:${"0".repeat(64)}`,
         })),
     } as KernelClient["extensionProfiles"],
-    ...(over.tasks === undefined ? {} : { tasks: over.tasks }),
     ...(over.capabilities === undefined ? {} : { capabilities: over.capabilities }),
     ...(over.sessions === undefined ? {} : { sessions: over.sessions }),
     ...(over.hosting === undefined ? {} : { hosting: over.hosting }),
@@ -635,90 +633,6 @@ test("done does not release the event pump before the protocol stream closes", a
   expect(closed).toBe(true);
 });
 
-test("startRun maps the complete guard and active-task request without workspace routing", async () => {
-  const ctrl = controllableHandle("exec_task");
-  let captured: unknown;
-  const { c } = client({
-    start: async (params) => {
-      captured = params;
-      return ctrl.handle;
-    },
-  });
-  await c.connect();
-  const handle = c.startRun({
-    executionId: "exec_task",
-    messages: [],
-    guardJudge: {
-      guidance: "review writes",
-      model: "openai/judge",
-      onUnsure: "deny",
-      timeoutMs: 5_000,
-    },
-    task: { id: "CLAR-42", provider_key: "provider-key", mode: "work" },
-  });
-  expect(captured).toMatchObject({
-    execution_id: "exec_task",
-    guard_judge: {
-      guidance: "review writes",
-      model: "openai/judge",
-      on_unsure: "deny",
-      timeout_ms: 5_000,
-    },
-    task: { id: "CLAR-42", provider_key: "provider-key", mode: "work" },
-  });
-  expect(captured).not.toHaveProperty("workspace");
-  expect(captured).not.toHaveProperty("guard_judge.prompt");
-  ctrl.settle({ execution_id: "exec_task", status: "completed" });
-  ctrl.close();
-  await handle.done;
-});
-
-test("startRun keeps native capability settings but omits host guard settings for Container", async () => {
-  const ctrl = controllableHandle("exec_container");
-  let captured: Record<string, unknown> | undefined;
-  const { c } = client({
-    capabilities: { runtime: { kind: "container" } as never },
-    start: async (params) => {
-      captured = params as Record<string, unknown>;
-      return ctrl.handle;
-    },
-  });
-  await c.connect();
-  const handle = c.startRun({
-    executionId: "exec_container",
-    messages: [],
-    guardMode: "auto",
-    guardJudge: { guidance: "must not cross" },
-    memory: "off",
-    plans: "off",
-  });
-  expect(captured).not.toHaveProperty("guard_mode");
-  expect(captured).not.toHaveProperty("guard_judge");
-  expect(captured).toMatchObject({ memory: "off", plans: "off" });
-  ctrl.settle({ execution_id: "exec_container", status: "completed" });
-  ctrl.close();
-  await handle.done;
-});
-
-test("startRun refuses explicit Task and Skill before a Container request", async () => {
-  let starts = 0;
-  const { c } = client({
-    capabilities: { runtime: { kind: "container" } as never },
-    start: async () => {
-      starts += 1;
-      return controllableHandle("unexpected").handle;
-    },
-  });
-  await c.connect();
-  expect(() =>
-    c.startRun({ messages: [], task: { provider_key: "p", id: "1", mode: "work" } }),
-  ).toThrow("Tasks is unavailable in Isolation Container");
-  expect(() => c.startRun({ messages: [], skill: { name: "review" } })).toThrow(
-    "Skills is unavailable in Isolation Container",
-  );
-  expect(starts).toBe(0);
-});
-
 test("progress derives retries, plan revisions and non-successful run endings", async () => {
   const ctrl = controllableHandle("exec_progress");
   const { c, progress } = client({ start: async () => ctrl.handle });
@@ -1139,41 +1053,6 @@ test("a lifecycle closure that rejects is recorded without rejecting physical ob
   });
 });
 
-test("a guard_confirm's structured command detail reaches the UI params", async () => {
-  const ctrl = controllableHandle("exec_g");
-  let seen: unknown;
-  const { c } = client(
-    { start: async () => ctrl.handle },
-    {
-      onElicit: async (params) => {
-        seen = params;
-        return { action: "decline" };
-      },
-    },
-  );
-  await c.connect();
-  const handle = c.startRun({ messages: [], profile: "coder" });
-  await flushMicrotasks();
-
-  ctrl.fireElicit({
-    id: "exec_g:elicit:0",
-    execution_id: "exec_g",
-    kind: "guard_confirm",
-    prompt: "Allow `rm -rf dist`?",
-    detail: { command: "rm -rf dist", cwd: "/ws", reason: "no allowed commands list configured" },
-  });
-  await flushMicrotasks();
-
-  expect(seen).toMatchObject({
-    kind: "guard_confirm",
-    detail: { command: "rm -rf dist", cwd: "/ws", reason: "no allowed commands list configured" },
-  });
-
-  ctrl.settle({ execution_id: "exec_g", status: "completed" });
-  ctrl.close();
-  await handle.done;
-});
-
 test("getRun maps a stored run and returns null on not_found", async () => {
   const detail: RunDetail = {
     execution_id: "exec_4",
@@ -1218,46 +1097,6 @@ test("listProfiles projects the kernel's agents", async () => {
   ]);
 });
 
-test("Tasks control-plane methods stay thin pass-throughs to the kernel service", async () => {
-  const calls: string[] = [];
-  const tasks = new Proxy({} as KernelClient["tasks"], {
-    get: (_target, property) => async () => {
-      calls.push(String(property));
-      return {};
-    },
-  });
-  const { c } = client({ tasks });
-  await c.connect();
-
-  await c.tasks.status();
-  await c.tasks.capabilities();
-  await c.tasks.listContainers({});
-  await c.tasks.search({});
-  await c.tasks.get({ provider_key: "provider", id: "TASK-1" });
-  await c.tasks.searchActors({});
-  await c.tasks.create({} as never);
-  await c.tasks.assign({} as never);
-  await c.tasks.previewTransition({} as never);
-  await c.tasks.transition({} as never);
-  await c.tasks.comment({} as never);
-  await c.tasks.attachArtifact({} as never);
-
-  expect(calls).toEqual([
-    "status",
-    "capabilities",
-    "listContainers",
-    "search",
-    "get",
-    "searchActors",
-    "create",
-    "assign",
-    "previewTransition",
-    "transition",
-    "comment",
-    "attachArtifact",
-  ]);
-});
-
 test("plugin installs forward the selected inventory target to the kernel", async () => {
   let target: unknown;
   const kernel = Object.assign(fakeKernel({}), {
@@ -1274,9 +1113,9 @@ test("plugin installs forward the selected inventory target to the kernel", asyn
   });
   await c.connect();
 
-  await c.plugins.install("https://example.test/plugin.git", undefined, { source: "clarvis" });
+  await c.plugins.install("https://example.test/plugin.git", undefined, { source: "agents" });
 
-  expect(target).toEqual({ source: "clarvis" });
+  expect(target).toEqual({ source: "agents" });
   await c.dispose();
 });
 
@@ -1356,8 +1195,8 @@ test("every non-run control-plane method stays a thin pass-through to its kernel
     c.sessions.delete("session"),
     c.plugins.list(),
     c.plugins.install("https://example.com/plugin.git"),
-    c.plugins.update({ scope: "global", source: "clarvis", name: "plugin" }),
-    c.plugins.uninstall({ scope: "global", source: "clarvis", name: "plugin" }),
+    c.plugins.update({ scope: "global", source: "agents", name: "plugin" }),
+    c.plugins.uninstall({ scope: "global", source: "agents", name: "plugin" }),
   ]);
   expect(c.project).toBe(kernel.project);
   expect(c.workspace).toBe(kernel.workspace);
@@ -1476,28 +1315,28 @@ test("capabilities stays readable while reconnect is between kernels", async () 
   const c = createKernelRunClient({
     createKernel: async () => {
       if (builds++ > 0) await replacement;
-      return fakeKernel({ capabilities: { tasks: true } });
+      return fakeKernel({ capabilities: { memory: true } });
     },
     callbacks: { onEvent: () => {} },
   });
 
   await c.connect();
-  expect(c.capabilities.tasks).toBe(true);
+  expect(c.capabilities.memory).toBe(true);
 
   const reconnecting = c.reconnect();
   await flushMicrotasks();
 
   expect(() => c.capabilities).not.toThrow();
-  expect(c.capabilities).toMatchObject({ tasks: true });
+  expect(c.capabilities).toMatchObject({ memory: true });
 
   release();
   await reconnecting;
-  expect(c.capabilities).toMatchObject({ tasks: true });
+  expect(c.capabilities).toMatchObject({ memory: true });
   await c.dispose();
 });
 
 test("capabilities still refuses before the first connect", () => {
-  const { c } = client({ capabilities: { tasks: true } });
+  const { c } = client({ capabilities: { memory: true } });
   expect(() => c.capabilities).toThrow("kernel run client is not connected");
 });
 

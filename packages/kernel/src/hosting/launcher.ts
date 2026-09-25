@@ -3,7 +3,7 @@ import { hostname } from "node:os";
 import { isAbsolute } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { detachObserved, loadEnv, NOOP_LOGGER, type Logger } from "@clarvis/capability";
-import { localKernelPolicyIdentity } from "./policy-identity.ts";
+import { localHostPolicyIdentity } from "./policy-identity.ts";
 import { kernelError } from "../core/errors.ts";
 import { connectKernelClient, type RemoteKernel } from "../transport/client.ts";
 import { connectLocalKernelTransport } from "../transport/local.ts";
@@ -55,6 +55,7 @@ async function connect(
   identity: LocalHostIdentity,
   deadline: number,
   logger: Logger,
+  allowRetiring = false,
 ): Promise<RemoteKernel> {
   const remaining = Math.max(1, Math.ceil(deadline - performance.now()));
   const transport = await connectLocalKernelTransport(record.endpoint, {
@@ -77,7 +78,11 @@ async function connect(
       await client.close();
       throw kernelError("conflict", "local host handshake does not match its discovery identity");
     }
-    if (client.localHost !== undefined && (await client.localHost.inspect()).restart_requested) {
+    if (
+      !allowRetiring &&
+      client.localHost !== undefined &&
+      (await client.localHost.inspect()).restart_requested
+    ) {
       await client.close();
       throw kernelError("unavailable", "local host is retiring after an explicit restart request");
     }
@@ -111,7 +116,6 @@ export async function connectOrLaunchLocalKernel(
   if (!Number.isSafeInteger(timeout) || timeout <= 0 || timeout > 120_000)
     throw kernelError("invalid_request", "host startup timeout must be within 120 seconds");
   const logger = options.logger ?? NOOP_LOGGER;
-  const policyId = localKernelPolicyIdentity(loadEnv(options.environment));
   const identity = await resolveLocalHostIdentity({
     ...options,
     ...(process.platform === "win32"
@@ -123,6 +127,12 @@ export async function connectOrLaunchLocalKernel(
     CLARVIS_HOME: identity.globalDir,
     CLARVIS_WORKSPACE_ROOT: identity.workspaceRoot,
   };
+  const policyId = localHostPolicyIdentity({
+    env: loadEnv(options.environment),
+    workspaceRoot: identity.workspaceRoot,
+    globalDir: identity.globalDir,
+    environment,
+  });
   const deadline = performance.now() + timeout;
   let launched = false;
   let launchFailed = false;
@@ -132,16 +142,33 @@ export async function connectOrLaunchLocalKernel(
       throw kernelError("conflict", "local host state belongs to another machine");
     const live = record !== null && localHostProcessAlive(record.pid);
     if (live) {
-      if (record.policy_id !== policyId)
-        throw kernelError(
-          "conflict",
-          "active local host has different operator execution policy; reconnect using its original policy and request an idle host restart before applying changed policy",
-        );
       if (record.wire_version !== CLARVIS_WIRE_VERSION)
         throw kernelError(
           "unsupported",
           "active local host requires its original compatible installation",
         );
+      if (record.policy_id !== policyId) {
+        let previous: RemoteKernel | undefined;
+        try {
+          previous = await connect(record, identity, deadline, logger, true);
+          if (
+            previous.localHost === undefined ||
+            !(await previous.localHost.inspect()).restart_requested
+          )
+            throw kernelError(
+              "conflict",
+              "active local host has different operator execution policy; reconnect using its original policy and request an idle host restart before applying changed policy",
+            );
+        } catch (error) {
+          const code =
+            typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+          if (code !== "unavailable" && code !== "ECONNREFUSED" && code !== "ENOENT") throw error;
+        } finally {
+          await previous?.close();
+        }
+        await delay(Math.min(50, Math.max(1, deadline - performance.now())));
+        continue;
+      }
       if (record.artifact_id !== options.artifactId) {
         let previous: RemoteKernel | undefined;
         try {
@@ -159,6 +186,7 @@ export async function connectOrLaunchLocalKernel(
             throw kernelError(
               "conflict",
               "active local host from another installation has work in progress; wait for it to finish or reconnect using the original installation",
+              { replacement_available: true, host_generation: record.host_generation },
             );
           if (code !== "unavailable" && code !== "ECONNREFUSED" && code !== "ENOENT") throw error;
         } finally {
@@ -207,6 +235,44 @@ export async function connectOrLaunchLocalKernel(
     "unavailable",
     "local host startup is unconfirmed; no process was stopped or restarted",
   );
+}
+
+/** Retire only the generation identified by a prior replacement conflict, after an operator choice. */
+export async function requestLocalHostReplacement(
+  options: LocalKernelLaunchOptions,
+  expectedGeneration: string,
+): Promise<void> {
+  const identity = await resolveLocalHostIdentity({
+    ...options,
+    ...(process.platform === "win32"
+      ? {}
+      : { endpointRootCandidates: localHostEndpointRootCandidates(options.environment) }),
+  });
+  const record = await readLocalHostConnection(identity);
+  if (
+    record === null ||
+    record.host_generation !== expectedGeneration ||
+    record.artifact_id === options.artifactId ||
+    record.wire_version !== CLARVIS_WIRE_VERSION ||
+    record.host !== hostname() ||
+    !localHostProcessAlive(record.pid)
+  )
+    throw kernelError("conflict", "the previous local host changed; retry the connection");
+  const deadline = performance.now() + (options.startupTimeoutMs ?? 30_000);
+  const previous = await connect(record, identity, deadline, options.logger ?? NOOP_LOGGER, true);
+  try {
+    if (previous.localHost === undefined)
+      throw kernelError("unsupported", "previous local host has no operator controls");
+    await previous.localHost.requestShutdown();
+  } finally {
+    await previous.close();
+  }
+  while (performance.now() < deadline) {
+    const current = await readLocalHostConnection(identity);
+    if (current === null || current.host_generation !== expectedGeneration) return;
+    await delay(Math.min(50, Math.max(1, deadline - performance.now())));
+  }
+  throw kernelError("unavailable", "previous local host is still draining physical work");
 }
 
 /** Strict private CLI arguments shared by the distributed host entry and process fixtures. */

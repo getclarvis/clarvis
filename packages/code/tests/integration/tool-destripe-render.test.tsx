@@ -129,7 +129,7 @@ test("collapsed tool failures keep identity and diagnosis on separate lines", as
   expect(rows.join("\n")).not.toContain('{"error"');
 });
 
-test("a warning shell keeps its exit diagnosis inline before the guard verdict", async () => {
+test("a warning shell keeps its exit diagnosis inline", async () => {
   const warning: FoldFixtureNode = {
     ...collapsed,
     key: "shell-warning",
@@ -142,45 +142,14 @@ test("a warning shell keeps its exit diagnosis inline before the guard verdict",
       stdout: "protocol build passed\nkernel build passed",
       stderr: "typecheck failed",
     }),
-    guard: { mode: "auto", outcome: "allowed", answerer: "judge" },
   };
   const rows = await frame(() => <BlockView defaultFolded={() => true} node={warning} />, 110);
   expect(rows[1]).toContain("shell(bun test)");
   expect(rows[1]).toContain("… +3 lines");
   expect(rows[1]).toContain("exit 2");
-  expect(rows[1]).toContain("approved by judge");
-  expect(rows[1]!.indexOf("exit 2")).toBeLessThan(rows[1]!.indexOf("approved by judge"));
   expect(rows[2]).not.toContain("exit 2");
   expect(rows.join("\n")).not.toContain("protocol build passed");
   expect(rows.join("\n")).not.toContain("typecheck failed");
-});
-
-test("shell headers state the guard verdict and answerer without its mode", async () => {
-  const approved: FoldFixtureNode = {
-    ...collapsed,
-    key: "guard-approved",
-    mcpName: "shell",
-    args: { command: "bun test" },
-    result: '{"exit_code":0,"stdout":"","stderr":""}',
-    guard: { mode: "auto", outcome: "allowed", answerer: "judge" },
-  };
-  const denied: FoldFixtureNode = {
-    ...approved,
-    key: "guard-denied",
-    status: "error",
-    error: "denied",
-    guard: { mode: "auto", outcome: "denied", answerer: "judge" },
-  };
-  const allowedRows = await frame(
-    () => <BlockView defaultFolded={() => approved.collapsed ?? false} node={approved} />,
-    110,
-  );
-  const deniedRows = await frame(
-    () => <BlockView defaultFolded={() => denied.collapsed ?? false} node={denied} />,
-    110,
-  );
-  expect(allowedRows.join("\n")).toContain("approved by judge");
-  expect(deniedRows.join("\n")).toContain("denied by judge");
 });
 
 test("a finished call that ran >= 2s keeps its duration in the header", async () => {

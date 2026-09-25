@@ -1,8 +1,7 @@
 # Local subscription-backed model providers
 
 > Production ownership is split across `@clarvis/paths`, `@clarvis/protocol`, `@clarvis/capability`,
-> `@clarvis/loop`, `@clarvis/llm`, `@clarvis/kernel`, and `@clarvis/code`. Remote
-> `@clarvis/server` access is deliberately unavailable in this phase.
+> `@clarvis/loop`, `@clarvis/llm`, `@clarvis/kernel`, and `@clarvis/code`.
 
 ## 1. Purpose
 
@@ -270,8 +269,7 @@ Test: manager, adapter, LLM error, and public-contract tests cited above.
 ## 9. Explicit exclusions
 
 Remote server authentication, browser cookies, copied CLI state, installed CLI subprocesses,
-multi-account aliases, and browser PKCE callbacks are outside this phase. `@clarvis/server` exposes
-neither login nor subscription inference; its protocol service reports `unavailable`. Browser login
+multi-account aliases, and browser PKCE callbacks are outside this phase. Browser login
 may be added later only with provider-registered S256 PKCE and exact loopback callback validation.
 
 ### Per-instance affinity and replay

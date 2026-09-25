@@ -44,10 +44,9 @@ interface Formatted {
  * `content` mode only; `offset` is a 0-based result offset, not a line offset.
  * When the underlying scan hits its output cap, the result carries an explicit
  * "search incomplete" warning rather than silently returning a partial set (see
- * {@link composeResult}). Confined directory searches always run in process so
- * every file is opened and revalidated by Clarvis; ripgrep remains available
- * for a descriptor snapshot of one file and for explicitly unconfined
- * directory searches. The in-process path stops once the pattern has spent
+ * {@link composeResult}). Directory searches always run in process so each
+ * candidate receives classified-path admission; ripgrep remains available
+ * for a descriptor snapshot of one file. The in-process path stops once the pattern has spent
  * `config.regexScanBudgetMs` of regular-expression time, and says so in a
  * distinct warning naming the pattern as the cause.
  */
@@ -65,8 +64,8 @@ export const grep: ToolDef = {
       pattern: {
         type: "string",
         description:
-          "Regex: confined directory scans use JavaScript; file/unconfined searches may use " +
-          "ripgrep/Rust. Prefer escaped literals, explicit character ranges and simple groups. " +
+          "Regex: directory scans use JavaScript; single-file searches may use ripgrep/Rust. " +
+          "Prefer escaped literals, explicit character ranges and simple groups. " +
           "Avoid lookaround, backreferences, inline flags and engine-specific escapes/classes. " +
           "Unicode, shorthand classes and case folding can differ. Use ignore_case and multiline " +
           "arguments for flags; do not assume complex patterns have identical semantics.",

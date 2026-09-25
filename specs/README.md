@@ -56,9 +56,7 @@ put `Production:` / `Test:` evidence directly in their sections. The recurring s
 | 7 | **Coupling** | Who it depends on, who depends on it, and where the seams are |
 | 8 | **Open questions** | What this document deliberately leaves open, and what the implementation does not settle |
 
-The layouts are not mechanically identical. [`capabilities/tasks-domain.md`](capabilities/tasks-domain.md)
-inserts *State model* and shifts its remaining sections to 6–9;
-[`hosts/kernel-composition.md`](hosts/kernel-composition.md) and
+The layouts are not mechanically identical. [`hosts/kernel-composition.md`](hosts/kernel-composition.md) and
 [`hosts/subscription-providers.md`](hosts/subscription-providers.md) use nine domain-sequenced
 sections; [`hosts/storage.md`](hosts/storage.md) keeps its compact six-section contract unnumbered.
 Other documents may rename a recurring role, but still keep production and test evidence beside the
@@ -91,12 +89,10 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 
 | Document | Covers | Implemented in |
 | --- | --- | --- |
-| [`tools-contract.md`](execution/tools-contract.md) | The one dispatcher every tool sits behind: argument validation, the approval gate, output bounding, the immutable `RuntimeConfig`, and the single registry both surfaces derive from | `tools` |
+| [`tools-contract.md`](execution/tools-contract.md) | The one dispatcher every tool sits behind: argument validation, output bounding, the immutable `RuntimeConfig`, and the single registry both surfaces derive from | `tools` |
 | [`tools-read-and-search.md`](execution/tools-read-and-search.md) | The nine observing tools (`read_file`, `read_image`, `read_files`, `list_dir`, `glob`, `grep`, `diff`, `file_stat`, `tree`) and the ripgrep-parity contract between grep's two engines | `tools` |
 | [`tools-mutation.md`](execution/tools-mutation.md) | The nine mutating tools and the shared staging/locking/rollback machinery that makes a write all-or-nothing | `tools` |
 | [`tools-shell-and-sessions.md`](execution/tools-shell-and-sessions.md) | Running commands with `shell` and `shell_session`, process trees, killing, bounded capture, and cursors | `tools` |
-| [`command-guard.md`](execution/command-guard.md) | Per-call approval: the shell analyzer that produces facts, the kernel's single deterministic policy, and the one Judge review path every remaining Auto `ask` takes | `tools`, `kernel`, `loop`, `code` |
-| [`effect-review.md`](execution/effect-review.md) | Authenticated operator evidence, host effect attestation, revisioned grants, configuration-review receipts and the restricted writers | `capability`, `tools`, `kernel`, `loop`, `trace`, `workflows`, `protocol`, `code` |
 | [`hooks.md`](execution/hooks.md) | Operator- and plugin-declared command or MCP-tool invocations bound to lifecycle events: matching, blocking and observer semantics, subprocess and MCP execution, foreign payloads, and argument rewriting | `hooks`, `capability`, `loop`, `mcp-client` |
 | [`sandbox.md`](execution/sandbox.md) | Native Bubblewrap/Seatbelt probing and policy construction, toolchain discovery on `PATH`, host path policy, real-platform canaries, and operator inspection | `tools`, `loop`, `kernel`, `protocol`, `code` |
 | [`skills.md`](execution/skills.md) | Discovering, parsing and merging `SKILL.md` trees with last-wins precedence; serving catalog, body and confined resource pages through `load_skill` and `read_skill_resource`; and routing named or description-matching skills into the run | `skills`, `kernel`, `loop` |
@@ -121,17 +117,13 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | --- | --- | --- |
 | [`plan-store.md`](capabilities/plan-store.md) | The plan as one Markdown file whose bytes *are* the plan: the parse/render inverse pair, the `(revision, digest, spec_digest)` compare-and-swap triple, and the file-backed repository | `plan` |
 | [`plan-capability.md`](capabilities/plan-capability.md) | Planning packaged as a registrable capability: sessions, the five plan tools, the review blocker, two finalize gates, retention policy and the kernel's plans service | `plan`, `kernel`, `capability` |
-| [`judge.md`](capabilities/judge.md) | Semantic reviewer settings, private step protocol, isolated run contribution and host persistence boundary | `judge`, `kernel`, `loop` |
 | [`goals.md`](capabilities/goals.md) | Persistent objectives, host-owned session transactions, user control, checkpoint policy, scoped completion evidence and per-goal reconciliation | `goal`, `kernel`, `protocol` |
 | [`memory-store.md`](capabilities/memory-store.md) | The Markdown wiki (`PROFILE.md` → `TOPIC.md` → `MEMORY.md`): the store port and its adapters, the atomic batch engine and journal, revisions, deterministic reindex, and BM25F search | `memory`, `paths` |
 | [`memory-capability.md`](capabilities/memory-capability.md) | The seam from wiki to run: the `<memory>` seed block, the seven tools, the entry-agent-only write policy, the settings block and the kernel control plane | `memory`, `kernel` |
 | [`memory-indexer.md`](capabilities/memory-indexer.md) | Turning a finished run into something the wiki knows: the durable enqueue, the background drain with leases and retry budgets, and the isolated versus continuation index passes | `memory`, `kernel` |
 | [`workflows-scheduling.md`](capabilities/workflows-scheduling.md) | Manager-to-leader fan-out: the four spawn tools, wave scheduling and write-conflict separation, round barriers, the FIFO concurrency semaphore and the tree-wide token ledger | `workflows` |
 | [`workflows-service.md`](capabilities/workflows-service.md) | The non-live half: code-backed built-ins, optional `WORKFLOW.md` overrides, the three reusable result schemas, and the kernel's persisted workflow tree and routing | `workflows`, `kernel`, `code` |
-| [`worktrees.md`](capabilities/worktrees.md) | Launch-time Git worktrees: Git-owned identity and lifecycle, immutable process scope, linked-checkout sandbox mounts, and Isolation Sandbox `require_escalated` host-command fallback | `code`, `kernel`, `paths`, `tools` |
-| [`tasks-domain.md`](capabilities/tasks-domain.md) | The vendor-neutral task model: stages, actors, claims, strict schemas, the stable error taxonomy, provider identity, the `clarvis.tasks.v2` MCP adapter and its conformance harness | `tasks` |
-| [`tasks-capability.md`](capabilities/tasks-capability.md) | Binding one run to one remote task: the ten tools, the four-way gate on what is offered, `task_outcome_unknown` handling, and the kernel's single provider factory | `tasks`, `kernel` |
-| [`provider-executables.md`](capabilities/provider-executables.md) | Replacing a capability's *content* without changing its vocabulary: memory/plan provider registries and the language-neutral JSON-RPC executable protocol | `capability`, `memory`, `plan`, `kernel`, `code` |
+| [`worktrees.md`](capabilities/worktrees.md) | Launch-time Git worktrees: Git-owned identity and lifecycle, immutable process scope, and linked-checkout sandbox mounts | `code`, `kernel`, `paths`, `tools` |
 
 ### `hosts/` — the kernel, the terminal UI and the HTTP facade
 
@@ -139,7 +131,6 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | --- | --- | --- |
 | [`protocol.md`](hosts/protocol.md) | The transport-agnostic contract: wire DTOs plus the `KernelClient` service interfaces, a pure leaf with no dependency of any kind | `protocol` |
 | [`kernel-composition.md`](hosts/kernel-composition.md) | The three stacked construction entry points — in-process composition, `createFileKernel` as the sole local one-workspace bootstrap, and `createFileRunHost` process hosting — plus owner scoping | `kernel` |
-| [`isolated-agent-runtime.md`](hosts/isolated-agent-runtime.md) | Host-owned admission and model/remote-MCP brokers, direct selected-workspace mounts, private execution, immutable OCI distribution, and Docker/Podman adapters for disposable agent workers | `kernel`, `protocol`, `code`, `paths`, `loop`, `mcp-client`, `tools`, `tooling/` |
 | [`kernel-config.md`](hosts/kernel-config.md) | The synchronous config store under the async config service, `kernelSettingsSchema` validation, the shipped agent fleet as TypeScript data, and field-by-field overlays | `kernel`, `protocol` |
 | [`self-configuration.md`](hosts/self-configuration.md) | Reviewed configuration file tools, host authority, and the product-owned Markdown documentation skill | `kernel`, `paths`, `protocol`, `code`, `skills`, `loop` |
 | [`kernel-runs.md`](hosts/kernel-runs.md) | Admission and execution identity, request assembly from settings plus agent records, the run-scoped handle with its queues, and the two mappers that project events into the protocol union | `kernel`, `protocol` |
@@ -150,10 +141,8 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`workspace-changes.md`](hosts/workspace-changes.md) | VCS-agnostic current-workspace change inventory and patch detail for `/diff`, with a Git adapter in the kernel | `protocol`, `kernel`, `code` |
 | [`plugins.md`](hosts/plugins.md) | Reading a `plugin.json`, translating foreign dialects, degrading one artifact at a time, and normalized Git/local/npm marketplace installation | `kernel`, `loop`, `code` |
 | [`model-catalog.md`](hosts/model-catalog.md) | The shipped models.dev snapshot, `provider/model` ref parsing and provider resolution, pricing, reasoning-effort floors and where a model's cache mode is derived | `kernel`, `capability`, `code` |
-| [`subscription-providers.md`](hosts/subscription-providers.md) | Local ChatGPT and Grok subscription login, credentials, entitled catalogs, pinned Responses transports, billing separation, coexistence, and remote unavailability | `paths`, `protocol`, `capability`, `loop`, `llm`, `kernel`, `code`, `server` |
+| [`subscription-providers.md`](hosts/subscription-providers.md) | Local ChatGPT and Grok subscription login, credentials, entitled catalogs, pinned Responses transports, billing separation, coexistence, and local availability | `paths`, `protocol`, `capability`, `loop`, `llm`, `kernel`, `code` |
 | [`sessions.md`](hosts/sessions.md) | A session as a conversation index of turns pointing at runs: the file-backed service with its bounded summary sidecar, and how a client rebuilds a transcript from persisted traces | `kernel`, `code`, `protocol` |
-| [`server-auth.md`](hosts/server-auth.md) | Everything in front of the MCP surface: bind-time refusals, the environment posture schema, the four owner modes, OAuth `client_credentials`, and the per-request principal pipeline | `server` |
-| [`server-mcp.md`](hosts/server-mcp.md) | The four-tool facade: `clarvis_run` as a blocking call that *is* the run, the steer/cancel/respond triad, session-scoped run bookkeeping and the bounded notification sink | `server` |
 | [`code-bootstrap.md`](hosts/code-bootstrap.md) | From the `clarvis` bin to a painted frame: the flag table, the two flags answered before the graph loads, bundle-versus-source entry, headless modes and the Solid/OpenTUI shell | `code` |
 | [`code-performance.md`](hosts/code-performance.md) | Startup latency, resident-memory budgets, measurement discipline, measured evidence, and the prioritized reduction plan | `code`, `kernel` |
 | [`code-run-host.md`](hosts/code-run-host.md) | The stateful bridge to the kernel run stream: the in-flight handle, the session, the kernel run client and workspace client manager, and the transcript/activity/session projection stores | `code` |
@@ -161,7 +150,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`code-transcript.md`](hosts/code-transcript.md) | How the Lead-only main transcript or one selected child transcript is filtered, grouped, folded and rendered, including tool-call identity and hard display ceilings | `code` |
 | [`code-transcript-stability.md`](hosts/code-transcript-stability.md) | Stable record and row identity, sealed content, explicit exploration, bounded native residence, semantic reader anchors and Lead/child replay equivalence | `code` |
 | [`code-input-and-overlays.md`](hosts/code-input-and-overlays.md) | The composer and its completion popup, the shared floating-card and windowed-list primitives, plan/history overlays, and the `!bash` escape hatch | `code` |
-| [`code-domain-hubs.md`](hosts/code-domain-hubs.md) | The six full-screen domain views (agents, tasks, workflows, sessions, memory, run controls) and the controller/adapter layering that keeps them thin | `code` |
+| [`code-domain-hubs.md`](hosts/code-domain-hubs.md) | The five full-screen domain views (agents, workflows, sessions, memory, run controls) and the controller/adapter layering that keeps them thin | `code` |
 | [`code-extensions.md`](hosts/code-extensions.md) | The five-step Extensions setup, unified exact catalog, capability review, preview-bound Extension Profile composition and retained-list performance contract | `code`, `kernel`, `protocol`, `skills` |
 | [`code-settings-panels.md`](hosts/code-settings-panels.md) | The configuration surface: the view host with its scope toggle and dirty latch, the single-slot field editor, and the provider/model and extension-browser screens | `code` |
 | [`code-keyboard.md`](hosts/code-keyboard.md) | Capability-gated key candidates over `@opentui/keymap`, and generating every footer segment, help row and hint from that one live declaration | `code` |
@@ -175,9 +164,9 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`package-architecture.md`](cross-cutting/package-architecture.md) | Package roles, dependency directions, the single product-version model, package-versus-subpath criteria, and the application/Protocol/Kernel boundary | root manifest, workspace manifests, graph tooling, all workspaces |
 | [`grants.md`](cross-cutting/grants.md) | The one string vocabulary a profile asks with, how capabilities contribute grants at boot, and how a profile's model/tools/grants resolve into the tools an agent actually sees | `loop`, `capability`, `kernel`, and the grant-contributing capability packages |
 | [`prompt-cache.md`](cross-cutting/prompt-cache.md) | What a provider's prefix cache charges for, the append-only rule that keeps it, the measured cost of breaking it, and the session-affinity and breakpoint mechanics | `loop`, `llm` |
-| [`model-instructions.md`](cross-cutting/model-instructions.md) | Owned prompt/tool inventory, compact role and harness handoffs, local schema guidance, recovery semantics and structural payload budgets | `kernel`, `loop`, `tools`, `plan`, `workflows`, `tasks`, `server`, instruction-contributing packages |
-| [`elicitation.md`](cross-cutting/elicitation.md) | Every way a run asks a human — `ask_user`, guard prompts, budget escalation, MCP elicitation — through one port, one per-run FIFO, one tree-wide mux and each host's own surface | `loop`, `kernel`, `server`, `code`, `workflows` |
-| [`security.md`](cross-cutting/security.md) | Path confinement, the single redaction module and its two rule sets, environment filtering for subprocesses, workspace trust, and what is explicitly *not* a sandbox | `tools`, `kernel`, `capability`, `hooks` |
+| [`model-instructions.md`](cross-cutting/model-instructions.md) | Owned prompt/tool inventory, compact role and harness handoffs, local schema guidance, recovery semantics and structural payload budgets | `kernel`, `loop`, `tools`, `plan`, `workflows`, instruction-contributing packages |
+| [`elicitation.md`](cross-cutting/elicitation.md) | Every way a run asks a human — `ask_user`, budget escalation, MCP elicitation and workflow review — through one port, one per-run FIFO, one tree-wide mux and each host's own surface | `loop`, `kernel`, `code`, `workflows` |
+| [`security.md`](cross-cutting/security.md) | Environment filesystem policy, classified-path protection, the single redaction module and its two rule sets, subprocess environment filtering, and workspace trust | `tools`, `kernel`, `capability`, `hooks` |
 | [`observability.md`](cross-cutting/observability.md) | The one `Logger` port and its single backend, the event-name vocabulary, environment-only verbosity, the cost model at hot call sites, and the audit channel | `capability`, `kernel` (repo-wide) |
 | [`agent-interop.md`](cross-cutting/agent-interop.md) | Component-scoped ownership of the shared `.agents` seam, plus the single-owner correspondence tables that make a foreign-dialect hook document degrade instead of silently failing open | `kernel`, `skills`, `capability`, `paths` |
 | [`test-architecture.md`](cross-cutting/test-architecture.md) | Test placement, runner isolation, the pre-commit gate, LCOV-summed coverage floors, and the static TUI scenario inventory | `tooling/`, root config, all workspaces |

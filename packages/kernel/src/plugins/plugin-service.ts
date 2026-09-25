@@ -53,7 +53,7 @@ function checkedPluginRef(value: unknown): PluginRef {
   const name = pluginNameField.safeParse(ref.name);
   if (
     (ref.scope !== "global" && ref.scope !== "workspace") ||
-    (ref.source !== "agents" && ref.source !== "clarvis") ||
+    ref.source !== "agents" ||
     !name.success ||
     Object.keys(ref).some((key) => !["scope", "source", "name"].includes(key))
   ) {
@@ -134,32 +134,7 @@ function executablesOf(name: string, manifest: PluginManifest | undefined): stri
     const spec = s.type === "stdio" ? [s.command, ...(s.args ?? [])].join(" ") : s.url;
     out.push(`$ ${name}:${server}  ${spec}`);
   }
-  for (const [capability, declaration] of Object.entries(manifest?.capabilityExecutables ?? {})) {
-    const override = declaration.platforms?.[process.platform];
-    const argv = [
-      override?.command ?? declaration.command,
-      ...(override?.args ?? declaration.args),
-    ];
-    out.push(`$ ${name}:${capability}  ${argv.join(" ")}`);
-  }
   return out;
-}
-
-/** Capability executable declarations projected for provider selection. */
-function capabilityExecutablesOf(
-  manifest: PluginManifest | undefined,
-): PluginContributions["capability_executables"] {
-  return Object.entries(manifest?.capabilityExecutables ?? {})
-    .map(([capability, declaration]) => {
-      const override = declaration.platforms?.[process.platform];
-      return {
-        capability,
-        command: override?.command ?? declaration.command,
-        args: [...(override?.args ?? declaration.args)],
-        platform_override: override !== undefined,
-      };
-    })
-    .sort((a, b) => a.capability.localeCompare(b.capability));
 }
 
 /**
@@ -282,10 +257,6 @@ function contributionsOf(
       .map((server) => effectivePluginMcpName(name, server))
       .sort(),
     hooks: manifest?.hooks?.length ?? 0,
-    capability_executables: capabilityExecutablesOf(manifest),
-    ...(manifest?.capabilityRunPolicies !== undefined
-      ? { capability_run_policies: manifest.capabilityRunPolicies }
-      : {}),
     executables: executablesOf(name, manifest),
   };
 }
@@ -447,23 +418,22 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
     return installed.map((plugin) => viewFor(plugin, enabled));
   }
 
-  function checkedInstallTarget(target: unknown): { source: "agents" | "clarvis" } {
+  function checkedInstallTarget(target: unknown): { source: "agents" } {
     if (
       typeof target !== "object" ||
       target === null ||
       Array.isArray(target) ||
-      ((target as { source?: unknown }).source !== "agents" &&
-        (target as { source?: unknown }).source !== "clarvis") ||
+      (target as { source?: unknown }).source !== "agents" ||
       Object.keys(target).some((key) => key !== "source")
     ) {
       throw kernelError("invalid_request", "invalid plugin install target");
     }
-    return target as { source: "agents" | "clarvis" };
+    return target as { source: "agents" };
   }
 
   async function installPrepared(
     prepare: (signal: AbortSignal) => Promise<Awaited<ReturnType<PluginFetcher["fetch"]>>>,
-    target: { source: "agents" | "clarvis" },
+    target: { source: "agents" },
     expectedName?: string,
   ): Promise<PluginView> {
     const abort = new AbortController();

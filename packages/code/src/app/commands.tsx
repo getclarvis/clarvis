@@ -14,7 +14,6 @@ import type { ClarvisDirs } from "../adapters/agents.ts";
 import type { KeysAdapter } from "../adapters/provider-secrets.ts";
 import type { CodeConfigStore } from "../adapters/code-config.ts";
 import type { MemoryModeStore } from "../adapters/memory-mode.ts";
-import type { GuardModeStore } from "../adapters/guard-mode.ts";
 import type { ThemePreview } from "../theme/theme.ts";
 import { DEFAULT_AGENT_NAME, type EnvView } from "../adapters/agent-files.ts";
 import type { AgentsStore } from "../adapters/agents-store.ts";
@@ -29,7 +28,6 @@ import {
 } from "../onboarding/doctor.ts";
 import { seedMemoryBlock } from "../onboarding/seed-memory.ts";
 import { seedPlansBlock } from "../onboarding/seed-plans.ts";
-import { seedDefaultAllowlist } from "../onboarding/seed-default-allowlist.ts";
 import type { ConnectionState, ReconnectMode } from "../adapters/connection-state.ts";
 import type { DebugSessionController } from "../adapters/debug-session.ts";
 import type { RunHost } from "../run-host.ts";
@@ -77,7 +75,6 @@ import {
 import { errorText } from "../adapters/errors.ts";
 import type { HintTone } from "../views/hint.ts";
 import type { SessionId, SessionMeta } from "../adapters/session-store.ts";
-import type { TasksController } from "../features/tasks/controller.ts";
 import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
 
 /** Dependencies for {@link registerAppCommands}: every adapter and effect the app-level commands close over. */
@@ -90,7 +87,6 @@ export interface AppCommandDeps {
     InteractionEffects,
     | "openAgentPicker"
     | "openIsolationPicker"
-    | "openReviewPicker"
     | "openMemoryPicker"
     | "openDiff"
     | "openPlan"
@@ -131,13 +127,10 @@ export interface AppCommandDeps {
   marketplaceDefaultUrls?: readonly string[];
   code: CodeConfigStore;
   memoryMode: MemoryModeStore;
-  guard: GuardModeStore;
   workflows: Pick<WorkflowsService, "list" | "get" | "delete">;
   workflowActivity?: Accessor<WorkflowActivity | null>;
-  tasks: TasksController;
   storage: Pick<StorageService, "inspect" | "cleanup">;
   /** A transient host-level reason that blocks starting task work, such as the RSS fuse. */
-  taskWorkBlockedReason?: () => string | null;
   getRun: (id: string) => Promise<RunDetail | null>;
   runActive: () => boolean;
   hasAvailablePlan: () => boolean;
@@ -262,29 +255,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       );
     }),
   });
-  commands.registerView({
-    name: "tasks.open",
-    title: "Tasks",
-    desc: "Browse and work on external tasks in the current workspace",
-    slash: "/tasks",
-    surface: "slash",
-    group: "navigate",
-    enabled: deps.tasks.available,
-    view: lazyView(async () => {
-      const { TasksHub } = await import("../views/cold-surfaces.ts");
-      return (host) =>
-        TasksHub(host, {
-          controller: deps.tasks,
-          profiles: deps.agents.list,
-          defaultContainer: () => deps.settings.effective().tasks?.default_container,
-          ...(deps.taskWorkBlockedReason === undefined
-            ? {}
-            : { workBlockedReason: deps.taskWorkBlockedReason }),
-          onError: (message) => notify(message, "warn"),
-        });
-    }),
-  });
-
   /** Opens `childCmd` above the current view, or seeds `returnCmd` beneath a deep link. */
   function openWithReturn(childCmd: string, returnCmd: string, scope?: Scope): void {
     const factory = commands.viewFactory(childCmd);
@@ -364,7 +334,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     name: "isolation.picker",
     enabled: () => !deps.runActive(),
     title: "Isolation",
-    desc: "Choose Host, Sandbox, Docker or Podman isolation for the next run",
+    desc: "Choose Host or Sandbox isolation for the next run",
     surface: "internal",
     group: "navigate",
     actionSurfaces: ["footer", "full-help"],
@@ -372,20 +342,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     hintPriority: 49,
     hintGroup: "navigation",
     run: () => effects.openIsolationPicker(),
-  });
-
-  commands.registerAction({
-    name: "review.picker",
-    enabled: () => !deps.runActive(),
-    title: "Guard",
-    desc: "Choose Off, Approval or Auto without changing isolation",
-    surface: "internal",
-    group: "navigate",
-    actionSurfaces: ["footer", "full-help"],
-    footerLabel: "guard",
-    hintPriority: 48,
-    hintGroup: "navigation",
-    run: () => effects.openReviewPicker(),
   });
 
   commands.registerAction({
@@ -695,7 +651,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerView({
     name: "controls.open",
     title: "Run controls",
-    desc: "Isolation, Guard, memory and plan retention for the next run",
+    desc: "Isolation, memory and plan retention for the next run",
     surface: "internal",
     group: "navigate",
     parent: "settings",
@@ -704,7 +660,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       return (host) =>
         RunControlsPanel(host, {
           settings: deps.settings,
-          guard: deps.guard,
           memory: deps.memoryMode,
           notify,
           runActive: deps.runActive,
@@ -730,9 +685,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           catalog: deps.catalog,
           notify,
           runActive: deps.runActive,
-          ...(deps.runtime?.()?.kind === "container"
-            ? { reload: () => deps.reconnectBackend("reload") }
-            : {}),
           ...(deps.inspectRunContext === undefined
             ? {}
             : { inspectContext: deps.inspectRunContext }),
@@ -789,7 +741,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
 
   const refOf = (plugin: {
     scope: "global" | "workspace";
-    source: "agents" | "clarvis";
+    source: "agents";
     name: string;
   }): PluginRef => ({
     scope: plugin.scope,
@@ -881,7 +833,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
 
   const installAndActivatePlugin = async (
     url: string,
-    source: "agents" | "clarvis",
+    source: "agents",
     subdir?: string,
   ): Promise<string> => {
     const extensionProfile = await marketplaceInstallPreflight();
@@ -912,7 +864,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
 
   const installListingAndActivate = async (
     listing: MarketplaceListing,
-    source: "agents" | "clarvis",
+    source: "agents",
   ): Promise<string> => {
     const extensionProfile = await marketplaceInstallPreflight();
     const installed = await pluginsStore.installSource(marketplaceInstallSource(listing), source);
@@ -1030,33 +982,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           },
           notify,
         });
-    }),
-  });
-
-  commands.registerView({
-    name: "capability-providers.open",
-    title: "Feature backends",
-    desc: "Select Memory, Plans and Tasks providers by scope",
-    surface: "internal",
-    group: "navigate",
-    parent: "settings",
-    view: lazyView(async () => {
-      const { CapabilityProvidersPanel } = await import("../views/cold-surfaces.ts");
-      return (host) => {
-        detachObserved(
-          "capability_provider_plugins_reload",
-          () => pluginsStore.reload(),
-          (e) => notify(errorText(e), "warn"),
-        );
-        return CapabilityProvidersPanel(host, {
-          settings: deps.settings,
-          plugins: pluginsStore.list,
-          tasks: deps.tasks,
-          notify,
-          openPlugins: () =>
-            openWithReturn("marketplace.open", "capability-providers.open", host.scope()),
-        });
-      };
     }),
   });
 
@@ -1430,7 +1355,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       deps.memoryMode.refresh();
       deps.memoryMode.setMode("on");
     }
-    await seedDefaultAllowlist(deps.settings);
   }
 
   /** Finish an idempotent first-run setup and publish the resulting agent fleet live. */
@@ -1876,18 +1800,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           deps.memoryMode.setMode("on");
           notify(
             `memory: on (${outcome.scope} settings) ${glyph("emDash")} change it in Memory settings`,
-          );
-          recheck();
-        }),
-      (e) => notify(errorText(e), "warn"),
-    );
-    detachObserved(
-      "seed_default_allowlist",
-      () =>
-        seedDefaultAllowlist(deps.settings).then((outcome) => {
-          if (!outcome.seeded) return;
-          notify(
-            `guard: seeded ${outcome.count} allowed commands (${outcome.scope} settings) ${glyph("emDash")} edit them in settings`,
           );
           recheck();
         }),

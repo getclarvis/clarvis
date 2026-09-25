@@ -1,5 +1,4 @@
 import { createTwoFilesPatch } from "diff";
-import { readFileOptionsForPath } from "../lib/files.ts";
 import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { readTextFile } from "../lib/textfile.ts";
 import type { ToolDef } from "./types.ts";
@@ -46,22 +45,8 @@ export const diffTool: ToolDef = {
     const toRel = args.to as string;
     const fromTarget = resolveFileToolPath(fromRel, config);
     const toTarget = resolveFileToolPath(toRel, config);
-    const fromContent = (
-      await readTextFile(
-        fromTarget,
-        fromRel,
-        config.maxFileBytes,
-        readFileOptionsForPath(config, fromTarget),
-      )
-    ).content;
-    const toContent = (
-      await readTextFile(
-        toTarget,
-        toRel,
-        config.maxFileBytes,
-        readFileOptionsForPath(config, toTarget),
-      )
-    ).content;
+    const fromContent = (await readTextFile(fromTarget, fromRel, config.maxFileBytes)).content;
+    const toContent = (await readTextFile(toTarget, toRel, config.maxFileBytes)).content;
 
     if (fromContent === toContent) return "(no differences)";
 

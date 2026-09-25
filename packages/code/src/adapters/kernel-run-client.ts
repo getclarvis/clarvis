@@ -30,7 +30,6 @@ import type {
   SkillsService,
   StartRunParams,
   StorageService,
-  TasksService,
   WorkflowsService,
   WorkspaceService,
   WorkspaceChangesService,
@@ -147,8 +146,6 @@ export interface KernelRunClient {
   readonly extensionProfiles: ExtensionProfileService;
   /** Process-pinned Extension Profile identity used to stamp newly started session turns. */
   currentExtensionProfile(): ExtensionProfileRunRef | undefined;
-  /** Provider-neutral external task control plane. */
-  readonly tasks: TasksService;
   readonly storage: StorageService;
   dispose(): Promise<void>;
 }
@@ -185,35 +182,16 @@ interface ProtoRunHandle extends ProtocolRunHandle {
  */
 const ASK_USER_WINDOW_MS = 30_000;
 
-function toStartParams(
-  input: StartRunInput,
-  executionId: string,
-  container: boolean,
-): StartRunParams {
+function toStartParams(input: StartRunInput, executionId: string): StartRunParams {
   return {
     execution_id: executionId,
     messages: input.messages ?? [],
     ...(input.profile ? { agent: input.profile } : {}),
     ...(input.continueFrom ? { continue_from: input.continueFrom } : {}),
     ...(input.sessionId ? { session_id: input.sessionId } : {}),
-    ...(!container && input.guardMode ? { guard_mode: input.guardMode } : {}),
-    ...(!container && input.guardJudge
-      ? {
-          guard_judge: {
-            guidance: input.guardJudge.guidance,
-            ...(input.guardJudge.model ? { model: input.guardJudge.model } : {}),
-            ...(input.guardJudge.onUnsure ? { on_unsure: input.guardJudge.onUnsure } : {}),
-            ...(input.guardJudge.timeoutMs ? { timeout_ms: input.guardJudge.timeoutMs } : {}),
-            ...(input.guardJudge.maxRetries === undefined
-              ? {}
-              : { max_retries: input.guardJudge.maxRetries }),
-          },
-        }
-      : {}),
     ...(input.memory ? { memory: input.memory } : {}),
     ...(input.plans ? { plans: input.plans } : {}),
-    ...(!container && input.task ? { task: input.task } : {}),
-    ...(!container && input.skill ? { skill: input.skill } : {}),
+    ...(input.skill ? { skill: input.skill } : {}),
     ...(input.goalIntent ? { goal_intent: input.goalIntent } : {}),
     ...(input.intent ? { intent: input.intent } : {}),
     elicit_policy: { ask_user_window_ms: ASK_USER_WINDOW_MS },
@@ -375,7 +353,6 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
       const params: ElicitRequestParams = {
         message: req.prompt,
         kind: req.kind,
-        ...(req.detail !== undefined ? { detail: req.detail } : {}),
         requestedSchema: req.schema ?? { type: "object", properties: {} },
         id: req.id,
         ...(req.window_ms !== undefined ? { windowMs: req.window_ms } : {}),
@@ -553,16 +530,7 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
   function startRun(input: StartRunInput): RunHandle {
     const executionId = input.executionId ?? "exec_" + crypto.randomUUID();
     const current = requireKernel();
-    const container = current.capabilities?.runtime?.kind === "container";
-    if (container && input.task !== undefined)
-      throw new Error(
-        "Tasks is unavailable in Isolation Container. Use Isolation Sandbox or Host.",
-      );
-    if (container && input.skill !== undefined)
-      throw new Error(
-        "Skills is unavailable in Isolation Container. Use Isolation Sandbox or Host.",
-      );
-    const params = toStartParams(input, executionId, container);
+    const params = toStartParams(input, executionId);
     if (current.hosting === undefined) return driveHandle(executionId, current.runs.start(params));
     const service = current.hosting;
     const handle =
@@ -789,20 +757,6 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     delete: (ref, options) => requireKernel().extensionProfiles.delete(ref, options),
     clone: (source, target) => requireKernel().extensionProfiles.clone(source, target),
   };
-  const tasks: TasksService = {
-    status: (options) => requireKernel().tasks.status(options),
-    capabilities: (options) => requireKernel().tasks.capabilities(options),
-    listContainers: (input, options) => requireKernel().tasks.listContainers(input, options),
-    search: (input, options) => requireKernel().tasks.search(input, options),
-    get: (ref, options) => requireKernel().tasks.get(ref, options),
-    searchActors: (input, options) => requireKernel().tasks.searchActors(input, options),
-    create: (input, options) => requireKernel().tasks.create(input, options),
-    assign: (input, options) => requireKernel().tasks.assign(input, options),
-    previewTransition: (input, options) => requireKernel().tasks.previewTransition(input, options),
-    transition: (input, options) => requireKernel().tasks.transition(input, options),
-    comment: (input, options) => requireKernel().tasks.comment(input, options),
-    attachArtifact: (input, options) => requireKernel().tasks.attachArtifact(input, options),
-  };
   const storage: StorageService = {
     inspect: () => requireKernel().storage.inspect(),
     cleanup: (request) => requireKernel().storage.cleanup(request),
@@ -855,7 +809,6 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     plugins,
     extensionProfiles,
     currentExtensionProfile: () => lastExtensionProfile,
-    tasks,
     storage,
     dispose,
   };

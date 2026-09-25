@@ -5,11 +5,11 @@ import { kernelError } from "../core/errors.ts";
 import { serveKernelOverStdio } from "../transport/stdio.ts";
 import { createFileRunHost, type FileRunHost, type FileRunHostOptions } from "./file-host.ts";
 import { acquireLocalHostState, resolveLocalHostIdentity } from "./local-state.ts";
-import { localKernelPolicyIdentity } from "./policy-identity.ts";
+import { localHostPolicyIdentity } from "./policy-identity.ts";
 
 /** Inputs for one process-owned hosted kernel carried by an already authenticated stdio channel. */
 export interface ServeRemoteStdioOptions {
-  kernel: Extract<FileRunHostOptions, { composition?: { kind: "file" } }>["kernel"];
+  kernel: FileRunHostOptions["kernel"];
   artifactId: string;
   input?: Readable;
   output?: Writable;
@@ -41,12 +41,14 @@ export async function serveRemoteFileKernelOverStdio(
     owner: options.kernel.defaultOwner,
   });
   const env = options.kernel.env ?? loadEnv(options.kernel.environment?.values ?? process.env);
-  const state = await acquireLocalHostState(
-    identity,
-    options.artifactId,
-    localKernelPolicyIdentity(env),
-    logger,
-  );
+  const environment = options.kernel.environment?.values ?? process.env;
+  const policyId = localHostPolicyIdentity({
+    env,
+    workspaceRoot: identity.workspaceRoot,
+    globalDir: identity.globalDir,
+    environment,
+  });
+  const state = await acquireLocalHostState(identity, options.artifactId, policyId, logger);
   if (state === null) throw kernelError("conflict", "another kernel host owns this workspace");
   let host: FileRunHost | undefined;
   let closing: Promise<void> | undefined;
@@ -74,6 +76,15 @@ export async function serveRemoteFileKernelOverStdio(
       exposeLocalControls: false,
       exposeDefaultOwner: true,
     });
+    if (
+      localHostPolicyIdentity({
+        env,
+        workspaceRoot: identity.workspaceRoot,
+        globalDir: identity.globalDir,
+        environment,
+      }) !== policyId
+    )
+      throw kernelError("conflict", "Sandbox policy changed during host startup");
     await host.sync();
     const owned = host;
     const pump = serveKernelOverStdio(owned.server, { input, output }, logger);

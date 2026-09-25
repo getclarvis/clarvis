@@ -98,24 +98,6 @@ Test: [runtime-status-conformance.test.ts](../../packages/kernel/tests/contract/
 passes every current variant/lifecycle through both actual boundaries and preserves their distinct
 identifier and text bounds.
 
-### Binary multiplexing for process pipes
-
-`createContainerChannel` exposes Kernel, control and model byte-stream pairs over one physical
-readable/writable pair. Each direction begins with ASCII `CLARVIS-CONTAINER/1\n`; subsequent frames
-contain a one-byte channel (1, 2 or 3), a four-byte big-endian payload length, and 1–65,536 payload
-bytes. A divergent prefix, unknown channel, invalid length, interrupted frame, or physical stream
-failure closes all lanes and their pending stdio calls. stdout carries only this wire; diagnostics
-must use the process's separate stderr pipe.
-
-The multiplexor never interprets JSON. Each lane uses `createStdioTransport` or
-`serveKernelOverStdio`, retaining the existing 8 MiB physical JSON line, 64 MiB logical message,
-128 MiB JSON queue and 128 inbound request limits. Outbound physical frames are created lazily:
-one write is in flight, arbitration advances after each frame, and callbacks yield before selecting
-the next lane. A virtual output accepts one bounded codec line at a time, not an entire fragmented
-logical message. Inbound retained physical frames are bounded by 32 MiB and 1,024 frames, including
-reserved space for the frame being assembled and one buffered frame per virtual reader. Reaching a
-bound pauses physical reads until virtual readers consume their backlog; no frame is discarded.
-
 `KernelConnection.responseSent(method, result)` is an optional, local lifecycle callback.
 `serveKernelOverStdio` invokes it only after a successful response has finished writing to the
 owned stream and the request has not been cancelled. It does not acknowledge peer application
@@ -128,63 +110,6 @@ Production: `KernelConnection` in [server.ts](../../packages/kernel/src/transpor
 `serveKernelOverStdio` in [stdio.ts](../../packages/kernel/src/transport/stdio.ts).
 Test: [stdio-response-sent.test.ts](../../packages/kernel/tests/contract/stdio-response-sent.test.ts)
 checks deferred writes, cancellation, write failure and callback failure without duplicate frames.
-
-### Private Container bootstrap and model ports
-
-`parseContainerInitialize` admits a closed, lossless-JSON bootstrap envelope up to 8 MiB. Its
-configuration keeps the separate 4 MiB ceiling. The envelope binds a UUID generation, admitted
-owner, project/workspace DTOs (guest path `/workspace`), bare SHA-256 namespace, engine/platform,
-base ABI/image ID, artifact/config digests and a finite model lease. Its strict `runtime` object
-requires `network: "none" | "outbound"`, carrying the launcher-inspected mode for truthful guest
-status; omission and `internet` are rejected. This field describes the enforced engine policy and
-does not give the guest authority to change it. The envelope rejects alternate paths,
-environment, authentication and unknown fields at every structural level. The owner matches the
-projected loop identity, the workspace belongs to the project, the canonical configuration digest
-matches, and the lease has the exact logical model pairs and at most 24 hours of remaining validity.
-The ready DTO admits wire 10 and broker 1 only. These validators do not start or qualify a Kernel.
-
-The model broker is a separate `KernelServer` restricted to `model.call`. Scope/model/admission
-checks precede its host-only resolver. Its generation owns at most 65,536 call IDs, with no replay
-or eviction; requests reserve `(context + bounded output) * (1 + host retries)` atomically under
-host concurrency, queue and aggregate-token limits. Timeout and retry ceilings are host inputs,
-not authority supplied by the guest. Request input is bounded to 32 MiB; output uses the smaller
-of that limit and the host response ceiling. Delta queues are bounded to 1,024 events/8 MiB.
-
-Known input/output usage (including retried usage, without adding cache subsets again) is debited
-in full. Reservation surplus becomes releasable only with complete usage and a successful local
-terminal write. This write boundary does not prove peer processing. Unknown usage, cancellation
-after dispatch or a missing terminal write retains the reservation. Usage above the reservation
-increases the charge and blocks new admission when the generation ceiling no longer admits it.
-Repeated write callbacks cannot release credit twice. EOF/revocation/expiration retires authority;
-provider revocation aborts its active/queued calls without selecting another account or model.
-Run/agent/job attribution does not establish host-side domain authorization.
-
-Production: [container-contract.ts](../../packages/kernel/src/hosting/container-contract.ts)
-(`parseContainerInitialize`, `containerReadySchema`),
-[container-model-contract.ts](../../packages/kernel/src/hosting/container-model-contract.ts),
-[model-broker-host.ts](../../packages/kernel/src/runtime/model-broker-host.ts)
-(`createContainerModelBroker`) and
-[model-broker-client.ts](../../packages/kernel/src/runtime/model-broker-client.ts).
-Test: [container-contract.test.ts](../../packages/kernel/tests/contract/container-contract.test.ts),
-[container-model-broker.test.ts](../../packages/kernel/tests/unit/container-model-broker.test.ts)
-and [container-model-stream.test.ts](../../packages/kernel/tests/integration/container-model-stream.test.ts)
-exercise bootstrap refusal/limits, admission side-effect counters, accounting, revocation and
-sequenced stream/tool-input/retry callbacks. These deterministic tests do not establish engine,
-artifact or complete domain qualification.
-
-Both stdio adapters accept opt-in `strictDirection`. In that mode clients accept only response and
-notification frames; servers accept only request and cancel frames. Other valid frame shapes close
-the wire before dispatch. The default remains unchanged for existing transports. Method allow-lists,
-bootstrap admission and authority belong to the endpoint composition, not the binary parser.
-This primitive does not itself launch a process or establish the native Container composition.
-
-Production: `createContainerChannel` in
-[container-channel.ts](../../packages/kernel/src/hosting/container-channel.ts), and
-`createStdioTransport`/`serveKernelOverStdio` in [stdio.ts](../../packages/kernel/src/transport/stdio.ts).
-Test: [container-channel.test.ts](../../packages/kernel/tests/contract/container-channel.test.ts)
-checks byte-by-byte prefix/header decoding, UTF-8 preservation, all three lanes with histories above
-8 MiB, round-robin progress, count/byte backpressure and resumption, cancellation, truncated/invalid
-frames, pending-call teardown and strict direction without handler side effects.
 
 ## 2. Surface
 
@@ -266,7 +191,7 @@ The special operations and their metadata:
 | --- | --- | --- |
 | `hello` | read | — |
 | `hosting.start` | write | — |
-| `hosting.attach` | read; acquiring/taking control additionally requires registry operator authority | — |
+| `hosting.attach` | read; acquiring/taking control additionally requires registry control authority | — |
 | `hosting.steer` | write | — |
 | `hosting.compact` | write | — |
 | `hosting.cancel` | write | — |
@@ -289,8 +214,8 @@ whole DTO vocabulary each method carries belongs to **protocol-kernel-contract**
 
 Ordinary operations' individual `access`/`sensitivity` pairing is declared by
 `OPERATIONS` in `packages/kernel/src/transport/operations.ts`.
-Six service groups carry a `sensitivity` tag on every operation (`plugins`, `extensionProfiles`,
-`secrets`, `providerAuth`, `files`, `tasks`). Extension Profiles deliberately shares the `plugins`
+Five service groups carry a `sensitivity` tag on every operation (`plugins`, `extensionProfiles`,
+`secrets`, `providerAuth`, `files`). Extension Profiles deliberately shares the `plugins`
 sensitivity because selecting or editing one changes the active executable extension set. Models uses `provider_auth` only for its two entitled-catalog
 operations; `hosting`, `runs`, `config`, `memory`, `plans`, `workflows`, `skills`,
 `sessions` and `storage` carry access metadata without a sensitivity tag:
@@ -367,18 +292,6 @@ operations; `hosting`, `runs`, `config`, `memory`, `plans`, `workflows`, `skills
 | sessions | `sessions.delete` | write | — |
 | storage | `storage.inspect` | read | — |
 | storage | `storage.cleanup` | write | — |
-| tasks | `tasks.status` | read | `tasks` |
-| tasks | `tasks.capabilities` | read | `tasks` |
-| tasks | `tasks.listContainers` | read | `tasks` |
-| tasks | `tasks.search` | read | `tasks` |
-| tasks | `tasks.get` | read | `tasks` |
-| tasks | `tasks.searchActors` | read | `tasks` |
-| tasks | `tasks.create` | write | `tasks` |
-| tasks | `tasks.assign` | write | `tasks` |
-| tasks | `tasks.previewTransition` | read | `tasks` |
-| tasks | `tasks.transition` | write | `tasks` |
-| tasks | `tasks.comment` | write | `tasks` |
-| tasks | `tasks.attachArtifact` | write | `tasks` |
 
 ### 2.4 Notifications
 
@@ -631,8 +544,7 @@ otherwise `context` is bound, `helloCompleted` set, and the result assembled wit
 `context.capabilities ?? capabilities`.
 
 `CLARVIS_WIRE_VERSION` in [wire.ts](../../packages/kernel/src/transport/wire.ts) is the single
-revision authority for the kernel RPC over local sockets, SSH stdio and Container channel 1. The
-private Container channel and model broker negotiate their own revisions. Supporting hosted runs additionally
+revision authority for the kernel RPC over local sockets and SSH stdio. Supporting hosted runs additionally
 requires the advertised `hosting.host_generation`; opening a transport does not enable that service.
 Production: `createKernelServer` and `connectKernelClient` in
 [server.ts](../../packages/kernel/src/transport/server.ts) and
@@ -821,8 +733,7 @@ without the `readableAll`/`writableAll` relaxations. A local host composition mu
 `resolveConnection` and `authorize` to authenticate the account and limit operations; filesystem
 placement by itself is not authorization. This adapter alone does not detach or preserve a run.
 
-RPC defines the calls and notifications; local IPC supplies their byte streams. The adapter never
-forwards kernel frames to the [private Container channel](isolated-agent-runtime.md#process-and-transport-topology).
+RPC defines the calls and notifications; local IPC supplies their byte streams.
 `createKernelServer` accepts the kernel catalog only; the local-transport service test rejects
 `host.capability` on this endpoint. Hosted-run ownership, durable handoff and observation recovery
 belong to [the hosting service](hosted-runs.md#hosted-kernel-rpc), independently of the socket lifetime.
@@ -1020,16 +931,6 @@ Test: `packages/kernel/tests/contract/transport-codecs.test.ts` ("forwards steer
 respond with the handle's execution id") and `packages/kernel/tests/integration/transport.test.ts`
 ("presents a model question, expires its window and settles the silence as window_elapsed").
 
-Interrupt receipt statuses describe registry outcomes, not transport health. A transport failure
-rejects the handle's request as sanitized `unavailable`; expiry before delivery to a subscriber
-returns `not_running`. Container uses this same public run-control contract over channel 1 rather
-than translating it through a private execution protocol. The bounded channel contract is owned by
-[kernel runs](kernel-runs.md). Production: `connectKernelClient` in
-`packages/kernel/src/transport/client.ts` and `createContainerChannel` in
-`packages/kernel/src/hosting/container-channel.ts`. Test:
-`packages/kernel/tests/contract/transport-codecs.test.ts` and
-`packages/kernel/tests/contract/container-channel.test.ts`.
-
 **INV-222.** An elicitation emitted before `runs.start` resolves is buffered and delivered to a
 handler registered afterwards.
 Production: registration of the `ClientRun` before the start request (`packages/kernel/src/transport/client.ts`), the
@@ -1192,19 +1093,6 @@ descriptor as the NDJSON wire.
 Production: `refuseLoggerOnWire` `packages/kernel/src/serve.ts`, called first at `packages/kernel/src/serve.ts`.
 Test: `packages/kernel/tests/integration/serve.test.ts` — `describe("serveFileKernelOverStdio refuses a logger
 bound to its own wire", …)`. The composition around it belongs to the kernel-bootstrap document.
-
-**INV-T21.** A Tasks operation's client-supplied `AbortSignal` is extracted by the operation's own
-`requestOptions`, not by widening the parameter envelope: `taskRequestOptions` turns a caller's
-`{ signal }` into the transport `request`'s third argument, wired on every operation under
-`OPERATIONS.tasks` in `packages/kernel/src/transport/operations.ts`.
-This is distinct from INV-218's mechanism, under which `sessions.listPage`/`workflows.list` thread a
-signal into `invoke` server-side with no client-side `requestOptions` involved at all. Opaque
-cursor/id fields inside a Tasks operation's `input` (e.g. `next_cursor`) pass through the wire
-unmodified.
-Production: `taskRequestOptions` in `packages/kernel/src/transport/operations.ts`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts` — `tasks.create`'s `request_id`/
-`provider_key` round-trip byte-for-byte, and `tasks.search` both preserves an opaque `next_cursor`
-and forwards a caller's `AbortSignal` as `options: { signal }` on the wire request.
 
 **INV-T22.** Every Extension Profile service method is an ordinary operation and is classified with
 `sensitivity: "plugins"`; observation methods are reads, while selection and definition mutations
@@ -1396,9 +1284,9 @@ of the service it is given (`ServiceOperations` and `serviceOperations` in the s
 | `packages/kernel/src/bin.ts` | the `clarvis-kernel` binary, through `serveFileKernelOverStdio` |
 | `tests/contract/*`, `tests/integration/transport.test.ts`, `tests/integration/stdio-transport.test.ts`, `tests/unit/loopback-transport.test.ts` | the only exercisers of the client half in-repo |
 
-`packages/code` and `packages/server` contain **no** reference to `connectKernelClient`,
+`packages/code` contains **no** reference to `connectKernelClient`,
 `createLoopbackTransport`, `createKernelServer`, `createStdioTransport` or `serveKernelOverStdio`
-(searched across both packages' `src`).
+(searched across its `src`).
 
 ### 7.3 The direction the code forces
 
@@ -1461,7 +1349,7 @@ input are ignored"). `createLoopbackTransport.notify` instead dispatches straigh
 actually execute whatever real `KernelServer` operation the method name happens to name, with side
 effects, before discarding the result. This is a genuinely divergent implementation of one interface
 member, but it has no live consequence today: a repo-wide search of `packages/kernel/src`,
-`packages/code/src` and `packages/server/src` for a client-side call to `KernelTransport.notify`
+`packages/code/src` for a client-side call to `KernelTransport.notify`
 (as opposed to the unrelated `deps.notify`/UI toast helper of the same name in `@clarvis/code`, or the
 *server-side* `notifications.notify` used to push `run.event`/`config.change`/etc. — `packages/kernel/src/transport/server.ts`)
 finds none; the only exerciser is `packages/kernel/tests/unit/loopback-transport.test.ts`'s isolated unit test. §7 of
@@ -1482,32 +1370,14 @@ arbitrary asymmetry.** `run.event` is validated by a strict `zod` discriminated-
 closed, fixed-key shape over a closed enum (`ConfigChangeKind`, `packages/protocol/src/config.ts`).
 `run.elicitation` applies `hasOnly` only at the top level and checks four scalar fields of `request`
 without constraining its key set (`packages/kernel/src/transport/client.ts`) precisely because `ElicitationRequest`
-is declared open on purpose: `kind` is `"ask_user" | "guard_confirm" | "plan_review" | "workflow_review"
+is declared open on purpose: `kind` is `"ask_user" | "plan_review" | "workflow_review"
 | (string & {})`, documented "so a kernel may add kinds without a protocol bump" |
 (`ElicitationRequest.kind` in `packages/protocol/src/runs.ts`), and `schema` is `JsonSchema = Record<string, unknown>`, documented "a JSON
 Schema passed through opaquely" (`packages/protocol/src/common.ts`). Applying a closed `hasOnly` to `request`
 today would reject a future `kind`'s legitimate extra fields, defeating the exact extensibility `kind`
 was made open for — so the omission is the correct reading, not an arbitrary weakening.
 
-~~**One narrower residual is not explained by either the open-`kind` or opaque-`schema` reasoning:
-`ElicitationRequest.detail` gets no structural check at all — not even `isRecord`.**~~ **Resolved.**
-The residual was correctly identified, and the argument for closing it was weaker than
-the case deserved. `detail` (`ElicitationCommandDetail` in `packages/protocol/src/runs.ts`, carrying
-`command`/`cwd`/`reason`/`warning?`) shares neither property that keeps the request around it open,
-so a nested `hasOnly` costs nothing in forward-compatibility — but "it costs nothing" is not why it
-has to be there. `detail` is what a human reads when approving a command, and its TSDoc tells clients
-to render it directly rather than parse `prompt`, so a `detail` whose `command` is absent
-or not a string reaches an approval dialog as `undefined` and the approval is then given for a
-command nobody was shown. That is the reasoning now recorded at `isCommandDetail`
-(`packages/kernel/src/transport/client.ts`), which checks the closed key set and every
-member's type and is consulted only when `detail` is present. `kind` and
-`schema` stay untouched, for exactly the reasons above. Five malformed shapes — not a record, a
-missing `command`, a non-string `command`, a non-string `warning`, an unknown key — close the
-transport fail-closed under `it.each` at
-`packages/kernel/tests/contract/transport-codecs.test.ts` ("closes fail-closed on a
-guard_confirm detail with %s"), with a well-formed `detail` delivered intact and a
-control asserting that an unknown `kind` and an opaque `schema` still pass through
-unexamined.
+The request keeps an open `kind` and opaque `schema`; the transport rejects the retired command-detail field and validates the optional countdown duration. Production: `observe` for `N.runElicitation` in [client.ts](../../packages/kernel/src/transport/client.ts). Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
 
 **`transport.frame_dropped` with `reason: "serialization"` is unpinned.** It is emitted at
 `packages/kernel/src/transport/stdio.ts` and is the only one of the six reasons absent from the drop-reason suite

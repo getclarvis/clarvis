@@ -13,7 +13,7 @@ import type { RunEvent, StartRunParams } from "@clarvis/protocol";
 import { createInProcessKernel } from "../../src/index.ts";
 import { createMemoryConfigStore } from "../../src/config.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
-import { globalPaths } from "@clarvis/paths";
+import { agentsPluginsDir } from "@clarvis/paths";
 
 const PROVIDERS = [
   { name: "anthropic", kind: "anthropic" },
@@ -212,8 +212,8 @@ describe("kernel over loop, driven by settings (the closed loop)", () => {
   it("guards selected plugin lifecycle mutations at the kernel boundary", async () => {
     const ws = mkdtempSync(join(tmpdir(), "clarvis-kernel-"));
     const globalDir = join(ws, "global");
-    const ref = { scope: "global" as const, source: "clarvis" as const, name: "selected" };
-    const pluginDir = join(globalPaths(globalDir).pluginsDir, ref.name);
+    const ref = { scope: "global" as const, source: "agents" as const, name: "selected" };
+    const pluginDir = join(agentsPluginsDir(join(ws, "home")), ref.name);
     mkdirSync(pluginDir, { recursive: true });
     writeFileSync(join(pluginDir, "plugin.json"), JSON.stringify({ name: ref.name }));
     const kernel = createInProcessKernel({
@@ -225,6 +225,7 @@ describe("kernel over loop, driven by settings (the closed loop)", () => {
       ...kernelIdentity(ws),
       configStore: seededConfig(),
       globalConfigDir: globalDir,
+      home: join(ws, "home"),
       activePlugins: () => [ref],
     });
     const request = {

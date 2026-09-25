@@ -1,4 +1,3 @@
-import type { OperatorAuthorityState } from "./operator-authority.ts";
 import type { RunRequest, AgentRole, AssistantMessagePhase, ToolTransport } from "./api.ts";
 import type {
   ContextSnapshotEntry,
@@ -10,7 +9,7 @@ import type {
 } from "./run.ts";
 import type { ExecutionStatus } from "./execution-status.ts";
 import type { FinalizationDisposition } from "./finalization.ts";
-import type { CommandGuardReview, ToolEvidenceDetail } from "./trace-kinds.ts";
+import type { ToolEvidenceDetail } from "./trace-kinds.ts";
 import type { ElicitNoResponseReason } from "./elicit.ts";
 
 /**
@@ -99,7 +98,6 @@ export type BuiltinTraceEvent =
       tool_evidence?: ToolEvidenceDetail;
       error: string | null;
       diff?: string;
-      guard?: CommandGuardReview;
       interruption?: { source: "operator" };
       control?: { tool_execution_id: string; actions: readonly ["interrupt"] };
     }
@@ -558,7 +556,6 @@ export interface ExecutionRecord {
   /** Required for every new record, including recovered executions. */
   visibility: ExecutionVisibility;
   /** Host-owned intent state, never reconstructed from final_context. */
-  operator_authority_state?: OperatorAuthorityState;
   id: string;
   owner_key_name: string;
   status: ExecutionStatus;

@@ -3,7 +3,6 @@ import { resolveConfig } from "../../src/config.ts";
 import { NOOP_TOOLS_LOGGER, setWarnSink, warn, type ToolsLogger } from "../../src/lib/log.ts";
 import { fsError, serializeError, ToolError } from "../../src/errors.ts";
 import { killTree } from "../../src/lib/process.ts";
-import { resolvePath } from "../../src/lib/paths.ts";
 import { sandboxCommand } from "../../src/sandbox.ts";
 import { bestEffort } from "../../src/lib/tasks.ts";
 import { callTool, cleanup, makeConfig, makeWorkspace, write } from "../helpers/fixtures.ts";
@@ -55,7 +54,6 @@ describe("tools.config_resolved", () => {
       logger,
       probeRipgrep: () => true,
       readOnly: true,
-      confineToWorkspace: false,
       sandbox: { type: "native", availability: "optional" },
     });
     const [record] = eventsOf(records, "tools.config_resolved");
@@ -66,7 +64,6 @@ describe("tools.config_resolved", () => {
       sandbox_mode: "native",
       sandbox_availability: "optional",
       read_only: true,
-      confined: false,
       skill_execution_roots: 0,
       platform: process.platform,
     });
@@ -185,46 +182,6 @@ describe("tools.kill_tree_failed", () => {
   });
 });
 
-describe("tools.path_refused", () => {
-  let root = "";
-  afterEach(() => {
-    if (root !== "") cleanup(root);
-    root = "";
-  });
-
-  it("separates a genuine escape from a path that could not be resolved", () => {
-    root = makeWorkspace();
-    const { logger, records } = recorder();
-    expect(() => resolvePath("../elsewhere", root, true, undefined, logger)).toThrow(ToolError);
-    const [record] = eventsOf(records, "tools.path_refused");
-    expect(record?.level).toBe("debug");
-    expect(record?.fields).toEqual({
-      event: "tools.path_refused",
-      input: "../elsewhere",
-      reason: "outside_root",
-      allow_roots_count: 1,
-    });
-  });
-
-  it("counts every root a confined target was allowed to sit under", () => {
-    root = makeWorkspace();
-    const { logger, records } = recorder();
-    expect(() => resolvePath("/definitely/outside", root, true, ["/also/outside"], logger)).toThrow(
-      ToolError,
-    );
-    expect(eventsOf(records, "tools.path_refused")[0]?.fields).toMatchObject({
-      allow_roots_count: 2,
-    });
-  });
-
-  it("an accepted path says nothing", () => {
-    root = makeWorkspace();
-    const { logger, records } = recorder();
-    resolvePath("inside.txt", root, true, undefined, logger);
-    expect(records).toEqual([]);
-  });
-});
-
 describe("the process-wide warn sink", () => {
   afterEach(() => {
     setWarnSink(null);
@@ -315,20 +272,7 @@ describe("the process-wide warn sink", () => {
   });
 });
 
-/**
- * Which grep engine ran is behaviour, not a performance detail.
- *
- * @remarks Ripgrep and the in-process scanner do not share regex semantics, so
- * the choice decides what a pattern means. A confined directory search must
- * stay in-process — ripgrep would walk the tree itself, outside the confinement
- * check every other path goes through.
- *
- * The parity suite cannot see this: it disables confinement precisely so it can
- * compare the two engines, so a regression that started spawning `rg` for
- * confined directories keeps it green. The engine is published on
- * `tools.grep_path`, which is the only seam that observes the decision without
- * reaching into the module.
- */
+/** Directory searches stay in-process so each candidate receives classified-path admission. */
 describe("tools.grep_path", () => {
   let root = "";
   afterEach(() => {
@@ -338,7 +282,6 @@ describe("tools.grep_path", () => {
 
   const engineFor = async (over: {
     ripgrepAvailable: boolean;
-    confineToWorkspace: boolean;
     target?: string;
   }): Promise<string> => {
     const { logger, records } = recorder();
@@ -348,39 +291,26 @@ describe("tools.grep_path", () => {
       makeConfig(root, {
         logger,
         ripgrepAvailable: over.ripgrepAvailable,
-        confineToWorkspace: over.confineToWorkspace,
       }),
     );
     return eventsOf(records, "tools.grep_path")[0]?.fields.engine as string;
   };
 
-  it("stays in-process for a confined directory even when ripgrep is available", async () => {
+  it("stays in-process for a directory even when ripgrep is available", async () => {
     root = makeWorkspace();
     write(root, "a.txt", "needle here\n");
-    expect(await engineFor({ ripgrepAvailable: true, confineToWorkspace: true })).toBe(
-      "in_process",
-    );
+    expect(await engineFor({ ripgrepAvailable: true })).toBe("in_process");
   });
 
-  it("uses ripgrep for the same directory once confinement is off", async () => {
-    root = makeWorkspace();
-    write(root, "a.txt", "needle here\n");
-    expect(await engineFor({ ripgrepAvailable: true, confineToWorkspace: false })).toBe("ripgrep");
-  });
-
-  it("uses ripgrep for a single confined file, where no tree walk is involved", async () => {
+  it("uses ripgrep for a single file, where no tree walk is involved", async () => {
     root = makeWorkspace();
     const file = write(root, "a.txt", "needle here\n");
-    expect(
-      await engineFor({ ripgrepAvailable: true, confineToWorkspace: true, target: file }),
-    ).toBe("ripgrep");
+    expect(await engineFor({ ripgrepAvailable: true, target: file })).toBe("ripgrep");
   });
 
-  it("stays in-process when ripgrep is absent, whatever the confinement", async () => {
+  it("stays in-process when ripgrep is absent", async () => {
     root = makeWorkspace();
     write(root, "a.txt", "needle here\n");
-    expect(await engineFor({ ripgrepAvailable: false, confineToWorkspace: false })).toBe(
-      "in_process",
-    );
+    expect(await engineFor({ ripgrepAvailable: false })).toBe("in_process");
   });
 });

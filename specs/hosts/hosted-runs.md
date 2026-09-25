@@ -25,12 +25,6 @@ these with canonical FileKernel services and immutable run preparation behind re
 lease fencing and bounded idle shutdown. Code's workspace manager connects to this composition;
 its background feature exposes explicit handoff, discovery and attachment through the kernel RPC.
 
-Production: `HostedRunRef`, `HostedRunAttachment`, `HostedRunReceipt` and `HostingService` in
-[hosting.ts](../../packages/protocol/src/hosting.ts). The concrete kernel RPC and its IPC adapters
-remain owned by [kernel transport](kernel-transport.md). The Container launcher carries this same
-public hosting service through channel 1; process
-ownership and broker channels remain owned by [isolated agent runtime](isolated-agent-runtime.md).
-
 ## Code integration
 
 Host-started goal stages use `RunHost.synchronizeGoal` in the already selected conversation.
@@ -51,12 +45,11 @@ Production: `goalBinding`, `prepareGoalConversation` and `synchronizeGoal` in
 Test: automatic-stage, delayed-goal-read, diverging-canonical-history and refused-submission cases in
 [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
 
-The host also seeds command-review authority separately from the synthetic Goal work prompt. Guided
+The host seeds Goal authority separately from the synthetic Goal work prompt. Guided
 stages preserve the exact seed after exact user messages reconstructed from host-recorded source
 executions; auto stages use only those source messages; literal stages serialize the complete
-user-declared definition. The reviewer also receives the complete persisted Goal definition as a
-separate host-attested `review_context`, so it can assess whether a command is necessary for the
-current objective without converting inferred assumptions or human criteria into permission.
+user-declared definition. The host also retains the complete persisted Goal definition as a
+separate host-attested `review_context`, without converting inferred assumptions or human criteria into permission.
 Automatic continuations inherit both fields and never capture their synthetic reminder as fresh
 evidence. Production: `goalAuthorityMessages`, `goalReviewContext` and
 `GoalExecutionPolicy` in
@@ -143,15 +136,14 @@ Uncertain handoff remains visible and consults the same operation receipt instea
 A draft received during handoff keeps the TUI open even after the run has entered background.
 The exit path restores the terminal and prints the execution identity; it bypasses checkout removal.
 
-Container and SSH processes are owned by the current client channel and refuse that handoff before
+SSH processes are owned by the current client channel and refuse that handoff before
 any hosting mutation. Their list, attach and cancel controls remain useful only while the same
 connection is alive. The workspace manager exposes this lifecycle fact explicitly; Code does not
-infer it from the Kernel's native/container runtime label.
+infer it from the Kernel's native runtime label.
 
 | Connection destination | `/background` survives TUI exit | List, attach and cancel |
 | --- | --- | --- |
 | local Host or Sandbox | yes, after a confirmed host receipt | current or reopened TUI while the local host exists |
-| Docker or Podman | no | current Container connection only |
 | SSH remote | no | current SSH stdio connection only; saved history persists after closure |
 
 Opening a local workspace offers runs with `continue` policy after first paint, unless a draft,
@@ -286,7 +278,7 @@ siblings remain. Segmentation bounds files and read buffers, not total disk rete
 
 Production: `openProjectionStorage` and `removeProjectionStorage` in
 [projection-storage.ts](../../packages/kernel/src/hosting/projection-storage.ts), used by
-`openHostedProjection`, local host and Container storage. Test: `streams beyond the former lifetime
+`openHostedProjection`, local host storage. Test: `streams beyond the former lifetime
 quota with bounded segments and immutable cuts` in
 [hosted-projection-file.test.ts](../../packages/kernel/tests/component/hosted-projection-file.test.ts)
 streams more than 64 MiB through the real snapshot decoder and preserves an earlier cut.
@@ -302,7 +294,7 @@ this local syscall recovery does not establish crash resumption or projection re
 
 Production: `recoverProjectionIO` in
 [projection-io.ts](../../packages/kernel/src/hosting/projection-io.ts), called by `openProjectionStorage`;
-local and Container hosts supply their Logger. Test: `recovers positional writes and rotation sync
+local hosts supply their Logger. Test: `recovers positional writes and rotation sync
 without duplicating frames or changing a snapshot` in
 [hosted-projection-file.test.ts](../../packages/kernel/tests/component/hosted-projection-file.test.ts)
 uses real segmented files with faults before/after individual IO operations. `positional IO recovery
@@ -378,27 +370,12 @@ clients. Disconnecting a client retires its control but retains physical occupan
 
 Peers are host-created identities, not caller-supplied RPC records. Observers cannot reserve work or
 acquire control. An occupied controller requires explicit takeover; successful transfer increments
-the epoch and revokes the previous conversation's consent without revoking unrelated conversations.
+the epoch and retires the previous conversation controller without affecting unrelated conversations.
 Controls carrying an earlier epoch are refused.
-
-A consent scope survives consecutive turns in the same live conversation instance. `closeSession`
-retires it on switch/resume, and `disconnect` retires every scope of that connection. A later instance
-receives a fresh scope. At most 64 conversation scopes are retained per connection. Even when the
-revocation callback fails, a disconnected peer and its controls become unusable before that error is
-reported; all scopes are attempted. The concrete guard/configuration policy supplies this callback.
-
-Native Host/Sandbox command approval consults the live scope on every check. Answers received after
-that scope retires deny even when the old dialog selected one-time approval. Human fallback answers
-are not cached by effect review. Container composes no guard or approval port. Production:
-`createGuardHumanApproval` in [human-approval.ts](../../packages/kernel/src/guard/human-approval.ts)
-and `createContainerNativeKernel` in
-[container-native.ts](../../packages/kernel/src/hosting/container-native.ts). Test:
-[guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts) and
-[container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
 
 Production: `createHostedAdmission`, `HostedAdmission` and `HostedControl` in
 [admission.ts](../../packages/kernel/src/hosting/admission.ts). Test: the reservation/disconnect,
-forged-peer, takeover, conversation-resume, independent-limit and revocation-failure cases in
+forged-peer, takeover, conversation-resume and independent-limit cases in
 [hosted-admission.test.ts](../../packages/kernel/tests/unit/hosted-admission.test.ts).
 
 ## Execution pump and subscribers
@@ -591,7 +568,7 @@ and definite refusal, uncertain conflict and lost receipt recovery in
 The registry retains at most 32 runs and 128 handoff operation identities per generation. Receipt
 lookup expires after 24 hours by default; an expired/failed operation id is never replayed. The commit
 queue holds at most 16 operations and an encoded index cannot exceed 2 MiB. No provider credentials,
-prompts or live consent scopes enter that index. Acknowledged terminal entries are reclaimed only
+prompts enter that index. Acknowledged terminal entries are reclaimed only
 after observations close, using the dedicated `removeProjection` port; session and trace deletion
 are outside that port. Reclamation failures cannot silently free retention capacity.
 
@@ -846,7 +823,7 @@ action.
 must supply the host generation, durable index/projection operations and a token verifier; RPC
 parameters cannot select them. A successful hello binds the configured workspace and an operator or
 observer role; a supplied workspace selector must match that workspace's id or canonical path.
-Operator authority and machine-local application controls are separate. The bootstrap may set
+Machine-local application controls are separately exposed. The bootstrap may set
 `exposeLocalControls: false`; the connection then retains hosting and goal services but advertises no
 `local_host` capability and receives no local inspection, browser handoff, runtime retry or restart
 service. This is the required composition boundary for a later remote transport.
@@ -868,7 +845,7 @@ exported through [bootstrap.ts](../../packages/kernel/src/bootstrap.ts). Test:
 FileKernel, real loop with MockLLM, file-backed projection/index and Unix socket. It verifies
 withholding local controls without removing hosted goal authority,
 completion with no connected client, the same execution id after attach, canonical turn settlement,
-authentication, observer restrictions and shared operator authority revocation. This is not evidence of
+authentication, observer restrictions and conversation control retirement. This is not evidence of
 a surviving child process, a subscription provider, or a TUI journey.
 
 `serveRemoteFileKernelOverStdio` composes that same file host for one process-owned authenticated
@@ -985,6 +962,11 @@ through its authenticated local control and only while idle. The new launcher re
 waits for the prior generation to retire, and then starts its selected artifact. Active physical work
 refuses the transition and remains owned by the prior process. A wire mismatch still requires the
 original compatible installation because the new client cannot assume control-protocol compatibility.
+For a same-wire incompatible artifact with active work, the launcher returns the exact prior host
+generation as a replacement offer. Only an operator choosing the boot-screen termination action
+may authenticate to that generation and call `requestShutdown`. The host closes new admission,
+cancels and drains its hosted runs, retires its lease, and preserves their durable history before
+the new generation starts. A changed generation or matching artifact refuses that action.
 A timeout reports unconfirmed startup. `bin.ts` accepts the strict private `--local-host` bootstrap
 mode while preserving ordinary stdio serving. Selecting and retaining the installed artifact is the
 application composition's responsibility, not authority supplied over RPC.
@@ -994,18 +976,23 @@ non-secret loop projection and the enabled/confine/grant tool policy; raw enviro
 credentials, owner and diagnostics are excluded. Equivalent environment spellings compare equally.
 Both narrower and wider policy refuse reuse, preserving admitted work and the original generation.
 The operator reconnects with the original policy, requests an idle host restart, then launches with
-the desired policy. The launcher never silently mutates policy or restarts an active host.
+the desired policy. When an idle restart was already requested, the launcher checks that retiring
+host through authenticated read-only control and waits for its exit before starting the desired
+policy; a live host without that request still refuses the mismatch. The launcher never silently
+mutates policy or restarts an active host.
 Production: `localKernelPolicyIdentity` in
 [policy-identity.ts](../../packages/kernel/src/hosting/policy-identity.ts),
 `localHostEndpointRootCandidates` and `resolveLocalHostIdentity` in
 [local-state.ts](../../packages/kernel/src/hosting/local-state.ts),
-`connectOrLaunchLocalKernel` in [launcher.ts](../../packages/kernel/src/hosting/launcher.ts), and
+`connectOrLaunchLocalKernel` and `requestLocalHostReplacement` in
+[launcher.ts](../../packages/kernel/src/hosting/launcher.ts), and
 `serveLocalFileKernel` in [serve-local.ts](../../packages/kernel/src/hosting/serve-local.ts).
 Test: [host-policy-identity.test.ts](../../packages/kernel/tests/unit/host-policy-identity.test.ts),
 [local-host-state.test.ts](../../packages/kernel/tests/integration/local-host-state.test.ts) for
 snapshot precedence and identity stability, and the independent process tests for long-temp fallback,
-same-generation reconnection and preservation of background execution after incompatible
-tool/default/ceiling reconnect attempts in
+same-generation reconnection, explicit old-run cancellation before a new generation, changed Sandbox
+policy after a requested idle restart, and
+preservation of background execution after incompatible tool/default/ceiling reconnect attempts in
 [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts).
 
 The host normally exits after 60 seconds with no clients or physical work. The idle boundary includes
@@ -1110,7 +1097,7 @@ current controller claims a request; another observer or an earlier controller c
 Disconnect relinquishes the claim without approving the request. Expiry or host close resolves an
 unanswered request as not opened. Opening a browser is separate from provider authorization.
 
-Inspection returns copied process state. Application-owned Docker recipe preparation publishes
+Inspection returns copied process state. The application may publish
 bounded, sequenced `runtime_notice` data through `FileRunHost.runtimeNotice`, which is not a guest
 RPC operation. The workspace adapter reports that notice to the TUI. Runtime retry and configuration
 restart are explicit operator operations; neither inspection nor reconnect triggers them.
@@ -1226,7 +1213,6 @@ Test: `restart scopes steering reconciliation to its persisted destination, cons
 `retains steering when canonical history is %s and retries only the lookup` and
 `finds steering consumption older than sixteen turns despite a missing newer trace` in
 [hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).
-
 
 Production: `startOperator` and the observation controls in
 [registry.ts](../../packages/kernel/src/hosting/registry.ts), `acceptOperator`, `prepareOperator` and

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
@@ -61,6 +61,66 @@ describe("GitChangesProvider", () => {
     expect(availability.status).toBe("not_applicable");
     if (availability.status !== "not_applicable") throw new Error("expected not_applicable");
     expect(availability.reason.code).toBe("not_a_repository");
+  });
+
+  it("refuses listing and reading when the workspace is not a repository", async () => {
+    const root = tempDir("clarvis-changes-no-repo-operations-");
+    const changes = provider();
+    await expect(changes.listChanges(ctx(root), {})).rejects.toMatchObject({
+      code: "unsupported",
+    });
+    await expect(
+      changes.readChange(ctx(root), { query_id: "irrelevant", entry_id: "irrelevant" }),
+    ).rejects.toMatchObject({ code: "unsupported" });
+  });
+
+  it("refuses a Git worktree root that does not contain the selected workspace", async () => {
+    const root = tempDir("clarvis-changes-outside-worktree-");
+    const other = tempDir("clarvis-changes-different-worktree-");
+    const changes = createGitChangesProvider({
+      gitExecutable: "/fake/git",
+      processRunner: {
+        async run(request) {
+          const args = request.args;
+          const stdout = args.includes("--version")
+            ? "git version 2.45.0\n"
+            : args.includes("--is-inside-work-tree")
+              ? "true\n"
+              : args.includes("--show-toplevel")
+                ? `${other}\n`
+                : args.includes("--git-common-dir")
+                  ? `${join(other, ".git")}\n`
+                  : `${join(other, ".git")}\n`;
+          return { exitCode: 0, stdout, stderr: "" };
+        },
+      },
+    });
+    const availability = await changes.probe(ctx(root));
+    expect(availability).toMatchObject({
+      status: "not_applicable",
+      reason: { code: "not_a_repository" },
+    });
+  });
+
+  it.each([
+    ["fatal: permission denied", "access_denied"],
+    ["fatal: unknown probe failure", "probe_failed"],
+  ] as const)("classifies Git probe refusal: %s", async (stderr, code) => {
+    const root = tempDir("clarvis-changes-probe-refused-");
+    const changes = createGitChangesProvider({
+      gitExecutable: "/fake/git",
+      processRunner: {
+        async run(request) {
+          if (request.args.includes("--version"))
+            return { exitCode: 0, stdout: "git version 2.45.0\n", stderr: "" };
+          return { exitCode: 128, stdout: "", stderr };
+        },
+      },
+    });
+    expect(await changes.probe(ctx(root))).toMatchObject({
+      status: "unavailable",
+      reason: { code },
+    });
   });
 
   it("reports unavailable when the git executable is missing", async () => {
@@ -407,6 +467,30 @@ describe("createWorkspaceChangesService", () => {
       entry_id: large.id,
     });
     expect(stale.status).toBe("stale");
+  });
+
+  it("classifies untracked symlinks, binary files and oversized patches", async () => {
+    const root = tempDir("clarvis-changes-untracked-detail-");
+    initRepo(root);
+    writeFileSync(join(root, "base.txt"), "base\n");
+    git(root, ["add", "base.txt"]);
+    git(root, ["commit", "--quiet", "-m", "base"]);
+    symlinkSync("base.txt", join(root, "link.txt"));
+    writeFileSync(join(root, "binary.dat"), Buffer.from([0, 1, 2, 0, 255]));
+    writeFileSync(join(root, "large.txt"), `${"large content\n".repeat(100)}`);
+    const changes = createGitChangesProvider({
+      processRunner: createNodeProcessRunner(),
+      limits: { maxPatchBytes: 80 },
+    });
+    const page = await changes.listChanges(ctx(root), { comparison_id: "unstaged" });
+    const detail = async (name: string) => {
+      const item = page.items.find((entry) => entry.new_path === name);
+      expect(item).toBeDefined();
+      return changes.readChange(ctx(root), { query_id: page.query_id, entry_id: item!.id });
+    };
+    expect((await detail("link.txt")).status).toBe("empty");
+    expect((await detail("binary.dat")).status).toBe("binary");
+    expect((await detail("large.txt")).status).toBe("truncated");
   });
 
   it("surfaces not_applicable providers and untracked symlink/binary special cases", async () => {

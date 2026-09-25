@@ -27,8 +27,6 @@ export type * from "./workflows.ts";
 export type * from "./skills.ts";
 export type * from "./sessions.ts";
 export type * from "./goals.ts";
-export type * from "./tasks.ts";
 export type * from "./storage.ts";
 export type * from "./transport.ts";
 export type * from "./client.ts";
-export type * from "./effect-review.ts";

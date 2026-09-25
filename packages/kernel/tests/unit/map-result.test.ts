@@ -104,63 +104,6 @@ describe("storedToDetail — plan_ref sourced from capability_state.plans", () =
   });
 });
 
-describe("storedToDetail — active_task sourced from capability_state.tasks", () => {
-  it("projects only stable identity fields from valid task run state", () => {
-    const detail = storedToDetail(
-      baseStoredExecution({
-        tasks: {
-          version: 2,
-          providerKey: "mcp:jira-work:tasks:abc",
-          taskId: "CLAR-42",
-          mode: "work",
-          lastRevision: "18",
-          lastStage: "review",
-          claim: { executionId: "exec_1", claimantId: "agent" },
-        },
-      }),
-    );
-
-    expect(detail.active_task).toEqual({
-      id: "CLAR-42",
-      provider_key: "mcp:jira-work:tasks:abc",
-      mode: "work",
-    });
-  });
-
-  it("omits malformed task state", () => {
-    expect(
-      storedToDetail(baseStoredExecution({ tasks: { version: 2 } })).active_task,
-    ).toBeUndefined();
-    expect(
-      storedToDetail(
-        baseStoredExecution({
-          tasks: {
-            version: 1,
-            providerKey: "mcp:jira-work:tasks:abc",
-            taskId: "CLAR-42",
-            mode: "work",
-            lastStage: "review",
-          },
-        }),
-      ).active_task,
-    ).toBeUndefined();
-    expect(
-      storedToDetail(
-        baseStoredExecution({
-          tasks: {
-            version: 2,
-            providerKey: "mcp:jira-work:tasks:abc",
-            taskId: "CLAR-42",
-            mode: "work",
-            lastStage: "review",
-            pendingMutations: [{ operation: "comment" }],
-          },
-        }),
-      ).active_task,
-    ).toBeUndefined();
-  });
-});
-
 describe("storedToDetail — workflow contributed trace rehydration", () => {
   it("rehydrates all three persisted workflow edges through their public narrowing", () => {
     const stored = baseStoredExecution();

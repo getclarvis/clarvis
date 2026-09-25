@@ -33,19 +33,16 @@ import type { AgentsStore } from "../adapters/agents-store.ts";
 import type { SettingsAdapter } from "../adapters/settings.ts";
 import { resolveContextWindow } from "../adapters/settings.ts";
 import type { ModelsCatalog } from "../adapters/models-catalog.ts";
-import { isContainerCompatibleProfile, type ClarvisDirs } from "../adapters/agents.ts";
+import { type ClarvisDirs } from "../adapters/agents.ts";
 import type { KeysAdapter } from "../adapters/provider-secrets.ts";
 import type { CodeConfigStore } from "../adapters/code-config.ts";
-import type { GuardModeStore } from "../adapters/guard-mode.ts";
 import type { MemoryModeStore } from "../adapters/memory-mode.ts";
 import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
 import {
-  deriveIsolation,
   deriveRunControls,
   effectiveRunIsolation,
   type IsolationMode,
 } from "../adapters/execution-safety.ts";
-import { isContainerIsolation } from "../features/run/isolation.ts";
 import type { ThemePreview } from "../theme/theme.ts";
 import { readEnvView } from "../adapters/agent-files.ts";
 import { registerCodeCommands } from "../app/command-composition.ts";
@@ -77,7 +74,6 @@ import {
 import type { SessionId, SessionMeta } from "../adapters/session-store.ts";
 import type { PromptHistory } from "../core/prompt-history.ts";
 import type { McpStartupNotice, RunHost } from "../run-host.ts";
-import type { TasksController } from "../features/tasks/controller.ts";
 import type { SessionCatalogItem } from "./config/SessionsHub.tsx";
 import { createInteraction, type InteractionEffects } from "../keys/interaction.ts";
 import { commandKeyLabel, LAYER } from "../keys/keyspec.ts";
@@ -132,11 +128,6 @@ import { productVersion } from "../cli-args.ts";
 const IsolationPicker = lazy(async () => {
   const module = await import("./overlays/IsolationPicker.tsx");
   return { default: module.IsolationPicker };
-});
-
-const ReviewPicker = lazy(async () => {
-  const module = await import("./overlays/ReviewPicker.tsx");
-  return { default: module.ReviewPicker };
 });
 
 const MemoryPicker = lazy(async () => {
@@ -266,7 +257,6 @@ export interface AppRunControls {
   runtimePlacementNotice?: Accessor<{
     sequence: number;
     message: string;
-    pendingReconnect?: boolean;
   } | null>;
   bang: (cmd: string) => boolean;
   localBusy: () => boolean;
@@ -306,14 +296,13 @@ export interface AppSessionControls {
   usage?: () => { input: number; output: number; cached?: number } | null;
 }
 
-/** The workspace's configuration surfaces — agents, settings, guard/memory mode, keys and the model catalog. */
+/** The workspace's configuration surfaces — agents, settings, memory mode, keys and the model catalog. */
 export interface AppFleet {
   agents: ActiveAgentStore;
   agentFiles: AgentsStore;
   settings: SettingsAdapter;
   dirs: ClarvisDirs;
   code: CodeConfigStore;
-  guard: GuardModeStore;
   memoryMode: MemoryModeStore;
   preview: ThemePreview;
   keys: KeysAdapter;
@@ -341,9 +330,8 @@ export interface AppBackend {
   plugins: PluginService;
   extensionProfiles: ExtensionProfileService;
   skills: SkillsService;
-  tasks: TasksController;
   storage: StorageService;
-  /** Host-reported execution placement and effective container policy. */
+  /** Host-reported execution placement and effective isolation policy. */
   runtime?: () => RuntimeStatus | undefined;
   reconnect: (mode?: ReconnectMode) => Promise<{ ok: boolean; message: string }>;
   restoreIsolation?: (isolation: IsolationMode) => Promise<{ ok: boolean; message: string }>;
@@ -402,7 +390,6 @@ export function App(props: AppProps): JSX.Element {
       return;
     shownMcpStartupNotice = notice.sequence;
     props.fleet.settings.version();
-    if (isContainerIsolation(deriveIsolation(props.fleet.settings.effective()))) return;
     notify(
       `MCP unavailable for this run ${glyph("emDash")} ${notice.servers
         .map((server) => `${server.name}: ${server.reason}`)
@@ -787,10 +774,6 @@ export function App(props: AppProps): JSX.Element {
       if (props.run.active()) return;
       if (overlays.openPicker("isolationPicker")) notify("");
     },
-    openReviewPicker: () => {
-      if (props.run.active()) return;
-      if (overlays.openPicker("reviewPicker")) notify("");
-    },
     openMemoryPicker: () => {
       if (props.run.active()) return;
       if (overlays.openPicker("memoryPicker")) notify("");
@@ -947,9 +930,7 @@ export function App(props: AppProps): JSX.Element {
   createEffect(() => {
     if (
       props.run.active() &&
-      ["agentPicker", "isolationPicker", "reviewPicker", "memoryPicker"].includes(
-        overlays.overlay(),
-      )
+      ["agentPicker", "isolationPicker", "memoryPicker"].includes(overlays.overlay())
     )
       overlays.dismissTop();
   });
@@ -1013,11 +994,7 @@ export function App(props: AppProps): JSX.Element {
   });
   const runControls = createMemo(() => {
     props.fleet.settings.version();
-    return deriveRunControls(
-      props.fleet.settings.effective(),
-      props.fleet.guard.mode(),
-      props.fleet.memoryMode.mode(),
-    );
+    return deriveRunControls(props.fleet.settings.effective(), props.fleet.memoryMode.mode());
   });
 
   let pendingSlashArgs = "";
@@ -1071,7 +1048,6 @@ export function App(props: AppProps): JSX.Element {
     agentFiles: props.fleet.agentFiles,
     code: props.fleet.code,
     memoryMode: props.fleet.memoryMode,
-    guard: props.fleet.guard,
     workflows: props.backend.workflows,
     modelsService: props.backend.models,
     providerAuth: props.backend.providerAuth,
@@ -1088,9 +1064,7 @@ export function App(props: AppProps): JSX.Element {
     plugins: props.backend.plugins,
     extensionProfiles: props.backend.extensionProfiles,
     skills: props.backend.skills,
-    tasks: props.backend.tasks,
     storage: props.backend.storage,
-    taskWorkBlockedReason: pressureBlockedReason,
     onSubmitPrompt: (messages, display, skill) => {
       submitFromLeadTail(() => props.run.submitPrompt(messages, display, skill));
     },
@@ -1213,7 +1187,6 @@ export function App(props: AppProps): JSX.Element {
       agentName: agentName(),
       model: resolvedModel(),
       isolation: effectiveIsolation(),
-      review: runControls().guardMode,
       sandboxUnavailable:
         effectiveIsolation() === "sandbox" &&
         appWiring.sandboxInspection()?.backend.available === false,
@@ -1221,7 +1194,6 @@ export function App(props: AppProps): JSX.Element {
       memory: runControls().memory,
       plans: runControls().plans,
       connection: props.backend.connection(),
-      configurationPending: props.run.runtimePlacementNotice?.()?.pendingReconnect === true,
       doctorDirty: doctorDirty() && !focusedRepairSurface(),
       workspace: props.shell.workspace,
       workspaceLabel: props.shell.workspaceLabel,
@@ -1281,17 +1253,15 @@ export function App(props: AppProps): JSX.Element {
 
   const skillMentionProvider = createSkillMentionProvider({
     skills: () =>
-      isContainerIsolation(runControls().isolation)
-        ? []
-        : commands
-            .entries()
-            .filter((entry) => entry.namespace === "skills")
-            .map((entry) => ({
-              name:
-                entry.slashes[0]?.replace(/^\//, "") ||
-                (entry.name.startsWith("skill.") ? entry.name.slice("skill.".length) : entry.name),
-              description: entry.desc,
-            })),
+      commands
+        .entries()
+        .filter((entry) => entry.namespace === "skills")
+        .map((entry) => ({
+          name:
+            entry.slashes[0]?.replace(/^\//, "") ||
+            (entry.name.startsWith("skill.") ? entry.name.slice("skill.".length) : entry.name),
+          description: entry.desc,
+        })),
   });
 
   const argHintProviders = (): CompleteProvider[] =>
@@ -1654,11 +1624,7 @@ export function App(props: AppProps): JSX.Element {
                 enabled={lifecycle.active}
                 list={props.fleet.agents.list}
                 active={props.fleet.agents.active}
-                isRunnable={(name) =>
-                  props.fleet.agents.isRunnable(name) &&
-                  (!isContainerIsolation(runControls().isolation) ||
-                    isContainerCompatibleProfile(name, props.fleet.agents.list()))
-                }
+                isRunnable={(name) => props.fleet.agents.isRunnable(name)}
                 defaults={() => {
                   const global = props.fleet.code.read("global").agent?.default;
                   const workspace = props.fleet.code.read("workspace").agent?.default;
@@ -1725,29 +1691,6 @@ export function App(props: AppProps): JSX.Element {
                   {...(props.backend.restoreIsolation === undefined
                     ? {}
                     : { restore: props.backend.restoreIsolation })}
-                  onClose={() => overlays.dismissTop()}
-                  onApplied={() => overlays.dismissTop()}
-                />
-              </Suspense>
-            )}
-          </SurfaceBoundary>
-          <SurfaceBoundary
-            active={() => overlays.overlay() === "reviewPicker"}
-            retention="retain-one"
-            placement="portal"
-          >
-            {(lifecycle) => (
-              <Suspense fallback={<text>Loading Guard{glyph("ellipsis")}</text>}>
-                <ReviewPicker
-                  interaction={interaction}
-                  settings={props.fleet.settings}
-                  guard={props.fleet.guard}
-                  scope={() =>
-                    props.fleet.settings.read("workspace") !== undefined ? "workspace" : "global"
-                  }
-                  runActive={props.run.active}
-                  active={lifecycle.active}
-                  notify={notify}
                   onClose={() => overlays.dismissTop()}
                   onApplied={() => overlays.dismissTop()}
                 />

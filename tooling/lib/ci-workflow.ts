@@ -33,15 +33,7 @@ export interface CiWorkflow {
   jobs: Record<string, CiJob>;
 }
 
-export const LINUX_GATES = [
-  "build",
-  "typecheck",
-  "lint",
-  "knip",
-  "checks",
-  "coverage",
-  "server-image",
-];
+export const LINUX_GATES = ["build", "typecheck", "lint", "knip", "checks", "coverage"];
 const CONSUMERS = ["typecheck", "lint", "knip", "checks", "coverage"];
 const equalSet = (actual: string[], expected: string[]) =>
   JSON.stringify([...actual].sort()) === JSON.stringify([...expected].sort());
@@ -211,12 +203,6 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
       coverage.steps.find((step) => step.run === commands.coverage[0])?.env
         ?.CLARVIS_NATIVE_SANDBOX_CANARY === "1",
       "coverage: native sandbox canary missing",
-    );
-    check(
-      runs(workflow.jobs["server-image"]).includes(
-        "docker build --file packages/server/Dockerfile --tag clarvis-server:ci .",
-      ),
-      "server-image: self-contained Docker gate missing",
     );
     const aggregate = workflow.jobs.linux;
     check(

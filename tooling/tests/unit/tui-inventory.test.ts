@@ -7,7 +7,7 @@ const rows = [
   ["CMD-24", "Dynamic skill commands"],
   ["CMD-25", "Dynamic MCP prompts"],
   ["SET-01", "Providers"],
-  ["SAFE-09", "Docker"],
+  ["SAFE-08", "Isolation"],
   ["NATIVE-01", "Physical terminal"],
 ] as const;
 

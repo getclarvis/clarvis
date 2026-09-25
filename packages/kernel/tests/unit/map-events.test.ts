@@ -59,7 +59,6 @@ describe("engineEventToProto (TraceEvent → engine-independent RunEvent project
       arguments: {},
       result: "ok",
       error: null,
-      guard: { mode: "auto", outcome: "allowed", answerer: "judge" },
     };
     expect(engineEventToProto(ev)).toEqual({
       type: "tool_call",
@@ -70,7 +69,6 @@ describe("engineEventToProto (TraceEvent → engine-independent RunEvent project
       arguments: {},
       ok: true,
       result: "ok",
-      guard: { mode: "auto", outcome: "allowed", answerer: "judge" },
     });
   });
 

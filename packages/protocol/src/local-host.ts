@@ -34,4 +34,6 @@ export interface LocalHostService {
   respondBrowser(requestId: string, opened: boolean): Promise<void>;
   /** Refuses while physical work is active; admission closes before a restart is acknowledged. */
   requestRestart(): Promise<void>;
+  /** Explicit operator replacement: stop new admission, cancel hosted work, and retire this generation. */
+  requestShutdown(): Promise<void>;
 }

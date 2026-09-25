@@ -2,7 +2,6 @@ import { basename } from "node:path";
 import { parseModelRef } from "../adapters/model-policy.ts";
 import { tokens } from "../theme/tokens.ts";
 import { glyph } from "../theme/glyphs.ts";
-import type { GuardMode } from "../adapters/guard-mode.ts";
 import type { IsolationMode, MemoryState, PlansState } from "../adapters/execution-safety.ts";
 import { connectionLabel, type ConnectionState } from "../adapters/connection-state.ts";
 
@@ -15,13 +14,11 @@ export interface HeaderInput {
   agentName: string;
   model: string;
   isolation: IsolationMode;
-  review: GuardMode;
   sandboxUnavailable?: boolean;
   memoryConfigured: boolean;
   memory: MemoryState;
   plans: PlansState;
   connection: ConnectionState;
-  configurationPending?: boolean;
   doctorDirty: boolean;
   workspace: string;
   workspaceLabel?: string;
@@ -29,15 +26,7 @@ export interface HeaderInput {
 }
 
 export type HeaderFieldKey =
-  | "workspace"
-  | "identity"
-  | "model"
-  | "isolation"
-  | "review"
-  | "memory"
-  | "urgent"
-  | "exception"
-  | "version";
+  "workspace" | "identity" | "model" | "isolation" | "memory" | "urgent" | "exception" | "version";
 
 export interface HeaderField {
   key: HeaderFieldKey;
@@ -71,13 +60,6 @@ function urgentField(input: HeaderInput): HeaderField | undefined {
       elastic: false,
     };
   }
-  if (input.configurationPending === true)
-    return {
-      key: "urgent",
-      text: `${glyph("warning")} reconnect pending`,
-      color: tokens.warn,
-      elastic: false,
-    };
   return undefined;
 }
 
@@ -123,23 +105,17 @@ function isolationLabel(isolation: IsolationMode): string {
   return isolation[0]!.toUpperCase() + isolation.slice(1);
 }
 
-function reviewLabel(review: GuardMode): string {
-  return review === "on" ? "Approval" : review[0]!.toUpperCase() + review.slice(1);
-}
-
 /**
- * The configuration a run depends on — model, isolation, review and memory —
+ * The configuration a run depends on — model, isolation and memory —
  * with complete labels at every supported width.
  */
 function statusChips(input: HeaderInput): HeaderField[] {
   const model = modelNames(input.model);
   const isolation = isolationLabel(input.isolation);
-  const review = reviewLabel(input.review);
   const memory = memoryLabel(input.memory);
   const fit: Array<[HeaderFieldKey, string]> = [
     ["model", model.full],
     ["isolation", `Isolation: ${isolation}`],
-    ["review", `Guard: ${review}`],
     ["memory", `Memory: ${memory}`],
   ];
   return fit.map(([key, text]) => ({
@@ -148,8 +124,7 @@ function statusChips(input: HeaderInput): HeaderField[] {
     color:
       key === "model"
         ? tokens.fg
-        : (key === "isolation" && input.isolation === "host") ||
-            (key === "review" && input.review === "off")
+        : key === "isolation" && input.isolation === "host"
           ? tokens.warn
           : tokens.muted,
     elastic: false,

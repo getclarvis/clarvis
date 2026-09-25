@@ -529,7 +529,7 @@ const STORE_INPUT: CreatePlanInput = {
   now: new Date("2026-08-06T12:00:00.000Z"),
 };
 
-/** The semantic contract every built-in or external {@link PlanStore} satisfies. */
+/** The semantic contract every {@link PlanStore} satisfies. */
 export function planStoreConformance(): readonly PlanStoreConformanceCase[] {
   return [
     {

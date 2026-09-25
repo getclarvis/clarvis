@@ -1,34 +1,39 @@
-import { promises as fs } from "node:fs";
+import { fs } from "../lib/environment-fs.ts";
+import path from "node:path";
+import { fsyncDir } from "@clarvis/paths";
 import { ToolError, fsError } from "../errors.ts";
 import { resolveFileToolPath, displayPath } from "../lib/paths.ts";
 import { withFileLock, applyOpsAtomic } from "../lib/atomic.ts";
 import type { ToolDef } from "./types.ts";
 
 /**
- * The `remove` tool: delete a single regular file, confined to the workspace.
+ * The `remove` tool: delete one file, symlink entry, empty directory, or recursive tree.
  *
  * @remarks
- * A directory is rejected (`not_a_file`) - use shell for recursive directory
- * removal. The target is `lstat`-ed (not followed) to catch a directory before
- * any delete; a missing path fails with `not_found` via {@link fsError}. The
- * delete runs under a per-file lock ({@link withFileLock}) through
- * {@link applyOpsAtomic}, whose symlink guard refuses a symlink target with
- * `invalid_input` (it is never unlinked) and which serializes the delete against
- * concurrent writers of the same path.
+ * A nonempty tree requires `recursive: true`.
+ * The target is `lstat`-ed (not followed) before any delete; a missing path
+ * fails with `not_found` via {@link fsError}. All variants hold
+ * {@link withFileLock}. Files and symlink entries use {@link applyOpsAtomic};
+ * directory removals report a partial outcome
+ * when a deletion has landed but durability or completion is uncertain.
  */
 export const remove: ToolDef = {
   atomicMutation: true,
   name: "remove",
   description:
-    "Delete ONE file. Operates on regular files only — a directory is rejected; use shell for " +
-    "recursive directory removal. Fails with not_found if the path does not exist. Refuses to " +
-    "delete through a symlink.",
+    "Delete ONE file, symlink entry, or empty directory. With recursive:true, delete a directory tree. Fails with not_found " +
+    "if the path does not exist. Refuses to follow a symlink to its destination.",
   inputSchema: {
     type: "object",
     properties: {
       path: {
         type: "string",
-        description: "File to delete. Relative to workspace root or absolute (~ is not expanded).",
+        description:
+          "File or empty directory to delete. Relative to workspace root or absolute (~ is not expanded).",
+      },
+      recursive: {
+        type: "boolean",
+        description: "Remove a directory tree. Defaults to false.",
       },
     },
     required: ["path"],
@@ -36,6 +41,7 @@ export const remove: ToolDef = {
   async handler(args, config) {
     const rel = args.path as string;
     const target = resolveFileToolPath(rel, config);
+    const recursive = args.recursive === true;
 
     return withFileLock(target, async () => {
       let stat;
@@ -44,14 +50,63 @@ export const remove: ToolDef = {
       } catch (err) {
         throw fsError(err as NodeJS.ErrnoException, rel);
       }
-      if (stat.isDirectory()) {
-        throw new ToolError("not_a_file", `Path is a directory (files only): ${rel}`, {
+      if (recursive && !stat.isDirectory())
+        throw new ToolError("invalid_input", "Recursive cleanup requires a directory.", {
           path: rel,
         });
+      if (stat.isDirectory()) {
+        if (recursive) {
+          try {
+            await fs.rm(target, { recursive: true, force: false });
+          } catch (error) {
+            throw fsError(error as NodeJS.ErrnoException, rel);
+          }
+          try {
+            await fsyncDir(path.dirname(target));
+          } catch {
+            throw new ToolError(
+              "commit_partial",
+              "Tree was removed but durability could not be confirmed.",
+            );
+          }
+          return `Removed tree ${displayPath(target, config.workspaceRoot)}.`;
+        }
+        try {
+          const directory = await fs.opendir(target);
+          try {
+            if ((await directory.read()) !== null)
+              throw new ToolError("invalid_input", `Directory is not empty: ${rel}`, { path: rel });
+          } finally {
+            await directory.close();
+          }
+        } catch (error) {
+          if (error instanceof ToolError) throw error;
+          throw fsError(error as NodeJS.ErrnoException, rel);
+        }
+        const commit = async (): Promise<void> => {
+          try {
+            await fs.rmdir(target);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOTEMPTY")
+              throw new ToolError("invalid_input", `Directory is not empty: ${rel}`, { path: rel });
+            throw fsError(error as NodeJS.ErrnoException, rel);
+          }
+          try {
+            await fsyncDir(path.dirname(target));
+          } catch {
+            throw new ToolError(
+              "commit_partial",
+              `Directory was removed but durability could not be confirmed: ${rel}`,
+              { path: rel },
+            );
+          }
+        };
+        await commit();
+        return `Removed empty directory ${displayPath(target, config.workspaceRoot)}.`;
       }
 
       try {
-        await applyOpsAtomic([{ type: "delete", path: target }], config.reviewMutation);
+        await applyOpsAtomic([{ type: "delete", path: target }]);
       } catch (err) {
         if (err instanceof ToolError) throw err;
         throw fsError(err as NodeJS.ErrnoException, rel);

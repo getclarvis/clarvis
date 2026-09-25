@@ -337,13 +337,10 @@ Within one iteration of `runAgentLoop`, after a model call and tool dispatch, th
 2. Dispatch tool calls (`runDispatch`), which is where `guards.record(...)` is fed per call (delegated
    to [loop-tool-dispatch-and-results](tool-dispatch.md); call sites `packages/loop/src/runtime/tools/mcp-dispatch.ts`
    and `executeAgentToolCall` in `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts`).
-   A command/path review with `guard.outcome === "denied"` is an observable tool error but not an
-   execution failure: it clears the doom-loop streak and resets successful-result stagnation because
-   the handler never ran. A hard crossing remains provisional while the rest of the same dispatch is
+   A hard crossing remains provisional while the rest of the same dispatch is
    folded in model-declared order; a later success clears it. The first `tripped()` observation after
    dispatch latches a still-standing crossing until explicit reset. Production: `createConvergenceGuards`,
    `createDoomLoopGuard`, and `executeAgentToolCall`. Tests:
-   `packages/loop/tests/integration/command-guard-wiring.test.ts` (four policy plus two human denials),
    `packages/loop/tests/integration/doom-loop-lead.test.ts` (six genuine failures followed by one
    success in the same batch), and `packages/loop/tests/unit/doom-loop-guard.test.ts`.
 3. `d.guards.takeSoft()` — any pending soft warnings from either guard are joined into **one**
@@ -860,12 +857,6 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
   [loop-capability-composition](capability-composition.md)), and workflow fan-out budgets/ledger semantics (owned by
   [workflows-scheduling-and-spawn](../capabilities/workflows-scheduling.md), including `WorkflowLedger`'s own reservation-sizing formula at
   `packages/workflows/src/ledger.ts` and its concurrency tests).
-- **Terminology collision worth flagging for any future reader**: `packages/loop/tests/integration/command-guard-wiring.test.ts`
-  is *not* about the convergence guards this document owns — it exercises the shell **command-approval**
-  guard (`Guard`/`GuardContext`/`GuardDecision` from `packages/loop/src/lib.ts`, the kernel's
-  `createShellGuard`/`createGuardResolver` machinery), an entirely different "guard" concept belonging to
-  tool-dispatch/kernel policy. It was deliberately excluded from this spec's evidence after inspection;
-  a keyword search on "guard" in `packages/loop/tests` will otherwise surface it as if it belonged here.
 - **A second, analogous terminology collision**: `packages/loop/tests/component/max-output-tokens-clamp.test.ts`
   is named after "output budget" but tests an entirely different mechanism — clamping a run's configured
   `max_output_tokens` to fit inside the model's context window (prompt + completion), exercised through

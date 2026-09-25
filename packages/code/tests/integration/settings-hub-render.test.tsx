@@ -47,6 +47,6 @@ test("activating the selected row opens its command", async () => {
   expect(opened).toEqual(["providers.open"]);
   press("down");
   press("return");
-  expect(opened).toEqual(["providers.open", "capability-providers.open"]);
+  expect(opened).toEqual(["providers.open", "agents.open"]);
   t.renderer.destroy();
 });

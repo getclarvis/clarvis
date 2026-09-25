@@ -31,7 +31,7 @@ export interface ModelViewDeps {
   runActive?: () => boolean;
   inspectContext?: RunHost["inspectCurrentContext"];
   fitContext?: RunHost["fitCurrentContext"];
-  /** Replace an immutable Container generation after the host-side save. */
+  /** Reload the host after a model save. */
   reload?: () => Promise<{ ok: boolean; message: string }>;
 }
 

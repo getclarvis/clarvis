@@ -3,7 +3,6 @@ import { join } from "node:path";
 
 const SWEPT_SOURCES = [
   "src/adapters/code-config.ts",
-  "src/adapters/guard-mode.ts",
   "src/adapters/session-store.ts",
   "src/adapters/settings.ts",
   "src/views/config/AgentsPanel.tsx",

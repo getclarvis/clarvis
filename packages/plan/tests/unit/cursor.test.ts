@@ -19,11 +19,11 @@ describe("plan cursor tagging", () => {
   });
 
   test("round-trips a payload that itself contains the separator", () => {
-    const cursor = encodePlanCursor(PLAN_CURSOR_TAGS.provider, "pm1:not-really-a-tag");
-    expect(decodePlanCursor(PLAN_CURSOR_TAGS.provider, cursor)).toBe("pm1:not-really-a-tag");
+    const cursor = encodePlanCursor(PLAN_CURSOR_TAGS.file, "pm1:not-really-a-tag");
+    expect(decodePlanCursor(PLAN_CURSOR_TAGS.file, cursor)).toBe("pm1:not-really-a-tag");
   });
 
-  test("the three tags are distinct, so no backend can decode another's cursor", () => {
+  test("the two tags are distinct, so no backend can decode another's cursor", () => {
     const tags = Object.values(PLAN_CURSOR_TAGS);
     expect(new Set(tags).size).toBe(tags.length);
   });
@@ -62,7 +62,7 @@ describe("plan cursor tagging", () => {
   test("does not echo a foreign payload either", () => {
     const secret = encodePlanCursor(PLAN_CURSOR_TAGS.memory, "acquisition-of-northwind");
     try {
-      decodePlanCursor(PLAN_CURSOR_TAGS.provider, secret);
+      decodePlanCursor(PLAN_CURSOR_TAGS.file, secret);
       throw new Error("expected a PlanCursorError");
     } catch (error) {
       expect(error).toBeInstanceOf(PlanCursorError);

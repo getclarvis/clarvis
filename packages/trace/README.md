@@ -30,8 +30,7 @@ referenced by persisted sessions and never removes those records, so age-based g
 cannot break resumable conversation history. `CLARVIS_TRACE_TTL_DAYS=0` remains the explicit
 opt-out.
 `resolveTraceStore` also accepts a separate lock directory. Local workspace hosts use that seam so
-the owner-scoped trace records remain at their established global paths while Host/Sandbox and a
-Container coordinate through one selectively mounted workspace lock root.
+the owner-scoped trace records remain at their established global paths while native Host and Sandbox runs coordinate through one workspace lock root.
 
 No external dependencies — `node:fs`, `node:os`, `node:path` and `node:crypto`
 only, over `@clarvis/capability` and `@clarvis/paths`. `@clarvis/loop` depends on
@@ -238,14 +237,3 @@ An explicitly requested settled-context compaction uses `replaceFinalContext` to
 only `final_context` and add any summarizer usage to the record totals. The replacement holds the
 same owner deletion lease and per-record lease as `deleteById`, so neither record deletion nor owner
 deletion can race the rewrite and resurrect stale context.
-
-Terminal `tool_call` rows may include the final command-guard review. The mapper
-preserves that small structured fact so restored sessions can show whether an
-automatic review approved or denied the command and who supplied the answer.
-
-## Authority state
-
-`buildRecord` and trace stores preserve sanitized, versioned `operator_authority_state` as transversal
-host state. Kernel validates its binding and active status before restoration. A recovered record
-without that state grants no authority. It is not mapped into model content or public run events.
-See [effect review](../../specs/execution/effect-review.md).

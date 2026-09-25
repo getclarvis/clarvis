@@ -122,7 +122,7 @@ function ClampedText(props: {
 }
 
 /** Syntax-highlighted code clamped to {@link MAX_BODY_LINES} lines, with a "+N more" line when `full` is unset. */
-export function ClampedCode(props: {
+function ClampedCode(props: {
   content: string;
   filetype: string;
   full?: boolean;

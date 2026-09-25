@@ -37,17 +37,10 @@ test("the in-memory adapter stamps and decodes its own cursors", () => {
   expect(source).toContain("decodePlanCursor(PLAN_CURSOR_TAGS.memory");
 });
 
-test("the provider store wraps the remote's dialect on both sides", () => {
-  const source = read("provider.ts");
-  expect(source).toContain("encodePlanCursor(PLAN_CURSOR_TAGS.provider");
-  expect(source).toContain("decodePlanCursor(PLAN_CURSOR_TAGS.provider");
-});
-
 test("no other module invents a plan cursor tag", () => {
   const owner = read("cursor.ts");
   expect(owner).toContain('file: "pf1"');
   expect(owner).toContain('memory: "pm1"');
-  expect(owner).toContain('provider: "pp1"');
   for (const name of ["file-repository.ts", "testing.ts", "provider.ts", "store.ts"]) {
     const source = read(name);
     expect(source).not.toContain('"pf1');

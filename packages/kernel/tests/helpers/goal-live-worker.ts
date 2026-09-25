@@ -126,7 +126,7 @@ export async function runGoalLiveWorker(job: GoalLiveJob): Promise<GoalLiveResul
         logger: NOOP_LOGGER,
         env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" }),
         environment: createKernelEnvironment({ PATH: process.env.PATH }),
-        builtins: { tools: true, skills: false, hooks: false, tasks: false },
+        builtins: { tools: true, skills: false, hooks: false },
         planStoreFor: () => planStore,
         executeRun: (args) => {
           const request = args.rawBody as { execution_id: string; agent_instance_id: string };

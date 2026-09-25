@@ -44,7 +44,6 @@ describe("kernel prompt-cache composition through the real SDK transport", () =>
         providers: [
           { name: "fixture", kind: "openai-compatible", base_url: "https://fixture.invalid/v1" },
         ],
-        runtime: { backend: "native" },
         plans: { mode: "on", pending_task_nudges: 0 },
       }),
     );
@@ -174,7 +173,7 @@ describe("kernel prompt-cache composition through the real SDK transport", () =>
       subscriptions: false,
       logger: NOOP_LOGGER,
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_AGENT_TOOLS_ENABLED: "1" }),
-      builtins: { tools: true, hooks: false, tasks: false },
+      builtins: { tools: true, hooks: false },
       executeRun: (args) => {
         const execution = {
           ...args,
@@ -193,7 +192,6 @@ describe("kernel prompt-cache composition through the real SDK transport", () =>
       agent: "leader",
       session_id: "wire-session",
       agent_instance_id: "leader",
-      guard_mode: "off",
       messages: [{ role: "user", content: "Delegate to two explorers." }],
     });
     for await (const _event of first.events) void _event;
@@ -207,7 +205,6 @@ describe("kernel prompt-cache composition through the real SDK transport", () =>
     const cancelled = await kernel.runs.start({
       agent: "leader",
       continue_from: first.execution_id,
-      guard_mode: "off",
       messages: [{ role: "user", content: "Cancel this physical attempt." }],
     });
     await arrived;
@@ -217,7 +214,6 @@ describe("kernel prompt-cache composition through the real SDK transport", () =>
     const second = await kernel.runs.start({
       agent: "leader",
       continue_from: cancelled.execution_id,
-      guard_mode: "on",
       messages: [{ role: "user", content: "Confirm with the guard enabled." }],
     });
     for await (const _event of second.events) void _event;
@@ -365,7 +361,6 @@ describe("kernel prompt-cache composition through the real SDK transport", () =>
         providers: [
           { name: "fixture", kind: "openai-compatible", base_url: "https://fixture.invalid/v1" },
         ],
-        runtime: { backend: "native" },
         plans: { mode: "on", pending_task_nudges: 0 },
       }),
     );
@@ -470,7 +465,7 @@ describe("kernel prompt-cache composition through the real SDK transport", () =>
         planStoreFor: () => store,
         logger: NOOP_LOGGER,
         env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_AGENT_TOOLS_ENABLED: "0" }),
-        builtins: { tools: false, hooks: false, tasks: false },
+        builtins: { tools: false, hooks: false },
         executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm: adapter } }),
       });
     let kernel = await open();

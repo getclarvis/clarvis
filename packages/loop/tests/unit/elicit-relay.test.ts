@@ -68,7 +68,7 @@ describe("buildElicitRelay — relay.handle", () => {
     });
 
     const result = await relay.handle(
-      { message: "Run it?", kind: "guard_confirm", origin: "model" },
+      { message: "Run it?", kind: "custom_review", origin: "model" },
       undefined,
     );
 

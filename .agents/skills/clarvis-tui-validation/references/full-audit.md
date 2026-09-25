@@ -42,7 +42,7 @@ the exact reason; an available but unattempted journey remains an incomplete req
 
 Inventory existing harnesses and already-valid evidence before running suites. Prefer repository
 fixtures for scripted streams, errors, elicitation, delayed/stale responses, state corruption,
-Tasks mutations, MCP pools, extension drift, and ownership races. Reuse compatible fixtures across
+MCP pools, extension drift, and ownership races. Reuse compatible fixtures across
 scenarios, preserving intentional persistence; reset when state would contaminate the next case.
 Implement a missing harness only within the task's authorization.
 
@@ -71,14 +71,6 @@ fixtures to extend race and failure coverage, with separate verdicts. Before cla
 scenario as blocked, exercise safe available alternatives within scope. Record attempted commands
 and the prerequisite that is missing. Hardware, browser, OAuth, and other platform canaries retain
 their own proof boundaries.
-
-For container scenarios, consult the current
-[runtime contract](../../../../specs/hosts/isolated-agent-runtime.md) and use test-owned workspace,
-recipe, image, and generation identities. Assert effective placement independently, exercise host
-public Kernel transport, native domain journeys, model-broker revocation, steer/cancel/reconnect,
-persistent data/mise state, independent base/artifact identity and absence of fallback.
-Distinguish a guest service response from an unrelated host listener. Record cleanup alongside the
-test that created each resource.
 
 ## Assess the result
 

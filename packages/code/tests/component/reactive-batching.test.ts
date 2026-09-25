@@ -151,8 +151,6 @@ describe("reactive batching", () => {
         priceFor: () => undefined,
         activeProfile: () => "coder",
         setActiveProfile: () => {},
-        guardMode: () => "on",
-        judgePayload: () => ({}),
         memoryMode: () => "on",
       });
       return d;

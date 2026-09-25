@@ -43,12 +43,7 @@ import type { Logger, LLMProvider, ModelExecutionResolver } from "@clarvis/capab
 import type { ExecuteRunDeps } from "./execute-run.ts";
 import type { SkillsProvider } from "@clarvis/skills/capability";
 import type { Capability, RunCapabilityContext } from "@clarvis/capability";
-import type {
-  GuardResolution,
-  GuardResolver,
-  SandboxResolver,
-  SecretNamesResolver,
-} from "./capabilities/tools.ts";
+import type { SandboxResolver, SecretNamesResolver } from "./capabilities/tools.ts";
 import type { PluginBootstrapSkill } from "./capabilities/skills-settings.ts";
 import { createAskUserCapability } from "./capabilities/ask-user.ts";
 import { agentToolCaps } from "./tools/builtin/grants.ts";
@@ -139,7 +134,7 @@ export interface SkillRootSnapshotProvider {
 /**
  * The host-supplied options for {@link buildExecuteRunDeps}: the environment and
  * logger, the workspace root, and the optional ports that wire up the tools
- * guard/sandbox, extra skill roots, built-in toggles, embedder capabilities
+ * sandbox, extra skill roots, built-in toggles, embedder capabilities
  * and connection-health observation.
  */
 export interface BuildRunDepsOptions {
@@ -186,15 +181,10 @@ export interface BuildRunDepsOptions {
    * this run's request never mentions — see `WorkspaceHooksOptions.credentialNames`.
    */
   hookCredentialNames?: () => readonly string[];
-  /** Host port for the tools guard: resolves the run's guard from the
-   * request and registered parameters, host settings, and the elicit channel. */
-  resolveGuard?: GuardResolver;
   resolveSandbox?: SandboxResolver;
   /** Host port naming the environment variables that hold credentials, so the
    * tools capability can withhold them from every command it spawns. */
   resolveSecretNames?: SecretNamesResolver;
-  /** Isolated container guests set this to false so `require_escalated` fails closed. */
-  allowHostEscalation?: boolean;
   /** Opt out of built-in capabilities to run leaner (and to allow the
    * corresponding optional package to be absent). Omitted = all on. */
   builtins?: BuiltinCapabilityToggles;
@@ -589,10 +579,8 @@ export async function buildExecuteRunDeps({
   systemSkillProvider,
   reservedSystemSkillName,
   skillBootstraps,
-  resolveGuard,
   resolveSandbox,
   resolveSecretNames,
-  allowHostEscalation,
   resolveHooks,
   hookCredentialNames,
   builtins,
@@ -773,22 +761,6 @@ export async function buildExecuteRunDeps({
   }
   skills = mergeSystemSkills(skills, systemSkillProvider, reservedSystemSkillName);
 
-  const guardResolutionCache = new WeakMap<
-    RunCapabilityContext,
-    Promise<GuardResolution | undefined>
-  >();
-  const sharedResolveGuard: GuardResolver | undefined =
-    resolveGuard === undefined
-      ? undefined
-      : (ctx) => {
-          let cached = guardResolutionCache.get(ctx);
-          if (cached === undefined) {
-            cached = Promise.resolve().then(() => resolveGuard(ctx));
-            guardResolutionCache.set(ctx, cached);
-          }
-          return cached;
-        };
-
   const capabilities: Capability[] = [];
   const capabilityRegistry = createCapabilityRegistry();
   if (!useHooks) reportBuiltinDisabled(logger, "@clarvis/hooks", "hooks");
@@ -841,10 +813,8 @@ export async function buildExecuteRunDeps({
     capabilities.push(
       createAgentToolsCapability({
         ...(statePaths === undefined ? {} : { statePaths }),
-        ...(sharedResolveGuard !== undefined ? { resolveGuard: sharedResolveGuard } : {}),
         ...(resolveSandbox !== undefined ? { resolveSandbox } : {}),
         ...(resolveSecretNames !== undefined ? { resolveSecretNames } : {}),
-        ...(allowHostEscalation !== undefined ? { allowHostEscalation } : {}),
         ...(selectedSkills === undefined
           ? {}
           : {
@@ -877,11 +847,10 @@ export async function buildExecuteRunDeps({
           : {
               systemOnly: {
                 provider: systemSkillProvider,
-                eligible: async (ctx: RunCapabilityContext) =>
+                eligible: (ctx: RunCapabilityContext) =>
                   useTools &&
                   ctx.env.CLARVIS_AGENT_TOOLS_ENABLED &&
-                  agentToolCaps(ctx.entryGrants, ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT).canMutate &&
-                  (await sharedResolveGuard?.(ctx))?.reviewMutation !== undefined,
+                  agentToolCaps(ctx.entryGrants, ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT).canMutate,
               },
             }),
       }),

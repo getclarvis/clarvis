@@ -40,7 +40,6 @@ import { createRunHost, type RunHost } from "./run-host.ts";
 import { createLoopController, type LoopController } from "./features/loop/controller.ts";
 import { createBackgroundController } from "./features/background/controller.ts";
 import { createGoalController, type GoalBinding } from "./features/goal/controller.ts";
-import { knownPlanProviderKey } from "./adapters/capability-providers.ts";
 import {
   automaticAgentFallback,
   createActiveAgentStore,
@@ -63,13 +62,7 @@ import {
   type ModelsCatalog,
 } from "./adapters/models-catalog.ts";
 import { createCodeConfigStore, type CodeConfigStore } from "./adapters/code-config.ts";
-import {
-  createGuardModeStore,
-  type GuardMode,
-  type GuardModeStore,
-} from "./adapters/guard-mode.ts";
 import { createMemoryModeStore, type MemoryModeStore } from "./adapters/memory-mode.ts";
-import { loadGuardJudgePrompt } from "./adapters/guard-judge-prompt.ts";
 import { createTheme, createThemePreview, type ThemePreview } from "./theme/theme.ts";
 import type { ThemeConfig } from "./theme/model.ts";
 import { tokens } from "./theme/tokens.ts";
@@ -97,12 +90,7 @@ import {
   type KernelRunClient,
   type KernelRunClientCallbacks,
 } from "./adapters/kernel-run-client.ts";
-import {
-  isContainerKernelOwnershipConflict,
-  isContainerWorkspaceDestination,
-  WorkspaceClientManager,
-} from "./adapters/workspace-client-manager.ts";
-import { createTasksController } from "./features/tasks/controller.ts";
+import { WorkspaceClientManager } from "./adapters/workspace-client-manager.ts";
 import {
   createWorkspaceCallbackTarget,
   isActiveWorkspaceCallbackTarget,
@@ -119,7 +107,6 @@ import {
   type ReconnectMode,
 } from "./adapters/connection-state.ts";
 import { runFatalBoot } from "./views/FatalBoot.tsx";
-import { containerConnectionStatus } from "./startup-foundation.ts";
 import { createElicitSlot } from "./adapters/elicit-slot.ts";
 import {
   createSessionStore,
@@ -209,7 +196,7 @@ const describeToolCall = (input: {
  * @remarks `runPrintMode` creates its own manager instead of using this helper:
  *   it needs `keySources` and `memory: true`, neither of which a silent
  *   listing/delete command has any use for. Every path still goes through the
- *   manager so a selected Container destination connects before application composition.
+ *   manager so the selected local or SSH destination connects before application composition.
  */
 async function bootSilentSessionStore(): Promise<{
   manager: WorkspaceClientManager;
@@ -570,37 +557,40 @@ async function runApp(
   const [runtimePlacementNotice, setRuntimePlacementNotice] = createSignal<{
     sequence: number;
     message: string;
-    pendingReconnect?: boolean;
   } | null>(null);
-  const connectWorkspaceManager = (
-    containerOwnershipConflict: "refuse" | "terminate" = "refuse",
-  ): Promise<WorkspaceClientManager> =>
+  const workspaceManagerOptions = () => ({
+    ...workspaceClientTarget(),
+    globalDir: globalRoot(),
+    ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
+    ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
+    logger: diagnostics?.logger ?? createLogger("silent"),
+    openMcpAuthorizationUrl: openPublicUrl,
+  });
+  const connectWorkspaceManager = (): Promise<WorkspaceClientManager> =>
     diagnosticAsync("boot.workspace-manager", () =>
-      WorkspaceClientManager.create({
-        ...workspaceClientTarget(),
-        globalDir: globalRoot(),
-        ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
-        ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
-        logger: diagnostics?.logger ?? createLogger("silent"),
-        openMcpAuthorizationUrl: openPublicUrl,
-        onContainerProgress: (phase) =>
-          bootShell.setStartupStatus(containerConnectionStatus(phase)),
-        containerOwnershipConflict,
-      }),
+      WorkspaceClientManager.create(workspaceManagerOptions()),
     );
-  const useHostForBoot = async (): Promise<void> => {
-    await saveOperatorIsolation("host");
-  };
   let connectedWorkspaceManager: WorkspaceClientManager | undefined;
   try {
     connectedWorkspaceManager = await (preparedWorkspaceManager ?? connectWorkspaceManager());
   } catch (error) {
     diagnosticEvent("boot.failed", { phase: "workspace-manager", error, attempt: 1 }, "error");
+    const details =
+      typeof error === "object" && error !== null && "details" in error ? error.details : null;
+    const replacementGeneration =
+      typeof details === "object" &&
+      details !== null &&
+      "replacement_available" in details &&
+      details.replacement_available === true &&
+      "host_generation" in details &&
+      typeof details.host_generation === "string"
+        ? details.host_generation
+        : undefined;
     let attempt = 1;
-    const connect = async (ownership: "refuse" | "terminate"): Promise<void> => {
+    const connect = async (): Promise<void> => {
       attempt += 1;
       try {
-        connectedWorkspaceManager = await connectWorkspaceManager(ownership);
+        connectedWorkspaceManager = await connectWorkspaceManager();
       } catch (retryError) {
         diagnosticEvent(
           "boot.failed",
@@ -610,37 +600,25 @@ async function runApp(
         throw retryError;
       }
     };
-    const containerSelected = await isContainerWorkspaceDestination({
-      ...workspaceClientTarget(),
-      globalDir: globalRoot(),
-      ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
-      ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
-      logger: diagnostics?.logger ?? createLogger("silent"),
-    }).catch(() => false);
     const recovered = await runFatalBoot({
       renderer,
       error,
-      retry: () => connect("refuse"),
-      ...(isContainerKernelOwnershipConflict(error)
-        ? {
+      retry: connect,
+      ...(replacementGeneration === undefined
+        ? {}
+        : {
             resolution: {
               key: "t",
-              label: "terminate previous Container",
-              run: () => connect("terminate"),
-            },
-          }
-        : containerSelected
-          ? {
-              resolution: {
-                key: "h",
-                label: "use Host",
-                run: async () => {
-                  await useHostForBoot();
-                  await connect("refuse");
-                },
+              label: "stop previous runs and start",
+              run: async () => {
+                await WorkspaceClientManager.replacePreviousHost(
+                  workspaceManagerOptions(),
+                  replacementGeneration,
+                );
+                await connect();
               },
-            }
-          : {}),
+            },
+          }),
       quit: () => {
         releaseBootRendererLifecycle();
         platform.shutdown("boot-failed").catch(() => undefined);
@@ -669,7 +647,6 @@ async function runApp(
       setRuntimePlacementNotice({
         sequence: ++runtimePlacementSequence,
         message: notice.message,
-        ...(notice.pendingReconnect === true ? { pendingReconnect: true } : {}),
       });
     } else setRuntimePlacementNotice(null);
   });
@@ -754,7 +731,6 @@ async function runApp(
   let agentFiles!: AgentsStore;
   let initialAgentFiles: AgentFile[] = [];
   let initialAgentConflicts: string[] = [];
-  let guard!: GuardModeStore;
   let memoryMode!: MemoryModeStore;
   let preview!: ThemePreview;
   const [modelsCatalog, setModelsCatalog] = createSignal<ModelsCatalog | null>(null);
@@ -780,15 +756,6 @@ async function runApp(
     } catch {
       return undefined;
     }
-  }
-
-  function judgePayloadFor(
-    runtimeDirs: ClarvisDirs,
-    mode: GuardMode,
-  ): { guardJudge?: { guidance: string } } {
-    if (mode !== "auto") return {};
-    const guidance = loadGuardJudgePrompt(runtimeDirs).guidance;
-    return guidance.length === 0 ? {} : { guardJudge: { guidance } };
   }
 
   const createRunClientCallbacks = (
@@ -1017,7 +984,6 @@ async function runApp(
   const workspaceFiles = createWorkspaceFiles(runClient.files);
 
   interface WorkspaceAdaptersSnapshot {
-    guard: GuardModeStore;
     memoryMode: MemoryModeStore;
     agentFiles: AgentsStore;
     agents: ActiveAgentStore;
@@ -1038,10 +1004,6 @@ async function runApp(
     let snapshot!: Omit<WorkspaceAdaptersSnapshot, "activate" | "dispose">;
     let activate!: () => void;
     const dispose = createRoot((disposeRoot) => {
-      const nextGuard = createGuardModeStore({
-        code: input.code,
-        settingsGuard: () => input.settings.effective().guard,
-      });
       const nextMemoryMode = createMemoryModeStore({
         settingsMemory: () => input.settings.effective().memory,
       });
@@ -1102,7 +1064,6 @@ async function runApp(
         });
       };
       snapshot = {
-        guard: nextGuard,
         memoryMode: nextMemoryMode,
         agentFiles: nextAgentFiles,
         agents: nextAgents,
@@ -1114,7 +1075,6 @@ async function runApp(
   }
 
   const publishWorkspaceAdapters = (next: WorkspaceAdaptersSnapshot): void => {
-    guard = next.guard;
     memoryMode = next.memoryMode;
     agentFiles = next.agentFiles;
     agents = next.agents;
@@ -1172,16 +1132,13 @@ async function runApp(
       project: input.client.project.id,
       workspaceId: input.client.workspace.id,
       workspace: input.workspacePath,
-      runtimeKind: () => input.client.capabilities.runtime?.kind,
       backgroundHandoffSurvivesExit: () => workspaceManager.backgroundHandoffSurvivesExit,
       priceFor: (model) => priceForRuntime(input.catalog(), input.settings, model),
       activeProfile: () => input.adapters.agents.active(),
       setActiveProfile: (name) => input.adapters.agents.setActive(name),
-      guardMode: () => input.adapters.guard.mode(),
-      judgePayload: (mode) => judgePayloadFor(input.dirs, mode),
       memoryMode: () => input.adapters.memoryMode.mode(),
       plansMode: () => plansState(input.settings.effective()).mode,
-      planProviderKey: () => knownPlanProviderKey(input.settings.effective().plans?.provider),
+      planProviderKey: () => "markdown",
       isManagerProfile: () => {
         const grants = input
           .profiles()
@@ -1383,13 +1340,6 @@ async function runApp(
     await agentFiles.reload();
     setProfiles(await runClient.listProfiles());
   }
-
-  const tasks = createTasksController({
-    service: runClient.tasks,
-    available: () => runClient.capabilities.tasks,
-    runActive: () => runHost.runActive() || runHost.bashActive(),
-    workOnTask: (ref, profile) => runHost.workOnTask(ref, profile),
-  });
 
   /**
    * A session's token counts as every surface states them: input the provider
@@ -1661,9 +1611,6 @@ async function runApp(
     get code() {
       return code;
     },
-    get guard() {
-      return guard;
-    },
     get memoryMode() {
       return memoryMode;
     },
@@ -1709,9 +1656,6 @@ async function runApp(
     },
     get skills() {
       return runClient.skills;
-    },
-    get tasks() {
-      return tasks;
     },
     get storage() {
       return runClient.storage;

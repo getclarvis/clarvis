@@ -101,7 +101,7 @@ describe("extractDocumentLinks", () => {
 describe("stable repository references", () => {
   test("finds line-qualified files, ranges, lists, ambient shorthand, and prose", () => {
     const references = extractLineQualifiedReferences(
-      "intro\n`packages/example/src/file.ts: 1-3, 5,8`, `packages/example/src/other.ts#L9-L12`, `.githooks/pre-commit:7`, `packages/server/Dockerfile:39-60`, `.gitattributes:8`, `: 13-21`, (:405), at line 48, lines 50-52, imports at 54-57, and (referenced `58-60`)\n",
+      "intro\n`packages/example/src/file.ts: 1-3, 5,8`, `packages/example/src/other.ts#L9-L12`, `.githooks/pre-commit:7`, `packages/example/Makefile:39-60`, `.gitattributes:8`, `: 13-21`, (:405), at line 48, lines 50-52, imports at 54-57, and (referenced `58-60`)\n",
     );
 
     expect(references).toEqual([
@@ -117,8 +117,8 @@ describe("stable repository references", () => {
       },
       { raw: ".githooks/pre-commit:7", path: ".githooks/pre-commit", line: 2 },
       {
-        raw: "packages/server/Dockerfile:39-60",
-        path: "packages/server/Dockerfile",
+        raw: "packages/example/Makefile:39-60",
+        path: "packages/example/Makefile",
         line: 2,
       },
       { raw: ".gitattributes:8", path: ".gitattributes", line: 2 },
@@ -142,13 +142,13 @@ describe("stable repository references", () => {
   test("extracts owned repository roots but not URLs, basenames, or placeholder examples", () => {
     expect(
       extractRepositoryFileReferences(
-        "`packages/code/src/runtime.tsx` `tooling/checks/spec-hygiene.ts` `.githooks/pre-commit` `packages/server/Dockerfile` `.gitattributes` runtime.tsx packages/<name>/src/file.ts https://example.test/specs/a.md",
+        "`packages/code/src/runtime.tsx` `tooling/checks/spec-hygiene.ts` `.githooks/pre-commit` `packages/example/Makefile` `.gitattributes` runtime.tsx packages/<name>/src/file.ts https://example.test/specs/a.md",
       ),
     ).toEqual([
       { path: "packages/code/src/runtime.tsx", line: 1 },
       { path: "tooling/checks/spec-hygiene.ts", line: 1 },
       { path: ".githooks/pre-commit", line: 1 },
-      { path: "packages/server/Dockerfile", line: 1 },
+      { path: "packages/example/Makefile", line: 1 },
     ]);
   });
 

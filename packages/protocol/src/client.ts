@@ -19,7 +19,6 @@ import type { PlansService } from "./plans.ts";
 import type { WorkflowsService } from "./workflows.ts";
 import type { SkillsService } from "./skills.ts";
 import type { SessionService } from "./sessions.ts";
-import type { TasksService } from "./tasks.ts";
 import type { ProviderAuthService } from "./provider-auth.ts";
 import type { StorageService } from "./storage.ts";
 import type { ExtensionProfileService } from "./extension-profiles.ts";
@@ -35,8 +34,6 @@ export interface KernelCapabilities {
   skills: boolean;
   /** Whether agent-tool surfaces are available. */
   agent_tools: boolean;
-  /** Whether this host wires the external Tasks capability/control plane. */
-  tasks: boolean;
   /** True only when this connection has persistent conversation goal controls. */
   goals?: boolean;
   /** Generation of an authenticated local host that owns runs beyond this connection. */
@@ -51,51 +48,13 @@ export interface KernelCapabilities {
   runtime?: RuntimeStatus;
 }
 
-/** Truthful host-reported runtime placement and effective container policy. */
-export type RuntimeStatus =
-  | {
-      kind: "native";
-      host_platform: string;
-      isolation: "host" | "sandbox";
-      lifecycle: "ready";
-    }
-  | ({
-      kind: "container";
-      engine: "podman" | "docker";
-      host_platform: string;
-      guest_platform: "linux";
-      network: "none" | "outbound";
-      engine_version?: string;
-    } & (
-      | {
-          generation: string;
-          image_digest: string;
-          artifact_digest: string;
-          base_abi: string;
-          broker_version: number;
-          channel_version: number;
-          state_namespace: string;
-          lifecycle: "ready";
-        }
-      | {
-          generation?: string;
-          image_digest?: string;
-          artifact_digest?: string;
-          base_abi?: string;
-          broker_version?: number;
-          channel_version?: number;
-          state_namespace?: string;
-          lifecycle:
-            | "cold"
-            | "inspecting"
-            | "preparing"
-            | "starting"
-            | "stopping"
-            | "stopped"
-            | "disconnected"
-            | "failed";
-        }
-    ));
+/** Truthful host-reported native execution placement. */
+export interface RuntimeStatus {
+  kind: "native";
+  host_platform: string;
+  isolation: "host" | "sandbox";
+  lifecycle: "ready";
+}
 
 /** Options passed when connecting a {@link KernelClient}. */
 export interface ConnectOptions {
@@ -154,8 +113,6 @@ export interface KernelClient {
   readonly skills: SkillsService;
   /** Conversation/session index over runs. */
   readonly sessions: SessionService;
-  /** Provider-neutral external task control plane. */
-  readonly tasks: TasksService;
   /** Metadata-only local storage inventory and disposable-artifact cleanup. */
   readonly storage: StorageService;
 

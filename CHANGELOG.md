@@ -5,6 +5,14 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Removed Shell Guard, Judge, command review and file-tool path admission. Shell and file tools now
+  follow host permissions or the configured native Sandbox policy.
+- Removed Docker and Podman execution, container images and runtime installers. Isolation now offers
+  Host and Sandbox; remote SSH connections remain available. Release candidates use source identity
+  and stable releases continue to publish portable binaries.
+
 ## [0.2.0] - Unreleased
 
 ### Changed
@@ -28,22 +36,15 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 - `/diff` and `Ctrl+X D` show the current Git working tree, including staged, unstaged and untracked
   files, instead of grouping transcript tool calls. The overlay opens on an empty conversation.
-- Isolation and command review are independent controls. `Ctrl+X I` selects Host, native Sandbox,
-  Docker or Podman, while `Ctrl+X G` selects Off, Approval or Auto review for native placements.
-  Settings > Run controls and `Ctrl+X I` expose the same choices; runtime placement remains
-  global-only.
 - `/background`, `/background list`, `/attach` and scoped cancellation let a local Host/Sandbox run
-  continue after its TUI closes and return to the same execution later. Container and SSH retain
-  list, attach and cancel only while their current client connection is alive.
+  continue after its TUI closes and return to the same execution later. SSH retains list, attach
+  and cancel only while its current client connection is alive.
 - `/goal` creates and controls a persistent objective with bounded automatic continuation,
   checkpoints, token limits, deadlines and human or command-based completion criteria.
 - `/loop` schedules interval or cron prompts for the current conversation while the TUI remains
   open, with pause, resume, cancellation and bounded run counts.
 - `--remote` with `--remote-workspace` keeps the TUI local while an authenticated OpenSSH channel
   runs a process-owned Clarvis host on another machine.
-- Clarvis can author its own bounded configuration through the reviewed `configure_clarvis` writer.
-  `/clarvis-configure` loads the embedded guide in the current conversation without changing agent
-  or placement.
 - Composer `$name` mentions expand a unique user-invocable skill into the current turn without
   starting another run. Agent-backed skills, environment-shaped tokens and the reserved
   `$clarvis-configure` name stay literal.
@@ -52,29 +53,12 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 - A focused shell invocation can be interrupted without cancelling the complete agent run.
 - Plan reminders name the plan and group compact task ids/statuses into attention, pending and
   closed work so returned or failed work is actionable without repeating task titles.
-- Source release candidates now carry qualified Container artifacts separately from stable
-  installers. `./dev-install.sh --candidate` installs a candidate in an isolated checkout, while
-  ordinary `./dev-install.sh` prepares each available local Docker/Podman engine and one matching
-  Kernel artifact for development.
+- Source release candidates carry an exact source identity separately from stable installers.
+  `./dev-install.sh --candidate` installs a candidate in an isolated checkout; ordinary
+  `./dev-install.sh` prepares the local source launcher.
 
 ### Changed
 
-- **Breaking:** Docker/Podman Isolation now serves one complete native Kernel over the public wire.
-  Plans, Memory, Workflows and Goals execute inside the Container and persist in the same canonical
-  stores used by Host/Sandbox, together with sessions, conversation context and traces. External
-  Tasks, plugins, skills, hooks, generic MCP, external capability providers, preview and Command
-  Review remain unavailable. Provider configuration, credentials and API requests stay in the host
-  model broker. The placement never falls back to Sandbox/Host. `.clarvis` is covered by private
-  storage, `.agents` is masked and Git metadata is read-only.
-- Container distribution now separates a version-independent Debian base from the compiled
-  `clarvis-kernel-<target>.tar.gz` artifact. Launch verifies and transfers that artifact into an
-  immutable engine volume instead of rebuilding a versioned product image.
-- Docker and Podman share product-owned resource limits and outbound networking by default. Docker
-  alone supports an advanced operator-owned runtime recipe. Both engines fail closed; selecting an
-  unavailable or invalid Container never silently falls back to Sandbox or Host.
-- Isolation changes remain in their picker through save, reconnect and admission. Failed changes
-  restore the previous connection and choice; startup through an unavailable Container can offer an
-  explicit Host recovery. Container `/model` saves attempt the required idle generation reload.
 - The transcript now uses native OpenTUI scrolling and one semantic row model for streaming and
   settled content, preserving the reader's position while new work arrives and returning explicit
   submissions to the live tail.
@@ -88,65 +72,21 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Fixed
 
-- Auto command review never elicits a person. Dangerous matches, Judge denials and Judge
-  uncertainty are refused to the principal with the exact policy match; unsandbox is a Judge
-  decision. Approval (`on`) asks a human only for the grey zone that is neither allow-listed nor
-  dangerous, and denies forced removal of a credential file instead of prompting. Judge policy
-  now states that deny and unsure are closed refusals to the calling agent, not a handoff to a
-  person or TUI prompt.
 - Grok subscription catalogs keep `vision` unless the entitled payload omits image input, so persisted
   `tool_calling`-only rows can no longer strip composer images as if the model were blind.
-- Auto review denies uncertainty, model failures and malformed answers to the calling agent and
-  never selects human fallback.
-- `$clarvis-configure` remains literal despite the embedded guide intentionally having no agent
-  override, preserving explicit configuration disclosure.
 - SSH sessions no longer claim that a promoted run can survive TUI exit: the SSH stdio channel owns
   its remote Kernel and closes it when the connection ends.
-- Switching between Host/Sandbox and Docker/Podman now replaces the workspace connection while idle,
-  immediately updates the effective Isolation header, and cleans a failed Container composition so
-  the namespace is not left owned by a leaked generation.
 - `/model` can request an explicit context target through `runs.context` again; the optional field is
   admitted by the closed transport envelope.
 - A Lead now defers plan mutations issued in the same model iteration after tracked delegation until
   the returned task state and fresh CAS identity are published. Sub-agents continue to receive no
   plan mutation tools, and strict digest checks remain intact.
 - Agent and workflow counts appear only in the sidebar; the footer no longer repeats the roster.
-- Container launch now admits the exact base before preparers, inspects every privileged preparer
-  before start, enforces exact capability/NNP/tmpfs policy, shares boot and preparation deadlines,
-  revokes subscription-backed model leases synchronously, and reconciles uncertain create/stop/close
-  outcomes without releasing workspace ownership early.
-- Compiled Container Kernels now bundle the lazy Ajv validation modules required by the first agent
-  run, preserve the builtin-tool namespace marker across the model broker, and clean hosted
-  projection directories without reporting `EISDIR`.
-- Container cold boot reports its preparation phase without overwriting the logo or losing startup
-  input during renderer handoff. Interactive startup can retire an exact verified prior Container
-  Kernel that still owns the namespace.
 - Corrupt PNG tool results are refused before they can enter a later provider request.
-- Container agents now receive the admitted Container placement, Docker/Podman engine, network mode
-  and guest workspace root in their system environment while the host bind source remains private.
-- Long accepted user prompts and slim follow-up turns now retain their authenticated conversation
-  scope for automatic command review instead of forcing manual approval through missing evidence.
-- Explicit non-forced current-branch pushes and bounded pull-request metadata/check observations now
-  reach automatic effect review with repository, branch and HEAD attestation instead of stopping as
-  partial evidence before a reviewer attempt.
 - POSIX local hosts now fall back to the private account-scoped namespace under `/tmp` when the
   operator environment's temporary root would make the Unix socket exceed its byte limit, preserving
   independent startup, discovery and reconnection without changing run scratch paths.
-- Simple Podman isolation accepts Podman's unprefixed 64-character local image IDs when resolving
-  the development runtime image, instead of reporting an invalid image id after a successful build.
-- Runtime carrier and final-image builds bypass OCI builder caches so a current-source or release
-  build cannot silently retain an older compiled guest through a stale cross-stage `COPY` layer.
 - Settled Markdown no longer keeps a tall streaming height as blank rows above the run outcome.
-
-### Security
-
-- Container guests receive no provider credentials, engine socket, host shell, host skill paths or
-  extension executables. The selected workspace remains intentionally writable and default outbound
-  networking can reach remote services and transmit readable workspace data; the isolation promise
-  protects the host outside that workspace, not the workspace itself.
-- Review Auto evaluates attested effects and authenticated operator scope. Dangerous operations,
-  credentials and Approval-mode decisions remain human-only; review events persist no prompt,
-  response, command arguments or operator evidence payloads.
 
 ## [0.1.1] - 2026-09-04
 

@@ -7,12 +7,6 @@ export const SETTINGS_ITEMS = [
     cmd: "providers.open",
   },
   {
-    id: "capability-providers",
-    label: "Feature backends",
-    desc: "Choose what powers Memory, Plans and Tasks",
-    cmd: "capability-providers.open",
-  },
-  {
     id: "agents",
     label: "Agents",
     desc: "Permissions, model, delegation and prompt",
@@ -47,7 +41,7 @@ export const SETTINGS_ITEMS = [
   {
     id: "controls",
     label: "Run controls",
-    desc: "Safety, sandbox, guard, memory and plan retention for the next run",
+    desc: "Safety, sandbox, memory and plan retention for the next run",
     cmd: "controls.open",
   },
 ] as const;

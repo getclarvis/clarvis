@@ -26,7 +26,7 @@ async function fixture() {
   await mkdir(globalDir);
   await writeFile(
     globalPaths(globalDir).settingsFile,
-    JSON.stringify({ runtime: { backend: "native" }, memory: { enabled: false } }),
+    JSON.stringify({ memory: { enabled: false } }),
   );
   const identity = await resolveLocalHostIdentity({ workspaceRoot, globalDir, owner: "operator" });
   if (identity.paths.endpointDirectory !== undefined) {
@@ -41,7 +41,7 @@ async function fixture() {
       subscriptions: false,
       logger: NOOP_LOGGER,
       env: loadEnv({ CLARVIS_AGENT_TOOLS_ENABLED: "0", CLARVIS_LOG_LEVEL: "silent" }),
-      builtins: { tools: false, hooks: false, tasks: false },
+      builtins: { tools: false, hooks: false },
     },
     artifactId: "lifecycle-fixture",
     idleTimeoutMs: 500,

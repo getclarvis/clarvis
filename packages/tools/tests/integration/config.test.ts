@@ -39,7 +39,6 @@ describe("runtime config", () => {
       regexScanBudgetMs: 5000,
       ripgrepAvailable: false,
       readOnly: false,
-      confineToWorkspace: true,
       temporaryRoots: [],
       skillExecutionRoots: [],
       gitMetadataPaths: [],
@@ -47,12 +46,9 @@ describe("runtime config", () => {
   });
 
   it("honours every caller-facing runtime override", () => {
-    const guard = () => Promise.resolve({ verdict: "allow" as const });
-    const elicit = () => Promise.resolve(true);
     const config = resolveConfig({
       workspaceRoot: root,
       readOnly: true,
-      confineToWorkspace: false,
       maxOutputBytes: 4096,
       maxShellOutputBytes: 2048,
       maxFileBytes: 8192,
@@ -66,14 +62,11 @@ describe("runtime config", () => {
       maxSessions: 4,
       regexScanBudgetMs: 250,
       probeRipgrep: () => true,
-      guard,
-      elicit,
       secretEnvNames: ["TOKEN"],
     });
 
     expect(config).toMatchObject({
       readOnly: true,
-      confineToWorkspace: false,
       maxOutputBytes: 4096,
       maxShellOutputBytes: 2048,
       maxFileBytes: 8192,
@@ -87,8 +80,6 @@ describe("runtime config", () => {
       maxSessions: 4,
       regexScanBudgetMs: 250,
       ripgrepAvailable: true,
-      guard,
-      elicit,
       secretEnvNames: ["TOKEN"],
     });
   });

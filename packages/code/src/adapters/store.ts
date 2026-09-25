@@ -875,7 +875,6 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
           n.result = event.result;
           n.diff = event.diff;
           n.error = event.error;
-          n.guard = event.guard;
           n.dehydrated = undefined;
           n.hydrationNotice = undefined;
         });
@@ -1770,7 +1769,6 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             n.result = event.result;
             n.diff = event.diff;
             n.error = event.error;
-            n.guard = event.guard;
             n.status = event.ok ? "ok" : "error";
             const yieldedSession =
               identity === "shell" &&

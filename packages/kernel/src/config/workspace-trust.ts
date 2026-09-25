@@ -31,9 +31,8 @@ import type { SettingsData, WorkspaceTrustVerdict } from "@clarvis/protocol";
  *   operator's install list wearing the operator's own authority.
  * - `providers.subscription` attempts to attach global subscription credentials
  *   to a repository-chosen provider declaration or endpoint contract.
- * - `runtime` can select a host executable, engine connection and broader network grant.
  *
- * Policy fields a repository might merely weaken (`guard`, `sandbox`) are
+ * Policy fields a repository might merely weaken (`sandbox`) are
  * deliberately absent: keeping the list short is what keeps the verdict `inert`
  * for the overwhelming majority of repositories, and a mechanism that prompts
  * about ordinary repositories teaches the answer "approve" and protects nobody.
@@ -43,11 +42,7 @@ export const WORKSPACE_RISK_FIELDS = [
   "mcpServers",
   "enabledPlugins",
   "marketplaces",
-  "memory.provider",
-  "plans.provider",
-  "tasks.provider",
   "providers.subscription",
-  "runtime",
 ] as const;
 
 /** One entry of {@link WORKSPACE_RISK_FIELDS}. */
@@ -100,24 +95,8 @@ function declaresSomething(value: unknown): boolean {
  *   to surface `withheld` to the human, never to the model.
  */
 export function stripWorkspaceRiskFields(settings: SettingsData): StrippedWorkspaceSettings {
-  const executableProvider = (field: "memory" | "plans"): boolean => {
-    const block = settings[field];
-    if (typeof block !== "object" || block === null) return false;
-    const provider = (block as { provider?: { kind?: unknown } }).provider;
-    return provider?.kind === "executable" || provider?.kind === "plugin";
-  };
   const withheld = WORKSPACE_RISK_FIELDS.filter((field) => {
     if (field === "providers.subscription") return subscriptionProviders(settings).length > 0;
-    if (field === "memory.provider") return executableProvider("memory");
-    if (field === "plans.provider") return executableProvider("plans");
-    if (field === "tasks.provider") {
-      const block = settings.tasks;
-      return (
-        typeof block === "object" &&
-        block !== null &&
-        typeof (block as { provider?: unknown }).provider === "object"
-      );
-    }
     return declaresSomething(settings[field]);
   });
   if (withheld.length === 0) return { settings, withheld: [] };
@@ -129,21 +108,7 @@ export function stripWorkspaceRiskFields(settings: SettingsData): StrippedWorksp
       else delete kept.providers;
       continue;
     }
-    if (field === "tasks.provider") {
-      delete kept.tasks;
-      continue;
-    }
-    if (field === "memory.provider" || field === "plans.provider") {
-      const blockName = field.startsWith("memory") ? "memory" : "plans";
-      const block = kept[blockName];
-      if (typeof block === "object" && block !== null) {
-        const next = { ...(block as Record<string, unknown>) };
-        delete next.provider;
-        kept[blockName] = next;
-      }
-    } else {
-      delete kept[field];
-    }
+    delete kept[field];
   }
   return { settings: kept, withheld };
 }
@@ -167,7 +132,7 @@ function nonSubscriptionProviders(settings: SettingsData): SettingsData["provide
 /**
  * Permanently remove host-only declarations and subscription overrides from a workspace.
  * Approval can authorize model selection, but never creates or redirects global credentials or
- * selects an execution backend.
+ * selects host credentials.
  */
 export function stripWorkspaceSubscriptionProviders(
   settings: SettingsData,
@@ -183,20 +148,15 @@ export function stripWorkspaceSubscriptionProviders(
     : undefined;
   const removedProviders =
     providers !== undefined && providers.length !== settings.providers?.length;
-  const removedRuntime = settings.runtime !== undefined;
-  if (!removedProviders && !removedRuntime) return { settings, withheld: [] };
+  if (!removedProviders) return { settings, withheld: [] };
   const kept = { ...settings };
-  if (removedRuntime) delete kept.runtime;
   if (removedProviders) {
     if (providers.length > 0) kept.providers = providers;
     else delete kept.providers;
   }
   return {
     settings: kept,
-    withheld: [
-      ...(removedProviders ? (["providers.subscription"] as const) : []),
-      ...(removedRuntime ? (["runtime"] as const) : []),
-    ],
+    withheld: [...(removedProviders ? (["providers.subscription"] as const) : [])],
   };
 }
 
@@ -264,33 +224,13 @@ function workspaceExecutableSurface(
 ): WorkspaceExecutableSurface | undefined {
   const risky: Record<string, unknown> = {};
   for (const field of WORKSPACE_RISK_FIELDS) {
-    if (field === "runtime") continue;
     if (field === "providers.subscription") {
       const providers = subscriptionProviders(settings ?? {});
       if (providers.length > 0) risky[field] = providers;
       continue;
     }
-    if (field === "tasks.provider") {
-      const block = settings?.tasks;
-      const provider =
-        typeof block === "object" && block !== null
-          ? (block as { provider?: unknown }).provider
-          : undefined;
-      if (typeof provider === "object" && provider !== null) risky[field] = provider;
-      continue;
-    }
-    if (field === "memory.provider" || field === "plans.provider") {
-      const blockName = field.startsWith("memory") ? "memory" : "plans";
-      const block = settings?.[blockName];
-      const provider =
-        typeof block === "object" && block !== null
-          ? (block as { provider?: { kind?: unknown } }).provider
-          : undefined;
-      if (provider?.kind === "executable" || provider?.kind === "plugin") risky[field] = provider;
-    } else {
-      const value = settings?.[field];
-      if (declaresSomething(value)) risky[field] = value;
-    }
+    const value = settings?.[field];
+    if (declaresSomething(value)) risky[field] = value;
   }
   const hasSettings = Object.keys(risky).length > 0;
   const hasAgents = agents.length > 0;

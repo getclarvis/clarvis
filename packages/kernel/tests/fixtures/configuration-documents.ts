@@ -50,8 +50,8 @@ Coordinate work carefully, preserve unrelated changes, and report validation evi
     content: `{
   "schema_version": 1,
   "description": "Review tools and the workflow launcher",
-  "plugins": [{"scope": "global", "source": "clarvis", "name": "review-tools"}],
-  "skills": [{"scope": "user", "source": "clarvis", "name": "review-project"}]
+  "plugins": [{"scope": "global", "source": "agents", "name": "review-tools"}],
+  "skills": [{"scope": "user", "source": "agents", "name": "review-project"}]
 }`,
   },
   plugin: {
@@ -68,7 +68,7 @@ Coordinate work carefully, preserve unrelated changes, and report validation evi
     language: "json",
     content: `{
   "marketplaces": ["https://example.invalid/clarvis-marketplace.git"],
-  "enabledPlugins": [{"scope": "global", "source": "clarvis", "name": "review-tools"}]
+  "enabledPlugins": [{"scope": "global", "source": "agents", "name": "review-tools"}]
 }`,
   },
   mcp: {
@@ -107,10 +107,6 @@ Coordinate work carefully, preserve unrelated changes, and report validation evi
       "steward": {"max_net_tokens": 20000, "max_reviews_per_work_run": 8,
         "max_completion_reviews_per_attempt": 1}
     }
-  },
-  "tasks": {
-    "provider": {"kind": "mcp", "server": "tasks", "protocol": "clarvis.tasks.v2"},
-    "writes": "disabled"
   },
   "workflows": {"max_concurrency": 2, "max_total_leaders": 8, "budget_tokens": 100000},
   "agents": {"max_live_children": 8}
@@ -151,20 +147,5 @@ Use the user's invocation text as args.scope; ask for scope if it is absent.
 Call run_workflow with name review-project, args containing scope, and explain true first.
 Then call it without explain to request human preflight. Inspect workflow_status and use the
 current session_id and revision with workflow_decide at any checkpoint. Report actual outcomes.`,
-  },
-  runtime: {
-    path: "settings.json",
-    language: "json",
-    content: `{
-  "runtime": {"backend": "docker", "network": "outbound"}
-}`,
-  },
-  review: {
-    path: "settings.json",
-    language: "json",
-    content: `{
-  "guard": {"type": "shell", "mode": "auto"},
-  "effect_review": {"on_unsure": "deny"}
-}`,
   },
 } as const;

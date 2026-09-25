@@ -7,7 +7,6 @@ import type { ThemeConfig, ThemeMode, TokenName } from "../core/theme-types.ts";
 import type { ClarvisDirs } from "./agents.ts";
 import type { KeySource } from "./provider-secrets.ts";
 import type { Scope } from "../keys/commands.ts";
-import type { GuardMode } from "./guard-mode.ts";
 import {
   normalizeKeyboardConfig,
   type KeyboardConfig,
@@ -24,7 +23,6 @@ export interface CodeUiConfig extends Record<string, unknown> {
 export interface CodeConfig {
   theme?: ThemeConfig;
   agent?: { default?: string };
-  guard?: { mode?: string };
   /** Global-only automatic version-check preference; workspace values are ignored. */
   updateCheck?: { enabled?: boolean };
   keySources?: Record<string, KeySource>;
@@ -41,7 +39,6 @@ export interface CodeConfigStore {
   themeAt(scope: Scope): ThemeConfig;
   effectiveTheme: Accessor<ThemeConfig>;
   agentDefault: Accessor<string | undefined>;
-  guardModeDefault: Accessor<GuardMode | undefined>;
   /** Whether Code may check for a newer version; global-only and default-on. */
   updateCheckEnabled: Accessor<boolean>;
   asciiEnabled: Accessor<boolean>;
@@ -205,10 +202,6 @@ export function createCodeConfigStore(dirs: ClarvisDirs): CodeConfigStore {
       const g = global().agent?.default;
       const d = w ?? g;
       return typeof d === "string" && d.length > 0 ? d : undefined;
-    },
-    guardModeDefault: () => {
-      const d = workspace().guard?.mode ?? global().guard?.mode;
-      return d === "off" || d === "on" || d === "auto" ? d : undefined;
     },
     updateCheckEnabled: () => global().updateCheck?.enabled !== false,
     asciiEnabled: () => (workspace().ui?.ascii ?? global().ui?.ascii) === true,

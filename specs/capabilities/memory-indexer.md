@@ -357,17 +357,6 @@ Test: [`indexer-continuation.test.ts`](../../packages/memory/tests/unit/indexer-
 `memory.run.enqueue_failed`, and reported as `phase: "failed"` (`packages/memory/src/ingest.ts`), and the
 `onNotice` listener's own throws are swallowed (`packages/memory/src/ingest.ts`).
 
-A Container foreground run uses the same native Memory capability, queue callback and `onRunEnd`
-path when its frozen Memory projection is active. The indexer runs inside the Container and uses the
-same brokered logical model port; no host indexer or external Memory provider is constructed.
-Disabled Memory remains off without resolving a provider. Native Host/Sandbox runs retain the same
-canonical `onRunEnd` path above. Production: `createContainerNativeKernel` in
-`packages/kernel/src/hosting/container-native.ts` and `createMemoryFactory` in
-`packages/memory/src/factory.ts`. Test:
-`packages/kernel/tests/integration/container-kernel-host.test.ts` and
-`packages/memory/tests/component/factory.test.ts` (`routes every indexer pass through the host-owned
-run executor`).
-
 ### 4.2 `boundRunSnapshot` ordering
 
 `boundRunSnapshot` lives in `packages/memory/src/jobs.ts`, not in the file-backed job store.
@@ -558,12 +547,6 @@ The refusal handler matches every wire name outside
 `readToolset.names ∪ writeToolset.names ∪ {submit_result}` (`packages/memory/src/capability.ts`) and answers with an envelope failure carrying "is not available in this pass"
 (`packages/memory/src/capability.ts`). It refuses at **dispatch**, never by withholding a tool from the
 advertised array (`packages/memory/src/capability.ts`).
-
-For an external provider, writes are wrapped so the queue fence spans the remote call: the wrapper
-takes `store.exclusive`, checks `fence.before`, executes, checks `fence.after`, and returns
-`LOST_INDEX_CLAIM` as an error result if either check fails (`packages/memory/src/indexer/capability.ts`). The test
-pins the exact call order `["fence:before", "provider:write_memory", "fence:after"]`
-(`packages/memory/tests/component/indexing-pass-capability.test.ts`).
 
 ### 4.9 Pyramid closure
 
@@ -1027,15 +1010,6 @@ Production: `packages/kernel/src/runs/memory-ingest-phase.ts`, enforced at
 `packages/kernel/src/runs/managed-run.ts`.
 Test: `packages/kernel/tests/unit/memory-ingest-phase.test.ts`.
 
-**Container ingest boundary.** Container owns its Memory provider, lifecycle callback, queue and
-store in the same Kernel. Indexing uses the projected local provider and host model broker, while
-external providers and host-side indexing remain absent. Production: `createContainerNativeKernel`
-in `packages/kernel/src/hosting/container-native.ts` and `createContainerModelProvider` in
-`packages/kernel/src/runtime/model-broker-client.ts`. Test:
-`packages/kernel/tests/integration/container-kernel-host.test.ts` and
-`packages/memory/tests/component/factory.test.ts` (`routes every indexer pass through the host-owned
-run executor`).
-
 ### Broker, factory and health
 
 **MIX-28.** A `retry_wait` settlement does not unsubscribe; exactly one terminal outcome
@@ -1163,16 +1137,6 @@ Log events this subsystem emits, with level: `memory.job.blocked` (info, `packag
 | the run's trace store | `planPass` reads the subject through `indexer.deps.traceStore.getById(owner, run_id)` (`packages/memory/src/indexer/run.ts`) — no direct `@clarvis/trace` import or manifest edge | structural, via `ExecuteRunDeps` from `@clarvis/loop` |
 
 ### 7.2 Inbound
-
-| Consumer | Edge | Source |
-| --- | --- | --- |
-| `@clarvis/kernel` (`file-kernel`) | supplies the memory options `loadPolicy`/`storeFor`/`serverPort`/`pluginPort`/`executablePort` into its composition | `packages/kernel/src/file-kernel.ts` |
-| `@clarvis/kernel` (`kernel.ts`) | registers `memoryFactory.stop()` on the kernel lifecycle | `packages/kernel/src/kernel.ts` |
-| `@clarvis/kernel` (`memory-service`) | exposes `health`/`jobs`/`retryJob` over the protocol | `packages/kernel/src/memory/memory-service.ts` |
-| `@clarvis/kernel` (`native-kernel`, Container projection) | constructs the factory through `createMemoryFactory` with `llm`/`runDeps`/`passRunDeps`, keeps Memory and its indexer native inside the Container while rejecting external providers before their startup | `createNativeKernel` in `packages/kernel/src/native-kernel.ts`, `projectContainerConfiguration` in `packages/kernel/src/config/container-projection.ts` |
-| `@clarvis/kernel` (`managed-run`, `run-service`, `workflows-service`) | uses `ingestPendingAfter` / `DEFAULT_INGEST_CLOSE_GRACE_MS` to decide whether a run's stream may close | `packages/kernel/src/runs/managed-run.ts`, `packages/kernel/src/runs/run-service.ts`, `packages/kernel/src/workflows/workflows-service.ts` |
-| `@clarvis/code` | reads `memory_ingest` phases through the kernel's policy export | `packages/kernel/src/policy.ts`, adapted at `packages/code/src/adapters/event-span.ts` and consumed at `packages/code/src/run-host.ts` |
-| memory's own run capability | calls `enqueueFinishedRun`, `factory.subscribeToRun`, `factory.poke` in `onRunEnd` | `createMemoryRunCapability` in `packages/memory/src/capability.ts` |
 
 ### 7.3 What the host, not this package, must compose
 

@@ -795,7 +795,6 @@ describe("hosted registry", () => {
     const receipt = await peer.service.detach(f.handoff(view));
     expect(receipt.run.disconnect_policy).toBe("continue");
     expect(f.contexts.get("run-1")!.signal.aborted).toBe(false);
-    expect(JSON.stringify(f.commits)).not.toContain(f.scopes[0]!);
     await f.registry.close();
   });
 
@@ -860,7 +859,6 @@ describe("hosted registry", () => {
     await writing.promise;
     expect(f.commits.every((state) => state.receipts.length === 0)).toBe(true);
     const leaving = first.close();
-    expect(f.retired).toEqual(f.scopes);
     const second = f.registry.connect("operator");
     expect(await second.service.receipt("detach-1")).toBeNull();
     release.resolve();
@@ -910,11 +908,10 @@ describe("hosted registry", () => {
     await f.registry.close();
   });
 
-  it("requires explicit takeover, fences old controls and changes volatile guard scope", async () => {
+  it("requires explicit takeover, fences old controls and changes interactive scope", async () => {
     const f = fixture();
     const first = f.registry.connect("operator");
     const view = await first.service.start(input());
-    const previous = f.registry.guardAllowlistFor({ owner: "owner", executionId: "run-1" });
     const second = f.registry.connect("operator");
     await expect(
       second.service.attach({
@@ -929,10 +926,6 @@ describe("hosted registry", () => {
       control: "takeover",
     });
     expect(next.run.control).toBe("self");
-    expect(f.registry.guardAllowlistFor({ owner: "owner", executionId: "run-1" })).not.toBe(
-      previous,
-    );
-    expect(f.retired).toEqual(f.scopes);
     await expect(view.handle.cancel()).rejects.toThrow("control changed");
     const observer = f.registry.connect("observer");
     const watched = await observer.service.attach({
@@ -947,13 +940,12 @@ describe("hosted registry", () => {
     await f.registry.close();
   });
 
-  it("rejects non-detachable handoff and discards consent when its conversation closes", async () => {
+  it("rejects non-detachable handoff and closes its conversation", async () => {
     const f = fixture({ detachable: false });
     const peer = f.registry.connect("operator");
     const view = await peer.service.start(input());
     await expect(peer.service.detach(f.handoff(view))).rejects.toThrow("non-detachable");
     await peer.service.closeSession("session-1");
-    expect(f.retired).toEqual(f.scopes);
     expect(f.contexts.get("run-1")!.signal.aborted).toBe(true);
     await f.registry.close();
   });

@@ -16,6 +16,7 @@ export interface LocalHostOperatorOptions {
   inspect(): LocalHostStatus;
   canControl(peerId: string, sessionId: string): boolean;
   requestRestart(): Promise<void>;
+  requestShutdown(): Promise<void>;
   now?(): number;
   browserTimeoutMs?: number;
 }
@@ -128,6 +129,10 @@ export function createLocalHostOperator(options: LocalHostOperatorOptions) {
         async requestRestart() {
           assertPeer();
           await options.requestRestart();
+        },
+        async requestShutdown() {
+          assertPeer();
+          await options.requestShutdown();
         },
       };
     },

@@ -23,28 +23,6 @@ import { normalizeRunPagination } from "./pagination.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import type { SteerQueue } from "./steer-queue.ts";
 import type { GoalCreationExecutionPolicy, GoalExecutionPolicy } from "../goals/hosted-turn.ts";
-import { randomUUID } from "node:crypto";
-import { seedRunInstructions } from "./instruction-snapshot.ts";
-import type {
-  OperatorAuthoritySeed,
-  OperatorAuthorityBinding,
-  OperatorAuthorityState,
-} from "@clarvis/capability";
-
-/** Match the durable controller identity without carrying an earlier outcome binding. */
-function sameAuthorityController(
-  owner: string,
-  binding: OperatorAuthorityBinding | undefined,
-  prior: OperatorAuthorityState | undefined,
-): boolean {
-  return (
-    binding !== undefined &&
-    prior !== undefined &&
-    prior.binding.owner_key_name === owner &&
-    prior.binding.session_id === binding.session_id &&
-    prior.binding.controller_epoch === binding.controller_epoch
-  );
-}
 
 /**
  * Builds the engine run request body from protocol start params (after `execution_id` is assigned).
@@ -59,7 +37,7 @@ export type PreparedRunExecution =
       goal?: GoalExecutionPolicy;
       goalCreation?: GoalCreationExecutionPolicy;
     }
-  | { kind: "workflow"; start(seed?: OperatorAuthoritySeed, signal?: AbortSignal): RunHandle };
+  | { kind: "workflow"; start(): RunHandle };
 
 /** Run service with a host-only prepared launch sharing ordinary execution-id reservations. */
 export interface KernelRunService extends RunService {
@@ -77,15 +55,6 @@ export type RunExecutor = (args: RunExecutorArgs) => Promise<ExecuteRunOutcome>;
 
 /** Configuration for {@link createRunService}. */
 export interface RunServiceConfig {
-  /** Live host admission; public session ids alone are never binding evidence. */
-  operatorAuthorityFor?: (run: { owner: string; executionId: string }) =>
-    | {
-        binding: OperatorAuthorityBinding;
-        signal: AbortSignal;
-        /** False for a host-generated continuation body; its prior authority may still be restored. */
-        captureInput?: boolean;
-      }
-    | undefined;
   /** Engine dependencies passed to `executeRun`; its `traceStore` also backs
    * this service's list/get/delete. */
   deps: ExecuteRunDeps;
@@ -100,11 +69,7 @@ export interface RunServiceConfig {
   isManagerRun?: (params: StartRunParams) => boolean;
   /** Runs a manager turn as a workflow, returning the same {@link RunHandle}. Called
    * by `start` only when {@link RunServiceConfig.isManagerRun} returns true. */
-  runManagerWorkflow?: (
-    params: StartRunParams & { execution_id: string },
-    seed?: OperatorAuthoritySeed,
-    signal?: AbortSignal,
-  ) => RunHandle;
+  runManagerWorkflow?: (params: StartRunParams & { execution_id: string }) => RunHandle;
   /** How long the event stream lingers, after each `memory_ingest` notice, for
    * the next one to arrive before giving up. Test override; defaults to
    * {@link DEFAULT_INGEST_CLOSE_GRACE_MS}. */
@@ -169,69 +134,14 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
     executionId: string,
     prepared?: PreparedRunExecution,
   ): RunHandle {
-    const authorityAdmission = cfg.operatorAuthorityFor?.({ owner, executionId });
-    const admittedBinding = authorityAdmission?.binding;
-    const previousAuthority =
-      params.continue_from === undefined
-        ? undefined
-        : store.getById(owner, params.continue_from)?.operator_authority_state;
-    const sameController = sameAuthorityController(owner, admittedBinding, previousAuthority);
-    const continuedOutcome =
-      sameController && previousAuthority?.status === "active"
-        ? previousAuthority.binding.outcome_id
-        : undefined;
-    const admittedMessages =
-      prepared?.kind === "ordinary" && prepared.goal !== undefined
-        ? prepared.goal.authorityMessages
-        : params.messages;
-    const currentEvidence = (authorityAdmission?.captureInput === false ? [] : admittedMessages)
-      .filter((message) => message.role === "user")
-      .map((message) => ({
-        id: randomUUID(),
-        source: params.continue_from === undefined ? ("start" as const) : ("continue" as const),
-        text:
-          typeof message.content === "string"
-            ? message.content
-            : message.content
-                .filter((part) => part.type === "text")
-                .map((part) => part.text)
-                .join("\n"),
-        execution_id: executionId,
-      }));
-    const settledEvidence =
-      currentEvidence.length > 0 && sameController && previousAuthority?.status === "settled"
-        ? previousAuthority.evidence
-        : [];
-    const operatorAuthoritySeed: OperatorAuthoritySeed | undefined =
-      cfg.operatorAuthorityFor !== undefined && authorityAdmission === undefined
-        ? undefined
-        : {
-            binding: {
-              ...(admittedBinding ?? {
-                owner_key_name: owner,
-                session_id: executionId,
-                controller_epoch: randomUUID(),
-              }),
-              outcome_id: continuedOutcome ?? randomUUID(),
-            },
-            evidence: [...settledEvidence, ...currentEvidence],
-            ...(prepared?.kind === "ordinary" && prepared.goal !== undefined
-              ? { review_context: prepared.goal.reviewContext }
-              : {}),
-          };
     const elicitation = elicitWindowFor(params);
-    if (prepared?.kind === "workflow")
-      return prepared.start(operatorAuthoritySeed, authorityAdmission?.signal);
+    if (prepared?.kind === "workflow") return prepared.start();
     if (
       prepared === undefined &&
       cfg.runManagerWorkflow !== undefined &&
       cfg.isManagerRun?.(params) === true
     ) {
-      return cfg.runManagerWorkflow(
-        { ...params, execution_id: executionId },
-        operatorAuthoritySeed,
-        authorityAdmission?.signal,
-      );
+      return cfg.runManagerWorkflow({ ...params, execution_id: executionId });
     }
     return createManagedRun({
       executionId,
@@ -248,7 +158,6 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
           cfg.executeRun ??
           (async (args: ExecuteRunArgs) => (await import("@clarvis/loop")).executeRun(args));
         const args: Omit<RunExecutorArgs, "rawBody"> = {
-          operatorAuthoritySeed,
           owner,
           deps:
             boundPolicy === undefined
@@ -271,16 +180,11 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
           compaction: context.compaction,
           toolInterrupts: context.toolInterrupts,
           externalSignal: context.signal,
-          operatorAuthoritySignal: authorityAdmission?.signal,
           elicit: context.elicit,
         };
         const rawBody =
           prepared?.kind === "ordinary" ? prepared.rawBody : assembleRunRequest(request);
-        const outcome = await executeRun({
-          ...args,
-          operatorAuthoritySeed: seedRunInstructions(operatorAuthoritySeed, rawBody),
-          rawBody,
-        });
+        const outcome = await executeRun({ ...args, rawBody });
         return engineResultToProto(outcome.executionId, outcome.response);
       },
     });

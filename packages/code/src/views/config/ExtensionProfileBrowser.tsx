@@ -623,9 +623,6 @@ export function ExtensionProfileBrowser(
               <For each={plugin.mcp_servers}>
                 {(server) => <text fg={tokens.muted}>{`  MCP ${server}`}</text>}
               </For>
-              <For each={plugin.capability_executables}>
-                {(name) => <text fg={tokens.warn}>{`  service ${name}`}</text>}
-              </For>
               <Show when={plugin.hooks.total > 0}>
                 <text fg={tokens.muted}>{`  hooks ${plugin.hooks.total} declared`}</text>
               </Show>

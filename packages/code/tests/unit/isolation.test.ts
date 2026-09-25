@@ -23,44 +23,22 @@ function adapter(initial: SettingsFile = {}): {
 }
 
 describe("applyIsolation", () => {
-  it("exposes Host, Sandbox, Docker and Podman as one choice list", () => {
-    expect(ISOLATION_CHOICES.map((choice) => choice.value)).toEqual([
-      "host",
-      "sandbox",
-      "docker",
-      "podman",
-    ]);
-    expect(isolationPlacementLines("podman").join(" ")).toContain("fails closed");
+  it("exposes Host and Sandbox as the isolation choices", () => {
+    expect(ISOLATION_CHOICES.map((choice) => choice.value)).toEqual(["host", "sandbox"]);
+    expect(isolationPlacementLines("sandbox").join(" ")).toContain("workspace");
   });
 
-  it("persists each container engine as a simple global runtime selection", async () => {
-    for (const backend of ["docker", "podman"] as const) {
-      const { settings, writes } = adapter({
-        sandbox: { type: "native", enabled: true },
-      });
-      expect(await applyIsolation(backend, settings)).toBe(backend);
-      expect(writes).toEqual([
-        {
-          scope: "global",
-          patch: {
-            runtime: { backend },
-          },
-        },
-      ]);
-    }
-  });
-
-  it("writes native runtime for Host and Sandbox", async () => {
+  it("writes the native sandbox policy for Host and Sandbox", async () => {
     const { settings, writes } = adapter();
     expect(await applyIsolation("sandbox", settings)).toBe("sandbox");
     expect(writes[0]).toMatchObject({
       scope: "global",
-      patch: { runtime: { backend: "native" }, sandbox: { enabled: true } },
+      patch: { sandbox: { enabled: true } },
     });
     expect(await applyIsolation("host", settings)).toBe("host");
     expect(writes[1]).toMatchObject({
       scope: "global",
-      patch: { runtime: { backend: "native" }, sandbox: { enabled: false } },
+      patch: { sandbox: { enabled: false } },
     });
   });
 });

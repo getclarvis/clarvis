@@ -96,26 +96,9 @@ plan gates and a final schema;
 the complete preceding history remains a prefix and the catalog/key stay equal. Controlled responses
 prove serialization, not remote cache hits or automatic host continuation.
 
-The legacy Goal formulation service uses one byte-identical base prompt for auto and guided modes. Both precedence
-rules are fixed policy; mode, seed, trajectory, digest, truncation and workspace availability remain
-in the final volatile message. The call-local Auto reviewer uses Judge's fixed policy, fixed Goal
-and Plan slots, persistent global/workspace instructions in its fixed configuration, chronological
-per-entry operator evidence and a volatile authority/case tail. Empty
-semantic slots preserve their positions; new operator input extends the prefix; a changed Plan
-invalidates from its existing slot. The reviewer excludes the work run's operational Goal reminder,
-Plan CAS header and transcript, and does not duplicate evidence or semantic context inside its
-authority tail. Its breakpoint and full-key invalidation are specified by [Judge](../capabilities/judge.md).
-Judge correction retries append private tool results and subsequent assistant messages through the
-ordinary Loop. They never replace the fixed policy, configuration, evidence prefix or earlier history.
-Production: `createJudgeRunCapability` and `executeJudge` in `packages/judge/src`.
-Test: `ordinary Loop corrects %s with append-only feedback and bounded attempts` in
-`packages/judge/tests/integration/executor.test.ts`. This proves prefix preservation, not remote KV hits.
-The effect reviewer uses the same framing and authoritative compile transition. Plan
-lifecycle/progress fields never enter either review context. Production: `goalAgentPrompt`,
-`planReviewContext`, `createCommandReview` and `judgeCacheBreakpoints`. Test:
-`keeps one byte-identical semantic prefix while mode and trajectory remain volatile`, Judge executor
-framing tests and the real-engine host case in
-[judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts).
+The legacy Goal formulation service uses one byte-identical base prompt for auto and guided modes.
+Both precedence rules are fixed policy; mode, seed, trajectory, digest, truncation and workspace
+availability remain in the final volatile message.
 
 Goal Steward uses a fixed policy, tool-free catalog and one output schema for definition and
 completion review. Repository instructions and the selected main-agent prompt are
@@ -138,16 +121,6 @@ and the no-repository-instructions continuation case compare actual SDK messages
 cache keys. This proves prefix serialization,
 not a remote provider cache hit.
 
-Judge's canonical configuration likewise retains identical bytes when instruction object-key order
-or private execution identity changes. Changed commands and authority revisions stay in its tail;
-changed instructions invalidate from the existing configuration slot. Tests compare complete
-engine-bound messages, tool catalogs, cache breakpoints and stable `parent_judge` affinity across
-independent command/effect executions in
-[executor.test.ts](../../packages/judge/tests/integration/executor.test.ts). Steward tests compare
-actual SDK messages, catalog and conversation affinity across in-run reviews and checkpointed work
-runs while confirming repository instructions stay absent. These are composition guarantees, not measured remote
-KV-cache hit rates; TTL, provider retention and deliberately changed input still affect reuse.
-
 Goal snapshot refreshes during tool handling defer reminder publication until dispatch has appended
 all tool results. A pause received during inference must not insert a user reminder inside the
 assistant-call/tool-result exchange. The complete exchange persists unchanged into resume; cached
@@ -166,7 +139,7 @@ single assigned agent ID supplies the instance. Continuations inherit both unles
 branching into another agent instance. Each spawned child uses its existing persisted delegation ID.
 Workflow leaders share the manager's session and use the scheduler's reserved child execution ID
 as their agent instance. The manager and same-profile workflow leaders must have distinct keys;
-Host/Sandbox assembly and the native Container Kernel retain this identity in the persisted request.
+Host/Sandbox assembly retains this identity in the persisted request.
 
 The typed `composePromptCacheKey(PromptCacheIdentity)` is the only composer. Raw components accept
 the existing ASCII execution-ID alphabet: letters, digits, `.`, `_`, `:`, `-`. Embedded underscores
@@ -186,24 +159,6 @@ backend warmup, not a later warmup exclusion. Production: `composePromptCacheKey
 caller cannot restore the old shared key through `LLMCallParams.promptCacheKey`. TTL remains a
 separate setting, defaulting to `1h` when the run can wait for human interaction and `5m` otherwise.
 
-Guard compiler/reviewer inference is another auxiliary instance in the same persisted run session.
-Every such call supplies the stable instance `judge` to the decorated provider, producing the
-canonical `<session>_judge` key through `composePromptCacheKey` and inheriting the run's TTL. The
-call-local reviewer marks stable guidance when present; otherwise it and effect review request an
-empty message-breakpoint list so Anthropic and explicitly cached OpenAI-compatible adapters can mark
-the stable system policy without marking variable operator evidence, effect facts or command data.
-Native OpenAI, ChatGPT and xAI consume the same composed key through their existing provider-specific
-affinity fields. Google retains its existing adapter behavior because it exposes no Clarvis cache
-protocol.
-
-Kernel reviewer accounting observes those calls out-of-band: recording
-`guard_reviewer_model_call` does not change `LLMCallParams`, provider messages, tools, breakpoints,
-session/agent identity, prompt-cache key or persisted `final_context`. Production:
-`callReviewerWithTrace` in [reviewer-trace.ts](../../packages/kernel/src/guard/reviewer-trace.ts).
-Test: "keeps contributed trace accounting out of provider messages and final_context" in
-[execute-run.test.ts](../../packages/loop/tests/component/execute-run.test.ts) compares the exact
-captured messages and final context with and without the trace-only activation.
-
 Memory queue claims persist a dedicated agent ID and reserve each execution ID before inference.
 Recovery preserves the agent ID and continues the previous indexing execution when its context is
 available. The durable predecessor reservation list also crosses a claim that died before
@@ -220,29 +175,21 @@ have different jobs and are not interchangeable.
 [hosted session preparation](../../packages/kernel/src/hosting/sessions.ts),
 [`assembleLeader`](../../packages/kernel/src/workflows/workflows-service.ts),
 [`runSubagent`](../../packages/loop/src/runtime/subagents/run-subagent.ts) and
-[memory queue claims](../../packages/memory/src/file-store/jobs.ts), plus
-`executeJudge` in
-[executor.ts](../../packages/judge/src/executor.ts).
+[memory queue claims](../../packages/memory/src/file-store/jobs.ts).
+
 Test: [`prompt-cache-identity.test.ts`](../../packages/capability/tests/unit/prompt-cache-identity.test.ts),
 [`prompt-cache-provider.test.ts`](../../packages/llm/tests/unit/prompt-cache-provider.test.ts),
-[`openai-compatible-run.test.ts`](../../packages/loop/tests/integration/openai-compatible-run.test.ts)
-the kernel composition test,
-[judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts), and
-[effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts),
-while [observability.test.ts](../../packages/llm/tests/unit/observability.test.ts) pins the empty
+[`openai-compatible-run.test.ts`](../../packages/loop/tests/integration/openai-compatible-run.test.ts).
+[observability.test.ts](../../packages/llm/tests/unit/observability.test.ts) pins the empty
 breakpoint list to a system-only marker on Anthropic and explicitly cached OpenAI-compatible models.
 Workflow manager/leader separation, SDK-serialized keys and
 continuation from persisted requests are
 covered by `separates workflow leader cache identities` in
 [`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts).
 Native Goal continuation keeps this same session/instance affinity; its binding never substitutes
-the new execution ID or goal ID for the agent identity. Container runs the same Goal domain inside
-its Kernel and reaches the host model broker through the logical model port, so no Goal bridge or
-alternate cache identity exists. Production:
-[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts) and
-[model-broker-client.ts](../../packages/kernel/src/runtime/model-broker-client.ts). Test:
-[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts)
-and [container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
+the new execution ID or goal ID for the agent identity. Production:
+[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts). Test:
+[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts).
 
 ## Provider wire and replay
 
@@ -291,9 +238,8 @@ requested/resolved model, requested/effective effort where available, SDK/config
 endpoint without sensitive query data, effective key and affinity hashes, serialized surface/item
 hashes, first divergence, timings, tool-call identities and usage presence. Reports contain no
 credentials, raw prompts or encrypted reasoning. Unknown consumption remains explicit.
-Completed-call snapshots from a failed Container Kernel generation remain in the trial and global
-consumption ledger, deduplicated by physical attempt. A process failure cannot erase already
-observed usage.
+Completed-call snapshots remain in the trial and global consumption ledger, deduplicated by
+physical attempt. A process failure cannot erase already observed usage.
 Serialized model and reasoning effort are recorded separately from requested settings and any
 provider-reported effective values. Item metadata records existing IDs, phase, call correlation,
 summary-part counts and encrypted-content presence without recording the encrypted content.

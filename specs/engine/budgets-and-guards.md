@@ -235,17 +235,15 @@ subsystem's constructors read.
 | `addUsage(acc, usage)` | function | folds one call's `LLMUsage` into a `TokenAccumulator` in place | `packages/loop/src/runtime/usage.ts` |
 | `accumulateSubagentUsage(byModel, modelRef, delta)` | function | adds one finished sub-agent's totals into the per-model `SubagentAggregate` map, bumping `instances` by exactly 1 per call | `packages/loop/src/runtime/usage.ts` |
 | `perAgentFromAggregate(model, agg)` | function | projects a `SubagentAggregate` into a `type: "subagent"` `PerAgentUsage` row | `packages/loop/src/runtime/usage.ts` |
-| `LeadSubagentUsageInput` | interface | `{leadModel, primarySubagentModel, leadUsage, leadIterations, subagentsByModel, elapsedMs, warnings?, vision?}` | `packages/loop/src/runtime/usage.ts` |
-| `VisionUsage` | interface | `{model, tokens: TokenAccumulator}` — the vision pre-pass's spend | `packages/loop/src/runtime/usage.ts` |
-| `perAgentFromVision(vision)` | function | projects a `VisionUsage` into a `type: "vision"` `PerAgentUsage` row | `packages/loop/src/runtime/usage.ts` |
-| `finalizeLeadSubagentUsage(input)` | function | assembles a lead run's full `Usage`: one `lead` row, one `subagent` row per model (or a zeroed placeholder when none ran), plus an optional `vision` row | `packages/loop/src/runtime/usage.ts` |
+| `LeadSubagentUsageInput` | interface | `{leadModel, primarySubagentModel, leadUsage, leadIterations, subagentsByModel, elapsedMs, warnings?}` | `packages/loop/src/runtime/usage.ts` |
+| `finalizeLeadSubagentUsage(input)` | function | assembles a lead run's full `Usage`: one `lead` row, one `subagent` row per model (or a zeroed placeholder when none ran), with no auxiliary usage row | `packages/loop/src/runtime/usage.ts` |
 | `finalizeUsage(raw, model, elapsedMs)` | function | assembles a non-lead (single-agent) run's `Usage`: one `subagent` row for the entry model | `packages/loop/src/runtime/usage.ts` |
 
 ### 2.11 `packages/loop/src/runtime/usage-accounting.ts`
 
 | Export | Kind | Signature / shape | File |
 | --- | --- | --- | --- |
-| `UsageAccounting` | interface | `{entryUsage, counter, subagentAggByModel, warnings, vision: {current?}, finalize()}` — the run's whole mutable usage-tracking surface | `packages/loop/src/runtime/usage-accounting.ts` |
+| `UsageAccounting` | interface | `{entryUsage, counter, subagentAggByModel, warnings, finalize()}` — the run's whole mutable usage-tracking surface | `packages/loop/src/runtime/usage-accounting.ts` |
 | `createUsageAccounting(a)` | factory | `(a: {shape, deps, entryMax, startedAt}) => UsageAccounting` | `packages/loop/src/runtime/usage-accounting.ts` |
 
 ## 3. Data and formats
@@ -284,7 +282,7 @@ and classified by the same set.
 
 ### 3.4 `Usage` / `PerAgentUsage` (produced by `usage.ts` / `usage-accounting.ts`)
 
-`Usage.by_agent` is an array of rows tagged `type: "lead" | "subagent" | "vision"`
+`Usage.by_agent` is an array of rows tagged `type: "lead" | "subagent"`
 (`packages/loop/src/runtime/usage.ts`). A lead row example (`packages/loop/tests/unit/usage.test.ts`):
 
 ```json
@@ -301,9 +299,8 @@ followed by one `subagent` row per distinct model that ran, sorted by model name
 (`packages/loop/src/runtime/usage.ts`, test: `packages/loop/tests/unit/usage.test.ts`). `iterations_used` is the lead's own iterations plus
 every sub-agent's (`packages/loop/src/runtime/usage.ts`, test: `packages/loop/tests/unit/usage.test.ts`).
 
-`UsageAccounting.warnings` is a mutable array and `UsageAccounting.vision.current` a mutable single
-slot — both are appended/set **after** construction (by the loop and delegation machinery, per the
-interface's own `@remarks`) and `finalize()` reads their *live* state each time it is called, so
+`UsageAccounting.warnings` is a mutable array, appended after construction by the loop and delegation
+machinery. `finalize()` reads its live state each time it is called, so
 calling `finalize()` more than once reflects whatever was appended in between
 (`packages/loop/src/runtime/usage-accounting.ts`). This is directly pinned by
 `packages/loop/tests/unit/usage-accounting.test.ts`, which appends the string
@@ -315,16 +312,6 @@ A lead run's usage additionally carries up to two **static** warnings, attached 
 profile has tools or an active built-in) and `subagent_ask_user_ignored` (a spawnable profile grants
 `ask_user`, which sub-agents cannot use). Production: `packages/loop/src/runtime/usage-accounting.ts`. Test:
 `packages/loop/tests/unit/usage.test.ts` pins `subagent_has_no_tools`'s presence in the finalized `Usage`.
-
-A `type: "vision"` row (`perAgentFromVision`, `packages/loop/src/runtime/usage.ts`) reports what a vision pre-pass spent.
-It is kept in `UsageAccounting.vision.current`, a mutable slot **deliberately separate** from
-`subagentAggByModel`: folding it into the sub-agent aggregate previously reported a spawned sub-agent
-that never existed and inflated the lead's `subagents_spawned` (`packages/loop/src/runtime/usage-accounting.ts`). The
-vision row therefore contributes no iteration to `iterations_used` and no instance to
-`subagents_spawned`. Test: `packages/loop/tests/integration/subagent-only-prepass-usage.test.ts` — a comment in the test calls
-this out directly as "the defect this pins" — asserts the pre-pass row's `type` is `"vision"` (not
-`"subagent"`), that `iterations_used` is `1` (the entry agent's own iteration, not the pre-pass), and
-that the sole `subagent` row present is the entry agent, not the pre-pass.
 
 ## 4. Behavior
 

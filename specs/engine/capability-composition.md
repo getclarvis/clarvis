@@ -139,7 +139,7 @@ execution and admits only exact catalog pairs, with no native transport fallback
 [`buildExecuteRunDeps`](../../packages/loop/src/runtime/build-run-deps.ts).
 Test: [`model-execution-injection.test.ts`](../../packages/loop/tests/integration/model-execution-injection.test.ts).
 
-Catalog metadata reaches entry and delegated targets, [vision](vision-routing.md), and live/stored
+Catalog metadata reaches entry and delegated targets and live/stored
 [compaction](context-compaction.md), preserving context/output limits and provider-kind behavior
 without a synthetic `ResolvedProviderConfig`. Production:
 [`resolveSubagentProfiles`](../../packages/loop/src/runtime/subagents/subagent-profiles.ts),
@@ -213,9 +213,8 @@ event is `"loaded"|"load_failed"|"disabled"`: turning a built-in off produces it
 logged outcome, not simply the absence of a log line.
 
 Five call sites, all in this one file — a scan of `packages/loop/src` turns up no other dynamic
-`import()` call, only three TSDoc `{@link import(...)}` references
-(`packages/loop/src/runtime/context/tool-spill.ts`, `packages/loop/src/runtime/tools/wire-names.ts`,
-`packages/loop/src/runtime/vision-prepass.ts`). Four of the five name a `@clarvis/*` package; the
+`import()` call, only two TSDoc `{@link import(...)}` references
+(`packages/loop/src/runtime/context/tool-spill.ts` and `packages/loop/src/runtime/tools/wire-names.ts`). Four of the five name a `@clarvis/*` package; the
 fifth is a local module:
 
 | Call | File | Guard |
@@ -474,13 +473,12 @@ Production: `buildEntrySeed` in
    setup-timeout budget. An optional block may be omitted; a required declared seed must produce
    non-empty content before inference (`packages/loop/src/runtime/orchestrator.ts`). Entry attachment
    is similarly mandatory for a required activation, while child scopes retain their ordinary filter.
-   Entry `forAgent` validation, actual `attach`, and contribution folding precede the optional vision
-   prepass, so unavailable required controls cannot spend an auxiliary provider call before refusal.
+   Entry `forAgent` validation, actual `attach`, and contribution folding precede inference, so
+   unavailable required controls cannot admit a provider call before refusal.
    Attach runs once against the actual entry context; its exceptions use the bounded entry error.
    Production: `runAgent` in [run-agent.ts](../../packages/loop/src/runtime/loop/run-agent.ts), `runEntryAgent` in
    [orchestrator.ts](../../packages/loop/src/runtime/orchestrator.ts), and `capabilitiesForScope` in
-   [compose.ts](../../packages/capability/src/compose.ts). Test: mandatory setup, saturation and
-   auxiliary-vision refusal in
+   [compose.ts](../../packages/capability/src/compose.ts). Test: mandatory setup and saturation in
    [host-capability.test.ts](../../packages/loop/tests/integration/host-capability.test.ts).
 7. `seedMarkers = allCapabilities.map(c => c.seedMarker).filter(...)` — over the **registered**
    set, not the activated one (`packages/loop/src/runtime/orchestrator.ts`) — matching the contract's own rationale
@@ -730,7 +728,7 @@ their own:**
 | A capability's `forRun` throws `ExtensionCallUnavailableError` (host gate saturated) | Optional activation resolves `null`; required activation fails before inference | `packages/loop/src/runtime/orchestrator.ts` |
 | A capability's `seedBlock()` exceeds its setup budget | Optional block omitted; required declared seed fails setup | `packages/loop/src/runtime/orchestrator.ts` |
 | A capability's extension-admitted `seedBlock` hits a saturated host gate | Wrapper returns `undefined` and logs saturation; the orchestrator refuses a required declared seed | `packages/loop/src/runtime/extension-admission.ts`; test `packages/loop/tests/unit/extension-admission.test.ts` |
-| A required entry capability declines `forAgent` or throws in `attach` | `required_capability_unavailable` before entry or auxiliary vision inference; children retain ordinary filtering | `capabilitiesForScope` in `packages/capability/src/compose.ts`; required-entry scope/attach vision cases in `packages/loop/tests/integration/host-capability.test.ts` |
+| A required entry capability declines `forAgent` or throws in `attach` | `required_capability_unavailable` before entry inference; children retain ordinary filtering | `capabilitiesForScope` in `packages/capability/src/compose.ts`; required-entry scope/attach vision cases in `packages/loop/tests/integration/host-capability.test.ts` |
 | A capability's extension-admitted lifecycle method, `onRunEnd`, or `finalizeRun` hits a saturated host gate | The `ExtensionCallUnavailableError` propagates to the owning caller; this wrapper supplies no fallback | `packages/loop/src/runtime/extension-admission.ts` |
 | A capability's `finalizeRun` throws or exceeds `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` | Its state slot is omitted from the run record; the run itself is unaffected | `packages/loop/src/runtime/execute-run.ts` |
 | Two contributions declare the same tool wire name | `foldContributions` **throws** synchronously | `packages/capability/src/compose.ts` |

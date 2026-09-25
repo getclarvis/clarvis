@@ -210,6 +210,16 @@ describe("AiSdkAdapter — representative generation composition", () => {
 
     await adapter().call(
       params({
+        capabilities: undefined,
+        messages: [
+          { role: "user", content: [{ type: "image", image: "data:image/png;base64,AAAA" }] },
+        ],
+      }),
+    );
+    expect(JSON.stringify(lastArgs().messages)).toContain("active model lacks vision");
+
+    await adapter().call(
+      params({
         capabilities: new Set(["vision"]),
         messages: [
           { role: "user", content: [{ type: "image", image: "data:image/png;base64,AAAA" }] },

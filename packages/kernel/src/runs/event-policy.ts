@@ -87,7 +87,6 @@ export const RUN_EVENT_POLICY = {
   compaction_started: live("engine", ["engine_trace"]),
   compaction: persisted(),
   compaction_skipped: persisted(),
-  vision_analysis: persisted(),
   elicitation_requested: persisted(),
   elicitation_resolved: persisted(),
   steering_applied: persisted(),

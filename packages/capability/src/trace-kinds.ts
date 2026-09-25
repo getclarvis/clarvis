@@ -30,7 +30,6 @@ export const BUILTIN_TRACE_KINDS = [
   "compaction_started",
   "compaction",
   "compaction_skipped",
-  "vision_analysis",
   "cancellation",
   "user_question",
   "user_steering",
@@ -325,29 +324,6 @@ export interface CancellationDetail {
   agent: AgentRole;
   subagent_instance_id?: string;
   reason?: string;
-}
-
-/**
- * The vision pre-pass: a single completion that read the turn's images on behalf
- * of an entry agent whose own model cannot see them.
- *
- * @remarks Deliberately not a `delegation_*` entry. No sub-agent exists — there
- *   is no agent id to poll, steer or stop, and no tool surface — so reporting it
- *   as a delegation would put a child in the trace that a client could never
- *   address. `model` is the model that did the reading, which is by construction
- *   not the agent's own.
- *
- *   `status` is `completed` only when the pass produced text the entry agent
- *   actually received; a blank reading is `failed`, because the run proceeds on
- *   placeholders either way and the distinction that matters to a reader is
- *   whether the images were described, not whether the HTTP call returned.
- */
-export interface VisionAnalysisDetail {
-  model: string;
-  image_count: number;
-  status: "completed" | "failed";
-  /** The reading handed to the entry agent, or the failure's message. */
-  result: string;
 }
 
 /**
@@ -740,7 +716,6 @@ export interface TraceDetailMap {
   compaction_started: CompactionStartedDetail;
   compaction: CompactionDetail;
   compaction_skipped: CompactionSkippedDetail;
-  vision_analysis: VisionAnalysisDetail;
   cancellation: CancellationDetail;
   user_question: UserQuestionDetail;
   user_steering: UserSteeringDetail;

@@ -401,13 +401,6 @@ export const settingsSchema = z
         "Model used by the run's Lead, overriding its agent profile. A spawned Sub-agent keeps " +
           "its own model when it declares one.",
       ),
-    default_vision_model: modelField
-      .optional()
-      .describe(
-        "Model used to read a turn's images when the agent's own model cannot see them. The " +
-          "pass is a single completion with no tools; its reading is spliced into the agent's " +
-          "context. Omit to leave images as numbered placeholders for a blind model.",
-      ),
     default_reasoning_effort: z
       .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
       .optional()

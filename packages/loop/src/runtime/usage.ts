@@ -80,26 +80,6 @@ export interface LeadSubagentUsageInput {
   subagentsByModel: Map<string, SubagentAggregate>;
   elapsedMs: number;
   warnings?: string[];
-  /** The vision pre-pass's model and tokens, when one ran. */
-  vision?: VisionUsage;
-}
-
-/** What the vision pre-pass spent, and on which model. */
-export interface VisionUsage {
-  model: string;
-  tokens: TokenAccumulator;
-}
-
-/** Projects a {@link VisionUsage} into its `type: "vision"` row. */
-export function perAgentFromVision(vision: VisionUsage): PerAgentUsage {
-  return {
-    type: "vision",
-    model: vision.model,
-    input_tokens: vision.tokens.input,
-    output_tokens: vision.tokens.output,
-    cached_tokens: vision.tokens.cached,
-    cache_write_tokens: vision.tokens.cache_write,
-  };
 }
 
 /**
@@ -153,7 +133,7 @@ export function finalizeLeadSubagentUsage(input: LeadSubagentUsageInput): Usage 
   const usage: Usage = {
     iterations_used: input.leadIterations + totalIterations,
     elapsed_ms: Math.round(input.elapsedMs),
-    by_agent: [lead, ...subagents, ...(input.vision ? [perAgentFromVision(input.vision)] : [])],
+    by_agent: [lead, ...subagents],
   };
   if (input.warnings && input.warnings.length > 0) {
     usage.warnings = input.warnings;

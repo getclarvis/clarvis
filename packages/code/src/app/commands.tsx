@@ -623,24 +623,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   });
 
   commands.registerView({
-    name: "controls.open",
-    title: "Run controls",
-    desc: "Memory and plan retention for the next run",
-    surface: "internal",
-    group: "navigate",
-    parent: "settings",
-    view: lazyView(async () => {
-      const { RunControlsPanel } = await import("../views/cold-surfaces.ts");
-      return (host) =>
-        RunControlsPanel(host, {
-          settings: deps.settings,
-          memory: deps.memoryMode,
-          notify,
-        });
-    }),
-  });
-
-  commands.registerView({
     name: "model.open",
     title: "Default model",
     desc: "Choose the default from every configured provider",
@@ -1113,7 +1095,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerView({
     name: "settings.open",
     title: "Settings",
-    desc: "Providers, agents, defaults, memory, theme, updates and run controls",
+    desc: "Providers, agents, defaults, memory, theme and updates",
     slash: "/settings",
     surface: "slash",
     group: "navigate",
@@ -1233,7 +1215,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   });
 
   const FIX_VIEW_CMD: Record<
-    "providers" | "model" | "defaults" | "theme" | "agents" | "memory" | "controls",
+    "providers" | "model" | "defaults" | "theme" | "agents" | "memory",
     string
   > = {
     providers: "providers.open",
@@ -1242,10 +1224,9 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     theme: "theme.open",
     agents: "agents.open",
     memory: "memory.config",
-    controls: "controls.open",
   };
   function openFixView(
-    view: "providers" | "model" | "defaults" | "theme" | "agents" | "memory" | "controls",
+    view: "providers" | "model" | "defaults" | "theme" | "agents" | "memory",
     scope: Scope,
     returnCmd = "doctor.open",
   ): void {
@@ -1724,7 +1705,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
         seedPlansBlock(deps.settings).then((outcome) => {
           if (!outcome.seeded) return;
           notify(
-            `planning: on ${glyph("separator")} keep plans (${outcome.scope} settings) ${glyph("emDash")} use /plan for review and Run controls for retention`,
+            `planning: on ${glyph("separator")} keep plans (${outcome.scope} settings) ${glyph("emDash")} use /plan for review`,
           );
           recheck();
         }),

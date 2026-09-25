@@ -329,17 +329,6 @@ function mapEntryRaw(
         event.user_contribution_count = d.user_contribution_count;
       return event;
     }
-    case "vision_analysis": {
-      const d = capDetail(entry.kind, entry.detail);
-      return {
-        type: "vision_analysis",
-        model: d.model,
-        image_count: d.image_count,
-        status: d.status,
-        result: d.result,
-        occurred_at: abs(entry.at),
-      };
-    }
     case "compaction_skipped": {
       const d = capDetail(entry.kind, entry.detail);
       return {

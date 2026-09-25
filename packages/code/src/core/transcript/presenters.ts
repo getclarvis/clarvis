@@ -116,23 +116,6 @@ export function compactionSkippedNoticeText(reason: string): string {
   return `requested compaction skipped ${glyph("emDash")} ${reason.replace(/_/g, " ")}`;
 }
 
-/**
- * Vision pre-pass annotation line.
- *
- * @remarks Names the model rather than an agent: the pass is one completion, so
- * there is no child in the run tree for a reader to go looking for.
- */
-export function visionNoticeText(
-  model: string,
-  imageCount: number,
-  status: "completed" | "failed",
-): string {
-  const plural = imageCount === 1 ? "image" : "images";
-  return status === "completed"
-    ? `read ${String(imageCount)} ${plural} ${glyph("separator")} ${model}`
-    : `image reading failed ${glyph("separator")} ${model}`;
-}
-
 /** Soft-limit annotation line. */
 export function softLimitNoticeText(
   dimension: string,

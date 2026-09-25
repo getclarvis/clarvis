@@ -891,30 +891,6 @@ describe("trace-mapper — carries or omits optional detail fields per event kin
     });
   });
 
-  it("vision_analysis: persists the reading, the model and the image count", () => {
-    const entries: TraceEntry[] = [
-      {
-        at: 3,
-        kind: "vision_analysis",
-        detail: {
-          model: "anthropic/vision",
-          image_count: 2,
-          status: "completed",
-          result: "two cats",
-        },
-      },
-    ];
-
-    expect(byType(mapTrace(entries, ANCHOR).events, "vision_analysis")[0]).toEqual({
-      type: "vision_analysis",
-      model: "anthropic/vision",
-      image_count: 2,
-      status: "completed",
-      result: "two cats",
-      occurred_at: ANCHOR + 3,
-    });
-  });
-
   it("compaction: omits all optionals for a lead truncation", () => {
     const entries: TraceEntry[] = [
       { at: 6, kind: "compaction", detail: { agent: "lead", operation: "truncation" } },

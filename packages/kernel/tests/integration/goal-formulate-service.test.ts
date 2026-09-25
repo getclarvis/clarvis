@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { readOnlyTools } from "@clarvis/tools";
 import type { GoalChange } from "@clarvis/protocol";
 import { createGoalFileHostFixture } from "../helpers/goal-file-host.ts";
 
@@ -251,7 +250,7 @@ describe("Goal formulation through the real file host", () => {
         ?.find((event) => event.type === "run_started"),
     ).toMatchObject({ type: "run_started", max_tokens: 123_456 });
     const announced = fixture.requests[0]!.tools!.map((tool) => tool.function.name).sort();
-    expect(announced).toEqual([...readOnlyTools.map((tool) => tool.name), "submit_result"].sort());
+    expect(announced).toEqual(["list_dir", "read_file", "submit_result"]);
     const replay = await fixture.client.goals.formulate({
       session_id: "conversation",
       expected_revision: 0,

@@ -33,7 +33,6 @@ and user-authored extensions are not a fixed inventory.
 Prompt assembly also includes the five [built-in agents](../../packages/kernel/src/config/builtin-agents/index.ts),
 the three [built-in workflows](../../packages/workflows/src/builtin-workflows/index.ts),
 [compaction](../../packages/loop/src/runtime/context/compaction-prompt.ts),
-[vision prepass](../../packages/loop/src/runtime/vision-prepass.ts),
 [plan state and gate messages](../../packages/plan/src/capability/messages.ts),
 [memory seed](../../packages/memory/src/seed.ts), [memory policy](../../packages/memory/src/capability.ts)
 and [indexer instructions](../../packages/memory/src/indexer/request.ts),
@@ -134,9 +133,7 @@ handoff cases in [builtin-agents.test.ts](../../packages/kernel/tests/component/
    Production: `DEFAULT_COMPACTION_PROMPT` and `COMPACTION_UPDATE_INSTRUCTION` in
    `packages/loop/src/runtime/context/compaction-prompt.ts`. Test:
    `packages/loop/tests/unit/compaction-guidance.test.ts` (combined 1500-character ceiling) and
-   `llm-compaction.test.ts` (merged-anchor request). The vision prepass likewise treats images as
-   data and marks unreadable details; its request remains tool-less, pinned in
-   `packages/loop/tests/integration/image-vision-routing.test.ts`.
+   `llm-compaction.test.ts` (merged-anchor request).
 7. **Truncation is not silent instruction completeness.** MCP sections preserve attribution and
    append a truncation marker inside the existing 32,768-code-point ceiling. Production:
    `renderMcpInstructions` in `packages/loop/src/runtime/mcp-instructions.ts`. Test:

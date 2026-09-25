@@ -408,16 +408,6 @@ const RUN_EVENT_SCHEMAS = {
       user_contribution_count: finite.optional(),
     })
     .strict(),
-  vision_analysis: z
-    .object({
-      type: z.literal("vision_analysis"),
-      at: finite,
-      model: text,
-      image_count: finite,
-      status: z.enum(["completed", "failed"]),
-      result: text,
-    })
-    .strict(),
   compaction_skipped: z
     .object({
       type: z.literal("compaction_skipped"),

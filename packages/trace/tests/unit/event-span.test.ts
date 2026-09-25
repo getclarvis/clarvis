@@ -169,16 +169,6 @@ describe("deriveEventSpan", () => {
     ).toEqual({ span_id: "subagent:w1", phase: "point", kind: "subagent" });
     expect(
       deriveEventSpan({
-        type: "vision_analysis",
-        model: "anthropic/vision",
-        image_count: 1,
-        status: "completed",
-        result: "a cat",
-        occurred_at: 0,
-      }),
-    ).toEqual({ span_id: "run", phase: "point", kind: "event" });
-    expect(
-      deriveEventSpan({
         type: "cancellation",
         agent: "subagent",
         subagent_instance_id: "w1",

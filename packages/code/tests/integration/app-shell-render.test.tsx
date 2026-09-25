@@ -1104,7 +1104,7 @@ test("Tab opens a child and rapid Escape steps back through its hub to the trans
   expect(providers).toContain("Credentials");
 
   press(t, "escape");
-  const settings = await captureUntil(t, "Run controls");
+  const settings = await captureUntil(t, "Updates");
   expect(settings).toContain("Settings");
 
   press(t, "escape");
@@ -1154,7 +1154,7 @@ test("a saved manual destination binding is active on first boot", async () => {
   const t = await mountApp(defaultProps({ code }));
   await captureUntil(t, "New task");
   press(t, "f8");
-  const settings = await captureUntil(t, "Run controls");
+  const settings = await captureUntil(t, "Updates");
   expect(settings).toContain("Settings");
   t.renderer.destroy();
 });
@@ -1190,7 +1190,7 @@ test("Keyboard settings persists a profile and a normalized diagnostic for this 
   press(t, "escape");
   await t.renderOnce();
   t.mockInput.pressEnter();
-  await captureUntil(t, "Run controls");
+  await captureUntil(t, "Updates");
   for (let index = 0; index < settingsHubIndex("keyboard"); index++) press(t, "down");
   await t.renderOnce();
   press(t, "return");
@@ -1697,7 +1697,7 @@ test("a workspace switch keeps the active view's Escape route live", async () =>
   await t.mockInput.typeText("/settings");
   await t.renderOnce();
   press(t, "return");
-  await captureUntil(t, "Run controls");
+  await captureUntil(t, "Updates");
 
   setSwitching(true);
   let out = await captureUntil(t, "switching workspace");
@@ -3768,7 +3768,7 @@ test("a pending elicitation does not discard an in-progress config edit", async 
   press(t, "escape");
   await t.renderOnce();
   t.mockInput.pressEnter();
-  await captureUntil(t, "Run controls");
+  await captureUntil(t, "Updates");
   for (let i = 0; i < settingsHubIndex("theme"); i++) press(t, "down");
   await t.renderOnce();
   press(t, "return");
@@ -3797,7 +3797,7 @@ test("a pending elicitation does not discard an in-progress config edit", async 
   press(t, "escape");
   await captureUntil(t, "Discard unsaved changes?");
   press(t, "y");
-  await captureUntil(t, "Run controls");
+  await captureUntil(t, "Updates");
   press(t, "escape");
   const answered = await captureUntil(t, "Which files should I update?");
   expect(answered).not.toContain("contrast checker");

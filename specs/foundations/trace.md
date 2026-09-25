@@ -96,10 +96,6 @@ after activation, flushing the already-projected activation entries through a la
 `packages/loop/tests/component/execute-run.test.ts`, "publishes the run trace during forRun and
 journals later contributed records".
 
-`VisionAnalysisDetail` (`packages/capability/src/trace-kinds.ts`) is reachable through `./trace`'s `export *`
-(`packages/capability/src/trace.ts`) but is not in `index.ts`'s explicit type-export list, which
-never names it.
-
 Two detail shapes are published but **not** in `BUILTIN_TRACE_KINDS`: `PlanReviewDetail`
 (`packages/capability/src/trace-kinds.ts`) and `TaskNudgeDetail` (`packages/capability/src/trace-kinds.ts`). The doc comment
 states the reason directly: "`plan_review` is a kind the planning capability records, not one the
@@ -140,7 +136,6 @@ once, in one place.
 | `compaction_started` | `CompactionStartedDetail` | `packages/capability/src/trace-kinds.ts` |
 | `compaction` | `CompactionDetail` | `packages/capability/src/trace-kinds.ts` |
 | `compaction_skipped` | `CompactionSkippedDetail` | `packages/capability/src/trace-kinds.ts` |
-| `vision_analysis` | `VisionAnalysisDetail` | `packages/capability/src/trace-kinds.ts` |
 | `cancellation` | `CancellationDetail` | `packages/capability/src/trace-kinds.ts` |
 | `user_question` | `UserQuestionDetail` | `packages/capability/src/trace-kinds.ts` |
 | `user_steering` | `UserSteeringDetail` | `packages/capability/src/trace-kinds.ts` |
@@ -252,7 +247,7 @@ builtin kind above, so the two vocabularies differ only by those unmapped kinds:
 `lead_iteration`, `delegation_created`, `subagent_iteration`, `tool_call`, `tool_call_started`,
 `tool_output_delta`, `tool_control_released`, `tool_input_delta`, `subagent_iteration_started`, `lead_iteration_started`,
 `delegation_completed`, `delegation_failed`, `budget_check`, `compaction_started`, `compaction`, `compaction_skipped`,
-`vision_analysis`, `cancellation`, `user_question`, `user_steering`, `soft_limit_check`,
+`cancellation`, `user_question`, `user_steering`, `soft_limit_check`,
 `run_started`, `run_ended`, `delegation_started`, `model_call_error`, `guard_escalation`,
 `convergence_warning`, `model_call_retry`, `elicitation_requested`, `model_reasoning`,
 `model_stream_delta`, `mcp_degraded`.
@@ -953,7 +948,7 @@ event gets `{ span_id: "run", phase: "point", kind: "event" }`. Then:
 | `model_reasoning` / `model_stream_delta` / `model_call_error` / `model_call_retry` | iteration span | point | `iteration` |
 | `user_question` / `user_steering` | iteration span from `iteration_ref` | point | `iteration` |
 | `compaction` / `compaction_skipped` / `cancellation` / `convergence_warning` / `guard_escalation` | `subagent:<id>` when scoped, else `"run"` | point | `subagent` / `event` |
-| `elicitation_requested` / `budget_check` / `soft_limit_check` / `mcp_degraded` / `vision_analysis` | `"run"` | point | `event` |
+| `elicitation_requested` / `budget_check` / `soft_limit_check` / `mcp_degraded` | `"run"` | point | `event` |
 
 `iterationSpanId` yields `<instanceId>:<n>` only when `agent === "subagent"` **and** the
 instance id is defined; everything else, including a subagent with no instance id, is `lead:<n>`. Pinned at `packages/trace/tests/unit/event-span.test.ts`, and the whole table.

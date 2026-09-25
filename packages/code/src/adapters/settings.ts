@@ -368,8 +368,7 @@ export async function createSettingsAdapter(
    *
    * @remarks A concurrent-modification conflict is the case that matters: the
    *   snapshot this adapter holds is, by definition, the stale one the conflict
-   *   was reported against. Leaving it in place made Run controls and Memory
-   *   settings keep reporting the refused value as `Effective` /
+   *   was reported against. Leaving it in place made Memory settings keep reporting the refused value as `Effective` /
    *   `Source: workspace` indefinitely, with no route to refresh. Failing to
    *   re-read is not allowed to mask the original failure, so the refusal is
    *   still thrown to the caller.

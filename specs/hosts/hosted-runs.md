@@ -517,7 +517,7 @@ Effective execution binding is supplied by `InProcessKernel.prepareRun` and `cre
 specified below. `serveLocalFileKernel` supplies the process lease and private connection authority
 described under independent process composition.
 
-Run controls capture the current controller epoch. Observers cannot mutate; taking an occupied
+Hosted run control operations capture the current controller epoch. Observers cannot mutate; taking an occupied
 controller requires explicit takeover. Authority is checked again after asynchronous observation
 preparation. A connection can hold four observations, counting preparations already in flight.
 Closing control cancels unpromoted work and revokes its interactive consent. Promoted work continues.

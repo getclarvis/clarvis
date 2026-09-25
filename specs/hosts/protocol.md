@@ -557,7 +557,6 @@ distinguishing fields:
 | `soft_limit_check` | `dimension: "tokens" \| "iterations"`, `used`, `limit`, `outcome` | `RunEvent` |
 | `compaction_started` | `mode: "scheduled" \| "forced"` | `RunEvent` |
 | `compaction` | `operation`, `fallback_reason?`, `freed_chars?`, `contribution_count?`, `requested?: true`, `user_contribution_count?` | `RunEvent` |
-| `vision_analysis` | `model`, `image_count`, `status: "completed" \| "failed"`, `result` | `RunEvent` |
 | `compaction_skipped` | `reason` (5-member union) | `RunEvent` |
 | `elicitation_requested` | `agent?`, `subagent_id?`, `question`, `options?` | `RunEvent` |
 | `elicitation_resolved` | `agent?`, `subagent_id?`, `question`, `outcome`, `answer?`, `options?` | `RunEvent` |
@@ -681,16 +680,13 @@ on the same part rather than separate variants.
 | --- | --- | --- |
 | `RunStatus` | `"running" \| "completed" \| "failed" \| "cancelled"` | `packages/protocol/src/runs.ts` |
 | `AgentRole` | `"lead" \| "subagent"` | `packages/protocol/src/runs.ts` |
-| `PerAgentUsage` | `{ role: AgentRole \| "vision"; model; input_tokens; output_tokens; cached_tokens; cache_write_tokens; iterations? }` | `packages/protocol/src/runs.ts` |
+| `PerAgentUsage` | `{ role: AgentRole; model; input_tokens; output_tokens; cached_tokens; cache_write_tokens; iterations? }` | `packages/protocol/src/runs.ts` |
 | `RunUsage` | `{ iterations; elapsed_ms; input_tokens?; output_tokens?; cached_tokens?; by_agent?: PerAgentUsage[]; warnings? }` | `packages/protocol/src/runs.ts` |
 | `RunResult` | `{ execution_id; status: RunStatus; result?; ended_reason?; usage?: RunUsage; error?: { code; message; kind?; retry_after_ms? } }` plus final disposition or `disposition: "checkpoint"` with separate `checkpoint: { summary, next_step }` | `packages/protocol/src/runs.ts` |
 | `RunSummary` | `{ execution_id; owner?; status; created_at; ended_at? }` | `packages/protocol/src/runs.ts` |
 | `RunDetail` (extends `RunSummary`) | `+ messages: Message[]; events: RunEvent[]; result?: RunResult; continue_from?; plan_ref?: PlanRef; extension_profile?: ExtensionProfileRunRef; recovery?: RunRecovery` | `packages/protocol/src/runs.ts` |
 
-`PerAgentUsage.role`'s `"vision"` member is not an agent: its own doc comment calls it "the engine's
-image-reading pre-pass, one completion on a model no agent runs on" (`packages/protocol/src/runs.ts`) — the same
-escape-hatch shape as `capability_event`'s open string (§5 invariant 4), applied to cost attribution
-rather than to the event union. `RunUsage.by_agent` is optional because "a live run's final result may
+`RunUsage.by_agent` is optional because "a live run's final result may
 report per-agent detail... instead" of the flat totals (`packages/protocol/src/runs.ts`), which are themselves
 "present on a stored run (`get`)" but optional on a live result.
 
@@ -750,9 +746,7 @@ could not be parsed" (`packages/protocol/src/config.ts`).
 `SettingsView.known_grants?: readonly string[]` (`packages/protocol/src/config.ts`) lists "every capability grant an
 agent profile in this workspace may name" and is populated only by the kernel, "an optional feature
 package contributes its own grant, so the set is a property of what this kernel actually composed"
-(`packages/protocol/src/config.ts`). Its own remark names the defect that motivated it: a stale `image` grant "left
-by the vision-routing refactor... was reported 'runnable' by Doctor and the agent editor while every
-run in the workspace was rejected before its first model call" (`packages/protocol/src/config.ts`). Absent when the
+(`packages/protocol/src/config.ts`). Absent when the
 kernel did not report it, in which case "a client must then skip the check rather than assume a
 vocabulary" (`packages/protocol/src/config.ts`).
 

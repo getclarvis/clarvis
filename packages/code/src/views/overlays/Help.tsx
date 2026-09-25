@@ -118,7 +118,7 @@ export function Help(props: {
    * @remarks Projected from `registered` visibility, not `active`. `/help` is
    *   itself a view overlay, so it pushes the `view` overlay context and every
    *   binding gated on `overlay==none` — expand/collapse blocks, the block
-   *   cursor, transcript scrolling, the memory toggle, Run controls, sub-agent
+   *   cursor, transcript scrolling, the memory toggle, sub-agent
    *   focus — is inactive for exactly as long as the reader is looking at it.
    *   "Available here" therefore cannot list them, and with the static key
    *   tables gone the one screen whose purpose is the key reference documented

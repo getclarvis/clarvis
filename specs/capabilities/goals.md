@@ -86,7 +86,8 @@ delegation surface: `shared_prompt: ""`, no MCP servers, no spawnable agents and
 `read_workspace` grant. Its output schema contributes the
 generic `submit_result`. The Kernel replaces, rather than extends, dependencies with the canonical
 Tools capability, whose effective surface derives from `@clarvis/tools` `readOnlyTools`. Therefore
-file, image and directory reads may be available;
+file and directory reads may be available; image reads additionally require the selected model's
+declared `vision` capability (see [vision routing](../engine/vision-routing.md)).
 write/edit/shell/session control and every Goal, Plan, Memory, Workflow, skill, hook, MCP or delegation
 surface is absent and undispatchable. If Tools is disabled or the host ceiling forbids reads, the run
 continues from seed/trajectory with `workspace_read_available: false` and receives no substitute.

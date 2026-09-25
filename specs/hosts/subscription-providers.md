@@ -230,10 +230,10 @@ authenticated `/v1/models` catalog and `/v1/responses` inference paths. It does 
 Clarvis product version for that header. Responses-backed Grok catalog rows always carry
 `tool_calling`. `vision` follows published image-input modalities (`input_modalities`, `modalities`,
 or `modalities.input`) or an explicit `supports_vision` flag. When those facts are absent, the
-adapter still tags `vision`: a closed `tool_calling`-only capability set would make the engine strip
-composer images as if the model were blind. Test: “maps only visible API-supported Codex models and
+adapter omits `vision`, so the engine strips image bytes for models without an explicit vision
+declaration. Test: “maps only visible API-supported Codex models and
 their reasoning facts”, “retains only Responses-backed Grok subscription models”, “projects Grok
-vision from catalog modalities and keeps it when the catalog is silent”, and “pins Grok
+vision only from catalog declarations”, and “pins Grok
 subscription transport and derives its required headers after assembly” in
 `packages/kernel/tests/unit/subscription-adapters.test.ts` pin both independent version identities,
 the `gpt-5.6-sol`-shaped catalog entry, Grok catalog/inference header parity, and Grok vision

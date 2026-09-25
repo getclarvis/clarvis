@@ -624,34 +624,6 @@ test("manual compaction annotations distinguish applied and skipped requests", (
   expect(annotations[2]!.text).toContain("summarization failed");
 });
 
-test("a vision pre-pass annotates the transcript, and a failed one reads as failed", () => {
-  const nodes = replay([
-    ev({ type: "run_started", at: 0 }),
-    ev({
-      type: "vision_analysis",
-      at: 1,
-      model: "anthropic/vision",
-      image_count: 2,
-      status: "completed",
-      result: "two cats",
-    }),
-    ev({
-      type: "vision_analysis",
-      at: 2,
-      model: "anthropic/vision",
-      image_count: 1,
-      status: "failed",
-      result: "boom",
-    }),
-  ]);
-  const annotations = nodes.filter((node) => node.kind === "annotation");
-  expect(annotations[0]).toMatchObject({ tone: "info", status: "ok" });
-  expect(annotations[0]!.text).toContain("read 2 images");
-  expect(annotations[0]!.text).toContain("anthropic/vision");
-  expect(annotations[1]).toMatchObject({ tone: "warn", status: "error" });
-  expect(annotations[1]!.text).toContain("image reading failed");
-});
-
 test("two same-type annotations in the same millisecond both land (sequence keys, no drop)", () => {
   const soft = (used: number): RunEvent =>
     ev({

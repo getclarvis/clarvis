@@ -120,7 +120,6 @@ export function deriveRunEventSpan(ev: RunEvent): RunEventSpan {
         ? { span_id: `subagent:${ev.subagent_id}`, phase: "point", kind: "subagent" }
         : { span_id: "run", phase: "point", kind: "event" };
 
-    case "vision_analysis":
     case "elicitation_requested":
     case "elicitation_resolved":
     case "soft_limit_check":

@@ -211,7 +211,7 @@ describe("llm.cache.request and llm.request.tuning", () => {
       model: "acme/model",
       reasoning_path: "openai",
       max_output_tokens: 2048,
-      images_stripped: false,
+      images_stripped: true,
     });
   });
 

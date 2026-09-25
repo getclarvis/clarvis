@@ -938,8 +938,6 @@ tool-result `truncation` as `tool output shortened`, distinct from context `comp
 `freedChars` to the nearest thousand for its `−Nk chars` segment and appends a user-contribution
 count to context compaction when `opts.userContributionCount` is set. `compactionSkippedNoticeText(reason)` reports an
 explicit compaction request that could not be applied, replacing the reason's underscores with spaces.
-`visionNoticeText(model, imageCount, status)` names the model rather than an agent
-because the vision pre-pass is one completion with no run-tree child a reader could go looking for.
 `softLimitNoticeText` is a plain `used/limit → outcome` line. For the `iterations` dimension its TUI
 label is `iteration limit`; other dimensions retain their `soft <dimension>` label.
 

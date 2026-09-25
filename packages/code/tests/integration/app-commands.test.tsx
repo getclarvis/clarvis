@@ -942,20 +942,6 @@ test("every top-level command carries a canonical /token (no bare-title rows)", 
   dispose();
 });
 
-test("non-aliased hub children and folded toggles stay off the slash surface", () => {
-  const { commands, dispose } = harness();
-  const byName = new Map(commands.entries().map((e) => [e.name, e]));
-  for (const name of ["controls.open"]) {
-    expect([name, byName.get(name)?.slashes]).toEqual([name, []]);
-    expect([name, byName.get(name)?.parent]).toEqual([
-      name,
-      name.includes("plugin") || name === "mcp.browse" ? "extensions" : "settings",
-    ]);
-  }
-  expect(byName.get("memory.cycle")).toBeUndefined();
-  dispose();
-});
-
 test("Extensions children remain internal and only the wizard owns a slash route", () => {
   const { commands, dispose } = harness();
   const byName = new Map(commands.entries().map((entry) => [entry.name, entry]));
@@ -977,9 +963,9 @@ test("Extensions children remain internal and only the wizard owns a slash route
 
 test("/settings <child> deep-links to that editor with a mounted parent route", () => {
   const { commands, calls, opened, dispose } = harness();
-  expect(commands.route("settings.open", "controls")).toBe(true);
+  expect(commands.route("settings.open", "memory")).toBe(true);
   expect(opened.at(-1)?.parent).toBe("settings.open");
-  expect(calls).toContain("view:controls.open");
+  expect(calls).toContain("view:memory.config");
   expect(commands.route("settings.open", "updates")).toBe(true);
   expect(calls).toContain("view:updates.open");
   expect(commands.route("settings.open", "")).toBe(false);
@@ -999,7 +985,6 @@ const DISPOSITION: [string, { surface: string; group: string; parent?: string }]
   ["plan.open", { surface: "internal", group: "navigate" }],
   ["app.quit", { surface: "slash", group: "actions" }],
   ["catalog.refresh", { surface: "slash", group: "actions", parent: "inspect" }],
-  ["controls.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["providers.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["agents.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["defaults.open", { surface: "internal", group: "navigate", parent: "settings" }],
@@ -1276,7 +1261,6 @@ const FACTORY_SMOKES = [
   "agents.open",
   "sessions.open",
   "workflows.open",
-  "controls.open",
   "defaults.open",
   "model.open",
   "effort.open",

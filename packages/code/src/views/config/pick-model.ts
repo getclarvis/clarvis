@@ -24,8 +24,6 @@ export function modelPickerSpec(opts: {
   close: () => void;
   /** Called when no provider is configured and there is no manual editor to fall back to. */
   onNoProviders?: () => void;
-  /** Restrict the offered models to those declaring this capability. */
-  requireCapability?: string;
   /** Overrides the picker's title; use when the field is not "the model". */
   title?: string;
 }): CatalogPickerSpec | null {
@@ -41,12 +39,7 @@ export function modelPickerSpec(opts: {
   }
   return {
     title: opts.title ?? "Pick a model " + glyph("emDash") + " configured providers",
-    rows: () =>
-      configuredModelRows(
-        opts.settings.effective().providers ?? [],
-        opts.current,
-        opts.requireCapability,
-      ),
+    rows: () => configuredModelRows(opts.settings.effective().providers ?? [], opts.current),
     ...(manual
       ? {
           onManual: () => {

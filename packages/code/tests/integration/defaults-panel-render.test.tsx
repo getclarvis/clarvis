@@ -130,7 +130,7 @@ function mount(
   return { host, controls, deps, press, notes, tones, writes };
 }
 
-test("the three vision/budget defaults render with the derived footer", async () => {
+test("the two budget defaults render with the derived footer", async () => {
   const { host, deps } = mount();
   const t = await openRender((() => DefaultsPanel(host, deps)) as never, {
     width: 100,
@@ -160,8 +160,8 @@ test("the selected field row carries the full-width selection band, like the pic
   const band = selectionBg().toLowerCase();
   const cellOf = (needle: string) =>
     spans.lines.flatMap((l) => l.spans).find((s) => s.text.includes(needle))!;
-  expect(rgbToHex(cellOf("Vision model").bg).toLowerCase()).toBe(band);
-  expect(rgbToHex(cellOf("When budget is exceeded").bg).toLowerCase()).not.toBe(band);
+  expect(rgbToHex(cellOf("When budget is exceeded").bg).toLowerCase()).toBe(band);
+  expect(rgbToHex(cellOf("Total token limit").bg).toLowerCase()).not.toBe(band);
   t.renderer.destroy();
 });
 
@@ -176,9 +176,9 @@ test("details open separately without expanding the defaults overview", async ()
   press("i");
   await t.renderOnce();
   const detail = t.captureCharFrame();
-  expect(detail).toContain("Defaults ▸ Vision model");
+  expect(detail).toContain("Defaults ▸ When budget is exceeded");
   expect(detail).toContain("Configured: inherit");
-  expect(detail).toContain("Effective: not configured");
+  expect(detail).toContain("Effective: escalate");
   expect(detail).toContain("[e] edit");
   t.renderer.destroy();
 });
@@ -190,7 +190,6 @@ test("the token-limit detail explains the host ceiling", async () => {
     height: 20,
   });
   await t.renderOnce();
-  press("down");
   press("down");
   press("i");
   await t.renderOnce();
@@ -208,7 +207,6 @@ test("editing the budget outcome stages only the selected budget field", async (
     height: 20,
   });
   await t.renderOnce();
-  press("down");
   press("return");
   await t.renderOnce();
   expect(t.captureCharFrame()).toContain("budget.on_exceed");
@@ -219,7 +217,6 @@ test("editing the budget outcome stages only the selected budget field", async (
     {
       scope: "global",
       patch: {
-        default_vision_model: undefined,
         budget: { on_exceed: "stop" },
       },
     },
@@ -235,72 +232,12 @@ test("editing the token limit opens the bounded numeric editor", async () => {
   });
   await t.renderOnce();
   press("down");
-  press("down");
   press("return");
   await t.renderOnce();
   const editor = t.captureCharFrame();
   expect(editor).toContain("total_token_limit");
   expect(editor).toContain("[↵] commit");
   press("escape");
-  t.renderer.destroy();
-});
-
-test("the vision-model picker withholds a model that declares capabilities without vision", async () => {
-  const providers: ProviderFixture[] = [
-    {
-      name: "openrouter",
-      kind: "openai-compatible",
-      models: {
-        "glm-5.2": {
-          context_window_tokens: 128000,
-          max_output_tokens: 8000,
-          capabilities: ["tool_calling"],
-        },
-        "sees-things": { context_window_tokens: 64000, capabilities: ["vision"] },
-      },
-    },
-  ];
-  const { host, deps, press } = mount({ providers });
-  const t = await openRender((() => DefaultsPanel(host, deps)) as never, {
-    width: 100,
-    height: 24,
-  });
-  await t.renderOnce();
-  press("return");
-  await t.renderOnce();
-  await t.renderOnce();
-  const frame = t.captureCharFrame();
-  expect(frame).toContain("Pick a vision model");
-  expect(frame).toContain("openrouter/sees-things");
-  expect(frame).not.toContain("openrouter/glm-5.2");
-  t.renderer.destroy();
-});
-
-test("the vision-model picker still offers a model the catalog knows nothing about", async () => {
-  const providers: ProviderFixture[] = [
-    {
-      name: "openrouter",
-      kind: "openai-compatible",
-      models: {
-        // declares capabilities, and vision is not among them -> withheld
-        "glm-5.2": { context_window_tokens: 128000, capabilities: ["tool_calling"] },
-        // a custom entry the catalog has never seen -> unknown, not unsupported
-        "home-grown": { context_window_tokens: 64000 },
-      },
-    },
-  ];
-  const { host, deps, press } = mount({ providers });
-  const t = await openRender((() => DefaultsPanel(host, deps)) as never, {
-    width: 100,
-    height: 24,
-  });
-  await t.renderOnce();
-  press("return");
-  await t.renderOnce();
-  await t.renderOnce();
-  const frame = t.captureCharFrame();
-  expect(frame).toContain("openrouter/home-grown");
-  expect(frame).not.toContain("openrouter/glm-5.2");
   t.renderer.destroy();
 });
 
@@ -316,7 +253,6 @@ test("saving writes neither default model nor default effort", async () => {
     {
       scope: "global",
       patch: {
-        default_vision_model: undefined,
         budget: undefined,
       },
     },

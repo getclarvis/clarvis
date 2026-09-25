@@ -1,16 +1,15 @@
-# Agents, workflows, sessions, memory and run-control screens
+# Agents, workflows, sessions and memory screens
 
 > Implemented at `packages/code/src/**` and `packages/code/tests/**`. Every claim below is anchored
 > to a file and line. Open questions are collected in the final section.
 
 ## 1. Purpose
 
-`@clarvis/code` renders five full-screen "domain hub" views on top of the kernel's protocol
+`@clarvis/code` renders four full-screen "domain hub" views on top of the kernel's protocol
 services. Each one owns one domain the terminal user manipulates directly: authoring Agent Profiles
 (`AgentsPanel`), inspecting a workflow's manager→leader tree and each node's result
-(`WorkflowsHub`), resuming or deleting saved sessions (`SessionsHub`), configuring the workspace
-memory block (`MemoryConfigPanel`), and setting the safety/guard/memory/plan-retention posture for
-the next run (`RunControlsPanel`). Planning review itself is toggled by `/plan`, outside this hub.
+(`WorkflowsHub`), resuming or deleting saved sessions (`SessionsHub`), and configuring the workspace
+memory block (`MemoryConfigPanel`). Planning review is toggled by `/plan`, outside this hub.
 
 The views are thin. Everything that is not painting is pushed either into a **feature controller**
 (`src/features/agents/controller.ts`) — pure orchestration with no presentation
@@ -24,7 +23,7 @@ sit beside them: `features/issues.ts` (validation issue projection), `features/d
 `core/run-status.ts` into glyph-rendered strings. The deleted compatibility re-export
 `features/notice.ts` is recorded in §8 item 8.
 
-All five views reach their data through `@clarvis/protocol` service interfaces or through
+All four views reach their data through `@clarvis/protocol` service interfaces or through
 `@clarvis/kernel`'s six sanctioned entrypoints; none of them touches the filesystem or the engine.
 `WorkflowsHub`'s own doc comment states the rule: "It reads everything through the kernel's
 workflows/runs services, never the local filesystem, so a remote kernel needs no change"
@@ -42,14 +41,13 @@ Every hub is registered as a *view* command. The name/title/surface/parent tuple
 | `agents.open` | Agents | — | `internal` | `settings` | `packages/code/src/features/agents/commands.ts` |
 | `sessions.open` | Sessions | `/sessions` | `slash` | `sessions` | `packages/code/src/app/commands.tsx` |
 | `workflows.open` | Workflows | `/workflow` | `slash` | — | `packages/code/src/app/commands.tsx` |
-| `controls.open` | Run controls | — | `internal` | `settings` | `packages/code/src/app/commands.tsx` (`controls.open`) |
 | `memory.config` | Memory settings | — | `internal` | `settings` | `packages/code/src/app/commands.tsx` (`memory.config`) |
 
-The five commands are unconditionally registered.
+The four commands are unconditionally registered.
 
 ### 2.2 View entry points
 
-All five follow the same signature shape `(host: ViewHost, deps) => JSX.Element`. `ViewHost` is
+All four follow the same signature shape `(host: ViewHost, deps) => JSX.Element`. `ViewHost` is
 declared at `packages/code/src/keys/commands.ts` and supplies `scope()`/`toggleScope()`/
 `bindScope()`, `dirty()`/`markDirty()`/`onSave()`, `level.push/pop/depth`, `confirm()`, `close()` and
 `dispatch()`.
@@ -60,7 +58,6 @@ declared at `packages/code/src/keys/commands.ts` and supplies `scope()`/`toggleS
 | `WorkflowsHub` | `WorkflowsHubDeps` = `{ list; get; getRun; delete?; now; live?; openAgentPicker?; pollMs?; refreshSlowMs? }` | `packages/code/src/views/config/WorkflowsHub.tsx` |
 | `SessionsHub` | `SessionsHubDeps` = `{ sessions; catalog?; now; statusLine; resume; resumeCatalog?; delete? }` plus `SessionCatalogItem` | `packages/code/src/views/config/SessionsHub.tsx` |
 | `MemoryConfigPanel` | `MemoryConfigDeps` = `{ settings: SettingsAdapter; memoryMode: MemoryModeStore; notify }` | `packages/code/src/views/config/MemoryConfigPanel.tsx` |
-| `RunControlsPanel` | Memory mode and completed-plan retention controls | `packages/code/src/views/config/RunControlsPanel.tsx` |
 
 `refreshSlowMs` on `WorkflowsHubDeps` is explicitly documented as an internal test seam for the
 pending-operation warning (`packages/code/src/views/config/WorkflowsHub.tsx`).
@@ -479,14 +476,6 @@ freshly retriggered call to `statusLine()` re-reads `settings.effective()` and p
 This subscribes the computation to the memory mode signal so the adjacent effective-settings
 read picks up the new value after refresh.
 
-### 4.8 Run controls
-
-Run Controls has two rows: Memory for this session and Completed plans. Memory changes the
-session `MemoryModeStore`; completed-plan retention writes the selected settings scope through
-`patchPlansSettings`, preserving other plan settings. Production: `RunControlsPanel` in
-`packages/code/src/views/config/RunControlsPanel.tsx` and `patchPlansSettings` in
-`packages/code/src/adapters/settings.ts`. Test: `packages/code/tests/integration/run-controls-render.test.tsx`.
-
 ## 5. Invariants
 
 The invariants below are derived directly from this document's own source and tests. The first two are
@@ -504,10 +493,9 @@ specific to these files.
    `agents.ts`, `memory-mode.ts`, `effort-levels.ts` all comply (see their import headers).
    Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts`.
 
-3. **`AgentsPanel.tsx` and `RunControlsPanel.tsx` contain no non-ASCII character outside comments** —
+3. **`AgentsPanel.tsx` contains no non-ASCII character outside comments** —
    every rendered glyph goes through `glyph()`.
-   Production: `packages/code/src/views/config/AgentsPanel.tsx`,
-   `packages/code/src/views/config/RunControlsPanel.tsx`.
+   Production: `packages/code/src/views/config/AgentsPanel.tsx`.
    Pinned: `packages/code/tests/architecture/ascii-source-boundary.test.ts`.
    `WorkflowsHub.tsx` is also in the swept list. `SessionsHub`,
    `MemoryConfigPanel` is **not** — see §8.
@@ -666,23 +654,6 @@ specific to these files.
     reactive.** Production: `packages/code/src/adapters/memory-mode.ts`.
     Pinned: `packages/code/tests/unit/memory-mode.test.ts`.
 
-45. **The Run-controls memory row changes only the session store, never settings.**
-    Production: `packages/code/src/views/config/RunControlsPanel.tsx` (`applyMemory`).
-    Pinned: `packages/code/tests/integration/run-controls-render.test.tsx`.
-
-48. **Run Controls contains no planning-mode selector; completed-plan retention is its only editable
-    plan row.** Planning review belongs to `/plan`. Production:
-    `packages/code/src/views/config/RunControlsPanel.tsx` (`activate`, `body`). Pinned:
-    `packages/code/tests/integration/run-controls-render.test.tsx` ("Run controls exposes retention
-    without a planning-mode control").
-
-49. **A completed-plan retention write preserves mode, pending-task nudges and provider while
-    targeting the selected scope.** Production:
-    `packages/code/src/views/config/RunControlsPanel.tsx` (`applyPlanRetention`) and
-    `packages/code/src/adapters/settings.ts` (`patchPlansSettings`). Pinned:
-    `packages/code/tests/integration/run-controls-render.test.tsx` (global/provider and workspace
-    preservation cases).
-
 51. **A settled run's outcome label is classified only from the segment before the first separator.**
     Production: `packages/code/src/features/run/status-presenter.ts`, with the in-source account of
     the defect.
@@ -710,7 +681,7 @@ specific to these files.
     Pinned: `packages/code/tests/unit/agents-events.test.ts` — the file names it an
     "exhaustiveness canary".
 
-57. **The five hubs' command metadata (name, title, surface, parent) is a pinned contract and each
+57. **The four hubs' command metadata (name, title, surface, parent) is a pinned contract and each
     has exactly one registered factory.**
     Production: the registration sites in §2.1.
     Pinned: `packages/code/tests/component/command-composition.test.ts`, asserted.
@@ -730,7 +701,6 @@ specific to these files.
 | Workflow refresh never settles | `packages/code/src/views/config/WorkflowsHub.tsx` | "Refresh is still pending; the backend may be unavailable"; still one in-flight request |
 | Workflow result cannot be stringified | `packages/code/src/views/config/WorkflowsHub.tsx` | "(unserializable result)". Pinned at `packages/code/tests/integration/workflows-hub-render.test.tsx` |
 | Leader node has no `task` (legacy record) | `packages/code/src/views/config/WorkflowsHub.tsx` | "Task unavailable for this legacy workflow"; `[t]` is unbound |
-| Any Run-controls settings write throws | `packages/code/src/views/config/RunControlsPanel.tsx` (`applyPlanRetention`) | `notify(errorText(error))`; the session store is not updated |
 | Session-memory toggle activated with no configured memory block | `packages/code/src/views/config/MemoryConfigPanel.tsx` | refuses to cycle; notifies "memory is not configured in settings — save a block first". Pinned at `packages/code/tests/integration/memory-config-render.test.tsx` |
 | Any detached async operation rejects unobserved | `packages/code/src/core/tasks.ts` | a `task.failed` diagnostic event is emitted with the operation name; nothing is thrown into the render tree |
 
@@ -759,7 +729,7 @@ Only the six kernel entrypoints appear (INV-251) — full statement owned by
 
 | Consumer | What it needs | Site |
 | --- | --- | --- |
-| `src/app/commands.tsx` | four of the five views + their deps | `packages/code/src/app/commands.tsx`; Agents is registered by `src/features/agents/commands.ts` |
+| `src/app/commands.tsx` | three of the four views + their deps | `packages/code/src/app/commands.tsx`; Agents is registered by `src/features/agents/commands.ts` |
 | `src/features/agents/commands.ts` | `AgentsPanel` | `packages/code/src/features/agents/commands.ts` |
 | `src/views/App.tsx` | `SessionCatalogItem` (type) | `packages/code/src/views/App.tsx` |
 | `src/views/App.tsx` | `runStripText` | `packages/code/src/views/App.tsx` |
@@ -782,8 +752,7 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
 ### 7.4 Explicit delegations
 
 - `DoctorView`, `KeyboardView` → their own documents.
-- `execution-safety.ts` (`deriveRunControls`, `memoryState`,
-  `planRetentionDescription`, `safetyDescription`, `memoryDescription`),
+- `execution-safety.ts` (`memoryState`, `plansState`, `planRetentionLabel`),
   `session-store.ts`, `workflow-projection.ts`, `settings.ts` →
   [hosts/code-run-host.md](code-run-host.md) / [hosts/code-settings-panels.md](code-settings-panels.md).
 - The domain semantics behind each hub — workflow
@@ -794,7 +763,7 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
 
 1. **Why `SessionsHub.tsx` and `MemoryConfigPanel.tsx` are
    outside the ASCII sweep.** `packages/code/tests/architecture/ascii-source-boundary.test.ts`
-   lists fourteen files; these views render literal non-ASCII characters — a literal
+   lists ten files; these views render literal non-ASCII characters — a literal
    `${"—"}` in `packages/code/src/views/config/SessionsHub.tsx`, em-dashes in eight `MemoryConfigPanel.tsx` status strings. Whether the sweep list is
    an intentional subset or has simply not caught up is not stated anywhere in the code.
 

@@ -103,7 +103,7 @@ exposed for tests via `packages/loop/src/testing/index.ts` (`validateBody`).
 
 `runRequestSchema` (`packages/loop/src/validation/request/request-schema.ts`) is a strict object
 with these top-level fields: `execution_id?`, `continue_from?`, `session_id?`, `agent_instance_id?`,
-`prompt_cache_ttl?`, `messages`, `servers`, `profiles`, `entry`, `providers`, `vision_model?`,
+`prompt_cache_ttl?`, `messages`, `servers`, `profiles`, `entry`, `providers`,
 `budget`, `elicit_wait_ms?`, `guard_escalation?`, `output_schema?`, plus
 `...capabilityRequestParamFields` (`packages/loop/src/validation/request/request-schema.ts`) — a
 static spread of every **built-in** capability's own request params. Product parameters are supplied by the host's `CapabilityRegistry` and read through
@@ -243,7 +243,7 @@ and `addAutomaticMcpTools`. Test: `packages/loop/tests/unit/settings-schema.test
 `providers?`, `mcpServers?` (a **record** keyed by server name — the "ecosystem-standard `mcpServers`
 shape", `packages/loop/src/settings/settings-schema.ts`, as opposed to the request's flat
 `servers[]` array where each entry carries its own `name`), `default_model?`,
-`default_vision_model?`, `default_reasoning_effort?`, `budget?` (every field optional, unlike the
+`default_reasoning_effort?`, `budget?` (every field optional, unlike the
 request's `budgetSchema` — see §4.4), `...capabilitySettingsFields` (built-in blocks:
 `hooks`, `agents`), `marketplaces?`, and `enabledPlugins?`. The fields are assembled in
 `packages/loop/src/runtime/capabilities/settings-specs.ts` from the registered capabilities.
@@ -430,8 +430,8 @@ Production: `validateBody`, `rejectProviderConfigIssues`, `requireResolvableMode
 Test: `validates every registered model reference with the host provider rules` in
 [request-schema-facade.test.ts](../../packages/loop/tests/component/request-schema-facade.test.ts).
 
-When `validateBody` receives `modelExecutionResolver`, request `providers` must be empty. Profile,
-vision and reviewer references must resolve to the exact requested pair; unknown or mismatched pairs
+When `validateBody` receives `modelExecutionResolver`, request `providers` must be empty. Profile
+and reviewer references must resolve to the exact requested pair; unknown or mismatched pairs
 fail closed, including aliases. Provider kind for reasoning-summary validation comes from catalog
 metadata. The native rules below apply when no resolver is supplied; native URL and subscription
 validation remain unchanged. Production: [`validateBody`](../../packages/loop/src/validation/request-schema.ts),
@@ -439,8 +439,8 @@ validation remain unchanged. Production: [`validateBody`](../../packages/loop/sr
 [`enforcePerProfileRules`](../../packages/loop/src/validation/request/profile-rules.ts).
 Test: [`model-execution.test.ts`](../../packages/loop/tests/unit/model-execution.test.ts).
 
-The host settings assembler's optional resolver checks the entry and delegated closure, default
-vision target and explicit reviewer before emitting an empty provider array. Without it, provider
+The host settings assembler's optional resolver checks the entry and delegated closure and explicit
+reviewer before emitting an empty provider array. Without it, provider
 declarations survive assembly. Production: [`createSettingsRunAssembler`](../../packages/kernel/src/runs/settings-assembler.ts).
 Test: [`settings-assembler-model-execution.test.ts`](../../packages/kernel/tests/component/settings-assembler-model-execution.test.ts)
 and [`settings-assembler.test.ts`](../../packages/kernel/tests/component/settings-assembler.test.ts).
@@ -475,7 +475,7 @@ capability names it. Production: `referencedProviders`. Test:
 `packages/loop/tests/unit/request-provider-validation.test.ts`.
 
 `requireResolvableModelProviders` (`packages/loop/src/validation/request/provider-rules.ts`)
-resolves every profile's `model` and, when present, `vision_model`, via `resolveProvider`
+resolves every profile's `model` via `resolveProvider`
 (`@clarvis/capability`), throwing that resolver's own `code`/`message` (typically
 `unknown_provider`) on the first miss.
 
@@ -548,7 +548,7 @@ spec.schema.optional() }` and re-`.strict()`s.
 ascending-precedence list of `SettingsScope`s (`{ origin, settings }`) key by key through a
 `STRATEGIES` table built once at module load: `CORE_STRATEGIES` for `providers` (union by name, later
 wins — `mergeProviders`), `mcpServers` (shallow record merge, later wins per key —
-`mergeRecord`), `default_model`/`default_vision_model`/`default_reasoning_effort`/`budget`
+`mergeRecord`), `default_model`/`default_reasoning_effort`/`budget`
 (last-wins), `enabledPlugins` (exact-reference concatenation with duplicate identities removed) and
 `marketplaces` (distinct-string concatenation — first-seen order, later scopes can only add); plus
 one `specStrategy` per entry of `BUILTIN_SETTINGS_SPECS`

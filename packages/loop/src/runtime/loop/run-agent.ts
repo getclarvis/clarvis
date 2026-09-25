@@ -1,4 +1,4 @@
-import type { ContextPort, Logger, SteerSource } from "@clarvis/capability";
+import type { Logger, SteerSource } from "@clarvis/capability";
 import {
   bind,
   checkpointMetadataSchema,
@@ -99,8 +99,6 @@ export interface RunAgentInput extends LoopCore {
   emptyResponseAgent: "LLM" | "Lead";
   /** Notified of the created {@link LiveContext} before the loop starts. */
   onContext?: (ctx: LiveContext) => void;
-  /** Prepare appended context after capability attachment/folding and initial budget admission, before inference. */
-  prepareContext?: (ctx: ContextPort) => Promise<void>;
   /** Mutable sink for run-level warnings, forwarded to {@link AgentBuildContext.warnings}. */
   warnings?: string[];
 }
@@ -321,7 +319,7 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
       : undefined;
   const gates = [...folded.gates, ...(hookGate ? [hookGate] : [])];
 
-  const sighted = input.target.capabilities?.has("vision") ?? true;
+  const sighted = input.target.capabilities?.has("vision") ?? false;
   const visible = (list: readonly NamespacedTool[]): NamespacedTool[] =>
     sighted ? [...list] : list.filter((t) => !VISION_AGENT_TOOL_WIRE_NAMES.includes(t.wireName));
 
@@ -357,16 +355,6 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
   };
   const initialStop = checkStartBudget();
   if (initialStop !== undefined) return initialStop;
-
-  if (input.prepareContext !== undefined) {
-    const cancelled = maybeCancelled();
-    if (cancelled !== null) return cancelled;
-    await input.prepareContext(ctx);
-    const cancelledAfterPreparation = maybeCancelled();
-    if (cancelledAfterPreparation !== null) return cancelledAfterPreparation;
-    const preparedStop = checkStartBudget();
-    if (preparedStop !== undefined) return preparedStop;
-  }
 
   const noProgressResult = (): AgentResult => {
     trace.record("terminate", {

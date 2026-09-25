@@ -448,7 +448,7 @@ The complete discriminator list: `run_started`, `run_ended`, `iteration_started`
 `delegation_completed`, `delegation_failed`, `workflow_run_started`, `workflow_title_updated`,
 `workflow_sequence_state`, `workflow_run_progress`, `workflow_run_completed`, `workflow_run_failed`, `plan_created`,
 `plan_updated`, `plan_removed`, `plan_review_requested`, `plan_review_resolved`, `soft_limit_check`,
-`compaction_started`, `compaction`, `vision_analysis`, `compaction_skipped`, `elicitation_requested`,
+`compaction_started`, `compaction`, `compaction_skipped`, `elicitation_requested`,
 `elicitation_resolved`, `steering_applied`, `memory_ingest`, `capability_event`, `events_dropped`,
 `mcp_degraded` (`RUN_EVENT_SCHEMAS`). *Which* events exist and why belongs to
 **kernel-run-service-and-events**.

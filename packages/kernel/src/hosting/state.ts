@@ -92,7 +92,7 @@ const run: z.ZodType<HostedRunRef> = z.strictObject({
           by_agent: z
             .array(
               z.strictObject({
-                role: z.enum(["lead", "subagent", "vision"]),
+                role: z.enum(["lead", "subagent"]),
                 model: text,
                 input_tokens: natural,
                 output_tokens: natural,

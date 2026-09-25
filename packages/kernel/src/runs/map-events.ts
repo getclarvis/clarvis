@@ -670,16 +670,6 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         ...sub(ev.subagent_instance_id),
         reason: ev.reason,
       };
-    case "vision_analysis":
-      return {
-        type: "vision_analysis",
-        at: ev.occurred_at,
-        model: ev.model,
-        image_count: ev.image_count,
-        status: ev.status,
-        result: ev.result,
-      };
-
     case "elicitation_requested":
       return {
         type: "elicitation_requested",

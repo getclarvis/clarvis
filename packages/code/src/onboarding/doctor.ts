@@ -45,7 +45,7 @@ export interface GateResult {
 export type FixKind =
   | {
       kind: "view";
-      view: "providers" | "model" | "defaults" | "theme" | "agents" | "memory" | "controls";
+      view: "providers" | "model" | "defaults" | "theme" | "agents" | "memory";
     }
   | { kind: "set-default" }
   | { kind: "set-key" }
@@ -445,7 +445,6 @@ export const GATES: Gate[] = [
     label: "plans",
     severity: "ui",
     optional: true,
-    fix: { kind: "view", view: "controls" },
     check: (ctx) => {
       const state = plansState(ctx.settings.effective());
       const policy = `${state.mode === "review" ? "approval required" : "on"} ${glyph("separator")} ${planRetentionLabel(state.retention)}`;
@@ -453,7 +452,7 @@ export const GATES: Gate[] = [
         return {
           status: "pass",
           detail: `${policy} (defaults)`,
-          hint: "use /plan to require review; Run controls sets retention",
+          hint: "use /plan to require review",
         };
       if (state.mode === "off") return { status: "pass", detail: "off" };
       return { status: "pass", detail: policy };

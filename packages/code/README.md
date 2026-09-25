@@ -161,7 +161,7 @@ The TUI contract is divided across the focused `code-*` specs in the
 [`hosts` map](../../specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade): bootstrap,
 performance, run hosting, transcript projection, input/overlays, domain hubs, settings panels,
 keyboard policy, theme, and onboarding. The performance contract and measurement review live
-in [`code-performance.md`](../../specs/hosts/code-performance.md). Image entry and the vision pre-pass are specified in
+in [`code-performance.md`](../../specs/hosts/code-performance.md). Image entry and routing are specified in
 [`engine/vision-routing.md`](../../specs/engine/vision-routing.md).
 Thinking text shows at most three wrapped lines, with `...` when additional content is hidden.
 Resizing updates the preview; the persisted reasoning is unchanged.
@@ -390,13 +390,13 @@ stores the token for a later run.
 After onboarding, `/model` is the only surface that changes `default_model`, and `/effort` is the
 only surface that changes its `default_reasoning_effort`. They write only their own setting in the
 selected global/workspace scope. Providers owns credentials and the available-model set, while
-Settings > Defaults owns vision and budget defaults; none can overwrite the model/effort choice.
+Settings > Defaults owns budget defaults; none can overwrite the model/effort choice.
 Those user defaults are authoritative for the run's Lead even when its selected Agent Profile
 declares another model or effort. A spawned Sub-agent keeps the model and effort explicitly
 declared by its own Agent Profile, falling back to the user defaults only when it declares none.
 Settings > Defaults shows the effective host token default when no settings layer declares one; it
 does not label the run unlimited while the kernel still applies its environment fallback.
-Defaults, Memory and Run controls use the same overview/detail interaction as Agents: the overview
+Defaults and Memory use the same overview/detail interaction as Agents: the overview
 keeps one compact row per setting, Enter edits, and `i` opens effective details.
 Settings > Memory presents its effective summary and rows as one list — the effective state, then
 `Memory`, `Extraction model` when a block exists, and `Session memory` — with no intermediate scope
@@ -578,7 +578,7 @@ tree, then closes `/diff`; its footer omits
 the global Ctrl+C cancel/quit action like the Plan and Goal detail screens.
 
 Memory's quick control is session-only.
-Application actions use Ctrl+X: M for Memory, R for Run controls,
+Application actions use Ctrl+X: M for Memory,
 P for Plan, O for Goal, W for Workflow, D for Diff, S for the activity Sidebar, K for block expansion, and E
 for the expanded editor. Ctrl+X Up/Down enter transcript-block focus; while a block is focused,
 plain Up/Down move between blocks and Tab returns to the composer. While a Ctrl+X prefix is pending,
@@ -593,7 +593,7 @@ available in Keyboard settings. All shortcut labels spell out Ctrl and Shift ins
 Memory and Agent pickers are disabled while a run is active.
 Clarvis keeps the terminal's native text path
 instead of requesting all-key escape reports, preserving dead-key and IME composition; a literal
-`ß` remains ordinary text. The three run-control pickers are loaded on first use and retained after their first
+`ß` remains ordinary text. The three quick pickers are loaded on first use and retained after their first
 mount. `Ctrl+X S` is the sole keyboard route for toggling the responsive activity Sidebar; it opens
 the first available Agents, Parallel work or Plan section when closed and closes the surface when open.
 In every width below the split it opens that surface across the whole content region instead of a narrow
@@ -672,13 +672,11 @@ approval guidance only when a decision is pending.
 
 `/plan` toggles this workspace's next-run policy between normal planning and required human review:
 `review` becomes `on`, while `on` or `off` becomes `review`. Repeated invocations serialize, so a
-second `/plan` restores normal planning even when entered while the first write is settling. Run
-controls has no planning-mode selector; its only plan row chooses whether completed plans are kept
-or deleted after a successful result. Registered Clarvis commands own their slash tokens, so an
+second `/plan` restores normal planning even when entered while the first write is settling.
+Registered Clarvis commands own their slash tokens, so an
 agent-backed skill named `plan` cannot shadow this built-in action.
-`/plans` and `/planning` are not commands. Execution memory has no global quick toggle:
-the next-run/session choice belongs to Run controls, while persistent configuration belongs to
-Settings > Memory.
+`/plans` and `/planning` are not commands. The session memory choice is available through
+Ctrl+X M; persistent configuration belongs to Settings > Memory.
 
 Keyboard policy is scoped to an opaque terminal-path identifier in the global `code.json`. Local
 Kitty sessions default to the enhanced profile; SSH, multiplexed legacy and unknown paths default to
@@ -1441,8 +1439,7 @@ the notice is never written into transcript history. A selected plugin whose cap
 files drift receives the parallel `Plugin '<name>' changed executable files` warning while its
 runtime MCP/hook projections are withheld.
 
-The workspace header reports model and memory status. Settings > Run controls presents session
-memory and completed-plan retention; the latter writes the selected settings scope.
+The workspace header reports model and memory status.
 
 Local and SSH destinations remain available through `WorkspaceClientManager`. Their settings,
 Agent, prompt and model-catalog writes stay with the selected host; `/model` attempts an idle reload

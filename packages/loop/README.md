@@ -304,7 +304,7 @@ its own package.
 
 A capability may also contribute an `OutputTokenBudget`. The loop wraps the selected provider once
 at the model-call boundary, so the same reservation covers ordinary completions, transport retries,
-context-compaction summaries and vision calls; manager sub-agents inherit it through normal
+context-compaction summaries and sub-agent calls; manager sub-agents inherit it through normal
 capability composition. Exhaustion returns the ordinary `budget_exhausted` result before another
 provider call instead of escaping as a generic failure. The run's existing local budget still owns
 iterations/time/input accounting; the shared port adds an outer output ceiling rather than replacing
@@ -378,7 +378,7 @@ wrappers; injected connections bypass MCP/OAuth factories and remain caller-owne
 `traceDir` and the optional `traceLocksDir` let a host preserve the record location while placing
 cross-process coordination in an independently mounted workspace state directory.
 The resolver admits only exact catalog pairs with empty request `providers`, supplying metadata to
-entry/delegated profiles, vision and compaction without fabricating native transport configuration.
+entry/delegated profiles and compaction without fabricating native transport configuration.
 When catalog metadata omits a maximum output size, delegated profiles use the context window as a
 conservative per-call ceiling so aggregate Workflow budgets cannot exceed host broker admission.
 Without it, native provider resolution remains unchanged. These are generic embedding ports. See [composition](../../specs/engine/capability-composition.md)
@@ -429,8 +429,8 @@ Registrations marked `required: true` fail before inference if activation, a dec
 attachment is unavailable. Physical extension saturation cannot silently remove their controls;
 `required_capability_unavailable` identifies that failure. Child permissions are unchanged and an
 already-cancelled run keeps cancellation semantics. Entry attachment and contribution folding finish
-before auxiliary vision inference. The reading is then appended to the same live context, after
-preserved history and current reminders; the shared budget is checked before and after preparation.
+before inference. Their contributions are appended to the live context after
+preserved history and current reminders.
 The logical timeout
 does not release the host's physical extension permit: non-cooperative promises retain one of 32
 ordinary slots (at most four per stable capability/phase) until they really settle, so repeated runs
@@ -571,7 +571,7 @@ iteration would allocate per iteration for nothing.
 | `debug` | `skills.roots_unavailable`         | `cause`                                                                                                        |
 
 Plus the degradation warnings the engine already emitted, now named:
-`mcp.connect.failed`, `vision.capability_missing`, `vision.call_failed`, `trace.ingest_failed`,
+`mcp.connect.failed`, `trace.ingest_failed`,
 `trace.emit_failed`, `skills.discovery_failed`, `skills.discovery_warning`,
 `capability.extension_saturated`, `capability.setup_timeout`, `capability.finalize_timeout`,
 `capability.finalize_failed`, `capability.run_end_failed`, `capability.run_end_timeout`,

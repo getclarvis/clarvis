@@ -209,14 +209,6 @@ export type BuiltinTraceEvent =
       user_contribution_count?: number;
     }
   | {
-      type: "vision_analysis";
-      model: string;
-      image_count: number;
-      status: "completed" | "failed";
-      result: string;
-      occurred_at: number;
-    }
-  | {
       type: "compaction_skipped";
       agent: AgentRole;
       subagent_instance_id?: string;
@@ -437,7 +429,6 @@ export const BUILTIN_TRACE_EVENT_TYPES = [
   "compaction_started",
   "compaction",
   "compaction_skipped",
-  "vision_analysis",
   "cancellation",
   "user_question",
   "user_steering",

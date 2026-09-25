@@ -38,7 +38,7 @@ import type { KeysAdapter } from "../adapters/provider-secrets.ts";
 import type { CodeConfigStore } from "../adapters/code-config.ts";
 import type { MemoryModeStore } from "../adapters/memory-mode.ts";
 import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
-import { deriveRunControls } from "../adapters/execution-safety.ts";
+import { memoryState, plansState } from "../adapters/execution-safety.ts";
 import type { ThemePreview } from "../theme/theme.ts";
 import { readEnvView } from "../adapters/agent-files.ts";
 import { registerCodeCommands } from "../app/command-composition.ts";
@@ -975,9 +975,13 @@ export function App(props: AppProps): JSX.Element {
       "(default)"
     );
   });
-  const runControls = createMemo(() => {
+  const headerRunPolicy = createMemo(() => {
     props.fleet.settings.version();
-    return deriveRunControls(props.fleet.settings.effective(), props.fleet.memoryMode.mode());
+    const settings = props.fleet.settings.effective();
+    return {
+      memory: memoryState(settings, props.fleet.memoryMode.mode()),
+      plans: plansState(settings),
+    };
   });
 
   let pendingSlashArgs = "";
@@ -1168,8 +1172,8 @@ export function App(props: AppProps): JSX.Element {
       agentName: agentName(),
       model: resolvedModel(),
       memoryConfigured: props.fleet.memoryMode.configured(),
-      memory: runControls().memory,
-      plans: runControls().plans,
+      memory: headerRunPolicy().memory,
+      plans: headerRunPolicy().plans,
       connection: props.backend.connection(),
       doctorDirty: doctorDirty() && !focusedRepairSurface(),
       workspace: props.shell.workspace,

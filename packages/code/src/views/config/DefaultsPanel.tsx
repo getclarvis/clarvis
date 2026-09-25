@@ -1,13 +1,10 @@
 import type { JSX } from "solid-js";
 import { createSignal } from "solid-js";
-import { glyph } from "../../theme/glyphs.ts";
 import type { ViewHost } from "../../keys/commands.ts";
 import type { SettingsAdapter, SettingsFile } from "../../adapters/settings.ts";
 import type { EnvView } from "../../adapters/agent-files.ts";
 import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
 import { bindLevelKeys, createFieldEditor, LevelHost, StatusRow } from "./view-host.tsx";
-import type { CatalogPickerSpec } from "./CatalogPicker.tsx";
-import { modelPickerSpec } from "./pick-model.ts";
 import type { HintTone } from "../hint.ts";
 import type { SettingPresentation } from "../../ui/presentation.ts";
 import { DetailColumn, DetailSettingRow, SettingDetail } from "../../ui/patterns/detail-view.tsx";
@@ -22,7 +19,7 @@ export interface DefaultsDeps {
 type BudgetDraft = NonNullable<SettingsFile["budget"]>;
 
 /**
- * Config panel for vision-model and token-budget defaults.
+ * Config panel for token-budget defaults.
  * The run model and its effort deliberately live only in `/model` and `/effort`.
  */
 export function DefaultsPanel(host: ViewHost, deps: DefaultsDeps): JSX.Element {
@@ -30,15 +27,12 @@ export function DefaultsPanel(host: ViewHost, deps: DefaultsDeps): JSX.Element {
   const env = deps.env;
   const fe = createFieldEditor(host.interaction, host.active);
 
-  const [visionModel, setVisionModel] = createSignal<string | undefined>(undefined);
   const [budget, setBudget] = createSignal<BudgetDraft | undefined>(undefined);
   const [sel, setSel] = createSignal(0);
-  const [picker, setPicker] = createSignal<CatalogPickerSpec | null>(null);
-  const clamp = (i: number): number => Math.max(0, Math.min(2, i));
+  const clamp = (i: number): number => Math.max(0, Math.min(1, i));
 
   function load(): void {
     const s = settings.read(host.scope()) ?? {};
-    setVisionModel(s.default_vision_model);
     setBudget(s.budget);
     host.markDirty(false);
   }
@@ -47,7 +41,6 @@ export function DefaultsPanel(host: ViewHost, deps: DefaultsDeps): JSX.Element {
 
   async function save(): Promise<void> {
     await settings.write(host.scope(), {
-      default_vision_model: visionModel(),
       budget: budget(),
     });
     host.markDirty(false);
@@ -58,20 +51,6 @@ export function DefaultsPanel(host: ViewHost, deps: DefaultsDeps): JSX.Element {
   function editSelected(): void {
     const i = clamp(sel());
     if (i === 0) {
-      const spec = modelPickerSpec({
-        fe,
-        settings,
-        current: visionModel() ?? "",
-        requireCapability: "vision",
-        title: `Pick a vision model ${glyph("emDash")} configured providers`,
-        commit: (v) => {
-          setVisionModel(v || undefined);
-          host.markDirty(true);
-        },
-        close: () => setPicker(null),
-      });
-      if (spec) setPicker(spec);
-    } else if (i === 1) {
       fe.startEnum(
         "budget.on_exceed",
         ["stop", "escalate"],
@@ -108,7 +87,7 @@ export function DefaultsPanel(host: ViewHost, deps: DefaultsDeps): JSX.Element {
       ? { verbs: [{ key: "e", label: "edit", run: editSelected }] }
       : {
           nav: {
-            count: () => 3,
+            count: () => 2,
             index: sel,
             setIndex: setSel,
             activate: { label: "edit", run: editSelected },
@@ -119,22 +98,11 @@ export function DefaultsPanel(host: ViewHost, deps: DefaultsDeps): JSX.Element {
   bindLevelKeys({
     host,
     editor: fe,
-    suspend: () => picker() !== null,
     register: (enabled) => registerLevel(host.interaction.keymap, { ...spec(), enabled }),
   });
 
   function settingsRows(): SettingPresentation[] {
     return [
-      {
-        label: "Vision model",
-        configured: visionModel() ?? "inherit",
-        effective: visionModel() ?? settings.effective().default_vision_model ?? "not configured",
-        source: visionModel()
-          ? host.scope()
-          : (settings.origin?.("default_vision_model") ?? "product default"),
-        applies: "next run",
-        mutation: "staged",
-      },
       {
         label: "When budget is exceeded",
         configured: budget()?.on_exceed ?? "inherit",
@@ -172,16 +140,7 @@ export function DefaultsPanel(host: ViewHost, deps: DefaultsDeps): JSX.Element {
     const index = clamp(sel());
     return (
       <SettingDetail setting={settingsRows()[index]}>
-        {index === 0 ? (
-          <StatusRow
-            label="vision"
-            text={
-              visionModel()
-                ? "reads images for an agent whose own model cannot see them"
-                : "images become numbered placeholders for a model without vision"
-            }
-          />
-        ) : index === 2 ? (
+        {index === 1 ? (
           <StatusRow label="host ceiling" text={String(env.tokenCeiling)} />
         ) : undefined}
       </SettingDetail>
@@ -192,7 +151,6 @@ export function DefaultsPanel(host: ViewHost, deps: DefaultsDeps): JSX.Element {
     <LevelHost
       host={host}
       editor={fe}
-      picker={picker}
       levels={[
         { title: "Defaults", body },
         { title: "Defaults", body: detailBody },

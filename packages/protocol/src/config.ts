@@ -116,8 +116,7 @@ export interface SettingsView {
    *   contributes its own grant, so the set is a property of what this kernel
    *   actually composed rather than of any static list. Without it a client
    *   checking a profile's readiness had to skip grants entirely, and a profile
-   *   naming an undeclared one (a stale `image` left by the vision-routing
-   *   refactor) was reported "runnable" by Doctor and the agent editor while
+   *   naming an undeclared grant was reported "runnable" by Doctor and the agent editor while
    *   every run in the workspace was rejected before its first model call.
    *   Absent when the kernel did not report it; a client must then skip the
    *   check rather than assume a vocabulary.

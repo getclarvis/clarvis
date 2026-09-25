@@ -150,10 +150,9 @@ CLARVIS_AGENT_TOOLS_MAX_GRANT"; `edit_workspace` "implies read"; `run_commands`
 "implies edit"; and "capability-owned grants are admitted only when that
 capability is registered for the run." The same description string closes with
 a disclaimer that is not itself a grant rule but disambiguates the
-vocabulary's boundary: "Receiving images is not a grant: a profile may be
-seeded with turn images via `spawn_subagent` `image_refs`, and is eligible as
-the automatic vision delegate, exactly when its model declares the 'vision'
-capability" (same citation) — vision eligibility is model-declared, not
+vocabulary's boundary: "Receiving images is not a grant: a profile may receive
+turn images through a child-spawn tool's `image_refs` only when its model
+declares the 'vision' capability" (same citation) — vision eligibility is model-declared, not
 grant-gated, and is out of scope here; see [engine/vision-routing.md](../engine/vision-routing.md).
 
 ### 3.3 The `ReadinessContext`/`ReadinessProfile` shape (advisory pre-flight)

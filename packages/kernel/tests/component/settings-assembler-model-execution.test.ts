@@ -31,7 +31,6 @@ function assembler(
     settings: {
       global: {
         default_model: "alias/org/model:tag",
-        default_vision_model: "alias/org/model:tag",
         providers: [{ name: "alias", kind: "openai", base_url: "https://example.test/v1" }],
       },
     },
@@ -54,7 +53,6 @@ test("catalog assembler validates the delegated closure without native transport
     "alias/org/model:tag",
     "alias/org/model:tag",
   ]);
-  expect(request.vision_model).toBe("alias/org/model:tag");
   expect(request.prompt_cache_ttl).toBeUndefined();
   expect(() => assembler("alias/missing")(start)).toThrow(/execution catalog/);
 });

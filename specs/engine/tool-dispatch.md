@@ -705,14 +705,6 @@ Additional invariants derived directly from the code, carrying no INV number of 
   deserve the same treatment is not something the code decides one way or the other — only this one
   string is special-cased.
 
-- (Resolved during reconciliation, kept for the record: both the call-site count/arity of INV-062 and
-  the "vision-delegate" registry named in `packages/loop/src/runtime/tools/mcp-registry.ts`'s doc comment are settled by
-  `packages/loop/tests/architecture/mcp-registry-call-sites.test.ts`, initially missed because it sits
-  outside this document's stated scope. Its own doc comment states plainly "there was a fourth: the
-  vision delegate's. The vision pre-pass is a single model call with no tools now, so it builds no
-  registry at all", which is why only three call sites exist today; and its two `it` blocks
-  are exactly the dedicated architecture-walk test the two removed bullets above said was missing —
-  see the updated INV-062 citation in §5.)
 - **Whether a profile's `tools` field can name a built-in coding-tool wire name (not just an MCP dotted
   name)**, and how that would interact with `findInvalidToolRef`'s pool-name check in `openToolPool`,
   is governed by the request/profile schema — out of this document's scope (see

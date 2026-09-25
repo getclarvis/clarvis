@@ -307,7 +307,7 @@ the resolver's value into the `Authorization` header.
    value is therefore an inactivity window for streaming and an absolute bound for generation,
    where no progress signal exists. On expiry the controller aborts with the bridge's
    `ModelCallInactivityError`.
-5. **Decide image stripping** — `stripImages = !(params.capabilities?.has("vision") ?? true)`.
+5. **Decide image stripping** — `stripImages = !(params.capabilities?.has("vision") ?? false)`.
 6. **Convert** — `toModelMessages(params.messages, { stripImages })`, then
    `buildRequestOptions`, then `reportRequest`.
 7. **Branch.** `openai-codex`, or any call with `onStreamDelta`, uses the streaming path below.
@@ -977,7 +977,7 @@ Production: `packages/llm/src/ai-sdk/result.ts` (with the reason in one of
 `src/`'s few non-TSDoc comments).
 Test: `packages/llm/tests/unit/ai-sdk-modules.test.ts` (including a 1 MiB body).
 
-**LLM-33.** Images are stripped exactly when the resolved model lacks the `"vision"` capability, and
+**LLM-33.** Images are stripped unless the resolved model explicitly declares the `"vision"` capability, and
 a stripped image becomes a **numbered placeholder**, never a dropped part; numbering is global across
 the whole message list.
 Production: `packages/llm/src/ai-sdk-adapter.ts`;

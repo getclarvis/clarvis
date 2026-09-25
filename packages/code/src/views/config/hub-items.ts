@@ -15,7 +15,7 @@ export const SETTINGS_ITEMS = [
   {
     id: "defaults",
     label: "Defaults",
-    desc: "Vision and run budget",
+    desc: "Run budget",
     cmd: "defaults.open",
   },
   {
@@ -36,11 +36,5 @@ export const SETTINGS_ITEMS = [
     label: "Updates",
     desc: "Automatic version checks",
     cmd: "updates.open",
-  },
-  {
-    id: "controls",
-    label: "Run controls",
-    desc: "Memory and plan retention for the next run",
-    cmd: "controls.open",
   },
 ] as const;

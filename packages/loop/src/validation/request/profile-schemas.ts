@@ -172,9 +172,8 @@ export const agentProfileSchema = z
           "the 'shell' host-command tool; implies edit). Capability-owned grants are admitted " +
           "only when that capability is registered for the run; their semantics are declared by " +
           "the owning capability rather than by this engine schema. Receiving images is not a " +
-          "grant: a profile may be seeded with turn images via a child-spawn tool's `image_refs`, and is " +
-          "eligible as the automatic vision delegate, exactly when its model declares the " +
-          "'vision' capability.",
+          "grant: a profile may receive turn images through a child-spawn tool's `image_refs` " +
+          "only when its model declares the 'vision' capability.",
       ),
     can_spawn: z
       .array(z.string().max(INPUT_LIMITS.profileNameChars))

@@ -142,7 +142,6 @@ function HubMenu(host, deps: { title; items; openChild(cmd: string): void })    
 | `theme` | Theme | `theme.open` |
 | `keyboard` | Keyboard | `keyboard.open` |
 | `updates` | Updates | `updates.open` |
-| `controls` | Run controls | `controls.open` |
 
 The Agents panel lists Shared prompt ahead of agent rows. Its overview shows the effective origin
 once and a stable `view / edit` prompt row; full prose opens in a separate scrollable level before
@@ -153,12 +152,6 @@ scope with no override starts from the current effective prompt with `mode: repl
 write. See [`agent-system-prompt.md`](../engine/agent-system-prompt.md). Production:
 `packages/code/src/views/config/AgentsPanel.tsx`. Test:
 `packages/code/tests/integration/agents-panel-render.test.tsx`.
-
-`RunControlsPanel` presents Memory for this session and Completed plans. Enter changes the selected
-value, while `i` opens its effective detail. Memory updates only the session store; completed-plan
-retention writes through `patchPlansSettings` in the selected scope. Production:
-`RunControlsPanel` in `packages/code/src/views/config/RunControlsPanel.tsx`. Test:
-`packages/code/tests/integration/run-controls-render.test.tsx`.
 
 The `Ctrl+X M` Memory picker mirrors the session `on`/`off` choice. Persisted Memory settings
 remain under `MemoryConfigPanel`. Production: `MemoryPicker` in
@@ -902,19 +895,18 @@ exhaustiveness canary over the union, at `packages/code/tests/unit/providers-eve
 
 ### 4.13 DefaultsPanel
 
-Three rows, indices clamped to `[0,2]` (`packages/code/src/views/config/DefaultsPanel.tsx`), `nav.count = 3` :
+Two rows, indices clamped to `[0,1]` (`packages/code/src/views/config/DefaultsPanel.tsx`), `nav.count = 2`:
 
 | Row | Field | Editor |
 | --- | --- | --- |
-| 0 | `default_vision_model` | `modelPickerSpec` with `requireCapability: "vision"` |
-| 1 | `budget.on_exceed` | `startEnum(["stop","escalate"])` seeded from the draft or `env.budgetOnExceed` |
-| 2 | `budget.total_token_limit` | `startNumber` with `min: 1`, `max: env.tokenCeiling` |
+| 0 | `budget.on_exceed` | `startEnum(["stop","escalate"])` seeded from the draft or `env.budgetOnExceed` |
+| 1 | `budget.total_token_limit` | `startNumber` with `min: 1`, `max: env.tokenCeiling` |
 
-`save()` writes exactly `{ default_vision_model, budget }`, so it never touches
+`save()` writes exactly `{ budget }`, so it never touches
 `default_model` or `default_reasoning_effort` — pinned at
 `packages/code/tests/integration/defaults-panel-render.test.tsx`, which asserts the written patch
-is `{ default_vision_model: undefined, budget: undefined }`, which asserts the frame
-contains neither "Default model" nor "Reasoning effort". Row 2's commit writes back only
+is `{ budget: undefined }` and the frame contains neither "Default model" nor "Reasoning effort".
+Row 1's commit writes back only
 `total_token_limit` and no longer co-writes `on_exceed`. When neither scope declares a token
 limit, the effective cell shows `env.tokenDefault`; the kernel's real fallback is never presented as
 "unlimited". `readEnvView` obtains that value from `CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT`.
@@ -1297,7 +1289,7 @@ authored.
 Production: `packages/code/src/features/providers/request-params.ts`. Test: `packages/code/tests/unit/request-params.test.ts`; render-side
 `packages/code/tests/integration/providers-key-render.test.tsx`.
 
-**INV-P34.** `DefaultsPanel.save` writes only `default_vision_model` and `budget`.
+**INV-P34.** `DefaultsPanel.save` writes only `budget`.
 Production: `packages/code/src/views/config/DefaultsPanel.tsx`. Test:
 `packages/code/tests/integration/defaults-panel-render.test.tsx`.
 
@@ -1520,7 +1512,7 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
   `defaults.open`, `extension-profiles.open`, `plugins.open`, `hooks.open`, `marketplace.open`, `mcp.browse`, `settings.open`, `extensions.open`.
 - `views/overlay-host.ts` depends on `ViewHostControls`' exact shape — `runSave`, `scopeBound`,
   `escape`, `dispose` (`packages/code/src/views/overlay-host.ts`).
-- `AgentsPanel`, `RunControlsPanel`, `MemoryConfigPanel`, `WorkflowsHub`, `SessionsHub`, `ThemeView`,
+- `AgentsPanel`, `MemoryConfigPanel`, `WorkflowsHub`, `SessionsHub`, `ThemeView`,
   `KeyboardView`, `DoctorView`, `ModelView`, `EffortView` all consume `view-host.tsx`'s toolkit; they
   belong to sibling documents ([hosts/code-domain-hubs.md](code-domain-hubs.md), [hosts/model-catalog.md](model-catalog.md)).
 

@@ -2,12 +2,6 @@ import { parseModelRef, PLANS_DEFAULTS } from "@clarvis/kernel/config";
 import type { SettingsFile } from "./settings.ts";
 import type { MemoryMode } from "./memory-mode.ts";
 
-/** Effective memory and planning state consumed by the shell and Run Controls. */
-export interface RunControlsState {
-  memory: MemoryState;
-  plans: PlansState;
-}
-
 /** Canonical memory tri-state; see {@link memoryState} for how it's derived. */
 export type MemoryState = "off" | "inert" | "on";
 
@@ -32,14 +26,13 @@ export interface PlansState {
   configured: boolean;
 }
 
-/** Plan retention named by its consequence, so every surface that shows it —
- * Run Controls, the Plan overlay, the doctor — uses one vocabulary. */
+/** Plan retention named by its consequence for the Plan overlay and doctor. */
 export function planRetentionLabel(retention: PlanRetention): string {
   return retention === "keep" ? "keep" : "delete after success";
 }
 
-/** The single "what will planning do on the next run" rule — Run Controls, the
- * header chip and the doctor gate must never disagree on it. */
+/** The single "what will planning do on the next run" rule shared by the
+ * header chip and doctor gate. */
 export function plansState(settings: SettingsFile): PlansState {
   const block = settings.plans;
   if (block === undefined)
@@ -88,37 +81,4 @@ export function memoryState(settings: SettingsFile, sessionMode: MemoryMode = "o
   const memory = settings.memory;
   if (memory === undefined || memory.enabled === false || sessionMode === "off") return "off";
   return modelResolves(memory.model ?? settings.default_model, settings) ? "on" : "inert";
-}
-
-/**
- * Derives the full {@link RunControlsState} from workspace settings plus the
- * session's current memory mode.
- */
-export function deriveRunControls(
-  settings: SettingsFile,
-  memoryMode: MemoryMode,
-): RunControlsState {
-  return {
-    memory: memoryState(settings, memoryMode),
-    plans: plansState(settings),
-  };
-}
-
-/** A plain-language line describing what the current memory state means for a run. */
-export function memoryDescription(state: RunControlsState): string {
-  return state.memory === "on"
-    ? "Reads memory before the run and learns from it afterward."
-    : state.memory === "inert"
-      ? "Configured, but no extraction model resolves."
-      : "Disabled for this session; runs neither read nor update memory.";
-}
-
-/** Plain-language consequences of the completed-plan retention default. */
-export function planRetentionDescription(retention: PlanRetention): string[] {
-  return retention === "keep"
-    ? ["Completed plans remain available in the selected provider."]
-    : [
-        "Successful runs delete their plan after the result is recorded.",
-        "Failed, cancelled or interrupted runs keep their plan.",
-      ];
 }

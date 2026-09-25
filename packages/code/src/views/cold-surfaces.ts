@@ -2,7 +2,6 @@ export { Help } from "./overlays/Help.tsx";
 export { StorageView } from "./config/StorageView.tsx";
 export { SessionsHub } from "./config/SessionsHub.tsx";
 export { WorkflowsHub } from "./config/WorkflowsHub.tsx";
-export { RunControlsPanel } from "./config/RunControlsPanel.tsx";
 export { ModelView } from "./config/ModelView.tsx";
 export { EffortView } from "./config/EffortView.tsx";
 export { DefaultsPanel } from "./config/DefaultsPanel.tsx";

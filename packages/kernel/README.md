@@ -399,8 +399,8 @@ product decision, not provider endorsement. Synthetic registrations exercise tra
 tests. Provider `user-agent` identity uses the root-owned Clarvis product version. ChatGPT and Grok
 separately send adapter-owned compatibility revisions (`0.153.2` and `1.0.6`, respectively) in the
 catalog version fields their services gate; those values are not the Clarvis product version.
-Responses-backed Grok entitled-catalog rows tag `tool_calling` and keep `vision` unless the payload
-explicitly omits image input, so persisted model capabilities cannot strip composer images. The
+Responses-backed Grok entitled-catalog rows tag `tool_calling` and tag `vision` only when the
+payload declares image input or `supports_vision: true`. The
 ordinary remote composition uses the unavailable implementation. The authenticated local
 `createFileRunHost` composition exposes subscription control only to its operator role.
 
@@ -805,7 +805,7 @@ owner and derives the effective per-child buffer slice; the kernel does not mate
 32-MiB aggregate ceiling itself.
 
 `createSettingsRunAssembler` optionally accepts a `modelExecutionResolver`: it checks exact entry,
-delegated, vision and explicit reviewer targets against that closed catalog and emits empty
+delegated and explicit reviewer targets against that closed catalog and emits empty
 `providers`, keeping transport declarations outside the request. Without this option, native provider declarations
 and resolution are preserved.
 

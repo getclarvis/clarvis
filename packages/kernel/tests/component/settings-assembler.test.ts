@@ -105,10 +105,7 @@ describe("settings run assembler", () => {
       (native({ agent: "solo", messages: [], execution_id: "native" }) as { providers: unknown[] })
         .providers,
     ).toEqual(settings.providers);
-    for (const overrides of [
-      { default_model: "alias/missing" },
-      { default_vision_model: "alias/missing" },
-    ]) {
+    for (const overrides of [{ default_model: "alias/missing" }]) {
       const missing = await assemblerWith(
         { solo: {} },
         { ...settings, ...overrides },

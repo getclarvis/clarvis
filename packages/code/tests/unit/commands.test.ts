@@ -454,24 +454,24 @@ test("one binding renders identically in the popup hint, Help groups and the foo
   const keymap = t.keymap as unknown as Interaction["keymap"];
   const { commands } = harness({ keymap } as unknown as Interaction);
   const off = commands.registerAction({
-    name: "controls.open",
-    title: "Run controls",
-    desc: "Run controls",
+    name: "sample.open",
+    title: "Sample view",
+    desc: "Sample view",
     surface: "internal",
     group: "navigate",
     run: () => {},
   });
   const offKeys = keymap.registerLayer({
     priority: 900,
-    bindings: [{ key: "alt+r", cmd: "controls.open" }],
+    bindings: [{ key: "alt+r", cmd: "sample.open" }],
   });
 
-  const popup = commands.entries().find((e) => e.name === "controls.open")!.keyHint;
+  const popup = commands.entries().find((e) => e.name === "sample.open")!.keyHint;
   const helpRow = commands
     .keyCommandGroups()
     .flatMap((g) => g.rows)
-    .find((r) => r.desc === "Run controls");
-  const footer = commandKeyLabel(keymap, "controls.open");
+    .find((r) => r.desc === "Sample view");
+  const footer = commandKeyLabel(keymap, "sample.open");
 
   expect(popup).toBe("Alt+R");
   expect(helpRow?.key).toBe("Alt+R");

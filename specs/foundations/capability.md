@@ -278,7 +278,6 @@ re-arm a policy from there. `AgentProfile` is the full agent definition: `name`,
 | `servers` | `McpServerConfig[]` | — |
 | `profiles` | `AgentProfile[]` | — |
 | `entry` | `string` | profile to start from |
-| `vision_model?` | `string` | a model reference, not a profile — reads the turn's images in a single-completion, no-tools, no-workspace, no-agent-identity pass, when the entry agent's own model cannot see them |
 | `budget` | `BudgetConfig` | — |
 | `providers` | `ProviderConfig[]` | — |
 | `output_schema?` | `unknown` | constrains the agent's result |
@@ -635,11 +634,8 @@ Beyond the open vocabularies (§3.4), `run.ts` defines the run's remaining wire 
 `ExecutionMode` (`packages/capability/src/run.ts`) is `subagent-only | lead-subagent`. `PerAgentUsage` is
 discriminated by `type`: `lead` (model + token fields + `iterations` + `subagents_spawned`),
 `subagent` (model + token fields + optional `iterations`/`instances`, rolled up across every instance of
-one profile), and `vision` (model + token fields only). The doc-comment states `vision` is a **third**
-variant rather than a `subagent` row, because counting it as one inflated the lead's
-`subagents_spawned` and reported a child no client could address — and it carries no `iterations` for
-the same reason context compaction contributes none: it is a single call, not a loop. `Usage`
- bundles `iterations_used`, `elapsed_ms`, `by_agent: PerAgentUsage[]`, optional `warnings`.
+one profile). `Usage` bundles `iterations_used`, `elapsed_ms`, `by_agent: PerAgentUsage[]`, and
+optional `warnings`.
 
 `ResourceToolKind` is `resource_list | resource_read`. `Resolved` is what
 resolving a wire tool name back to an MCP call yields: `connection`, `toolName`, `fullName`, optional
@@ -778,8 +774,7 @@ composition. Refusal or setup timeout cannot silently omit mandatory controls. `
 uses the stable `required_capability_unavailable` code and identifies the phase (`activation`,
 `seed`, `entry`). A spawned child's absent attachment remains valid; requiring the entry does not
 expand any child's permissions. Required entry `attach` exceptions are mapped to that same bounded
-entry failure without private exception details; attachment and folding happen before auxiliary
-vision inference. An already-aborted run retains cancellation semantics.
+entry failure without private exception details; attachment and folding happen before inference. An already-aborted run retains cancellation semantics.
 Production: `Capability.required` / `RunCapability.required` in
 [contract.ts](../../packages/capability/src/contract.ts), `CapabilityUnavailableError` in
 [errors.ts](../../packages/capability/src/errors.ts), and `capabilitiesForScope` in
@@ -1338,11 +1333,6 @@ widening of the contract, preferring a port over exposing an engine type
   is intended is not stated; every test that could collide passes a UUID, either as an explicit
   `dedupeKey` (`packages/capability/tests/unit/tasks.test.ts`) or inside the `operation` string
   (`packages/capability/tests/unit/tasks.test.ts`).
-- **`ports.ts` re-export surface vs. `index.ts`.** `trace.ts` does `export * from "./trace-kinds.ts"`
-  (`packages/capability/src/trace.ts`) while `index.ts` enumerates its type exports explicitly (`packages/capability/src/index.ts`), so at
-  least one type (`VisionAnalysisDetail`, declared at `packages/capability/src/trace-kinds.ts`
-  and named nowhere in `index.ts`) is reachable through `./trace` but not through `.`. Whether that asymmetry is deliberate is not
-  recorded in either file.
 - **Rationale is generally absent by design.** Where the source carries a `@remarks`
   block giving a reason, this document quotes it and cites the source. Where it does not, no reason is
   derivable and none is asserted here — see §2.7 for the two such gaps in `api.ts` itself (why

@@ -1,11 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import {
-  deriveRunControls,
-  memoryDescription,
-  memoryState,
-  modelResolves,
-  planRetentionDescription,
-} from "../../src/adapters/execution-safety.ts";
+import { memoryState, modelResolves } from "../../src/adapters/execution-safety.ts";
 import type { SettingsFile } from "../../src/adapters/settings.ts";
 
 /**
@@ -21,38 +15,6 @@ import type { SettingsFile } from "../../src/adapters/settings.ts";
 const onDisk = (settings: Record<string, unknown>): SettingsFile => settings as SettingsFile;
 
 const OPENAI = { name: "openai", kind: "openai" } as const;
-
-describe("execution safety", () => {
-  it("explains the effective behavior", () => {
-    const state = deriveRunControls(
-      {
-        providers: [OPENAI],
-        default_model: "openai/model",
-        memory: {} as SettingsFile["memory"],
-      },
-      "on",
-    );
-    expect(memoryDescription(state)).toBe(
-      "Reads memory before the run and learns from it afterward.",
-    );
-  });
-
-  it("explains memory and plan-retention consequences", () => {
-    const controls = deriveRunControls({}, "off");
-    expect(memoryDescription({ ...controls, memory: "inert" })).toContain("no extraction model");
-    expect(memoryDescription({ ...controls, memory: "off" })).toContain(
-      "Disabled for this session",
-    );
-
-    expect(planRetentionDescription("keep")).toEqual([
-      "Completed plans remain available in the selected provider.",
-    ]);
-    expect(planRetentionDescription("discard")).toEqual([
-      "Successful runs delete their plan after the result is recorded.",
-      "Failed, cancelled or interrupted runs keep their plan.",
-    ]);
-  });
-});
 
 describe("memoryState — the one on/inert/off rule every surface shares", () => {
   it("is off without a block, with a disabled block, or when the session opted out", () => {
@@ -86,8 +48,6 @@ describe("memoryState — the one on/inert/off rule every surface shares", () =>
     expect(memoryState(undeclared)).toBe("inert");
     const modelless = onDisk({ memory: {}, providers: [OPENAI] });
     expect(memoryState(modelless)).toBe("inert");
-    expect(deriveRunControls(undeclared, "on").memory).toBe("inert");
-    expect(deriveRunControls(modelless, "on").memory).toBe("inert");
   });
 
   it("modelResolves rejects unparsable tokens instead of throwing", () => {

@@ -82,23 +82,6 @@ export type PerAgentUsage =
       cache_write_tokens: number;
       iterations?: number;
       instances?: number;
-    }
-  /**
-   * The vision pre-pass: one completion on a model that is not any agent's.
-   *
-   * @remarks A third variant rather than a `subagent` row, because it is not one:
-   * counting it as a sub-agent inflated the lead's `subagents_spawned` and
-   * reported a child no client could address. It carries no `iterations` for the
-   * same reason context compaction contributes none — it is a single call, not a
-   * loop.
-   */
-  | {
-      type: "vision";
-      model: string;
-      input_tokens: number;
-      output_tokens: number;
-      cached_tokens: number;
-      cache_write_tokens: number;
     };
 
 /**

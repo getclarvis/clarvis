@@ -341,7 +341,6 @@ The following commands and candidates (`packages/code/src/keys/interaction.ts`,
 | `memory.picker` | `<leader>m` | `overlay==none` |
 | `activity.toggle` | `<leader>s` | `overlay==none` |
 | `tool.interruptFocused` | `<leader>t` | eligible focused shell |
-| `controls.open` | `<leader>r` | `overlay==none` |
 | `plan.open` | `<leader>p` | `overlay in (none, plan)` |
 | `workflow.current` | `<leader>w` | `overlay==none`; current workflow required |
 | `goal.toggle` | `<leader>o` | `overlay==none` |
@@ -398,7 +397,6 @@ For an `enhanced` environment with all modifiers `"supported"` (no manual overri
   "run.cancel": "ctrl+c",
   "app.escape": "escape",
   "review.picker": "<leader>g",
-  "controls.open": "<leader>r",
   "plan.open": "<leader>p"
 }
 ```
@@ -572,7 +570,7 @@ Pinned: `packages/code/tests/unit/keyspec.test.ts` (`verb("delete", ...)` yields
     `command(name, run, meta)`, which merges `ACTION_PROJECTION[name]` under any explicit
     `meta` and is registered, with **no bindings at all**, as one layer:
     `keymap.registerLayer({ commands })` (`packages/code/src/keys/interaction.ts`). This is not the same
-    set as `DEFAULT_BINDING_CANDIDATES`: it omits `agent.picker`, `controls.open` and
+    set as `DEFAULT_BINDING_CANDIDATES`: it omits `agent.picker` and
     `plan.open` (which have no `command()` registration in this file — only key
     candidates) and adds `transcript.loadEarlier`, which has no entry in
     `DEFAULT_BINDING_CANDIDATES`/`DEFAULT_WHEN` at all. Because this layer carries no
@@ -1063,7 +1061,7 @@ Tests: `packages/code/tests/integration/interaction.test.ts`; full-shell paths a
 pinned at `packages/code/tests/integration/app-shell-render.test.tsx`.
 
 **INV-D13.** Application actions use Ctrl+X consistently across client platforms and profiles:
-M Memory, R Run controls, P Plan, O Goal, W Workflow, S Sidebar, K block
+M Memory, P Plan, O Goal, W Workflow, S Sidebar, K block
 expansion, E expanded editor, and Up/Down block navigation. These are sequential keypresses,
 not simultaneous chords. The shared OpenTUI timed-leader addon expires a pending prefix after
 two seconds. Keyboard manual overrides remain supported.

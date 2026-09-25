@@ -45,8 +45,8 @@ function catalogInputModalities(model: Record<string, unknown>): string[] | unde
 }
 
 /**
- * Responses-backed Grok models are tool-using. Vision follows published image modalities, or remains
- * enabled when the catalog omits that fact — a closed `tool_calling`-only tag would strip images.
+ * Responses-backed Grok models are tool-using. Vision requires published image modalities or an
+ * explicit `supports_vision` declaration.
  */
 function grokCatalogCapabilities(model: Record<string, unknown>): string[] {
   const capabilities = ["tool_calling"];
@@ -55,8 +55,7 @@ function grokCatalogCapabilities(model: Record<string, unknown>): string[] {
     if (modalities.includes("image")) capabilities.push("vision");
     return capabilities;
   }
-  if (model.supports_vision === false) return capabilities;
-  capabilities.push("vision");
+  if (model.supports_vision === true) capabilities.push("vision");
   return capabilities;
 }
 

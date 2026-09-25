@@ -26,9 +26,6 @@ function walk(dir: string, out: string[] = []): string[] {
  * call sites can see it. The argument is required now, so this guards the shape
  * of the fix rather than the fix itself — a future default would restore the
  * silence a compile error currently prevents.
- *
- * There was a fourth: the vision delegate's. The vision pre-pass is a single
- * model call with no tools now, so it builds no registry at all.
  */
 describe("every buildRegistry call site names the run's reserved set", () => {
   const callSites: { file: string; snippet: string }[] = [];

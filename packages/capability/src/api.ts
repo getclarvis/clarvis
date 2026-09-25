@@ -473,15 +473,6 @@ export interface RunRequest {
    * here once so children and continuations of this run do not re-read files.
    */
   shared_prompt?: string;
-  /**
-   * Model used to read the turn's images when the entry agent's own model
-   * cannot see them.
-   *
-   * @remarks Deliberately a model reference rather than a profile name: reading
-   * an image is a capability of a model, and the pass that uses it is a single
-   * completion with no tools, no workspace and no agent identity.
-   */
-  vision_model?: string;
   budget: BudgetConfig;
   providers: ProviderConfig[];
   output_schema?: unknown;

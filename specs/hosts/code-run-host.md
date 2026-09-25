@@ -278,7 +278,7 @@ optional `prepareReconnect`, and `callbacks`.
 | `adapters/connection-state.ts` | `ConnectionState`, `ConnectionStore`, `createConnectionState`, `connectionLabel`, `connectionProbe` | `packages/code/src/adapters/connection-state.ts` |
 | `adapters/stream-metrics.ts` | `StreamMetrics`, `createStreamMetrics`, `streamMetrics` | `packages/code/src/adapters/stream-metrics.ts` |
 | `adapters/memory-pressure.ts` | `MIB`, `DEFAULT_TUI_RSS_LIMIT_BYTES`, `MEMORY_PRESSURE_SAMPLE_MS`, `MEMORY_PRESSURE_STEP_TIMEOUT_MS`, `MEMORY_PRESSURE_EPISODE_TIMEOUT_MS`, `MEMORY_PRESSURE_STATUS_RESTORING`, `MEMORY_PRESSURE_STATUS_FAILED`, `MemoryPressurePhase`, `ProcessMemorySample`, `MemoryMaintenanceReport`, `MemoryPressureSnapshot`, `MemoryPressureDeps`, `MemoryPressureController`, `memoryPressureAllowsSlash`, `memoryPressureStatus`, `tuiRssLimitBytes`, `createMemoryPressureController` | `packages/code/src/adapters/memory-pressure.ts` |
-| `adapters/execution-safety.ts` | `RunControlsState`, `MemoryState`, `PlanMode`, `PlanRetention`, `PlansState`, `planRetentionLabel`, `plansState`, `modelResolves`, `memoryState`, `deriveRunControls`, `memoryDescription`, `planRetentionDescription` | symbols of the same names |
+| `adapters/execution-safety.ts` | `MemoryState`, `PlanMode`, `PlanRetention`, `PlansState`, `planRetentionLabel`, `plansState`, `modelResolves`, `memoryState` | symbols of the same names |
 | `adapters/file-prompt-history.ts` | `createFilePromptHistory(limit = 200, file = workspaceStatePaths().promptHistoryFile, options)` | `packages/code/src/adapters/session-store.ts` |
 | `adapters/workspace-client-manager.ts` | `ManagedWorkspaceClient`, `WorkspaceClientOptions`, `WorkspaceClientManager` | symbols of the same names |
 | `adapters/kernel-errors.ts` | `hasKernelErrorCode(error, code): error is {code}` — the narrowing every kernel-error branch in this scope goes through | `packages/code/src/adapters/kernel-errors.ts` |
@@ -994,19 +994,12 @@ occupied-host and placement-transition cases in
 
 ### 4.20 `execution-safety` derivations (`packages/code/src/adapters/execution-safety.ts`)
 
-Pure functions of `RunControlsState`, no state of their own.
-
-`deriveRunControls` projects Memory and Plans from effective settings and session mode.
-
-`memoryDescription` is a three-way switch on `state.memory`: `"on"` reads before/after, "no
-extraction model resolves" for `"inert"`, otherwise disabled-for-this-session.
-
-`planRetentionDescription(retention)` describes only the completed-plan retention consequence used by
-Run Controls: `keep` leaves completed plans available in the selected provider; `discard` says a
-successful run deletes after recording its result and that failed, cancelled or interrupted runs
-retain the plan. Planning mode is intentionally absent from this presentation helper because the
-TUI changes review policy through `/plan`, not Run Controls. Pinned by
-`packages/code/tests/unit/execution-safety.test.ts` (plan-retention consequence case).
+`memoryState` derives the effective session memory state from settings and session mode.
+`plansState` derives the effective planning mode and retention policy from settings.
+The header and Doctor consume these functions directly. Production:
+`packages/code/src/adapters/execution-safety.ts`. Test:
+`packages/code/tests/unit/execution-safety.test.ts` and
+`packages/code/tests/integration/doctor.test.ts`.
 
 ### 4.21 Memory-pressure state machine (`packages/code/src/adapters/memory-pressure.ts`)
 

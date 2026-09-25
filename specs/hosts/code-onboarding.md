@@ -424,8 +424,7 @@ gate's result.
 - **`memory`** reports `warn` ("not configured") when its block is absent from `effective()`;
   **`plans`** instead reports `pass` ("`<policy>` (defaults)") when unconfigured
   (`packages/code/src/onboarding/doctor.ts`, `memory` and `plans` gate definitions) — only memory's absence is flagged as a warning, plans treats its defaults as a
-  healthy state. Its hint routes review changes to `/plan` and retention changes to Run Controls;
-  Run Controls no longer edits planning mode. Neither gate ever blocks boot regardless, since both are `ui` severity
+  healthy state. Its hint routes review changes to `/plan`. Neither gate blocks boot, since both are `ui` severity
   (`packages/code/tests/integration/doctor.test.ts` for memory for plans — the latter asserting
   `results.plans.status` is `"pass"`, not `"warn"`, on an unconfigured block).
 - **`credentials`** (soft severity): subscription-backed `openai-codex` and `xai-grok` providers are
@@ -453,7 +452,7 @@ seeder here), two seeders run unconditionally and idempotently, each `.then()`-n
 on a real write and calling `recheck()` to re-run the gate ladder:
 
 1. `seedPlansBlock` → on success, notify `planning: on · keep plans (<scope> settings) — use
-   /plan for review and Run controls for retention`.
+   /plan for review`.
 2. `seedMemoryBlock` → on success, also calls `deps.memoryMode.refresh()` then `.setMode("on")` before
    notifying — the memory-mode store freezes its signal from `configured()` at construction
    (`packages/code/src/onboarding/seed-memory.ts`), so a mid-session seed must force both calls or the session keeps asking for

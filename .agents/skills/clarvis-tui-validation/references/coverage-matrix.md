@@ -109,7 +109,6 @@ states, Escape/back, persistence, status feedback, and scope where applicable.
 | `SET-07` | Theme        |
 | `SET-08` | Keyboard     |
 | `SET-09` | Updates      |
-| `SET-10` | Run controls |
 
 For every panel, verify global and workspace scopes, effective-value labeling, scope switching,
 revision conflicts, failed saves, stale responses, reset/inheritance behavior, and deep-link return

@@ -25,7 +25,7 @@ export interface DoctorViewDeps {
   report: Accessor<DoctorReport>;
   recheck: () => void;
   openFix: (
-    view: "providers" | "model" | "defaults" | "theme" | "agents" | "memory" | "controls",
+    view: "providers" | "model" | "defaults" | "theme" | "agents" | "memory",
     scope: Scope,
   ) => void;
   startAnyway: () => void;

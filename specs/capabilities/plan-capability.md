@@ -1081,10 +1081,6 @@ Numbered; each carries production evidence and the pinning test.
     store's own `delete` call surfaces as `PlanConflictError`, and the racing write's effect
     survives).
 
-56. **Under the server's `auto_decline` posture, `plans: "review"` is downgraded to `"on"`,** and the
-    downgrade is reported — `packages/server/src/mcp/elicitation.ts`. **Unpinned** in
-    this document's scope.
-
 57. **The plan capability never turns independent spawning into a planning requirement.**
     `spawn_subagent` remains independent and has no `task_id`. The plan-owned `delegate_task`
     augmentation requires the exact id of an existing task and forbids invented ids. Production:

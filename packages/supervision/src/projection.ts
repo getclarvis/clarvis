@@ -7,10 +7,9 @@
  * parent's context is a token fire; a lifecycle-only projection tells a parent a
  * child is running but not that it has failed the same test four times.
  *
- * Deliberately **not** an exhaustive switch. `mapEntry` and `@clarvis/server`'s
- * `viewOf` are already exhaustive over the trace vocabulary and break the build
- * when a kind is added — two such gates are enough, and a third would make every
- * new event kind a chore here for no gain. An unrecognized kind projects to
+ * Deliberately **not** an exhaustive switch. `mapEntry` already gates the trace
+ * vocabulary; adding another exhaustive gate here would make every new event
+ * kind a chore for no gain. An unrecognized kind projects to
  * `null`, which is also the correct answer for the high-frequency signal-only
  * kinds (`model_stream_delta`, `tool_output_delta`): they reach a trace sink even
  * though they never reach `entries()`, so filtering them is load-bearing.

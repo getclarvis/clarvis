@@ -99,8 +99,7 @@ named surface rather than a barrel.
 
 Not exported from any entrypoint: `isDroppableRunEvent` and `DEFAULT_RUN_EVENT_BUFFER*`
 (`packages/kernel/src/runs/coalesce-events.ts`) — `packages/kernel/src/transport/client.ts` imports
-`isDroppableRunEvent` by relative path, while `@clarvis/server` re-derives the same verdict from the
-exported table (`packages/server/src/mcp/notify.ts`).
+`isDroppableRunEvent` by relative path.
 
 Also internal: `createManagedRunWithRuntime`, `ManagedRunRuntime`, `ManagedRunTimer`
 (`packages/kernel/src/runs/managed-run.ts`), marked `@internal` with the stated reason that "hosts configure policy
@@ -1089,8 +1088,6 @@ store owns the full schema".
 | `packages/kernel/src/kernel.ts` | `createRunService`, `createSettingsRunAssembler` | the composition root; supplies `isManagerRun` and `runManagerWorkflow` from `createAgentWorkflowPolicy` and `createWorkflowsService` (`packages/kernel/src/kernel.ts`) |
 | `packages/kernel/src/workflows/workflows-service.ts` | `createManagedRun` | `runManagerWorkflow` is the second producer of a `RunHandle`, with `observe` and `settle` |
 | `packages/kernel/src/transport/client.ts` | `coalesceRunEvents`, `isDroppableRunEvent`, `sizeOfRunEvent`, `DEFAULT_RUN_EVENT_BUFFER*` | the remote client re-applies the same backpressure policy locally |
-| `packages/server/src/mcp/notify.ts` | `RUN_EVENT_POLICY`, `coalesceRunEvents`, `sizeOfRunEvent` | MCP notification fan-out reuses the table rather than re-listing droppable types |
-| `packages/server/src/mcp/event-view.ts` | `RUN_EVENT_POLICY`, `coalesceRunEvents` | the coalesce class is read from the table rather than restated |
 | `packages/code/src/adapters/event-span.ts` | `deriveRunEventSpan` | the TUI groups its transcript by the kernel's span ids |
 | `packages/kernel/src/index.ts`, focused subpath modules, and `packages/kernel/package.json` | the exported surface | pinned to six entrypoints by `packages/kernel/tests/architecture/public-surface.test.ts` |
 
@@ -1100,7 +1097,7 @@ store owns the full schema".
   mappers here are that something, and both are pure functions with no store or transport access
   (`packages/kernel/src/runs/map-events.ts`).
 - `event-policy.ts` importing only `type { RunEvent }` is what lets `coalesce-events.ts`,
-  `transport/client.ts` and `@clarvis/server` all key off one table without pulling in the run service.
+  `transport/client.ts` key off one table without pulling in the run service.
 - `run-service.ts` never imports the workflows package; it receives `isManagerRun` and
   `runManagerWorkflow` as optional injected functions, which is what keeps a host that
   wires no workflows (the docstring's "absent for hosts that do not wire workflows") on the
@@ -1113,8 +1110,7 @@ store owns the full schema".
 ## 8. Open questions
 
 - **`sources`, `durability` and `mapper` have no runtime reader at all.** The only fields anything
-  reads are `coalesce` (`packages/kernel/src/runs/coalesce-events.ts`, `packages/server/src/mcp/event-view.ts`) and
-  `droppable` (`packages/kernel/src/runs/coalesce-events.ts`, `packages/server/src/mcp/notify.ts`). The other three
+  reads are `coalesce` and `droppable` (`packages/kernel/src/runs/coalesce-events.ts`). The other three
   exist as documentation-as-data pinned by `packages/kernel/tests/unit/event-policy.test.ts`. Nothing in the
   code cross-checks them against the mappers — nothing would fail if `plan_created` were marked
   `mapper: "engine"` while `capabilityEventToProto` still produced it.

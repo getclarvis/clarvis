@@ -31,7 +31,6 @@ export const PACKAGE_ROLES = {
   "@clarvis/workflows": "product-capability",
   "@clarvis/kernel": "host-implementation",
   "@clarvis/code": "application",
-  "@clarvis/server": "application",
 } as const satisfies Record<string, PackageRole>;
 
 /** Source modules allowed to read the root-owned Clarvis product version at runtime. */
@@ -39,7 +38,6 @@ export const PRODUCT_VERSION_IMPORTERS = [
   "packages/code/src/cli-args.ts",
   "packages/loop/src/version.ts",
   "packages/mcp-client/src/version.ts",
-  "packages/server/src/version.ts",
 ] as const;
 
 const PRODUCT_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
@@ -70,7 +68,6 @@ const PACKAGE_EDGE_EXCEPTIONS = new Set([
 
 const APPLICATION_FOUNDATIONS: Readonly<Record<string, readonly string[]>> = {
   "@clarvis/code": ["@clarvis/paths"],
-  "@clarvis/server": ["@clarvis/capability", "@clarvis/paths"],
 };
 
 /** Human-facing plural label used by the generated role-grouped graph. */

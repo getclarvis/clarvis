@@ -603,30 +603,6 @@
     },
     {
       "mechanism": "subprocess",
-      "file": "packages/server/tests/architecture/bin-bind-gate.test.ts",
-      "identity": "subprocess|spawnBin|Bun.spawn([process.execPath, binPath, ...args], { env: binEnv(), stdout: \"ignore\", stderr: \"pipe\", stdin: \"ignore\", timeout: 10_000, killSignal: \"SIGKILL\", })|0",
-      "package_owner": "@clarvis/server",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/server/tests/architecture/bin-bind-gate.test.ts",
-      "identity": "timer|readUntilSettled|setTimeout(() => resolve(false), 5_000)|0",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/server/tests/architecture/product-version.test.ts",
-      "identity": "subprocess|describe:server CLI product version/it:reports the root-owned version and exits before boot|Bun.spawn([process.execPath, binPath, \"--version\"], { env: { ...globalThis.process.env, CLARVIS_LOG_LEVEL: \"silent\" }, stdout: \"pipe\", stderr: \"pipe\", })|0",
-      "package_owner": "@clarvis/server",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
       "file": "packages/tools/tests/contract/grep-parity.test.ts",
       "identity": "subprocess|module|spawnSync(\"rg\", [\"--version\"], { stdio: \"ignore\" })|0",
       "package_owner": "@clarvis/tools",

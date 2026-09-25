@@ -30,7 +30,6 @@ const FORBIDDEN = [
   "@clarvis/kernel",
   "@clarvis/protocol",
   "@clarvis/code",
-  "@clarvis/server",
   "@clarvis/memory",
   "@clarvis/plan",
   "@clarvis/workflows",

@@ -55,7 +55,7 @@ const OWNS_THE_TERMINAL = "packages/code/";
  * logger or a kernel exists — the case the observability standard explicitly
  * carves out for `--help` and boot failures.
  */
-const CLI_ENTRYPOINTS = new Set(["packages/kernel/src/bin.ts", "packages/server/src/bin.ts"]);
+const CLI_ENTRYPOINTS = new Set(["packages/kernel/src/bin.ts"]);
 
 /** The one module in a package permitted to hold its default writer. */
 const SANCTIONED_SINKS = new Set([

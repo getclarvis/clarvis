@@ -32,10 +32,8 @@ const nonnegativeInt = z.coerce.number().int().nonnegative();
  * @returns a schema that treats `"false"`, `"0"`, `"no"`, `"off"` and the empty
  *   string (case-insensitive, trimmed) as `false` and any other string as
  *   `true`; non-string values fall back to `Boolean(v)`.
- * @remarks The false-value list is a decision that can drift between hosts, so
- *   this is the one authoritative source; `@clarvis/server`'s `loadServerEnv`
- *   imports it rather than keeping its own copy. `positiveInt`/`nonnegativeInt`
- *   stay unexported and duplicated in each host on purpose - they are zod idiom
+ * @remarks The false-value list is shared by hosts through this authoritative
+ *   source. `positiveInt`/`nonnegativeInt` stay unexported and duplicated in each host on purpose - they are zod idiom
  *   with exactly one correct spelling, and extracting them would widen this
  *   package's public surface to save one line each.
  */

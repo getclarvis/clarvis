@@ -20,7 +20,7 @@ export interface CreateLoggerOptions {
    * @remarks Defaults to `@clarvis/loop` because that is where the factory
    *   lives, not because that is who is calling. It used to be hardcoded, and
    *   since this is the only factory in the repository, every `@clarvis/kernel`
-   *   and `@clarvis/server` line was labelled as a loop line — so a record could
+   *   line was labelled as a loop line — so a record could
    *   not be attributed to the package that wrote it.
    */
   service?: string;

@@ -143,8 +143,7 @@ their child and derive `globalPaths` from that root, as the Code `SmokeContext` 
 assuming that a temporary `home` argument can redirect every consumer.
 The second is the name `@clarvis/hooks` already injects into every hook subprocess, so a hook
 that invokes Clarvis inherits a variable that points at the right tree. They replaced
-`CLARVIS_SERVER_CONFIG_DIR`, `CLARVIS_SERVER_WORKSPACE` and `CLARVIS_CODE_WORKSPACE`, which are
-removed rather than deprecated.
+older component-specific overrides, which are no longer part of the configuration contract.
 
 ## The four trees
 
@@ -246,8 +245,7 @@ The monorepo held **eight** copies of "write to a tmp file, then rename", and th
 diverged on the property that matters. Four kernel modules and `code` used `.tmp.${pid}` /
 `.tmp-${pid}`, which is safe against two _processes_ and not against two writers inside one;
 `memory` used `.${pid}.${counter}.tmp` and `trace` `.tmp-${randomUUID()}`, which are; and
-`@clarvis/server` wrote its Ed25519 signing key to a bare `${file}.tmp` with **no pid at all**, so
-two boots racing that one file collided on a single temp path. Nobody had filed it.
+a bare `${file}.tmp` lets two concurrent writers collide on one path.
 
 ```ts
 await writeFileAtomic(file, text); // tmp + rename; 0600 file, 0700 parents

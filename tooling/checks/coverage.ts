@@ -38,7 +38,6 @@ const PACKAGE_THRESHOLDS = {
   paths: { functions: 1, lines: 1 },
   plan: { functions: 0.95, lines: 0.97 },
   protocol: { functions: 1, lines: 1 },
-  server: { functions: 0.9, lines: 0.96 },
   skills: { functions: 1, lines: 1 },
   supervision: { functions: 0.98, lines: 1 },
   tools: { functions: 0.98, lines: 0.98 },
@@ -129,9 +128,9 @@ const NO_COUNTER_ALLOWLIST = {
     "src/workspace/changes-provider.ts",
     // Pure re-export barrel for the startup logger path.
     "src/logger.ts",
-    // Executable entry point: the `clarvis-kernel` bin. Unlike the server's, this
-    // one is a thin `serveFileKernelOverStdio` wrapper plus two failure writes,
-    // so the untested surface is small and the decision below does not apply.
+    // Executable entry point: the `clarvis-kernel` bin. It is a thin
+    // `serveFileKernelOverStdio` wrapper plus two failure writes, so the
+    // uninstrumented surface is small.
     "src/bin.ts",
   ],
   loop: [
@@ -148,28 +147,6 @@ const NO_COUNTER_ALLOWLIST = {
     "src/memory-contract.ts",
     "src/run-contract.ts",
     "src/types.ts",
-  ],
-  server: [
-    // Executable entry point: the `clarvis-server` bin, where the CLI
-    // argument parsing and bind-address policy live. Its behaviour -
-    // including the fail-closed bind-address gate AGENTS.md names as
-    // inviolable - is exercised by real subprocess tests in
-    // tests/bin-bind-gate.test.ts, asserting on the externally observable
-    // exit code and stderr message. Bun's coverage instrumentation only sees
-    // code running inside the `bun test` process itself, so a subprocess
-    // contributes no counters here no matter how thoroughly it is tested.
-    // Measured: importing the module in-process (mocking `process.exit` to
-    // stop it where a real exit would) does add it to the LCOV report, but
-    // `bun test`'s module cache is shared across every file in one run (no
-    // `--isolate` here), so only one of the file's many mutually exclusive
-    // early-return branches can ever execute per suite run - at most ~84% of
-    // its lines even in the best single-branch case, against a package line
-    // floor at 96% with under 1 point of headroom. Closing this needs either
-    // splitting the gate into a directly importable, unit-testable function
-    // (the shape `isPrivateBind`/`isPrivateLanBind` already use), or a
-    // verified way to run more than one scenario against this file in one
-    // coverage run.
-    "src/bin.ts",
   ],
   skills: [
     // Type-only.

@@ -23,8 +23,7 @@ came to look for files no writer ever produced." (`packages/paths/src/index.ts`)
 narrower problem is durability: the atomic-write family "replaces seven hand-rolled tmp-and-rename
 copies that had already diverged on the property that matters — one of them raced two processes
 onto a single temp name" (`packages/paths/src/index.ts`; see also
-`packages/paths/src/atomic.ts`, naming `@clarvis/server`'s signing key as the concrete instance: "written to a
-bare `<file>.tmp`, so two boots racing the same key file collided on one temp path"). A third,
+`packages/paths/src/atomic.ts`, whose temporary-name contract prevents two writers from colliding on one path. A third,
 narrower reason covers the **resolve** family (`expandHome`, `resolveAgainst`,
 `resolveWorkspaceDir`, §2.11): those three functions "were forked verbatim between the engine and
 an optional feature package that is structurally forbidden from importing it," so this

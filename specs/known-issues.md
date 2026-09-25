@@ -1832,11 +1832,10 @@ inline platform check.
 
 ---
 
-## Two CI flakes that were diagnosed and fixed, recorded so they are not re-diagnosed
+## A diagnosed and fixed CI flake
 
-Both predate the change that found them and both were reproduced from `main`'s own history, not
-from a branch. Neither is a Bun runtime death, so neither belongs with the entries above; both were
-tests whose timing assumptions were wrong.
+This test failure predates the change that found it and was reproduced from `main`'s own history,
+not from a branch. It was a timing assumption in the test, not a Bun runtime failure.
 
 **`@clarvis/plan` — `plan store > independent stores contending on the on-disk lock all succeed`,
 red on the Windows runner.** Last seen on `main` in run `30777232473`. The lockfile wait budget was
@@ -1865,29 +1864,6 @@ iteration count. And recovery is two-part rather than mtime alone: `reclaimLocal
 (`packages/paths/src/local-lease.ts`). A live writer keeps itself young through
 `LOCK_HEARTBEAT_MS` (5s, `packages/plan/src/file-repository.ts`). The budget-under-the-ceiling
 rule is therefore still the constraint to preserve when either number is touched.
-
-**`@clarvis/server` — `bin: fail-closed bind-address gate`, exit `137` where `1` was expected.**
-Last seen on `main` in run `30770028108`. `readUntilSettled` broke out of its read loop as soon as a
-gate marker reached stderr and then called `proc.kill("SIGKILL")` unconditionally. But the marker
-means the bin has *decided* to exit, not that it has exited — so on a loaded runner the kill landed
-first and the refusal reported `128 + 9` instead of the `1` the gate's contract names. The helper now
-gives a refusal a bounded grace period to exit on its own and keeps the kill for the "passes the
-gate and keeps serving" case it was written for.
-
-The helper stands as described: `readUntilSettled` at
-`packages/server/tests/architecture/bin-bind-gate.test.ts` still ends its read loop on a
-`GATE_MARKERS` hit, but a stderr containing `"refusing a"` now races `proc.exited` against
-a 5000ms timer and returns the natural exit code when it wins
-(`packages/server/tests/architecture/bin-bind-gate.test.ts`); the unconditional
-`proc.kill("SIGKILL")` survives only as the fall-through. `spawnBin`'s `timeout: 10_000` /
-`killSignal: "SIGKILL"` is documented in place as the last-resort net for a run that settles on no
-marker at all, not as the reaper for the ordinary path. The two named refusal cases assert that
-`code` is `1`.
-
-Neither reproduces locally with any useful frequency: 12 consecutive runs of the server case and 6
-of the plan case were green on a Linux workstation while both were failing on CI. That is the same
-lesson as the `code` signal death above — a local run is not evidence about a CI flake — and it is
-why both were diagnosed from the failure's own shape rather than by trying to reproduce them.
 
 **One thing that has changed about the guard rather than the fix.** The `windows` job still runs
 `bun --filter @clarvis/plan test`, and push/pull-request triggers were restored. A

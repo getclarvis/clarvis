@@ -844,8 +844,8 @@ See [self-configuration](../../specs/hosts/self-configuration.md).
 Clarvis ships five agents — `marshall`, `admiral`, `coder`, `explorer`, `planner` — as TypeScript in
 `src/config/builtin-agents/`. They are not templates copied into a user's configuration on first
 run: there is no scaffolding step, and a host whose configuration directory is empty already has all
-five. That is what lets `@clarvis/code` reach its first prompt, and `@clarvis/server` serve a
-request, against a directory nothing has ever written to. `DEFAULT_ENTRY_AGENT` (`marshall`) is what
+five. That lets `@clarvis/code` reach its first prompt against a directory nothing has ever
+written to. `DEFAULT_ENTRY_AGENT` (`marshall`) is what
 `createFileKernel` hands the run assembler, so a request naming no agent still resolves.
 
 The two shipped leaders, `marshall` and `admiral`, each declare a 256-iteration soft session limit;

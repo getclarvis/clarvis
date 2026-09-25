@@ -65,8 +65,7 @@ Second, what a filter withholds is **counted, never named** — the hook filter 
 and the log line says so explicitly (`packages/hooks/src/env.ts`,
 `packages/hooks/src/capability.ts`).
 
-Delegated to siblings: server authentication and bind policy
-([hosts/server-auth.md](../hosts/server-auth.md)), native Bubblewrap/Seatbelt sandboxing
+Delegated to siblings: native Bubblewrap/Seatbelt sandboxing
 ([execution/sandbox.md](../execution/sandbox.md)), the `.clarvis`/state directory layout itself
 ([foundations/paths.md](../foundations/paths.md)), and release artifact identity, checksums, download
 bounds, staging, and activation ([distribution-and-updates.md](distribution-and-updates.md)).
@@ -956,9 +955,6 @@ bugs: a failed spill loses the middle of one tool result rather than the run
 lets the run proceed rather than refusing to start
 (`packages/kernel/src/config/workspace-trust.ts`); and the coarse fallback's false positives are
 real — a 64-hex project id and a full UUID both read as credentials, which is why
-`@clarvis/server` shortens ids to 12 characters before logging
-(`packages/server/src/logging.ts`; pinned by
-`packages/server/tests/unit/logging.test.ts`).
 
 ## 7. Coupling
 

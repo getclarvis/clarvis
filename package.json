@@ -2,7 +2,7 @@
   "name": "clarvis",
   "version": "0.2.0",
   "private": true,
-  "description": "Clarvis monorepo — loop engine, tools, skills, MCP server and the terminal UI.",
+  "description": "Clarvis monorepo — loop engine, tools, skills, MCP client and the terminal UI.",
   "license": "MIT",
   "author": "getclarvis",
   "repository": {
@@ -34,7 +34,6 @@
     "packages/loop",
     "packages/workflows",
     "packages/kernel",
-    "packages/server",
     "packages/code"
   ],
   "scripts": {
@@ -43,7 +42,7 @@
     "build:watch": "tsc -b --watch",
     "dev:install": "./dev-install.sh",
     "clean": "tsc -b --clean && bun --workspaces clean",
-    "test": "bun run test:tooling && bun --filter @clarvis/capability test && bun --filter @clarvis/supervision test && bun --filter @clarvis/llm test && bun --filter @clarvis/paths test && bun --filter @clarvis/trace test && bun --filter @clarvis/mcp-client test && bun --filter @clarvis/protocol test && bun --filter @clarvis/skills test && bun --filter @clarvis/memory test && bun --filter @clarvis/plan test && bun --filter @clarvis/goal test && bun --filter @clarvis/tools test && bun --filter @clarvis/hooks test && bun --filter @clarvis/loop test && bun --filter @clarvis/workflows test && bun --filter @clarvis/kernel test && bun --filter @clarvis/server test && bun --filter @clarvis/code test",
+    "test": "bun run test:tooling && bun --filter @clarvis/capability test && bun --filter @clarvis/supervision test && bun --filter @clarvis/llm test && bun --filter @clarvis/paths test && bun --filter @clarvis/trace test && bun --filter @clarvis/mcp-client test && bun --filter @clarvis/protocol test && bun --filter @clarvis/skills test && bun --filter @clarvis/memory test && bun --filter @clarvis/plan test && bun --filter @clarvis/goal test && bun --filter @clarvis/tools test && bun --filter @clarvis/hooks test && bun --filter @clarvis/loop test && bun --filter @clarvis/workflows test && bun --filter @clarvis/kernel test && bun --filter @clarvis/code test",
     "test:tooling": "bun test tooling/tests/unit tooling/tests/architecture --timeout 60000",
     "test:coverage": "bun --workspaces --sequential --if-present test:coverage && bun run coverage:check",
     "coverage:check": "bun run tooling/checks/coverage.ts",
@@ -77,7 +76,6 @@
     "build:workflows": "bun --filter @clarvis/workflows build",
     "build:protocol": "bun --filter @clarvis/protocol build",
     "build:kernel": "bun --filter @clarvis/kernel build",
-    "build:server": "bun --filter @clarvis/server build",
     "build:code": "bun --filter @clarvis/code build",
     "link": "bun --filter @clarvis/code link",
     "smoke": "bun --filter @clarvis/code smoke",

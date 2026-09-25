@@ -882,8 +882,7 @@ statically or dynamically — the name occurs there only in TSDoc prose
 production consumer anywhere in the repository** — its only importers are this package's own
 integration tests (`packages/hooks/tests/integration/bun-spawn.test.ts`,
 `packages/hooks/tests/integration/real-subprocess.test.ts`) and one type-only import in the
-engine's suite (`packages/loop/tests/architecture/logger-drift.test.ts`). `@clarvis/kernel`,
-`@clarvis/server` and `@clarvis/code` never reach `@clarvis/hooks` at all, statically or
+engine's suite (`packages/loop/tests/architecture/logger-drift.test.ts`). `@clarvis/kernel` and `@clarvis/code` never reach `@clarvis/hooks` at all, statically or
 dynamically — the closest any of them comes is naming it in a TSDoc remark; the kernel's
 plugin-manifest reader
 (`packages/kernel/src/plugins/hook-dialects.ts`, delegated to [plugins-and-marketplace](../hosts/plugins.md)) inverts

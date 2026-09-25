@@ -1301,7 +1301,7 @@ The package extends the root `tsconfig.base.json` with `noEmit` for the typechec
 dependencies (`packages/mcp-client/tsconfig.json`); `include` covers `src/**/*.ts` **and**
 `tests/**/*.ts`. Its test script carries `--timeout 60000`
 (`packages/mcp-client/package.json`). Its coverage floors are `functions: 0.90, lines: 0.98`
-(`tooling/checks/coverage.ts`) — tied with `memory` and `server` for the lowest function floor in
+(`tooling/checks/coverage.ts`) — tied with `memory` for the lowest function floor in
 that table (`tooling/checks/coverage.ts`), while its line floor of 0.98 is among the
 highest.
 
@@ -1358,8 +1358,7 @@ highest.
 - How `McpServerConfig` values (including `shared`, `resources`, `env`, `headers`) are assembled from
   `settings.json` and plugin manifests — [kernel-config-and-agents](../hosts/kernel-config.md). The pool-sharing
   mode is chosen by the `CLARVIS_MCP_POOL_SHARING` environment default
-  (`packages/capability/src/env.ts`), and its owner-scoping consequence is described in
-  [server-access-and-owner-scoping](../hosts/server-mcp.md).
+  (`packages/capability/src/env.ts`).
 
 **Not investigated**
 

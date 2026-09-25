@@ -65,7 +65,7 @@ export type PlansMode = "off" | "on" | "review";
  * @remarks The window belongs to the surface that can actually put a question
  *   in front of a human, and it travels with the run-creation request rather
  *   than being inferred by the kernel: a terminal UI declares it, a headless
- *   caller or an MCP facade simply omits it, and the kernel applies it per run
+ *   caller simply omits it, and the kernel applies it per run
  *   — including a hosted execution started with these params and a workflow
  *   manager's leaders, which present through the manager's own channel. It is
  *   deliberately separate from `elicit_wait_ms`: the policy is how long the
@@ -946,7 +946,7 @@ export interface RunHandle {
    * @returns whether the question was still pending, plus the window's remaining
    *   projection when one applies.
    * @remarks Optional because not every handle has a client that presents
-   *   questions — the MCP facade declines them instead. A handle without it (or
+   *   questions. A handle without it (or
    *   a client that never calls it) keeps the operational wait bound as the only
    *   way a question ends unanswered.
    */

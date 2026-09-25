@@ -7,8 +7,8 @@
  * not include such instructions.
  *
  * The rule is not "no helpful errors" — it is that the audience decides. An
- * operator reading `clarvis-server --help` or a boot failure on their own
- * terminal *should* be told about `--allow-public-bind`; those never reach a
+ * operator reading a CLI help message or a boot failure on their own
+ * terminal can receive operational guidance; those messages never reach a
  * model. This scans only the strings that become tool results.
  *
  * It scans for the shape rather than for one known string, because the next

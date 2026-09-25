@@ -149,21 +149,6 @@
     "packages/protocol": {
       "name": "@clarvis/protocol",
     },
-    "packages/server": {
-      "name": "@clarvis/server",
-      "bin": {
-        "clarvis-server": "dist/bin.js",
-      },
-      "dependencies": {
-        "@clarvis/capability": "workspace:*",
-        "@clarvis/kernel": "workspace:*",
-        "@clarvis/paths": "workspace:*",
-        "@clarvis/protocol": "workspace:*",
-        "@modelcontextprotocol/sdk": "^1.29.0",
-        "jose": "^6.2.3",
-        "zod": "^4.4.3",
-      },
-    },
     "packages/skills": {
       "name": "@clarvis/skills",
       "dependencies": {
@@ -304,8 +289,6 @@
     "@clarvis/plan": ["@clarvis/plan@workspace:packages/plan"],
 
     "@clarvis/protocol": ["@clarvis/protocol@workspace:packages/protocol"],
-
-    "@clarvis/server": ["@clarvis/server@workspace:packages/server"],
 
     "@clarvis/skills": ["@clarvis/skills@workspace:packages/skills"],
 

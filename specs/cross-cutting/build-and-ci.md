@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-This subsystem is everything that turns 18 workspace source directories into something runnable and keeps them
+This subsystem is everything that turns 17 workspace source directories into something runnable and keeps them
 consistent while they change: one Bun workspace (`package.json`, `workspaces`) with a single root
 lockfile (`bun.lock` is the only lockfile in the tree), a two-layer TypeScript configuration (a `tsc -b`
 solution over per-package `composite` emit projects, `tsconfig.json`), one shared ESLint/Prettier
@@ -66,7 +66,7 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `build:packages` | `tsc -b` | `package.json` (`scripts.build:packages`) |
 | `build:watch` | `tsc -b --watch` | `package.json` (`scripts.build:watch`) |
 | `clean` | `tsc -b --clean && bun --workspaces clean` | `package.json` (`scripts.clean`) |
-| `test` | `test:tooling`, followed by 18 sequential `bun --filter @clarvis/<pkg> test` invocations, all `&&`-chained | `package.json` (`scripts.test`) |
+| `test` | `test:tooling`, followed by 17 sequential `bun --filter @clarvis/<pkg> test` invocations, all `&&`-chained | `package.json` (`scripts.test`) |
 | `test:coverage` | `bun --workspaces --sequential --if-present test:coverage && bun run coverage:check` | `package.json` (`scripts.test:coverage`) |
 | `coverage:check` | `bun run tooling/checks/coverage.ts` | `package.json` (`scripts.coverage:check`) |
 | `typecheck` | workspace typechecks followed by `typecheck:tooling` | `package.json` (`scripts.typecheck`) |
@@ -80,7 +80,7 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `format` / `format:check` | workspace formatting plus root tooling and repository workflows | `package.json` (`scripts.format*`) |
 | `check:pre-commit` | `format:check && build && typecheck && lint:eslint && lint:intent && knip && test:coverage` | `package.json` (`scripts.check:pre-commit`) |
 | `hooks:install` | `git config core.hooksPath .githooks` | `package.json` (`scripts.hooks:install`) |
-| `build:<pkg>` × 18 | `bun --filter @clarvis/<pkg> build` | `package.json` (`scripts.build:<pkg>`) |
+| `build:<pkg>` × 16 | `bun --filter @clarvis/<pkg> build` | `package.json` (`scripts.build:<pkg>`) |
 | `link` | `bun --filter @clarvis/code link` | `package.json` (`scripts.link`) |
 | `smoke` | `bun --filter @clarvis/code smoke` | `package.json` (`scripts.smoke`) |
 | `release:package` / `release:smoke` / `release:install-smoke` | native portable archive, artifact smoke, and installer smoke | `package.json` (`scripts.release:*`) |
@@ -126,7 +126,7 @@ that matter:
 | `@clarvis/protocol` | `test` is `bun run test:contract`, which is `tsc -p tsconfig.json` — it runs no `bun test` at all | `packages/protocol/package.json` |
 | `@clarvis/workflows` | every test script carries `--isolate` | `packages/workflows/package.json` |
 | `@clarvis/llm`, `@clarvis/loop`, `@clarvis/workflows` | declare `prebuild: bun run clean` | `packages/llm/package.json`, `packages/loop/package.json`, `packages/workflows/package.json` |
-| `@clarvis/kernel`, `@clarvis/protocol`, `@clarvis/server` | `typecheck` is `tsc -p tsconfig.json` with no `--noEmit` flag (their `tsconfig.json` sets `noEmit: true` itself) | `packages/kernel/package.json`, `packages/kernel/tsconfig.json` |
+| `@clarvis/kernel`, `@clarvis/protocol` | `typecheck` is `tsc -p tsconfig.json` with no `--noEmit` flag (their `tsconfig.json` sets `noEmit: true` itself) | `packages/kernel/package.json`, `packages/kernel/tsconfig.json` |
 | `@clarvis/code` | `typecheck` is bare `tsc --noEmit` (no `-p`) | `packages/code/package.json` |
 
 Every `bun test` invocation reachable from a package's `test` script carries `--timeout 60000` on the
@@ -153,7 +153,6 @@ separate measured change moves it.
 | `@clarvis/loop` | `.`, `./capabilities/tools`, `./host`, `./workflows`, `./testing` | — |
 | `@clarvis/workflows` | `.`, `./schemas`, `./artifact` | — |
 | `@clarvis/kernel` | `.`, `./bootstrap`, `./config`, `./policy`, `./local` | `clarvis-kernel` → `dist/bin.js` |
-| `@clarvis/server` | **none** | `clarvis-server` → `dist/bin.js` |
 | `@clarvis/code` | **none** | `clarvis` → `src/cli.ts` |
 
 Every export entry has the same three-condition shape, `bun` first:
@@ -162,10 +161,8 @@ Every export entry has the same three-condition shape, `bun` first:
 ".": { "bun": "./src/index.ts", "types": "./dist/index.d.ts", "import": "./dist/index.js" }
 ```
 
-(`packages/capability/package.json`; the same shape recurs in every library manifest). The two application
-packages publish no `exports` at all and are reached only through their `bin`
-(`packages/server/package.json`, `packages/code/package.json`). Note the asymmetry in the
-bins: kernel and server point at built `dist/bin.js`, `code` points at TypeScript source
+(`packages/capability/package.json`; the same shape recurs in every library manifest). The application package publishes no `exports` and is reached through its `bin`
+(`packages/code/package.json`). Kernel points at built `dist/bin.js`; Code points at TypeScript source
 (`src/cli.ts`), which then dispatches to the bundle at runtime (§4.6).
 
 `@clarvis/skills` is the only manifest carrying `"overrides": { "esbuild": "^0.25.0" }` plus
@@ -176,7 +173,7 @@ bins: kernel and server point at built `dist/bin.js`, `code` points at TypeScrip
 | Profile | Packages | Evidence |
 | --- | --- | --- |
 | Extends `tsconfig.base.json` | 13: capability, hooks, llm, loop, mcp-client, memory, paths, plan, skills, supervision, tools, trace, workflows | `rg -l tsconfig.base.json packages/*/tsconfig.json` → 13 |
-| Standalone | 4: `protocol`, `kernel`, `server`, `code` | none of those four contains `extends` |
+| Standalone | 3: `protocol`, `kernel`, `code` | none of those three contains `extends` |
 
 `tsconfig.base.json` fixes `module`/`moduleResolution` = `NodeNext`,
 `rewriteRelativeImportExtensions: true`, `types: ["bun","node"]`, `strict`,
@@ -185,17 +182,14 @@ bins: kernel and server point at built `dist/bin.js`, `code` points at TypeScrip
 `skipLibCheck: true`. Extending packages keep only `target`/`lib` and path-relative options
 (`packages/capability/tsconfig.json`).
 
-The four standalone profiles differ concretely:
+The three standalone profiles differ concretely:
 
 | Package | `module` | `moduleResolution` | Extras |
 | --- | --- | --- | --- |
 | `protocol` | `NodeNext` | `NodeNext` | `rewriteRelativeImportExtensions`, `declaration: true`, `isolatedModules: true`, `verbatimModuleSyntax`, `noEmit: true`, no `types` array (`packages/protocol/tsconfig.json`) |
 | `kernel` | `NodeNext` | `NodeNext` | `rewriteRelativeImportExtensions`, `verbatimModuleSyntax`, 18 `paths` entries onto sibling **sources** (`packages/kernel/tsconfig.json`) |
-| `server` | `NodeNext` | `NodeNext` | `rewriteRelativeImportExtensions`, `verbatimModuleSyntax`, 6 `paths` entries onto sources (`packages/server/tsconfig.json`) |
 | `code` | `ESNext` | `bundler` | `jsx: "preserve"`, `jsxImportSource: "@opentui/solid"`, `types: ["bun"]` only, `allowImportingTsExtensions`, 16 `paths` entries (`packages/code/tsconfig.json`) |
 
-`tsconfig.base.json` names only "protocol/kernel/code" as special — `server` is a fourth standalone
-profile the comment does not mention.
 
 ### 2.5 ESLint / Prettier / Knip
 
@@ -242,7 +236,7 @@ its `src`, tests, artifact builders and benchmarks,
 
 Root `bunfig.toml` sets `[install] linker = "hoisted"` and a `[test]` block with
 `preload = ["./tooling/test-runtime/clarvis-home-preload.ts"]`, `coverageReporter = ["text","lcov"]`,
-`coverageDir = "coverage"`, `coverageSkipTestFiles = true`. Every one of the 18 workspace packages
+`coverageDir = "coverage"`, `coverageSkipTestFiles = true`. Every one of the 17 workspace packages
 has its own `bunfig.toml` repeating those three coverage keys plus
 `coveragePathIgnorePatterns = ["../**"]` (e.g. `packages/capability/bunfig.toml`). Every package
 that runs `bun test` also preloads the shared home redirector; only the type-only `protocol` package
@@ -333,7 +327,7 @@ packages/<pkg>/dist/
 
 `files` in the manifests is `["dist", "README.md"]` for library packages
 (`packages/capability/package.json`, `files`), `["dist"]` for `protocol`
-(`packages/protocol/package.json`, `files`); `kernel`, `server` and `code` declare no `files` field.
+(`packages/protocol/package.json`, `files`); `kernel` and `code` declare no `files` field.
 Every workspace package is `"private": true` and omits `version`; workspace entries in `bun.lock`
 also omit versions. The root `package.json` owns the single Clarvis product version, and
 `check:graph` enforces the complete manifest/lock policy.
@@ -459,7 +453,7 @@ Two different `paths` regimes exist and the direction matters. A package's dev `
 gaps resolve silently through the ordinary `types` condition onto `dist/*.d.ts` — the built output —
 even during an otherwise source-mapped, non-build `tsc -p tsconfig.json` typecheck:
 
-- The **dev** `tsconfig.json` of `loop`, `kernel`, `server`, `code`, `memory`, `workflows`, `trace`,
+- The **dev** `tsconfig.json` of `loop`, `kernel`, `code`, `memory`, `workflows`, `trace`,
   `hooks`, `llm`, `mcp-client`, `skills`, `supervision` maps most `@clarvis/*` specifiers it imports
   onto sibling **sources** (e.g. `packages/loop/tsconfig.json`, `packages/kernel/tsconfig.json`),
   but each package's map omits some of its own declared dependencies: `kernel`'s 18-entry map
@@ -479,8 +473,7 @@ even during an otherwise source-mapped, non-build `tsc -p tsconfig.json` typeche
 - The **build** `tsconfig.build.json` either clears the mapping (`"paths": {}`, e.g.
   `packages/loop/tsconfig.build.json`) so resolution goes through the emitted `dist/*.d.ts`, or
   remaps explicitly onto `dist/*.d.ts` — `kernel` does this for `protocol` and `plan`
-  (`packages/kernel/tsconfig.build.json`), and `server`
-  for `protocol` and four `kernel` entrypoints (`packages/server/tsconfig.build.json`).
+  (`packages/kernel/tsconfig.build.json`).
 
 Project references mirror the runtime dependency edges. `packages/kernel/tsconfig.build.json`
 lists its referenced packages; `packages/loop/tsconfig.build.json` lists nine (including the three optional
@@ -995,7 +988,7 @@ real JavaScript files; emitting packages rewrite source extensions back to their
 equivalents in emitted JavaScript, while declaration specifiers remain source-oriented and resolve
 to sibling `.d.ts` files.
 Production: `tsconfig.base.json` and the standalone emitting profiles in
-`packages/{kernel,protocol,server}/tsconfig.json` enable `rewriteRelativeImportExtensions`;
+`packages/{kernel,protocol}/tsconfig.json` enable `rewriteRelativeImportExtensions`;
 `packages/code/tsconfig.json` enables `allowImportingTsExtensions`; `check:imports` is part of
 `lint:intent` in `package.json`.
 Test: `tooling/checks/import-extensions.ts` (`moduleSpecifiers`, `aliasedTypeScriptImports`) scans the
@@ -1026,16 +1019,15 @@ Test: `packages/code/tests/architecture/cli-fast-path.test.ts` (manifest bin cas
 **BUILD-32.** Clarvis uses a single product version: root `package.json` owns one exact SemVer;
 every workspace manifest is private and omits `version`, as does every workspace entry in
 `bun.lock`. The only runtime imports of the root
-manifest are Code's CLI presentation, Loop's public `VERSION`, MCP Client's initialization identity,
-and Server's CLI version module.
+manifest are Code's CLI presentation, Loop's public `VERSION`, and MCP Client's initialization identity.
+
 Production: root `package.json` (`version`); `tooling/lib/package-architecture.ts`
 (`PRODUCT_VERSION_IMPORTERS`, `productVersionPolicyErrors`, `productLockfileVersionErrors`,
 `productManifestImportViolation`); `tooling/lib/package-graph.ts` (`analyzePackageGraph`);
-`packages/{code,loop,mcp-client,server}/src` version consumers.
+`packages/{code,loop,mcp-client}/src` version consumers.
 Test: `tooling/tests/unit/package-architecture.test.ts` (product-version policy and importer cases),
 `packages/code/tests/unit/cli-args.test.ts`, `packages/loop/tests/unit/version.test.ts`,
-`packages/mcp-client/tests/unit/version.test.ts`, `packages/server/tests/unit/version.test.ts`, and
-`packages/server/tests/architecture/product-version.test.ts`.
+and `packages/mcp-client/tests/unit/version.test.ts`.
 
 **BUILD-33.** The POSIX checkout bootstrap `dev-install.sh` delegates to typed Code tooling and
 installs `clarvis-develop`, never a second product `bin`. It requires the exact pinned Bun, performs
@@ -1138,7 +1130,7 @@ sets it (`package.json`, `scripts.hooks:install`, is the only writer).
   `packages/code/tooling/artifact/build.ts` in its own TSDoc as the module whose `ASSETS` list must stay in
   step — a documentation-level coupling with no mechanical check.
 
-**Type-only vs runtime.** `@clarvis/protocol` is a `dependencies` entry of `kernel`, `server` and
+**Type-only vs runtime.** `@clarvis/protocol` is a `dependencies` entry of `kernel` and
 `code` but has an emitting `tsconfig.build.json` (`packages/protocol/tsconfig.build.json`) purely so
 `dist/*.d.ts` exists for `tsc` — its own package `test` script is a typecheck, not a test run
 (`packages/protocol/package.json`). The inverse instance — a package declared only under

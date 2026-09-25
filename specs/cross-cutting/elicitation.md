@@ -15,14 +15,10 @@ ever live for a given run at a time, and — one level up — a workflow's concu
 share a second, tree-wide FIFO (`packages/workflows/src/elicit-mux.ts`) so at most one prompt is
 ever live for the whole workflow tree.
 
-The engine itself does not know what a terminal, a remote MCP client, or a headless server caller is:
-it hands `ElicitParams` to whatever `Elicit` callback the host supplied and awaits an
+The engine does not know which host surface presents a question. It hands `ElicitParams` to whatever `Elicit` callback the host supplied and awaits an
 `ElicitRawResult`. The **kernel** is the first layer that turns this into something addressable by id
-(`packages/kernel/src/runs/elicit-bridge.ts`), and each of `code` (a terminal) and `server` (an
-MCP-over-HTTP facade) then bridges that bridge to its own surface — a modal block in the TUI, or one
-of three "postures" (`relay`/`tool`/`auto_decline`) in the server
-(`packages/server/src/mcp/elicitation.ts`). A run that has no human attached at all (the server's
-default posture, or a headless `code --prompt` invocation) still gets an answer for every question —
+(`packages/kernel/src/runs/elicit-bridge.ts`), and `code` presents it as a modal block in the TUI.
+A run with no human attached (such as a headless `code --prompt` invocation) still gets an answer for every question —
 just always the same one, `decline` or `cancel` — so the engine's control flow never has to special-case
 "nobody is listening."
 
@@ -33,7 +29,7 @@ really on screen. The interactive TUI declares 30 seconds. The window is a host 
 the run-creation request, it starts only after that confirmation, and on expiry the kernel closes the
 question by id and hands the decision back to the model as an honest "no answer" (§4.11). Nothing
 else changes: plan and workflow reviews, soft-budget asks, relayed MCP
-questions, headless and server runs keep the wait policies below, and an elapsed window is never an
+questions and headless runs keep the wait policies below, and an elapsed window is never an
 approval.
 
 ## 2. Surface
@@ -98,22 +94,6 @@ approval.
 Wire framing of these notifications over JSON-RPC (`N.runElicitation`, `N.runElicitationSettled`,
 `M.runsRespond`, etc.) is the
 concern of **kernel-transport-and-wire**; this document stops at the DTO shapes themselves.
-
-### 2.6 `@clarvis/server` MCP surface
-
-| Item | Location | Shape |
-| --- | --- | --- |
-| `clarvis_run` input fields (elicitation-relevant) | `packages/server/src/mcp/tools.ts` | `elicitations: enum["auto_decline","await"].default("auto_decline")`, `elicitation_wait_ms?: number.int().min(1000).max(600000)` |
-| `clarvis_run` output field | `packages/server/src/mcp/tools.ts` | `posture: { elicitation, plans_effective?, downgrades: string[], auto_answered: number }` |
-| `clarvis_respond` input | `packages/server/src/mcp/tools.ts` | `{ execution_id, id, action, content? }` |
-| `clarvis_respond` description | `packages/server/src/mcp/tools.ts` | `"Only meaningful when the run was started with elicitations: \"await\"; otherwise questions are declined automatically."` |
-| `ElicitationPosture` | `packages/server/src/mcp/elicitation.ts` | `"relay" \| "tool" \| "auto_decline"` |
-| `AppliedPosture` | `packages/server/src/mcp/elicitation.ts` | `{ elicitation, plans_effective?, prompt_cache_ttl?, downgrades: string[], auto_answered: number }` |
-| `resolvePosture(input)` | `packages/server/src/mcp/elicitation.ts` | decides the posture before the run starts |
-| `createElicitationController(opts)` | `packages/server/src/mcp/elicitation.ts` | owns one run's `onElicit` handler + pending map |
-| MCP wire request the server sends its own client | `packages/server/src/mcp/server.ts` | `{ method: "elicitation/create", params: request }` via `extra.sendRequest`, answer validated against `z.object({ action: enum, content?: record })` |
-| Env defaults | `packages/server/src/config/env.ts` | `CLARVIS_SERVER_ELICIT_TOOL_WAIT_MS` = 120,000; `CLARVIS_SERVER_ELICIT_RELAY_MS` = 600,000; `CLARVIS_SERVER_ELICIT_BACKSTOP_MS` = 60,000 |
-| Backstop wiring | `packages/server/src/bin.ts` | `CLARVIS_DEFAULT_ELICIT_WAIT_MS := CLARVIS_SERVER_ELICIT_BACKSTOP_MS` (60s), overriding the engine's own 30-minute default for every server-hosted run |
 
 ### 2.7 `@clarvis/mcp-client` — Clarvis as an MCP client relaying elicitation
 
@@ -415,62 +395,6 @@ the question the kernel settled — answered, expired by its window, or torn dow
 the frontend's own answer path is the only one that can accept or decline. The wire framing of that
 notification is owned by [kernel transport](../hosts/kernel-transport.md) (INV-326).
 
-### 4.5 Server posture resolution (`resolvePosture`)
-
-`resolvePosture` (`packages/server/src/mcp/elicitation.ts`) is a pure decision made **before** the run starts:
-
-| Input | Effect on `elicitation` |
-| --- | --- |
-| `clientDeclaresElicitation: true` | `"relay"` (client capability wins regardless of `requested`) |
-| `clientDeclaresElicitation: false`, `requested: "await"` | `"tool"` |
-| `clientDeclaresElicitation: false`, `requested: "auto_decline"` | `"auto_decline"` |
-
-Two further downgrades, both recorded as human-readable strings in `downgrades`:
-
-- `requested === "await"` but the client declares elicitation anyway →
-  `"elicitations:await→relay (client declares the elicitation capability)"` — relay always
-  wins over the caller's own request for the tool-based posture.
-- `elicitation === "auto_decline"` and `requestedPlans === "review"` → downgraded to `plans_effective:
-  "on"`, `"plans:review→on (an unanswered review gate cancels the run)"` — because an
-  unanswered plan-review gate does not skip approval, it cancels the whole run.
-
-
-Under `auto_decline`, `prompt_cache_ttl` is pinned to `"5m"` with the note "no elicitation can pause
-this run" — left `undefined` otherwise so the kernel derives it as usual.
-
-### 4.6 `ElicitationController` — answering everything a run asks
-
-`createElicitationController` (`packages/server/src/mcp/elicitation.ts`) is `attach`ed once per run, before the run's first
-iteration (`attach(runHandle)` installs `runHandle.onElicit(...)`). Per incoming
-`ElicitationRequest`:
-
-1. If `disposed`, auto-decline immediately.
-2. Always `opts.publish(request)` first — the question reaches the run's own event stream regardless
-   of posture.
-3. `posture.elicitation === "auto_decline"` → auto-decline.
-4. `posture.elicitation === "relay"` and a `sendRequest` is configured → forwards via
-   `sendRequest(...)` (the MCP `elicitation/create` request to the connected client); on the answer,
-   calls `runHandle.respond(...)`; on any thrown error (timeout, rejection, malformed answer) — falls
-   back to auto-decline.
-5. Otherwise (`tool` posture) — schedules a timeout (`opts.scheduleTimeout ?? scheduleSystemTimeout`,
-   `opts.toolWaitMs`) that auto-declines if it fires, and records the pending entry so
-   `clarvis_respond` can answer it first.
-
-`respond(response)` only accepts an answer in `tool` posture; otherwise returns
-`{accepted:false, note: "this run answers questions itself (posture=...)"}`. An unknown/already-settled
-id likewise returns `{accepted:false, note:"no pending question with that id"}`.
-
-`dispose()` sets `disposed = true` and force-auto-declines every still-pending question —
-called on session/connection teardown so no question is left hanging past the connection's life.
-
-`reportAnswered(logger, posture, action, auto)` (`packages/server/src/mcp/elicitation.ts`) logs one `elicit.answered`
-event (fields: `posture`, `action`, `auto`) for every question the controller settles, at three call
-sites: inside `autoDecline` (`auto: true`), after a successful relay answer (`auto: false`), and inside `respond()` for an accepted `tool`-posture answer (`auto: false`).
-`AppliedPosture.auto_answered` — the same field `clarvis_run` echoes back statically per §2.6 — is a
-live counter, not a fixed report value: `autoDecline` mutates it in place (`opts.posture.auto_answered
-+= 1`) as a side effect of each auto-decline, so it grows across the run's lifetime rather than
-being computed once.
-
 ### 4.7 The workflow elicit mux — state machine
 
 `createElicitMux(user, options?)` (`packages/workflows/src/elicit-mux.ts`) builds one internal `createElicitSerializer()`
@@ -552,9 +476,8 @@ the entry profile's `"ask_user"` grant, `capabilityNeedsHuman` is `true` when an
 `true` but the host supplied no `elicit` callback at all, the run never starts — it throws
 `ValidationError("elicitation_not_supported"...)` rather than admitting a run that would
 later park on its first question with nothing able to answer it. This is the one place absence of an
-`Elicit` transport is treated as a **request-validation failure** rather than a per-question decline;
-every other "nobody is listening" case in this document (server `auto_decline`, a headless `code` client, a
-disabled relay) instead runs to completion by auto-answering each question (§1, §6).
+`Elicit` transport is treated as a **request-validation failure** rather than a per-question decline.
+A headless client or disabled relay with an installed callback can still auto-answer a question (§1, §6).
 
 ### 4.11 The interactive `ask_user` decision window
 
@@ -694,14 +617,6 @@ Test: `packages/kernel/tests/contract/transport-codecs.test.ts` ("buffers an eli
 before runs.start returns", "drops a buffered question the kernel settles before any handler
 attaches", "keeps a buffered question when the settlement names another run").
 
-**ELI-06.** Under the server's `auto_decline` elicitation posture, a requested
-`plans: "review"` is always downgraded to `plans_effective: "on"`, never silently left as `"review"`
-and never upgraded to fail the run.
-Production: `packages/server/src/mcp/elicitation.ts`.
-Test: `packages/server/tests/unit/elicitation.test.ts` ("downgrades plans:review only when no
-answer channel exists").
-
-
 **ELI-08.** A workflow preflight has no implicit affirmative path. The TUI begins with no selected
 decision; the wire schema places `cancel` before `run`; only an explicitly submitted `run` starts the
 first round, while decline, cancel, timeout and an absent channel spawn no leader. The model-facing
@@ -723,7 +638,7 @@ and whose `kind` is `"ask_user"`, and only when the run declared a positive
 question almost immediately. An unmarked request, a relayed external one, or one that merely
 names `kind: "ask_user"` never receives `window_ms`, never expires by window, and never receives the
 window's continuation guidance; plan reviews, workflow reviews, soft-budget
-asks, headless runs and server runs keep their existing wait policies.
+asks and headless runs keep their existing wait policies.
 Production: `packages/kernel/src/runs/elicit-bridge.ts` (`windowFor`, `MAX_ELICIT_WINDOW_MS`),
 `packages/loop/src/runtime/elicit-relay.ts` (`buildElicitRelay`'s relay rebuild).
 Test: `packages/kernel/tests/unit/elicit-bridge.test.ts` (policy, provenance and forged-kind cases,
@@ -808,9 +723,7 @@ direct client under its own id).
 | A relayed MCP-server elicitation (`buildElicitRelay`'s `relay`) times out | caught specifically for `ElicitTimeoutError` (`packages/loop/src/runtime/elicit-relay.ts`) | `{action:"decline"}` returned to the MCP server — never propagated as a throw |
 | A relayed elicitation fails for a non-timeout reason | same catch, `else` branch (`packages/loop/src/runtime/elicit-relay.ts`) | rethrown — the MCP dispatch layer sees a real failure |
 | A registered kernel-bridge `onElicit` handler throws | `deliver`'s try/catch (`packages/kernel/src/runs/elicit-bridge.ts`) | swallowed; "cannot break or settle the engine's pending question" — every other handler and the pending state are unaffected |
-| An unknown or already-answered `respond(id, ...)` | `pending.get(id) === undefined` short-circuit (`packages/kernel/src/runs/elicit-bridge.ts`, and server's `packages/server/src/mcp/elicitation.ts`) | no-op / `{accepted:false, note:"no pending question with that id"}` |
-| Server elicitation controller is `dispose()`d with questions outstanding | `dispose()` (`packages/server/src/mcp/elicitation.ts`) | every pending question is force-auto-declined; `disposed` latches so any later `attach`-delivered question is auto-declined too |
-| Server's `relay` posture: `sendRequest` throws (client refuses, disconnects, or answer fails schema validation) | `catch` around `sendRequest` (`packages/server/src/mcp/elicitation.ts`) | falls back to `autoDecline(request.id)` — a relay failure degrades to a decline, not a stuck run |
+| An unknown or already-answered `respond(id, ...)` | `pending.get(id) === undefined` in `packages/kernel/src/runs/elicit-bridge.ts` | no pending question is settled |
 | Workflow review is untouched, declined, cancelled, times out, or has no interactive channel | `ElicitBlock` leaves the choice blank; `buildRunWorkflowHandler` accepts only explicit `decision === "run"`, passes the effective run wait bound, and maps every other resolution separately | workflow is not started; zero leaders registered; the tool result distinguishes decline, dismissal, invalid content and no-response timeout; settled waits log `workflow.review_resolved`, and timeout also logs `capability.elicit_no_response` |
 | `code`'s own `onElicit` callback throws | `reportElicitFailure` (`packages/code/src/adapters/kernel-run-client.ts`) | logs `elicit.handler.failed` (warn) and still answers `{action:"cancel"}` |
 | `code` invoked headlessly (`--prompt`, no interactive UI) | `handle.onElicit` registered in `packages/code/src/runtime.tsx` (`runPrintMode`) | every question is logged to stderr and auto-declined via `handle.respond({id, action:"decline"})` |
@@ -846,11 +759,6 @@ direct client under its own id).
   (`packages/kernel/src/runs/managed-run.ts`) and wires `bridge.elicit` into the `ManagedRunContext.elicit` the engine's
   `execute` closure receives; `RunHandle.onElicit`/`respond` on the returned handle forward
   straight to `bridge.onElicit`/`bridge.respond`.
-- `@clarvis/server`'s `mcp/elicitation.ts` depends only on `@clarvis/capability` (`NOOP_LOGGER`,
-  `Logger`) and `@clarvis/protocol` (`ElicitationRequest`, `ElicitationResponse`, `RunHandle`) — it
-  never imports `@clarvis/loop` or the MCP SDK directly; the SDK-specific `sendRequest`/
-  `getClientCapabilities` wiring lives one layer up in `mcp/server.ts` (`packages/server/src/mcp/server.ts`), which is
-  the only file that actually names `@modelcontextprotocol/sdk` for this concern.
 - `@clarvis/mcp-client`'s `client.ts` is the only place `ElicitRequestSchema`/`ElicitResult` from the
   MCP SDK are named for elicitation (`packages/mcp-client/src/client.ts`) — `@clarvis/loop`'s `open-tool-pool.ts` threads an
   `ElicitationRelay` through to it per connection (`packages/loop/src/runtime/open-tool-pool.ts`), never constructing the

@@ -47,13 +47,13 @@ in `packages/paths/tests/architecture/one-diagnostic-channel.test.ts`.
 ### 1.1 The trace-versus-log rule
 
 This document's scope names "the trace-versus-log rule" as its own (trace *persistence itself* is the
-sibling [foundations/trace.md](../foundations/trace.md) document's). None of the six files this document reads —
+sibling [foundations/trace.md](../foundations/trace.md) document's). None of the source modules this document reads —
 `packages/capability/src/{ports,log,env}.ts`, `packages/kernel/src/component-loggers.ts`,
 `packages/loop/src/logger.ts`, and the per-package `log.ts` modules in `tools`, `skills`,
-`workflows`, `plan`, `server` — states the general principle in one place; they assume it. `§6`'s
+`workflows` and `plan` — states the general principle in one place; they assume it. `§6`'s
 compaction-summarizer row is the only place in the document the distinction is worked through
 concretely, and its citation (`packages/loop/src/runtime/context/llm-compaction.ts`) is
-outside this document's own scope. Stated plainly, from what the six in-scope files show by
+outside this document's own scope. Stated plainly, from what the in-scope files show by
 construction rather than by comment: **a trace entry is part of the persisted record of what a run
 did and is read back on rehydration** (`TracePort.record`, `packages/capability/src/ports.ts`);
 **a log record is Clarvis's own machinery narrating itself, is never parsed back, and has no
@@ -175,19 +175,6 @@ modules instead hold logging *helpers*:
 | `@clarvis/plan` | `packages/plan/src/log.ts` | `boundedPlanReason(error)` | normalizes, redacts and caps (500 chars) a plan read/parse failure before it may be logged |
 | `@clarvis/plan` | `packages/plan/src/log.ts` | `MAX_PLAN_LOG_REASON_CHARS` | `500` |
 
-### 2.5 `@clarvis/server`'s logging module
-
-| Symbol | Location | Role |
-| --- | --- | --- |
-| `ServerLoggers` | `packages/server/src/logging.ts` | `{log, audit, child(bindings)}` — the pair every collaborator threads |
-| `createServerLoggers(log, audit)` | `packages/server/src/logging.ts` | pairs a diagnostic logger with an audit logger, `child` re-pairs both bound |
-| `SILENT_SERVER_LOGGERS` | `packages/server/src/logging.ts` | the fallback pair, both `NOOP_LOGGER` |
-| `ownerFields(owner, mode)` | `packages/server/src/logging.ts` | `{owner, owner_authenticated: mode === "token"}` |
-| `RequestLogMode` | `packages/server/src/logging.ts` | `"off" \| "errors" \| "all"` |
-| `logHttpRequest(logger, mode, fields)` | `packages/server/src/logging.ts` | writes `event: "http.request"` at `info`, gated by `mode` |
-| `REQUEST_ID_HEADER` | `packages/server/src/logging.ts` | `"x-clarvis-request-id"` |
-| `newRequestId()` / `newInstanceId()` | `packages/server/src/logging.ts` | both mint a 12-hex-digit id via `shortId()` |
-
 ### 2.6 Environment variables (all from `packages/capability/src/env.ts`)
 
 | Variable | Type / default | Effect |
@@ -207,8 +194,6 @@ is deliberately open, "the way `TraceKind` is" — and never mentions silencing 
 
 ### 2.7 CLI flags observed wiring these variables
 
-- `@clarvis/server`'s `bin.ts` maps a `--log-level` flag onto `CLARVIS_LOG_LEVEL`
-  (`packages/server/src/bin.ts`) before constructing its loggers.
 - `@clarvis/kernel`'s `serveFileKernelOverStdio` accepts `opts.logger` directly (no flag), and refuses
   to start when that logger shares a file descriptor with the stdio wire — see §6.
 
@@ -220,8 +205,7 @@ decides how a logger reaches each shape:
 - A **function parameter** takes `logger: Logger = NOOP_LOGGER`.
 - An **options-bag interface property** cannot carry a default in TypeScript, so it stays
   `logger?: Logger` and is normalized once, at construction (`options.logger ?? NOOP_LOGGER`). Every
-  site below that point calls it unconditionally — `@clarvis/server`'s `SILENT_SERVER_LOGGERS`
-  (`packages/server/src/logging.ts`) is the pattern.
+  site below that point calls it unconditionally.
 - A field on a hot internal config object may be made **required** and filled by its resolver.
   `@clarvis/tools` did that with `RuntimeConfig.logger` rather than pay ~30 optional-chained sites
   against a 0.98 function floor.
@@ -257,13 +241,6 @@ logger.info(
 ```
 
 
-```ts
-// packages/server/src/logging.ts
-logger.info(
-  { event: "http.request", ...fields },
-  "an HTTP request was answered; the status is what the caller saw",
-);
-```
 
 ```ts
 // packages/tools/src/config.ts (via tools.config_resolved, observed in
@@ -332,13 +309,6 @@ rules, all pinned by test (`packages/capability/tests/unit/log.test.ts`):
   `mcp=debug,mcp.connect=error` resolves `mcp.connect.retry` to `error` and `mcp.pool` to `debug`;
   `mcpclient` does **not** match `mcp=debug` (no dot boundary).
 
-### 3.4 Identifiers
-
-- `newRequestId()` / `newInstanceId()`: 12 hex characters, from `crypto.randomUUID()` with hyphens
-  stripped and truncated (`packages/server/src/logging.ts`). Deliberately shorter
-  than a full UUID and never caller-supplied — "an id a caller chooses is an id a caller can collide
-  with".
-
 ### 3.5 What is never logged, at any level
 
 An `Authorization` header, a bearer token, a `secret_hash`, a JWK, `auth.json` contents, resolved MCP
@@ -364,11 +334,6 @@ Order of operations in `createFileKernel` (`packages/kernel/src/file-kernel.ts`)
     — "nothing serves a request until it reports ready".
 6. Pass `componentLogger("worktrees")`, `componentLogger("guard")` etc. to each collaborator as it is
    built, and pass `auditLogger` into `createGuardResolver({..., audit: auditLogger})`.
-
-`@clarvis/server`'s `bin.ts` follows the identical shape at the process level
-(`packages/server/src/bin.ts`): build `root` via `createLogger`, bind an `instance_id`, derive
-`components` and pick `components("server")`, derive `audit` via `createAuditLogger`, and pair both
-into one `ServerLoggers` via `createServerLoggers`.
 
 Four correlation scopes exist, and each is bound by the layer that owns it: **service**
 (`{service, instance_id}`, bound by the factory), **component** (`{component}`, bound where the kernel
@@ -550,8 +515,8 @@ LRU-by-insertion-order structure rather than merely a size-capped one.
 - **`@clarvis/capability` is the sole owner of `Logger`/`LogFn`/`LOG_LEVELS` and everything derived
   from them.** Every other package in this document's scope imports the type from there rather than
   redeclaring it: `packages/loop/src/logger.ts`, `packages/kernel/src/component-loggers.ts`,
-  `packages/skills/src/lib/log.ts`, `packages/workflows/src/log.ts`,
-  `packages/server/src/logging.ts`. This is a static, compile-time import edge in every case.
+  `packages/skills/src/lib/log.ts` and `packages/workflows/src/log.ts`.
+  This is a static, compile-time import edge in every case.
 - **`componentLogger`/`bindLevelled` live in `@clarvis/capability` because two layers need them and
   neither can import the other**: "`@clarvis/kernel` derives a component logger for each collaborator
   it constructs, and `@clarvis/loop` does the same for the three subsystems it wires directly"
@@ -570,11 +535,7 @@ LRU-by-insertion-order structure rather than merely a size-capped one.
   already-built `Logger` value rather than constructing one.
 - **`@clarvis/kernel`'s `component-loggers.ts` depends only on `@clarvis/capability`**
   (`packages/kernel/src/component-loggers.ts`) — it does not import pino or `@clarvis/loop`
-  directly, so it composes over whatever `Logger` a host (kernel's own `createFileKernel`, or
-  `@clarvis/server`'s `bin.ts`) hands it.
-- **`@clarvis/server` reaches `createAuditLogger`/`createComponentLoggers` by importing them from
-  `@clarvis/kernel`** (`packages/server/src/bin.ts`), not by re-implementing them — a single owner
-  for the silence/audit-pinning logic that both hosts need identically.
+  directly, so it composes over the `Logger` supplied by its host.
 - **`@clarvis/tools`, `@clarvis/skills` (and, outside this document's direct scope,
   `@clarvis/paths` and `@clarvis/hooks`) each declare their own minimal structural logger port**
   (`ToolsLogger`, `SkillDiagnostics.logger`, `PathsLogger`, and `HookLogger` at
@@ -632,8 +593,7 @@ LRU-by-insertion-order structure rather than merely a size-capped one.
   terminal outright — so adding a file means claiming one of those, and a companion test fails when a
   named exemption stops needing to be one. The survey behind it also corrected the reading above:
   `@clarvis/workflows` and `@clarvis/plan` hold **none**; `@clarvis/skills`' single write *is* its own
-  sanctioned sink, the same shape as `@clarvis/tools`'; and `@clarvis/server`'s are in `bin.ts`, which
-  the standard already carves out for an operator at a shell. The rule was held everywhere — only one
+  sanctioned sink, the same shape as `@clarvis/tools`'. The rule was held everywhere — only one
   package proved it.
 - ~~**INV-OBS-2** (settings/request cannot set `CLARVIS_LOG`/`CLARVIS_LOG_AUDIT`) is argued from the
   *absence* of the field from the environment-only schema location, not from a positive test that

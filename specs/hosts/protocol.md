@@ -873,9 +873,8 @@ The following are derived directly from this package's own source and tests.
    `import \{[^}]*\} from "@clarvis/protocol";` (a *value*-form brace import, as opposed to
    `import type { ... }`) across every `packages/*/src` and `packages/*/tests` tree returns **zero**
    matches, while the same search restricted to `import type` returns matches in every consumer
-   (`code`, `kernel`, `server`). All three consumer tsconfigs enable `verbatimModuleSyntax`
-   (`packages/code/tsconfig.json`, `packages/kernel/tsconfig.json`,
-   `packages/server/tsconfig.json`), so their normal typechecks reject a future bare
+   (`code`, `kernel`). Both consumer tsconfigs enable `verbatimModuleSyntax`
+   (`packages/code/tsconfig.json`, `packages/kernel/tsconfig.json`), so their normal typechecks reject a future bare
    value-form import of an interface or alias. There is no separate architecture assertion that
    enumerates this property; compiler enforcement is the pin.
 
@@ -1017,15 +1016,10 @@ Every consumer reaches it **only as a type import**, verified directly (§5, inv
 | Consumer | Value imports | Type imports | Forcing mechanism |
 | --- | --- | --- | --- |
 | `@clarvis/kernel` | 0 | 91 source/test files currently import the public barrel, all with `import type` | `packages/kernel/tsconfig.json` maps `@clarvis/protocol` to the package's own **source**, so `tsc` checks the implementation directly against these interfaces |
-| `@clarvis/server` | 0 | 15 source/test files currently import the public barrel, all with `import type` | `packages/server/tests/architecture/dependency-boundary.test.ts` fixture-tests that the type import is an allowed boundary |
 | `@clarvis/code` | 0 | 110 source/test files currently import the public barrel, all with `import type` | `packages/code/tests/architecture/dependency-boundary.test.ts` pins `code`'s Clarvis-namespaced manifest dependencies to `@clarvis/kernel`, `@clarvis/paths`, and `@clarvis/protocol` |
 
-Both `code`'s and `server`'s dependency-boundary tests explicitly *permit* `@clarvis/protocol` (both
-derive an allowlist from `allowedInternalDependenciesFor` in `tooling/lib/package-architecture.ts` and
-compare it to their manifest — `packages/code/tests/architecture/dependency-boundary.test.ts`,
-`packages/server/tests/architecture/dependency-boundary.test.ts`) while forbidding `@clarvis/loop`
-and every engine-layer package — i.e. the test suite encodes "may depend on protocol, may not depend
-on the engine" as one design, not two.
+`code`'s dependency-boundary test permits `@clarvis/protocol` while forbidding
+`@clarvis/loop` and every engine-layer package.
 
 ### 7.3 What forces the type-only property, structurally
 
@@ -1049,8 +1043,7 @@ on the engine" as one design, not two.
   mutation — the reasoning is asserted in a comment, not shown.
 - **A remote HTTP/WebSocket `KernelTransport` remains unimplemented.** The current kernel exports an
   in-process client, `createLoopbackTransport`, `createStdioTransport`, and
-  `serveKernelOverStdio` (`packages/kernel/src/index.ts`). The HTTP-facing `@clarvis/server` exposes
-  MCP rather than a `KernelTransport`; `Principal` and `ConnectOptions.auth` therefore remain
+  `serveKernelOverStdio` (`packages/kernel/src/index.ts`). `Principal` and `ConnectOptions.auth` remain
   forward-compatible hosted-kernel shapes rather than a transport exercised in this repository.
 - **The exact set of `KernelErrorCode` values a given method can actually return** is not enumerated
   per-method anywhere in this package outside the handful of doc-comment mentions captured in §6 —

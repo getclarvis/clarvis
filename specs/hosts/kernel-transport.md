@@ -1284,9 +1284,9 @@ of the service it is given (`ServiceOperations` and `serviceOperations` in the s
 | `packages/kernel/src/bin.ts` | the `clarvis-kernel` binary, through `serveFileKernelOverStdio` |
 | `tests/contract/*`, `tests/integration/transport.test.ts`, `tests/integration/stdio-transport.test.ts`, `tests/unit/loopback-transport.test.ts` | the only exercisers of the client half in-repo |
 
-`packages/code` and `packages/server` contain **no** reference to `connectKernelClient`,
+`packages/code` contains **no** reference to `connectKernelClient`,
 `createLoopbackTransport`, `createKernelServer`, `createStdioTransport` or `serveKernelOverStdio`
-(searched across both packages' `src`).
+(searched across its `src`).
 
 ### 7.3 The direction the code forces
 
@@ -1349,7 +1349,7 @@ input are ignored"). `createLoopbackTransport.notify` instead dispatches straigh
 actually execute whatever real `KernelServer` operation the method name happens to name, with side
 effects, before discarding the result. This is a genuinely divergent implementation of one interface
 member, but it has no live consequence today: a repo-wide search of `packages/kernel/src`,
-`packages/code/src` and `packages/server/src` for a client-side call to `KernelTransport.notify`
+`packages/code/src` for a client-side call to `KernelTransport.notify`
 (as opposed to the unrelated `deps.notify`/UI toast helper of the same name in `@clarvis/code`, or the
 *server-side* `notifications.notify` used to push `run.event`/`config.change`/etc. — `packages/kernel/src/transport/server.ts`)
 finds none; the only exerciser is `packages/kernel/tests/unit/loopback-transport.test.ts`'s isolated unit test. §7 of

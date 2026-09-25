@@ -51,7 +51,7 @@ The whole thing runs sequentially, fail-fast, from one npm script: `check:pre-co
 | `knip` | `knip` | `package.json` (`scripts.knip`) |
 | `test:coverage` | `bun --workspaces --sequential --if-present test:coverage && bun run coverage:check` | `package.json` (`scripts.test:coverage`) |
 | `coverage:check` | `bun run tooling/checks/coverage.ts` | `package.json` (`scripts.coverage:check`) |
-| `test` | `test:tooling` followed by 18 package tests chained with `&&`, in dependency order | `package.json` (`scripts.test`) |
+| `test` | `test:tooling` followed by 17 package tests chained with `&&`, in dependency order | `package.json` (`scripts.test`) |
 | `hooks:install` | `git config core.hooksPath .githooks` | `package.json` (`scripts.hooks:install`) |
 | `smoke` | `bun --filter @clarvis/code smoke` | `package.json` (`scripts.smoke`) |
 | `release:prepare` | `bun run tooling/release/prepare.ts <version>` | `package.json` (`scripts.release:prepare`) |
@@ -311,7 +311,7 @@ the bound URL. The package-local `tempRoot` fixtures do not create a runtime pac
 dependency.
 
 Test: `packages/memory/tests/integration/file-store-observability.test.ts`,
-`packages/paths/tests/contract/local-lease.test.ts`, `packages/server/tests/unit/sessions.test.ts`,
+`packages/paths/tests/contract/local-lease.test.ts`,
 `tooling/tests/unit/coverage.test.ts` and the Code render suites exercise temporary spies, explicit
 mtimes and observable settling without changing production defaults.
 
@@ -395,14 +395,13 @@ floor without lowering a threshold.
 | paths | 1.00 | 1.00 |
 | plan | 0.95 | 0.97 |
 | protocol | 1.00 | 1.00 |
-| server | 0.90 | 0.96 |
 | skills | 1.00 | 1.00 |
 | supervision | 0.98 | 1.00 |
 | tools | 0.98 | 0.98 |
 | trace | 0.98 | 0.97 |
 | workflows | 1.00 | 1.00 |
 
-Three packages share the lowest function floor at 0.90: `mcp-client`, `memory` and `server`.
+Two packages share the lowest function floor at 0.90: `mcp-client` and `memory`.
 
 Output line format is fixed (`tooling/checks/coverage.ts`):
 
@@ -427,7 +426,6 @@ records that a fourth, `GRANDFATHERED`, was never legitimate and no longer has a
 | kernel | 5 | – | 1 (`src/bin.ts`) | – |
 | loop | – | 4 (`host`, `lib`, `workflows`, `workspace`) | – | – (former `src/version.ts` and `src/settings/marketplace-schema.ts` entries removed) |
 | memory | 4 | – | – | – |
-| server | – | – | 1 (`src/bin.ts`) | – |
 | skills | 1 | – | – | – |
 | supervision | – | 1 | – | – |
 | tools | 4 | 1 (`src/shell-entry.ts`) | – | – |
@@ -462,13 +460,6 @@ named re-export does not.
 Five packages have **no** key at all and fall through `?? []` (`tooling/checks/coverage.ts`):
 `llm`, `mcp-client`, `paths`, `plan`, `protocol`. No `GRANDFATHERED` entries remain; see §8 item 10.
 
-The `server/src/bin.ts` entry carries the longest justification in the file
-(`tooling/checks/coverage.ts`): its behaviour *is* tested, by real subprocess tests, but
-"Bun's coverage instrumentation only sees code running inside the `bun test` process itself, so a
-subprocess contributes no counters here no matter how thoroughly it is tested". The same
-cross-reference is written from the other side, in the test:
-`packages/server/tests/architecture/bin-bind-gate.test.ts`.
-
 `TYPE_ONLY_PACKAGES` is a separate one-member set, `{"protocol"}`
 (`tooling/checks/coverage.ts`).
 
@@ -500,7 +491,7 @@ pass, as `… --coverage && bun run test:architecture`:
 | kernel | unit, component, contract, integration | yes | 5 |
 | paths | unit, component, contract, integration | yes | 3 |
 | trace | unit, component, contract, integration | yes | 1 |
-| llm / server / workflows | …including architecture | no | 1 / 4 / 1 |
+| llm / workflows | …including architecture | no | 1 / 1 |
 
 Architecture tests run separately in those packages and contribute no `SF:` records, which means in
 those packages every `src` module must be reached from a *non*-architecture test or be
@@ -1022,7 +1013,7 @@ only the owner-specific default").
 
 10. **INV-306 (own-source half) — only `src/`-relative `SF:` records enter a package's ratios; a
     workspace dependency's source cannot.** Rule: `tooling/checks/coverage.ts`, reinforced by
-    `coveragePathIgnorePatterns = ["../**"]` in all 18 package bunfigs. ~~**Unpinned.**~~
+    `coveragePathIgnorePatterns = ["../**"]` in all 17 package bunfigs. ~~**Unpinned.**~~
     **Pinned on its reinforcement half:** `checkPackageHarness` fails any package bunfig
     whose `[test] coveragePathIgnorePatterns` omits `"../**"`, naming the consequence — "workspace
     dependencies enter this package's ratios" (`tooling/lib/test-harness.ts`, over
@@ -1127,8 +1118,8 @@ only the owner-specific default").
     `tooling/lib/package-graph.ts`. Pinned by `tooling/tests/unit/package-graph.test.ts`.
 
 23. **Every package's `tsconfig.json` includes its `tests` tree**, so the gate's `typecheck` phase
-    type-checks test sources. Verified by reading all 18: fourteen use
-    `["src/**/*.ts","tests/**/*.ts"]`, and `code`, `kernel`, `protocol`, `server` use
+    type-checks test sources. Verified by reading all 17: fourteen use
+    `["src/**/*.ts","tests/**/*.ts"]`, and `code`, `kernel`, `protocol` use
     `["src","tests"]` (e.g. `packages/protocol/tsconfig.json`, `packages/kernel/tsconfig.json`).
     **Unpinned.**
 
@@ -1309,7 +1300,7 @@ already ends its own chain in `.catch(() => {})` (`packages/capability/src/tasks
    `component` from `integration`. The one observable regularity is the `architecture` idiom
    (§4.10) and the `contract` idiom (§4.9); the other four are conventional only.
 
-3. **`e2e` is a declared level with zero members.** No `tests/e2e` directory exists in any of the 18
+3. **`e2e` is a declared level with zero members.** No `tests/e2e` directory exists in any of the 17
    packages. It is pinned as *accepted* by `tooling/tests/unit/source-policy.test.ts`, so it is live
    vocabulary, but nothing uses it.
 
@@ -1404,7 +1395,7 @@ already ends its own chain in `.catch(() => {})` (`packages/capability/src/tasks
 13. **Delegated to sibling documents.** The individual rules the 50 `tests/architecture/` files
     enforce belong to their owning subsystems (the `.clarvis`/`.agents` vocabulary to *paths*, the
     optional-package boundary and the eager-import closure to *loop*, the entrypoint-ownership and
-    external-name tables to *kernel*, the bind gate and tool surface to *server*, and so on); this
+    external-name tables to *kernel*, and so on); this
     document describes only the level's shared idiom. CI job layout, the Bun version pin, the
     `code` bundle/smoke contract and interactive PTY validation belong to
     *build-tooling-ci-and-platform* and to the `code` host document.

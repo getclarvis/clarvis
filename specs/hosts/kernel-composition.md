@@ -246,7 +246,7 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
    applies once to resident owners plus every later owner generation.**
    Production: `InProcessKernel.startMemoryRecovery`, `buildOwner`, and `residentOwner` in
    `packages/kernel/src/kernel.ts`; host calls in `packages/code/src/runtime.tsx`,
-   `packages/kernel/src/serve.ts`, and `packages/server/src/bin.ts`.
+   `packages/kernel/src/serve.ts`.
    Test: `packages/kernel/tests/integration/owner-isolation.test.ts` (`starts durable memory recovery
    only after the host releases boot`).
 

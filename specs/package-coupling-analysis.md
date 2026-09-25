@@ -23,23 +23,22 @@ The table and Mermaid source belong to the generator and must stay exactly as em
 
 <!-- prettier-ignore-start -->
 <!-- package-graph:start -->
-Packages: 18; internal edges: 50; optional edges: 3.
+Packages: 17; internal edges: 46; optional edges: 3.
 
 | Package | Role | Direct internal dependencies | Internal consumers |
 | --- | --- | --- | ---: |
-| `capability` | foundation | — | 13 |
+| `capability` | foundation | — | 12 |
 | `code` | application | `kernel`, `paths`, `protocol` | 0 |
 | `goal` | product-capability | `capability`, `loop` | 1 |
 | `hooks` | execution-service | `capability`, `tools` | 1 |
-| `kernel` | host-implementation | `capability`, `goal`, `llm`, `loop`, `mcp-client`, `memory`, `paths`, `plan`, `protocol`, `skills`, `tools`, `trace`, `workflows` | 2 |
+| `kernel` | host-implementation | `capability`, `goal`, `llm`, `loop`, `mcp-client`, `memory`, `paths`, `plan`, `protocol`, `skills`, `tools`, `trace`, `workflows` | 1 |
 | `llm` | execution-service | `capability` | 2 |
 | `loop` | engine | `capability`, `hooks` (optional), `llm`, `mcp-client`, `paths`, `skills` (optional), `supervision`, `tools` (optional), `trace` | 4 |
 | `mcp-client` | execution-service | `capability`, `paths` | 2 |
 | `memory` | product-capability | `capability`, `loop`, `paths` | 1 |
-| `paths` | foundation | — | 10 |
+| `paths` | foundation | — | 9 |
 | `plan` | product-capability | `capability`, `paths` | 1 |
-| `protocol` | host-contract | — | 3 |
-| `server` | application | `capability`, `kernel`, `paths`, `protocol` | 0 |
+| `protocol` | host-contract | — | 2 |
 | `skills` | execution-service | `capability`, `paths` | 2 |
 | `supervision` | execution-service | `capability` | 2 |
 | `tools` | execution-service | `paths` | 3 |
@@ -82,7 +81,6 @@ flowchart LR
   end
   subgraph role_application["applications"]
     code["@clarvis/code"]
-    server["@clarvis/server"]
   end
   code --> kernel
   code --> paths
@@ -121,10 +119,6 @@ flowchart LR
   memory --> paths
   plan --> capability
   plan --> paths
-  server --> capability
-  server --> kernel
-  server --> paths
-  server --> protocol
   skills --> capability
   skills --> paths
   supervision --> capability
@@ -148,5 +142,5 @@ flowchart LR
   rejects packages without one and dependencies that violate the role policy.
 - A leaf with zero dependencies and many consumers (`capability` at 13, `paths` at 10) is a
   vocabulary package: everything above it is allowed to name it, and it may name nothing.
-- A package with zero consumers (`code`, `server`) is an application: it is the top of the graph and
+- A package with zero consumers (`code`) is an application: it is the top of the graph and
   nothing in the workspace may depend on it.

@@ -12,7 +12,7 @@ content and runtime seams, not the accuracy of every large or small model.
 
 ## 2. Surface
 
-The owned tool inventory has 70 declarations across the following surfaces. This is an inventory,
+The owned tool inventory spans the following surfaces. This is an inventory,
 not a single request payload: grants, agent role, capability activation and host posture select what
 a model actually sees. MCP resource tools are instantiated per connection; third-party tool names
 and user-authored extensions are not a fixed inventory.
@@ -27,7 +27,6 @@ and user-authored extensions are not a fixed inventory.
 | Memory | 7 | `MEMORY_TOOL_CONTRACTS` in [tool-contract.ts](../../packages/memory/src/tool-contract.ts) |
 | Workflow spawning and sequence control | 6 | [tool.ts](../../packages/workflows/src/tool.ts), [work-items.ts](../../packages/workflows/src/work-items.ts), [run-round.ts](../../packages/workflows/src/run-round.ts), [run-workflow.ts](../../packages/workflows/src/run-workflow.ts) |
 | Skill loading and resource reads | 2 | `loadSkillTool` and `readSkillResourceTool` in [skills/tool.ts](../../packages/skills/src/tool.ts) |
-| Public MCP run and controls | 4 | [server/mcp/tools.ts](../../packages/server/src/mcp/tools.ts) |
 | MCP resource listing and reading | 2 | [mcp-client/resources.ts](../../packages/mcp-client/src/resources.ts) |
 | Workflow title | 1 | [workflow-title.ts](../../packages/kernel/src/workflows/workflow-title.ts) |
 
@@ -145,11 +144,6 @@ handoff cases in [builtin-agents.test.ts](../../packages/kernel/tests/component/
    append a truncation marker inside the existing 32,768-code-point ceiling. Production:
    `renderMcpInstructions` in `packages/loop/src/runtime/mcp-instructions.ts`. Test:
    `packages/loop/tests/unit/mcp-instructions.test.ts`, including astral Unicode input.
-8. **MCP controls distinguish instructions from outcomes.** Run transport timeout/progress options
-   are not tool arguments; steering acknowledgement is not completion; question responses use the
-   active session's elicitation and requested schema. Production: descriptors in
-   `packages/server/src/mcp/tools.ts` and `handleSteerTool` in `control-tools.ts`. Test:
-   `packages/server/tests/component/control-tools.test.ts` and the run/elicitation component suites.
 
 ## 6. Failure modes and degradation
 
@@ -165,27 +159,12 @@ bounds do not semantically certify third-party content or grant extra authority.
 
 ## 7. Coupling
 
-The owning package READMEs reviewed and updated for these changes are [kernel](../../packages/kernel/README.md),
-[loop](../../packages/loop/README.md), [tools](../../packages/tools/README.md),
-[plan](../../packages/plan/README.md), [workflows](../../packages/workflows/README.md),
-and [server](../../packages/server/README.md).
-Focused owners are [kernel config](../hosts/kernel-config.md), [tool dispatch](../engine/tool-dispatch.md),
-[delegation](../engine/delegation-and-subagents.md), [compaction](../engine/context-compaction.md),
-[vision](../engine/vision-routing.md), [tool surface](../execution/tools-contract.md),
-[reads/search](../execution/tools-read-and-search.md), [mutation](../execution/tools-mutation.md),
-[shell/session](../execution/tools-shell-and-sessions.md), [planning](../capabilities/plan-capability.md),
-[workflow scheduling](../capabilities/workflows-scheduling.md), [workflow service](../capabilities/workflows-service.md),
-and [MCP facade](../hosts/server-mcp.md).
-
-Reviewed without changing their contracts: memory [README](../../packages/memory/README.md),
-[capability](../capabilities/memory-capability.md) and [indexer](../capabilities/memory-indexer.md);
-skills [README](../../packages/skills/README.md) and [spec](../execution/skills.md);
-MCP client [README](../../packages/mcp-client/README.md) and [spec](../foundations/mcp-client.md);
-[sandbox](../execution/sandbox.md), [hooks](../execution/hooks.md),
-[security](security.md), [prompt cache](prompt-cache.md) and [known issues](../known-issues.md).
-Their scoped loading, trust and runtime contracts remain necessary; this is not a rewrite of every
-unchanged string. No new package or dependency edge is introduced. Public guides remain owned by
-`getclarvis/docs`; no public API or command changed here and no external guide update is required.
+The prompt and tool contracts remain owned by [kernel config](../hosts/kernel-config.md),
+[tool dispatch](../engine/tool-dispatch.md), [planning](../capabilities/plan-capability.md),
+[workflow scheduling](../capabilities/workflows-scheduling.md), and
+[MCP client](../foundations/mcp-client.md). The removed MCP-over-HTTP facade no longer contributes
+public tool descriptions. The public guide is owned by `getclarvis/docs` and needs corresponding
+cleanup.
 
 ## 8. Open questions
 

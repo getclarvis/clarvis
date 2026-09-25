@@ -61,8 +61,7 @@ export function tmpPathFor(target: string): string {
  * Paired with {@link tmpPathFor} so a collector cannot drift from its builder.
  * `@clarvis/trace` once carried a private `` /\.json\.tmp-/ `` matching a
  * shape six other modules built independently. Because the convention is a
- * prefix, `TMP_GLOB` already ignores these files, so an orphan is invisible to
- * `grep`/`glob` and to git without any further rule.
+ * prefix, `TMP_GLOB` identifies orphaned files for cleanup.
  */
 export function isTmpFile(name: string): boolean {
   return name.startsWith(TMP_PREFIX);
@@ -318,8 +317,7 @@ export interface AtomicWriteOptions {
  * @remarks The thrown `error` already reaches the caller; `tmp_removed` does
  * not, and that is the half worth a channel. A cleanup that fails leaves a
  * `.clarvis-tmp-*` orphan, and because the convention is a prefix that
- * `TMP_GLOB` already hides, that orphan is invisible to `grep`, to `glob` and
- * to git — so nothing else in the product would ever mention it.
+ * `TMP_GLOB` identifies, housekeeping can find and remove it.
  */
 function reportStagingFailure(
   logger: PathsLogger,

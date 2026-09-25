@@ -260,8 +260,7 @@ writeFileDurableSync(file, text);
   `<dir>/.clarvis-tmp-<pid>-<counter>-<uuid>` — the pid makes an orphan attributable, the counter
   separates two writers inside one process, the UUID makes the whole thing collision-free. It is a
   _sibling_ of the target because `rename` is only atomic within one filesystem, and because it is
-  a **prefix**, `TMP_GLOB` and `INTERNAL_IGNORE_PATTERNS` already hide every orphan from
-  `grep`/`glob` and from git with no further rule.
+  a **prefix**, `TMP_GLOB` identifies every orphan for housekeeping.
 - **`writeFileDurable` is a separate function, not a flag.** `rename` is atomic but not durable:
   after a power loss the kernel may reorder it ahead of the data it publishes, leaving a journal
   entry pointing at bytes that never landed — and a recovery matrix reasoning over such a journal
@@ -390,8 +389,7 @@ Three of these exist because the code path they describe resolves to a boolean n
   will not sync a directory handle" as a no-op, and every crash-recovery guarantee in the product
   rests on that `fsync`.
 - **`paths.atomic_staging_failed`**'s `tmp_removed` is the half the thrown error never carries. A
-  failed cleanup leaks a `.clarvis-tmp-*` orphan that `TMP_GLOB` hides from `grep`, from `glob` and
-  from git, so nothing else would ever mention it.
+  failed cleanup leaks a `.clarvis-tmp-*` orphan that `TMP_GLOB` identifies during cleanup, so nothing else would ever mention it.
 
 `paths.spill_sweep`'s `truncated` is the same class: `sweepSpillDir` stops at 10,000 entries and
 returns `void`, so a workspace past that threshold would otherwise stop being swept silently and

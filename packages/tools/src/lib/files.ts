@@ -1,9 +1,6 @@
 import { constants, promises as fs, type Stats } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
-import path from "node:path";
-import picomatch from "picomatch";
 import { ToolError, fsError } from "../errors.ts";
-import { loadIgnore } from "./ignore.ts";
 
 /** Default parallelism for batched `stat` calls (see {@link mapLimit}). */
 export const STAT_CONCURRENCY = 32;
@@ -28,7 +25,7 @@ export interface ReadFileOptions {
  * the host exposes `O_NOFOLLOW`; descriptor metadata remains the authority on
  * every platform.
  */
-export async function openReadHandle(target: string, noFollow = false): Promise<FileHandle> {
+async function openReadHandle(target: string, noFollow = false): Promise<FileHandle> {
   if (process.platform === "win32") return fs.open(target, "r");
   const flags =
     constants.O_RDONLY |
@@ -208,82 +205,4 @@ export async function mapLimit<T, R>(
   }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
   return results;
-}
-
-/**
- * Glob files under `base`, optionally filtering out git-ignored paths.
- *
- * @param base - the directory the glob is rooted at.
- * @param workspaceRoot - the workspace root used to resolve `.gitignore` rules.
- * @param opts - `pattern` is the glob (dotfiles included, files only);
- *   `respectGitignore` toggles the ignore filter.
- * @returns matching absolute paths plus whether the traversal ceiling stopped
- *   discovery before the tree was exhausted.
- * @remarks When `respectGitignore` is set, the ignore matcher is evaluated
- *   against each match's path relative to `workspaceRoot`, so ignore rules
- *   anywhere between the workspace root and the file apply.
- */
-export interface FileListing {
-  files: string[];
-  truncated: boolean;
-}
-
-export async function listFiles(
-  base: string,
-  workspaceRoot: string,
-  opts: {
-    pattern: string;
-    respectGitignore: boolean;
-    maxEntries?: number;
-    signal?: AbortSignal;
-    admit?: (path: string, kind: "directory" | "file") => boolean;
-  },
-): Promise<FileListing> {
-  const maxEntries = Math.max(1, opts.maxEntries ?? Number.MAX_SAFE_INTEGER);
-  const matches = picomatch(opts.pattern, { dot: true, windows: false });
-  const ig = opts.respectGitignore ? loadIgnore(workspaceRoot) : null;
-  const files: string[] = [];
-  const stack = [base];
-  let visited = 0;
-  let truncated = false;
-
-  scan: while (stack.length > 0) {
-    if (visited >= maxEntries || opts.signal?.aborted) {
-      truncated = true;
-      break;
-    }
-    const dir = stack.pop()!;
-    let handle;
-    try {
-      handle = await fs.opendir(dir);
-    } catch {
-      continue;
-    }
-    try {
-      for await (const entry of handle) {
-        if (visited >= maxEntries || opts.signal?.aborted) {
-          truncated = true;
-          break scan;
-        }
-        visited += 1;
-        const abs = path.join(dir, entry.name);
-        const workspaceRel = path.relative(workspaceRoot, abs);
-        if (entry.isDirectory()) {
-          if (
-            ig?.ignores(`${workspaceRel}${path.sep}`) !== true &&
-            opts.admit?.(abs, "directory") !== false
-          )
-            stack.push(abs);
-          continue;
-        }
-        if (!entry.isFile() && !entry.isSymbolicLink()) continue;
-        if (opts.admit?.(abs, "file") === false) continue;
-        const baseRel = path.relative(base, abs).split(path.sep).join("/");
-        if (matches(baseRel) && ig?.ignores(workspaceRel) !== true) files.push(abs);
-      }
-    } finally {
-      await Promise.resolve(handle.close()).catch(() => undefined);
-    }
-  }
-  return { files, truncated };
 }

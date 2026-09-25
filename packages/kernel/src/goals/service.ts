@@ -175,8 +175,8 @@ export function createGoalService(options: {
     string,
     { fingerprint: string; promise: Promise<GoalFormulateResult> }
   >();
-  const readActivityTools = new Set(["read_file", "read_files", "read_image"]);
-  const searchActivityTools = new Set(["file_stat", "glob", "grep", "list_dir", "tree"]);
+  const readActivityTools = new Set(["read_file", "read_image"]);
+  const searchActivityTools = new Set(["list_dir"]);
   const activityFor = (event: TraceEvent): GoalFormulationActivity | undefined => {
     if (!isBuiltinTraceEvent(event)) return undefined;
     if (event.type === "subagent_iteration_started")

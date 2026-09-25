@@ -16,7 +16,6 @@ import {
   CONTEXT_FILENAMES,
   globalPaths,
   HOME_ENV,
-  INTERNAL_IGNORE_PATTERNS,
   INTERNAL_SKIP_DIRS,
   ownerSegment,
   TMP_GLOB,
@@ -275,12 +274,10 @@ describe("shared constants", () => {
   test("skip dirs bound a tree walk; ignore patterns feed an ignore file", () => {
     expect(INTERNAL_SKIP_DIRS).toContain(CLARVIS_DIR);
     expect(INTERNAL_SKIP_DIRS).toContain("node_modules");
-    expect(INTERNAL_IGNORE_PATTERNS).toEqual([".git", CLARVIS_DIR, TMP_GLOB]);
   });
 
   test("neither list mentions .agents — it is the user's own content", () => {
     expect(INTERNAL_SKIP_DIRS).not.toContain(AGENTS_DIR);
-    expect(INTERNAL_IGNORE_PATTERNS).not.toContain(AGENTS_DIR);
   });
 });
 

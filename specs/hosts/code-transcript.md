@@ -336,13 +336,10 @@ Constants: `SEGMENT_MIN = 4096`, `TAIL_PLAIN_CAP = 24_576`,
 | `shell` | JSON object carrying at least one of `exit_code`, `stdout`, `stderr`, `signal`, `timed_out` | `packages/code/src/adapters/tool-parsers.ts` |
 | `shell_session` | JSON object carrying `session_id`, `running`, `ready`, `exit_code`, `stdout`, `stderr`, or `sessions` | `packages/code/src/adapters/tool-parsers.ts` |
 | `read_file` | `cat -n` style: `<spaces><digits>\t<content>`; any other non-blank line is a note | `packages/code/src/adapters/tool-parsers.ts` |
-| `read_files` | `==> <path> <==` banners; a banner of the form `<path> — <code>: <message>` carries a per-file error; a line matching `/more file\(s\) not shown/` is the trailing note | `packages/code/src/adapters/tool-parsers.ts` |
-| `grep` (content mode) | `path:line:text` (match) and `path-line-text` (context), `--` separates groups, an unmatched line appends to the previous row | `packages/code/src/adapters/tool-parsers.ts` |
-| `glob` / `list_dir` / `list_memories` | newline-separated non-blank paths; `"(no matches)"` yields `[]` | `packages/code/src/adapters/tool-parsers.ts` |
+| `list_dir` / `list_memories` | newline-separated non-blank paths; `"(no matches)"` yields `[]` | `packages/code/src/adapters/tool-parsers.ts` |
 
 Real examples in the tests: a `shell` envelope at
-`packages/code/tests/unit/tool-parsers.test.ts`; a `read_files` document; a `grep`
-content block; a guard denial `{"error":"denied","message":"…"}`.
+`packages/code/tests/unit/tool-parsers.test.ts`; a memory-search content block; a guard denial `{"error":"denied","message":"…"}`.
 
 `MonitorParsed` (`packages/code/src/adapters/tool-parsers.ts`) carries `hasExitCode: boolean` distinct from
 `exitCode: number | null` — `hasExitCode` is `"exit_code" in j`, so it distinguishes "no
@@ -652,17 +649,12 @@ affordances that exist. Pinned at
 | --- | --- |
 | `renderBash` | `shell` |
 | `renderReadFile` | `read_file` |
-| `renderReadFiles` | `read_files` |
 | `renderImage` | `read_image` |
-| `renderGrep` | `grep` |
-| `renderPathList` | `glob`, `list_dir`, `list_memories` |
+| `renderPathList` | `list_dir`, `list_memories` |
 | `renderWriteFile` | `write_file`, `write_memory` |
-| `renderEdit` | `edit_file`, `multi_edit`, `edit_memory` |
+| `renderEdit` | `edit_file`, `edit_memory` |
 | `renderApplyPatch` | `apply_patch` |
-| `renderDiffTool` | `diff`, `replace` |
-| `renderSummary` | `move`, `copy`, `mkdir`, `remove`, `delete_memory` |
-| `renderTree` | `tree` |
-| `renderJsonCard` | `file_stat` |
+| `renderSummary` | `remove`, `delete_memory` |
 | `renderShellSession` | `shell_session` |
 | `renderMemoryRead` | `read_memory` |
 | `renderMemoryGrep` | `grep_memories` |
@@ -697,7 +689,7 @@ on `hidden === 1`.
 so lead mutation bodies remain inline while delegated calls retain the gate. `gateBody` calls `mutationBody` with the call's identity, diff and
 arguments. `gateStats` prefers the host's `call.mutation` measurement over counting the
 bounded body. Four renderers implement the gate: `renderWriteFile`,
-`renderEdit`, `renderApplyPatch` and `renderDiffTool`.
+`renderEdit` and `renderApplyPatch`.
 
 **The "(reconstructed)" marker.** `renderEdit` (`packages/code/src/views/tools/registry.tsx`) prints a muted
 `(call.result || "edited") + " " + glyph("separator") + " (reconstructed)"` label whenever the call
@@ -713,9 +705,8 @@ visibly distinguished on screen from a real one. Pinned at
 | Identity | Body |
 | --- | --- |
 | `write_file`, `write_memory` | `diff` if present, else `args.content` |
-| `edit_file`, `multi_edit`, `edit_memory` | `diff` if present, else `synthesizeUnifiedDiff(args.path, editsFromArgs(args))` |
+| `edit_file`, `edit_memory` | `diff` if present, else `synthesizeUnifiedDiff(args.path, editsFromArgs(args))` |
 | `apply_patch` | `diff` if present, else `args.patch` |
-| `replace` | `diff` with trailing newlines stripped |
 | anything else | `""` |
 
 `mutationStats` returns `null` for a non-mutation or an empty body, and for a `write_file` /
@@ -1168,7 +1159,7 @@ grouping pass: a memory write must not fold into a run of reads —
 `packages/code/tests/unit/tool-groups.test.ts`.
 
 **INV-263.** `MUTATION_TOOLS` has an exact, exhaustive membership: `write_file`, `edit_file`,
-`multi_edit`, `apply_patch`, `replace`, `move`, `copy`, `mkdir`, `remove`, `write_memory`,
+`apply_patch`, `remove`, `write_memory`,
 `edit_memory`, `delete_memory`. Because the file half is derived from
 `@clarvis/loop`'s registry (`packages/loop/src/runtime/tools/builtin/names.ts`), a registry change
 alters this set — and must therefore be a visible diff to the pinning test. Production:
@@ -1675,10 +1666,7 @@ instead of covering the conversation").
 | Tool result is not JSON, or is JSON but not the tool's envelope | `parseBash` returns `parsed: false`; `parseMonitor` returns `undefined` and `renderMonitor` falls through to `renderGeneric` | `packages/code/src/adapters/tool-parsers.ts`; `packages/code/src/views/tools/registry.tsx` |
 | A `ToolError` payload (`{error, message}`) reaches `parseBash` | `errorText` composes `"code: message"`, or whichever of the two is present, and puts it in `stderr` alone | `packages/code/src/adapters/tool-parsers.ts` |
 | `result` and `error` are the same string | `stdout` is dropped so the sentence is printed once | `packages/code/src/adapters/tool-parsers.ts` |
-| `read_files` output has no `==> path <==` banner | falls back to `renderGeneric` | `packages/code/src/views/tools/registry.tsx` |
 | `grep_memories` output parses to zero groups | falls back to `renderGeneric` | `packages/code/src/views/tools/registry.tsx` |
-| `file_stat` / generic result is not a JSON object | `renderJsonCard` falls back to `renderGeneric`; `renderGeneric` itself upgrades to the JSON card only when `parseJsonObject` succeeds | `packages/code/src/views/tools/registry.tsx` |
-| `diff`/`replace` with an empty body | falls back to `renderGeneric` | `packages/code/src/views/tools/registry.tsx` |
 | Any tool with no registry entry | `renderGeneric` | `packages/code/src/views/tools/registry.tsx` |
 | Empty result | a muted placeholder — `"(no output)"`, `"(no matches)"`, `"(no sessions)"`, `"(empty)"`, `"(done)"` | `packages/code/src/views/tools/registry.tsx` |
 | A tool call errored | `resolveErrorRenderer` — the tool's own renderer for the four `ERROR_AWARE` tools, plain error text otherwise | `packages/code/src/views/tools/registry.tsx` |

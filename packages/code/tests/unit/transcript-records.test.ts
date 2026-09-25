@@ -140,7 +140,8 @@ describe("transcript records and first admission", () => {
   });
 
   test("only explicitly known observing identities qualify for exploration", () => {
-    for (const name of ["read_file", "grep", "glob"]) expect(isExplorationTool(name)).toBe(true);
+    for (const name of ["read_file", "list_dir", "read_image"])
+      expect(isExplorationTool(name)).toBe(true);
     for (const name of ["shell", "write_file", "unknown", "remote.read_file"])
       expect(isExplorationTool(name)).toBe(false);
     expect(isExplorationTool("read_file", "remote")).toBe(false);

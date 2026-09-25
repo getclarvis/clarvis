@@ -86,14 +86,12 @@ delegation surface: `shared_prompt: ""`, no MCP servers, no spawnable agents and
 `read_workspace` grant. Its output schema contributes the
 generic `submit_result`. The Kernel replaces, rather than extends, dependencies with the canonical
 Tools capability, whose effective surface derives from `@clarvis/tools` `readOnlyTools`. Therefore
-read file(s), image, directory, glob, grep, diff, file stat and tree operations may be available;
+file, image and directory reads may be available;
 write/edit/shell/session control and every Goal, Plan, Memory, Workflow, skill, hook, MCP or delegation
 surface is absent and undispatchable. If Tools is disabled or the host ceiling forbids reads, the run
 continues from seed/trajectory with `workspace_read_available: false` and receives no substitute.
 For a normative source, the trace retains a host-minted SHA-256 attestation of the complete tool
-result before its display copy is abbreviated. For `read_files`, the host reconstructs the complete
-ordered batch, including its original headers, and compares that digest; abbreviated display text
-alone cannot disprove a complete read. Literal truncation-notice text in a file is not a truncation
+result before its display copy is abbreviated. A complete `read_file` result is attested before its display text is abbreviated. Literal truncation-notice text in a file is not a truncation
 signal: exact content or digest matching determines completeness. Commit-time rereading must match that attestation;
 an actual ranged/partial read, missing file or changed snapshot still fails closed. Production:
 `verifyTraceNormativeSources` in

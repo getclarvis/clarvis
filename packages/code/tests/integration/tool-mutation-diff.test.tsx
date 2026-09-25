@@ -60,7 +60,7 @@ function grepEvent(): RunEvent {
     subagent_id: "w1",
     call_id: "call_2",
     at: 2,
-    server: "grep",
+    server: "list_dir",
     tool: "",
     arguments: { pattern: "indigo" },
     result: "(no matches)",
@@ -131,7 +131,7 @@ const largeMutationDiff = (): string =>
     ...Array.from({ length: 55 }, (_, index) => `+lead-visible-${index}`),
   ].join("\n");
 
-function mutationEvent(tool: "edit_file" | "multi_edit" | "apply_patch", lead: boolean): RunEvent {
+function mutationEvent(tool: "edit_file" | "apply_patch", lead: boolean): RunEvent {
   const diff = largeMutationDiff();
   return ev({
     type: "tool_call",
@@ -144,9 +144,7 @@ function mutationEvent(tool: "edit_file" | "multi_edit" | "apply_patch", lead: b
     arguments:
       tool === "apply_patch"
         ? { patch: diff }
-        : tool === "multi_edit"
-          ? { path: "src/visible.ts", edits: [{ old_string: "old", new_string: "new" }] }
-          : { path: "src/visible.ts", old_string: "old", new_string: "new" },
+        : { path: "src/visible.ts", old_string: "old", new_string: "new" },
     result: "mutation applied",
     ok: true,
     diff,
@@ -154,7 +152,7 @@ function mutationEvent(tool: "edit_file" | "multi_edit" | "apply_patch", lead: b
 }
 
 test("successful mutations start folded and explicit expansion reveals their bounded diff", async () => {
-  for (const tool of ["edit_file", "multi_edit", "apply_patch"] as const) {
+  for (const tool of ["edit_file", "apply_patch"] as const) {
     const node = nodesFor([mutationEvent(tool, true)]).find((item) => item.kind === "tool_call")!;
     const folded = await frame(node, false, { defaultFolded: true, height: 100 });
     expect(folded).not.toContain("lead-visible-54");

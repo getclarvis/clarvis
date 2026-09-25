@@ -6,7 +6,7 @@
  * Two seams, because there are genuinely two lifetimes. {@link ToolsLogger}
  * rides on the per-toolset `RuntimeConfig` and is what nearly every site uses.
  * {@link WarnSink} is a single process-wide slot for the memoized/pure sites
- * that have no config in scope — `serializeError` and the `.gitignore` loader.
+ * that have no config in scope — `serializeError`.
  */
 
 /**

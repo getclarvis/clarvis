@@ -1,9 +1,8 @@
 import { ExecutionSessionManager } from "./lib/execution-session.ts";
-import { spawnSync } from "node:child_process";
 import { statSync } from "node:fs";
 import path from "node:path";
 import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./lib/log.ts";
-import { resolveCommand, workspaceStatePaths, type WorkspaceStatePaths } from "@clarvis/paths";
+import { workspaceStatePaths, type WorkspaceStatePaths } from "@clarvis/paths";
 
 /**
  * The fully resolved, validated runtime configuration threaded through every
@@ -53,8 +52,7 @@ export interface RuntimeConfig {
    * before it stops applying the pattern.
    *
    * @remarks
-   * Charged by `grep`'s in-process fallback, `replace`, and shell readiness
-   * matching through
+   * Charged by shell readiness matching through
    * {@link "./lib/scan-budget.js" | createScanBudget}. It bounds a
    * catastrophically backtracking user pattern, which would otherwise freeze
    * the single-threaded host for as long as the scope takes to walk; see that
@@ -64,9 +62,6 @@ export interface RuntimeConfig {
    * application's elapsed cost.
    */
   regexScanBudgetMs: number;
-
-  /** Whether `rg` (ripgrep) was found on `PATH`; enables the fast grep path. */
-  ripgrepAvailable: boolean;
 
   /** When true, only the read-only tool surface is exposed (no mutations). */
   readOnly: boolean;
@@ -164,23 +159,6 @@ export class StartupError extends Error {
   }
 }
 
-function probeRipgrep(): boolean {
-  try {
-    const res = spawnSync(resolveCommand("rg"), ["--version"], { stdio: "ignore" });
-    return res.status === 0;
-  } catch {
-    return false;
-  }
-}
-
-function runProbe(probe: () => boolean): boolean {
-  try {
-    return probe();
-  } catch {
-    return false;
-  }
-}
-
 function validateWorkspace(rawRoot: string): string {
   const workspaceRoot = path.resolve(rawRoot);
   let stat;
@@ -265,9 +243,6 @@ export interface AgentToolsOptions {
   /** Override {@link RuntimeConfig.regexScanBudgetMs} (min 1). */
   regexScanBudgetMs?: number;
 
-  /** Injectable ripgrep probe (for tests); defaults to spawning `rg --version`. */
-  probeRipgrep?: () => boolean;
-
   /**
    * Where the resolved toolset reports what its machinery did; defaults to
    * {@link NOOP_TOOLS_LOGGER}.
@@ -284,16 +259,13 @@ export interface AgentToolsOptions {
 /**
  * Resolve a caller-supplied {@link AgentToolsOptions} into a validated
  * {@link RuntimeConfig}: validate the workspace, clamp every limit to its
- * minimum, order-check the shell timeouts, and run the ripgrep probe to fill
- * the capability flag.
+ * minimum and order-check the shell timeouts.
  *
  * @param options - the caller options; only `workspaceRoot` is required.
  * @returns the fully resolved runtime config.
  * @throws {@link StartupError} when `workspaceRoot` is missing, does not exist,
  *   or is not a directory; when any limit falls below its minimum; or when
- *   `shellTimeoutMaxMs` is less than `shellTimeoutMs`. Skill execution roots
- * @remarks Probe failures never throw - a throwing probe is treated as the
- *   capability being absent (see {@link RuntimeConfig.ripgrepAvailable}).
+ *   `shellTimeoutMaxMs` is less than `shellTimeoutMs`.
  */
 export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
   if (!options.workspaceRoot) {
@@ -319,7 +291,6 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
   );
   assertTimeoutOrder(shellTimeoutMs, shellTimeoutMaxMs, "shellTimeoutMs", "shellTimeoutMaxMs");
 
-  const ripgrepAvailable = runProbe(options.probeRipgrep ?? probeRipgrep);
   const readOnly = options.readOnly ?? false;
   const temporaryRoots = (options.temporaryRoots ?? []).map((root) => {
     const resolved = path.resolve(root);
@@ -336,7 +307,6 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
   logger.debug(
     {
       event: "tools.config_resolved",
-      ripgrep: ripgrepAvailable,
       read_only: readOnly,
       platform: process.platform,
     },
@@ -394,7 +364,6 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
       1,
       "regexScanBudgetMs",
     ),
-    ripgrepAvailable,
     readOnly,
     stateRoot: statePaths.root,
     statePaths,

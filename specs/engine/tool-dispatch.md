@@ -60,9 +60,9 @@ Production: `packages/loop/src/runtime/tools/submit-result-tool.ts` and
 | `AGENT_LIST_TOOL` / `AGENT_POLL_TOOL` / `AGENT_STOP_TOOL` / `AGENT_STEER_TOOL` / `AWAIT_AGENTS_TOOL` | `packages/loop/src/runtime/tools/wire-names.ts` | `"agent_list"`, `"agent_poll"`, `"agent_stop"`, `"agent_steer"`, `"await_agents"` |
 | `AGENT_SUPERVISION_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | the five names above, in that order |
 | `BUILTIN_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | `[delegate_task, submit_result, ask_user]` |
-| `AGENT_TOOL_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | 23 coding-tool wire names (`read_file` … `tree`) |
+| `AGENT_TOOL_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | 9 coding-tool wire names (`read_file` … `remove`) |
 | `VISION_AGENT_TOOL_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | `["read_image"]` |
-| `READ_ONLY_AGENT_TOOL_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | 9 read-only coding tool names |
+| `READ_ONLY_AGENT_TOOL_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | 3 read-only coding tool names |
 | `RESERVED_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | `[...BUILTIN_WIRE_NAMES, ...AGENT_TOOL_WIRE_NAMES]` |
 | `CONTROL_PLANE_TOOL_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | `run`, `steer`, `get_run`, `list_runs`, `delete_run`, `list_profiles` — a separate, control-plane surface, not run-time tool names |
 

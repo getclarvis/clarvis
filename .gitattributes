@@ -2,8 +2,7 @@
 #
 # Without this, Git for Windows' `core.autocrlf=true` default rewrites LF to CRLF
 # on checkout and corrupts the fixtures that assert on exact bytes: the CRLF/BOM
-# tally in `packages/tools/src/lib/text.ts`, and every `apply_patch`, `diff` and
-# `replace` test. Committing the rule fixes every clone, which a CI-only
+# tally in `packages/tools/src/lib/text.ts`, and the `apply_patch` tests. Committing the rule fixes every clone, which a CI-only
 # `git config` would not.
 * text=auto eol=lf
 

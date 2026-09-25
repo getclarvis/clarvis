@@ -186,7 +186,8 @@ for (const latency of [10, 90, 500]) {
       const id = fixture.history().snapshot().rowIds[0]!;
       const row = fixture.scrollbox().content.findDescendantById(`transcript-row:${id}`);
       await new Promise((resolve) => setTimeout(resolve, latency));
-      for (const event of transcriptToolEvents("second", "grep")) applyEvent(sink, event, "live");
+      for (const event of transcriptToolEvents("second", "list_dir"))
+        applyEvent(sink, event, "live");
       await fixture.frames();
       expect(fixture.history().snapshot().rowIds).toEqual([id]);
       expect(fixture.scrollbox().content.findDescendantById(`transcript-row:${id}`)).toBe(row);

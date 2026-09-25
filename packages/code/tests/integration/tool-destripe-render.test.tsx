@@ -8,7 +8,7 @@ const collapsed: FoldFixtureNode = {
   kind: "tool_call",
   status: "ok",
   text: "",
-  mcpName: "tree",
+  mcpName: "list_dir",
   toolName: "",
   args: { path: "." },
   result: "a\nb\nc\nd\ne",
@@ -28,22 +28,22 @@ test("a collapsed tool call is one header line with a breathing row above", asyn
     <BlockView defaultFolded={() => collapsed.collapsed ?? false} node={collapsed} />
   ));
   expect((rows[0] ?? "").trim()).toBe("");
-  expect(rows[1]).toContain("tree");
+  expect(rows[1]).toContain("list_dir");
   expect(rows[1]).toContain("… +5 lines");
   expect((rows[2] ?? "").trim()).toBe("");
 });
 
 test("consecutive collapsed calls each keep their own breathing row", async () => {
-  const second: FoldFixtureNode = { ...collapsed, key: "t2", mcpName: "glob" };
+  const second: FoldFixtureNode = { ...collapsed, key: "t2", mcpName: "read_file" };
   const rows = await frame(() => (
     <box flexDirection="column">
       <BlockView defaultFolded={() => collapsed.collapsed ?? false} node={collapsed} />
       <BlockView defaultFolded={() => second.collapsed ?? false} node={second} />
     </box>
   ));
-  expect(rows[1]).toContain("tree");
+  expect(rows[1]).toContain("list_dir");
   expect((rows[2] ?? "").trim()).toBe("");
-  expect(rows[3]).toContain("glob");
+  expect(rows[3]).toContain("read_file");
 });
 
 test("a collapsed mutation shows real diff stats, not its one-line result", async () => {
@@ -165,7 +165,7 @@ test("a fast call (< 2s) earns no duration chip", async () => {
   const rows = await frame(() => (
     <BlockView defaultFolded={() => fast.collapsed ?? false} node={fast} />
   ));
-  expect(rows[1]).toContain("tree");
+  expect(rows[1]).toContain("list_dir");
   expect(rows[1]).not.toContain("1s");
 });
 
@@ -202,7 +202,7 @@ test("an expanded body renders only its curated result under the header", async 
       <BlockView defaultFolded={() => expanded.collapsed ?? false} node={expanded} />
     </box>
   ));
-  expect(rows[1]).toContain("tree");
+  expect(rows[1]).toContain("list_dir");
   expect((rows[2] ?? "").trim()).toBe("");
   expect(rows[3]).toContain("shell");
   expect(rows[3]).toContain("(ls)");

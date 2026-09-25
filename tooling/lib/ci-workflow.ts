@@ -189,9 +189,6 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
         `${id}: duplicate aggregate gate or build`,
       );
     }
-    const coverage = workflow.jobs.coverage;
-    const preparation = runs(coverage).join("\n");
-    check(preparation.includes("sudo apt-get install -y ripgrep"), "coverage: missing ripgrep");
     const aggregate = workflow.jobs.linux;
     check(
       aggregate.name === "linux" && aggregate.if === "${{ always() }}",

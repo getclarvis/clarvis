@@ -364,14 +364,11 @@ in `packages/tools/src/lib/execution-session.ts`, and `createAgentToolsCapabilit
 ### 4.3 Bounded reads
 
 `readRawFile` opens one descriptor, requires a regular file and enforces a byte ceiling before
-and during the read. A single-file ripgrep search consumes a bounded descriptor snapshot;
-directory grep checks each candidate in process. Model file reads have no special state-artifact gate.
+and during the read. Model file reads have no special state-artifact gate.
 
-Production: `readRawFile` in `packages/tools/src/lib/files.ts`, `grepSearch` in
-`packages/tools/src/lib/rg.ts`, and `dispatch` in `packages/tools/src/core.ts`.
-Test: `packages/tools/tests/integration/bounded-read.test.ts`,
-`packages/tools/tests/integration/explicit-state-paths.test.ts`, and
-`packages/tools/tests/integration/grep.test.ts`.
+Production: `readRawFile` in `packages/tools/src/lib/files.ts` and `dispatch` in
+`packages/tools/src/core.ts`. Test: `packages/tools/tests/integration/bounded-read.test.ts`
+and `packages/tools/tests/integration/explicit-state-paths.test.ts`.
 
 ### 4.4 Mutating writes
 
@@ -604,11 +601,7 @@ TOCTOU family between validation and rename, as described in §4.4.
    process permissions. Production: `resolveToolPath` in `packages/tools/src/lib/paths.ts`.
    Test: `packages/tools/tests/integration/open-authority.test.ts`.
 7. **A read uses one regular-file descriptor and a byte ceiling.** Production: `readRawFile` in
-   `packages/tools/src/lib/files.ts`. Test: `packages/tools/tests/integration/read-files.test.ts`.
-8. **Directory grep checks candidates in process; single-file ripgrep uses a descriptor snapshot.**
-   Production: `grepSearch` in `packages/tools/src/lib/rg.ts`. Test:
-   `packages/tools/tests/unit/observability.test.ts` and
-   `packages/tools/tests/contract/regex-dialect.test.ts`.
+   `packages/tools/src/lib/files.ts`. Test: `packages/tools/tests/integration/bounded-read.test.ts`.
 9. **Native mutation refuses symlink targets.** Production: `assertNotSymlink` in
    `packages/tools/src/lib/atomic.ts`. Test: `packages/tools/tests/integration/symlink.test.ts`.
 11. **`sanitizeToolPayload` never applies the coarse fallback.** Production
@@ -910,7 +903,6 @@ trust still governs activation. Production: `dispatch` in
 | Error details unserializable/cyclic | `packages/kernel/src/transport/stdio.ts` | `safeErrorDetails` returns `undefined`; details are simply omitted |
 | Capability event detail unserializable | `packages/kernel/src/runs/map-events.ts` | `"[unserializable capability event]"`, `truncated: true` |
 | Non-`ToolError` thrown by a handler | `packages/tools/src/errors.ts` | generic `internal` to the model; the stack only to the warn sink |
-| ripgrep probe throws at config time | `packages/tools/src/config.ts` | treated as "capability absent" |
 
 Degradations worth naming explicitly, because they are *deliberate* and therefore easy to mistake for
 bugs: a failed spill loses the middle of one tool result rather than the run

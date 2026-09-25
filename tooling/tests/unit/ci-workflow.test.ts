@@ -113,7 +113,6 @@ describe("independent CI workflow", () => {
       workflow.jobs["keyboard-macos"].steps.flatMap((step) => (step.run ? [step.run] : [])),
     ).toEqual([
       "bun --version && bun --revision",
-      "brew install ripgrep && rg --version",
       "bun install --frozen-lockfile",
       "bun --filter @clarvis/tools test",
       keyboard,

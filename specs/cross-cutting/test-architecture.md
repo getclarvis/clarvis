@@ -1135,7 +1135,7 @@ only the owner-specific default").
 
 26. **The `text=auto eol=lf` normalisation is committed, not configured per-clone**, because
     byte-exact fixtures depend on it: the `.gitattributes` comment names "the CRLF/BOM tally in
-    `packages/tools/src/lib/text.ts`, and every `apply_patch`, `diff` and `replace` test", and states
+    `packages/tools/src/lib/text.ts`, and the `apply_patch` tests", and states
     that "committing the rule fixes every clone, which a CI-only `git config` would not"
     (`.gitattributes`).
 

@@ -31,7 +31,7 @@ import { ownerSegment, workspaceRoot, type RootOptions } from "./roots.ts";
  *
  * The one residue is transient: a `rename` is atomic only within a filesystem,
  * so an atomic write's temp file must be a sibling of its target. Those carry
- * `TMP_PREFIX`, which `TMP_GLOB` and `INTERNAL_IGNORE_PATTERNS` already hide.
+ * `TMP_PREFIX`, which `TMP_GLOB` identifies for cleanup.
  */
 export interface WorkspacePaths {
   /** The working tree root. */

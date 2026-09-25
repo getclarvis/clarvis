@@ -10,7 +10,7 @@ const locks = new Map<string, Promise<unknown>>();
  * Options {@link fs.rm} takes to survive the same contention, documented for
  * exactly this case.
  */
-export const RM_RETRY = { maxRetries: 4, retryDelay: 25 } as const;
+const RM_RETRY = { maxRetries: 4, retryDelay: 25 } as const;
 
 /**
  * Bind the shared rename policy to this module's filesystem seam. Keeping the
@@ -113,7 +113,7 @@ async function captureMode(target: string): Promise<number | undefined> {
  * @remarks A missing path is fine (the `lstat` failure is swallowed): only an
  *   existing symlink is rejected.
  */
-export async function assertNotSymlink(target: string): Promise<void> {
+async function assertNotSymlink(target: string): Promise<void> {
   const lst = await fs.lstat(target).catch(() => null);
   if (lst?.isSymbolicLink()) {
     throw new ToolError("invalid_input", `Refusing to write through a symlink: ${target}`, {

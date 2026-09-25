@@ -5,14 +5,7 @@ import { subagentFocusToast } from "../core/transcript/index.ts";
 import { toolIdentity } from "../adapters/tool-identity.ts";
 import { nextFocus, type BlockOverride } from "./block-focus.ts";
 
-const DIFF_TOOLS = new Set([
-  "apply_patch",
-  "edit_file",
-  "multi_edit",
-  "write_file",
-  "diff",
-  "replace",
-]);
+const DIFF_TOOLS = new Set(["apply_patch", "edit_file", "write_file"]);
 
 /**
  * Host-provided data and callbacks {@link createTranscriptState} reads and

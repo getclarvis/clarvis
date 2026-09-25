@@ -4,7 +4,7 @@
  * this table instead of carrying four hand-maintained name matrices.
  *
  * @remarks It is also the one place the surface *size* is written down.
- * `tests/component/tool-surface.test.ts` pins it at 20 full / 9 read-only, so
+ * `tests/component/tool-surface.test.ts` pins it at 9 full / 3 read-only, so
  * growing or shrinking the surface is a deliberate edit here rather than silent
  * drift. Each row once carried a third field gating it on an optional runtime
  * that could fail to load; nothing conditions the surface any more, and no
@@ -15,24 +15,13 @@
 export const EXPECTED_TOOL_DESCRIPTORS = [
   { name: "read_file", readOnly: true },
   { name: "read_image", readOnly: true },
-  { name: "read_files", readOnly: true },
   { name: "write_file", readOnly: false },
   { name: "edit_file", readOnly: false },
-  { name: "multi_edit", readOnly: false },
   { name: "apply_patch", readOnly: false },
-  { name: "replace", readOnly: false },
   { name: "list_dir", readOnly: true },
-  { name: "glob", readOnly: true },
-  { name: "grep", readOnly: true },
-  { name: "diff", readOnly: true },
   { name: "shell", readOnly: false },
   { name: "shell_session", readOnly: false },
-  { name: "move", readOnly: false },
-  { name: "copy", readOnly: false },
-  { name: "mkdir", readOnly: false },
   { name: "remove", readOnly: false },
-  { name: "file_stat", readOnly: true },
-  { name: "tree", readOnly: true },
 ] as const;
 
 /** Expected names for one effective surface, preserving presentation order. */

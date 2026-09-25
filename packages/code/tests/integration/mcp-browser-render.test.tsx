@@ -24,7 +24,7 @@ const NODES: ServerNode[] = [
     type: "stdio",
     tools: [
       {
-        name: "read_files",
+        name: "read_documents",
         description: "Read files from the workspace",
         inputSchema: {
           properties: {
@@ -134,7 +134,7 @@ test("tool detail renders the argument table instead of a JSON dump", async () =
   press("return");
   await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("read_files — Read files from the workspace");
+  expect(frame).toContain("read_documents — Read files from the workspace");
   expect(frame).toContain("arguments");
   expect(frame).toContain("paths");
   expect(frame).toContain("array");

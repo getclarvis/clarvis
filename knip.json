@@ -29,9 +29,6 @@
     },
     "packages/protocol": {
       "entry": ["tests/contract/public-contract.fixture.ts"]
-    },
-    "packages/tools": {
-      "ignoreBinaries": ["rg"]
     }
   }
 }

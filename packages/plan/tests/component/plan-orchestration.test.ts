@@ -50,15 +50,8 @@ import type { PlanReviewDecision } from "../../src/capability/review-gate.ts";
 import type { PlanSession } from "../../src/capability/session.ts";
 import { fakeAgentBuildContext, makeTrace } from "../helpers/context.ts";
 
-const READ_TOOLS = new Set(["read_file", "read_files", "list_dir", "glob", "grep", "diff"]);
-const MUTATE_TOOLS = new Set([
-  "write_file",
-  "edit_file",
-  "multi_edit",
-  "apply_patch",
-  "shell",
-  "shell_session",
-]);
+const READ_TOOLS = new Set(["read_file", "read_image", "list_dir"]);
+const MUTATE_TOOLS = new Set(["write_file", "edit_file", "apply_patch", "shell", "shell_session"]);
 const CONTROL_TOOLS = new Set([
   "ask_user",
   "load_skill",
@@ -745,7 +738,7 @@ describe("reviewBlocker before any plan exists", () => {
     return orch.contribution.handlers![0]!.matches(call);
   };
 
-  it.each(["write_file", "edit_file", "multi_edit", "apply_patch", "shell", "shell_session"])(
+  it.each(["write_file", "edit_file", "apply_patch", "shell", "shell_session"])(
     "refuses %s before a plan exists, naming create_plan as the way forward",
     async (name) => {
       const orch = unplannedOrch();
@@ -762,7 +755,7 @@ describe("reviewBlocker before any plan exists", () => {
     },
   );
 
-  it.each(["read_file", "read_files", "list_dir", "glob", "grep", "diff"])(
+  it.each(["read_file", "read_image", "list_dir"])(
     "still allows %s, so the plan it must author can be grounded in evidence",
     (name) => {
       expect(blocked(unplannedOrch(), name)).toBe(false);

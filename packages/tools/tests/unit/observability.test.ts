@@ -4,7 +4,7 @@ import { NOOP_TOOLS_LOGGER, setWarnSink, warn, type ToolsLogger } from "../../sr
 import { fsError, serializeError } from "../../src/errors.ts";
 import { killTree } from "../../src/lib/process.ts";
 import { bestEffort } from "../../src/lib/tasks.ts";
-import { callTool, cleanup, makeConfig, makeWorkspace, write } from "../helpers/fixtures.ts";
+import { cleanup, makeWorkspace } from "../helpers/fixtures.ts";
 
 interface Record_ {
   level: "debug" | "info" | "warn" | "error";
@@ -51,29 +51,14 @@ describe("tools.config_resolved", () => {
     resolveConfig({
       workspaceRoot: root,
       logger,
-      probeRipgrep: () => true,
       readOnly: true,
     });
     const [record] = eventsOf(records, "tools.config_resolved");
     expect(record?.level).toBe("debug");
     expect(record?.fields).toEqual({
       event: "tools.config_resolved",
-      ripgrep: true,
       read_only: true,
       platform: process.platform,
-    });
-  });
-
-  it("reports the ripgrep probe result", () => {
-    root = makeWorkspace();
-    const { logger, records } = recorder();
-    resolveConfig({
-      workspaceRoot: root,
-      logger,
-      probeRipgrep: () => false,
-    });
-    expect(eventsOf(records, "tools.config_resolved")[0]?.fields).toMatchObject({
-      ripgrep: false,
     });
   });
 
@@ -81,7 +66,6 @@ describe("tools.config_resolved", () => {
     root = makeWorkspace();
     const config = resolveConfig({
       workspaceRoot: root,
-      probeRipgrep: () => false,
     });
     expect(config.logger).toBe(NOOP_TOOLS_LOGGER);
   });
@@ -214,48 +198,5 @@ describe("the process-wide warn sink", () => {
         fields: { operation: "test_cleanup" },
       },
     ]);
-  });
-});
-
-/** Directory searches stay in-process so each candidate receives classified-path admission. */
-describe("tools.grep_path", () => {
-  let root = "";
-  afterEach(() => {
-    if (root !== "") cleanup(root);
-    root = "";
-  });
-
-  const engineFor = async (over: {
-    ripgrepAvailable: boolean;
-    target?: string;
-  }): Promise<string> => {
-    const { logger, records } = recorder();
-    await callTool(
-      "grep",
-      { pattern: "needle", ...(over.target === undefined ? {} : { path: over.target }) },
-      makeConfig(root, {
-        logger,
-        ripgrepAvailable: over.ripgrepAvailable,
-      }),
-    );
-    return eventsOf(records, "tools.grep_path")[0]?.fields.engine as string;
-  };
-
-  it("stays in-process for a directory even when ripgrep is available", async () => {
-    root = makeWorkspace();
-    write(root, "a.txt", "needle here\n");
-    expect(await engineFor({ ripgrepAvailable: true })).toBe("in_process");
-  });
-
-  it("uses ripgrep for a single file, where no tree walk is involved", async () => {
-    root = makeWorkspace();
-    const file = write(root, "a.txt", "needle here\n");
-    expect(await engineFor({ ripgrepAvailable: true, target: file })).toBe("ripgrep");
-  });
-
-  it("stays in-process when ripgrep is absent", async () => {
-    root = makeWorkspace();
-    write(root, "a.txt", "needle here\n");
-    expect(await engineFor({ ripgrepAvailable: false })).toBe("in_process");
   });
 });

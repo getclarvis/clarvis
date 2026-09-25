@@ -1174,13 +1174,13 @@ describe("hooks written in the external dialect", () => {
         .hooks[0]?.match;
 
     it("maps the names a real filter reaches for", () => {
-      expect(match("Bash|Edit|Write|MultiEdit")).toEqual({
-        tool: ["shell", "edit_file", "write_file", "multi_edit"],
+      expect(match("Bash|Edit|Write")).toEqual({
+        tool: ["shell", "edit_file", "write_file"],
       });
     });
 
     it("maps a name that differs from ours only in case", () => {
-      expect(match("Grep|Glob")).toEqual({ tool: ["grep", "glob"] });
+      expect(match("Read|LS")).toEqual({ tool: ["read_file", "list_dir"] });
     });
 
     it("carries through a name it has no opinion about", () => {

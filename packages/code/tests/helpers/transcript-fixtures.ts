@@ -56,7 +56,7 @@ export function transcriptToolEvents(
 /** Completion order deliberately differs from first admission, without timers. */
 export function transcriptExplorationEvents(count = 500): RunEvent[] {
   const calls = Array.from({ length: count }, (_, index) =>
-    transcriptToolEvents(`read-${index}`, index % 2 === 0 ? "read_file" : "grep"),
+    transcriptToolEvents(`read-${index}`, index % 2 === 0 ? "read_file" : "list_dir"),
   );
   return [
     ...calls.flatMap((call) => call.slice(0, -1)),

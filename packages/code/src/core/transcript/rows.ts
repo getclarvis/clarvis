@@ -1,17 +1,7 @@
 import type { TranscriptProjectionId, TranscriptRecordId, TranscriptRowId } from "./identity.ts";
 
 /** Presentation eligibility is an allowlist, not an inference from unknown tool effects. */
-const EXPLORATION_TOOLS = new Set([
-  "read_file",
-  "read_files",
-  "read_image",
-  "list_dir",
-  "glob",
-  "grep",
-  "diff",
-  "file_stat",
-  "tree",
-]);
+const EXPLORATION_TOOLS = new Set(["read_file", "read_image", "list_dir"]);
 
 /** Namespaced/unknown MCP tools remain individual even when their leaf is familiar. */
 export function isExplorationTool(identity: string, server?: string): boolean {

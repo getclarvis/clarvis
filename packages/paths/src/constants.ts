@@ -76,10 +76,7 @@ export const CONTEXT_FILENAMES: readonly string[] = ["CLARVIS.md", "AGENTS.md"];
  * Directory names a workspace tree walk never descends into.
  *
  * @remarks
- * Distinct from {@link INTERNAL_IGNORE_PATTERNS}: this bounds a structural scan
- * of the working tree, whereas those are ignore-file patterns applied to
- * `grep`/`glob`. The two lists differ because they answer different questions,
- * not because they drifted.
+ * This list bounds structural scans of the working tree.
  */
 export const INTERNAL_SKIP_DIRS: readonly string[] = [
   GIT_DIR,
@@ -90,12 +87,3 @@ export const INTERNAL_SKIP_DIRS: readonly string[] = [
   "coverage",
   "build",
 ];
-
-/**
- * Built-in ignore patterns applied beneath every user-supplied ignore source.
- *
- * @remarks
- * {@link AGENTS_DIR} is deliberately absent: it is the user's own content, and
- * `grep`/`glob` are expected to see it.
- */
-export const INTERNAL_IGNORE_PATTERNS: readonly string[] = [GIT_DIR, CLARVIS_DIR, TMP_GLOB];

@@ -2,8 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { resolveConfig, StartupError } from "../../src/config.ts";
 import { cleanup, makeWorkspace, write } from "../helpers/fixtures.ts";
 
-const noProbe = () => false;
-
 describe("runtime config", () => {
   let root: string;
 
@@ -18,7 +16,6 @@ describe("runtime config", () => {
   it("resolves the documented programmatic defaults", () => {
     const config = resolveConfig({
       workspaceRoot: root,
-      probeRipgrep: noProbe,
     });
 
     expect(config).toMatchObject({
@@ -35,7 +32,6 @@ describe("runtime config", () => {
       shellTimeoutMaxMs: 600000,
       maxSessions: 32,
       regexScanBudgetMs: 5000,
-      ripgrepAvailable: false,
       readOnly: false,
       temporaryRoots: [],
     });
@@ -57,7 +53,6 @@ describe("runtime config", () => {
       shellTimeoutMaxMs: 9000,
       maxSessions: 4,
       regexScanBudgetMs: 250,
-      probeRipgrep: () => true,
       secretEnvNames: ["TOKEN"],
     });
 
@@ -75,7 +70,6 @@ describe("runtime config", () => {
       shellTimeoutMaxMs: 9000,
       maxSessions: 4,
       regexScanBudgetMs: 250,
-      ripgrepAvailable: true,
       secretEnvNames: ["TOKEN"],
     });
   });
@@ -116,40 +110,20 @@ describe("runtime config", () => {
       { maxSessions: 0 },
       { regexScanBudgetMs: 0 },
     ]) {
-      expect(() =>
-        resolveConfig({ workspaceRoot: root, probeRipgrep: noProbe, ...options }),
-      ).toThrow(StartupError);
+      expect(() => resolveConfig({ workspaceRoot: root, ...options })).toThrow(StartupError);
     }
     expect(() =>
       resolveConfig({
         workspaceRoot: root,
         shellTimeoutMs: 9000,
         shellTimeoutMaxMs: 5000,
-        probeRipgrep: noProbe,
       }),
     ).toThrow(/shellTimeoutMaxMs/);
     expect(() =>
       resolveConfig({
         workspaceRoot: root,
         shellTimeoutMs: Number.MAX_SAFE_INTEGER + 1,
-        probeRipgrep: noProbe,
       }),
     ).toThrow(StartupError);
-  });
-
-  it("treats a throwing capability probe as unavailable", () => {
-    const throwingProbe = (): boolean => {
-      throw new Error("probe boom");
-    };
-    const config = resolveConfig({
-      workspaceRoot: root,
-      probeRipgrep: throwingProbe,
-    });
-    expect(config.ripgrepAvailable).toBe(false);
-  });
-
-  it("can run the real capability probes", () => {
-    const config = resolveConfig({ workspaceRoot: root });
-    expect(typeof config.ripgrepAvailable).toBe("boolean");
   });
 });

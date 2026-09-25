@@ -1,23 +1,12 @@
 import { readFile } from "./read-file.ts";
 import { readImage } from "./read-image.ts";
-import { readFiles } from "./read-files.ts";
 import { writeFile } from "./write-file.ts";
 import { editFile } from "./edit-file.ts";
-import { multiEdit } from "./multi-edit.ts";
 import { applyPatchTool } from "./apply-patch.ts";
-import { replace } from "./replace.ts";
 import { listDir } from "./list-dir.ts";
-import { globTool } from "./glob.ts";
-import { grep } from "./grep.ts";
-import { diffTool } from "./diff.ts";
 import { shell } from "./shell.ts";
 import { shellSession } from "./shell-session.ts";
-import { move } from "./move.ts";
-import { copy } from "./copy.ts";
-import { mkdir } from "./mkdir.ts";
 import { remove } from "./remove.ts";
-import { fileStat } from "./file-stat.ts";
-import { tree } from "./tree.ts";
 import type { ToolDef } from "./types.ts";
 
 /**
@@ -41,24 +30,13 @@ export interface ToolDescriptor {
 export const toolDescriptors: readonly ToolDescriptor[] = [
   { tool: readFile, readOnly: true },
   { tool: readImage, readOnly: true },
-  { tool: readFiles, readOnly: true },
   { tool: writeFile, readOnly: false },
   { tool: editFile, readOnly: false },
-  { tool: multiEdit, readOnly: false },
   { tool: applyPatchTool, readOnly: false },
-  { tool: replace, readOnly: false },
   { tool: listDir, readOnly: true },
-  { tool: globTool, readOnly: true },
-  { tool: grep, readOnly: true },
-  { tool: diffTool, readOnly: true },
   { tool: shell, readOnly: false },
   { tool: shellSession, readOnly: false },
-  { tool: move, readOnly: false },
-  { tool: copy, readOnly: false },
-  { tool: mkdir, readOnly: false },
   { tool: remove, readOnly: false },
-  { tool: fileStat, readOnly: true },
-  { tool: tree, readOnly: true },
 ];
 
 /**

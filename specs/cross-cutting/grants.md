@@ -200,24 +200,20 @@ interface AgentToolCaps { canRead: boolean; canMutate: boolean; canExec: boolean
 (`packages/tools/src/tools/registry.ts`); the loop derives everything
 else from it:
 
-| Set | Derivation | Content (20 total tools) | File |
+| Set | Derivation | Content (9 total tools) | File |
 | --- | --- | --- | --- |
-| `AGENT_TOOL_NAMES` | `tools.map(t => t.name)` | all 20 | `packages/loop/src/runtime/tools/builtin/names.ts` |
-| `READ_ONLY_TOOL_NAMES` | `readOnlyTools.map(t => t.name)` | `read_file, read_image, read_files, list_dir, glob, grep, diff, file_stat, tree` (9) | `packages/loop/src/runtime/tools/builtin/names.ts`; source flags at `packages/tools/src/tools/registry.ts` |
-| `EDIT_TOOL_NAMES` | `AGENT_TOOL_NAMES` minus `READ_ONLY_TOOL_NAMES` | `write_file, edit_file, multi_edit, apply_patch, replace, shell, shell_session, move, copy, mkdir, remove` (11) | `packages/loop/src/runtime/tools/builtin/names.ts`; source flags `packages/tools/src/tools/registry.ts` |
-| `EXEC_TOOL_NAMES` | hardcoded literal list, **not** derived from the tools package's own flags | `shell, shell_session` (2) | `packages/loop/src/runtime/tools/builtin/names.ts` |
-| `FILE_MUTATING_TOOL_NAMES` | `EDIT_TOOL_NAMES` minus command runners | `write_file, edit_file, multi_edit, apply_patch, replace, move, copy, mkdir, remove` (9) | `packages/loop/src/runtime/tools/builtin/names.ts` (`FILE_MUTATING_TOOL_NAMES`) |
+| `AGENT_TOOL_NAMES` | `tools.map(t => t.name)` | all 9 | `packages/loop/src/runtime/tools/builtin/names.ts` |
+| `READ_ONLY_TOOL_NAMES` | `readOnlyTools.map(t => t.name)` | `read_file, read_image, list_dir` (3) | `packages/loop/src/runtime/tools/builtin/names.ts`; source flags at `packages/tools/src/tools/registry.ts` |
+| `EDIT_TOOL_NAMES` | `AGENT_TOOL_NAMES` minus `READ_ONLY_TOOL_NAMES` | `write_file, edit_file, apply_patch, shell, shell_session, remove` (6) | `packages/loop/src/runtime/tools/builtin/names.ts`; source flags `packages/tools/src/tools/registry.ts` |
+| `EXEC_TOOL_NAMES` | hardcoded literal list | `shell, shell_session` (2) | `packages/loop/src/runtime/tools/builtin/names.ts` |
+| `FILE_MUTATING_TOOL_NAMES` | `EDIT_TOOL_NAMES` minus command runners | `write_file, edit_file, apply_patch, remove` (4) | `packages/loop/src/runtime/tools/builtin/names.ts` |
 
-Tool name strings verified individually at their definitions: `read_file`
-(`packages/tools/src/tools/read-file.ts`), `read_image`
-(`packages/tools/src/tools/read-image.ts`), `read_files` (`packages/tools/src/tools/read-files.ts`), `write_file`
-(`packages/tools/src/tools/write-file.ts`), `edit_file` (`packages/tools/src/tools/edit-file.ts`), `multi_edit`
-(`packages/tools/src/tools/multi-edit.ts`), `apply_patch` (`packages/tools/src/tools/apply-patch.ts`), `replace`
-(`packages/tools/src/tools/replace.ts`), `list_dir` (`packages/tools/src/tools/list-dir.ts`), `glob` (`packages/tools/src/tools/glob.ts`), `grep`
-(`packages/tools/src/tools/grep.ts`), `diff` (`packages/tools/src/tools/diff.ts`), `shell` (`packages/tools/src/tools/shell.ts`), `shell_session` (`packages/tools/src/tools/shell-session.ts`), `move` (`packages/tools/src/tools/move.ts`),
-`copy` (`packages/tools/src/tools/copy.ts`), `mkdir` (`packages/tools/src/tools/mkdir.ts`), `remove` (`packages/tools/src/tools/remove.ts`),
-`file_stat` (`packages/tools/src/tools/file-stat.ts`), `tree` (`packages/tools/src/tools/tree.ts`).
-
+The tool definitions and their names are owned by
+`packages/tools/src/tools/registry.ts`; the loop derives grant sets from that
+registry. Production: `toolDescriptors` in `packages/tools/src/tools/registry.ts`
+and `AGENT_TOOL_NAMES` in `packages/loop/src/runtime/tools/builtin/names.ts`.
+Test: `packages/tools/tests/component/tool-surface.test.ts` and
+`packages/loop/tests/unit/tool-effect.test.ts`.
 ## 4. Behavior
 
 ### 4.1 Request-time grant validation (structural → semantic)
@@ -278,7 +274,7 @@ For each agent (entry or spawned), `createAgentToolsRunCapability.forAgent(scope
      `EXEC_TOOL_NAMES` member whenever `canExec` is false, even from an
      otherwise-full (`canMutate: true`) definition list
      (`packages/loop/src/runtime/tools/builtin/toolset.ts`).
-   - Net effect per ceiling tier: `read` → the 9 read-only tools only; `edit` →
+   - Net effect per ceiling tier: `read` → the 3 read-only tools only; `edit` →
      read-only + the 9 members of `FILE_MUTATING_TOOL_NAMES`, with no `shell`
      or `shell_session`; `exec` → all 20.
 4. `dispatch(name, …)` on the built toolset rejects any call whose `name` is

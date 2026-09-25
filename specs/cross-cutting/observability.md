@@ -247,7 +247,6 @@ logger.info(
 // packages/tools/tests/unit/observability.test.ts, "reports the flags that decide the advertised surface")
 {
   event: "tools.config_resolved",
-  ripgrep: true,
   read_only: true,
   skill_execution_roots: 0,
   platform: process.platform,

@@ -23,7 +23,7 @@ describe("planReviewUnplannedBlock", () => {
 
   it("does not duplicate a coding-tool catalogue it cannot derive", () => {
     const text = planReviewUnplannedBlock("write_file");
-    for (const removed of ["outline", "check_syntax", "read_file", "read_files", "grep"]) {
+    for (const removed of ["outline", "check_syntax", "read_file", "read_image"]) {
       expect(text, removed).not.toContain(removed);
     }
   });

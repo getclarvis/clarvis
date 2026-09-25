@@ -119,20 +119,14 @@ export const EXTERNAL_HOOK_EVENT_NAMES: Readonly<Record<string, string>> = {
  * How each tool name written in the external hooks dialect is spelled here.
  *
  * @remarks
- * A hook filter names the tools it fires on, and the two vocabularies disagree
- * on almost every entry a real rule reaches for. Measured against a public
- * catalog of 196 plugins, five of the thirty-nine names their filters used
- * existed here; the other thirty-four — `Write`, `Edit`, `Bash` and
- * `MultiEdit` above all — translated cleanly, installed, were approved, and
- * then matched nothing. That failure is silent in the worst direction: the
- * commonest such rule is a gate that blocks a dangerous shell command, and a
- * gate that never fires reads exactly like a gate that allowed everything.
+ * A hook filter names the tools it fires on. Foreign spellings for active
+ * Clarvis tools are mapped here so the filter reaches the intended call.
+ * Unsupported names must not be approximated to unrelated tools.
  *
  * Keyed by {@link normalizeToolName} so one entry covers every capitalization
  * and separator a document writes the same name in. Every foreign name that has
  * a counterpart is listed, including the ones that differ only in case: an
- * unmapped name is carried through exactly as written, and `Grep` carried
- * through is a pattern that never matches `grep`.
+ * unmapped name is carried through exactly as written.
  *
  * Names with no counterpart at all belong in
  * {@link EXTERNAL_TOOLS_WITHOUT_COUNTERPART}, not here. Mapping one onto its
@@ -148,10 +142,7 @@ export const EXTERNAL_TOOL_NAMES: Readonly<Record<string, string>> = {
   writefile: "write_file",
   edit: "edit_file",
   editfile: "edit_file",
-  multiedit: "multi_edit",
   applypatch: "apply_patch",
-  glob: "glob",
-  grep: "grep",
   ls: "list_dir",
   listdir: "list_dir",
   task: "delegate_task",
@@ -164,10 +155,7 @@ export const EXTERNAL_HOOK_TOOL_NAMES: Readonly<Record<string, string>> = {
   read_file: "Read",
   write_file: "Write",
   edit_file: "Edit",
-  multi_edit: "MultiEdit",
   apply_patch: "apply_patch",
-  glob: "Glob",
-  grep: "Grep",
   list_dir: "LS",
   delegate_task: "Task",
   load_skill: "Skill",

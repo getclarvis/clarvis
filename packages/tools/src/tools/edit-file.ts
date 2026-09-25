@@ -28,7 +28,7 @@ import type { ToolResult } from "./content.ts";
  * @remarks The write preserves the file's original line endings and BOM via
  *   {@link reencode}; only the content is changed.
  */
-export async function editFileLocked(
+async function editFileLocked(
   target: string,
   relPath: string,
   config: RuntimeConfig,
@@ -235,7 +235,7 @@ export const editFile: ToolDef = {
   description:
     "Replace literal text in one file. Prefer an exact, unique match; a whitespace-tolerant " +
     "fallback is reported for inspection. On no_match, re-read; on ambiguous_match, add context. " +
-    "Use replace_all only when every occurrence should change. Batch same-file edits with multi_edit.",
+    "Use replace_all only when every occurrence should change.",
   inputSchema: {
     type: "object",
     properties: {

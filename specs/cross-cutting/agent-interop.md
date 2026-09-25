@@ -69,15 +69,6 @@ distinct cross-runtime naming convention — a root-level file, not a `.agents` 
 mechanics belong to the paths-directory-vocabulary document; it is noted here only to distinguish it from
 the seam this document covers.
 
-The "user's own content" framing is stated a fourth time, on the built-in ignore list `grep`/`glob`
-apply: `INTERNAL_IGNORE_PATTERNS`'s doc comment says `AGENTS_DIR` "is deliberately absent: it is the
-user's own content, and `grep`/`glob` are expected to see it" (`packages/paths/src/constants.ts`).
-By contrast `INTERNAL_SKIP_DIRS`, the structural workspace-tree-walk skip list, never names `AGENTS_DIR`
-either, but says nothing about why — it lists only `.git`, `node_modules`, `dist`, `CLARVIS_DIR`,
-`.next`, `coverage` and `build` (`packages/paths/src/constants.ts`), and its own doc comment
-distinguishes it from `INTERNAL_IGNORE_PATTERNS` only on the axis of which operation each list bounds,
-not on `.agents` specifically.
-
 ### 2.2 The hook-dialect correspondence tables (`@clarvis/capability`)
 
 All exported from `@clarvis/capability`'s root (`packages/capability/src/index.ts`):
@@ -85,7 +76,7 @@ All exported from `@clarvis/capability`'s root (`packages/capability/src/index.t
 | Symbol | File | Shape |
 | --- | --- | --- |
 | `EXTERNAL_HOOK_EVENT_NAMES` | `packages/capability/src/hooks-config.ts` | `Readonly<Record<string,string>>`, Clarvis event → foreign event, 11 entries |
-| `EXTERNAL_TOOL_NAMES` | `packages/capability/src/hooks-config.ts` | `Readonly<Record<string,string>>`, normalized foreign tool name → Clarvis wire name, 16 entries |
+| `EXTERNAL_TOOL_NAMES` | `packages/capability/src/hooks-config.ts` | `Readonly<Record<string,string>>`, normalized foreign tool name → Clarvis wire name, 13 entries |
 | `EXTERNAL_HOOK_TOOL_NAMES` | `packages/capability/src/hooks-config.ts` | `Readonly<Record<string,string>>`, Clarvis built-in wire name → preferred external stdin spelling |
 | `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` | `packages/capability/src/hooks-config.ts` | `ReadonlySet<string>`, 5 normalized foreign names with no Clarvis tool |
 | `normalizeToolName(name)` | `packages/capability/src/hooks-config.ts` | `(string) => string` — strips everything but letters/digits, lower-cases |
@@ -121,10 +112,7 @@ rather than mapped onto an approximation (`packages/capability/src/hooks-config.
 | `read`, `readfile` | `read_file` |
 | `write`, `writefile` | `write_file` |
 | `edit`, `editfile` | `edit_file` |
-| `multiedit` | `multi_edit` |
 | `applypatch` | `apply_patch` |
-| `glob` | `glob` |
-| `grep` | `grep` |
 | `ls`, `listdir` | `list_dir` |
 | `task` | `delegate_task` |
 | `skill` | `load_skill` |

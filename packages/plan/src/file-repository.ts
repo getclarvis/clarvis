@@ -366,16 +366,8 @@ export function createFilePlanRepository(options: CreateFilePlanRepositoryOption
    * over the target, then fsync the directory.
    *
    * @remarks The temp name comes from `@clarvis/paths`' `tmpPathFor` rather
-   *   than being spelled here. It used to be `.<name>.<uuid>.tmp`, which is a
-   *   shape nothing else in the monorepo recognises — so an orphan left by a
-   *   crash matched neither `TMP_GLOB` nor `INTERNAL_IGNORE_PATTERNS`, and
-   *   showed up in `git status` and in `grep`/`glob` inside the one directory
-   *   this whole change exists to keep clean. `tmpPathFor` carries
-   *   `TMP_PREFIX`, which both rules already hide.
-   *
-   *   The temp file stays a *sibling* of the plan, under the plans root,
-   *   because `rename` is atomic only within one filesystem. That is the one
-   *   thing the lockfile move could not take out of the working tree.
+   *   than being spelled here. The shared prefix lets housekeeping recognise
+   *   an orphan left by a crash.
    */
   async function atomicWrite(path: string, content: string): Promise<void> {
     assertPlanSourceSize(content);

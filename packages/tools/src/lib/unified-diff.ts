@@ -2,7 +2,7 @@ import { createTwoFilesPatch } from "diff";
 
 const DIFF_OMITTED = "[diff omitted: combined input exceeds the configured diff budget]";
 const DIFF_TIMED_OUT = "[diff omitted: computation exceeded the 2000ms time budget]";
-export const DEFAULT_DIFF_TIMEOUT_MS = 2_000;
+const DEFAULT_DIFF_TIMEOUT_MS = 2_000;
 
 function inputBytes(before: string, after: string): number {
   return Buffer.byteLength(before, "utf8") + Buffer.byteLength(after, "utf8");

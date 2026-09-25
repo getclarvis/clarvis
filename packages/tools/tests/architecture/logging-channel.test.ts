@@ -42,7 +42,7 @@ describe("the tools' diagnostics have one channel", () => {
   const files = sourceFiles(SRC);
 
   it("scans the whole source tree", () => {
-    expect(files.length).toBeGreaterThan(40);
+    expect(files.length).toBeGreaterThan(30);
   });
 
   it.each(FORBIDDEN)("no src module writes through $name", ({ pattern }) => {

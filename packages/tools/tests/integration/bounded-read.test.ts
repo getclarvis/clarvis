@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
-import { mkdirSync, mkdtempSync, promises as fs, rmSync, type Stats } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { promises as fs, type Stats } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { ToolError } from "../../src/errors.ts";
-import { listFiles, readRawFile } from "../../src/lib/files.ts";
+import { readRawFile } from "../../src/lib/files.ts";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -92,25 +90,5 @@ describe("bounded descriptor reads", () => {
     expect(requested).toEqual([9]);
     expect(statCalls).toBe(2);
     expect(closeCalls).toBe(1);
-  });
-});
-
-describe("bounded file listing", () => {
-  it("reports traversal truncation before entering a queued directory", async () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-list-bound-"));
-    try {
-      mkdirSync(join(root, "nested"));
-      expect(
-        await listFiles(root, root, { pattern: "**/*", respectGitignore: false, maxEntries: 1 }),
-      ).toMatchObject({ files: [], truncated: true });
-      expect(
-        await listFiles(join(root, "missing"), root, {
-          pattern: "**/*",
-          respectGitignore: false,
-        }),
-      ).toMatchObject({ files: [], truncated: false });
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
   });
 });

@@ -2,8 +2,7 @@
  * Shell resolution and process-tree termination, off the main entrypoint.
  *
  * @remarks
- * `@clarvis/tools`' root export pulls the whole tool registry - ajv, diff,
- * ignore, picomatch and ripgrep - which is the wrong price for
+ * `@clarvis/tools`' root export pulls the whole tool registry - ajv and diff - which is the wrong price for
  * a consumer that only needs to know which shell this host speaks and how to
  * kill what it spawned. This subpath carries exactly that, so
  * `@clarvis/hooks` (and anything else running a command outside the tool

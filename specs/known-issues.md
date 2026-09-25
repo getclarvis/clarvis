@@ -686,7 +686,7 @@ signal — 31.0%**. Every one of the 26 was in `@clarvis/code`, and every one ex
 Split on the pin commit `e201dfd`: **8/22 = 36.4%** on the 1.3.14 era, **18/62 =
 29.0%** on 1.3.11.
 
-The other 10 failures at that step were ordinary — a ripgrep guard in `tools`, a `coverage:check`
+The other 10 failures at that step were ordinary — a `coverage:check`
 threshold — and are not this.
 
 The `tools (windows)` job failed 14 times in the same window with **zero** signal deaths. Every
@@ -1264,16 +1264,7 @@ shapes the derivation enumerates, where the SDK reads provider metadata from. Th
 and has not been done. Nothing binds a future version of either dependency; a test converts a
 reading into a regression alarm, which is the most this repository can do about a third party.
 
-### Three external binaries the behaviour depends on, and one guard that never runs
-
-**`ripgrep`, and this is worse than the report says.** The whole of the guard is
-`if (process.env.CI) expect(rgAvailable).toBe(true);` at
-`packages/tools/tests/contract/grep-parity.test.ts`, and that line is the **only** reader of
-`process.env.CI` anywhere in `packages/`. Nothing under `tooling/`, `.githooks/`, the root
-`package.json` or `bunfig.toml` sets it; GitHub Actions does. Restored push and pull-request CI now
-enforces the guard, while local pre-commit runs still do not set `CI`: a local machine without `rg`
-skips the parity contract rather than failing it. The environment precondition is therefore
-remote-CI-enforced but not local-gate-enforced.
+### External Git dependency for plugin browsing
 
 **`git`, and a citation the report gets wrong.** It cites
 `packages/code/src/adapters/marketplace.ts` as "spawns `git` directly through
@@ -1286,9 +1277,7 @@ nowhere is the precondition itself: `git` must be on the **client's** `PATH` for
 nothing in the tree fails if that seam is later rewired. Git is separately the authority for every
 launch-time worktree fact.
 
-*What would settle these.* For `ripgrep`, making the assertion unconditional — the binary is
-genuinely required, and the current condition is dead surface. For `git`, an architecture test over
-the client-side seam. Neither is a question about the outside world; both are simply not done.
+*What would settle this.* An architecture test over the client-side Git seam.
 
 ### `link()` atomicity and `fsync` durability are asserted by comment, and only one of them is stale
 
@@ -1666,11 +1655,8 @@ has ever run on.
 
 `packages/tools/src/lib/files.ts` returns early on `win32` with Node's portable `"r"` mode,
 dropping both `O_NONBLOCK` and `O_NOFOLLOW`. Losing `O_NONBLOCK` is harmless and the TSDoc says why — Windows filesystem paths expose no FIFOs. Losing `O_NOFOLLOW` is a real
-reduction: `noFollow` becomes advisory there. The generic spill reader compensates with a pinned
-inode and parent check in `packages/tools/src/lib/files.ts`; `file_stat` in
-`packages/tools/src/tools/file-stat.ts` still requires its own native Windows qualification. The TSDoc's
-"descriptor metadata remains the authority on every platform" applies to descriptor-bound reads;
-classified configuration reads also recheck their canonical class.
+reduction: `noFollow` becomes advisory there. The descriptor read still verifies regular-file metadata on every platform. Native Windows
+qualification of last-component symlink behavior remains outstanding.
 
 `packages/plan/src/file-repository.ts` composes the same flag word opens with it.
 The compensating controls are the `lstat` in `confined` and the `entry.isFile()` filter in

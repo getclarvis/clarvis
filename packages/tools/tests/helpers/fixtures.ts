@@ -29,7 +29,7 @@ import {
   type ServerConfig,
 } from "../../src/config.ts";
 import { NOOP_TOOLS_LOGGER } from "../../src/lib/log.ts";
-import { contentText, type ContentPart, type ToolResult } from "../../src/tools/content.ts";
+import { contentText, type ContentPart } from "../../src/tools/content.ts";
 import { workspaceStatePaths } from "@clarvis/paths";
 import { ExecutionSessionManager } from "../../src/lib/execution-session.ts";
 
@@ -88,7 +88,6 @@ export function makeConfig(root: string, overrides: Partial<ServerConfig> = {}):
     shellTimeoutMaxMs: DEFAULT_SHELL_TIMEOUT_MAX_MS,
     maxSessions: DEFAULT_MAX_SESSIONS,
     regexScanBudgetMs: DEFAULT_REGEX_SCAN_BUDGET_MS,
-    ripgrepAvailable: false,
     readOnly: false,
     stateRoot: statePaths.root,
     statePaths,
@@ -113,11 +112,6 @@ export interface CallResult {
 
 export function resultText(content: ContentPart[]): string {
   return contentText(content);
-}
-
-export function handlerText(out: string | ToolResult): string {
-  const content = typeof out === "string" ? out : out.content;
-  return typeof content === "string" ? content : resultText(content);
 }
 
 export async function callTool(
@@ -217,33 +211,6 @@ export const modeBitsEnforced = process.platform !== "win32" && !isRoot;
  * `ci.yml` deliberately runs only selected package surfaces there.
  */
 export const posixShell = process.platform !== "win32";
-
-/**
- * Whether this filesystem can hold a filename that is not valid UTF-8.
- *
- * Linux treats a filename as an opaque byte string, so an arbitrary `0xFF` is a
- * legal name and a tool that walks the tree has to cope with it. macOS does not:
- * APFS and HFS+ validate encoding and reject the byte outright with `EILSEQ`, so
- * the input under test cannot be brought into existence there at all.
- *
- * Probed rather than derived from `process.platform`, because this is a property
- * of the *filesystem* and not of the OS — a case-sensitive volume, a network
- * mount or a container image can each answer differently on the same host.
- */
-export const nonUtf8FilenamesSupported = ((): boolean => {
-  if (process.platform === "win32") return false;
-  const probe = Buffer.concat([
-    Buffer.from(path.join(tmpdir(), "clarvis-utf8-probe-")),
-    Buffer.from([0xff]),
-  ]);
-  try {
-    writeFileSync(probe, "");
-    rmSync(probe, { force: true });
-    return true;
-  } catch {
-    return false;
-  }
-})();
 
 /**
  * Whether "settled on the shell's exit rather than waiting for a backgrounded

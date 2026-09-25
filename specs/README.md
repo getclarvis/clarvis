@@ -90,8 +90,8 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | Document | Covers | Implemented in |
 | --- | --- | --- |
 | [`tools-contract.md`](execution/tools-contract.md) | The one dispatcher every tool sits behind: argument validation, output bounding, the immutable `RuntimeConfig`, and the single registry both surfaces derive from | `tools` |
-| [`tools-read-and-search.md`](execution/tools-read-and-search.md) | The nine observing tools (`read_file`, `read_image`, `read_files`, `list_dir`, `glob`, `grep`, `diff`, `file_stat`, `tree`) and the ripgrep-parity contract between grep's two engines | `tools` |
-| [`tools-mutation.md`](execution/tools-mutation.md) | The nine mutating tools and the shared staging/locking/rollback machinery that makes a write all-or-nothing | `tools` |
+| [`tools-read.md`](execution/tools-read.md) | The three observing tools (`read_file`, `read_image`, `list_dir`) and bounded reads | `tools` |
+| [`tools-mutation.md`](execution/tools-mutation.md) | The four file mutation tools and the shared staging/locking/rollback machinery that makes a write all-or-nothing | `tools` |
 | [`tools-shell-and-sessions.md`](execution/tools-shell-and-sessions.md) | Running commands with `shell` and `shell_session`, process trees, killing, bounded capture, and cursors | `tools` |
 | [`hooks.md`](execution/hooks.md) | Operator- and plugin-declared command or MCP-tool invocations bound to lifecycle events: matching, blocking and observer semantics, subprocess and MCP execution, foreign payloads, and argument rewriting | `hooks`, `capability`, `loop`, `mcp-client` |
 | [`skills.md`](execution/skills.md) | Discovering, parsing and merging `SKILL.md` trees with last-wins precedence; serving catalog, body and confined resource pages through `load_skill` and `read_skill_resource`; and routing named or description-matching skills into the run | `skills`, `kernel`, `loop` |

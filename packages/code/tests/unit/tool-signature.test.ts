@@ -18,12 +18,6 @@ test("non-whitelisted args of a curated tool stay out of the header", () => {
   expect(sig("shell", { command: "sleep 1", timeout_ms: 120000 })).toBe("(sleep 1)");
 });
 
-test("grep shows pattern then path, both bare, in that order", () => {
-  expect(sig("grep", { pattern: "indigo|#6366f1", path: "frontend/src" })).toBe(
-    "(indigo|#6366f1, frontend/src)",
-  );
-});
-
 test("a long path truncates from the START so the basename survives", () => {
   const path = "/workspaces/monorepo/packages/code/src/views/deeply/nested/blocks.tsx";
   const out = sig("read_file", { path });
@@ -60,10 +54,6 @@ test("without a resident signature, live args still format, and missing args sta
   );
   expect(resolveToolCallSignature({ mcpName: "read_file", toolName: "" })).toBe("()");
   expect(resolveToolCallSignature({ mcpName: "list_dir", toolName: "" })).toBe("(.)");
-});
-
-test("read_files joins its paths without JSON noise", () => {
-  expect(sig("read_files", { paths: ["a.ts", "b.ts"] })).toBe("(a.ts, b.ts)");
 });
 
 test("an uncurated MCP tool labels every value instead of dumping positionals", () => {

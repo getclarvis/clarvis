@@ -220,7 +220,7 @@
     {
       "mechanism": "timer",
       "file": "packages/kernel/tests/integration/file-kernel.test.ts",
-      "identity": "timer|describe:createFileKernel \u2014 skills roots from plugins/it:withdraws plugin skill drift without rejecting the next run|setTimeout(() => reject(new Error(\"skill drift watcher did not fire\")), 10_000)|0",
+      "identity": "timer|describe:createFileKernel — skills roots from plugins/it:withdraws plugin skill drift without rejecting the next run|setTimeout(() => reject(new Error(\"skill drift watcher did not fire\")), 10_000)|0",
       "package_owner": "@clarvis/kernel",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -364,7 +364,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|0",
+      "identity": "timer|describe:AiSdkAdapter — streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|0",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -372,7 +372,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|1",
+      "identity": "timer|describe:AiSdkAdapter — streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|1",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -380,7 +380,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|0",
+      "identity": "timer|describe:AiSdkAdapter — streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|0",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -388,7 +388,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|1",
+      "identity": "timer|describe:AiSdkAdapter — streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|1",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -396,7 +396,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|2",
+      "identity": "timer|describe:AiSdkAdapter — streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|2",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -428,7 +428,7 @@
     {
       "mechanism": "positive-wait",
       "file": "packages/loop/tests/integration/host-capability.test.ts",
-      "identity": "positive-wait|describe:executeRun \u2014 capability run-end/it:awaits every capability's durable run-end work before resolving|Bun.sleep(5)|0",
+      "identity": "positive-wait|describe:executeRun — capability run-end/it:awaits every capability's durable run-end work before resolving|Bun.sleep(5)|0",
       "package_owner": "@clarvis/loop",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -436,7 +436,7 @@
     {
       "mechanism": "positive-wait",
       "file": "packages/loop/tests/integration/host-capability.test.ts",
-      "identity": "positive-wait|describe:executeRun \u2014 capability run-end/it:stops waiting once the run-end budget elapses, and says so|Bun.sleep(400)|0",
+      "identity": "positive-wait|describe:executeRun — capability run-end/it:stops waiting once the run-end budget elapses, and says so|Bun.sleep(400)|0",
       "package_owner": "@clarvis/loop",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -603,22 +603,6 @@
     },
     {
       "mechanism": "subprocess",
-      "file": "packages/tools/tests/contract/grep-parity.test.ts",
-      "identity": "subprocess|module|spawnSync(\"rg\", [\"--version\"], { stdio: \"ignore\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/contract/regex-dialect.test.ts",
-      "identity": "subprocess|module|spawnSync(\"rg\", [\"--version\"], { stdio: \"ignore\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
       "file": "packages/tools/tests/integration/execution-session.test.ts",
       "identity": "subprocess|describe:ExecutionSessionManager/it:spawns once and settles both streams with physical exit status|spawn(file, args, options)|0",
       "package_owner": "@clarvis/tools",
@@ -642,57 +626,9 @@
       "reason": "Exercises physical TERM-to-KILL escalation and confirmed process-group shutdown."
     },
     {
-      "mechanism": "listener",
-      "file": "packages/tools/tests/integration/file-stat.test.ts",
-      "identity": "listener|describe:file_stat|server.listen(sock, () => { server.off(\"error\", reject); resolve(); })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/grep.test.ts",
-      "identity": "subprocess|describe:grep single-file target pre-scan (in-process)|spawnSync(mkfifo!, [fifo], { stdio: \"ignore\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/grep.test.ts",
-      "identity": "subprocess|module|spawnSync(\"rg\", [\"--version\"], { stdio: \"ignore\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/ignore.test.ts",
-      "identity": "subprocess|makeFifo|spawnSync(mkfifo!, [target], { stdio: \"ignore\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/ignore.test.ts",
-      "identity": "subprocess|probeIgnore|spawnSync(process.execPath, [\"-e\", program, root], { env, encoding: \"utf8\", timeout: 2_000, })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
       "mechanism": "subprocess",
       "file": "packages/tools/tests/integration/read-file.test.ts",
       "identity": "subprocess|describe:read_file|spawnSync(mkfifo!, [fifo], { stdio: \"ignore\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/rg.test.ts",
-      "identity": "subprocess|module|spawnSync(\"rg\", [\"--version\"], { stdio: \"ignore\" })|0",
       "package_owner": "@clarvis/tools",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
@@ -716,7 +652,7 @@
     {
       "mechanism": "subprocess",
       "file": "packages/trace/tests/integration/json-trace-store.test.ts",
-      "identity": "subprocess|describe:json-trace-store \u2014 delete/it:rejects a cross-process insert while the new generation is still being deleted|Bun.spawn( [process.execPath, DELETE_INSERT_WORKER, dir, readyPath, startPath, resultPath], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
+      "identity": "subprocess|describe:json-trace-store — delete/it:rejects a cross-process insert while the new generation is still being deleted|Bun.spawn( [process.execPath, DELETE_INSERT_WORKER, dir, readyPath, startPath, resultPath], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
       "package_owner": "@clarvis/trace",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"

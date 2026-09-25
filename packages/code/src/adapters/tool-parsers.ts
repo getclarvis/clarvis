@@ -219,7 +219,7 @@ export function parseGrepContent(result: string): { groups: GrepGroup[]; noMatch
   return { groups, noMatches: false };
 }
 
-/** Split a `glob`-style tool result into its non-empty path lines, or `[]` for "(no matches)". */
+/** Split a path-list result into its non-empty lines, or `[]` for "(no matches)". */
 export function parsePathList(result: string): string[] {
   if (result.trim() === "(no matches)" || result.trim().length === 0) return [];
   return result.split("\n").filter((l) => l.trim().length > 0);
@@ -232,16 +232,9 @@ export interface Edit {
 }
 
 /**
- * Recover the {@link Edit} list from a tool call's raw arguments, supporting
- * both the multi-edit `edits: [...]` shape and the single-edit
- * `old_string`/`new_string` shape.
+ * Recover the {@link Edit} list from a tool call's `old_string`/`new_string` arguments.
  */
 export function editsFromArgs(args: Record<string, unknown>): Edit[] {
-  if (Array.isArray(args.edits)) {
-    return args.edits
-      .filter((e): e is Record<string, unknown> => !!e && typeof e === "object")
-      .map((e) => ({ oldText: String(e.old_string ?? ""), newText: String(e.new_string ?? "") }));
-  }
   if (typeof args.old_string === "string" || typeof args.new_string === "string") {
     return [{ oldText: String(args.old_string ?? ""), newText: String(args.new_string ?? "") }];
   }
@@ -271,53 +264,6 @@ export function synthesizeUnifiedDiff(path: string, edits: Edit[]): string {
 /** Parse an arbitrary tool result as a JSON object, or `undefined` if it isn't one. */
 export function parseJsonObject(result: string): Record<string, unknown> | undefined {
   return tryJson(result);
-}
-
-/** One file's section of a `read_files` (batch read) tool call's result. */
-export interface ReadFilesSection {
-  path: string;
-  error: string | null;
-  body: string;
-}
-
-/**
- * Parse a `read_files` tool call's `==> path <==` banner-delimited output into
- * per-file sections, recognizing a trailing `... more file(s) not shown` note.
- */
-export function parseReadFiles(result: string): {
-  sections: ReadFilesSection[];
-  note: string | null;
-} {
-  const sections: ReadFilesSection[] = [];
-  let note: string | null = null;
-  let current: ReadFilesSection | undefined;
-  let bodyLines: string[] = [];
-  const flush = (): void => {
-    if (current) {
-      current.body = bodyLines.join("\n").replace(/^\n+|\n+$/g, "");
-      sections.push(current);
-    }
-    bodyLines = [];
-  };
-  for (const line of result.split("\n")) {
-    const h = /^==> (.*) <==$/.exec(line);
-    if (h) {
-      flush();
-      const inner = h[1]!;
-      const em = /^(.+?) — ([a-z_]+): (.+)$/.exec(inner);
-      current = em
-        ? { path: em[1]!, error: `${em[2]}: ${em[3]}`, body: "" }
-        : { path: inner, error: null, body: "" };
-      continue;
-    }
-    if (/more file\(s\) not shown/.test(line)) {
-      note = line.trim();
-      continue;
-    }
-    if (current) bodyLines.push(line);
-  }
-  flush();
-  return { sections, note };
 }
 
 export interface ShellSessionParsed {

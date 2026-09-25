@@ -137,7 +137,9 @@ describe("LiveContext.snapshot", () => {
   it("excludes the system head and preserves order, flags and task_id", () => {
     const ctx = createLiveContext(seedWithSystem(), ROOMY, SCOPE);
     ctx.setCanonicalState("state v1");
-    ctx.appendAssistantToolCalls("looking", [{ id: "c1", name: "grep", arguments: { q: "x" } }]);
+    ctx.appendAssistantToolCalls("looking", [
+      { id: "c1", name: "list_dir", arguments: { q: "x" } },
+    ]);
     ctx.appendToolMessage("c1", "match found", { taskId: "t7" });
     ctx.appendAssistant("done");
 

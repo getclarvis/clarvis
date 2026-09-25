@@ -29,7 +29,7 @@ export const writeFile: ToolDef = {
   description:
     "Create or completely overwrite a file with `content`, creating missing parent directories. " +
     "Writes `content` verbatim (no trailing newline added or stripped). Use ONLY to create a new " +
-    "file or fully replace one; to change part of an existing file use edit_file or multi_edit so " +
+    "file or fully replace one; to change part of an existing file use edit_file so " +
     "you do not lose the rest.",
   inputSchema: {
     type: "object",

@@ -314,10 +314,8 @@ counterpart and are absent from the table on purpose — "an approximation that 
 moment is worse than an honest gap".
 
 `EXTERNAL_TOOL_NAMES` (keyed by `normalizeToolName`: letters+digits only, lower-cased): `bash`/`shell→shell`, `read`/`readfile→read_file`, `write`/`writefile→write_file`,
-`edit`/`editfile→edit_file`, `multiedit→multi_edit`, `applypatch→apply_patch`, `glob→glob`,
-`grep→grep`, `ls`/`listdir→list_dir`, `task→delegate_task`, `skill→load_skill`. Measured against a public catalog of
-196 plugins: "five of the thirty-nine names their filters used existed here; the other thirty-four
-… translated cleanly, installed, were approved, and then matched nothing". `EXTERNAL_HOOK_TOOL_NAMES` owns the reverse spelling emitted on stdin;
+`edit`/`editfile→edit_file`, `applypatch→apply_patch`, `ls`/`listdir→list_dir`, `task→delegate_task`, `skill→load_skill`. Measured against a public catalog of
+196 plugins, external names without Clarvis counterparts must be reported rather than silently accepted. `EXTERNAL_HOOK_TOOL_NAMES` owns the reverse spelling emitted on stdin;
 the two directions are explicit because several external aliases map to one Clarvis tool.
 `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` lists 5 foreign names with no
 Clarvis tool at all (`exitplanmode`, `todowrite`, `notebookedit`, `webfetch`, `websearch`) so a
@@ -861,7 +859,7 @@ all: the package consumes `hookSchema`'s inferred type but defines no schema of 
 `packages/hooks/src/capability.ts` and `packages/hooks/src/event-serialization.ts`); `@clarvis/tools/shell` — the narrow
 subpath carrying `resolveShell`/`shellArgs`/`killTree`/`ownProcessGroup`/`ShellSpec`
 (`packages/hooks/src/subprocess.ts`), chosen specifically to avoid pulling in the whole tool registry —
-the root export carries ajv, diff, ignore, picomatch and ripgrep, "the wrong price for a consumer
+the root export carries Ajv and diff helpers, "the wrong price for a consumer
 that only needs to know which shell this host speaks and how to kill what it spawned"
 (`packages/tools/src/shell-entry.ts`).
 

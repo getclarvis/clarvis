@@ -167,8 +167,8 @@ export const agentProfileSchema = z
           "'ask_user' (a spawned sub-agent cannot call ask_user, so this grant on a sub-agent " +
           "profile is inert). Built-in coding " +
           "only when granted, and capped by CLARVIS_AGENT_TOOLS_MAX_GRANT): 'read_workspace' (the " +
-          "read-only tools read_file/list_dir/glob/grep), 'edit_workspace' (adds the mutating file " +
-          "tools write_file/edit_file/multi_edit/apply_patch; implies read), 'run_commands' (adds " +
+          "read-only tools read_file/list_dir), 'edit_workspace' (adds the mutating file " +
+          "tools write_file/edit_file/apply_patch; implies read), 'run_commands' (adds " +
           "the 'shell' host-command tool; implies edit). Capability-owned grants are admitted " +
           "only when that capability is registered for the run; their semantics are declared by " +
           "the owning capability rather than by this engine schema. Receiving images is not a " +

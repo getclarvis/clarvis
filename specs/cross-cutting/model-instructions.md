@@ -19,7 +19,7 @@ and user-authored extensions are not a fixed inventory.
 
 | Surface | Declarations | Source owner |
 | --- | ---: | --- |
-| Coding, files, search, shell and sessions | 20 | `toolDescriptors` in [tools/registry.ts](../../packages/tools/src/tools/registry.ts) |
+| Coding, files, shell and sessions | 9 | `toolDescriptors` in [tools/registry.ts](../../packages/tools/src/tools/registry.ts) |
 | Independent and tracked child spawning | 2 | [lead-tools.ts](../../packages/loop/src/runtime/subagents/lead-tools.ts) |
 | Child listing, polling, waiting, steering and stopping | 5 | `buildTools` in [agents.ts](../../packages/loop/src/runtime/capabilities/agents.ts) |
 | Human question and structured completion | 2 | [ask-user-tool.ts](../../packages/loop/src/runtime/tools/ask-user-tool.ts), [submit-result-tool.ts](../../packages/loop/src/runtime/tools/submit-result-tool.ts) |

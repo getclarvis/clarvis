@@ -52,8 +52,8 @@ describe("foldContributions", () => {
 
   it("rejects a tool wire name claimed by two contributions", () => {
     expect(() =>
-      foldContributions([{ tools: [tool("read_files")] }, { tools: [tool("read_files")] }]),
-    ).toThrow(/duplicate tool wire name 'read_files'/);
+      foldContributions([{ tools: [tool("read_image")] }, { tools: [tool("read_image")] }]),
+    ).toThrow(/duplicate tool wire name 'read_image'/);
     expect(() => foldContributions([{ tools: [tool("dup"), tool("dup")] }])).toThrow(
       /duplicate tool wire name 'dup'/,
     );

@@ -27,10 +27,9 @@ Production: exports in [index.ts](../../packages/tools/src/index.ts) and
 [tool-surface.test.ts](../../packages/tools/tests/component/tool-surface.test.ts).
 
 The ordered `toolDescriptors` table in [registry.ts](../../packages/tools/src/tools/registry.ts)
-owns all 20 names. `readOnlyTools` is its nine-tool observing projection:
-`read_file`, `read_image`, `read_files`, `list_dir`, `glob`, `grep`, `diff`, `file_stat` and `tree`.
-The full projection also contains `write_file`, `edit_file`, `multi_edit`, `apply_patch`, `replace`,
-`shell`, `shell_session`, `move`, `copy`, `mkdir` and `remove`. `listTools` advertises the
+owns all nine names. `readOnlyTools` is its three-tool observing projection:
+`read_file`, `read_image` and `list_dir`. The full projection also contains
+`write_file`, `edit_file`, `apply_patch`, `shell`, `shell_session` and `remove`. `listTools` advertises the
 projection selected by `RuntimeConfig.readOnly`; `dispatch` selects from that same projection.
 
 Production: `toolDescriptors`, `readOnlyTools` and `selectSurface` in
@@ -41,8 +40,7 @@ Production: `toolDescriptors`, `readOnlyTools` and `selectSurface` in
 
 ## Runtime configuration and results
 
-`resolveConfig` requires an existing directory for `workspaceRoot`, validates numeric ceilings and
-probes ripgrep. A toolset owns a session manager unless the host supplies one. `readOnly` defaults
+`resolveConfig` requires an existing directory for `workspaceRoot`, validates numeric ceilings. A toolset owns a session manager unless the host supplies one. `readOnly` defaults
 to false. Limits cover text and shell output, input file and image sizes, traversal, mutation
 bytes, diff input, metadata, shell duration, sessions and regular-expression scan time.
 `secretEnvNames` is host supplied and removed from spawned command environments. `stateRoot`
@@ -81,6 +79,6 @@ Production: `dispatch`, `boundParts` and `boundMeta` in
   [core.test.ts](../../packages/tools/tests/component/core.test.ts) and
   [execution-session.test.ts](../../packages/tools/tests/integration/execution-session.test.ts).
 
-Read and search behavior belongs to [tools-read-and-search.md](tools-read-and-search.md),
+Read behavior belongs to [tools-read.md](tools-read.md),
 mutations to [tools-mutation.md](tools-mutation.md), and shell sessions to
 [tools-shell-and-sessions.md](tools-shell-and-sessions.md).

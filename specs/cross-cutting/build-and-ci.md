@@ -299,7 +299,6 @@ NOT add a `schedule:` or `push:` trigger".
 | `CLARVIS_CODE_SOURCE=1` | `packages/code/src/cli.ts` | launcher runs `src/index.tsx` instead of `dist/index.js` |
 | `SMOKE_TIMEOUT_MS` | `packages/code/tooling/artifact/smoke.ts` | smoke timeout, default `90_000` |
 | `BENCH_N`, `BENCH_POLL_MS`, `BENCH_TIMEOUT_MS`, `BENCH_MAX_LOAD` | `packages/code/tooling/benchmarks/first-paint.ts` | benchmark sample size, poll, timeout, per-core load refusal (default `0.35`) |
-| `CI` | `packages/tools/tests/contract/grep-parity.test.ts` | when set, `rg` must be installed (TEST-01) |
 | `GITHUB_STEP_SUMMARY` | `tooling/checks/ci-coverage.ts`, `tooling/checks/ci-artifacts.ts` | package outcomes, retry notes and build-transfer measurements |
 | `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, `CI_BUILD_PRODUCER_ATTEMPT` | `tooling/checks/ci-artifacts.ts`, and `requireBuildProducer` in `tooling/lib/ci-artifacts.ts` for `CI_BUILD_PRODUCER_ATTEMPT` | same-run artifact identity with distinct producer and consumer attempts |
 | `CI_BUILD_ARTIFACT_ID`, `CI_BUILD_ARTIFACT_DIGEST`, `CI_BUILD_TAR_DIGEST` | `tooling/lib/ci-artifacts.ts`, `requireBuildProducer` | complete immutable producer receipt required before download |
@@ -390,7 +389,7 @@ single-flight loader. The artifact smoke requires the asset to exist while also 
 `.gitattributes` normalizes every file to `text=auto eol=lf` and marks `*.png`, `*.wasm`,
 `*.ico`, `*.woff`, `*.woff2` binary marks `bun.lock -text`. The stated reason is that
 Git-for-Windows' `core.autocrlf=true` "corrupts the fixtures that assert on exact bytes: the CRLF/BOM
-tally in `packages/tools/src/lib/text.ts`, and every `apply_patch`, `diff` and `replace` test".
+tally in `packages/tools/src/lib/text.ts`, and the `apply_patch` tests".
 
 ### 3.5 Report formats produced by the tooling
 
@@ -542,8 +541,7 @@ remove each gate/dependency and fixtures executing the actual YAML Bash body;
 [Bun version tests](../../tooling/tests/unit/bun-version.test.ts), per-job setup/evidence validation.
 The validator reuses `workflowSecurityFailures`; other workflows retain their existing policies.
 
-**`windows`**, `windows-latest`, records the exact Bun runtime and installs ripgrep from a pinned
-release asset after checking its SHA-256 and executing it in the same step. Then it runs four
+**`windows`**, `windows-latest`, records the exact Bun runtime and runs four
 package suites and one explicit test-file list:
 
 - `bun --filter @clarvis/paths test`
@@ -559,8 +557,7 @@ contributes only its platform-independent keyboard-policy tests. `kernel`, `loop
 `mcp-client` and `supervision` remain deliberately absent. Production: `.github/workflows/ci.yml`
 (`jobs.windows.steps`).
 
-**`keyboard-macos`**, `macos-14`, records the Bun version/revision, installs/verifies
-ripgrep, runs the complete `@clarvis/tools` suite and keyboard policy tests. It publishes
+**`keyboard-macos`**, `macos-14`, records the Bun version/revision, runs the complete `@clarvis/tools` suite and keyboard policy tests. It publishes
 the stable `keyboard policy (macos)` status context required by both permanent-branch rulesets.
 Production: `.github/workflows/ci.yml` (`jobs.keyboard-macos`).
 
@@ -1072,7 +1069,6 @@ monorepo`).
 | Model catalog file exceeds 8 MiB, or the user cache is corrupt | `readCatalogFile` throws `"model catalog exceeds byte limit"`; a bad cache is silently ignored and the bundled snapshot returned | `packages/kernel/src/models/model-catalog.ts` |
 | Neither models-dev.json candidate exists | `bundlePath()` returns the source-tree path anyway "so the ensuing read reports the location a developer expects" | `packages/kernel/src/models/model-catalog.ts` |
 | `code`'s temp-home cleanup races a live child | `rmSync` failure swallowed; comment: "a live child may still hold a handle; the OS reaps the temp dir" | `tooling/test-runtime/clarvis-home-preload.ts` |
-| `chocolatey`-style install reporting success over a no-op | avoided by construction: the Windows ripgrep step verifies the SHA256 and runs the binary in the same step | `.github/workflows/ci.yml` |
 | Documentation embeds a source line locator, names an explicit repository file that does not exist, or a tracked spec embeds a calendar date or source-size inventory | `check:specs` reports every unstable, missing, dated, or source-size reference and exits nonzero; illustrative paths use visible placeholders, chronology stays in `CHANGELOG.md`, and behavioral line limits remain legal | `tooling/checks/spec-hygiene.ts`; `extractLineQualifiedReferences`, `resolveRepositoryFileReference`, `extractCalendarDates`, and `extractSourceSizeReferences` in `tooling/lib/spec-hygiene.ts` |
 | A Pages workflow, local `docs/` site, or VitePress dependency is reintroduced | the repository-metadata architecture test reports the duplicated ownership surface | `tooling/tests/architecture/repository-metadata.test.ts` (`keeps public-site ownership outside this monorepo`) |
 

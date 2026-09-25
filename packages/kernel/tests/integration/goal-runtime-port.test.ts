@@ -706,7 +706,7 @@ describe("durable host goal runtime port", () => {
         tool({
           call_id: `call-${i % 512}`,
           subagent_instance_id: `child-${Math.floor(i / 512)}`,
-          mcp_name: "grep",
+          mcp_name: "list_dir",
           arguments: { pattern: `synthetic-${i}` },
           result: "synthetic match",
         }),

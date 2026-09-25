@@ -56,24 +56,13 @@ export const BUILTIN_WIRE_NAMES: readonly string[] = [
 export const AGENT_TOOL_WIRE_NAMES: readonly string[] = [
   "read_file",
   "read_image",
-  "read_files",
   "write_file",
   "edit_file",
-  "multi_edit",
   "apply_patch",
-  "replace",
   "list_dir",
-  "glob",
-  "grep",
-  "diff",
   "shell",
   "shell_session",
-  "move",
-  "copy",
-  "mkdir",
   "remove",
-  "file_stat",
-  "tree",
 ];
 
 /**
@@ -98,13 +87,7 @@ export const VISION_AGENT_TOOL_WIRE_NAMES: readonly string[] = ["read_image"];
 export const READ_ONLY_AGENT_TOOL_WIRE_NAMES: readonly string[] = [
   "read_file",
   "read_image",
-  "read_files",
   "list_dir",
-  "glob",
-  "grep",
-  "diff",
-  "file_stat",
-  "tree",
 ];
 
 /**

@@ -43,7 +43,7 @@ const leadTool = (id: string): RunEvent =>
     call_id: id,
     at: 2,
     server: "fs",
-    tool: "grep",
+    tool: "list_dir",
     arguments: {},
     result: "ok",
     ok: true,
@@ -204,7 +204,7 @@ test("a finished tool call keeps its duration; a close that never saw its start 
     call_id: "c1",
     at: 1000,
     server: "fs",
-    tool: "grep",
+    tool: "list_dir",
     arguments: { pattern: "x" },
   });
   const closed = ev({
@@ -213,7 +213,7 @@ test("a finished tool call keeps its duration; a close that never saw its start 
     call_id: "c1",
     at: 3500,
     server: "fs",
-    tool: "grep",
+    tool: "list_dir",
     arguments: { pattern: "x" },
     result: "ok",
     ok: true,

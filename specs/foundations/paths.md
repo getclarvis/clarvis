@@ -75,12 +75,9 @@ Test: `packages/paths/tests/unit/git-environment.test.ts`.
 | `TOOL_OUTPUT_SUFFIX` | `".txt"` | `packages/paths/src/constants.ts` |
 | `CONTEXT_FILENAMES` | `["CLARVIS.md", "AGENTS.md"]` | `packages/paths/src/constants.ts` |
 | `INTERNAL_SKIP_DIRS` | `[".git","node_modules","dist",CLARVIS_DIR,".next","coverage","build"]` | `packages/paths/src/constants.ts` |
-| `INTERNAL_IGNORE_PATTERNS` | `[".git", CLARVIS_DIR, TMP_GLOB]` | `packages/paths/src/constants.ts` |
 
-`INTERNAL_SKIP_DIRS` bounds a structural tree walk; `INTERNAL_IGNORE_PATTERNS` is applied beneath
-user-supplied `grep`/`glob` ignore sources, and deliberately omits `AGENTS_DIR` — "it is the user's
-own content, and `grep`/`glob` are expected to see it" (`packages/paths/src/constants.ts`). The two lists
-"differ because they answer different questions, not because they drifted" (`packages/paths/src/constants.ts`).
+`INTERNAL_SKIP_DIRS` bounds structural workspace tree walks and omits `AGENTS_DIR`,
+which contains user-authored content (`packages/paths/src/constants.ts`).
 
 ### 2.3 Roots (`packages/paths/src/roots.ts`)
 

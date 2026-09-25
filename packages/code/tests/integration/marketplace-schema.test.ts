@@ -90,7 +90,7 @@ test("marketplaceSchema: accepts an optional subdir path for a multi-plugin repo
   expect(catalog.plugins[0]!.path).toBe("plugins/reviewkit");
 });
 
-test("marketplaceSchema: a path that escapes the repo bars that listing from install alone", () => {
+test("marketplaceSchema: external listing paths remain installable", () => {
   for (const path of ["../evil", "plugins/../../etc", "/abs/path", "plugins\\win"]) {
     const catalog = read({
       ...happy,
@@ -102,9 +102,8 @@ test("marketplaceSchema: a path that escapes the repo bars that listing from ins
     const escaper = catalog.plugins.find((p) => p.name === "escaper");
     const survivor = catalog.plugins.find((p) => p.name === "survivor");
 
-    expect(escaper?.installable).toBe(false);
-    expect(escaper?.path).toBeUndefined();
-    expect(escaper?.notes.join(" ")).toContain("cannot be installed from here");
+    expect(escaper?.installable).toBe(true);
+    expect(escaper?.path).toBe(path);
     expect(survivor?.installable).toBe(true);
   }
 });
@@ -194,7 +193,7 @@ test("marketplaceSchema: a local source with no path is still read, and still no
   expect(catalog.plugins[0]!.notes.join(" ")).toContain("no path");
 });
 
-test("marketplaceSchema: a local source that would escape its root is named as such", () => {
+test("marketplaceSchema: parent-relative local sources remain installable", () => {
   const catalog = read({
     ...happy,
     plugins: [
@@ -203,8 +202,8 @@ test("marketplaceSchema: a local source that would escape its root is named as s
     ],
   });
   for (const listing of catalog.plugins) {
-    expect(listing.installable).toBe(false);
-    expect(listing.notes.join(" ")).toContain("outside the marketplace root");
+    expect(listing.installable).toBe(true);
+    expect(listing.notes).toEqual([]);
   }
 });
 
@@ -348,7 +347,7 @@ test("bounds a listing's notes, in count and in the length of any one of them", 
   expect(Math.max(...notes.map((n) => n.length))).toBeLessThan(1000);
 });
 
-test("keeps a listing whose path escapes its source, but refuses to install it", () => {
+test("keeps a listing with a parent-relative source path", () => {
   const catalog = read({
     name: "acme",
     plugins: [
@@ -357,7 +356,6 @@ test("keeps a listing whose path escapes its source, but refuses to install it",
   });
 
   expect(catalog.plugins).toHaveLength(1);
-  expect(catalog.plugins[0]!.installable).toBe(false);
-  expect(catalog.plugins[0]!.path).toBeUndefined();
-  expect(catalog.plugins[0]!.notes.join(" ")).toContain("cannot be installed from here");
+  expect(catalog.plugins[0]!.installable).toBe(true);
+  expect(catalog.plugins[0]!.path).toBe("../x");
 });

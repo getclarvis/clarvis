@@ -110,7 +110,6 @@ catalog bounds, `onEvent` and `logger`.
 | `NamespacedRegistry` | type | re-exported by `packages/mcp-client/src/registry.ts` | defined by `NamespacedRegistry` in `packages/capability/src/run.ts` |
 | `isMcpRequestTimeout` | fn | `packages/mcp-client/src/errors.ts` | `(err: unknown) => boolean` |
 | `isMcpProtocolError` | fn | `packages/mcp-client/src/errors.ts` | `(err: unknown) => boolean` |
-| `mcpSpawnArgv` | fn | `packages/mcp-client/src/bun-stdio-client.ts` | `(command, args, platform = process.platform) => { argv: string[]; verbatim: boolean }` |
 | `BunStdioClientTransport` | class | `packages/mcp-client/src/bun-stdio-client.ts` | implements the SDK `Transport` |
 | `BunStdioClientParameters` | type | `packages/mcp-client/src/bun-stdio-client.ts` | `{ command; args?; cwd?; env?; onStderr?; onStderrEnd?; stderrWritable?; maxFrameBytes?; closeGraceMs?; terminateGraceMs?; logger? }` — spawn parameters for a `BunStdioClientTransport` |
 | `BunStderrWritable` | type | `packages/mcp-client/src/bun-stdio-client.ts` | `{ write; once("drain"\|"error"); off("drain"\|"error") }` — the minimal backpressure surface a parent stderr sink must expose |
@@ -340,17 +339,6 @@ and the `resources` and `cwd` discriminants are pinned in the surrounding block.
 Pool keys are never logged raw. `poolKeyHash` reports the first 12 hex characters of a SHA-256
 (`packages/mcp-client/src/connection-manager.ts`), and a test asserts the record matches `/^[0-9a-f]{12}$/` and does
 not contain the owner string (`packages/mcp-client/tests/component/observability-pool.test.ts`).
-
-### 3.9 Windows spawn argv
-
-`mcpSpawnArgv` (`packages/mcp-client/src/bun-stdio-client.ts`) returns `{ argv: [command...args], verbatim: false }`
-unchanged off Windows. On Windows it resolves the command on `PATH`
-(`packages/paths/src/which.ts`) and, only if the resolved extension is `.cmd` or `.bat`
-(`packages/mcp-client/src/bun-stdio-client.ts`), rewrites it to
-`[ComSpec ?? "cmd.exe", "/d", "/s", "/c", '"part" "part" …']` with `verbatim: true`. A
-double quote anywhere in the command or arguments throws instead. The exact produced line is pinned:
-`'"myserver.cmd" "--flag" "value"'`
-(`packages/mcp-client/tests/unit/mcp-spawn-argv.test.ts`).
 
 ### 3.10 OAuth credential document
 
@@ -723,8 +711,8 @@ SSE stream whose *total* exceeds the JSON cap is allowed as long as each event f
 
 ### 4.11 `BunStdioClientTransport`
 
-`start` refuses a second start, computes argv via `mcpSpawnArgv`, spawns with all three
-streams piped and `windowsVerbatimArguments` only when the cmd-routing branch fired, and
+`start` refuses a second start, spawns the configured command and arguments with all three
+streams piped, and
 arms two readers whose rejections are routed through `suppressSecondaryRejection(…, "transport.onerror")`.
 
 `send` writes one outbound JSON-RPC message as a single newline-framed line —
@@ -997,11 +985,6 @@ sampled rather than written per call.
 Production: `packages/mcp-client/src/resilient-session.ts`
 (`createSampler`, `packages/capability/src/log.ts`).
 Pinned: `packages/mcp-client/tests/unit/observability-session.test.ts`.
-
-**MCP-20.** On Windows, a command whose resolved extension is `.cmd`/`.bat` is routed through
-`cmd /d /s /c` with every part quoted and `verbatim: true`; a literal double quote in any part is
-refused rather than escaped. Production: `packages/mcp-client/src/bun-stdio-client.ts`.
-Pinned: `packages/mcp-client/tests/unit/mcp-spawn-argv.test.ts`.
 
 **MCP-21.** A newline-delimited JSON-RPC frame is refused **before** the transport retains more than
 its byte budget. Production: `packages/mcp-client/src/bun-stdio-client.ts`.
@@ -1340,8 +1323,7 @@ highest.
 
 - Several doc comments narrate a prior defect (`packages/mcp-client/src/client.ts` on `defaultCwd`,
   `packages/mcp-client/src/server-stderr.ts` on stderr reaching the host terminal,
-  `packages/mcp-client/src/bun-stdio-client.ts` on Windows `npx` shims, and
-  `packages/mcp-client/src/connection-manager.ts` on the dropped relay). The *current*
+  and `packages/mcp-client/src/connection-manager.ts` on the dropped relay). The *current*
   mechanism is verified in each case; the historical claims are not checkable from the code and are
   quoted, never asserted.
 - The reason for `poolSharing`'s default being `owner` is stated as a security posture in the comment
@@ -1371,6 +1353,3 @@ highest.
   (`SCANNED_TREES`) for any static, side-effect or dynamic `@clarvis/loop` specifier and
   requires the offender list to be empty, with a companion case asserting files were
   actually read, so an empty result means something.
-- Runtime behaviour on Windows: `mcpSpawnArgv`'s cmd-routing branch is only partially exercised on a
-  non-Windows host, and the test itself branches on whether a real `npx.cmd` resolved
-  (`packages/mcp-client/tests/unit/mcp-spawn-argv.test.ts`).

@@ -21,16 +21,14 @@ const GIT_REPOSITORY_ENVIRONMENT_NAMES = new Set([
 /**
  * Copy an environment without Git's repository-local routing and storage variables.
  *
- * @remarks Transport and credential variables remain available. Names compare
- * case-insensitively on Windows, matching that platform's environment semantics.
+ * @remarks Transport and credential variables remain available.
  */
 export function withoutGitRepositoryEnvironment(
   source: Readonly<Record<string, string | undefined>>,
 ): Record<string, string | undefined> {
   const environment: Record<string, string | undefined> = {};
   for (const [name, value] of Object.entries(source)) {
-    const comparedName = process.platform === "win32" ? name.toUpperCase() : name;
-    if (!GIT_REPOSITORY_ENVIRONMENT_NAMES.has(comparedName)) environment[name] = value;
+    if (!GIT_REPOSITORY_ENVIRONMENT_NAMES.has(name)) environment[name] = value;
   }
   return environment;
 }

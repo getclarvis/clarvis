@@ -7,7 +7,6 @@ import type { SessionResult } from "../lib/execution-session.ts";
 import { shellSessionView } from "./shell-session.ts";
 import type { RuntimeConfig } from "../config.ts";
 import type { ToolDef } from "./types.ts";
-import { currentShellFlavor } from "../shell.ts";
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const MAX_YIELD_MS = 30_000;
@@ -29,8 +28,6 @@ function readinessPattern(value: string | undefined): RegExp | undefined {
  * @param signal - the terminating signal name, or null on a normal exit.
  * @returns `code` when present; otherwise `128 + signal number` (0 when neither
  *   is set).
- * @remarks The signal branch is unreachable on Windows, which reports no
- *   terminating signal and always delivers an exit code.
  */
 function computeExit(code: number | null, signal: NodeJS.Signals | null): number {
   if (code !== null) return code;
@@ -59,27 +56,18 @@ interface ShellDependencies {
  */
 export function createShell(dependencies: ShellDependencies = {}): ToolDef {
   const finalize = dependencies.finalizeOutput;
-  const powershell = currentShellFlavor() === "powershell";
   return {
     name: "shell",
     description:
-      (powershell
-        ? "Run a PowerShell command and return stdout, stderr, and exit code. "
-        : "Run a shell command (sh -c) and return stdout, stderr, and exit code. ") +
-      "Blocks until exit unless yield_time_ms is supplied; a live command then returns a session_id for shell_session. Output is byte-bounded in memory and older bytes may expire. Prefer focused output." +
-      (powershell
-        ? " Use PowerShell syntax, not sh or cmd.exe; Windows PowerShell 5.1 has no `&&`. " +
-          "Cmdlets report exit code 0 or 1; native executables retain their own code."
-        : ""),
+      "Run a shell command (sh -c) and return stdout, stderr, and exit code. Blocks until exit unless yield_time_ms is supplied; a live command then returns a session_id for shell_session. Output is byte-bounded in memory and older bytes may expire. Prefer focused output.",
     bounded: true,
     inputSchema: {
       type: "object",
       properties: {
         command: {
           type: "string",
-          description: powershell
-            ? "PowerShell command with closed stdin; no interactive prompts. Use yield_time_ms for a server or watcher."
-            : "Command run via sh -c with closed stdin; no interactive prompts. Use yield_time_ms for a server or watcher.",
+          description:
+            "Command run via sh -c with closed stdin; no interactive prompts. Use yield_time_ms for a server or watcher.",
         },
         cwd: { type: "string", description: "Working directory. Default: workspace root." },
         timeout_ms: {

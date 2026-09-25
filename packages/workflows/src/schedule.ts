@@ -63,7 +63,7 @@ interface PreparedItem {
  *
  * @param raw - the path exactly as the discovery round emitted it.
  * @returns the normalized path, or the empty string when nothing is left.
- * @remarks Comparison is **case-insensitive**: macOS and Windows filesystems are
+ * @remarks Comparison is **case-insensitive**: macOS filesystems are
  *   case-insensitive, so `SRC/a.ts` and `src/a.ts` are one file there. A false
  *   positive only serializes two items that could have run together; a false
  *   negative lets two leaders corrupt a shared workspace. The error is taken on

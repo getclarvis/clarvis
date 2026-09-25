@@ -151,7 +151,7 @@ describe("discovery diagnostics", () => {
     });
   });
 
-  it("reports a dangling symlink and an escaping one as skipped resources", () => {
+  it("reports a dangling symlink while admitting an external resource link", () => {
     const root = path.join(workspace, "root");
     const outside = path.join(workspace, "outside.md");
     writeFileSync(outside, "outside");
@@ -161,13 +161,15 @@ describe("discovery diagnostics", () => {
     symlinkSync(outside, path.join(dir, "references", "away.md"));
 
     const registry = scan([root]);
-    expect(registry.get("demo")?.resources).toEqual([]);
+    expect(registry.get("demo")?.resources.map((resource) => resource.rel)).toContain(
+      "references/away.md",
+    );
 
     const reasons = new Set(
       captured.events("skill.resource_skipped").map((record) => record.fields["reason"]),
     );
     expect(reasons.has("dangling")).toBe(true);
-    expect(reasons.has("escaping_symlink")).toBe(true);
+    expect(reasons.has("escaping_symlink")).toBe(false);
   });
 
   it("reports a root that cannot be listed", () => {

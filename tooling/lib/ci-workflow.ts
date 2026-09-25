@@ -70,7 +70,7 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
       "CI cancellation contract changed",
     );
     check(
-      equalSet(Object.keys(workflow.jobs), [...LINUX_GATES, "linux", "windows", "sandbox-macos"]),
+      equalSet(Object.keys(workflow.jobs), [...LINUX_GATES, "linux", "keyboard-macos"]),
       "CI job set is incomplete or unexpected",
     );
     for (const [id, job] of Object.entries(workflow.jobs)) {
@@ -189,21 +189,6 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
         `${id}: duplicate aggregate gate or build`,
       );
     }
-    const coverage = workflow.jobs.coverage;
-    const preparation = runs(coverage).join("\n");
-    for (const command of [
-      "sudo apt-get install -y apparmor-profiles bubblewrap ripgrep",
-      "sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict",
-      "bwrap --unshare-user --ro-bind / / -- /bin/true",
-      "bwrap --version",
-      "rg --version",
-    ])
-      check(preparation.includes(command), `coverage: missing sandbox preparation ${command}`);
-    check(
-      coverage.steps.find((step) => step.run === commands.coverage[0])?.env
-        ?.CLARVIS_NATIVE_SANDBOX_CANARY === "1",
-      "coverage: native sandbox canary missing",
-    );
     const aggregate = workflow.jobs.linux;
     check(
       aggregate.name === "linux" && aggregate.if === "${{ always() }}",
@@ -217,11 +202,7 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
       "linux: needs JSON must enter Bash through environment only",
     );
     check(
-      workflow.jobs.windows.name === "tools, paths, plan, memory, keyboard policy (windows)",
-      "Windows required status changed",
-    );
-    check(
-      workflow.jobs["sandbox-macos"].name === "keyboard policy (macos)",
+      workflow.jobs["keyboard-macos"].name === "keyboard policy (macos)",
       "macOS required status changed",
     );
     check(

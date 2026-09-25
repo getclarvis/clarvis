@@ -37,7 +37,7 @@ export type ToolSpill = (text: string) => Promise<string | undefined>;
  *
  *   The file sits in the workspace's *state* tree under the user's global root,
  *   so it is outside the working tree and cannot be committed by accident. The
- *   model still reads it back: `read_file` and `read_files` admit only this exact
+ *   model still reads it back: `read_file` admits only this exact
  *   generic spill file in the current workspace's local state. The returned
  *   path is absolute for that reason.
  */

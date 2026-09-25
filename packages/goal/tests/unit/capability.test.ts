@@ -293,7 +293,7 @@ describe("host-bound goal capability", () => {
     expect(
       contribution.dispatchPolicy?.admit({
         id: "delegate",
-        name: "delegate_task",
+        name: "spawn_subagent",
         arguments: {},
       }),
     ).toMatchObject({ ok: false });

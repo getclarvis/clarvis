@@ -7,7 +7,7 @@ import { workspacePaths, workspaceStatePaths } from "@clarvis/paths";
 import { createToolSpill } from "../../src/runtime/context/tool-spill.ts";
 import type { Logger } from "@clarvis/capability";
 
-const modeBitsEnforced = process.platform !== "win32" && process.getuid?.() !== 0;
+const modeBitsEnforced = process.getuid?.() !== 0;
 
 async function workspace(): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), "clarvis-spill-"));

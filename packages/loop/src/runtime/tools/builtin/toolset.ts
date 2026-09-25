@@ -4,7 +4,6 @@ import {
   listTools,
   resolveConfig,
   type RuntimeConfig,
-  type SandboxConfig,
   type ToolsLogger,
   type ExecutionSessionManager,
 } from "@clarvis/tools";
@@ -16,7 +15,7 @@ import { isOperatorInterruptedTool } from "../tool-interrupt.ts";
 
 /**
  * Options for {@link createAgentToolset}: the `workspaceRoot`, the `canMutate` /
- * `canExec` capability gates and optional `sandbox` wiring passed through to @clarvis/tools.
+ * `canExec` capability gates passed through to @clarvis/tools.
  */
 export interface AgentToolsetOptions {
   /** Trusted resolved machinery namespace, not a model argument. */
@@ -27,12 +26,6 @@ export interface AgentToolsetOptions {
   temporaryRoots?: readonly string[];
   sessionManager?: ExecutionSessionManager;
   sessionAgent?: object;
-  skillExecutionRoots?: readonly string[];
-  sandbox?: SandboxConfig;
-  /** Host-owned run identity for the resolved filesystem policy. */
-  runIdentity?: string;
-  /** Physical filesystem placement selected by the host, independently of escalation. */
-  filesystemPlacement?: "host" | "sandbox";
   /** Credential env-var names withheld from every spawned command. */
   secretEnvNames?: readonly string[];
   /**
@@ -158,14 +151,6 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
       ...(opts.temporaryRoots !== undefined ? { temporaryRoots: opts.temporaryRoots } : {}),
       ...(opts.sessionManager !== undefined ? { sessionManager: opts.sessionManager } : {}),
       ...(opts.sessionAgent !== undefined ? { sessionAgent: opts.sessionAgent } : {}),
-      ...(opts.skillExecutionRoots !== undefined
-        ? { skillExecutionRoots: opts.skillExecutionRoots }
-        : {}),
-      ...(opts.sandbox !== undefined ? { sandbox: opts.sandbox } : {}),
-      ...(opts.runIdentity !== undefined ? { runIdentity: opts.runIdentity } : {}),
-      ...(opts.filesystemPlacement !== undefined
-        ? { filesystemPlacement: opts.filesystemPlacement }
-        : {}),
       ...(opts.secretEnvNames !== undefined ? { secretEnvNames: opts.secretEnvNames } : {}),
       ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
     });
@@ -267,7 +252,7 @@ export function createAgentToolsetWithAdapter(
  * config from the options, drop the exec tools when `canExec` is false, and
  * expose an abort-aware `dispatch`.
  *
- * @param opts - workspace root, capability gates and optional sandbox wiring;
+ * @param opts - workspace root and capability gates;
  *   see {@link AgentToolsetOptions}.
  * @returns the toolset; `dispatch` returns an error result for a tool not in the
  *   agent's set and resolves to {@link abortedResult} when the signal fires.

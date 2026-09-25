@@ -1,13 +1,7 @@
 import { projected } from "../capability-event.ts";
 import { randomUUID } from "node:crypto";
 import type { WorkspaceStatePaths } from "@clarvis/paths";
-import {
-  DELEGATE_TASK_MAX_CHARS,
-  parseDelegateTaskText,
-  parseTaskTitle,
-  type LLMProvider,
-  type TaskTrackingPort,
-} from "@clarvis/capability";
+import { parseTaskBrief, parseTaskTitle, type LLMProvider } from "@clarvis/capability";
 import type { GateVerdict, ImagePart, LifecycleHook, SteerSource } from "@clarvis/capability";
 import type { SettledStatus } from "@clarvis/capability";
 import type { Logger } from "@clarvis/capability";
@@ -36,39 +30,32 @@ import { agentToolsActive } from "../tools/builtin/grants.ts";
 import type { ComputeClock, ComputeRegion } from "@clarvis/capability";
 import { fireObservers } from "../loop/lifecycle-hooks.ts";
 import type { CapabilityEventListener } from "@clarvis/capability";
-import { DELEGATE_TASK_TOOL_NAME } from "../tools/wire-names.ts";
-import type { SPAWN_SUBAGENT_TOOL_NAME } from "../tools/wire-names.ts";
+import { SPAWN_SUBAGENT_TOOL_NAME } from "../tools/wire-names.ts";
 import type { ToolInterruptRegistry } from "../tools/tool-interrupt.ts";
-
-type ChildSpawnToolName = typeof DELEGATE_TASK_TOOL_NAME | typeof SPAWN_SUBAGENT_TOOL_NAME;
 
 /**
  * The result of validating raw child-spawn arguments: either the normalized
- * `{ title, task, profile, task_id?, image_refs? }` on success, or a
+ * `{ title, task, profile, image_refs? }` on success, or a
  * model-facing error `message` explaining what to fix.
  *
- * @remarks Produced by {@link validateDelegateTaskArgs}; the `profile` is always
+ * @remarks Produced by {@link validateSpawnArgs}; the `profile` is always
  *   resolved to a concrete registered name even when the caller omitted it.
  */
-export type DelegateTaskArgsResult =
+export type SpawnArgsResult =
   | {
       ok: true;
       title: string;
       task: string;
       profile: string;
-      task_id?: string;
       image_refs?: number[];
     }
   | { ok: false; message: string };
 
 /**
- * Options for {@link validateDelegateTaskArgs}: whether this is a tracked
- * delegation, the optional task tracker, profile resolution inputs, and the
+ * Options for {@link validateSpawnArgs}: profile resolution inputs and the
  * available turn-image count.
  */
-export interface ValidateDelegateTaskOptions {
-  tasks?: TaskTrackingPort;
-  requireTaskId?: boolean;
+export interface ValidateSpawnOptions {
   profiles?: SubagentProfileRegistry;
   defaultProfile?: string;
   turnImageCount?: number;
@@ -76,33 +63,31 @@ export interface ValidateDelegateTaskOptions {
 
 /**
  * Validates and normalizes raw child-spawn arguments against the run's profiles,
- * tracked tasks, and available images.
+ * and available images.
  *
  * @param raw - the model-supplied argument object.
- * @param options - validation context; see {@link ValidateDelegateTaskOptions}.
- * @returns a {@link DelegateTaskArgsResult} — the normalized args or an
+ * @param options - validation context; see {@link ValidateSpawnOptions}.
+ * @returns a {@link SpawnArgsResult} — the normalized args or an
  *   actionable error message.
  * @remarks `title` and `task` must be non-empty strings. `profile` resolves in
  *   order: an explicit registered name, else `defaultProfile` if registered,
  *   else the sole profile when exactly one exists, otherwise it is required.
- *   A tracked delegation requires an exact `task_id` that is neither `done` nor
- *   `abandoned`; an independent spawn ignores that surplus field. `image_refs` requires the turn to
+ *   `image_refs` requires the turn to
  *   carry images and the chosen profile's model to declare the `vision`
  *   capability — no grant is consulted, and the model-facing description says
  *   the same; indices must be in-range integers and are de-duplicated while
  *   preserving order.
  */
-export function validateDelegateTaskArgs(
+export function validateSpawnArgs(
   raw: unknown,
-  options: ValidateDelegateTaskOptions = {},
-): DelegateTaskArgsResult {
-  const { tasks, profiles, defaultProfile, turnImageCount } = options;
-  const requireTaskId = options.requireTaskId ?? tasks !== undefined;
+  options: ValidateSpawnOptions = {},
+): SpawnArgsResult {
+  const { profiles, defaultProfile, turnImageCount } = options;
   if (typeof raw !== "object" || raw === null) {
     return { ok: false, message: "task must be a non-empty string" };
   }
   const obj = raw as Record<string, unknown>;
-  const parsedTask = parseDelegateTaskText(obj.task);
+  const parsedTask = parseTaskBrief(obj.task);
   if (!parsedTask.ok) return parsedTask;
   const parsedTitle = parseTaskTitle(obj.title);
   if (!parsedTitle.ok) return parsedTitle;
@@ -129,41 +114,6 @@ export function validateDelegateTaskArgs(
       ok: false,
       message: `profile is required — name the profile this Sub-agent should run as.${namesHint}`,
     };
-  }
-  let task_id: string | undefined;
-  if (requireTaskId) {
-    const id = obj.task_id;
-    if (typeof id !== "string" || id.length === 0) {
-      return {
-        ok: false,
-        message:
-          "task_id is required and must be the exact id of an existing tracked task. " +
-          "Use spawn_subagent for independent work.",
-      };
-    }
-    if (tasks === undefined) {
-      return {
-        ok: false,
-        message: "task_id cannot be resolved because this run has no task tracker",
-      };
-    }
-    const spawnable = tasks.openTasks().map((open: { id: string }) => open.id);
-    const idsHint =
-      spawnable.length > 0
-        ? ` Spawnable task ids: ${spawnable.join(", ")}.`
-        : " No existing tracked task is currently spawnable.";
-    const independentHint = " Use spawn_subagent for independent work.";
-    const task = tasks.getTask(id);
-    if (!task) {
-      return { ok: false, message: `unknown task_id '${id}'.${idsHint}${independentHint}` };
-    }
-    if (task.status === "done" || task.status === "abandoned") {
-      return {
-        ok: false,
-        message: `task_id '${id}' is already ${task.status} and cannot be re-spawned (only a pending, in-progress, returned, or failed task can be spawned).${idsHint}${independentHint}`,
-      };
-    }
-    task_id = id;
   }
   let image_refs: number[] | undefined;
   if (obj.image_refs !== undefined) {
@@ -204,7 +154,6 @@ export function validateDelegateTaskArgs(
     title: parsedTitle.title,
     task: parsedTask.task,
     profile,
-    ...(task_id !== undefined ? { task_id } : {}),
     ...(image_refs !== undefined ? { image_refs } : {}),
   };
 }
@@ -216,11 +165,11 @@ export type { SubagentAggregate };
  * Everything a delegation needs across its two phases ({@link prepareSpawn} then
  * {@link runPreparedSubagent}): the environment, the open tool registry, the
  * profile registry and default, the shared budget/ledger and trace, per-model
- * usage accumulators, cancellation, the optional task-tracking port and capability
+ * usage accumulators, cancellation, the capability
  * factory, workspace root, lifecycle hooks, this turn's images, and the
  * capability event emitter.
  */
-export interface DelegateTaskContext {
+export interface SpawnContext {
   /** Inherited host-resolved machinery namespace. */
   statePaths?: WorkspaceStatePaths;
   env: EnvConfig;
@@ -233,11 +182,6 @@ export interface DelegateTaskContext {
   trace: TracePort;
   subagentAggByModel: Map<string, SubagentAggregate>;
   signal?: AbortSignal;
-  tasks?: TaskTrackingPort;
-  /** Whether this call must resolve an existing tracked task. */
-  requireTaskId?: boolean;
-  /** The wire name used in model-facing results and denials. */
-  toolName?: ChildSpawnToolName;
   capabilitiesFor?: SubagentCapabilitiesFactory;
   clock?: ComputeClock;
   /** This sub-agent's own background compute region, when spawned in the
@@ -289,8 +233,8 @@ export function settlementStatusOf(outcome: SpawnAttemptOutcome): SettledStatus 
 
 /**
  * The lead-facing result of a child-spawn call: the `text` to return to the
- * lead, whether a sub-agent was actually `spawned`, the tracked `taskId` it was
- * tracked against (if any), and the attempt's own {@link SpawnAttemptOutcome}.
+ * lead, whether a sub-agent was actually `spawned`, and the attempt's
+ * {@link SpawnAttemptOutcome}.
  *
  * @remarks `outcome` is reported rather than inferred downstream from `text`,
  *   which is prose written for the model. Treating a rendered partial as a
@@ -300,7 +244,6 @@ export function settlementStatusOf(outcome: SpawnAttemptOutcome): SettledStatus 
 export interface SpawnResult {
   text: string;
   spawned: boolean;
-  taskId?: string;
   outcome: SpawnAttemptOutcome;
 }
 
@@ -308,7 +251,7 @@ export interface SpawnResult {
  * The fully prepared spawn produced by {@link prepareSpawn}: the selected
  * profile, a fresh delegation instance id, the scoped tool registry, any
  * activated agent capabilities and their system sections, the built-in-toolset
- * flag, the (possibly exit-condition-augmented) task text, the tracked task id,
+ * flag, the task text,
  * selected images, and any advisor messages to append to the result.
  */
 export interface PreparedSpawn {
@@ -322,7 +265,6 @@ export interface PreparedSpawn {
   systemSections?: string[];
   hasBuiltinTools: boolean;
   subagentTask: string;
-  taskId?: string;
   images?: ImagePart[];
   adviseMessages?: string[];
 }
@@ -336,88 +278,56 @@ export type PrepareSpawnResult =
   { ok: false; text: string } | { ok: true; prepared: PreparedSpawn };
 
 /**
- * Phase one of a delegation: validates the arguments, runs the pre-delegate
+ * Phase one of a spawn: validates the arguments, runs the pre-spawn
  * hooks and assembles everything needed to run the
  * sub-agent — without yet running it.
  *
  * @param rawArgs - the model-supplied child-spawn arguments.
- * @param ctx - the delegation context; see {@link DelegateTaskContext}.
+ * @param ctx - the delegation context; see {@link SpawnContext}.
  * @returns a {@link PrepareSpawnResult} — the prepared spawn, or a rejection when
  *   validation fails or a workspace hook denies the spawn.
- * @remarks Reconciles the tracker first so `task_id` validation sees external edits.
- *   A `preDelegateTask` hook that throws fails closed (spawn denied); advisory
+ * @remarks A `preSpawnSubagent` hook that throws fails closed (spawn denied); advisory
  *   hook messages are carried through to be appended to the sub-agent's result.
- *   On success it reserves an identity without publishing creation or claiming a task,
- *   scopes the tool registry to the profile, activates the profile's capabilities, and appends the tracked task's
- *   exit condition to the task text when present.
+ *   On success it reserves an identity without publishing creation,
+ *   scopes the tool registry to the profile and activates the profile's capabilities.
  *
  *   **A spawn's brief is not rewritable here, and a hook that tries is refused
  *   rather than ignored.** The sweep runs with `rewritable: false`, so a
  *   `rewrite` verdict denies the spawn instead of passing it through with the
  *   arguments the hook believes it replaced — the one outcome worse than either
  *   honouring or refusing, because the author is never told. The capability is
- *   not lost: both child-spawn tools are dispatched through the ordinary tool loop, so a
+ *   not lost: `spawn_subagent` is dispatched through the ordinary tool loop, so a
  *   `pre_tool_use` hook matching it replaces the brief and profile upstream of
  *   this validation, and the model is told what actually ran.
  */
 export async function prepareSpawn(
   rawArgs: unknown,
-  ctx: DelegateTaskContext,
+  ctx: SpawnContext,
 ): Promise<PrepareSpawnResult> {
-  await ctx.tasks?.reconcile?.();
-  const validated = validateDelegateTaskArgs(rawArgs, {
-    ...(ctx.tasks ? { tasks: ctx.tasks } : {}),
-    requireTaskId: ctx.requireTaskId ?? ctx.tasks !== undefined,
+  const validated = validateSpawnArgs(rawArgs, {
     profiles: ctx.profiles,
     ...(ctx.defaultProfile !== undefined ? { defaultProfile: ctx.defaultProfile } : {}),
     turnImageCount: ctx.turnImages?.length ?? 0,
   });
-  const toolName = ctx.toolName ?? DELEGATE_TASK_TOOL_NAME;
+  const toolName = SPAWN_SUBAGENT_TOOL_NAME;
   if (!validated.ok) {
     return { ok: false, text: `${toolName} error: ${validated.message}` };
-  }
-
-  const taskId = validated.task_id;
-  const tracked = taskId !== undefined ? ctx.tasks?.getTask(taskId) : undefined;
-  const exitCondition = tracked?.exit ?? tracked?.exit_condition;
-  if (exitCondition && !parseDelegateTaskText(exitCondition).ok) {
-    return {
-      ok: false,
-      text:
-        `${toolName} error: task plus its tracked exit condition must fit within ` +
-        `the ${String(DELEGATE_TASK_MAX_CHARS)}-character delegated-task limit; ` +
-        "shorten the brief or exit condition",
-    };
-  }
-  const subagentTask = exitCondition
-    ? `${validated.task}\n\nExit condition: ${exitCondition}`
-    : validated.task;
-  const parsedSubagentTask = parseDelegateTaskText(subagentTask);
-  if (!parsedSubagentTask.ok) {
-    return {
-      ok: false,
-      text:
-        `${toolName} error: task plus its tracked exit condition must fit within ` +
-        `the ${String(DELEGATE_TASK_MAX_CHARS)}-character delegated-task limit; ` +
-        "shorten the brief or exit condition",
-    };
   }
 
   const sweep = await runVerdictHooks(
     ctx.hooks,
     (h) =>
-      h.preDelegateTask
+      h.preSpawnSubagent
         ? (): Promise<GateVerdict> | GateVerdict =>
-            h.preDelegateTask!({
+            h.preSpawnSubagent!({
               title: validated.title,
               task: validated.task,
               profile: validated.profile,
-              ...(validated.task_id !== undefined ? { taskId: validated.task_id } : {}),
             })
         : undefined,
     {
       onThrow: "deny",
-      onThrowWarn: "preDelegateTask hook threw; failing closed — spawn denied",
+      onThrowWarn: "preSpawnSubagent hook threw; failing closed — spawn denied",
       logger: ctx.logger,
       logFields: { profile: validated.profile },
       timeoutMs: LIFECYCLE_GATE_HOOK_TIMEOUT_MS,
@@ -462,8 +372,7 @@ export async function prepareSpawn(
         ? { systemSections: activation.systemSections }
         : {}),
       hasBuiltinTools: agentToolsActive(ctx.env, selectedProfile.grants),
-      subagentTask: parsedSubagentTask.task,
-      ...(taskId !== undefined ? { taskId } : {}),
+      subagentTask: validated.task,
       ...(images !== undefined && images.length > 0 ? { images } : {}),
       ...(adviseMessages.length > 0 ? { adviseMessages } : {}),
     },
@@ -560,21 +469,17 @@ export function buildRunSubagentInput(
 }
 
 /**
- * Phase two of a delegation: runs the prepared sub-agent to completion and
- * reconciles its outcome with the tracker, usage accounting, hooks, and event
+ * Phase two of a spawn: runs the prepared sub-agent to completion and
+ * reconciles its outcome with usage accounting, hooks, and event
  * channels.
  *
  * @param prepared - the {@link PreparedSpawn} from {@link prepareSpawn}.
- * @param ctx - the delegation context; see {@link DelegateTaskContext}.
+ * @param ctx - the delegation context; see {@link SpawnContext}.
  * @returns the lead-facing {@link SpawnResult} (`spawned` is always true here),
  *   its `text` rendered by {@link mapOutcomeToText} and suffixed with any advisor
  *   messages.
  * @remarks Accumulates the sub-agent's usage by model on both the success and
- *   throw paths (a throw draws from the pre-seeded `usageSink`). When a tracked task
- *   is attached and the run was not cancelled, an `error` or `budget_exhausted`
- *   outcome — or a thrown error — marks the task failed; a child stopped at its own
- *   iteration limit hands its partial back as `returned`, leaving the task
- *   incomplete and respawnable, and a cancellation never touches the tracker. Emits
+ *   throw paths (a throw draws from the pre-seeded `usageSink`). Emits
  *   `delegation_started` before the run and
  *   `delegation_completed`/`delegation_failed` after, mirroring the trace.
  *
@@ -598,7 +503,7 @@ export function buildRunSubagentInput(
  */
 export async function runPreparedSubagent(
   prepared: PreparedSpawn,
-  ctx: DelegateTaskContext,
+  ctx: SpawnContext,
 ): Promise<SpawnResult> {
   const {
     selectedProfile,
@@ -608,21 +513,14 @@ export async function runPreparedSubagent(
     systemSections,
     hasBuiltinTools,
     subagentTask,
-    taskId,
     images,
   } = prepared;
   ctx.signal?.throwIfAborted();
-  if (ctx.tasks && taskId !== undefined) {
-    if (!(await ctx.tasks.markSpawned(taskId)))
-      throw new Error("Tracked task is no longer available for this delegation");
-    ctx.tasks.noteSpawned(taskId);
-  }
   const creation = {
     delegation_id: subagentInstanceId,
     title: prepared.title,
     task: prepared.task,
     tools: selectedProfile.tools,
-    ...(taskId === undefined ? {} : { task_id: taskId }),
     profile: selectedProfile.name,
   };
   ctx.trace.record("delegation_created", creation);
@@ -652,7 +550,6 @@ export async function runPreparedSubagent(
       kind: "delegation_started",
       detail: {
         delegation_id: subagentInstanceId,
-        ...(taskId === undefined ? {} : { task_id: taskId }),
         model: selectedProfile.modelRef,
       },
     }),
@@ -698,9 +595,6 @@ export async function runPreparedSubagent(
     accumulateSubagentUsage(ctx.subagentAggByModel, effectiveModelRef, usageSink);
     const aborted = ctx.signal?.aborted === true;
     const msg = err instanceof Error ? err.message : String(err);
-    if (ctx.tasks && taskId !== undefined && !aborted) {
-      await ctx.tasks.markFailed(taskId, `Sub-agent error: ${msg}`);
-    }
     const text = aborted ? "Sub-agent cancelled." : `Sub-agent error: ${msg}`;
     await fireObservers(
       ctx.hooks,
@@ -710,7 +604,6 @@ export async function runPreparedSubagent(
     );
     ctx.trace.record("delegation_failed", {
       delegation_id: subagentInstanceId,
-      ...(taskId === undefined ? {} : { task_id: taskId }),
       status: aborted ? "cancelled" : "error",
       result: text,
     });
@@ -720,7 +613,6 @@ export async function runPreparedSubagent(
         kind: "delegation_failed",
         detail: {
           delegation_id: subagentInstanceId,
-          ...(taskId === undefined ? {} : { task_id: taskId }),
           status: aborted ? "cancelled" : "error",
         },
       }),
@@ -728,7 +620,6 @@ export async function runPreparedSubagent(
     return {
       text: withAdvise(text),
       spawned: true,
-      ...(taskId !== undefined ? { taskId } : {}),
       outcome: aborted ? "cancelled" : "failed",
     };
   }
@@ -738,7 +629,6 @@ export async function runPreparedSubagent(
   const resultText = mapOutcomeToText(outcome);
   ctx.trace.record(outcome.status === "completed" ? "delegation_completed" : "delegation_failed", {
     delegation_id: subagentInstanceId,
-    ...(taskId === undefined ? {} : { task_id: taskId }),
     status: outcome.status,
     result: resultText,
   });
@@ -757,44 +647,12 @@ export async function runPreparedSubagent(
       : outcome.status === "error"
         ? "failed"
         : "limited";
-  if (ctx.tasks && taskId !== undefined && !aborted) {
-    const incompleteReason =
-      outcome.status === "error"
-        ? "failed"
-        : outcome.status === "budget_exhausted"
-          ? "budget_exhausted"
-          : undefined;
-    if (incompleteReason !== undefined) {
-      await ctx.tasks.markFailed(taskId, resultText);
-      ctx.emitCapabilityEvent?.(
-        projected({
-          capability: "delegation",
-          kind: "delegation_failed",
-          detail: {
-            delegation_id: subagentInstanceId,
-            task_id: taskId,
-            status: outcome.status,
-          },
-        }),
-      );
-      return { text: withAdvise(resultText), spawned: true, taskId, outcome: attemptOutcome };
-    }
-    // A child that hands its work back — having finished, or having stopped at its
-    // own iteration limit with a partial — leaves the task open for the parent to
-    // judge or respawn. Recording that hand-back is the tracker's job; closing the
-    // task is not, because only the parent may close it through its own transition
-    // tool. Without this the task went straight from `in_progress` to whatever the
-    // parent decided next, and the documented intermediate state was never written.
-    await ctx.tasks.markReturned?.(taskId, resultText);
-  }
-
   ctx.emitCapabilityEvent?.(
     projected({
       capability: "delegation",
       kind: attemptOutcome === "completed" ? "delegation_completed" : "delegation_failed",
       detail: {
         delegation_id: subagentInstanceId,
-        ...(taskId === undefined ? {} : { task_id: taskId }),
         status: aborted ? "cancelled" : outcome.status,
       },
     }),
@@ -803,7 +661,6 @@ export async function runPreparedSubagent(
   return {
     text: withAdvise(resultText),
     spawned: true,
-    ...(taskId !== undefined ? { taskId } : {}),
     outcome: attemptOutcome,
   };
 }

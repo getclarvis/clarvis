@@ -370,7 +370,7 @@ describe("engineEventToProto (TraceEvent → engine-independent RunEvent project
   it("maps every phase the durable job queue actually emits, not just done/failed", () => {
     // Regression: the phase allowlist was never widened when the loop's
     // memory-ingest notice grew "queued" (fired on every run's happy path) and
-    // "blocked" (no indexer model configured) — both were silently dropped
+    // "blocked" (indexer runtime unavailable) — both were silently dropped
     // instead of reaching the wire.
     expect(
       capabilityEventToProto({
@@ -393,7 +393,6 @@ describe("engineEventToProto (TraceEvent → engine-independent RunEvent project
       engineEventToProto({
         type: "delegation_created",
         delegation_id: "w1",
-        task_id: "t2",
         spawned_at: 11,
         title: "explorer",
         task: "look at auth",
@@ -404,7 +403,6 @@ describe("engineEventToProto (TraceEvent → engine-independent RunEvent project
       type: "delegation_created",
       at: 11,
       delegation_id: "w1",
-      task_id: "t2",
       title: "explorer",
       task: "look at auth",
       profile: "explorer",
@@ -424,7 +422,6 @@ describe("engineEventToProto (TraceEvent → engine-independent RunEvent project
       engineEventToProto({
         type: "delegation_completed",
         delegation_id: "w1",
-        task_id: "t2",
         completed_at: 13,
         status: "completed",
         result: "auth uses JWT",
@@ -433,7 +430,6 @@ describe("engineEventToProto (TraceEvent → engine-independent RunEvent project
       type: "delegation_completed",
       at: 13,
       delegation_id: "w1",
-      task_id: "t2",
       status: "completed",
       summary: "auth uses JWT",
     });

@@ -3,7 +3,7 @@
  * confinement it enforces, the permissions it sets, and how it recovers a lock
  * whose holder died. The backend-agnostic contract lives in repository.test.ts.
  */
-import { describe, expect, spyOn, test, vi } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { constants, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import * as fsp from "node:fs/promises";
 import { mkdir, mkdtemp, open, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
@@ -25,31 +25,18 @@ import {
   PlanConflictError,
 } from "@clarvis/plan";
 
-const spyOnProcessPlatform = vi.spyOn as unknown as (
-  target: object,
-  property: string,
-  accessType: "get",
-) => { mockReturnValue(value: NodeJS.Platform): { mockRestore(): void } };
-
 const NOW = new Date("2026-07-27T10:00:00.000Z");
 
-/** Mode bits are unobservable on Windows and meaningless under root. */
-const modeBitsEnforced = process.platform !== "win32" && process.getuid?.() !== 0;
+/** Mode bits are unobservable under root. */
+const modeBitsEnforced = process.getuid?.() !== 0;
 
-/**
- * Whether this host can link one directory to another at all. Probed rather
- * than assumed from the platform: Windows can, given Developer Mode or
- * elevation, so a blanket `skipIf(win32)` would drop coverage on a host that
- * actually supports it. Uses a junction on win32 - the only directory link
- * Windows creates without elevation - and a plain symlink everywhere else,
- * matching what the escape-check test below needs to create for real.
- */
+/** Probe whether this filesystem permits directory symlinks. */
 const canLinkDirectories = ((): boolean => {
   const base = mkdtempSync(join(tmpdir(), "clarvis-plan-link-probe-"));
   const target = join(base, "target");
   try {
     mkdirSync(target);
-    symlinkSync(target, join(base, "link"), process.platform === "win32" ? "junction" : "dir");
+    symlinkSync(target, join(base, "link"), "dir");
     return true;
   } catch {
     return false;
@@ -239,11 +226,7 @@ describe("file plan repository", () => {
       const outside = await mkdtemp(join(tmpdir(), "clarvis-plan-out-"));
       try {
         await mkdir(join(dir, ".clarvis"), { recursive: true });
-        await symlink(
-          outside,
-          join(dir, ".clarvis", "plans"),
-          process.platform === "win32" ? "junction" : "dir",
-        );
+        await symlink(outside, join(dir, ".clarvis", "plans"), "dir");
         const repository = repositoryFor(dir);
         await expect(repository.create(draft("Escapee"))).rejects.toThrow(/symlink|directory/i);
       } finally {
@@ -538,7 +521,7 @@ describe("file plan repository — owner-scoped roots", () => {
   });
 });
 
-describe("fsyncDir — the win32 directory-sync durability branch", () => {
+describe("fsyncDir durability", () => {
   /**
    * Replaces `node:fs/promises`' `open` with one that fails exactly the
    * directory-handle open `fsyncDir` makes (`open(root, O_RDONLY)`, no mode
@@ -563,51 +546,17 @@ describe("fsyncDir — the win32 directory-sync durability branch", () => {
     }) as typeof fsp.open);
   }
 
-  test("swallows a directory-open failure on win32, so the write still succeeds", async () => {
+  test("propagates a directory-open failure", async () => {
     const dir = await mkdtemp(join(tmpdir(), "clarvis-plan-fsyncdir-"));
     const root = join(dir, "plans");
-    const platformSpy = spyOnProcessPlatform(process, "platform", "get").mockReturnValue("win32");
-    const openSpy = interceptDirectoryOpen(
-      root,
-      Object.assign(new Error("simulated: cannot open a directory handle on win32"), {
-        code: "EPERM",
-      }),
-    );
-    try {
-      const repository = repositoryFor(dir, { root });
-      const created = await repository.create(draft("Windows durability"));
-      expect(created.index.path).toContain("windows-durability");
-    } finally {
-      platformSpy.mockRestore();
-      openSpy.mockRestore();
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
-
-  /**
-   * The mirror of the test above, and it pins the platform for the same reason
-   * that one does: `fsyncDir` reads `process.platform` per call, so a test that
-   * only *assumes* it is off win32 is really asserting whatever host it runs on.
-   * That held until `@clarvis/plan` joined the Windows CI job, where the ambient
-   * platform makes the swallow branch correct and this expectation impossible.
-   * Skipping it there would have been the wrong repair: the branch under test is
-   * platform-independent code, so the test should be too.
-   */
-  test("still propagates a directory-open failure off win32", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "clarvis-plan-fsyncdir-"));
-    const root = join(dir, "plans");
-    const platformSpy = spyOnProcessPlatform(process, "platform", "get").mockReturnValue("linux");
     const openSpy = interceptDirectoryOpen(
       root,
       Object.assign(new Error("simulated EIO opening the plans directory"), { code: "EIO" }),
     );
     try {
       const repository = repositoryFor(dir, { root });
-      await expect(repository.create(draft("Non-Windows durability"))).rejects.toThrow(
-        /simulated EIO/,
-      );
+      await expect(repository.create(draft("Durability"))).rejects.toThrow(/simulated EIO/);
     } finally {
-      platformSpy.mockRestore();
       openSpy.mockRestore();
       await rm(dir, { recursive: true, force: true });
     }

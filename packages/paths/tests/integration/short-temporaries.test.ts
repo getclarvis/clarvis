@@ -25,9 +25,6 @@ import { recorder } from "../helpers/recorder.ts";
 
 const roots: string[] = [];
 
-/** Directory modes and symlink creation express privacy on POSIX only. */
-const windows = process.platform === "win32";
-
 function ownedRoot(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix));
   roots.push(root);
@@ -103,7 +100,7 @@ describe("short temporary allocation", () => {
     expect(allocation.path.startsWith(base)).toBe(true);
     expect(basename(dirname(allocation.path))).toBe("r");
     expect(allocation.id).toMatch(/^[A-Za-z0-9_-]{8}$/);
-    if (!windows) expect(statSync(allocation.path).mode & 0o777).toBe(0o700);
+    expect(statSync(allocation.path).mode & 0o777).toBe(0o700);
     expect(statSync(allocation.path).isDirectory()).toBe(true);
 
     const metadata = JSON.parse(
@@ -141,28 +138,25 @@ describe("short temporary allocation", () => {
     second.allocation.remove();
   });
 
-  test.skipIf(windows)(
-    "refuses an existing container it cannot call its own, and never repairs it",
-    () => {
-      const base = ownedRoot("clarvis-short-container-");
-      const { container } = allocate(base);
-      chmodSync(container, 0o755);
-      const log = recorder();
-      expect(() =>
-        allocateShortTemporaryRoot({
-          label: "run",
-          candidates: [base],
-          budgetBytes: 4096,
-          requireTrustedAncestors: false,
-          logger: log.logger,
-        }),
-      ).toThrow("short_temporary_root_unavailable");
-      expect(statSync(container).mode & 0o777).toBe(0o755);
-      expect(log.events("paths.temporary_root_allocation_failed")).toMatchObject([
-        { reason: "unusable" },
-      ]);
-    },
-  );
+  test("refuses an existing container it cannot call its own, and never repairs it", () => {
+    const base = ownedRoot("clarvis-short-container-");
+    const { container } = allocate(base);
+    chmodSync(container, 0o755);
+    const log = recorder();
+    expect(() =>
+      allocateShortTemporaryRoot({
+        label: "run",
+        candidates: [base],
+        budgetBytes: 4096,
+        requireTrustedAncestors: false,
+        logger: log.logger,
+      }),
+    ).toThrow("short_temporary_root_unavailable");
+    expect(statSync(container).mode & 0o777).toBe(0o755);
+    expect(log.events("paths.temporary_root_allocation_failed")).toMatchObject([
+      { reason: "unusable" },
+    ]);
+  });
 
   test("orders a fitting base first and refuses an unfitting one only on request", () => {
     const base = ownedRoot("clarvis-short-budget-");
@@ -241,7 +235,7 @@ describe("short temporary allocation failures", () => {
     );
   });
 
-  test.skipIf(windows)("refuses a base that cannot host the container", () => {
+  test("refuses a base that cannot host the container", () => {
     const base = ownedRoot("clarvis-short-readonly-");
     chmodSync(base, 0o500);
     try {
@@ -253,20 +247,17 @@ describe("short temporary allocation failures", () => {
     }
   });
 
-  test.skipIf(windows)(
-    "leaves an allocation that no longer has its identity, and its record",
-    () => {
-      const base = ownedRoot("clarvis-short-identity-");
-      const { allocation, log, container } = allocate(base);
-      rmSync(allocation.path, { recursive: true, force: true });
-      symlinkSync(base, allocation.path);
-      allocation.remove();
-      expect(log.events("paths.temporary_root_cleanup_failed")).toMatchObject([
-        { reason: "identity_changed" },
-      ]);
-      expect(existsSync(join(container, "a", `${allocation.id}.json`))).toBe(true);
-    },
-  );
+  test("leaves an allocation that no longer has its identity, and its record", () => {
+    const base = ownedRoot("clarvis-short-identity-");
+    const { allocation, log, container } = allocate(base);
+    rmSync(allocation.path, { recursive: true, force: true });
+    symlinkSync(base, allocation.path);
+    allocation.remove();
+    expect(log.events("paths.temporary_root_cleanup_failed")).toMatchObject([
+      { reason: "identity_changed" },
+    ]);
+    expect(existsSync(join(container, "a", `${allocation.id}.json`))).toBe(true);
+  });
 
   test("drops the record of an allocation whose directory already vanished", () => {
     const base = ownedRoot("clarvis-short-vanished-");
@@ -277,7 +268,7 @@ describe("short temporary allocation failures", () => {
     expect(existsSync(join(container, "a", `${allocation.id}.json`))).toBe(false);
   });
 
-  test.skipIf(windows)("reports a cleanup that could not remove its record", () => {
+  test("reports a cleanup that could not remove its record", () => {
     const base = ownedRoot("clarvis-short-cleanup-");
     const { allocation, log, container } = allocate(base);
     chmodSync(join(container, "a"), 0o500);
@@ -312,30 +303,27 @@ describe("short temporary allocation failures", () => {
     expect(existsSync(gone)).toBe(false);
   });
 
-  test.skipIf(windows)(
-    "preserves an abandoned allocation whose contents it cannot read",
-    async () => {
-      const base = ownedRoot("clarvis-short-unreadable-");
-      const { container } = allocate(base);
-      const kept = plant(container, "unreadable", record("unreadable"));
-      chmodSync(kept, 0o000);
-      try {
-        const report = await collectAbandonedShortTemporaryRoots({
-          candidates: [base],
-          budgetBytes: 4096,
-          requireTrustedAncestors: false,
-          graceMs: 0,
-          isProcessAlive: (pid) => pid === process.pid,
-          logger: recorder().logger,
-        });
-        expect(report.removed).toBe(0);
-        expect(report.preservedContent).toBe(1);
-        expect(existsSync(kept)).toBe(true);
-      } finally {
-        chmodSync(kept, 0o700);
-      }
-    },
-  );
+  test("preserves an abandoned allocation whose contents it cannot read", async () => {
+    const base = ownedRoot("clarvis-short-unreadable-");
+    const { container } = allocate(base);
+    const kept = plant(container, "unreadable", record("unreadable"));
+    chmodSync(kept, 0o000);
+    try {
+      const report = await collectAbandonedShortTemporaryRoots({
+        candidates: [base],
+        budgetBytes: 4096,
+        requireTrustedAncestors: false,
+        graceMs: 0,
+        isProcessAlive: (pid) => pid === process.pid,
+        logger: recorder().logger,
+      });
+      expect(report.removed).toBe(0);
+      expect(report.preservedContent).toBe(1);
+      expect(existsSync(kept)).toBe(true);
+    } finally {
+      chmodSync(kept, 0o700);
+    }
+  });
 
   test("counts metadata it does not recognise without touching it", async () => {
     const base = ownedRoot("clarvis-short-notes-");
@@ -353,7 +341,7 @@ describe("short temporary allocation failures", () => {
     expect(existsSync(notes)).toBe(true);
   });
 
-  test.skipIf(windows)("keeps the record when the removal itself fails", async () => {
+  test("keeps the record when the removal itself fails", async () => {
     const base = ownedRoot("clarvis-short-sweep-failure-");
     const { container } = allocate(base);
     const directory = plant(container, "stuck", record("stuck"));
@@ -416,34 +404,31 @@ describe("abandoned short temporary roots", () => {
     expect(existsSync(malformed)).toBe(true);
   });
 
-  test.skipIf(windows)(
-    "preserves an abandoned allocation that holds a symlink or a nested file",
-    async () => {
-      const base = ownedRoot("clarvis-short-links-");
-      const elsewhere = ownedRoot("clarvis-short-link-target-");
-      writeFileSync(join(elsewhere, "kept.txt"), "content a run left elsewhere");
-      const { container } = allocate(base);
-      const symlinked = plant(container, "symlinkd", record("symlinkd"));
-      symlinkSync(elsewhere, join(symlinked, "target"));
-      const nested = plant(container, "nestedfl", record("nestedfl"));
-      mkdirSync(join(nested, "one", "two"), { recursive: true, mode: 0o700 });
-      writeFileSync(join(nested, "one", "two", "deep.txt"), "output");
+  test("preserves an abandoned allocation that holds a symlink or a nested file", async () => {
+    const base = ownedRoot("clarvis-short-links-");
+    const elsewhere = ownedRoot("clarvis-short-link-target-");
+    writeFileSync(join(elsewhere, "kept.txt"), "content a run left elsewhere");
+    const { container } = allocate(base);
+    const symlinked = plant(container, "symlinkd", record("symlinkd"));
+    symlinkSync(elsewhere, join(symlinked, "target"));
+    const nested = plant(container, "nestedfl", record("nestedfl"));
+    mkdirSync(join(nested, "one", "two"), { recursive: true, mode: 0o700 });
+    writeFileSync(join(nested, "one", "two", "deep.txt"), "output");
 
-      const report = await collectAbandonedShortTemporaryRoots({
-        candidates: [base],
-        budgetBytes: 4096,
-        requireTrustedAncestors: false,
-        graceMs: 0,
-        isProcessAlive: (pid) => pid === process.pid,
-        logger: recorder().logger,
-      });
+    const report = await collectAbandonedShortTemporaryRoots({
+      candidates: [base],
+      budgetBytes: 4096,
+      requireTrustedAncestors: false,
+      graceMs: 0,
+      isProcessAlive: (pid) => pid === process.pid,
+      logger: recorder().logger,
+    });
 
-      expect(report.removed).toBe(0);
-      expect(report.preservedContent).toBe(2);
-      expect(existsSync(join(symlinked, "target", "kept.txt"))).toBe(true);
-      expect(existsSync(join(nested, "one", "two", "deep.txt"))).toBe(true);
-    },
-  );
+    expect(report.removed).toBe(0);
+    expect(report.preservedContent).toBe(2);
+    expect(existsSync(join(symlinked, "target", "kept.txt"))).toBe(true);
+    expect(existsSync(join(nested, "one", "two", "deep.txt"))).toBe(true);
+  });
 
   test("never treats a name that is not an allocation id as one", async () => {
     const base = ownedRoot("clarvis-short-id-shape-");
@@ -507,7 +492,7 @@ describe("abandoned short temporary roots", () => {
     expect(report.removed).toBe(0);
   });
 
-  test.skipIf(windows)("survives a stale record it cannot drop", async () => {
+  test("survives a stale record it cannot drop", async () => {
     const base = ownedRoot("clarvis-short-stale-stuck-");
     const { container } = allocate(base);
     const recordFile = join(container, "a", "vanished.json");

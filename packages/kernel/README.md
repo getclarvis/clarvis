@@ -265,7 +265,7 @@ Notifications follow successful durable publication; a notification failure does
 `createGoalEvidenceSource` derives bounded references from existing tool traces and current artifact
 bytes. Tool identity follows the actual trace mapper's flat-name versus qualified-MCP convention;
 goal controls and polling never enter the evidence catalog. Shell checks require exit zero even when
-transport succeeded, newer contradictory results invalidate older successes, and confined artifact
+transport succeeded, newer contradictory results invalidate older successes, and artifact
 reads recheck their digest. Qualitative relevance remains model judgment.
 Before completion, the host revalidates normative source digests and the current candidate plus
 host/human evidence. `createGoalStewardCoordinator` owns one finite read-only evaluation at a time
@@ -330,7 +330,7 @@ takeover retire it without releasing physical work. Pending controls/continuatio
 starts revalidate process authority after asynchronous preparation. `readRunTrace` is a host-only,
 owner-scoped evidence port and never enters the client protocol.
 `serveLocalFileKernel` composes a separately launched host with a private lease, credential,
-generation-aware discovery index and idle shutdown. Disabled workspace memory permits idle
+generation-aware discovery index and idle shutdown. Globally disabled Memory permits idle
 retirement even when the host supports memory; pending jobs and queue inspection failures still
 prevent automatic retirement. `connectOrLaunchLocalKernel` authenticates the
 discovered generation or launches the application-selected artifact without inheriting TUI stdio.
@@ -350,7 +350,7 @@ audit; maintenance can proceed once all physical work is resolved. New inference
 conversation. Code composes its companion entry and uses the same RPC through its workspace
 manager; installed-artifact retention and platform qualification remain application responsibilities.
 Process integration tests verify survival after a launching client exits with MockLLM; they do not
-qualify a subscription/TUI journey or native Windows/macOS behavior. The ownership, limits and
+qualify a subscription/TUI journey or native macOS behavior. The ownership, limits and
 validation scope are specified in [hosted runs](../../specs/hosts/hosted-runs.md).
 
 `serveRemoteFileKernelOverStdio` is the process-owned counterpart for a caller-authenticated remote
@@ -385,10 +385,6 @@ transport and lifecycle behavior without claiming network SSH interoperability.
 global Clarvis configuration, resolves provider secrets, builds loop
 dependencies and returns an asynchronous kernel client.
 
-Its sandbox inspection probes only Clarvis's fixed native-backend canary. Discovered toolchains are
-reported from passive executable-path resolution and are never launched by `ConfigService` merely to
-populate diagnostics.
-
 It also binds remote MCP OAuth persistence to the global `state/mcp-oauth.json` path. A local host
 may provide `openMcpAuthorizationUrl` to grant browser-opening authority; a remote or intentionally
 headless host omits it and fails explicitly if a server requires interactive authorization. The
@@ -403,8 +399,8 @@ product decision, not provider endorsement. Synthetic registrations exercise tra
 tests. Provider `user-agent` identity uses the root-owned Clarvis product version. ChatGPT and Grok
 separately send adapter-owned compatibility revisions (`0.153.2` and `1.0.6`, respectively) in the
 catalog version fields their services gate; those values are not the Clarvis product version.
-Responses-backed Grok entitled-catalog rows tag `tool_calling` and keep `vision` unless the payload
-explicitly omits image input, so persisted model capabilities cannot strip composer images. The
+Responses-backed Grok entitled-catalog rows tag `tool_calling` and tag `vision` only when the
+payload declares image input or `supports_vision: true`. The
 ordinary remote composition uses the unavailable implementation. The authenticated local
 `createFileRunHost` composition exposes subscription control only to its operator role.
 
@@ -491,7 +487,7 @@ packaged skill in a plugin cannot be captured within its bounds, that plugin's e
 surface is withheld while its independently valid non-skill contributions remain.
 `PluginContributions.observeRuntimeFiles` applies the same asynchronous latch to captured
 package-local MCP and hook executable files. An explicitly local executable declaration
-must resolve to a confined regular file at pin time; symlinks are monitored by their declaration path,
+must resolve to a regular file at pin time; symlinks are monitored by their declaration path,
 and later replacement withdraws the executable projections without a run-admission rehash.
 Workspace-trust transitions recompose the extension snapshot and atomically replace the loop's exact
 skill catalog only while no run is active. Approval refreshes the trust surface through the production
@@ -537,6 +533,8 @@ The memory factory follows the same owner boundary: it caches one background
 index worker per activated owner, binds tool-server access to that owner, and
 keys ingest subscriptions by owner plus run ID. Stopping the kernel stops every
 worker; a worker never drains another owner's store or lease.
+The Memory on/off choice comes from global settings for every workspace. Workspace
+memory blocks may configure the wiki and budgets, but cannot change that choice.
 
 ## Lower-level composition
 
@@ -600,7 +598,7 @@ exact-snapshot gate for the complete inventory of executable plugin content inhe
 plugin or Extension Profile separately.
 
 `PluginService.installSource` admits three marketplace fetch forms. Git sources may select a
-confined subdirectory and one validated ref or full SHA; local directories are copied into managed
+declared directory and one validated ref or full SHA; local directories are copied into managed
 inventory under file/count/depth bounds with symlinks and special entries refused; npm packages are
 installed into staging with lifecycle scripts, audits and funding requests disabled before the
 validated plugin is atomically installed. Catalog installs carry the listing name as an expected
@@ -631,7 +629,7 @@ both refuse replacement/update so Clarvis cannot discard edits in a checkout it 
 
 Plugin admission is all-or-nothing only for artifacts that define the plugin as a whole: its selected
 manifest, install record and bounded agent tree. A declared or conventional hooks/MCP companion that
-is absent, malformed, oversized or outside the plugin costs only that contribution and produces an
+is absent, malformed or oversized costs only that contribution and produces an
 operator-visible note. Manifests and companion documents are descriptor-read before JSON parsing
 with a 2 MiB ceiling; install records are capped at 64 KiB. The shared plugin-agent limits add bounded
 depth, directory/entry/file counts, 256 KiB per file and 8 MiB aggregate source. Install-root
@@ -640,7 +638,7 @@ enumeration is also bounded and fails explicitly instead of returning a partial 
 A Clarvis-specific dot-directory manifest is authoritative. Without one, the resolver scores the
 root and shape-matched host manifests by supported contribution directives, selects one document
 deterministically, and never merges manifests. Relative skill, hook and MCP paths resolve from that
-manifest's directory before the plugin root and remain confined to the install root. An absent
+manifest's directory before the plugin root and may resolve beyond the install root. An absent
 `mcpServers` declaration falls through to `.mcp.json` and then `mcp.json`. When an event-keyed hook
 document from another host starts a command with `./` or `.\`, the dialect adapter anchors that
 executable to the plugin's install root; the hook process still runs with the workspace as its
@@ -695,7 +693,7 @@ The transport layer maps the same kernel services to Clarvis wire methods:
 - `createLoopbackTransport` connects both sides in process.
 - `createStdioTransport` and `serveKernelOverStdio` provide stdio framing.
 - `connectLocalKernelTransport` and `listenLocalKernel` reuse that framing over reconnectable Unix
-  sockets or Windows named pipes. The listener bounds clients and hello deadlines; its caller must
+  sockets. The listener bounds clients and hello deadlines; its caller must
   supply authenticated resolution and operation authorization on `createKernelServer`.
 - `serveFileKernelOverStdio` combines a file kernel and stdio server.
 
@@ -765,25 +763,17 @@ live-only run event. The persisted terminal event records the applied operation 
 summary-to-eviction `fallback_reason`; replay therefore retains what happened without reviving an
 already-finished spinner.
 
-## Control plane and isolation
+## Control plane and tool execution
 
 The kernel provides services for configuration, plugins, secrets, models, provider
 authentication, files, memory, plans, workflows, skills, sessions, tasks, storage,
 Extension Profiles and runs. These are control-plane APIs rather than model-callable
-MCP tools. The tools capability executes shell and file calls under the configured
-native sandbox; it offers no per-call escape. Production:
-`packages/kernel/src/file-kernel.ts` (`createFileKernel`) and
-`packages/tools/src/sandbox.ts` (`sandboxCommand`). Test:
+MCP tools. The tools capability executes shell and file calls on the host under the process's
+permissions. Production: `createFileKernel` in `packages/kernel/src/file-kernel.ts` and
+`dispatch` in `packages/tools/src/core.ts`. Test:
 `packages/kernel/tests/integration/file-kernel.test.ts` and
-`packages/tools/tests/integration/sandbox.test.ts`. See the
-[sandbox contract](../../specs/execution/sandbox.md).
+`packages/tools/tests/integration/open-authority.test.ts`.
 
-The hosted generation identity includes the effective Sandbox settings and resolved roots, not only
-environment flags. Runs use the startup Sandbox snapshot; a settings change that would alter it
-requires an idle host restart before another run can use it. Inspection reports host-visible reads,
-the selected workspace/write posture and effective network without exposing credential values.
-An untrusted workspace cannot weaken an enabled global Sandbox: the host retains its read-only,
-network, environment, toolchain and protected-path floor when resolving runs and inspection.
 ## The settings schema
 
 The kernel publishes exactly one, `kernelSettingsSchema`: the engine's blocks
@@ -817,7 +807,7 @@ owner and derives the effective per-child buffer slice; the kernel does not mate
 32-MiB aggregate ceiling itself.
 
 `createSettingsRunAssembler` optionally accepts a `modelExecutionResolver`: it checks exact entry,
-delegated, vision and explicit reviewer targets against that closed catalog and emits empty
+delegated and explicit reviewer targets against that closed catalog and emits empty
 `providers`, keeping transport declarations outside the request. Without this option, native provider declarations
 and resolution are preserved.
 
@@ -862,7 +852,7 @@ by the user, an applicable loaded skill, or an agent-instruction file such as `A
 `CLARVIS.md`. Harness availability alone is not authorization; profile and grant limits still apply.
 All five condition instructions on the tools actually exposed, distinguish a delegated
 brief from caller conversation, acknowledge the shared workspace, and select `submit_result` only
-when present. Marshall covers independent versus tracked delegation, background handles, review of
+when present. Marshall covers independent spawning, background handles, review of
 returned work and live-child finalization. Admiral adds the workflow spawn ladder, revision-matched
 checkpoints, batch-local conflict protection and partial writes after failure. Leaves state their
 limitations and return blockers instead of assuming missing authority or context. Detailed argument
@@ -911,6 +901,7 @@ The read-only workspace service applies the same rule before returning a file to
 limited to 8 MiB and images to 7 MiB before base64 expansion. Its picker walks directory handles
 incrementally, stops after 4,000 files or 20,000 examined entries, and clamps caller limits; one
 huge directory or image therefore cannot become a multi-gigabyte protocol response.
+File and image reads resolve relative paths from the workspace and accept absolute paths.
 
 ## Run events reach a client by two paths
 
@@ -998,7 +989,7 @@ decision before each later authored round or repeat pass.
 
 Primary and auxiliary token ledgers are likewise constructed anew inside every manager execution,
 not accumulated across session turns. Auxiliary claims account for both the configured leader
-concurrency and the engine's concurrent `delegate_task` capacity. Ordinary manager children cap each
+concurrency and the engine's concurrent `spawn_subagent` capacity. Ordinary manager children cap each
 model call at that fair share; leaders claim their subtree only after semaphore admission, and their
 root/subagent model calls partition it again. A model with no explicit output cap therefore cannot
 let one call reserve the entire workflow budget before its siblings start.
@@ -1023,30 +1014,30 @@ and traversal segments are rejected before filesystem access.
 raising the global level. `createInProcessKernel` takes a `logger` of its own and passes it to the
 plugin service, the model catalog and each owner's runs/sessions with `{ owner }` bound.
 
-| Level | `event`                                                        | Fields                                                                                          |
-| ----- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| info  | `kernel.boot.started`                                          | `workspace_root`, `global_dir`, `ownership_mode`, `memory_enabled`, `default_model`             |
-| info  | `kernel.config.scopes`                                         | `global_present`, `workspace_present`, `workspace_trust`, `plugin_scopes`, `enabled_plugins`    |
-| error | `kernel.config.rejected`                                       | `scope`, `path`, `at`, `message`, `schema`                                                      |
-| warn  | `kernel.config.document_discarded`                             | `scope`, `path`, `reason`                                                                       |
-| warn  | `kernel.config.agents_unreadable`                              | `scope`, `dir`, `cause`                                                                         |
-| debug | `kernel.capabilities.registered`                               | `specs`, `grants`                                                                               |
-| info  | `kernel.capability.composed`                                   | `capability`, `enabled`, `reason`                                                               |
-| warn  | `kernel.plugin.skipped`                                        | `plugin`, `scope`, `phase`, `cause`                                                             |
-| info  | `kernel.models.catalog`                                        | `source`, `providers`, `models`                                                                 |
-| warn  | `kernel.models.cache_invalid`                                  | `path`, `cause`                                                                                 |
-| info  | `kernel.boot.ready`                                            | `duration_ms`, `recovered_runs`, `capabilities`                                                 |
-| info  | `runs.recovered_interrupted`                                   | `recovered`, `examined`, `quarantined`, `degraded`, `exhausted`                                 |
-| warn  | `runs.recovery_failed`                                         | `cause`                                                                                         |
-| debug | `runs.event.unmapped`                                          | `path`, `kind`, `capability`, `reason`                                                          |
-| debug | `runs.rehydrated`                                              | `execution_id`, `events_total`, `events_mapped`, `events_dropped`                               |
-| debug | `sessions.rehydrate`                                           | `session_id`, `found`, `turns`, `pending`                                                       |
-| warn  | `local.process.failed`                                         | `command`, `exit_code`, `duration_ms`, `stdout_chars`, `stderr_chars`                           |
-| warn  | `local.git.failed`                                             | `op`, `repo_host`, `cause`                                                                      |
-| warn  | `transport.frame_dropped`                                      | `direction`, `reason`, `bytes`                                                                  |
-| warn  | `transport.{notify,cancel,subscribe,unsubscribe,close}_failed` | `operation`, `cause`                                                                            |
-| warn  | `lifecycle.late_close_failed`                                  | `operation`, `cause`                                                                            |
-| warn  | `capexec.session.failed`                                       | `capability`, `cause`                                                                           |
+| Level | `event`                                                        | Fields                                                                                       |
+| ----- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| info  | `kernel.boot.started`                                          | `workspace_root`, `global_dir`, `ownership_mode`, `memory_enabled`, `default_model`          |
+| info  | `kernel.config.scopes`                                         | `global_present`, `workspace_present`, `workspace_trust`, `plugin_scopes`, `enabled_plugins` |
+| error | `kernel.config.rejected`                                       | `scope`, `path`, `at`, `message`, `schema`                                                   |
+| warn  | `kernel.config.document_discarded`                             | `scope`, `path`, `reason`                                                                    |
+| warn  | `kernel.config.agents_unreadable`                              | `scope`, `dir`, `cause`                                                                      |
+| debug | `kernel.capabilities.registered`                               | `specs`, `grants`                                                                            |
+| info  | `kernel.capability.composed`                                   | `capability`, `enabled`, `reason`                                                            |
+| warn  | `kernel.plugin.skipped`                                        | `plugin`, `scope`, `phase`, `cause`                                                          |
+| info  | `kernel.models.catalog`                                        | `source`, `providers`, `models`                                                              |
+| warn  | `kernel.models.cache_invalid`                                  | `path`, `cause`                                                                              |
+| info  | `kernel.boot.ready`                                            | `duration_ms`, `recovered_runs`, `capabilities`                                              |
+| info  | `runs.recovered_interrupted`                                   | `recovered`, `examined`, `quarantined`, `degraded`, `exhausted`                              |
+| warn  | `runs.recovery_failed`                                         | `cause`                                                                                      |
+| debug | `runs.event.unmapped`                                          | `path`, `kind`, `capability`, `reason`                                                       |
+| debug | `runs.rehydrated`                                              | `execution_id`, `events_total`, `events_mapped`, `events_dropped`                            |
+| debug | `sessions.rehydrate`                                           | `session_id`, `found`, `turns`, `pending`                                                    |
+| warn  | `local.process.failed`                                         | `command`, `exit_code`, `duration_ms`, `stdout_chars`, `stderr_chars`                        |
+| warn  | `local.git.failed`                                             | `op`, `repo_host`, `cause`                                                                   |
+| warn  | `transport.frame_dropped`                                      | `direction`, `reason`, `bytes`                                                               |
+| warn  | `transport.{notify,cancel,subscribe,unsubscribe,close}_failed` | `operation`, `cause`                                                                         |
+| warn  | `lifecycle.late_close_failed`                                  | `operation`, `cause`                                                                         |
+| warn  | `capexec.session.failed`                                       | `capability`, `cause`                                                                        |
 
 The diagnostic properties below are load-bearing:
 

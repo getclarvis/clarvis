@@ -53,7 +53,6 @@ function gitValue(dir: string, args: string[]): string | undefined {
   const result = spawnSync("git", ["-C", dir, ...args], {
     encoding: "utf8",
     env: withoutGitRepositoryEnvironment(process.env),
-    windowsHide: true,
     timeout: 5_000,
     maxBuffer: PLUGIN_RESOURCE_LIMITS.installRecordBytes,
   });
@@ -69,7 +68,7 @@ type DirectoryNamesResult = { ok: true; names: string[] } | { ok: false; error: 
  * without materializing an unbounded `readdir`.
  *
  * Symbolic links are admitted only when their current target is a directory.
- * Package readers still realpath-confine every contributed path to that target,
+ * Package readers resolve contributed paths from that target,
  * so a shared-store link changes inventory placement without widening the
  * package boundary.
  */

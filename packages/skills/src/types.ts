@@ -33,8 +33,6 @@ export interface SkillRoot {
   manifestName?: "case-insensitive" | "exact";
   /** Whether the portable Agent Skills frontmatter contract is enforced without defaults. */
   validation?: "compatible" | "agent-skills";
-  /** Filesystem-resolved package boundary that discovered paths may not escape. */
-  confinementRoot?: string;
   /** Host approval for skills under this root to expose their own directory for execution. */
   executionRoot?: string;
 }
@@ -57,8 +55,6 @@ export interface SkillRootInput {
   manifestName?: "case-insensitive" | "exact";
   /** `agent-skills` enforces portable identity, metadata, compatibility, and tool fields. */
   validation?: "compatible" | "agent-skills";
-  /** Optional package boundary; resolved like {@link SkillRootInput.path}. */
-  confinementRoot?: string;
   /** Optional host approval for discovered skills to expose their own directory to commands. */
   executionRoot?: string;
 }
@@ -77,8 +73,7 @@ export interface SkillResource {
 }
 
 /**
- * Skill-relative icon paths, keyed by the theme each is drawn for. Both are
- * confined to the skill directory by the reader that produced them.
+ * Declared icon paths, keyed by the theme each is drawn for.
  */
 export interface SkillIcons {
   light?: string;
@@ -251,9 +246,9 @@ export interface SkillRegistry {
    *   `not_a_file` if the path is not a regular file.
    */
   resource(name: string, rel: string): string;
-  /** Read one confined bundled resource as UTF-8 text. */
+  /** Read one bounded resource as UTF-8 text. */
   readResource(name: string, rel: string): string;
-  /** Read one bounded UTF-8 page of a confined bundled resource. */
+  /** Read one bounded UTF-8 page of a resource. */
   readResourceChunk(
     name: string,
     rel: string,

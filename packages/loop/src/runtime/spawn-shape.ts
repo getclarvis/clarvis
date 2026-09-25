@@ -11,7 +11,7 @@ import type { RunShape } from "./run-shape.ts";
  * @param shape - the derived run shape.
  * @param declarations - the run's capability-owned grant catalogue.
  * @returns true for a lead or an entry carrying a grant declared spawn-capable.
- * @remarks This gates the registry's existence, and with it the five supervision
+ * @remarks This gates the registry's existence, and with it the four supervision
  *   tools. A solo run therefore never sees them in its schema — the surface
  *   follows from what a run can spawn, not from a request flag.
  */

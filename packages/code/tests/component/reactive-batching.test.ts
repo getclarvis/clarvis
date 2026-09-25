@@ -95,7 +95,7 @@ describe("reactive batching", () => {
               call_id: `c${i}`,
               at: 1,
               server: "fs",
-              tool: "grep",
+              tool: "list_dir",
               arguments: {},
             }),
             "live",

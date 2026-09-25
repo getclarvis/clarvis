@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { createHash } from "node:crypto";
 import { mapTrace, mapEntry, RESULT_MAX } from "@clarvis/trace";
-import { DELEGATE_TASK_MAX_CHARS, type TraceEntry, type TraceEvent } from "@clarvis/capability";
+import { TASK_BRIEF_MAX_CHARS, type TraceEntry, type TraceEvent } from "@clarvis/capability";
 import { capDetail, ARGS_MAX } from "../../src/cap-detail.ts";
 
 const ANCHOR = 1_700_000_000_000;
@@ -825,7 +825,6 @@ describe("trace-mapper — carries or omits optional detail fields per event kin
           freed_chars: 100,
           original_chars: 500,
           kept_chars: 400,
-          task_id: "t1",
           contribution_count: 3,
           requested: true,
           user_contribution_count: 2,
@@ -844,7 +843,6 @@ describe("trace-mapper — carries or omits optional detail fields per event kin
       freed_chars: 100,
       original_chars: 500,
       kept_chars: 400,
-      task_id: "t1",
       contribution_count: 3,
       requested: true,
       user_contribution_count: 2,
@@ -890,30 +888,6 @@ describe("trace-mapper — carries or omits optional detail fields per event kin
       agent: "lead",
       reason: "summarization_failed",
       occurred_at: ANCHOR + 7,
-    });
-  });
-
-  it("vision_analysis: persists the reading, the model and the image count", () => {
-    const entries: TraceEntry[] = [
-      {
-        at: 3,
-        kind: "vision_analysis",
-        detail: {
-          model: "anthropic/vision",
-          image_count: 2,
-          status: "completed",
-          result: "two cats",
-        },
-      },
-    ];
-
-    expect(byType(mapTrace(entries, ANCHOR).events, "vision_analysis")[0]).toEqual({
-      type: "vision_analysis",
-      model: "anthropic/vision",
-      image_count: 2,
-      status: "completed",
-      result: "two cats",
-      occurred_at: ANCHOR + 3,
     });
   });
 
@@ -1020,7 +994,7 @@ describe("trace-mapper — carries or omits optional detail fields per event kin
     expect(withoutCp!.outcome).toBe("escalations_exhausted");
   });
 
-  it("delegation_created: carries task_id/profile when present", () => {
+  it("delegation_created: carries profile when present", () => {
     const entries: TraceEntry[] = [
       {
         at: 18,
@@ -1030,13 +1004,11 @@ describe("trace-mapper — carries or omits optional detail fields per event kin
           title: "t",
           task: "do it",
           tools: ["fs.read"],
-          task_id: "task-1",
           profile: "researcher",
         },
       },
     ];
     const ev = byType(mapTrace(entries, ANCHOR).events, "delegation_created")[0]!;
-    expect(ev.task_id).toBe("task-1");
     expect(ev.profile).toBe("researcher");
   });
 
@@ -1048,13 +1020,13 @@ describe("trace-mapper — carries or omits optional detail fields per event kin
         detail: {
           delegation_id: "w1",
           title: "t",
-          task: "x".repeat(DELEGATE_TASK_MAX_CHARS + 1),
+          task: "x".repeat(TASK_BRIEF_MAX_CHARS + 1),
           tools: [],
         },
       },
     ];
     const ev = byType(mapTrace(entries, ANCHOR).events, "delegation_created")[0]!;
-    expect(ev.task).toHaveLength(DELEGATE_TASK_MAX_CHARS);
+    expect(ev.task).toHaveLength(TASK_BRIEF_MAX_CHARS);
     expect(ev.task.endsWith("...[truncated]")).toBe(true);
   });
 });

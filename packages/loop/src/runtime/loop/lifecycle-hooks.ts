@@ -92,7 +92,7 @@ type ObserverMethod =
  * @remarks Exported so every gate that refuses one reports the same sentence,
  * and so a test can assert the refusal without restating it. It names the
  * channel that does work, because the capability is not missing: a
- * `pre_tool_use` hook matching either child-spawn tool replaces its brief and
+ * `pre_tool_use` hook matching `spawn_subagent` replaces its brief and
  * profile through the ordinary tool dispatch, where the replacement is validated
  * by the tool's own schema, reported to the model as
  * an `[advisor]` line, and carried beside the arguments the model actually sent

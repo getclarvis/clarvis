@@ -1,26 +1,13 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { validateDelegateTaskArgs } from "../../src/runtime/subagents/delegate-task.ts";
+import { validateSpawnArgs } from "../../src/runtime/subagents/spawn-subagent.ts";
 import {
   resolveSubagentProfiles,
   hasVisionCapableProfile,
 } from "../../src/runtime/subagents/subagent-profiles.ts";
-import {
-  buildDelegateTaskTool,
-  buildSpawnSubagentTool,
-} from "../../src/runtime/subagents/lead-tools.ts";
+import { buildSpawnSubagentTool } from "../../src/runtime/subagents/lead-tools.ts";
 import { collectTurnImages } from "../../src/runtime/subagents/build-subagent-input.ts";
-import type { DelegateTaskAugmentation } from "@clarvis/capability";
 import { loadEnv } from "@clarvis/capability";
 import type { Message } from "@clarvis/capability";
-
-/** A stand-in for a tracker's schema augmentation, exercising the same seam a
- * real `TaskTrackingPort` would use without depending on any particular tracker. */
-const fakeTaskIdAugmentation: DelegateTaskAugmentation = {
-  description: "Delegate one tracked task to a Sub-agent.",
-  properties: {
-    task_id: { type: "string", description: "The tracked task id to spawn against." },
-  },
-};
 
 const env = loadEnv({});
 
@@ -112,9 +99,9 @@ describe("hasVisionCapableProfile", () => {
   });
 });
 
-describe("validateDelegateTaskArgs — image_refs", () => {
+describe("validateSpawnArgs — image_refs", () => {
   it("accepts image_refs for a vision profile and dedupes the indices", () => {
-    const r = validateDelegateTaskArgs(
+    const r = validateSpawnArgs(
       { title: "w", task: "read", profile: "vision_agent", image_refs: [0, 0, 1] },
       {
         profiles,
@@ -126,7 +113,7 @@ describe("validateDelegateTaskArgs — image_refs", () => {
   });
 
   it("rejects image_refs for a profile whose model lacks vision", () => {
-    const r = validateDelegateTaskArgs(
+    const r = validateSpawnArgs(
       { title: "w", task: "x", profile: "coder", image_refs: [0] },
       {
         profiles,
@@ -138,7 +125,7 @@ describe("validateDelegateTaskArgs — image_refs", () => {
   });
 
   it("rejects an out-of-range index", () => {
-    const r = validateDelegateTaskArgs(
+    const r = validateSpawnArgs(
       { title: "w", task: "x", profile: "vision_agent", image_refs: [3] },
       {
         profiles,
@@ -149,7 +136,7 @@ describe("validateDelegateTaskArgs — image_refs", () => {
   });
 
   it("rejects image_refs when the turn carries no images", () => {
-    const r = validateDelegateTaskArgs(
+    const r = validateSpawnArgs(
       { title: "w", task: "x", profile: "vision_agent", image_refs: [0] },
       {
         profiles,
@@ -162,7 +149,7 @@ describe("validateDelegateTaskArgs — image_refs", () => {
 
   it("rejects a non-array or empty image_refs", () => {
     expect(
-      validateDelegateTaskArgs(
+      validateSpawnArgs(
         { title: "w", task: "x", profile: "vision_agent", image_refs: [] },
         {
           profiles,
@@ -171,7 +158,7 @@ describe("validateDelegateTaskArgs — image_refs", () => {
       ).ok,
     ).toBe(false);
     expect(
-      validateDelegateTaskArgs(
+      validateSpawnArgs(
         { title: "w", task: "x", profile: "vision_agent", image_refs: "0" },
         {
           profiles,
@@ -182,7 +169,7 @@ describe("validateDelegateTaskArgs — image_refs", () => {
   });
 
   it("omits image_refs from the result when it is not provided", () => {
-    const r = validateDelegateTaskArgs(
+    const r = validateSpawnArgs(
       { title: "w", task: "x", profile: "vision_agent" },
       {
         profiles,
@@ -201,11 +188,5 @@ describe("child-spawn tools — image_refs property gating", () => {
   it("adds image_refs only when imageRefsAllowed is true", () => {
     expect(props(buildSpawnSubagentTool(profiles, true)).image_refs).toBeDefined();
     expect(props(buildSpawnSubagentTool(profiles, false)).image_refs).toBeUndefined();
-  });
-
-  it("adds image_refs alongside task_id when a tracker augments the schema", () => {
-    const p = props(buildDelegateTaskTool(profiles, true, fakeTaskIdAugmentation));
-    expect(p.image_refs).toBeDefined();
-    expect(p.task_id).toBeDefined();
   });
 });

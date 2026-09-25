@@ -10,7 +10,7 @@ import {
   createCapabilityServices,
   type AgentBuildContext,
   type AgentScope,
-  type TaskTrackingProvider,
+  type SpawnGateProvider,
   type RunCapability,
 } from "@clarvis/capability";
 
@@ -22,7 +22,7 @@ import {
 } from "../../src/index.ts";
 import { createInMemoryPlanRepository } from "../../src/testing.ts";
 import { PlanSession } from "../../src/capability/session.ts";
-import { createPlansCapability, PLAN_PORT } from "../../src/capability/index.ts";
+import { createPlansCapability, PLAN_SPAWN_PORT } from "../../src/capability/index.ts";
 import {
   CREATE_PLAN_TOOL_NAME,
   LIST_PLANS_TOOL_NAME,
@@ -401,7 +401,7 @@ describe("plan.tracking_port.absent", () => {
     );
     expect(run).not.toBeNull();
 
-    const provider = services.get(PLAN_PORT) as TaskTrackingProvider;
+    const provider = services.get(PLAN_SPAWN_PORT) as SpawnGateProvider;
     expect(provider.forAgent(fakeAgentBuildContext())).toBeUndefined();
     expect(provider.forAgent(fakeAgentBuildContext())).toBeUndefined();
 
@@ -433,7 +433,7 @@ describe("plan.tracking_port.absent", () => {
     const bc: AgentBuildContext = fakeAgentBuildContext();
     run!.forAgent(scope)!.attach(bc);
 
-    const provider = services.get(PLAN_PORT) as TaskTrackingProvider;
+    const provider = services.get(PLAN_SPAWN_PORT) as SpawnGateProvider;
     expect(provider.forAgent(bc)).toBeDefined();
     expect(log.of("plan.tracking_port.absent")).toHaveLength(0);
   });

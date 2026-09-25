@@ -17,7 +17,6 @@ orchestrating selection/execution/resolution across a whole list of configured h
 `@clarvis/loop`'s `LifecycleHook` contract — everything else in the package is deliberately
 ignorant of what a lifecycle hook is (`packages/hooks/src/types.ts`, `packages/hooks/src/index.ts`).
 
-The package explicitly is **not** a sandbox: "This is credential hygiene, not a sandbox"
 (`packages/hooks/src/env.ts`). A hook command runs with full operator privileges, reads/writes
 the workspace and reaches the network; the one goal the environment filter pursues is that "the
 model-provider credentials this run is holding must not reach a subprocess that had no reason to
@@ -34,7 +33,6 @@ plugin / request schemas) even when the optional `@clarvis/hooks` package itself
 
 ## 2. Surface
 
-Hooks are a native Host/Sandbox capability.
 
 ### 2.1 `@clarvis/hooks` entrypoint `.` (`src/index.ts`)
 
@@ -90,7 +88,7 @@ settings/plugin/request-schema path can reach executable code — which is what 
 | Symbol | Value / shape |
 | --- | --- |
 | `HOOKS_CAPABILITY_NAME` | `"hooks"` |
-| `GATE_HOOK_EVENTS` | `["pre_tool_use","post_tool_use","pre_finalize","pre_delegate_task"]` |
+| `GATE_HOOK_EVENTS` | `["pre_tool_use","post_tool_use","pre_finalize","pre_spawn_subagent"]` |
 | `OBSERVER_HOOK_EVENTS` | `["run_start","run_end","post_compact","subagent_start","subagent_complete","model_call_error","budget_exhausted","user_steer"]` |
 | `COMPACTION_HOOK_EVENTS` | `["pre_compact"]` |
 | `CONTEXT_HOOK_EVENTS` | `["session_start"]` |
@@ -154,7 +152,7 @@ filtering and contain paths, never credentials. Production: the command environm
 
 ```ts
 {
-  event: "pre_tool_use" | "post_tool_use" | "pre_finalize" | "pre_delegate_task"
+  event: "pre_tool_use" | "post_tool_use" | "pre_finalize" | "pre_spawn_subagent"
        | "run_start" | "run_end" | "post_compact" | "subagent_start"
        | "subagent_complete" | "model_call_error"
        | "budget_exhausted" | "user_steer" | "session_start" | "pre_compact"
@@ -162,7 +160,6 @@ filtering and contain paths, never credentials. Production: the command environm
   match?: { tool?: string | string[], args?: Record<string, string> },
   type?: "command" | "mcp_tool",
   command: string,                    // command hooks; max 8192 chars
-  command_windows?: string,
   async?: boolean,
   status_message?: string,            // bounded display metadata
   additional_context_limit?: number,  // 0..65536 captured chars
@@ -253,9 +250,9 @@ Test: `a checkpoint finalize carries its stage handoff separately from the final
 | Event | Fields on the stdin payload | Test |
 | --- | --- | --- |
 | `pre_tool_use` | `tool_name`, `tool_input` (clamped value) | shape: `packages/hooks/tests/component/runner.test.ts`; clamping: `packages/hooks/tests/component/capability.test.ts` |
-| `post_tool_use` | `tool_name`, `tool_input`, `tool_response: { text, progress, task_id, image_count }` | `packages/hooks/tests/component/capability.test.ts` |
+| `post_tool_use` | `tool_name`, `tool_input`, `tool_response: { text, progress, image_count }` | `packages/hooks/tests/component/capability.test.ts` |
 | `pre_finalize` | `agent`, `subagent_instance_id`, `mode`, `text`, `value` (clamped); `checkpoint` (clamped) only for checkpoint mode | `packages/hooks/tests/component/capability.test.ts` |
-| `pre_delegate_task` | `title`, `task` (clamped text), `profile`, `task_id` | `packages/hooks/tests/component/capability.test.ts` |
+| `pre_spawn_subagent` | `title`, `task` (clamped text), `profile` | `packages/hooks/tests/component/capability.test.ts` |
 | `run_start` | `mode`, `entry`, `lead_model`, `subagent_model` | `packages/hooks/tests/component/capability.test.ts` |
 | `run_end` | `status`, `error_code`, `iterations_used`, `elapsed_ms` | `packages/hooks/tests/component/capability.test.ts` |
 | `post_compact` | `agent`, `subagent_instance_id`, `operation`, `freed_chars`, `kept_chars` | `packages/hooks/tests/component/capability.test.ts` |
@@ -268,7 +265,7 @@ Test: `a checkpoint finalize carries its stage handoff separately from the final
 | `session_start` | none — projects to `{}` (`packages/hooks/src/event-serialization.ts`) | not exercised via `payloadFor` in this document's scope |
 | `user_prompt_expansion` | `command_name` | `packages/hooks/tests/component/capability.test.ts` |
 
-(`pre_delegate_task` through `budget_exhausted` above share one test body, "projects every
+(`pre_spawn_subagent` through `budget_exhausted` above share one test body, "projects every
 remaining event onto snake_case fields", `packages/hooks/tests/component/capability.test.ts`.)
 
 `defaultTimeoutFor` (`packages/hooks/src/event-serialization.ts`) resolves `HookInvocation.defaultTimeoutMs` by
@@ -288,7 +285,7 @@ function defaultTimeoutFor(event) {
 
 Because the tool check runs **before** the gate check, `pre_tool_use`/`post_tool_use` — which are
 also members of `GATE_HOOK_EVENTS` — get the short `tool` default (5000 ms), not the long `gate`
-one (30000 ms); only the two non-tool gates (`pre_finalize`, `pre_delegate_task`) get 30000 ms.
+one (30000 ms); only the two non-tool gates (`pre_finalize`, `pre_spawn_subagent`) get 30000 ms.
 Pinned by "gives the tool events the short default budget and the rare gates the long one",
 asserting `[5_000, 30_000, 2_000, 5_000]` for `pre_tool_use`/`pre_finalize`/`run_end`/`run_start`
 in that order (`packages/hooks/tests/component/capability.test.ts`).
@@ -311,15 +308,13 @@ in that order (`packages/hooks/tests/component/capability.test.ts`).
 | `user_steer` | `UserPromptSubmit` |
 | `user_prompt_expansion` | `UserPromptExpansion` |
 
-`pre_delegate_task`, `run_start`, `model_call_error`, `budget_exhausted` have **no** foreign
+`pre_spawn_subagent`, `run_start`, `model_call_error`, `budget_exhausted` have **no** foreign
 counterpart and are absent from the table on purpose — "an approximation that fires at the wrong
 moment is worse than an honest gap".
 
 `EXTERNAL_TOOL_NAMES` (keyed by `normalizeToolName`: letters+digits only, lower-cased): `bash`/`shell→shell`, `read`/`readfile→read_file`, `write`/`writefile→write_file`,
-`edit`/`editfile→edit_file`, `multiedit→multi_edit`, `applypatch→apply_patch`, `glob→glob`,
-`grep→grep`, `ls`/`listdir→list_dir`, `task→delegate_task`, `skill→load_skill`. Measured against a public catalog of
-196 plugins: "five of the thirty-nine names their filters used existed here; the other thirty-four
-… translated cleanly, installed, were approved, and then matched nothing". `EXTERNAL_HOOK_TOOL_NAMES` owns the reverse spelling emitted on stdin;
+`edit`/`editfile→edit_file`, `applypatch→apply_patch`, `ls`/`listdir→list_dir`, `skill→load_skill`. Measured against a public catalog of
+196 plugins, external names without Clarvis counterparts must be reported rather than silently accepted. `EXTERNAL_HOOK_TOOL_NAMES` owns the reverse spelling emitted on stdin;
 the two directions are explicit because several external aliases map to one Clarvis tool.
 `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` lists 5 foreign names with no
 Clarvis tool at all (`exitplanmode`, `todowrite`, `notebookedit`, `webfetch`, `websearch`) so a
@@ -378,7 +373,7 @@ passes only `denyExact`).
    b. for an `mcp_tool`, resolves the run-scoped server/tool through `MCP_HOOK_TOOL_PORT`,
       recursively expands `${field.path}` values from the event payload, calls it directly, and
       applies the same output verdict parser without entering ordinary tool dispatch;
-   c. for a command hook, selects `command_windows` on Windows and otherwise `command`, then calls
+   c. for a command hook, selects `command`, then calls
       `runHookCommand` (`packages/hooks/src/subprocess.ts`) which spawns the host shell, writes stdin, bounds
       stdout/stderr, bounds the wall clock, and never rejects (§4.4);
    d. `classify(res, inv)` (`packages/hooks/src/runner.ts`) turns the `SubprocessResult` into either a
@@ -476,9 +471,7 @@ into the transcript. Production: `scheduleBackground` and `run` in
 
 Injectable deps (`spawn`, `killTree`, `ownProcessGroup`, `resolveShell`, `shellArgs`, `timers`,
 `now`, `logger`) all default to real implementations (`packages/hooks/src/subprocess.ts`).
-`detached` comes from `ownProcessGroup()` and is **never** passed unconditionally — POSIX process
-groups vs. Windows `DETACHED_PROCESS`, whose console-less child would be a silent do-nothing spawn
-(see also the repo-wide Windows rule this mirrors).
+`detached` comes from `ownProcessGroup()` and creates a POSIX process group.
 
 Just before spawning, `hooks.spawn` is logged at debug with `hook_event`, `shell_file`, `detached`,
 `timeout_ms`, `stdin_bytes` and `data_truncated` — never the command text or its arguments
@@ -863,7 +856,7 @@ all: the package consumes `hookSchema`'s inferred type but defines no schema of 
 `packages/hooks/src/capability.ts` and `packages/hooks/src/event-serialization.ts`); `@clarvis/tools/shell` — the narrow
 subpath carrying `resolveShell`/`shellArgs`/`killTree`/`ownProcessGroup`/`ShellSpec`
 (`packages/hooks/src/subprocess.ts`), chosen specifically to avoid pulling in the whole tool registry —
-the root export carries ajv, diff, ignore, picomatch and ripgrep, "the wrong price for a consumer
+the root export carries Ajv and diff helpers, "the wrong price for a consumer
 that only needs to know which shell this host speaks and how to kill what it spawned"
 (`packages/tools/src/shell-entry.ts`).
 
@@ -912,7 +905,7 @@ in [loop-run-lifecycle](../engine/loop-run-lifecycle.md), delegated per the docu
 
 ## 8. Open questions
 
-- **Why `pre_delegate_task`, `run_start`, `model_call_error` and `budget_exhausted` have no foreign
+- **Why `pre_spawn_subagent`, `run_start`, `model_call_error` and `budget_exhausted` have no foreign
   dialect counterpart** is not stated beyond the general principle ("an approximation that fires at
   the wrong moment is worse than an honest gap", `packages/capability/src/hooks-config.ts`); no comment explains why
   specifically these four rather than some other subset lack a mapping.
@@ -947,9 +940,8 @@ in [loop-run-lifecycle](../engine/loop-run-lifecycle.md), delegated per the docu
   beyond its existence and its import of `EXTERNAL_TOOL_NAMES`
   (`packages/kernel/src/plugins/hook-dialects.ts`).
 - ~~**The rationale for the specific set of `KEEP_EXACT` names and `SECRET_NAME`/`SECRET_PREFIX`
-  patterns.**~~ **The membership rules are now stated at the source.** `KEEP_EXACT` has three groups
-  and the third is empty on purpose: what a shell needs to start and behave (plus the Windows
-  equivalents), and the version-manager and toolchain roots that make `bun`, `cargo` or `java`
+  patterns.**~~ **The membership rules are now stated at the source.** `KEEP_EXACT` keeps
+  what a shell needs to start and behave, plus the version-manager and toolchain roots that make `bun`, `cargo` or `java`
   resolvable — and *nothing* kept merely because a hook is likely to want it, since a name promoted
   into the keep-list becomes unremovable by any future secret rule
   (`packages/hooks/src/env.ts`). `SECRET_NAME` is deliberately not the same pattern as

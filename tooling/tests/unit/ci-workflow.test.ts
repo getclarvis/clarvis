@@ -90,37 +90,21 @@ describe("independent CI workflow", () => {
     }
   });
 
-  test("keeps native Windows/macOS scope and the release consumer's three public contexts", () => {
+  test("keeps macOS keyboard scope and the release consumer's public contexts", () => {
     const workflow = parsed();
     const keyboard =
       "bun test packages/code/tests/unit/keyboard-profile.test.ts packages/code/tests/unit/keyspec.test.ts packages/code/tests/unit/active-actions.test.ts";
-    expect(workflow.jobs.windows["runs-on"]).toBe("windows-latest");
+    expect(workflow.jobs["keyboard-macos"]["runs-on"]).toBe("macos-14");
     expect(
-      workflow.jobs.windows.steps
-        .filter((step) => step.run?.startsWith("bun "))
-        .map((step) => step.run),
+      workflow.jobs["keyboard-macos"].steps.flatMap((step) => (step.run ? [step.run] : [])),
     ).toEqual([
       "bun --version && bun --revision",
       "bun install --frozen-lockfile",
-      "bun --filter @clarvis/paths test",
       "bun --filter @clarvis/tools test",
-      "bun --filter @clarvis/plan test",
-      "bun --filter @clarvis/memory test",
-      keyboard,
-    ]);
-    expect(workflow.jobs["sandbox-macos"]["runs-on"]).toBe("macos-14");
-    expect(
-      workflow.jobs["sandbox-macos"].steps.flatMap((step) => (step.run ? [step.run] : [])),
-    ).toEqual([
-      "bun --version && bun --revision",
-      "brew install ripgrep && rg --version",
-      "bun install --frozen-lockfile",
-      "CLARVIS_NATIVE_SANDBOX_CANARY=1 bun --filter @clarvis/tools test",
-      "CLARVIS_NATIVE_SANDBOX_CANARY=1 bun test packages/kernel/tests/integration/sandbox-policy.test.ts",
       keyboard,
     ]);
     const release = readFileSync(".github/workflows/gitflow-release.yml", "utf8");
-    for (const id of ["linux", "windows", "sandbox-macos"])
+    for (const id of ["linux", "keyboard-macos"])
       expect(release).toContain(`'${workflow.jobs[id].name}'`);
   });
 });

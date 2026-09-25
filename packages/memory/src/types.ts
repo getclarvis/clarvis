@@ -39,6 +39,10 @@ export interface IndexerRuntime {
   deps: ExecuteRunDeps;
   modelRef: string;
   providers: readonly ProviderConfig[];
+  /** Resolve the subject run's selected model through current host providers. */
+  resolveRunModel?: (
+    run: RunSnapshot,
+  ) => { modelRef: string; providers: readonly ProviderConfig[] } | undefined;
   /** Host-owned execution boundary for lifecycle and Extension Profile admission around every pass. */
   executeRun?: (args: ExecuteRunArgs) => Promise<ExecuteRunOutcome>;
   /** Same memory provider selected for the run being learned from. */
@@ -81,11 +85,9 @@ export interface IndexerRuntime {
  * Resolves the {@link IndexerRuntime} for a pass, or `undefined` when indexing
  * cannot proceed.
  *
- * @remarks Called per pass rather than captured once, so a settings edit or a
- * model configured later takes effect on the next drain tick. `undefined` is not
- * a failure: the drain reports such a job `blocked`, consuming no attempt and
- * taking no lease, so the day a model appears every earlier run's learning is
- * recovered.
+ * @remarks Called per pass rather than captured once, so a settings edit takes
+ * effect on the next drain tick. `undefined` is not a failure: the drain reports
+ * such a job `blocked`, consuming no attempt and taking no lease.
  */
 export type IndexerRuntimeResolver = () =>
   IndexerRuntime | undefined | Promise<IndexerRuntime | undefined>;
@@ -412,11 +414,8 @@ export interface MemoryJobPruneOptions {
   /**
    * Drop *un*terminal jobs (`pending`/`retry_wait`) last updated before this.
    *
-   * @remarks Omit to keep them forever, which was the only behaviour before a
-   * run in a workspace with no indexer model began enqueueing anyway. That
-   * enqueue is what lets a workspace recover its whole learning history the day
-   * a model is configured — but a workspace that never configures one would
-   * otherwise accumulate a snapshot per run without bound.
+   * @remarks Omit to keep them forever. An unavailable indexer runtime can
+   * otherwise leave pending snapshots accumulating without bound.
    */
   pendingBefore?: number;
 }

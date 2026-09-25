@@ -57,9 +57,8 @@ See [self-configuration.md](../hosts/self-configuration.md) for the writer's aut
 
 ## 2. Surface
 
-Workflow execution is available in Host and Sandbox. The native host keeps manager, leaders,
-registry and execution in its Kernel, persists records in the canonical owner-scoped host directory
-shared with Host/Sandbox, and uses frozen projected definitions. Plugin
+The host keeps the workflow manager, leaders, registry and execution in its Kernel, persists records
+in the canonical owner-scoped host directory, and uses frozen projected definitions. Plugin
 definitions remain unavailable; no subset or host bridge substitutes for the workflow.
 
 ### `@clarvis/workflows` — `./artifact` entry
@@ -409,7 +408,7 @@ Workflow documents written through ordinary file tools are validated by `loadWor
 ### 4.2 Reading a brief — `readBrief` (`packages/workflows/src/artifact.ts`)
 
 Containment is decided by `path.relative(dir, target)`, not by a `startsWith("/")` string test,
-because that test misses `C:\…` and UNC paths on Windows (`packages/workflows/src/artifact.ts`). A brief path that
+because that test misses other absolute path shapes (`packages/workflows/src/artifact.ts`). A brief path that
 is absolute, resolves to the directory itself (`inside.length === 0`), or climbs out (`inside`
 starts with `..`) throws "must be a path inside the workflow". The brief is then read bounded to
 `WORKFLOW_LIMITS.briefBytes`, trimmed, and checked again against `WORKFLOW_LIMITS.textChars` after

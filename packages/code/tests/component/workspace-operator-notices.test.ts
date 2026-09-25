@@ -6,7 +6,7 @@ import { WorkspaceClientManager } from "../../src/adapters/workspace-client-mana
 function peer(generation = "generation") {
   let state: LocalHostStatus = {
     host_generation: generation,
-    runtime: { kind: "native", host_platform: "linux", isolation: "sandbox", lifecycle: "ready" },
+    runtime: { kind: "native", host_platform: "linux", lifecycle: "ready" },
     restart_requested: false,
   };
   let browser: LocalHostBrowserRequest | null = null;

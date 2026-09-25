@@ -15,9 +15,6 @@ test("keeps the README install commands on stable latest-release redirects", () 
   expect(fencedBlocks(readme, "bash")[0]).toBe(
     "curl -fsSL https://github.com/getclarvis/clarvis-releases/releases/latest/download/install.sh | sh",
   );
-  expect(fencedBlocks(readme, "powershell")[0]).toBe(
-    "irm https://github.com/getclarvis/clarvis-releases/releases/latest/download/install.ps1 | iex",
-  );
 });
 
 test("keeps public-site ownership outside this monorepo", () => {

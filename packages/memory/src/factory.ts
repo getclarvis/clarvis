@@ -21,8 +21,6 @@ import { DEFAULT_BUDGETS } from "./config.ts";
  * plus what model resolution needs from the surrounding settings. */
 export interface MemoryFactorySettings {
   config: MemoryConfig;
-  /** Fallback indexer model when config.model is unset. */
-  defaultModel?: string;
   providers?: ProviderConfig[];
 }
 
@@ -102,13 +100,7 @@ export interface CreateMemoryFactoryOptions {
 /** A per-process factory that hands back cached, settings-aware memory instances. */
 export interface MemoryFactory {
   /**
-   * Memory for a caller that **cannot proceed without indexing**, or undefined
-   * when memory is off, disabled, or no indexer model resolves.
-   *
-   * @remarks The background index worker, and nothing else. A missing model is
-   *   a hard gate here because draining the queue *is* inference; for every
-   *   other caller it is a reason to stop learning, not a reason to stop
-   *   having memory — see {@link forOwnerControlPlane}.
+   * Memory for the background worker, or undefined when memory is disabled.
    */
   forOwner(owner: string): Memory | undefined;
   /**
@@ -116,13 +108,8 @@ export interface MemoryFactory {
    * searching and editing the wiki — or undefined only when memory is genuinely
    * off or disabled.
    *
-   * @remarks Resolves even with no indexer model: the wiki is readable and
-   *   editable without one, and only learning stops. Collapsing that case into
-   *   "not configured" is what made an enabled-but-model-less workspace report
-   *   *"memory is off"* in the UI, and what cost such a run its seed block and
-   *   its wiki tools as well as its learning. Shares the one process-wide
-   *   store, and therefore its exclusive lock, with {@link forOwner}'s
-   *   instance.
+   * @remarks Shares the one process-wide store and exclusion lock with
+   *   {@link forOwner}.
    */
   forOwnerControlPlane(owner: string): Memory | undefined;
   /**
@@ -178,11 +165,8 @@ export interface MemoryFactory {
  *
  * @param opts - provider, workspace root, logger, and the per-run
  *   `loadSettings` port; see {@link CreateMemoryFactoryOptions}.
- * @returns a factory whose `forOwner` returns `undefined` when memory is off,
- *   `config.enabled === false`, `loadSettings` throws, or no model can be
- *   resolved (neither `memory.model` nor `defaultModel`), and whose
- *   `forOwnerControlPlane` returns `undefined` only for the first three — a
- *   workspace with no indexer model still has a wiki worth reading.
+ * @returns a factory whose owner accessors return `undefined` when memory is
+ *   disabled or settings cannot be read. Indexing uses each subject run's model.
  * @remarks Lives in long-lived deps and is built once per process; instances
  *   are cached per owner plus a settings signature, the same pattern
  *   `dynamicSkills` uses in `build-run-deps`, so a settings edit between runs
@@ -231,16 +215,15 @@ export function createMemoryFactory(opts: CreateMemoryFactoryOptions): MemoryFac
     return store;
   };
   const cache = new Map<string, { sig: string; memory: Memory }>();
-  let warnedNoModel = false;
   let warnedProviderUnresolved = false;
 
   /**
    * Build the per-pass {@link IndexerRuntimeResolver} for one owner.
    *
    * @remarks A resolver rather than a resolved value, called per pass: a
-   * settings edit, or a model configured after the process started, takes effect
+   * settings edit after the process started takes effect
    * on the next drain tick without rebuilding anything. It yields `undefined`
-   * whenever indexing cannot proceed — memory off, no model, or no engine deps
+   * whenever indexing cannot proceed — memory disabled or no engine deps
    * wired — and the drain treats that as `blocked` rather than as a failure, so
    * no attempt is consumed and the learning is recovered later.
    */
@@ -254,11 +237,8 @@ export function createMemoryFactory(opts: CreateMemoryFactoryOptions): MemoryFac
         return undefined;
       }
       if (settings === undefined || settings.config.enabled === false) return undefined;
-      const modelRef = settings.config.model ?? settings.defaultModel;
       const deps = opts.runDeps?.();
-      if (modelRef === undefined || deps === undefined) return undefined;
-      const providers = providersFor(modelRef, settings.providers);
-      if (providers === undefined) return undefined;
+      if (deps === undefined) return undefined;
       const resolved = await resolveProviderFor(owner);
       if (resolved === undefined || !resolved.ok) return undefined;
       const passDeps = opts.passRunDeps?.();
@@ -266,8 +246,13 @@ export function createMemoryFactory(opts: CreateMemoryFactoryOptions): MemoryFac
       return {
         owner,
         deps,
-        modelRef,
-        providers,
+        modelRef: "",
+        providers: [],
+        resolveRunModel: (run) => {
+          if (run.model_ref === undefined) return undefined;
+          const providers = providersFor(run.model_ref, settings.providers);
+          return providers === undefined ? undefined : { modelRef: run.model_ref, providers };
+        },
         ...(opts.executeRun === undefined ? {} : { executeRun: opts.executeRun }),
         memoryProvider: resolved.provider,
         memoryProviderKey: resolved.key,
@@ -318,19 +303,13 @@ export function createMemoryFactory(opts: CreateMemoryFactoryOptions): MemoryFac
   }
 
   /**
-   * Resolve the owner's memory, optionally requiring an indexer model.
+   * Resolve the owner's memory.
    *
    * @param owner - the owner scope to resolve for.
-   * @param requireModel - when true, a workspace with no resolvable indexer
-   *   model yields `undefined` (the run path); when false, a model-less
-   *   instance is built whose `index` reports `"no-model"` while every
-   *   store-backed operation works (the control-plane path).
    * @returns the cached {@link Memory}, or undefined when memory is off.
-   * @remarks Cache key is the bare `owner` whenever a model resolved, so both
-   *   entry points share one instance in the common case; the model-less
-   *   instance gets its own key and exists only for the control plane.
+   * @remarks Both entry points share one instance and one exclusion lock.
    */
-  function resolve(owner: string, requireModel: boolean): Memory | undefined {
+  function resolve(owner: string): Memory | undefined {
     let settings: MemoryFactorySettings | undefined;
     try {
       settings = opts.loadSettings();
@@ -346,27 +325,15 @@ export function createMemoryFactory(opts: CreateMemoryFactoryOptions): MemoryFac
     }
     if (settings === undefined || settings.config.enabled === false) return undefined;
 
-    const modelRef = settings.config.model ?? settings.defaultModel;
-    if (modelRef === undefined) {
-      if (!warnedNoModel) {
-        warnedNoModel = true;
-        opts.logger?.warn(
-          { event: "memory.model.absent" },
-          "memory is enabled and neither memory.model nor default_model is set; the wiki stays readable and editable, and every finished run's learning waits in the durable queue until a model is configured",
-        );
-      }
-      if (requireModel) return undefined;
-    }
-
-    const key = modelRef === undefined ? `no-model:${owner}` : owner;
-    const sig = JSON.stringify([settings.config, modelRef ?? null, settings.providers ?? []]);
+    const key = owner;
+    const sig = JSON.stringify([settings.config, settings.providers ?? []]);
     const hit = cache.get(key);
     if (hit !== undefined && hit.sig === sig) return hit.memory;
 
     const memory = createMemory({
       store: storeFor(owner),
       ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
-      ...(modelRef !== undefined ? { indexer: indexerFor(owner) } : {}),
+      indexer: indexerFor(owner),
       ...(settings.config.budgets !== undefined ? { budgets: settings.config.budgets } : {}),
     });
     cache.set(key, { sig, memory });
@@ -398,7 +365,7 @@ export function createMemoryFactory(opts: CreateMemoryFactoryOptions): MemoryFac
     const hit = workers.get(owner);
     if (hit !== undefined) return hit;
     const worker = createIndexWorker({
-      resolve: () => resolve(owner, true),
+      resolve: () => resolve(owner),
       onJobSettled: (job) => broker.publish(owner, job),
       ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
     });
@@ -442,14 +409,14 @@ export function createMemoryFactory(opts: CreateMemoryFactoryOptions): MemoryFac
     const settings = providerConfig();
     if (settings === undefined) return undefined;
     return resolveMemoryProvider(settings.config.config.provider, {
-      wiki: resolve(owner, false),
+      wiki: resolve(owner),
       seedMaxChars: settings.config.config.budgets?.seed_chars ?? DEFAULT_BUDGETS.seed_chars,
     });
   }
 
   return {
-    forOwner: (owner: string) => resolve(owner, true),
-    forOwnerControlPlane: (owner: string) => resolve(owner, false),
+    forOwner: (owner: string) => resolve(owner),
+    forOwnerControlPlane: (owner: string) => resolve(owner),
     providerFor: resolveProviderFor,
     start: (owner) => workerFor(owner)?.start(),
     poke: (owner) => workerFor(owner)?.poke(),
@@ -463,7 +430,6 @@ export function createMemoryFactory(opts: CreateMemoryFactoryOptions): MemoryFac
         }
       } finally {
         cache.delete(owner);
-        cache.delete(`no-model:${owner}`);
         ownerStores.delete(owner);
       }
     },

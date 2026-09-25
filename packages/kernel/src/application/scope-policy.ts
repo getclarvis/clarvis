@@ -34,7 +34,7 @@ export interface OwnerScope {
 
 /** Services instantiated once for the operator/workspace composition. */
 export interface OperatorServices {
-  /** Settings, agents, and sandbox inspection. */
+  /** Settings and agents. */
   readonly config: ConfigService;
   /** Operator-owned credentials. */
   readonly secrets: SecretService;

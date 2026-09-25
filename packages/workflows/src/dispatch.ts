@@ -341,7 +341,7 @@ export function beginDispatch(
        * @remarks `pump` is edge-triggered on this batch's own settlements, so
        * once every unit it started has finished it can no longer retry itself.
        * The backlog is not necessarily empty at that point: the registry
-       * ceiling counts *every* live child, so background `delegate_task`
+       * ceiling counts *every* live child, so background `spawn_subagent`
        * sub-agents and ad-hoc `run_leader` handles outside this batch can hold
        * it full. Waiting on them and retrying is what makes a refusal mean
        * "not yet"; treating it as terminal here is what dropped a backlog
@@ -581,7 +581,7 @@ interface CapacityLog {
  * only restore the silent drop under a different name.
  *
  * That absence of a deadline is exactly why it says so. A round of hundreds of
- * units behind a live-child ceiling, or one stuck `delegate_task`, is
+ * units behind a live-child ceiling, or one stuck `spawn_subagent`, is
  * indistinguishable from a hung manager from the outside. The per-poll record
  * is sampled, and one `info` names the stall after
  * {@link CAPACITY_STALL_MS} so the fact survives at a production level.

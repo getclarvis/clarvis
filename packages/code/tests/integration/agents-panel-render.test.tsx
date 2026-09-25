@@ -142,9 +142,6 @@ function fakeSettings(
     envStatus: () => "unset",
     declaredMcpServers: () => [],
     reload: async () => {},
-    inspectSandbox: async () => {
-      throw new Error("sandbox inspection is outside the AgentsPanel contract");
-    },
   };
 }
 

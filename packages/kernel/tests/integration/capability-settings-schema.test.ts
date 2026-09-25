@@ -84,13 +84,12 @@ describe("kernelSettingsSchema", () => {
   // engine schema no longer knows it. These are the assertions that used to live
   // in the loop's own settings-schema suite.
   it("admits the memory block and applies its defaults", () => {
-    const block = { memory: { model: "anthropic/claude-haiku", budgets: { max_index_ops: 4 } } };
+    const block = { memory: { budgets: { max_index_ops: 4 } } };
     expect(settingsSchema.safeParse(block).success).toBe(false);
     const parsed = kernelSettingsSchema.safeParse(block);
     expect(parsed.success).toBe(true);
     expect((parsed.data as Record<string, unknown>).memory).toMatchObject({
       enabled: true,
-      model: "anthropic/claude-haiku",
     });
     expect(kernelSettingsSchema.safeParse({ memory: {} }).success).toBe(true);
   });

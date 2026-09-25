@@ -13,12 +13,6 @@ jobs:
         with:
           bun-version: ${VERSION}
       - run: bun --version && bun --revision
-  windows:
-    steps:
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${VERSION}
-      - run: bun --version && bun --revision
   macos:
     steps:
       - uses: oven-sh/setup-bun@v2
@@ -104,7 +98,6 @@ describe("bunVersionFailures", () => {
         "      - run: bun --version",
         "      - run: bun run typecheck\n      - run: bun --version",
       ),
-      original.ci.replace("  windows:", "      - run: bun --version && bun --revision\n  windows:"),
       "jobs: [",
     ])
       expect(bunVersionFailures({ ...original, ci }).length).toBeGreaterThan(0);

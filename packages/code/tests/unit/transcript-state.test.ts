@@ -88,7 +88,7 @@ test("a selected subagent isolates its blocks and cycling back restores only Lea
     node({
       key: "r::w0",
       mcpName: "fs",
-      toolName: "grep",
+      toolName: "list_dir",
       subagentOrder: 0,
       subagentId: "scout-id",
     }),
@@ -111,14 +111,14 @@ test("two different runs' subagents at the same order never collide", () => {
     node({
       key: "run1::w0",
       mcpName: "fs",
-      toolName: "grep",
+      toolName: "list_dir",
       subagentOrder: 0,
       subagentId: "id-a",
     }),
     node({
       key: "run2::w0",
       mcpName: "fs",
-      toolName: "grep",
+      toolName: "list_dir",
       subagentOrder: 0,
       subagentId: "id-b",
     }),
@@ -134,7 +134,7 @@ test("toggleSubagent: selects, re-toggling the same clears, toggling another swi
     node({
       key: "r::w0",
       mcpName: "fs",
-      toolName: "grep",
+      toolName: "list_dir",
       subagentOrder: 0,
       subagentId: "scout-id",
     }),
@@ -181,11 +181,11 @@ test("a selection is cleared automatically if its subagent disappears from the r
 
 test("selecting a subagent clears a focused key that's no longer visible", () => {
   const nodes = [
-    node({ key: "r::t1", mcpName: "fs", toolName: "grep" }),
+    node({ key: "r::t1", mcpName: "fs", toolName: "list_dir" }),
     node({
       key: "r::w0",
       mcpName: "fs",
-      toolName: "grep",
+      toolName: "list_dir",
       subagentOrder: 0,
       subagentId: "scout-id",
     }),
@@ -211,7 +211,7 @@ test("toggleExpandOrBlock without focus flips expand-all; the second flip clears
 
 test("toggleExpandOrBlock with a focused block overrides that block only", () => {
   const nodes = [
-    node({ key: "r::t1", mcpName: "fs", toolName: "grep" }),
+    node({ key: "r::t1", mcpName: "fs", toolName: "list_dir" }),
     node({ key: "r::t2", mcpName: "fs", toolName: "read_file" }),
   ];
   const h = harness(nodes);
@@ -225,7 +225,7 @@ test("toggleExpandOrBlock with a focused block overrides that block only", () =>
 
 test("focusBlock clamps at the ends; clearFocus reports whether there was one", () => {
   const nodes = [
-    node({ key: "r::t1", mcpName: "fs", toolName: "grep" }),
+    node({ key: "r::t1", mcpName: "fs", toolName: "list_dir" }),
     node({ key: "r::t2", mcpName: "fs", toolName: "read_file" }),
   ];
   const h = harness(nodes);
@@ -248,7 +248,7 @@ test("focusBlock with nothing focusable notifies and returns null", () => {
 });
 
 test("toggleAt focuses the block and toggles it; reset clears focus and overrides", () => {
-  const nodes = [node({ key: "r::t1", mcpName: "fs", toolName: "grep" })];
+  const nodes = [node({ key: "r::t1", mcpName: "fs", toolName: "list_dir" })];
   const h = harness(nodes);
   h.ts.toggleAt("r::t1");
   expect(h.ts.focusedKey()).toBe("r::t1");
@@ -260,7 +260,7 @@ test("toggleAt focuses the block and toggles it; reset clears focus and override
 });
 
 test("fold overrides are pruned as semantic retention evicts their keys", () => {
-  const first = node({ key: "turn-0::tool", mcpName: "fs", toolName: "grep" });
+  const first = node({ key: "turn-0::tool", mcpName: "fs", toolName: "list_dir" });
   const h = harness([first]);
   h.ts.toggleAt(first.key);
 
@@ -269,7 +269,7 @@ test("fold overrides are pruned as semantic retention evicts their keys", () => 
     const current = node({
       key: `turn-${turn}::tool`,
       mcpName: "fs",
-      toolName: "grep",
+      toolName: "list_dir",
     });
     h.setNodes([current]);
     expect(h.ts.overrideOf(previousKey)).toBeUndefined();
@@ -287,7 +287,7 @@ test("pickDiffNodes returns every diff-producing call in chronological order", (
   const nodes = [
     node({ key: "a::1", mcpName: "write_file" }),
     node({ key: "a::2", mcpName: "edit_file" }),
-    node({ key: "a::3", mcpName: "fs", toolName: "grep" }),
+    node({ key: "a::3", mcpName: "fs", toolName: "list_dir" }),
   ];
   const h = harness(nodes);
   expect(h.ts.pickDiffNodes().map((node) => node.key)).toEqual(["a::1", "a::2"]);
@@ -312,7 +312,7 @@ test("pickDiffNodes never crosses between Lead and a selected sub-agent transcri
 });
 
 test("pickDiffNodes is empty when the transcript has no diff-producing call", () => {
-  const h = harness([node({ key: "a::1", mcpName: "fs", toolName: "grep" })]);
+  const h = harness([node({ key: "a::1", mcpName: "fs", toolName: "list_dir" })]);
   expect(h.ts.pickDiffNodes()).toEqual([]);
   h.dispose();
 });

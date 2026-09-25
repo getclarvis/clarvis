@@ -10,12 +10,12 @@ import { tools } from "@clarvis/tools";
  * Tools a capability contributes rather than the workspace tool set, named here
  * with their owner so a rename shows up as a failure in this file.
  *
- * `delegate_task` is the engine's delegation capability and `load_skill` is
+ * `load_skill` is
  * contributed by the optional skills capability. `@clarvis/tools` knows
  * nothing about either, so they cannot be checked against the registry below
  * and are listed instead.
  */
-const CAPABILITY_TOOLS = new Set(["delegate_task", "load_skill"]);
+const CAPABILITY_TOOLS = new Set(["load_skill"]);
 
 describe("the external dialect's tool names name tools that exist", () => {
   const known = new Set(tools.map((tool) => tool.name));

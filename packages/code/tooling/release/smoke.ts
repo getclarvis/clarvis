@@ -21,8 +21,6 @@ import { APP_READY_MARKER } from "../artifact/markers.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const repositoryRoot = join(packageRoot, "..", "..");
-const confinement =
-  process.env.CLARVIS_SMOKE_REQUIRE_CONFINEMENT === "1" ? "required" : "environment";
 
 async function commandOutput(
   command: string[],
@@ -132,12 +130,8 @@ async function main(): Promise<void> {
     ]);
     const runtimeName = releaseRuntimeExecutableName();
     const runtime = join(versionRoot, "runtime", runtimeName);
-    const legacyRuntime = join(
-      versionRoot,
-      "runtime",
-      process.platform === "win32" ? "bun.exe" : "bun",
-    );
-    if (process.platform !== "win32") await chmod(runtime, 0o755);
+    const legacyRuntime = join(versionRoot, "runtime", "bun");
+    await chmod(runtime, 0o755);
     const entry = join(versionRoot, "packages", "code", "src", "cli.ts");
     const identity = await commandOutput(
       [runtime, "-e", "process.stdout.write(process.execPath)"],
@@ -176,12 +170,6 @@ async function main(): Promise<void> {
     ) {
       throw new Error("portable runtime lost compatibility with an older launcher");
     }
-    if (process.platform === "win32") {
-      process.stdout.write(
-        `release smoke ok - ${target} ${product.version} passed manifest and fast-path checks; PTY complete-app boot is covered by POSIX release jobs\n`,
-      );
-      return;
-    }
     const boot = await bootAndObserve({
       runtime,
       entry,
@@ -191,8 +179,6 @@ async function main(): Promise<void> {
       timeoutMs: Number(process.env.SMOKE_TIMEOUT_MS ?? 90_000),
       pollMs: 100,
       overrides: { CLARVIS_INSTALL_ROOT: installRoot },
-      confinement,
-      readOnlyRoots: [],
     });
     if (boot.outcome !== "ready") {
       throw new Error(

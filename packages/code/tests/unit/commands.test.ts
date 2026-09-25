@@ -402,23 +402,23 @@ test("route() invokes the def's router and returns whether it handled the line",
     group: "navigate",
     subcommands: [
       { name: "providers", desc: "Providers" },
-      { name: "sandbox", desc: "Sandbox" },
+      { name: "updates", desc: "Updates" },
     ],
     route: (args) => {
-      if (args.trim() === "sandbox") {
-        seen.push("sandbox");
+      if (args.trim() === "updates") {
+        seen.push("updates");
         return true;
       }
       return false;
     },
     view: () => null as never,
   });
-  expect(commands.route("settings.open", "sandbox")).toBe(true);
+  expect(commands.route("settings.open", "updates")).toBe(true);
   expect(commands.route("settings.open", "bogus")).toBe(false);
-  expect(seen).toEqual(["sandbox"]);
+  expect(seen).toEqual(["updates"]);
   expect(commands.entries().find((e) => e.name === "settings.open")!.subcommands).toEqual([
     { name: "providers", desc: "Providers" },
-    { name: "sandbox", desc: "Sandbox" },
+    { name: "updates", desc: "Updates" },
   ]);
   off();
 });
@@ -454,24 +454,24 @@ test("one binding renders identically in the popup hint, Help groups and the foo
   const keymap = t.keymap as unknown as Interaction["keymap"];
   const { commands } = harness({ keymap } as unknown as Interaction);
   const off = commands.registerAction({
-    name: "controls.open",
-    title: "Run controls",
-    desc: "Isolation controls",
+    name: "sample.open",
+    title: "Sample view",
+    desc: "Sample view",
     surface: "internal",
     group: "navigate",
     run: () => {},
   });
   const offKeys = keymap.registerLayer({
     priority: 900,
-    bindings: [{ key: "alt+r", cmd: "controls.open" }],
+    bindings: [{ key: "alt+r", cmd: "sample.open" }],
   });
 
-  const popup = commands.entries().find((e) => e.name === "controls.open")!.keyHint;
+  const popup = commands.entries().find((e) => e.name === "sample.open")!.keyHint;
   const helpRow = commands
     .keyCommandGroups()
     .flatMap((g) => g.rows)
-    .find((r) => r.desc === "Isolation controls");
-  const footer = commandKeyLabel(keymap, "controls.open");
+    .find((r) => r.desc === "Sample view");
+  const footer = commandKeyLabel(keymap, "sample.open");
 
   expect(popup).toBe("Alt+R");
   expect(helpRow?.key).toBe("Alt+R");

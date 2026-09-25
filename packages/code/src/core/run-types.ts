@@ -7,7 +7,6 @@ import type { MemoryIngestDetail } from "@clarvis/protocol";
 
 interface ProgressEventSummary {
   type?: string;
-  task_id?: string;
   to?: string;
   reason?: string;
 }

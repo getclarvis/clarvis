@@ -473,15 +473,6 @@ export interface RunRequest {
    * here once so children and continuations of this run do not re-read files.
    */
   shared_prompt?: string;
-  /**
-   * Model used to read the turn's images when the entry agent's own model
-   * cannot see them.
-   *
-   * @remarks Deliberately a model reference rather than a profile name: reading
-   * an image is a capability of a model, and the pass that uses it is a single
-   * completion with no tools, no workspace and no agent identity.
-   */
-  vision_model?: string;
   budget: BudgetConfig;
   providers: ProviderConfig[];
   output_schema?: unknown;
@@ -530,7 +521,6 @@ export interface AgentsParam {
   /** Aggregate retained activity-buffer payload across the whole registry. */
   max_total_buffer_bytes?: number;
   poll_max_bytes?: number;
-  await_timeout_ms?: number;
   max_live_children?: number;
   max_retained_children?: number;
   max_notices_per_iteration?: number;
@@ -543,12 +533,11 @@ export interface AgentsParam {
  *
  * @remarks `text` is the textual result fed back to the model; `progress`
  * reports whether the call advanced the task (used by stagnation detection);
- * `taskId` correlates a plan task; `images` carries any returned images.
+ * `images` carries any returned images.
  */
 export interface HandlerResult {
   text: string;
   progress: boolean;
-  taskId?: string;
   images?: ToolResultImage[];
   /** Run-local physical execution that remains interruptible after this call returns. */
   interruptContinuation?: { stop(): Promise<boolean>; completed: Promise<unknown> };
@@ -584,11 +573,11 @@ export type GateVerdict =
  * The replacement is total, not a merge — a partial object would make a hook's
  * effect depend on which keys the model happened to send.
  *
- * A spawn is not an exception to this. `delegate_task` is dispatched through the
+ * A spawn is not an exception to this. `spawn_subagent` is dispatched through the
  * ordinary tool loop, so a `beforeToolUse` hook matching it already replaces the
  * brief and the profile — upstream of the spawn's own validation, and with the
  * model told what actually ran. Offering `rewrite` a second time at
- * `preDelegateTask` would mean rebuilding that non-silence at a second site.
+ * `preSpawnSubagent` would mean rebuilding that non-silence at a second site.
  */
 export type HookVerdict = GateVerdict | { kind: "rewrite"; arguments: unknown; message?: string };
 
@@ -633,12 +622,11 @@ export interface PreFinalizeContext {
   value?: unknown;
 }
 
-/** Context passed to a `preDelegateTask` hook: the delegated task's `title`, `task` body, target `profile`, and optional plan `taskId`. */
-export interface PreDelegateTaskContext {
+/** Context passed to a `preSpawnSubagent` hook: the child's title, brief, and profile. */
+export interface PreSpawnContext {
   title: string;
   task: string;
   profile: string;
-  taskId?: string;
 }
 
 /** Context passed to an `onRunStart` hook: the run `mode`, the `entry` profile, and the resolved lead/sub-agent model ids when known. */
@@ -746,7 +734,7 @@ export interface UserSteerContext {
 /**
  * A set of lifecycle callbacks a host registers to observe and gate a run.
  *
- * @remarks The `beforeToolUse`/`afterToolUse`/`preFinalize`/`preDelegateTask`
+ * @remarks The `beforeToolUse`/`afterToolUse`/`preFinalize`/`preSpawnSubagent`
  * gates return a {@link HookVerdict} and can block or advise an action; the
  * `on*` observers return `void` and only react. All hooks are optional.
  */
@@ -754,7 +742,7 @@ export interface LifecycleHook {
   beforeToolUse?: (context: BeforeToolUseContext) => Promise<HookVerdict>;
   afterToolUse?: (context: AfterToolUseContext) => Promise<GateVerdict>;
   preFinalize?: (context: PreFinalizeContext) => Promise<GateVerdict>;
-  preDelegateTask?: (context: PreDelegateTaskContext) => Promise<GateVerdict>;
+  preSpawnSubagent?: (context: PreSpawnContext) => Promise<GateVerdict>;
 
   onRunStart?: (context: RunStartContext) => Promise<void>;
   onRunEnd?: (context: RunEndContext) => Promise<void>;

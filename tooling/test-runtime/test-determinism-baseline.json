@@ -98,14 +98,6 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
-      "mechanism": "subprocess",
-      "file": "packages/code/tests/integration/shell-cache-isolation.test.ts",
-      "identity": "subprocess|module|Bun.spawnSync([\"bun\", file], { cwd: pkgRoot })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
       "mechanism": "timer",
       "file": "packages/code/tests/integration/workflows-hub-render.test.tsx",
       "identity": "timer|test:a refresh that never settles stays one physical request and becomes visible|setTimeout(resolve, 20)|0",
@@ -315,14 +307,6 @@
     },
     {
       "mechanism": "subprocess",
-      "file": "packages/kernel/tests/integration/sandbox-policy.test.ts",
-      "identity": "subprocess|describe:sandbox host policy/it:caches discovery until the environment changes or refresh is requested|Bun.spawn({ cmd: [process.execPath, SANDBOX_CACHE_PROBE_PATH, root], env: { ...process.env, PATH: bin }, stdout: \"pipe\", stderr: \"pipe\", })|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "boundary-canary",
-      "reason": "isolated child owns PATH while proving physical toolchain discovery and cache invalidation"
-    },
-    {
-      "mechanism": "subprocess",
       "file": "packages/kernel/tests/integration/serve.test.ts",
       "identity": "subprocess|describe:serveFileKernelOverStdio/it:advertises agent_tools:false when CLARVIS_AGENT_TOOLS_ENABLED=false|Bun.spawn({ cmd: [process.execPath, SERVE_AGENT_TOOLS_PROBE_PATH], cwd: join(import.meta.dir, \"../..\"), env: { ...process.env, CLARVIS_AGENT_TOOLS_ENABLED: \"false\" }, stdout: \"pipe\", stderr: \"pipe\", })|0",
       "package_owner": "@clarvis/kernel",
@@ -452,7 +436,7 @@
     {
       "mechanism": "positive-wait",
       "file": "packages/loop/tests/integration/selective-shell-interrupt.test.ts",
-      "identity": "positive-wait|it:releases a yielded control when the process exits without an interrupt|Bun.sleep(2000)|0",
+      "identity": "positive-wait|describe:selective interrupt through executeRun and the real shell/it:releases a yielded control when the process exits without an interrupt|Bun.sleep(2000)|0",
       "package_owner": "@clarvis/loop",
       "classification": "boundary-canary",
       "reason": "A bounded fuse for real shell exit; the awaited event is the physical tool control release."
@@ -460,7 +444,7 @@
     {
       "mechanism": "positive-wait",
       "file": "packages/loop/tests/integration/selective-shell-interrupt.test.ts",
-      "identity": "positive-wait|it:stops a yielded session through its original hosted interrupt token|Bun.sleep(10)|0",
+      "identity": "positive-wait|describe:selective interrupt through executeRun and the real shell/it:stops a yielded session through its original hosted interrupt token|Bun.sleep(10)|0",
       "package_owner": "@clarvis/loop",
       "classification": "boundary-canary",
       "reason": "Polls physical process-stop evidence under a bounded deadline; the delay is not the awaited event."
@@ -611,22 +595,6 @@
     },
     {
       "mechanism": "subprocess",
-      "file": "packages/tools/tests/contract/grep-parity.test.ts",
-      "identity": "subprocess|module|spawnSync(\"rg\", [\"--version\"], { stdio: \"ignore\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/contract/regex-dialect.test.ts",
-      "identity": "subprocess|module|spawnSync(\"rg\", [\"--version\"], { stdio: \"ignore\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
       "file": "packages/tools/tests/integration/execution-session.test.ts",
       "identity": "subprocess|describe:ExecutionSessionManager/it:spawns once and settles both streams with physical exit status|spawn(file, args, options)|0",
       "package_owner": "@clarvis/tools",
@@ -644,143 +612,15 @@
     {
       "mechanism": "subprocess",
       "file": "packages/tools/tests/integration/process-owner.test.ts",
-      "identity": "subprocess|module|spawn( process.execPath, [ \"-e\", \"process.on('SIGTERM', () => {}); process.stdout.write('READY\\\\n'); setInterval(() => {}, 1000)\", ], { cwd: root, detached: true, stdio: [\"ignore\", \"pipe\", \"ignore\"] }, )|0",
+      "identity": "subprocess|it:escalates from TERM to KILL for an owned process that ignores TERM|spawn( process.execPath, [ \"-e\", \"process.on('SIGTERM', () => {}); process.stdout.write('READY\\\\n'); setInterval(() => {}, 1000)\", ], { cwd: root, detached: true, stdio: [\"ignore\", \"pipe\", \"ignore\"] }, )|0",
       "package_owner": "@clarvis/tools",
       "classification": "boundary-canary",
       "reason": "Exercises physical TERM-to-KILL escalation and confirmed process-group shutdown."
     },
     {
-      "mechanism": "listener",
-      "file": "packages/tools/tests/integration/file-stat.test.ts",
-      "identity": "listener|describe:file_stat|server.listen(sock, () => { server.off(\"error\", reject); resolve(); })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/grep.test.ts",
-      "identity": "subprocess|describe:grep single-file target pre-scan (in-process)|spawnSync(mkfifo!, [fifo], { stdio: \"ignore\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/grep.test.ts",
-      "identity": "subprocess|module|spawnSync(\"rg\", [\"--version\"], { stdio: \"ignore\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/ignore.test.ts",
-      "identity": "subprocess|makeFifo|spawnSync(mkfifo!, [target], { stdio: \"ignore\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/ignore.test.ts",
-      "identity": "subprocess|probeIgnore|spawnSync(process.execPath, [\"-e\", program, root], { env, encoding: \"utf8\", timeout: 2_000, })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
       "mechanism": "subprocess",
       "file": "packages/tools/tests/integration/read-file.test.ts",
       "identity": "subprocess|describe:read_file|spawnSync(mkfifo!, [fifo], { stdio: \"ignore\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/rg.test.ts",
-      "identity": "subprocess|module|spawnSync(\"rg\", [\"--version\"], { stdio: \"ignore\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "listener",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "listener|module|Bun.listen({ hostname: \"127.0.0.1\", port: 0, socket: { data() {} }, })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync( npm, [\"pack\", fixture, \"--pack-destination\", scratch, \"--json\", \"--ignore-scripts\"], { cwd: workspace, encoding: \"utf8\", timeout: 30_000, env: { ...process.env, npm_config_cache: join(scratch, \"host-cache\") }, }, )|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync( readOnlyWorkspace.file, readOnlyWorkspace.args, readOnlyWorkspace.options, )|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync(declaredRoots.file, declaredRoots.args, { ...declaredRoots.options, encoding: \"utf8\", })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync(filesystem.file, filesystem.args, { ...filesystem.options, encoding: \"utf8\", })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync(spec.file, spec.args, { ...spec.options, encoding: \"utf8\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync(spec.file, spec.args, { ...spec.options, encoding: \"utf8\", })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync(spec.file, spec.args, { ...spec.options, encoding: \"utf8\", timeout: 30_000, })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync(spec.file, spec.args, { ...spec.options, encoding: \"utf8\", timeout: 10_000, })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "A real Bubblewrap process must reject classified writes while an ordinary workspace write succeeds."
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync(spec.file, spec.args, spec.options)|0",
       "package_owner": "@clarvis/tools",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
@@ -882,14 +722,6 @@
       "reason": "physical listener or subprocess boundary is required by this test"
     },
     {
-      "mechanism": "subprocess",
-      "file": "tooling/tests/unit/prompt-cache-artifact.test.ts",
-      "identity": "subprocess|module|Bun.spawn([...view.command, process.execPath, script, view.globalDir], { stdout: \"pipe\", stderr: \"pipe\", })|0",
-      "package_owner": "tooling",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
       "mechanism": "positive-wait",
       "file": "tooling/tests/unit/prompt-cache-recorder.test.ts",
       "identity": "positive-wait|describe:physical cache evidence/it:retains completed usage and tools when the provider stream is aborted after completion|Bun.sleep(5)|0",
@@ -931,14 +763,6 @@
     },
     {
       "mechanism": "subprocess",
-      "file": "packages/code/tests/unit/artifact-isolation.test.ts",
-      "identity": "subprocess|describe:smoke fixture isolation/test:native confinement either proves the boundary or reports unavailable|Bun.spawn(command, { cwd: context.workspace, env: context.environmentFor(), stdout: \"pipe\", stderr: \"pipe\", })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "boundary-canary",
-      "reason": "physical boundary canary required by the test"
-    },
-    {
-      "mechanism": "subprocess",
       "file": "tooling/tests/unit/clarvis-home-preload.test.ts",
       "identity": "subprocess|run|Bun.spawn([process.execPath, \"--preload\", preload, \"-e\", script], { cwd: process.cwd(), env: environment, stdout: \"pipe\", stderr: \"pipe\", })|0",
       "package_owner": "tooling",
@@ -956,7 +780,7 @@
     {
       "mechanism": "subprocess",
       "file": "packages/kernel/tests/integration/hosted-settlement-crash.test.ts",
-      "identity": "subprocess|test|Bun.spawn([globalThis.process.execPath, fixture, root, mode, phase], { cwd: root, env: { PATH: globalThis.process.env.PATH, SystemRoot: globalThis.process.env.SystemRoot, HOME: root, TMPDIR: root, TEMP: root, TMP: root, }, stdin: \"pipe\", stdout: \"pipe\", stderr: \"pipe\", signal: AbortSignal.timeout(15_000), })|0",
+      "identity": "subprocess|test|Bun.spawn([globalThis.process.execPath, fixture, root, mode, phase], { cwd: root, env: { PATH: globalThis.process.env.PATH, HOME: root, TMPDIR: root, TEMP: root, TMP: root, }, stdin: \"pipe\", stdout: \"pipe\", stderr: \"pipe\", signal: AbortSignal.timeout(15_000), })|0",
       "package_owner": "@clarvis/kernel",
       "classification": "boundary-canary",
       "reason": "Kills a real isolated host after a durable settlement milestone and restarts it twice to verify canonical accounting and physical admission recovery without another execution."

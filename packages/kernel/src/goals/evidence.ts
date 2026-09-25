@@ -24,7 +24,6 @@ const MAX_ARTIFACT_BYTES = 16 * 1024 * 1024;
 const CONTROL_TOOLS = new Set([
   "get_goal",
   "update_goal",
-  "await_agents",
   "agent_status",
   "agent_await",
   "shell_session",
@@ -46,7 +45,7 @@ export interface GoalCommandEvidence {
 /** Bounded host-observed receipt for a completed delegated run. */
 export interface GoalDelegationEvidence {
   id: string;
-  tool: "delegate_task";
+  tool: "spawn_subagent";
   status: "completed";
   result_excerpt: string;
   truncated: boolean;
@@ -147,12 +146,11 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
     const overflow = Buffer.byteLength(JSON.stringify(event.result)) > MAX_PAYLOAD_BYTES;
     const result = overflow ? "" : sanitizeText(event.result);
     return {
-      id: `tool-${goalEvidenceDigest([executionId, "delegate_task", event.delegation_id])}`,
+      id: `tool-${goalEvidenceDigest([executionId, "spawn_subagent", event.delegation_id])}`,
       executionId,
-      tool: "delegate_task",
+      tool: "spawn_subagent",
       argumentsDigest: goalEvidenceDigest({
         delegation_id: event.delegation_id,
-        ...(event.task_id === undefined ? {} : { task_id: event.task_id }),
       }),
       resultDigest:
         event.result_digest ??
@@ -161,9 +159,9 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
           : goalEvidenceDigest(event.result)),
       successful: !overflow && event.status === "completed",
       ...(overflow ? { unavailable: "payload_overflow" as const } : {}),
-      description: `delegate_task completed; delegation ${event.delegation_id}`.slice(0, 512),
+      description: `spawn_subagent completed; delegation ${event.delegation_id}`.slice(0, 512),
       delegationEvidence: {
-        tool: "delegate_task",
+        tool: "spawn_subagent",
         status: "completed",
         result_excerpt: result.slice(0, 4096),
         truncated: overflow || result.length > 4096,
@@ -326,7 +324,7 @@ export interface GoalEvidenceSource {
 }
 
 /**
- * Derive evidence from the existing owner-scoped trace journal and confined file snapshots.
+ * Derive evidence from the existing owner-scoped trace journal and bounded file snapshots.
  * Live receipts form a bounded window. Once it rotates, journal replay must attest the observed
  * prefix before any proof is usable; missing history never becomes success.
  */
@@ -335,7 +333,7 @@ export function createGoalEvidenceSource(options: {
   workspaceRoot: string;
   /** Each call supplies a fresh owner-scoped replay, including the active journal when available. */
   readTrace(executionId: string): Iterable<TraceEvent> | undefined;
-  /** Injectable descriptor reader for deterministic mutation races; production uses the shared confined reader. */
+  /** Injectable descriptor reader for deterministic mutation races; production uses the shared bounded reader. */
   readArtifact?: (path: string) => Promise<Uint8Array>;
 }): GoalEvidenceSource {
   const live = new Map<string, Observation>();
@@ -350,15 +348,7 @@ export function createGoalEvidenceSource(options: {
     options.readArtifact ??
     (async (path: string): Promise<Uint8Array> => {
       const { readRawFile } = await import("@clarvis/tools");
-      return readRawFile(
-        resolve(options.workspaceRoot, path),
-        "goal artifact",
-        MAX_ARTIFACT_BYTES,
-        undefined,
-        {
-          expectedArtifactRoot: options.workspaceRoot,
-        },
-      );
+      return readRawFile(resolve(options.workspaceRoot, path), "goal artifact", MAX_ARTIFACT_BYTES);
     });
   const artifactDigest = async (path: string): Promise<string> => {
     const bytes = await readArtifact(path);

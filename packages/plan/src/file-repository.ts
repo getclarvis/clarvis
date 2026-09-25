@@ -66,7 +66,7 @@ import {
  * while the ones ahead of it each take, write, fsync and release. Twenty-four
  * concurrent writers on a slow filesystem exhausted two seconds and reported a
  * timeout for a lock nobody was holding — `plan.test.ts`'s contention case,
- * intermittently red on the Windows runner.
+ * intermittently red on the CI runner.
  *
  * It also stays comfortably under {@link LOCK_STALE_MS}: ordinary contention
  * gets a bounded answer before a lease is even eligible for crash recovery,
@@ -325,17 +325,11 @@ export function createFilePlanRepository(options: CreateFilePlanRepositoryOption
    * Best-effort `fsync` of a directory, durably persisting a rename of one of
    * its entries.
    *
-   * @remarks Windows will not open or sync a directory handle the way this
-   *   needs, so a failure there is a no-op rather than a failed write - left
-   *   unguarded this throws, and since the caller's `catch` rethrows, every
-   *   plan write on Windows fails after the plan has already been renamed into
-   *   place. On every other platform a failure here is a real durability
-   *   problem (disk full, EIO, a quota) and still propagates: silently
-   *   swallowing it there would let a write report success while the rename
-   *   might not survive a crash.
+   * @remarks A durability failure propagates because a plan is the auditable
+   *   record of what the agent intended and did.
    *
    *   This is deliberately **not** `@clarvis/paths`' `fsyncDir`, which never
-   *   throws on any platform. That posture is right for a trace record or a
+   *   throws. That posture is right for a trace record or a
    *   memory revision, where losing the last write to a crash costs a little
    *   history; a plan is the auditable record of what the agent intended and
    *   did, and a durability failure there must be reported rather than
@@ -343,19 +337,9 @@ export function createFilePlanRepository(options: CreateFilePlanRepositoryOption
    *   duplication stays.
    */
   async function fsyncDir(): Promise<void> {
-    const canSyncDirectory = process.platform !== "win32";
-    let directory;
-    try {
-      directory = await open(root, constants.O_RDONLY);
-    } catch (error) {
-      if (canSyncDirectory) throw error;
-      return;
-    }
+    const directory = await open(root, constants.O_RDONLY);
     try {
       await directory.sync();
-    } catch (error) {
-      if (canSyncDirectory) throw error;
-      return;
     } finally {
       await directory.close();
     }
@@ -366,16 +350,8 @@ export function createFilePlanRepository(options: CreateFilePlanRepositoryOption
    * over the target, then fsync the directory.
    *
    * @remarks The temp name comes from `@clarvis/paths`' `tmpPathFor` rather
-   *   than being spelled here. It used to be `.<name>.<uuid>.tmp`, which is a
-   *   shape nothing else in the monorepo recognises — so an orphan left by a
-   *   crash matched neither `TMP_GLOB` nor `INTERNAL_IGNORE_PATTERNS`, and
-   *   showed up in `git status` and in `grep`/`glob` inside the one directory
-   *   this whole change exists to keep clean. `tmpPathFor` carries
-   *   `TMP_PREFIX`, which both rules already hide.
-   *
-   *   The temp file stays a *sibling* of the plan, under the plans root,
-   *   because `rename` is atomic only within one filesystem. That is the one
-   *   thing the lockfile move could not take out of the working tree.
+   *   than being spelled here. The shared prefix lets housekeeping recognise
+   *   an orphan left by a crash.
    */
   async function atomicWrite(path: string, content: string): Promise<void> {
     assertPlanSourceSize(content);

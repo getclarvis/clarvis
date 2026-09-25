@@ -580,7 +580,6 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         type: "delegation_created",
         at: ev.spawned_at,
         delegation_id: ev.delegation_id,
-        ...(ev.task_id !== undefined ? { task_id: ev.task_id } : {}),
         title: ev.title,
         task: ev.task,
         ...(ev.profile !== undefined ? { profile: ev.profile } : {}),
@@ -591,7 +590,6 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         type: "delegation_started",
         at: ev.occurred_at,
         delegation_id: ev.delegation_id,
-        ...(ev.task_id !== undefined ? { task_id: ev.task_id } : {}),
         model: ev.model,
       };
     case "delegation_completed":
@@ -600,7 +598,6 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         type: ev.type,
         at: ev.completed_at,
         delegation_id: ev.delegation_id,
-        ...(ev.task_id !== undefined ? { task_id: ev.task_id } : {}),
         status: ev.status,
         summary: terminalLabel(ev.result),
       };
@@ -673,16 +670,6 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         ...sub(ev.subagent_instance_id),
         reason: ev.reason,
       };
-    case "vision_analysis":
-      return {
-        type: "vision_analysis",
-        at: ev.occurred_at,
-        model: ev.model,
-        image_count: ev.image_count,
-        status: ev.status,
-        result: ev.result,
-      };
-
     case "elicitation_requested":
       return {
         type: "elicitation_requested",

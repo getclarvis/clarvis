@@ -1,6 +1,6 @@
 # When configuration is rejected or pending
 
-1. For an invalid settings document, inspect the exact validation error, check the supported fields in the settings reference and the Settings interface, then correct the requested scope and retry the reviewed file operation. Do not move the same bytes to another path.
+1. For an invalid settings document, inspect the exact validation error, check the supported fields in the settings reference and the Settings interface, then correct the requested scope and retry the file operation. Do not move the same bytes to another path.
 2. For untrusted workspace configuration, inspect the workspace trust status through the operator Settings surface. Only the operator's existing trust control can approve the specific executable inputs; editing a file or loading this skill cannot do it.
 3. For a selected profile mismatch, inspect the effective Extension Profile and its exact standalone skill or plugin references. A standalone skill in a custom profile may be inactive because it was not selected or belongs to a different scope. Repository plugin contributions and other executable workspace inputs may be withheld by workspace trust; a standalone skill file alone does not require that approval.
 4. For a disabled capability, compare the entry agent's grants and immutable ceiling with the selected runtime placement. An unavailable `load_skill` or file tool cannot be restored by skill text.

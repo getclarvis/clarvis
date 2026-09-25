@@ -208,7 +208,6 @@ holds its own catalog lease while it can use skills. Production: `releaseRunLeas
 | `profiles` | the transitive `can_spawn` closure, deduplicated |
 | `entry` | resolved agent name |
 | `budget` | entry-agent frontmatter `budget`, else `merged.budget`, else the fallback, with `on_exceed` completed |
-| `vision_model` | `merged.default_vision_model`, only when a string |
 | `execution_id`, `continue_from`, `session_id`, `agent_instance_id`, `output_schema`, `memory`, `task` | straight passthrough, present only when the param is |
 | `prompt_cache_ttl` | request value when provided, else absent |
 | `hook_user_prompt_expansion` | only for a resolved user-invoked skill; `{ command_name }` is bare for operator/workspace skills and `<plugin>:<skill>` for plugin skills |
@@ -284,7 +283,6 @@ Complete table, transcribed :
 | `compaction_started` | engine_trace | **live_only** | engine | false | false |
 | `compaction` | engine_trace | persisted | engine | false | false |
 | `compaction_skipped` | engine_trace | persisted | engine | false | false |
-| `vision_analysis` | engine_trace | persisted | engine | false | false |
 | `elicitation_requested` | engine_trace | persisted | engine | false | false |
 | `elicitation_resolved` | engine_trace | persisted | engine | false | false |
 | `steering_applied` | engine_trace | persisted | engine | false | false |
@@ -366,9 +364,8 @@ even when direct stored inputs contain signal-only event kinds. The separate min
 fingerprint, then projects exactly those two strings (`packages/kernel/src/runs/map-result.ts`).
 Malformed or extra host metadata is not reflected into the protocol DTO.
 
-`engineResultToProto`'s `liveUsage` maps each `by_agent` row through `mapPerAgent`, which renames the engine's `type` to protocol `role` and includes `iterations` only when
-the engine recorded it **and** `a.type !== "vision"` — a vision agent's usage row never carries
-`iterations`, even one the engine did set.
+`engineResultToProto`'s `liveUsage` maps each `by_agent` row through `mapPerAgent`, which renames the engine's `type` to protocol `role` and includes `iterations` when
+the engine recorded it.
 
 ## 4. Behavior
 
@@ -469,7 +466,7 @@ store's own fallback, whereas "the loop owns the defaults outright (`AGENTS_DEFA
 so an absent field must stay absent — writing one out would freeze today's default into every run
 request and make a later change to it invisible". `agentsBlockToParam` recognizes exactly
 ten numeric fields, `AGENTS_FIELDS` : `buffer_lines`, `buffer_bytes`,
-`max_total_buffer_bytes`, `poll_max_bytes`, `await_timeout_ms`, `max_live_children`,
+`max_total_buffer_bytes`, `poll_max_bytes`, `max_live_children`,
 `max_retained_children`, `max_notices_per_iteration`, `max_consecutive_failed_children`,
 `finish_nudges` — each carried through only when it is a non-negative integer.
 

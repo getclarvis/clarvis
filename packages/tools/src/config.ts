@@ -1,16 +1,8 @@
 import { ExecutionSessionManager } from "./lib/execution-session.ts";
-import { spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { realpathSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import path from "node:path";
 import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./lib/log.ts";
-import {
-  discoverLinkedGitMetadataPaths,
-  resolveFilesystemPolicy,
-  type ResolvedFilesystemPolicy,
-  type SandboxConfig,
-} from "./sandbox.ts";
-import { resolveCommand, workspaceStatePaths, type WorkspaceStatePaths } from "@clarvis/paths";
+import { workspaceStatePaths, type WorkspaceStatePaths } from "@clarvis/paths";
 
 /**
  * The fully resolved, validated runtime configuration threaded through every
@@ -60,8 +52,7 @@ export interface RuntimeConfig {
    * before it stops applying the pattern.
    *
    * @remarks
-   * Charged by `grep`'s in-process fallback, `replace`, and shell readiness
-   * matching through
+   * Charged by shell readiness matching through
    * {@link "./lib/scan-budget.js" | createScanBudget}. It bounds a
    * catastrophically backtracking user pattern, which would otherwise freeze
    * the single-threaded host for as long as the scope takes to walk; see that
@@ -72,9 +63,6 @@ export interface RuntimeConfig {
    */
   regexScanBudgetMs: number;
 
-  /** Whether `rg` (ripgrep) was found on `PATH`; enables the fast grep path. */
-  ripgrepAvailable: boolean;
-
   /** When true, only the read-only tool surface is exposed (no mutations). */
   readOnly: boolean;
 
@@ -83,7 +71,7 @@ export interface RuntimeConfig {
    *
    * @remarks Outside the working tree by design — a repository is not where
    * generated bookkeeping belongs. Tool reads use ordinary host filesystem
-   * permissions or the configured native sandbox for this tree.
+   * permissions for this tree.
    */
   stateRoot: string;
 
@@ -97,12 +85,6 @@ export interface RuntimeConfig {
   /** Run-owned authority for shell command processes. */
   sessionManager: ExecutionSessionManager;
 
-  /** Host-selected skill directories admitted only to command execution. */
-  skillExecutionRoots: readonly string[];
-
-  /** Immutable linked-worktree metadata roots pinned before the agent can mutate the workspace. */
-  gitMetadataPaths: readonly string[];
-
   /**
    * Where this toolset reports what its machinery did.
    *
@@ -115,10 +97,6 @@ export interface RuntimeConfig {
    */
   readonly logger: ToolsLogger;
 
-  /** Optional sandbox settings for isolating spawned commands. */
-  sandbox?: SandboxConfig;
-  /** One immutable filesystem authority shared by shell and its live sessions. */
-  filesystemPolicy: ResolvedFilesystemPolicy;
   /**
    * Environment variable names holding credentials, withheld from every command
    * this toolset spawns.
@@ -127,9 +105,8 @@ export interface RuntimeConfig {
    * The agent controls the text of the commands it runs, so an unscrubbed
    * environment makes every API key on the host one `printenv` away — and a
    * command that exfiltrates one is indistinguishable from a command that
-   * legitimately reads its environment. Native sandboxes use these names to
-   * reject credential variables requested through `passEnv`; bare host commands
-   * subtract them from the inherited environment.
+   * legitimately reads its environment. Host commands subtract these names
+   * from their inherited environment.
    */
   secretEnvNames?: readonly string[];
 }
@@ -182,23 +159,6 @@ export class StartupError extends Error {
   }
 }
 
-function probeRipgrep(): boolean {
-  try {
-    const res = spawnSync(resolveCommand("rg"), ["--version"], { stdio: "ignore" });
-    return res.status === 0;
-  } catch {
-    return false;
-  }
-}
-
-function runProbe(probe: () => boolean): boolean {
-  try {
-    return probe();
-  } catch {
-    return false;
-  }
-}
-
 function validateWorkspace(rawRoot: string): string {
   const workspaceRoot = path.resolve(rawRoot);
   let stat;
@@ -246,8 +206,6 @@ export interface AgentToolsOptions {
   sessionAgent?: object;
   /** Host-owned command sessions; standalone configs receive a private closable manager. */
   sessionManager?: ExecutionSessionManager;
-  /** Host-selected skill directories required by enabled skills. */
-  skillExecutionRoots?: readonly string[];
 
   /** Override {@link RuntimeConfig.maxOutputBytes} (min 1024). */
   maxOutputBytes?: number;
@@ -285,9 +243,6 @@ export interface AgentToolsOptions {
   /** Override {@link RuntimeConfig.regexScanBudgetMs} (min 1). */
   regexScanBudgetMs?: number;
 
-  /** Injectable ripgrep probe (for tests); defaults to spawning `rg --version`. */
-  probeRipgrep?: () => boolean;
-
   /**
    * Where the resolved toolset reports what its machinery did; defaults to
    * {@link NOOP_TOOLS_LOGGER}.
@@ -297,12 +252,6 @@ export interface AgentToolsOptions {
    */
   logger?: ToolsLogger;
 
-  /** Sandbox settings passed through to {@link RuntimeConfig.sandbox}. */
-  sandbox?: SandboxConfig;
-  /** Host-owned run identity; standalone toolsets receive a random identity. */
-  runIdentity?: string;
-  /** Host-selected physical placement; omitted standalone calls infer Host or Sandbox. */
-  filesystemPlacement?: "host" | "sandbox";
   /** Secret names passed through to {@link RuntimeConfig.secretEnvNames}. */
   secretEnvNames?: readonly string[];
 }
@@ -310,18 +259,13 @@ export interface AgentToolsOptions {
 /**
  * Resolve a caller-supplied {@link AgentToolsOptions} into a validated
  * {@link RuntimeConfig}: validate the workspace, clamp every limit to its
- * minimum, order-check the shell timeouts, and run the ripgrep probe to fill
- * the capability flag.
+ * minimum and order-check the shell timeouts.
  *
  * @param options - the caller options; only `workspaceRoot` is required.
  * @returns the fully resolved runtime config.
  * @throws {@link StartupError} when `workspaceRoot` is missing, does not exist,
  *   or is not a directory; when any limit falls below its minimum; or when
- *   `shellTimeoutMaxMs` is less than `shellTimeoutMs`. Skill execution roots
- *   also fail startup when they are excessive, missing, not directories, or
- *   broad enough to contain the workspace.
- * @remarks Probe failures never throw - a throwing probe is treated as the
- *   capability being absent (see {@link RuntimeConfig.ripgrepAvailable}).
+ *   `shellTimeoutMaxMs` is less than `shellTimeoutMs`.
  */
 export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
   if (!options.workspaceRoot) {
@@ -333,7 +277,6 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
   });
   if (path.resolve(statePaths.workspaceRoot) !== workspaceRoot)
     throw new StartupError("Tool state paths belong to another workspace.");
-  const gitMetadataPaths = discoverLinkedGitMetadataPaths(workspaceRoot);
   const logger = options.logger ?? NOOP_TOOLS_LOGGER;
 
   const shellTimeoutMs = requireMin(
@@ -348,7 +291,6 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
   );
   assertTimeoutOrder(shellTimeoutMs, shellTimeoutMaxMs, "shellTimeoutMs", "shellTimeoutMaxMs");
 
-  const ripgrepAvailable = runProbe(options.probeRipgrep ?? probeRipgrep);
   const readOnly = options.readOnly ?? false;
   const temporaryRoots = (options.temporaryRoots ?? []).map((root) => {
     const resolved = path.resolve(root);
@@ -362,75 +304,14 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
       throw new StartupError(`Temporary root is not a directory: ${resolved}`);
     return resolved;
   });
-  if ((options.skillExecutionRoots?.length ?? 0) > 512) {
-    throw new StartupError("Agent tools accept at most 512 skill execution roots.");
-  }
-  let canonicalWorkspaceRoot = workspaceRoot;
-  if ((options.skillExecutionRoots?.length ?? 0) > 0) {
-    try {
-      canonicalWorkspaceRoot = realpathSync(workspaceRoot);
-    } catch {
-      throw new StartupError(`Workspace root cannot be canonicalized: ${workspaceRoot}`);
-    }
-  }
-  const skillExecutionRoots = [
-    ...new Set(
-      (options.skillExecutionRoots ?? []).map((root) => {
-        const absolute = path.resolve(root);
-        let resolved: string;
-        try {
-          resolved = realpathSync(absolute);
-          if (!statSync(resolved).isDirectory()) {
-            throw new StartupError(`Skill execution root is not a directory: ${resolved}`);
-          }
-        } catch (error) {
-          if (error instanceof StartupError) throw error;
-          throw new StartupError(`Skill execution root does not exist: ${absolute}`);
-        }
-        const workspaceFromRoot = path.relative(resolved, canonicalWorkspaceRoot);
-        if (
-          resolved === path.parse(resolved).root ||
-          workspaceFromRoot === "" ||
-          (!workspaceFromRoot.startsWith(`..${path.sep}`) &&
-            workspaceFromRoot !== ".." &&
-            !path.isAbsolute(workspaceFromRoot))
-        ) {
-          throw new StartupError(`Skill execution root is too broad: ${resolved}`);
-        }
-        return resolved;
-      }),
-    ),
-  ];
   logger.debug(
     {
       event: "tools.config_resolved",
-      ripgrep: ripgrepAvailable,
-      sandbox_mode: options.sandbox?.type ?? "none",
-      sandbox_availability: options.sandbox?.availability ?? null,
       read_only: readOnly,
-      skill_execution_roots: skillExecutionRoots.length,
       platform: process.platform,
     },
     "the coding toolset resolved its configuration; these flags decide the surface it advertises",
   );
-
-  const sandbox =
-    options.sandbox === undefined
-      ? undefined
-      : {
-          ...options.sandbox,
-          readOnlyPaths: [
-            ...new Set([...(options.sandbox.readOnlyPaths ?? []), ...skillExecutionRoots]),
-          ],
-        };
-  const filesystemPolicy = resolveFilesystemPolicy({
-    runId: options.runIdentity ?? randomUUID(),
-    placement: options.filesystemPlacement ?? (sandbox === undefined ? "host" : "sandbox"),
-    workspaceRoot,
-    temporaryRoots,
-    gitMetadataPaths,
-    ...(sandbox === undefined ? {} : { sandbox }),
-  });
 
   return {
     workspaceRoot,
@@ -483,17 +364,12 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
       1,
       "regexScanBudgetMs",
     ),
-    ripgrepAvailable,
     readOnly,
     stateRoot: statePaths.root,
     statePaths,
     temporaryRoots,
     sessionAgent: options.sessionAgent ?? {},
     sessionManager: options.sessionManager ?? new ExecutionSessionManager(),
-    skillExecutionRoots,
-    gitMetadataPaths,
-    sandbox,
-    filesystemPolicy,
     secretEnvNames: options.secretEnvNames,
   };
 }

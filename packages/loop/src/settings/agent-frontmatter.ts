@@ -77,7 +77,7 @@ const toolsFrontmatter = z
  * per-entry `budget`, and a default `output_schema`.
  *
  * @remarks Unknown fields fail validation. Profile metadata cannot select executor policy,
- * sandbox, endpoints or credentials. Run assembly still picks named fields rather than
+ * endpoints or credentials. Run assembly still picks named fields rather than
  * spreading authored frontmatter into the execution request.
  */
 export const agentFrontmatterSchema = agentProfileSchema

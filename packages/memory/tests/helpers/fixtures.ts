@@ -25,6 +25,7 @@ export function run(partial: Partial<RunSnapshot> = {}): RunSnapshot {
   const started = tick();
   return {
     run_id: `run_${started}`,
+    model_ref: "anthropic/x",
     workspace: "/ws",
     status: "completed",
     started_at: started,

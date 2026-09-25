@@ -3,7 +3,7 @@ import { parsePlan, planFilename, renderPlan, transitionTask } from "../../src/i
 import { createMemoryPlanStore } from "../helpers/store.ts";
 
 describe("plan format", () => {
-  test("uses Windows-safe filenames", () => {
+  test("uses portable filenames", () => {
     expect(planFilename(new Date("2026-07-25T12:34:56Z"), "Ship the Plan!")).toBe(
       "2026-07-25T12-34-56-ship-the-plan.md",
     );

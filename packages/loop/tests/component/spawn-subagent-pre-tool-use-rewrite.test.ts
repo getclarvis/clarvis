@@ -14,7 +14,7 @@ import { resolveSubagentProfiles } from "../../src/runtime/subagents/subagent-pr
 import { MockLLM } from "../helpers/fixtures.ts";
 
 /**
- * The standing proof that refusing a `preDelegateTask` rewrite costs nothing.
+ * The standing proof that refusing a `preSpawnSubagent` rewrite costs nothing.
  *
  * `spawn_subagent` is dispatched through the ordinary tool loop, so the fire
  * point that *does* replace a call's arguments — `beforeToolUse` — reaches a
@@ -24,7 +24,7 @@ import { MockLLM } from "../helpers/fixtures.ts";
  * assistant message it produced is left exactly as it sent it, so the request
  * prefix every later call is served from does not move.
  *
- * If this file ever goes red, refusing the `preDelegateTask` rewrite has become
+ * If this file ever goes red, refusing the `preSpawnSubagent` rewrite has become
  * a loss of capability and the decision recorded in `prepareSpawn`'s TSDoc has
  * to be revisited.
  */

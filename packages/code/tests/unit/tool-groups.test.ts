@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { isExplorationTool, TranscriptRows } from "../../src/core/transcript/rows.ts";
 
 test("only allowlisted reads group; shell, mutations and unknown MCP remain individual", () => {
-  for (const name of ["read_file", "read_image", "glob", "grep"])
+  for (const name of ["read_file", "read_image", "read_image", "list_dir"])
     expect(isExplorationTool(name)).toBe(true);
   for (const name of ["shell", "write_file", "edit_file", "apply_patch", "memory_write", "unknown"])
     expect(isExplorationTool(name)).toBe(false);

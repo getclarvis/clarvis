@@ -309,7 +309,7 @@ function buildRunLeaderHandler(
         return Promise.resolve(
           verdict(
             "not spawning this leader — too many child agents are already running. Wait with " +
-              "await_agents or end one with agent_stop, then try again.",
+              "agent_poll or end one with agent_stop, then try again.",
           ),
         );
       }
@@ -443,8 +443,8 @@ function buildRunLeaderHandler(
         kind: "result",
         text:
           `Tool '${RUN_LEADER_TOOL_NAME}' result: started ${handle.id} (leader ${runId}) in the ` +
-          "background. It is running now — keep working, then collect it with await_agents (to " +
-          "wait) or agent_poll (to look). Do not finish until it has returned.",
+          "background. It is running now — keep working, then inspect it with agent_poll " +
+          "or read its completion notice. Do not finish until it has returned.",
         progress: true,
       });
     },

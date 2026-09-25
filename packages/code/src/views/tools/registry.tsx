@@ -11,7 +11,6 @@ import {
   parseShellSession,
   parsePathList,
   parseReadFile,
-  parseReadFiles,
 } from "../../adapters/tool-parsers.ts";
 import {
   diffStats,
@@ -276,46 +275,6 @@ function renderReadFile(call: ToolCallView): JSX.Element {
   );
 }
 
-function renderReadFiles(call: ToolCallView): JSX.Element {
-  const { sections, note } = parseReadFiles(call.result);
-  if (sections.length === 0) return renderGeneric(call);
-  return (
-    <box flexDirection="column">
-      <For each={sections}>
-        {(s) => {
-          const parsed = parseReadFile(s.body);
-          const last =
-            parsed.firstLine !== null
-              ? parsed.firstLine + parsed.content.split("\n").length - 1
-              : null;
-          const head = s.error
-            ? `  ${glyph("separator")}  ${s.error}`
-            : parsed.firstLine !== null
-              ? `  ${glyph("separator")}  lines ${parsed.firstLine}${glyph("enDash")}${last}`
-              : "";
-          return (
-            <box flexDirection="column">
-              <text fg={s.error ? tokens.del : tokens.accent2}>{s.path + head}</text>
-              <Show when={parsed.content.length > 0}>
-                <ClampedCode
-                  content={parsed.content}
-                  filetype={filetypeFor(s.path)}
-                  wrap={call.wrap ? "char" : undefined}
-                  full={call.full}
-                />
-              </Show>
-              <For each={parsed.notes}>{(n) => <text fg={tokens.muted}>{n}</text>}</For>
-            </box>
-          );
-        }}
-      </For>
-      <Show when={note !== null}>
-        <text fg={tokens.muted}>{note}</text>
-      </Show>
-    </box>
-  );
-}
-
 function renderImage(call: ToolCallView): JSX.Element {
   const path = String(call.arguments.path ?? "");
   return (
@@ -484,38 +443,6 @@ export function diffHeaderPath(diff: string): string | undefined {
   return fallback;
 }
 
-interface DiffFileSection {
-  path: string | undefined;
-  diff: string;
-}
-
-function splitDiffFiles(raw: string): { preamble: string; files: DiffFileSection[] } {
-  const lines = raw.split("\n");
-  const starts: number[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i]!.startsWith("--- ") || !(lines[i + 1] ?? "").startsWith("+++ ")) continue;
-    let s = i;
-    if (s > 0 && /^=+$/.test(lines[s - 1]!)) s -= 1;
-    if (s > 0 && lines[s - 1]!.startsWith("Index: ")) s -= 1;
-    starts.push(s);
-  }
-  if (starts.length === 0) return { preamble: "", files: [{ path: undefined, diff: raw }] };
-  const preamble = lines.slice(0, starts[0]).join("\n").trim();
-  const files = starts.map((s, i) => {
-    const body = trimTrailing(lines.slice(s, starts[i + 1] ?? lines.length).join("\n"));
-    return { path: diffHeaderPath(body), diff: body };
-  });
-  return { preamble, files };
-}
-
-function firstPathArg(args: Record<string, unknown>): string | undefined {
-  for (const key of ["path", "from", "to", "source", "file"]) {
-    const v = args[key];
-    if (typeof v === "string" && v.length > 0) return v;
-  }
-  return undefined;
-}
-
 function renderApplyPatch(call: ToolCallView): JSX.Element {
   const body = gateBody(call);
   if (oversize(body, mutationBodyExpanded(call))) {
@@ -539,54 +466,6 @@ function renderApplyPatch(call: ToolCallView): JSX.Element {
         wrapMode={call.full ? "word" : "none"}
         showLineNumbers={false}
       />
-    </box>
-  );
-}
-
-/**
- * Renders the `diff`/`replace` tools' result.
- *
- * @remarks
- * `replace` ships the diff via `call.diff` and a human-readable summary via
- * `call.result` — both are shown when present, the summary above the diff.
- */
-function renderDiffTool(call: ToolCallView): JSX.Element {
-  const flat = call.result.trim();
-  if (flat === "(no differences)" || flat === "(no matches)") {
-    return <text fg={tokens.muted}>{flat}</text>;
-  }
-  const raw = trimTrailing(call.diff ?? call.result);
-  if (raw.length === 0) return renderGeneric(call);
-  if (oversize(raw, mutationBodyExpanded(call))) {
-    return (
-      <box flexDirection="column">
-        <Show when={call.diff && flat.length > 0}>
-          <ClampedText content={flat} fg={tokens.muted} />
-        </Show>
-        <GateChip stats={gateStats(call, raw)} />
-      </box>
-    );
-  }
-  const { preamble, files } = splitDiffFiles(raw);
-  const fallback = firstPathArg(call.arguments);
-  return (
-    <box flexDirection="column">
-      <Show when={call.diff && flat.length > 0}>
-        <ClampedText content={flat} fg={tokens.muted} full={call.full} wrap={call.wrap} />
-      </Show>
-      <Show when={preamble.length > 0}>
-        <text fg={tokens.muted}>{preamble}</text>
-      </Show>
-      <For each={files}>
-        {(f) => (
-          <StableDiff
-            diff={f.diff}
-            filetype={filetypeFor(f.path ?? fallback)}
-            wrapMode={call.full ? "word" : "none"}
-            showLineNumbers={false}
-          />
-        )}
-      </For>
     </box>
   );
 }
@@ -694,12 +573,6 @@ function renderJsonCard(call: ToolCallView): JSX.Element {
   );
 }
 
-function renderTree(call: ToolCallView): JSX.Element {
-  const body = trimTrailing(call.result);
-  if (!body) return <text fg={tokens.muted}>(empty)</text>;
-  return <ClampedText content={body} full={call.full} wrap={call.wrap} />;
-}
-
 function renderGeneric(call: ToolCallView): JSX.Element {
   const body = trimTrailing(call.result);
   if (!body) return <text fg={tokens.muted}>(no output)</text>;
@@ -728,23 +601,12 @@ function renderMemoryGrep(call: ToolCallView): JSX.Element {
 const byTool: Record<string, ToolRenderer> = {
   shell: renderBash,
   read_file: renderReadFile,
-  read_files: renderReadFiles,
   read_image: renderImage,
-  grep: renderGrep,
-  glob: renderPathList,
   list_dir: renderPathList,
   write_file: renderWriteFile,
   edit_file: renderEdit,
-  multi_edit: renderEdit,
   apply_patch: renderApplyPatch,
-  diff: renderDiffTool,
-  replace: renderDiffTool,
-  move: renderSummary,
-  copy: renderSummary,
-  mkdir: renderSummary,
   remove: renderSummary,
-  tree: renderTree,
-  file_stat: renderJsonCard,
   shell_session: renderShellSession,
   read_memory: renderMemoryRead,
   list_memories: renderPathList,

@@ -171,7 +171,6 @@ test("an archive with the wrong top-level payload is rejected", async () => {
 });
 
 test("staged runtime verification bounds output and rejects the wrong version", async () => {
-  if (process.platform === "win32") return;
   const target = releaseTarget();
   if (target === undefined) return;
   const root = await mkdtemp(join(tmpdir(), "clarvis-managed-update-smoke-failures-"));
@@ -201,7 +200,6 @@ test("staged runtime verification bounds output and rejects the wrong version", 
 });
 
 test("activation verifies an existing version and rejects a non-directory destination", async () => {
-  if (process.platform === "win32") return;
   const target = releaseTarget();
   if (target === undefined) return;
   const root = await mkdtemp(join(tmpdir(), "clarvis-managed-update-existing-"));
@@ -224,7 +222,6 @@ test("activation verifies an existing version and rejects a non-directory destin
 });
 
 test("activation waits for the selected release's documentation publisher before switching current", async () => {
-  if (process.platform === "win32") return;
   const target = releaseTarget();
   if (target === undefined) return;
   const root = await mkdtemp(join(tmpdir(), "clarvis-update-docs-"));
@@ -260,7 +257,6 @@ test("activation waits for the selected release's documentation publisher before
 });
 
 test("an eligible verified archive is staged, smoked and activated last", async () => {
-  if (process.platform === "win32") return;
   const target = releaseTarget();
   if (target === undefined) return;
   const root = await mkdtemp(join(tmpdir(), "clarvis-managed-update-activate-"));

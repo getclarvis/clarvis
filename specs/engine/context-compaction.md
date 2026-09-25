@@ -189,7 +189,6 @@ Number.MAX_SAFE_INTEGER, preserveRecentTokens: 0, llmTimeoutMs: 120000 }`.
   evictable: boolean;
   canonical: boolean;
   summary: boolean;
-  taskId?: string;
   noteKind?: string;
   blockKind?: string;
   superseded?: boolean;
@@ -198,9 +197,9 @@ Number.MAX_SAFE_INTEGER, preserveRecentTokens: 0, llmTimeoutMs: 120000 }`.
 
 ### `LiveSeedEntry` (`packages/loop/src/runtime/context/compaction-contracts.ts`) — `LiveMessage | ContextSnapshotEntry`
 
-A raw `LiveMessage` seeds as non-evictable with no task/note/block attribution
+A raw `LiveMessage` seeds as non-evictable with no note/block attribution
 (`packages/loop/src/runtime/context/live-entry-store.ts`); a `ContextSnapshotEntry` restores its persisted
-`evictable`/`canonical`/`summary` flags and `task_id`/`note_kind`/`block_kind`
+`evictable`/`canonical`/`summary` flags and `note_kind`/`block_kind`
 (`packages/loop/src/runtime/context/live-entry-store.ts`).
 
 ### `ContextSnapshotEntry` — persisted/rehydrated shape (`LiveContext.snapshot()`, `packages/loop/src/runtime/context/live-entry-store.ts`)
@@ -211,7 +210,6 @@ A raw `LiveMessage` seeds as non-evictable with no task/note/block attribution
   evictable: boolean;
   summary: boolean;
   canonical: boolean;
-  task_id?: string;
   note_kind?: string;
   block_kind?: string;
 }
@@ -238,7 +236,6 @@ kernel persists to and rehydrates a run's trace from; the trace/persistence form
   contribution_count?: number;
   requested?: true;
   user_contribution_count?: number;
-  task_id?: string;
 }
 ```
 
@@ -366,7 +363,7 @@ sequence. Canonical reminders and runtime notes already sent retain their positi
 (config-gated, content-length-gated — `packages/loop/src/runtime/context/compaction-policy.ts`); if truncating, computes
 `headChars = ceil(maxResultChars/2)`, `tailChars = maxResultChars - headChars`, slices head and tail,
 and builds the marker (see §3); either way it pushes the tool entry as **evictable**
-(`store.push(..., true, taskId)`) and calls `enforceToolImageBudget()` again afterward
+(`store.push(..., true)) and calls `enforceToolImageBudget()` again afterward
 (`packages/loop/src/runtime/context/live-context.ts`).
 
 ### 4.3 `enforceToolImageBudget` (`packages/loop/src/runtime/context/live-context.ts`)

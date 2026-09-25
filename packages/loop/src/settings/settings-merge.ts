@@ -132,7 +132,6 @@ const CORE_STRATEGIES: Partial<Record<keyof SettingsFile, Strategy>> = {
   mcpServers: (scopes) =>
     mergeRecord(INPUT_LIMITS.mcpMapEntries, ...scopes.map((s) => s.settings.mcpServers)),
   default_model: (scopes) => lastWins("default_model", scopes),
-  default_vision_model: (scopes) => lastWins("default_vision_model", scopes),
   default_reasoning_effort: (scopes) => lastWins("default_reasoning_effort", scopes),
   budget: (scopes) => lastWins("budget", scopes),
   enabledPlugins: (scopes) => concatDistinctPluginRefs(scopes, INPUT_LIMITS.enabledPlugins),

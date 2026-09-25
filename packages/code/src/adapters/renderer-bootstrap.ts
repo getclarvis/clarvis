@@ -8,15 +8,11 @@ export interface RendererBootstrapOptions {
 
 /** Catchable signals OpenTUI owns by default when a host does not replace them. */
 export type RendererTeardownSignal =
-  "SIGINT" | "SIGTERM" | "SIGQUIT" | "SIGABRT" | "SIGHUP" | "SIGPIPE" | "SIGBREAK" | "SIGBUS";
+  "SIGINT" | "SIGTERM" | "SIGQUIT" | "SIGABRT" | "SIGHUP" | "SIGPIPE" | "SIGBUS";
 
 /** Platform-supported catchable signals that must restore the renderer before exit. */
-export function rendererTeardownSignals(
-  platform: NodeJS.Platform,
-): readonly RendererTeardownSignal[] {
-  return platform === "win32"
-    ? ["SIGINT", "SIGTERM", "SIGBREAK"]
-    : ["SIGINT", "SIGTERM", "SIGQUIT", "SIGABRT", "SIGHUP", "SIGPIPE", "SIGBUS"];
+export function rendererTeardownSignals(): readonly RendererTeardownSignal[] {
+  return ["SIGINT", "SIGTERM", "SIGQUIT", "SIGABRT", "SIGHUP", "SIGPIPE", "SIGBUS"];
 }
 
 function signalExitCode(signal: RendererTeardownSignal): number {
@@ -50,7 +46,7 @@ export function installBootRendererLifecycle(
   renderer: CliRenderer,
   host: BootRendererProcess = process,
 ): BootRendererLifecycle {
-  const signals = rendererTeardownSignals(host.platform);
+  const signals = rendererTeardownSignals();
   let phase: "boot" | "platform" | "released" | "destroyed" = "boot";
   let platformShutdown: (() => unknown) | undefined;
   const signalHandlers = new Map<RendererTeardownSignal, () => void>();

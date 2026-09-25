@@ -11,7 +11,6 @@
 
 An **Extension Profile** selects which already-installed extensions compose the active Clarvis kernel. It
 does not install plugins, copy `settings.json`, select a model or Agent Profile, carry secrets,
-change grants/sandbox/memory, pin plugin versions, or inherit from another Extension Profile. A custom
 Extension Profile is a complete allow-list of exact plugin installations and standalone skills; plugin
 contributions remain atomic. (`ExtensionProfileDefinition` in
 `packages/protocol/src/extension-profiles.ts`; `resolved` and `skillRoots` in
@@ -39,7 +38,6 @@ than an Extension Profile domain object. (`skillRoots` in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `ExecuteRunDeps.hostMetadata` in
 `packages/loop/src/runtime/execute-run.ts`.)
 
-Extension Profile selection remains persisted and effective for Host/Sandbox.
 
 ## 2. Surface
 
@@ -277,7 +275,7 @@ that captures the changed version, while an idle trust transition atomically rep
 with the new trust-dependent roots. Package-local executable files use the same asynchronous model:
 `observeRuntimeFiles` withdraws the plugin's MCP/hook/capability projections through
 `runtimeAvailable`, without a run-admission or capability-location rehash. Explicitly local
-declarations that are absent or do not resolve to a confined regular file are rejected during pin;
+declarations that are absent or do not resolve to a regular file are rejected during pin;
 watchers bind the declaration path and compare inode/device identity as well as metadata so symlink
 retargeting cannot preserve availability. Selected standalone skill
 digests cover effective catalog
@@ -629,7 +627,6 @@ construction (`packages/kernel/src/file-kernel.ts`).
 ## 8. Open questions
 
 There are no unresolved version-one contract questions. Version pinning, Extension Profile inheritance,
-partial plugin contribution masks, model/provider selection, Agent Profiles, grants/sandbox,
 memory, secrets, and automatic repository activation are deliberately out of scope. A user who
 needs a variation clones an Extension Profile and edits the complete allow-list; any expansion of that
 scope requires a new schema version and an explicit product decision.

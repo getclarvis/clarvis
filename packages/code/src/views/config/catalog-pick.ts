@@ -150,31 +150,14 @@ interface ConfiguredModelsProvider {
  * Builds picker rows for the models already configured under each provider
  * (as opposed to the wider catalog), marking `current` as added.
  *
- * @param requireCapability - when given, a model that declares capabilities
- *   *without* this one is withheld: a picker whose field means "a model that
- *   can do X" must not list models that provably cannot.
- * @remarks A model carrying **no** capability data is still offered. `undefined`
- *   means "not known", never "unsupported" — the same rule
- *   {@link knownToLackReasoning} states below, and the same one the engine
- *   follows when it sends images to an uncatalogued model. Filtering those out
- *   would hide every custom openai-compatible entry the catalog has never seen,
- *   including ones that do support the capability.
  */
 export function configuredModelRows(
   providers: ConfiguredModelsProvider[],
   current?: string,
-  requireCapability?: string,
 ): CatalogRow[] {
   const out: CatalogRow[] = [];
   for (const p of providers) {
     for (const [id, m] of Object.entries(p.models ?? {})) {
-      if (
-        requireCapability !== undefined &&
-        m.capabilities !== undefined &&
-        !m.capabilities.includes(requireCapability)
-      ) {
-        continue;
-      }
       const full = `${p.name}/${id}`;
       out.push({
         id: full,

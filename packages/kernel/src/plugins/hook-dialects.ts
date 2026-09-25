@@ -126,7 +126,6 @@ const hookEntrySchema = z
   .object({
     type: z.string().min(1).optional(),
     command: z.string().min(1).optional(),
-    commandWindows: z.string().min(1).optional(),
     timeout: z.number().positive().optional(),
     async: z.boolean().optional(),
     statusMessage: z.string().min(1).max(512).optional(),
@@ -638,14 +637,6 @@ export function convertHooksDocument(
             type === "command"
               ? resolveRelativeCommand(substituteRoot(entry.command ?? "", pluginRoot), pluginRoot)
               : "",
-          ...(entry.commandWindows === undefined
-            ? {}
-            : {
-                command_windows: resolveRelativeCommand(
-                  substituteRoot(entry.commandWindows, pluginRoot),
-                  pluginRoot,
-                ),
-              }),
           ...(entry.async === true ? { async: true } : {}),
           ...(entry.statusMessage === undefined ? {} : { status_message: entry.statusMessage }),
           ...(entry.additionalContextLimit === undefined
@@ -693,7 +684,6 @@ function resolveRelativeCommand(command: string, pluginRoot: string): string {
     const declared = match[2] ?? "";
     const root = resolve(pluginRoot);
     const target = resolve(root, declared.replaceAll(/[\\/]/g, sep));
-    if (target !== root && !target.startsWith(root + sep)) return command;
     return `${leading}"${target}"${command.slice(match[0].length)}`;
   }
   return command;

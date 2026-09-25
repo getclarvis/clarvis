@@ -1,6 +1,6 @@
 /**
  * The agent-supervision registry: one id space, one record per child, and the
- * reads the five supervision tools serve.
+ * reads the four supervision tools serve.
  *
  * @remarks One registry belongs to one run, and only that run's *entry* agent
  * can spawn — a leader is a separate `executeRun` with a registry of its own. So
@@ -12,7 +12,6 @@
  * into it.
  */
 import {
-  CodedError,
   isBuiltinTraceEntry,
   isBuiltinTraceEvent,
   NOOP_LOGGER,
@@ -45,7 +44,6 @@ import type {
   AgentRegistryPort,
   AgentSettlement,
   AgentStatus,
-  SettledStatus,
   WaitingOn,
 } from "@clarvis/capability";
 
@@ -56,7 +54,6 @@ export interface AgentsLimits {
   /** Aggregate retained activity-buffer payload across all child records. */
   maxTotalBufferBytes: number;
   pollMaxBytes: number;
-  awaitTimeoutMs: number;
   /** Ceiling on children alive at once; a spawn past it is refused, not queued. */
   maxLiveChildren: number;
   /** How many settled children keep their buffer before the oldest is evicted. */
@@ -116,28 +113,6 @@ export interface AgentNotice {
   progress: boolean;
 }
 
-/** What `waitAny` resolved with. */
-export interface AgentSettledInfo {
-  id: string;
-  status: SettledStatus;
-  result?: string;
-}
-
-/** A pending `waitAny`, disposable so a lost race leaves no waiter behind. */
-export interface AgentWait {
-  promise: Promise<AgentSettledInfo>;
-  dispose(): void;
-}
-
-/** Raised when a wait names a child the registry does not track. */
-export class UnknownAgentError extends CodedError {
-  readonly code = "unknown_agent" as const;
-
-  constructor(id: string) {
-    super(`Unknown agent id '${id}'.`, { agent_id: id });
-  }
-}
-
 /** What teardown had to abandon, for the run's usage warnings. */
 export interface AgentTeardownReport {
   abandoned: string[];
@@ -165,7 +140,6 @@ export interface AgentRegistry extends AgentRegistryPort {
   poll(id: string, opts: { offset?: number; match?: RegExp }): AgentPollResult | null;
   stop(id: string, reason: string): AgentStopResult | null;
   steer(id: string, message: SteerMessage): { ok: boolean; status: AgentStatus } | null;
-  waitAny(ids?: readonly string[]): AgentWait;
   liveIds(): string[];
   /** Route one of the run's own trace entries to the child that produced it. */
   ingestTraceEntry(entry: TraceEntry): void;
@@ -238,7 +212,6 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
   const byNative = new Map<string, string>();
   const order: string[] = [];
   const tasks = new Set<Promise<unknown>>();
-  const waiters = new Set<(info: AgentSettledInfo) => void>();
   let notices: AgentNotice[] = [];
   let consecutiveFailures = 0;
   let failureProbeAt = 0;
@@ -386,10 +359,6 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
       progress: s.status === "completed",
     });
 
-    for (const wake of [...waiters]) {
-      waiters.delete(wake);
-      wake({ id: r.id, status: s.status, ...(s.result !== undefined ? { result: s.result } : {}) });
-    }
     evictRetained();
   };
 
@@ -562,48 +531,6 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
       return { ok, status: r.status };
     },
 
-    waitAny(ids): AgentWait {
-      if (ids !== undefined) {
-        for (const id of ids) {
-          if (!records.has(id)) {
-            return { promise: Promise.reject(new UnknownAgentError(id)), dispose() {} };
-          }
-        }
-        for (const id of ids) {
-          const record = records.get(id)!;
-          if (!isLive(record)) {
-            return {
-              promise: Promise.resolve({
-                id: record.id,
-                status: record.status as SettledStatus,
-                ...(record.result !== null ? { result: record.result } : {}),
-              }),
-              dispose() {},
-            };
-          }
-        }
-      }
-      const scope = ids === undefined ? undefined : new Set(ids);
-      let wake: ((info: AgentSettledInfo) => void) | undefined;
-      const promise = new Promise<AgentSettledInfo>((resolve) => {
-        const listener = (info: AgentSettledInfo): void => {
-          if (scope !== undefined && !scope.has(info.id)) {
-            waiters.add(listener);
-            return;
-          }
-          resolve(info);
-        };
-        wake = listener;
-        waiters.add(listener);
-      });
-      return {
-        promise,
-        dispose(): void {
-          if (wake !== undefined) waiters.delete(wake);
-        },
-      };
-    },
-
     ingestTraceEntry(entry: TraceEntry): void {
       const detail = entry.detail as { subagent_instance_id?: unknown } | null;
       const native =
@@ -696,7 +623,6 @@ export function createAgentRegistry(opts: AgentRegistryOptions): AgentRegistry {
         r.buffer.freeze();
       }
       notices = [];
-      for (const w of waiters) waiters.delete(w);
       if (abandoned.length > 0 || undrainedSteers > 0) {
         logger.warn(
           {

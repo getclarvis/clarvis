@@ -1,14 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import {
-  deriveIsolation,
-  effectiveRunIsolation,
-  deriveRunControls,
-  memoryDescription,
-  memoryState,
-  modelResolves,
-  planRetentionDescription,
-  safetyDescription,
-} from "../../src/adapters/execution-safety.ts";
+import { memoryState, modelResolves } from "../../src/adapters/execution-safety.ts";
 import type { SettingsFile } from "../../src/adapters/settings.ts";
 
 /**
@@ -16,98 +7,21 @@ import type { SettingsFile } from "../../src/adapters/settings.ts";
  *
  * @remarks `SettingsFile` is the *output* of the loop's settings schema, where
  * `memory.enabled` carries `z.boolean().default(true)` and so reads as required.
- * These cases deliberately exercise the pre-default shape: `memory: {}` is what a
- * user actually writes, and `memoryState` separates it from `{ enabled: false }`
- * — only the latter is "off". Typing the fixtures as the schema's output would
- * erase the distinction under test, so the widening is named once, here.
+ * These cases deliberately exercise the pre-default shape of settings files.
  */
 const onDisk = (settings: Record<string, unknown>): SettingsFile => settings as SettingsFile;
 
 const OPENAI = { name: "openai", kind: "openai" } as const;
 
-describe("execution safety", () => {
-  it("shows active host placement without replacing the idle next-run preference", () => {
-    const host = {
-      kind: "native",
-      host_platform: "linux",
-      isolation: "host",
-      lifecycle: "ready",
-    } as const;
-    expect(effectiveRunIsolation("sandbox", host, true)).toBe("host");
-    expect(effectiveRunIsolation("sandbox", host, false)).toBe("sandbox");
-    expect(effectiveRunIsolation("sandbox", undefined, true)).toBe("sandbox");
-  });
-  it("derives isolation from sandbox settings", () => {
-    expect(deriveIsolation({})).toBe("host");
-    expect(deriveIsolation({ sandbox: { type: "native", enabled: true } })).toBe("sandbox");
-    expect(deriveRunControls({}, "off").isolation).toBe("host");
-  });
-
-  it("explains the effective behavior", () => {
-    const state = deriveRunControls(
-      {
-        providers: [OPENAI],
-        default_model: "openai/model",
-        memory: {} as SettingsFile["memory"],
-        sandbox: {
-          type: "native",
-          enabled: true,
-          filesystem: "workspace-read-only",
-          network: "none",
-        },
-      },
-      "on",
-    );
-    expect(safetyDescription(state)).toEqual([
-      "Commands run inside the native sandbox.",
-      "Shell commands see the workspace read-only.",
-      "Shell network access is disabled.",
-    ]);
-    expect(memoryDescription(state)).toBe(
-      "Reads memory before the run and learns from it afterward.",
-    );
-  });
-
-  it("explains sandbox, memory, and plan-retention consequences", () => {
-    const sandbox = {
-      ...deriveRunControls(
-        {
-          sandbox: {
-            type: "native" as const,
-            enabled: true,
-            availability: "optional" as const,
-            filesystem: "workspace-write" as const,
-            network: "host" as const,
-          },
-        },
-        "off" as const,
-      ),
-    };
-    expect(safetyDescription(sandbox)).toEqual([
-      "Commands run inside the native sandbox.",
-      "Shell commands may change this workspace.",
-      "Host network access is enabled.",
-    ]);
-    expect(safetyDescription(deriveRunControls({}, "off"))).toEqual([
-      "Commands run with the host process's permissions.",
-    ]);
-    expect(memoryDescription({ ...sandbox, memory: "inert" })).toContain("no extraction model");
-    expect(memoryDescription({ ...sandbox, memory: "off" })).toContain("Disabled for this session");
-
-    expect(planRetentionDescription("keep")).toEqual([
-      "Completed plans remain available in the selected provider.",
-    ]);
-    expect(planRetentionDescription("discard")).toEqual([
-      "Successful runs delete their plan after the result is recorded.",
-      "Failed, cancelled or interrupted runs keep their plan.",
-    ]);
-  });
-});
-
 describe("memoryState — the one on/inert/off rule every surface shares", () => {
-  it("is off without a block, with a disabled block, or when the session opted out", () => {
+  it("is off by default or when the global choice is off", () => {
     expect(memoryState({})).toBe("off");
-    expect(memoryState({ memory: { enabled: false }, providers: [OPENAI] })).toBe("off");
+    expect(
+      memoryState(
+        onDisk({ memory: { enabled: false }, default_model: "openai/model", providers: [OPENAI] }),
+        "on",
+      ),
+    ).toBe("on");
     expect(
       memoryState(
         onDisk({ memory: {}, default_model: "openai/model", providers: [OPENAI] }),
@@ -116,28 +30,27 @@ describe("memoryState — the one on/inert/off rule every surface shares", () =>
     ).toBe("off");
   });
 
-  it("is on only when the extraction model reaches a declared provider", () => {
-    expect(
-      memoryState(onDisk({ memory: {}, default_model: "openai/model", providers: [OPENAI] })),
-    ).toBe("on");
+  it("is on only when the selected run model reaches a declared provider", () => {
+    expect(memoryState(onDisk({ default_model: "openai/model", providers: [OPENAI] }), "on")).toBe(
+      "on",
+    );
     expect(
       memoryState(
         onDisk({
-          memory: { model: "openai/mini" },
           default_model: "ghost/model",
           providers: [OPENAI],
         }),
+        "on",
+        "openai/mini",
       ),
     ).toBe("on");
   });
 
   it("settles the two formerly divergent inert cases the same way", () => {
     const undeclared = onDisk({ memory: {}, default_model: "ghost/model" });
-    expect(memoryState(undeclared)).toBe("inert");
+    expect(memoryState(undeclared, "on")).toBe("inert");
     const modelless = onDisk({ memory: {}, providers: [OPENAI] });
-    expect(memoryState(modelless)).toBe("inert");
-    expect(deriveRunControls(undeclared, "on").memory).toBe("inert");
-    expect(deriveRunControls(modelless, "on").memory).toBe("inert");
+    expect(memoryState(modelless, "on")).toBe("inert");
   });
 
   it("modelResolves rejects unparsable tokens instead of throwing", () => {

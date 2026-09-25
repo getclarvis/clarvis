@@ -32,11 +32,10 @@ export function toolLabel(mcpName: string | undefined, toolName: string | undefi
 }
 
 const BUILTIN_TOOL_LABELS: Readonly<Record<string, string>> = {
-  await_agents: "Wait for agents",
   agent_poll: "Check agent",
   agent_steer: "Steer agent",
   agent_stop: "Stop agent",
-  delegate_task: "Delegate task",
+  spawn_subagent: "Spawn sub-agent",
   run_leader: "Start workflow leader",
   run_workflow: "Run workflow",
   run_round: "Run workflow rounds",
@@ -47,12 +46,10 @@ const BUILTIN_TOOL_LABELS: Readonly<Record<string, string>> = {
 
 const TRANSCRIPT_EXTERNAL_ORCHESTRATION_TOOLS = new Set([
   "spawn_subagent",
-  "delegate_task",
   "agent_list",
   "agent_poll",
   "agent_stop",
   "agent_steer",
-  "await_agents",
   "run_leader",
   "run_workflow",
   "run_round",
@@ -66,7 +63,7 @@ const TRANSCRIPT_EXTERNAL_ORCHESTRATION_TOOLS = new Set([
  * Lead history.
  *
  * @remarks A non-empty `toolName` denotes a namespaced MCP identity such as
- * `server.await_agents`; matching only its leaf would hide an unrelated downstream tool. During
+ * `server.agent_poll`; matching only its leaf would hide an unrelated downstream tool. During
  * provider composition the unsplit wire name must be supplied as `mcpName`.
  */
 export function isTranscriptExternalOrchestrationTool(

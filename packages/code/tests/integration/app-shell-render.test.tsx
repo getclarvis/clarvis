@@ -137,37 +137,27 @@ interface SettingsKnobs {
   defaultModel?: string;
   providersValid?: boolean;
   memoryEnabled?: boolean;
-  memoryModel?: string;
-  /** Drop the `memory:` block entirely — the pre-seed state, which also makes
-   * mounting fire the one-time seed notification. */
-  memoryUnconfigured?: boolean;
   providers?: unknown[];
   runtime?: Record<string, unknown>;
-  sandbox?: Record<string, unknown>;
   plans?: Record<string, unknown>;
   workspaceTrust?: "inert" | "trusted" | "unapproved" | "changed";
   withheldWorkspaceFields?: readonly string[];
   setWorkspaceTrust?: (approve: boolean) => Promise<void>;
-  inspectSandbox?: SettingsAdapter["inspectSandbox"];
 }
 
 const HEALTHY_PROVIDERS = [{ name: "acme", models: {} }];
 const HEALTHY_DEFAULT_MODEL = "acme/model-x";
 
 function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
+  let savedMemoryEnabled: boolean | undefined;
   const effective = () => {
     const k = knobs();
+    const memoryEnabled = savedMemoryEnabled ?? k.memoryEnabled;
     return {
       providers: k.providers ?? HEALTHY_PROVIDERS,
       default_model: "defaultModel" in k ? k.defaultModel : HEALTHY_DEFAULT_MODEL,
-      memory: k.memoryUnconfigured
-        ? undefined
-        : {
-            enabled: k.memoryEnabled ?? true,
-            ...(k.memoryModel !== undefined ? { model: k.memoryModel } : {}),
-          },
+      memory: memoryEnabled === undefined ? undefined : { enabled: memoryEnabled },
       runtime: k.runtime,
-      sandbox: k.sandbox,
       plans: k.plans ?? { mode: "on", retention: "keep" },
     };
   };
@@ -186,15 +176,21 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
     setWorkspaceTrust: (approve: boolean) =>
       knobs().setWorkspaceTrust?.(approve) ?? Promise.resolve(),
     sources: () => ({ global: "/nonexistent/global" }),
-    write: async () => {},
+    write: async (
+      scope: "global" | "workspace",
+      patch: Parameters<SettingsAdapter["write"]>[1],
+    ) => {
+      if (patch.memory?.enabled !== undefined) {
+        expect(scope).toBe("global");
+        savedMemoryEnabled = patch.memory.enabled;
+      }
+    },
     validateProviders: () => ({ ok: knobs().providersValid ?? true }),
     refs: () => ({ agents: [], defaultModel: false }),
     modelRefs: () => ({ agents: [], defaultModel: false }),
     envStatus: () => "unset",
     declaredMcpServers: () => [],
     reload: async () => {},
-    inspectSandbox: (options?: { refresh?: boolean }) =>
-      knobs().inspectSandbox?.(options) ?? Promise.resolve(null as never),
   } as unknown as SettingsAdapter;
 }
 
@@ -245,9 +241,7 @@ function baseFleet(
         keySource: () => "auto",
         writeKeySource: () => {},
       } as never),
-    memoryMode: createMemoryModeStore({
-      settingsMemory: () => settings.effective().memory,
-    }),
+    memoryMode: createMemoryModeStore(),
     preview: {
       source: () => ({}),
       draft: () => null,
@@ -1091,15 +1085,9 @@ test("Enter runs an exact hierarchical hub while Tab still owns child completion
 });
 
 test("Tab opens a child and rapid Escape steps back through its hub to the transcript", async () => {
-  let inspections = 0;
   const t = await mountApp(
     defaultProps({
-      settingsKnobs: () => ({
-        inspectSandbox: async () => {
-          inspections += 1;
-          return null as never;
-        },
-      }),
+      settingsKnobs: () => ({}),
     }),
   );
   await captureUntil(t, "New task");
@@ -1115,7 +1103,7 @@ test("Tab opens a child and rapid Escape steps back through its hub to the trans
   expect(providers).toContain("Credentials");
 
   press(t, "escape");
-  const settings = await captureUntil(t, "Run controls");
+  const settings = await captureUntil(t, "Updates");
   expect(settings).toContain("Settings");
 
   press(t, "escape");
@@ -1125,7 +1113,6 @@ test("Tab opens a child and rapid Escape steps back through its hub to the trans
   await Promise.resolve();
   const transcript = t.captureCharFrame();
   expect(transcript).not.toContain("Settings");
-  expect(inspections).toBe(0);
   t.renderer.destroy();
 });
 
@@ -1166,7 +1153,7 @@ test("a saved manual destination binding is active on first boot", async () => {
   const t = await mountApp(defaultProps({ code }));
   await captureUntil(t, "New task");
   press(t, "f8");
-  const settings = await captureUntil(t, "Run controls");
+  const settings = await captureUntil(t, "Updates");
   expect(settings).toContain("Settings");
   t.renderer.destroy();
 });
@@ -1202,7 +1189,7 @@ test("Keyboard settings persists a profile and a normalized diagnostic for this 
   press(t, "escape");
   await t.renderOnce();
   t.mockInput.pressEnter();
-  await captureUntil(t, "Run controls");
+  await captureUntil(t, "Updates");
   for (let index = 0; index < settingsHubIndex("keyboard"); index++) press(t, "down");
   await t.renderOnce();
   press(t, "return");
@@ -1709,7 +1696,7 @@ test("a workspace switch keeps the active view's Escape route live", async () =>
   await t.mockInput.typeText("/settings");
   await t.renderOnce();
   press(t, "return");
-  await captureUntil(t, "Run controls");
+  await captureUntil(t, "Updates");
 
   setSwitching(true);
   let out = await captureUntil(t, "switching workspace");
@@ -1771,7 +1758,7 @@ test("Alt+M no longer changes memory for the session", async () => {
   await captureUntil(t, "New task");
   press(t, "m", { meta: true });
   await t.renderOnce();
-  expect(memoryMode.mode()).toBe("on");
+  expect(memoryMode.mode()).toBe("off");
   expect(t.captureCharFrame()).not.toContain("memory: off (session)");
   t.renderer.destroy();
 });
@@ -1792,25 +1779,18 @@ test("agent picker overlay opens on /agent and closes on escape", async () => {
   t.renderer.destroy();
 });
 
-test("Ctrl+X I opens the isolation picker and Escape returns to the composer", async () => {
-  const t = await mountApp(defaultProps({}));
+test("Ctrl+X M saves Memory On and keeps it selected when the picker reopens", async () => {
+  let memoryMode!: AppFleet["memoryMode"];
+  let settings!: SettingsAdapter;
+  const build = defaultProps({});
+  const t = await mountApp((renderer) => {
+    const props = build(renderer);
+    memoryMode = props.fleet.memoryMode;
+    settings = props.fleet.settings;
+    return props;
+  });
   await captureUntil(t, "New task");
-
-  press(t, "x", { ctrl: true });
-  press(t, "i");
-  const picker = await captureUntil(t, "Select isolation");
-
-  expect(picker).toContain("Sandbox");
-  expect(picker).toContain("Host");
-  press(t, "escape");
-  const back = await captureUntil(t, "New task");
-  expect(back).not.toContain("Select isolation");
-  t.renderer.destroy();
-});
-
-test("Ctrl+X M opens the session memory picker and Escape returns to the composer", async () => {
-  const t = await mountApp(defaultProps({ settingsKnobs: () => ({ memoryEnabled: true }) }));
-  await captureUntil(t, "New task");
+  expect(memoryMode.mode()).toBe("off");
 
   press(t, "x", { ctrl: true });
   press(t, "m");
@@ -1818,21 +1798,29 @@ test("Ctrl+X M opens the session memory picker and Escape returns to the compose
 
   expect(picker).toContain("On");
   expect(picker).toContain("Off");
-  expect(picker).toContain("Persisted Memory settings are unchanged");
+  press(t, "up");
+  press(t, "return");
+  await captureUntil(t, "memory: on");
+  expect(memoryMode.mode()).toBe("on");
+  expect(settings.read("global")?.memory?.enabled).toBe(true);
+
+  press(t, "x", { ctrl: true });
+  press(t, "m");
+  const reopened = await captureUntil(t, "Select memory");
+  expect(reopened).toContain("On");
+  expect(memoryMode.mode()).toBe("on");
   press(t, "escape");
-  const back = await captureUntil(t, "New task");
-  expect(back).not.toContain("Select memory");
+  await captureUntil(t, "New task");
   t.renderer.destroy();
 });
 
-test("a literal sharp s remains composer text instead of opening the isolation picker", async () => {
+test("a literal sharp s remains composer text", async () => {
   const t = await mountApp(defaultProps({}));
   await captureUntil(t, "New task");
 
   await t.mockInput.typeText("ß");
-  const out = await captureUntil(t, "ß");
+  await captureUntil(t, "ß");
 
-  expect(out).not.toContain("Select isolation");
   t.renderer.destroy();
 });
 
@@ -2385,7 +2373,6 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   expect(out).not.toContain("Activity detail");
   expect(out).toContain("[Ctrl+X S] open / close sidebar");
   expect(out).toContain("send / steer");
-  expect(out).toContain("isolation");
   expect(out).not.toContain("close activity");
   expect(out).not.toContain("Agents 1 · 1 running");
   expect(historyOpen!.width).toBeLessThan(historyWidthBefore!);
@@ -3798,7 +3785,7 @@ test("a pending elicitation does not discard an in-progress config edit", async 
   press(t, "escape");
   await t.renderOnce();
   t.mockInput.pressEnter();
-  await captureUntil(t, "Run controls");
+  await captureUntil(t, "Updates");
   for (let i = 0; i < settingsHubIndex("theme"); i++) press(t, "down");
   await t.renderOnce();
   press(t, "return");
@@ -3827,7 +3814,7 @@ test("a pending elicitation does not discard an in-progress config edit", async 
   press(t, "escape");
   await captureUntil(t, "Discard unsaved changes?");
   press(t, "y");
-  await captureUntil(t, "Run controls");
+  await captureUntil(t, "Updates");
   press(t, "escape");
   const answered = await captureUntil(t, "Which files should I update?");
   expect(answered).not.toContain("contrast checker");
@@ -3953,7 +3940,6 @@ test("run configuration pickers stay closed during execution and return when idl
   try {
     await captureUntil(t, "Steer this run");
     for (const [key, mods] of [
-      ["i", {}],
       ["m", {}],
       ["tab", { shift: true }],
     ] as const) {
@@ -3961,16 +3947,11 @@ test("run configuration pickers stay closed during execution and return when idl
       press(t, key, mods);
       await t.renderOnce();
       const out = t.captureCharFrame();
-      expect(out).not.toContain("Select isolation");
       expect(out).not.toContain("Select memory");
       expect(out).not.toContain("Select Agent Profile");
     }
     setActive(false);
     await captureUntil(t, "New task");
-    press(t, "x", { ctrl: true });
-    press(t, "i");
-    await captureUntil(t, "Select isolation");
-    press(t, "escape");
     press(t, "x", { ctrl: true });
     press(t, "m");
     await captureUntil(t, "Select memory");
@@ -4034,12 +4015,9 @@ test("legacy wire input opens leader pickers without consuming the draft and kee
     await t.mockInput.typeText("draft preserved");
     await t.renderOnce();
     const initial = t.captureCharFrame();
-    for (const text of ["Isolation:", "Memory:", "[I] isolation", "[M] memory", "[E] editor"])
+    for (const text of ["Memory:", "[M] memory", "[E] expand editor"])
       expect(initial).toContain(text);
-    for (const [key, title] of [
-      ["i", "Select isolation"],
-      ["m", "Select memory"],
-    ] as const) {
+    for (const [key, title] of [["m", "Select memory"]] as const) {
       press(t, "x", { ctrl: true });
       const pending = await captureUntil(t, "Ctrl+X active");
       const activityLine = t.renderer.root.findDescendantById("lead-activity-line");

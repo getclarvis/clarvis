@@ -22,7 +22,6 @@ export const INPUT_LIMITS = {
   pathChars: 4_096,
   commandPatterns: 256,
   commandPatternChars: 2_048,
-  sandboxListEntries: 256,
   marketplaces: 64,
   enabledPlugins: 256,
   providers: 1_000,

@@ -13,33 +13,11 @@ export {
 export type { AgentToolsCapabilityOptions } from "./runtime/capabilities/tools.ts";
 export { FILE_MUTATING_TOOL_NAMES } from "./runtime/tools/builtin/index.ts";
 export {
-  probeBubblewrap,
-  probeSeatbelt,
-  probeSandbox,
-  sandboxCommand,
-  discoverToolchains,
-  TOOLCHAIN_COMMANDS,
-} from "@clarvis/tools/sandbox";
-export type {
-  SandboxProbe,
-  BubblewrapProbe,
-  SeatbeltProbe,
-  DiscoveredToolchain,
-  ToolchainId,
-} from "@clarvis/tools/sandbox";
-export {
   resolveShell,
   shellArgs,
-  currentShellFlavor,
   executableOnPath,
   resolveCommand,
   killTree,
   ownProcessGroup,
 } from "@clarvis/tools";
-export type { ShellSpec, ShellDeps, ShellFlavor } from "@clarvis/tools";
-export {
-  discoverSandboxToolchains,
-  resolveSandboxHostPolicy,
-  resolveSandboxPath,
-} from "./runtime/capabilities/sandbox-host-policy.ts";
-export type { ResolvedSandboxPath } from "./runtime/capabilities/sandbox-host-policy.ts";
+export type { ShellSpec } from "@clarvis/tools";

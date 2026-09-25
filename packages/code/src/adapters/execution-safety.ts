@@ -1,31 +1,6 @@
 import { parseModelRef, PLANS_DEFAULTS } from "@clarvis/kernel/config";
 import type { SettingsFile } from "./settings.ts";
 import type { MemoryMode } from "./memory-mode.ts";
-import type { RuntimeStatus } from "@clarvis/protocol";
-
-/** User-facing execution boundary. */
-export type IsolationMode = "host" | "sandbox";
-
-/** Actual active native placement overrides next-run preferences; an idle native host does not. */
-export function effectiveRunIsolation(
-  configured: IsolationMode,
-  runtime: RuntimeStatus | undefined,
-  active: boolean,
-): IsolationMode {
-  if (runtime?.kind === "native" && active) return runtime.isolation;
-  return configured;
-}
-
-/** Effective safety, memory and planning state consumed by the shell and Run Controls. */
-export interface RunControlsState {
-  isolation: IsolationMode;
-  sandboxEnabled: boolean;
-  sandboxRequired: boolean;
-  filesystem: "workspace-write" | "workspace-read-only";
-  network: "host" | "none" | "internet" | "outbound";
-  memory: MemoryState;
-  plans: PlansState;
-}
 
 /** Canonical memory tri-state; see {@link memoryState} for how it's derived. */
 export type MemoryState = "off" | "inert" | "on";
@@ -51,14 +26,13 @@ export interface PlansState {
   configured: boolean;
 }
 
-/** Plan retention named by its consequence, so every surface that shows it —
- * Run Controls, the Plan overlay, the doctor — uses one vocabulary. */
+/** Plan retention named by its consequence for the Plan overlay and doctor. */
 export function planRetentionLabel(retention: PlanRetention): string {
   return retention === "keep" ? "keep" : "delete after success";
 }
 
-/** The single "what will planning do on the next run" rule — Run Controls, the
- * header chip and the doctor gate must never disagree on it. */
+/** The single "what will planning do on the next run" rule shared by the
+ * header chip and doctor gate. */
 export function plansState(settings: SettingsFile): PlansState {
   const block = settings.plans;
   if (block === undefined)
@@ -70,8 +44,7 @@ export function plansState(settings: SettingsFile): PlansState {
   };
 }
 
-/** The single "does this model token reach a declared provider" rule — the
- * doctor, the memory panel and the header chip must never disagree on it. */
+/** Whether a model token reaches a declared provider. */
 export function modelResolves(model: string | undefined, settings: SettingsFile): boolean {
   if (!model) return false;
   try {
@@ -99,73 +72,12 @@ export function modelResolves(model: string | undefined, settings: SettingsFile)
   }
 }
 
-/** Canonical memory tri-state: `off` (no block / disabled / session off),
- * `inert` (enabled but the extraction model — memory.model, else
- * default_model — does not resolve to a usable provider, so runs will not
- * learn), `on`. Every "memory: on" surface derives from here. */
-export function memoryState(settings: SettingsFile, sessionMode: MemoryMode = "on"): MemoryState {
-  const memory = settings.memory;
-  if (memory === undefined || memory.enabled === false || sessionMode === "off") return "off";
-  return modelResolves(memory.model ?? settings.default_model, settings) ? "on" : "inert";
-}
-
-/** Resolve the configured execution boundary. */
-export function deriveIsolation(settings: SettingsFile): IsolationMode {
-  const sandbox = settings.sandbox;
-  return sandbox !== undefined && sandbox.enabled !== false ? "sandbox" : "host";
-}
-
-/**
- * Derives the full {@link RunControlsState} from workspace settings plus the
- * session's current memory mode.
- */
-export function deriveRunControls(
+/** Canonical memory tri-state for the next run. */
+export function memoryState(
   settings: SettingsFile,
-  memoryMode: MemoryMode,
-): RunControlsState {
-  const sandbox = settings.sandbox;
-  const sandboxEnabled = sandbox !== undefined && sandbox.enabled !== false;
-  const isolation = deriveIsolation(settings);
-  return {
-    isolation,
-    sandboxEnabled,
-    sandboxRequired: sandboxEnabled,
-    filesystem: sandbox?.filesystem ?? "workspace-write",
-    network: sandbox?.network ?? "host",
-    memory: memoryState(settings, memoryMode),
-    plans: plansState(settings),
-  };
-}
-
-/** Plain-language lines describing the current isolation policy. */
-export function safetyDescription(state: RunControlsState): string[] {
-  if (!state.sandboxEnabled) return ["Commands run with the host process's permissions."];
-  return [
-    "Commands run inside the native sandbox.",
-    state.filesystem === "workspace-read-only"
-      ? "Shell commands see the workspace read-only."
-      : "Shell commands may change this workspace.",
-    state.network === "none"
-      ? "Shell network access is disabled."
-      : "Host network access is enabled.",
-  ];
-}
-
-/** A plain-language line describing what the current memory state means for a run. */
-export function memoryDescription(state: RunControlsState): string {
-  return state.memory === "on"
-    ? "Reads memory before the run and learns from it afterward."
-    : state.memory === "inert"
-      ? "Configured, but no extraction model resolves."
-      : "Disabled for this session; runs neither read nor update memory.";
-}
-
-/** Plain-language consequences of the completed-plan retention default. */
-export function planRetentionDescription(retention: PlanRetention): string[] {
-  return retention === "keep"
-    ? ["Completed plans remain available in the selected provider."]
-    : [
-        "Successful runs delete their plan after the result is recorded.",
-        "Failed, cancelled or interrupted runs keep their plan.",
-      ];
+  mode: MemoryMode = "off",
+  runModel = settings.default_model,
+): MemoryState {
+  if (mode === "off") return "off";
+  return modelResolves(runModel, settings) ? "on" : "inert";
 }

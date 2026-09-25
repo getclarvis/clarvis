@@ -43,7 +43,7 @@ export const RUN_WORK_ITEMS_TOOL_NAME = "run_work_items";
 
 const RUN_WORK_ITEMS_DESCRIPTION =
   "Schedule a batch of leaders by dependencies and declared file conflicts. Returns the wave " +
-  "plan immediately; collect outcomes with await_agents or agent_poll. Scheduling separates " +
+  "plan immediately; collect outcomes with agent_poll. Scheduling separates " +
   "conflicting readers/writers within this batch only, not your own or unrelated agents' work.";
 
 /** A parsed `run_work_items` call. */
@@ -311,7 +311,7 @@ function describePlan(
     `scheduled ${String(total)} work item(s) into ${String(waves.length)} wave(s) — ${shape}. ` +
     `Wave 1 is running now: ${started}.${describeQueued(queued)} ` +
     "Later waves start as their dependencies clear. " +
-    "Keep working, then collect them with await_agents (to wait) or agent_poll (to look). " +
+    "Keep working, then collect them with agent_poll or read its completion notice. " +
     "Do not finish until they have returned."
   );
 }
@@ -378,7 +378,7 @@ export function buildRunWorkItemsHandler(
         return Promise.resolve(
           verdict(
             "not starting this batch — too many child agents are already running. Wait with " +
-              "await_agents or end one with agent_stop, then try again.",
+              "agent_poll or end one with agent_stop, then try again.",
           ),
         );
       }

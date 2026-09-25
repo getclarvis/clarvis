@@ -30,7 +30,6 @@ runs unchanged (`packages/kernel/src/config/agent-overlay.ts`).
 
 Agent-driven edits in the ordinary conversation use the
 [direct self-configuration contract](self-configuration.md): ordinary file tools write configuration
-documents under host permissions or the configured native sandbox. The config service below still
 validates documents when it reads them. Production: `dispatch` in
 [core.ts](../../packages/tools/src/core.ts) and `createFileConfigStore` in
 [file-config-store.ts](../../packages/kernel/src/config/file-config-store.ts). Test:
@@ -79,7 +78,6 @@ Not exported from `./config` but exported from their module and imported by test
 | `revokeWorkspace()` | `packages/kernel/src/config/config-service.ts` | — |
 | `workspaceTrustError()` | `packages/kernel/src/config/config-service.ts` | — |
 | `updateSettings(scope, patch, expectedRevision)` | `packages/kernel/src/config/config-service.ts` | `invalid_request`, `conflict` |
-| `inspectSandbox(options?)` | `packages/kernel/src/config/config-service.ts` | `unavailable` |
 | `listAgents()` | `packages/kernel/src/config/config-service.ts` | — |
 | `getAgent(scope \| "builtin", name)` | `packages/kernel/src/config/config-service.ts` | `invalid_request`, `not_found` |
 | `writeAgent(scope, name, doc)` | `packages/kernel/src/config/config-service.ts` | `invalid_request` (/), `conflict` |
@@ -92,9 +90,7 @@ Not exported from `./config` but exported from their module and imported by test
 | `subscribe(kinds, listener)` | `packages/kernel/src/config/config-service.ts` | — |
 
 `createConfigService` takes two optional host collaborators (`packages/kernel/src/config/config-service.ts`):
-`inspectSandbox` (absent ⇒ `inspectSandbox()` rejects `unavailable`) and `knownGrants` (absent ⇒
 `SettingsView.known_grants` is left **absent rather than empty**, `packages/kernel/src/config/config-service.ts`). The kernel
-supplies both at `packages/kernel/src/kernel.ts`. The positive path — a supplied `inspectSandbox`
 resolving through the service — is pinned at
 `packages/kernel/tests/contract/config-service.test.ts`; the absent-collaborator path is the one
 cited above in Section 6.
@@ -794,7 +790,7 @@ Each entry: **rule** — production anchor — test anchor.
 
 32. **An unreadable agents directory is distinguishable from an empty one.**
     `reportAgentsUnreadable` (`packages/kernel/src/config/file-config-store.ts`). Pinned:
-    `packages/kernel/tests/integration/file-config-store.test.ts` (skips on win32 and as root).
+    `packages/kernel/tests/integration/file-config-store.test.ts` (skips as root).
 
 33. **`kernelSettingsSchema` admits the registered capability blocks that the engine's bare schema
     rejects, and is still strict about anything else.** `packages/kernel/src/config/capability-registry.ts` over
@@ -839,9 +835,7 @@ Each entry: **rule** — production anchor — test anchor.
     when the frontmatter declares none").
 
 40. **The shipped leads expose the child harness without prescribing a generic work method.**
-    Marshall names `spawn_subagent` for independent work, `delegate_task` for an existing plan task
-    with its exact id, the three leaf roles, background supervision and the shared workspace. Admiral
-    names both child tools as manager-local capabilities. Both condition tool use on availability,
+    Marshall names `spawn_subagent` for independent work, the three leaf roles, background supervision and the shared workspace. Admiral names the same child tool as a manager-local capability. Both condition tool use on availability,
     require explicit delegation instruction under the shared policy (user, applicable loaded skill,
     or agent-instruction file), distinguish handles from results, and retain the live-child
     finalization gate. Production:
@@ -883,7 +877,6 @@ Each entry: **rule** — production anchor — test anchor.
 | Ill-formed agent name | `packages/kernel/src/config/config-service.ts` | `invalid_request`; store never called |
 | Cross-scope name collision | `packages/kernel/src/config/config-service.ts` | `conflict` with `{name, scope, conflictingScope}` |
 | Missing agent on `getAgent`/`renameAgent` | `packages/kernel/src/config/config-service.ts` | `not_found` |
-| No sandbox probe configured | `packages/kernel/src/config/config-service.ts` | rejects `unavailable` |
 | Store lacks `setWorkspaceTrust` | `packages/kernel/src/config/config-service.ts` | **degrades**: re-reads settings, "the same answer an inert workspace gets"; pinned on the memory store at `packages/kernel/tests/contract/config-service.test.ts` |
 | Store lacks `watch` | `packages/kernel/src/config/config-service.ts` | **degrades** to a no-op unsubscribe |
 | Scope not configured on the file store | `packages/kernel/src/config/file-config-store.ts` | plain `Error: config store has no '<scope>' scope configured`; `rewriteUnderLease` throws it **before** taking the lock, pinned `packages/kernel/tests/integration/file-config-store.test.ts` |
@@ -961,7 +954,6 @@ ceiling, the three failure kinds, and the `missing` flag.
 | `file-kernel.ts` | `createFileConfigStore`, `DEFAULT_ENTRY_AGENT`, `SettingsSnapshot` | `packages/kernel/src/file-kernel.ts` |
 | `runs/settings-assembler.ts` | `AgentRecord`, `ConfigStore`, `readEffectiveAgent` | `packages/kernel/src/runs/settings-assembler.ts` |
 | `application/workflow-policy.ts` | `resolveAgentsByName`, `ConfigStore` | `packages/kernel/src/application/workflow-policy.ts` |
-| `sandbox/policy.ts` | `ConfigStore`/`SettingsSnapshot` types | `packages/kernel/src/sandbox/policy.ts` |
 | `plugins/plugin-service.ts` | `parseAgentFrontmatter` | `packages/kernel/src/plugins/plugin-service.ts` |
 | `plugins/plugin-contributions.ts` | `AgentRecord` type | `packages/kernel/src/plugins/plugin-contributions.ts`; it also exposes `settingsScopes`/`agents`/`readAgent`, consumed at `packages/kernel/src/config/file-config-store.ts` |
 | `@clarvis/code` | `resolveAgentsByName`, `AgentSummary.overlay.shadowed` | `packages/code/src/adapters/kernel-run-client.ts`, `packages/code/src/adapters/agents-store.ts` |

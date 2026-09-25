@@ -16,7 +16,6 @@ export {
   subagentFocusToast,
   thinkingDisplayText,
   transcriptDisplayText,
-  visionNoticeText,
 } from "./presenters.ts";
 
 export {

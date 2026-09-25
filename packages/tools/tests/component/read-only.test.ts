@@ -62,8 +62,6 @@ describe("read-only surface", () => {
     const cases: Array<[string, Record<string, unknown>]> = [
       ["read_file", { path: "a.txt" }],
       ["list_dir", {}],
-      ["glob", { pattern: "**/*.ts" }],
-      ["grep", { pattern: "alpha" }],
     ];
     for (const [name, args] of cases) {
       const rFull = await callTool(name, args, full);
@@ -77,8 +75,6 @@ describe("read-only surface", () => {
     write(root, "keep.txt", "original\n");
     await callTool("read_file", { path: "keep.txt" }, ro);
     await callTool("list_dir", {}, ro);
-    await callTool("glob", { pattern: "**/*" }, ro);
-    await callTool("grep", { pattern: "orig" }, ro);
 
     const blocked = await dispatch("write_file", { path: "keep.txt", content: "changed\n" }, ro);
     expect(blocked.isError).toBe(true);

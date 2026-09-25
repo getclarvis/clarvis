@@ -41,12 +41,8 @@ export async function serveRemoteFileKernelOverStdio(
     owner: options.kernel.defaultOwner,
   });
   const env = options.kernel.env ?? loadEnv(options.kernel.environment?.values ?? process.env);
-  const environment = options.kernel.environment?.values ?? process.env;
   const policyId = localHostPolicyIdentity({
     env,
-    workspaceRoot: identity.workspaceRoot,
-    globalDir: identity.globalDir,
-    environment,
   });
   const state = await acquireLocalHostState(identity, options.artifactId, policyId, logger);
   if (state === null) throw kernelError("conflict", "another kernel host owns this workspace");
@@ -79,12 +75,9 @@ export async function serveRemoteFileKernelOverStdio(
     if (
       localHostPolicyIdentity({
         env,
-        workspaceRoot: identity.workspaceRoot,
-        globalDir: identity.globalDir,
-        environment,
       }) !== policyId
     )
-      throw kernelError("conflict", "Sandbox policy changed during host startup");
+      throw kernelError("conflict", "Execution policy changed during host startup");
     await host.sync();
     const owned = host;
     const pump = serveKernelOverStdio(owned.server, { input, output }, logger);

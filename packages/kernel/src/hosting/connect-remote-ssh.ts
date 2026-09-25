@@ -9,13 +9,7 @@ const SAFE_REMOTE_TOKEN = /^[A-Za-z0-9_./:=@+-]+$/u;
 const MAX_STDERR_BYTES = 32 * 1024;
 const SSH_ENVIRONMENT_KEYS = [
   "HOME",
-  "USERPROFILE",
   "PATH",
-  "Path",
-  "PATHEXT",
-  "SystemRoot",
-  "SYSTEMROOT",
-  "WINDIR",
   "SSH_AUTH_SOCK",
   "SSH_ASKPASS",
   "SSH_ASKPASS_REQUIRE",
@@ -114,7 +108,6 @@ export async function connectRemoteKernelOverSsh(
     ],
     {
       stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
       env: remoteSshEnvironment(process.env),
     },
   );

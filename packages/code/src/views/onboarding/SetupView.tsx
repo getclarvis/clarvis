@@ -101,7 +101,7 @@ export function SetupView(
             <text fg={tokens.add}>{glyph("success") + " Ready to use"}</text>
             <text fg={tokens.fg}>{`Agent   ${deps.state().agent ?? "coder"}`}</text>
             <text fg={tokens.fg}>{`Model   ${deps.state().model ?? "configured default"}`}</text>
-            <text fg={tokens.muted}>Guard, memory and planning use Clarvis defaults.</text>
+            <text fg={tokens.muted}>Memory and planning use Clarvis defaults.</text>
           </Show>
         </box>
       </box>

@@ -30,7 +30,6 @@ export const BUILTIN_TRACE_KINDS = [
   "compaction_started",
   "compaction",
   "compaction_skipped",
-  "vision_analysis",
   "cancellation",
   "user_question",
   "user_steering",
@@ -285,26 +284,23 @@ export interface LeadIterationStartedDetail {
 
 /**
  * A sub-agent delegation as it is created: its `delegation_id`, human `title`,
- * the `task` brief, the granted `tools`, and optionally the `task_id` it
- * advances and the agent `profile` it runs under.
+ * the `task` brief, the granted `tools`, and the agent `profile` it runs under.
  */
 export interface DelegationCreatedDetail {
   delegation_id: string;
   title: string;
   task: string;
   tools: string[];
-  task_id?: string;
   profile?: string;
 }
 
 /**
  * The outcome of a finished delegation — its `status` and returned `result`,
- * plus the `task_id` it was tied to — shared by both the
+ * shared by both the
  * `delegation_completed` and `delegation_failed` kinds.
  */
 export interface DelegationFinishedDetail {
   delegation_id: string;
-  task_id?: string;
   status: string;
   result: string;
   /** SHA-256 of the complete result before retention caps are applied. */
@@ -331,36 +327,13 @@ export interface CancellationDetail {
 }
 
 /**
- * The vision pre-pass: a single completion that read the turn's images on behalf
- * of an entry agent whose own model cannot see them.
- *
- * @remarks Deliberately not a `delegation_*` entry. No sub-agent exists — there
- *   is no agent id to poll, steer or stop, and no tool surface — so reporting it
- *   as a delegation would put a child in the trace that a client could never
- *   address. `model` is the model that did the reading, which is by construction
- *   not the agent's own.
- *
- *   `status` is `completed` only when the pass produced text the entry agent
- *   actually received; a blank reading is `failed`, because the run proceeds on
- *   placeholders either way and the distinction that matters to a reader is
- *   whether the images were described, not whether the HTTP call returned.
- */
-export interface VisionAnalysisDetail {
-  model: string;
-  image_count: number;
-  status: "completed" | "failed";
-  /** The reading handed to the entry agent, or the failure's message. */
-  result: string;
-}
-
-/**
  * A context-compaction pass that reclaimed room in an agent's window, naming the
  * `operation` (`eviction`, `truncation`, or `summarization`) and, where
  * applicable, how many entries/characters were removed versus kept.
  *
  * @remarks The optional count fields are populated per operation kind — e.g.
  *   `evicted_count` for eviction, the `*_chars` measures for truncation and
- *   summarization; `task_id` scopes the pass to a specific task when relevant.
+ *   summarization.
  */
 export interface CompactionDetail {
   agent: AgentRole;
@@ -390,7 +363,6 @@ export interface CompactionDetail {
   requested?: true;
   /** Number of applied contributions authored by the user request channel. */
   user_contribution_count?: number;
-  task_id?: string;
 }
 
 /** A live-only compaction pass announcement emitted before hooks or model work begin. */
@@ -539,7 +511,6 @@ export interface RunEndedDetail {
  */
 export interface DelegationStartedDetail {
   delegation_id: string;
-  task_id?: string;
   model: string;
 }
 
@@ -745,7 +716,6 @@ export interface TraceDetailMap {
   compaction_started: CompactionStartedDetail;
   compaction: CompactionDetail;
   compaction_skipped: CompactionSkippedDetail;
-  vision_analysis: VisionAnalysisDetail;
   cancellation: CancellationDetail;
   user_question: UserQuestionDetail;
   user_steering: UserSteeringDetail;

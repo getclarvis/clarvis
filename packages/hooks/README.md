@@ -108,8 +108,7 @@ policy still applies before the loop accepts the stage. The external event spell
   `deny` blocks it. A cancelled run always passes, so teardown never looks like a policy denial.
   This is why a decision to block is read before anything else: routing a contradictory body to
   `on_failure` would resolve a block into an allow.
-- **portable lifecycle fields are retained**: `commandWindows` selects a Windows-only command,
-  `async` detaches command hooks with an eight-process background ceiling (except `SessionEnd`,
+- **portable lifecycle fields are retained**: `async` detaches command hooks with an eight-process background ceiling (except `SessionEnd`,
   which always waits), `additionalContextLimit` bounds parsed stdout, and `statusMessage` remains
   available as display metadata. `prompt` and `agent` entries are reported and skipped.
 - **`mcp_tool` hooks use the run-scoped MCP port directly** with recursively expanded
@@ -123,7 +122,6 @@ policy still applies before the loop accepts the stage. The external event spell
 and anything whose name looks like a secret, plus `CLARVIS_HOOK_*` describing the fire point. A
 plugin hook additionally receives `PLUGIN_ROOT`/`PLUGIN_DATA` and the
 `CODEX_PLUGIN_ROOT`/`CODEX_PLUGIN_DATA` compatibility aliases, without adding credential material.
-That is credential hygiene, **not a sandbox** — a hook command runs with the operator's own
 privileges, which is the point of it being installed/operator-authored config.
 
 ## Usage
@@ -191,7 +189,7 @@ arguments it was matched against.
 - **Defaults differ per event class**, and the schema's own `timeout_ms` description is generated
   from `HOOK_DEFAULT_TIMEOUT_MS` so the two cannot drift: **5000 ms** for the tool events, which fire
   on every tool call in sequence inside the dispatch; **30000 ms** for `pre_finalize` /
-  `pre_delegate_task`, which are O(1) per agent; **2000 ms** for `run_end`.
+  `pre_spawn_subagent`, which are O(1) per agent; **2000 ms** for `run_end`.
 - **`session_start` is a dedicated context group**, not an observer. Its `{"kind":"context","text":"…"}`
   output is collected by the capability's `seedBlock()` into a pinned, non-evictable entry-context
   block that **survives compaction** rather than being re-injected after it. Its `seedMarker` is

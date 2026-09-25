@@ -111,6 +111,20 @@ describe("dispatch — success and error routing", () => {
     expect(r.isError).toBe(true);
     expect(JSON.parse(resultText(r.content))).toMatchObject({ error: "not_found" });
   });
+
+  it("bounds mutation diff metadata while retaining a usable preview", async () => {
+    const before = "a".repeat(4_000);
+    write(root, "large.txt", before);
+    const r = await dispatch(
+      "edit_file",
+      { path: "large.txt", old_string: before, new_string: "b".repeat(4_000) },
+      makeConfig(root, { maxToolMetaBytes: 1_024 }),
+    );
+    expect(r.isError).toBe(false);
+    expect(r.meta).toMatchObject({ truncated: true });
+    expect(Buffer.byteLength(JSON.stringify(r.meta), "utf8")).toBeLessThanOrEqual(1_024);
+    expect(String(r.meta?.diff)).toContain("[diff truncated to metadata budget]");
+  });
 });
 
 describe("listTools surface", () => {
@@ -135,7 +149,7 @@ describe("listTools surface", () => {
 
   it("tells the model that large output is cut, on every tool that can emit it", () => {
     const byName = new Map(listTools(config).map((t) => [t.name, t.description]));
-    for (const name of ["shell", "grep", "read_file"]) {
+    for (const name of ["shell", "read_file"]) {
       expect(byName.get(name)).toContain("byte-bounded");
     }
   });
@@ -145,10 +159,10 @@ describe("listTools surface", () => {
     // bounded tail. Descriptions must name the end the reader actually loses.
     const byName = new Map(listTools(config).map((t) => [t.name, t.description]));
     expect(byName.get("shell")).toContain("older bytes may expire");
-    for (const name of ["grep", "read_file"]) {
+    for (const name of ["read_file"]) {
       expect(byName.get(name)).toContain("loses its tail");
     }
-    for (const name of ["shell", "grep", "read_file"]) {
+    for (const name of ["shell", "read_file"]) {
       expect(byName.get(name)).not.toContain("middle of an oversized result is dropped");
     }
   });

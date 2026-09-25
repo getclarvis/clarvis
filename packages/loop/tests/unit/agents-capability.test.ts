@@ -1,11 +1,10 @@
-import { afterEach, beforeEach, describe, it, expect, vi } from "../bun-test.ts";
+import { describe, it, expect } from "../bun-test.ts";
 import {
   createAgentsRunCapability,
   AGENT_LIST_TOOL,
   AGENT_POLL_TOOL,
   AGENT_STEER_TOOL,
   AGENT_STOP_TOOL,
-  AWAIT_AGENTS_TOOL,
   AGENTS_UNFINISHED_CODE,
 } from "../../src/runtime/capabilities/agents.ts";
 import { fakeAgentBuildContext, fakeAgentScope } from "../../src/runtime/capabilities/testing.ts";
@@ -20,7 +19,6 @@ const LIMITS: AgentsLimits = {
   bufferBytes: 32_768,
   maxTotalBufferBytes: 524_288,
   pollMaxBytes: 4096,
-  awaitTimeoutMs: 50,
   maxLiveChildren: 8,
   maxRetainedChildren: 8,
   maxNoticesPerIteration: 4,
@@ -49,11 +47,7 @@ function attach(over: Partial<AgentsLimits> = {}): Attached {
   const limits = { ...LIMITS, ...over };
   const registry = createAgentRegistry({ limits });
   const bc = fakeAgentBuildContext({ agent: "lead" });
-  const capability = createAgentsRunCapability(
-    registry,
-    limits.awaitTimeoutMs,
-    limits.finishNudges,
-  );
+  const capability = createAgentsRunCapability(registry, limits.finishNudges);
   const agentCapability = capability.forAgent(fakeAgentScope({ agent: "lead", entry: true }))!;
   const contribution = agentCapability.attach(bc);
   return {
@@ -67,7 +61,7 @@ function attach(over: Partial<AgentsLimits> = {}): Attached {
 }
 
 describe("agents capability — activation", () => {
-  it("advertises all five tools to an entry agent", () => {
+  it("advertises all four tools to an entry agent", () => {
     const { contribution } = attach();
     expect(contribution.advertised).toBe(true);
     expect(contribution.tools!.map((t) => t.wireName)).toEqual([
@@ -75,20 +69,12 @@ describe("agents capability — activation", () => {
       AGENT_POLL_TOOL,
       AGENT_STOP_TOOL,
       AGENT_STEER_TOOL,
-      AWAIT_AGENTS_TOOL,
     ]);
-  });
-
-  it("distinguishes a wait wake from completion or cancellation", () => {
-    const { contribution } = attach();
-    const wait = contribution.tools!.find((tool) => tool.wireName === AWAIT_AGENTS_TOOL)!;
-    expect(wait.description).toContain("inspect woke_on and still_running");
-    expect(wait.description).toContain("Timeout leaves children running");
   });
 
   it("does not attach to a spawned sub-agent — that is what scopes a parent to its own children", () => {
     const registry = createAgentRegistry({ limits: LIMITS });
-    const capability = createAgentsRunCapability(registry, 50, 2);
+    const capability = createAgentsRunCapability(registry, 2);
     expect(capability.forAgent(fakeAgentScope({ entry: false }))).toBeNull();
   });
 });
@@ -204,147 +190,9 @@ describe("agents capability — the tools", () => {
   it("every supervision verdict is an immediate result — never a deferred", async () => {
     const { registry, call } = attach();
     registry.register(registration("n1"));
-    for (const name of [AGENT_LIST_TOOL, AWAIT_AGENTS_TOOL]) {
+    for (const name of [AGENT_LIST_TOOL, AGENT_POLL_TOOL]) {
       expect((await call(name)).kind).toBe("result");
     }
-  });
-});
-
-describe("agents capability — await_agents", () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
-  it("returns immediately with woke_on 'none' when there is nothing to wait for", async () => {
-    const { call, body } = attach();
-    expect(body(await call(AWAIT_AGENTS_TOOL))).toContain('"woke_on":"none"');
-  });
-
-  it("returns an unknown-id error immediately instead of waiting for the timeout", async () => {
-    const { call, body } = attach({ awaitTimeoutMs: 2000 });
-    const verdict = await call(AWAIT_AGENTS_TOOL, { ids: ["agent_missing"] });
-    expect(body(verdict)).toContain("unknown agent_id");
-  });
-
-  it("filters non-string ids before validating the requested wait scope", async () => {
-    const { registry, call, body } = attach({ awaitTimeoutMs: 20 });
-    const handle = registry.register(registration("n1"))!;
-    const pending = call(AWAIT_AGENTS_TOOL, { ids: [false, handle.id], timeout_ms: 20 });
-    handle.settled({ status: "completed", result: "done" });
-    expect(body(await pending)).toContain('"woke_on":"agent_done"');
-  });
-
-  it("wakes on the first child to settle and counts that as progress", async () => {
-    const { registry, call, body } = attach({ awaitTimeoutMs: 2000 });
-    const handle = registry.register(registration("n1"))!;
-    const pending = call(AWAIT_AGENTS_TOOL);
-    handle.settled({ status: "completed", result: "landed" });
-    const verdict = await pending;
-    expect(body(verdict)).toContain('"woke_on":"agent_done"');
-    expect(body(verdict)).toContain("landed");
-    expect((verdict as { progress: boolean }).progress).toBe(true);
-  });
-
-  it("wakes on the timeout without claiming progress", async () => {
-    const { registry, call, body } = attach({ awaitTimeoutMs: 20 });
-    registry.register(registration("n1"));
-    const pending = call(AWAIT_AGENTS_TOOL);
-    await vi.advanceTimersByTimeAsync(20);
-    const verdict = await pending;
-    expect(body(verdict)).toContain('"woke_on":"timeout"');
-    expect((verdict as { progress: boolean }).progress).toBe(false);
-  });
-
-  it("wakes on a queued user steer, without consuming it", async () => {
-    const limits = { ...LIMITS, awaitTimeoutMs: 3000 };
-    const registry = createAgentRegistry({ limits });
-    let probed = 0;
-    const bc = fakeAgentBuildContext({
-      agent: "lead",
-      steerProbe: () => {
-        probed += 1;
-        return probed > 1;
-      },
-    });
-    const contribution = createAgentsRunCapability(registry, limits.awaitTimeoutMs, 2)
-      .forAgent(fakeAgentScope({ agent: "lead", entry: true }))!
-      .attach(bc);
-    registry.register(registration("n1"));
-    const pending = contribution.handlers![0]!.handle(
-      { id: "c1", name: AWAIT_AGENTS_TOOL, arguments: {} },
-      1,
-    );
-    await vi.advanceTimersByTimeAsync(500);
-    const verdict = await pending;
-    expect((verdict as { text: string }).text).toContain('"woke_on":"steer"');
-    expect((verdict as { progress: boolean }).progress).toBe(false);
-  });
-
-  it("wakes on cancellation and resumes the run clock", async () => {
-    const limits = { ...LIMITS, awaitTimeoutMs: 3000 };
-    const registry = createAgentRegistry({ limits });
-    const controller = new AbortController();
-    let paused = 0;
-    let resumed = 0;
-    const bc = fakeAgentBuildContext({
-      agent: "lead",
-      signal: controller.signal,
-      clock: {
-        race: async (promise) => promise,
-        pause: () => {
-          paused += 1;
-        },
-        resume: () => {
-          resumed += 1;
-        },
-        enter: () => {},
-        leave: () => {},
-        pauseCompute: () => () => {},
-        enterBackground: () => ({ pause: () => () => {}, leave: () => {} }),
-        poke: () => {},
-      },
-    });
-    const contribution = createAgentsRunCapability(registry, limits.awaitTimeoutMs, 2)
-      .forAgent(fakeAgentScope({ agent: "lead", entry: true }))!
-      .attach(bc);
-    registry.register(registration("n1"));
-
-    const pending = contribution.handlers![0]!.handle(
-      { id: "c1", name: AWAIT_AGENTS_TOOL, arguments: {} },
-      1,
-    );
-    controller.abort();
-    const verdict = await pending;
-
-    expect((verdict as { text: string }).text).toContain('"woke_on":"cancelled"');
-    expect((verdict as { progress: boolean }).progress).toBe(false);
-    expect(paused).toBe(1);
-    expect(resumed).toBe(1);
-  });
-
-  it("maps an unexpected registry wait rejection to a timeout result", async () => {
-    let disposed = false;
-    const registry = {
-      has: () => true,
-      liveIds: () => ["ag_test"],
-      waitAny: () => ({
-        promise: Promise.reject(new Error("wait failed")),
-        dispose: () => {
-          disposed = true;
-        },
-      }),
-    } as unknown as AgentRegistry;
-    const bc = fakeAgentBuildContext({ agent: "lead" });
-    const contribution = createAgentsRunCapability(registry, 1000, 2)
-      .forAgent(fakeAgentScope({ agent: "lead", entry: true }))!
-      .attach(bc);
-
-    const verdict = await contribution.handlers![0]!.handle(
-      { id: "c1", name: AWAIT_AGENTS_TOOL, arguments: { ids: ["ag_test"] } },
-      1,
-    );
-
-    expect((verdict as { text: string }).text).toContain('"woke_on":"timeout"');
-    expect(disposed).toBeTrue();
   });
 });
 
@@ -392,7 +240,7 @@ describe("agents capability — the finish gate (D10)", () => {
     registry.register(registration("n1"));
     const outcome = await contribution.gates![0]!.check({ mode: "text", text: "done" });
     expect(outcome.kind).toBe("nudge");
-    expect((outcome as { note: string }).note).toContain("await_agents");
+    expect((outcome as { note: string }).note).toContain("agent_poll");
     expect(bc.trace.entries().find((e) => e.kind === "agent_finish_nudge")!.detail).toMatchObject({
       outcome: "nudged",
       nudge_index: 1,
@@ -459,11 +307,7 @@ describe("agents capability — teardown warnings", () => {
     const warnings: string[] = [];
     const registry = createAgentRegistry({ limits: LIMITS });
     const bc = fakeAgentBuildContext({ agent: "lead", warnings });
-    const contribution = createAgentsRunCapability(
-      registry,
-      LIMITS.awaitTimeoutMs,
-      LIMITS.finishNudges,
-    )
+    const contribution = createAgentsRunCapability(registry, LIMITS.finishNudges)
       .forAgent(fakeAgentScope({ agent: "lead", entry: true }))!
       .attach(bc);
     return { registry, contribution, warnings };

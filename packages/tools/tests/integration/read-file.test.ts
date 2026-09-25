@@ -12,7 +12,7 @@ import {
 } from "../helpers/fixtures.ts";
 import type { ServerConfig } from "../../src/config.ts";
 
-const mkfifo = process.platform === "win32" ? undefined : executableOnPath("mkfifo");
+const mkfifo = executableOnPath("mkfifo");
 
 describe("read_file", () => {
   let root: string;

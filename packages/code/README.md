@@ -4,7 +4,7 @@ The flagship Clarvis terminal UI. It connects to an independently owned workspac
 `@clarvis/kernel` and renders runs with SolidJS and OpenTUI.
 
 The UI programs against the `@clarvis/protocol` service contract, so the same
-shell uses the same typed kernel RPC over a private local socket or Windows named pipe.
+shell uses the same typed kernel RPC over a private local socket.
 `/diff` and `Ctrl+X D` open the current workspace changes from `KernelClient.changes`, not
 transcript tool history.
 
@@ -20,8 +20,8 @@ canonical refresh and confirmed revision sequencing. Its usage adapter converts 
 and delegates token/cache/pricing accumulation to Kernel’s `addRunUsage` through `./policy`. The workspace manager launches or discovers
 the companion `local-host` entry and owns its connection, while the host owns execution and history.
 
-On a local Host or Sandbox connection, `/background` confirms that the current hosted run may
-continue, then closes the TUI. SSH Kernels are owned by the current client channel, so
+On a local host connection, `/background` confirms that the current hosted run may continue,
+then closes the TUI. SSH Kernels are owned by the current client channel, so
 they refuse an exit-surviving handoff; list, attach and cancel remain available while that
 connection is alive. A failed or uncertain handoff leaves the interface open.
 An explicitly classified pre-admission refusal clears that attempt and permits a fresh handoff
@@ -43,8 +43,8 @@ the displayed host/run identity. The host records this operator verification in 
 before releasing its physical-work block. The conversation is archived and new work requires a new
 conversation; existing history and any known result remain. Failed confirmation or persistence keeps
 the recovery pending. The application does not infer physical closure from a missing host process.
-After attachment through a local Host/Sandbox connection, the activity line says `continues after
-exit` for a promoted run. `/quit` closes that TUI without asking about losing the run or cancelling
+After attachment through a local host connection, the activity line says `continues after exit`
+for a promoted run. `/quit` closes that TUI without asking about losing the run or cancelling
 it; a new turn defaults to ordinary exit policy. SSH attachments never show that
 promise. Unsaved settings still require confirmation, and Ctrl+C still requests run cancellation.
 A Goal turn whose intent has committed also carries the host's continuation policy immediately.
@@ -61,11 +61,8 @@ durable queue, and the replacement Kernel recovers it without spending an attemp
 leaves a healthy connection available. Provider
 credential saves and extension activation request that same reload path; connection recovery alone
 does not activate a saved Extension Profile.
-For an idle Host/Sandbox selection change, reload resolves the saved placement again,
-retires the previous connection, and publishes the replacement Kernel's effective runtime to the
-header before another run can start. If the replacement cannot be admitted, the picker restores the
-previous isolation through the host administrative config service before the manager recovers that
-connection. Expected EOF while retiring Host/Sandbox is not presented as a connection failure.
+An explicit idle reload retires the previous connection and publishes the replacement Kernel's
+runtime before another run can start. A failed reload leaves the existing connection available.
 For SSH connections, reconnect first closes and drains the old SSH-owned host so its exclusive
 workspace lease is retired before the replacement starts. That expected closure is not presented as
 a connection failure. Closing the TUI or SSH stream also closes that remote host, cancels its
@@ -164,7 +161,7 @@ The TUI contract is divided across the focused `code-*` specs in the
 [`hosts` map](../../specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade): bootstrap,
 performance, run hosting, transcript projection, input/overlays, domain hubs, settings panels,
 keyboard policy, theme, and onboarding. The performance contract and measurement review live
-in [`code-performance.md`](../../specs/hosts/code-performance.md). Image entry and the vision pre-pass are specified in
+in [`code-performance.md`](../../specs/hosts/code-performance.md). Image entry and routing are specified in
 [`engine/vision-routing.md`](../../specs/engine/vision-routing.md).
 Thinking text shows at most three wrapped lines, with `...` when additional content is hidden.
 Resizing updates the preview; the persisted reasoning is unchanged.
@@ -232,13 +229,12 @@ installation marker are refused.
 For end users, the public installers in the repository root download portable artifacts from the
 binary-only [`getclarvis/clarvis-releases`](https://github.com/getclarvis/clarvis-releases)
 repository. A portable archive includes the exact Bun runtime, the map-free split artifact, its
-package-owned assets, and the native OpenTUI closure for one of six targets: GNU/glibc Linux, macOS,
-or Windows on x64 or arm64. Alpine and other musl-only Linux distributions are not portable-release
-targets for this beta. The installed application uses native Host or Sandbox isolation. The bundled Bun executable is installed as `runtime/clarvis` on
-POSIX and `runtime/clarvis.exe` on Windows, so operating-system process viewers attribute the
-foreground process and its CPU and memory use to Clarvis rather than Bun. Developer source commands
-still run under their explicitly invoked Bun executable. Archives retain `runtime/bun` or `runtime/bun.exe`
-only as a compatibility entry for an older launcher; current installers and updates do not select it.
+package-owned assets, and the native OpenTUI closure for one of four targets: GNU/glibc Linux
+or macOS on x64 or arm64. Alpine and other musl-only Linux distributions are not portable-release
+targets for this beta. The bundled Bun executable is installed as `runtime/clarvis`, so process
+viewers attribute foreground resource use to Clarvis. Developer source commands still run under
+their explicitly invoked Bun executable. Archives retain `runtime/bun` only as a compatibility
+entry for an older launcher; current installers and updates do not select it.
 Runtime dependency discovery accepts only installed bare package specifiers from generated imports
 and calls, including minified `createRequire` bindings; relative, absolute,
 built-in, and module-internal `#` references retained by the generated artifact are not interpreted
@@ -259,11 +255,10 @@ The installer also verifies the release-level `SHA256SUMS`, confirms that the st
 requested version, stores it under `versions/v<version>`, and writes `current` only after every
 earlier step succeeds. On POSIX, checksum parsing, checksum calculation, and archive extraction all
 use the portable `C` locale, so a synthetic host locale cannot add warnings to an otherwise healthy
-install. Both root installers print the target, resolved destination, and numbered download,
-verification, staging, and activation phases. `install.sh --uninstall` and
-`install.ps1 -Uninstall` authenticate the installer-owned marker (or the complete legacy managed
-layout), share the updater's mutation lock through launcher and Windows `PATH` cleanup, and remove
-only managed application files. POSIX launcher ownership is bound to the selected install root;
+install. The root installer prints the target, resolved destination, and numbered download,
+verification, staging, and activation phases. `install.sh --uninstall` authenticates the installer-owned marker (or the complete legacy managed
+layout), share the updater's mutation lock through launcher cleanup, and remove
+only managed application files. Launcher ownership is bound to the selected install root;
 linked managed directories and non-file activation/marker destinations are refused. Cancellation
 stops the operation, repeated removal is a successful no-op, and Clarvis configuration,
 credentials, sessions, and workspace data remain untouched.
@@ -360,7 +355,7 @@ checkouts remain visible and activatable but never offer the managed update acti
 explicit `updateable` projection also suppresses Update for local and npm installs rather than
 offering an operation that will be refused. Extension Profile selects only already-installed extensions.
 Marketplace entries may install from Git
-repositories/subdirectories (optionally pinned by ref or SHA), confined local directories, or npm
+repositories/subdirectories (optionally pinned by ref or SHA), local directories, or npm
 packages fetched without lifecycle scripts. Each install carries the listing name and refuses an
 explicitly different manifest identity; an unnamed foreign manifest uses that listing name as its
 stable install identity. The browser shows `AVAILABLE`, `INSTALLED_BY_DEFAULT`,
@@ -395,21 +390,14 @@ stores the token for a later run.
 After onboarding, `/model` is the only surface that changes `default_model`, and `/effort` is the
 only surface that changes its `default_reasoning_effort`. They write only their own setting in the
 selected global/workspace scope. Providers owns credentials and the available-model set, while
-Settings > Defaults owns vision and budget defaults; none can overwrite the model/effort choice.
+Settings > Defaults owns budget defaults; none can overwrite the model/effort choice.
 Those user defaults are authoritative for the run's Lead even when its selected Agent Profile
 declares another model or effort. A spawned Sub-agent keeps the model and effort explicitly
 declared by its own Agent Profile, falling back to the user defaults only when it declares none.
 Settings > Defaults shows the effective host token default when no settings layer declares one; it
 does not label the run unlimited while the kernel still applies its environment fallback.
-Defaults, Memory, Sandbox and Run controls use the same stable overview/detail interaction as
-Agents: the overview keeps one compact row per setting, Enter edits, and `i` opens configured,
-effective, source and application details without expanding the list in place. Sandbox host and
-toolchain diagnostics live with the Sandbox detail, where errors remain visible and refreshable.
-Settings > Memory presents its effective summary and rows as one list — the effective state, then
-`Memory`, `Extraction model` when a block exists, and `Session memory` — with no intermediate scope
-headings: each row names its own origin (`from <scope>`, `this client`) and its own timing
-(`next run`, `now`), and the session control stays client-local and immediate whatever scope page it
-is shown from.
+Defaults uses the same overview/detail interaction as Agents: the overview keeps one compact row
+per setting, Enter edits, and `i` opens effective details.
 Editing a shipped agent in `/settings` → agents writes a **customization**, not a copy: only the
 fields you changed reach `agents/<name>.md`, and everything else keeps following the shipped
 default. Deleting that file is offered as a reset — the shipped agent comes back. A shipped agent
@@ -447,7 +435,7 @@ benchmark's individual markers.
 On the first interactive launch, startup opens a branded Clarvis setup rather than Doctor or an
 empty conversation. Enter begins the focused provider/model picker; the flow makes the selected
 model the default and asks for its credential without ever rendering the secret. After saving,
-Clarvis seeds its ordinary planning and memory defaults, reloads the live Agent Profile
+Clarvis seeds its ordinary planning defaults, reloads the live Agent Profile
 catalogue, selects `marshall`, and shows one Ready screen. No agent or workflow file is written at
 any point; the default fleet and workflow catalogue are built into the kernel. One **Escape** from
 either picker closes the bootstrap picker and returns to setup with the staged choice unsaved.
@@ -499,10 +487,7 @@ restoring the ordinary row. See
 A previously configured but damaged installation opens the branded Repair Clarvis screen instead.
 It presents the first run-blocking condition and one primary repair route; Doctor remains the manual
 full diagnostic available at `/doctor`, where optional recommendations are distinct from blockers.
-Cold boot does not probe host sandbox toolchains: that inspection may run several bounded
-`--version` subprocesses and is not needed to route setup or repair. An explicit Doctor recheck
-performs it for the header and readiness gates; opening Settings > Sandbox performs its own
-panel-local inspection. Durable memory-queue recovery is likewise released only after
+Durable memory-queue recovery is released only after
 `app.boot.painted`, so stale indexing work cannot delay the first usable application frame.
 
 `/agent` separates the current session agent from persistent defaults. `Enter` changes only the
@@ -587,23 +572,24 @@ keeps the whole path too and names the open file's operation. Escape returns fro
 tree, then closes `/diff`; its footer omits
 the global Ctrl+C cancel/quit action like the Plan and Goal detail screens.
 
-Memory's quick control is session-only.
-Application actions use Ctrl+X: I for Isolation, M for Memory, R for Run controls,
+Memory starts off on a fresh installation. Ctrl+X M saves the global on/off choice across
+workspaces and restarts; subsequent runs use that choice until it is changed.
+Application actions use Ctrl+X: M for Memory,
 P for Plan, O for Goal, W for Workflow, D for Diff, S for the activity Sidebar, K for block expansion, and E
 for the expanded editor. Ctrl+X Up/Down enter transcript-block focus; while a block is focused,
 plain Up/Down move between blocks and Tab returns to the composer. While a Ctrl+X prefix is pending,
 the navigation band names the sequence the user actually holds and lists the continuations the
-keymap would dispatch next (`Ctrl+X active ▸ [K] expand · [I] isolation …`), so the options appear
+keymap would dispatch next (`Ctrl+X active ▸ [K] expand · [M] memory …`), so the options appear
 next to the prefix they belong to and the activity line keeps reporting the run instead. A pending
 prefix is announced once, on the surface that owns the band, and each continuation reflects the
 binding that would really fire there. These defaults are identical
-on macOS, Windows and Linux: press Ctrl+X, release it, then press the second key.
+on macOS and Linux: press Ctrl+X, release it, then press the second key.
 The prefix expires after two seconds; Escape clears it and retains normal back behavior. Manual overrides remain
 available in Keyboard settings. All shortcut labels spell out Ctrl and Shift instead of a caret.
-Isolation, Memory and Agent pickers are disabled while a run is active.
+Memory and Agent pickers are disabled while a run is active.
 Clarvis keeps the terminal's native text path
 instead of requesting all-key escape reports, preserving dead-key and IME composition; a literal
-`ß` remains ordinary text. The three run-control pickers are loaded on first use and retained after their first
+`ß` remains ordinary text. The three quick pickers are loaded on first use and retained after their first
 mount. `Ctrl+X S` is the sole keyboard route for toggling the responsive activity Sidebar; it opens
 the first available Agents, Parallel work or Plan section when closed and closes the surface when open.
 In every width below the split it opens that surface across the whole content region instead of a narrow
@@ -682,13 +668,11 @@ approval guidance only when a decision is pending.
 
 `/plan` toggles this workspace's next-run policy between normal planning and required human review:
 `review` becomes `on`, while `on` or `off` becomes `review`. Repeated invocations serialize, so a
-second `/plan` restores normal planning even when entered while the first write is settling. Run
-controls has no planning-mode selector; its only plan row chooses whether completed plans are kept
-or deleted after a successful result. Registered Clarvis commands own their slash tokens, so an
+second `/plan` restores normal planning even when entered while the first write is settling.
+Registered Clarvis commands own their slash tokens, so an
 agent-backed skill named `plan` cannot shadow this built-in action.
-`/plans` and `/planning` are not commands. Execution memory has no global quick toggle:
-the next-run/session choice belongs to Run controls, while persistent configuration belongs to
-Settings > Memory.
+`/plans` and `/planning` are not commands. The global memory choice is available through
+Ctrl+X M; the selected run model also drives post-run memory indexing.
 
 Keyboard policy is scoped to an opaque terminal-path identifier in the global `code.json`. Local
 Kitty sessions default to the enhanced profile; SSH, multiplexed legacy and unknown paths default to
@@ -745,11 +729,11 @@ are in [loop-scheduling.md](../../specs/hosts/loop-scheduling.md).
 
 ### Shell and file tools
 
-Shell commands and file operations execute with the selected Isolation policy. When native
-Sandbox isolation is configured, its filesystem and network restrictions apply to both.
-Production: `packages/code/src/features/run/` (run configuration) and
-`packages/tools/src/sandbox.ts` (`sandboxCommand`). The behavior is specified in
-[sandbox.md](../../specs/execution/sandbox.md).
+Shell commands and file operations execute on the host with its process permissions.
+Production: `dispatch` in `packages/tools/src/core.ts` and `ExecutionSessionManager.launch` in
+`packages/tools/src/lib/execution-session.ts`. Test:
+`packages/tools/tests/integration/open-authority.test.ts` and
+`packages/tools/tests/integration/execution-session.test.ts`.
 
 `~/.clarvis` is `$CLARVIS_HOME` when that is set.
 
@@ -895,7 +879,6 @@ Beyond the `async.*`, `diagnostics.*` and `task.*` vocabulary above:
 | error | `settings.save.rejected`                                                               | `scope`, `issue_count`, `fields`, `reason`                     |
 | debug | `settings.model_ref.unparsed`                                                          | `site`, `error` (sampled)                                      |
 | error | `plugin.install.failed`                                                                | `phase`, `argv0`, `subcommand`, `exit_code`, `stderr_tail`     |
-| warn  | `marketplace.containment.unknown`                                                      | `reason`                                                       |
 | error | `doctor.check.failed`                                                                  | `check_id`, `error`, `duration_ms`                             |
 | debug | `shell.local.exit`                                                                     | `exit_code`, `duration_ms`, `killed`, `signal`, `spawn_failed` |
 | warn  | `run.stream.interrupted`                                                               | `execution_id`, `error`                                        |
@@ -1007,10 +990,9 @@ a directory outside the global `exports/` tree.
   Sidebar/footer state and the selected child's isolated transcript.
 - Provider tool plumbing for Lead-owned supervision, spawning/delegation and workflow orchestration
   is also transcript-silent in every phase. Composing, started, streaming-output and terminal rows for
-  `spawn_subagent`, `delegate_task`, `agent_list`, `agent_poll`, `agent_stop`, `agent_steer`,
-  `await_agents`, `run_leader`, `run_workflow`, `run_round`, `run_work_items`, `workflow_status` and
+  `spawn_subagent`, `agent_list`, `agent_poll`, `agent_stop`, `agent_steer`, `run_leader`, `run_workflow`, `run_round`, `run_work_items`, `workflow_status` and
   `workflow_decide` never mount in the
-  Lead transcript; this includes transient copy such as `Wait for agents starting…`. Typed delegation
+  Lead transcript; this includes transient copy such as `Check agent starting…`. Typed delegation
   events remain the sole owner of the two lifecycle markers, while workflow state remains
   Sidebar-only. Ordinary Lead `thinking`/`working` state occupies one fixed activity line
   immediately above the composer, outside the transcript ScrollBox; child-owned tools/content remain
@@ -1385,8 +1367,7 @@ the build pays that once. Consequences worth knowing:
   Plan, settings panels and domain hubs stay out of the startup entrypoint until their capability or
   route is first mounted. `lazyView` gives command views one Solid-owned loading boundary and cached
   module without duplicating lifecycle code. The build and artifact smoke reject an entrypoint that
-  absorbs representative lazy boundaries, and derive generated chunk basenames from either POSIX or
-  Windows path separators so every native release job enforces the same graph contract.
+  absorbs representative lazy boundaries, and derive generated chunk basenames so every native release job enforces the same graph contract.
 - **Local maps are detached; installed and portable maps are omitted.** Bun eagerly loads an external `.map`
   found beside its runtime `.js`; with this artifact that erased most of the splitting gain. The
   ordinary package/root build moves maps to `dist/maps/` for offline diagnostics and the smoke
@@ -1415,19 +1396,15 @@ the kernel re-checks for its own private state, and a host offering none fails w
 resource: `socketPath(label)` builds an exclusive address inside the root whenever the endpoint budget
 allows it and otherwise from a short root of its own, taken from the same validated parents followed by
 the host's short temporary roots, and a host where none of them can hold an address fails
-`smoke_socket_root_unavailable` instead of starting a backend that cannot bind. `writableRoots` declares
-the socket root as an extra mount for confinement, and cleanup removes it after the children settle. The
+`smoke_socket_root_unavailable` instead of starting a backend that cannot bind. Cleanup removes
+the socket root after the children settle. The
 fixture lifecycle terminates registered children before removing its roots. It asserts the shipped snapshot
 exists for a later Providers open, and proves first paint emits no `catalog.load.started` while
 `deferred_catalog` remains true.
 
-The normal smoke mode isolates environment and filesystem state. The opt-in native mode requires a
-working Bubblewrap probe, mounts only selected runtime/checkout roots read-only, masks `.clarvis`,
-`.agents` and `.git`, disables network, and fails as unavailable instead of falling back to an
-unconfined PTY. `script(1)` and tmux both use the fixture environment; tmux receives the fixture's
+The smoke harness uses disposable environment and filesystem state. `script(1)` and tmux both use the fixture environment; tmux receives the fixture's
 reserved socket through `-S` and every capture and `kill-server` command names that same endpoint.
-Installer smoke copies release inputs into the fixture and refuses Windows User `Path`
-coverage unless a disposable account is explicitly proven. The regression coverage is
+Installer smoke copies release inputs into the fixture. The regression coverage is
 `packages/code/tests/unit/artifact-isolation.test.ts` plus
 `packages/code/tests/unit/benchmark-isolation.test.ts`, which executes the benchmark's version arm
 against a real Bun child and checks the observed fixture roots. The release/installer/PTY contract
@@ -1458,16 +1435,7 @@ the notice is never written into transcript history. A selected plugin whose cap
 files drift receives the parallel `Plugin '<name>' changed executable files` warning while its
 runtime MCP/hook projections are withheld.
 
-The workspace header reports effective Isolation. Settings >
-Run controls owns the persisted global Host or Sandbox choice alongside the `Ctrl+X I` quick picker.
-Host follows OS permissions; Sandbox reads host-visible files but limits writes to
-its declared roots. `workspace-read-only` keeps the workspace read-only even below a writable
-temporary root. A Sandbox command may use an accessible directory outside the workspace as `cwd`.
-The panel's effective access line follows host inspection when an untrusted workspace requests a
-weaker Sandbox than the global policy; Run controls, Doctor and the quick picker use the same
-observation for effective placement, while editable rows still show the requested settings. When
-idle, selecting a placement reloads the workspace connection. The picker shows its save/reconnect
-phase until admission completes. Host selection requires the explicit danger confirmation.
+The workspace header reports model and memory status.
 
 Local and SSH destinations remain available through `WorkspaceClientManager`. Their settings,
 Agent, prompt and model-catalog writes stay with the selected host; `/model` attempts an idle reload

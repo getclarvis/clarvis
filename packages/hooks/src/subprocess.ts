@@ -358,17 +358,8 @@ function errorMessage(e: unknown): string {
  *   abort are all ordinary fields, because the caller's contract is to turn any
  *   outcome into a verdict rather than to handle an exception at a fire point.
  * @remarks
- * `detached` comes from `ownProcessGroup()` and is never passed unconditionally.
- * On POSIX it makes the child a group leader, which is the only reason
- * `killTree` can reap a hook's grandchildren; on Windows it would mean
- * `DETACHED_PROCESS`, denying the child a console and producing a silent
- * do-nothing spawn. There is no platform branch here: `killTree` runs
- * `taskkill /T /F` on Windows, where signals do not exist and the escalation
- * step is therefore a no-op.
- *
- * The shell is the one the host's own tools resolve to - `sh` on POSIX, pwsh
- * with an encoded command on Windows - so a hook command behaves exactly like a
- * `shell` tool command on the same machine.
+ * `detached` puts the child in its own process group so `killTree` can reap
+ * its descendants. Hook commands use the same `sh` resolver as coding tools.
  *
  * An already-aborted signal short-circuits before the spawn: at teardown there
  * is nothing to learn from starting a process only to kill it.

@@ -11,6 +11,7 @@ import {
   openSync,
   readFileSync,
   readdirSync,
+  renameSync,
   unlinkSync,
   writeFileSync,
   type Stats,
@@ -22,6 +23,7 @@ import {
   open,
   readFile,
   readdir,
+  rename,
   unlink,
   type FileHandle,
 } from "node:fs/promises";
@@ -32,8 +34,6 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   fsyncDir,
   fsyncDirSync,
-  renameWithRetry,
-  renameWithRetrySync,
   tmpPathFor,
   writeFileDurable,
   writeFileDurableSync,
@@ -625,7 +625,7 @@ export async function reclaimLocalLease(
 
     const quarantine = tmpPathFor(path);
     try {
-      await renameWithRetry(path, quarantine, { logger });
+      await rename(path, quarantine);
       options.afterReclaimMove?.(path);
     } catch (error) {
       if (errno(error) === "ENOENT") return true;
@@ -681,7 +681,7 @@ export function reclaimLocalLeaseSync(path: string, options: LocalLeaseRecoveryO
 
     const quarantine = tmpPathFor(path);
     try {
-      renameWithRetrySync(path, quarantine, { logger });
+      renameSync(path, quarantine);
       options.afterReclaimMove?.(path);
     } catch (error) {
       if (errno(error) === "ENOENT") return true;
@@ -839,7 +839,7 @@ function createLease(
           // Detach the directory entry first, then inspect the inode that was
           // actually moved. This makes the check-and-remove one atomic namespace
           // transition: an ABA successor is restored, never unlinked.
-          await renameWithRetry(path, quarantine);
+          await rename(path, quarantine);
         } catch {
           return false;
         }
@@ -910,7 +910,7 @@ function createLeaseSync(
         options.beforeRelease?.(path);
         const quarantine = tmpPathFor(path);
         try {
-          renameWithRetrySync(path, quarantine);
+          renameSync(path, quarantine);
         } catch {
           return false;
         }

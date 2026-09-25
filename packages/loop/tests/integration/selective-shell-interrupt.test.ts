@@ -12,7 +12,6 @@ import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
 import { GateLLM } from "./_gate-llm.ts";
 import { makeHarness, type TestHarness } from "./_helpers.ts";
 
-const posixShell = process.platform !== "win32";
 const roots: string[] = [];
 let harness: TestHarness | undefined;
 afterEach(async () => {
@@ -87,7 +86,7 @@ function shellScript(command = "printf 'partial-out\\n'; printf 'partial-err\\n'
   });
 }
 
-describe.skipIf(!posixShell)("selective interrupt through executeRun and the real shell", () => {
+describe("selective interrupt through executeRun and the real shell", () => {
   it("releases a yielded control when the process exits without an interrupt", async () => {
     const control = channel();
     let released!: (event: Extract<TraceEvent, { type: "tool_control_released" }>) => void;

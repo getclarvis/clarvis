@@ -169,7 +169,7 @@ this document's scope description names explicitly as owning "the reserve/releas
 | `createSemaphore(limit)` | factory | `=> Semaphore`, FIFO, `limit` coerced to `max(1, floor(limit))` | `packages/capability/src/semaphore.ts` |
 
 Two independent bounds are built over this one factory: `packages/loop/src/runtime/orchestrator.ts`
-(`createSemaphore(deps.env.CLARVIS_MAX_PARALLEL_SUBAGENTS)`, the run's `delegate_task` fan-out limit —
+(`createSemaphore(deps.env.CLARVIS_MAX_PARALLEL_SUBAGENTS)`, the run's `spawn_subagent` fan-out limit —
 consumed in `packages/loop/src/runtime/delegation.ts`, owned by [loop-delegation-and-subagents](delegation-and-subagents.md)) and the
 workflow leader-concurrency semaphore (`packages/workflows/src/*`, owned by
 [workflows-scheduling-and-spawn](../capabilities/workflows-scheduling.md)).
@@ -200,7 +200,7 @@ is only cited here as the wiring that reaches this subsystem's constructors.
 | `CLARVIS_DEFAULT_STAGNATION_THRESHOLD` | `3` | `packages/capability/src/env.ts` | `createStagnationGuard`'s hard `threshold` fallback |
 | `CLARVIS_DEFAULT_STAGNATION_SOFT_THRESHOLD` | `2` | `packages/capability/src/env.ts` | `createStagnationGuard`'s `soft` fallback |
 | `CLARVIS_GUARD_MAX_ESCALATIONS` | `2` | `packages/capability/src/env.ts` (doc `packages/capability/src/env.ts`) | `escalateGuardTrip`'s `maxEscalations`, deliberately separate from `CLARVIS_DEFAULT_MAX_ESCALATIONS` (comment, `packages/capability/src/env.ts`) |
-| `CLARVIS_MAX_PARALLEL_SUBAGENTS` | `4` | `packages/capability/src/env.ts` | the `delegate_task` fan-out `Semaphore` (`packages/loop/src/runtime/orchestrator.ts`) |
+| `CLARVIS_MAX_PARALLEL_SUBAGENTS` | `4` | `packages/capability/src/env.ts` | the `spawn_subagent` fan-out `Semaphore` (`packages/loop/src/runtime/orchestrator.ts`) |
 | `CLARVIS_MAX_CONCURRENT_EXTENSION_CALLS` | `32` | `packages/capability/src/env.ts` (`CLARVIS_MAX_CONCURRENT_EXTENSION_CALLS`) | `ExtensionAdmissionController.maxActiveNormal` fallback |
 | `CLARVIS_MAX_CONCURRENT_EXTENSION_RUN_END_CALLS` | `8` | `packages/capability/src/env.ts` | `.maxActiveRunEnd` fallback |
 | `CLARVIS_MAX_CONCURRENT_EXTENSION_CALLS_PER_OPERATION` | `4` | `packages/capability/src/env.ts` | `.maxActivePerOperation` fallback |
@@ -235,17 +235,15 @@ subsystem's constructors read.
 | `addUsage(acc, usage)` | function | folds one call's `LLMUsage` into a `TokenAccumulator` in place | `packages/loop/src/runtime/usage.ts` |
 | `accumulateSubagentUsage(byModel, modelRef, delta)` | function | adds one finished sub-agent's totals into the per-model `SubagentAggregate` map, bumping `instances` by exactly 1 per call | `packages/loop/src/runtime/usage.ts` |
 | `perAgentFromAggregate(model, agg)` | function | projects a `SubagentAggregate` into a `type: "subagent"` `PerAgentUsage` row | `packages/loop/src/runtime/usage.ts` |
-| `LeadSubagentUsageInput` | interface | `{leadModel, primarySubagentModel, leadUsage, leadIterations, subagentsByModel, elapsedMs, warnings?, vision?}` | `packages/loop/src/runtime/usage.ts` |
-| `VisionUsage` | interface | `{model, tokens: TokenAccumulator}` — the vision pre-pass's spend | `packages/loop/src/runtime/usage.ts` |
-| `perAgentFromVision(vision)` | function | projects a `VisionUsage` into a `type: "vision"` `PerAgentUsage` row | `packages/loop/src/runtime/usage.ts` |
-| `finalizeLeadSubagentUsage(input)` | function | assembles a lead run's full `Usage`: one `lead` row, one `subagent` row per model (or a zeroed placeholder when none ran), plus an optional `vision` row | `packages/loop/src/runtime/usage.ts` |
+| `LeadSubagentUsageInput` | interface | `{leadModel, primarySubagentModel, leadUsage, leadIterations, subagentsByModel, elapsedMs, warnings?}` | `packages/loop/src/runtime/usage.ts` |
+| `finalizeLeadSubagentUsage(input)` | function | assembles a lead run's full `Usage`: one `lead` row, one `subagent` row per model (or a zeroed placeholder when none ran), with no auxiliary usage row | `packages/loop/src/runtime/usage.ts` |
 | `finalizeUsage(raw, model, elapsedMs)` | function | assembles a non-lead (single-agent) run's `Usage`: one `subagent` row for the entry model | `packages/loop/src/runtime/usage.ts` |
 
 ### 2.11 `packages/loop/src/runtime/usage-accounting.ts`
 
 | Export | Kind | Signature / shape | File |
 | --- | --- | --- | --- |
-| `UsageAccounting` | interface | `{entryUsage, counter, subagentAggByModel, warnings, vision: {current?}, finalize()}` — the run's whole mutable usage-tracking surface | `packages/loop/src/runtime/usage-accounting.ts` |
+| `UsageAccounting` | interface | `{entryUsage, counter, subagentAggByModel, warnings, finalize()}` — the run's whole mutable usage-tracking surface | `packages/loop/src/runtime/usage-accounting.ts` |
 | `createUsageAccounting(a)` | factory | `(a: {shape, deps, entryMax, startedAt}) => UsageAccounting` | `packages/loop/src/runtime/usage-accounting.ts` |
 
 ## 3. Data and formats
@@ -284,7 +282,7 @@ and classified by the same set.
 
 ### 3.4 `Usage` / `PerAgentUsage` (produced by `usage.ts` / `usage-accounting.ts`)
 
-`Usage.by_agent` is an array of rows tagged `type: "lead" | "subagent" | "vision"`
+`Usage.by_agent` is an array of rows tagged `type: "lead" | "subagent"`
 (`packages/loop/src/runtime/usage.ts`). A lead row example (`packages/loop/tests/unit/usage.test.ts`):
 
 ```json
@@ -301,9 +299,8 @@ followed by one `subagent` row per distinct model that ran, sorted by model name
 (`packages/loop/src/runtime/usage.ts`, test: `packages/loop/tests/unit/usage.test.ts`). `iterations_used` is the lead's own iterations plus
 every sub-agent's (`packages/loop/src/runtime/usage.ts`, test: `packages/loop/tests/unit/usage.test.ts`).
 
-`UsageAccounting.warnings` is a mutable array and `UsageAccounting.vision.current` a mutable single
-slot — both are appended/set **after** construction (by the loop and delegation machinery, per the
-interface's own `@remarks`) and `finalize()` reads their *live* state each time it is called, so
+`UsageAccounting.warnings` is a mutable array, appended after construction by the loop and delegation
+machinery. `finalize()` reads its live state each time it is called, so
 calling `finalize()` more than once reflects whatever was appended in between
 (`packages/loop/src/runtime/usage-accounting.ts`). This is directly pinned by
 `packages/loop/tests/unit/usage-accounting.test.ts`, which appends the string
@@ -315,16 +312,6 @@ A lead run's usage additionally carries up to two **static** warnings, attached 
 profile has tools or an active built-in) and `subagent_ask_user_ignored` (a spawnable profile grants
 `ask_user`, which sub-agents cannot use). Production: `packages/loop/src/runtime/usage-accounting.ts`. Test:
 `packages/loop/tests/unit/usage.test.ts` pins `subagent_has_no_tools`'s presence in the finalized `Usage`.
-
-A `type: "vision"` row (`perAgentFromVision`, `packages/loop/src/runtime/usage.ts`) reports what a vision pre-pass spent.
-It is kept in `UsageAccounting.vision.current`, a mutable slot **deliberately separate** from
-`subagentAggByModel`: folding it into the sub-agent aggregate previously reported a spawned sub-agent
-that never existed and inflated the lead's `subagents_spawned` (`packages/loop/src/runtime/usage-accounting.ts`). The
-vision row therefore contributes no iteration to `iterations_used` and no instance to
-`subagents_spawned`. Test: `packages/loop/tests/integration/subagent-only-prepass-usage.test.ts` — a comment in the test calls
-this out directly as "the defect this pins" — asserts the pre-pass row's `type` is `"vision"` (not
-`"subagent"`), that `iterations_used` is `1` (the entry agent's own iteration, not the pre-pass), and
-that the sole `subagent` row present is the entry agent, not the pre-pass.
 
 ## 4. Behavior
 
@@ -533,10 +520,8 @@ in [goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal
    keeps producing trace entries, sub-agent activity, or retries never trips it, however long it runs.
 5. `soft-budget.ts`'s `buildSoftLimitAsk` and `guard-escalation.ts`'s `buildGuardEscalationAsk` both
    bracket their human wait in `clock.pause()`/`clock.resume()` — **not** `pauseCompute()`/release,
-   which is a distinct mechanism for claiming an active *compute region* rather than a plain pause
-   (`packages/loop/src/runtime/capabilities/agents.ts` states explicitly why `await_agents`'s own wait uses `pause()` for the same
-   reason: `pauseCompute` would wrongly claim the region belonging to a still-spending background
-   child). Both adapters reach the wait through the one shared helper,
+   which is a distinct mechanism for claiming an active *compute region* rather than a plain pause.
+   Both adapters reach the wait through the one shared helper,
    `elicitWithClockPause` (`packages/capability/src/elicit.ts`), whose `finally` resumes a clock paused
    before the wait, via
    `packages/loop/src/runtime/tools/ask-user-tool.ts`'s re-export (`packages/loop/src/runtime/budget/soft-budget.ts`,
@@ -844,7 +829,7 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
   exactly one caller, and that caller is owned by a different document.
 - `packages/loop/src/runtime/delegation.ts` (owned by [loop-delegation-and-subagents](delegation-and-subagents.md)) is the sole
   consumer of the fan-out `Semaphore` built at `packages/loop/src/runtime/orchestrator.ts` — it calls `.acquire()`/`.release()`
-  around each `delegate_task` dispatch; this document owns only the `createSemaphore` factory and its FIFO/
+  around each `spawn_subagent` dispatch; this document owns only the `createSemaphore` factory and its FIFO/
   abort contract, not the fan-out policy built over it.
 - `packages/loop/src/runtime/run-trace.ts`'s `GUARD_TRIP_CODES` (owned by [loop-run-lifecycle](loop-run-lifecycle.md)) is what
   turns `tool_failure_loop`/`stagnation_detected` into `run_ended.reason: "guard_trip"` — this document

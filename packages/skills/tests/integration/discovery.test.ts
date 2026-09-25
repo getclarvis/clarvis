@@ -190,7 +190,6 @@ describe("root discovery and shadowing", () => {
             discovery: "immediate",
             manifestName: "exact",
             validation: "agent-skills",
-            confinementRoot: root,
           },
         ],
       }),

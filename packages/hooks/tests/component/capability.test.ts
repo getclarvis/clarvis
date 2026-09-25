@@ -85,7 +85,7 @@ describe("compileWorkspaceHooks", () => {
       "pre_tool_use",
       "post_tool_use",
       "pre_finalize",
-      "pre_delegate_task",
+      "pre_spawn_subagent",
       "run_start",
       "run_end",
       "post_compact",
@@ -105,7 +105,7 @@ describe("compileWorkspaceHooks", () => {
         "beforeToolUse",
         "afterToolUse",
         "preFinalize",
-        "preDelegateTask",
+        "preSpawnSubagent",
         "onRunStart",
         "onRunEnd",
         "onPostCompact",
@@ -351,10 +351,10 @@ describe("the payload a hook receives", () => {
 
   it("projects every remaining event onto snake_case fields", async () => {
     expect(
-      await payloadFor("pre_delegate_task", async (h) =>
-        h.preDelegateTask?.({ title: "T", task: "body", profile: "coder", taskId: "t1" }),
+      await payloadFor("pre_spawn_subagent", async (h) =>
+        h.preSpawnSubagent?.({ title: "T", task: "body", profile: "coder" }),
       ),
-    ).toEqual({ title: "T", task: "body", profile: "coder", task_id: "t1" });
+    ).toEqual({ title: "T", task: "body", profile: "coder" });
 
     expect(
       await payloadFor("run_start", async (h) =>

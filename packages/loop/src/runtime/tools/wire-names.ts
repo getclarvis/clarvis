@@ -1,5 +1,3 @@
-/** Wire name of the tool that delegates an existing tracked task. */
-export const DELEGATE_TASK_TOOL_NAME = "delegate_task";
 /** Wire name of the tool that starts an independent sub-agent. */
 export const SPAWN_SUBAGENT_TOOL_NAME = "spawn_subagent";
 /** Wire name of the tool that finalizes the run with its result. */
@@ -14,11 +12,9 @@ export const AGENT_POLL_TOOL = "agent_poll";
 export const AGENT_STOP_TOOL = "agent_stop";
 /** Wire name of the supervision tool that steers a running child. */
 export const AGENT_STEER_TOOL = "agent_steer";
-/** Wire name of the supervision tool that waits for children to settle. */
-export const AWAIT_AGENTS_TOOL = "await_agents";
 
 /**
- * The five agent-supervision wire names, in the order they are advertised.
+ * The four agent-supervision wire names, in the order they are advertised.
  *
  * @remarks They live here, in the dep-free wire-name module, rather than in the
  * `agents` capability that implements them, so a consumer gating on them can
@@ -29,7 +25,6 @@ export const AGENT_SUPERVISION_WIRE_NAMES: readonly string[] = [
   AGENT_POLL_TOOL,
   AGENT_STOP_TOOL,
   AGENT_STEER_TOOL,
-  AWAIT_AGENTS_TOOL,
 ];
 
 /**
@@ -42,7 +37,6 @@ export const AGENT_SUPERVISION_WIRE_NAMES: readonly string[] = [
  * which is the only way the list can stay complete as features are added.
  */
 export const BUILTIN_WIRE_NAMES: readonly string[] = [
-  DELEGATE_TASK_TOOL_NAME,
   SPAWN_SUBAGENT_TOOL_NAME,
   SUBMIT_RESULT_TOOL_NAME,
   ASK_USER_TOOL_NAME,
@@ -56,24 +50,13 @@ export const BUILTIN_WIRE_NAMES: readonly string[] = [
 export const AGENT_TOOL_WIRE_NAMES: readonly string[] = [
   "read_file",
   "read_image",
-  "read_files",
   "write_file",
   "edit_file",
-  "multi_edit",
   "apply_patch",
-  "replace",
   "list_dir",
-  "glob",
-  "grep",
-  "diff",
   "shell",
   "shell_session",
-  "move",
-  "copy",
-  "mkdir",
   "remove",
-  "file_stat",
-  "tree",
 ];
 
 /**
@@ -98,13 +81,7 @@ export const VISION_AGENT_TOOL_WIRE_NAMES: readonly string[] = ["read_image"];
 export const READ_ONLY_AGENT_TOOL_WIRE_NAMES: readonly string[] = [
   "read_file",
   "read_image",
-  "read_files",
   "list_dir",
-  "glob",
-  "grep",
-  "diff",
-  "file_stat",
-  "tree",
 ];
 
 /**

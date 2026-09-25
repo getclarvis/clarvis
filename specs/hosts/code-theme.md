@@ -460,7 +460,6 @@ status line with `MEMORY_PRESSURE_STATUS_RESTORING` or `MEMORY_PRESSURE_STATUS_F
    (`src/adapters/code-config.ts`, `src/adapters/session-store.ts`,
    `src/adapters/settings.ts`, and nine config-view `.tsx` files —
    `AgentsPanel.tsx`, `DoctorView.tsx`, `MarketplaceBrowser.tsx`, `McpBrowser.tsx`,
-   `RunControlsPanel.tsx`, `SandboxConfigPanel.tsx`, `ThemeView.tsx`,
    `WorkflowsHub.tsx`, `view-host.tsx`) contain **zero** non-ASCII characters (codepoint `> 0x7f`)
    outside comments. Production files: `views/config/ThemeView.tsx` (in this document's scope) plus the
    twelve listed above (mostly owned by sibling documents, listed here because the rule spans all

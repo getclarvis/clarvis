@@ -52,7 +52,6 @@ export interface KernelCapabilities {
 export interface RuntimeStatus {
   kind: "native";
   host_platform: string;
-  isolation: "host" | "sandbox";
   lifecycle: "ready";
 }
 

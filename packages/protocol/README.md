@@ -76,7 +76,7 @@ adapter using the same RPC framing.
 
 ## Services
 
-File-tool configuration uses ordinary runs and concrete `configuration_review` elicitation when required.
+File-tool configuration uses ordinary runs; file calls have no configuration approval path.
 Host-owned authority is separate from model-provided parameters and saved transcript content.
 `LocalHostStatus.skills_revision` notifies attached clients when the host publishes a skill catalog
 generation, allowing command listings to refresh without reconnecting. See
@@ -100,24 +100,24 @@ duplicate confirmation never restarts it. An elapsed window is never an answer:
 `KernelClient` carries the connected `project`/`workspace` identity and groups asynchronous
 services:
 
-| Service             | Responsibility                                                                         |
-| ------------------- | -------------------------------------------------------------------------------------- |
-| `runs`              | Start, stream, steer, compact live or settled context, inspect and delete runs.        |
-| `config`            | Settings, agent documents and context documents.                                       |
-| `extensionProfiles` | Exact inventory, definition, composition preview and selection of active extensions.   |
-| `plugins`           | Installed plugins, atomic contributions and lifecycle operations.                      |
-| `secrets`           | Server-side provider secret names and writes.                                          |
-| `models`            | Model metadata and pricing catalog.                                                    |
-| `providerAuth`      | Token-free local subscription status, device login and disconnect control.             |
-| `files`             | Read-only workspace file and image access.                                             |
-| `changes`           | Read-only workspace change inventory and unified patch detail.                         |
-| `memory`            | Owner-facing execution-memory review and curation.                                     |
-| `plans`             | History from the built-in Markdown plan store.                                         |
-| `workflows`         | Agentic workflows: a manager run fanning out leaders.                                  |
-| `skills`            | Skill listing and prompt rendering.                                                    |
-| `sessions`          | Workspace-scoped conversation/session records.                                         |
-| `goals`             | Availability, durable goal state, authenticated controls and operation receipts.       |
-| `storage`           | Metadata-only local inventory and confirmed cleanup of disposable artifacts.           |
+| Service             | Responsibility                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `runs`              | Start, stream, steer, compact live or settled context, inspect and delete runs.                                          |
+| `config`            | Settings, agent documents and context documents.                                                                         |
+| `extensionProfiles` | Exact inventory, definition, composition preview and selection of active extensions.                                     |
+| `plugins`           | Installed plugins, atomic contributions and lifecycle operations.                                                        |
+| `secrets`           | Server-side provider secret names and writes.                                                                            |
+| `models`            | Model metadata and pricing catalog.                                                                                      |
+| `providerAuth`      | Token-free local subscription status, device login and disconnect control.                                               |
+| `files`             | Read-only workspace listing and file/image reads; relative paths use the workspace root and absolute paths are accepted. |
+| `changes`           | Read-only workspace change inventory and unified patch detail.                                                           |
+| `memory`            | Owner-facing execution-memory review and curation.                                                                       |
+| `plans`             | History from the built-in Markdown plan store.                                                                           |
+| `workflows`         | Agentic workflows: a manager run fanning out leaders.                                                                    |
+| `skills`            | Skill listing and prompt rendering.                                                                                      |
+| `sessions`          | Workspace-scoped conversation/session records.                                                                           |
+| `goals`             | Availability, durable goal state, authenticated controls and operation receipts.                                         |
+| `storage`           | Metadata-only local inventory and confirmed cleanup of disposable artifacts.                                             |
 
 `ModelCatalog.source` can be `cache`, `bundle`, or `projection`. The last denotes immutable logical
 execution metadata without provider endpoints or credential names; it does not grant refresh or
@@ -194,7 +194,7 @@ fingerprint is not trusted. The full format, selection precedence, snapshot and 
 [`hosts/extension-profiles.md`](../../specs/hosts/extension-profiles.md).
 
 Marketplace installation uses `PluginInstallSource`, a closed union for Git (optional subdirectory,
-ref or SHA), confined local directories, and npm packages (optional version and credential-free
+ref or SHA), local directories, and npm packages (optional version and credential-free
 HTTPS registry). A source may carry `expected_name`, binding a marketplace listing to the installed
 manifest identity and supplying a stable name only when a foreign manifest omits one.
 `PluginService.installSource` keeps source interpretation on the client/catalog side and fetch policy
@@ -329,11 +329,8 @@ operation from replay because start signals are intentionally absent there.
 
 ## Runtime projection
 
-`SandboxInspection.filesystem` reports Host or Sandbox placement, host-visible read scope,
-the write boundary, and the effective workspace posture; `effective_network` reports the enforced
-network mode. The kernel resolves this doctor snapshot and the UI presents it alongside backend
-availability. The optional handshake runtime projection identifies native Host or Sandbox placement
-and a ready lifecycle. It is informational; the selected Kernel host owns execution policy.
+The optional handshake runtime projection identifies the host platform and ready lifecycle.
+It is informational; the selected Kernel host owns execution policy.
 
 ## Development
 

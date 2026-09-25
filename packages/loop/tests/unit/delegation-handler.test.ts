@@ -9,7 +9,7 @@ import { createAgentRegistry, type AgentsLimits } from "@clarvis/supervision";
 import { createTrace } from "@clarvis/trace";
 import { loadEnv } from "@clarvis/capability";
 import type { LLMProvider, LLMToolCall } from "@clarvis/capability";
-import type { TaskTrackingPort } from "@clarvis/capability";
+import type { SpawnGatePort } from "@clarvis/capability";
 
 const env = loadEnv({});
 
@@ -18,7 +18,6 @@ const AGENTS_TEST_LIMITS: AgentsLimits = {
   bufferBytes: 32_768,
   maxTotalBufferBytes: 524_288,
   pollMaxBytes: 4096,
-  awaitTimeoutMs: 1000,
   maxLiveChildren: 8,
   maxRetainedChildren: 8,
   maxNoticesPerIteration: 4,
@@ -63,36 +62,11 @@ function makeDeps(
   };
 }
 
-/**
- * A hand-rolled fake `TaskTrackingPort`, standing in for whatever capability
- * tracks a run's work items. `delegate_task`'s handler consumes only the
- * port's shape, and every case below would read the same against a tracker
- * over, say, a list of GitHub issues.
- */
-function fakeTracker(over: Partial<TaskTrackingPort> = {}): TaskTrackingPort {
-  return {
-    openTasks: () => [],
-    getTask: () => undefined,
-    markSpawned: () => true,
-    markFailed: () => true,
-    beforeSpawn: async () => ({ kind: "ok" }),
-    noteSpawned: () => {},
-    augmentDelegateTask: () => ({
-      description: "tracked spawn",
-      properties: { task_id: { type: "string" } },
-    }),
-    ...over,
-  };
+function fakeSpawnGate(over: Partial<SpawnGatePort> = {}): SpawnGatePort {
+  return { beforeSpawn: async () => ({ kind: "ok" }), ...over };
 }
 
 const AGENT_STOP_CONTROL = { stop: () => {}, steer: () => false, undrained: () => 0 };
-
-const delegateCall = (id: string, args: Record<string, unknown> = {}): LLMToolCall =>
-  ({
-    id,
-    name: "delegate_task",
-    arguments: { title: "w", task: "do x", ...args },
-  }) as unknown as LLMToolCall;
 
 const spawnCall = (id: string, args: Record<string, unknown> = {}): LLMToolCall =>
   ({
@@ -187,45 +161,6 @@ describe("child-spawn handler resilience (finding 4)", () => {
     expect(registry.list()).toHaveLength(1);
   });
 
-  it("cancels a queued child without claiming its task or publishing creation", async () => {
-    const semaphore = createSemaphore(1);
-    await semaphore.acquire();
-    const registry = createAgentRegistry({ limits: AGENTS_TEST_LIMITS });
-    const claims: string[] = [];
-    const tasks = fakeTracker({
-      openTasks: () => [{ id: "t1", status: "pending" }],
-      getTask: () => ({ id: "t1", title: "Queued task", status: "pending" }),
-      markSpawned: (id) => {
-        claims.push(id);
-        return true;
-      },
-      noteSpawned: (id) => {
-        claims.push(id);
-      },
-    });
-    const deps = makeDeps({ tasks, agents: registry, semaphore });
-    const contribution = buildDelegationContribution(deps);
-    const call = delegateCall("queued", { task_id: "t1", background: true });
-    try {
-      const verdict = await contribution
-        .handlers!.find((handler) => handler.matches(call))!
-        .handle(call, 0);
-      expect(verdict.kind).toBe("result");
-      expect(registry.list()).toHaveLength(1);
-      await registry.teardown(0);
-      expect(claims).toEqual([]);
-      expect(
-        deps.bc.trace
-          .entries()
-          .some(
-            (event) => event.kind === "delegation_created" || event.kind === "delegation_started",
-          ),
-      ).toBe(false);
-    } finally {
-      semaphore.release();
-    }
-  });
-
   it("spawn_subagent with an unknown profile is a plain rejection, not an unhandled error", async () => {
     const deps = makeDeps();
     const contribution = buildDelegationContribution(deps);
@@ -267,43 +202,6 @@ describe("child-spawn handler resilience (finding 4)", () => {
       expect(verdict.progress).toBe(false);
     }
   });
-
-  it.each(["technical", "capacity"] as const)(
-    "never publishes a creation, a start or a task claim for a %s refusal",
-    async (cause) => {
-      const registry = createAgentRegistry({
-        limits: { ...AGENTS_TEST_LIMITS, maxConsecutiveFailedChildren: 1, maxLiveChildren: 1 },
-      });
-      const seed = registry.register({
-        kind: "subagent",
-        nativeId: "seed",
-        title: "seed",
-        control: AGENT_STOP_CONTROL,
-      })!;
-      if (cause === "technical") seed.settled({ status: "failed", result: "boom" });
-      const spawned: string[] = [];
-      const tasks = fakeTracker({
-        openTasks: () => [{ id: "t1", status: "pending" }],
-        getTask: (id) => (id === "t1" ? { id: "t1", title: "T", status: "pending" } : undefined),
-        markSpawned: (id) => {
-          spawned.push(id);
-          return true;
-        },
-      });
-      const deps = makeDeps({ agents: registry, tasks });
-      const contribution = buildDelegationContribution(deps);
-      const call = delegateCall("refused-task", { task_id: "t1", background: true });
-      const handler = contribution.handlers!.find((h) => h.matches(call))!;
-
-      const verdict = await handler.handle(call, 0);
-
-      expect(verdict.kind).toBe("result");
-      expect(spawned).toEqual([]);
-      expect(deps.bc.trace.entries().some((e) => e.kind === "delegation_created")).toBe(false);
-      expect(deps.bc.trace.entries().some((e) => e.kind === "terminate")).toBe(false);
-      seed.settled({ status: "completed" });
-    },
-  );
 
   it("resets the circuit when an admitted child finishes successfully", async () => {
     const registry = createAgentRegistry({
@@ -385,26 +283,6 @@ describe("child-spawn handler resilience (finding 4)", () => {
     expect(registry.failingStreakExceeded()).toBe(false);
   });
 
-  it("a background spawn queued behind a saturated semaphore settles as stopped when its combined signal was already aborted", async () => {
-    const registry = createAgentRegistry({ limits: AGENTS_TEST_LIMITS });
-    const semaphore = createSemaphore(1);
-    await semaphore.acquire();
-    const controller = new AbortController();
-    controller.abort(new Error("bc stop"));
-    const deps = makeDeps({ agents: registry, semaphore }, { signal: controller.signal });
-    const contribution = buildDelegationContribution(deps);
-    const call = spawnCall("bg-abort", { background: true });
-    const handler = contribution.handlers!.find((h) => h.matches(call))!;
-    const wait = registry.waitAny();
-
-    const verdict = await handler.handle(call, 0);
-    expect(verdict.kind).toBe("result");
-
-    const info = await wait.promise;
-    expect(info.status).toBe("stopped");
-    expect(info.result).toBe("cancelled before it finished");
-  });
-
   it("a sub-agent run that throws still closes its delegation span in the persisted trace", async () => {
     const deps = makeDeps();
     const contribution = buildDelegationContribution(deps);
@@ -424,29 +302,6 @@ describe("child-spawn handler resilience (finding 4)", () => {
       (created.detail as { delegation_id: string }).delegation_id,
     );
     expect((failed.detail as { status: string }).status).toBe("error");
-  });
-
-  it("a background spawn whose sub-agent run throws outside its own catch settles as failed, not silently lost", async () => {
-    const registry = createAgentRegistry({ limits: AGENTS_TEST_LIMITS });
-    let calls = 0;
-    const deps = makeDeps({
-      agents: registry,
-      emitCapabilityEvent: () => {
-        calls += 1;
-        if (calls === 2) throw new Error("emit boom");
-      },
-    });
-    const contribution = buildDelegationContribution(deps);
-    const call = spawnCall("bg-throw", { background: true });
-    const handler = contribution.handlers!.find((h) => h.matches(call))!;
-    const wait = registry.waitAny();
-
-    const verdict = await handler.handle(call, 0);
-    expect(verdict.kind).toBe("result");
-
-    const info = await wait.promise;
-    expect(info.status).toBe("failed");
-    expect(info.result).toBe("emit boom");
   });
 
   it("an inline deferred spawn whose sub-agent run throws outside its own catch surfaces as a Sub-agent error result", async () => {
@@ -491,27 +346,23 @@ describe("child-spawn handler resilience (finding 4)", () => {
   });
 });
 
-/**
- * The pre-spawn ruling, the batch bookkeeping and the schema augmentation all
- * arrive through the optional {@link TaskTrackingPort} — `delegation.ts`'s own
- * TSDoc calls `tasks` "the only coupling to a tracker". These pin that seam
- * directly, with a tracker that has nothing to do with any particular feature.
- */
-describe("delegate_task handler — the TaskTrackingPort seam", () => {
-  it("with no tracker configured, only spawn_subagent is advertised", async () => {
+/** The optional spawn gate can refuse a child before preparation. */
+describe("spawn gate for independent children", () => {
+  it("with no spawn gate configured, only spawn_subagent is advertised", async () => {
     const deps = makeDeps();
     const contribution = buildDelegationContribution(deps);
     expect(contribution.tools?.map((tool) => tool.wireName)).toEqual(["spawn_subagent"]);
 
-    const call = spawnCall("no-tracker");
+    const call = spawnCall("no-gate");
     const handler = contribution.handlers!.find((h) => h.matches(call))!;
     expect((await handler.handle(call, 0)).kind).toBe("deferred");
-    expect(contribution.handlers!.some((h) => h.matches(delegateCall("unavailable")))).toBe(false);
   });
 
   it("a refuse verdict from beforeSpawn answers the call with its text and spawns nothing", async () => {
-    const tasks = fakeTracker({ beforeSpawn: async () => ({ kind: "refuse", text: "not now" }) });
-    const deps = makeDeps({ tasks });
+    const spawnGate = fakeSpawnGate({
+      beforeSpawn: async () => ({ kind: "refuse", text: "not now" }),
+    });
+    const deps = makeDeps({ spawnGate });
     const contribution = buildDelegationContribution(deps);
     const call = spawnCall("refused");
     const handler = contribution.handlers!.find((h) => h.matches(call))!;
@@ -526,16 +377,16 @@ describe("delegate_task handler — the TaskTrackingPort seam", () => {
     expect(deps.bc.trace.entries().some((e) => e.kind === "delegation_created")).toBe(false);
   });
 
-  it("a terminal verdict from beforeSpawn ends the agent with the tracker's own result", async () => {
+  it("a terminal verdict from beforeSpawn ends the agent with the gate's own result", async () => {
     const terminalResult: AgentResult = {
       status: "error",
       partialText: "",
-      error: { code: "no_progress", message: "tracker says stop" },
+      error: { code: "no_progress", message: "gate says stop" },
     };
-    const tasks = fakeTracker({
+    const spawnGate = fakeSpawnGate({
       beforeSpawn: async () => ({ kind: "terminal", result: terminalResult }),
     });
-    const deps = makeDeps({ tasks });
+    const deps = makeDeps({ spawnGate });
     const contribution = buildDelegationContribution(deps);
     const call = spawnCall("terminal");
     const handler = contribution.handlers!.find((h) => h.matches(call))!;
@@ -544,89 +395,5 @@ describe("delegate_task handler — the TaskTrackingPort seam", () => {
 
     expect(verdict.kind).toBe("terminal");
     if (verdict.kind === "terminal") expect(verdict.result).toBe(terminalResult);
-  });
-
-  it("an ok verdict lets the spawn proceed, and noteSpawned fires with the resolved task_id", async () => {
-    const noted: string[] = [];
-    const tasks = fakeTracker({
-      openTasks: () => [{ id: "t1", status: "pending" }],
-      getTask: (id) => (id === "t1" ? { id: "t1", title: "T", status: "pending" } : undefined),
-      noteSpawned: (id) => noted.push(id),
-    });
-    const deps = makeDeps({ tasks });
-    const contribution = buildDelegationContribution(deps);
-    const call = delegateCall("ok-verdict", { task_id: "t1" });
-    const handler = contribution.handlers!.find((h) => h.matches(call))!;
-
-    const verdict = await handler.handle(call, 0);
-
-    expect(verdict.kind).toBe("deferred");
-    expect(noted).toEqual([]);
-    if (verdict.kind === "deferred") await verdict.run();
-    expect(noted).toEqual(["t1"]);
-  });
-
-  it("delegate_task rejects a missing task_id and points independent work to spawn_subagent", async () => {
-    const noted: string[] = [];
-    const tasks = fakeTracker({ noteSpawned: (id) => noted.push(id) });
-    const deps = makeDeps({ tasks });
-    const contribution = buildDelegationContribution(deps);
-    const call = delegateCall("no-task-id");
-    const handler = contribution.handlers!.find((h) => h.matches(call))!;
-
-    const verdict = await handler.handle(call, 0);
-    expect(verdict.kind).toBe("result");
-    if (verdict.kind === "result") {
-      expect(verdict.text).toContain("task_id is required");
-      expect(verdict.text).toContain("Use spawn_subagent for independent work");
-    }
-    expect(noted).toEqual([]);
-  });
-
-  it("spawn_subagent ignores a surplus task_id and never associates it with the tracker", async () => {
-    const seenBeforeSpawn: Array<string | undefined> = [];
-    const noted: string[] = [];
-    const tasks = fakeTracker({
-      beforeSpawn: async (taskId) => {
-        seenBeforeSpawn.push(taskId);
-        return { kind: "ok" };
-      },
-      noteSpawned: (id) => noted.push(id),
-    });
-    const contribution = buildDelegationContribution(makeDeps({ tasks }));
-    const call = spawnCall("surplus-task-id", { task_id: "independent" });
-    const handler = contribution.handlers!.find((h) => h.matches(call))!;
-
-    expect((await handler.handle(call, 0)).kind).toBe("deferred");
-    expect(seenBeforeSpawn).toEqual([undefined]);
-    expect(noted).toEqual([]);
-  });
-
-  it("advertises tolerant, separate schemas when a tracker is present", () => {
-    const tasks = fakeTracker({
-      augmentDelegateTask: () => ({
-        description: "Spawn a Sub-agent against a tracked task.",
-        properties: { task_id: { type: "string" } },
-      }),
-    });
-    const deps = makeDeps({ tasks });
-    const contribution = buildDelegationContribution(deps);
-    expect(contribution.tools?.map((tool) => tool.wireName)).toEqual([
-      "spawn_subagent",
-      "delegate_task",
-    ]);
-    const spawn = contribution.tools!.find((tool) => tool.wireName === "spawn_subagent")!;
-    const delegated = contribution.tools!.find((tool) => tool.wireName === "delegate_task")!;
-
-    expect(delegated.description).toBe("Spawn a Sub-agent against a tracked task.");
-    expect(
-      (spawn.inputSchema as { properties: Record<string, unknown> }).properties.task_id,
-    ).toBeUndefined();
-    expect(
-      (delegated.inputSchema as { properties: Record<string, unknown> }).properties.task_id,
-    ).toBeDefined();
-    expect((delegated.inputSchema as { required: string[] }).required).toContain("task_id");
-    expect(spawn.inputSchema).not.toHaveProperty("additionalProperties", false);
-    expect(delegated.inputSchema).not.toHaveProperty("additionalProperties", false);
   });
 });

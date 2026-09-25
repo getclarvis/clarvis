@@ -99,40 +99,6 @@ test("isOversizeMutation agrees with renderEdit on the synthesized-diff fallback
   expect(out).toContain("(reconstructed)");
 });
 
-test("an oversize replace collapses to its summary plus a stats chip", async () => {
-  const out = await frame(
-    view({
-      mcpName: "replace",
-      arguments: { pattern: "foo", replacement: "bar" },
-      diff: bigDiff(60),
-      result: "Replaced 60 occurrence(s) in 1 file(s)",
-    }),
-  );
-  expect(out).toContain("Replaced 60 occurrence(s)");
-  expect(out).toContain("+60");
-  expect(out).toContain("… +63 lines");
-  expect(out).not.toContain("line 5");
-});
-
-test("full=true lifts the replace gate onto the per-file diffs", async () => {
-  const out = await frame(
-    view({
-      mcpName: "replace",
-      diff: bigDiff(60),
-      result: "Replaced 60 occurrence(s) in 1 file(s)",
-      full: true,
-    }),
-  );
-  expect(out).toContain("line 5");
-  expect(out).not.toContain("… +");
-});
-
-test("isOversizeMutation gates replace on its meta.diff, matching the renderer", () => {
-  expect(isOversizeMutation({ mcpName: "replace", toolName: "", diff: bigDiff(80) })).toBe(true);
-  expect(isOversizeMutation({ mcpName: "replace", toolName: "", diff: bigDiff(3) })).toBe(false);
-  expect(isOversizeMutation({ mcpName: "replace", toolName: "" })).toBe(false);
-});
-
 test("memory writes gate under their own identity, like their file twins", async () => {
   const content = Array.from({ length: 50 }, (_, i) => `wiki line ${i}`).join("\n");
   const write = { mcpName: "write_memory", toolName: "", args: { path: "PROFILE.md", content } };

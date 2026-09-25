@@ -14,7 +14,7 @@ import {
 import { messagesField } from "./message-schemas.ts";
 import { nonnegativeIntField } from "./numeric-schemas.ts";
 import { INPUT_LIMITS } from "../input-limits.ts";
-import { agentProfileSchema, modelField } from "./profile-schemas.ts";
+import { agentProfileSchema } from "./profile-schemas.ts";
 import { providerConfigSchema } from "./provider-schemas.ts";
 import { serverSchema } from "./server-schemas.ts";
 
@@ -195,14 +195,6 @@ export const runRequestSchema = z
           "— there are no built-in providers; an undeclared token is rejected (unknown_provider). The " +
           "Lead/Sub-agent/profiles may use DIFFERENT providers in one run. Keys are env-only: " +
           "api_key_env is the NAME of an env var the runtime reads, never a key value.",
-      ),
-    vision_model: modelField
-      .optional()
-      .describe(
-        "Model used to read the turn's images when the entry agent's own model lacks the " +
-          "'vision' capability. The pass is a single completion with no tools and no workspace: " +
-          "its reading is spliced into the entry agent's context as an '[image analysis]' " +
-          "message. Omit to leave images as numbered placeholders for a model that cannot see.",
       ),
     budget: budgetSchema,
     elicit_wait_ms: nonnegativeIntField("elicit_wait_ms")

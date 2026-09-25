@@ -20,10 +20,8 @@ import { join } from "node:path";
 import { existsSync } from "node:fs";
 import {
   createSmokeFixture,
-  requireNativeSmokeConfinement,
   type SmokeContext,
   type SmokeChild,
-  type SmokeConfinement,
   type SmokeEnvironmentOverride,
 } from "./isolation.ts";
 
@@ -101,9 +99,7 @@ export interface BootOptions {
   /** Explicitly admitted variant/install overrides; reserved roots cannot be replaced. */
   overrides?: SmokeEnvironmentOverride;
   /** Require a real native boundary; never falls back to an unconfined PTY. */
-  confinement?: SmokeConfinement;
   /** Host trees required read-only by the native boundary, such as the checkout. */
-  readOnlyRoots?: string[];
 }
 
 function matched(raw: string, plain: string, text: string): boolean {
@@ -281,21 +277,11 @@ async function observeViaTmux(options: BootOptions): Promise<BootObservation> {
  * @returns the observation; the child is always killed before this resolves.
  */
 export async function bootAndObserve(options: BootOptions): Promise<BootObservation> {
-  let command = scriptCommand(
+  const command = scriptCommand(
     options.runtime ?? process.execPath,
     options.entry,
     options.args ?? [],
   );
-  if (options.confinement === "required") {
-    if (command === undefined) {
-      throw new Error("smoke_native_confinement_unavailable:script_pty_required");
-    }
-    command = await requireNativeSmokeConfinement(
-      options.context,
-      command,
-      options.readOnlyRoots ?? [],
-    );
-  }
   if (command === undefined) return observeViaTmux(options);
   const log = join(options.context.logs, `clarvis-boot-${process.pid}-${Date.now()}.log`);
   return observeViaScript(command, options, log);

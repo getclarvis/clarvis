@@ -98,7 +98,7 @@ export function planCasHeader(document: PlanDocument, reviewRequired: boolean): 
 const PLAN_CAS_HEADER_MAX_CHARS = 32_768;
 const PLAN_NAME_MAX_CHARS = 256;
 const PLAN_OPERATIONAL_GUIDANCE =
-  "Keep the plan current. Mark direct work in_progress first. After delegate_task, verify the task's published status. Record outcomes with transition_plan_task when exit criteria are met. Review returned and failed tasks before completion.";
+  "Keep the plan current. Mark direct work in_progress first. Record outcomes with transition_plan_task when exit criteria are met. Review returned and failed tasks before completion.";
 
 type TaskCategory = "attention" | "pending" | "closed";
 
@@ -223,7 +223,7 @@ function approvalLine(document: PlanDocument, reviewRequired: boolean): string {
     );
   return (
     "Approval: AWAITING HUMAN APPROVAL — most tools are blocked until it is granted. " +
-    "Call submit_result or delegate_task to present this plan for approval; revise_plan first " +
+    "Call submit_result to present this plan for approval; revise_plan first " +
     "if it still needs changes."
   );
 }

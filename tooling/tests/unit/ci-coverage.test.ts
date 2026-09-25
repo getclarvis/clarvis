@@ -47,7 +47,7 @@ function supervisor(statuses: Record<string, number[]> = {}) {
   let clock = 100;
   const deps: CoverageDependencies = {
     bun: "fixture-bun",
-    env: { CLARVIS_NATIVE_SANDBOX_CANARY: "1" },
+    env: {},
     signal: controller.signal,
     now: () => clock++,
     emit: (event) => events.push(event),

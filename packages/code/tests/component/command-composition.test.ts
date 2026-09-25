@@ -71,7 +71,6 @@ function fakeSettings(): SettingsAdapter {
     envStatus: () => "unset",
     declaredMcpServers: () => [],
     reload: async () => {},
-    inspectSandbox: () => Promise.resolve(null as never),
   };
 }
 
@@ -128,7 +127,6 @@ function harness(): {
     ui,
     effects: {
       openAgentPicker: () => calls.push("agent-picker"),
-      openIsolationPicker: () => calls.push("isolation-picker"),
       openMemoryPicker: () => calls.push("memory-picker"),
       openDiff: () => calls.push("diff"),
       openPlan: () => calls.push("plan"),
@@ -160,13 +158,6 @@ function harness(): {
     extensionProfiles: {} as never,
     skills: { list: async () => [], getPrompt: async () => [] },
     code,
-    memoryMode: {
-      configured: () => true,
-      mode: () => "on",
-      setMode: (m: string) => calls.push("memory:" + m),
-      cycle: () => "on",
-      refresh: () => {},
-    } as never,
     workflows: {
       list: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
       get: async () => null,
@@ -232,13 +223,10 @@ const VIEW_CONTRACT = [
   ["sessions.open", "Sessions", "slash", "sessions"],
   ["storage.open", "Storage", "slash", undefined],
   ["workflows.open", "Workflows", "slash", undefined],
-  ["controls.open", "Run controls", "internal", "settings"],
   ["defaults.open", "Defaults", "internal", "settings"],
   ["model.open", "Default model", "slash", undefined],
   ["effort.open", "Default effort", "slash", undefined],
   ["marketplace.open", "Marketplace", "internal", "extensions"],
-  ["memory.config", "Memory settings", "internal", "settings"],
-  ["sandbox.config", "Sandbox", "internal", "settings"],
   ["theme.open", "Theme", "internal", "settings"],
   ["settings.open", "Settings", "slash", undefined],
   ["doctor.open", "Doctor", "slash", "inspect"],

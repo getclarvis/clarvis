@@ -5,34 +5,12 @@ import { SUBAGENT_NO_PROGRESS_LIMIT } from "../loop/loop-shared.ts";
 import type { RunAgentInput } from "../loop/run-agent.ts";
 
 /**
- * How a command reaches the host on a given platform, in the terms a model
- * needs to write one.
- *
- * @remarks Deliberately a local two-line derivation rather than an import of
- *   `@clarvis/tools`' `currentShellFlavor`. That package is an
- *   `optionalDependency` of the engine, and a run configured with
- *   `builtins.tools = false` still has a system prompt.
- */
-function shellLine(platform: NodeJS.Platform): string {
-  return platform === "win32"
-    ? "Shell: PowerShell (pwsh/powershell.exe) — not sh, and not cmd.exe."
-    : "Shell: sh, invoked as `sh -c`.";
-}
-
-/**
  * Renders the `# Environment` system-prompt section: the workspace root, the
  * host platform, and how a shell command is run.
  *
  * @param workspaceRoot - the run's workspace root.
  * @param platform - the host platform; defaults to `process.platform`.
- * @remarks The platform line is not decoration. Until it existed the **only**
- *   signal of the host OS anywhere in a run was the wording inside the `shell`
- *   tool's own description, and only on Windows — so on a POSIX host the model
- *   was told nothing at all and had to guess from path separators. Naming it in
- *   the system prompt is what lets a model choose `rm -rf` over `Remove-Item`
- *   deliberately rather than by luck.
- *
- *   What is **not** here, on purpose, is a probe of `PATH`. Reporting which
+ * @remarks No probe of `PATH` appears here. Reporting which
  *   binaries resolve invites the model to pick a toolchain from what is
  *   installed, and the installed set is the weaker evidence: a machine with both
  *   `npm` and `bun` on `PATH` says nothing about which one this repository uses,
@@ -45,7 +23,7 @@ function environmentPreamble(workspaceRoot: string, platform: NodeJS.Platform): 
     "",
     `Workspace root: ${workspaceRoot}`,
     `OS: ${platform}`,
-    shellLine(platform),
+    "Shell: sh, invoked as `sh -c`.",
   ].join("\n");
 }
 

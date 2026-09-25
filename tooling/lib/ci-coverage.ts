@@ -36,7 +36,6 @@ export interface CoverageDependencies {
 
 const CRASH_EXITS = new Set([132, 134, 139]);
 const MAX_CODE_RETRIES = 3;
-const POSIX_PROCESS_GROUPS = process.platform !== "win32";
 
 /** Bun can re-raise a script's signal with a null exit code; unknown termination fails closed. */
 export function normalizeCoverageExit(
@@ -57,13 +56,13 @@ export async function executeCoverageCommand(command: CoverageCommand): Promise<
       cwd: command.cwd,
       env: command.env,
       stdio: "inherit",
-      detached: POSIX_PROCESS_GROUPS,
+      detached: true,
     });
     let killFuse: ReturnType<typeof setTimeout> | undefined;
     let killError: Error | undefined;
     const kill = (signal: NodeJS.Signals) => {
       try {
-        if (POSIX_PROCESS_GROUPS && child.pid) process.kill(-child.pid, signal);
+        if (child.pid) process.kill(-child.pid, signal);
         else child.kill(signal);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ESRCH")

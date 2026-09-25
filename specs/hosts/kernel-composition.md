@@ -19,6 +19,13 @@ remain host bindings. Production: `createFileKernel` in
 [file-kernel.ts](../../packages/kernel/src/file-kernel.ts). Test:
 [file-kernel.test.ts](../../packages/kernel/tests/integration/file-kernel.test.ts).
 
+`loadMemorySettings` takes the Memory on/off choice only from global settings. A workspace block
+may provide provider and budget configuration but cannot change activation for that workspace.
+An absent global choice leaves explicit run requests available; Code starts them off until the
+operator selects On globally. Production: `loadMemorySettings` in
+`packages/kernel/src/file-kernel.ts`. Test: `packages/kernel/tests/integration/file-kernel.test.ts`
+(`uses the global Memory choice across workspaces`).
+
 The in-process facade exposes an unavailable `GoalService`; authenticated conversation hosting
 supplies the live service per connection. `InProcessKernel.prepareRun` accepts a host-only goal
 policy, and `readRunTrace` resolves canonical evidence under the requested resident owner scope.
@@ -156,13 +163,13 @@ and plugin skill roots are composed. Standalone skill selection is passed as
 resolved `SkillRootInput` entries with exact `include` lists. The loop receives those roots and the
 opaque `{ id, fingerprint }` run metadata; it does not import Extension Profile policy.
 
-The tools capability receives the selected workspace, sandbox policy, and secret environment names.
-It creates run-owned scratch and appends host system temporary access inside the optional tools
-capability. File and shell calls use the configured native sandbox without a per-call bypass.
-Production: `packages/kernel/src/file-kernel.ts` (`createFileKernel`),
-`packages/tools/src/sandbox.ts` (`sandboxCommand`). Test:
+The tools capability receives the selected workspace and secret environment names. It creates
+run-owned scratch and appends host system temporary access inside the optional tools capability.
+File and shell calls use host process permissions. Production: `createFileKernel` in
+`packages/kernel/src/file-kernel.ts` and `createAgentToolsCapability` in
+`packages/loop/src/runtime/capabilities/tools.ts`. Test:
 `packages/kernel/tests/integration/file-kernel.test.ts` and
-`packages/tools/tests/integration/sandbox.test.ts`.
+`packages/loop/tests/integration/tools.test.ts`.
 
 Workflow leaders are separate auxiliary runs. `auxiliaryWorkflowRunDeps` removes the memory
 capability and leader assembly forces `memory: "off"`; the primary manager remains the workflow's
@@ -190,8 +197,7 @@ in [memory indexing](../capabilities/memory-indexer.md) and
 [planning](../capabilities/plan-capability.md).
 
 Production: `packages/kernel/src/config/capability-registry.ts`;
-`packages/kernel/src/file-kernel.ts`; `packages/kernel/src/extension-profiles/extension-profile-manager.ts`;
-`packages/tools/src/sandbox.ts`.
+`packages/kernel/src/file-kernel.ts`; `packages/kernel/src/extension-profiles/extension-profile-manager.ts`.
 
 Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
 `packages/kernel/tests/integration/builtin-fleet.test.ts`.

@@ -1,9 +1,7 @@
 import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
-  AGENTS_DIR,
   CLARVIS_DIR,
   SHORT_SCRATCH_BUDGET_BYTES,
   UNIX_SOCKET_PATH_BUDGET_BYTES,
@@ -17,7 +15,6 @@ import {
 
 const RESERVED_ENVIRONMENT_KEYS = new Set([
   "HOME",
-  "USERPROFILE",
   "CLARVIS_HOME",
   "CLARVIS_WORKSPACE_ROOT",
   "TMPDIR",
@@ -43,9 +40,6 @@ const ALLOWED_OVERRIDE_KEYS = new Set([
 const INHERITED_OPERATIONAL_KEYS = [
   "PATH",
   "BUN_INSTALL",
-  "SystemRoot",
-  "COMSPEC",
-  "PATHEXT",
   "LANG",
   "LC_ALL",
   "LC_CTYPE",
@@ -149,9 +143,6 @@ export interface SmokeContext {
   /** Terminate registered children and remove only this context's roots. */
   cleanup(): Promise<void>;
 }
-
-/** Whether the PTY child must use a real native filesystem/process boundary. */
-export type SmokeConfinement = "environment" | "required";
 
 /** Inputs a caller may fix instead of letting the harness choose them. */
 export interface SmokeContextOptions {
@@ -393,7 +384,6 @@ function baseEnvironment(
     if (value !== undefined && value.trim().length > 0) environment[key] = value;
   }
   environment.HOME = context.home;
-  environment.USERPROFILE = context.home;
   environment.CLARVIS_HOME = context.global;
   environment.CLARVIS_WORKSPACE_ROOT = context.workspace;
   environment.TMPDIR = context.tmp;
@@ -602,109 +592,6 @@ function allocateSocketRoot(
     }
   }
   throw new Error(`smoke_socket_root_unavailable:${refused.join(";")}`);
-}
-
-function existingSystemRoot(path: string): boolean {
-  return existsSync(path);
-}
-
-function parentDirectories(path: string): string[] {
-  const result: string[] = [];
-  let current = dirname(path);
-  while (current !== "/") {
-    result.unshift(current);
-    current = dirname(current);
-  }
-  return result;
-}
-
-/**
- * Wrap a PTY command in Bubblewrap without providing an unsandboxed fallback.
- *
- * @remarks This is intentionally a small harness boundary rather than the product
- * command sandbox. It grants read-only access to the selected runtime/checkout,
- * masks operator configuration trees, binds the fixture read-write, and denies
- * network access. A real probe runs before the command is returned so an absent or
- * unusable backend is reported as unavailable instead of as a passing smoke.
- */
-export async function requireNativeSmokeConfinement(
-  context: SmokeContext,
-  command: string[],
-  readOnlyRoots: string[],
-): Promise<string[]> {
-  if (process.platform !== "linux") {
-    throw new Error(`smoke_native_confinement_unavailable:${process.platform}`);
-  }
-  const bwrap =
-    ["/usr/bin/bwrap", "/bin/bwrap", "/usr/local/bin/bwrap"].find((path) => existsSync(path)) ??
-    Bun.which("bwrap");
-  if (bwrap === null) throw new Error("smoke_native_confinement_unavailable:bwrap");
-
-  const roots = [...new Set(readOnlyRoots.map((path) => resolve(path)))];
-  for (const root of roots) {
-    const info = await lstat(root).catch(() => undefined);
-    if (info === undefined || info.isSymbolicLink()) {
-      throw new Error(`smoke_native_confinement_invalid_read_root:${root}`);
-    }
-  }
-
-  const args = [
-    bwrap,
-    "--die-with-parent",
-    "--unshare-user",
-    "--unshare-pid",
-    "--unshare-ipc",
-    "--unshare-uts",
-    "--unshare-net",
-    "--cap-drop",
-    "ALL",
-    "--proc",
-    "/proc",
-    "--dev",
-    "/dev",
-    "--tmpfs",
-    "/tmp",
-    "--tmpfs",
-    "/home",
-    "--tmpfs",
-    "/root",
-    "--tmpfs",
-    "/var",
-    "--tmpfs",
-    "/run",
-  ];
-  for (const system of ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc"]) {
-    if (existingSystemRoot(system)) args.push("--ro-bind", system, system);
-  }
-  const hostRoots = roots.filter((root) => !pathOverlaps(root, context.root));
-  for (const directory of [...new Set(hostRoots.flatMap(parentDirectories))]) {
-    if (!new Set(["/", "/tmp", "/home", "/root", "/var", "/run"]).has(directory)) {
-      args.push("--dir", directory);
-    }
-  }
-  for (const root of roots) {
-    if (!pathOverlaps(root, context.root)) args.push("--ro-bind", root, root);
-  }
-  for (const root of hostRoots) {
-    for (const hidden of [CLARVIS_DIR, AGENTS_DIR, ".git"]) {
-      const path = join(root, hidden);
-      if (existsSync(path)) args.push("--tmpfs", path);
-    }
-  }
-  args.push("--bind", context.root, context.root);
-  for (const writable of context.writableRoots) {
-    if (!pathOverlaps(writable, context.root)) args.push("--bind", writable, writable);
-  }
-  args.push("--chdir", context.workspace, "--", ...command);
-
-  const boundary = args.indexOf("--bind");
-  const probe = Bun.spawnSync([...args.slice(0, boundary), "--", "/bin/sh", "-c", ":"]);
-  if (probe.exitCode !== 0) {
-    throw new Error(
-      `smoke_native_confinement_unavailable:${probe.stderr.toString().trim().slice(0, 240)}`,
-    );
-  }
-  return args;
 }
 
 /**

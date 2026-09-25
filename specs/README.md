@@ -90,11 +90,10 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | Document | Covers | Implemented in |
 | --- | --- | --- |
 | [`tools-contract.md`](execution/tools-contract.md) | The one dispatcher every tool sits behind: argument validation, output bounding, the immutable `RuntimeConfig`, and the single registry both surfaces derive from | `tools` |
-| [`tools-read-and-search.md`](execution/tools-read-and-search.md) | The nine observing tools (`read_file`, `read_image`, `read_files`, `list_dir`, `glob`, `grep`, `diff`, `file_stat`, `tree`) and the ripgrep-parity contract between grep's two engines | `tools` |
-| [`tools-mutation.md`](execution/tools-mutation.md) | The nine mutating tools and the shared staging/locking/rollback machinery that makes a write all-or-nothing | `tools` |
+| [`tools-read.md`](execution/tools-read.md) | The three observing tools (`read_file`, `read_image`, `list_dir`) and bounded reads | `tools` |
+| [`tools-mutation.md`](execution/tools-mutation.md) | The four file mutation tools and the shared staging/locking/rollback machinery that makes a write all-or-nothing | `tools` |
 | [`tools-shell-and-sessions.md`](execution/tools-shell-and-sessions.md) | Running commands with `shell` and `shell_session`, process trees, killing, bounded capture, and cursors | `tools` |
 | [`hooks.md`](execution/hooks.md) | Operator- and plugin-declared command or MCP-tool invocations bound to lifecycle events: matching, blocking and observer semantics, subprocess and MCP execution, foreign payloads, and argument rewriting | `hooks`, `capability`, `loop`, `mcp-client` |
-| [`sandbox.md`](execution/sandbox.md) | Native Bubblewrap/Seatbelt probing and policy construction, toolchain discovery on `PATH`, host path policy, real-platform canaries, and operator inspection | `tools`, `loop`, `kernel`, `protocol`, `code` |
 | [`skills.md`](execution/skills.md) | Discovering, parsing and merging `SKILL.md` trees with last-wins precedence; serving catalog, body and confined resource pages through `load_skill` and `read_skill_resource`; and routing named or description-matching skills into the run | `skills`, `kernel`, `loop` |
 
 ### `engine/` — the loop itself
@@ -107,8 +106,8 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`tool-dispatch.md`](engine/tool-dispatch.md) | Wire names and reservations, the MCP registry and its two dispatchers, the fail-open argument validator, and the `submit_result` finalize contract with its schema budget | `loop`, `mcp-client` |
 | [`context-compaction.md`](engine/context-compaction.md) | The message window an iteration appends to, preserved historical entries, and the selection/rewrite policy that sheds tokens without breaking call/result pairing or the cached prefix | `loop`, `kernel` |
 | [`budgets-and-guards.md`](engine/budgets-and-guards.md) | Five self-defence mechanisms: the shared token ledger and iteration counter, the pausable compute clock, the concurrency-safe output-token reservation, admission control and convergence guards | `loop`, `capability` |
-| [`delegation-and-subagents.md`](engine/delegation-and-subagents.md) | How one run produces children: independent `spawn_subagent`, tracked `delegate_task`, inline/background execution, and the five `agent_*` supervision tools | `loop`, `supervision`, `capability` |
-| [`vision-routing.md`](engine/vision-routing.md) | The two ways an image enters a run, and the tool-less vision pre-pass spliced in when the entry agent's own model cannot see it | `loop`, `code`, `tools` |
+| [`delegation-and-subagents.md`](engine/delegation-and-subagents.md) | How one run produces children: `spawn_subagent`, inline/background execution, and the four `agent_*` supervision tools | `loop`, `supervision`, `capability` |
+| [`vision-routing.md`](engine/vision-routing.md) | Image entry, model capability gating, and explicit delegation | `loop`, `code`, `tools` |
 | [`agent-system-prompt.md`](engine/agent-system-prompt.md) | The four-layer system head, the fleet-wide shared prompt, last-wins global/workspace overrides, workspace trust, and run-start snapshotting | `loop`, `kernel`, `paths`, `code`, `skills` |
 
 ### `capabilities/` — features that compose onto the engine
@@ -123,7 +122,6 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`memory-indexer.md`](capabilities/memory-indexer.md) | Turning a finished run into something the wiki knows: the durable enqueue, the background drain with leases and retry budgets, and the isolated versus continuation index passes | `memory`, `kernel` |
 | [`workflows-scheduling.md`](capabilities/workflows-scheduling.md) | Manager-to-leader fan-out: the four spawn tools, wave scheduling and write-conflict separation, round barriers, the FIFO concurrency semaphore and the tree-wide token ledger | `workflows` |
 | [`workflows-service.md`](capabilities/workflows-service.md) | The non-live half: code-backed built-ins, optional `WORKFLOW.md` overrides, the three reusable result schemas, and the kernel's persisted workflow tree and routing | `workflows`, `kernel`, `code` |
-| [`worktrees.md`](capabilities/worktrees.md) | Launch-time Git worktrees: Git-owned identity and lifecycle, immutable process scope, and linked-checkout sandbox mounts | `code`, `kernel`, `paths`, `tools` |
 
 ### `hosts/` — the kernel, the terminal UI and the HTTP facade
 
@@ -150,7 +148,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`code-transcript.md`](hosts/code-transcript.md) | How the Lead-only main transcript or one selected child transcript is filtered, grouped, folded and rendered, including tool-call identity and hard display ceilings | `code` |
 | [`code-transcript-stability.md`](hosts/code-transcript-stability.md) | Stable record and row identity, sealed content, explicit exploration, bounded native residence, semantic reader anchors and Lead/child replay equivalence | `code` |
 | [`code-input-and-overlays.md`](hosts/code-input-and-overlays.md) | The composer and its completion popup, the shared floating-card and windowed-list primitives, plan/history overlays, and the `!bash` escape hatch | `code` |
-| [`code-domain-hubs.md`](hosts/code-domain-hubs.md) | The five full-screen domain views (agents, workflows, sessions, memory, run controls) and the controller/adapter layering that keeps them thin | `code` |
+| [`code-domain-hubs.md`](hosts/code-domain-hubs.md) | The three full-screen domain views (agents, workflows, sessions) and the controller/adapter layering that keeps them thin | `code` |
 | [`code-extensions.md`](hosts/code-extensions.md) | The five-step Extensions setup, unified exact catalog, capability review, preview-bound Extension Profile composition and retained-list performance contract | `code`, `kernel`, `protocol`, `skills` |
 | [`code-settings-panels.md`](hosts/code-settings-panels.md) | The configuration surface: the view host with its scope toggle and dirty latch, the single-slot field editor, and the provider/model and extension-browser screens | `code` |
 | [`code-keyboard.md`](hosts/code-keyboard.md) | Capability-gated key candidates over `@opentui/keymap`, and generating every footer segment, help row and hint from that one live declaration | `code` |
@@ -179,7 +177,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 
 | Document | Holds | Reach for it when |
 | --- | --- | --- |
-| [`known-issues.md`](known-issues.md) | What was measured, ruled out, or tried and reverted: the ten behaviours that turn on something outside this repository, the Bun crash forensics and its retry, the memory leaks and their soaks, the Windows gaps and their suppression predicates, the extractions that were abandoned, and the four confirmed defects and how each was closed | Something is failing and you want to know whether it has already been diagnosed — or you are about to re-run an experiment someone else has run |
+| [`known-issues.md`](known-issues.md) | What was measured, ruled out, or tried and reverted: the ten behaviours that turn on something outside this repository, the Bun crash forensics and its retry, the memory leaks and their soaks, the extractions that were abandoned, and the four confirmed defects and how each was closed | Something is failing and you want to know whether it has already been diagnosed — or you are about to re-run an experiment someone else has run |
 | [`package-coupling-analysis.md`](package-coupling-analysis.md) | The generated package-graph report | You want the dependency edges as the checker sees them — this one is generated and gated, so it is the only file here that cannot drift |
 
 ---

@@ -19,8 +19,8 @@ and user-authored extensions are not a fixed inventory.
 
 | Surface | Declarations | Source owner |
 | --- | ---: | --- |
-| Coding, files, search, shell and sessions | 20 | `toolDescriptors` in [tools/registry.ts](../../packages/tools/src/tools/registry.ts) |
-| Independent and tracked child spawning | 2 | [lead-tools.ts](../../packages/loop/src/runtime/subagents/lead-tools.ts) |
+| Coding, files, shell and sessions | 9 | `toolDescriptors` in [tools/registry.ts](../../packages/tools/src/tools/registry.ts) |
+| Child spawning | 1 | [lead-tools.ts](../../packages/loop/src/runtime/subagents/lead-tools.ts) |
 | Child listing, polling, waiting, steering and stopping | 5 | `buildTools` in [agents.ts](../../packages/loop/src/runtime/capabilities/agents.ts) |
 | Human question and structured completion | 2 | [ask-user-tool.ts](../../packages/loop/src/runtime/tools/ask-user-tool.ts), [submit-result-tool.ts](../../packages/loop/src/runtime/tools/submit-result-tool.ts) |
 | Plans | 5 | [plan/tools.ts](../../packages/plan/src/tools.ts) |
@@ -33,7 +33,6 @@ and user-authored extensions are not a fixed inventory.
 Prompt assembly also includes the five [built-in agents](../../packages/kernel/src/config/builtin-agents/index.ts),
 the three [built-in workflows](../../packages/workflows/src/builtin-workflows/index.ts),
 [compaction](../../packages/loop/src/runtime/context/compaction-prompt.ts),
-[vision prepass](../../packages/loop/src/runtime/vision-prepass.ts),
 [plan state and gate messages](../../packages/plan/src/capability/messages.ts),
 [memory seed](../../packages/memory/src/seed.ts), [memory policy](../../packages/memory/src/capability.ts)
 and [indexer instructions](../../packages/memory/src/indexer/request.ts),
@@ -64,7 +63,7 @@ and [prompt caching](prompt-cache.md). Instruction edits must not reposition non
 The default shared prompt requires agents to work directly unless the user explicitly requests
 delegation or an applicable loaded skill or agent-instruction file (such as `AGENTS.md` or
 `CLARVIS.md`) explicitly instructs it. Tool availability, profile permissions, complexity and
-efficiency gains are not sufficient. The rule covers independent spawning, tracked delegation and
+efficiency gains are not sufficient. The rule covers child spawning and
 workflow leaders, within the instruction's scope and existing profile/grant limits. This is prompt
 policy, not a new runtime authorization gate. The built-in leads follow it and give children a self-contained
 brief: necessary context, bounded scope, constraints and expected result. Children do not inherit
@@ -72,9 +71,7 @@ the caller's conversation and share its workspace. Concurrent reads can conflict
 Leaves return missing-context or authority blockers; they cannot invent access to a parent question
 tool or spawn tools. Completion uses `submit_result` when exposed, otherwise final text.
 
-Background handles, steering acknowledgements and first-child wakeups are not successful work
-results. `await_agents` can wake while other children still run; inspect the returned state and
-outcomes. A returned delegated plan task still needs lead review and an explicit terminal state.
+Background handles and steering acknowledgements are not successful work results. Inspect child status and outcomes before reporting completion. A plan task still needs lead review and an explicit terminal state.
 Structured completion can be rejected by validation or a gate, so correct the reported condition
 before retrying. Live-child and pending-task gates are recovery boundaries, not directions to
 cancel useful work or fabricate completion.
@@ -90,7 +87,6 @@ may already have written files; workflow failure is not a workspace rollback.
 Memory keeps its existing scoped/on-demand guidance. Skills load a named or description-matching
 body through `load_skill`, then bundled files through `read_skill_resource`. Their write-authority,
 resource paths, pagination and bootstrap exceptions are load-bearing rather than removable
-verbosity. The same applies to native Sandbox isolation, resource data limits and human-question semantics; their handlers and
 authority contracts are unchanged by the instruction review.
 
 ## 5. Invariants
@@ -118,7 +114,7 @@ handoff cases in [builtin-agents.test.ts](../../packages/kernel/tests/component/
    `packages/tools/tests/integration/apply-patch.test.ts`. The complete advertised coding descriptor
    JSON ceiling is 21,000 characters; the regex contract suites retain the detailed engine evidence.
 3. **Completion guidance agrees with gates.** A handle, returned task or rejected submission is not
-   completion. Production: `buildSpawnSubagentTool`, `buildDelegateTaskTool`, `buildSubmitResultTool`,
+   completion. Production: `buildSpawnSubagentTool`, `buildSubmitResultTool`,
    `createAgentsRunCapability` and `PENDING_TASKS_NOTE`. Test:
    `packages/loop/tests/unit/lead-tools.test.ts`, `submit-result-tool.test.ts`,
    `agents-capability.test.ts`, and `packages/plan/tests/unit/plan-messages.test.ts`; the existing
@@ -137,9 +133,7 @@ handoff cases in [builtin-agents.test.ts](../../packages/kernel/tests/component/
    Production: `DEFAULT_COMPACTION_PROMPT` and `COMPACTION_UPDATE_INSTRUCTION` in
    `packages/loop/src/runtime/context/compaction-prompt.ts`. Test:
    `packages/loop/tests/unit/compaction-guidance.test.ts` (combined 1500-character ceiling) and
-   `llm-compaction.test.ts` (merged-anchor request). The vision prepass likewise treats images as
-   data and marks unreadable details; its request remains tool-less, pinned in
-   `packages/loop/tests/integration/image-vision-routing.test.ts`.
+   `llm-compaction.test.ts` (merged-anchor request).
 7. **Truncation is not silent instruction completeness.** MCP sections preserve attribution and
    append a truncation marker inside the existing 32,768-code-point ceiling. Production:
    `renderMcpInstructions` in `packages/loop/src/runtime/mcp-instructions.ts`. Test:
@@ -171,4 +165,4 @@ cleanup.
 There is no cross-provider, large-versus-small-model success-rate claim from these deterministic
 tests. Such a claim needs a fixed task set, actual exposed-tool payloads, equal budgets and observed
 completion/error rates on the selected models. Byte counts and static phrase assertions are not a
-substitute. Native Windows/macOS checks likewise require their own environments.
+substitute. Native macOS checks likewise require their own environments.

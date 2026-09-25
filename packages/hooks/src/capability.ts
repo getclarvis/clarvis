@@ -72,7 +72,7 @@ const EVENT_METHOD: Record<GateEvent | ObserverEvent | CompactionEvent, keyof Li
   pre_tool_use: "beforeToolUse",
   post_tool_use: "afterToolUse",
   pre_finalize: "preFinalize",
-  pre_delegate_task: "preDelegateTask",
+  pre_spawn_subagent: "preSpawnSubagent",
   run_start: "onRunStart",
   run_end: "onRunEnd",
   post_compact: "onPostCompact",

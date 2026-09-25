@@ -66,7 +66,7 @@ function context(): RunCapabilityContext {
     emit: () => undefined,
     executionId: "run-1",
     services: createCapabilityServices(),
-    requestParam: () => undefined,
+    requestParam: (key) => (key === "memory" ? "on" : undefined),
   };
 }
 

@@ -57,7 +57,7 @@ describe("continue_from — image marker alignment for a no-vision entry", () =>
     const store = createMemoryTraceStore();
 
     const llm1 = new MockLLM({
-      script: [{ text: "prior image reading" }, { text: "turn 1 done" }],
+      script: [{ text: "turn 1 done" }],
     });
     const h1 = await makeHarness({ llm: llm1, mcpFactory: mockMCPFactory({}), traceStore: store });
     open.push(h1);
@@ -76,14 +76,13 @@ describe("continue_from — image marker alignment for a no-vision entry", () =>
       entry: "lead",
       providers,
       profiles,
-      vision_model: "anthropic/vision-subagent",
       budget: { on_exceed: "stop", total_token_limit: 100000, timeout_ms: 30000 },
     });
     expect((run1 as { status: string }).status).toBe("completed");
     const priorId = (run1 as { execution_id: string }).execution_id;
 
     const llm2 = new MockLLM({
-      script: [{ text: "current image reading" }, { text: "turn 2 done" }],
+      script: [{ text: "turn 2 done" }],
     });
     const h2 = await makeHarness({ llm: llm2, mcpFactory: mockMCPFactory({}), traceStore: store });
     open.push(h2);
@@ -103,7 +102,6 @@ describe("continue_from — image marker alignment for a no-vision entry", () =>
       entry: "lead",
       providers,
       profiles,
-      vision_model: "anthropic/vision-subagent",
       budget: { on_exceed: "stop", total_token_limit: 100000, timeout_ms: 30000 },
     });
     expect((run2 as { status: string }).status).toBe("completed");

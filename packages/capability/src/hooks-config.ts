@@ -28,7 +28,7 @@ export const GATE_HOOK_EVENTS = [
   "pre_tool_use",
   "post_tool_use",
   "pre_finalize",
-  "pre_delegate_task",
+  "pre_spawn_subagent",
 ] as const;
 
 /**
@@ -119,20 +119,14 @@ export const EXTERNAL_HOOK_EVENT_NAMES: Readonly<Record<string, string>> = {
  * How each tool name written in the external hooks dialect is spelled here.
  *
  * @remarks
- * A hook filter names the tools it fires on, and the two vocabularies disagree
- * on almost every entry a real rule reaches for. Measured against a public
- * catalog of 196 plugins, five of the thirty-nine names their filters used
- * existed here; the other thirty-four — `Write`, `Edit`, `Bash` and
- * `MultiEdit` above all — translated cleanly, installed, were approved, and
- * then matched nothing. That failure is silent in the worst direction: the
- * commonest such rule is a gate that blocks a dangerous shell command, and a
- * gate that never fires reads exactly like a gate that allowed everything.
+ * A hook filter names the tools it fires on. Foreign spellings for active
+ * Clarvis tools are mapped here so the filter reaches the intended call.
+ * Unsupported names must not be approximated to unrelated tools.
  *
  * Keyed by {@link normalizeToolName} so one entry covers every capitalization
  * and separator a document writes the same name in. Every foreign name that has
  * a counterpart is listed, including the ones that differ only in case: an
- * unmapped name is carried through exactly as written, and `Grep` carried
- * through is a pattern that never matches `grep`.
+ * unmapped name is carried through exactly as written.
  *
  * Names with no counterpart at all belong in
  * {@link EXTERNAL_TOOLS_WITHOUT_COUNTERPART}, not here. Mapping one onto its
@@ -148,13 +142,9 @@ export const EXTERNAL_TOOL_NAMES: Readonly<Record<string, string>> = {
   writefile: "write_file",
   edit: "edit_file",
   editfile: "edit_file",
-  multiedit: "multi_edit",
   applypatch: "apply_patch",
-  glob: "glob",
-  grep: "grep",
   ls: "list_dir",
   listdir: "list_dir",
-  task: "delegate_task",
   skill: "load_skill",
 };
 
@@ -164,12 +154,8 @@ export const EXTERNAL_HOOK_TOOL_NAMES: Readonly<Record<string, string>> = {
   read_file: "Read",
   write_file: "Write",
   edit_file: "Edit",
-  multi_edit: "MultiEdit",
   apply_patch: "apply_patch",
-  glob: "Glob",
-  grep: "Grep",
   list_dir: "LS",
-  delegate_task: "Task",
   load_skill: "Skill",
 };
 
@@ -228,7 +214,7 @@ const OFFERING_EVENT_SET = new Set<string>([...CONTEXT_HOOK_EVENTS, ...COMPACTIO
  * The tool events get the short budget rather than the gate one because they
  * fire on **every tool call**, in sequence, inside the dispatch: a 30s ceiling
  * there is 30s of wall clock per call before `on_failure` even applies. The long
- * budget is reserved for `pre_finalize` and `pre_delegate_task`, which fire O(1)
+ * budget is reserved for `pre_finalize` and `pre_spawn_subagent`, which fire O(1)
  * times per agent.
  *
  * `run_end` is shorter still, matching `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS`:
@@ -282,7 +268,7 @@ export const hookSchema = z
       })
       .describe(
         "Lifecycle event that triggers the hook. Gate events (pre_tool_use, " +
-          "post_tool_use, pre_finalize, pre_delegate_task) fire before/around a " +
+          "post_tool_use, pre_finalize, pre_spawn_subagent) fire before/around a " +
           "decision and their verdict controls the loop (deny blocks, advise annotates). " +
           "Observer events (run_start, run_end, post_compact, subagent_start, subagent_complete, " +
           "model_call_error, budget_exhausted, user_steer) are notify-only: the command runs, its output " +
@@ -334,7 +320,6 @@ export const hookSchema = z
           "regexes. Only valid for the tool events pre_tool_use and post_tool_use.",
       ),
     command: z.string().max(MAX_HOOK_COMMAND_CHARS).default(""),
-    command_windows: z.string().min(1).max(MAX_HOOK_COMMAND_CHARS).optional(),
     async: z.boolean().optional(),
     status_message: z.string().min(1).max(512).optional(),
     additional_context_limit: z
@@ -358,7 +343,7 @@ export const hookSchema = z
         "Milliseconds to wait for the command before it is killed and treated as a hook " +
           `failure (resolved per on_failure). Defaults to ${HOOK_DEFAULT_TIMEOUT_MS.tool} for ` +
           `the tool events, ${HOOK_DEFAULT_TIMEOUT_MS.gate} for pre_finalize and ` +
-          `pre_delegate_task, ${HOOK_DEFAULT_TIMEOUT_MS.run_end} for run_end and ` +
+          `pre_spawn_subagent, ${HOOK_DEFAULT_TIMEOUT_MS.run_end} for run_end and ` +
           `${HOOK_DEFAULT_TIMEOUT_MS.observer} for every other event.`,
       ),
     on_failure: z

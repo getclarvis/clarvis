@@ -77,8 +77,8 @@ test("runs in the given cwd", async () => {
   expect(r.stdout.trim()).toBe(realpathSync(dir));
 });
 
-test.skipIf(process.platform === "win32")("runs bash-only syntax, not just POSIX sh", async () => {
-  // `!` must keep running through `bash` specifically on POSIX hosts, even
+test("runs bash-only syntax, not just POSIX sh", async () => {
+  // `!` must keep running through `bash` specifically on supported hosts, even
   // though the kernel's own tools resolve to bare `sh`: on a host where
   // /bin/sh is dash or ash (Debian, Ubuntu, Alpine), `[[ ... ]]` is a syntax
   // error under sh but valid under bash.

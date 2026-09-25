@@ -29,8 +29,8 @@ File-kernel hosts retain traces for 30 days by default. Cleanup receives the exe
 referenced by persisted sessions and never removes those records, so age-based garbage collection
 cannot break resumable conversation history. `CLARVIS_TRACE_TTL_DAYS=0` remains the explicit
 opt-out.
-`resolveTraceStore` also accepts a separate lock directory. Local workspace hosts use that seam so
-the owner-scoped trace records remain at their established global paths while native Host and Sandbox runs coordinate through one workspace lock root.
+`resolveTraceStore` also accepts a separate lock directory. Local workspace hosts use that seam so owner-scoped trace records remain at their established
+global paths while runs coordinate through one workspace lock root.
 
 No external dependencies — `node:fs`, `node:os`, `node:path` and `node:crypto`
 only, over `@clarvis/capability` and `@clarvis/paths`. `@clarvis/loop` depends on
@@ -56,7 +56,7 @@ to connected clients; restored runs clear remaining controls at run settlement.
 
 Free text is bounded as it enters the recording handle and bounded again in the mapper for legacy
 or direct entries that bypassed it. In particular, `delegation_created.task` shares
-`@clarvis/capability`'s 32,768-Unicode-character `delegate_task` ceiling, so one brief cannot be
+`@clarvis/capability`'s 32,768-Unicode-character `spawn_subagent` ceiling, so one brief cannot be
 multiplied unbounded across the retained trace, persisted event and UI projection.
 An iteration's authoritative final model response has its own 2 MiB ceiling, aligned with the TUI's
 per-node transcript retention. It deliberately does not share the 5,000-character tool-result cap:

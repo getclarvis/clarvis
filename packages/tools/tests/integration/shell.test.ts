@@ -16,8 +16,6 @@ const {
   chmod,
   modeBitsEnforced,
   lines,
-  posixShell,
-  backgroundSettleIsMeasurable,
 } = await import("../helpers/fixtures.ts");
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -49,66 +47,50 @@ describe("shell", () => {
       expect(r.json.exit_code).toBe(3);
     });
 
-    it.skipIf(!posixShell)("captures stderr separately", async () => {
+    it("captures stderr separately", async () => {
       const r = await callTool("shell", { command: "echo oops 1>&2" }, config);
       expect(lines(r.json.stderr)).toBe("oops\n");
       expect(lines(r.json.stdout)).toBe("");
     });
 
-    it.skipIf(!posixShell)(
-      "joins split UTF-8 chunks and keeps output without a newline",
-      async () => {
-        const r = await callTool(
-          "shell",
-          { command: "printf '\\303'; sleep 0.02; printf '\\251'; printf err 1>&2" },
-          config,
-        );
-        expect(r.isError).toBe(false);
-        expect(r.json.stdout).toBe("é");
-        expect(r.json.stderr).toBe("err");
-        expect(r.json.stdout_truncated).toBe(false);
-        expect(r.json.stderr_truncated).toBe(false);
-        expect(r.json.stdout_omitted_bytes).toBe(0);
-      },
-    );
+    it("joins split UTF-8 chunks and keeps output without a newline", async () => {
+      const r = await callTool(
+        "shell",
+        { command: "printf '\\303'; sleep 0.02; printf '\\251'; printf err 1>&2" },
+        config,
+      );
+      expect(r.isError).toBe(false);
+      expect(r.json.stdout).toBe("é");
+      expect(r.json.stderr).toBe("err");
+      expect(r.json.stdout_truncated).toBe(false);
+      expect(r.json.stderr_truncated).toBe(false);
+      expect(r.json.stdout_omitted_bytes).toBe(0);
+    });
 
-    it.skipIf(!posixShell)(
-      "reports the raw exit code, both streams, and a null signal when the command exits nonzero",
-      async () => {
-        const r = await callTool(
-          "shell",
-          { command: "printf out; printf err 1>&2; exit 3" },
-          config,
-        );
-        expect(r.isError).toBe(false);
-        expect(r.json.exit_code).toBe(3);
-        expect(lines(r.json.stdout)).toBe("out");
-        expect(lines(r.json.stderr)).toBe("err");
-        expect(r.json.signal).toBeNull();
-        expect(r.json.timed_out).toBe(false);
-      },
-    );
+    it("reports the raw exit code, both streams, and a null signal when the command exits nonzero", async () => {
+      const r = await callTool("shell", { command: "printf out; printf err 1>&2; exit 3" }, config);
+      expect(r.isError).toBe(false);
+      expect(r.json.exit_code).toBe(3);
+      expect(lines(r.json.stdout)).toBe("out");
+      expect(lines(r.json.stderr)).toBe("err");
+      expect(r.json.signal).toBeNull();
+      expect(r.json.timed_out).toBe(false);
+    });
 
-    it.skipIf(!posixShell)(
-      "reports exit code 128 plus the signal number when the child is killed by a signal",
-      async () => {
-        const r = await callTool("shell", { command: "kill -TERM $$" }, config);
-        expect(r.isError).toBe(false);
-        expect(r.json.exit_code).toBe(128 + osConstants.signals.SIGTERM);
-        expect(r.json.signal).toBe("SIGTERM");
-        expect(r.json.timed_out).toBe(false);
-      },
-    );
+    it("reports exit code 128 plus the signal number when the child is killed by a signal", async () => {
+      const r = await callTool("shell", { command: "kill -TERM $$" }, config);
+      expect(r.isError).toBe(false);
+      expect(r.json.exit_code).toBe(128 + osConstants.signals.SIGTERM);
+      expect(r.json.signal).toBe("SIGTERM");
+      expect(r.json.timed_out).toBe(false);
+    });
 
-    it.skipIf(!posixShell)(
-      "reports a signal-killed command as a non-zero exit, never success",
-      async () => {
-        const r = await callTool("shell", { command: "kill -9 $$" }, config);
-        expect(r.isError).toBe(false);
-        expect(r.json.exit_code).toBe(137);
-        expect(r.json.signal).toBe("SIGKILL");
-      },
-    );
+    it("reports a signal-killed command as a non-zero exit, never success", async () => {
+      const r = await callTool("shell", { command: "kill -9 $$" }, config);
+      expect(r.isError).toBe(false);
+      expect(r.json.exit_code).toBe(137);
+      expect(r.json.signal).toBe("SIGKILL");
+    });
 
     it("reports a null signal for a normal exit", async () => {
       const r = await callTool("shell", { command: "echo ok" }, config);
@@ -290,7 +272,7 @@ describe("shell", () => {
   });
 
   describe("bounded output", () => {
-    it.skipIf(!posixShell)("keeps only a bounded tail and creates no shell spill", async () => {
+    it("keeps only a bounded tail and creates no shell spill", async () => {
       const small = makeConfig(root, { maxShellOutputBytes: 64 });
       const r = await callTool(
         "shell",
@@ -309,7 +291,7 @@ describe("shell", () => {
         expect(readdirSync(local).some((name) => isSpillFile(name))).toBe(false);
     });
 
-    it.skipIf(!posixShell)("budgets stdout and stderr against a single shared cap", async () => {
+    it("budgets stdout and stderr against a single shared cap", async () => {
       const small = makeConfig(root, { maxShellOutputBytes: 2000 });
       const r = await callTool(
         "shell",
@@ -343,7 +325,7 @@ describe("shell", () => {
         "const { writeSync } = require('node:fs'); const chunk = Buffer.alloc(65_536, 88); while (true) writeSync(1, chunk);",
       );
       const invocation = `"${process.execPath}" "${producer}"`;
-      const command = process.platform === "win32" ? `& ${invocation}` : invocation;
+      const command = invocation;
       const start = Date.now();
       const r = await callTool("shell", { command, timeout_ms: 1000 }, config);
       const elapsed = Date.now() - start;
@@ -359,29 +341,12 @@ describe("shell", () => {
       const producer = path.join(root, "burst.cjs");
       writeFileSync(producer, "process.stdout.write(Buffer.alloc(9_000_000, 88));");
       const invocation = `"${process.execPath}" "${producer}"`;
-      const command = process.platform === "win32" ? `& ${invocation}` : invocation;
+      const command = invocation;
       const r = await callTool("shell", { command }, config);
       expect(r.isError).toBe(false);
       expect(r.json.exit_code).toBe(0);
       expect(r.json.stdout_truncated).toBe(true);
       expect(r.json.stdout_omitted_bytes).toBeGreaterThan(0);
-    });
-
-    it.skipIf(
-      (process.platform !== "linux" && process.platform !== "darwin") ||
-        process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1",
-    )("drains oversized output through the native sandbox", async () => {
-      const isolated = makeConfig(root, {
-        sandbox: { type: "native", availability: "required", network: "none" },
-      });
-      const r = await callTool(
-        "shell",
-        { command: "yes CLARVIS_FLOOD | head -c 9000000" },
-        isolated,
-      );
-      expect(r.isError).toBe(false);
-      expect(r.json.exit_code).toBe(0);
-      expect(r.json.stdout_truncated).toBe(true);
     });
 
     it("keeps cancellation ahead of truncation after a large output burst", async () => {
@@ -421,7 +386,7 @@ describe("shell", () => {
       expect(r.json.exit_code).toBe(0);
       expect(lines(r.json.stdout)).toContain("ready");
       expect(r.json.timed_out).toBe(false);
-      if (backgroundSettleIsMeasurable) expect(elapsed).toBeLessThan(10_000);
+      expect(elapsed).toBeLessThan(10_000);
     });
   });
 
@@ -456,15 +421,12 @@ describe("shell", () => {
   });
 
   describe("spawn and finalize IO errors", () => {
-    it.skipIf(!posixShell)(
-      "rejects with io_error when spawn throws synchronously on a null byte in the command",
-      async () => {
-        const r = await callTool("shell", { command: NUL_COMMAND }, config);
-        expect(r.isError).toBe(true);
-        expect(r.json.error).toBe("io_error");
-        expect(String(r.json.message)).toContain("Failed to spawn command");
-      },
-    );
+    it("rejects with io_error when spawn throws synchronously on a null byte in the command", async () => {
+      const r = await callTool("shell", { command: NUL_COMMAND }, config);
+      expect(r.isError).toBe(true);
+      expect(r.json.error).toBe("io_error");
+      expect(String(r.json.message)).toContain("Failed to spawn command");
+    });
 
     it("rejects with io_error when finalizing captured output fails", async () => {
       const { createShell } = await import("../../src/tools/shell.ts");

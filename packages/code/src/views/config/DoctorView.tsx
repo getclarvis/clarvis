@@ -24,10 +24,7 @@ export interface DoctorViewDeps {
   ctx: DoctorCtx;
   report: Accessor<DoctorReport>;
   recheck: () => void;
-  openFix: (
-    view: "providers" | "model" | "defaults" | "theme" | "agents" | "memory" | "controls",
-    scope: Scope,
-  ) => void;
+  openFix: (view: "providers" | "model" | "defaults" | "theme" | "agents", scope: Scope) => void;
   startAnyway: () => void;
   keys: KeysAdapter;
   notify: (message: string) => void;

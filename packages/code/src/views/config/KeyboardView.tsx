@@ -317,7 +317,7 @@ export function KeyboardView(
   };
 
   const cycleClient = (): void => {
-    const choices: (ClientPlatform | undefined)[] = [undefined, "macos", "windows", "linux"];
+    const choices: (ClientPlatform | undefined)[] = [undefined, "macos", "linux"];
     const id = host.interaction.keyboardEnvironmentId();
     const current = deps.code.keyboardConfig().environments[id] ?? {
       profile: environment().profile,
@@ -373,7 +373,7 @@ export function KeyboardView(
         keys,
         knownCommands: new Set(stableCommands().map((item) => item.name)),
         invalidKeys,
-        defaultBindings: resolvedVitalBindings(process.platform, environment()),
+        defaultBindings: resolvedVitalBindings(environment()),
         normalizeKey: (key) =>
           host.interaction.keymap
             .parseKeySequence(key)

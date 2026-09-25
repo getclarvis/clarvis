@@ -299,7 +299,7 @@ export async function runGoalLiveWorker(job: GoalLiveJob): Promise<GoalLiveResul
       physically_closed:
         goal.runs.every((run) => run.phase === "closed") && host.stats().runs === 0,
       delegation:
-        tools.includes("delegate_task") && result.calls.some((call) => call.purpose === "child"),
+        tools.includes("spawn_subagent") && result.calls.some((call) => call.purpose === "child"),
       plan_complete:
         plans.length === 1 &&
         plans[0].status === "completed" &&

@@ -166,13 +166,8 @@ export type RunStatus = "running" | "completed" | "failed" | "cancelled";
  * per-agent split (drops lead/subagent-only internals such as spawn counts).
  */
 export interface PerAgentUsage {
-  /**
-   * Which producer these tokens belong to.
-   *
-   * @remarks `"vision"` is not an agent: it is the engine's image-reading
-   * pre-pass, one completion on a model no agent runs on.
-   */
-  role: AgentRole | "vision";
+  /** Which agent role produced these tokens. */
+  role: AgentRole;
   model: string;
   input_tokens: number;
   output_tokens: number;
@@ -605,7 +600,6 @@ export type RunEvent =
       type: "delegation_created";
       at: Timestamp;
       delegation_id: string;
-      task_id?: string;
       title: string;
       task: string;
       profile?: string;
@@ -615,14 +609,12 @@ export type RunEvent =
       type: "delegation_started";
       at: Timestamp;
       delegation_id: string;
-      task_id?: string;
       model?: string;
     }
   | {
       type: "delegation_completed" | "delegation_failed";
       at: Timestamp;
       delegation_id: string;
-      task_id?: string;
       status: string;
       /** Bounded terminal summary for rosters; the full result stays in the run trace. */
       summary?: string;
@@ -734,21 +726,6 @@ export type RunEvent =
       requested?: true;
       user_contribution_count?: number;
     })
-  /**
-   * The vision pre-pass: one completion read the turn's images for an agent
-   * whose own model cannot see them.
-   *
-   * @remarks Not a delegation event. No sub-agent exists, so there is no agent
-   * id a client could poll, steer or stop.
-   */
-  | {
-      type: "vision_analysis";
-      at: Timestamp;
-      model: string;
-      image_count: number;
-      status: "completed" | "failed";
-      result: string;
-    }
   | (Attributed & {
       type: "compaction_skipped";
       reason:

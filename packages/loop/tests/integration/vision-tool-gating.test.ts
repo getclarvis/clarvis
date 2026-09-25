@@ -55,8 +55,8 @@ describe("read_image is offered only to a model that can consume its result", ()
     expect(names).toContain("read_file");
   });
 
-  it("offers read_image when the model declares no capabilities at all", async () => {
+  it("withholds read_image when the model declares no capabilities at all", async () => {
     const names = await toolNamesFor("uncatalogued");
-    expect(names).toContain("read_image");
+    expect(names).not.toContain("read_image");
   });
 });

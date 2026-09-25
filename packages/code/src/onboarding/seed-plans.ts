@@ -13,8 +13,7 @@ export type PlansSeedOutcome =
  * Planning is a policy the user should be able to see and change, not an
  * invisible default. Writing the block once — into the **global** scope, so
  * every workspace inherits it — makes the policy legible in Doctor, lets
- * `/plan` override review per workspace, and keeps retention attributable to a
- * scope in Run Controls.
+ * `/plan` override review per workspace.
  *
  * @param settings - the settings adapter; the block goes to the global scope.
  * @returns what happened, so the caller can notify only on a real write.

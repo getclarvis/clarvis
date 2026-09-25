@@ -4,7 +4,7 @@ import type {
   ClipboardProcessRequest,
   ClipboardProcessResult,
 } from "../../src/adapters/clipboard-process.ts";
-import { createPlatform, WINDOWS_CLIPBOARD_COPY_SCRIPT } from "../../src/adapters/platform.ts";
+import { createPlatform } from "../../src/adapters/platform.ts";
 import {
   environmentFixture,
   spyOnProcessEnv,
@@ -116,14 +116,4 @@ test("locally, copyText prefers the native tool and never emits OSC-52 when it s
   expect(await p.copyText("hello")).toBe(true);
   expect(run).toHaveBeenCalled();
   expect(oscCalls).toBe(0);
-});
-
-test("the Windows clipboard script sets Console.InputEncoding before reading piped stdin", async () => {
-  // [Console]::OutputEncoding (set by the shared shell preamble in shell.ts)
-  // only governs what PowerShell writes; reading piped stdin needs
-  // InputEncoding set first, or non-ASCII clipboard text arrives as mojibake.
-  expect(WINDOWS_CLIPBOARD_COPY_SCRIPT).toContain("[Console]::InputEncoding");
-  expect(WINDOWS_CLIPBOARD_COPY_SCRIPT.indexOf("InputEncoding")).toBeLessThan(
-    WINDOWS_CLIPBOARD_COPY_SCRIPT.indexOf("ReadToEnd"),
-  );
 });

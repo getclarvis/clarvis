@@ -3,13 +3,7 @@ import type { MutableUsage, Usage } from "@clarvis/capability";
 import type { TokenAccumulator, SubagentAggregate } from "@clarvis/capability";
 import { createIterationCounter, type IterationCounter } from "./budget/budget.ts";
 import { agentToolsActive } from "./tools/builtin/grants.ts";
-import {
-  finalizeLeadSubagentUsage,
-  finalizeUsage,
-  perAgentFromAggregate,
-  perAgentFromVision,
-  type VisionUsage,
-} from "./usage.ts";
+import { finalizeLeadSubagentUsage, finalizeUsage, perAgentFromAggregate } from "./usage.ts";
 import type { RunShape } from "./run-shape.ts";
 
 /**
@@ -27,15 +21,6 @@ export interface UsageAccounting {
   counter: IterationCounter;
   subagentAggByModel: Map<string, SubagentAggregate>;
   warnings: string[];
-  /**
-   * The vision pre-pass's spend, set by the pre-pass when one ran.
-   *
-   * @remarks A mutable single slot rather than a map: a run makes at most one
-   *   such call. It is deliberately *not* folded into
-   *   {@link UsageAccounting.subagentAggByModel} — doing so reported a spawned
-   *   sub-agent that never existed and inflated the lead's `subagents_spawned`.
-   */
-  vision: { current?: VisionUsage };
   finalize: () => Usage;
 }
 
@@ -89,7 +74,6 @@ export function createUsageAccounting(a: {
   const counter = createIterationCounter(entryMax);
   const entryUsage: TokenAccumulator = { input: 0, output: 0, cached: 0, cache_write: 0 };
   const subagentAggByModel = new Map<string, SubagentAggregate>();
-  const vision: { current?: VisionUsage } = {};
   const warnings = isLead ? collectLeadWarnings(shape, deps) : [];
 
   const finalize = (): Usage => {
@@ -103,7 +87,6 @@ export function createUsageAccounting(a: {
         subagentsByModel: subagentAggByModel,
         elapsedMs,
         warnings,
-        ...(vision.current ? { vision: vision.current } : {}),
       });
     }
     const snapshot: MutableUsage = { iterations: counter.count(), tokens: { ...entryUsage } };
@@ -112,10 +95,9 @@ export function createUsageAccounting(a: {
       usage.by_agent.push(perAgentFromAggregate(model, agg));
       usage.iterations_used += agg.iterations;
     }
-    if (vision.current) usage.by_agent.push(perAgentFromVision(vision.current));
     if (warnings.length > 0) usage.warnings = warnings;
     return usage;
   };
 
-  return { entryUsage, counter, subagentAggByModel, vision, warnings, finalize };
+  return { entryUsage, counter, subagentAggByModel, warnings, finalize };
 }

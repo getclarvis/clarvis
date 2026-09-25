@@ -345,20 +345,18 @@ describe("wire handshake", () => {
     }
   });
 
-  it("preserves native Host and Sandbox runtime status", async () => {
-    for (const isolation of ["host", "sandbox"] as const) {
-      const transport = new FakeTransport();
-      transport.helloResult = {
-        ...HELLO,
-        capabilities: {
-          ...HELLO.capabilities,
-          runtime: { kind: "native", host_platform: "linux", isolation, lifecycle: "ready" },
-        },
-      };
-      const client = await connectKernelClient(transport);
-      expect(client.capabilities.runtime).toMatchObject({ kind: "native", isolation });
-      await client.close();
-    }
+  it("preserves native Host runtime status", async () => {
+    const transport = new FakeTransport();
+    transport.helloResult = {
+      ...HELLO,
+      capabilities: {
+        ...HELLO.capabilities,
+        runtime: { kind: "native", host_platform: "linux", lifecycle: "ready" },
+      },
+    };
+    const client = await connectKernelClient(transport);
+    expect(client.capabilities.runtime).toMatchObject({ kind: "native", lifecycle: "ready" });
+    await client.close();
   });
 
   it("closes and detaches every observer when hello rejects", async () => {

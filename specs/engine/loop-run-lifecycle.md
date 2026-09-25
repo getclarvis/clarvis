@@ -145,7 +145,6 @@ run's hard `ResolvedConfig`: `max_tokens`, bounded only when
 | `textNoSubmitMessage?` | builds the error message when a contract run keeps producing text without submitting |
 | `emptyResponseAgent` | which persona (`"LLM"` or `"Lead"`) to name in the empty-response error |
 | `onContext?` | notified of the created `LiveContext` before the loop starts |
-| `prepareContext?` | asynchronous context preparation after actual capability attachment/folding and initial budget admission, before inference; receives the live `ContextPort` |
 | `warnings?` | mutable sink for run-level warnings, forwarded to `AgentBuildContext.warnings` |
 
 ### 2.7 Environment knobs this subsystem reads
@@ -340,7 +339,7 @@ block `<cap-block>\nwhat the session started with\n</cap-block>` and a fresh `SE
 marker, the composed texts after the system head are
 `[carried, "a normal earlier message", "do the thing"]` and the fresh `SEED` is absent.
 
-`EntrySeed` is `{ entryMessages, turnImages, entryStripsImages }`
+`EntrySeed` is `{ entryMessages, turnImages }`
 (`packages/loop/src/runtime/entry-seed.ts`).
 
 ### 3.9 `final_context`
@@ -446,8 +445,7 @@ the cancelled record."
 | sub-agent | `resolveIterationCap(entryResolved, CLARVIS_DEFAULT_ITERATION_LIMIT)` (`packages/loop/src/runtime/subagents/subagent-profiles.ts`) |
 
 - usage accounting, entry seed, and the per-attempt input builder;
-- `runWithClockAndTimeout` whose `buildLoop` supplies auxiliary vision through `runAgent`'s
-  `prepareContext`, after capability attachment and initial budget admission;
+- `runWithClockAndTimeout` whose `buildLoop` runs the selected agent after capability attachment and budget admission;
 - `toResponse` maps the loop result with a role-aware empty-result fallback message: `"Lead returned
   an empty response."` for a lead; otherwise `"LLM returned an empty response."` for
   `empty_response` and `"Run terminated with no result."` for any other code.
@@ -467,7 +465,7 @@ calls once per clock/signal attempt (`EntryInputBuilder`'s own type), in this or
 3. **The agents-registry injection** : when `deps.services` holds an `AGENT_REGISTRY_PORT`
    entry (i.e. a supervision registry exists — see §4.2 step 4), `resolveAgentsLimits` is consulted
    and, if it resolves, `createAgentsRunCapability(agents...)` is **prepended** ahead of the ordered
-   list, so the five `agent_*` handlers are matched before any other capability's.
+   list, so the four `agent_*` handlers are matched before any other capability's.
 4. **`buildFinalizerSoftBudget`** (called per-attempt inside `buildSharedInput`): returns
    `[undefined, undefined]` outright when the run is not in soft mode; otherwise it builds a
    `SoftBudget` from the request's `total_token_limit` and the resolved iteration cap, and — only when
@@ -523,11 +521,6 @@ settlement behavior for external cancellation.
     `budget_check` and return `budgetStop("exhausted")`, pinned by
     `packages/loop/tests/unit/run-agent.test.ts` (fires `onBudgetExhausted` and records
     `budget_check`, with zero model calls);
-    when `prepareContext` is present, recheck cancellation, await the preparation against this live
-    context, then check the same budget again before the entry's first call. Auxiliary charges can
-    therefore exhaust the shared ledger without admitting another call. Production: `runAgent` in
-    [run-agent.ts](../../packages/loop/src/runtime/loop/run-agent.ts). Test: `context preparation
-    admission` in [run-agent.test.ts](../../packages/loop/tests/unit/run-agent.test.ts).
 12. wrap the target's LLM in `withOutputTokenBudget` when a capability contributed one;
 13. call `runAgentLoop`, and close the steer source / compaction source in a `finally` when either
     exists.
@@ -1302,7 +1295,7 @@ declared on `WorkflowCtx` and the function is supplied by the host, so `workflow
 - `execute-run.ts → orchestrator.ts` (import, call) — the only call site of `runOrchestrator`.
 - `orchestrator.ts → run-agent.ts`, `entry-seed.ts`,
   `entry-inputs.ts`, `run-shape.ts`, `run-response-mapping.ts`,
-  `run-trace.ts`, `run-timeout.ts`, `vision-prepass.ts`,
+  `run-trace.ts`, `run-timeout.ts`,
   `open-tool-pool.ts`, `capability-order.ts`, `capability-tool-metadata.ts`.
 - `run-agent.ts → loop.ts` — `runAgentLoop` is called from exactly one place.
 - `run-subagent.ts → run-agent.ts` — the second caller of `runAgent`
@@ -1338,11 +1331,11 @@ declared on `WorkflowCtx` and the function is supplied by the host, so `workflow
 | `LiveContext`, compaction selection/rewrite, `buildCompactionThunk`'s policy internals | [loop-context-compaction](context-compaction.md) |
 | `TokenLedger`, `IterationCounter`, `runBudgetCheckpoint`, `SoftBudget`, `ComputeClock` arithmetic, `ConvergenceGuards`, guard escalation | [loop-budgets-clocks-and-guards](budgets-and-guards.md) |
 | What a tool call does — the MCP registry, `executeMcpToolCall`, `openToolPool`, the result contract | [loop-tool-dispatch-and-results](tool-dispatch.md) |
-| `delegate_task`, `run-subagent`, the five `agent_*` tools, the supervision registry | [loop-delegation-and-subagents](delegation-and-subagents.md), [supervision-registry](../foundations/supervision.md) |
+| `spawn_subagent`, `run-subagent`, the four `agent_*` tools, the supervision registry | [loop-delegation-and-subagents](delegation-and-subagents.md), [supervision-registry](../foundations/supervision.md) |
 | `foldContributions`, `capabilitiesForScope`, `orderCapabilities`, `buildExecuteRunDeps` | [loop-capability-composition](capability-composition.md) |
 | Why appending is free and rewriting is not; the seed's prefix arithmetic | [prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md) |
 | The elicit relay, `withElicitWaitBound`, the soft-limit ask | [elicitation-and-user-interaction](../cross-cutting/elicitation.md) |
-| `runVisionPrepass` | [vision-prepass-and-image-routing](vision-routing.md) |
+| Image routing and model capability gating | [vision-routing](vision-routing.md) |
 | Request validation and settings schemas | [loop-request-and-settings-schema](request-and-settings-schema.md) |
 | The journal's on-disk format and `recoverOrphans` | [trace-recording-and-persistence](../foundations/trace.md) |
 

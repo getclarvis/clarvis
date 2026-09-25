@@ -26,7 +26,6 @@ import type { PlansMode } from "@clarvis/protocol";
  * request; deliberately loose, since the config store owns the full schema. */
 interface EngineSettings {
   default_model?: string;
-  default_vision_model?: string;
   default_reasoning_effort?: string;
   providers?: unknown[];
   mcpServers?: Record<string, Record<string, unknown>>;
@@ -175,7 +174,6 @@ const AGENTS_FIELDS = [
   "buffer_bytes",
   "max_total_buffer_bytes",
   "poll_max_bytes",
-  "await_timeout_ms",
   "max_live_children",
   "max_retained_children",
   "max_notices_per_iteration",
@@ -432,7 +430,6 @@ export function createSettingsRunAssembler(
   return (params) => {
     const settings = store.readSettings();
     const merged = settings.merged as unknown as EngineSettings;
-    requireCatalogModel(merged.default_vision_model, options.modelExecutionResolver);
     const contexts = (["global", "workspace"] as const).flatMap((scope) => {
       const context = store.readContext(scope);
       return context === null ? [] : [context];
@@ -513,9 +510,6 @@ export function createSettingsRunAssembler(
         (agentBudget ?? merged.budget) as Record<string, unknown> | undefined,
         fallbackBudget,
       ),
-      ...(typeof merged.default_vision_model === "string"
-        ? { vision_model: merged.default_vision_model }
-        : {}),
       ...(params.execution_id !== undefined ? { execution_id: params.execution_id } : {}),
       ...(params.continue_from !== undefined ? { continue_from: params.continue_from } : {}),
       ...(params.session_id !== undefined ? { session_id: params.session_id } : {}),

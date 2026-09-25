@@ -297,7 +297,7 @@ export async function clearDevelopmentTempWorkspaces(
 }
 
 function developmentBinDirectory(environment: NodeJS.ProcessEnv = process.env): string {
-  const home = environment.HOME ?? environment.USERPROFILE ?? homedir();
+  const home = environment.HOME ?? homedir();
   return resolve(
     environment.CLARVIS_DEV_BIN_DIR ?? environment.XDG_BIN_HOME ?? join(home, ".local", "bin"),
   );
@@ -341,7 +341,7 @@ function repositoryHookIsConfigured(): boolean {
 
 async function cleanEffectiveGlobalState(): Promise<void> {
   const { globalRoot } = await import("@clarvis/paths");
-  const userHome = process.env.HOME ?? process.env.USERPROFILE ?? homedir();
+  const userHome = process.env.HOME ?? homedir();
   const target = globalRoot();
   const removed = await cleanDevelopmentState(target, userHome);
   console.log(

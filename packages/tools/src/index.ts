@@ -73,14 +73,13 @@ export {
 } from "./config.ts";
 export type { RuntimeConfig, AgentToolsOptions } from "./config.ts";
 export { ExecutionSessionManager } from "./lib/execution-session.ts";
-export type { SandboxConfig } from "./sandbox.ts";
-export { systemTemporaryRoots } from "./sandbox.ts";
-export { resolveShell, shellArgs, encodePowerShellCommand, currentShellFlavor } from "./shell.ts";
-export type { ShellSpec, ShellDeps, ShellFlavor } from "./shell.ts";
+export { systemTemporaryRoots } from "./lib/system-temporary-roots.ts";
+export { resolveShell, shellArgs } from "./shell.ts";
+export type { ShellSpec } from "./shell.ts";
 export { executableOnPath, resolveCommand } from "@clarvis/paths";
 export { killTree, ownProcessGroup } from "./lib/process.ts";
 export { isAlive } from "./lib/process-owner.ts";
-export type { KillDeps, TaskkillRunner } from "./lib/process.ts";
+export type { KillDeps } from "./lib/process.ts";
 
 export { tools, readOnlyTools, getTool, selectSurface } from "./tools/registry.ts";
 export type { ToolDef, ToolCallHooks } from "./tools/types.ts";

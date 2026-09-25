@@ -16,7 +16,6 @@ import {
   CONTEXT_FILENAMES,
   globalPaths,
   HOME_ENV,
-  INTERNAL_IGNORE_PATTERNS,
   INTERNAL_SKIP_DIRS,
   ownerSegment,
   TMP_GLOB,
@@ -101,8 +100,7 @@ describe("workspacePaths", () => {
   const p = workspacePaths(WS);
 
   // `workspacePaths` resolves its root, so every derived path hangs off
-  // `p.root` and not off the literal `WS`. The two coincide on POSIX and part
-  // company on Windows, where `resolve("/work/repo")` adopts the cwd's device.
+  // `p.root` and not off the literal `WS`.
   test("clarvisDir hangs off the tree root, and root stays the tree", () => {
     expect(p.root).toBe(resolve(WS));
     expect(p.clarvisDir).toBe(join(p.root, CLARVIS_DIR));
@@ -275,12 +273,10 @@ describe("shared constants", () => {
   test("skip dirs bound a tree walk; ignore patterns feed an ignore file", () => {
     expect(INTERNAL_SKIP_DIRS).toContain(CLARVIS_DIR);
     expect(INTERNAL_SKIP_DIRS).toContain("node_modules");
-    expect(INTERNAL_IGNORE_PATTERNS).toEqual([".git", CLARVIS_DIR, TMP_GLOB]);
   });
 
   test("neither list mentions .agents — it is the user's own content", () => {
     expect(INTERNAL_SKIP_DIRS).not.toContain(AGENTS_DIR);
-    expect(INTERNAL_IGNORE_PATTERNS).not.toContain(AGENTS_DIR);
   });
 });
 
@@ -316,9 +312,7 @@ describe("owner-derived path confinement", () => {
 describe("portability", () => {
   // The root is resolved before it is handed over because `globalPaths` takes
   // an explicit root verbatim — unlike `workspacePaths`, which resolves. Only a
-  // canonical root makes `value === resolve(value)` a statement about the
-  // builders; on Windows a `/`-rooted literal is not canonical, since resolving
-  // it prepends the cwd's device.
+  // canonical root makes `value === resolve(value)` a statement about the builders.
   test("no builder emits a hardcoded separator", () => {
     const g = globalPaths(resolve(GLOBAL));
     const w = workspacePaths(WS);

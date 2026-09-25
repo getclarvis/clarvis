@@ -45,7 +45,7 @@ not load the optional tools runtime. Production: `createAgentToolsCapability` in
 | Subpath | Source file | Carries |
 | --- | --- | --- |
 | `.` | `src/lib.ts` | Curated main API: `executeRun`, `buildExecuteRunDeps`, `createHostModelCallAdmission`/`createHostExtensionAdmission` (the two host-gate factories, `packages/loop/src/lib.ts`, re-exporting `packages/loop/src/runtime/build-run-deps.ts`), the capability contract types, `createAskUserCapability`, providers, trace/message/error types, `VERSION`. No optional-package value import: the imports of `@clarvis/skills` and `@clarvis/skills/capability` in `packages/loop/src/lib.ts` are type-only and erased at compile time. |
-| `./capabilities/tools` | `src/capabilities-tools.ts` | The opt-in tools capability, guard analyzers, and `@clarvis/tools`/`@clarvis/tools/sandbox` re-exports. The **one** entry deliberately outside the optional-free rule — choosing it opts into loading `@clarvis/tools` (`packages/loop/src/capabilities-tools.ts`). |
+| `./capabilities/tools` | `src/capabilities-tools.ts` | Opt-in tools capability and `@clarvis/tools` exports (`packages/loop/src/capabilities-tools.ts`). |
 | `./host` | `src/host.ts` | Host-facing re-exports across the groups in §2.1a; the surface `@clarvis/kernel` builds config on top of (`packages/loop/src/host.ts`). |
 | `./workflows` | `src/workflows.ts` | Exactly one export, `createElicitSerializer` — the narrow adapter `@clarvis/workflows` needs; supervision (`registerBackgroundChild` etc.) was deliberately moved out to `@clarvis/supervision` (`packages/loop/src/workflows.ts`). |
 | `./testing` | `src/testing/index.ts` | Mock LLM/MCP, engine-owned real-loop test infrastructure, and `validateBody`, for integration tests (`packages/loop/src/testing/index.ts`, exports). |
@@ -80,7 +80,6 @@ rather than left thin:
 | Settings merge | `mergeProviders`, `mergeSettings`, `SettingsScope` | `settings/settings-merge.js` (`packages/loop/src/host.ts`) |
 | Capability settings | `readCapabilitySettings`, `settingsSchemaFor` | `settings/capability-settings.js` (`packages/loop/src/host.ts`) |
 | Settings schema | `mcpServerSettingsSchema`, `mcpServerPluginSchema`, `pluginNameField`, `pluginRefField`, `settingsSchema`, `McpServerSettings`, `SettingsFile`, plus `settingsServerToEngine` | `settings/settings-schema.js`, `settings/engine-server.js` (`packages/loop/src/host.ts`) |
-| Sandbox config | `ResolvedSandboxSettings`, `SandboxSettings` | `runtime/capabilities/tools-settings.ts` (`packages/loop/src/host.ts`) |
 | Request-schema helpers | `parseModelRef`, `resolveProvider`, `providerConfigSchema`, `grantSchema`, `BUILTIN_GRANT_NAMES`, `profileReadinessIssues`, `ReadinessIssue`, `ReadinessProfile` | `@clarvis/capability`, `validation/request-schema.js`, `validation/request/grant-registry.js`, `validation/profile-readiness.js` (`packages/loop/src/host.ts`) |
 | Wire names / misc helpers | `deriveEventSpan`, `EventSpan`, `CONTROL_PLANE_TOOL_NAMES`, `SUBMIT_RESULT_TOOL_NAME`, `boundPromise`, `contentToText`, `errorText`, `isWellFormedHttpUrl`, `readJsonFile`, `ownerFromWorkspace`, `loadEnv` | various (`packages/loop/src/host.ts`) |
 | Extension admission / run-deps construction | `createExtensionAdmissionController`, `ExtensionCallUnavailableError`, `ExtensionAdmissionController`, `ExtensionAdmissionOptions`, `ExtensionAdmissionSnapshot`, `MCPStatus`, `NamespacedTool`, `ToolTransport`, `buildExecuteRunDeps`, `createHostExtensionAdmission`, `createHostModelCallAdmission`, `hooksEffective`, `BuildRunDepsOptions`, `BuiltRunDeps`, `HostExtensionAdmission`, `HostModelCallAdmission`, `SkillRootInput`, `PluginBootstrapSkill` | `@clarvis/capability`, `./runtime/build-run-deps.ts`, `./runtime/capabilities/skills-settings.ts` (`packages/loop/src/host.ts`) |
@@ -119,7 +118,7 @@ buildExecuteRunDeps(options: BuildRunDepsOptions): Promise<BuiltRunDeps>
 | `composeSkills?` | `(discovered: SkillsProvider \| undefined) => SkillsProvider` | host composition after discovery; called once only when both skill gates are enabled. The result is shared by the registered capability and owner-facing listings. Product-specific builtin content and name policy remain with the host. |
 | `resolveHooks?` | `(ctx) => readonly HookConfig[] \| undefined` | host port for workspace hooks; omitted entirely means no hook ever runs (`packages/loop/src/runtime/build-run-deps.ts`) |
 | `hookCredentialNames?` | `() => readonly string[]` | forwarded to the hooks capability's env denylist |
-| `resolveGuard?`, `resolveSandbox?`, `resolveSecretNames?` | host ports for the tools capability |  |
+| `resolveSecretNames?` | host port for credential names withheld from spawned commands | `packages/loop/src/runtime/build-run-deps.ts` |
 | `builtins?` | `BuiltinCapabilityToggles` | `{ tools?, skills?, hooks? }`, each defaults **on** (`packages/loop/src/runtime/build-run-deps.ts`) |
 | `capabilities?` | `Capability[]` | embedder/host capabilities, registered **after** the built-ins |
 | `onConnectionEvent?` | `ConnectionEventSink` | pooled-connection health transitions |
@@ -140,7 +139,7 @@ execution and admits only exact catalog pairs, with no native transport fallback
 [`buildExecuteRunDeps`](../../packages/loop/src/runtime/build-run-deps.ts).
 Test: [`model-execution-injection.test.ts`](../../packages/loop/tests/integration/model-execution-injection.test.ts).
 
-Catalog metadata reaches entry and delegated targets, [vision](vision-routing.md), and live/stored
+Catalog metadata reaches entry and delegated targets and live/stored
 [compaction](context-compaction.md), preserving context/output limits and provider-kind behavior
 without a synthetic `ResolvedProviderConfig`. Production:
 [`resolveSubagentProfiles`](../../packages/loop/src/runtime/subagents/subagent-profiles.ts),
@@ -214,9 +213,8 @@ event is `"loaded"|"load_failed"|"disabled"`: turning a built-in off produces it
 logged outcome, not simply the absence of a log line.
 
 Five call sites, all in this one file — a scan of `packages/loop/src` turns up no other dynamic
-`import()` call, only three TSDoc `{@link import(...)}` references
-(`packages/loop/src/runtime/context/tool-spill.ts`, `packages/loop/src/runtime/tools/wire-names.ts`,
-`packages/loop/src/runtime/vision-prepass.ts`). Four of the five name a `@clarvis/*` package; the
+`import()` call, only two TSDoc `{@link import(...)}` references
+(`packages/loop/src/runtime/context/tool-spill.ts` and `packages/loop/src/runtime/tools/wire-names.ts`). Four of the five name a `@clarvis/*` package; the
 fifth is a local module:
 
 | Call | File | Guard |
@@ -282,10 +280,10 @@ undetected `devDependency` cycle that no build, install or consumer would ever s
 
 ```ts
 export const BUILTIN_SETTINGS_SPECS: readonly CapabilitySettingsSpec[] =
-  [hooksSettingsSpec, agentToolsSettingsSpec, sandboxSettingsSpec, agentsSettingsSpec];
+  [hooksSettingsSpec, agentsSettingsSpec];
 
 export const capabilitySettingsFields = {
-  ...HOOKS_SETTINGS_FIELDS, ...AGENT_TOOLS_SETTINGS_FIELDS, ...AGENTS_SETTINGS_FIELDS,
+  ...HOOKS_SETTINGS_FIELDS, ...AGENTS_SETTINGS_FIELDS,
 };
 export const capabilityRequestParamFields = {
   ...AGENT_TOOLS_REQUEST_PARAMS, ...AGENTS_REQUEST_PARAMS,
@@ -318,8 +316,6 @@ parser when the host supplies the same registry; no engine-specific product key 
 | Block | Spec key | Merge | Plugin-contributable | Owner file |
 | --- | --- | --- | --- | --- |
 | `hooks` (array) | `hooks` | all-operator-then-all-plugin, capped `MAX_HOOKS_PER_RUN` | yes | `packages/loop/src/runtime/capabilities/hooks.ts` |
-| `guard` | `guard` | last-wins | no (forbidden: "a plugin could silently disarm the workspace's own guard") | `packages/loop/src/runtime/capabilities/tools-settings.ts` |
-| `sandbox` | `sandbox` | scalar last-wins, path lists union with `excluded_paths` subtracted from `extra_paths` | no | `packages/loop/src/runtime/capabilities/tools-settings.ts` |
 | — (no settings block) | — | — | `bootstrapSkill` plugin field only, never `pluginContributable` | `packages/loop/src/runtime/capabilities/skills-settings.ts` |
 
 `SKILLS_PLUGIN_FIELDS.bootstrapSkill` is deliberately **not** part of `pluginSettingsFragment` (it
@@ -477,13 +473,12 @@ Production: `buildEntrySeed` in
    setup-timeout budget. An optional block may be omitted; a required declared seed must produce
    non-empty content before inference (`packages/loop/src/runtime/orchestrator.ts`). Entry attachment
    is similarly mandatory for a required activation, while child scopes retain their ordinary filter.
-   Entry `forAgent` validation, actual `attach`, and contribution folding precede the optional vision
-   prepass, so unavailable required controls cannot spend an auxiliary provider call before refusal.
+   Entry `forAgent` validation, actual `attach`, and contribution folding precede inference, so
+   unavailable required controls cannot admit a provider call before refusal.
    Attach runs once against the actual entry context; its exceptions use the bounded entry error.
    Production: `runAgent` in [run-agent.ts](../../packages/loop/src/runtime/loop/run-agent.ts), `runEntryAgent` in
    [orchestrator.ts](../../packages/loop/src/runtime/orchestrator.ts), and `capabilitiesForScope` in
-   [compose.ts](../../packages/capability/src/compose.ts). Test: mandatory setup, saturation and
-   auxiliary-vision refusal in
+   [compose.ts](../../packages/capability/src/compose.ts). Test: mandatory setup and saturation in
    [host-capability.test.ts](../../packages/loop/tests/integration/host-capability.test.ts).
 7. `seedMarkers = allCapabilities.map(c => c.seedMarker).filter(...)` — over the **registered**
    set, not the activated one (`packages/loop/src/runtime/orchestrator.ts`) — matching the contract's own rationale
@@ -666,7 +661,7 @@ Test: `packages/loop/tests/architecture/optional-package-loading.test.ts`.
 
 **INV-CC-02.** (Locally derived; the number `INV-085` is likewise already taken by
 [prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md), `specs/cross-cutting/prompt-cache.md`.) The `settings-specs.ts` walk that proves INV-076 is not vacuous: it actually reaches
-`hooks.ts`, `tools-settings.ts` and `skills-settings.ts`, and crosses **into** `@clarvis/capability`'s
+`hooks.ts` and `skills-settings.ts`, and crosses **into** `@clarvis/capability`'s
 own source (more than 5 files under `capability/`) and `@clarvis/supervision`'s own source (more than
 1 file under `supervision/`) rather than stopping at either package's barrel — the direct structural
 analog of INV-078's non-vacuousness pin for the memory-capability walk.
@@ -733,7 +728,7 @@ their own:**
 | A capability's `forRun` throws `ExtensionCallUnavailableError` (host gate saturated) | Optional activation resolves `null`; required activation fails before inference | `packages/loop/src/runtime/orchestrator.ts` |
 | A capability's `seedBlock()` exceeds its setup budget | Optional block omitted; required declared seed fails setup | `packages/loop/src/runtime/orchestrator.ts` |
 | A capability's extension-admitted `seedBlock` hits a saturated host gate | Wrapper returns `undefined` and logs saturation; the orchestrator refuses a required declared seed | `packages/loop/src/runtime/extension-admission.ts`; test `packages/loop/tests/unit/extension-admission.test.ts` |
-| A required entry capability declines `forAgent` or throws in `attach` | `required_capability_unavailable` before entry or auxiliary vision inference; children retain ordinary filtering | `capabilitiesForScope` in `packages/capability/src/compose.ts`; required-entry scope/attach vision cases in `packages/loop/tests/integration/host-capability.test.ts` |
+| A required entry capability declines `forAgent` or throws in `attach` | `required_capability_unavailable` before entry inference; children retain ordinary filtering | `capabilitiesForScope` in `packages/capability/src/compose.ts`; required-entry scope/attach vision cases in `packages/loop/tests/integration/host-capability.test.ts` |
 | A capability's extension-admitted lifecycle method, `onRunEnd`, or `finalizeRun` hits a saturated host gate | The `ExtensionCallUnavailableError` propagates to the owning caller; this wrapper supplies no fallback | `packages/loop/src/runtime/extension-admission.ts` |
 | A capability's `finalizeRun` throws or exceeds `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` | Its state slot is omitted from the run record; the run itself is unaffected | `packages/loop/src/runtime/execute-run.ts` |
 | Two contributions declare the same tool wire name | `foldContributions` **throws** synchronously | `packages/capability/src/compose.ts` |

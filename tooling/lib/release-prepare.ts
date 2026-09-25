@@ -4,7 +4,6 @@ const RELEASE_VERSION_PATTERN =
 export interface ReleasePreparationSources {
   packageJson: string;
   installSh: string;
-  installPowerShell: string;
   changelog: string;
 }
 
@@ -100,7 +99,7 @@ function promoteChangelog(changelog: string, version: string, date: string): str
   return `${changelog.slice(0, bodyStart)}\n\n## [${version}] - ${date}\n\n${body}\n${changelog.slice(nextRelease)}`;
 }
 
-/** Prepares the root product identity, both installer defaults, and the changelog atomically in memory. */
+/** Prepares the root product identity, installer default, and changelog atomically in memory. */
 export function prepareReleaseSources(
   sources: ReleasePreparationSources,
   version: string,
@@ -123,12 +122,6 @@ export function prepareReleaseSources(
       `CLARVIS_VERSION:-${previousVersion}`,
       `CLARVIS_VERSION:-${version}`,
       "install.sh",
-    ),
-    installPowerShell: replaceExactlyOnce(
-      sources.installPowerShell,
-      `else { "${previousVersion}" }`,
-      `else { "${version}" }`,
-      "install.ps1",
     ),
     changelog: promoteChangelog(sources.changelog, version, date),
     previousVersion,

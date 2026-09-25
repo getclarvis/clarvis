@@ -1,5 +1,5 @@
 /**
- * Supported host-composition surface for config, provider, plugin, and sandbox policy.
+ * Supported host-composition surface for config, provider, and plugin policy.
  *
  * @remarks Kernel and other hosts use this narrow subpath for host policy.
  * Runtime execution remains on the package root and capability-specific
@@ -66,10 +66,6 @@ export {
   type SettingsFile,
 } from "./settings/settings-schema.ts";
 export { settingsServerToEngine } from "./settings/engine-server.ts";
-export type {
-  ResolvedSandboxSettings,
-  SandboxSettings,
-} from "./runtime/capabilities/tools-settings.ts";
 export { parseModelRef } from "@clarvis/capability";
 export { resolveProvider } from "@clarvis/capability";
 export { providerConfigSchema, grantSchema } from "./validation/request-schema.ts";

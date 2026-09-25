@@ -161,9 +161,16 @@ The `memory:` settings block (`memoryConfigSchema`, packages/memory/src/schemas.
 | Field | Type | Default |
 | --- | --- | --- |
 | `enabled` | `boolean` | `MEMORY_DEFAULTS.enabled` = `true` (packages/memory/src/config.ts) |
-| `model` | `string` (optional) | none — hosts default to a cheap model |
 | `budgets` | `budgetsSchema.partial()` (optional) | merged over `DEFAULT_BUDGETS` |
 | `provider` | `memoryProviderSchema` (optional; `{ kind: "wiki" }`) | absent = built-in wiki |
+
+The global settings scope owns `enabled`; workspace `memory` blocks may supply budgets and provider
+configuration but cannot change the on/off choice. The Code picker saves `enabled` globally and
+defaults off when no global choice exists. Production: `loadMemorySettings` in
+`packages/kernel/src/file-kernel.ts`, `saveMemoryMode` in
+`packages/code/src/adapters/memory-mode.ts`. Test:
+`packages/kernel/tests/integration/file-kernel.test.ts` and
+`packages/code/tests/unit/memory-mode.test.ts`.
 
 `memoryProviderSchema` accepts only `{ kind: "wiki" }`. Unknown kinds and fields are rejected during settings validation. Production: `packages/memory/src/schemas.ts` (`memoryProviderSchema`). Test: `packages/memory/tests/component/factory.test.ts`.
 
@@ -175,7 +182,7 @@ number.min(500)`, `max_index_ops: number.min(1).max(50)`. Defaults (packages/mem
 object: `keep_revisions: 20`, `keep_days: 90`, `min_revisions: 3` — how much superseded revision
 content is kept so an automatic change can be undone, with the doc comment noting `min_revisions`
 is a floor that outranks the other two bounds. Unlike `budgets`, it has **no** corresponding field
-in `memoryConfigSchema` (packages/memory/src/schemas.ts declares only `enabled`/`model`/`budgets`/`provider`) —
+in `memoryConfigSchema` (packages/memory/src/schemas.ts declares only `enabled`/`budgets`/`provider`) —
 it is not settable via the `memory:` block, and is read directly off the constant by
 `packages/memory/src/file-store/revisions.ts` (owned by the sibling [capabilities/memory-store.md](memory-store.md) document).
 
@@ -326,16 +333,14 @@ absent `description` — holds. `reviewDigest` is not itself re-exported from `s
 
 ### 4.1 `forRun(ctx)` and `prepareMemoryRuntime` — shared per-run activation
 
-1. If `ctx.requestParam("memory") === "off"` → return `null` (no seed, no tools, no ingest); this is
+1. Unless `ctx.requestParam("memory") === "on"` → return `null` (no seed, no tools, no ingest); this is
    the **request-level** override read through `RunCapabilityContext.requestParam`, since `memory`
    is a param `memorySettingsSpec` registers, not a field of the engine's own request type
    (`createMemoryCapability` and `prepareMemoryRunInternal` in
    `packages/memory/src/capability.ts`).
-2. Resolve `memory = factory?.forOwnerControlPlane(ctx.owner)` — **not**
-   `forOwner`, so a workspace with no indexer model still keeps its seed, tools and enqueue; only
-   *learning* (the background worker) requires `forOwner`'s stricter gate
-   (`MemoryFactory` and `prepareMemoryRunInternal`, mirrored in the kernel's own `mem()` at
-   `packages/kernel/src/memory/memory-service.ts`).
+2. Resolve `memory = factory?.forOwnerControlPlane(ctx.owner)`. Post-run indexing uses the
+   entry model recorded in the run snapshot (`MemoryFactory` and `prepareMemoryRunInternal`,
+   mirrored in the kernel's own `mem()` at `packages/kernel/src/memory/memory-service.ts`).
 3. If `factory.providerFor` exists (a provider-aware factory): await it. `undefined` → `null`.
    `!resolved.ok` → log `memory_provider_unavailable` and return `null` — "the run continues with
    no memory at all — it is never silently served from a different store than the one declared"
@@ -613,7 +618,7 @@ constructs a provider whose tool descriptors differ from canonical and asserts t
 
 | Condition | Behavior | Cite |
 | --- | --- | --- |
-| `ctx.requestParam("memory") === "off"` | Native `forRun` and `prepareMemoryRuntime` return `null`: no seed, no tools, no ingest for this run | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
+| `ctx.requestParam("memory") !== "on"` | Native `forRun` and `prepareMemoryRuntime` return `null`: no seed, no tools, no ingest for this run | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
 | `factory` absent, or `factory.forOwnerControlPlane` resolves nothing | Native `forRun` and provider-opaque preparation return `null` | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
 | `factory.providerFor` resolves `undefined` | Native `forRun` and provider-opaque preparation return `null` | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
 | `factory.providerFor` resolves `{ ok: false, failure }` | logs `memory_provider_unavailable` (with `cause`/`provider` fields) and returns `null` — never silently falls back to a different store | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
@@ -683,8 +688,8 @@ durable index job queue is out of scope here (delegated to [capabilities/memory-
 
 **What depends on this document** (not traced further here, out of scope): the kernel's
 `memory-ingest-phase.ts` (`packages/kernel/src/runs/memory-ingest-phase.ts`, owned by
-[capabilities/memory-indexer.md](memory-indexer.md)) and `code`'s `MemoryConfigPanel`/`memory-mode` adapter (owned by
-[hosts/code-domain-hubs.md](../hosts/code-domain-hubs.md)) both consume the `MEMORY_INGEST_EVENT` wire shape and `MemoryService` this document
+[capabilities/memory-indexer.md](memory-indexer.md)) and `code`'s `memory-mode` adapter (owned by
+[hosts/code-settings-panels.md](../hosts/code-settings-panels.md)) both consume the `MEMORY_INGEST_EVENT` wire shape and `MemoryService` this document
 defines.
 
 ## 8. Open questions

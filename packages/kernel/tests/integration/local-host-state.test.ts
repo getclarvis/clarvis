@@ -59,40 +59,37 @@ describe("private local host state", () => {
     ).toEqual(["/tmp"]);
   });
 
-  test.skipIf(process.platform === "win32")(
-    "keeps identity stable for one snapshot and publishes a long-temp fallback record",
-    async () => {
-      const f = await fixture();
-      const environment = {
-        TMPDIR: join("/tmp", "incident-" + "a".repeat(168)),
-        TMP: join("/tmp", "other-" + "b".repeat(168)),
-        TEMP: join("/tmp", "third-" + "c".repeat(168)),
-        UNRELATED_SECRET: "does-not-select-an-endpoint",
-      };
-      const input = {
-        workspaceRoot: f.workspaceRoot,
-        globalDir: join(f.root, "snapshot-global"),
-        owner: "operator",
-        endpointRootCandidates: localHostEndpointRootCandidates(environment),
-      };
-      const first = await resolveLocalHostIdentity(input);
-      const second = await resolveLocalHostIdentity({
-        ...input,
-        endpointRootCandidates: localHostEndpointRootCandidates({
-          ...environment,
-          UNRELATED_SECRET: "changed",
-        }),
-      });
-      expect(second.paths.endpoint).toBe(first.paths.endpoint);
-      expect(first.paths.endpointDirectory).toStartWith(`${resolve("/tmp")}/clv-`);
-      expect(Buffer.byteLength(first.paths.endpoint, "utf8")).toBeLessThanOrEqual(100);
-      const state = await acquireLocalHostState(first, "test-artifact", "0".repeat(64));
-      if (state === null) throw new Error("snapshot fixture unexpectedly contended");
-      cleanups.push(() => state.close());
-      await state.publish("workspace");
-      expect((await readLocalHostConnection(first))?.endpoint).toBe(first.paths.endpoint);
-    },
-  );
+  test("keeps identity stable for one snapshot and publishes a long-temp fallback record", async () => {
+    const f = await fixture();
+    const environment = {
+      TMPDIR: join("/tmp", "incident-" + "a".repeat(168)),
+      TMP: join("/tmp", "other-" + "b".repeat(168)),
+      TEMP: join("/tmp", "third-" + "c".repeat(168)),
+      UNRELATED_SECRET: "does-not-select-an-endpoint",
+    };
+    const input = {
+      workspaceRoot: f.workspaceRoot,
+      globalDir: join(f.root, "snapshot-global"),
+      owner: "operator",
+      endpointRootCandidates: localHostEndpointRootCandidates(environment),
+    };
+    const first = await resolveLocalHostIdentity(input);
+    const second = await resolveLocalHostIdentity({
+      ...input,
+      endpointRootCandidates: localHostEndpointRootCandidates({
+        ...environment,
+        UNRELATED_SECRET: "changed",
+      }),
+    });
+    expect(second.paths.endpoint).toBe(first.paths.endpoint);
+    expect(first.paths.endpointDirectory).toStartWith(`${resolve("/tmp")}/clv-`);
+    expect(Buffer.byteLength(first.paths.endpoint, "utf8")).toBeLessThanOrEqual(100);
+    const state = await acquireLocalHostState(first, "test-artifact", "0".repeat(64));
+    if (state === null) throw new Error("snapshot fixture unexpectedly contended");
+    cleanups.push(() => state.close());
+    await state.publish("workspace");
+    expect((await readLocalHostConnection(first))?.endpoint).toBe(first.paths.endpoint);
+  });
 
   test("projection storage is generation-owned and terminal reclamation is idempotent", async () => {
     const f = await fixture();
@@ -202,23 +199,20 @@ describe("private local host state", () => {
     });
   });
 
-  test.skipIf(process.platform === "win32")(
-    "refuses permissive, symbolic and hardlinked credential files",
-    async () => {
-      const f = await fixture();
-      await f.acquire();
-      const file = f.identity.paths.connectionFile;
-      await writeFile(file, "{}", { mode: 0o644 });
-      await expect(readPrivateHostJson(file, 1024)).rejects.toMatchObject({ code: "unauthorized" });
-      await chmod(file, 0o600);
-      const other = join(f.root, "linked.json");
-      await link(file, other);
-      await expect(readPrivateHostJson(file, 1024)).rejects.toMatchObject({
-        code: "invalid_request",
-      });
-      await rm(file);
-      await symlink(other, file);
-      await expect(readPrivateHostJson(file, 1024)).rejects.toBeDefined();
-    },
-  );
+  test("refuses permissive, symbolic and hardlinked credential files", async () => {
+    const f = await fixture();
+    await f.acquire();
+    const file = f.identity.paths.connectionFile;
+    await writeFile(file, "{}", { mode: 0o644 });
+    await expect(readPrivateHostJson(file, 1024)).rejects.toMatchObject({ code: "unauthorized" });
+    await chmod(file, 0o600);
+    const other = join(f.root, "linked.json");
+    await link(file, other);
+    await expect(readPrivateHostJson(file, 1024)).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    await rm(file);
+    await symlink(other, file);
+    await expect(readPrivateHostJson(file, 1024)).rejects.toBeDefined();
+  });
 });

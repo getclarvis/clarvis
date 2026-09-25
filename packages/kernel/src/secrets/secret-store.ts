@@ -92,14 +92,6 @@ export function createFileSecretStore(opts: FileSecretStoreOptions = {}): Secret
   /**
    * Persist the secret set atomically, owner-readable only.
    *
-   * @remarks
-   * **The mode bits do not confine anything on Windows.** `0o700`/`0o600` map
-   * only onto the read-only attribute there, so provider API keys written on a
-   * Windows host are readable by any process running as that user - which is the
-   * same trust boundary the file's directory already sits behind, but a weaker
-   * guarantee than the POSIX one. Tightening it would take an explicit ACL, which
-   * is deliberately out of scope; recorded here so the difference is a known
-   * divergence rather than an assumption that happens to be false.
    */
   const writeAll = (values: Record<string, string>): void => {
     writeFileAtomicSync(file, `${JSON.stringify(values, null, 2)}\n`);

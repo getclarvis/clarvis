@@ -231,8 +231,7 @@ history does not guarantee a hit under the indexing instance's distinct key.
 array and a rendered run digest. It is
 what runs when the indexed run left no resumable `final_context`, declared MCP
 servers (whose tools are part of the cached array), or was answered by a
-different model than the one indexing it — a cache belongs to a model, so setting
-`memory.model` to something cheaper is choosing this path deliberately. It also
+different model than the one indexing it — a cache belongs to a model. It also
 uses this path when a stored profile carries a grant the pass deps do not declare;
 workflow managers are the common case because their capability is injected only
 for the primary manager run. Retrying that continuation would fail validation
@@ -295,8 +294,8 @@ pyramid gate ever passing (`validate`) gives up far sooner — it will not close
 the fifth try if it did not on the second. An abort is not a failure at all, and
 is decided from the drain's own signal rather than the error's shape, because
 every provider surfaces cancellation differently. A workspace with no indexer
-model reports its due jobs `blocked` — no attempt consumed, no lease taken — so
-the learning is recovered whole the day a model is configured.
+runtime reports its due jobs `blocked` — no attempt consumed, no lease taken — so
+the learning stays queued until the runtime is available.
 
 That durable job policy is the indexer's only provider-recovery loop. Both isolated and continuation
 entry profiles set `retry.max_retries: 0`, so one transient provider failure returns to the queue,
@@ -355,8 +354,8 @@ parameter: verbosity is `CLARVIS_LOG_LEVEL` / `CLARVIS_LOG` only
 `CLARVIS_MEMORY_LOCK_WARN_MS` (default 5000).
 
 The index queue is durable and drains in the background, which is precisely what makes its failures
-invisible: nothing on a run's response path can see a retry, a give-up, or a workspace whose learning
-is only waiting for a model.
+invisible: nothing on a run's response path can see a retry, a give-up, or a job waiting for its
+indexer runtime to become available.
 
 | Level | `event`                              | Fields                                                                                                             |
 | ----- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
@@ -373,7 +372,6 @@ is only waiting for a model.
 | info  | `memory.drain.pass`                  | `claimed`, `completed`, `retried`, `failed`, `blocked`                                                             |
 | warn  | `memory.drain.failed`                | `cause`                                                                                                            |
 | warn  | `memory.settings.unreadable`         | `cause`                                                                                                            |
-| warn  | `memory.model.absent`                | — (once per factory)                                                                                               |
 | warn  | `memory.provider.undeclared`         | `provider`, `model` (once per factory)                                                                             |
 | warn  | `memory.seed.provider_failed`        | `provider`, `cause`                                                                                                |
 | info  | `memory.run.enqueued`                | `execution_id`, `state`                                                                                            |
@@ -400,7 +398,7 @@ This diagnostic identifies the selected context path; physical-call usage establ
 
 **`memory.lock.held_long` is the enforcement for a rule nothing else enforces.** "Never start a pass
 from inside `store.exclusive`" cannot deadlock, because the store's lock is re-entrant — it would
-silently hold the tree lock for a whole inference, blocking the wiki tools, the memory panel and
+silently hold the tree lock for a whole inference, blocking the wiki tools and
 every concurrent run's seed. A hold past `CLARVIS_MEMORY_LOCK_WARN_MS` says so, and `nested`
 distinguishes a re-entrant hold from a slow one.
 
@@ -425,15 +423,15 @@ surfaces and are not duplicated here.
 - `write_memory` / `edit_memory` / `delete_memory` — maintain it (each mutation
   triggers a reindex).
 
-Host and Sandbox runs retain that seven-tool surface when Memory is active.
+Host runs retain that seven-tool surface when Memory is active.
 
 Durable file-backed job scans
 visit at most 10,000 directory entries, read at most 1 MiB from a job record and
 retain a top page of at most 200 jobs; counts, next-due lookup and claims fold
 over the scan without collecting the queue.
 
-A write-enabled entry agent may write memory directly during a Host or Sandbox run. The
-same native tools back the Kernel editing surface and the dedicated indexing pass in the Kernel that
+A write-enabled entry agent may write memory directly during a host run. The same tools back the
+Kernel editing surface and the dedicated indexing pass in the Kernel that
 owns that Memory store.
 
 `pinned:` and `authority: confirmed` are the owner's alone, and the rule binds
@@ -480,16 +478,11 @@ event without loading the wiki.
 `memory.provider` accepts only `{ "kind": "wiki" }`; omission selects the same built-in wiki.
 Memory owns its tool schemas, write authorization, seed wrapping, sanitization and indexing policy.
 
-## Which model gate applies
+## Run model
 
-The capability resolves through `MemoryFactory.forOwnerControlPlane`, **not**
-`forOwner`. `forOwner` gates on the indexer model and now has exactly one
-consumer, the background worker, which genuinely cannot drain without one.
-
-Under the old gate a workspace with no `default_model` lost the seed block, all
-seven wiki tools and the post-run enqueue _together_ — it could not even read
-what earlier runs had written. **A missing indexer model costs a run its
-learning, never its memory.**
+Memory starts off. A run with `memory: "on"` can use the wiki, and its selected
+entry model also drives post-run indexing. The snapshot retains that model so
+background work uses the same choice even if settings change later.
 
 ## Test ownership
 

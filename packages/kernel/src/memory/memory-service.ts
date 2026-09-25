@@ -42,10 +42,8 @@ export interface MemoryServiceConfig {
    * Builds a per-owner {@link Memory}; `undefined` when the host wired no
    * memory subsystem at all, which disables every method.
    *
-   * @remarks The service resolves through
-   * {@link MemoryFactory.forOwnerControlPlane}, not `forOwner`: diagnosing the
-   * wiki and inspecting its queue must keep working in a workspace that has
-   * memory enabled but no indexer model. Only learning depends on the model.
+   * @remarks Diagnosing the wiki and inspecting its queue remain available
+   * when a subject run's model cannot be resolved for indexing.
    */
   factory: MemoryFactory | undefined;
   /** Owner scope whose memory wiki this service operates over (via {@link MemoryFactory}). */
@@ -71,8 +69,7 @@ export function createMemoryService(cfg: MemoryServiceConfig): MemoryService {
    *
    * @returns the owner-scoped memory wiki.
    * @throws {@link kernelError | KernelException} `capability_disabled` when
-   *   memory is absent or switched off for this workspace — but *not* merely
-   *   because no indexer model resolves.
+   *   memory is absent or switched off for this workspace.
    */
   function mem(): Memory {
     const m = cfg.factory?.forOwnerControlPlane(cfg.owner);

@@ -41,9 +41,10 @@ function tempWorkspace(): string {
 }
 
 /** A representative finished run for the indexer. */
-function run(): RunSnapshot {
+function run(modelRef = "anthropic/claude-cheap"): RunSnapshot {
   return {
     run_id: "exec_a",
+    model_ref: modelRef,
     workspace: "/ws",
     status: "completed",
     started_at: 1,
@@ -89,7 +90,7 @@ describe("createMemoryFactory", () => {
       llm,
       workspaceRoot: "/ws",
       logger,
-      loadSettings: () => ({ config: { ...CONFIG, enabled: false }, defaultModel: "p/m" }),
+      loadSettings: () => ({ config: { ...CONFIG, enabled: false } }),
     });
     expect(disabled.forOwner("o")).toBeUndefined();
 
@@ -108,20 +109,16 @@ describe("createMemoryFactory", () => {
     );
   });
 
-  it("requires a model: no memory.model and no default_model → undefined with one warning", () => {
-    const { llm, logger, warn } = makeFactoryDeps();
+  it("creates the wiki without a configured model", () => {
+    const { llm, logger } = makeFactoryDeps();
     const factory = createMemoryFactory({
       llm,
       workspaceRoot: "/ws",
       logger,
       loadSettings: () => ({ config: CONFIG }),
     });
-    expect(factory.forOwner("o")).toBeUndefined();
-    expect(factory.forOwner("o")).toBeUndefined();
-    const noModelWarns = warn.mock.calls.filter(
-      (c) => (c[0] as { event?: string }).event === "memory.model.absent",
-    );
-    expect(noModelWarns).toHaveLength(1);
+    expect(factory.forOwner("o")).toBeDefined();
+    expect(factory.forOwner("o")).toBe(factory.forOwnerControlPlane("o"));
   });
 
   it("refuses an undeclared non-built-in model provider and warns only once", async () => {
@@ -131,12 +128,12 @@ describe("createMemoryFactory", () => {
       workspaceRoot: "/ws",
       logger,
       runDeps: () => fakeIndexerRuntime([{ text: "unused" }]).runtime.deps,
-      loadSettings: () => ({ config: CONFIG, defaultModel: "custom/model" }),
+      loadSettings: () => ({ config: CONFIG }),
     });
 
     const memory = factory.forOwner("o")!;
-    expect((await memory.index(run())).note).toBe("no-indexer");
-    expect((await memory.index(run())).note).toBe("no-indexer");
+    expect((await memory.index(run("custom/model"))).note).toBe("run-model-unavailable");
+    expect((await memory.index(run("custom/model"))).note).toBe("run-model-unavailable");
     expect(
       warn.mock.calls.filter(
         (call) => (call[0] as { event?: string }).event === "memory.provider.undeclared",
@@ -155,7 +152,6 @@ describe("createMemoryFactory", () => {
       logger,
       loadSettings: () => ({
         config: CONFIG,
-        defaultModel: "anthropic/claude-cheap",
         providers: [{ name: "anthropic", kind: "anthropic" as const, api_key_env: "K" }],
       }),
     });
@@ -173,7 +169,7 @@ describe("createMemoryFactory", () => {
     expect(llm.calls).toHaveLength(0);
   });
 
-  it("carries the resolved model and providers into the pass it runs", async () => {
+  it("uses the finished run's selected model for its index pass", async () => {
     const { llm, logger } = makeFactoryDeps();
     const { runtime } = fakeIndexerRuntime([{ text: "nothing durable" }]);
     const factory = createMemoryFactory({
@@ -183,17 +179,16 @@ describe("createMemoryFactory", () => {
       runDeps: () => runtime.deps,
       loadSettings: () => ({
         config: CONFIG,
-        defaultModel: "anthropic/claude-cheap",
         providers: [{ name: "anthropic", kind: "anthropic" as const, api_key_env: "K" }],
       }),
     });
 
-    const report = await factory.forOwner("evandro")!.index(run());
+    const report = await factory.forOwner("evandro")!.index(run("anthropic/claude-selected"));
 
     expect(report.skipped).toBe(true);
     expect(report.note).toBe("nothing-to-record");
     const passLlm = runtime.deps.llm as unknown as { calls: { model: string }[] };
-    expect(passLlm.calls[0]?.model).toBe("claude-cheap");
+    expect(passLlm.calls[0]?.model).toBe("claude-selected");
   });
 
   it("routes every indexer pass through the host-owned run executor", async () => {
@@ -209,7 +204,7 @@ describe("createMemoryFactory", () => {
       logger,
       runDeps: () => runtime.deps,
       executeRun,
-      loadSettings: () => ({ config: CONFIG, defaultModel: "anthropic/claude-cheap" }),
+      loadSettings: () => ({ config: CONFIG }),
     });
 
     const report = await factory.forOwner("evandro")!.index(run());
@@ -228,7 +223,7 @@ describe("createMemoryFactory", () => {
       workspaceRoot: tempWorkspace(),
       logger,
       runDeps: () => runtime.deps,
-      loadSettings: () => ({ config: CONFIG, defaultModel: "anthropic/cheap" }),
+      loadSettings: () => ({ config: CONFIG }),
     });
     const memory = factory.forOwner("o")!;
     const snapshot = run();
@@ -268,7 +263,7 @@ describe("createMemoryFactory", () => {
       workspaceRoot: tempWorkspace(),
       logger,
       runDeps: () => runtime.deps,
-      loadSettings: () => ({ config: CONFIG, defaultModel: "anthropic/cheap" }),
+      loadSettings: () => ({ config: CONFIG }),
       storeFor: (owner) => stores.get(owner)!,
     });
     const alice = factory.forOwner("alice")!;
@@ -338,7 +333,7 @@ describe("createMemoryFactory", () => {
       workspaceRoot: tempWorkspace(),
       logger,
       runDeps: () => deps,
-      loadSettings: () => ({ config: CONFIG, defaultModel: "anthropic/cheap" }),
+      loadSettings: () => ({ config: CONFIG }),
       storeFor: (owner) => stores.get(owner)!,
     });
     const alice = factory.forOwner("alice")!;
@@ -405,26 +400,24 @@ describe("createMemoryFactory", () => {
 
   it("caches per owner + settings signature and rebuilds when settings change", () => {
     const { llm, logger } = makeFactoryDeps();
-    let model = "anthropic/cheap-1";
+    let seedChars = 6000;
     const factory = createMemoryFactory({
       llm,
       workspaceRoot: "/ws",
       logger,
-      loadSettings: () => ({ config: { ...CONFIG, model } }),
+      loadSettings: () => ({ config: { ...CONFIG, budgets: { seed_chars: seedChars } } }),
     });
     const a = factory.forOwner("o1");
     expect(factory.forOwner("o1")).toBe(a);
     const b = factory.forOwner("o2");
     expect(b).not.toBe(a);
 
-    model = "anthropic/cheap-2";
+    seedChars = 7000;
     expect(factory.forOwner("o1")).not.toBe(a);
   });
 
   describe("forOwnerControlPlane", () => {
-    it("resolves with no model, so an enabled workspace stays browsable", () => {
-      // The run path must still refuse — a run that cannot learn must not
-      // pretend it can — but the wiki itself is readable without an indexer.
+    it("shares the wiki with the worker", () => {
       const { llm, logger } = makeFactoryDeps();
       const factory = createMemoryFactory({
         llm,
@@ -433,7 +426,7 @@ describe("createMemoryFactory", () => {
         loadSettings: () => ({ config: CONFIG }),
       });
 
-      expect(factory.forOwner("o")).toBeUndefined();
+      expect(factory.forOwner("o")).toBeDefined();
       const memory = factory.forOwnerControlPlane("o");
       expect(memory).toBeDefined();
       expect(memory!.tools.map((t) => t.name)).toContain("read_memory");
@@ -461,7 +454,7 @@ describe("createMemoryFactory", () => {
         llm,
         workspaceRoot: tempWorkspace(),
         logger,
-        loadSettings: () => ({ config: CONFIG, defaultModel: "anthropic/cheap" }),
+        loadSettings: () => ({ config: CONFIG }),
       });
 
       const forRun = factory.forOwner("o");
@@ -482,7 +475,7 @@ describe("createMemoryFactory", () => {
         llm,
         workspaceRoot: "/ws",
         logger,
-        loadSettings: () => ({ config: { ...CONFIG, enabled: false }, defaultModel: "p/m" }),
+        loadSettings: () => ({ config: { ...CONFIG, enabled: false } }),
       });
       expect(disabled.forOwnerControlPlane("o")).toBeUndefined();
     });
@@ -506,8 +499,8 @@ describe("createMemoryFactory", () => {
 });
 
 describe("memory factory — per-owner persistence", () => {
-  const settings = (model: string) => ({
-    config: { enabled: true, model } as never,
+  const settings = (seedChars: number) => ({
+    config: { enabled: true, budgets: { seed_chars: seedChars } },
     providers: [{ name: "anthropic", kind: "anthropic" }] as never,
   });
 
@@ -518,7 +511,7 @@ describe("memory factory — per-owner persistence", () => {
       llm,
       logger,
       workspaceRoot: tempWorkspace(),
-      loadSettings: () => settings("anthropic/x"),
+      loadSettings: () => settings(6000),
       storeFor: (owner) => {
         calls.push(owner);
         return { marker: owner } as never;
@@ -532,12 +525,12 @@ describe("memory factory — per-owner persistence", () => {
   it("rebuilds the facade on a settings change but never a second store over one tree", () => {
     const { llm, logger } = makeFactoryDeps();
     const calls: string[] = [];
-    let model = "anthropic/x";
+    let seedChars = 6000;
     const factory = createMemoryFactory({
       llm,
       logger,
       workspaceRoot: tempWorkspace(),
-      loadSettings: () => settings(model),
+      loadSettings: () => settings(seedChars),
       storeFor: (owner) => {
         calls.push(owner);
         return { marker: owner } as never;
@@ -545,7 +538,7 @@ describe("memory factory — per-owner persistence", () => {
     });
 
     const first = factory.forOwner("alice");
-    model = "anthropic/y";
+    seedChars = 7000;
     const second = factory.forOwner("alice");
 
     expect(second).not.toBe(first);
@@ -560,7 +553,7 @@ describe("memory factory — per-owner persistence", () => {
       llm,
       logger,
       workspaceRoot: tempWorkspace(),
-      loadSettings: () => settings("anthropic/x"),
+      loadSettings: () => settings(6000),
       storeFor: (owner) => {
         calls.push(owner);
         return { marker: owner } as never;

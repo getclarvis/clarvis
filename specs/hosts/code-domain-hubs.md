@@ -1,21 +1,19 @@
-# Agents, workflows, sessions, memory and run-control screens
+# Agents, workflows and sessions screens
 
 > Implemented at `packages/code/src/**` and `packages/code/tests/**`. Every claim below is anchored
 > to a file and line. Open questions are collected in the final section.
 
 ## 1. Purpose
 
-`@clarvis/code` renders five full-screen "domain hub" views on top of the kernel's protocol
+`@clarvis/code` renders three full-screen "domain hub" views on top of the kernel's protocol
 services. Each one owns one domain the terminal user manipulates directly: authoring Agent Profiles
 (`AgentsPanel`), inspecting a workflow's manager→leader tree and each node's result
-(`WorkflowsHub`), resuming or deleting saved sessions (`SessionsHub`), configuring the workspace
-memory block (`MemoryConfigPanel`), and setting the safety/guard/memory/plan-retention posture for
-the next run (`RunControlsPanel`). Planning review itself is toggled by `/plan`, outside this hub.
+(`WorkflowsHub`), and resuming or deleting saved sessions (`SessionsHub`). Planning review is toggled by `/plan`, outside this hub.
 
 The views are thin. Everything that is not painting is pushed either into a **feature controller**
 (`src/features/agents/controller.ts`) — pure orchestration with no presentation
 imports (`packages/code/tests/architecture/architecture-boundary.test.ts`) — or into an
-**adapter** (`src/adapters/{agent-files,agents-store,agents,memory-mode,effort-levels}.ts`) which may
+**adapter** (`src/adapters/{agent-files,agents-store,agents,effort-levels}.ts`) which may
 not import `ui/` or `views/` at all
 (`packages/code/tests/architecture/architecture-boundary.test.ts`). Three shared feature helpers
 sit beside them: `features/issues.ts` (validation issue projection), `features/dispose-guard.ts`
@@ -24,7 +22,7 @@ sit beside them: `features/issues.ts` (validation issue projection), `features/d
 `core/run-status.ts` into glyph-rendered strings. The deleted compatibility re-export
 `features/notice.ts` is recorded in §8 item 8.
 
-All five views reach their data through `@clarvis/protocol` service interfaces or through
+All three views reach their data through `@clarvis/protocol` service interfaces or through
 `@clarvis/kernel`'s six sanctioned entrypoints; none of them touches the filesystem or the engine.
 `WorkflowsHub`'s own doc comment states the rule: "It reads everything through the kernel's
 workflows/runs services, never the local filesystem, so a remote kernel needs no change"
@@ -42,14 +40,12 @@ Every hub is registered as a *view* command. The name/title/surface/parent tuple
 | `agents.open` | Agents | — | `internal` | `settings` | `packages/code/src/features/agents/commands.ts` |
 | `sessions.open` | Sessions | `/sessions` | `slash` | `sessions` | `packages/code/src/app/commands.tsx` |
 | `workflows.open` | Workflows | `/workflow` | `slash` | — | `packages/code/src/app/commands.tsx` |
-| `controls.open` | Run controls | — | `internal` | `settings` | `packages/code/src/app/commands.tsx` (`controls.open`) |
-| `memory.config` | Memory settings | — | `internal` | `settings` | `packages/code/src/app/commands.tsx` (`memory.config`) |
 
-The five commands are unconditionally registered.
+The three commands are unconditionally registered.
 
 ### 2.2 View entry points
 
-All five follow the same signature shape `(host: ViewHost, deps) => JSX.Element`. `ViewHost` is
+All four follow the same signature shape `(host: ViewHost, deps) => JSX.Element`. `ViewHost` is
 declared at `packages/code/src/keys/commands.ts` and supplies `scope()`/`toggleScope()`/
 `bindScope()`, `dirty()`/`markDirty()`/`onSave()`, `level.push/pop/depth`, `confirm()`, `close()` and
 `dispatch()`.
@@ -59,8 +55,6 @@ declared at `packages/code/src/keys/commands.ts` and supplies `scope()`/`toggleS
 | `AgentsPanel` | `AgentsDeps` = `{ agents: AgentsStore; settings: SettingsAdapter; catalog: ModelsCatalog\|null; code: CodeConfigStore; env: EnvView; notify; controller? }` | `packages/code/src/views/config/AgentsPanel.tsx` |
 | `WorkflowsHub` | `WorkflowsHubDeps` = `{ list; get; getRun; delete?; now; live?; openAgentPicker?; pollMs?; refreshSlowMs? }` | `packages/code/src/views/config/WorkflowsHub.tsx` |
 | `SessionsHub` | `SessionsHubDeps` = `{ sessions; catalog?; now; statusLine; resume; resumeCatalog?; delete? }` plus `SessionCatalogItem` | `packages/code/src/views/config/SessionsHub.tsx` |
-| `MemoryConfigPanel` | `MemoryConfigDeps` = `{ settings: SettingsAdapter; memoryMode: MemoryModeStore; notify }` | `packages/code/src/views/config/MemoryConfigPanel.tsx` |
-| `RunControlsPanel` | inline deps `{ settings; memory: MemoryModeStore; notify; runActive; reload; openSandbox }` | `packages/code/src/views/config/RunControlsPanel.tsx` (`RunControlsPanel`) |
 
 `refreshSlowMs` on `WorkflowsHubDeps` is explicitly documented as an internal test seam for the
 pending-operation warning (`packages/code/src/views/config/WorkflowsHub.tsx`).
@@ -108,7 +102,7 @@ and [background-commands.test.tsx](../../packages/code/tests/integration/backgro
 | `deriveAgentShape(v): AgentShape` | `isLead`/`askUserGranted`/`softMode` | `packages/code/src/adapters/agents.ts` |
 | `grantBadges(grants, max?): string` | whole-label badge string with `+N` remainder | `packages/code/src/adapters/agents.ts` |
 | `ClarvisDirs` | `{ global; workspace?; state? }` | `packages/code/src/adapters/agents.ts` |
-| `createMemoryModeStore(deps): MemoryModeStore` | `configured`/`mode`/`setMode`/`cycle`/`refresh` | `packages/code/src/adapters/memory-mode.ts`, contract |
+| `createMemoryModeStore(initialMode?): MemoryModeStore`, `saveMemoryMode` | `mode`/`setMode`/`cycle`; reads the global choice, defaults off, and writes it globally | `packages/code/src/adapters/memory-mode.ts`, contract |
 | `EFFORT_LEVELS`, `EffortLevel` | `["off","minimal","low","medium","high","xhigh","max"]` | `packages/code/src/adapters/effort-levels.ts` |
 | `normalizeReasoningEfforts(values)` | provider `none`→`off`, drop unknowns, order-normalize | `packages/code/src/adapters/effort-levels.ts` |
 | `supportedReasoningEfforts(catalog, providers, modelRef)` | `EffortLevel[] \| undefined` | `packages/code/src/adapters/effort-levels.ts` |
@@ -430,102 +424,6 @@ confirms with turn count, deletes, removes the row from the local catalog, and *
 selection index**. Verbs: `n` → `host.dispatch("app.clear")`, `x` →
 `host.dispatch("session.export")`, `d` present only when `deps.delete` is supplied.
 
-### 4.7 Memory settings
-
-`load()` reads the **per-scope** file (not the merged view) and seeds `saved`/`draft` from its
-`memory` block, resetting selection and dirty state
-(`packages/code/src/views/config/MemoryConfigPanel.tsx`). `host.bindScope({ mode: "reload", load })`
- — unlike the other panels, changing scope reloads.
-
-Rows: `Memory` (0), `Extraction model` (1, only when a draft block exists), `Session memory` (last)
-— `rowCount()` is 3 with a draft and 2 without. `editSelected` maps: with no draft,
-row 0 → `createBlock()` and anything else → `toggleSessionMode()`; with a draft, 0 → flip `enabled`,
-1 → `editModel()`, else → `toggleSessionMode()`.
-
-`createBlock()` copies the *effective* memory block and forces `enabled: true`, and warns when
-`default_model` does not resolve. `removeBlock()` (key `x`) sets the draft to `null`
-and notifies that a save is needed. `toggleSessionMode()` itself refuses to cycle
-when `!deps.memoryMode.configured()`, instead notifying "memory is not configured in settings —
-save a block first"; pinned by
-`packages/code/tests/integration/memory-config-render.test.tsx` ("activating the session row
-while memory is not configured warns instead of cycling"). `save()` writes `{ memory: draft ?? undefined }`,
-refreshes `memoryMode`, and — when the saved block is enabled — forces the session toggle **on** and
-distinguishes an `inert` outcome ("memory model not resolved; memory will not learn") from a live one.
-
-`statusLine()` is a five-way ladder over the *effective* settings: no block → "Off — no
-memory configuration is effective"; `enabled === false` → "Off — disabled by settings";
-`!effectiveResolves()` → "Unavailable — no extraction model resolves"; session mode `off` → "Off for
-this session — configured default remains unchanged"; else "On — runs can read and update workspace
-memory".
-
-`MemoryModeStore` (`packages/code/src/adapters/memory-mode.ts`) keeps `configured()` derived from
-settings (block present and `enabled !== false`) behind a manual `version` signal bumped by
-`refresh()`, while `mode` is an independent local signal seeded from `configured()` at construction.
-
-**`statusLine`'s `const cfg = deps.memoryMode.configured(); void cfg;` (`MemoryConfigPanel.tsx`)
-is a deliberate Solid reactivity idiom, not a leftover.** `settings.effective()` — every branch of
-`statusLine` reads it — is a plain closure read with no signal call of its own
-(`packages/code/src/adapters/settings.ts`, `function effective(): SettingsFile { return
-view.merged as SettingsFile; }`); `SettingsAdapter` exposes a separate `version: Accessor<number>`
- that a consumer must read explicitly to subscribe to settings changes, and
-`MemoryConfigPanel.tsx` never calls `settings.version()`. So without some other subscription,
-`statusLine()` would not re-run when settings change underneath it. `MemoryModeStore.configured()`
-does read a signal internally — `version()` at `packages/code/src/adapters/memory-mode.ts` — so
-calling it establishes exactly that subscription in whatever reactive scope calls `statusLine`; the
-returned boolean is irrelevant (the five branches never consult it) and is discarded on purpose.
-`save()` closes the loop: after writing settings it calls `deps.memoryMode.refresh()`, which bumps `configured`'s underlying `version` signal and retriggers every computation that
-previously called `configured()` — including the `StatusRow` render that calls `statusLine()` — so the
-freshly retriggered call to `statusLine()` re-reads `settings.effective()` and picks up the new value.
-The same idiom, with the identical shape, recurs verbatim (and equally uncommented) in
-`packages/code/src/views/config/SandboxConfigPanel.tsx` — `void savedVersion();` as the first line of both
-`effectiveStatus()` and `hostWarning()`, immediately before each reads `deps.settings.effective().sandbox`
-— confirming this is an established pattern in this package for "subscribe via a call whose value is
-thrown away, and let a sibling non-reactive read pick up fresh state within the retriggered
-computation," not something specific to memory or an accidental one-off.
-
-### 4.8 Run controls
-
-Four rows, fixed order: Isolation (0), Guard (1), Memory for this session (2),
-Completed plans (3). `[b] sandbox details` is offered only on row 0, and the host wires it to
-`openWithReturn("sandbox.config", "controls.open", host.scope())`. Production:
-`packages/code/src/views/config/RunControlsPanel.tsx` (`spec`, `body`) and
-`packages/code/src/app/commands.tsx` (`controls.open`).
-
-`host.bindScope({ mode: "retarget" })` retargets Review and completed-plan retention. Isolation is a
-host-global placement choice and always writes global settings; memory remains session-only
-(`packages/code/src/views/config/RunControlsPanel.tsx`, `host.bindScope`,
-`applyIsolationChoice`).
-
-| Row | Choices | Write |
-| --- | --- | --- |
-| Isolation | `Host`, `Sandbox` | shared `applyIsolation`, global |
-| Memory | `on`, `off` | `applyMemory` — **session store only** |
-| Completed plans | `keep` / `discard` labelled "Keep plans" / "Delete after success" | `applyPlanRetention` |
-
-Run Controls and the `Ctrl+X I` quick picker share `applyIsolation`. Host requires an explicit
-danger confirmation; Sandbox enables a required native boundary.
-Run Controls and the `Ctrl+X M` Memory picker both write only `MemoryModeStore`; they never persist
-settings. All application shortcuts use the shared Ctrl+X family.
-
-`applyMemory` never writes settings. It sets the session mode and then reports one of three
-outcomes computed from `memoryState(effective, mode)`: `inert` → memory will not learn; still `off` →
-"enable it in Settings > Memory before the next run"; otherwise the plain confirmation.
-
-The completed-plan row writes only `retention`, through `patchPlansSettings`. That helper materializes
-a valid complete plan block by preserving the scoped value first, then effective mode/provider/nudge
-siblings, then `PLANS_DEFAULTS`; selecting workspace scope therefore creates an explicit workspace
-block without resetting the policy inherited at the moment of the edit. `discard` is not a
-"never save" switch: the plan capability persists the live plan and deletes it only after a
-successful result; failures, cancellation and interruption retain it. Production:
-`packages/code/src/views/config/RunControlsPanel.tsx` (`scopedPlans`, `applyPlanRetention`) and
-`packages/code/src/adapters/settings.ts` (`patchPlansSettings`). Plan lifecycle ownership remains in
-[capabilities/plan-capability.md](../capabilities/plan-capability.md).
-
-`sandboxLine()` reports the selected native backend's availability, fetched once in `onMount` via
-`settings.inspectSandbox()` and defaulting to `null` on failure. Its most severe branch —
-unavailable *and* `sandboxRequired` — is rendered in the delete color. Sandbox semantics
-themselves belong to the [execution/sandbox.md](../execution/sandbox.md) document.
-
 ## 5. Invariants
 
 The invariants below are derived directly from this document's own source and tests. The first two are
@@ -543,13 +441,12 @@ specific to these files.
    `agents.ts`, `memory-mode.ts`, `effort-levels.ts` all comply (see their import headers).
    Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts`.
 
-3. **`AgentsPanel.tsx` and `RunControlsPanel.tsx` contain no non-ASCII character outside comments** —
+3. **`AgentsPanel.tsx` contains no non-ASCII character outside comments** —
    every rendered glyph goes through `glyph()`.
-   Production: `packages/code/src/views/config/AgentsPanel.tsx`,
-   `packages/code/src/views/config/RunControlsPanel.tsx`.
+   Production: `packages/code/src/views/config/AgentsPanel.tsx`.
    Pinned: `packages/code/tests/architecture/ascii-source-boundary.test.ts`.
    `WorkflowsHub.tsx` is also in the swept list. `SessionsHub`,
-   `MemoryConfigPanel` is **not** — see §8.
+   `SessionsHub` is **not** — see §8.
 
 4. **A frontmatter parse failure never seals an agent runnable.** `agentReadiness` short-circuits on
    `agent.invalid` to `{ runnable: false, issues: [{ code: "malformed_frontmatter" }] }` instead of
@@ -684,56 +581,6 @@ specific to these files.
 39. **A session whose workspace is unavailable can be neither resumed nor deleted.**
     Production: `packages/code/src/views/config/SessionsHub.tsx`, and the activate guard. Pinned: `packages/code/tests/integration/sessions-hub-render.test.tsx`.
 
-40. **The memory panel's `Source` badge names the scope whose value actually won the merge, not the
-    scope on screen.** Production: `packages/code/src/views/config/MemoryConfigPanel.tsx`, with the
-    Pinned: `packages/code/tests/integration/memory-config-render.test.tsx`.
-
-41. **Creating a memory block copies the effective block and forces `enabled: true`.**
-    Production: `packages/code/src/views/config/MemoryConfigPanel.tsx`.
-    Pinned: `packages/code/tests/integration/memory-config-render.test.tsx`.
-
-42. **The session toggle is inert while no memory block is configured, and says so.**
-    Production: `packages/code/src/views/config/MemoryConfigPanel.tsx`.
-    Pinned: `packages/code/tests/integration/memory-config-render.test.tsx`.
-
-43. **A save whose block is enabled but whose extraction model does not resolve warns that memory will
-    not learn.** Production: `packages/code/src/views/config/MemoryConfigPanel.tsx`.
-    Pinned: `packages/code/tests/integration/memory-config-render.test.tsx`, and the equivalent
-    warning on the session toggle.
-
-44. **`configured()` only becomes true again after an explicit `refresh()` — settings files are not
-    reactive.** Production: `packages/code/src/adapters/memory-mode.ts`.
-    Pinned: `packages/code/tests/unit/memory-mode.test.ts`.
-
-45. **The Run-controls memory row changes only the session store, never settings.**
-    Production: `packages/code/src/views/config/RunControlsPanel.tsx` (`applyMemory`).
-    Pinned: `packages/code/tests/integration/run-controls-render.test.tsx`.
-
-48. **Run Controls contains no planning-mode selector; completed-plan retention is its only editable
-    plan row.** Planning review belongs to `/plan`. Production:
-    `packages/code/src/views/config/RunControlsPanel.tsx` (`activate`, `body`). Pinned:
-    `packages/code/tests/integration/run-controls-render.test.tsx` ("Run controls exposes retention
-    without a planning-mode control").
-
-49. **A completed-plan retention write preserves mode, pending-task nudges and provider while
-    targeting the selected scope.** Production:
-    `packages/code/src/views/config/RunControlsPanel.tsx` (`applyPlanRetention`) and
-    `packages/code/src/adapters/settings.ts` (`patchPlansSettings`). Pinned:
-    `packages/code/tests/integration/run-controls-render.test.tsx` (global/provider and workspace
-    preservation cases).
-
-50. **Isolation and Memory have separate vocabularies and shared application paths
-    across Run Controls and the quick pickers. Memory changes only the session store and never
-    persists settings.** Production:
-    `packages/code/src/features/run/isolation.ts` (`ISOLATION_CHOICES`, `isolationConfirmation`,
-    `applyIsolation`), `packages/code/src/views/config/RunControlsPanel.tsx`,
-    `packages/code/src/views/overlays/IsolationPicker.tsx`,
-    `packages/code/src/views/overlays/MemoryPicker.tsx`, and
-    `packages/code/src/adapters/memory-mode.ts`. Pinned:
-    `packages/code/tests/unit/isolation.test.ts`,
-    `packages/code/tests/integration/run-controls-render.test.tsx` and
-    `packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
-
 51. **A settled run's outcome label is classified only from the segment before the first separator.**
     Production: `packages/code/src/features/run/status-presenter.ts`, with the in-source account of
     the defect.
@@ -761,7 +608,7 @@ specific to these files.
     Pinned: `packages/code/tests/unit/agents-events.test.ts` — the file names it an
     "exhaustiveness canary".
 
-57. **The five hubs' command metadata (name, title, surface, parent) is a pinned contract and each
+57. **The four hubs' command metadata (name, title, surface, parent) is a pinned contract and each
     has exactly one registered factory.**
     Production: the registration sites in §2.1.
     Pinned: `packages/code/tests/component/command-composition.test.ts`, asserted.
@@ -781,9 +628,6 @@ specific to these files.
 | Workflow refresh never settles | `packages/code/src/views/config/WorkflowsHub.tsx` | "Refresh is still pending; the backend may be unavailable"; still one in-flight request |
 | Workflow result cannot be stringified | `packages/code/src/views/config/WorkflowsHub.tsx` | "(unserializable result)". Pinned at `packages/code/tests/integration/workflows-hub-render.test.tsx` |
 | Leader node has no `task` (legacy record) | `packages/code/src/views/config/WorkflowsHub.tsx` | "Task unavailable for this legacy workflow"; `[t]` is unbound |
-| `settings.inspectSandbox()` rejects | `packages/code/src/views/config/RunControlsPanel.tsx` (`onMount`) | availability stays `null`; the row reads "Checking native sandbox on the kernel host…" indefinitely |
-| Any Run-controls settings write throws | `packages/code/src/views/config/RunControlsPanel.tsx` (`applyIsolationChoice`, `applyGuard`, `applyPlanRetention`) | `notify(errorText(error))`; the session store is not updated |
-| Session-memory toggle activated with no configured memory block | `packages/code/src/views/config/MemoryConfigPanel.tsx` | refuses to cycle; notifies "memory is not configured in settings — save a block first". Pinned at `packages/code/tests/integration/memory-config-render.test.tsx` |
 | Any detached async operation rejects unobserved | `packages/code/src/core/tasks.ts` | a `task.failed` diagnostic event is emitted with the operation name; nothing is thrown into the render tree |
 
 Degradation that is deliberately silent: `AgentsPanel.openConflictPicker`'s pick discards a `null`
@@ -811,7 +655,7 @@ Only the six kernel entrypoints appear (INV-251) — full statement owned by
 
 | Consumer | What it needs | Site |
 | --- | --- | --- |
-| `src/app/commands.tsx` | four of the five views + their deps | `packages/code/src/app/commands.tsx`; Agents is registered by `src/features/agents/commands.ts` |
+| `src/app/commands.tsx` | three of the four views + their deps | `packages/code/src/app/commands.tsx`; Agents is registered by `src/features/agents/commands.ts` |
 | `src/features/agents/commands.ts` | `AgentsPanel` | `packages/code/src/features/agents/commands.ts` |
 | `src/views/App.tsx` | `SessionCatalogItem` (type) | `packages/code/src/views/App.tsx` |
 | `src/views/App.tsx` | `runStripText` | `packages/code/src/views/App.tsx` |
@@ -833,10 +677,8 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
 
 ### 7.4 Explicit delegations
 
-- Sandbox semantics, `SandboxConfigPanel`, `probeSandbox` → [execution/sandbox.md](../execution/sandbox.md).
 - `DoctorView`, `KeyboardView` → their own documents.
-- `execution-safety.ts` (`deriveRunControls`, `deriveIsolation`, `memoryState`,
-  `planRetentionDescription`, `safetyDescription`, `memoryDescription`),
+- `execution-safety.ts` (`memoryState`, `plansState`, `planRetentionLabel`),
   `session-store.ts`, `workflow-projection.ts`, `settings.ts` →
   [hosts/code-run-host.md](code-run-host.md) / [hosts/code-settings-panels.md](code-settings-panels.md).
 - The domain semantics behind each hub — workflow
@@ -845,11 +687,10 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
 
 ## 8. Open questions
 
-1. **Why `SessionsHub.tsx` and `MemoryConfigPanel.tsx` are
-   outside the ASCII sweep.** `packages/code/tests/architecture/ascii-source-boundary.test.ts`
-   lists fourteen files; these views render literal non-ASCII characters — a literal
-   `${"—"}` in `packages/code/src/views/config/SessionsHub.tsx`, em-dashes in eight `MemoryConfigPanel.tsx` status strings. Whether the sweep list is
-   an intentional subset or has simply not caught up is not stated anywhere in the code.
+1. **Why `SessionsHub.tsx` is outside the ASCII sweep.**
+   `packages/code/tests/architecture/ascii-source-boundary.test.ts` omits this view,
+   which renders a literal em dash. Whether the sweep is intentionally selective
+   is not stated in source.
 
 3. ~~**`AGENT_TEMPLATES` is a `Record<string, AgentTemplate>` with exactly one key, and
    `createFromTemplate` hard-codes `AGENT_TEMPLATES.explorer!`**~~ **Resolved — collapsed
@@ -872,8 +713,7 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
    recorded.
 
 6. **`AgentsStore.reload`'s epoch guard (invariant 16) is unpinned.** No test in
-   `packages/code/tests` interleaves two reloads. Likewise unpinned: the custom-sandbox confirmation
-   branch in `RunControlsPanel.applyIsolationChoice` (invariant 50).
+   `packages/code/tests` interleaves two reloads.
 
 7. **`GrantId` is a closed union in `packages/code/src/adapters/agents.ts`, but the panel writes it through
    `patchFm({ grants })` onto an `AgentFrontmatter`** whose grant vocabulary is the kernel's open

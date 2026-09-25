@@ -6,14 +6,14 @@ import {
   mkdtempSync,
   openSync,
   readSync,
-  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { dirname, join } from "node:path";
 import { DIR_MODE, FILE_MODE } from "@clarvis/paths";
 import { NOOP_LOGGER } from "@clarvis/capability";
+import { resolveResourcePath } from "./paths.ts";
 import type { SkillContent } from "./types.ts";
 import { readBoundedText, readBoundedTextChunk } from "./bounded-read.ts";
 import {
@@ -23,11 +23,8 @@ import {
   MAX_SKILL_RESOURCE_SNAPSHOT_BYTES,
 } from "./limits.ts";
 
-/** Copy only confined regular single-link files under a fixed allocation limit. */
-function captureBytes(file: string, root: string, limit: number) {
-  const rel = relative(realpathSync(root), realpathSync(file));
-  if (isAbsolute(rel) || rel === ".." || rel.startsWith("../") || rel.startsWith("..\\"))
-    throw new Error("Skill snapshot resource escapes its package.");
+/** Copy regular single-link files under a fixed allocation limit. */
+function captureBytes(file: string, limit: number) {
   const descriptor = openSync(
     file,
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
@@ -54,7 +51,6 @@ function captureBytes(file: string, root: string, limit: number) {
 export function captureSkillExecution(skills: readonly SkillContent[]) {
   const root = mkdtempSync(join(tmpdir(), "clarvis-skills-"));
   const contents = new Map<string, SkillContent>();
-  const files = new Map<string, Map<string, string>>();
   let total = 0;
   try {
     for (const [index, skill] of skills.entries()) {
@@ -64,13 +60,7 @@ export function captureSkillExecution(skills: readonly SkillContent[]) {
       let skillBytes = 0;
       for (const resource of skill.resources) {
         const parts = resource.rel.split("/");
-        if (parts.some((part) => !part || part === "." || part === ".." || /[\\:]/.test(part)))
-          throw new Error("Invalid skill resource snapshot path.");
-        const { bytes, mode } = captureBytes(
-          resource.path,
-          skill.dir,
-          MAX_SKILL_RESOURCE_FILE_BYTES,
-        );
+        const { bytes, mode } = captureBytes(resource.path, MAX_SKILL_RESOURCE_FILE_BYTES);
         skillBytes += bytes.length;
         total += bytes.length;
         if (skillBytes > MAX_SKILL_RESOURCE_SNAPSHOT_BYTES || total > 64 * 1024 * 1024)
@@ -81,7 +71,7 @@ export function captureSkillExecution(skills: readonly SkillContent[]) {
         resources.set(resource.rel, path);
       }
       const path = join(dir, "SKILL.md");
-      const { bytes: manifest } = captureBytes(skill.path, skill.dir, MAX_SKILL_RESOURCE_BYTES);
+      const { bytes: manifest } = captureBytes(skill.path, MAX_SKILL_RESOURCE_BYTES);
       total += manifest.length;
       if (total > 64 * 1024 * 1024)
         throw new Error("Skill execution snapshot exceeds its byte budget.");
@@ -96,15 +86,15 @@ export function captureSkillExecution(skills: readonly SkillContent[]) {
           path: resources.get(resource.rel)!,
         })),
       });
-      files.set(skill.name, resources);
     }
   } catch (error) {
     rmSync(root, { recursive: true, force: true });
     throw error;
   }
   const read = (name: string, rel: string, offset = 0, maxChars = MAX_SKILL_RESOURCE_CHARS) => {
-    const path = files.get(name)?.get(rel);
-    if (path === undefined) throw new Error("Resource is outside the captured skill revision.");
+    const skill = contents.get(name);
+    if (skill === undefined) throw new Error("Unknown captured skill.");
+    const path = resolveResourcePath(skill.dir, rel);
     return readBoundedTextChunk(path, {
       offset,
       maxChars: Math.min(maxChars, MAX_SKILL_RESOURCE_CHARS),
@@ -118,8 +108,9 @@ export function captureSkillExecution(skills: readonly SkillContent[]) {
   return {
     contents,
     readResource(name: string, rel: string) {
-      const path = files.get(name)?.get(rel);
-      if (path === undefined) throw new Error("Resource is outside the captured skill revision.");
+      const skill = contents.get(name);
+      if (skill === undefined) throw new Error("Unknown captured skill.");
+      const path = resolveResourcePath(skill.dir, rel);
       return readBoundedText(path, {
         maxBytes: MAX_SKILL_RESOURCE_BYTES,
         maxChars: MAX_SKILL_RESOURCE_CHARS,

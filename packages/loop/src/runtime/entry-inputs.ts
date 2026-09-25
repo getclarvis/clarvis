@@ -45,7 +45,7 @@ import { AGENT_REGISTRY_PORT, resolveAgentsLimits } from "@clarvis/supervision";
 import type { ResultContract } from "./tools/result-contract.ts";
 import { buildSubagentInputPersona, userText } from "./subagents/build-subagent-input.ts";
 import { buildLeadInputPersona } from "./subagents/build-lead-input.ts";
-import type { SubagentAggregate } from "./subagents/delegate-task.ts";
+import type { SubagentAggregate } from "./subagents/spawn-subagent.ts";
 import type { RunShape } from "./run-shape.ts";
 import type { ToolInterruptRegistry } from "./tools/tool-interrupt.ts";
 
@@ -222,10 +222,7 @@ export function createEntryInput(p: EntryInputParams): EntryInputBuilder {
   const entryCapsWithAgents: readonly RunCapability[] =
     agents === undefined || agentsLimits === undefined
       ? ordered
-      : [
-          createAgentsRunCapability(agents, agentsLimits.awaitTimeoutMs, agentsLimits.finishNudges),
-          ...ordered,
-        ];
+      : [createAgentsRunCapability(agents, agentsLimits.finishNudges), ...ordered];
   const buildSharedInput = (clock: ComputeClock, signal: AbortSignal | undefined) => {
     const entryScope: AgentScope = {
       agent: isLead ? "lead" : "subagent",

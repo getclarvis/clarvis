@@ -395,13 +395,6 @@ export const OPERATIONS = {
           p.expected_revision as string | null,
         ),
     },
-    inspectSandbox: {
-      method: "config.inspectSandbox",
-      metadata: read(),
-      encode: (options) => ({ options }),
-      invoke: (services, p) =>
-        services.config.inspectSandbox(p.options as Parameters<ConfigService["inspectSandbox"]>[0]),
-    },
     approveWorkspace: {
       method: "config.approveWorkspace",
       metadata: write(),

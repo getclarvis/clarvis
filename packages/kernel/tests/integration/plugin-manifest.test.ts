@@ -5,7 +5,6 @@ import {
   mkdtempSync,
   realpathSync,
   rmSync,
-  symlinkSync,
   truncateSync,
   writeFileSync,
 } from "node:fs";
@@ -174,11 +173,6 @@ describe("Agent Plugins v1 package", () => {
     write("plugin.json", { $schema: AGENT_PLUGIN_SCHEMA, name: "portable.plugin" });
     const cases: { name: string; entry: unknown; reason: string }[] = [
       {
-        name: "escaped_cwd",
-        entry: { type: "stdio", command: "node", cwd: "../outside" },
-        reason: "cwd is not confined",
-      },
-      {
         name: "reserved_env",
         entry: { type: "stdio", command: "node", env: { PLUGIN_ROOT: "other" } },
         reason: "env may not define",
@@ -242,6 +236,18 @@ describe("Agent Plugins v1 package", () => {
     expect(oversized.error).toBeUndefined();
     expect(oversized.manifest?.mcpServers).toBeUndefined();
     expect(oversized.notes.join(" ")).toContain("resource limit");
+  });
+
+  it("admits a portable MCP working directory outside the plugin", () => {
+    const data = join(root, "runtime-data");
+    mkdirSync(data, { recursive: true });
+    write("plugin.json", { $schema: AGENT_PLUGIN_SCHEMA, name: "portable.plugin" });
+    write("mcp.json", {
+      $schema: AGENT_MCP_SCHEMA,
+      mcpServers: { external: { type: "stdio", command: "node", cwd: "../outside" } },
+    });
+    const result = resolveAgentPlugin(data);
+    expect(result.manifest?.mcpServers?.external?.cwd).toBe(join(root, "..", "outside"));
   });
 
   it("loads the fixed skills tree and normalizes portable stdio and streamable HTTP servers", () => {
@@ -408,53 +414,6 @@ describe("Agent Plugins v1 package", () => {
     });
     expect(resolve().manifest?.mcpServers).toBeUndefined();
   });
-
-  it.skipIf(process.platform === "win32")(
-    "rejects a portable manifest symlink that leaves the package",
-    () => {
-      const outside = mkdtempSync(join(tmpdir(), "clarvis-manifest-outside-"));
-      try {
-        writeFileSync(
-          join(outside, "plugin.json"),
-          JSON.stringify({ $schema: AGENT_PLUGIN_SCHEMA, name: "portable.plugin" }),
-        );
-        symlinkSync(join(outside, "plugin.json"), join(root, "plugin.json"));
-
-        const source = readPluginManifestSource(root);
-        expect("error" in source && source.error).toContain("resolves outside the plugin root");
-      } finally {
-        rmSync(outside, { recursive: true, force: true });
-      }
-    },
-  );
-
-  it.skipIf(process.platform === "win32")(
-    "disables only MCP when root mcp.json leaves the package",
-    () => {
-      const outside = mkdtempSync(join(tmpdir(), "clarvis-mcp-outside-"));
-      const data = join(root, "runtime-data");
-      mkdirSync(data, { recursive: true });
-      try {
-        write("plugin.json", { $schema: AGENT_PLUGIN_SCHEMA, name: "portable.plugin" });
-        writeFileSync(
-          join(outside, "mcp.json"),
-          JSON.stringify({
-            $schema: AGENT_MCP_SCHEMA,
-            mcpServers: { escaped: { type: "stdio", command: "node" } },
-          }),
-        );
-        symlinkSync(join(outside, "mcp.json"), join(root, "mcp.json"));
-
-        const { manifest, error, notes } = resolveAgentPlugin(data);
-        expect(error).toBeUndefined();
-        expect(manifest?.name).toBe("portable.plugin");
-        expect(manifest?.mcpServers).toBeUndefined();
-        expect(notes.join(" ")).toContain("resolves outside the plugin root");
-      } finally {
-        rmSync(outside, { recursive: true, force: true });
-      }
-    },
-  );
 });
 
 describe("foreign manifest fields", () => {
@@ -523,16 +482,16 @@ describe("foreign manifest fields", () => {
     expect(pluginSkillRoots(root, undefined)).toEqual({ roots: [join(root, "skills")], notes: [] });
   });
 
-  it("drops a skills location that climbs out of the plugin, keeping the rest", () => {
+  it("admits a parent-relative skills location", () => {
     const { roots, notes } = pluginSkillRoots(root, ["../elsewhere", "./mine"]);
-    expect(roots).toEqual([join(root, "mine")]);
-    expect(notes.join(" ")).toContain("resolves outside the plugin");
+    expect(roots).toEqual([join(root, "..", "elsewhere"), join(root, "mine")]);
+    expect(notes).toEqual([]);
   });
 
-  it("falls back to the default when nothing declared can be scanned", () => {
+  it("keeps an external declared skill root", () => {
     const { roots, notes } = pluginSkillRoots(root, ["../elsewhere"]);
-    expect(roots).toEqual([join(root, "skills")]);
-    expect(notes.join(" ")).toContain("nothing declared could be scanned");
+    expect(roots).toEqual([join(root, "..", "elsewhere")]);
+    expect(notes).toEqual([]);
   });
 
   it("reports a skills location naming a file rather than a directory of skills", () => {
@@ -1215,13 +1174,13 @@ describe("hooks written in the external dialect", () => {
         .hooks[0]?.match;
 
     it("maps the names a real filter reaches for", () => {
-      expect(match("Bash|Edit|Write|MultiEdit")).toEqual({
-        tool: ["shell", "edit_file", "write_file", "multi_edit"],
+      expect(match("Bash|Edit|Write")).toEqual({
+        tool: ["shell", "edit_file", "write_file"],
       });
     });
 
     it("maps a name that differs from ours only in case", () => {
-      expect(match("Grep|Glob")).toEqual({ tool: ["grep", "glob"] });
+      expect(match("Read|LS")).toEqual({ tool: ["read_file", "list_dir"] });
     });
 
     it("carries through a name it has no opinion about", () => {
@@ -1715,7 +1674,6 @@ describe("convertHooksDocument", () => {
               {
                 type: "command",
                 command: "record",
-                commandWindows: "record.exe",
                 statusMessage: "Recording result",
                 additionalContextLimit: 2048,
               },
@@ -1740,7 +1698,6 @@ describe("convertHooksDocument", () => {
       {
         event: "post_tool_use",
         command: "record",
-        command_windows: "record.exe",
         status_message: "Recording result",
         additional_context_limit: 2048,
       },
@@ -1749,7 +1706,7 @@ describe("convertHooksDocument", () => {
   });
 });
 
-describe("companion documents are confined to the plugin", () => {
+describe("companion document path resolution", () => {
   /** Write a file beside the plugin directory, i.e. outside it. */
   function writeOutside(name: string, body: unknown): string {
     const path = join(root, "..", name);
@@ -1757,7 +1714,7 @@ describe("companion documents are confined to the plugin", () => {
     return path;
   }
 
-  it("refuses a servers document that climbs out, and still loads the plugin", () => {
+  it("reads a parent-relative servers document", () => {
     writeOutside("outside-servers.json", { mcpServers: { leaked: { command: "x" } } });
     write("plugin.json", { ...base, mcpServers: "../outside-servers.json" });
 
@@ -1765,21 +1722,21 @@ describe("companion documents are confined to the plugin", () => {
 
     expect(error).toBeUndefined();
     expect(manifest?.name).toBe("demo");
-    expect(manifest?.mcpServers).toBeUndefined();
-    expect(notes.join(" ")).toContain("resolves outside the plugin");
+    expect(manifest?.mcpServers?.leaked).toMatchObject({ command: "x" });
+    expect(notes).toEqual([]);
   });
 
-  it("decides on the resolved path, so a climb through a subdirectory is refused too", () => {
+  it("resolves a servers document with parent components", () => {
     writeOutside("outside-servers.json", { mcpServers: { leaked: { command: "x" } } });
     write("plugin.json", { ...base, mcpServers: "skills/../../outside-servers.json" });
 
     const { manifest, notes } = resolve();
 
-    expect(manifest?.mcpServers).toBeUndefined();
-    expect(notes.join(" ")).toContain("resolves outside the plugin");
+    expect(manifest?.mcpServers?.leaked).toMatchObject({ command: "x" });
+    expect(notes).toEqual([]);
   });
 
-  it("refuses an absolute servers path", () => {
+  it("reads an absolute servers path", () => {
     const outside = writeOutside("outside-servers.json", {
       mcpServers: { leaked: { command: "x" } },
     });
@@ -1787,8 +1744,8 @@ describe("companion documents are confined to the plugin", () => {
 
     const { manifest, notes } = resolve();
 
-    expect(manifest?.mcpServers).toBeUndefined();
-    expect(notes.join(" ")).toContain("resolves outside the plugin");
+    expect(manifest?.mcpServers?.leaked).toMatchObject({ command: "x" });
+    expect(notes).toEqual([]);
   });
 
   it("still reads a servers document that stays inside", () => {
@@ -1799,17 +1756,6 @@ describe("companion documents are confined to the plugin", () => {
 
     expect(manifest?.mcpServers?.inside).toMatchObject({ command: "x" });
     expect(notes.join(" ")).not.toContain("resolves outside");
-  });
-
-  it("reads no hooks from a named file that climbs out, keeping the plugin", () => {
-    writeOutside("outside-hooks.json", [{ event: "pre_tool_use", command: "leak" }]);
-    write("plugin.json", { ...base, hooks: "../outside-hooks.json" });
-
-    const { manifest, error, notes } = resolve();
-
-    expect(error).toBeUndefined();
-    expect(manifest?.hooks).toBeUndefined();
-    expect(notes.join(" ")).toContain("resolves outside the plugin");
   });
 });
 
@@ -1855,8 +1801,6 @@ describe("a manifest that lives in a host dot-directory", () => {
 
     const { roots, notes } = pluginSkillRoots(dir, "../skills/", location);
     expect(roots).toEqual([join(dir, "skills")]);
-    /* Resolved against the plugin root instead, `../skills/` escapes it and the
-       plugin is told its own correct path is invalid. */
     expect(notes.join(" ")).not.toContain("outside the plugin");
   });
 
@@ -1876,10 +1820,10 @@ describe("a manifest that lives in a host dot-directory", () => {
     expect(resolved.manifest?.hooks?.[0]?.command).toBe("echo hi");
   });
 
-  it("still refuses a path that leaves the plugin from either base", () => {
+  it("accepts a path that leaves the plugin from the manifest base", () => {
     const { roots, notes } = pluginSkillRoots(dir, "../../elsewhere", ".alpha-plugin/plugin.json");
-    expect(roots).toEqual([join(dir, "skills")]);
-    expect(notes.join(" ")).toContain("outside the plugin");
+    expect(roots).toEqual([join(dir, "..", "..", "elsewhere")]);
+    expect(notes).toEqual([]);
   });
 
   it("leaves a root manifest resolving from the root, as before", () => {

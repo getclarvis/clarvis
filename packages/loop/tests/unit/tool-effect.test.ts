@@ -16,25 +16,25 @@ describe("createToolEffectPort", () => {
       "submit_result",
       "ask_user",
       "spawn_subagent",
-      "delegate_task",
+      "spawn_subagent",
       "agent_list",
       "agent_poll",
       "agent_stop",
       "agent_steer",
-      "await_agents",
+      "agent_poll",
     ]) {
       expect(effect(name)).toBe("control");
     }
   });
 
   it("classifies the read-only coding tools as read", () => {
-    for (const name of ["read_file", "list_dir", "glob", "grep", "diff", "tree"]) {
+    for (const name of ["read_file", "read_image", "list_dir"]) {
       expect(effect(name)).toBe("read");
     }
   });
 
   it("classifies every other coding tool as mutate, shell and the monitors included", () => {
-    for (const name of ["write_file", "edit_file", "apply_patch", "remove", "move"]) {
+    for (const name of ["write_file", "edit_file", "apply_patch", "remove"]) {
       expect(effect(name)).toBe("mutate");
     }
     // They observe and mutate through one entry point, so no caller can treat

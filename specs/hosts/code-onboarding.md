@@ -15,8 +15,7 @@ just started" to "a person can trust what they're looking at."
    the shell or must first send the user to a setup wizard or a repair screen
    (`packages/code/src/onboarding/doctor.ts`), plus the idempotent "seed a default into global
    settings the first time this workspace is used" functions
-   (`seed-memory.ts`, `seed-plans.ts`, sharing one guard sequence in
-   `seed-block-once.ts`).
+   (`seed-plans.ts`, using the guard in `seed-block-once.ts`).
 2. **Platform adapter** (`src/adapters/platform.ts`): the one seam between `code` and everything
    OS-specific that is not already `@clarvis/kernel/local` — terminal capability detection, graceful
    shutdown sequencing, and native clipboard I/O (text and PNG image) — backed by a bounded child-process
@@ -43,14 +42,14 @@ report without waiting for it to happen twice.
 
 | Symbol | Kind | Signature / shape | Cite |
 | --- | --- | --- | --- |
-| `GateId` | type | `"config" \| "providers" \| "credentials" \| "agents" \| "default_model" \| "default_agent" \| "theme" \| "memory" \| "plans" \| "run_safety" \| "workspace_trust" \| "backend" \| "diagnostics"` | `packages/code/src/onboarding/doctor.ts` |
+| `GateId` | type | `"config" \| "providers" \| "credentials" \| "agents" \| "default_model" \| "default_agent" \| "theme" \| "plans" \| "workspace_trust" \| "backend" \| "diagnostics"` | `packages/code/src/onboarding/doctor.ts` |
 | `GateResult` | interface | `{ status: "pass"\|"warn"\|"fail"; detail: string; hint?: string; fix?: FixKind }` | `packages/code/src/onboarding/doctor.ts` |
-| `FixKind` | type | `{kind:"view";view:"providers"\|"model"\|"defaults"\|"theme"\|"agents"\|"memory"\|"controls"} \| {kind:"set-default"} \| {kind:"set-key"} \| {kind:"reconnect"} \| {kind:"repair-settings";scope:Scope}` | `packages/code/src/onboarding/doctor.ts` |
+| `FixKind` | type | `{kind:"view";view:"providers"\|"model"\|"defaults"\|"theme"\|"agents"\|"controls"} \| {kind:"set-default"} \| {kind:"set-key"} \| {kind:"reconnect"} \| {kind:"repair-settings";scope:Scope}` | `packages/code/src/onboarding/doctor.ts` |
 | `Gate` | interface | `{ id: GateId; label: string; severity: "hard"\|"soft"\|"ui"\|"comms"; optional?: boolean; fix?: FixKind; check(ctx): GateResult }` | `packages/code/src/onboarding/doctor.ts` |
 | `BackendProbe` | interface | `{ status: "checking"\|"reachable"\|"unreachable"; profileCount?: number }` | `packages/code/src/onboarding/doctor.ts` |
-| `DoctorCtx` | interface | `{ settings, agents: {list,conflicts}, code, env, backend: Accessor<BackendProbe>, sandboxInspection: Accessor<SandboxInspection\|null>, subscriptionReadiness?: Accessor<Partial<Record<SubscriptionScheme,{state:SubscriptionState;entitled?:boolean}>>> }` | `packages/code/src/onboarding/doctor.ts` (`DoctorCtx`) |
+| `DoctorCtx` | interface | settings, agents, code, environment, backend and optional subscription readiness | `packages/code/src/onboarding/doctor.ts` |
 | `DoctorReport` | interface | `{ gates: Gate[]; results: Record<GateId,GateResult>; blocked: boolean }` | `packages/code/src/onboarding/doctor.ts` |
-| `GATES` | const | the fixed 13-gate ladder, in display order | `packages/code/src/onboarding/doctor.ts` |
+| `GATES` | const | the fixed gate ladder, in display order | `packages/code/src/onboarding/doctor.ts` |
 | `runGates(ctx): DoctorReport` | fn | evaluates every gate, times each, degrades a throw to a `fail` | `packages/code/src/onboarding/doctor.ts` |
 | `bootGate(report): "shell"\|"doctor"` | fn | `report.blocked ? "doctor" : "shell"` | `packages/code/src/onboarding/doctor.ts` |
 | `StartupRoute` | type | `"shell" \| "setup" \| "repair"` | `packages/code/src/onboarding/doctor.ts` |
@@ -61,7 +60,6 @@ report without waiting for it to happen twice.
 | Symbol | Signature | Cite |
 | --- | --- | --- |
 | `seedBlockOnce<T>(settings, {alreadyConfigured, buildPatch, additionalOutcome?}): Promise<SeedOutcome<T>>` | shared guard sequence: already-configured → corrupt → no-settings-file → write to `global` | `packages/code/src/onboarding/seed-block-once.ts` |
-| `seedMemoryBlock(settings): Promise<MemorySeedOutcome>` | writes `{memory:{enabled:true}}` | `packages/code/src/onboarding/seed-memory.ts` |
 | `seedPlansBlock(settings): Promise<PlansSeedOutcome>` | writes `{plans:{...PLANS_DEFAULTS}}` (from `@clarvis/kernel/config`) | `packages/code/src/onboarding/seed-plans.ts`, `seedPlansBlock` |
 
 ### 2.3 `DoctorView`
@@ -91,7 +89,6 @@ behind every claim there.
 | `buildRendererConfig(opts?): CliRendererConfig` | the OpenTUI renderer config `code` boots with | `packages/code/src/adapters/renderer-bootstrap.ts` |
 | `createPlatform(renderer, opts?): Platform` | constructs the adapter around a live `CliRenderer` | `packages/code/src/adapters/platform.ts` (`createPlatform`) |
 | `readClipboardImage(signal?, run?): Promise<ClipboardImage\|null>` | free function, also exposed on `Platform` | `packages/code/src/adapters/platform.ts` |
-| `WINDOWS_CLIPBOARD_COPY_SCRIPT` | const (exported for tests) | `packages/code/src/adapters/platform.ts` |
 
 ### 2.5 `adapters/clipboard-process.ts`
 
@@ -193,13 +190,12 @@ the blocked/cleared issue text, its two action bindings, inert `q`/Escape behavi
 
 ### 3.1 Settings patches the seeders write
 
-Both seeders write to the **global** scope only, never workspace
+The planning seeder writes to the **global** scope only, never workspace
 (`packages/code/src/onboarding/seed-block-once.ts`), and every write is a full-block *replacement* of that key, not a merge with
-whatever else might be under it in the global file (`buildPatch()` in each seeder).
+whatever else might be under it in the global file (`buildPatch()` in the seeder).
 
 | Seeder | Patch written | Example |
 | --- | --- | --- |
-| `seedMemoryBlock` | `{ memory: { enabled: true } }` — `model` deliberately omitted | `packages/code/src/onboarding/seed-memory.ts`, pinned by `packages/code/tests/unit/seed-memory.test.ts` |
 | `seedPlansBlock` | `{ plans: { ...PLANS_DEFAULTS } }`, where `PLANS_DEFAULTS` (from `@clarvis/kernel/config`) is asserted to include `{mode:"on", retention:"keep"}` | `packages/code/src/onboarding/seed-plans.ts`, `packages/code/tests/unit/seed-plans.test.ts` |
 
 ### 3.2 Workflow-free onboarding
@@ -299,7 +295,7 @@ Non-finite/invalid `maxBytes`/`keepFiles` seams fall back to the production defa
 
 ### 3.4 Doctor gate ladder (as data)
 
-The 13-gate table, in fixed display order, its severity and default fix:
+The 11-gate table, in fixed display order, its severity and default fix:
 
 | # | `id` | severity | default `fix` |
 | --- | --- | --- | --- |
@@ -309,13 +305,11 @@ The 13-gate table, in fixed display order, its severity and default fix:
 | 4 | `credentials` | soft | `{set-key}` |
 | 5 | `default_model` | soft | `{view:"model"}` |
 | 6 | `workspace_trust` | ui, optional | none |
-| 7 | `run_safety` | ui, optional | `{view:"controls"}` |
-| 8 | `default_agent` | ui, optional | `{set-default}` |
-| 9 | `theme` | ui, optional | `{view:"theme"}` |
-| 10 | `memory` | ui, optional | `{view:"memory"}` |
-| 11 | `plans` | ui, optional | `{view:"controls"}` |
-| 12 | `backend` | comms, optional | `{reconnect}` |
-| 13 | `diagnostics` | ui, optional | none |
+| 7 | `default_agent` | ui, optional | `{set-default}` |
+| 8 | `theme` | ui, optional | `{view:"theme"}` |
+| 9 | `plans` | ui, optional | none |
+| 10 | `backend` | comms, optional | `{reconnect}` |
+| 11 | `diagnostics` | ui, optional | none |
 
 (`packages/code/src/onboarding/doctor.ts`; order/severity ranking pinned by
 `packages/code/tests/integration/doctor.test.ts`, which also asserts the array holds no `"tty"` gate.)
@@ -419,27 +413,10 @@ gate's result.
 - **`default_model`** resolves a model against providers via `modelResolves`, checking a model's
   provider **and** its declared model name, not the provider name alone
   (`packages/code/tests/integration/doctor.test.ts`).
-- **`run_safety`**: with sandboxing enabled but not yet inspected (`sandboxInspection()` is `null`), the
-  gate **passes** with a "checking sandbox host" detail rather than warning
-  (`packages/code/src/onboarding/doctor.ts`). Cold command composition deliberately leaves
-  this inspection deferred; an explicit Doctor recheck or the Sandbox settings surface performs the
-  host probe (`packages/code/src/app/commands.tsx`, `inspectReadiness`;
-  `packages/code/src/views/config/SandboxConfigPanel.tsx`, `refreshInspection`;
-  `packages/code/src/views/overlay-host.ts`, `popView`, which is not an inspection route; pinned by
-  `packages/code/tests/integration/app-commands.test.tsx`, "sandbox inspection is deferred until an
-  explicit Doctor recheck", and `packages/code/tests/integration/app-shell-render.test.tsx`,
-  "Tab opens a child and rapid Escape steps back through its hub to the transcript"). Only a completed inspection reporting unavailability warns, distinguishing
-  `availability:"required"` and stored `optional` (both block runs; optional is treated as required).
+
 - **`workspace_trust`** is keyed on the trust verdict (`inert`/`trusted`/other), never solely on
   `withheldWorkspaceFields()`, because an untrusted workspace whose only executable surface is agent
   `.md` files would otherwise report "nothing withheld" (`packages/code/src/onboarding/doctor.ts`).
-- **`memory`** reports `warn` ("not configured") when its block is absent from `effective()`;
-  **`plans`** instead reports `pass` ("`<policy>` (defaults)") when unconfigured
-  (`packages/code/src/onboarding/doctor.ts`, `memory` and `plans` gate definitions) — only memory's absence is flagged as a warning, plans treats its defaults as a
-  healthy state. Its hint routes review changes to `/plan` and retention changes to Run Controls;
-  Run Controls no longer edits planning mode. Neither gate ever blocks boot regardless, since both are `ui` severity
-  (`packages/code/tests/integration/doctor.test.ts` for memory for plans — the latter asserting
-  `results.plans.status` is `"pass"`, not `"warn"`, on an unconfigured block).
 - **`credentials`** (soft severity): subscription-backed `openai-codex` and `xai-grok` providers are
   checked in declaration order before API-key providers. Missing readiness returns `pass` with
   `"subscription check deferred"` immediately, so later subscriptions and `api_key_env` entries are
@@ -459,19 +436,10 @@ gate's result.
 
 ### 4.4 Seeding sequence at app mount
 
-On mount (`packages/code/src/app/commands.tsx`, `registerAppCommands`'s `seed_plans_settings` and
-`seed_memory_settings` observed tasks; outside this document's owned file set but the call site of every
-seeder here), two seeders run unconditionally and idempotently, each `.then()`-notifying the user only
-on a real write and calling `recheck()` to re-run the gate ladder:
+On mount, `registerAppCommands` schedules the idempotent `seedPlansBlock` task.
+A real write notifies the user and rechecks Doctor (`packages/code/src/app/commands.tsx`).
 
-1. `seedPlansBlock` → on success, notify `planning: on · keep plans (<scope> settings) — use
-   /plan for review and Run controls for retention`.
-2. `seedMemoryBlock` → on success, also calls `deps.memoryMode.refresh()` then `.setMode("on")` before
-   notifying — the memory-mode store freezes its signal from `configured()` at construction
-   (`packages/code/src/onboarding/seed-memory.ts`), so a mid-session seed must force both calls or the session keeps asking for
-   `memory:"off"` for its whole lifetime.
-
-After scheduling those two seeders, `startupRoute` decides whether to open
+After scheduling the seeder, `startupRoute` decides whether to open
 `setup.open` or `recovery.open` (`packages/code/src/app/commands.tsx`, `startupRoute`). The first-run **wizard** path
 (`prepareSetup` in `packages/code/src/app/commands.tsx`) calls the same two seeders synchronously
 (`seedSetupDefaults`) before refreshing the live agent catalogue and setting the default entry agent.
@@ -492,10 +460,10 @@ Pinned exactly by `packages/code/tests/integration/platform-copy.test.ts`.
 
 Native-tool candidate lists, tried **in order** until one succeeds (`exitCode===0`, no error, not timed
 out):
-- copy: darwin→`pbcopy`; win32→PowerShell `Set-Clipboard` via `-EncodedCommand`; `WAYLAND_DISPLAY` set→
+- copy: darwin→`pbcopy`; `WAYLAND_DISPLAY` set→
   `wl-copy`; `DISPLAY` set→`xclip -selection clipboard` then `xsel --clipboard --input`
   (`packages/code/src/adapters/platform.ts`).
-- paste-image: darwin→`pngpaste`; win32→PowerShell `Clipboard.GetImage()`; `WAYLAND_DISPLAY`→`wl-paste
+- paste-image: darwin→`pngpaste`; `WAYLAND_DISPLAY`→`wl-paste
   --type image/png`; `DISPLAY`→`xclip -selection clipboard -t image/png -o` — **`xsel` is never tried for
   image paste** (`packages/code/src/adapters/platform.ts`, pinned by `packages/code/tests/integration/platform.test.ts`). A
   candidate's output must start with the 8-byte PNG signature or it is rejected as not-an-image
@@ -522,7 +490,7 @@ window) → on panic with an error, write its stack to stderr → `process.exit(
 | `process.on("unhandledRejection", ...)` | `shutdown("panic", e)` | Yes |
 | `SIGINT` | `shutdown("signal:SIGINT")` | Yes |
 | `SIGTERM` | `shutdown("signal:SIGTERM")` | Yes |
-| `SIGHUP` (only when `process.platform !== "win32"`) | `shutdown("signal:SIGHUP")` | Yes |
+| `SIGHUP` | `shutdown("signal:SIGHUP")` | Yes |
 
 ### 4.7 Terminal guard lifecycle
 
@@ -647,10 +615,9 @@ recovery screen with no further keypress — pinned by
    Grok must both be connected and entitled" and the unset native-key route case).
 6. **A seeder never writes when no `settings.json` exists in either scope, and never writes over a
    corrupt scope** — creating the file is the `config` gate's job, and a write over corruption would fail
-   anyway. — `packages/code/src/onboarding/seed-block-once.ts` — pinned by `tests/unit/seed-block-once.test.ts` (`"declines when... corrupt"`, `"declines when no settings.json exists"`) and mirrored per-seeder in
-   `packages/code/tests/unit/seed-memory.test.ts`, `tests/unit/seed-plans.test.ts` (analogous cases).
+   anyway. — `packages/code/src/onboarding/seed-block-once.ts` — pinned by `tests/unit/seed-block-once.test.ts` (`"declines when... corrupt"`, `"declines when no settings.json exists"`) and mirrored in `packages/code/tests/unit/seed-plans.test.ts`.
 7. **A seeder's write always targets the global scope**, regardless of which scope had a settings file. —
-   `packages/code/src/onboarding/seed-block-once.ts` — pinned by `packages/code/tests/unit/seed-memory.test.ts`.
+   `packages/code/src/onboarding/seed-block-once.ts` — pinned by `packages/code/tests/unit/seed-plans.test.ts`.
 10. **Onboarding never materializes built-in workflow documents.** `prepareSetup` seeds settings,
     refreshes profiles and selects the default agent; workflow definitions are supplied by the kernel.
     — `packages/code/src/app/commands.tsx` (`prepareSetup`) — pinned end to end by
@@ -712,10 +679,6 @@ recovery screen with no further keypress — pinned by
     timeout, abort, or oversized stdout**, and stdout past `maxStdoutBytes` is truncated rather than
     buffered without bound. — `packages/code/src/adapters/clipboard-process.ts` — pinned by
     `packages/code/tests/integration/clipboard-process.test.ts` (timeout→SIGTERM→SIGKILL) (oversized output capped and terminated).
-24. **`SIGHUP` is registered only off Windows** (`process.platform !== "win32"`), since Windows never
-    raises it. — `packages/code/src/adapters/platform.ts` (`createPlatform`) — unpinned by a Windows-specific test within this document's scope
-    (no Windows job covers `code`; see the repository-wide Windows-CI note, out of this document's scope).
-
 ## 6. Failure modes and degradation
 
 | Failure | Handling | Cite |
@@ -746,9 +709,8 @@ recovery screen with no further keypress — pinned by
 - `@clarvis/kernel/policy` — `sanitizeErrorMessage` (diagnostic string scrubbing,
   `packages/code/src/adapters/diagnostic-session.ts`).
 - `@clarvis/kernel/config` — `PLANS_DEFAULTS` (`packages/code/src/adapters/settings.ts`).
-- `@clarvis/kernel/local` — `resolveShell`/`shellArgs` (Windows clipboard script construction,
-  `packages/code/src/adapters/platform.ts`), `killTree`/`ownProcessGroup` (`packages/code/src/adapters/clipboard-process.ts`).
-- `../adapters/execution-safety.ts` (`deriveIsolation`, `memoryState`, `modelResolves`,
+- `@clarvis/kernel/local` — `killTree`/`ownProcessGroup` (`packages/code/src/adapters/clipboard-process.ts`).
+- `../adapters/execution-safety.ts` (`memoryState`, `modelResolves`,
   `planRetentionLabel`, `plansState`) and `../adapters/agent-files.ts` (`agentReadiness`) — doctor's gate
   logic reads these projections but does not own their semantics (`packages/code/src/onboarding/doctor.ts`) — delegated to
   sibling documents (memory/plan capability semantics; agent readiness/grants).
@@ -808,8 +770,8 @@ recovery screen with no further keypress — pinned by
 - **Whether any test exercises the `heartbeat` timer's actual firing** (as opposed to its construction) is
   not answered in `tests/unit/diagnostics.test.ts`; the heartbeat's `unref()` call (`packages/code/src/adapters/diagnostic-session.ts`)
   suggests it is expected not to keep the process alive, but no test in this document's scope asserts that.
-- **The exact eight `GateId`s classified `optional: true`** (`workspace_trust`, `run_safety`,
-  `default_agent`, `theme`, `memory`, `plans`, `backend`, `diagnostics` — i.e., every non-hard/soft gate)
+- **The exact six `GateId`s classified `optional: true`** (`workspace_trust`,
+  `default_agent`, `theme`, `plans`, `backend`, `diagnostics` — i.e., every non-hard/soft gate)
   carry an `optional` flag on the `Gate` interface (`packages/code/src/onboarding/doctor.ts`) whose only reader within this document's
   scope is documentation-only; `runGates`'s blocking computation reads `severity`, not `optional`
   (`packages/code/src/onboarding/doctor.ts`). Whether `optional` is consumed anywhere else (e.g. a UI affordance beyond what

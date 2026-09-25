@@ -56,32 +56,6 @@ test("read_file with no line-numbered rows omits the lines header", async () => 
   expect(out).not.toContain("lines");
 });
 
-test("read_files renders one section per file, flags per-file errors, and shows the trailing note", async () => {
-  const result = [
-    "==> src/a.ts <==",
-    "     1\tconst a = 1",
-    "==> src/missing.ts — not_found: no such file <==",
-    "==> src/c.ts <==",
-    "     1\tok()",
-    "[... 2 more file(s) not shown ...]",
-  ].join("\n");
-  const out = await frame(toolNode({ mcpName: "read_files", args: {}, result }), 120, 40);
-  expect(out).toContain("src/a.ts");
-  expect(out).toContain("const a = 1");
-  expect(out).toContain("src/missing.ts");
-  expect(out).toContain("not_found: no such file");
-  expect(out).toContain("src/c.ts");
-  expect(out).toContain("ok()");
-  expect(out).toContain("2 more file(s) not shown");
-});
-
-test("read_files with no ==> headers falls back to the generic renderer", async () => {
-  const out = await frame(
-    toolNode({ mcpName: "read_files", args: {}, result: "just some plain text" }),
-  );
-  expect(out).toContain("just some plain text");
-});
-
 test("read_image shows the path when given", async () => {
   const out = await frame(toolNode({ mcpName: "read_image", args: { path: "shot.png" } }));
   expect(out).toContain("[image]");
@@ -93,45 +67,14 @@ test("read_image with no path arg renders just the marker", async () => {
   expect(out).toContain("[image]");
 });
 
-test("grep content mode groups matches by path and clamps past the line budget", async () => {
-  const rows = (n: number, path: string): string =>
-    Array.from({ length: n }, (_, i) => `${path}:${i + 1}:line ${i + 1}`).join("\n");
-  const result = [rows(6, "a.ts"), "--", rows(6, "b.ts")].join("\n--\n");
-  const out = await frame(
-    toolNode({ mcpName: "grep", args: { output_mode: "content", pattern: "x" }, result }),
-  );
-  expect(out).toContain("a.ts");
-  expect(out).toContain("line 1");
-  expect(out).toContain("… +");
-});
-
-test("grep content mode with no matches renders the muted placeholder", async () => {
-  const out = await frame(
-    toolNode({
-      mcpName: "grep",
-      args: { output_mode: "content", pattern: "nope" },
-      result: "(no matches)",
-    }),
-  );
+test("list_dir with no matches renders the muted placeholder", async () => {
+  const out = await frame(toolNode({ mcpName: "list_dir", args: {}, result: "(no matches)" }));
   expect(out).toContain("(no matches)");
 });
 
-test("grep in files_with_matches mode (default) renders as a path list", async () => {
-  const out = await frame(
-    toolNode({ mcpName: "grep", args: { pattern: "x" }, result: "a.ts\nb.ts\n" }),
-  );
-  expect(out).toContain("a.ts");
-  expect(out).toContain("b.ts");
-});
-
-test("glob with no matches renders the muted placeholder", async () => {
-  const out = await frame(toolNode({ mcpName: "glob", args: {}, result: "(no matches)" }));
-  expect(out).toContain("(no matches)");
-});
-
-test("glob clamps a long path list and reports the hidden count", async () => {
+test("list_dir clamps a long path list and reports the hidden count", async () => {
   const paths = Array.from({ length: 15 }, (_, i) => `file_${i + 1}.ts`).join("\n");
-  const out = await frame(toolNode({ mcpName: "glob", args: {}, result: paths }));
+  const out = await frame(toolNode({ mcpName: "list_dir", args: {}, result: paths }));
   expect(out).toContain("file_1.ts");
   expect(out).toContain("file_10.ts");
   expect(out).not.toContain("file_11.ts");
@@ -202,40 +145,6 @@ test("apply_patch over the cap collapses to a stats chip, with no result line wh
     }),
   );
   expect(out).toContain("+50");
-});
-
-test("the diff tool with no diff and no result falls back to the generic renderer", async () => {
-  const out = await frame(
-    toolNode({ mcpName: "diff", args: { from: "a.ts", to: "b.ts" }, result: "", diff: undefined }),
-  );
-  expect(out).toContain("(no output)");
-});
-
-test("the diff tool's (no matches) result stays a muted one-liner", async () => {
-  const out = await frame(
-    toolNode({
-      mcpName: "diff",
-      args: { from: "a.ts", to: "b.ts" },
-      result: "(no matches)",
-      diff: undefined,
-    }),
-  );
-  expect(out).toContain("(no matches)");
-});
-
-test("the diff tool over the cap shows the summary and a stats chip instead of the full diff", async () => {
-  const lines = Array.from({ length: 50 }, (_, i) => ` c${i}`);
-  const diff = ["--- a/x.ts", "+++ b/x.ts", "@@ -1,50 +1,50 @@", ...lines].join("\n");
-  const out = await frame(
-    toolNode({
-      mcpName: "diff",
-      args: { from: "a.ts", to: "b.ts" },
-      result: "50 lines differ",
-      diff,
-    }),
-  );
-  expect(out).toContain("50 lines differ");
-  expect(out).toContain("+0");
 });
 
 test("shell_session list with no sessions renders the muted placeholder", async () => {
@@ -336,34 +245,11 @@ test("shell_session with an unparsable result falls back to the generic renderer
   expect(out).toContain("(no output)");
 });
 
-test("move/copy/mkdir/remove render their one-line summary", async () => {
-  for (const mcpName of ["move", "copy", "mkdir", "remove"]) {
+test("remove renders its one-line summary", async () => {
+  for (const mcpName of ["remove"]) {
     const out = await frame(toolNode({ mcpName, args: {}, result: `${mcpName} done` }));
     expect(out).toContain(`${mcpName} done`);
   }
-});
-
-test("tree renders the raw listing", async () => {
-  const out = await frame(toolNode({ mcpName: "tree", args: {}, result: "src/\n  a.ts\n  b.ts" }));
-  expect(out).toContain("a.ts");
-  expect(out).toContain("b.ts");
-});
-
-test("tree with an empty result shows the muted placeholder", async () => {
-  const out = await frame(toolNode({ mcpName: "tree", args: {}, result: "" }));
-  expect(out).toContain("(empty)");
-});
-
-test("file_stat renders as a JSON key/value card", async () => {
-  const out = await frame(
-    toolNode({
-      mcpName: "file_stat",
-      args: { path: "a.ts" },
-      result: JSON.stringify({ size: 123, isDirectory: false }),
-    }),
-  );
-  expect(out).toContain("size");
-  expect(out).toContain("123");
 });
 
 test("read_memory renders the body as markdown code, or the empty placeholder", async () => {

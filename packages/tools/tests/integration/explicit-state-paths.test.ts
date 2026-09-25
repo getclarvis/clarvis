@@ -24,7 +24,6 @@ describe("explicit machinery namespace", () => {
     const config = resolveConfig({
       workspaceRoot: workspace,
       statePaths: selected,
-      probeRipgrep: () => false,
     });
     expect(config.stateRoot).toBe(selected.root);
     expect(config.statePaths).not.toBe(selected);
@@ -33,7 +32,6 @@ describe("explicit machinery namespace", () => {
       resolveConfig({
         workspaceRoot: workspace,
         statePaths: workspaceStatePaths(root),
-        probeRipgrep: () => false,
       }),
     ).toThrow(StartupError);
   });
@@ -52,7 +50,6 @@ describe("explicit machinery namespace", () => {
     const config = resolveConfig({
       workspaceRoot: workspace,
       statePaths: selected,
-      probeRipgrep: () => false,
     });
     const admitted = await callTool("read_file", { path: own }, config);
     expect(admitted.isError).toBe(false);
@@ -76,7 +73,6 @@ describe("explicit machinery namespace", () => {
     const config = resolveConfig({
       workspaceRoot: workspace,
       statePaths: selected,
-      probeRipgrep: () => false,
     });
     const listed = await callTool("shell_session", { action: "list" }, config);
     expect(listed.isError).toBe(false);

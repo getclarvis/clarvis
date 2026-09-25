@@ -236,7 +236,6 @@ const RUN_EVENT_SCHEMAS = {
       type: z.literal("delegation_created"),
       at: finite,
       delegation_id: text,
-      task_id: text.optional(),
       title: text,
       task: text,
       profile: text.optional(),
@@ -248,7 +247,6 @@ const RUN_EVENT_SCHEMAS = {
       type: z.literal("delegation_started"),
       at: finite,
       delegation_id: text,
-      task_id: text.optional(),
       model: text.optional(),
     })
     .strict(),
@@ -257,7 +255,6 @@ const RUN_EVENT_SCHEMAS = {
       type: z.literal("delegation_completed"),
       at: finite,
       delegation_id: text,
-      task_id: text.optional(),
       status: text,
       summary: text.optional(),
     })
@@ -267,7 +264,6 @@ const RUN_EVENT_SCHEMAS = {
       type: z.literal("delegation_failed"),
       at: finite,
       delegation_id: text,
-      task_id: text.optional(),
       status: text,
       summary: text.optional(),
     })
@@ -410,16 +406,6 @@ const RUN_EVENT_SCHEMAS = {
       contribution_count: finite.optional(),
       requested: z.literal(true).optional(),
       user_contribution_count: finite.optional(),
-    })
-    .strict(),
-  vision_analysis: z
-    .object({
-      type: z.literal("vision_analysis"),
-      at: finite,
-      model: text,
-      image_count: finite,
-      status: z.enum(["completed", "failed"]),
-      result: text,
     })
     .strict(),
   compaction_skipped: z

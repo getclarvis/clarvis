@@ -8,10 +8,6 @@
  * failures that would reach an operator, so they are asserted against the real
  * thing here.
  *
- * `posixShell` guards the file because every command below is POSIX shell
- * syntax and every kill assertion is POSIX signal semantics. The Windows shell
- * path is covered where it can be: `subprocess.test.ts` asserts the pwsh
- * `-EncodedCommand` argv from any host.
  */
 import { describe, expect, test } from "bun:test";
 import { readFile, realpath } from "node:fs/promises";
@@ -24,8 +20,6 @@ import {
   type HookRunner,
 } from "@clarvis/hooks";
 import { tempRoot } from "../helpers/temp-root.ts";
-
-const posixShell = process.platform !== "win32";
 
 interface RealHookFixture {
   workspace: string;
@@ -96,7 +90,7 @@ async function waitForText(path: string, expected?: string, budgetMs = 5_000): P
   }
 }
 
-describe.skipIf(!posixShell)("a hook command against a real shell", () => {
+describe("a hook command against a real shell", () => {
   isolatedTest("a deny reaches the caller with its message intact", async ({ runner }) => {
     const result = await runner.run(
       { event: "pre_tool_use", command: `echo '{"kind":"deny","message":"dist/ is generated"}'` },

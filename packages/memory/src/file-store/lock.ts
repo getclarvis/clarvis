@@ -176,7 +176,7 @@ export function createTreeLock(options: TreeLockOptions): TreeLock {
               nested,
               threshold_ms: warnMs,
             },
-            "the memory tree lock was held far longer than a batch of writes takes; the wiki tools, the memory panel and every concurrent run's seed were blocked for that whole time",
+            "the memory tree lock was held far longer than a batch of writes takes; the wiki tools and every concurrent run's seed were blocked for that whole time",
           );
         }
         await release();

@@ -27,12 +27,11 @@ export interface EntrySeedDeps {
 /**
  * The composed opening context: the ordered `entryMessages` (system head, pinned
  * seed blocks, continuation history, then this turn's messages), the `turnImages`
- * collected from this turn, and whether this agent `entryStripsImages`.
+ * collected from this turn.
  */
 export interface EntrySeed {
   entryMessages: LiveSeedEntry[];
   turnImages: ImagePart[];
-  entryStripsImages: boolean;
 }
 
 /**
@@ -67,8 +66,7 @@ function entrySeedMarker(
  * history, any capability seed block the continuation did not already carry,
  * and this turn's messages.
  *
- * @returns the {@link EntrySeed} — messages, this turn's images, and whether the
- *   agent strips images.
+ * @returns the {@link EntrySeed} — messages and this turn's images.
  * @remarks Prior image entries remain intact. This turn's images are also
  *   available separately for model-specific routing.
  *
@@ -102,7 +100,6 @@ export function buildEntrySeed(a: {
   const { entryProfile, entryResolved } = shape;
 
   const turnImages = collectTurnImages(messages);
-  const entryStripsImages = !(entryResolved.capabilities?.has("vision") ?? true);
 
   const capabilitySections = systemSectionsFor(deps.runCapabilities, {
     agent: shape.isLead ? "lead" : "subagent",
@@ -146,6 +143,5 @@ export function buildEntrySeed(a: {
   return {
     entryMessages,
     turnImages,
-    entryStripsImages,
   };
 }

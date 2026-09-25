@@ -128,7 +128,6 @@ describe("json-trace-store — persisted continuation payload", () => {
         evictable: true,
         summary: false,
         canonical: false,
-        task_id: "t1",
       },
     ];
     const planRef = {

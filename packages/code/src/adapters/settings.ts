@@ -10,12 +10,7 @@ import {
   type providerConfigSchema,
   type SettingsFile,
 } from "@clarvis/kernel/config";
-import type {
-  ConfigService,
-  SandboxInspection,
-  SettingsData,
-  SettingsRepairPlan,
-} from "@clarvis/protocol";
+import type { ConfigService, SettingsData, SettingsRepairPlan } from "@clarvis/protocol";
 import { glyph } from "../core/marks.ts";
 import { diagnosticCount, diagnosticEvent } from "../core/diagnostic-events.ts";
 import { keyOrigin, type KeysAdapter, type KeySource } from "./provider-secrets.ts";
@@ -184,7 +179,6 @@ export interface SettingsAdapter {
   declaredMcpServers(): McpServerDecl[];
   /** Re-fetch the cached snapshot from the kernel (after an external change). */
   reload(): Promise<void>;
-  inspectSandbox(options?: { refresh?: boolean }): Promise<SandboxInspection>;
 }
 
 /**
@@ -374,8 +368,7 @@ export async function createSettingsAdapter(
    *
    * @remarks A concurrent-modification conflict is the case that matters: the
    *   snapshot this adapter holds is, by definition, the stale one the conflict
-   *   was reported against. Leaving it in place made Run controls and Memory
-   *   settings keep reporting the refused value as `Effective` /
+   *   was reported against. Leaving it in place kept reporting the refused value as `Effective` /
    *   `Source: workspace` indefinitely, with no route to refresh. Failing to
    *   re-read is not allowed to mask the original failure, so the refusal is
    *   still thrown to the caller.
@@ -583,6 +576,5 @@ export async function createSettingsAdapter(
     envStatus,
     declaredMcpServers,
     reload,
-    inspectSandbox: (options) => config.inspectSandbox(options),
   };
 }

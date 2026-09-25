@@ -294,7 +294,7 @@ describe("marketplaceSchema: a source, read in each dialect a catalog writes it 
     expect(entry.source).toBe("git@example.invalid:o/a.git");
   });
 
-  it("reads a confined bare relative source as an installable local plugin", () => {
+  it("reads a bare relative source as an installable local plugin", () => {
     const entry = only({ name: "beside", source: "./plugins/beside" });
 
     expect(entry.source).toBe("./plugins/beside");
@@ -303,18 +303,16 @@ describe("marketplaceSchema: a source, read in each dialect a catalog writes it 
     expect(entry.notes).toEqual([]);
   });
 
-  it("names a bare source that would resolve outside the marketplace root", () => {
+  it("admits a bare source regardless of its directory", () => {
     for (const source of ["../outside", "plugins/../../etc", "/etc/passwd", "win\\path"]) {
       const entry = only({ name: "escaper", source });
-      expect(entry.installable).toBe(false);
+      expect(entry.installable).toBe(true);
       expect(entry.source).toBe(source);
-      expect(entry.notes.join("\n")).toContain(
-        "listing 'escaper' names a local source that would resolve outside the marketplace root",
-      );
+      expect(entry.notes).toEqual([]);
     }
   });
 
-  it("reads a confined `local` descriptor case-insensitively", () => {
+  it("reads a `local` descriptor case-insensitively", () => {
     for (const kind of ["local", "LOCAL", "  Local  "]) {
       const entry = only({ name: "beside", source: { source: kind, path: "  plugins/beside  " } });
       expect(entry.source).toBe("plugins/beside");
@@ -332,12 +330,12 @@ describe("marketplaceSchema: a source, read in each dialect a catalog writes it 
     expect(entry.notes).toEqual(["listing 'beside' names a local source with no path"]);
   });
 
-  it("names a `local` descriptor whose path would escape the marketplace root", () => {
+  it("admits a parent-relative local descriptor", () => {
     const entry = only({ name: "beside", source: { source: "local", path: "../outside" } });
 
     expect(entry.source).toBe("../outside");
-    expect(entry.installable).toBe(false);
-    expect(entry.notes.join("\n")).toContain("outside the marketplace root");
+    expect(entry.installable).toBe(true);
+    expect(entry.notes).toEqual([]);
   });
 
   it("degrades a source kind it has no fetcher for, with or without a path", () => {
@@ -425,9 +423,8 @@ describe("marketplaceSchema: a source, read in each dialect a catalog writes it 
         source: {
           source: "git-subdir",
           url: "https://github.com/example/plugins.git",
-          path: "../outside",
         },
-        note: "without a confined relative path",
+        note: "without a path",
       },
     ];
 
@@ -488,8 +485,8 @@ describe("marketplaceSchema: a listing's subdirectory path", () => {
     expect(entry.notes).toEqual([]);
   });
 
-  it("bars install over a path it cannot read, but keeps the listing", () => {
-    for (const path of ["../evil", "plugins/../../etc", "/abs/path", "plugins\\win", "", 7]) {
+  it("admits external paths but rejects invalid path values", () => {
+    for (const path of ["", 7]) {
       const entry = only({ path });
       expect(entry.path).toBeUndefined();
       expect(entry.installable).toBe(false);
@@ -740,7 +737,7 @@ describe("marketplaceSchema: a whole catalog written in another host's dialect",
     expect(catalog.notes.join("\n")).not.toContain("metadata");
   });
 
-  it("offers the git-backed and confined local listings for install", () => {
+  it("offers the git-backed and local listings for install", () => {
     const catalog = read(foreign);
 
     expect(catalog.plugins.filter((entry) => entry.installable).map((entry) => entry.name)).toEqual(

@@ -43,7 +43,7 @@ const leadTool = (id: string): RunEvent =>
     call_id: id,
     at: 2,
     server: "fs",
-    tool: "grep",
+    tool: "list_dir",
     arguments: {},
     result: "ok",
     ok: true,
@@ -51,12 +51,12 @@ const leadTool = (id: string): RunEvent =>
 
 const transcriptExternalOrchestrationTools = [
   "spawn_subagent",
-  "delegate_task",
+  "spawn_subagent",
   "agent_list",
   "agent_poll",
   "agent_stop",
   "agent_steer",
-  "await_agents",
+  "agent_poll",
   "run_leader",
   "run_workflow",
   "run_round",
@@ -204,7 +204,7 @@ test("a finished tool call keeps its duration; a close that never saw its start 
     call_id: "c1",
     at: 1000,
     server: "fs",
-    tool: "grep",
+    tool: "list_dir",
     arguments: { pattern: "x" },
   });
   const closed = ev({
@@ -213,7 +213,7 @@ test("a finished tool call keeps its duration; a close that never saw its start 
     call_id: "c1",
     at: 3500,
     server: "fs",
-    tool: "grep",
+    tool: "list_dir",
     arguments: { pattern: "x" },
     result: "ok",
     ok: true,
@@ -511,7 +511,7 @@ test("an MCP leaf collision survives replay while a child lifecycle missing its 
         agent: "lead",
         call_id: "mcp",
         at: 1,
-        tool: "server_await_agents",
+        tool: "server_agent_poll",
         chars: 64,
       }),
       ev({
@@ -520,7 +520,7 @@ test("an MCP leaf collision survives replay while a child lifecycle missing its 
         call_id: "mcp",
         at: 2,
         server: "server",
-        tool: "await_agents",
+        tool: "agent_poll",
         arguments: { query: "downstream" },
       }),
       ev({
@@ -529,7 +529,7 @@ test("an MCP leaf collision survives replay while a child lifecycle missing its 
         call_id: "mcp",
         at: 3,
         server: "server",
-        tool: "await_agents",
+        tool: "agent_poll",
         arguments: { query: "downstream" },
         result: "visible downstream result",
         ok: true,
@@ -569,7 +569,7 @@ test("an MCP leaf collision survives replay while a child lifecycle missing its 
       expect.objectContaining({
         key: 'exec_collision::tool:["lead","mcp"]',
         mcpName: "server",
-        toolName: "await_agents",
+        toolName: "agent_poll",
         result: "visible downstream result",
       }),
     ]);
@@ -581,7 +581,7 @@ test("an MCP leaf collision survives replay while a child lifecycle missing its 
       expect.objectContaining({
         key: 'exec_collision::tool:["lead","mcp"]',
         mcpName: "server",
-        toolName: "await_agents",
+        toolName: "agent_poll",
       }),
     ]);
     expect(
@@ -622,34 +622,6 @@ test("manual compaction annotations distinguish applied and skipped requests", (
   expect(annotations[1]!.text).toContain("summarization failed");
   expect(annotations[2]).toMatchObject({ tone: "warn", status: "error" });
   expect(annotations[2]!.text).toContain("summarization failed");
-});
-
-test("a vision pre-pass annotates the transcript, and a failed one reads as failed", () => {
-  const nodes = replay([
-    ev({ type: "run_started", at: 0 }),
-    ev({
-      type: "vision_analysis",
-      at: 1,
-      model: "anthropic/vision",
-      image_count: 2,
-      status: "completed",
-      result: "two cats",
-    }),
-    ev({
-      type: "vision_analysis",
-      at: 2,
-      model: "anthropic/vision",
-      image_count: 1,
-      status: "failed",
-      result: "boom",
-    }),
-  ]);
-  const annotations = nodes.filter((node) => node.kind === "annotation");
-  expect(annotations[0]).toMatchObject({ tone: "info", status: "ok" });
-  expect(annotations[0]!.text).toContain("read 2 images");
-  expect(annotations[0]!.text).toContain("anthropic/vision");
-  expect(annotations[1]).toMatchObject({ tone: "warn", status: "error" });
-  expect(annotations[1]!.text).toContain("image reading failed");
 });
 
 test("two same-type annotations in the same millisecond both land (sequence keys, no drop)", () => {

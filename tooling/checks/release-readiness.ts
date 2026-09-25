@@ -72,7 +72,6 @@ export function workflowSecurityFailures(workflows: readonly WorkflowSource[]): 
 export function releaseReadinessFailures(input: {
   product: ProductManifest;
   installSh: string;
-  installPowerShell: string;
   rootLicense: string;
   thirdPartyNotices: string;
   vercelAiSdkLicense: string;
@@ -164,14 +163,8 @@ export function releaseReadinessFailures(input: {
   if (!input.installSh.includes(`CLARVIS_VERSION:-${version}`)) {
     failures.push("install.sh default version differs from the product version");
   }
-  if (!input.installPowerShell.includes(`else { "${version}" }`)) {
-    failures.push("install.ps1 default version differs from the product version");
-  }
   if (!input.installSh.includes(`CLARVIS_RELEASE_REPOSITORY:-${RELEASE_REPOSITORY}`)) {
     failures.push(`install.sh must download from ${RELEASE_REPOSITORY}`);
-  }
-  if (!input.installPowerShell.includes(`else { "${RELEASE_REPOSITORY}" }`)) {
-    failures.push(`install.ps1 must download from ${RELEASE_REPOSITORY}`);
   }
   if (input.tag !== undefined && input.tag.length > 0 && input.tag !== `v${version}`) {
     failures.push(`release tag ${input.tag} differs from v${version}`);
@@ -189,7 +182,6 @@ export function checkReleaseReadiness(root: string): void {
   const failures = releaseReadinessFailures({
     product,
     installSh: read("install.sh"),
-    installPowerShell: read("install.ps1"),
     rootLicense: read("LICENSE"),
     thirdPartyNotices: read("THIRD_PARTY_NOTICES.md"),
     vercelAiSdkLicense: read("third-party/vercel-ai-sdk/LICENSE"),
@@ -214,8 +206,8 @@ export function checkReleaseReadiness(root: string): void {
   const tag = process.env.RELEASE_TAG;
   process.stdout.write(
     tag
-      ? "release readiness: product, installers, source/distribution repositories and supplied tag agree\n"
-      : "release readiness: product, installers and source/distribution repositories agree; no release tag supplied\n",
+      ? "release readiness: product, installer, source/distribution repositories and supplied tag agree\n"
+      : "release readiness: product, installer and source/distribution repositories agree; no release tag supplied\n",
   );
 }
 

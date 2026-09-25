@@ -71,7 +71,6 @@ function runCtx(maxLiveChildren = 16): {
       bufferBytes: 131_072,
       maxTotalBufferBytes: 6_291_456,
       pollMaxBytes: 8192,
-      awaitTimeoutMs: 5000,
       maxLiveChildren,
       maxRetainedChildren: 32,
       maxNoticesPerIteration: 8,

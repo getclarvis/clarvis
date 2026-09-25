@@ -40,7 +40,7 @@ test("injections keep identity, bypass SDK/MCP/OAuth construction and retry, and
     spyOn(mcp, "createMCPAuthorizationCoordinator"),
   ];
   const close = spyOn(connections, "closeAll");
-  const llm = new MockLLM({ script: [{ text: "a cat" }, { text: "done" }] });
+  const llm = new MockLLM({ script: [{ text: "a cat" }] });
   try {
     const built = await buildExecuteRunDeps({
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
@@ -62,8 +62,7 @@ test("injections keep identity, bypass SDK/MCP/OAuth construction and retry, and
         rawBody: {
           ...VALID_REQUEST,
           providers: [],
-          profiles: [{ ...VALID_REQUEST.profiles[0]!, model: "catalog/text" }],
-          vision_model: "catalog/eyes",
+          profiles: [{ ...VALID_REQUEST.profiles[0]!, model: "catalog/eyes" }],
           messages: [
             {
               role: "user",
@@ -77,12 +76,12 @@ test("injections keep identity, bypass SDK/MCP/OAuth construction and retry, and
         deps: built.deps,
       });
       expect(result).toBeDefined();
-      expect(llm.calls).toHaveLength(2);
+      expect(llm.calls).toHaveLength(1);
       expect(llm.calls[0]?.model).toBe("eyes");
       expect(llm.calls[0]?.capabilities).toEqual(new Set(["vision"]));
       expect(llm.calls[0]?.maxOutputTokens).toBe(128);
-      for (const call of llm.calls) expect(call.providerConfig).toBeUndefined();
-      expect(JSON.stringify(llm.calls[1]?.messages)).toContain("a cat");
+      expect(llm.calls[0]?.providerConfig).toBeUndefined();
+      expect(JSON.stringify(llm.calls[0]?.messages)).toContain("data:image/png");
     } finally {
       await built.dispose();
     }

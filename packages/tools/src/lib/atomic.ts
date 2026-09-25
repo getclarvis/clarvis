@@ -1,7 +1,7 @@
 import { constants, promises as fs } from "node:fs";
 import { bestEffort } from "./tasks.ts";
 import path from "node:path";
-import { TMP_GLOB, fsyncDir, renameWithRetry, tmpPathFor, writeFileDurable } from "@clarvis/paths";
+import { TMP_GLOB, fsyncDir, tmpPathFor, writeFileDurable } from "@clarvis/paths";
 import { ToolError } from "../errors.ts";
 
 const locks = new Map<string, Promise<unknown>>();
@@ -10,15 +10,13 @@ const locks = new Map<string, Promise<unknown>>();
  * Options {@link fs.rm} takes to survive the same contention, documented for
  * exactly this case.
  */
-export const RM_RETRY = { maxRetries: 4, retryDelay: 25 } as const;
+const RM_RETRY = { maxRetries: 4, retryDelay: 25 } as const;
 
 /**
- * Bind the shared rename policy to this module's filesystem seam. Keeping the
- * function lookup live lets rollback tests inject a failing rename without
- * duplicating `@clarvis/paths`' retry algorithm or its platform matrix.
+ * Keep filesystem lookup live so rollback tests can inject a failing rename.
  */
 function renameForTools(from: string, to: string): Promise<void> {
-  return renameWithRetry(from, to, { rename: fs.rename });
+  return fs.rename(from, to);
 }
 
 /**
@@ -113,7 +111,7 @@ async function captureMode(target: string): Promise<number | undefined> {
  * @remarks A missing path is fine (the `lstat` failure is swallowed): only an
  *   existing symlink is rejected.
  */
-export async function assertNotSymlink(target: string): Promise<void> {
+async function assertNotSymlink(target: string): Promise<void> {
   const lst = await fs.lstat(target).catch(() => null);
   if (lst?.isSymbolicLink()) {
     throw new ToolError("invalid_input", `Refusing to write through a symlink: ${target}`, {

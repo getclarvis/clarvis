@@ -1,7 +1,6 @@
 import { createSignal } from "solid-js";
 import type { CliRenderer } from "@opentui/core";
 import { depthFromCapabilities, type ColorDepth, type ThemeMode } from "../core/theme-types.ts";
-import { resolveShell, shellArgs } from "@clarvis/kernel/local";
 import { runClipboardProcess } from "./clipboard-process.ts";
 import { detachObserved } from "../core/tasks.ts";
 import { diagnosticCount, diagnosticEvent } from "../core/diagnostic-events.ts";
@@ -26,7 +25,7 @@ export interface PlatformCapabilities {
   revision(): number;
   keyboard(): "kitty" | "legacy";
   remote(): boolean;
-  runtimePlatform(): "macos" | "windows" | "linux" | "unknown";
+  runtimePlatform(): "macos" | "linux" | "unknown";
   terminal(): { name: string; version?: string };
   mouse(): boolean;
   clipboard: { osc52(): boolean };
@@ -61,44 +60,6 @@ export interface PlatformOptions extends RendererBootstrapOptions {
   clipboardProcess?: ClipboardProcessRunner;
 }
 
-/**
- * Read the clipboard through PowerShell, which is where Windows keeps it.
- *
- * @remarks The payload goes in base64 through `-EncodedCommand` for the same
- *   reason every other command does: no character of it is then parsed by the
- *   Windows command-line tokenizer.
- *
- *   The platform is passed explicitly rather than left to `process.platform`,
- *   even though both callers already guard on it. `resolveShell()` with no
- *   arguments memoizes its answer process-wide, so reaching it while the
- *   platform reads `win32` pins PowerShell for every later caller in that
- *   process - `runLocalBash` included, which then tries to spawn the absolute
- *   `powershell.exe` path on a POSIX host and settles every `!` command as a
- *   spawn failure. Production never sees it, because `process.platform` is a
- *   constant there; the suite does, because the clipboard tests pin it to
- *   exercise this very branch. Supplying seams bypasses the cache in both
- *   directions, so this call can neither read a poisoned entry nor write one,
- *   and what it computes on a real Windows host is what the memoized form
- *   returned.
- */
-function windowsClipboardArgs(script: string): [string, string[]] {
-  const shell = resolveShell({ platform: "win32" });
-  return [shell.file, shellArgs(shell, script)];
-}
-
-/**
- * @internal Exported only for tests: the PowerShell script that reads piped
- * stdin and writes it to the clipboard.
- * @remarks The shared shell preamble sets `[Console]::OutputEncoding` for what
- *   PowerShell writes; reading piped stdin is governed by `InputEncoding`
- *   instead. Left unset it defaults to the OEM/ANSI codepage and non-ASCII
- *   text arrives on the clipboard as mojibake, so it must be set - and read -
- *   before `ReadToEnd` runs.
- */
-export const WINDOWS_CLIPBOARD_COPY_SCRIPT =
-  "[Console]::InputEncoding=New-Object System.Text.UTF8Encoding $false;" +
-  "Set-Clipboard -Value ([Console]::In.ReadToEnd())";
-
 async function nativeClipboardCopy(
   text: string,
   signal?: AbortSignal,
@@ -106,9 +67,6 @@ async function nativeClipboardCopy(
 ): Promise<boolean> {
   const candidates: [string, string[]][] = [];
   if (process.platform === "darwin") candidates.push(["pbcopy", []]);
-  if (process.platform === "win32") {
-    candidates.push(windowsClipboardArgs(WINDOWS_CLIPBOARD_COPY_SCRIPT));
-  }
   if (process.env.WAYLAND_DISPLAY) candidates.push(["wl-copy", []]);
   if (process.env.DISPLAY) {
     candidates.push(["xclip", ["-selection", "clipboard"]]);
@@ -141,17 +99,6 @@ export async function readClipboardImage(
 ): Promise<ClipboardImage | null> {
   const candidates: [string, string[]][] = [];
   if (process.platform === "darwin") candidates.push(["pngpaste", []]);
-  if (process.platform === "win32") {
-    candidates.push(
-      windowsClipboardArgs(
-        "Add-Type -AssemblyName System.Windows.Forms;" +
-          "$img=[Windows.Forms.Clipboard]::GetImage();" +
-          "if($img){$ms=New-Object IO.MemoryStream;" +
-          "$img.Save($ms,[Drawing.Imaging.ImageFormat]::Png);" +
-          "[Console]::OpenStandardOutput().Write($ms.ToArray(),0,$ms.Length)}",
-      ),
-    );
-  }
   if (process.env.WAYLAND_DISPLAY) candidates.push(["wl-paste", ["--type", "image/png"]]);
   if (process.env.DISPLAY)
     candidates.push(["xclip", ["-selection", "clipboard", "-t", "image/png", "-o"]]);
@@ -258,13 +205,7 @@ export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}
     remote: () =>
       renderer.capabilities?.remote ?? !!(process.env.SSH_TTY ?? process.env.SSH_CONNECTION),
     runtimePlatform: () =>
-      process.platform === "darwin"
-        ? "macos"
-        : process.platform === "win32"
-          ? "windows"
-          : process.platform === "linux"
-            ? "linux"
-            : "unknown",
+      process.platform === "darwin" ? "macos" : process.platform === "linux" ? "linux" : "unknown",
     terminal: () => ({
       name: renderer.capabilities?.terminal?.name || process.env.TERM || "unknown",
       ...(renderer.capabilities?.terminal?.version
@@ -329,7 +270,7 @@ export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}
   process.on("exit", restore);
   process.on("uncaughtException", (e) => void shutdown("panic", e));
   process.on("unhandledRejection", (e) => void shutdown("panic", e));
-  for (const signal of rendererTeardownSignals(process.platform)) {
+  for (const signal of rendererTeardownSignals()) {
     process.on(signal, () => void shutdown(`signal:${signal}`));
   }
 

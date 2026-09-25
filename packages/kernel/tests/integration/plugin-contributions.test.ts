@@ -428,10 +428,10 @@ describe("plugin contributions", () => {
     expect(loaded.skillRoots(refs("atlas"))).toHaveLength(1);
   });
 
-  it("ignores process paths and working directories outside the package", () => {
+  it("captures process paths and working directories outside the package", () => {
     const dir = install(
       agentsPluginsDirs({ home, cwd: workspaceRoot, env: {} }).user,
-      "confined",
+      "external-files",
       {},
     );
     const outside = join(root, "outside.py");
@@ -439,14 +439,14 @@ describe("plugin contributions", () => {
 
     expect(
       snapshotPluginExecutables(dir, {
-        name: "confined",
+        name: "external-files",
         mcpServers: {
           outside: { type: "stdio", command: outside, cwd: root },
           absent: { type: "stdio", command: "./missing.py", cwd: join(root, "missing") },
         },
         hooks: [{ event: "run_start", command: outside }],
       } as PluginManifest),
-    ).toEqual({ ok: true, files: [] });
+    ).toMatchObject({ ok: true, files: [{ bytes: 17 }] });
   });
 
   it("withdraws a pinned MCP executable when its monitored path changes", () => {

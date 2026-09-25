@@ -35,10 +35,6 @@ export const TMP_PREFIX = ".clarvis-tmp-";
 /**
  * Directory mode for everything Clarvis creates: owner-only.
  *
- * @remarks
- * Applied best-effort. Windows ignores the mode rather than failing, and that is
- * acceptable — a platform that cannot honour it must not turn directory creation
- * into an error.
  */
 export const DIR_MODE = 0o700;
 
@@ -49,8 +45,7 @@ export const DIR_MODE = 0o700;
  * The companion of {@link DIR_MODE}, and the reason the atomic-write family
  * lives in this package: the seven hand-rolled copies it replaces each restated
  * the pair, and a copy that forgets it publishes a run's transcript, a signing
- * key or an API secret at the ambient umask. Windows honours only the write bit,
- * which is the same best-effort posture {@link DIR_MODE} takes.
+ * key or an API secret at the ambient umask.
  */
 export const FILE_MODE = 0o600;
 
@@ -76,10 +71,7 @@ export const CONTEXT_FILENAMES: readonly string[] = ["CLARVIS.md", "AGENTS.md"];
  * Directory names a workspace tree walk never descends into.
  *
  * @remarks
- * Distinct from {@link INTERNAL_IGNORE_PATTERNS}: this bounds a structural scan
- * of the working tree, whereas those are ignore-file patterns applied to
- * `grep`/`glob`. The two lists differ because they answer different questions,
- * not because they drifted.
+ * This list bounds structural scans of the working tree.
  */
 export const INTERNAL_SKIP_DIRS: readonly string[] = [
   GIT_DIR,
@@ -90,12 +82,3 @@ export const INTERNAL_SKIP_DIRS: readonly string[] = [
   "coverage",
   "build",
 ];
-
-/**
- * Built-in ignore patterns applied beneath every user-supplied ignore source.
- *
- * @remarks
- * {@link AGENTS_DIR} is deliberately absent: it is the user's own content, and
- * `grep`/`glob` are expected to see it.
- */
-export const INTERNAL_IGNORE_PATTERNS: readonly string[] = [GIT_DIR, CLARVIS_DIR, TMP_GLOB];

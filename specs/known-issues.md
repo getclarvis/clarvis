@@ -34,39 +34,14 @@ workload remains necessary before claiming the TUI performance incident resolved
 
 ## Smoke qualification remains environment-dependent
 
-**Status: implementation is isolated; several qualification surfaces remain unverified in the
-current environment.** `createSmokeFixture` and `SmokeContext` now give artifact, release, first-paint
-and installer callers an exclusive root, explicit `CLARVIS_HOME`, allowlisted child environment and
-owned lifecycle. That root is also chosen rather than inherited: it comes from a short, account-owned
-temporary root, so a host whose every candidate is foreign-owned (/tmp owned by another account) reports
-`smoke_fixture_no_usable_parent` naming each refusal instead of booting somewhere the kernel rejects, and
-a host without `script(1)` still needs tmux for the PTY. The required native path is deliberately
-stricter: `requireNativeSmokeConfinement`
-reports `smoke_native_confinement_unavailable` when its Bubblewrap probe cannot launch, and never
-falls back to an unconfined PTY. The deterministic smoke regression is
-`packages/code/tests/unit/artifact-isolation.test.ts`; benchmark root isolation is covered by
-`packages/code/tests/unit/benchmark-isolation.test.ts`. The per-runner structural canary is
-`tooling/tests/unit/harness-isolation-contract.test.ts`; Plan fixture lock placement is covered by
-`packages/plan/tests/integration/file-repository.test.ts`, and the auth view's symlink/overlap
-refusals by `tooling/tests/unit/prompt-cache-artifact.test.ts`.
-
-The ordinary smoke path reached the application in the isolated fixture but remained blocked by the
-host's `local host state has an unsafe parent directory` ownership check. This is an environmental
-failure, not evidence to weaken the private-state check or to make the fixture reuse an operator
-root. A host run with a safe temporary parent is required before claiming the complete artifact
-journey.
-
-The current Linux installer smoke completed its staged archive, install, lock, cancellation,
-preservation and uninstall checks. The artifact and release smoke runners both reached their
-isolated TUI and then received the same application-level `local host state has an unsafe parent
-directory` refusal; neither result is a passing complete-app PTY claim.
-
-Windows User `Path` coverage in `installer-smoke.ts` remains unavailable unless a disposable account
-or VM is explicitly proven; the harness refuses before mutating persistent User `Path`. The auth
-regressions cover synthetic refresh, lock and staging behavior in
-`tooling/tests/unit/prompt-cache-artifact.test.ts`; real subscription OAuth was not run. The
-`--use-global-oauth` path is therefore an explicit, platform-scoped qualification mode rather than
-an assertion that deterministic or synthetic evidence proves live credentials.
+**Status: disposable fixtures are implemented; live qualification depends on the host.**
+`createSmokeFixture` and `SmokeContext` give artifact, release, first-paint and installer callers
+an exclusive root, explicit `CLARVIS_HOME`, allowlisted child environment and owned lifecycle.
+A host with no usable temporary parent reports `smoke_fixture_no_usable_parent`; a host without
+`script(1)` needs tmux for the PTY. Regression coverage is in
+`packages/code/tests/unit/artifact-isolation.test.ts`,
+`packages/code/tests/unit/benchmark-isolation.test.ts`, and
+`tooling/tests/unit/harness-isolation-contract.test.ts`.
 
 ---
 
@@ -118,17 +93,17 @@ the throw and silently stops persisting that session for its whole life. The rea
 here that no schema describes — `isSession` checks identity and `Array.isArray(turns)` and nothing
 else, so an added key is not rejected on read and a corrupt one is not caught either.
 
-**A `preDelegateTask` hook's `rewrite` verdict was computed and silently discarded.**
+**A `preSpawnSubagent` hook's `rewrite` verdict was computed and silently discarded.**
 `runVerdictHooks` built the replacement arguments and returned them; `prepareSpawn` read only
 `denied` and `advise`. A hook author who returns `rewrite` on `pre_tool_use` — where it **is**
 honoured — reasonably expected the same here and got a no-op with the original brief spawned.
 
 Resolved by **refusing it loudly** rather than honouring it: the sweep now runs with
-`rewritable: false` (`packages/loop/src/runtime/subagents/delegate-task.ts`), so a `rewrite`
+`rewritable: false` (`packages/loop/src/runtime/subagents/spawn-subagent.ts`), so a `rewrite`
 verdict denies the spawn instead of passing it through with arguments the hook believes it replaced.
 That is the one outcome worse than either honouring or refusing, because the author is never told.
-No capability is lost, which is what made refusing the cheaper answer: both child-spawn tools are
-dispatched through the ordinary tool loop, so a `pre_tool_use` hook matching either still replaces
+No capability is lost, which is what made refusing the cheaper answer: `spawn_subagent` is
+dispatched through the ordinary tool loop, so a matching `pre_tool_use` hook still replaces
 the brief and profile **upstream** of this validation, and there the model is told what actually ran through the
 `[advisor]` channel and the trace records an `arguments_original`. Honouring it here would have meant
 rebuilding that non-silence at a second site.
@@ -161,22 +136,22 @@ would fit. Closing this also removed two assertions in
 and were in fact pinning the same discontinuity — the identical shell at 200 columns showed both
 hints on the unchanged code.
 
-## Path-based native writes retain a parent-directory TOCTOU
 
-**Status: open; path-based mutation limitation.** The workspace root no longer confines ordinary
-file tools. Host follows OS permissions; Sandbox enforces its environment policy.
-A concurrent process can replace a parent directory after `resolveFileToolPath` resolves a path
-and before `applyOpsAtomic` performs `mkdir`, staging, or `rename` by pathname. Native sandbox
-containment remains the environment boundary when configured; the file tool itself does not pin
-the parent inode.
+---
+
+## Path-based writes retain a parent-directory TOCTOU
+
+**Status: open; path-based mutation limitation.** A concurrent process can replace a parent
+directory after `resolveFileToolPath` resolves a path and before `applyOpsAtomic` performs `mkdir`,
+staging, or `rename` by pathname. The file tool does not pin the parent inode; host process
+permissions govern access.
 
 The durable fix requires descriptor-relative mutation for all write handlers, with platform-specific
-handling of symlinks and Windows reparse points. Another `realpath` before a pathname-based rename
+handling of symlinks. Another `realpath` before a pathname-based rename
 would leave a final gap. Production: `resolveFileToolPath` in
 `packages/tools/src/lib/paths.ts` and `applyOpsAtomic` in `packages/tools/src/lib/atomic.ts`.
-Test: `packages/tools/tests/integration/atomic.test.ts` covers native mutation behavior;
-it does not close this race. Ordinary external writes remain governed by their placement and OS
-permissions.
+Test: `packages/tools/tests/integration/atomic.test.ts` covers mutation behavior; it does not close
+this race.
 
 ---
 
@@ -615,96 +590,13 @@ never paints past a narrow viewport"). The band contract these fixes implement i
 
 ---
 
-## `code`'s `!bash` fix for Windows is unverified
+## Restricted environments can reject ephemeral loopback listeners
 
-`runLocalBash` (`packages/code/src/adapters/local-shell.ts`) carried the same unconditional
-`detached: true` as the tools' `shell` and was silently broken on Windows in the same way; it now
-uses `ownProcessGroup()` from `@clarvis/kernel/local`. Later terminal-text hardening changed only the
-captured output projection; the process-control path and its platform gap remain exactly as recorded.
-
-The change is POSIX-identical by construction: `ownProcessGroup` is `platform !== "win32"`
-(`packages/tools/src/lib/process.ts`), so on POSIX the spawn is byte-for-byte the `detached: true`
-it replaced. The risk was never a regression. It is that Windows `!bash` is still broken for some
-*other* reason and nobody would learn it from CI.
-
-Nothing exercises it there. The original reason — "the `tools (windows)` CI job runs `@clarvis/tools`
-and `@clarvis/paths` only, and `code` is deliberately outside it" — is now stale in its details, and
-the conclusion it supported is stronger rather than weaker. The job has since grown
-(`.github/workflows/ci.yml`): it is named `tools, paths, plan, memory, keyboard policy (windows)` and
-runs `@clarvis/paths`, `@clarvis/tools`, `@clarvis/plan` and `@clarvis/memory`, plus the explicitly
-listed `@clarvis/code` keyboard-policy tests. The job's own comment says that `code` contributes only
-its platform-independent keyboard-policy tests there. So `code` is no
-longer wholly absent from the Windows leg, but the part of it that is present touches nothing in the
-shell adapter, and `packages/code/tests/integration/local-shell.test.ts` — the suite that would
-exercise this — is not among the three.
-
-At the time this gap was recorded, none of it was running because the workflow had only a
-`workflow_dispatch` trigger. The first public-beta preparation restored push-to-`main` and pull
-request triggers. That makes the narrow Windows leg runnable again; it still does not
-include `packages/code/tests/integration/local-shell.test.ts`, so it does not close this gap. No
-post-restoration Windows result is recorded in this source-backed review.
-
-What is verified on Windows is the helper, not the call site. `@clarvis/tools` is in the job, and
-`packages/tools/tests/unit/process.test.ts` pins `ownProcessGroup("win32") === false` there.
-Nothing pins that `runLocalBash` calls it, and no assertion about `!bash` behaviour has ever run on a
-Windows host.
-
-A concrete candidate for "some other reason" is visible in the module itself: the Windows path is not
-the POSIX path with one flag flipped. `runLocalBash` branches the
-executable — `bash` on POSIX, `shell.file` otherwise — so on Windows the whole `resolveShell` /
-`shellArgs` PowerShell route, base64 `-EncodedCommand` payload included, is Windows-only code that no
-test reaches. The suite's one win32 guard is scoped to shell *syntax* and not to any of that:
-`packages/code/tests/integration/local-shell.test.ts` skips the bash-only-syntax test on win32,
-while the two named process-group tests beside it — `a grandchild holding the pipes past exit does
-not wedge the job` and `timeout kills the whole process group` — are unguarded and
-written in POSIX shell (`sleep 5 & echo launched`, `sleep 30 & sleep 30`), so on a Windows runner
-they would die on the command text long before reaching the behaviour they check. Guarding them would
-be the wrong repair: it would turn a real
-unknown into a green run.
-
-One failure mode around shell resolution on this path *has* been identified, and it was found from
-the POSIX side, not the Windows one. `resolveShell()` with no arguments memoizes process-wide, so
-reaching it while `process.platform` reads `win32` pins PowerShell for every later caller —
-`runLocalBash` included, which then tries to spawn the absolute `powershell.exe` path on a POSIX host
-and settles every `!` command as a spawn failure. The TSDoc on `windowsClipboardArgs` in
-`packages/code/src/adapters/platform.ts` records it and the fix: pass the
-platform explicitly so the call can neither read a poisoned entry nor write one. Production never saw
-it, because `process.platform` is a constant there; the suite did, because the clipboard tests pin
-win32 to exercise that branch. It is worth knowing here because it is evidence about what this path
-is sensitive to, and because the test that covers it,
-`packages/code/tests/integration/shell-cache-isolation.test.ts`, is itself skipped on win32.
-
----
-
-## The Codex workspace sandbox can reject ephemeral loopback listeners
-
-**Status: confirmed environmental limitation; not a Clarvis product regression and
-not evidence that port `0` is occupied.**
-
-Some repository tests deliberately bind a local listener on `127.0.0.1` with port `0`, asking the OS
-for an available ephemeral port. Examples include `captureServer` in
-`packages/mcp-client/tests/integration/remote-transport.test.ts`, the OAuth fixture in
-`packages/mcp-client/tests/integration/oauth-transport.test.ts`, and the native-network enforcement
-case in `packages/tools/tests/integration/sandbox.test.ts` (`Bun.listen`). Inside a Codex
-workspace sandbox that prohibits listener creation, these otherwise independent tests can fail with
-the shared Bun signature:
-
-```text
-Failed to start server. Is port 0 in use?
-```
-
-That wording is misleading in this environment. Port `0` is a request for dynamic allocation, not a
-specific occupied port, and a sandbox denial can surface through the same runtime error. A cluster of
-listener-based failures with this exact signature must therefore be classified first as an execution
-environment failure. Rerun the affected test file or package outside the Codex sandbox before changing
-Clarvis code or reporting a product defect. Only a reproduction outside that sandbox is product
-evidence.
-
-This exception is deliberately narrow. It does not make an assertion failure, protocol mismatch,
-timeout after a listener was successfully created, or a failure on an unrestricted host ignorable.
-The handoff must name the exact command and error and keep the affected surface unverified until the
-outside-sandbox rerun passes. `AGENTS.md` carries this entry's short operational rule under **Known
-environmental failures**.
+**Status: confirmed environmental limitation; not a Clarvis product regression.**
+Restricted execution environments can refuse ephemeral loopback listeners. Bun may then report
+`Failed to start server. Is port 0 in use?` even though port `0` requests dynamic allocation.
+Rerun an affected listener test with host permissions before attributing that signature to
+Clarvis. An assertion failure or a timeout after successful listener creation is a separate issue.
 
 ---
 
@@ -733,12 +625,8 @@ signal — 31.0%**. Every one of the 26 was in `@clarvis/code`, and every one ex
 Split on the pin commit `e201dfd`: **8/22 = 36.4%** on the 1.3.14 era, **18/62 =
 29.0%** on 1.3.11.
 
-The other 10 failures at that step were ordinary — a ripgrep guard in `tools`, a `coverage:check`
+The other 10 failures at that step were ordinary — a `coverage:check`
 threshold — and are not this.
-
-The `tools (windows)` job failed 14 times in the same window with **zero** signal deaths. Every
-`panic:` line in those runs' logs is prefixed `linux`, because `gh run view --log-failed` prints
-every failed job in the run.
 
 **No newer sample is recorded here.** CI push and pull-request triggers were restored, but no
 post-restoration GitHub-runner result is part of this review. Treat 31.0% as a
@@ -1124,7 +1012,7 @@ transcript; closing it restores the selected reading position. The final artifac
 passes, and its restart restores the durable failure and recovered result. Recorded intermediate
 frames and native identity assertions complement screenshots; none establishes every possible
 terminal interleaving. The numerical historical benchmark exited 137, so a comparable 10% RSS
-regression verdict remains unavailable. Windows/macOS runtime qualification is not established by
+regression verdict remains unavailable. macOS runtime qualification is not established by
 these Linux results.
 
 ---
@@ -1311,52 +1199,7 @@ shapes the derivation enumerates, where the SDK reads provider metadata from. Th
 and has not been done. Nothing binds a future version of either dependency; a test converts a
 reading into a regression alarm, which is the most this repository can do about a third party.
 
-### Three external binaries the behaviour depends on, and one guard that never runs
-
-**`ripgrep`, and this is worse than the report says.** The whole of the guard is
-`if (process.env.CI) expect(rgAvailable).toBe(true);` at
-`packages/tools/tests/contract/grep-parity.test.ts`, and that line is the **only** reader of
-`process.env.CI` anywhere in `packages/`. Nothing under `tooling/`, `.githooks/`, the root
-`package.json` or `bunfig.toml` sets it; GitHub Actions does. Restored push and pull-request CI now
-enforces the guard, while local pre-commit runs still do not set `CI`: a local machine without `rg`
-skips the parity contract rather than failing it. The environment precondition is therefore
-remote-CI-enforced but not local-gate-enforced.
-
-**Native sandbox backends are operationally gated, with one macOS platform risk.** Bubblewrap and
-Seatbelt outcomes are discriminated typed probes carrying a reason, decided behind injectable seams,
-fail-closed by default, and surfaced to the operator (`packages/tools/src/sandbox.ts`,
-`SandboxProbe`, `probeSandbox`). Linux and macOS CI enable real-host canaries for workspace
-write/read-only behavior, scratch writes, undeclared-path and process isolation, host/denied
-networking, and the kernel toolchain-inspection path (`packages/tools/tests/integration/sandbox.test.ts`,
-`enforces the native sandbox against real host resources`;
-`packages/kernel/tests/integration/sandbox-policy.test.ts`, `inspects a discovered toolchain without
-executing it through the real native backend`; `.github/workflows/ci.yml`, `jobs.coverage` and
-`jobs.sandbox-macos`).
-
-**A resolved Seatbelt regression made installed Apple Git look absent.** A real Clarvis
-run executed `git status --short` inside Seatbelt; `xcode-select` could not read
-`/var/select/developer_dir`, printed “No developer tools were found” and opened the Command Line
-Tools installer even though host `/usr/bin/git --version` reported Apple Git 2.39.5. The first exact
-link allowance was insufficient: Seatbelt's `file-test-existence` checks also require the authored
-alias parents, and the real Git then required authored `/etc/gitconfig` checks beside canonical
-`/private/etc`. A later macOS 14 CI runner proved that Apple Git can consult
-`/var/db/xcode_select_link` as well: its canonical `/private/var/db` tree was admitted, but the
-authored alias was not, so Seatbelt denied the readlink and reproduced the same fallback. The final
-policy admits read-only `/etc`, `/private/etc`, the `/var` link and only the authored/canonical
-`var/select` and `var/db` trees. It does not admit general `/private/var` or writes. The opt-in macOS
-canary now resolves both selectors inside the generated profile before it executes the installed
-`/usr/bin/git --version`; a selector regression therefore stops before the Git shim can request the
-graphical installer. It also rejects the developer-tools fallback
-(`packages/tools/tests/integration/sandbox.test.ts`, `runs the installed Apple Git without
-triggering the developer-tools fallback`).
-
-The remaining risk is specific and external: Apple marks `sandbox-exec` deprecated, and Apple DTS
-states that the Sandbox Profile Language is not a supported API for third-party products
-([Apple Developer Forums](https://developer.apple.com/forums/thread/661939)). Clarvis does not hide
-that with an optional fallback by default: if `/usr/bin/sandbox-exec` or the profile stops working,
-the Seatbelt probe reports unavailable and a required run fails closed. The CI canary detects drift
-on the supported macOS runner, but cannot turn this private/deprecated OS surface into a durable Apple
-compatibility promise.
+### External Git dependency for plugin browsing
 
 **`git`, and a citation the report gets wrong.** It cites
 `packages/code/src/adapters/marketplace.ts` as "spawns `git` directly through
@@ -1369,9 +1212,7 @@ nowhere is the precondition itself: `git` must be on the **client's** `PATH` for
 nothing in the tree fails if that seam is later rewired. Git is separately the authority for every
 launch-time worktree fact.
 
-*What would settle these.* For `ripgrep`, making the assertion unconditional — the binary is
-genuinely required, and the current condition is dead surface. For `git`, an architecture test over
-the client-side seam. Neither is a question about the outside world; both are simply not done.
+*What would settle this.* An architecture test over the client-side Git seam.
 
 ### `link()` atomicity and `fsync` durability are asserted by comment, and only one of them is stale
 
@@ -1394,9 +1235,7 @@ fails acquisition loudly rather than degrading, because rethrows and `acquireLoc
  does not catch.
 
 **The `writeFileDurable` half is largely stale.** The dependency is already recorded in TSDoc:
-`packages/paths/src/atomic.ts` explains why `rename` is atomic but not durable, why Windows will not
-open or sync a directory handle at all, and why treating that refusal as a no-op keeps the writer
-portable while a durable write silently degrades to an atomic one. The degradation is pinned by
+`packages/paths/src/atomic.ts` explains why `rename` is atomic but not durable, and why unsupported directory sync errors degrade a durable write to an atomic one. The degradation is pinned by
 `packages/paths/tests/contract/atomic.test.ts`, both for the never-throws property and for one
 `paths.fsync_dir_unsupported` diagnostic per errno. "No test in
 `packages/memory/tests` simulates a power loss" is literally true and misleading:
@@ -1493,7 +1332,7 @@ and zero test failures. The seven-sample TUI benchmark was trusted (AC power, pe
 16 cores, load/core 0.068–0.093): source and bundle first-paint medians improved from 1325.90/1327.12
 ms on 1.3.11 to 1134.21/1134.64 ms on 1.4.0; bundled `--version` improved from 418.02 to 281.66 ms.
 This local candidate evidence does not stand in for the still-unrun GitHub 1.3 control arm or the
-Windows/macOS jobs.
+macOS job.
 
 ---
 
@@ -1528,454 +1367,6 @@ work must keep measuring runtime chunk topology and must not reintroduce eager p
 product mitigation is load-bearing: a task submitted in the startup composer begins when the run
 host is ready, before complete-app mount. The revalidation procedure lives in
 [the TUI skill's performance mode](../.agents/skills/clarvis-tui-validation/references/performance.md).
-
----
-
-## Windows release packaging exposed host-specific artifact assumptions
-
-**Resolved for the published `v0.0.1-beta` artifacts.** Manual release workflow run
-`32972288986` built, packaged, smoked, and installer-smoked `darwin-x64`, `darwin-arm64`,
-`linux-x64`, and `linux-arm64`. Both `windows-x64` and `windows-arm64` stopped earlier in
-`bun --filter @clarvis/code build:install` with `artifact has no dynamic import for the AiSdkAdapter
-chunk`; packaging and installer smoke therefore never ran on either Windows target. The manual
-dispatch could not publish and its publish job was skipped by design.
-
-The bundle still contained the adapter in a lazy chunk. The failure was in the assertion that
-verified that graph: `assertLazyProviderArtifact` extracted the generated chunk name with
-`providerChunk.path.split("/")`. Bun's Windows artifact path uses backslashes, so the assertion
-treated the complete path as the basename and searched the emitted JavaScript for an impossible
-dynamic-import specifier containing that absolute path. Both Windows architectures failed at the
-same assertion; the four slash-separated native jobs passed it.
-
-The contract now separates a generated chunk path on either slash before matching its basename.
-`packages/code/tests/architecture/artifact-contract.test.ts` pins the regression with a
-Windows-shaped absolute path while retaining the generated `./chunk-provider123.js` import. Manual
-rerun `32988189314` verified that correction on both Windows architectures: `build:install` passed.
-It then exposed a separate failure in `release:package`. Runtime dependency discovery passed a
-non-package generated call specifier into the closure, and `packageManifest` consequently tried to
-open `node_modules/package.json`. Both Windows jobs failed there; the other four targets again
-completed packaging, release smoke, installer smoke, and artifact upload. The emitted specifier was
-not present in the job log, so the narrower source token cannot be claimed from that run alone.
-
-Runtime call discovery now uses one pure package-name validator for ordinary calls and direct
-`createRequire(import.meta.url)(...)` calls, confirms every discovered package directory exists, and
-rejects any invalid name that reaches manifest resolution. The unit regression covers package
-subpaths plus relative, absolute Windows/POSIX, built-in, and internal specifiers.
-
-Official tag-triggered release run
-[`32998576908`](https://github.com/getclarvis/clarvis/actions/runs/32998576908) then ran from release
-commit `4aab234b7a70229949d042ce451a57a9e4eb2672`. All six native package jobs passed. In particular,
-both Windows architectures completed `build:install`, `release:package`, `release:smoke`, and
-`release:install-smoke`, and the publish job verified all six archive sidecars before publishing the
-release. This closes the packaging incident. It does not add a native Windows PTY first-paint claim:
-Windows release smoke covers the manifest and CLI fast paths, while real-PTY first paint remains in
-the POSIX release jobs.
-
----
-
-## Windows gaps, in detail
-
-The short form is in `AGENTS.md`. The reasoning behind each suppression predicate — and, for two of
-them, why the predicate is a defect marker rather than a statement of inapplicability.
-
-Every gap below is **still open**. The four platform gaps came first; the three that follow them —
-the pid-liveness errno, the surfaces outside the job's four packages, and the two absent
-`O_NOFOLLOW` guarantees — were carried here from the gap report's §6. Every predicate,
-guard and behaviour named here was verified present in the tree during that audit. Two things around them
-have moved since the record was first written, and both change how the gaps can now be worked on:
-
-- **The restored Windows leg exposed a test-owned file-handle leak; its native rerun is pending.**
-  After push/pull-request triggers were restored, public `main` run `32963947832` exercised the retained
-  `tools, paths, plan, memory, keyboard policy (windows)` job. Its first attempt failed in
-  `@clarvis/paths` when Bun reported a `FileHandle` finalized before explicit close during a live
-  lease-contention test. An isolated rerun passed all `@clarvis/paths` tests, then exposed six
-  platform-invalid `@clarvis/tools` fixtures: POSIX temp commands under PowerShell, a filesystem
-  socket on Windows, a POSIX `/dev/null` command, and two `/proc`-based unwritable-path assumptions.
-  The test-only corrections in this tree keep the run-owned-temp scenario cross-platform, scope the
-  genuinely POSIX cases to the POSIX shell, and force spill-write failure with a portable
-  file-as-parent `ENOTDIR` shape. Public run `32968159089` then passed `@clarvis/paths` (222 pass,
-  14 platform skips), `@clarvis/tools` (1102 pass, 64 platform skips), and `@clarvis/plan` (288 pass,
-  3 platform skips). It reached `@clarvis/memory`, where 629 tests passed before the non-repository
-  workspace-state case failed in fixture teardown: Windows returned `EBUSY` while recursively
-  removing the temporary root. A first correction gave the shared fixture five bounded `fs.rm`
-  retries with a 20 ms delay, but public run `32969624120` disproved it: Paths (222 pass, 14 platform
-  skips), Tools (1102 pass, 64 platform skips) and Plan (288 pass, 3 platform skips) all passed again,
-  then Memory reached 629 passing tests before the same case failed after 41.19 ms with the same
-  `EBUSY`; the keyboard-policy step was skipped. The retry has therefore been removed rather than
-  retained as a false fix. The cause is the production probe: `captureWorkspaceState` launched its
-  three Git commands in parallel under `Promise.all`, so the first expected non-repository rejection
-  returned `undefined` while sibling processes could still hold the temporary directory as their
-  current directory. It now uses `Promise.allSettled` and chooses the first failure only after every
-  child callback has settled. The existing non-repository integration case remains the regression:
-  its `finally` removes the workspace immediately after the capture returns. Public run
-  `32970820273` verified the correction and completed the whole Windows job: Paths reported 222 pass
-  and 14 platform skips; Tools 1102 pass and 64 platform skips; Plan 288 pass and 3 platform skips;
-  Memory 630 pass, 1 platform skip and 0 failures; and the three keyboard-policy files 36 pass and 0
-  failures. Main run
-  [`33012772530`](https://github.com/getclarvis/clarvis/actions/runs/33012772530) reproduced the
-  earlier finalizer signature after those three successful executions. The first error was a
-  `FileHandle` for a `clarvis-local-lease-*` temp path being closed during garbage collection; the
-  immediately following housekeeping test then failed while checking files it should preserve.
-  This was not a spill-age or housekeeping defect. The heartbeat-loss diagnostic test acquired an
-  asynchronous lease, deliberately made `renew()` mark it lost, and ended without calling
-  `release()`. Its fixture cleanup removed the directory but could not close the held descriptor.
-  The regression now releases the lease in `finally` and asserts the expected `false` result: a lost
-  lease cannot remove the canonical entry, but `release()` must still stop heartbeat work and close
-  its handle. A fresh Windows run remains the native verification for that correction.
-- **Two diagnostics were added to make these gaps diagnosable without a runner**, because "the
-  windows job will settle it" was not a plan while the workflow was disabled. They remain useful
-  even after trigger restoration and are described under the gaps they serve.
-
-### Windows session capture and stop await native verification
-
-Command sessions now capture stdout and stderr through separate pipes under `ExecutionSessionManager` and stop tracked trees through the retained child handle and `taskkill /T /F`. Linux integration tests cover yield, readiness, polling, and stop. The Windows capture and physical stop behavior remain unqualified until native CI runs the new session tests. Production: `ExecutionSessionManager` in `packages/tools/src/lib/execution-session.ts` and `stopOwnedProcess` in `packages/tools/src/lib/process-owner.ts`. Test: `packages/tools/tests/integration/shell-session.test.ts` and `packages/tools/tests/integration/execution-session.test.ts`.
-
-### PowerShell serializes stderr as CLIXML
-
-When stderr is redirected, a `shell` caller sees `#< CLIXML <Objs…>` with escaped ANSI codes rather
-than the message. How Windows stderr should be presented is an open product decision.
-
-This one has **no predicate of its own** — `grep -rni clixml` finds the string nowhere in the tree
-but `AGENTS.md`. The stderr fixtures that would surface it are scoped by `posixShell` instead
-(`packages/tools/tests/integration/shell.test.ts`, "captures stderr separately", which uses
-`1>&2`), and that is correct on its own terms: the redirection syntax genuinely is POSIX. But it
-means the CLIXML gap is recorded here and nowhere else in code. Anyone deciding the product question
-should give it a named predicate at that point, not before.
-
-### `apply_patch` reports `io_error` where POSIX reports `not_a_file`
-
-When the target's parent is itself a file, POSIX raises `ENOTDIR`, which `fsError` maps
-(`packages/tools/src/errors.ts`, with the `ENOTDIR` branch); Windows raises something
-else that reaches the `io_error` fallback, and **which code that is has not been identified**. Find
-it and add it to `fsError` rather than widening the fallback. The assertion is scoped to POSIX until
-then (`packages/tools/tests/integration/apply-patch.test.ts`).
-
-The datum was always present — it is in the error message — and nothing but the model ever read it,
-so no CI job retained it. The fallback now also emits `tools.fs_error_unmapped`
-(`packages/tools/src/errors.ts`) carrying `errno_code`, `syscall`, `path` and `platform`, at
-`debug`, since an unusual errno is an ordinary outcome rather than a degradation. One Windows run
-with debug logging on now answers the question that CI was previously the only way to ask.
-
-### Two pid-liveness probes spell "exists but is not mine" as `EPERM` alone
-
-Three modules probe whether a pid is alive with a signal-0 `process.kill`, and they split two to
-one on what an unclassifiable errno means. That split is deliberate and each owning spec records the
-direction its site chose (`specs/foundations/paths.md`,
-`specs/execution/tools-shell-and-sessions.md`, `specs/capabilities/memory-store.md`,
-`specs/foundations/trace.md`), so it is not the defect. The defect is the **errno
-spelling** the two fail-open sites share:
-
-| Site | Reads "alive" as |
-| --- | --- |
-| `packages/memory/src/file-store/lock.ts` | `code === "EPERM"` |
-| `packages/trace/src/journal-recovery.ts` | `code === "EPERM"` |
-| `packages/paths/src/local-lease.ts` | `errno !== "ESRCH"` |
-
-On Windows, libuv's `uv_kill` opens the target and passes an `OpenProcess` failure through
-`uv_translate_sys_error`, which maps `ERROR_ACCESS_DENIED` to `EACCES` rather than `EPERM`. Under
-that reading the two `=== "EPERM"` sites report a live process owned by another principal as
-**dead**, and the affected modules still need native qualification.
-`packages/paths/src/atomic.ts` already treats `EPERM` and `EACCES` as one Windows family, which is
-the in-tree precedent. **This is read off libuv's error table, not measured here** — no Windows
-runner has confirmed it, and none can while CI is dispatch-only.
-
-**The obvious repair is wrong, and the trap is worth recording.** Converging all three on
-`!== "ESRCH"` widens "alive" to every error the probe can raise, and `process.kill` raises more than
-errnos. Measured on the pinned Bun on Linux: `process.kill(2147483647, 0)` throws `ESRCH`, but
-`2147483648`, `4294967296` and `1.5` all throw a `TypeError` with `code === "ERR_INVALID_ARG_TYPE"` —
-the probe was never made. Both sites accept the pid from a file with no upper-bound check
-(`packages/trace/src/journal-recovery.ts` admits any JSON number,
-`packages/memory/src/file-store/lock.ts` guards `Number.isInteger(pid) && pid > 0` and no more). Under a blanket `!== "ESRCH"` such a file reads as alive forever:
-memory's `stealable()` never returns true and every `store.exclusive` ends in "timed out waiting for
-tree lock"; trace's journal is never recovered and never quarantined.
-The narrow repair — pre-guard the pid, then accept the closed set `EPERM | EACCES` — keeps each
-site's chosen direction and loses nothing.
-
-Note that the existing tests are **vacuous with respect to this**:
-`packages/trace/tests/integration/journal.test.ts` uses `pid: 2_147_483_646`, just under the
-boundary. Only an `EACCES` case would be non-vacuous.
-
-### Packages outside the Windows job, and the three different things their surfaces are
-
-The job covers four packages plus three keyboard-policy test files. The gap report tabulates five
-POSIX-shaped surfaces with no Windows evidence in the
-packages it does not cover. Re-verified, those five are three different kinds of thing, and two of
-them are not gaps at all.
-
-**A product guarantee that silently does not hold there.** The trace store and the memory tree are
-owner-confined by mode bits: `packages/trace/src/json-trace-store.ts`, `packages/trace/src/journal.ts`, and
-`packages/memory/src/file-store/layout.ts`, `packages/memory/src/file-store/journal.ts`,
-`packages/memory/src/file-store/revisions.ts` and `packages/memory/src/file-store/lock.ts`.
-None of those calls *fails* on Windows — `chmodSync` there moves only the
-read-only attribute and `mode` on `mkdirSync`/`openSync` is ignored — so the code is not a
-correctness bug. The confinement simply does not exist. That is a finding about the product, not
-about the tests, and relabelling it as a test problem is how it would get lost.
-
-**Test assertions that would not run.** Six file-mode expectations in `@clarvis/trace` and
-`@clarvis/memory` would fail on Windows and under root alike; the established remedy is a named
-`modeBitsEnforced` predicate wrapping the mode expectation only, never the surrounding test. The
-current `@clarvis/skills` tests contain nineteen `symlinkSync` call sites
-(`packages/skills/tests/integration/symlink.test.ts`,
-`packages/skills/tests/integration/scan.test.ts`,
-`packages/skills/tests/integration/diagnostics.test.ts`,
-`packages/skills/tests/integration/bounds.test.ts`,
-`packages/skills/tests/integration/paths.test.ts`, and
-`packages/skills/tests/integration/sidecar.test.ts`).
-`packages/code/tests/integration/marketplace.test.ts` has three more, equally outside the
-Windows job. Several of the skills sites link a **file**, where the
-`"junction"` substitution that `packages/tools/tests/helpers/fixtures.ts` and
-`packages/plan/tests/integration/file-repository.test.ts` use does not apply — the guard there has
-to be a probe, not a substitution. The escape cases include
-`packages/skills/tests/integration/paths.test.ts` and
-`packages/skills/tests/integration/scan.test.ts`, so guarding them suppresses a security assertion;
-say so at the point it happens rather than letting it pass as routine.
-
-**Two rows that are not gaps.** `packages/skills/src/scan.ts` is listed as "POSIX
-separator normalisation". It is the opposite: `toPosixRel` splits on `path.sep` and joins with `/`,
-which is the platform-*correct* normalisation for a display path and the same idiom `@clarvis/tools`
-uses deliberately. Rewriting it to a bare `path.relative` would make resource paths host-shaped and
-break `references/api.md` lookups on Windows, so the row is not merely harmless — acting on it would
-introduce the bug.
-
-**And one row that is simply true.** `!bash`'s `ownProcessGroup()` call is unexercised — the job runs
-three keyboard-policy files from `@clarvis/code` and nothing that touches the shell adapter. That is
-its own entry above.
-
-### `O_NOFOLLOW` is absent on Windows, and neither path that asks for it is pinned
-
-Two packages open a file read-only with `O_NOFOLLOW` where the host defines it. Nothing asserts the
-flag word at either call site, and the `win32` arm of the first is dead code on every host the suite
-has ever run on.
-
-`packages/tools/src/lib/files.ts` returns early on `win32` with Node's portable `"r"` mode,
-dropping both `O_NONBLOCK` and `O_NOFOLLOW`. Losing `O_NONBLOCK` is harmless and the TSDoc says why — Windows filesystem paths expose no FIFOs. Losing `O_NOFOLLOW` is a real
-reduction: `noFollow` becomes advisory there. The generic spill reader compensates with a pinned
-inode and parent check in `packages/tools/src/lib/files.ts`; `file_stat` in
-`packages/tools/src/tools/file-stat.ts` still requires its own native Windows qualification. The TSDoc's
-"descriptor metadata remains the authority on every platform" applies to descriptor-bound reads;
-classified configuration reads also recheck their canonical class.
-
-`packages/plan/src/file-repository.ts` composes the same flag word opens with it.
-The compensating controls are the `lstat` in `confined` and the `entry.isFile()` filter in
-`planEntries`; `O_NOFOLLOW` only narrows the window between those and the `open`. Its junction-based
-root-escape check is written *for* Windows and gated on a capability probe
-(`packages/plan/tests/integration/file-repository.test.ts`, used with `"junction"`) — so the gap report's "was not run on Windows" is half stale: it is written for Windows and
-has simply not executed since the triggers were disarmed.
-
-The fix is a handle-relative open — the same `openat`-shaped remedy the classified write-side TOCTOU entry above
-demands — and specifically **not** an `lstat` pre-check on Windows, which would convert a known
-absence into a believed protection. What *is* available from a POSIX host today is an assertion on
-the real read path that the flag word carries the bit. A pure test of the flag *arithmetic* proves
-nothing: measured during the investigation pass and not re-run here, extracting the
-composition into a helper and asserting both arms left `@clarvis/plan` green at 266 passing while the
-call site was reduced to `constants.O_RDONLY`.
-
-### Guard location facts on Windows need a native runner
-
-`isWithinRoots` folds case on Windows for Guard risk facts. Linux tests can exercise the injected
-case-fold comparison, but cannot prove Windows drive and separator behavior with the host `path.sep`.
-The tool-access decision itself belongs to the Host OS or native Sandbox, not to
-that Guard location fact. Production: `isWithinRoots` in `packages/tools/src/lib/paths.ts`.
-Test: `packages/tools/tests/integration/paths.test.ts`; native Windows qualification remains open.
-
-### `backgroundSettleIsMeasurable` — the measurement, not the behaviour
-
-`&` is PowerShell's background-**job** operator, which hosts the pipeline in a second runspace; that
-startup was seen at 4081ms on one runner and **12993ms** on another, and the second exceeds the 10s
-child the fixture backgrounds, so no threshold can separate "returned promptly" from "waited for the
-child". The measurement is not merely noisy there, it is undecidable, and a threshold picked anyway
-is a coin toss wearing an assertion's clothes.
-
-Only the stopwatch is suppressed there; every assertion about what the call *did* still runs. The
-test at `packages/tools/tests/integration/shell.test.ts` executes on every platform — no error,
-exit 0, `ready` on stdout, `timed_out` false — and only,
-`if (backgroundSettleIsMeasurable) expect(elapsed).toBeLessThan(10_000);`, is conditional. Restoring
-a timing check on Windows means making the property structural rather than temporal: have the child
-touch a marker file and assert the marker is absent when the call returns.
-
-This is the exception that proves the rule below rather than a licence to ignore it.
-
-### Do not scope a test to POSIX just because it fails on Windows
-
-`windows-latest` carries Git-for-Windows' coreutils on `PATH`, so `printf`, `seq`, `sleep`, `yes`
-and `head` all run there; only genuine *shell syntax* (`1>&2`, `$$`, `for … in`, `while [ … ]`,
-`trap`) is unavailable.
-
-A guard applied on the wrong premise turns a real defect into a green run. `posixShell`
-(`packages/tools/tests/helpers/fixtures.ts`) is for syntax; a defect gets its own named
-predicate.
-
-Two more predicates in the same file carry platform truths worth knowing: `modeBitsEnforced`
- is false on Windows **and** under root (both make a "permission denied" assertion
-unprovable), and `makeSymlink` needs `"dir"` to pick the junction Windows requires for a
-directory link.
-
-The discipline held as the file grew: `canSymlink` and `nonUtf8FilenamesSupported`
-are **probed** rather than derived from `process.platform`, because Windows can symlink given
-Developer Mode or elevation and encoding validity is a property of the filesystem rather than the OS;
-the former detached-sleep fixture depended on `setsid(1)`, which is absent on macOS and the
-BSDs. It was removed when its last consumer, the late-abort shell regression, switched to observing
-native process `exit` before `close` rather than assuming completion after 50 ms. The Windows CI
-failure showed that the fixed delay could cancel a still-running shell. The replacement in
-`packages/tools/tests/integration/shell.test.ts` runs on every platform without a detached-process
-command. `lines()` normalizes CRLF so a fixture never fails on the line ending alone.
-
-Four packages joined the Windows job after this record was written. Plan and Paths retain local
-predicates in `packages/plan/tests/integration/file-repository.test.ts`,
-`packages/paths/tests/component/workspace-state.test.ts` and
-`packages/paths/tests/contract/atomic.test.ts` each declare their own local
-`modeBitsEnforced`; Memory now does the same in `packages/memory/tests/integration/file-store.test.ts`.
-None of those is wrong,
-but none of them can distinguish a defect from an inapplicability the way a named predicate does. If
-a Windows defect is found in one of those packages, give it a named predicate there rather than an
-inline platform check.
-
----
-
-## A diagnosed and fixed CI flake
-
-This test failure predates the change that found it and was reproduced from `main`'s own history,
-not from a branch. It was a timing assumption in the test, not a Bun runtime failure.
-
-**`@clarvis/plan` — `plan store > independent stores contending on the on-disk lock all succeed`,
-red on the Windows runner.** Last seen on `main` in run `30777232473`. The lockfile wait budget was
-`LOCK_ATTEMPTS × LOCK_RETRY_MS` = 200 × 10ms = **two seconds**, and the test puts 24 independent
-repositories on one lock. The budget has to cover the time the whole *queue* takes to drain, not the
-time one holder keeps the lock: the twenty-fourth waiter is still waiting while the twenty-three
-ahead of it each take, write, fsync and release. On a Windows filesystem that exceeds two seconds,
-and the waiter reported a timeout for a lock nobody was holding.
-
-The budget is now 1000 attempts, ten seconds — `packages/plan/src/file-repository.ts`, with
-the reasoning carried in that constant's own TSDoc. The ceiling that matters is `LOCK_STALE_MS`
-(30s, `packages/plan/src/file-repository.ts`): a waiter that gives up sooner than it would judge
-a holder dead can never reach the stale-steal branch, which is what recovers a crashed writer, so
-the wait must sit comfortably between a realistic queue and that. The test itself is unchanged and
-still puts 24 stores on one lock under the `plan store — Markdown effects` describe block in
-`packages/plan/tests/integration/markdown-plan-store.test.ts`.
-
-Two mechanism details have moved since this was written, without disturbing the diagnosis. The
-budget no longer drives a loop in the plan package: it is handed to the shared lease as
-`waitMs: LOCK_ATTEMPTS * LOCK_RETRY_MS` (`packages/plan/src/file-repository.ts`), and
-`acquireLocalLease` re-derives the attempt count from it (`packages/paths/src/local-lease.ts`),
-so `LOCK_ATTEMPTS` is now the budget expressed in units of `LOCK_RETRY_MS` rather than a literal
-iteration count. And recovery is two-part rather than mtime alone: `reclaimLocalLease`
-(`packages/paths/src/local-lease.ts`) requires both that the lock be older than `staleMs`
-(`packages/paths/src/local-lease.ts`) and that the recorded pid be dead
-(`packages/paths/src/local-lease.ts`). A live writer keeps itself young through
-`LOCK_HEARTBEAT_MS` (5s, `packages/plan/src/file-repository.ts`). The budget-under-the-ceiling
-rule is therefore still the constraint to preserve when either number is touched.
-
-**One thing that has changed about the guard rather than the fix.** The `windows` job still runs
-`bun --filter @clarvis/plan test`, and push/pull-request triggers were restored. A
-future run can therefore surface a regression again, but no development machine here reproduces the
-Windows filesystem timing that found it and no post-restoration result is recorded yet. The run IDs
-above cannot be re-checked from a source tree and are kept verbatim as the record of where each was
-last observed.
-
----
-
-## Why delegation was not extracted into its own package
-
-Extracting `runtime/delegation.ts` + `runtime/subagents/` + `runtime/capabilities/{delegation,agents}.ts`
-as a `@clarvis/delegation` package was specified, measured and **abandoned**. It was not a matter of
-effort; it did not build. Recorded so nobody pays for the measurement twice.
-
-The abandonment still stands. The generated block in `specs/package-coupling-analysis.md` has no
-`delegation` row: the package was never created, and the graph check would fail the gate if that
-document and the manifests disagreed. Its generated counts remain the authority as other packages
-are added or dependency edges change.
-
-What has changed since the original analysis is that **two of the six obstacles dissolved as
-side-effects of other work**, and the coupling numbers moved with them. Both halves are recorded
-below: the measurement as it was taken, then the state of its subject today.
-
-### The obstacles as originally measured
-
-- **The coupling is bidirectional.** The subsystem reached ~50 symbols across 24 modules outward
-  (`budget/`, `context/`, `support/`, `tools/`, `plans/`, `plan/`, `usage.ts`, `run-shape.ts`,
-  `capability-event.ts`, `loop/`) — and nine engine modules reached ~20 symbols *back in*:
-  `orchestrator.ts`, `execute-run.ts` (`planProjection`), `entry-inputs.ts`, `vision-prepass.ts`,
-  `entry-seed.ts`, `run-shape.ts`, `open-tool-pool.ts`, `settings-specs.ts` and
-  `capabilities/plans.ts`. Leaving the assembly in `entry-inputs.ts` — the only tractable scope —
-  closes a **package cycle**, and `tsc -b` project references refuse one. This is not the
-  `workflows` shape: there the kernel builds the capability and injects it, so the loop never
-  imports it.
-- **The cycle lands on the eager configuration path**, because `settings-specs.ts` value-imports the
-  delegation/agents settings.
-- **`run-shape.ts` ↔ `spawn-shape.ts`** was a literal two-file cycle across the proposed boundary;
-  that one *was* fixable, and is what the `@clarvis/supervision` extraction fixed.
-- **`vision-prepass.ts` calls `runSubagent` on the core run path.** Running a nested agent is
-  engine, not capability, and no boundary drawn around `runtime/subagents/` separates the two.
-  **Resolved** by the vision-routing work: the pre-pass is now a single `llm.call` naming a model,
-  so it spawns nothing. The remaining obstacles still stand on their own.
-- **`buildDelegationOrchestration` returns both contributions** — `delegation` *and* `plans` — over
-  one shared `PlanSession`. Splitting it is a redesign, and `plans` stays in the engine anyway.
-- **The tests could not follow.** The relevant suites span spawn, supervision and delegation, and
-  nearly all drive `executeRun`, so by the rule that governed every prior extraction they stay — the
-  new package would be born near-empty against its own floor.
-
-### The same obstacles, re-read against the tree
-
-- **The bidirectional coupling is smaller but intact.** Re-measuring the nine subsystem files gives
-  **41 named symbols across 17 engine modules** outward: `budget/budget.ts`, `capability-event.ts`,
-  `context/{compaction-prompt,context-compaction,tool-spill}.ts`,
-  `loop/{lifecycle-hooks,loop-contract,loop-shared,run-agent}.ts`,
-  `support/{bounded,concurrency,signals}.ts`,
-  `tools/{ask-user-tool,builtin/grants,mcp-registry,wire-names}.ts` and `usage.ts`. Three of the
-  original targets — `plans/`, `plan/` and `run-shape.ts` — are no longer reached at all. Inward,
-  **16 symbols across 8 modules**: `packages/loop/src/runtime/entry-seed.ts`,
-  `packages/loop/src/runtime/run-shape.ts`, `packages/loop/src/runtime/tools/tool-effect.ts`,
-  `packages/loop/src/runtime/entry-inputs.ts`,
-  `packages/loop/src/runtime/open-tool-pool.ts`, `packages/loop/src/runtime/orchestrator.ts`,
-  `packages/loop/src/runtime/vision-prepass.ts`, plus the package entry
-  `packages/loop/src/lib.ts`. The direction of the edges is unchanged, so the package cycle is
-  unchanged; only its width moved.
-- **The eager configuration path is clear — this obstacle is gone.**
-  `packages/loop/src/runtime/capabilities/settings-specs.ts` now imports
-  `AGENTS_REQUEST_PARAMS`, `AGENTS_SETTINGS_FIELDS` and `agentsSettingsSpec` from
-  `@clarvis/supervision`, whose owner is `packages/supervision/src/settings.ts`. `BUILTIN_SETTINGS_SPECS` at
-  `packages/loop/src/runtime/capabilities/settings-specs.ts` names none of the delegation modules.
-  Nothing on the configuration path value-imports `capabilities/agents.ts` or
-  `capabilities/delegation.ts` any more, so a hypothetical extraction would no longer drag the cycle
-  onto the eager path. Do not re-derive this as a live obstacle.
-- **`run-shape.ts` ↔ `spawn-shape.ts` stays fixed.** `packages/loop/src/runtime/spawn-shape.ts`
-  carries `import type { RunShape } from "./run-shape.ts"`, and `run-shape.ts` imports nothing back;
-  the surviving edge is one-way and type-only, so it is erased at emit.
-- **`vision-prepass.ts` stays free of spawning.** The pre-pass is a single provider call at
-  `packages/loop/src/runtime/vision-prepass.ts` (`await p.deps.llm.call({`). `runSubagent`
-  exists in exactly two places in the tree, both inside the proposed boundary: its definition at
-  `packages/loop/src/runtime/subagents/run-subagent.ts` and its one call at
-  `packages/loop/src/runtime/subagents/delegate-task.ts`. The residual inward edge from the
-  pre-pass is a single text helper (`userText`, `vision-prepass.ts`).
-- **`buildDelegationOrchestration` no longer exists — this obstacle is gone.** The planning move
-  (commit `58bd33cc`, *move planning out of the engine and onto capability seams*) split it. What
-  remains is `buildDelegationContribution` at `packages/loop/src/runtime/delegation.ts`,
-  returning one contribution; `PlanSession` and `planProjection` are exported from
-  `packages/plan/src/capability/index.ts`. The former plans module under
-  `packages/loop/src/runtime/capabilities/` is deleted, and
-  `packages/loop/src/runtime/execute-run.ts` contains no occurrence of `plan` at all.
-  The premise "`plans` stays in the engine anyway" is now false: planning took exactly the shape this
-  extraction could not, reaching the loop only through `@clarvis/capability`
-  (`packages/plan/src/capability/index.ts` states the entry must never import `@clarvis/loop`).
-- **The test obstacle is unchanged.** Tests under `packages/loop/tests` name `delegate_task`,
-  `runSubagent`, the capability constructors or the `agent_*` tools, and many reach `executeRun`
-  directly or through `packages/loop/tests/integration/_helpers.ts`.
-
-### What a real extraction would still cost
-
-The 26-field delegation assembly is now **20 fields** — `DelegationCapabilityDeps` at
-`packages/loop/src/runtime/capabilities/delegation.ts`, supplied in full at
-`packages/loop/src/runtime/entry-inputs.ts`. Moving it to the kernel is still its own work, and
-so is separating "the engine can run a nested agent" from "the `delegate_task` tool". Neither is
-scheduled.
-
-Two things did come out of this analysis rather than nothing: `@clarvis/supervision` (which took the
-registry, the `agents` settings block and the `run-shape`/`spawn-shape` knot) and the delegation↔tracker
-decoupling — `TASK_TRACKING_PORT`, resolved off the run's service registry at
-`packages/loop/src/runtime/capabilities/delegation.ts`, so the engine never names the
-package that tracks its tasks. The five supervision tools stayed in the engine deliberately: they are
-policy over substrate and read only four engine modules
-(`packages/loop/src/runtime/capabilities/agents.ts`).
 
 ---
 
@@ -2019,10 +1410,8 @@ gates at exactly two points in `packages/loop/src/runtime/loop/run-agent.ts` —
 handler (`runGates`) and the contract-less text-only path (`onTextOnly`,
 `runGates`, reached only after the `if` branch has returned). So a run cancelled
 mid-flight is never asked about its open tasks: cancellation returns `cancelledResult()` directly
- without touching a gate. And nothing marks a task `in_progress`
-when the lead does the work itself rather than delegating it — the sole automatic writer is
-`markSpawned` (`packages/plan/src/capability/delegation-port.ts`), reachable only through
-delegation.
+ without touching a gate. The lead records its task progress explicitly through
+`transition_plan_task`.
 
 The plans capability does contribute a `beforeIteration` hook
 (`packages/plan/src/capability/orchestration.ts`), which is the obvious place such a nudge would

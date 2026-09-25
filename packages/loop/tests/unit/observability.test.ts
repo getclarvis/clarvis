@@ -30,12 +30,12 @@ describe("tool.args_validation_failed_open", () => {
     const validator = createToolArgValidator(logger);
     const broken = { type: "object", properties: { x: { type: 7 } } } as Record<string, unknown>;
 
-    expect(validator.validate(broken, { x: 1 }, "grep")).toBeNull();
-    expect(validator.validate(broken, { x: 2 }, "grep")).toBeNull();
+    expect(validator.validate(broken, { x: 1 }, "list_dir")).toBeNull();
+    expect(validator.validate(broken, { x: 2 }, "list_dir")).toBeNull();
 
     const records = logger.of("tool.args_validation_failed_open");
     expect(records).toHaveLength(1);
-    expect(records[0]?.fields).toMatchObject({ tool: "grep", reason: "compile_error" });
+    expect(records[0]?.fields).toMatchObject({ tool: "list_dir", reason: "compile_error" });
     expect(typeof records[0]?.fields.cause).toBe("string");
   });
 
@@ -86,7 +86,7 @@ describe("tool.args_validation_failed_open", () => {
   it("accepts no logger at all", () => {
     const validator = createToolArgValidator();
     const broken = { type: "object", properties: { x: { type: 7 } } } as Record<string, unknown>;
-    expect(validator.validate(broken, { x: 1 }, "grep")).toBeNull();
+    expect(validator.validate(broken, { x: 1 }, "list_dir")).toBeNull();
   });
 });
 

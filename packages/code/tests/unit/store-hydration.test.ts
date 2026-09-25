@@ -18,8 +18,8 @@ function toolCall(callId: string): RunEvent {
     call_id: callId,
     at: 2,
     server: "fs",
-    tool: "grep",
-    arguments: { pattern: `p-${callId}` },
+    tool: "list_dir",
+    arguments: { path: `p-${callId}` },
     result: `result-${callId}`,
     diff: `diff-${callId}`,
     ok: true,
@@ -245,7 +245,7 @@ test("a dehydrated node keeps its identity, key, status and tool name", () => {
     const first = toolNodes(store)[0]!;
     expect(first.key).toBe('exec_1::tool:["lead","c0"]');
     expect(first.status).toBe("ok");
-    expect(first.toolName).toBe("grep");
+    expect(first.toolName).toBe("list_dir");
     expect(first.mcpName).toBe("fs");
   });
 });
@@ -273,7 +273,7 @@ test("rehydrate refills a dropped body from the persisted run and clears the fla
       expect(refilled.dehydrated).toBeUndefined();
       expect(refilled.result).toBe("result-c0");
       expect(refilled.diff).toBe("diff-c0");
-      expect(refilled.args).toEqual({ pattern: "p-c0" });
+      expect(refilled.args).toEqual({ path: "p-c0" });
       expect(calls).toBe(1);
     },
   );

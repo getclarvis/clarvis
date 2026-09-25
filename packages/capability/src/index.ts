@@ -29,15 +29,9 @@ export type {
 export type { OutputTokenBudget, OutputTokenReservation } from "./output-budget.ts";
 export { createCapabilityRequestView, portKey, createCapabilityServices } from "./services.ts";
 export type { PortKey, CapabilityServices } from "./services.ts";
-export { TASK_TRACKING_PORT } from "./task-tracking-port.ts";
+export { SPAWN_GATE_PORT } from "./spawn-gate-port.ts";
 export { RUN_TRACE_PORT } from "./run-trace-port.ts";
-export type {
-  SpawnGate,
-  DelegateTaskAugmentation,
-  TrackedTask,
-  TaskTrackingPort,
-  TaskTrackingProvider,
-} from "./task-tracking-port.ts";
+export type { SpawnGate, SpawnGatePort, SpawnGateProvider } from "./spawn-gate-port.ts";
 export { TOOL_EFFECT_PORT } from "./tool-effect.ts";
 export type { ToolEffect, ToolEffectPort } from "./tool-effect.ts";
 export {
@@ -154,8 +148,8 @@ export {
 export { contentToText } from "./message-content.ts";
 export { TASK_TITLE_MAX, parseTaskTitle } from "./task-title.ts";
 export type { TaskTitleParseResult } from "./task-title.ts";
-export { DELEGATE_TASK_MAX_CHARS, parseDelegateTaskText } from "./delegate-task.ts";
-export type { DelegateTaskTextParseResult } from "./delegate-task.ts";
+export { TASK_BRIEF_MAX_CHARS, parseTaskBrief } from "./task-brief.ts";
+export type { TaskBriefParseResult } from "./task-brief.ts";
 export { parseModelRef } from "./model-ref.ts";
 export type { ModelRef } from "./model-ref.ts";
 export type { ModelExecutionInfo, ModelExecutionResolver } from "./model-execution.ts";
@@ -206,7 +200,7 @@ export type {
   BeforeToolUseContext,
   AfterToolUseContext,
   PreFinalizeContext,
-  PreDelegateTaskContext,
+  PreSpawnContext,
   RunStartContext,
   RunEndContext,
   SubagentStartContext,

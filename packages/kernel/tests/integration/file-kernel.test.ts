@@ -274,7 +274,7 @@ describe("createFileKernel — key reconciliation", () => {
 });
 
 describe("createFileKernel — memory settings loader", () => {
-  it("leaves memory unconfigured when settings carry no memory block", async () => {
+  it("uses the built-in wiki when settings carry no memory block", async () => {
     const ws = seedWorkspace();
     const kernel = await createFileKernel({
       workspaceRoot: ws,
@@ -284,30 +284,30 @@ describe("createFileKernel — memory settings loader", () => {
       memory: true,
     });
 
-    await expect(kernel.memory.health()).rejects.toMatchObject({
-      details: { memory_code: "MEMORY_NOT_CONFIGURED" },
-    });
+    expect((await kernel.memory.health()).totals.documents).toBe(0);
 
     await kernel.close();
   });
 
-  it("resolves memory settings (model + providers) from merged config when memory is enabled", async () => {
+  it("uses the global Memory choice across workspaces", async () => {
     const ws = mkdtempSync(join(tmpdir(), "clarvis-fk-"));
     mkdirSync(join(ws, ".clarvis", "agents"), { recursive: true });
+    const globalDir = join(ws, "global");
     writeFileSync(
       join(ws, ".clarvis", "settings.json"),
       JSON.stringify({
         default_model: "anthropic/x",
         providers: [{ name: "anthropic", kind: "anthropic" }],
-        memory: { enabled: true },
+        memory: { enabled: false },
       }),
     );
+    seedFile(globalPaths(globalDir).settingsFile, JSON.stringify({ memory: { enabled: true } }));
 
     const kernel = await createFileKernel({
       workspaceRoot: ws,
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
       traceDir: join(ws, "traces"),
-      globalDir: join(ws, "global"),
+      globalDir,
       memory: true,
     });
 
@@ -315,6 +315,24 @@ describe("createFileKernel — memory settings loader", () => {
     expect(health.totals.documents).toBe(0);
 
     await kernel.close();
+
+    writeFileSync(
+      globalPaths(globalDir).settingsFile,
+      JSON.stringify({ memory: { enabled: false } }),
+    );
+    writeFileSync(
+      join(ws, ".clarvis", "settings.json"),
+      JSON.stringify({ memory: { enabled: true } }),
+    );
+    const disabled = await createFileKernel({
+      workspaceRoot: ws,
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      traceDir: join(ws, "traces"),
+      globalDir,
+      memory: true,
+    });
+    await expect(disabled.memory.health()).rejects.toMatchObject({ code: "capability_disabled" });
+    await disabled.close();
   });
 });
 

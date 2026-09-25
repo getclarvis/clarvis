@@ -1096,9 +1096,7 @@ test("a connection-owned host neither advertises exit survival nor attempts back
     throw new Error("must not detach");
   };
   expect(f.host.continuesOnExit()).toBe(false);
-  await expect(f.host.backgroundCurrentRun()).rejects.toThrow(
-    "available only on a local Host or Sandbox",
-  );
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow("available only on a local host");
   expect(detachCalls).toBe(0);
   f.host.teardownRuns();
   await observing;
@@ -1317,7 +1315,7 @@ test("happy path: submitTurn wires begin→startRun→sink→endTurn and settles
       call_id: "c1",
       at: 1,
       server: "fs",
-      tool: "grep",
+      tool: "list_dir",
       arguments: {},
     }),
     "live",
@@ -1565,7 +1563,7 @@ test("a plain (non-manager) run never populates workflowActivity", async () => {
   dispose();
 });
 
-test("memory mode: 'off' rides on the run input; 'on' is omitted (server default)", async () => {
+test("memory mode is explicit on every run input", async () => {
   const off = mount({ memoryMode: () => "off" });
   const turnOff = off.host.submitTurn("hi");
   await flush();
@@ -1577,7 +1575,7 @@ test("memory mode: 'off' rides on the run input; 'on' is omitted (server default
   const on = mount(); // default deps: memoryMode 'on'
   const turnOn = on.host.submitTurn("hi");
   await flush();
-  expect(on.runs[0]!.input.memory).toBeUndefined();
+  expect(on.runs[0]!.input.memory).toBe("on");
   on.runs[0]!.resolve(completed("exec_2"));
   await turnOn;
   on.dispose();
@@ -1760,7 +1758,7 @@ test("run error: endTurn still runs (turn marked error, totals untouched), spinn
       call_id: "c1",
       at: 1,
       server: "fs",
-      tool: "grep",
+      tool: "list_dir",
       arguments: {},
     }),
     "live",
@@ -1993,7 +1991,7 @@ test("clearSession during an active run: cancels it, runActive false, no orphan 
       call_id: "late",
       at: 2,
       server: "fs",
-      tool: "grep",
+      tool: "list_dir",
       arguments: {},
     }),
     "live",
@@ -2315,7 +2313,7 @@ test("a getRun that returns the stored trace replays its events into the transcr
           call_id: "c1",
           at: 1,
           server: "fs",
-          tool: "grep",
+          tool: "list_dir",
           arguments: {},
         }),
       ],
@@ -2341,7 +2339,7 @@ test("getRun failure after a completed run keeps the turn done and settles spinn
       call_id: "c1",
       at: 1,
       server: "fs",
-      tool: "grep",
+      tool: "list_dir",
       arguments: {},
     }),
     "live",

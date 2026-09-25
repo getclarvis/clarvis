@@ -9,12 +9,11 @@ export const RELEASES_API_URL =
 export const MAX_RELEASE_ASSET_BYTES = 512 * 1024 * 1024;
 
 /** One natively built portable distribution. */
-export type ReleaseTarget =
-  "linux-x64" | "linux-arm64" | "darwin-x64" | "darwin-arm64" | "windows-x64" | "windows-arm64";
+export type ReleaseTarget = "linux-x64" | "linux-arm64" | "darwin-x64" | "darwin-arm64";
 
 /** Name the bundled runtime after the product so operating-system process viewers identify Clarvis. */
-export function releaseRuntimeExecutableName(platform: NodeJS.Platform = process.platform): string {
-  return platform === "win32" ? "clarvis.exe" : "clarvis";
+export function releaseRuntimeExecutableName(): string {
+  return "clarvis";
 }
 
 /** A validated GitHub release asset carrying a server-computed SHA-256 digest. */
@@ -111,7 +110,6 @@ export function releaseTarget(
 ): ReleaseTarget | undefined {
   if (architecture !== "x64" && architecture !== "arm64") return undefined;
   if (platform === "linux" || platform === "darwin") return `${platform}-${architecture}`;
-  if (platform === "win32") return `windows-${architecture}`;
   return undefined;
 }
 

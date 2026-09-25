@@ -31,7 +31,7 @@ describe("filterHookEnv", () => {
     });
   });
 
-  test("keeps the toolchain roots the sandbox already considers necessary", () => {
+  test("keeps the toolchain roots need", () => {
     const out = filterHookEnv({ BUN_INSTALL: "/b", CARGO_HOME: "/c", JAVA_HOME: "/j" });
     expect(Object.keys(out).sort()).toEqual(["BUN_INSTALL", "CARGO_HOME", "JAVA_HOME"]);
   });
@@ -58,7 +58,7 @@ describe("filterHookEnv", () => {
     expect(filterHookEnv({ [name]: "sensitive" })).toEqual({});
   });
 
-  test.each(["AUTHOR", "AUTHORS", "PATH", "PATHEXT", "TOKENIZER_CACHE", "KEYBOARD_LAYOUT"])(
+  test.each(["AUTHOR", "AUTHORS", "PATH", "TOKENIZER_CACHE", "KEYBOARD_LAYOUT"])(
     "keeps %s, which merely looks similar",
     (name) => {
       expect(filterHookEnv({ [name]: "fine" })).toEqual({ [name]: "fine" });

@@ -81,7 +81,7 @@ Production: `workspaceExecutableSurface`, `resolveStoreSharedPrompt`. Test: `pac
 
 ### 4.4 Snapshot
 
-The kernel assembler stamps `shared_prompt` onto the run request once: the winning text, or `""` when disabled. Entry seed, `spawn_subagent`, `delegate_task`, and `runSubagent` reuse that value. They do not re-read the file. A later run sees the latest file.
+The kernel assembler stamps `shared_prompt` onto the run request once: the winning text, or `""` when disabled. Entry seed, `spawn_subagent` and `runSubagent` reuse that value. They do not re-read the file. A later run sees the latest file.
 
 Production: `stampedSharedPrompt`, `createSettingsRunAssembler`, `createEntryInput`, `buildRunSubagentInput`. Test: `packages/kernel/tests/component/shared-prompt.test.ts`, `packages/loop/tests/integration/specialized-subagents.test.ts`.
 
@@ -106,7 +106,7 @@ Production: `renderSkillsSection`. Test: `packages/skills/tests/unit/tool.test.t
 The built-in shared policy defaults to direct work. Sub-agents require an explicit user request or
 an explicit instruction from an applicable loaded skill or agent-instruction file such as `AGENTS.md`
 or `CLARVIS.md`. Tool availability, profile permissions, complexity and efficiency gains do not
-constitute such a request. Independent spawning, tracked delegation and workflow leaders all follow
+constitute such a request. Sub-agent spawning and workflow leaders all follow
 this rule; existing profile/grant limits remain necessary. This is model guidance, not an added
 runtime gate, and authored shared-prompt replacement/disable semantics remain unchanged.
 Production: `DEFAULT_SHARED_AGENT_PROMPT`. Test: `requires explicit delegation instructions rather

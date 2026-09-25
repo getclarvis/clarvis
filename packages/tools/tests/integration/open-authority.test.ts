@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, sep } from "node:path";
+import { join } from "node:path";
 import { createAgentTools } from "../../src/index.ts";
 
 const roots: string[] = [];
@@ -21,30 +21,16 @@ describe("host coding tools", () => {
     expect(written.isError).toBe(false);
     expect(readFileSync(target, "utf8")).toBe("open needle");
 
-    const found = await tools.callTool("glob", {
-      path: outside,
-      pattern: "**/*.txt",
-      respect_gitignore: false,
-    });
-    expect(found.isError).toBe(false);
-    expect(found.content[0]).toMatchObject({
-      type: "text",
-      text: expect.stringContaining(target.split(sep).join("/")),
-    });
-    const searched = await tools.callTool("grep", { path: outside, pattern: "needle" });
-    expect(searched.isError).toBe(false);
-    expect(searched.content[0]).toMatchObject({
-      type: "text",
-      text: expect.stringContaining("file.txt"),
-    });
+    const read = await tools.callTool("read_file", { path: target });
+    expect(read.isError).toBe(false);
 
     const configuration = join(root, ".clarvis", "settings.json");
     const configured = await tools.callTool("write_file", {
       path: configuration,
-      content: '{"sandbox":{"type":"native"}}',
+      content: '{"workspace_setting":{"type":"native"}}',
     });
     expect(configured.isError).toBe(false);
-    expect(readFileSync(configuration, "utf8")).toContain("sandbox");
+    expect(readFileSync(configuration, "utf8")).toContain("workspace_setting");
 
     const command = await tools.callTool("shell", { command: "printf open" });
     expect(command.isError).toBe(false);

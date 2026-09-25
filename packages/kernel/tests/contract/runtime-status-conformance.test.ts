@@ -39,18 +39,15 @@ function remote(runtime: unknown) {
   return createLocalHostClient(transport, "host").inspect();
 }
 
-test("disk and local-host transport accept only native Host and Sandbox status", async () => {
-  const values: RuntimeStatus[] = [
-    { kind: "native", host_platform: "linux", isolation: "host", lifecycle: "ready" },
-    { kind: "native", host_platform: "linux", isolation: "sandbox", lifecycle: "ready" },
-  ];
+test("disk and local-host transport accept only native host status", async () => {
+  const values: RuntimeStatus[] = [{ kind: "native", host_platform: "linux", lifecycle: "ready" }];
   for (const runtime of values) {
     expect(persisted(runtime)).toEqual(runtime);
     expect((await remote(runtime)).runtime).toEqual(runtime);
   }
   for (const invalid of [
     { kind: "unsupported", lifecycle: "ready" },
-    { kind: "native", host_platform: "linux", isolation: "sandbox", lifecycle: "fallback" },
+    { kind: "native", host_platform: "linux", lifecycle: "fallback" },
     { ...values[0], secret: "extra" },
   ]) {
     expect(() => persisted(invalid)).toThrow("host state index is invalid");

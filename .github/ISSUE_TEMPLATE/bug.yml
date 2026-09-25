@@ -30,7 +30,7 @@ body:
     id: platform
     attributes:
       label: Operating system and architecture
-      placeholder: Ubuntu 26.04 x64, macOS Apple silicon, or Windows 11 arm64
+      placeholder: Ubuntu 26.04 x64 or macOS Apple silicon
     validations:
       required: true
   - type: input

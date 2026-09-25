@@ -342,7 +342,7 @@ describe("durable host goal runtime port", () => {
     expect((await port.read()).evidence).toEqual([]);
   });
 
-  it("refuses outside workspace artifacts, including directory links, and unavailable bytes", async () => {
+  it("reads an artifact through an external directory link while rejecting unavailable bytes", async () => {
     const outside = {
       ...artifactCriterion,
       verification: { kind: "artifact_digest" as const, path: "escape/result.txt", digest },
@@ -353,9 +353,12 @@ describe("durable host goal runtime port", () => {
     await writeFile(join(external, "result.txt"), bytes);
     await symlink(external, join(f.workspaceRoot, "escape"), "junction");
     const { port } = await f.runtime();
-    expect((await port.read()).evidence).toEqual([]);
-    expect(accepted(await port.candidate(candidate("artifact", "host")))).toMatchObject({
-      valid: false,
+    const reference = (await port.read()).evidence[0]!;
+    expect(reference.digest).toBe(digest);
+    expect(
+      accepted(await port.candidate(candidate("artifact", "host", [reference.id]))),
+    ).toMatchObject({
+      valid: true,
     });
     const missing = await f.runtime("first", {
       readArtifact: async () => {
@@ -703,7 +706,7 @@ describe("durable host goal runtime port", () => {
         tool({
           call_id: `call-${i % 512}`,
           subagent_instance_id: `child-${Math.floor(i / 512)}`,
-          mcp_name: "grep",
+          mcp_name: "list_dir",
           arguments: { pattern: `synthetic-${i}` },
           result: "synthetic match",
         }),
@@ -973,7 +976,7 @@ it("projects completed delegation receipts from current and prior Goal stages", 
   expect(current.delegations).toHaveLength(1);
   expect(current.delegations[0]).toMatchObject({
     id: current.catalog[0]!.id,
-    tool: "delegate_task",
+    tool: "spawn_subagent",
     status: "completed",
     truncated: true,
   });

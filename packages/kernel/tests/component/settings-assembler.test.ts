@@ -105,10 +105,7 @@ describe("settings run assembler", () => {
       (native({ agent: "solo", messages: [], execution_id: "native" }) as { providers: unknown[] })
         .providers,
     ).toEqual(settings.providers);
-    for (const overrides of [
-      { default_model: "alias/missing" },
-      { default_vision_model: "alias/missing" },
-    ]) {
+    for (const overrides of [{ default_model: "alias/missing" }]) {
       const missing = await assemblerWith(
         { solo: {} },
         { ...settings, ...overrides },
@@ -132,7 +129,10 @@ describe("settings run assembler", () => {
         frontmatter: { grants: ["read_workspace"] },
         body: "Review.",
       });
-      store.writeAgent("global", name, { frontmatter: { sandbox: false }, body: "Override." });
+      store.writeAgent("global", name, {
+        frontmatter: { unknown_setting: false },
+        body: "Override.",
+      });
       const assemble = createSettingsRunAssembler(store);
       expect(() => assemble({ agent: "lead", messages: [], execution_id: "rejected" })).toThrow(
         `agent '${name}' has invalid frontmatter`,

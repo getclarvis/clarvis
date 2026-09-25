@@ -29,10 +29,9 @@ import {
   type ServerConfig,
 } from "../../src/config.ts";
 import { NOOP_TOOLS_LOGGER } from "../../src/lib/log.ts";
-import { contentText, type ContentPart, type ToolResult } from "../../src/tools/content.ts";
+import { contentText, type ContentPart } from "../../src/tools/content.ts";
 import { workspaceStatePaths } from "@clarvis/paths";
 import { ExecutionSessionManager } from "../../src/lib/execution-session.ts";
-import { resolveFilesystemPolicy } from "../../src/sandbox.ts";
 
 const fixtureGlobals = new Map<string, string>();
 
@@ -42,25 +41,8 @@ export function makeWorkspace(): string {
   return workspace;
 }
 
-// Windows refuses to unlink a file another process still holds open, and
-// `taskkill` returns as soon as the kill is *requested* - the handles a
-// command-session handles are released a moment later, so a teardown that runs
-// straight after it races and throws EBUSY. Retrying briefly is enough;
-// `maxRetries` alone is not, because Bun's rmSync does not back off on EBUSY.
 export function cleanup(root: string): void {
-  const deadline = Date.now() + 2000;
-  for (;;) {
-    try {
-      rmSync(root, { recursive: true, force: true });
-      break;
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if ((code !== "EBUSY" && code !== "ENOTEMPTY" && code !== "EPERM") || Date.now() > deadline) {
-        throw err;
-      }
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
-    }
-  }
+  rmSync(root, { recursive: true, force: true });
   const global = fixtureGlobals.get(root);
   fixtureGlobals.delete(root);
   if (global !== undefined) rmSync(global, { recursive: true, force: true });
@@ -89,30 +71,15 @@ export function makeConfig(root: string, overrides: Partial<ServerConfig> = {}):
     shellTimeoutMaxMs: DEFAULT_SHELL_TIMEOUT_MAX_MS,
     maxSessions: DEFAULT_MAX_SESSIONS,
     regexScanBudgetMs: DEFAULT_REGEX_SCAN_BUDGET_MS,
-    ripgrepAvailable: false,
-    skillExecutionRoots: [],
     readOnly: false,
     stateRoot: statePaths.root,
     statePaths,
     temporaryRoots: [],
     sessionAgent: {},
     sessionManager: new ExecutionSessionManager(),
-    gitMetadataPaths: [],
     ...overrides,
   };
-  return {
-    ...base,
-    filesystemPolicy:
-      overrides.filesystemPolicy ??
-      resolveFilesystemPolicy({
-        runId: "test-run",
-        placement: base.sandbox === undefined ? "host" : "sandbox",
-        workspaceRoot: base.workspaceRoot,
-        temporaryRoots: base.temporaryRoots,
-        gitMetadataPaths: base.gitMetadataPaths,
-        ...(base.sandbox === undefined ? {} : { sandbox: base.sandbox }),
-      }),
-  };
+  return base;
 }
 
 export interface CallResult {
@@ -128,11 +95,6 @@ export interface CallResult {
 
 export function resultText(content: ContentPart[]): string {
   return contentText(content);
-}
-
-export function handlerText(out: string | ToolResult): string {
-  const content = typeof out === "string" ? out : out.content;
-  return typeof content === "string" ? content : resultText(content);
 }
 
 export async function callTool(
@@ -210,85 +172,13 @@ export function mode(root: string, rel: string): number {
 
 const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
 
-/**
- * Whether POSIX mode bits actually deny access on this host.
- *
- * Root ignores them, and so does Windows, where `chmod` only toggles the
- * read-only attribute and does nothing at all to a directory. Both make a
- * "permission denied" assertion fail for the same reason, so they share one
- * predicate rather than growing a second Windows-specific idiom.
- */
-export const modeBitsEnforced = process.platform !== "win32" && !isRoot;
-
-/**
- * Whether the host shell speaks POSIX syntax.
- *
- * Windows runs commands through PowerShell (see `resolveShell`), which shares
- * none of `printf`, `1>&2`, `$$`, `seq`, `yes`, `trap` or `while [ ]`. A fixture
- * written in that dialect is asserting *tool* behaviour - paging, byte caps,
- * partial-line handling, signal reporting - and only reaches for a shell to
- * produce the output; the dialect is incidental to what is under test. Scoping
- * those to POSIX keeps the Windows job asserting what it can actually speak to;
- * `ci.yml` deliberately runs only selected package surfaces there.
- */
-export const posixShell = process.platform !== "win32";
-
-/**
- * Whether this filesystem can hold a filename that is not valid UTF-8.
- *
- * Linux treats a filename as an opaque byte string, so an arbitrary `0xFF` is a
- * legal name and a tool that walks the tree has to cope with it. macOS does not:
- * APFS and HFS+ validate encoding and reject the byte outright with `EILSEQ`, so
- * the input under test cannot be brought into existence there at all.
- *
- * Probed rather than derived from `process.platform`, because this is a property
- * of the *filesystem* and not of the OS — a case-sensitive volume, a network
- * mount or a container image can each answer differently on the same host.
- */
-export const nonUtf8FilenamesSupported = ((): boolean => {
-  if (process.platform === "win32") return false;
-  const probe = Buffer.concat([
-    Buffer.from(path.join(tmpdir(), "clarvis-utf8-probe-")),
-    Buffer.from([0xff]),
-  ]);
-  try {
-    writeFileSync(probe, "");
-    rmSync(probe, { force: true });
-    return true;
-  } catch {
-    return false;
-  }
-})();
-
-/**
- * Whether "settled on the shell's exit rather than waiting for a backgrounded
- * child" can be decided by a stopwatch on this host.
- *
- * False on Windows, and not for lack of trying: two budgets were measured off
- * it and both were wrong. `&` does not mean there what it means in `sh` — it is
- * PowerShell's background-*job* operator, which starts a job hosted in a second
- * PowerShell runspace, and that startup was observed at 4081ms on one
- * windows-latest runner and **12993ms** on another. The second number is the
- * damning one: it is longer than the 10s child the fixture backgrounds, so on
- * that run no threshold could tell "returned promptly" apart from "waited for
- * the child". The measurement is not merely noisy there, it is undecidable, and
- * a threshold picked anyway is a coin toss wearing an assertion's clothes.
- *
- * This suppresses **only the stopwatch**. Every assertion describing what the
- * call actually did — no error, exit 0, `ready` on stdout, `timed_out` false —
- * still runs on Windows, which is the part {@link posixShell} exists to protect.
- * Restoring a timing check there means making the property structural rather
- * than temporal: have the child touch a marker file and assert the marker is
- * absent when the call returns.
- */
-export const backgroundSettleIsMeasurable = process.platform !== "win32";
+/** Whether mode bits actually deny access on this host. */
+export const modeBitsEnforced = !isRoot;
 
 /**
  * Whether this host can create symlinks.
  *
- * Probed rather than assumed from the platform: Windows can, given Developer
- * Mode or elevation, so a plain `skipIf(win32)` would drop coverage on machines
- * that actually support it.
+ * Probed because filesystems may refuse symlink creation.
  */
 export const canSymlink = ((): boolean => {
   const dir = mkdtempSync(path.join(tmpdir(), "clarvis-symlink-probe-"));
@@ -302,24 +192,12 @@ export const canSymlink = ((): boolean => {
   }
 })();
 
-/**
- * Create a symlink, choosing the link type Windows needs.
- *
- * @param kind - `"dir"` produces a junction, which is the only directory link
- *   Windows creates without elevation. Node defaults `type` to `"file"` there,
- *   so a directory link made without this silently points at nothing.
- */
+/** Create a file or directory symlink. */
 export function makeSymlink(target: string, link: string, kind: "file" | "dir" = "file"): void {
-  symlinkSync(target, link, kind === "dir" && process.platform === "win32" ? "junction" : kind);
+  symlinkSync(target, link, kind);
 }
 
-/**
- * Normalize CRLF to LF for an output assertion.
- *
- * PowerShell terminates its lines with `\r\n`, so a fixture comparing against
- * `"hello\n"` fails on the line ending alone - a whole class of failure that
- * says nothing about the behaviour under test.
- */
+/** Normalize line endings for an output assertion. */
 export function lines(text: unknown): string {
   return String(text).replace(/\r\n/g, "\n");
 }

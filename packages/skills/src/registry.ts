@@ -12,12 +12,7 @@ import {
 } from "./parse.ts";
 import { resolveResourcePath } from "./paths.ts";
 import { composePresentation, readSkillSidecar } from "./sidecar.ts";
-import {
-  enumerateResources,
-  findSkillSidecar,
-  isHarnessConfigPath,
-  listSkillDirs,
-} from "./scan.ts";
+import { enumerateResources, findSkillSidecar, listSkillDirs } from "./scan.ts";
 import {
   MAX_SKILL_FILE_BYTES,
   MAX_SKILL_FILE_CHARS,
@@ -370,7 +365,6 @@ function scanRoot(root: SkillRoot, config: SkillConfig, stats: DiscoveryStats): 
     {
       discovery: root.discovery,
       manifestName: root.manifestName,
-      confinementRoot: root.confinementRoot,
     },
   );
   if (candidates.length > MAX_SKILLS_PER_ROOT) {
@@ -714,13 +708,7 @@ function makeRegistry(byName: Map<string, ResolvedSkill>, config: SkillConfig): 
     if (skill === undefined) {
       throw new SkillError("not_found", `No such skill: ${name}`, { name });
     }
-    const abs = resolveResourcePath(skill.info.dir, rel, config.logger);
-    if (isHarnessConfigPath(skill.info.dir, rel, abs, config)) {
-      throw new SkillError("not_found", `No such resource '${rel}' in skill '${name}'`, {
-        name,
-        rel,
-      });
-    }
+    const abs = resolveResourcePath(skill.info.dir, rel);
     let stat;
     try {
       stat = statSync(abs);

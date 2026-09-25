@@ -20,20 +20,6 @@ export const READ_SKILL_RESOURCE_TOOL_NAME = "read_skill_resource";
 /** Default cap on how many characters of a bundled skill resource are returned. */
 export const SKILL_RESOURCE_MAX_CHARS = 50_000;
 
-const RESOURCE_PATH_CHARACTER = "[^/\\\\\\u0000-\\u001f\\u007f]";
-const RESOURCE_PATH_NON_DOT_CHARACTER = "[^./\\\\\\u0000-\\u001f\\u007f]";
-const RESOURCE_PATH_FIRST_NON_DRIVE_CHARACTER = "[^:/\\\\\\u0000-\\u001f\\u007f]";
-const RESOURCE_PATH_SEGMENT =
-  `(${RESOURCE_PATH_NON_DOT_CHARACTER}${RESOURCE_PATH_CHARACTER}*|` +
-  `\\.${RESOURCE_PATH_NON_DOT_CHARACTER}${RESOURCE_PATH_CHARACTER}*|` +
-  `\\.\\.${RESOURCE_PATH_CHARACTER}+)`;
-const RESOURCE_PATH_FIRST_SEGMENT =
-  `([A-Za-z](${RESOURCE_PATH_FIRST_NON_DRIVE_CHARACTER}${RESOURCE_PATH_CHARACTER}*)?|` +
-  `[^A-Za-z./\\\\\\u0000-\\u001f\\u007f]${RESOURCE_PATH_CHARACTER}*|` +
-  `\\.${RESOURCE_PATH_NON_DOT_CHARACTER}${RESOURCE_PATH_CHARACTER}*|` +
-  `\\.\\.${RESOURCE_PATH_CHARACTER}+)`;
-const RESOURCE_PATH_PATTERN = `^${RESOURCE_PATH_FIRST_SEGMENT}(/${RESOURCE_PATH_SEGMENT})*$`;
-
 /**
  * The narrow provider slice the body and resource skill handlers need.
  */
@@ -107,10 +93,7 @@ export const readSkillResourceTool: NamespacedTool = {
         type: "string",
         minLength: 1,
         maxLength: 4_096,
-        pattern: RESOURCE_PATH_PATTERN,
-        description:
-          "The bundled file's exact relative path as listed by load_skill; never a SKILL.md or " +
-          "absolute path.",
+        description: "A file path resolved from the selected skill directory.",
       },
       offset: {
         type: "integer",

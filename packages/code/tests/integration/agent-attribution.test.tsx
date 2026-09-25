@@ -75,7 +75,7 @@ test("subagent events attribute the assistant, reasoning and tool_call nodes (or
       subagent_id: "w1",
       at: 6,
       server: "",
-      tool: "grep",
+      tool: "list_dir",
       arguments: { pattern: "jwt" },
       result: "(no matches)",
       ok: true,

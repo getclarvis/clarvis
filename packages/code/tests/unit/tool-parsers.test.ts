@@ -8,7 +8,6 @@ import {
   parseShellSession,
   parsePathList,
   parseReadFile,
-  parseReadFiles,
   synthesizeUnifiedDiff,
 } from "../../src/adapters/tool-parsers.ts";
 
@@ -45,13 +44,13 @@ test("toolErrorSummaryText humanizes structured codes and preserves plain errors
     toolErrorSummaryText(
       JSON.stringify({
         error: "patch_failed",
-        message: "Hunk did not apply cleanly in packages/code/tests/unit/isolation.test.ts",
-        file: "packages/code/tests/unit/isolation.test.ts",
+        message: "Hunk did not apply cleanly in packages/code/tests/unit/keyspec.test.ts",
+        file: "packages/code/tests/unit/keyspec.test.ts",
       }),
     ),
-  ).toBe("Patch failed: Hunk did not apply cleanly in packages/code/tests/unit/isolation.test.ts");
-  expect(toolErrorSummaryText("denied: command touches paths outside the workspace")).toBe(
-    "Denied: command touches paths outside the workspace",
+  ).toBe("Patch failed: Hunk did not apply cleanly in packages/code/tests/unit/keyspec.test.ts");
+  expect(toolErrorSummaryText("denied: command was rejected by the selected policy")).toBe(
+    "Denied: command was rejected by the selected policy",
   );
   expect(toolErrorSummaryText("ENOENT: no such file")).toBe("ENOENT: no such file");
 });
@@ -123,20 +122,9 @@ test("parsePathList splits paths and empties on (no matches)", () => {
   expect(parsePathList("(no matches)")).toEqual([]);
 });
 
-test("editsFromArgs reads both single and array forms", () => {
+test("editsFromArgs reads edit arguments", () => {
   expect(editsFromArgs({ old_string: "a", new_string: "b" })).toEqual([
     { oldText: "a", newText: "b" },
-  ]);
-  expect(
-    editsFromArgs({
-      edits: [
-        { old_string: "x", new_string: "y" },
-        { old_string: "p", new_string: "q" },
-      ],
-    }),
-  ).toEqual([
-    { oldText: "x", newText: "y" },
-    { oldText: "p", newText: "q" },
   ]);
   expect(editsFromArgs({})).toEqual([]);
 });
@@ -155,29 +143,6 @@ test("parseJsonObject returns undefined for non-objects", () => {
   expect(parseJsonObject("not json")).toBeUndefined();
   expect(parseJsonObject("[1,2]")).toBeUndefined();
 });
-
-test("parseReadFiles splits on headers, keeps bodies, and surfaces per-file errors", () => {
-  const result = [
-    "==> src/a.ts <==",
-    "     1\tconst a = 1",
-    "     2\tconst b = 2",
-    "==> src/missing.ts — not_found: no such file <==",
-    "==> src/c.ts <==",
-    "     1\tok()",
-    "[... 2 more file(s) not shown ...]",
-  ].join("\n");
-  const { sections, note } = parseReadFiles(result);
-  expect(sections.length).toBe(3);
-  expect(sections[0]!.path).toBe("src/a.ts");
-  expect(sections[0]!.error).toBeNull();
-  expect(sections[0]!.body).toBe("     1\tconst a = 1\n     2\tconst b = 2");
-  expect(sections[1]!.path).toBe("src/missing.ts");
-  expect(sections[1]!.error).toBe("not_found: no such file");
-  expect(sections[1]!.body).toBe("");
-  expect(sections[2]!.path).toBe("src/c.ts");
-  expect(note).toBe("[... 2 more file(s) not shown ...]");
-});
-
 test("parseShellSession keeps bounded status and stream fields", () => {
   const started = parseShellSession(
     JSON.stringify({

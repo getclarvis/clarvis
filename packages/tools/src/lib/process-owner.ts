@@ -34,7 +34,6 @@ function rootRunning(processOwner: OwnedProcess): boolean {
 }
 
 export function ownedTreeRunning(processOwner: OwnedProcess): boolean {
-  if (process.platform === "win32") return rootRunning(processOwner);
   try {
     process.kill(-processOwner.pid, 0);
   } catch (error) {
@@ -67,10 +66,6 @@ function signalOwnedTree(
   logger: ToolsLogger,
 ): void {
   const pid = processOwner.pid;
-  if (process.platform === "win32") {
-    if (rootRunning(processOwner)) killTree(pid, signal, { logger });
-    return;
-  }
   try {
     process.kill(-pid, signal);
   } catch {

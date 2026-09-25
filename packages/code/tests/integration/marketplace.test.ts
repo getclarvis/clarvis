@@ -11,7 +11,6 @@ import {
   OFFICIAL_MARKETPLACE_URL,
   type MarketplaceListing,
 } from "../../src/adapters/marketplace.ts";
-import { recordDiagnostics } from "../helpers/recording-diagnostics.ts";
 import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
 const roots: string[] = [];
@@ -411,71 +410,23 @@ test("a repo publishing only the cross-runtime document is still read", async ()
   expect(a.sources()[0]!.marketplace?.name).toBe("borrowed");
 });
 
-test("a local source resolving outside the marketplace root is named, after realpath", async () => {
+test("a local source linked outside the marketplace remains installable", async () => {
   const root = scratch();
   const outside = scratch();
   const file = agentsCatalog(root, {
     name: "local market",
     plugins: [
-      { name: "inside", source: { source: "local", path: "plugins/inside" }, description: "d" },
-      { name: "escapee", source: { source: "local", path: "plugins/escapee" }, description: "d" },
-      { name: "ghost", source: { source: "local", path: "plugins/ghost" }, description: "d" },
-    ],
-  });
-  const plugins = join(root, "plugins");
-  mkdirSync(join(plugins, "inside"), { recursive: true });
-  symlinkSync(outside, join(plugins, "escapee"), "dir");
-  const a = adapter({ urls: () => [], installed: () => [], agentsCatalogs: () => [file] });
-  const recording = recordDiagnostics();
-  try {
-    await a.load();
-  } finally {
-    recording.uninstall();
-  }
-  const byName = new Map(a.listings().map((l) => [l.name, l]));
-  expect(byName.get("escapee")!.notes.join(" ")).toContain("outside the marketplace root");
-  expect(byName.get("inside")!.notes.join(" ")).not.toContain("outside the marketplace root");
-  expect(byName.get("inside")!.installable).toBe(true);
-  expect(byName.get("inside")!.source).toBe(join(root, "plugins", "inside"));
-  // A path that does not exist yet is the case the "contained" answer was
-  // written for, and it is not a diagnostic: there is nothing to escape into.
-  expect(byName.get("ghost")!.notes.join(" ")).not.toContain("outside the marketplace root");
-  expect(recording.of("marketplace.containment.unknown")).toHaveLength(0);
-});
-
-test("a local source whose containment cannot be decided is refused, not assumed contained", async () => {
-  const root = scratch();
-  const file = agentsCatalog(root, {
-    name: "local market",
-    plugins: [
-      { name: "cycle", source: { source: "local", path: "plugins/cycle" }, description: "d" },
+      { name: "external", source: { source: "local", path: "plugins/external" }, description: "d" },
     ],
   });
   const plugins = join(root, "plugins");
   mkdirSync(plugins, { recursive: true });
-  // A symlink cycle makes realpath fail ELOOP. The target comes from the
-  // marketplace document, so its author can produce this at will — which is
-  // exactly why answering "contained" here let them suppress the note about
-  // their own listing.
-  symlinkSync(join(plugins, "cycle-b"), join(plugins, "cycle"));
-  symlinkSync(join(plugins, "cycle"), join(plugins, "cycle-b"));
-
+  symlinkSync(outside, join(plugins, "external"), "dir");
   const a = adapter({ urls: () => [], installed: () => [], agentsCatalogs: () => [file] });
-  const recording = recordDiagnostics();
-  try {
-    await a.load();
-  } finally {
-    recording.uninstall();
-  }
-
-  const listing = a.listings().find((l) => l.name === "cycle")!;
-  expect(listing.notes.join(" ")).toContain("outside the marketplace root");
-  expect(listing.installable).toBe(false);
-
-  const unknown = recording.of("marketplace.containment.unknown");
-  expect(unknown).toHaveLength(1);
-  expect(unknown[0]!.level).toBe("warn");
-  expect(unknown[0]!.details.errno).toBe("ELOOP");
+  await a.load();
+  const listing = a.listings().find((entry) => entry.name === "external")!;
+  expect(listing.installable).toBe(true);
+  expect(listing.source).toBe(join(plugins, "external"));
 });
 
 describe("addMarketplaceSource", () => {

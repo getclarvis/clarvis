@@ -478,11 +478,8 @@ test("a derived logger reports its own effective level and keeps its parent's bi
   });
 });
 
-test.if(process.platform !== "win32" && process.getuid?.() !== 0)(
-  "diagnostic files are owner-only",
-  () => {
-    const session = createDiagnosticSession({ directory: tempDir() });
-    session.close();
-    expect(statSync(session.path).mode & 0o777).toBe(0o600);
-  },
-);
+test.if(process.getuid?.() !== 0)("diagnostic files are owner-only", () => {
+  const session = createDiagnosticSession({ directory: tempDir() });
+  session.close();
+  expect(statSync(session.path).mode & 0o777).toBe(0o600);
+});

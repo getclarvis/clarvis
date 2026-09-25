@@ -1,61 +1,7 @@
-import { extname } from "node:path";
 import { JSONRPCMessageSchema, type JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { executableOnPath } from "@clarvis/paths";
 import type { Logger } from "@clarvis/capability";
 import { NOOP_LOGGER, suppressSecondaryRejection } from "@clarvis/capability";
-
-/** Extensions Windows will not spawn directly, and must route through `cmd`. */
-const WINDOWS_SHELL_SCRIPTS = new Set([".cmd", ".bat"]);
-
-/**
- * The argv that actually launches an MCP server on this host.
- *
- * @param command - the configured command, typically a bare name.
- * @param args - its configured arguments.
- * @param platform - host platform; injectable for tests.
- * @returns the argv to hand to `Bun.spawn`.
- * @remarks
- * On Windows the common MCP launchers - `npx`, `bunx`, `pnpm dlx` - are `.cmd`
- * shims, and a `.cmd` cannot be spawned directly: that path was closed as the
- * mitigation for a command-injection vulnerability in how arguments reached it.
- * Left unhandled, every `command: "npx"` server in a user's settings fails to
- * start with a bare `ENOENT`, on a host where `npx` plainly works in a terminal.
- *
- * `cmd /d /s /c` with the whole line quoted is the documented way to pass a path
- * containing spaces, and `windowsVerbatimArguments` stops the runtime re-quoting
- * a line `cmd` will parse itself.
- *
- * @throws {@link Error} if `command` or any argument contains a double quote.
- *   The line is parsed twice - once by `cmd.exe` itself, then again by the
- *   child's own argv parser - and those two parsers disagree on how an escaped
- *   quote is spelled. Guessing an escaping that satisfies both would silently
- *   hand the child a different argv than configured; refusing outright is
- *   safer than a corrupted command line that fails to start, or fails subtly,
- *   for a reason nothing here can explain. No real MCP server config needs a
- *   literal quote in a command or argument.
- */
-export function mcpSpawnArgv(
-  command: string,
-  args: readonly string[],
-  platform: NodeJS.Platform = process.platform,
-): { argv: string[]; verbatim: boolean } {
-  if (platform !== "win32") return { argv: [command, ...args], verbatim: false };
-  const resolved = executableOnPath(command, process.env.PATH, "win32") ?? command;
-  if (!WINDOWS_SHELL_SCRIPTS.has(extname(resolved).toLowerCase())) {
-    return { argv: [resolved, ...args], verbatim: false };
-  }
-  const parts = [resolved, ...args];
-  const quoted = parts.find((part) => part.includes('"'));
-  if (quoted !== undefined) {
-    throw new Error(
-      `MCP server command/argument contains a double quote, which cannot be passed ` +
-        `safely through cmd.exe on Windows: ${quoted}`,
-    );
-  }
-  const line = parts.map((a) => `"${a}"`).join(" ");
-  return { argv: [process.env.ComSpec ?? "cmd.exe", "/d", "/s", "/c", line], verbatim: true };
-}
 
 /**
  * Spawn parameters for a {@link BunStdioClientTransport}: the `command` and
@@ -160,14 +106,13 @@ export class BunStdioClientTransport implements Transport {
   start(): Promise<void> {
     if (this.process) throw new Error("BunStdioClientTransport already started");
 
-    const { argv, verbatim } = mcpSpawnArgv(this.parameters.command, this.parameters.args ?? []);
+    const argv = [this.parameters.command, ...(this.parameters.args ?? [])];
     this.process = Bun.spawn(argv, {
       cwd: this.parameters.cwd,
       env: this.parameters.env ?? process.env,
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
-      ...(verbatim ? { windowsVerbatimArguments: true } : {}),
       onExit: (_process, _exitCode, _signalCode, error) => {
         if (error) this.onerror?.(error);
         this.finish();

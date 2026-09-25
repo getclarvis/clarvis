@@ -432,7 +432,7 @@ describe("executeRun — capability setup", () => {
   );
 
   it.each(["scope", "attach"] as const)(
-    "validates required entry %s before auxiliary vision inference",
+    "validates required entry %s before inference",
     async (phase) => {
       const llm = new MockLLM({ script: [{ text: "must not read the image" }] });
       const outcome = await executeRun({
@@ -455,7 +455,6 @@ describe("executeRun — capability setup", () => {
           ],
           profiles: [{ name: "solo", model: "anthropic/text", tools: [], iteration_limit: 2 }],
           entry: "solo",
-          vision_model: "anthropic/vision",
           budget: { on_exceed: "stop", total_token_limit: 10000 },
         },
         capabilities: [

@@ -94,23 +94,20 @@ states, Escape/back, persistence, status feedback, and scope where applicable.
 | `CMD-24` | Dynamic skill slash commands, including optional task and agent routing                                                                                                                |
 | `CMD-25` | Dynamic MCP prompt slash commands, duplicate-name handling and refresh                                                                                                                 |
 | `CMD-26` | `/loop` duration/cron, list, pause/resume/cancel and live-session lifetime                                                                                                             |
-| `CMD-27` | `/background`, list and targeted cancellation; Host/Sandbox exit only after receipt; SSH handoff refusal                                                                               |
+| `CMD-27` | `/background`, list and targeted cancellation; local host exit only after receipt; SSH handoff refusal                                                                                 |
 | `CMD-28` | `/attach <execution-id>` and explicit control takeover in discovery                                                                                                                    |
 | `CMD-29` | `/goal` semantic formulation with persistent read/search/thinking activity, inspection, literal creation, reviewed edit/replacement, pause/resume/cancel/clear and host-started stages |
 
 ### Current Settings panels
 
-| ID       | Panel            |
-| -------- | ---------------- |
-| `SET-01` | Providers        |
-| `SET-03` | Agents           |
-| `SET-04` | Defaults         |
-| `SET-05` | Memory           |
-| `SET-06` | Sandbox          |
-| `SET-07` | Theme            |
-| `SET-08` | Keyboard         |
-| `SET-09` | Updates          |
-| `SET-10` | Run controls     |
+| ID       | Panel     |
+| -------- | --------- |
+| `SET-01` | Providers |
+| `SET-03` | Agents    |
+| `SET-04` | Defaults  |
+| `SET-07` | Theme     |
+| `SET-08` | Keyboard  |
+| `SET-09` | Updates   |
 
 For every panel, verify global and workspace scopes, effective-value labeling, scope switching,
 revision conflicts, failed saves, stale responses, reset/inheritance behavior, and deep-link return
@@ -150,50 +147,38 @@ routes.
 
 ## Product capabilities and integrations
 
-| ID       | Scenario                  | Minimum proof                                                                                                                                                                                            |
-| -------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CAP-01` | Plans                     | Create/update/review/retain/delete paths, full-screen detail, conflicts and active-run projection are coherent                                                                                           |
-| `CAP-02` | Execution memory          | Enable/disable, policy, review/curation, indexing after run, failure, recovery and persistence are coherent                                                                                              |
-| `CAP-03` | Subagents                 | Three concurrent children share no transcript owners; Lead keeps two navigable markers; A→B→Lead invalidates stale restores and preserves independent anchors; background interactions remain accessible |
-| `CAP-04` | Workflows                 | Built-in/custom precedence, manager tree, concurrency, cancellation, budget exhaustion, deletion and resume are correct                                                                                  |
-| `CAP-05` | Tasks board               | Availability, health, filters, detail, refresh, normalized/native state and claim semantics are honest                                                                                                   |
-| `CAP-06` | Task mutations            | Supported write, conflict, provider failure and unknown outcome never render as a successful empty board                                                                                                 |
-| `CAP-07` | Work on task              | Current workspace and selected agent are used; opening does not mutate; return refreshes source of truth                                                                                                 |
-| `CAP-09` | MCP tools and prompts     | Inventory, refresh, duplicate names, invocation, errors, degraded pools and prompt injection are visible and bounded                                                                                     |
-| `CAP-10` | OAuth-pending MCP         | Browser flow remains background, other work runs, bounds are retained, no duplicate browser, later reuse works when authorized                                                                           |
+| ID       | Scenario              | Minimum proof                                                                                                                                                                                            |
+| -------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CAP-01` | Plans                 | Create/update/review/retain/delete paths, full-screen detail, conflicts and active-run projection are coherent                                                                                           |
+| `CAP-02` | Execution memory      | Fresh-install off, global Ctrl+X M choice across workspaces and restarts, policy, review/curation, run-model indexing, failure and recovery are coherent                                                 |
+| `CAP-03` | Subagents             | Three concurrent children share no transcript owners; Lead keeps two navigable markers; A→B→Lead invalidates stale restores and preserves independent anchors; background interactions remain accessible |
+| `CAP-04` | Workflows             | Built-in/custom precedence, manager tree, concurrency, cancellation, budget exhaustion, deletion and resume are correct                                                                                  |
+| `CAP-05` | Tasks board           | Availability, health, filters, detail, refresh, normalized/native state and claim semantics are honest                                                                                                   |
+| `CAP-06` | Task mutations        | Supported write, conflict, provider failure and unknown outcome never render as a successful empty board                                                                                                 |
+| `CAP-07` | Work on task          | Current workspace and selected agent are used; opening does not mutate; return refreshes source of truth                                                                                                 |
+| `CAP-09` | MCP tools and prompts | Inventory, refresh, duplicate names, invocation, errors, degraded pools and prompt injection are visible and bounded                                                                                     |
+| `CAP-10` | OAuth-pending MCP     | Browser flow remains background, other work runs, bounds are retained, no duplicate browser, later reuse works when authorized                                                                           |
 
-## Extensions, trust, sandbox, and executable behavior
+## Extensions, trust, and executable behavior
 
-| ID        | Scenario                            | Minimum proof                                                                                                                                                                                    |
-| --------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `EXT-01`  | Extensions guided flow              | Scope, profile, inventory search, multi-select, contribution review, preview, apply, reconnect and final state                                                                                   |
-| `EXT-02`  | Cancel/discard/leave during work    | Draft discard confirmation and background completion ownership are predictable; Escape stays responsive                                                                                          |
-| `EXT-03`  | Marketplace collections             | Built-in/configured sources, search, large list windowing, add source, load failure and retry are correct                                                                                        |
-| `EXT-04`  | Plugin lifecycle                    | Install, identity validation, activate, update eligibility, uninstall and exact-ref selection are atomic and honest                                                                              |
-| `EXT-05`  | Extension Profiles                  | Create/customize/select/clear/delete, process-pinned read-only mode, conflicts and resolution errors are correct                                                                                 |
-| `EXT-06`  | Skills and resources                | Four-root inventory, qualified identity, task/agent routing, invalid or inactive roots and bounded reads are correct                                                                             |
-| `EXT-07`  | Hooks and executables               | Contribution review, workspace approval, command execution, failure and diagnostic redaction preserve trust boundaries                                                                           |
-| `EXT-08`  | Workspace trust                     | Executable configuration is withheld until approval, recomposes after change, and revocation takes effect safely                                                                                 |
-| `EXT-09`  | Drift after admission               | After the documented asynchronous drift notice, affected skills or executable contributions are withdrawn, unaffected work remains usable, and reconnect captures changed bytes                  |
-| `SAFE-01` | Run control changes                 | Isolation danger confirmation, next-run semantics and effective policy are visible |
-| `SAFE-03` | Native sandbox                      | Available/unavailable backends, containment refusal and diagnostics match the active OS |
-| `SAFE-04` | Secret and path boundaries          | Keys, subscriptions, logs, storage, export, attachments, marketplace and tool output reveal no protected material or escape path                                                                 |
-| `SAFE-05` | Host temporary interoperability     | Cross-tool host-temp access, read-only overlap and non-owning cleanup are proved on the active OS                                                                                                |
-| `SAFE-07` | Sandboxed DNS and package bootstrap | macOS DNS, real package execution, Apple Silicon Homebrew shims and denied-network behavior are proved                                                                                           |
-| `SAFE-08` | Isolation selector                  | Header, Run Controls and quick picker display and change the same effective placement |
+| ID        | Scenario                         | Minimum proof                                                                                                                                                                   |
+| --------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EXT-01`  | Extensions guided flow           | Scope, profile, inventory search, multi-select, contribution review, preview, apply, reconnect and final state                                                                  |
+| `EXT-02`  | Cancel/discard/leave during work | Draft discard confirmation and background completion ownership are predictable; Escape stays responsive                                                                         |
+| `EXT-03`  | Marketplace collections          | Built-in/configured sources, search, large list windowing, add source, load failure and retry are correct                                                                       |
+| `EXT-04`  | Plugin lifecycle                 | Install, identity validation, activate, update eligibility, uninstall and exact-ref selection are atomic and honest                                                             |
+| `EXT-05`  | Extension Profiles               | Create/customize/select/clear/delete, process-pinned read-only mode, conflicts and resolution errors are correct                                                                |
+| `EXT-06`  | Skills and resources             | Four-root inventory, qualified identity, task/agent routing, invalid or inactive roots and bounded reads are correct                                                            |
+| `EXT-07`  | Hooks and executables            | Contribution review, workspace approval, command execution, failure and diagnostic redaction preserve trust boundaries                                                          |
+| `EXT-08`  | Workspace trust                  | Executable configuration is withheld until approval, recomposes after change, and revocation takes effect safely                                                                |
+| `EXT-09`  | Drift after admission            | After the documented asynchronous drift notice, affected skills or executable contributions are withdrawn, unaffected work remains usable, and reconnect captures changed bytes |
+| `SAFE-01` | Memory and plan choices          | Global Memory on/off and completed-plan retention update their intended scopes and show their effective state                                                                   |
+| `SAFE-04` | Secret and path boundaries       | Keys, subscriptions, logs, storage, export, attachments, marketplace and tool output reveal no protected material or escape path                                                |
+| `SAFE-05` | Host temporary interoperability  | Cross-tool host-temp access and non-owning cleanup are proved on the active OS                                                                                                  |
 
 For `SAFE-05`, create a path through a host-native temporary API in `shell`, then reuse its absolute
-path through a later native coding tool. Repeat with a read-only workspace
-below the system temp root: the workspace must remain closed while exact run scratch remains
-writable. Teardown and fixture cleanup must stay distinct; Clarvis must never own or remove the
-system parent or unrelated children.
-
-For `SAFE-07`, do not use a raw IP or only a loopback socket: those miss the macOS resolver path.
-Resolve a registry hostname from the current built artifact and perform a bounded package bootstrap
-that both downloads and executes its fetched entrypoint; a metadata-only request is insufficient.
-When `/opt/homebrew/bin/npm` exists, require that logical shim rather than bypassing it with its
-resolved Cellar target. Repeat under `network: none` and require a network failure. Record external
-registry availability separately from the sandbox verdict.
+path through a later coding tool. Teardown and fixture cleanup must stay distinct; Clarvis must
+never own or remove the system parent or unrelated children.
 
 ## Operations, resilience, performance, and native canaries
 
@@ -215,4 +200,4 @@ registry availability separately from the sandbox verdict.
 | `PERF-04`   | Idle and active resource soak    | Diagnostics plus external process-tree RSS/PSS, CPU/redraw, listeners, owners, queues and child processes remain bounded                                                                                                                                                                                                |
 | `NATIVE-01` | Physical terminal                | Exact launcher and profile keyboard packets, rendering, Escape latency, paste, mouse and shutdown are exercised on target terminal hardware                                                                                                                                                                             |
 | `NATIVE-02` | Real provider/account            | Authorized provider stream, usage, tools, errors and continuation match deterministic behavior without exposing credentials                                                                                                                                                                                             |
-| `NATIVE-03` | Target platforms                 | Required macOS, Linux and Windows PTY/native canaries are reported independently; unavailable platforms remain unverified                                                                                                                                                                                               |
+| `NATIVE-03` | Target platforms                 | Required macOS and Linux PTY/native canaries are reported independently; unavailable platforms remain unverified                                                                                                                                                                                                        |

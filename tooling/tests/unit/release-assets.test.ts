@@ -68,7 +68,6 @@ async function writeReleaseSet(directory: string): Promise<void> {
     "MODELS-DEV-LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "VERCEL-AI-SDK-LICENSE",
-    "install.ps1",
     "install.sh",
   ]) {
     await writeFile(join(directory, name), `${name}\n`);

@@ -74,7 +74,6 @@ const STREAM_PLUMBING = new Set([
   "packages/kernel/src/hosting/serve-remote-stdio.ts",
   "packages/hooks/src/subprocess.ts",
   "packages/mcp-client/src/bun-stdio-client.ts",
-  "packages/tools/src/filesystem-worker.ts",
 ]);
 
 function isComment(line: string): boolean {

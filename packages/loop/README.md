@@ -93,9 +93,9 @@ The durable vocabulary and replay contract are owned by
 
 `buildRunDeps` composes the host-attested `clarvis-docs` provider separately from ordinary skill
 roots. Agents with `use_skills` receive it in their normal catalog. An entry agent without that
-grant receives only the system guide when its immutable ceiling permits editing, the placement is
-Host or Sandbox, and the host configuration-review port is available. This does not change tool
-grants, approve a mutation, or grant the same view to children. See
+grant receives only the system guide when its immutable ceiling permits editing and the host
+configuration-review port is available. This does not change tool grants, approve a mutation, or
+grant the same view to children. See
 [self-configuration](../../specs/hosts/self-configuration.md) and
 [skills](../../specs/execution/skills.md).
 
@@ -120,7 +120,7 @@ self-contained briefs. The default shared prompt requires an explicit request fr
 explicit instruction from an applicable loaded skill or agent-instruction file (such as `AGENTS.md`
 or `CLARVIS.md`) before spawning children, delegating tasks, or starting workflow leaders. Otherwise
 the agent works directly; available tools and efficiency gains do not authorize delegation. Profile
-and grant limits still apply. Supervision distinguishes handles, first-child wakeups and completed work.
+and grant limits still apply. Supervision distinguishes handles and completed work.
 It also keeps a child that stopped at its own iteration cap apart from one that failed: the cap is a
 recoverable partial the lead can reduce scope around, retry or take over, and a streak of technically
 failed children closes new child admission without ending the lead's run.
@@ -266,32 +266,24 @@ implicit host bridge.
 
 Built-ins cover:
 
-- coding tools. The host-selected placement and run identity produce one frozen filesystem policy
-  shared by each agent's command sessions and file service. Sandbox runs file calls in one isolated run-owned child, reads host-visible files and limits writes to declared roots;
-  the File Kernel applies the enabled global Sandbox as a floor when workspace settings are not trusted;
+- coding tools execute shell and file operations on the host with its process permissions.
 - one owner-only scratch root per run, allocated by `@clarvis/paths` as a short, exclusive,
   account-owned directory and advertised as `TMPDIR`, `TEMP` and `TMP`, plus the host's existing system
-  temporary roots pre-authorized across command and native tools. Shortness is what keeps a tool's own
+  temporary roots available to commands. Shortness is what keeps a tool's own
   socket address inside the operating system's limit when `CLARVIS_HOME`, the workspace path or the run
   id is deep; the system roots are compatibility access only and are never removed by Clarvis. A verified
   directory created through `mktemp -d` remains owned by that command; the loop removes only its own scratch after tracked processes have physically exited;
-- skills, including package-scoped helper execution for roots the host explicitly approves: the
-  loop passes only each selected skill's own directory to command tools, never executes a helper on
-  selection, and relies on `@clarvis/tools` to protect it from native mutations and mount it
-  read-only when a native sandbox is active. A host may supply `SkillRootSnapshotProvider`: roots
-  and bodies are captured at dependency construction, host monitors are armed before the captured
-  bytes are verified, and a memory-only availability predicate withdraws detected drift without
-  rescanning or rejecting a run. The host may publish an idle trust-recomposition event to atomically
-  replace that exact catalog; ordinary run admission only reads the current in-memory snapshot;
+- skills, including package-scoped helper disclosure. The loop passes each selected skill's
+  directory to the tool context and captures bodies at dependency construction. Host monitors
+  withdraw detected drift until reconnect.
 - bounded MCP initialization instructions, grouped by server and added as a system section for the
   entry agent and spawned subagents after the connection pool opens;
 - user elicitation;
 - lifecycle hooks;
 - exact user skill-command expansion observers, carried as host-derived request context and fired
   before seed context rather than approximated from an ordinary prompt;
-- independent child spawning (`spawn_subagent`) and tracked task delegation (`delegate_task`);
-- agent supervision (`agent_list`, `agent_poll`, `agent_stop`, `agent_steer`,
-  `await_agents`), over the run-scoped registry in `@clarvis/supervision`.
+- independent child spawning (`spawn_subagent`);
+- agent supervision (`agent_list`, `agent_poll`, `agent_stop`, `agent_steer`), over the run-scoped registry in `@clarvis/supervision`.
 
 The built-in `ask_user` tool asks that question and normalizes the answer. Its requests are marked
 `origin: "model"`, so a host can tell the engine's own question from a relayed external one, and its
@@ -304,11 +296,7 @@ a plain `ask_user` marked `origin: "external"`, so it keeps the operational boun
 host window. Neither no-answer outcome is evidence: only an accepted `ask_user` answer enters operator
 authority. See [`elicitation`](../../specs/cross-cutting/elicitation.md).
 
-`spawn_subagent` is always the plan-free route and has no `task_id` property. A task-tracking
-capability adds `delegate_task`, whose `task_id` is required and must name an existing open work
-item. An unknown or closed id is rejected with the currently spawnable ids and an explicit
-instruction to use `spawn_subagent` for independent work. Both input schemas tolerate and ignore
-surplus properties once their known arguments are valid.
+`spawn_subagent` runs independent work and has no plan-task binding. An optional capability gate may refuse a spawn before it starts. Its input schema tolerates surplus properties once the known arguments are valid.
 
 The `Capability` contract itself lives in `@clarvis/capability`, not here — the
 loop imports it like any other consumer, which is what lets a capability ship in
@@ -316,7 +304,7 @@ its own package.
 
 A capability may also contribute an `OutputTokenBudget`. The loop wraps the selected provider once
 at the model-call boundary, so the same reservation covers ordinary completions, transport retries,
-context-compaction summaries and vision calls; manager sub-agents inherit it through normal
+context-compaction summaries and sub-agent calls; manager sub-agents inherit it through normal
 capability composition. Exhaustion returns the ordinary `budget_exhausted` result before another
 provider call instead of escaping as a generic failure. The run's existing local budget still owns
 iterations/time/input accounting; the shared port adds an outer output ceiling rather than replacing
@@ -390,7 +378,7 @@ wrappers; injected connections bypass MCP/OAuth factories and remain caller-owne
 `traceDir` and the optional `traceLocksDir` let a host preserve the record location while placing
 cross-process coordination in an independently mounted workspace state directory.
 The resolver admits only exact catalog pairs with empty request `providers`, supplying metadata to
-entry/delegated profiles, vision and compaction without fabricating native transport configuration.
+entry/delegated profiles and compaction without fabricating native transport configuration.
 When catalog metadata omits a maximum output size, delegated profiles use the context window as a
 conservative per-call ceiling so aggregate Workflow budgets cannot exceed host broker admission.
 Without it, native provider resolution remains unchanged. These are generic embedding ports. See [composition](../../specs/engine/capability-composition.md)
@@ -441,8 +429,8 @@ Registrations marked `required: true` fail before inference if activation, a dec
 attachment is unavailable. Physical extension saturation cannot silently remove their controls;
 `required_capability_unavailable` identifies that failure. Child permissions are unchanged and an
 already-cancelled run keeps cancellation semantics. Entry attachment and contribution folding finish
-before auxiliary vision inference. The reading is then appended to the same live context, after
-preserved history and current reminders; the shared budget is checked before and after preparation.
+before inference. Their contributions are appended to the live context after
+preserved history and current reminders.
 The logical timeout
 does not release the host's physical extension permit: non-cooperative promises retain one of 32
 ordinary slots (at most four per stable capability/phase) until they really settle, so repeated runs
@@ -466,8 +454,8 @@ so many individually valid data URLs cannot multiply into an unbounded continuat
 
 Profiles and transport descriptors are bounded before they become retained run state: profile prose
 shares an 8 MiB aggregate character budget, individual base prompts cap at 256 KiB, and tool/grant/
-spawn lists have finite fanout. MCP argv, header/env maps and sandbox path
-lists likewise have per-item and collection ceilings in both `settings.json` and direct requests.
+spawn lists have finite fanout. MCP argv and header/env maps likewise have per-item and collection
+ceilings in both `settings.json` and direct requests.
 One child-spawn brief is limited to 32,768 Unicode characters in both advertised tool schemas and
 the programmatic handler. A tracked exit condition shares that same final prompt budget, so task
 augmentation cannot bypass the tool boundary.
@@ -506,8 +494,7 @@ The list below is the whole of `package.json`'s `exports` map:
   Clarvis product manifest, and `createToolArgValidator`: the engine's own rule for a tool call's
   arguments, for a host that rules on one itself (a workflow title's `set_title` call).
 - `@clarvis/loop/capabilities/tools` — coding tools integration.
-- `@clarvis/loop/host` — the narrow host-composition surface for config,
-  provider, plugin and sandbox policy that `@clarvis/kernel` programs against, including dependency
+- `@clarvis/loop/host` — the narrow host-composition surface for config, provider and plugin
   construction, logger/version bindings, request message ceilings and their host-facing types
   without importing the full execution entry.
 - `@clarvis/loop/workflows` — the engine-owned elicitation serializer a workflow
@@ -584,7 +571,7 @@ iteration would allocate per iteration for nothing.
 | `debug` | `skills.roots_unavailable`         | `cause`                                                                                                        |
 
 Plus the degradation warnings the engine already emitted, now named:
-`mcp.connect.failed`, `vision.capability_missing`, `vision.call_failed`, `trace.ingest_failed`,
+`mcp.connect.failed`, `trace.ingest_failed`,
 `trace.emit_failed`, `skills.discovery_failed`, `skills.discovery_warning`,
 `capability.extension_saturated`, `capability.setup_timeout`, `capability.finalize_timeout`,
 `capability.finalize_failed`, `capability.run_end_failed`, `capability.run_end_timeout`,

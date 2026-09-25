@@ -1162,7 +1162,6 @@ test("every non-run control-plane method stays a thin pass-through to its kernel
     c.config.previewSettingsRepair("global"),
     c.config.repairSettings("global", "revision"),
     c.config.updateSettings("global", {}, null),
-    c.config.inspectSandbox({} as never),
     c.config.approveWorkspace(),
     c.config.revokeWorkspace(),
     c.config.workspaceTrustError(),
@@ -1201,7 +1200,7 @@ test("every non-run control-plane method stays a thin pass-through to its kernel
   expect(c.project).toBe(kernel.project);
   expect(c.workspace).toBe(kernel.workspace);
   expect(Object.keys(c.plans)).toEqual(["read"]);
-  expect(calls).toHaveLength(45);
+  expect(calls).toHaveLength(44);
   await c.dispose();
 });
 

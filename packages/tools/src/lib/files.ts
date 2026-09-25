@@ -1,10 +1,6 @@
 import { constants, promises as fs, type Stats } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
-import path from "node:path";
-import picomatch from "picomatch";
 import { ToolError, fsError } from "../errors.ts";
-import { loadIgnore } from "./ignore.ts";
-import { isWithinRoots } from "./paths.ts";
 
 /** Default parallelism for batched `stat` calls (see {@link mapLimit}). */
 export const STAT_CONCURRENCY = 32;
@@ -16,8 +12,6 @@ const READ_CHUNK_BYTES = 64 * 1024;
 export interface ReadFileOptions {
   /** Refuse a last-component symlink where the host exposes `O_NOFOLLOW`. */
   noFollow?: boolean;
-  /** Host-owned workspace artifact root, verified against the opened descriptor. */
-  expectedArtifactRoot?: string;
 }
 
 /**
@@ -25,46 +19,16 @@ export interface ReadFileOptions {
  *
  * `O_NONBLOCK` is harmless for regular files and makes opening a FIFO return so
  * the descriptor can be rejected by `stat()` instead of waiting forever for a
- * writer. Windows does not support that flag for ordinary file opens, and its
- * filesystem paths do not expose POSIX FIFOs, so it uses Node's portable `r`
- * mode instead. `noFollow` additionally refuses a last-component symlink where
+ * writer. `noFollow` additionally refuses a last-component symlink where
  * the host exposes `O_NOFOLLOW`; descriptor metadata remains the authority on
  * every platform.
  */
-export async function openReadHandle(target: string, noFollow = false): Promise<FileHandle> {
-  if (process.platform === "win32") return fs.open(target, "r");
+async function openReadHandle(target: string, noFollow = false): Promise<FileHandle> {
   const flags =
     constants.O_RDONLY |
     constants.O_NONBLOCK |
     (noFollow && typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0);
   return fs.open(target, flags);
-}
-
-/** Verify a host-owned artifact's opened inode still belongs to its selected root. */
-async function assertOpenedArtifact(
-  handle: FileHandle,
-  target: string,
-  relForError: string,
-  root: string,
-): Promise<void> {
-  let canonical: string;
-  let opened;
-  let current;
-  try {
-    canonical = await fs.realpath(target);
-    opened = await handle.stat({ bigint: true });
-    current = await fs.stat(canonical, { bigint: true });
-  } catch (err) {
-    throw fsError(err as NodeJS.ErrnoException, relForError);
-  }
-  if (!isWithinRoots(canonical, [root]) || opened.dev !== current.dev || opened.ino !== current.ino)
-    throw new ToolError(
-      "path_escape",
-      `Artifact changed while it was being opened: ${relForError}.`,
-      {
-        path: relForError,
-      },
-    );
 }
 
 function notRegularFile(stat: Stats, relForError: string): ToolError {
@@ -97,7 +61,7 @@ function tooLargeFile(
  *
  * The extra byte distinguishes an exact-boundary file from a file that grew
  * after its descriptor metadata was observed. Reads advance the descriptor's
- * own cursor (`position: null`), which works on Windows as well as POSIX and
+ * own cursor (`position: null`), which works on POSIX and
  * keeps every byte tied to the same opened object even if the path is replaced.
  */
 async function readHandleBounded(handle: FileHandle, maxBytes: number): Promise<Buffer> {
@@ -181,8 +145,6 @@ export async function readRawFile(
   try {
     const stat = await handle.stat();
     if (!stat.isFile()) throw notRegularFile(stat, relForError);
-    if (options.expectedArtifactRoot !== undefined)
-      await assertOpenedArtifact(handle, target, relForError, options.expectedArtifactRoot);
     if (stat.size > maxBytes) {
       throw tooLargeFile(relForError, stat.size, maxBytes, limitHint);
     }
@@ -240,82 +202,4 @@ export async function mapLimit<T, R>(
   }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
   return results;
-}
-
-/**
- * Glob files under `base`, optionally filtering out git-ignored paths.
- *
- * @param base - the directory the glob is rooted at.
- * @param workspaceRoot - the workspace root used to resolve `.gitignore` rules.
- * @param opts - `pattern` is the glob (dotfiles included, files only);
- *   `respectGitignore` toggles the ignore filter.
- * @returns matching absolute paths plus whether the traversal ceiling stopped
- *   discovery before the tree was exhausted.
- * @remarks When `respectGitignore` is set, the ignore matcher is evaluated
- *   against each match's path relative to `workspaceRoot`, so ignore rules
- *   anywhere between the workspace root and the file apply.
- */
-export interface FileListing {
-  files: string[];
-  truncated: boolean;
-}
-
-export async function listFiles(
-  base: string,
-  workspaceRoot: string,
-  opts: {
-    pattern: string;
-    respectGitignore: boolean;
-    maxEntries?: number;
-    signal?: AbortSignal;
-    admit?: (path: string, kind: "directory" | "file") => boolean;
-  },
-): Promise<FileListing> {
-  const maxEntries = Math.max(1, opts.maxEntries ?? Number.MAX_SAFE_INTEGER);
-  const matches = picomatch(opts.pattern, { dot: true, windows: false });
-  const ig = opts.respectGitignore ? loadIgnore(workspaceRoot) : null;
-  const files: string[] = [];
-  const stack = [base];
-  let visited = 0;
-  let truncated = false;
-
-  scan: while (stack.length > 0) {
-    if (visited >= maxEntries || opts.signal?.aborted) {
-      truncated = true;
-      break;
-    }
-    const dir = stack.pop()!;
-    let handle;
-    try {
-      handle = await fs.opendir(dir);
-    } catch {
-      continue;
-    }
-    try {
-      for await (const entry of handle) {
-        if (visited >= maxEntries || opts.signal?.aborted) {
-          truncated = true;
-          break scan;
-        }
-        visited += 1;
-        const abs = path.join(dir, entry.name);
-        const workspaceRel = path.relative(workspaceRoot, abs);
-        if (entry.isDirectory()) {
-          if (
-            ig?.ignores(`${workspaceRel}${path.sep}`) !== true &&
-            opts.admit?.(abs, "directory") !== false
-          )
-            stack.push(abs);
-          continue;
-        }
-        if (!entry.isFile() && !entry.isSymbolicLink()) continue;
-        if (opts.admit?.(abs, "file") === false) continue;
-        const baseRel = path.relative(base, abs).split(path.sep).join("/");
-        if (matches(baseRel) && ig?.ignores(workspaceRel) !== true) files.push(abs);
-      }
-    } finally {
-      await Promise.resolve(handle.close()).catch(() => undefined);
-    }
-  }
-  return { files, truncated };
 }

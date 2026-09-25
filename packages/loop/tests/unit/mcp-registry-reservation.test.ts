@@ -38,7 +38,7 @@ describe("the engine's reserved wire names reach the registry", () => {
     ["extension", "ask_user"],
     ["extension", "read_file"],
     ["extension", "spawn_subagent"],
-    ["extension", "delegate_task"],
+    ["extension", "spawn_subagent"],
   ])("an MCP %s tool named %s never takes the built-in's name", (mcp, taken) => {
     const reg = buildRegistry(
       [{ conn: fakeConn(mcp), tools: [{ name: taken, inputSchema: { type: "object" } }] }],

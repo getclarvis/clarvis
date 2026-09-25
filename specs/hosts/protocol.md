@@ -64,7 +64,7 @@ Source ownership:
 | `hosting.ts` | Hosted-run identity, snapshot pages, handoff receipts, control epochs, attachments and the `HostingService` interface |
 | `goals.ts` | Persistent goal state, criteria, usage, operation receipts and authenticated user-control DTOs and `GoalService` contract |
 | `local-host.ts` | Optional local operator process state, bounded browser handoff DTOs and explicit runtime retry/restart controls |
-| `config.ts` | `ConfigService`, `SettingsData`/`SettingsView` (incl. `WorkspaceTrustVerdict`, `known_grants`), the `SandboxConfig`/`SandboxInspection` doctor cluster, `SettingsRepairPlan` (2-variant union), `AgentSummary`/`AgentDoc`/`AgentOverlay`/`AgentBudget`, context docs — see §3.10/§3.11 |
+| `config.ts` | `ConfigService`, settings and trust DTOs, repair plans, agent documents and context documents |
 | `plugins.ts` | `PluginService`, `PluginView`, `PluginContributions`, normalized install sources and atomic lifecycle DTOs |
 | `extension-profiles.ts` | `ExtensionProfileService`, exact inventory and plugin/skill references, definitions, composition previews, resolved snapshots, deltas, diagnostics, deletion, and persisted run identity |
 | `secrets.ts` | `SecretService` |
@@ -187,7 +187,7 @@ optional hosted-run ownership and a close method:
 
 `KernelCapabilities` has the three booleans `memory`, `skills`, and `agent_tools`, plus the
 optional host-reported `runtime` and `hosting.host_generation`. Native placement reports `kind`,
-`host_platform`, effective isolation and lifecycle.
+`host_platform` and lifecycle.
 The runtime projection is informational, not a client-controlled launch input. Public compatibility remains the concrete
 transport's `CLARVIS_WIRE_VERSION` handshake (`packages/kernel/src/transport/wire.ts`).
 
@@ -252,7 +252,6 @@ copies `events` (`packages/protocol/src/runs.ts`, `RunHandle.buffered`).
 | `revokeWorkspace` | `() => Promise<SettingsView>` | `packages/protocol/src/config.ts` |
 | `workspaceTrustError` | `() => Promise<string \| null>` | `packages/protocol/src/config.ts` |
 | `updateSettings` | `(scope, patch: Partial<SettingsData>, expectedRevision: string \| null) => Promise<SettingsView>` | `packages/protocol/src/config.ts` |
-| `inspectSandbox` | `(options?: { refresh?: boolean }) => Promise<SandboxInspection>` | `packages/protocol/src/config.ts` |
 | `listAgents` | `() => Promise<AgentSummary[]>` | `packages/protocol/src/config.ts` |
 | `getAgent` | `(scope: Scope \| "builtin", name: string) => Promise<AgentDoc>` | `packages/protocol/src/config.ts` |
 | `writeAgent` | `(scope, name, doc: AgentWrite) => Promise<AgentSummary>` | `packages/protocol/src/config.ts` |
@@ -331,6 +330,10 @@ logical execution metadata, not a downloaded cache or provider configuration.
 Production: `ModelCatalog` in [models.ts](../../packages/protocol/src/models.ts).
 
 #### `WorkspaceService` (`packages/protocol/src/workspace.ts`)
+
+`listFiles` enumerates the selected workspace; `readFile` and `readImage` resolve relative
+paths there and accept absolute paths. Production: `createWorkspaceService` in
+`packages/kernel/src/workspace/workspace-service.ts`. Test: `packages/kernel/tests/integration/workspace-service.test.ts`.
 
 | Method | Signature | File |
 | --- | --- | --- |
@@ -536,9 +539,9 @@ distinguishing fields:
 | `text_delta` | `iteration`, `channel: "text" \| "reasoning"`, `text`, `reset` | `packages/protocol/src/runs.ts` |
 | `model_error` | `iteration`, `kind`, `message` | `packages/protocol/src/runs.ts` |
 | `model_retry` | `iteration`, `kind`, `attempt`, `max_retries`, `delay_ms`, `status?`, `retry_after_ms?` | `packages/protocol/src/runs.ts` |
-| `delegation_created` | `delegation_id`, `task_id?`, `title`, `task`, `profile?`, `tools?` | `packages/protocol/src/runs.ts` |
-| `delegation_started` | `delegation_id`, `task_id?`, `model?` | `packages/protocol/src/runs.ts` |
-| `delegation_completed` \| `delegation_failed` | `delegation_id`, `task_id?`, `status`, `summary?` | `packages/protocol/src/runs.ts` |
+| `delegation_created` | `delegation_id`, `title`, `task`, `profile?`, `tools?` | `packages/protocol/src/runs.ts` |
+| `delegation_started` | `delegation_id`, `model?` | `packages/protocol/src/runs.ts` |
+| `delegation_completed` \| `delegation_failed` | `delegation_id`, `status`, `summary?` | `packages/protocol/src/runs.ts` |
 | `workflow_run_started` | `run_id`, `parent_run_id`, `profile?`, `title`, `task`, `round_id?`, `pass?`, `item_index?`, `replica?`, `replica_count?` | `packages/protocol/src/runs.ts` |
 | `workflow_title_updated` | `run_id`, `title` | `packages/protocol/src/runs.ts` |
 | `workflow_sequence_state` | `run_id`, `session_id`, six-state `status`, `revision`, current/proposed round/pass, `leaders_started`, `max_total_leaders`, `reason?` | `RunEvent` in `packages/protocol/src/runs.ts` |
@@ -554,7 +557,6 @@ distinguishing fields:
 | `soft_limit_check` | `dimension: "tokens" \| "iterations"`, `used`, `limit`, `outcome` | `RunEvent` |
 | `compaction_started` | `mode: "scheduled" \| "forced"` | `RunEvent` |
 | `compaction` | `operation`, `fallback_reason?`, `freed_chars?`, `contribution_count?`, `requested?: true`, `user_contribution_count?` | `RunEvent` |
-| `vision_analysis` | `model`, `image_count`, `status: "completed" \| "failed"`, `result` | `RunEvent` |
 | `compaction_skipped` | `reason` (5-member union) | `RunEvent` |
 | `elicitation_requested` | `agent?`, `subagent_id?`, `question`, `options?` | `RunEvent` |
 | `elicitation_resolved` | `agent?`, `subagent_id?`, `question`, `outcome`, `answer?`, `options?` | `RunEvent` |
@@ -678,16 +680,13 @@ on the same part rather than separate variants.
 | --- | --- | --- |
 | `RunStatus` | `"running" \| "completed" \| "failed" \| "cancelled"` | `packages/protocol/src/runs.ts` |
 | `AgentRole` | `"lead" \| "subagent"` | `packages/protocol/src/runs.ts` |
-| `PerAgentUsage` | `{ role: AgentRole \| "vision"; model; input_tokens; output_tokens; cached_tokens; cache_write_tokens; iterations? }` | `packages/protocol/src/runs.ts` |
+| `PerAgentUsage` | `{ role: AgentRole; model; input_tokens; output_tokens; cached_tokens; cache_write_tokens; iterations? }` | `packages/protocol/src/runs.ts` |
 | `RunUsage` | `{ iterations; elapsed_ms; input_tokens?; output_tokens?; cached_tokens?; by_agent?: PerAgentUsage[]; warnings? }` | `packages/protocol/src/runs.ts` |
 | `RunResult` | `{ execution_id; status: RunStatus; result?; ended_reason?; usage?: RunUsage; error?: { code; message; kind?; retry_after_ms? } }` plus final disposition or `disposition: "checkpoint"` with separate `checkpoint: { summary, next_step }` | `packages/protocol/src/runs.ts` |
 | `RunSummary` | `{ execution_id; owner?; status; created_at; ended_at? }` | `packages/protocol/src/runs.ts` |
 | `RunDetail` (extends `RunSummary`) | `+ messages: Message[]; events: RunEvent[]; result?: RunResult; continue_from?; plan_ref?: PlanRef; extension_profile?: ExtensionProfileRunRef; recovery?: RunRecovery` | `packages/protocol/src/runs.ts` |
 
-`PerAgentUsage.role`'s `"vision"` member is not an agent: its own doc comment calls it "the engine's
-image-reading pre-pass, one completion on a model no agent runs on" (`packages/protocol/src/runs.ts`) — the same
-escape-hatch shape as `capability_event`'s open string (§5 invariant 4), applied to cost attribution
-rather than to the event union. `RunUsage.by_agent` is optional because "a live run's final result may
+`RunUsage.by_agent` is optional because "a live run's final result may
 report per-agent detail... instead" of the flat totals (`packages/protocol/src/runs.ts`), which are themselves
 "present on a stored run (`get`)" but optional on a live result.
 
@@ -717,34 +716,16 @@ add kinds without a protocol bump" (`ElicitationRequest.kind` in `packages/proto
 This is structurally the same open/closed pattern already noted for `capability_event` in §5
 invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
 
-### 3.10 `ConfigService` data shapes I: settings and sandbox (`config.ts`)
+
+### 3.10 `ConfigService` data shapes I: settings (`config.ts`)
 
 | Type | Shape | File |
 | --- | --- | --- |
 | `WorkspaceTrustVerdict` | `{ state: "inert" \| "unapproved" \| "trusted" \| "changed"; fingerprint?; approved? }` | `packages/protocol/src/config.ts` |
-| `SettingsData` | `{ default_model?; providers?: ProviderConfig[]; mcp_servers?: Record<string, McpServerConfig>; guard?: GuardConfig; sandbox?: SandboxConfig; memory?: MemoryConfig; budget?; [block: string]: unknown }` | `SettingsData` in `packages/protocol/src/config.ts` |
+| `SettingsData` | Provider, model, MCP, capability and budget settings | `packages/protocol/src/config.ts` |
 | `ProviderConfig` | `{ name; kind?; base_url?; api_key_env?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 | `McpServerConfig` | `{ command?; args?; url?; [k]: unknown }` | `packages/protocol/src/config.ts` |
-| `GuardConfig` | `{ mode?: "off" \| "on" \| "auto"; allowed_commands?; denied_commands?; [k]: unknown }` | `packages/protocol/src/config.ts` |
-| `MemoryConfig` | `{ enabled?; model?; [k]: unknown }` | `packages/protocol/src/config.ts` |
-| `SandboxConfig` | `{ type: "native"; enabled?; availability?: "required" \| "optional"; filesystem?; network?; pass_env?; toolchains?: { mode?: "auto" \| "manual"; include?; exclude?; extra_paths?; excluded_paths? } }` | `packages/protocol/src/config.ts` (`SandboxConfig`) |
-| `SandboxToolchainScope` | `"system" \| "auto" \| "global" \| "workspace"` | `packages/protocol/src/config.ts` |
-| `SandboxInspection` | `{ filesystem: { placement: "host" \| "sandbox"; reads: "host-visible"; writes: "host-os" \| "declared-roots"; workspace: "read-write" \| "read-only" }; effective_network: "host" \| "none"; backend: { type: "bubblewrap" \| "seatbelt" \| "unsupported"; available; mode: "fresh-proc" \| "host-proc" \| "seatbelt" \| "unavailable"; degraded; reason? }; toolchains: SandboxToolchainStatus[]; extra_paths: SandboxPathStatus[]; effective_path: string[] }` | `packages/protocol/src/config.ts` (`SandboxInspection`) |
-
-`SandboxInspection.backend` identifies what the host actually probed: Bubblewrap uses `fresh-proc`
-or degraded `host-proc`, Seatbelt uses `seatbelt`, and an unavailable selected/unsupported backend
-uses `unavailable` (`packages/protocol/src/config.ts`, `SandboxInspection`). `SandboxToolchainScope`'s four
-values name where a discovered toolchain (or read-only path) originates: `"system"` (already on the
-host `PATH`), `"auto"` (found by discovery), or the `"global"` / `"workspace"` settings scope that
-declared it (`packages/protocol/src/config.ts`). This is the return shape behind `ConfigService.inspectSandbox`,
-whose §2.3 table row names only the method signature.
-`SandboxInspection.filesystem` separately describes Host versus Sandbox, host-visible reads,
-the write boundary and workspace posture. `effective_network` reports the enforced network mode;
-backend availability does not itself grant access.
-Production: `SandboxInspection` in `packages/protocol/src/config.ts` and
-`createSandboxPolicyResolver.inspect` in `packages/kernel/src/sandbox/policy.ts`. Test:
-`packages/kernel/tests/integration/sandbox-policy.test.ts` (`reports effective host-visible reads
-and the selected write posture`) and `packages/kernel/tests/contract/config-service.test.ts`.
+| `MemoryConfig` | `{ enabled?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 
 ### 3.11 `ConfigService` data shapes II: repair plan and agents (`config.ts`)
 
@@ -765,9 +746,7 @@ could not be parsed" (`packages/protocol/src/config.ts`).
 `SettingsView.known_grants?: readonly string[]` (`packages/protocol/src/config.ts`) lists "every capability grant an
 agent profile in this workspace may name" and is populated only by the kernel, "an optional feature
 package contributes its own grant, so the set is a property of what this kernel actually composed"
-(`packages/protocol/src/config.ts`). Its own remark names the defect that motivated it: a stale `image` grant "left
-by the vision-routing refactor... was reported 'runnable' by Doctor and the agent editor while every
-run in the workspace was rejected before its first model call" (`packages/protocol/src/config.ts`). Absent when the
+(`packages/protocol/src/config.ts`). Absent when the
 kernel did not report it, in which case "a client must then skip the check rather than assume a
 vocabulary" (`packages/protocol/src/config.ts`).
 

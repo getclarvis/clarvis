@@ -60,7 +60,7 @@ function mapPerAgent(a: PerAgentUsage): ProtoPerAgentUsage {
     output_tokens: a.output_tokens,
     cached_tokens: a.cached_tokens,
     cache_write_tokens: a.cache_write_tokens,
-    ...(a.type !== "vision" && a.iterations !== undefined ? { iterations: a.iterations } : {}),
+    ...(a.iterations !== undefined ? { iterations: a.iterations } : {}),
   };
 }
 

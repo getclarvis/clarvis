@@ -8,7 +8,7 @@ function command(root: string, source: string): string {
   const file = join(root, "session.cjs");
   writeFileSync(file, source);
   const invocation = `"${process.execPath}" "${file}"`;
-  return process.platform === "win32" ? `& ${invocation}` : invocation;
+  return invocation;
 }
 
 describe("shell and shell_session", () => {
@@ -87,49 +87,6 @@ describe("shell and shell_session", () => {
       expect(
         (await callTool("shell_session", { action: "stop", session_id: id }, owner)).json.stopped,
       ).toBe(true);
-    } finally {
-      await manager.close();
-      cleanup(root);
-    }
-  });
-
-  it.skipIf(
-    !["linux", "darwin"].includes(process.platform) ||
-      process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1",
-  )("yields, polls and stops a session through the native sandbox", async () => {
-    const root = makeWorkspace();
-    const manager = new ExecutionSessionManager();
-    try {
-      const config = makeConfig(root, {
-        sessionManager: manager,
-        sandbox: { type: "native", availability: "required", network: "none" },
-      });
-      const started = await callTool(
-        "shell",
-        {
-          command: "printf 'READY\\n'; printf 'SANDBOX\\n' >&2; while :; do sleep 1; done",
-          ready_when: "READY",
-          yield_time_ms: 5000,
-        },
-        config,
-      );
-      expect(started.isError).toBe(false);
-      expect(started.json).toMatchObject({ running: true, ready: true });
-      const sessionId = started.json.session_id as string;
-      const polled = await callTool(
-        "shell_session",
-        { action: "poll", session_id: sessionId },
-        config,
-      );
-      expect(polled.json).toMatchObject({ running: true });
-      expect(polled.json.stdout).toContain("READY");
-      expect(polled.json.stderr).toContain("SANDBOX");
-      const stopped = await callTool(
-        "shell_session",
-        { action: "stop", session_id: sessionId },
-        config,
-      );
-      expect(stopped.json).toMatchObject({ stopped: true, termination_confirmed: true });
     } finally {
       await manager.close();
       cleanup(root);

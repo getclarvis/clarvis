@@ -37,8 +37,8 @@ afterEach(() => {
   for (const d of made.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-/** Mode bits are unobservable on Windows and meaningless under root. */
-const modeBitsEnforced = process.platform !== "win32" && process.getuid?.() !== 0;
+/** Mode bits are unobservable under root. */
+const modeBitsEnforced = process.getuid?.() !== 0;
 
 describe("workspaceStatePaths", () => {
   test("roots under the global state tree, keyed by the workspace's segment", () => {

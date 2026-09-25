@@ -63,7 +63,7 @@ async function credentialPosture(path: string): Promise<CredentialFilePosture> {
     const info = await lstat(path);
     return {
       present: info.isFile() && !info.isSymbolicLink(),
-      owner_only: process.platform === "win32" ? null : (info.mode & 0o077) === 0,
+      owner_only: (info.mode & 0o077) === 0,
     };
   } catch {
     return { present: false, owner_only: null };

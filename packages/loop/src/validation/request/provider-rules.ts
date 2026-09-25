@@ -138,9 +138,7 @@ export function rejectProviderConfigIssues(
  *
  * @throws {@link ValidationError} with the resolver's own code/message (e.g.
  *   `unknown_provider`) for the first unresolvable token.
- * @remarks Covers `vision_model` alongside every profile's `model`. It is not a
- *   profile, so nothing else would check it, and an unresolvable one would
- *   surface only as a silently skipped vision pass.
+ * @remarks Covers every profile's `model` and any additional host-resolved models.
  */
 export function requireResolvableModelProviders(
   data: ParsedRunRequest,
@@ -149,7 +147,6 @@ export function requireResolvableModelProviders(
 ): void {
   const refs = data.profiles.map((p) => p.model);
   refs.push(...extraModels);
-  if (data.vision_model !== undefined) refs.push(data.vision_model);
   for (const ref of refs) {
     if (resolver !== undefined) {
       const parsed = parseModelRef(ref);

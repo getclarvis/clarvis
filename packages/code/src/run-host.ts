@@ -938,7 +938,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     if (!deps.backgroundHandoffSurvivesExit())
       return Promise.reject(
         new Error(
-          "This connection cannot keep a run alive after the TUI exits. Background handoff is available only on a local Host or Sandbox; use /background list to inspect or cancel runs while this connection remains open.",
+          "This connection cannot keep a run alive after the TUI exits. Background handoff is available only on a local host; use /background list to inspect or cancel runs while this connection remains open.",
         ),
       );
     if (handoffFlight !== undefined) return handoffFlight;
@@ -1298,9 +1298,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     rememberResidentTurn({ userKey });
     const sessionId = sess.meta()?.id;
     const memoryMode = deps.memoryMode();
-    const requestOptions = {
-      ...(memoryMode === "off" ? { memory: memoryMode } : {}),
-    };
+    const requestOptions = { memory: memoryMode };
     const pending = sess.takePending();
     const requestPending = hostedSession === undefined ? pending : [];
     const isManager = deps.isManagerProfile?.() === true;
@@ -1554,7 +1552,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           executionId,
           profile,
           ...(sessionId ? { sessionId } : {}),
-          ...(skillMemoryMode === "off" ? { memory: skillMemoryMode } : {}),
+          memory: skillMemoryMode,
         });
         setHandle(handle);
         return handle.done;

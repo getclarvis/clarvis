@@ -72,7 +72,7 @@ export const WORKFLOW_DECIDE_TOOL_NAME = "workflow_decide";
 
 const RUN_ROUND_DESCRIPTION =
   "Start the first round of a declared sequence and return immediately. Collect leaders with " +
-  "await_agents or agent_poll. Internal waves run automatically; later rounds and repeat passes " +
+  "agent_poll. Internal waves run automatically; later rounds and repeat passes " +
   "require workflow_status then revision-matched workflow_decide. Only one sequence may be active.";
 
 /** Build the read-only checkpoint inspection tool. */
@@ -926,7 +926,7 @@ function describePlan(
     `${shape}.${repeat} ` +
     `Round '${first.id}' is running now: ${[...handles.values()].join(", ")}.` +
     `${describeQueued(queued)} ` +
-    "Keep working, then collect them with await_agents (to wait) or agent_poll (to look). " +
+    "Keep working, then collect them with agent_poll or read its completion notice. " +
     "When this round returns, inspect its checkpoint with workflow_status and explicitly use " +
     "workflow_decide. No later round starts automatically."
   );
@@ -1437,7 +1437,7 @@ export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
             `${String(remaining)} cumulative slot(s) remaining (max_total_leaders=` +
             `${String(sequence.deps.ctx.leaderCount.limit)}). The checkpoint is unchanged.`
           : `not starting round '${round.id}' — too many child agents are already running. ` +
-            "Wait with await_agents or end one with agent_stop, then retry the same revision.";
+            "Inspect with agent_poll or end one with agent_stop, then retry the same revision.";
       return { text, progress: false, error: true };
     }
 

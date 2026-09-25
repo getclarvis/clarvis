@@ -268,7 +268,6 @@ function mapEntryRaw(
         task: d.task,
         tools: d.tools,
       };
-      if (d.task_id !== undefined) event.task_id = d.task_id;
       if (d.profile !== undefined) event.profile = d.profile;
       return event;
     }
@@ -277,7 +276,6 @@ function mapEntryRaw(
       const d = capDetail(entry.kind, entry.detail);
       const base = {
         delegation_id: d.delegation_id,
-        ...(d.task_id === undefined ? {} : { task_id: d.task_id }),
         completed_at: abs(entry.at),
         status: d.status,
         result: d.result,
@@ -329,19 +327,7 @@ function mapEntryRaw(
       if (d.requested !== undefined) event.requested = d.requested;
       if (d.user_contribution_count !== undefined)
         event.user_contribution_count = d.user_contribution_count;
-      if (d.task_id !== undefined) event.task_id = d.task_id;
       return event;
-    }
-    case "vision_analysis": {
-      const d = capDetail(entry.kind, entry.detail);
-      return {
-        type: "vision_analysis",
-        model: d.model,
-        image_count: d.image_count,
-        status: d.status,
-        result: d.result,
-        occurred_at: abs(entry.at),
-      };
     }
     case "compaction_skipped": {
       const d = capDetail(entry.kind, entry.detail);
@@ -440,7 +426,6 @@ function mapEntryRaw(
       return {
         type: "delegation_started",
         delegation_id: d.delegation_id,
-        ...(d.task_id === undefined ? {} : { task_id: d.task_id }),
         occurred_at: abs(entry.at),
         model: d.model,
       };

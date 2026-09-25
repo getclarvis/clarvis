@@ -51,7 +51,6 @@ export type WorkspaceHooksTrust =
   | { state: "unapproved"; fingerprint: string }
   | { state: "changed"; fingerprint: string; approved: string };
 import type { InProcessKernel } from "./kernel.ts";
-import { createSandboxPolicyResolver, pinSandboxPolicy } from "./sandbox/policy.ts";
 import type { KernelOwnershipMode } from "./application/scope-policy.ts";
 import {
   createKernelEnvironment,
@@ -285,7 +284,7 @@ function reportCapability(
  * @returns the fully wired file-backed kernel, ready to serve.
  * @remarks Loads an immutable environment snapshot, folds in plugin
  *   contributions, resolves API keys without process-global mutation, wires
- *   guard and sandbox-policy resolution, and enables memory only when
+ *   tool authority, and enables memory only when
  *   `opts.memory` is set. Building the loop deps is async, so this returns a promise.
  */
 export async function createFileKernel(opts: CreateFileKernelOptions): Promise<FileKernel> {
@@ -429,8 +428,9 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   ];
 
   /**
-   * The run's merged `memory:` block, re-read per call so a settings edit takes
-   * effect live; undefined keeps memory off for that run.
+   * The merged `memory:` provider and budgets with the global on/off choice,
+   * re-read per call so a settings edit takes effect live. An absent block uses
+   * the built-in wiki and budgets; each run must still explicitly request memory on.
    *
    * @remarks Its providers are passed through exactly as configured. Nothing on
    * this path consults the model catalog: `prompt_cache` is resolved where a
@@ -439,11 +439,15 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
    * in between — which is what keeps their two prefixes byte-identical.
    */
   const loadMemorySettings = (): MemoryFactorySettings | undefined => {
-    const merged = configStore.readSettings().merged as Record<string, unknown>;
+    const snapshot = configStore.readSettings();
+    const merged = snapshot.merged as Record<string, unknown>;
     const cfg = merged.memory;
-    if (cfg === undefined || cfg === null) return undefined;
-    const out: MemoryFactorySettings = { config: cfg as MemoryFactorySettings["config"] };
-    if (typeof merged.default_model === "string") out.defaultModel = merged.default_model;
+    const out: MemoryFactorySettings = {
+      config: {
+        ...(cfg as MemoryFactorySettings["config"] | undefined),
+        enabled: snapshot.scopes.global?.memory?.enabled ?? true,
+      },
+    };
     if (Array.isArray(merged.providers)) {
       out.providers = merged.providers as MemoryFactorySettings["providers"];
     }
@@ -451,13 +455,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   };
 
   const defaultModel = opts.defaultModel ?? environment.values.CLARVIS_DEFAULT_MODEL;
-  const sandboxPolicy = createSandboxPolicyResolver(
-    configStore,
-    opts.workspaceRoot,
-    environment.values,
-  );
-  const runSandboxPolicy = pinSandboxPolicy(sandboxPolicy);
-
   /**
    * The run's hooks, re-read from settings on every run.
    *
@@ -651,7 +648,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   const nativeRuntime = (): Extract<RuntimeStatus, { kind: "native" }> => ({
     kind: "native",
     host_platform: process.platform,
-    isolation: configStore.readSettings().merged.sandbox?.enabled === false ? "host" : "sandbox",
     lifecycle: "ready",
   });
   const native = await createNativeKernel({
@@ -673,7 +669,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       reservedSystemSkillName: SYSTEM_DOCS_NAME,
       ...(systemDocs === undefined ? {} : { systemSkillProvider: systemDocs.provider }),
       skillBootstraps: pluginSkillBootstraps,
-      resolveSandbox: runSandboxPolicy,
       resolveSecretNames: loadSecretNames,
       resolveHooks: loadHooks,
       hookCredentialNames: managedSecretNames,
@@ -776,7 +771,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
             ...(subscriptionManager === undefined
               ? {}
               : { providerAuthService: subscriptionManager }),
-            inspectSandbox: (options) => sandboxPolicy.inspect(options),
             ...(opts.globalDir !== undefined ? { globalConfigDir: opts.globalDir } : {}),
             defaultOwner: kernelDefaultOwner,
             ...(opts.ownerCache !== undefined ? { ownerCache: opts.ownerCache } : {}),

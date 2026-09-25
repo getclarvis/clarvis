@@ -143,55 +143,6 @@ test("edit_memory renders the reconstructed diff, exactly like edit_file", async
   expect(out).toContain("two");
 });
 
-test("a replace renders its summary plus one highlighted diff per touched file", async () => {
-  const perFile = (rel: string, old: string, neu: string): string =>
-    [
-      `Index: ${rel}`,
-      "===================================================================",
-      `--- ${rel}`,
-      `+++ ${rel}`,
-      "@@ -1 +1 @@",
-      `-${old}`,
-      `+${neu}`,
-    ].join("\n");
-  const out = await frame(
-    toolNode({
-      toolName: "replace",
-      args: { pattern: "foo", replacement: "bar" },
-      result: "Replaced 2 occurrence(s) in 2 file(s):\n  M one.ts (1 replacement)",
-      diff: perFile("one.ts", "foo1", "bar1") + "\n" + perFile("two.ts", "foo2", "bar2"),
-    }),
-  );
-  expect(out).toContain("Replaced 2 occurrence(s)");
-  expect(out).toContain("bar1");
-  expect(out).toContain("bar2");
-});
-
-test("the diff tool renders its unified result as a diff, not plain text", async () => {
-  const out = await frame(
-    toolNode({
-      toolName: "diff",
-      args: { from: "a.ts", to: "b.ts" },
-      result: REAL_DIFF,
-      diff: undefined,
-    }),
-  );
-  expect(out).toContain("TWO");
-  expect(out).toContain("two");
-});
-
-test("the diff tool's no-difference result stays a muted one-liner", async () => {
-  const out = await frame(
-    toolNode({
-      toolName: "diff",
-      args: { from: "a.ts", to: "b.ts" },
-      result: "(no differences)",
-      diff: undefined,
-    }),
-  );
-  expect(out).toContain("(no differences)");
-});
-
 test("every diff normalizes CRLF and bare CR before it reaches OpenTUI", async () => {
   const source = REAL_DIFF.replace(/\n/g, "\r\n").replace(" one\r\n", " one\r");
   const t = await openRender(

@@ -8,10 +8,10 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 ### Changed
 
 - Removed Shell Guard, Judge, command review and file-tool path admission. Shell and file tools now
-  follow host permissions or the configured native Sandbox policy.
-- Removed Docker and Podman execution, container images and runtime installers. Isolation now offers
-  Host and Sandbox; remote SSH connections remain available. Release candidates use source identity
-  and stable releases continue to publish portable binaries.
+  follow host process permissions.
+- Removed Docker and Podman execution, container images and runtime installers. Remote SSH
+  connections remain available. Release candidates use source identity and
+  stable releases continue to publish portable binaries.
 
 ## [0.2.0] - Unreleased
 
@@ -36,7 +36,7 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 - `/diff` and `Ctrl+X D` show the current Git working tree, including staged, unstaged and untracked
   files, instead of grouping transcript tool calls. The overlay opens on an empty conversation.
-- `/background`, `/background list`, `/attach` and scoped cancellation let a local Host/Sandbox run
+- `/background`, `/background list`, `/attach` and scoped cancellation let a local host run
   continue after its TUI closes and return to the same execution later. SSH retains list, attach
   and cancel only while its current client connection is alive.
 - `/goal` creates and controls a persistent objective with bounded automatic continuation,
@@ -78,9 +78,6 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   its remote Kernel and closes it when the connection ends.
 - `/model` can request an explicit context target through `runs.context` again; the optional field is
   admitted by the closed transport envelope.
-- A Lead now defers plan mutations issued in the same model iteration after tracked delegation until
-  the returned task state and fresh CAS identity are published. Sub-agents continue to receive no
-  plan mutation tools, and strict digest checks remain intact.
 - Agent and workflow counts appear only in the sidebar; the footer no longer repeats the roster.
 - Corrupt PNG tool results are refused before they can enter a later provider request.
 - POSIX local hosts now fall back to the private account-scoped namespace under `/tmp` when the
@@ -115,7 +112,7 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   and leader sub-agents, through per-call fair-share reservations that return unused headroom.
 - ChatGPT subscription catalog discovery now sends Codex compatibility revision `0.153.2`, matching
   the reviewed latest stable `@openai/codex` release while keeping Clarvis's own version separate.
-- First-run POSIX and PowerShell command policies now allow conventional inspection, build, test,
+- First-run shell command policies now allow conventional inspection, build, test,
   lint, and type-check commands across common language ecosystems. Existing allowlists remain
   unchanged, while generic runners, installs, publishing, deployments, and migrations still require
   review.
@@ -126,8 +123,6 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   scheduled it without retaining prompt or argument contents.
 - Command-review denials no longer accumulate as failed executions, while genuine tool failures do;
   a later success in the same model-declared batch clears a provisional convergence crossing.
-- Native sandboxes admit the host's compatible temporary roots and recognized system executables;
-  Apple-silicon Homebrew tools work inside Seatbelt without granting write access to Homebrew.
 - Transcript streaming remains in one chronological scroll flow, keeps an older reader's exact
   anchor, returns explicit new submissions to the Lead tail, and avoids stale overscroll while an
   elicitation replaces the composer.
@@ -172,8 +167,6 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 - Environment profiles now pin qualified plugin and skill selections into immutable run snapshots,
   with guided creation and editing through the Extensions workflow.
-- macOS can enforce native Seatbelt sandbox profiles for shell execution, with matching inspection
-  and CI coverage alongside the Linux Bubblewrap backend.
 - A source-development installer provides the `clarvis-develop` launcher for running the current
   checkout without replacing a managed release installation.
 - Extension compatibility now accepts portable MCP declarations, pre-registered OAuth client
@@ -202,8 +195,6 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Security
 
-- macOS shell execution can require a native sandbox instead of falling back to an unconstrained
-  host shell, while Linux sandbox enforcement remains fail-closed.
 - Environment snapshots are revalidated at run admission and recorded with their exact identities so
   workspace or marketplace drift cannot silently change an approved run.
 - Marketplace npm installs disable lifecycle scripts, while refs, registries, subdirectories, paths,
@@ -220,7 +211,7 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   keeping service credentials isolated from authorization requests and local callback state.
 - Portable installers now show numbered download, verification, staging, and activation progress and
   provide lock-serialized guarded uninstall modes that bind launcher ownership to the selected root,
-  reject linked managed paths, stop on cancellation, clean managed Windows `PATH` entries, and
+  reject linked managed paths, stop on cancellation, and
   preserve Clarvis user and workspace state.
 
 ### Changed
@@ -254,7 +245,7 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Added
 
-- Portable glibc-based Linux, macOS, and Windows release targets for x64 and arm64, including the Bun
+- Portable glibc-based Linux and macOS release targets for x64 and arm64, including the Bun
   runtime and target-native TUI dependencies.
 - Checksum-verifying installers and explicit `clarvis --update` support for managed installations.
 - First-run provider and model setup in the terminal UI.

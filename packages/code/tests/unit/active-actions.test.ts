@@ -179,15 +179,13 @@ test("block navigation occupies one atomic footer segment and retains actual bin
 test("shared footer modifiers preserve full help keys and budget the rendered text", () => {
   const actions = [
     action("send", 100, "primary", { keys: ["↵"], essential: true }),
-    action("isolation", 50, "navigation", { keys: ["Ctrl+X I"] }),
+    action("agents", 50, "navigation", { keys: ["Ctrl+X I"] }),
     action("memory", 49, "navigation", { keys: ["Ctrl+X M"] }),
     action("cancel", 90, "escape", { keys: ["Ctrl+C"], essential: true }),
   ];
-  expect(footerText(actions)).toBe(
-    "[↵] send  [Ctrl+C] cancel  │  Ctrl+X: [I] isolation  [M] memory",
-  );
+  expect(footerText(actions)).toBe("[↵] send  [Ctrl+C] cancel  │  Ctrl+X: [I] agents  [M] memory");
   expect(actions[1]!.keys).toEqual(["Ctrl+X I"]);
-  expect(actionSegment(actions[1]!)).toBe("[Ctrl+X I] isolation");
+  expect(actionSegment(actions[1]!)).toBe("[Ctrl+X I] agents");
   for (let width = 24; width <= 180; width++) {
     expect(Bun.stringWidth(footerText(budgetFooterActions(actions, width)))).toBeLessThanOrEqual(
       width - 2,
@@ -197,18 +195,18 @@ test("shared footer modifiers preserve full help keys and budget the rendered te
 
 test("mixed custom alternatives stay explicit outside the modifier group", () => {
   const actions = [
-    action("isolation", 50, "navigation", { keys: ["Ctrl+X I", "Alt+I"] }),
+    action("agents", 50, "navigation", { keys: ["Ctrl+X I", "Alt+I"] }),
     action("diff", 49, "navigation", { keys: ["Ctrl+X D"] }),
     action("memory", 48, "navigation", { keys: ["Ctrl+X M"] }),
   ];
-  expect(footerText(actions)).toBe("[Ctrl+X I/Alt+I] isolation  │  Ctrl+X: [D] diff  [M] memory");
-  expect(footerText(actions.slice(0, 2))).toBe("[Ctrl+X I/Alt+I] isolation  [Ctrl+X D] diff");
+  expect(footerText(actions)).toBe("[Ctrl+X I/Alt+I] agents  │  Ctrl+X: [D] diff  [M] memory");
+  expect(footerText(actions.slice(0, 2))).toBe("[Ctrl+X I/Alt+I] agents  [Ctrl+X D] diff");
 });
 
 test("responsive footer retains every action across rows with explicit modifier prefixes", () => {
   const actions = [
     action("send", 100, "primary", { keys: ["↵"] }),
-    action("isolation", 50, "navigation", { keys: ["Ctrl+X I"] }),
+    action("agents", 50, "navigation", { keys: ["Ctrl+X I"] }),
     action("diff", 49, "navigation", { keys: ["Ctrl+X D"] }),
     action("memory", 48, "navigation", { keys: ["Ctrl+X M"] }),
     action("cancel", 90, "escape", { keys: ["Ctrl+C"] }),
@@ -227,7 +225,7 @@ test("responsive footer retains every action across rows with explicit modifier 
 test("footer spans keep keys apart from labels and name the shared prefix once", () => {
   const actions = [
     action("send", 100, "primary", { keys: ["↵"] }),
-    action("isolation", 50, "navigation", { keys: ["Ctrl+X I"] }),
+    action("agents", 50, "navigation", { keys: ["Ctrl+X I"] }),
     action("memory", 49, "navigation", { keys: ["Ctrl+X M"] }),
   ];
   expect(footerSpans(actions).map((span) => [span.tone, span.text])).toEqual([
@@ -237,13 +235,13 @@ test("footer spans keep keys apart from labels and name the shared prefix once",
     ["prefix", "Ctrl+X:"],
     ["separator", " "],
     ["key", "[I]"],
-    ["label", " isolation"],
+    ["label", " agents"],
     ["separator", "  "],
     ["key", "[M]"],
     ["label", " memory"],
   ]);
   // The plain string remains the measurement and the tests' contract.
-  expect(footerText(actions)).toBe("[↵] send  │  Ctrl+X: [I] isolation  [M] memory");
+  expect(footerText(actions)).toBe("[↵] send  │  Ctrl+X: [I] agents  [M] memory");
 });
 
 test("a band admits the authored short wording before it drops a segment", () => {
@@ -324,7 +322,7 @@ test("a command that lost its sequence keeps only the keys the keymap dispatches
     ).map((entry) => entry.id),
   ).toEqual(["ui.level.close"]);
 
-  const custom = action("isolation.picker", 50, "navigation", {
+  const custom = action("agent.picker", 50, "navigation", {
     keys: ["Ctrl+X I", "Alt+I"],
     sequences: [
       ["<leader>", "i"],

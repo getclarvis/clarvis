@@ -56,8 +56,7 @@ export async function readTextFile(
  * @returns the {@link DecodedText}, or `null` on any of the above conditions.
  * @remarks Unlike {@link readTextFile}, ordinary filesystem, size and binary
  *   failures collapse to `null`, so it suits callers that treat an unavailable
- *   file as simply absent. A post-open `path_escape` is deliberately re-thrown:
- *   security-boundary races must not masquerade as an empty search result.
+ *   file as simply absent.
  */
 export async function readTextBuffer(
   target: string,
@@ -67,8 +66,7 @@ export async function readTextBuffer(
   let buf: Buffer;
   try {
     buf = await readRawFile(target, target, maxBytes, undefined, options);
-  } catch (err) {
-    if (err instanceof ToolError && err.code === "path_escape") throw err;
+  } catch {
     return null;
   }
   if (isBinary(buf)) return null;

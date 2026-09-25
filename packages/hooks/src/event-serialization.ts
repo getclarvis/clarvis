@@ -7,7 +7,7 @@ import type {
   ModelCallErrorContext,
   PreCompactContext,
   PostCompactContext,
-  PreDelegateTaskContext,
+  PreSpawnContext,
   PreFinalizeContext,
   RunEndContext,
   RunStartContext,
@@ -73,7 +73,7 @@ type HookContextByEvent = {
   pre_tool_use: BeforeToolUseContext;
   post_tool_use: AfterToolUseContext;
   pre_finalize: PreFinalizeContext;
-  pre_delegate_task: PreDelegateTaskContext;
+  pre_spawn_subagent: PreSpawnContext;
   run_start: RunStartContext;
   run_end: RunEndContext;
   post_compact: PostCompactContext;
@@ -149,7 +149,6 @@ const SERIALIZE = {
     tool_response: {
       text: clampText(c.result.text),
       progress: c.result.progress,
-      task_id: c.result.taskId,
       image_count: c.result.images?.length ?? 0,
     },
   }),
@@ -161,11 +160,10 @@ const SERIALIZE = {
     value: clampValue(c.value),
     ...(c.mode === "checkpoint" ? { checkpoint: clampValue(c.checkpoint) } : {}),
   }),
-  pre_delegate_task: (c: PreDelegateTaskContext) => ({
+  pre_spawn_subagent: (c: PreSpawnContext) => ({
     title: c.title,
     task: clampText(c.task),
     profile: c.profile,
-    task_id: c.taskId,
   }),
   run_start: (c: RunStartContext) => ({
     mode: c.mode,

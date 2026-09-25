@@ -68,20 +68,17 @@ export type MemoryProviderConfig = z.infer<typeof memoryProviderSchema>;
 
 /**
  * The `memory:` settings block the loop embeds: whether memory is on, where it
- * comes from, which model drives the per-run indexer, and optional
+ * comes from, and optional
  * {@link budgetsSchema} overrides.
  *
  * @remarks
- * `.strict()` rejects unknown keys. `enabled` defaults to `true`; `model` is
- * optional and hosts should default it to a cheap model; `budgets` is a partial
+ * `.strict()` rejects unknown keys. `enabled` defaults to `true`; `budgets` is a partial
  * override so only the caps a host cares about need be set; `provider` defaults
  * to the built-in wiki.
  */
 export const memoryConfigSchema = z
   .object({
     enabled: z.boolean().default(MEMORY_DEFAULTS.enabled),
-    /** Model id for the indexer; hosts should default to a cheap model. */
-    model: z.string().optional(),
     budgets: budgetsSchema.partial().optional(),
     provider: memoryProviderSchema.optional(),
   })

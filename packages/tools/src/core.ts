@@ -5,8 +5,6 @@ import { tools, getTool, selectSurface } from "./tools/registry.ts";
 import { textPart, type ContentPart, type ToolResult } from "./tools/content.ts";
 import type { ToolCallHooks } from "./tools/types.ts";
 import type { RuntimeConfig } from "./config.ts";
-import { isFileOperation, type AgentFilesystem } from "./agent-filesystem.ts";
-import { SandboxAgentFilesystem } from "./filesystem-service.ts";
 
 const ajv = new Ajv({ allErrors: true, useDefaults: true, coerceTypes: true });
 const validators = new Map<string, ValidateFunction>();
@@ -68,23 +66,6 @@ function boundMeta(meta: Record<string, unknown>, maxBytes: number): Record<stri
   }
   return best;
 }
-
-const localFilesystem: AgentFilesystem = {
-  async execute(call, config, signal) {
-    const tool = getTool(call.operation, selectSurface(config.readOnly));
-    if (!tool) throw new ToolError("not_found", `Unknown file tool: ${call.operation}`);
-    const { content, meta } = normalizeOutput(await tool.handler(call.args, config, signal));
-    const parts = typeof content === "string" ? [textPart(content)] : content;
-    return {
-      isError: false,
-      content: boundParts(parts, tool.bounded, config.maxOutputBytes),
-      ...(meta ? { meta: boundMeta(meta, config.maxToolMetaBytes) } : {}),
-    };
-  },
-  close() {
-    return Promise.resolve(true);
-  },
-};
 
 /**
  * The public description of a tool as advertised to a client/model: its name,
@@ -154,17 +135,6 @@ export async function dispatch(
   }
 
   try {
-    if (isFileOperation(name)) {
-      const filesystem =
-        config.filesystemPolicy.placement === "sandbox"
-          ? config.sessionManager.acquireFilesystem(
-              config.filesystemPolicy.identity,
-              () => new SandboxAgentFilesystem(config),
-            )
-          : localFilesystem;
-      const result = await filesystem.execute({ operation: name, args: filled }, config, signal);
-      return result;
-    }
     const { content, meta } = normalizeOutput(await tool.handler(filled, config, signal, hooks));
     const parts = typeof content === "string" ? [textPart(content)] : content;
     return {

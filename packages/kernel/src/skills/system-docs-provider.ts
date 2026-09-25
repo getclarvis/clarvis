@@ -19,7 +19,6 @@ export function createSystemDocsProvider(
         include: [SYSTEM_DOCS_NAME],
         manifestName: "exact",
         validation: "agent-skills",
-        confinementRoot: destination,
       },
     ],
     strict: true,

@@ -8,8 +8,8 @@
  * task port published on the run's service registry.
  *
  * This entry must never import `@clarvis/loop`. The engine consumes planning's
- * seam structurally — `delegate_task` takes a port shaped like
- * {@link PlanDelegationPort} without naming this package — which is what keeps
+ * seam structurally — `spawn_subagent` takes a port shaped like
+ * {@link PlanSpawnPort} without naming this package — which is what keeps
  * the dependency edge pointing one way.
  */
 import type {
@@ -47,12 +47,12 @@ import {
   LIST_PLANS_TOOL_NAME,
   READ_PLAN_TOOL_NAME,
 } from "./runtime-tools.ts";
-import { PLAN_PORT, type PlanDelegationPort } from "./task-port.ts";
+import { PLAN_SPAWN_PORT, type PlanSpawnPort } from "./spawn-port.ts";
 import { createPlanCatalogRun } from "./catalog.ts";
 import { planReviewContext } from "./review-context.ts";
 
-export { PLAN_PORT } from "./task-port.ts";
-export type { PlanDelegationPort, DelegateTaskAugmentation, SpawnGate } from "./task-port.ts";
+export { PLAN_SPAWN_PORT } from "./spawn-port.ts";
+export type { PlanSpawnPort, SpawnGate } from "./spawn-port.ts";
 export { PlanSession } from "./session.ts";
 export { planProjection } from "./orchestration.ts";
 
@@ -220,9 +220,9 @@ export function createPlansCapability(options: PlansCapabilityOptions): Capabili
         return created;
       };
 
-      const ports = new WeakMap<object, PlanDelegationPort>();
+      const ports = new WeakMap<object, PlanSpawnPort>();
       let absenceReported = false;
-      ctx.services.provide(PLAN_PORT, {
+      ctx.services.provide(PLAN_SPAWN_PORT, {
         forAgent: (bc) => {
           const port = ports.get(bc);
           if (port === undefined && !absenceReported) {
@@ -365,7 +365,7 @@ export function createPlansCapability(options: PlansCapabilityOptions): Capabili
  * taking ownership of the source plan. The host selects this projection; it is
  * not a model-controlled request mode. It opens no provider, runs no review or
  * task gates, publishes no context, and never reconciles, finalizes or deletes
- * a plan. Plan calls and tracked delegation are refused even without an outer
+ * a plan. Plan calls are refused even without an outer
  * dispatch restriction. The source request's planning mode still controls the
  * catalog, including its review descriptions and explicit opt-out.
  */

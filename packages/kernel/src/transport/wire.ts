@@ -53,7 +53,6 @@ export const M = {
   listAgents: OPERATIONS.config.listAgents.method,
   getSettings: OPERATIONS.config.getSettings.method,
   updateSettings: OPERATIONS.config.updateSettings.method,
-  inspectSandbox: OPERATIONS.config.inspectSandbox.method,
   approveWorkspace: OPERATIONS.config.approveWorkspace.method,
   revokeWorkspace: OPERATIONS.config.revokeWorkspace.method,
   workspaceTrustError: OPERATIONS.config.workspaceTrustError.method,

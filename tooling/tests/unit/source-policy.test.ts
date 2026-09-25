@@ -75,13 +75,4 @@ describe("findUnclassifiedTestFiles", () => {
       ]),
     ).toEqual([]);
   });
-
-  test("normalizes Windows paths", () => {
-    expect(
-      findUnclassifiedTestFiles([
-        "packages\\a\\tests\\architecture\\surface.test.ts",
-        "packages\\a\\tests\\surface.test.ts",
-      ]),
-    ).toEqual(["packages\\a\\tests\\surface.test.ts"]);
-  });
 });

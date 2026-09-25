@@ -104,7 +104,7 @@ one operation; conflicting modes are refused.
 
 The application refuses either transition while its conversation has active preparation, a run,
 shell work or compaction. It pauses TUI loop scheduling while connecting. Host probe failures publish
-connection failure separately from runtime placement. A failed transition probes the retained client
+connection failure separately from runtime state. A failed transition probes the retained client
 before declaring the connection unavailable; saved settings remain pending when reload was refused.
 
 Production: `WorkspaceClientManager.recover`, `invalidate`, `subscribeConnectionFailure` and
@@ -120,13 +120,14 @@ verifies sequenced notices, failed-poll recovery and browser callbacks fenced to
 transition ordering and intent; [app-commands.test.tsx](../../packages/code/tests/integration/app-commands.test.tsx)
 verifies the connection and reload routes.
 
-`/background` requests a durable handoff for the selected run and exits only after its receipt on a
-local Host/Sandbox connection whose independently owned host survives client disconnect.
-Agent command sessions started in that hosted run remain owned by the run through client disconnect. The
+`/background` requests a durable handoff for the selected run and exits only after its receipt on
+a local host whose independently owned lifecycle survives client disconnect. Agent command sessions
+started in that hosted run remain owned by the run through client disconnect. The
 tools capability closes command admission, drains tracked process trees, and releases run scratch
 only when the hosted execution itself ends. Closing a TUI window is not a run-end signal. An abrupt
-host crash outside a sandbox may leave an orphan; a stale session ID cannot authorize signalling in a later run. Production: `createAgentToolsCapability` in
-`packages/loop/src/runtime/capabilities/tools.ts`, `ExecutionSessionManager` in
+host crash may leave an orphan; a stale session ID cannot authorize signalling in a later run.
+Production: `createAgentToolsCapability` in `packages/loop/src/runtime/capabilities/tools.ts`,
+`ExecutionSessionManager` in
 `packages/tools/src/lib/execution-session.ts`, and `createHostedExecution` in
 `packages/kernel/src/hosting/sessions.ts`. Test:
 `packages/kernel/tests/integration/local-host-process.test.ts` (hosted session through disconnect
@@ -143,7 +144,7 @@ infer it from the Kernel's native runtime label.
 
 | Connection destination | `/background` survives TUI exit | List, attach and cancel |
 | --- | --- | --- |
-| local Host or Sandbox | yes, after a confirmed host receipt | current or reopened TUI while the local host exists |
+| local host | yes, after a confirmed host receipt | current or reopened TUI while the local host exists |
 | SSH remote | no | current SSH stdio connection only; saved history persists after closure |
 
 Opening a local workspace offers runs with `continue` policy after first paint, unless a draft,
@@ -516,7 +517,7 @@ Effective execution binding is supplied by `InProcessKernel.prepareRun` and `cre
 specified below. `serveLocalFileKernel` supplies the process lease and private connection authority
 described under independent process composition.
 
-Run controls capture the current controller epoch. Observers cannot mutate; taking an occupied
+Hosted run control operations capture the current controller epoch. Observers cannot mutate; taking an occupied
 controller requires explicit takeover. Authority is checked again after asynchronous observation
 preparation. A connection can hold four observations, counting preparations already in flight.
 Closing control cancels unpromoted work and revokes its interactive consent. Promoted work continues.
@@ -930,8 +931,7 @@ machine, endpoint and diagnostic PID. Discovery is a hint: an authenticated hell
 expected workspace and generation before a client can use the connection.
 
 POSIX directories/files require account ownership and shared private modes, canonical paths and
-safe parent directories. Windows creates a protected account-only ACL for new state directories and
-verifies existing ACLs; it does not infer privacy from POSIX mode bits. Bounded descriptor reads
+safe parent directories. Bounded descriptor reads
 reject links, special files, changing files and permissive credentials. A connection record is
 limited to 16 KiB and the run index to 2 MiB. These checks do not remove the parent-directory TOCTOU
 limitation documented in [known issues](../known-issues.md).
@@ -949,12 +949,12 @@ reject; an absent record does not authorize replacing a live lease or replaying 
 
 `connectOrLaunchLocalKernel` takes an absolute installation-selected executable/argv and an operator
 environment snapshot. It preserves policy while binding `CLARVIS_HOME` and `CLARVIS_WORKSPACE_ROOT`
-to the selected canonical roots. On POSIX, both launcher and child derive endpoint candidates from
+to the selected canonical roots. Both launcher and child derive endpoint candidates from
 that same snapshot: the first non-empty absolute value in `TMPDIR`, `TMP`, `TEMP` order, then `/tmp`.
 Relative values are ignored because launcher and child have different working directories. A short
 effective temp therefore preserves the existing endpoint, while a temp that would exceed the socket
 budget falls back deterministically without changing the environment delivered to runs. Child stdio
-is independent of the TUI. Linux/macOS and Windows have explicit detachment policies; `unref`
+is independent of the TUI. Linux and macOS use the POSIX detachment policy; `unref`
 releases the parent wait. Launch waits at most 30 seconds by default, configurable up to 120 seconds.
 It retries discovery/connection without replaying ordinary mutations. A live host with the same wire
 and effective operator policy accepts an artifact transition only
@@ -990,22 +990,22 @@ Production: `localKernelPolicyIdentity` in
 Test: [host-policy-identity.test.ts](../../packages/kernel/tests/unit/host-policy-identity.test.ts),
 [local-host-state.test.ts](../../packages/kernel/tests/integration/local-host-state.test.ts) for
 snapshot precedence and identity stability, and the independent process tests for long-temp fallback,
-same-generation reconnection, explicit old-run cancellation before a new generation, changed Sandbox
+same-generation reconnection, explicit old-run cancellation before a new generation, and changed
 policy after a requested idle restart, and
 preservation of background execution after incompatible tool/default/ceiling reconnect attempts in
 [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts).
 
 The host normally exits after 60 seconds with no clients or physical work. The idle boundary includes
 preparation/runs, local activities, maintenance, disconnect cleanup, index commits, and the FileKernel's
-execution leases. Pending/running/retry memory jobs also keep it alive. A supported but disabled
-workspace memory capability does not keep an idle host alive: only `capability_disabled` with
+execution leases. Pending/running/retry memory jobs also keep it alive. A globally disabled
+Memory capability does not keep an idle host alive: only `capability_disabled` with
 `MEMORY_NOT_CONFIGURED` means no active memory instance. Other queue inspection failures prevent
 automatic retirement; they are not treated as an empty queue.
 Production: `memoryKeepsHostAlive` in
 [memory-activity.ts](../../packages/kernel/src/hosting/memory-activity.ts). Test:
 [host-memory-activity.test.ts](../../packages/kernel/tests/unit/host-memory-activity.test.ts)
 covers absent/disabled memory, job states and inspection errors; `retires an idle memory-capable
-process with workspace memory disabled` in
+process with global memory disabled` in
 [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts)
 verifies process discovery retirement with the real file host.
 Closing a client never invokes
@@ -1031,7 +1031,7 @@ strict argv and explicit platform options;
 starts actual separate processes, proves work after the launching peer exits, reconnects to the same
 execution/generation, reloads old terminal metadata, and exercises concurrent launch and idle exit.
 That process fixture executes the real kernel/loop with MockLLM. It is not a subscription or TUI E2E,
-nor evidence of native Windows/macOS qualification or installed-artifact retention.
+nor evidence of native macOS qualification or installed-artifact retention.
 
 ## Hosted kernel RPC
 
@@ -1125,7 +1125,7 @@ candidate whose complete endpoint fits `UNIX_SOCKET_PATH_BUDGET_BYTES` — 100 U
 socket; normal composition includes `/tmp` after the
 preferred temp. Candidate selection is based only on length. A short but missing, inaccessible,
 symlinked, foreign-owned or permissive root still fails closed in the existing transport preparation;
-there is no post-bind security fallback. Windows uses its unchanged named-pipe namespace. These
+there is no post-bind security fallback. These
 builders do not authenticate peers, create listeners or establish filesystem permissions: callers
 must enforce those boundaries before publishing a usable endpoint.
 
@@ -1134,12 +1134,12 @@ derivation in [local-state.ts](../../packages/kernel/src/hosting/local-state.ts)
 composition in [launcher.ts](../../packages/kernel/src/hosting/launcher.ts) and
 [serve-local.ts](../../packages/kernel/src/hosting/serve-local.ts). Test:
 [local-host.test.ts](../../packages/paths/tests/unit/local-host.test.ts) covers deterministic builder
-selection and named-pipe spelling;
+selection;
 [local-host-state.test.ts](../../packages/kernel/tests/integration/local-host-state.test.ts) covers
 snapshot derivation and discovery validation; and
 [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts)
 launches a separate POSIX host with long temp values, completes authenticated hello and reconnects to
-the same generation. CI on Windows retains named-pipe coverage; the process fallback is POSIX-only.
+the same generation. The process fallback uses POSIX sockets.
 
 `protocol` owns the DTOs and has no runtime dependency. `kernel` implements storage using `paths`
 and the ordinary run event policy; it does not import Code or the TUI. The canonical terminal run

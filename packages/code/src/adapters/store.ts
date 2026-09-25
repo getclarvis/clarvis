@@ -28,7 +28,6 @@ import {
   compactionNoticeText,
   compactionSkippedNoticeText,
   softLimitNoticeText,
-  visionNoticeText,
   steerNoticeText,
   steerQueuedNoticeText,
   steerUndeliveredNoticeText,
@@ -1570,13 +1569,6 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             tone: "warn",
             text: compactionSkippedNoticeText(event.reason),
             ...attrOf(event.subagent_id),
-          }));
-        } else if (event.type === "vision_analysis") {
-          upsert(ns(`vision:${annSeq++}`), () => ({
-            kind: "annotation",
-            status: event.status === "completed" ? "ok" : "error",
-            tone: event.status === "completed" ? "info" : "warn",
-            text: visionNoticeText(event.model, event.image_count, event.status),
           }));
         } else if (event.type === "soft_limit_check") {
           upsert(ns(`soft:${annSeq++}`), () => ({

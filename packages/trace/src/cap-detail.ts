@@ -5,7 +5,7 @@ import type {
   TraceKind,
   ToolEvidenceDetail,
 } from "@clarvis/capability";
-import { DELEGATE_TASK_MAX_CHARS, isBuiltinTraceKind } from "@clarvis/capability";
+import { TASK_BRIEF_MAX_CHARS, isBuiltinTraceKind } from "@clarvis/capability";
 
 /** The marker appended by {@link truncate} to a string it shortened. */
 export const TRUNCATED_SUFFIX = "...[truncated]";
@@ -323,7 +323,7 @@ function capKinded(e: KindedDetail): unknown {
     }
     case "delegation_created": {
       const d = e.detail;
-      const task = truncateUnicodeTotal(d.task, DELEGATE_TASK_MAX_CHARS);
+      const task = truncateUnicodeTotal(d.task, TASK_BRIEF_MAX_CHARS);
       return task === d.task ? d : { ...d, task };
     }
     case "user_question": {

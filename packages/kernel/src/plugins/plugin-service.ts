@@ -127,7 +127,7 @@ function executablesOf(name: string, manifest: PluginManifest | undefined): stri
     out.push(
       h.type === "mcp_tool"
         ? `$ MCP ${h.server ?? "unknown"}.${h.tool ?? "unknown"}`
-        : `$ ${process.platform === "win32" ? (h.command_windows ?? h.command) : h.command}`,
+        : `$ ${h.command}`,
     );
   }
   for (const [server, s] of Object.entries(manifest?.mcpServers ?? {})) {
@@ -478,11 +478,11 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
      * Clone a plugin repo (optionally a subdirectory) into the global install root.
      *
      * @param url - git URL, validated by {@link validateGitUrl}.
-     * @param subdir - optional path within the repo holding the plugin.
+     * @param subdir - optional path resolved from the checkout holding the plugin.
      * @param target - global filesystem convention; defaults to the shared `.agents` inventory.
      * @returns the freshly installed plugin's {@link PluginView}.
      * @throws an `invalid_request` kernel error when the URL is rejected, the
-     *   plugin has no valid manifest, the subdir escapes the checkout, or a plugin
+     *   plugin has no valid manifest, the selected directory is unavailable, or a plugin
      *   of that name is already installed. The staging checkout is always removed.
      */
     async install(url, subdir, target = { source: "agents" }): Promise<PluginView> {

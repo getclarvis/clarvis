@@ -59,8 +59,6 @@ export function isLeadMutation(node: MutationNode): boolean {
   return node.subagentOrder === undefined && isMutationTool(node.mcpName, node.toolName);
 }
 
-const str = (v: unknown): string => (typeof v === "string" ? v : "");
-
 function synthesizedDiff(n: MutationNode): string {
   if (n.diff) return n.diff;
   const args = n.args ?? {};
@@ -68,12 +66,10 @@ function synthesizedDiff(n: MutationNode): string {
 }
 
 const GATED_BODY: Record<string, (node: MutationNode) => string> = {
-  write_file: (n) => n.diff || str(n.args?.content),
+  write_file: (n) => n.diff || (typeof n.args?.content === "string" ? n.args.content : ""),
+  write_memory: (n) => n.diff || (typeof n.args?.content === "string" ? n.args.content : ""),
+  apply_patch: (n) => n.diff || (typeof n.args?.patch === "string" ? n.args.patch : ""),
   edit_file: synthesizedDiff,
-  multi_edit: synthesizedDiff,
-  apply_patch: (n) => n.diff || str(n.args?.patch),
-  replace: (n) => str(n.diff).replace(/\n+$/, ""),
-  write_memory: (n) => n.diff || str(n.args?.content),
   edit_memory: synthesizedDiff,
 };
 

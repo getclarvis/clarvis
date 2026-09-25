@@ -96,10 +96,6 @@ after activation, flushing the already-projected activation entries through a la
 `packages/loop/tests/component/execute-run.test.ts`, "publishes the run trace during forRun and
 journals later contributed records".
 
-`VisionAnalysisDetail` (`packages/capability/src/trace-kinds.ts`) is reachable through `./trace`'s `export *`
-(`packages/capability/src/trace.ts`) but is not in `index.ts`'s explicit type-export list, which
-never names it.
-
 Two detail shapes are published but **not** in `BUILTIN_TRACE_KINDS`: `PlanReviewDetail`
 (`packages/capability/src/trace-kinds.ts`) and `TaskNudgeDetail` (`packages/capability/src/trace-kinds.ts`). The doc comment
 states the reason directly: "`plan_review` is a kind the planning capability records, not one the
@@ -140,7 +136,6 @@ once, in one place.
 | `compaction_started` | `CompactionStartedDetail` | `packages/capability/src/trace-kinds.ts` |
 | `compaction` | `CompactionDetail` | `packages/capability/src/trace-kinds.ts` |
 | `compaction_skipped` | `CompactionSkippedDetail` | `packages/capability/src/trace-kinds.ts` |
-| `vision_analysis` | `VisionAnalysisDetail` | `packages/capability/src/trace-kinds.ts` |
 | `cancellation` | `CancellationDetail` | `packages/capability/src/trace-kinds.ts` |
 | `user_question` | `UserQuestionDetail` | `packages/capability/src/trace-kinds.ts` |
 | `user_steering` | `UserSteeringDetail` | `packages/capability/src/trace-kinds.ts` |
@@ -252,7 +247,7 @@ builtin kind above, so the two vocabularies differ only by those unmapped kinds:
 `lead_iteration`, `delegation_created`, `subagent_iteration`, `tool_call`, `tool_call_started`,
 `tool_output_delta`, `tool_control_released`, `tool_input_delta`, `subagent_iteration_started`, `lead_iteration_started`,
 `delegation_completed`, `delegation_failed`, `budget_check`, `compaction_started`, `compaction`, `compaction_skipped`,
-`vision_analysis`, `cancellation`, `user_question`, `user_steering`, `soft_limit_check`,
+`cancellation`, `user_question`, `user_steering`, `soft_limit_check`,
 `run_started`, `run_ended`, `delegation_started`, `model_call_error`, `guard_escalation`,
 `convergence_warning`, `model_call_retry`, `elicitation_requested`, `model_reasoning`,
 `model_stream_delta`, `mcp_degraded`.
@@ -337,8 +332,8 @@ cross-owner `getById`, because a trace holds the full conversation."
 | `DETAIL_MAX_DEPTH` | `32` | structural depth ceiling |
 | `DETAIL_TRUNCATED_KEY` | `"__clarvis_truncated__"` | marker key set on a truncated object |
 
-`delegation_created.task` uses `DELEGATE_TASK_MAX_CHARS` (`32_768`,
-`packages/capability/src/delegate-task.ts`), applied through `truncateUnicodeTotal`
+`delegation_created.task` uses `TASK_BRIEF_MAX_CHARS` (`32_768`,
+`packages/capability/src/task-brief.ts`), applied through `truncateUnicodeTotal`
 (`packages/trace/src/cap-detail.ts`), which keeps prefix + marker inside one total ceiling (`packages/trace/src/cap-detail.ts`).
 
 ### 2e. Store bounds (`packages/trace/src/json-trace-store.ts`)
@@ -953,7 +948,7 @@ event gets `{ span_id: "run", phase: "point", kind: "event" }`. Then:
 | `model_reasoning` / `model_stream_delta` / `model_call_error` / `model_call_retry` | iteration span | point | `iteration` |
 | `user_question` / `user_steering` | iteration span from `iteration_ref` | point | `iteration` |
 | `compaction` / `compaction_skipped` / `cancellation` / `convergence_warning` / `guard_escalation` | `subagent:<id>` when scoped, else `"run"` | point | `subagent` / `event` |
-| `elicitation_requested` / `budget_check` / `soft_limit_check` / `mcp_degraded` / `vision_analysis` | `"run"` | point | `event` |
+| `elicitation_requested` / `budget_check` / `soft_limit_check` / `mcp_degraded` | `"run"` | point | `event` |
 
 `iterationSpanId` yields `<instanceId>:<n>` only when `agent === "subagent"` **and** the
 instance id is defined; everything else, including a subagent with no instance id, is `lead:<n>`. Pinned at `packages/trace/tests/unit/event-span.test.ts`, and the whole table.
@@ -1287,7 +1282,7 @@ Two degradations are worth naming as *policy* rather than mechanics, because the
 | Edge | Kind | Forced by |
 | --- | --- | --- |
 | `@clarvis/capability` — types (`TraceEntry`, `TraceEvent`, `ExecutionRecord`, `RunRequest`, `Logger`, …) | type-only, static | `packages/trace/src/trace-store.ts`, `packages/trace/src/trace-mapper.ts` (`TraceEntry`), `packages/trace/src/record-builder.ts` (`RunRequest`), `packages/trace/src/json-trace-store.ts` (`Logger`) |
-| `@clarvis/capability` — values (`sanitizeDeep`, `isBuiltinTraceKind`, `PersistenceError`, `ConflictError`, `executionIdConflict`, `levelEnabled`, `NOOP_LOGGER`, `unref`, `DELEGATE_TASK_MAX_CHARS`) | runtime, static | `packages/trace/src/json-trace-store.ts`, `packages/trace/src/cap-detail.ts`, `packages/trace/src/cleanup.ts`, `packages/trace/src/testing.ts` |
+| `@clarvis/capability` — values (`sanitizeDeep`, `isBuiltinTraceKind`, `PersistenceError`, `ConflictError`, `executionIdConflict`, `levelEnabled`, `NOOP_LOGGER`, `unref`, `TASK_BRIEF_MAX_CHARS`) | runtime, static | `packages/trace/src/json-trace-store.ts`, `packages/trace/src/cap-detail.ts`, `packages/trace/src/cleanup.ts`, `packages/trace/src/testing.ts` |
 | `@clarvis/capability` — values (`isBuiltinTraceEntry`, `isBuiltinTraceEvent`) | runtime, static | `packages/trace/src/trace-mapper.ts` (`isBuiltinTraceEntry`), `packages/trace/src/event-span.ts` (`isBuiltinTraceEvent`) |
 | `@clarvis/paths` — `ownerSegment`, `writeFileDurable(Sync)`, `acquireLocalLease(Sync)`, `reclaimLocalLeaseSync`, `isTmpFile`, `globalPaths` | runtime, static | `packages/trace/src/json-trace-store.ts`, `packages/trace/src/trace-store-factory.ts` |
 | Node builtins `node:fs`, `node:os`, `node:path`, `node:crypto` | runtime, static | `packages/trace/src/json-trace-store.ts`, `packages/trace/src/journal.ts`, `packages/trace/src/execution-id.ts` |
@@ -1385,11 +1380,6 @@ Only two packages declare it: `@clarvis/loop` and `@clarvis/kernel` (their packa
   grace split, and the `malformed_arguments` preservation. For the rest — the specific numeric values
   of `RESULT_MAX`, `ARGS_MAX`, `DETAIL_MAX_ENTRIES`, `MAX_TRACE_RECOVERY_JOURNALS`, `TMP_ORPHAN_GRACE_MS`
   — the code states the mechanism and not the derivation, and none is invented here.
-- **Windows.** `@clarvis/trace` is not in the Windows CI job: it runs `@clarvis/paths`,
-  `@clarvis/tools` and `@clarvis/plan` only
-  (`.github/workflows/ci.yml`). `process.kill(pid, 0)` (`packages/trace/src/journal-recovery.ts`) and the file-mode assertions
-  (`packages/trace/src/json-trace-store.ts`; `packages/trace/src/journal.ts`) are POSIX-shaped; whether they behave as specified
-  on Windows is unverified from this repository.
 ## Visibility views and physical identity
 
 `TraceStore` backends attest native filtering with `visibilityQueries: true`. Query methods accept

@@ -41,7 +41,7 @@ describe("resolveSubagentProfiles", () => {
           description: "read-only",
           model: "anthropic/m",
           base_prompt: "be careful",
-          tools: ["grep"],
+          tools: ["list_dir"],
         },
       ],
       providers,
@@ -51,7 +51,7 @@ describe("resolveSubagentProfiles", () => {
       name: "researcher",
       description: "read-only",
       basePrompt: "be careful",
-      tools: ["grep"],
+      tools: ["list_dir"],
     });
   });
 

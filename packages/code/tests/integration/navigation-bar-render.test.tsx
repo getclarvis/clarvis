@@ -187,12 +187,12 @@ test("a narrow band keeps every action and repeats the shared prefix", async () 
   test.keymap.registerLayer({
     commands: [
       uiCommand({
-        id: "isolation.picker",
-        title: "Isolation",
-        description: "Pick isolation",
+        id: "agent.picker",
+        title: "Agents",
+        description: "Pick agents",
         category: "navigate",
         surfaces: [...surfaces],
-        footerLabel: "isolation",
+        footerLabel: "agents",
         hintPriority: 50,
         hintGroup: "navigation",
         run: () => {},
@@ -210,7 +210,7 @@ test("a narrow band keeps every action and repeats the shared prefix", async () 
       }),
     ],
     bindings: [
-      { key: "ctrl+x i", cmd: "isolation.picker" },
+      { key: "ctrl+x i", cmd: "agent.picker" },
       { key: "ctrl+x m", cmd: "memory.picker" },
     ],
   });
@@ -224,12 +224,12 @@ test("a narrow band keeps every action and repeats the shared prefix", async () 
     { width: 100, height: 10 },
   );
   await t.renderOnce();
-  expect(t.captureCharFrame()).toContain("[I] isolation  [M] memory");
+  expect(t.captureCharFrame()).toContain("[I] agents  [M] memory");
 
   setWidth(MIN_BAND_WIDTH);
   await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("isolation");
+  expect(frame).toContain("agents");
   expect(frame).toContain("memory");
   const rows = bandLines(t.renderer.root);
   for (const row of rows) expect(Bun.stringWidth(row)).toBeLessThanOrEqual(MIN_BAND_WIDTH);

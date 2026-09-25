@@ -46,7 +46,7 @@ export {
  * human plan review.
  *
  * @remarks Until this existed, the review contract was stated in exactly one
- *   place a model might read — `delegate_task`'s description — so a Lead that
+ *   place a model might read — `spawn_subagent`'s description — so a Lead that
  *   never delegated never learned it. Two failures were measured against the
  *   same prompt and profile: one model wrote three files before the finalize
  *   gate told it a plan was required, and the other planned first but, not

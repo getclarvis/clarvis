@@ -1,37 +1,25 @@
 # `@clarvis/tools`
 
-Coding tools for Clarvis agents and standalone TypeScript callers. This is a private workspace
-package; the root manifest owns the product version. Its only internal dependency is
-`@clarvis/paths`.
-
-The authoritative contracts are [tool dispatch](../../specs/execution/tools-contract.md),
-[reads and search](../../specs/execution/tools-read-and-search.md),
-[mutations](../../specs/execution/tools-mutation.md),
-[shell and sessions](../../specs/execution/tools-shell-and-sessions.md), and
-[native sandboxing](../../specs/execution/sandbox.md).
+Coding tools for Clarvis agents and standalone TypeScript callers. This private
+workspace package depends on `@clarvis/paths`. Its contracts are
+[dispatch](../../specs/execution/tools-contract.md),
+[reading and listing](../../specs/execution/tools-read.md),
+[mutations](../../specs/execution/tools-mutation.md), and
+[shell sessions](../../specs/execution/tools-shell-and-sessions.md).
 
 ## Tools and authority
 
-The full registry has 20 tools. The nine observing tools are `read_file`, `read_image`,
-`read_files`, `list_dir`, `glob`, `grep`, `diff`, `file_stat` and `tree`. The mutating tools are
-`write_file`, `edit_file`, `multi_edit`, `apply_patch`, `replace`, `shell`, `shell_session`,
-`move`, `copy`, `mkdir` and `remove`. `readOnly: true` advertises and dispatches only the
-observing projection.
+The registry exposes nine tools. `read_file`, `read_image` and `list_dir` are
+observing tools. `write_file`, `edit_file`, `apply_patch`, `remove`, `shell` and
+`shell_session` can change state. `readOnly: true` advertises and dispatches only
+the three observing tools. Relative file paths resolve from `workspaceRoot`;
+absolute paths remain absolute. Host filesystem permissions determine access.
+`secretEnvNames` filters credential variables from command environments.
 
-Commands and file calls do not pass through a Shell Guard, Judge, command allowlist, path
-classification gate or configuration mutation review. Relative file paths resolve from
-`workspaceRoot`; absolute paths remain absolute. Host calls use the process's filesystem
-permissions. When the run configures a native sandbox, its Bubblewrap or Seatbelt policy also
-applies to shell commands and the run-owned file service. A sandbox that cannot start fails the
-call instead of silently falling back to Host. The sandbox's configured read-only workspace and
-write roots remain effective. `secretEnvNames` keeps host-supplied credential variables out of
-spawned command environments.
-
-Production: `dispatch` in [core.ts](src/core.ts), `resolveToolPath` in
-[paths.ts](src/lib/paths.ts), and `resolveFilesystemPolicy` in [sandbox.ts](src/sandbox.ts).
-Test: [open-authority.test.ts](tests/integration/open-authority.test.ts),
-[no-isolation.test.ts](tests/integration/no-isolation.test.ts), and
-[sandbox.test.ts](tests/integration/sandbox.test.ts).
+Production: `toolDescriptors` in [registry.ts](src/tools/registry.ts),
+`dispatch` in [core.ts](src/core.ts), and `resolveToolPath` in
+[paths.ts](src/lib/paths.ts). Test: [tool-surface.test.ts](tests/component/tool-surface.test.ts)
+and [open-authority.test.ts](tests/integration/open-authority.test.ts).
 
 ## Usage
 
@@ -44,70 +32,37 @@ const result = await agentTools.callTool("read_file", { path: "package.json" });
 await agentTools.close();
 ```
 
-`workspaceRoot` must be an existing directory. `createAgentTools` resolves numeric limits,
-probes ripgrep, freezes the filesystem policy for the toolset and owns a session manager unless
-the host supplies one. Call `close()` after the final tool call so run-owned shell sessions exit.
-The lower-level `resolveConfig`, `listTools` and `dispatch` exports support host integrations.
-Callers that use `resolveConfig` directly close its session manager themselves.
-
-```ts
-const readOnly = createAgentTools({ workspaceRoot: process.cwd(), readOnly: true });
-await readOnly.close();
-```
-
-Use `sandbox: { type: "native" }` to request native isolation. Bubblewrap is the Linux backend
-and Seatbelt is the macOS backend. The standalone library has no temporary roots by default;
-the Clarvis loop supplies run-owned scratch followed by discovered system temporary roots.
-The first root becomes `TMPDIR`, `TEMP` and `TMP` for commands. Native sandbox settings control
-network and filesystem access. A linked worktree's Git metadata is pinned when the toolset is
-created, with the configured workspace write policy applied to it.
+`workspaceRoot` must be an existing directory. The toolset owns a session
+manager unless the host supplies one. Call `close()` when finished so shell
+sessions exit. `resolveConfig`, `listTools` and `dispatch` support host
+integrations. The standalone library has no temporary roots by default; the
+Clarvis loop supplies run-owned scratch and system temporary roots. The first
+root becomes `TMPDIR`, `TEMP` and `TMP` for commands.
 
 ## Execution and limits
 
-`shell` can return a live `session_id` when `yield_time_ms` expires. `shell_session` polls,
-stops or lists only sessions owned by the same run and agent. Shell output uses bounded in-memory
-capture, per-stream cursors and omitted-byte counts. Generic oversized text results can spill to
-the workspace's machine-state root. File tools can read a state path when the effective OS or
-native sandbox permissions allow it; the dispatcher has no state-artifact special gate.
+`shell` can return a live `session_id` when `yield_time_ms` expires.
+`shell_session` polls, stops or lists only sessions owned by the same run and
+agent. Output capture uses bounded per-stream windows. Text reads use bounded
+descriptor reads and reject non-regular files. `read_image` recognizes PNG,
+JPEG, GIF and WebP from bytes. `apply_patch` stages a complete multi-file
+transaction and commits atomically. The file and command tools use host
+permissions; the dispatcher applies no extra path approval gate.
 
-Text reads use a bounded descriptor read and reject non-regular files. `read_image` recognizes
-PNG, JPEG, GIF and WebP by bytes and verifies a PNG's chunk stream. `readRawFile` exports the same
-bounded descriptor primitive for trusted host consumers without adding a model tool. A single-file
-ripgrep search uses a bounded snapshot on stdin; directory searches use the in-process scanner.
-The regular-expression scan budget applies to in-process grep, replace and shell readiness
-matching. Default limits include 50,000 traversal entries, 64 MiB mutation payload, 8 MiB
-combined diff input and 256 KiB metadata. All can be overridden through `createAgentTools`.
-
-`apply_patch` accepts the `*** Begin Patch` envelope and unified diffs. It stages a complete
-multi-file transaction, checks UTF-8 and hunks, and commits atomically; a failed hunk changes
-nothing. `copy`, `move`, `replace` and other mutations use the shared atomic machinery where
-applicable. Access is still subject to filesystem permissions and configured native isolation.
-
-Production: `readRawFile` in [files.ts](src/lib/files.ts), `ExecutionSessionManager` in
-[execution-session.ts](src/lib/execution-session.ts), and `applyOpsAtomic` in
-[atomic.ts](src/lib/atomic.ts). Test: [bounded-read.test.ts](tests/integration/bounded-read.test.ts),
-[api.test.ts](tests/integration/api.test.ts), and [atomic.test.ts](tests/integration/atomic.test.ts).
+Production: `readRawFile` in [files.ts](src/lib/files.ts),
+`ExecutionSessionManager` in [execution-session.ts](src/lib/execution-session.ts),
+and `applyOpsAtomic` in [atomic.ts](src/lib/atomic.ts).
+Test: [bounded-read.test.ts](tests/integration/bounded-read.test.ts),
+[execution-session.test.ts](tests/integration/execution-session.test.ts), and
+[atomic.test.ts](tests/integration/atomic.test.ts).
 
 ## Entry points
 
-| Import | Purpose |
-| --- | --- |
-| `@clarvis/tools` | Toolset, dispatch, registry, configuration, shell/process and sandbox helpers |
-| `@clarvis/tools/shell` | Shell and process helpers without loading the tool registry |
-| `@clarvis/tools/sandbox` | Native sandbox configuration, probes and policy construction |
+| Import                 | Purpose                                                        |
+| ---------------------- | -------------------------------------------------------------- |
+| `@clarvis/tools`       | Toolset, dispatch, registry, configuration and process helpers |
+| `@clarvis/tools/shell` | Shell and process helpers without loading the registry         |
 
-## Development
-
-Run from the repository root:
-
-```bash
-bun --filter @clarvis/tools build
-bun --filter @clarvis/tools typecheck
-bun --filter @clarvis/tools test
-bun --filter @clarvis/tools lint
-bun --filter @clarvis/tools format:check
-```
-
-The package has component, contract, integration and architecture tests. The root `bun run test`
-script runs the supported isolated workspace suite. Native sandbox canaries need their platform's
-backend and report a skip when it is unavailable.
+Run `bun --filter @clarvis/tools build`, `typecheck`, `test`, `lint` and
+`format:check` from the repository root during development. The root
+`bun run test` script runs the supported workspace suite.

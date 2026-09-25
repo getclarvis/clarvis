@@ -14,7 +14,6 @@ import {
   chmod,
   mode,
   modeBitsEnforced,
-  posixShell,
 } from "../helpers/fixtures.ts";
 import type { ServerConfig } from "../../src/config.ts";
 import { applyPatchTool } from "../../src/tools/apply-patch.ts";
@@ -243,20 +242,13 @@ missing-plus
       expect(read(root, "dup.txt")).toBe("existing\n");
     });
 
-    // POSIX reports ENOTDIR here, which fsError maps to not_a_file. Windows
-    // raises some other code for the same mistake - it reaches fsError's
-    // io_error fallback - and which one has not been identified, so this asserts
-    // the mapping only where the mapping is known to apply.
-    it.skipIf(!posixShell)(
-      "fails with not_a_file when creating a file beneath a path that is itself a file",
-      async () => {
-        write(root, "notdir", "iamafile\n");
-        const patch = `--- /dev/null\n+++ b/notdir/child.txt\n@@ -0,0 +1,1 @@\n+x\n`;
-        const r = await callTool("apply_patch", { patch }, config);
-        expect(r.json.error).toBe("not_a_file");
-        expect(exists(root, "notdir/child.txt")).toBe(false);
-      },
-    );
+    it("fails with not_a_file when creating a file beneath a path that is itself a file", async () => {
+      write(root, "notdir", "iamafile\n");
+      const patch = `--- /dev/null\n+++ b/notdir/child.txt\n@@ -0,0 +1,1 @@\n+x\n`;
+      const r = await callTool("apply_patch", { patch }, config);
+      expect(r.json.error).toBe("not_a_file");
+      expect(exists(root, "notdir/child.txt")).toBe(false);
+    });
   });
 
   describe("deleting a file", () => {

@@ -492,7 +492,7 @@ export class AiSdkAdapter implements LLMProvider {
       modelCallTimeoutBridgeOf(params),
     );
 
-    const stripImages = !(params.capabilities?.has("vision") ?? true);
+    const stripImages = !(params.capabilities?.has("vision") ?? false);
 
     let batcher: ReturnType<typeof makeDeltaBatcher> | undefined;
     let outputObserved = false;

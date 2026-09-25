@@ -7,7 +7,7 @@ does not authorize a tag, push, GitHub Release, or any other publication action.
 
 - Root `package.json` is the only product-version authority.
 - A final release tag is exactly `v<version>`, annotated, and signed by the authorized releaser.
-- The release workflow builds glibc-based Linux, macOS, and Windows archives for x64 and arm64 on
+- The release workflow builds glibc-based Linux and macOS archives for x64 and arm64 on
   native runners.
 - A tag-triggered workflow in `getclarvis/clarvis` uploads a complete draft to public
   `getclarvis/clarvis-releases` and activates it in its final step. There is no human pause after the
@@ -17,7 +17,7 @@ does not authorize a tag, push, GitHub Release, or any other publication action.
   App, installed on `clarvis` and `clarvis-releases` with `Contents: write`. Its Client ID is repository
   variable `CLARVIS_RELEASE_APP_CLIENT_ID`; its private key is repository secret
   `CLARVIS_RELEASE_APP_PRIVATE_KEY`.
-- The final publish job independently extracts all six archives, rejects any case-insensitive
+- The final publish job independently extracts all four archives, rejects any case-insensitive
   `.map` suffix, inline `sourceMappingURL=data:` payload, and non-allowlisted asset, rechecks every sidecar and `SHA256SUMS`, and only
   then mints the short-lived GitHub App token.
 - A manual workflow dispatch builds downloadable portable artifacts but cannot publish a release.
@@ -73,7 +73,7 @@ reset `main`, move a tag, or disable protections without separate explicit autho
 2. Create `release/<major.minor.patch>` from qualified `develop`. From a branch without unrelated changes, record user-facing changes under `Unreleased` in
    [CHANGELOG.md](CHANGELOG.md), then run
    `bun run release:prepare <version>`. This promotes that entry and updates the root product version
-   and both installer defaults as one validated operation. It does not commit, tag, or publish.
+   and the installer default as one validated operation. It does not commit, tag, or publish.
    Commit this preparation before the first branch push. The root version is the final version
    (for example `0.2.0`); RC tags label source snapshots and do not change the product version.
    Push the branch, then open its PR into `main` to create `v0.2.0-rc.1`.
@@ -136,14 +136,14 @@ bun run release:install-smoke
 ```
 
 Run the manual `workflow_dispatch` path to exercise every native runner without publishing. Download
-the six workflow artifacts and confirm:
+the four workflow artifacts and confirm:
 
 - every target job passed its manifest, fast-path, and applicable PTY smoke;
 - archive names, sizes, and SHA-256 sidecars are complete, and every archive contains its required
   notices and license files;
 - a clean machine can install, run `clarvis --version`, launch first paint, and update through a
   controlled release fixture;
-- unsigned macOS and Windows behavior is accurately described in the docs;
+- unsigned macOS behavior is accurately described in the docs;
 - no source map, secret, private fixture, or developer path is present in any archive.
 
 The tag workflow runs the complete release-assets gate before obtaining the cross-repository

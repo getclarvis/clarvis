@@ -711,7 +711,7 @@ describe("the settings rejection diagnostic now has a channel", () => {
   });
 
   it("distinguishes an unreadable agents directory from a workspace with no agents", () => {
-    if (process.platform === "win32" || process.getuid?.() === 0) return;
+    if (process.getuid?.() === 0) return;
     const logger = recordingLogger();
     const { root, store } = loggedStore(logger);
     const agents = join(root, ".clarvis", "agents");

@@ -74,7 +74,6 @@ import {
   traceBridge,
 } from "./run-trace.ts";
 import { runWithClockAndTimeout } from "./run-timeout.ts";
-import { runVisionPrepass } from "./vision-prepass.ts";
 import { boundPromise } from "./support/bounded.ts";
 import type { ExtensionAdmissionController } from "@clarvis/capability";
 import {
@@ -628,7 +627,7 @@ interface RunEntryParams {
 /**
  * Build and run the entry agent's loop, wiring its tool registry, token ledger,
  * iteration cap, usage accounting, seed and input builder, then executing it under
- * a clock and timeout, with auxiliary vision admitted after entry attachment.
+ * a clock and timeout.
  *
  * @param p - the prepared run context; see {@link RunEntryParams}.
  * @returns the entry agent's {@link EntryAgentOutcome} — response plus captured
@@ -699,21 +698,7 @@ async function runEntryAgent(p: RunEntryParams): Promise<EntryAgentOutcome> {
     finalize: accounting.finalize,
     buildLoop: async ({ clock, signal }) => {
       const entryInput = buildEntryInput(clock, signal);
-      return runAgent({
-        ...entryInput,
-        prepareContext: async (ctx) => {
-          const reading = await runVisionPrepass({
-            signal,
-            deps,
-            request,
-            trace: traceHandle,
-            ledger,
-            seed,
-            accounting,
-          });
-          if (reading !== undefined) ctx.appendNote(reading);
-        },
-      });
+      return runAgent(entryInput);
     },
     toResponse: (loopResult, usage) =>
       loopResultToResponse(loopResult, usage, (code) =>

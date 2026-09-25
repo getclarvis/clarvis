@@ -296,7 +296,7 @@ describe("configuration documents against product loaders", () => {
                 },
               ],
             },
-            { toolCalls: [{ name: "await_agents", arguments: {} }] },
+            { toolCalls: [{ name: "agent_list", arguments: {} }] },
             { text: "Review completed from the independent leader's evidence." },
           ],
         },
@@ -310,6 +310,20 @@ describe("configuration documents against product loaders", () => {
         },
       ],
     });
+    const leaderSettled = Promise.withResolvers<void>();
+    const coordinatedLlm = {
+      call: async (params: Parameters<typeof llm.call>[0]) => {
+        if (
+          params.tools.some((tool) => tool.wireName === "run_workflow") &&
+          params.messages.some((message) =>
+            contentToText(message.content).includes("Tool 'agent_list' result"),
+          )
+        ) {
+          await leaderSettled.promise;
+        }
+        return llm.call(params);
+      },
+    };
     const kernel = await createFileKernel({
       workspaceRoot: f.workspaceRoot,
       globalDir: f.globalDir,
@@ -318,7 +332,7 @@ describe("configuration documents against product loaders", () => {
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
       subscriptions: false,
       builtins: { hooks: false },
-      executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm } }),
+      executeRun: (args) => executeRun({ ...args, deps: { ...args.deps, llm: coordinatedLlm } }),
     });
     try {
       const configure = await kernel.runs.start({
@@ -345,7 +359,15 @@ describe("configuration documents against product loaders", () => {
         preflights++;
         void manager.respond({ id: request.id, action: "accept", content: { decision: "run" } });
       });
+      const observed = (async () => {
+        for await (const event of manager.events) {
+          if (event.type === "workflow_run_completed" || event.type === "workflow_run_failed") {
+            leaderSettled.resolve();
+          }
+        }
+      })();
       expect(await manager.done).toMatchObject({ status: "completed" });
+      await observed;
       expect(preflights).toBe(1);
       const workflow = await kernel.workflows.get(manager.execution_id);
       expect(workflow.status).toBe("completed");

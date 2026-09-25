@@ -247,9 +247,9 @@ describe("the hooks vocabulary", () => {
 
 describe("the external dialect's tool names", () => {
   it("normalizes away capitalization and separators", () => {
-    expect(normalizeToolName("MultiEdit")).toBe("multiedit");
-    expect(normalizeToolName("multi_edit")).toBe("multiedit");
-    expect(normalizeToolName("multi-edit")).toBe("multiedit");
+    expect(normalizeToolName("EditFile")).toBe("editfile");
+    expect(normalizeToolName("edit_file")).toBe("editfile");
+    expect(normalizeToolName("edit-file")).toBe("editfile");
     expect(normalizeToolName("")).toBe("");
   });
 
@@ -266,8 +266,6 @@ describe("the external dialect's tool names", () => {
     expect(EXTERNAL_TOOL_NAMES[normalizeToolName("Bash")]).toBe("shell");
     expect(EXTERNAL_TOOL_NAMES[normalizeToolName("Write")]).toBe("write_file");
     expect(EXTERNAL_TOOL_NAMES[normalizeToolName("Edit")]).toBe("edit_file");
-    expect(EXTERNAL_TOOL_NAMES[normalizeToolName("MultiEdit")]).toBe("multi_edit");
-    expect(EXTERNAL_TOOL_NAMES[normalizeToolName("Grep")]).toBe("grep");
     expect(EXTERNAL_TOOL_NAMES[normalizeToolName("Skill")]).toBe("load_skill");
   });
 

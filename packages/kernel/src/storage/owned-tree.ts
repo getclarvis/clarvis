@@ -12,8 +12,6 @@ export class UnsafeOwnedTreeError extends Error {
 export interface RemoveOwnedTreeOptions {
   /** Test seam for the effective POSIX user id. */
   currentUid?: number;
-  /** Test seam for platform-specific permission handling. */
-  platform?: NodeJS.Platform;
 }
 
 function isMissing(error: unknown): boolean {
@@ -31,7 +29,6 @@ export async function removeOwnedTree(
   root: string,
   options: RemoveOwnedTreeOptions = {},
 ): Promise<void> {
-  const platform = options.platform ?? process.platform;
   const currentUid = options.currentUid ?? process.getuid?.();
   const restore = async (path: string, rootEntry: boolean): Promise<void> => {
     let info: Awaited<ReturnType<typeof lstat>>;
@@ -45,10 +42,8 @@ export async function removeOwnedTree(
       if (rootEntry) throw new UnsafeOwnedTreeError("cleanup root is not a real directory");
       return;
     }
-    if (platform !== "win32") {
-      if (currentUid === undefined || info.uid !== currentUid) throw new UnsafeOwnedTreeError();
-      await chmod(path, 0o700);
-    }
+    if (currentUid === undefined || info.uid !== currentUid) throw new UnsafeOwnedTreeError();
+    await chmod(path, 0o700);
     const entries = await opendir(path);
     for await (const entry of entries) await restore(join(path, entry.name), false);
   };

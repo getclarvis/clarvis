@@ -51,10 +51,10 @@ describe("server stderr forwarder", () => {
     expect(lines).toEqual(["first", "second", "third"]);
   });
 
-  it("strips a carriage return so a Windows server does not log one", () => {
+  it("strips a carriage return from a CRLF line", () => {
     const { push, lines } = collect();
-    push("windows line\r\n");
-    expect(lines).toEqual(["windows line"]);
+    push("server line\r\n");
+    expect(lines).toEqual(["server line"]);
   });
 
   it("drops blank lines rather than forwarding empty records", () => {

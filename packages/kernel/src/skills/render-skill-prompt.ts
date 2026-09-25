@@ -127,26 +127,17 @@ function presentationText(bucket: Record<string, unknown>, key: string): string 
 }
 
 /**
- * An icon path that stays inside the skill directory it is relative to.
+ * An icon path supplied by the skills provider.
  *
  * @param bucket - the candidate icon mapping.
  * @param key - the theme slot to read.
- * @returns the path, or `undefined` when it is absent, not a string, or would
- *   escape the skill.
- * @remarks The protocol DTO documents these as already confined, and the builtin
- *   reader does confine them — but this projection exists precisely because the
- *   skills provider is a port a host may replace, and a claim a DTO makes has to
- *   be enforced by whoever asserts it. A UI opens these paths.
+ * @returns the path, or `undefined` when it is absent or not a bounded string.
  */
 function iconPath(bucket: Record<string, unknown>, key: string): string | undefined {
-  const raw = presentationText(bucket, key);
-  if (raw === undefined) return undefined;
-  const normalized = raw.replaceAll("\\", "/");
-  if (normalized.startsWith("/") || /^[A-Za-z]:/.test(normalized)) return undefined;
-  return normalized.split("/").includes("..") ? undefined : raw;
+  return presentationText(bucket, key);
 }
 
-/** Project the theme icon paths, dropping any slot that is not a confined path. */
+/** Project the theme icon paths from provider metadata. */
 function presentationIcons(value: unknown): SkillIconSet | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const bucket = value as Record<string, unknown>;

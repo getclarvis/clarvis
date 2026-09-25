@@ -33,7 +33,6 @@ import type {
   ExtensionProfileService,
   ExtensionProfilePluginRef,
   ResolvedExtensionProfile,
-  SandboxInspection,
   WorkspaceService,
   WorkspaceChangesService,
   WorkspaceRef,
@@ -155,7 +154,7 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
   readonly operatorServices: OperatorServices;
   /** Owner services bound to the configured default owner. */
   readonly defaultOwnerServices: OwnerServices;
-  /** Settings, agents, and sandbox inspection. */
+  /** Settings and agents. */
   readonly config: ConfigService;
   /** Skills catalog exposed as slash commands. */
   readonly skills: SkillsService;
@@ -302,8 +301,6 @@ export interface CreateKernelOptions {
   activePlugins?: () => readonly ExtensionProfilePluginRef[];
   /** Teardown hook invoked by {@link InProcessKernel.close}. */
   dispose?: () => Promise<void>;
-  /** Provides sandbox inspection to the config service; when omitted it is unavailable. */
-  inspectSandbox?: (options?: { refresh?: boolean }) => Promise<SandboxInspection>;
   /**
    * Event-stream backpressure for every owner's run service. Defaults to the
    * same bounded count-and-byte policy for local and remote clients.
@@ -335,7 +332,6 @@ export const DEFAULT_KERNEL_CAPABILITIES: KernelCapabilities = {
   runtime: {
     kind: "native",
     host_platform: process.platform,
-    isolation: "host",
     lifecycle: "ready",
   },
 };
@@ -883,7 +879,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   const config =
     opts.configService ??
     createConfigService(opts.configStore, {
-      ...(opts.inspectSandbox !== undefined ? { inspectSandbox: opts.inspectSandbox } : {}),
       /**
        * Composed exactly as `executeRun` composes the registry it validates
        * against: the engine's built-ins, the host registry's declarations, and

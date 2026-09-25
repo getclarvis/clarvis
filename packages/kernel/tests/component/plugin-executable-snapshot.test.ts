@@ -21,7 +21,7 @@ describe("plugin executable snapshot", () => {
     const argument = join(plugin, "config.json");
     writeFileSync(program, "#!/bin/sh\nexit 0\n");
     writeFileSync(argument, '{"version":1}\n');
-    if (process.platform !== "win32") chmodSync(program, 0o700);
+    chmodSync(program, 0o700);
     const manifest = {
       name: "fixture",
       mcpServers: {
@@ -34,7 +34,7 @@ describe("plugin executable snapshot", () => {
     expect(first.ok).toBeTrue();
     if (!first.ok) throw new Error(first.error);
     expect(first.files.map((file) => file.path)).toEqual(["config.json", "server.sh"]);
-    if (process.platform !== "win32") expect(first.files[1]!.mode).toBe(0o700);
+    expect(first.files[1]!.mode).toBe(0o700);
 
     writeFileSync(argument, '{"version":2}\n');
     const changed = snapshotPluginExecutables(plugin, manifest);
@@ -44,14 +44,14 @@ describe("plugin executable snapshot", () => {
     expect(changed.files[1]!.digest).toBe(first.files[1]!.digest);
   });
 
-  it("rejects missing local argv and ignores paths that escape the package", () => {
+  it("rejects missing argv and captures a linked external executable", () => {
     const missing = snapshotPluginExecutables(plugin, {
       name: "fixture",
       mcpServers: { local: { type: "stdio", command: "./missing.sh", cwd: plugin } },
     } as PluginManifest);
     expect(missing).toMatchObject({ ok: false });
 
-    if (process.platform !== "win32") {
+    {
       const outside = join(root, "outside.sh");
       writeFileSync(outside, "#!/bin/sh\n");
       symlinkSync(outside, join(plugin, "linked.sh"));
@@ -60,7 +60,7 @@ describe("plugin executable snapshot", () => {
           name: "fixture",
           mcpServers: { local: { type: "stdio", command: "./linked.sh", cwd: plugin } },
         } as PluginManifest),
-      ).toMatchObject({ ok: false });
+      ).toMatchObject({ ok: true, files: [{ path: "linked.sh" }] });
     }
   });
 

@@ -13,7 +13,7 @@ solution over per-package `composite` emit projects, `tsconfig.json`), one share
 configuration applied through each package's shim (`eslint.config.base.js`), a Knip pass run
 once from the root (`package.json`, `scripts.knip`), a locally-enforced pre-commit gate
 (`.githooks/pre-commit`),
-independent Linux CI gates plus the retained Windows/macOS jobs (`.github/workflows/ci.yml`), a six-target portable
+independent Linux CI gates plus the retained macOS job (`.github/workflows/ci.yml`), a four-target portable
 release matrix delegated to [distribution and updates](distribution-and-updates.md), and a separate
 bundling path for the one package that is never emitted by `tsc` — the terminal UI
 (`packages/code/tooling/artifact/build.ts`). The root `build` command composes those two paths sequentially,
@@ -144,7 +144,7 @@ separate measured change moves it.
 | `@clarvis/paths` | `.` | — |
 | `@clarvis/trace` | `.`, `./testing` | — |
 | `@clarvis/mcp-client` | `.` | — |
-| `@clarvis/tools` | `.`, `./guard`, `./shell`, `./sandbox` | — |
+| `@clarvis/tools` | `.`, `./shell` | — |
 | `@clarvis/hooks` | `.`, `./capability` | — |
 | `@clarvis/skills` | `.`, `./catalog`, `./capability` | — |
 | `@clarvis/memory` | `.`, `./schemas`, `./capability`, `./settings`, `./testing` | — |
@@ -299,7 +299,6 @@ NOT add a `schedule:` or `push:` trigger".
 | `CLARVIS_CODE_SOURCE=1` | `packages/code/src/cli.ts` | launcher runs `src/index.tsx` instead of `dist/index.js` |
 | `SMOKE_TIMEOUT_MS` | `packages/code/tooling/artifact/smoke.ts` | smoke timeout, default `90_000` |
 | `BENCH_N`, `BENCH_POLL_MS`, `BENCH_TIMEOUT_MS`, `BENCH_MAX_LOAD` | `packages/code/tooling/benchmarks/first-paint.ts` | benchmark sample size, poll, timeout, per-core load refusal (default `0.35`) |
-| `CI` | `packages/tools/tests/contract/grep-parity.test.ts` | when set, `rg` must be installed (TEST-01) |
 | `GITHUB_STEP_SUMMARY` | `tooling/checks/ci-coverage.ts`, `tooling/checks/ci-artifacts.ts` | package outcomes, retry notes and build-transfer measurements |
 | `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, `CI_BUILD_PRODUCER_ATTEMPT` | `tooling/checks/ci-artifacts.ts`, and `requireBuildProducer` in `tooling/lib/ci-artifacts.ts` for `CI_BUILD_PRODUCER_ATTEMPT` | same-run artifact identity with distinct producer and consumer attempts |
 | `CI_BUILD_ARTIFACT_ID`, `CI_BUILD_ARTIFACT_DIGEST`, `CI_BUILD_TAR_DIGEST` | `tooling/lib/ci-artifacts.ts`, `requireBuildProducer` | complete immutable producer receipt required before download |
@@ -388,9 +387,8 @@ single-flight loader. The artifact smoke requires the asset to exist while also 
 ### 3.4 Git attributes
 
 `.gitattributes` normalizes every file to `text=auto eol=lf` and marks `*.png`, `*.wasm`,
-`*.ico`, `*.woff`, `*.woff2` binary marks `bun.lock -text`. The stated reason is that
-Git-for-Windows' `core.autocrlf=true` "corrupts the fixtures that assert on exact bytes: the CRLF/BOM
-tally in `packages/tools/src/lib/text.ts`, and every `apply_patch`, `diff` and `replace` test".
+`*.ico`, `*.woff`, and `*.woff2` as binary, and keeps `bun.lock -text`. This preserves
+exact-byte fixtures such as the CRLF/BOM tally in `packages/tools/src/lib/text.ts` and the `apply_patch` tests.
 
 ### 3.5 Report formats produced by the tooling
 
@@ -521,15 +519,10 @@ and installs its own dependencies with `bun install --frozen-lockfile`. Installa
 Only `build` emits the shared Linux build, including the Code bundle; upload follows both build and
 smoke success. Its consumers restore that build before checking it and never silently rebuild.
 Finite timeouts remain conservative: 15 minutes
-for build and ordinary Linux gates, 30 for coverage, and 5 for aggregation. Windows/macOS retain
-their existing bounds. No required job or step uses `continue-on-error` or an optional gate condition.
+for build and ordinary Linux gates, 30 for coverage, and 5 for aggregation. The macOS job retains its existing bound. No required job or step uses `continue-on-error` or an optional gate condition.
 
-The `coverage` job installs and executes ripgrep and Bubblewrap, loads the packaged
-`bwrap-userns-restrict` AppArmor profile, and proves a minimal sandbox launch without disabling
-host-wide protection. `CLARVIS_NATIVE_SANDBOX_CANARY=1` reaches the complete coverage scripts.
 
-The public required contexts remain exactly `linux`,
-`tools, paths, plan, memory, keyboard policy (windows)`, and `keyboard policy (macos)`.
+The public required contexts remain exactly `linux` and `keyboard policy (macos)`.
 The release workflow consumes these literal names. `linux` has `always()` and all seven Linux
 needs; it installs nothing and downloads nothing. Its Bash step receives `toJSON(needs)` through
 an environment variable, then jq requires exactly one JSON object, the exact dependency key set,
@@ -545,31 +538,9 @@ remove each gate/dependency and fixtures executing the actual YAML Bash body;
 [Bun version tests](../../tooling/tests/unit/bun-version.test.ts), per-job setup/evidence validation.
 The validator reuses `workflowSecurityFailures`; other workflows retain their existing policies.
 
-**`windows`**, `windows-latest`, records the exact Bun runtime and installs ripgrep from a pinned
-release asset after checking its SHA-256 and executing it in the same step. Then it runs four
-package suites and one explicit test-file list:
-
-- `bun --filter @clarvis/paths test`
-- `bun --filter @clarvis/tools test`
-- `bun --filter @clarvis/plan test`
-- `bun --filter @clarvis/memory test`
-- `bun test packages/code/tests/unit/{keyboard-profile,keyspec,active-actions}.test.ts`
-
-The retained scope is deliberate: `paths` owns the Windows `PATH`/`PATHEXT` resolver; `tools` owns
-PowerShell dispatch and Windows process behavior; `plan` has a real win32 directory-sync branch;
-`memory` exercises platform filesystem, symlink and child-process lifetime behavior; and `code`
-contributes only its platform-independent keyboard-policy tests. `kernel`, `loop`, `trace`,
-`mcp-client` and `supervision` remain deliberately absent. Production: `.github/workflows/ci.yml`
-(`jobs.windows.steps`).
-
-**`sandbox-macos`**, `macos-14`, records the Bun version/revision, installs/verifies ripgrep, and runs
-the complete `@clarvis/tools` suite plus the kernel sandbox-policy integration with
-`CLARVIS_NATIVE_SANDBOX_CANARY=1`. It then runs the same three keyboard test files as Windows. The
-real-host canaries verify Seatbelt file/network/process enforcement and a discovered toolchain's
-kernel inspection path; this is not inferred from generated profile text. The job publishes the
-stable `keyboard policy (macos)` status context required by both permanent-branch repository rulesets;
-adding macOS canaries must not rename that external contract. Production: `.github/workflows/ci.yml`
-(`jobs.sandbox-macos`).
+**`keyboard-macos`**, `macos-14`, records the Bun version/revision, runs the complete `@clarvis/tools` suite and keyboard policy tests. It publishes
+the stable `keyboard policy (macos)` status context required by both permanent-branch rulesets.
+Production: `.github/workflows/ci.yml` (`jobs.keyboard-macos`).
 
 All host Bun jobs record `bun --version` and `bun --revision` immediately after setup, so a future run
 remains attributable to the executable it actually used. CI was restored for the new public
@@ -715,13 +686,10 @@ environment-isolated mode. `SmokeContext.socketPath(label)` reserves an exclusiv
 validates its UTF-8 length against `UNIX_SOCKET_PATH_BUDGET_BYTES` before any process is started, so
 a too-deep root is reported as itself rather than as a failing backend; tmux receives that address
 through `-S` and every capture and `kill-server` command names the same endpoint. The socket directory
-stays inside the fixture root while the endpoint budget allows it and otherwise becomes a short root of
-its own, which `SmokeContext.writableRoots` declares as an additional read-write bind for required
-confinement and which cleanup removes after the children settle. Every PTY child
-receives `environmentFor(...)`. Required native-confinement mode probes Bubblewrap first and throws
-`smoke_native_confinement_unavailable` rather than using an unconfined PTY when the backend is
-absent or unusable; ordinary mode still throws
-`"observing a boot requires either script(1) or tmux to provide a PTY"` when neither is available.
+stays inside the fixture root while the endpoint budget allows it and otherwise becomes a short
+root of its own. Cleanup removes it after the children settle. Every PTY child receives
+`environmentFor(...)`. When neither `script(1)` nor tmux is available, the harness reports
+`"observing a boot requires either script(1) or tmux to provide a PTY"`.
 
 The cross-runner contract canary is `tooling/tests/unit/harness-isolation-contract.test.ts`; it
 keeps artifact, release and installer runners on fixture-owned roots and explicit child
@@ -802,13 +770,11 @@ Numbered `BUILD-n`. Each carries the rule, the production site, and the test tha
 generated dynamic import; an artifact with zero JS chunks, the adapter class in the entry, no
 dynamic edge, or any static edge to the provider chunk is rejected with a message naming the
 condition. This remains valid when Bun moves the source dynamic import into an eagerly shared kernel
-chunk instead of spelling it directly in `index.js`, and when Bun reports the chunk path with POSIX
-or Windows separators.
+chunk instead of spelling it directly in `index.js`, and when Bun reports the chunk path with POSIX separators.
 Production: `packages/code/tooling/artifact/contract.ts` (`assertLazyProviderArtifact`). Enforced in
 the build by `packages/code/tooling/artifact/build.ts` (`assertLazyProviderChunk`) and again on disk
 by `packages/code/tooling/artifact/smoke.ts`.
-Test: `packages/code/tests/architecture/artifact-contract.test.ts` (lazy provider artifact and
-Windows-shaped chunk-path cases).
+Test: `packages/code/tests/architecture/artifact-contract.test.ts` (lazy provider artifact).
 
 **BUILD-4 (INV-259).** The ordinary developer/root artifact keeps its source maps **detached** under
 `dist/maps/`, and must still contain `index.js.map` there; a `.map` beside runtime JS, or a missing
@@ -923,14 +889,6 @@ setup`, and the source-mode escape.
 Production: `packages/code/src/cli-entry.ts`.
 Test: `packages/code/tests/unit/cli-entry.test.ts`.
 
-**BUILD-20.** Linux and macOS CI must execute the real native-sandbox canary; generated argv/profile
-tests alone do not establish host enforcement.
-Production: `.github/workflows/ci.yml` (`jobs.coverage`, `jobs.sandbox-macos`,
-`CLARVIS_NATIVE_SANDBOX_CANARY`).
-Test: `packages/tools/tests/integration/sandbox.test.ts` (`enforces the native sandbox against real
-host resources`) and `packages/kernel/tests/integration/sandbox-policy.test.ts` (`probes a discovered
-toolchain through the real native backend`).
-
 **BUILD-21.** The CI retry accepts only Code exits 132/134/139, with three additional attempts, and
 never retries 130/143 or another package. Production: `tooling/lib/ci-coverage.ts`, `runCiCoverage`
 and `normalizeCoverageExit`; `tooling/ci/retry-code-coverage.sh` is only the CLI entry.
@@ -942,29 +900,18 @@ kept verbatim.
 Production: `.gitattributes`. Unpinned by a test; the byte-exact fixtures it protects are
 named in the file's own comment.
 
-**BUILD-22.** Windows commands run through PowerShell, never `cmd.exe`, with the payload carried as a
-base64 UTF-16LE `-EncodedCommand`.
-Production: `packages/tools/src/shell.ts` (`computeShell`: `pwsh` from `PATH` restricted to
-`.EXE`, else `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`, tail), reached
-through `resolveShell` (`encodePowerShellCommand`) (`shellArgs` →
-`-NoProfile -NonInteractive -EncodedCommand`). Detailed behaviour is delegated to **tools-shell-and-sessions**.
+**BUILD-22.** Shell commands run under `sh`, with the approved command passed unchanged.
+Production: `resolveShell` and `shellArgs` in `packages/tools/src/shell.ts`.
+Test: `packages/tools/tests/unit/shell.test.ts`.
 
-**BUILD-23.** `spawn`'s `detached` option is derived from the platform, never passed
-unconditionally: `true` on POSIX, `false` on Windows.
-Production: `packages/tools/src/lib/process.ts`, with the Windows consequence documented ("a console-subsystem shell spawned that way produces nothing at all: empty stdout and
-stderr, a `null` exit code … while the spawn itself still reports success"). Call sites:
-`packages/tools/src/lib/execution-session.ts`.
+**BUILD-23.** Owned processes use a POSIX process group so termination reaches descendants.
+Production: `packages/tools/src/lib/process.ts` and `packages/tools/src/lib/process-owner.ts`.
+Test: `packages/tools/tests/integration/execution-session.test.ts`.
 
-**BUILD-24.** A test that exercises a platform-conditional branch pins `process.platform` rather than
-relying on the ambient host.
-Production: `packages/plan/src/file-repository.ts` (`fsyncDir` reads `process.platform` per
-call and swallows the failure only on win32).
-Test: `packages/plan/tests/integration/file-repository.test.ts` (pins `"win32"`) (pins `"linux"`). states the reason: "`fsyncDir` reads `process.platform` per
-call, so a test that only *assumes* it is off win32 is really asserting whatever host it runs on. That
-held until `@clarvis/plan` joined the Windows CI job … Skipping it there would have been the wrong
-repair: the branch under test is platform-independent code, so the test should be too."
-
-**BUILD-25.** Platform conditional tests name the property they cannot exercise: POSIX shell syntax (`posixShell`), mode-bit enforcement (`modeBitsEnforced`), or a process-settlement measurement (`backgroundSettleIsMeasurable`). Session capture is exercised through the new `shell` and `shell_session` tests on every supported platform; native Windows and macOS CI evidence remains necessary. Production: `packages/tools/tests/helpers/fixtures.ts` and `packages/tools/src/lib/execution-session.ts`. Test: `packages/tools/tests/integration/shell-session.test.ts` and `packages/tools/tests/integration/execution-session.test.ts`.
+**BUILD-25.** Session capture is exercised through the `shell` and `shell_session` tests.
+Production: `packages/tools/src/lib/execution-session.ts`.
+Test: `packages/tools/tests/integration/shell-session.test.ts` and
+`packages/tools/tests/integration/execution-session.test.ts`.
 
 **BUILD-26 (INV-313).** Every executable and declaration surface derives from the one exact Bun
 version in `mise.toml`: every host Bun CI job, the release package matrix, the release publication gate,
@@ -977,8 +924,7 @@ independent drift in the canonical pin, CI, canary, engines, types, and
 lockfile.
 
 **BUILD-27.** The tracked Clarvis repository contains no Python source (`.py`, `.pyi`, or `.pyw`);
-test executables and maintenance automation use the pinned Bun runtime. This does not restrict the
-the sandbox's support for user-installed toolchains.
+test executables and maintenance automation use the pinned Bun runtime.
 Production: `tooling/checks/bun-sources.ts`, invoked by `check:bun-sources` inside `lint:intent`.
 Test: `tooling/tests/unit/bun-sources.test.ts` pins the accepted and rejected extensions.
 
@@ -1078,7 +1024,6 @@ monorepo`).
 | Smoke fixture has no usable or short-enough parent | `throw new Error("smoke_fixture_no_usable_parent:<candidate>: <refusal>;…")`, or `smoke_socket_root_unavailable:…` when only the socket root cannot be reserved, naming every refusal | `packages/code/tooling/artifact/isolation.ts` (`validateParents`, `allocateFixtureRoot`, `allocateSocketRoot`) |
 | Smoke boot times out or hits `"failed to start"` | prints stripped screen tail + stderr tail, terminates owned children, removes only its own fixture and socket roots, and exits 1 | `packages/code/tooling/artifact/smoke.ts`; `SmokeContext.cleanup` and `packages/code/tooling/artifact/pty.ts` |
 | Smoke painted but wrote no `app.boot.painted` | `exit 1` with "`--debug` is the only diagnostic channel a bundled clarvis has" | `packages/code/tooling/artifact/smoke.ts` |
-| Required smoke confinement has no usable native backend | `throw new Error("smoke_native_confinement_unavailable:<reason>")`; no fallback PTY is started | `packages/code/tooling/artifact/isolation.ts` (`requireNativeSmokeConfinement`) |
 | Ordinary smoke has no `script(1)` and no `tmux` | `throw new Error("observing a boot requires either script(1) or tmux to provide a PTY")` | `packages/code/tooling/artifact/pty.ts` |
 | Code dies by signal 132/134/139 during CI tests | up to 3 additional Code attempts, then remaining packages and the global checker | `tooling/lib/ci-coverage.ts`, `runCiCoverage` |
 | Bun dies by 130 or 143 | passed straight through, never retried | `tooling/ci/retry-code-coverage.sh` |
@@ -1092,7 +1037,6 @@ monorepo`).
 | Model catalog file exceeds 8 MiB, or the user cache is corrupt | `readCatalogFile` throws `"model catalog exceeds byte limit"`; a bad cache is silently ignored and the bundled snapshot returned | `packages/kernel/src/models/model-catalog.ts` |
 | Neither models-dev.json candidate exists | `bundlePath()` returns the source-tree path anyway "so the ensuing read reports the location a developer expects" | `packages/kernel/src/models/model-catalog.ts` |
 | `code`'s temp-home cleanup races a live child | `rmSync` failure swallowed; comment: "a live child may still hold a handle; the OS reaps the temp dir" | `tooling/test-runtime/clarvis-home-preload.ts` |
-| `chocolatey`-style install reporting success over a no-op | avoided by construction: the Windows ripgrep step verifies the SHA256 and runs the binary in the same step | `.github/workflows/ci.yml` |
 | Documentation embeds a source line locator, names an explicit repository file that does not exist, or a tracked spec embeds a calendar date or source-size inventory | `check:specs` reports every unstable, missing, dated, or source-size reference and exits nonzero; illustrative paths use visible placeholders, chronology stays in `CHANGELOG.md`, and behavioral line limits remain legal | `tooling/checks/spec-hygiene.ts`; `extractLineQualifiedReferences`, `resolveRepositoryFileReference`, `extractCalendarDates`, and `extractSourceSizeReferences` in `tooling/lib/spec-hygiene.ts` |
 | A Pages workflow, local `docs/` site, or VitePress dependency is reintroduced | the repository-metadata architecture test reports the duplicated ownership surface | `tooling/tests/architecture/repository-metadata.test.ts` (`keeps public-site ownership outside this monorepo`) |
 
@@ -1119,11 +1063,6 @@ sets it (`package.json`, `scripts.hooks:install`, is the only writer).
 - Every package's resolvability depends on its own `exports` map and on the root workspaces array;
   `tooling/lib/package-graph.ts` reads `rootManifest.workspaces` reads
   `pkg.manifest.exports`, so both are load-bearing configuration and not documentation.
-- The published `@clarvis/tools/sandbox` subpath is a live runtime surface: it is imported by
-  `packages/loop/src/capabilities-tools.ts`,
-  `packages/loop/src/runtime/capabilities/sandbox-host-policy.ts`,
-  `packages/kernel/src/local.ts`, and `packages/kernel/src/sandbox/policy.ts`. The package-graph
-  analyzer checks all four imports against the tools manifest's export map.
 - `packages/code/tooling/artifact/smoke.ts` depends on `@clarvis/kernel`'s model-catalog data file
   existing at its fixed bundled path; moving it breaks the smoke rather than a unit test.
 - `packages/kernel/src/models/model-catalog.ts` names
@@ -1159,7 +1098,7 @@ groups, `killTree` and session capture belong to **tools-shell-and-sessions**.
    (`package.json`, `allowScripts`). Neither the reason for the skills-only override nor which
    dependency pulls esbuild in is derivable from the files in this document's scope.
 
-3. ~~**CI is disabled and the Windows/macOS legs are therefore unexercised.**~~ **Resolved in the
+3. **CI is active.** **Resolved in the
    first public-beta preparation:** `.github/workflows/ci.yml` triggers on push to `main` and `develop`, pull
    request, and manual dispatch with read-only permissions and SHA-pinned actions. This configuration
    does not itself claim a green platform run; observed release-platform evidence belongs to

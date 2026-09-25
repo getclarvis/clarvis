@@ -152,7 +152,6 @@ export function deriveEventSpan(event: TraceEvent): EventSpan {
     case "budget_check":
     case "soft_limit_check":
     case "mcp_degraded":
-    case "vision_analysis":
       return { span_id: "run", phase: "point", kind: "event" };
     default: {
       const exhaustive: never = event;

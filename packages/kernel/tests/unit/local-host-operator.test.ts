@@ -8,7 +8,7 @@ function fixture() {
   const operations: string[] = [];
   const status: LocalHostStatus = {
     host_generation: "generation",
-    runtime: { kind: "native", host_platform: "test", isolation: "sandbox", lifecycle: "ready" },
+    runtime: { kind: "native", host_platform: "test", lifecycle: "ready" },
     restart_requested: false,
   };
   const operator = createLocalHostOperator({

@@ -41,8 +41,7 @@ The three built-in definitions have an 11,000-character serialized regression ce
 
 ## The workflow tools
 
-Workflow scheduling is native in Host and Sandbox. The Kernel keeps the manager scheduler,
-workflow registry, leaders and shared budget together and persists their state in its
+The Kernel keeps the manager scheduler, workflow registry, leaders and shared budget together and persists their state in its
 canonical owner-scoped host state. The root entry exposes `workflowContextOf`,
 `workflowOutputBudgetOf` and `createLeaderOutputBudgetCapability` for every native composition.
 
@@ -78,7 +77,7 @@ rule guaranteed by persuasion is not guaranteed.
 The derived rule is deliberately **stronger** than the prose it replaced:
 
 - **Reader-writer, not writer-writer** — a read concurrent with a write is torn, not merely stale.
-- **Path comparison is case-insensitive**, because macOS and Windows are.
+- **Path comparison is case-insensitive**, because macOS is.
 - **A mutating item that declares no files is treated as writing everything.**
 - **Packing walks the items in the order the model emitted them**, so the same `work_items[]` always
   yields the same waves.
@@ -397,7 +396,7 @@ cross-package assertions live in the
 The only engine adapter this package consumes from `@clarvis/loop/workflows` is
 `createElicitSerializer`. Agent, run, tool, compute-clock, trace and elicitation contracts come
 directly from `@clarvis/capability`; they are not consumed through loop re-exports. The child
-registry both this package and `delegate_task` register into is `@clarvis/supervision`; it was
+registry both this package and `spawn_subagent` register into is `@clarvis/supervision`; it was
 extracted precisely so this package would stop reaching into a loop internal.
 
 ## Test ownership

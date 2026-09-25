@@ -21,43 +21,12 @@ export const ERROR_CODES = [
   "timeout",
   "aborted",
   "too_large",
-  "path_escape",
   "denied",
   "too_many_sessions",
   "internal",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
-
-/** Validate a serialized tool failure without trusting its worker-provided code. */
-export function isErrorCode(value: unknown): value is ErrorCode {
-  return typeof value === "string" && ERROR_CODES.some((code) => code === value);
-}
-
-/** Recover only public error fields from an in-band worker result. */
-export function parseToolError(text: unknown): ToolError | undefined {
-  if (typeof text !== "string" || text.length > 4096) return undefined;
-  try {
-    const value: unknown = JSON.parse(text);
-    if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
-    const error = value as Record<string, unknown>;
-    if (!isErrorCode(error.error) || typeof error.message !== "string") return undefined;
-    if (error.message.length === 0 || error.message.length > 1024) return undefined;
-    const path = error.path;
-    const partial = error.error === "commit_partial";
-    return new ToolError(error.error, error.message, {
-      ...(typeof path === "string" && path.length <= 1024 ? { path } : {}),
-      ...(partial && typeof error.source_exists === "boolean"
-        ? { source_exists: error.source_exists }
-        : {}),
-      ...(partial && typeof error.destination_committed === "boolean"
-        ? { destination_committed: error.destination_committed }
-        : {}),
-    });
-  } catch {
-    return undefined;
-  }
-}
 
 /**
  * A tool failure carrying a stable {@link ErrorCode} plus optional structured
@@ -122,13 +91,8 @@ export function serializeError(err: unknown): string {
  * does not recognize, and it is reported through the warn sink because it is the
  * only channel that outlives a tool result.
  *
- * That is what makes one of the recorded Windows gaps diagnosable:
- * `specs/known-issues.md` says `apply_patch` lands here where POSIX lands on
- * `not_a_file`, and that *"which code that is has not been identified"* — the
- * datum was already in the message and nothing but the model ever read it, so no
- * CI job retained it. It is emitted at `debug`, since an unusual errno is an
- * ordinary outcome rather than a degradation; the branch runs rarely enough that
- * the record costs nothing on a healthy host.
+ * The unusual errno is emitted at `debug` for diagnosis without changing the
+ * tool result's ordinary error mapping.
  */
 export function fsError(err: NodeJS.ErrnoException, path: string): ToolError {
   if (err.code === "ENOENT") return new ToolError("not_found", `No such file: ${path}`, { path });

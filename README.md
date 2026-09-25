@@ -10,7 +10,7 @@ repository in front of you.
 
 > **Beta:** Clarvis is a pre-1.0 release. Interfaces and pre-1.0 state formats may change, and
 > the portable artifacts are not yet code-signed or notarized. Clarvis can read and change files and
-> run commands; review approval prompts and use source control.
+> run commands; review requested approvals and use source control.
 
 ![Clarvis first-run setup with the responsive splash in a terminal](.github/assets/clarvis-setup.svg)
 
@@ -23,8 +23,8 @@ repository in front of you.
   does not imply provider endorsement of Clarvis.
 - **Agent workflows:** use a built-in Lead, delegate to focused Sub-agents, or run the packaged
   `audit`, `implement`, and `research` workflows.
-- **Tool use:** Shell and file tools follow Host OS permissions or the configured native Sandbox
-  policy on Linux and macOS. Workspace trust still governs activation of workspace configuration.
+- **Tool use:** Shell and file tools follow host OS permissions. Workspace trust still governs
+  activation of workspace configuration.
 - **Extensible:** add MCP servers, plugins, hooks, Agent Skills, custom agents, and workflows.
 - **Interactive or headless:** use the full TUI or run a prompt from scripts with `clarvis -p`.
 
@@ -39,12 +39,6 @@ Linux (glibc) and macOS:
 curl -fsSL https://github.com/getclarvis/clarvis-releases/releases/latest/download/install.sh | sh
 ```
 
-Windows PowerShell:
-
-```powershell
-irm https://github.com/getclarvis/clarvis-releases/releases/latest/download/install.ps1 | iex
-```
-
 Prefer to inspect an installer before running it? The [installation guide](https://clarvis.dev/installation)
 keeps the download, review, and execute flow as an alternative.
 
@@ -54,13 +48,12 @@ Verify the command:
 clarvis --version
 ```
 
-The installers download a versioned archive from GitHub Releases, verify its SHA-256 checksum,
-confirm that the staged CLI reports the requested version, and activate it only after every check
-succeeds. On Linux or macOS, follow the printed instruction if the resolved launcher directory
-(`${CLARVIS_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`) is not already on `PATH`. Windows adds the
-managed launcher to the user `PATH`; an existing terminal may need to be reopened.
+The installer downloads a versioned archive from GitHub Releases, verifies its SHA-256 checksum,
+confirms that the staged CLI reports the requested version, and activates it only after every check
+succeeds. Follow the printed instruction if the resolved launcher directory
+(`${CLARVIS_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`) is not already on `PATH`.
 
-The release workflow is configured for glibc-based Linux, macOS, and Windows on x64 and arm64. The
+The release workflow is configured for glibc-based Linux and macOS on x64 and arm64. The
 beta Linux archives do not target Alpine or other musl-only distributions. Platform claims remain
 beta-level until the corresponding native release job has completed. See
 [Installation](https://clarvis.dev/installation) for prerequisites, manual verification, configured targets,
@@ -81,31 +74,29 @@ On a clean installation:
 2. Connect a provider or local OpenAI-compatible endpoint and select a model.
 3. Enter the requested credential when the provider requires one. Clarvis stores credentials in
    the global user configuration, not in the project.
-4. Describe the work in the composer. Clarvis starts with the built-in `marshall` Lead and an
-   approval-oriented safety profile.
+4. Describe the work in the composer. Clarvis starts with the built-in `marshall` Lead.
 
-The current directory is the workspace boundary. Global configuration defaults to `~/.clarvis`;
-project-specific configuration lives in `<project>/.clarvis`.
+The current directory selects the workspace. File tools can also access absolute paths using the
+host process's permissions. Global configuration defaults to `~/.clarvis`; project-specific
+configuration lives in `<project>/.clarvis`.
 
 Essential controls:
 
-| Input      | Action                                                                   |
-| ---------- | ------------------------------------------------------------------------ |
-| `/help`    | Open the complete, context-aware help screen                             |
-| `Esc`      | Clear the current input, close a layer, or return to the previous screen |
-| `Ctrl+C`   | Cancel active work; when idle, enter the quit flow                       |
-| `/doctor`  | Inspect configuration, dependencies, and recoverable setup problems      |
-| `/model`   | Choose the default model                                                 |
-| `/effort`  | Choose the default reasoning effort supported by that model              |
-| `/goal`    | Create, inspect and control a persistent bounded objective               |
-| `Ctrl+X I` | Choose Host or native Sandbox isolation                                  |
+| Input     | Action                                                                   |
+| --------- | ------------------------------------------------------------------------ |
+| `/help`   | Open the complete, context-aware help screen                             |
+| `Esc`     | Clear the current input, close a layer, or return to the previous screen |
+| `Ctrl+C`  | Cancel active work; when idle, enter the quit flow                       |
+| `/doctor` | Inspect configuration, dependencies, and recoverable setup problems      |
+| `/model`  | Choose the default model                                                 |
+| `/effort` | Choose the default reasoning effort supported by that model              |
+| `/goal`   | Create, inspect and control a persistent bounded objective               |
 
 Other shortcuts depend on the terminal keyboard profile and appear in the footer and `/help`; the
 README does not duplicate a keymap that the application generates dynamically.
 
-Settings > Run controls exposes the same Host or Sandbox Isolation choice as `Ctrl+X I`.
-Both persist the native Sandbox setting globally. The local or SSH Kernel uses the selected
-workspace; remote SSH connections remain available through `--remote`.
+The local or SSH Kernel uses the selected workspace; remote SSH connections remain available
+through `--remote`.
 
 ## Common commands
 
@@ -137,16 +128,14 @@ remote terminals, and current accessibility limits.
 
 ## Security model
 
-Clarvis is local-first, but it is not an offline application and native Sandbox
-is not a complete security boundary:
+Clarvis is local-first, but it is not an offline application:
 
 - prompts and selected context are sent to the model provider you configure;
 - enabled MCP servers, plugins, hooks, task providers, and commands have their own trust boundaries;
-- file tools reject paths outside the workspace by default, but this path-based check is not a strong
-  write sandbox against a concurrent symlink or junction swap; host execution and user-approved
-  operations can also reach beyond a sandboxed process;
-- credentials saved through the managed API-key and subscription flows stay in global files. POSIX
-  installs apply owner-only mode bits; Windows relies on the user's profile access controls. Literal
+- shell and file tools execute with the host process's permissions; relative paths use the
+  workspace as their base, while absolute paths remain absolute;
+- credentials saved through the managed API-key and subscription flows stay in global files. Installations
+  apply owner-only mode bits. Literal
   provider or MCP headers can be authored in workspace settings, so use `${NAME}` references and
   never place a secret there;
 - `--remote` carries the complete kernel protocol through OpenSSH stdio. OpenSSH supplies transport

@@ -13,8 +13,6 @@ import { readFile } from "node:fs/promises";
 import { runHookCommand, type SubprocessRequest } from "@clarvis/hooks";
 import { tempRoot } from "../helpers/temp-root.ts";
 
-const posixShell = process.platform !== "win32";
-
 function request(
   workspace: string,
   over: Partial<SubprocessRequest> & { command: string },
@@ -41,7 +39,7 @@ async function waitGone(pid: number, budgetMs = 5_000): Promise<void> {
   }
 }
 
-describe.skipIf(!posixShell)("the Bun spawn adapter", () => {
+describe("the Bun spawn adapter", () => {
   test("falls back to the child's own kill when the process group cannot be reaped", async () => {
     const temp = await tempRoot("clarvis-hooks-bunspawn-");
     // `killTree` is the first attempt and normally succeeds, which leaves the

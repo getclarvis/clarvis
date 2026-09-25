@@ -779,7 +779,7 @@ test("a focused failed sub-agent keeps its terminal summary out of the transcrip
         status: "error",
         title: "Verify release",
         profile: "reviewer",
-        summary: "The release test failed on Windows",
+        summary: "The release test failed during verification",
         input: 0,
         output: 0,
       },
@@ -790,7 +790,7 @@ test("a focused failed sub-agent keeps its terminal summary out of the transcrip
   const t = await mount(props);
   const out = t.captureCharFrame();
   expect(out).toContain("Viewing A1 Verify release");
-  expect(out).not.toContain("The release test failed on Windows");
+  expect(out).not.toContain("The release test failed during verification");
   expect(out).not.toContain("Failed:");
   t.renderer.destroy();
 });

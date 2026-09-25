@@ -68,7 +68,7 @@ async function sweepLocalSpills(
       try {
         const info = await fs.lstat(file);
         if (!info.isFile()) continue;
-        if (process.platform !== "win32" && (info.mode & 0o777) !== FILE_MODE) {
+        if ((info.mode & 0o777) !== FILE_MODE) {
           await fs.chmod(file, FILE_MODE);
           modesRepaired += 1;
         }

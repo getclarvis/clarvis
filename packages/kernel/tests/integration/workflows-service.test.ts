@@ -621,7 +621,7 @@ describe("WorkflowsService", () => {
     for await (const ev of handle.events) void ev;
     const result = await handle.done;
 
-    expect(result.status).toBe("completed");
+    expect(result).toMatchObject({ status: "completed" });
     const page = await kernel.workflows.list();
     expect(page.items.map((w) => w.execution_id)).not.toContain(handle.execution_id);
     await expect(kernel.workflows.get(handle.execution_id)).rejects.toMatchObject({
@@ -733,8 +733,9 @@ describe("WorkflowsService", () => {
                 },
               ],
             },
-            { toolCalls: [{ name: "await_agents", arguments: {} }] },
+            { toolCalls: [{ name: "agent_list", arguments: {} }] },
             { text: "manager synthesis" },
+            { text: "manager synthesis after child settlement" },
           ],
         },
         { name: "leader", when: () => true, script: [{ text: "leader findings" }] },
@@ -798,8 +799,9 @@ describe("WorkflowsService", () => {
                 },
               ],
             },
-            { toolCalls: [{ name: "await_agents", arguments: {} }] },
+            { toolCalls: [{ name: "agent_list", arguments: {} }] },
             { text: "manager synthesis" },
+            { text: "manager synthesis after child settlement" },
           ],
         },
         { name: "leader", when: () => true, script: [{ text: "leader done" }] },
@@ -855,7 +857,7 @@ describe("WorkflowsService", () => {
     // fails with "no agent given".
     // `run_leader` is background-only, so the manager and the leader are genuinely
     // concurrent and a single global cursor would hand one the other's lines.
-    // Each gets its own script; the manager parks on await_agents rather than
+    // Each gets its own script; the manager checks agent_list rather than
     // finishing on top of a live child.
     const kernel = makeKernel(
       [],
@@ -872,8 +874,9 @@ describe("WorkflowsService", () => {
                 },
               ],
             },
-            { toolCalls: [{ name: "await_agents", arguments: {} }] },
+            { toolCalls: [{ name: "agent_list", arguments: {} }] },
             { text: "manager synthesis" },
+            { text: "manager synthesis after child settlement" },
           ],
         },
         { name: "leader", when: () => true, script: [{ text: "leader findings" }] },
@@ -888,7 +891,7 @@ describe("WorkflowsService", () => {
     for await (const ev of handle.events) events.push(ev);
     const result = await handle.done;
 
-    expect(result.status).toBe("completed");
+    expect(result).toMatchObject({ status: "completed" });
     const started = events.find((event) => event.type === "workflow_run_started");
     const completed = events.find((event) => event.type === "workflow_run_completed");
     expect(started).toMatchObject({
@@ -953,8 +956,9 @@ describe("WorkflowsService", () => {
                 },
               ],
             },
-            { toolCalls: [{ name: "await_agents", arguments: {} }] },
+            { toolCalls: [{ name: "agent_list", arguments: {} }] },
             { text: "manager synthesis" },
+            { text: "manager synthesis after child settlement" },
           ],
         },
         { name: "leader", when: () => true, script: [{ text: "fallback findings" }] },
@@ -992,8 +996,9 @@ describe("WorkflowsService", () => {
         ],
         usage: { output_tokens: 1 },
       },
-      { toolCalls: [{ name: "await_agents", arguments: {} }], usage: { output_tokens: 1 } },
+      { toolCalls: [{ name: "agent_list", arguments: {} }], usage: { output_tokens: 1 } },
       { text: "manager synthesis", usage: { output_tokens: 1 } },
+      { text: "manager synthesis after child settlement", usage: { output_tokens: 1 } },
     ];
     const deps = buildDeps(
       ws,
@@ -1081,7 +1086,7 @@ describe("WorkflowsService", () => {
                 },
               ],
             },
-            { toolCalls: [{ name: "await_agents", arguments: {} }] },
+            { toolCalls: [{ name: "agent_list", arguments: {} }] },
             { toolCalls: [{ name: "workflow_status", arguments: { session_id: "wfseq-1" } }] },
             {
               toolCalls: [
@@ -1096,8 +1101,9 @@ describe("WorkflowsService", () => {
                 },
               ],
             },
-            { toolCalls: [{ name: "await_agents", arguments: {} }] },
+            { toolCalls: [{ name: "agent_list", arguments: {} }] },
             { text: "manager synthesis" },
+            { text: "manager synthesis after child settlement" },
           ],
         },
         {
@@ -1179,7 +1185,7 @@ describe("WorkflowsService", () => {
                 },
               ],
             },
-            { toolCalls: [{ name: "await_agents", arguments: {} }] },
+            { toolCalls: [{ name: "agent_list", arguments: {} }] },
             { text: "must not authorize the second round", delayMs: 5_000 },
           ],
         },
@@ -1244,8 +1250,9 @@ describe("WorkflowsService", () => {
                   },
                 ],
               },
-              { toolCalls: [{ name: "await_agents", arguments: {} }] },
+              { toolCalls: [{ name: "agent_list", arguments: {} }] },
               { text: "manager synthesis" },
+              { text: "manager synthesis after child settlement" },
             ],
           },
           {
@@ -1470,7 +1477,7 @@ describe("WorkflowsService", () => {
                 },
               ],
             },
-            { toolCalls: [{ name: "await_agents", arguments: {} }] },
+            { toolCalls: [{ name: "agent_list", arguments: {} }] },
             { text: "manager synthesis", delayMs: 50 },
           ],
         },
@@ -1759,8 +1766,9 @@ describe("workflow memory ownership", () => {
                 { name: "run_leader", arguments: { title: "Research memory", prompt: "go" } },
               ],
             },
-            { toolCalls: [{ name: "await_agents", arguments: {} }] },
+            { toolCalls: [{ name: "agent_list", arguments: {} }] },
             { text: "manager synthesis" },
+            { text: "manager synthesis after child settlement" },
           ],
         },
         { name: "leader", when: () => true, script: [{ text: "leader findings" }] },
@@ -1788,6 +1796,7 @@ describe("workflow memory ownership", () => {
     const handle = await kernel.runs.start({
       messages: [{ role: "user", content: "decompose this" }],
       agent: "manager",
+      memory: "on",
     });
     // Deliberately not draining `handle.events`: an active memory capability
     // emits a non-terminal `queued` ingest notice from `onRunEnd`, and the run

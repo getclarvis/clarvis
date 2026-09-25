@@ -19,7 +19,7 @@ A **marketplace** is a git repository (or a `<marketplace-root>/.agents/plugins/
 plugins by name and source. Reading a listing grants nothing: the schema's own docstring says
 "Listing a plugin still grants it nothing: it has to be installed, enabled, and approved"
 (`packages/loop/src/settings/marketplace-schema.ts`). A Git install uses a shallow validated
-checkout; normalized marketplace installs may instead copy a confined local directory or unpack an
+checkout; normalized marketplace installs may instead copy a local directory or unpack an
 npm package without lifecycle scripts. Every source is inspected in staging before an atomic
 `rename` into the global install root (`packages/kernel/src/adapters/git/plugin-fetcher.ts`,
 `packages/kernel/src/plugins/plugin-service.ts`,
@@ -264,8 +264,7 @@ do not redirect that listing. Production: `agentsInventoryDirs` in
 Each inventory entry may be a physical immediate directory or a symbolic link whose current target
 is a directory. `directoryNames` in
 `packages/kernel/src/adapters/filesystem/plugin-repository.ts` follows only that outer inventory
-link; all manifest, skill, MCP, hook, agent, and executable readers still realpath-confine their
-paths to the resolved package root. A dangling link, link loop, or link to a non-directory is not an
+link; contribution paths may resolve beyond the package root. A dangling link, link loop, or link to a non-directory is not an
 installed plugin. A linked checkout is discovery-only: `inspectPlugin` marks it `linked`, does not
 advertise its recorded install source, and never classifies the target as a managed Git checkout.
 Both `PluginFetcher.update` and repository replacement reject it before any Git or filesystem
@@ -286,7 +285,6 @@ linked into the shared .agents inventory" and "refuses a linked Git checkout").
 | `mcpServers` | `record(string, mcpServerPluginSchema)` — or a path string, resolved before validation | `packages/loop/src/settings/plugin-schema.ts` |
 | `hooks` | `array(hookSchema).max(64)` (spread from `capabilityPluginFields`) | `packages/loop/src/runtime/capabilities/hooks.ts` |
 | `bootstrapSkill` | `string().min(1)` | `packages/loop/src/runtime/capabilities/skills-settings.ts` |
-| `guard`, `sandbox` | `z.undefined()` with an explanatory error — **forbidden** | `packages/loop/src/runtime/capabilities/tools-settings.ts` |
 
 `pluginNameField` accepts lowercase alphanumerics separated by `.`, `_`, or `-`, refuses ambiguous
 repeated `--`/`..`, edge punctuation, and `__proto__` / `constructor` / `prototype`. Its error string
@@ -314,7 +312,7 @@ Portable components use the v1 fixed locations and their own failure boundaries:
 
 - skills are immediate child directories of root `skills/`, require exact `SKILL.md`, validate the
   full portable Agent Skills frontmatter subset (identity, license, compatibility, metadata, and
-  space-separated `allowed-tools`), and cannot escape the package through a symlink;
+  space-separated `allowed-tools`), and may follow symlinks when configured;
 - MCP is read only from root `mcp.json` with the canonical v1 MCP schema. An invalid top-level MCP
   document disables MCP for that plugin without removing its skills; an invalid server, including
   one that exceeds a Clarvis host bound after normalization, removes only that server;
@@ -336,7 +334,7 @@ Production: `pluginSkillScanRoots`, `normalizeAgentMcp`, `normalizeAgentMcpServe
 
 A borrowed-host package with `.codex-plugin/plugin.json`, root `.mcp.json`, `agents/`, and `skills/`
 remains a supported borrowed-host dialect even when it does not claim the portable v1 root schema.
-Manifest-relative paths are resolved from `.codex-plugin/` and confined to the plugin root; the
+Manifest-relative paths are resolved from `.codex-plugin/` and may name external locations; the
 package is installable in the `.agents/plugins` inventory. Test:
 `packages/kernel/tests/integration/plugin-contributions.test.ts` (the `codex-kit` fixture).
 
@@ -524,23 +522,13 @@ Steps 3–9 mutate the parsed document **in place** before step 13 validates it.
 load-bearing: it lets a translated hook target the exact `<plugin>:<server>.<tool>` identity that
 the runtime dispatches, using the install identity supplied by the host rather than display data.
 
-### 4.3 Path confinement — `companionPath` / `pluginDirsFor`
+### 4.3 Path resolution — `companionPath` / `pluginDirsFor`
 
 `companionPath` (`packages/kernel/src/plugins/plugin-manifest.ts`) resolves a declared path
-against `dirs.base` first — but only if the result both stays inside `dirs.root` **and already
-exists** — otherwise against `dirs.root`. `confined` compares the *resolved* path
-against `root` or `root + sep`, so `a/../../b` is refused on the same rule as `../b` and
-an absolute path never escapes the root.
-
-`pluginDirsFor` sets `base` to the manifest's own directory, but falls back to `root`
-if that directory is itself outside the root.
-
-Confinement is **lexical**, and the docstring says so: "A symlink *inside* the plugin that points
-outside it is still followed, which is the same open parent-directory weakness recorded for
-classified configuration writes".
-
-Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts` (four refusal cases + one accepted nested case) (a `.alpha-plugin` manifest's `../skills/` resolves to the plugin's `skills/` with **no**
-"outside the plugin" note) (`../../elsewhere` is still refused from either base).
+against `dirs.base` first when that path exists, then against `dirs.root`. Absolute and
+parent-relative paths are admitted. `pluginDirsFor` uses the selected manifest's directory as
+its base. Test: `packages/kernel/tests/integration/plugin-manifest.test.ts` (external paths and
+borrowed manifest base).
 
 ### 4.4 `skills` → skill roots — `pluginSkillRoots` / `pluginSkillScanRoots`
 
@@ -554,14 +542,13 @@ Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts` (four refusa
 | neither string nor array | fallback + "not a path or a list of paths" | invalid-declaration branch |
 | a non-string / blank element | skipped + "is not a path" | element validation loop |
 | ends in `.md` (case-insensitive) | skipped + "names a file" | file-declaration branch |
-| escapes the plugin | skipped + "resolves outside the plugin" | `companionPath` result branch |
 | duplicate of an earlier root | silently de-duplicated | resolved-root insertion branch |
 | a location directly contains `SKILL.md` | accepted as one individual skill root | `pluginSkillRoots` + `listSkillDirs` |
 | exhaustive direct-skill siblings | compacted to their parent only when no undeclared directory or symlink can become visible | `compactSkillRoots` |
 | more than 4 effective roots survive | truncated to 4 + "only the first 4 of N" | `pluginSkillRoots` after compaction |
 | nothing survived | fallback + "nothing declared could be scanned" | final fallback branch |
 
-The scalar, invalid, confinement, duplicate, fallback and cap rows are pinned by their named cases
+The scalar, invalid, duplicate, fallback and cap rows are pinned by their named cases
 under "foreign manifest fields" in
 `packages/kernel/tests/integration/plugin-manifest.test.ts`. Exact compaction is pinned by
 "compacts exhaustive direct-skill siblings before applying the root budget"; refusal to widen is
@@ -571,8 +558,7 @@ serves every direct skill from an exhaustive grouped declaration". The default a
 location produce no note.
 
 For `format: "agent-plugin-v1"`, `pluginSkillScanRoots` keeps the resolved fixed root but attaches
-`discovery: "immediate"`, `manifestName: "exact"`, `validation: "agent-skills"`, and the package
-confinement root. Native and borrowed-host manifests retain the flexible behavior in the table.
+`discovery: "immediate"`, `manifestName: "exact"`, `validation: "agent-skills"`, without a package containment root. Native and borrowed-host manifests retain the flexible behavior in the table.
 
 Execution approval is deliberately narrower than scanning approval. `skillRoots` marks an admitted
 plugin root as eligible for bundled-helper execution, but `buildResolvedSkill` treats that marker as
@@ -668,7 +654,7 @@ loadable (`harvestDocument`, `harvestFile`, and `harvestConvention`).
    matcher; otherwise no filter, plus a note if a matcher was written anyway.
 4. Per entry: accept `"command"`/omitted or `"mcp_tool"`; skip a command without `command`, an MCP
    entry without `server`/`tool`, and an MCP entry on `SessionEnd`. Convert `timeout`
-   seconds → ms, clamped to `MAX_HOOK_TIMEOUT_MS`; substitute and anchor both POSIX and Windows
+   seconds → ms, clamped to `MAX_HOOK_TIMEOUT_MS`; substitute and anchor POSIX
    command paths; preserve `async`, `statusMessage`, `additionalContextLimit`, and the MCP
    `server`/`tool`/`input` fields. Pinned by the complete projection cases at
    `packages/kernel/tests/integration/plugin-manifest.test.ts`.
@@ -756,7 +742,7 @@ A translated external command whose leading executable is explicitly relative (`
 ordinary Clarvis hook array (`packages/kernel/src/plugins/hook-dialects.ts`). Hook
 execution still keeps the workspace as its working directory (`packages/hooks/src/runner.ts`),
 so anchoring the plugin's own executable does not move project-relative behavior into the plugin
-checkout. A path that would leave the install root is not rewritten. Native Clarvis hook arrays
+checkout. A parent-relative path may resolve beyond the install root. Native Clarvis hook arrays
 bypass the dialect converter and remain byte-for-byte as declared. Pinned at
 `packages/kernel/tests/integration/plugin-manifest.test.ts`.
 
@@ -765,7 +751,7 @@ bypass the dialect converter and remain byte-for-byte as declared. Pinned at
 `resolvePresentation` consumes the `interface` key so it stops being reported as unacted-on and
 reads the complete bounded install-surface presentation bucket: display/short/long descriptions,
 developer, category, capabilities, website/privacy/terms URLs, default prompts, brand colour,
-composer icon, logo and screenshots. Asset paths are confined lexical relative paths and the colour
+composer icon, logo and screenshots. Asset paths are bounded strings and the colour
 must be six-digit hex; malformed presentation costs only that metadata. Production:
 `resolvePresentation`, `displayText`, `displayTextList`, and `displayAssetPath` in
 `packages/kernel/src/plugins/plugin-manifest.ts`. Test: `reads the complete install-surface
@@ -885,8 +871,8 @@ plugin hooks, then truncates to `MAX_HOOKS_PER_RUN = 128`
 `pluginSettingsFragment` (`packages/loop/src/settings/plugin-schema.ts`) carries `mcpServers`
 plus every built-in settings spec marked `pluginContributable`. Across the whole repository exactly
 one spec sets it `true` — `hooksSettingsSpec`
-(`packages/loop/src/runtime/capabilities/hooks.ts`). The built-in `agentTools`, `sandbox` and
-`agents` specs set it `false`; the host-registered Memory, Plans and Workflows specs likewise
+(`packages/loop/src/runtime/capabilities/hooks.ts`). The built-in `agents` spec sets it `false`;
+the host-registered Memory, Plans and Workflows specs likewise
 declare `false` and cannot add plugin contributions. The Kernel supplies their registered
 prohibitions to the generic manifest parser.
 
@@ -915,7 +901,7 @@ by `installs the plugin at the given subdir, dropping the rest of the repo` in
 asserts the installed tree carries neither `.git` nor `plugins/`.
 
 `installSource` is the normalized marketplace entrypoint and accepts three source families through
-`PluginInstallSource`: Git URL with optional confined subdirectory and exclusive `ref`/`sha`, a
+`PluginInstallSource`: Git URL with optional declared directory and exclusive `ref`/`sha`, a
 local directory, or an npm package with optional version and credential-free HTTPS registry. Git
 selectors are passed as argv and validated against option/ref injection. Local installs copy into a
 private staging tree, reject symlinks and special entries, and cap depth (32), file count (10,000)
@@ -1019,21 +1005,12 @@ leniently-parsed frontmatter satisfies `agentFrontmatterSchema`. `executablesOf`
 - `listings()` de-duplicates on `url \0 name`, so two marketplaces offering the same plugin name both
   appear (pinned `packages/code/tests/integration/marketplace.test.ts`), and sorts by name.
 
-`readMarketplace` applies the 2 MiB ceiling before reading, then
-`confineLocalSources(marketplaceRoot(file), catalog)`. A confined local listing remains installable;
-an escaping or indeterminate target is marked non-installable and receives a note before it reaches
-the browser. For a cloned remote catalog, a confined local entry is projected back to the catalog's
-Git URL plus checkout-relative subdirectory so installation does not refer to the deleted scratch
-checkout. For a discovered on-disk catalog, it becomes an absolute local install source.
-Production: `readMarketplace`, `confineLocalSources`, `fetchMarketplace`, and `read` in
-`packages/code/src/adapters/marketplace.ts`. Test: local containment and remote-local projection in
-`packages/code/tests/integration/marketplace.test.ts`.
-
-`staysInside` answers `true` only for `ENOENT`/`ENOTDIR`; every other `realpath` failure
-answers `false` **and** emits `marketplace.containment.unknown` at `warn`. The docstring names the
-attack it closes: the target comes from the marketplace document, so an indeterminate realpath must
-fail closed before the listing enters the local install-source contract. Pinned at
-`packages/code/tests/integration/marketplace.test.ts`, including an `ELOOP` symlink cycle asserting exactly one diagnostic.
+`readMarketplace` applies the 2 MiB ceiling before reading. Local source paths resolve
+from the marketplace root and may name external directories. For a cloned remote catalog,
+a local entry is projected back to the catalog's Git URL plus checkout-relative path.
+For a discovered on-disk catalog, it becomes an absolute local install source.
+Production: `readMarketplace` and `marketplaceInstallSource` in
+`packages/code/src/adapters/marketplace.ts`. Test: `packages/code/tests/integration/marketplace.test.ts`.
 
 ### 4.14 Marketplace document reading (`readMarketplaceDocument`)
 
@@ -1058,13 +1035,11 @@ description keeps its place, taking its summary or its category".
 | Input | `source` | `installable` | note |
 | --- | --- | --- | --- |
 | string matching `^[A-Za-z]…://` or `user@host:` | as written | `true` | — |
-| string that is not a relative subpath | as written | `false` | "would resolve outside the marketplace root" |
-| any other string | as written, `sourceType: local` | `true` pending realpath confinement | — |
-| `{ source: "local", path }`, path relative | `path`, `sourceType: local` | `true` pending realpath confinement | — |
+| any other string | as written, `sourceType: local` | `true` | — |
+| `{ source: "local", path }` | `path`, `sourceType: local` | `true` | — |
 | `{ source: "local" }`, no path | `"local"` | `false` | "names a local source with no path" |
-| `{ source: "local", path }`, path escapes | `path` | `false` | "would resolve outside the marketplace root" |
 | `{ source: "url", url, ref?/sha? }` | URL, `sourceType: git` | `true` when URL and selector are valid | invalid URL or conflicting selector |
-| `{ source: "git-subdir", url, path, ref?/sha? }` | URL + confined subdirectory, `sourceType: git` | `true` when complete | missing/escaping path or invalid selector |
+| `{ source: "git-subdir", url, path, ref?/sha? }` | URL + declared directory, `sourceType: git` | `true` when complete | missing path or invalid selector |
 | `{ source: "npm", package, version?, registry? }` | package, `sourceType: npm` | `true` when package/version/HTTPS registry are safe | invalid package, path-like version, or unsafe registry |
 | `{ source: <other kind> }` | `path ?? kind` | `false` | "names source kind '<kind>', which Clarvis has no fetcher for" |
 
@@ -1113,10 +1088,6 @@ All of the following are derived directly from this document's own source and te
    Pinned: `packages/loop/tests/unit/plugin-schema.test.ts`,
    `packages/kernel/tests/integration/plugin-manifest.test.ts`.
 
-4. **A plugin may not contribute `sandbox`.** Declared as `z.undefined()` carrying the
-   reason (`packages/loop/src/runtime/capabilities/tools-settings.ts`). Pinned:
-   `packages/loop/tests/unit/plugin-schema.test.ts`.
-
 5. **`hooks` is the only `pluginContributable` built-in settings block.**
    `packages/loop/src/runtime/capabilities/hooks.ts`; every other spec in the repository declares
    `pluginContributable: false`. Consumed by `pluginSettingsFragment`
@@ -1164,13 +1135,11 @@ All of the following are derived directly from this document's own source and te
     (`packages/kernel/src/plugins/plugin-contributions.ts`). Unpinned as a structural rule; the
     consequences are pinned separately in both suites.
 
-12. **Every path a manifest names is confined to the plugin root, decided on the *resolved* path.**
+12. **Manifest paths may resolve beyond the plugin root.**
     `companionPath` (`packages/kernel/src/plugins/plugin-manifest.ts`). Pinned:
-    `packages/kernel/tests/integration/plugin-manifest.test.ts` (relative climb, climb through a subdirectory, absolute path,
-    and an accepted nested path).
+    `packages/kernel/tests/integration/plugin-manifest.test.ts` (parent-relative, absolute, and nested paths).
 
-13. **A relative path in a dot-directory manifest resolves from that directory first, and still
-    cannot escape the root.** `pluginDirsFor` + `companionPath`'s two-base attempt. Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts`.
+13. **A relative path in a dot-directory manifest resolves from that directory first.** `pluginDirsFor` + `companionPath`'s two-base attempt. Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts`.
 
 14. **No hooks source can cost a plugin anything but its hooks.** Every failure path in
     `harvestFile` / `harvestConvention` / `harvestDocument` returns `{ hooks: [], notes: [...] }`
@@ -1343,10 +1312,10 @@ All of the following are derived directly from this document's own source and te
     `packages/loop/tests/integration/execute-run-entrypoints.test.ts`.
 
 44a. **Every directly referenced package-local process file is part of the plugin snapshot.**
-    `snapshotPluginExecutables` resolves confined regular files from MCP stdio argv/cwd and
+    `snapshotPluginExecutables` resolves regular files from MCP stdio argv/cwd and
     translated absolute hook words; it hashes content and executable
     mode under bounded file, count, and aggregate budgets. An explicitly local declaration that is
-    absent or does not resolve to a confined regular file rejects that plugin snapshot. The runtime
+    absent or does not resolve to a regular file rejects that plugin snapshot. The runtime
     monitor binds the declaration path rather than only its resolved target and compares inode/device
     identity, so creating an absent file later or retargeting a symlink cannot launch unpinned bytes.
     Production:
@@ -1503,12 +1472,12 @@ All of the following are derived directly from this document's own source and te
     `packages/loop/src/settings/marketplace-schema.ts`. Pinned:
     `packages/code/tests/integration/marketplace-schema.test.ts`.
 
-65. **Git, confined local, and validated npm sources are installable; dialects without a fetcher,
+65. **Git, local, and validated npm sources are installable; dialects without a fetcher,
     transports the kernel refuses, and unsafe selectors remain visible but cannot be activated.**
     Git URL/ref/SHA and npm validation is shared by the tolerant reader and strict installer, so
     `installable: true` cannot describe a source the kernel will deterministically reject.
     Production: `readSource`, `pluginGitUrlIssue`, `pluginGitSelectorIssue`, and
-    `pluginNpmSourceIssue` in `packages/loop/src/settings/marketplace-schema.ts`, `confineLocalSources` and
+    `pluginNpmSourceIssue` in `packages/loop/src/settings/marketplace-schema.ts`,
     `marketplaceInstallSource` in `packages/code/src/adapters/marketplace.ts`, and `installSource` in
     `packages/kernel/src/plugins/plugin-service.ts`. Test:
     `packages/loop/tests/unit/marketplace-schema.test.ts`,
@@ -1531,10 +1500,6 @@ All of the following are derived directly from this document's own source and te
     official catalog may use root `marketplace.json`.** `documentsIn` and `fetchMarketplace`
     (`packages/code/src/adapters/marketplace.ts`). Pinned:
     `packages/code/tests/integration/marketplace.test.ts`.
-
-70. **A local source whose containment cannot be decided is treated as escaping, and the failure is
-    logged.** `staysInside` (`packages/code/src/adapters/marketplace.ts`) + `reportContainmentUnknown`.
-    Pinned: `packages/code/tests/integration/marketplace.test.ts`.
 
 71. **The panel lists exactly the skills a run would serve, by running the same catalog scan.**
     `skillNamesOf` uses `createAgentSkills` over `pluginSkillScanRoots`
@@ -1603,7 +1568,7 @@ All of the following are derived directly from this document's own source and te
     `packages/kernel/tests/integration/plugin-manifest.test.ts`.
 
 83. **Portable skills and MCP obey component-local failure boundaries.** Strict immediate-child
-    Agent Skills discovery, complete portable frontmatter validation, and symlink confinement can
+    Agent Skills discovery, complete portable frontmatter validation, and invalid skill resources can
     drop only the offending skill surface; an invalid top-level `mcp.json` drops MCP only, and an
     invalid server or post-normalization host-bound violation drops only that server. Production:
     `pluginSkillScanRoots`, `normalizeAgentMcp`, and `mcpServerPluginSchema` validation in
@@ -1678,8 +1643,7 @@ Common parse failures and dialect-level manifest validation set `ResolvedPluginM
 | native/borrowed document fails `pluginManifestSchema` | `<issue.path>: <issue.message>`, or the resource message | `parsePluginManifest` branch |
 | claimed Agent Plugins manifest is not root canonical v1 or fails its schema | exact portable-format/schema issue | `normalizeAgentManifest` |
 
-Everything else — an absent hooks file, non-JSON hooks, an unrecognized hooks shape, a hooks path
-outside the plugin, an oversized hooks document, a missing/unusable/oversized declared or
+Everything else — an absent hooks file, non-JSON hooks, an unrecognized hooks shape, an oversized hooks document, a missing/unusable/oversized declared or
 conventional native `mcpServers` companion, a portable `mcp.json` top-level failure,
 an unusable individual server entry (including a rejected borrowed-host `userConfig` reference),
 an unreadable presentation block, an unscannable `skills`

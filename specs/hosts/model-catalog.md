@@ -94,7 +94,6 @@ exposed over the transport under operation key `models`
 | Settings key | Type | Effect |
 | --- | --- | --- |
 | `default_model` | `string` | entry agent's model unless frontmatter overrides is the loser; see §4 |
-| `default_vision_model` | `string` | copied verbatim into the request's `vision_model` field |
 | `default_reasoning_effort` | `string` | entry/child effort resolution, same entry/child priority *shape* as model but only 2-tier (no `options.defaultModel`-equivalent at this layer) |
 
 `SettingsAssemblerOptions.defaultModel` is the last-resort fallback, below both
@@ -112,7 +111,7 @@ exposed over the transport under operation key `models`
 | `CatalogPicker(props)` | `packages/code/src/views/config/CatalogPicker.tsx` (`CatalogPicker`) | generic filterable list picker over a `CatalogRow[]`, with optional responsive first-run branding |
 | `catalog-pick.ts` | — | row builders: `providerRows`, `recommendedProviderRows`, `modelRows`, `configuredModelRows`, `configuredModelCapabilities`, `knownToLackReasoning`, `filterRows`, `catalogReady` |
 | `effort-levels.ts` | — | `EFFORT_LEVELS`, `normalizeReasoningEfforts`, `supportedReasoningEfforts`, `recommendedReasoningEffort` |
-| `pick-model.ts` | — | `modelPickerSpec(...)` — glue reused by `DefaultsPanel` (vision model), `AgentsPanel` (per-agent model override), `MemoryConfigPanel` (indexer model); full contract in §4.17 |
+| `pick-model.ts` | — | `modelPickerSpec(...)` — glue used by `AgentsPanel` for per-agent model overrides; full contract in §4.17 |
 | CLI `--refresh-models` | `packages/code/src/cli-args.ts`, `packages/code/src/runtime.tsx` (`runRefreshMode`) | headless mode: `kernel.models.refresh()` then exits |
 
 ## 3. Data and formats
@@ -328,10 +327,6 @@ handed off. This means:
 - `reasoning_effort` may legitimately end up `undefined` — no fallback throws for it (the assignment
   in `packages/kernel/src/runs/settings-assembler.ts` has no `if (undefined)` guard analogous to
   `model`'s; this is pinned by the corresponding component test).
-- `default_vision_model`, unlike `default_model`, has **no** per-agent override path: it is copied
-  straight from `merged.default_vision_model` into the request's top-level `vision_model` field
-  whenever it is a string — there is no agent-frontmatter equivalent for vision
-  model in this assembler.
 
 ### 4.7 `cacheModeOf` (`packages/kernel/src/models/model-catalog.ts`)
 
@@ -389,9 +384,8 @@ never overwrites an already-set value (doc-comment `packages/kernel/src/models/m
 
 Authenticated ChatGPT and Grok catalogs deliberately carry entitlement and model-shape metadata
 rather than models.dev pricing. ChatGPT copies `vision` when `input_modalities` includes `image`.
-Grok always tags `tool_calling` and copies `vision` from published image-input facts, or keeps
-`vision` when those facts are absent, so a closed `tool_calling`-only capability set cannot strip
-composer images. Capability projection is owned by
+Grok always tags `tool_calling` and copies `vision` only from published image-input facts or an
+explicit `supports_vision: true`. Capability projection is owned by
 [subscription-providers.md](subscription-providers.md). For prompt-cache policy, `cachePolicyModel`
 resolves an exact model-id match from the owning public catalog family when, and only when, the
 configured endpoint is the matching subscription kind: native `openai` for `openai-codex`, or the
@@ -577,8 +571,7 @@ manual-entry row the picker routes to instead of `onPick`; and the picker reserv
 
 `modelPickerSpec` is the one function behind the `pick-model.ts` row in §2.5's TUI-surface table: it
 turns a caller's wiring (`opts`) into either a `CatalogPickerSpec` or `null`, and every one of its
-three callers — `DefaultsPanel` (vision model), `AgentsPanel` (per-agent model override) and
-`MemoryConfigPanel` (indexer model) — hands it a `settings: SettingsAdapter`, the field's `current`
+caller — `AgentsPanel` (per-agent model override) — hands it a `settings: SettingsAdapter`, the field's `current`
 value, and `commit`/`close` callbacks, and reads back either a spec to mount a `CatalogPicker` from
 or `null` to do nothing further.
 
@@ -592,8 +585,8 @@ current value and commits the *trimmed* typed string on submit. Otherwise it cal
 rule directly: "When no provider is configured, falls back to manual entry via `opts.fe.start` if a
 manual editor was supplied, otherwise calls `opts.onNoProviders`; either way there is nothing to pick
 from, so `null` is returned.". `opts.fe` is deliberately optional — its own inline comment
-names "the `/model` picker" as an example of a host that omits it — and all three actual
-callers (`DefaultsPanel`, `AgentsPanel`, `MemoryConfigPanel`) do pass `fe`, so the no-`fe` branch is
+names "the `/model` picker" as an example of a host that omits it — and both actual
+caller (`AgentsPanel`) does pass `fe`, so the no-`fe` branch is
 untaken in the shipped call sites but is exercised directly by
 `packages/code/tests/unit/pick-model.test.ts`.
 
@@ -601,10 +594,7 @@ untaken in the shipped call sites but is exercised directly by
 to `"Pick a model " + glyph("emDash") + " configured providers"` unless `opts.title` overrides it
 (for callers where "the field is not \"the model\""); `rows`, a thunk re-reading
 `opts.settings.effective().providers` on every call and delegating to `configuredModelRows(providers,
-opts.current, opts.requireCapability)` — `requireCapability` is what lets
-`DefaultsPanel`'s vision-model picker restrict its rows to models declaring that capability
-(`packages/code/src/views/config/DefaultsPanel.tsx` passes `requireCapability: "vision"`; see
-[code-settings-panels](code-settings-panels.md)'s own `default_vision_model` row); `onManual`, present **only** when `manual` was built
+opts.current)`; `onManual`, present **only** when `manual` was built
 (i.e. only when `opts.fe` was supplied), which first calls `opts.close()` then invokes `manual()`
  — so opening the manual editor from an already-open picker always closes the picker first;
 `onClose: opts.close` verbatim; and `onPick`, which calls `opts.close()` then
@@ -793,7 +783,7 @@ catalog case).
 - `packages/kernel/src/kernel.ts` constructs the one `ModelCatalogService` instance per kernel —
   a **runtime, static** call, not conditional; every kernel always carries a catalog service.
 - `packages/kernel/src/runs/settings-assembler.ts` — imports only `EngineSettings`'s loosely-typed
-  `default_model`/`default_vision_model`/`default_reasoning_effort` fields (no import of
+  `default_model`/`default_reasoning_effort` fields (no import of
   `model-catalog.ts` itself); the coupling to pricing/cache-mode is at **configuration time** in the
   TUI, not at run-assembly time (per the doc-comment at `packages/kernel/src/models/model-catalog.ts`, deliberately —
   the whole point of moving `derivePromptCacheMode` out of the assembler was to stop making the
@@ -810,15 +800,14 @@ catalog case).
   for anything beyond scalar helpers), not an oversight — but it means `resolveModelPrice`'s
   exact/fill algorithm, and `seed`/`safeName` (§4.13), exist in two source files that must be kept in
   step by hand (the TUI's version diverges from the kernel's in both directions — §4.4).
-- `packages/code/src/views/config/{ModelView,EffortView,CatalogPicker,DefaultsPanel,AgentsPanel,
-  MemoryConfigPanel,ProvidersPanel}.tsx` and `packages/code/src/adapters/effort-levels.ts` all import
+- `packages/code/src/views/config/{ModelView,EffortView,CatalogPicker,AgentsPanel,
+  ProvidersPanel}.tsx` and `packages/code/src/adapters/effort-levels.ts` all import
   `adapters/models-catalog.ts` and/or `views/config/catalog-pick.ts` — a static, compile-time
   dependency; there is no dynamic/lazy loading of the catalog adapter.
 - `packages/llm/src/ai-sdk/request-options.ts` and `packages/loop/src/runtime/loop/loop.ts`
   both call `reasoningOutputFloor` — outside this document's scope (owned by [foundations/llm.md](../foundations/llm.md) and
   the loop's budget machinery), cited here only to show the floor function's actual callers.
 - `packages/loop/src/validation/request/provider-rules.ts`,
-  `packages/loop/src/runtime/vision-prepass.ts`,
   `packages/loop/src/runtime/subagents/subagent-profiles.ts` all call `resolveProvider` — request
   validation and per-agent provider resolution inside the loop, outside this document's scope.
 ## 8. Open questions
@@ -837,11 +826,11 @@ catalog case).
   from the table works exactly as before, with the operator setting `base_url` themselves, which is
   what keeps the list from needing to be complete
   (`packages/kernel/src/models/model-catalog.ts`).
-- **Whether `ProvidersPanel.tsx`, `AgentsPanel.tsx`, `MemoryConfigPanel.tsx` and `DefaultsPanel.tsx`
+- **Whether `ProvidersPanel.tsx` and `AgentsPanel.tsx`
   themselves (as opposed to their use of `CatalogPicker`/`pick-model.ts`) belong to this document**
   is ambiguous from the document boundary text; this spec describes their catalog-picker usage as a
   coupling point only and defers their own behavior (headers/body editing, key sources, agent
-  overlay editing, memory model selection) to whichever document owns those panels.
+  overlay editing) to whichever document owns those panels.
 - **The precise reasoning behind moving `prompt_cache` derivation from per-run to
   per-configuration** (the "used to be stamped per run request inside the kernel" remark at
   `packages/kernel/src/models/model-catalog.ts`) is stated in the source doc-comment itself, not

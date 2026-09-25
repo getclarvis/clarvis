@@ -82,23 +82,6 @@ export type PerAgentUsage =
       cache_write_tokens: number;
       iterations?: number;
       instances?: number;
-    }
-  /**
-   * The vision pre-pass: one completion on a model that is not any agent's.
-   *
-   * @remarks A third variant rather than a `subagent` row, because it is not one:
-   * counting it as a sub-agent inflated the lead's `subagents_spawned` and
-   * reported a child no client could address. It carries no `iterations` for the
-   * same reason context compaction contributes none — it is a single call, not a
-   * loop.
-   */
-  | {
-      type: "vision";
-      model: string;
-      input_tokens: number;
-      output_tokens: number;
-      cached_tokens: number;
-      cache_write_tokens: number;
     };
 
 /**
@@ -382,14 +365,13 @@ export interface NamespacedTool {
  *
  * @remarks `evictable` marks a message compaction may drop; `summary` marks a
  * compaction-produced summary; `canonical` marks always-retained context (e.g.
- * plan state); `task_id` associates the entry with a plan task when relevant.
+ * plan state).
  */
 export interface ContextSnapshotEntry {
   message: LiveMessage;
   evictable: boolean;
   summary: boolean;
   canonical: boolean;
-  task_id?: string;
   /** Active runtime-note kind. Older publications remain historical and become superseded. */
   note_kind?: string;
   /** The position-holding block identity, when the entry is a stable block. */

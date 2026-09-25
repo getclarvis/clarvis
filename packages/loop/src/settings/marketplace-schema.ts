@@ -23,26 +23,8 @@ const DEFAULT_ENTRY_DESCRIPTION = "no description provided by this marketplace";
 /** A non-empty string, the smallest field shape this document uses. */
 const nonEmptyString = z.string().min(1);
 
-/**
- * Whether a path stays inside the tree it is resolved against.
- *
- * @param value - the candidate relative path, in POSIX spelling.
- * @returns `true` when it has no leading `/`, no `..` segment and no backslash.
- */
-function isRelativeSubpath(value: string): boolean {
-  return !value.startsWith("/") && !value.includes("\\") && !/(^|\/)\.\.(\/|$)/.test(value);
-}
-
-/** A path that must resolve inside the tree it is read from; see {@link isRelativeSubpath}. */
-const relativeSubpathField = nonEmptyString
-  .refine(
-    isRelativeSubpath,
-    "must be a relative POSIX subdirectory (no leading '/', no '..', no backslashes)",
-  )
-  .describe(
-    "Subdirectory within the source that holds this plugin's manifest. Omit for a plugin at " +
-      "the root; set it so one source can ship several plugins.",
-  );
+/** A non-empty plugin source path. */
+const sourcePathField = nonEmptyString;
 
 /**
  * A source expressed as an object rather than a bare string: a `source`
@@ -357,9 +339,7 @@ interface SourceReading {
  * @param raw - the validated `source` value.
  * @returns the normalized source, and whether this host installs from it.
  * @remarks A bare string carrying a transport or an ssh spelling is a remote
- *   source and is installable. A confined relative spelling is an installable
- *   local source; an absolute or escaping path remains visible but cannot be
- *   installed.
+ *   source and is installable. A local path is installable whether relative or absolute.
  */
 function readSource(raw: string | z.infer<typeof sourceDescriptorSchema>): SourceReading {
   if (typeof raw === "string") {
@@ -373,14 +353,6 @@ function readSource(raw: string | z.infer<typeof sourceDescriptorSchema>): Sourc
         ...(issue === undefined ? {} : { note: issue }),
       };
     }
-    if (!isRelativeSubpath(value)) {
-      return {
-        source: value,
-        kind: "local",
-        installable: false,
-        note: "names a local source that would resolve outside the marketplace root",
-      };
-    }
     return { source: value, kind: "local", path: value, installable: true };
   }
   const kind = raw.source.trim().toLowerCase();
@@ -392,14 +364,6 @@ function readSource(raw: string | z.infer<typeof sourceDescriptorSchema>): Sourc
         kind: "local",
         installable: false,
         note: "names a local source with no path",
-      };
-    }
-    if (!isRelativeSubpath(path)) {
-      return {
-        source: path,
-        kind: "local",
-        installable: false,
-        note: "names a local source that would resolve outside the marketplace root",
       };
     }
     return { source: path, kind: "local", path, installable: true };
@@ -423,12 +387,12 @@ function readSource(raw: string | z.infer<typeof sourceDescriptorSchema>): Sourc
         note: urlIssue,
       };
     }
-    if (kind === "git-subdir" && (path === undefined || !isRelativeSubpath(path))) {
+    if (kind === "git-subdir" && path === undefined) {
       return {
         source: url,
         kind: "git",
         installable: false,
-        note: "names a git-subdir source without a confined relative path",
+        note: "names a git-subdir source without a path",
       };
     }
     const selectorIssue = pluginGitSelectorIssue({
@@ -570,7 +534,7 @@ function readEntry(raw: unknown, position: number): EntryReading {
   const resolved = readSource(sourceValue.data);
   if (resolved.note !== undefined) notes.push(`${named} ${resolved.note}`);
 
-  const path = resolved.path ?? readField(source.path, relativeSubpathField, named, "path", notes);
+  const path = resolved.path ?? readField(source.path, sourcePathField, named, "path", notes);
   let installable = resolved.installable;
   if (source.path !== undefined && path === undefined) {
     installable = false;

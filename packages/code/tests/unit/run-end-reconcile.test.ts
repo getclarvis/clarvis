@@ -23,7 +23,7 @@ const STORED: RunEvent[] = [
     call_id: "c1",
     at: 2,
     server: "fs",
-    tool: "grep",
+    tool: "list_dir",
     arguments: { pattern: "x" },
     result: "ok",
     ok: true,

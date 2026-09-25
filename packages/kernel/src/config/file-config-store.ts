@@ -660,10 +660,8 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
    * `unapproved` does not become approved because the operator changed one
    * unrelated setting inside it.
    *
-   * Only host-reviewed writers, including prepared file-tool batches, use this
-   * API. External changes and unreviewed tool writes cannot self-approve. Async
-   * batches carry trust only after settlement, checking every expected target
-   * and every previously captured document against concurrent drift.
+   * Only host-owned configuration writers use this API. External changes and
+   * ordinary file-tool writes cannot self-approve.
    *
    * A failure to record the carried approval is swallowed rather than thrown.
    * By that point the settings or agent file has already been written, so

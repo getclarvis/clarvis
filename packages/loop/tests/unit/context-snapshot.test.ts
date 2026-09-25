@@ -134,11 +134,13 @@ describe("LiveContext.snapshot", () => {
     ]);
   });
 
-  it("excludes the system head and preserves order, flags and task_id", () => {
+  it("excludes the system head and preserves order and flags", () => {
     const ctx = createLiveContext(seedWithSystem(), ROOMY, SCOPE);
     ctx.setCanonicalState("state v1");
-    ctx.appendAssistantToolCalls("looking", [{ id: "c1", name: "grep", arguments: { q: "x" } }]);
-    ctx.appendToolMessage("c1", "match found", { taskId: "t7" });
+    ctx.appendAssistantToolCalls("looking", [
+      { id: "c1", name: "list_dir", arguments: { q: "x" } },
+    ]);
+    ctx.appendToolMessage("c1", "match found");
     ctx.appendAssistant("done");
 
     const snap = ctx.snapshot();
@@ -158,7 +160,6 @@ describe("LiveContext.snapshot", () => {
     expect(contentToText(canonical!.message.content)).toBe("state v1");
     expect(calls!.message.role === "assistant" && "tool_calls" in calls!.message).toBe(true);
     expect(tool!.evictable).toBe(true);
-    expect(tool!.task_id).toBe("t7");
     expect(contentToText(final!.message.content)).toBe("done");
   });
 

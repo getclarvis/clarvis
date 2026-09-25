@@ -410,7 +410,7 @@ describe("subscription transport authority", () => {
           id: "grok-code",
           context_window: 256_000,
           max_output: 32_000,
-          capabilities: ["tool_calling", "vision"],
+          capabilities: ["tool_calling"],
           reasoning_efforts: ["low", "high"],
         },
       ],
@@ -420,7 +420,7 @@ describe("subscription transport authority", () => {
     expect(request?.headers.get("user-agent")).toBe(`clarvis/${VERSION}`);
   });
 
-  it("projects Grok vision from catalog modalities and keeps it when the catalog is silent", async () => {
+  it("projects Grok vision only from catalog declarations", async () => {
     const adapter = createXaiGrokAdapter({
       fetch: fetchStub(async () =>
         Response.json({
@@ -446,6 +446,11 @@ describe("subscription transport authority", () => {
               supports_vision: false,
             },
             {
+              model: "grok-vision-flag",
+              api_backend: "responses",
+              supports_vision: true,
+            },
+            {
               model: "grok-4.6",
               api_backend: "responses",
             },
@@ -461,7 +466,8 @@ describe("subscription transport authority", () => {
         { id: "grok-nested", capabilities: ["tool_calling", "vision"] },
         { id: "grok-text", capabilities: ["tool_calling"] },
         { id: "grok-no-vision-flag", capabilities: ["tool_calling"] },
-        { id: "grok-4.6", capabilities: ["tool_calling", "vision"] },
+        { id: "grok-vision-flag", capabilities: ["tool_calling", "vision"] },
+        { id: "grok-4.6", capabilities: ["tool_calling"] },
       ],
     });
   });

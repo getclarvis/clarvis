@@ -116,9 +116,6 @@ const HIDE_FROM_CATALOG_KEYS = [
 /** A hex colour, in the three- or six-digit form; anything else is not a colour we can render. */
 const COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
-/** A Windows drive-letter prefix, which makes an "icon path" absolute rather than skill-relative. */
-const DRIVE_PREFIX = /^[A-Za-z]:/;
-
 /**
  * Read the first value present under any accepted spelling of one concept.
  *
@@ -151,25 +148,15 @@ function boundedText(value: unknown, maxChars: number): string | undefined {
 }
 
 /**
- * Accept a skill-relative asset path, discarding any that could address a file
- * outside the skill directory.
+ * Accept a bounded asset path for presentation.
  *
  * @param value - the raw sidecar value.
- * @returns a normalized POSIX-style relative path, or `undefined` when the value
- *   is absent, unbounded, absolute, drive-qualified, backslash-separated, or
- *   contains a `..` segment.
- * @remarks Presentation data is still a path a UI will open, so it is bound by
- *   the same confinement rule bundled resources are: this rejects the escape
- *   rather than resolving it, because the reader has no filesystem to check
- *   against and a rejected icon costs only an icon.
+ * @returns the declared path, or `undefined` when absent or unbounded.
  */
 function assetPath(value: unknown): string | undefined {
   const raw = boundedText(value, MAX_SKILL_ICON_PATH_CHARS);
   if (raw === undefined) return undefined;
-  if (raw.startsWith("/") || raw.includes("\\") || DRIVE_PREFIX.test(raw)) return undefined;
-  const segments = raw.split("/").filter((segment) => segment.length > 0 && segment !== ".");
-  if (segments.length === 0 || segments.includes("..")) return undefined;
-  return segments.join("/");
+  return raw.startsWith("./") ? raw.slice(2) : raw;
 }
 
 /**
@@ -178,7 +165,7 @@ function assetPath(value: unknown): string | undefined {
  *
  * @param value - the raw `icon`/`icons` value.
  * @returns the theme-keyed paths, or `undefined` when neither theme resolves to
- *   a confined relative path.
+ *   a declared path.
  * @remarks A bare string serves both themes: an author who supplied one icon
  *   meant it to be used, and leaving the dark slot empty would make a UI fall
  *   back to no icon at all on half its themes.

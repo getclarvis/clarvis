@@ -237,8 +237,7 @@ provider. Kernel composition, protocol, runtime and real PTY tests own their res
 
 The live qualification runner under `tooling/goal/live.ts` is a separate host-boundary harness. It
 uses fresh roots, workers and locks for every trial; the operator's subscription store is not
-selected unless `--use-global-oauth` is passed explicitly and the Linux Bubblewrap view is
-available. Synthetic trials therefore do not imply provider, PTY or installed-artifact coverage.
+selected. Synthetic trials therefore do not imply provider, PTY or installed-artifact coverage.
 
 Auxiliary execution results can carry host-only per-model accounting alongside domain usage;
 unknown formulation telemetry remains unknown rather than being inferred from empty loop totals.

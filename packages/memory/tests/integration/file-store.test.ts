@@ -13,7 +13,7 @@ import { createFileMemoryStore } from "../../src/file-store.ts";
 import type { MemoryStore } from "../../src/types.ts";
 import { makeRoot, seedFile } from "../helpers/fs.ts";
 
-const modeBitsEnforced = process.platform !== "win32" && process.getuid?.() !== 0;
+const modeBitsEnforced = process.getuid?.() !== 0;
 
 describe("file memory store", () => {
   let root: string;

@@ -67,7 +67,6 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
       revokeWorkspace: record("config.revokeWorkspace"),
       workspaceTrustError: record("config.workspaceTrustError"),
       updateSettings: record("config.updateSettings"),
-      inspectSandbox: record("config.inspectSandbox"),
       listAgents: record("config.listAgents"),
       getAgent: record("config.getAgent"),
       writeAgent: record("config.writeAgent"),

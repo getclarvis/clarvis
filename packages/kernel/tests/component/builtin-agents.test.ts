@@ -140,7 +140,7 @@ describe("the shipped admiral agent", () => {
     const prompt = ADMIRAL.body.replace(/\s+/g, " ");
     expect(prompt).toContain("agent harness");
     expect(prompt).toContain("`spawn_subagent`");
-    expect(prompt).toContain("`delegate_task`");
+    expect(prompt).toContain("`spawn_subagent`");
     expect(prompt).toContain("manager-local children");
     expect(prompt).toContain("only on explicit instruction under the shared policy");
     expect(prompt).toContain("when explicitly instructed and their profile allows");
@@ -169,16 +169,14 @@ describe("the shipped marshall agent", () => {
     expect(MARSHALL.frontmatter.iteration_limit).toBe(512);
   });
 
-  test("uses separate tools for independent spawning and tracked delegation", () => {
+  test("describes independent spawning and child supervision", () => {
     const prompt = MARSHALL.body.replace(/\s+/g, " ");
     expect(prompt).toContain(
       "by default; delegation requires explicit instruction under the shared policy",
     );
     expect(prompt).not.toContain("unless the agent harness adds clear value");
     expect(prompt).toContain("`spawn_subagent` for independent work");
-    expect(prompt).toContain("`delegate_task` for an existing plan task");
-    expect(prompt).toContain("exact `task_id`");
-    expect(prompt).toContain("when planning is enabled");
+    expect(prompt).toContain("`agent_poll` for evidence and completion notices");
     expect(prompt).toContain("A background handle is not a result");
     expect(prompt).toContain("Review returned work before closing a plan task");
   });

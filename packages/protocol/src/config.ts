@@ -27,7 +27,6 @@ export interface SettingsData {
    */
   providers?: ProviderConfig[];
   mcp_servers?: Record<string, McpServerConfig>;
-  sandbox?: SandboxConfig;
   memory?: MemoryConfig;
   budget?: unknown;
   /** Forward-compatible: the kernel owns the exhaustive schema. */
@@ -60,125 +59,9 @@ export interface McpServerConfig {
   [k: string]: unknown;
 }
 
-/**
- * Sandbox settings block. `native` selects Bubblewrap on Linux and Seatbelt on
- * macOS. The kernel resolves this into the concrete jail for command execution;
- * the UI reads it back through {@link SandboxInspection} via
- * {@link ConfigService.inspectSandbox}.
- */
-export interface SandboxConfig {
-  /** Platform-native sandbox selection. */
-  type: "native";
-  enabled?: boolean;
-  /** Both `required` and legacy `optional` fail closed when the native backend is unavailable. */
-  availability?: "required" | "optional";
-  /** Whether the workspace mount is writable or read-only inside the jail. */
-  filesystem?: "workspace-write" | "workspace-read-only";
-  /** `host` shares the host network; `none` isolates it. */
-  network?: "host" | "none";
-  /** Host environment variables to pass through into the sandboxed process. */
-  pass_env?: string[];
-  /** Which language toolchains are made visible on the sandbox `PATH`. */
-  toolchains?: {
-    /** `auto` discovers and includes toolchains; `manual` includes none unless listed. */
-    mode?: "auto" | "manual";
-    /** Toolchain ids to force-include (by {@link SandboxToolchainStatus.id}). */
-    include?: string[];
-    /** Toolchain ids to exclude. */
-    exclude?: string[];
-    /** Extra host directories to keep read-only for writes inside the jail. */
-    extra_paths?: string[];
-    /** Entries from {@link extra_paths} to suppress (e.g. one inherited from another scope). */
-    excluded_paths?: string[];
-  };
-}
-
-/**
- * Where a discovered toolchain (or read-only path) originates: `system` (already
- * on the host `PATH`), `auto` (found by discovery), or the `global` / `workspace`
- * settings scope that declared it.
- */
-export type SandboxToolchainScope = "system" | "auto" | "global" | "workspace";
-
-/**
- * Doctor status for one toolchain the sandbox discovered passively, as reported
- * by {@link ConfigService.inspectSandbox}.
- */
-export interface SandboxToolchainStatus {
-  /** Stable toolchain identifier (e.g. `bun`, `node`), matched by include/exclude. */
-  id: string;
-  /** The executables this toolchain provides. */
-  commands: string[];
-  /** Whether the toolchain's executable path resolved successfully. */
-  available: boolean;
-  /** Whether it is folded into the effective sandbox `PATH`. */
-  enabled: boolean;
-  scope: SandboxToolchainScope;
-  /** Version manager that owns it (e.g. `mise`, `asdf`, `system`), when known. */
-  manager?: string;
-  /** The symlink/shim path as it appears on `PATH` (pre-resolution). */
-  logical_path?: string;
-  /** The real path {@link logical_path} resolves to. */
-  resolved_path?: string;
-  /** Directory added to the sandbox `PATH` to expose this toolchain. */
-  root?: string;
-  /** Populated when executable-path discovery failed. */
-  error?: string;
-}
-
-/**
- * Doctor status for one configured read-only extra path
- * ({@link SandboxConfig.toolchains}.`extra_paths`).
- */
-export interface SandboxPathStatus {
-  /** The path exactly as configured (before resolution). */
-  path: string;
-  /** Settings scope that declared this path. */
-  scope: "global" | "workspace";
-  /** Whether the path resolved successfully and can be mounted. */
-  available: boolean;
-  error?: string;
-}
-
-/**
- * Full sandbox doctor snapshot returned by {@link ConfigService.inspectSandbox}:
- * the native backend probe plus resolved toolchains, extra paths, and effective
- * `PATH` a sandboxed run would see.
- */
-export interface SandboxInspection {
-  /** Host-resolved access posture shown even when native Sandbox is disabled. */
-  filesystem: {
-    placement: "host" | "sandbox";
-    reads: "host-visible";
-    writes: "host-os" | "declared-roots";
-    workspace: "read-write" | "read-only";
-  };
-  /** Network access after the host applies the selected placement and global policy floor. */
-  effective_network: "host" | "none";
-  backend: {
-    /** Backend selected for this host, even when it is unavailable. */
-    type: "bubblewrap" | "seatbelt" | "unsupported";
-    available: boolean;
-    /**
-     * Bubblewrap uses `fresh-proc` or the degraded `host-proc`; Seatbelt uses
-     * `seatbelt`; an unusable or unsupported backend reports `unavailable`.
-     */
-    mode: "fresh-proc" | "host-proc" | "seatbelt" | "unavailable";
-    /** True when running in a reduced-isolation mode (`host-proc`). */
-    degraded: boolean;
-    /** Why the sandbox is unavailable or degraded, when applicable. */
-    reason?: string;
-  };
-  toolchains: SandboxToolchainStatus[];
-  extra_paths: SandboxPathStatus[];
-  /** The `PATH` entries a sandboxed process would run with, in order. */
-  effective_path: string[];
-}
-
 /** Memory subsystem settings block. */
 export interface MemoryConfig {
   enabled?: boolean;
-  model?: string;
   [k: string]: unknown;
 }
 
@@ -232,8 +115,7 @@ export interface SettingsView {
    *   contributes its own grant, so the set is a property of what this kernel
    *   actually composed rather than of any static list. Without it a client
    *   checking a profile's readiness had to skip grants entirely, and a profile
-   *   naming an undeclared one (a stale `image` left by the vision-routing
-   *   refactor) was reported "runnable" by Doctor and the agent editor while
+   *   naming an undeclared grant was reported "runnable" by Doctor and the agent editor while
    *   every run in the workspace was rejected before its first model call.
    *   Absent when the kernel did not report it; a client must then skip the
    *   check rather than assume a vocabulary.
@@ -460,9 +342,6 @@ export interface ConfigService {
     patch: Partial<SettingsData>,
     expectedRevision: string | null,
   ): Promise<SettingsView>;
-
-  /** Inspect the native sandbox and toolchains visible on the kernel host. */
-  inspectSandbox(options?: { refresh?: boolean }): Promise<SandboxInspection>;
 
   /**
    * All agents visible in the workspace: shipped, file-backed and plugin-shipped.

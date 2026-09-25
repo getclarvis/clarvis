@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { globalPaths } from "@clarvis/paths";
 import { isAlive, killTree } from "@clarvis/tools/shell";
@@ -142,56 +142,7 @@ describe("independent local kernel process", () => {
     await replacement.client.close();
   });
 
-  test("an idle requested restart admits a changed Sandbox policy", async () => {
-    const f = await fixture();
-    const first = await connectOrLaunchLocalKernel(f.options);
-    cleanups.push(() => first.client.close());
-    const previousGeneration = first.client.capabilities.hosting!.host_generation;
-    const settingsFile = globalPaths(f.globalDir).settingsFile;
-    const settings = JSON.parse(await readFile(settingsFile, "utf8"));
-    await writeFile(
-      settingsFile,
-      JSON.stringify({
-        ...settings,
-        sandbox: { type: "native", enabled: false, availability: "required" },
-      }),
-    );
-    await first.client.localHost!.requestRestart();
-    await first.client.close();
-    const replacement = await connectOrLaunchLocalKernel(f.options);
-    cleanups.push(() => replacement.client.close());
-    expect(replacement.client.capabilities.hosting!.host_generation).not.toBe(previousGeneration);
-    await replacement.client.close();
-  });
-
-  test.skipIf(process.platform === "win32")(
-    "falls back from a long temp snapshot and reconnects to the same generation",
-    async () => {
-      const longRoot = (label: string): string => join("/tmp", `${label}-${"a".repeat(168)}`);
-      const f = await fixture({
-        TMPDIR: longRoot("tmpdir"),
-        TMP: longRoot("tmp"),
-        TEMP: longRoot("temp"),
-      });
-      const first = await connectOrLaunchLocalKernel(f.options);
-      cleanups.push(() => first.client.close());
-      const record = (await readLocalHostConnection(first.identity))!;
-      expect(record).toBeDefined();
-      expect(dirname(first.identity.paths.endpointDirectory!)).toBe(resolve("/tmp"));
-      expect(record.endpoint).toBe(first.identity.paths.endpoint);
-      expect(Buffer.byteLength(record.endpoint, "utf8")).toBeLessThanOrEqual(100);
-      expect(first.client.capabilities.hosting!.host_generation).toBe(record.host_generation);
-
-      const second = await connectOrLaunchLocalKernel(f.options);
-      cleanups.push(() => second.client.close());
-      expect(second.identity.paths.endpoint).toBe(first.identity.paths.endpoint);
-      expect(second.client.capabilities.hosting!.host_generation).toBe(record.host_generation);
-      await second.client.close();
-      await first.client.close();
-    },
-  );
-
-  test("retires an idle memory-capable process with workspace memory disabled", async () => {
+  test("retires an idle memory-capable process with global memory disabled", async () => {
     const f = await fixture();
     const { client } = await connectOrLaunchLocalKernel(f.options);
     cleanups.push(() => client.close());
@@ -204,160 +155,154 @@ describe("independent local kernel process", () => {
     await until(async () => (await readLocalHostConnection(f.identity)) === null, 5000);
   });
 
-  test.skipIf(process.platform === "win32")(
-    "keeps a hosted session through client disconnect and drains it only when its run ends",
-    async () => {
-      const f = await fixture({
-        CLARVIS_AGENT_TOOLS_ENABLED: "1",
-        CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec",
-        CLARVIS_TEST_SESSION: "1",
+  test("keeps a hosted session through client disconnect and drains it only when its run ends", async () => {
+    const f = await fixture({
+      CLARVIS_AGENT_TOOLS_ENABLED: "1",
+      CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec",
+      CLARVIS_TEST_SESSION: "1",
+    });
+    await writeFile(
+      join(f.globalDir, "agents", "solo.md"),
+      "---\ntools: []\ngrants: [run_commands]\n---\nYou are solo.\n",
+    );
+    const { client } = await connectOrLaunchLocalKernel(f.options);
+    cleanups.push(() => client.close());
+    await client.sessions.save({
+      id: "conversation",
+      title: "Session handoff",
+      project_id: client.project.id,
+      workspace: client.workspace.id,
+      created_at: 1,
+      updated_at: 1,
+      turns: [],
+      totals: { input: 0, output: 0, cached: 0 },
+    });
+    const session = (await client.sessions.get("conversation"))!;
+    const attachment = await client.hosting!.start({
+      session_id: session.id,
+      session_revision: session.revision!,
+      kind: "conversation",
+      user_preview: "Session after disconnect",
+      params: {
+        execution_id: "session-run",
+        agent: "solo",
+        messages: [{ role: "user", content: "Start session" }],
+      },
+    });
+    const [run] = await client.hosting!.list();
+    await client.hosting!.detach({
+      execution_id: run!.execution_id,
+      host_generation: run!.host_generation,
+      control_epoch: run!.control_epoch,
+      revision: run!.revision,
+      operation_id: "session-handoff",
+    });
+    await client.close();
+    await writeFile(join(f.workspaceRoot, "continue.flag"), "continue");
+    const marker = join(f.workspaceRoot, "session-meta");
+    let sessionPid: number | undefined;
+    try {
+      await until(
+        async () =>
+          await access(marker).then(
+            () => true,
+            () => false,
+          ),
+      ).catch(async (error) => {
+        const probe = await connectOrLaunchLocalKernel(f.options);
+        const rows = await probe.client.hosting!.list();
+        await probe.client.close();
+        throw new Error(`${String(error)}: ${JSON.stringify(rows)}`);
       });
-      await writeFile(
-        join(f.globalDir, "agents", "solo.md"),
-        "---\ntools: []\ngrants: [run_commands]\n---\nYou are solo.\n",
+      const [scratch, pidText] = (await readFile(marker, "utf8")).trim().split("\n");
+      sessionPid = Number(pidText);
+      expect(isAlive(sessionPid)).toBe(true);
+      expect(
+        await access(scratch).then(
+          () => true,
+          () => false,
+        ),
+      ).toBe(true);
+      await writeFile(join(f.workspaceRoot, "finish.flag"), "finish");
+      const reopened = await connectOrLaunchLocalKernel(f.options);
+      cleanups.push(() => reopened.client.close());
+      await until(
+        async () => (await reopened.client.hosting!.list())[0]?.execution_state === "closed",
       );
-      const { client } = await connectOrLaunchLocalKernel(f.options);
-      cleanups.push(() => client.close());
-      await client.sessions.save({
-        id: "conversation",
-        title: "Session handoff",
-        project_id: client.project.id,
-        workspace: client.workspace.id,
-        created_at: 1,
-        updated_at: 1,
-        turns: [],
-        totals: { input: 0, output: 0, cached: 0 },
-      });
-      const session = (await client.sessions.get("conversation"))!;
-      const attachment = await client.hosting!.start({
-        session_id: session.id,
-        session_revision: session.revision!,
-        kind: "conversation",
-        user_preview: "Session after disconnect",
-        params: {
-          execution_id: "session-run",
-          agent: "solo",
-          messages: [{ role: "user", content: "Start session" }],
-        },
-      });
-      const [run] = await client.hosting!.list();
-      await client.hosting!.detach({
-        execution_id: run!.execution_id,
-        host_generation: run!.host_generation,
-        control_epoch: run!.control_epoch,
-        revision: run!.revision,
-        operation_id: "session-handoff",
-      });
-      await client.close();
-      await writeFile(join(f.workspaceRoot, "continue.flag"), "continue");
-      const marker = join(f.workspaceRoot, "session-meta");
-      let sessionPid: number | undefined;
-      try {
-        await until(
-          async () =>
-            await access(marker).then(
-              () => true,
-              () => false,
-            ),
-        ).catch(async (error) => {
-          const probe = await connectOrLaunchLocalKernel(f.options);
-          const rows = await probe.client.hosting!.list();
-          await probe.client.close();
-          throw new Error(`${String(error)}: ${JSON.stringify(rows)}`);
-        });
-        const [scratch, pidText] = (await readFile(marker, "utf8")).trim().split("\n");
-        sessionPid = Number(pidText);
-        expect(isAlive(sessionPid)).toBe(true);
-        expect(
-          await access(scratch).then(
-            () => true,
-            () => false,
-          ),
-        ).toBe(true);
-        await writeFile(join(f.workspaceRoot, "finish.flag"), "finish");
-        const reopened = await connectOrLaunchLocalKernel(f.options);
-        cleanups.push(() => reopened.client.close());
-        await until(
-          async () => (await reopened.client.hosting!.list())[0]?.execution_state === "closed",
-        );
-        expect(isAlive(sessionPid)).toBe(false);
-        expect(
-          await access(scratch).then(
-            () => true,
-            () => false,
-          ),
-        ).toBe(false);
-        await attachment.handle.closed;
-      } finally {
-        if (sessionPid !== undefined && isAlive(sessionPid)) killTree(sessionPid, "SIGKILL");
-      }
-    },
-  );
+      expect(isAlive(sessionPid)).toBe(false);
+      expect(
+        await access(scratch).then(
+          () => true,
+          () => false,
+        ),
+      ).toBe(false);
+      await attachment.handle.closed;
+    } finally {
+      if (sessionPid !== undefined && isAlive(sessionPid)) killTree(sessionPid, "SIGKILL");
+    }
+  });
 
-  test.skipIf(process.platform === "win32")(
-    "cancels a hosted session and removes scratch after physical stop",
-    async () => {
-      const f = await fixture({
-        CLARVIS_AGENT_TOOLS_ENABLED: "1",
-        CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec",
-        CLARVIS_TEST_SESSION: "1",
-      });
-      await writeFile(
-        join(f.globalDir, "agents", "solo.md"),
-        "---\ntools: []\ngrants: [run_commands]\n---\nYou are solo.\n",
-      );
-      const { client } = await connectOrLaunchLocalKernel(f.options);
-      cleanups.push(() => client.close());
-      await client.sessions.save({
-        id: "conversation-cancel",
-        title: "Session cancellation",
-        project_id: client.project.id,
-        workspace: client.workspace.id,
-        created_at: 1,
-        updated_at: 1,
-        turns: [],
-        totals: { input: 0, output: 0, cached: 0 },
-      });
-      const session = (await client.sessions.get("conversation-cancel"))!;
-      const attachment = await client.hosting!.start({
-        session_id: session.id,
-        session_revision: session.revision!,
-        kind: "conversation",
-        user_preview: "Cancel session",
-        params: {
-          execution_id: "session-cancel-run",
-          agent: "solo",
-          messages: [{ role: "user", content: "Start session" }],
-        },
-      });
-      await writeFile(join(f.workspaceRoot, "continue.flag"), "continue");
-      const marker = join(f.workspaceRoot, "session-meta");
-      let pid: number | undefined;
-      try {
-        await until(
-          async () =>
-            await access(marker).then(
-              () => true,
-              () => false,
-            ),
-        );
-        const [scratch, pidText] = (await readFile(marker, "utf8")).trim().split("\n");
-        pid = Number(pidText);
-        expect(isAlive(pid)).toBe(true);
-        await attachment.handle.cancel();
-        await attachment.handle.closed;
-        expect(isAlive(pid)).toBe(false);
-        expect(
-          await access(scratch).then(
+  test("cancels a hosted session and removes scratch after physical stop", async () => {
+    const f = await fixture({
+      CLARVIS_AGENT_TOOLS_ENABLED: "1",
+      CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec",
+      CLARVIS_TEST_SESSION: "1",
+    });
+    await writeFile(
+      join(f.globalDir, "agents", "solo.md"),
+      "---\ntools: []\ngrants: [run_commands]\n---\nYou are solo.\n",
+    );
+    const { client } = await connectOrLaunchLocalKernel(f.options);
+    cleanups.push(() => client.close());
+    await client.sessions.save({
+      id: "conversation-cancel",
+      title: "Session cancellation",
+      project_id: client.project.id,
+      workspace: client.workspace.id,
+      created_at: 1,
+      updated_at: 1,
+      turns: [],
+      totals: { input: 0, output: 0, cached: 0 },
+    });
+    const session = (await client.sessions.get("conversation-cancel"))!;
+    const attachment = await client.hosting!.start({
+      session_id: session.id,
+      session_revision: session.revision!,
+      kind: "conversation",
+      user_preview: "Cancel session",
+      params: {
+        execution_id: "session-cancel-run",
+        agent: "solo",
+        messages: [{ role: "user", content: "Start session" }],
+      },
+    });
+    await writeFile(join(f.workspaceRoot, "continue.flag"), "continue");
+    const marker = join(f.workspaceRoot, "session-meta");
+    let pid: number | undefined;
+    try {
+      await until(
+        async () =>
+          await access(marker).then(
             () => true,
             () => false,
           ),
-        ).toBe(false);
-      } finally {
-        if (pid !== undefined && isAlive(pid)) killTree(pid, "SIGKILL");
-      }
-    },
-  );
+      );
+      const [scratch, pidText] = (await readFile(marker, "utf8")).trim().split("\n");
+      pid = Number(pidText);
+      expect(isAlive(pid)).toBe(true);
+      await attachment.handle.cancel();
+      await attachment.handle.closed;
+      expect(isAlive(pid)).toBe(false);
+      expect(
+        await access(scratch).then(
+          () => true,
+          () => false,
+        ),
+      ).toBe(false);
+    } finally {
+      if (pid !== undefined && isAlive(pid)) killTree(pid, "SIGKILL");
+    }
+  });
 
   test("finishes after its launching client exits and reconnects to the same execution", async () => {
     const f = await fixture();

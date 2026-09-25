@@ -11,10 +11,8 @@ import { isAbsolute, join, resolve } from "node:path";
  * @remarks Only the two forms a shell itself produces are expanded. A bare
  * `~foo` is left alone — expanding it would mean looking up another user's home
  * directory, which is a different operation with a different failure mode — and
- * so is a Windows-style `~\foo`, because the values reaching here come from
- * settings files and command lines written in the POSIX spelling. Both are
- * returned verbatim rather than rejected, so a directory literally named `~foo`
- * still resolves.
+ * so is `~\foo`, because inputs use POSIX spelling. Both forms are returned
+ * verbatim, so a directory literally named `~foo` still resolves.
  */
 export function expandHome(p: string, home: string): string {
   if (p === "~") return home;

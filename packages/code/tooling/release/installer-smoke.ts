@@ -87,14 +87,14 @@ function withoutAnsiCsi(value: string): string {
   return result;
 }
 
-/** Normalize semantic installer output when PowerShell styles and wraps a long error. */
+/** Normalize semantic installer output for assertions. */
 export function normalizeInstallerOutput(output: string): string {
   return withoutAnsiCsi(output)
     .replace(/\r?\n\s*\|\s*/g, " ")
     .replace(/\s+/g, " ");
 }
 
-/** Match semantic installer output even when PowerShell styles and wraps a long error. */
+/** Match semantic installer output after normalization. */
 export function installerOutputIncludes(output: string, expected: string): boolean {
   return normalizeInstallerOutput(output).includes(expected);
 }
@@ -204,44 +204,6 @@ async function assertPosixStaleLauncherUsesLock(
   }
 }
 
-async function readWindowsUserPath(environment: Record<string, string>): Promise<string | null> {
-  const serialized = await run(
-    [
-      "pwsh",
-      "-NoProfile",
-      "-Command",
-      "[Console]::Out.Write((ConvertTo-Json -Compress ([Environment]::GetEnvironmentVariable('Path', 'User'))))",
-    ],
-    environment,
-  );
-  return JSON.parse(serialized) as string | null;
-}
-
-async function writeWindowsUserPath(
-  environment: Record<string, string>,
-  value: string | null,
-): Promise<void> {
-  await run(
-    [
-      "pwsh",
-      "-NoProfile",
-      "-Command",
-      "$value = if ($env:CLARVIS_TEST_USER_PATH_IS_NULL -eq '1') { $null } else { $env:CLARVIS_TEST_USER_PATH }; [Environment]::SetEnvironmentVariable('Path', $value, 'User')",
-    ],
-    {
-      ...environment,
-      CLARVIS_TEST_USER_PATH: value ?? "",
-      CLARVIS_TEST_USER_PATH_IS_NULL: value === null ? "1" : "0",
-    },
-  );
-}
-
-function windowsPathContains(path: string | null, expected: string): boolean {
-  return (path ?? "")
-    .split(";")
-    .some((entry) => entry.localeCompare(expected, undefined, { sensitivity: "accent" }) === 0);
-}
-
 async function capture(command: string[], environment: Record<string, string>): Promise<string> {
   const child = Bun.spawn(command, {
     env: environment,
@@ -261,11 +223,6 @@ async function capture(command: string[], environment: Record<string, string>): 
 async function main(): Promise<void> {
   const target = releaseTarget();
   if (target === undefined) throw new Error("native platform is not a release target");
-  if (process.platform === "win32" && process.env.CLARVIS_INSTALLER_SMOKE_DISPOSABLE !== "1") {
-    throw new Error(
-      "installer_smoke_unavailable: Windows User PATH coverage requires a proven disposable account",
-    );
-  }
   const product = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")) as {
     version: string;
   };
@@ -293,23 +250,13 @@ async function main(): Promise<void> {
       CLARVIS_BIN_DIR: binDirectory,
       CLARVIS_SKIP_PATH: "1",
     });
-    const installer =
-      process.platform === "win32"
-        ? ["pwsh", "-NoProfile", "-File", join(repositoryRoot, "install.ps1")]
-        : ["/bin/sh", join(repositoryRoot, "install.sh")];
-    const uninstaller =
-      process.platform === "win32" ? [...installer, "-Uninstall"] : [...installer, "--uninstall"];
-    const help = await run(
-      process.platform === "win32" ? [...installer, "-Help"] : [...installer, "--help"],
-      environment,
-    );
+    const installer = ["/bin/sh", join(repositoryRoot, "install.sh")];
+    const uninstaller = [...installer, "--uninstall"];
+    const help = await run([...installer, "--help"], environment);
     if (!help.includes("Usage:") || !help.toLowerCase().includes("uninstall")) {
       throw new Error("installer help did not expose uninstall mode");
     }
-    const unmanagedLauncher =
-      process.platform === "win32"
-        ? join(installRoot, "bin", "clarvis.cmd")
-        : join(binDirectory, "clarvis");
+    const unmanagedLauncher = join(binDirectory, "clarvis");
     const currentPath = join(installRoot, "current");
     const markerPath = join(installRoot, ".clarvis-managed-install");
     const versionsPath = join(installRoot, "versions");
@@ -353,7 +300,7 @@ async function main(): Promise<void> {
 
     const markerTarget = join(temporary, "marker-target");
     await mkdir(markerTarget);
-    await symlink(markerTarget, markerPath, process.platform === "win32" ? "junction" : "dir");
+    await symlink(markerTarget, markerPath, "dir");
     const markerLink = await refusal(installer, environment);
     if (
       !markerLink.includes("not a regular managed marker") ||
@@ -378,30 +325,16 @@ async function main(): Promise<void> {
     await mkdir(dirname(userState), { recursive: true });
     await writeFile(userState, '{"preserve":true}\n');
 
-    if (process.platform === "win32") {
-      for (let attempt = 0; attempt < 2; attempt++) {
-        assertVisibleProgress(await run(installer, environment));
-      }
-      const launcher = join(installRoot, "bin", "clarvis.cmd");
-      const output = await capture(["cmd.exe", "/d", "/c", launcher, "--version"], environment);
-      if (output.trim() !== `clarvis ${product.version}`)
-        throw new Error("Windows launcher drifted");
-    } else {
-      await chmod(join(repositoryRoot, "install.sh"), 0o755);
-      const source = await readFile(join(repositoryRoot, "install.sh"), "utf8");
-      assertVisibleProgress(await run(["/bin/sh"], environment, source));
-      assertVisibleProgress(await run(installer, environment));
-      const launcher = join(binDirectory, "clarvis");
-      const output = await capture([launcher, "--version"], environment);
-      if (output !== `clarvis ${product.version}\n`) throw new Error("POSIX launcher drifted");
-    }
+    await chmod(join(repositoryRoot, "install.sh"), 0o755);
+    const source = await readFile(join(repositoryRoot, "install.sh"), "utf8");
+    assertVisibleProgress(await run(["/bin/sh"], environment, source));
+    assertVisibleProgress(await run(installer, environment));
+    const launcher = join(binDirectory, "clarvis");
+    const output = await capture([launcher, "--version"], environment);
+    if (output !== `clarvis ${product.version}\n`) throw new Error("launcher drifted");
     const installedLauncher = await readFile(unmanagedLauncher, "utf8");
-    const expectedRuntime =
-      process.platform === "win32" ? "runtime\\clarvis.exe" : "runtime/clarvis";
-    if (
-      !installedLauncher.includes(expectedRuntime) ||
-      /runtime[\\/]bun(?:\.exe)?/.test(installedLauncher)
-    ) {
+    const expectedRuntime = "runtime/clarvis";
+    if (!installedLauncher.includes(expectedRuntime) || installedLauncher.includes("runtime/bun")) {
       throw new Error("installed launcher did not select the Clarvis-named runtime");
     }
     const current = await readFile(currentPath, "utf8");
@@ -417,11 +350,7 @@ async function main(): Promise<void> {
     await rename(versionsPath, savedVersions);
     await mkdir(linkedVersionsTarget);
     await writeFile(join(linkedVersionsTarget, "preserve.txt"), "outside payload\n");
-    await symlink(
-      linkedVersionsTarget,
-      versionsPath,
-      process.platform === "win32" ? "junction" : "dir",
-    );
+    await symlink(linkedVersionsTarget, versionsPath, "dir");
     const linkedVersions = await refusal(uninstaller, environment);
     if (
       !linkedVersions.includes("not a regular managed directory") ||
@@ -432,16 +361,14 @@ async function main(): Promise<void> {
     await rm(versionsPath, { recursive: true });
     await rename(savedVersions, versionsPath);
 
-    if (process.platform !== "win32") {
-      await assertPosixCancellationStopsUninstall(
-        uninstaller,
-        environment,
-        versionsPath,
-        markerPath,
-        currentPath,
-        unmanagedLauncher,
-      );
-    }
+    await assertPosixCancellationStopsUninstall(
+      uninstaller,
+      environment,
+      versionsPath,
+      markerPath,
+      currentPath,
+      unmanagedLauncher,
+    );
 
     const unrelatedRootFile = join(installRoot, "operator-note.txt");
     await writeFile(unrelatedRootFile, "keep me\n");
@@ -459,14 +386,11 @@ async function main(): Promise<void> {
     const unrelatedLauncherText = "unrelated launcher kept by uninstall\n";
     await writeFile(unmanagedLauncher, unrelatedLauncherText);
 
-    const uninstallOutput =
-      process.platform === "win32"
-        ? await run(uninstaller, environment)
-        : await run(
-            ["/bin/sh", "-s", "--", "--uninstall"],
-            environment,
-            await readFile(join(repositoryRoot, "install.sh"), "utf8"),
-          );
+    const uninstallOutput = await run(
+      ["/bin/sh", "-s", "--", "--uninstall"],
+      environment,
+      await readFile(join(repositoryRoot, "install.sh"), "utf8"),
+    );
     if (
       !uninstallOutput.includes("Clarvis uninstaller") ||
       !uninstallOutput.includes("[3/3] Removing managed releases") ||
@@ -513,64 +437,29 @@ async function main(): Promise<void> {
       throw new Error("legacy pre-marker installation was not safely uninstalled");
     }
 
-    if (process.platform === "win32") {
-      const originalUserPath = await readWindowsUserPath(environment);
-      const testUserPath =
-        originalUserPath === null
-          ? null
-          : originalUserPath
-              .split(";")
-              .filter(
-                (entry) =>
-                  entry.localeCompare(join(installRoot, "bin"), undefined, {
-                    sensitivity: "accent",
-                  }) !== 0,
-              )
-              .join(";");
-      try {
-        await writeWindowsUserPath(environment, testUserPath);
-        const pathEnvironment = { ...environment, CLARVIS_SKIP_PATH: "0" };
-        assertVisibleProgress(await run(installer, pathEnvironment));
-        const managedBin = join(installRoot, "bin");
-        if (!windowsPathContains(await readWindowsUserPath(environment), managedBin)) {
-          throw new Error("Windows installer did not add its managed PATH entry");
-        }
-        await rm(unmanagedLauncher);
-        const missingLauncherUninstall = await run(uninstaller, pathEnvironment);
-        if (
-          !missingLauncherUninstall.includes(`removed ${managedBin} from the user PATH`) ||
-          windowsPathContains(await readWindowsUserPath(environment), managedBin)
-        ) {
-          throw new Error("Windows uninstall left PATH behind after the launcher disappeared");
-        }
-      } finally {
-        await writeWindowsUserPath(environment, originalUserPath);
-      }
-    } else {
-      assertVisibleProgress(await run(installer, environment));
-      const boundLauncher = await readFile(unmanagedLauncher, "utf8");
-      const otherRootEnvironment = {
-        ...environment,
-        CLARVIS_INSTALL_ROOT: join(temporary, "other-install"),
-      };
-      const otherRootNoop = await run(uninstaller, otherRootEnvironment);
-      if (
-        !otherRootNoop.includes("nothing to remove") ||
-        (await readFile(unmanagedLauncher, "utf8")) !== boundLauncher
-      ) {
-        throw new Error("uninstall removed a launcher bound to another install root");
-      }
-      const otherRootInstall = await refusal(installer, otherRootEnvironment);
-      if (!otherRootInstall.includes("belongs to a different install root")) {
-        throw new Error("installer overwrote a launcher bound to another install root");
-      }
-      const stillActive = await capture([unmanagedLauncher, "--version"], environment);
-      if (stillActive !== `clarvis ${product.version}\n`) {
-        throw new Error("cross-root operations changed the active launcher");
-      }
-      await rm(installRoot, { recursive: true, force: true });
-      await assertPosixStaleLauncherUsesLock(uninstaller, environment, unmanagedLauncher);
+    assertVisibleProgress(await run(installer, environment));
+    const boundLauncher = await readFile(unmanagedLauncher, "utf8");
+    const otherRootEnvironment = {
+      ...environment,
+      CLARVIS_INSTALL_ROOT: join(temporary, "other-install"),
+    };
+    const otherRootNoop = await run(uninstaller, otherRootEnvironment);
+    if (
+      !otherRootNoop.includes("nothing to remove") ||
+      (await readFile(unmanagedLauncher, "utf8")) !== boundLauncher
+    ) {
+      throw new Error("uninstall removed a launcher bound to another install root");
     }
+    const otherRootInstall = await refusal(installer, otherRootEnvironment);
+    if (!otherRootInstall.includes("belongs to a different install root")) {
+      throw new Error("installer overwrote a launcher bound to another install root");
+    }
+    const stillActive = await capture([unmanagedLauncher, "--version"], environment);
+    if (stillActive !== `clarvis ${product.version}\n`) {
+      throw new Error("cross-root operations changed the active launcher");
+    }
+    await rm(installRoot, { recursive: true, force: true });
+    await assertPosixStaleLauncherUsesLock(uninstaller, environment, unmanagedLauncher);
     process.stdout.write(
       `installer smoke ok - ${target} guarded install and uninstall passed for ${product.version}\n`,
     );

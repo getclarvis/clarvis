@@ -13,7 +13,6 @@ import {
 import type { ClarvisDirs } from "../adapters/agents.ts";
 import type { KeysAdapter } from "../adapters/provider-secrets.ts";
 import type { CodeConfigStore } from "../adapters/code-config.ts";
-import type { MemoryModeStore } from "../adapters/memory-mode.ts";
 import type { ThemePreview } from "../theme/theme.ts";
 import { DEFAULT_AGENT_NAME, type EnvView } from "../adapters/agent-files.ts";
 import type { AgentsStore } from "../adapters/agents-store.ts";
@@ -26,7 +25,6 @@ import {
   type DoctorCtx,
   type Gate,
 } from "../onboarding/doctor.ts";
-import { seedMemoryBlock } from "../onboarding/seed-memory.ts";
 import { seedPlansBlock } from "../onboarding/seed-plans.ts";
 import type { ConnectionState, ReconnectMode } from "../adapters/connection-state.ts";
 import type { DebugSessionController } from "../adapters/debug-session.ts";
@@ -49,7 +47,6 @@ import type {
   ProviderAuthService,
   ResolvedExtensionProfile,
   RunDetail,
-  SandboxInspection,
   SkillsService,
   StorageService,
   WorkflowsService,
@@ -85,12 +82,7 @@ export interface AppCommandDeps {
   ui: CommandUi;
   effects: Pick<
     InteractionEffects,
-    | "openAgentPicker"
-    | "openIsolationPicker"
-    | "openMemoryPicker"
-    | "openDiff"
-    | "openPlan"
-    | "quit"
+    "openAgentPicker" | "openMemoryPicker" | "openDiff" | "openPlan" | "quit"
   >;
   session: {
     list: () => SessionMeta[];
@@ -126,7 +118,6 @@ export interface AppCommandDeps {
   /** Overrides product-owned marketplace sources for an embedding or isolated test host. */
   marketplaceDefaultUrls?: readonly string[];
   code: CodeConfigStore;
-  memoryMode: MemoryModeStore;
   workflows: Pick<WorkflowsService, "list" | "get" | "delete">;
   workflowActivity?: Accessor<WorkflowActivity | null>;
   storage: Pick<StorageService, "inspect" | "cleanup">;
@@ -158,12 +149,6 @@ export interface AppCommandDeps {
 export interface AppCommandWiring {
   doctorDirty: Accessor<boolean>;
   recheck: () => void;
-  /**
-   * The host's sandbox probe, or null until an explicit inspection completes.
-   * The header reads a completed probe so a configured-but-dead sandbox is
-   * visible in the chip rather than only in the doctor.
-   */
-  sandboxInspection: Accessor<SandboxInspection | null>;
   /** The agent a skill runs on, or `undefined` when it names none. */
   skillAgent: (name: string) => string | undefined;
   /** Release app, feature, and dynamic MCP command registrations. */
@@ -331,24 +316,10 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   };
 
   commands.registerAction({
-    name: "isolation.picker",
-    enabled: () => !deps.runActive(),
-    title: "Isolation",
-    desc: "Choose Host or Sandbox isolation for the next run",
-    surface: "internal",
-    group: "navigate",
-    actionSurfaces: ["footer", "full-help"],
-    footerLabel: "isolation",
-    hintPriority: 49,
-    hintGroup: "navigation",
-    run: () => effects.openIsolationPicker(),
-  });
-
-  commands.registerAction({
     name: "memory.picker",
     enabled: () => !deps.runActive(),
     title: "Memory",
-    desc: "Turn memory on or off for the next run in this session",
+    desc: "Turn memory on or off globally for subsequent runs",
     surface: "internal",
     group: "navigate",
     actionSurfaces: ["footer", "full-help"],
@@ -646,27 +617,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
         "success",
       );
     },
-  });
-
-  commands.registerView({
-    name: "controls.open",
-    title: "Run controls",
-    desc: "Isolation, memory and plan retention for the next run",
-    surface: "internal",
-    group: "navigate",
-    parent: "settings",
-    view: lazyView(async () => {
-      const { RunControlsPanel } = await import("../views/cold-surfaces.ts");
-      return (host) =>
-        RunControlsPanel(host, {
-          settings: deps.settings,
-          memory: deps.memoryMode,
-          notify,
-          runActive: deps.runActive,
-          reload: () => deps.reconnectBackend("reload"),
-          openSandbox: () => openWithReturn("sandbox.config", "controls.open", host.scope()),
-        });
-    }),
   });
 
   commands.registerView({
@@ -1072,37 +1022,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   });
 
   commands.registerView({
-    name: "memory.config",
-    title: "Memory settings",
-    desc: "Enable and configure execution memory (create the block, model, on/off)",
-    surface: "internal",
-    group: "navigate",
-    parent: "settings",
-    view: lazyView(async () => {
-      const { MemoryConfigPanel } = await import("../views/cold-surfaces.ts");
-      return (host) =>
-        MemoryConfigPanel(host, {
-          settings: deps.settings,
-          memoryMode: deps.memoryMode,
-          notify,
-        });
-    }),
-  });
-
-  commands.registerView({
-    name: "sandbox.config",
-    title: "Sandbox",
-    desc: "Enable, disable and configure native command isolation",
-    surface: "internal",
-    group: "navigate",
-    parent: "settings",
-    view: lazyView(async () => {
-      const { SandboxConfigPanel } = await import("../views/cold-surfaces.ts");
-      return (host) => SandboxConfigPanel(host, { settings: deps.settings, notify });
-    }),
-  });
-
-  commands.registerView({
     name: "theme.open",
     title: "Theme",
     desc: "Colors, presets, contrast " + glyph("emDash") + " live preview",
@@ -1155,7 +1074,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerView({
     name: "settings.open",
     title: "Settings",
-    desc: "Providers, agents, defaults, memory, sandbox, theme, updates and run controls",
+    desc: "Providers, agents, defaults, theme and updates",
     slash: "/settings",
     surface: "slash",
     group: "navigate",
@@ -1170,19 +1089,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     }),
   });
 
-  const [sandboxInspection, setSandboxInspection] = createSignal<Awaited<
-    ReturnType<SettingsAdapter["inspectSandbox"]>
-  > | null>(null);
-  let sandboxRequest = 0;
-  const refreshSandboxInspection = async (refresh = false): Promise<void> => {
-    const request = ++sandboxRequest;
-    try {
-      const inspection = await deps.settings.inspectSandbox({ refresh });
-      if (!disposed && request === sandboxRequest) setSandboxInspection(inspection);
-    } catch {
-      if (!disposed && request === sandboxRequest) setSandboxInspection(null);
-    }
-  };
   const [subscriptionReadiness, setSubscriptionReadiness] = createSignal<
     Partial<Record<SubscriptionScheme, { state: SubscriptionState; entitled?: boolean }>>
   >({});
@@ -1219,7 +1125,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     code: deps.code,
     env,
     backend: deps.backend,
-    sandboxInspection,
     subscriptionReadiness,
   };
   const [recheckRev, setRecheckRev] = createSignal(0);
@@ -1228,11 +1133,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   };
   const inspectReadiness = (): void => {
     recheck();
-    detachObserved(
-      "sandbox_reinspection",
-      () => refreshSandboxInspection(true).then(() => setRecheckRev((v) => v + 1)),
-      (e) => deps.notify(errorText(e), "warn"),
-    );
     detachObserved(
       "subscription_reinspection",
       () => refreshSubscriptionReadiness().then(() => setRecheckRev((v) => v + 1)),
@@ -1293,20 +1193,15 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     },
   });
 
-  const FIX_VIEW_CMD: Record<
-    "providers" | "model" | "defaults" | "theme" | "agents" | "memory" | "controls",
-    string
-  > = {
+  const FIX_VIEW_CMD: Record<"providers" | "model" | "defaults" | "theme" | "agents", string> = {
     providers: "providers.open",
     model: "model.open",
     defaults: "defaults.open",
     theme: "theme.open",
     agents: "agents.open",
-    memory: "memory.config",
-    controls: "controls.open",
   };
   function openFixView(
-    view: "providers" | "model" | "defaults" | "theme" | "agents" | "memory" | "controls",
+    view: "providers" | "model" | "defaults" | "theme" | "agents",
     scope: Scope,
     returnCmd = "doctor.open",
   ): void {
@@ -1350,11 +1245,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   /** Seed the ordinary Clarvis defaults only after setup has created settings.json. */
   async function seedSetupDefaults(): Promise<void> {
     await seedPlansBlock(deps.settings);
-    const memory = await seedMemoryBlock(deps.settings);
-    if (memory.seeded) {
-      deps.memoryMode.refresh();
-      deps.memoryMode.setMode("on");
-    }
   }
 
   /** Finish an idempotent first-run setup and publish the resulting agent fleet live. */
@@ -1785,21 +1675,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
         seedPlansBlock(deps.settings).then((outcome) => {
           if (!outcome.seeded) return;
           notify(
-            `planning: on ${glyph("separator")} keep plans (${outcome.scope} settings) ${glyph("emDash")} use /plan for review and Run controls for retention`,
-          );
-          recheck();
-        }),
-      (e) => notify(errorText(e), "warn"),
-    );
-    detachObserved(
-      "seed_memory_settings",
-      () =>
-        seedMemoryBlock(deps.settings).then((outcome) => {
-          if (!outcome.seeded) return;
-          deps.memoryMode.refresh();
-          deps.memoryMode.setMode("on");
-          notify(
-            `memory: on (${outcome.scope} settings) ${glyph("emDash")} change it in Memory settings`,
+            `planning: on ${glyph("separator")} keep plans (${outcome.scope} settings) ${glyph("emDash")} use /plan for review`,
           );
           recheck();
         }),
@@ -1819,12 +1695,10 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   return {
     doctorDirty,
     recheck: inspectReadiness,
-    sandboxInspection,
     skillAgent: (name: string) => mcpCaps.skillAgent(name),
     dispose: () => {
       if (disposed) return;
       disposed = true;
-      sandboxRequest++;
       mcpCaps.dispose();
       commandScope.dispose();
     },

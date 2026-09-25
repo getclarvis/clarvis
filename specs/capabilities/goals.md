@@ -86,14 +86,13 @@ delegation surface: `shared_prompt: ""`, no MCP servers, no spawnable agents and
 `read_workspace` grant. Its output schema contributes the
 generic `submit_result`. The Kernel replaces, rather than extends, dependencies with the canonical
 Tools capability, whose effective surface derives from `@clarvis/tools` `readOnlyTools`. Therefore
-read file(s), image, directory, glob, grep, diff, file stat and tree operations may be available;
+file and directory reads may be available; image reads additionally require the selected model's
+declared `vision` capability (see [vision routing](../engine/vision-routing.md)).
 write/edit/shell/session control and every Goal, Plan, Memory, Workflow, skill, hook, MCP or delegation
 surface is absent and undispatchable. If Tools is disabled or the host ceiling forbids reads, the run
 continues from seed/trajectory with `workspace_read_available: false` and receives no substitute.
 For a normative source, the trace retains a host-minted SHA-256 attestation of the complete tool
-result before its display copy is abbreviated. For `read_files`, the host reconstructs the complete
-ordered batch, including its original headers, and compares that digest; abbreviated display text
-alone cannot disprove a complete read. Literal truncation-notice text in a file is not a truncation
+result before its display copy is abbreviated. A complete `read_file` result is attested before its display text is abbreviated. Literal truncation-notice text in a file is not a truncation
 signal: exact content or digest matching determines completeness. Commit-time rereading must match that attestation;
 an actual ranged/partial read, missing file or changed snapshot still fails closed. Production:
 `verifyTraceNormativeSources` in
@@ -295,7 +294,7 @@ marked cancelled when replaced; completed commitments retain completion in the a
 
 The current record keeps `constraints`, `exclusions`, `assumptions`, normative `sources` and `origin`
 beside the existing objective and criteria. Each semantic array and the sources array contains at
-most 16 items; text and confined paths are at most 4,096 characters and every source digest is a
+most 16 items; text and paths are at most 4,096 characters and every source digest is a
 lowercase SHA-256. Guided origin retains the normalized seed up to 16,384 characters. Auto/guided
 origin also records the formulation execution, captured full-session revision, host-derived source
 execution IDs, digest and truncation state of the exact canonical trajectory, and optional measured
@@ -310,7 +309,7 @@ changed read fails closed. Later drift does not redefine the Goal: the view repo
 completion remains blocked until a semantic edit, or cancel/clear followed by formulation. Files the
 Goal authorizes changing are execution evidence, not normative sources.
 An explicit `read_file` range counts as complete only when its observed rendering equals that entire
-confined reread and has no continuation marker. Thus line one with an ample limit is valid, while an
+bounded reread and has no continuation marker. Thus line one with an ample limit is valid, while an
 actually partial range remains invalid.
 
 `revision` is the CAS revision of state; `objective_revision` changes with any objective, criteria,
@@ -953,7 +952,7 @@ real mapper output, pre-cap terminal classification, successful/failed commands,
 qualified MCP names; `projects completed delegation receipts from current and prior Goal stages`
 covers delegation receipts.
 
-Artifact criteria read the actual bytes through the shared `readRawFile` descriptor confinement,
+Artifact criteria read the actual bytes through the shared `readRawFile` descriptor reader,
 with only the selected workspace admitted and a 16 MiB ceiling. The reference includes the observed
 digest; it satisfies an artifact criterion only when path and expected digest match. Verification
 reads again to detect mutation, including when the artifact is cited in a qualitative assessment.
@@ -999,7 +998,7 @@ an earlier stage already presented as fresh progress` in
 Production: `createGoalEvidenceSource` and `goalEvidenceDigest` in
 [evidence.ts](../../packages/kernel/src/goals/evidence.ts).
 Test: [goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts)
-checks real file mutation/confinement, command failures, argument relevance, foreign references,
+checks real file mutation, command failures, argument relevance, foreign references,
 duplicate/oversized observations, persisted trace replay and repeated-check stagnation.
 
 ## Kernel runtime authority
@@ -1268,7 +1267,6 @@ Observer connections receive reads; writes resolve the actual registry controlle
 authority inside the short mutation and after asynchronous preparation. Initial/resumed execution
 uses the registry's internal start with that proof. Foreign peers and stale proof copies cannot
 control the conversation. Pause retains physical occupancy, and ordinary input cannot resume it.
-Native Host and Sandbox Kernels advertise the service. Goal state, controls, budgets and
 continuation remain in the canonical owner session.
 The common client returns explicit unavailability when the optional capability is absent.
 Production: [service.ts](../../packages/kernel/src/goals/service.ts),

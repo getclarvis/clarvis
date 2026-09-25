@@ -100,24 +100,6 @@ Test: `packages/code/tests/component/workspace-client-manager.test.ts`;
 `packages/code/tests/unit/workspace-runtime.test.ts`;
 `packages/kernel/tests/integration/file-kernel.test.ts`.
 
-## 5. Sandbox placement
-
-A linked checkout's `.git` is a pointer into the primary repository. The command sandbox therefore
-validates its worktree target and reciprocal backlink once while configuring the toolset, then pins
-the canonical common Git directory. Commands mount that pinned directory read-write for
-workspace-write mode and read-only for workspace-read-only mode without re-reading mutable metadata.
-It does not mount the operator's home directory, credential files, or keyring.
-
-The configured native sandbox remains in force for every agent command. It does not offer a
-per-call host escape. A toolset configured for Host runs under OS permissions; a toolset
-configured for Sandbox fails the call if its native backend cannot be applied.
-
-Production: `packages/tools/src/config.ts` (`resolveConfig`);
-`packages/tools/src/sandbox.ts` (`discoverLinkedGitMetadataPaths`, `sandboxCommand`);
-`packages/tools/src/lib/execution-session.ts` (`ExecutionSessionManager.launch`).
-
-Test: `packages/tools/tests/integration/sandbox.test.ts`;
-`packages/tools/tests/unit/sandbox-placement.test.ts`.
 
 ## 6. Invariants
 
@@ -136,11 +118,6 @@ Test: `packages/tools/tests/integration/sandbox.test.ts`;
    `packages/code/src/bootstrap/worktree.ts`; pre-shutdown wiring in `packages/code/src/runtime.tsx`.
    Test: `packages/code/tests/integration/app-shell-render.test.tsx`;
    `packages/code/tests/integration/worktree-bootstrap.test.ts`.
-
-4. **A linked checkout remains functional inside the sandbox without exposing host credentials.**
-   Production: `packages/tools/src/config.ts` (`resolveConfig`);
-   `packages/tools/src/sandbox.ts` (`discoverLinkedGitMetadataPaths`).
-   Test: `packages/tools/tests/integration/sandbox.test.ts`.
 
 6. **A newly created branch starts from the commit at `HEAD` of the checkout Clarvis was started
    in; bootstrap neither fetches nor consults a remote default ref, and uncommitted changes are
@@ -167,14 +144,11 @@ Test: `packages/tools/tests/integration/sandbox.test.ts`;
 | Primary `.clarvis/.gitignore` cannot be protected with `worktrees/` | startup refuses before `git worktree add` |
 | Git command times out or exceeds output bound | startup fails; the ignore entry, parent directory, or Git branch/worktree metadata created by an earlier step may remain, but Clarvis writes no parallel registry |
 | `HEAD` names no commit and no `clarvis/<name>` branch exists to reuse | startup fails before preparing the destination; no branch, checkout, or nested directory is created |
-| Sandbox cannot validate linked Git metadata | no extra metadata mount is added |
-| Linked Git metadata changes after toolset configuration | commands retain the originally validated pinned mount |
-| Native Sandbox backend is unavailable | command fails without a host fallback |
 | Exit cleanup observes pending changes or Git refuses removal | checkout and branch remain; a diagnostic records failure |
 
 ## 8. Dependency seams
 
 There is no `@clarvis/worktrees` package. Launch and confirmed-exit cleanup orchestration belong to
-Code, durable identity to Kernel, paths and ignore protection to `@clarvis/paths`, and process
-confinement to `@clarvis/tools`. Protocol carries only project/workspace
+Code, durable identity to Kernel, and paths and ignore protection to `@clarvis/paths`.
+Protocol carries only project/workspace
 identity already needed by sessions and runs; it exposes no worktree lifecycle API.

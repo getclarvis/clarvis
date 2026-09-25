@@ -16,7 +16,7 @@ import {
   truncateTail,
 } from "@clarvis/trace";
 import type { ToolCallDetail } from "@clarvis/capability";
-import { DELEGATE_TASK_MAX_CHARS } from "@clarvis/capability";
+import { TASK_BRIEF_MAX_CHARS } from "@clarvis/capability";
 
 const over = (n: number): string => "a".repeat(n + 1);
 
@@ -285,12 +285,12 @@ describe("capDetail — per-kind caps", () => {
       capDetail("delegation_created", {
         delegation_id: "d1",
         title: "inspect",
-        task: over(DELEGATE_TASK_MAX_CHARS),
+        task: over(TASK_BRIEF_MAX_CHARS),
         tools: [],
       }).task,
-    ).toHaveLength(DELEGATE_TASK_MAX_CHARS);
+    ).toHaveLength(TASK_BRIEF_MAX_CHARS);
 
-    const unicodeTask = "😀".repeat(DELEGATE_TASK_MAX_CHARS);
+    const unicodeTask = "😀".repeat(TASK_BRIEF_MAX_CHARS);
     expect(
       capDetail("delegation_created", {
         delegation_id: "d1-unicode",

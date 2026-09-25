@@ -237,7 +237,7 @@ A new package proposal answers all of the following before files move:
 - Which current and expected consumers justify a public contract?
 - Which role does it occupy, and which roles may depend on it?
 - Why is a subpath or application-local adapter insufficient?
-- Does it preserve optional loading, protocol isolation and Windows support?
+- Does it preserve optional loading, protocol isolation?
 - Which README, spec, production entrypoint and architecture test make it complete?
 
 If the only answer is reuse, size or tidiness, keep the code with its current owner.

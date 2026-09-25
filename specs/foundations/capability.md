@@ -142,7 +142,7 @@ Test: `composes dispatch policies with first refusal winning` in
 | `memoizeByOwner` | `<T>(build: (owner) => T) => (owner) => T` | `packages/capability/src/per-owner.ts` |
 | `sharedFallback` | `<T>(build: () => T) => (owner) => T` | `packages/capability/src/per-owner.ts` |
 | `TOOL_EFFECT_PORT` | `PortKey<ToolEffectPort>` with id `"tools.effect"` | `packages/capability/src/tool-effect.ts` |
-| `TASK_TRACKING_PORT` | `PortKey<TaskTrackingProvider>` with id `"delegation.task-tracking"` | `packages/capability/src/task-tracking-port.ts` |
+| `SPAWN_GATE_PORT` | `PortKey<SpawnGateProvider>` with id `"delegation.spawn-gate"` | `packages/capability/src/spawn-gate-port.ts` |
 | `createPersistedTraceProjectorRegistry` / `composePersistedTraceProjectors` | see `packages/capability/src/trace-projectors.ts` | delegated to [trace-recording-and-persistence](trace.md) |
 
 ### 2.4 Shared run vocabulary — exported values
@@ -157,7 +157,7 @@ Test: `composes dispatch policies with first refusal winning` in
 | `ProviderError` | class, `code = "provider_error"` | `packages/capability/src/llm-port.ts` |
 | `CodedError`, `ValidationError`, `CapabilityUnavailableError`, `ConflictError`, `PersistenceError`, `ContinuationUnavailableError`, `executionIdConflict` | error classes + factory | `packages/capability/src/errors.ts` |
 | `MALFORMED_ARGUMENTS_PREVIEW_CHARS` = `200`, `normalizeToolArguments`, `malformedArgumentsMessage` | argument decoding | `packages/capability/src/tool-arguments.ts` |
-| `DELEGATE_TASK_MAX_CHARS` = `32768`, `parseDelegateTaskText` | brief validation | `packages/capability/src/delegate-task.ts` |
+| `TASK_BRIEF_MAX_CHARS` = `32768`, `parseTaskBrief` | brief validation | `packages/capability/src/task-brief.ts` |
 | `TASK_TITLE_MAX` = `60`, `parseTaskTitle` | title validation | `packages/capability/src/task-title.ts` |
 | `splitFrontmatterFence` | markdown fence split | `packages/capability/src/frontmatter-fence.ts` |
 | `escapeRegExp`, `globToRegExp` | `*`-only glob | `packages/capability/src/glob.ts` |
@@ -278,7 +278,6 @@ re-arm a policy from there. `AgentProfile` is the full agent definition: `name`,
 | `servers` | `McpServerConfig[]` | — |
 | `profiles` | `AgentProfile[]` | — |
 | `entry` | `string` | profile to start from |
-| `vision_model?` | `string` | a model reference, not a profile — reads the turn's images in a single-completion, no-tools, no-workspace, no-agent-identity pass, when the entry agent's own model cannot see them |
 | `budget` | `BudgetConfig` | — |
 | `providers` | `ProviderConfig[]` | — |
 | `output_schema?` | `unknown` | constrains the agent's result |
@@ -292,23 +291,23 @@ at 2x, a read at 0.1x either way. A capability shipped in its own package takes 
 per-run param through a registered `CapabilitySettingsSpec` instead — which is why `memory` and `plans`
 are not fields here.
 
-`AgentsParam` is ten ceilings the doc-comment describes as bounding what the supervising
+`AgentsParam` is nine ceilings the doc-comment describes as bounding what the supervising
 *parent* pays for — memory, context, or liveness — with no on/off field, because whether the surface
 exists follows from whether the run's entry agent can spawn at all: `buffer_lines`, `buffer_bytes`,
-`max_total_buffer_bytes`, `poll_max_bytes`, `await_timeout_ms`, `max_live_children`,
+`max_total_buffer_bytes`, `poll_max_bytes`, `max_live_children`,
 `max_retained_children`, `max_notices_per_iteration`, `max_consecutive_failed_children`,
-`finish_nudges`. Why exactly these ten, and no others, is not stated anywhere in the file.
+`finish_nudges`.
 
 `BudgetConfig` models only `stop`/`escalate` outcomes for an exceeded budget;
 `BudgetMode` explains why that pair is closed.
 
 **`HandlerResult` and the hook vocabulary.** `HandlerResult` is `text`, `progress`
-(feeds stagnation detection), optional `taskId`, optional `images`. `HookVerdict` is
+(feeds stagnation detection), optional `images`. `HookVerdict` is
 `pass | deny(message) | advise(message) | rewrite(arguments, message?)`; the doc-comment states
 `rewrite` is meaningful only for `beforeToolUse` and is safe because a rewrite happens *upstream* of
 the tool's own schema validation. The replacement is total, never a
 merge. `LifecycleHook` bundles four verdict-returning gates
-(`beforeToolUse`, `afterToolUse`, `preFinalize`, `preDelegateTask`), eight `void` observers
+(`beforeToolUse`, `afterToolUse`, `preFinalize`, `preSpawnSubagent`), eight `void` observers
 (`onRunStart`, `onRunEnd`, `onSubagentStart`, `onSubagentComplete`, `onPostCompact`,
 `onModelCallError`, `onBudgetExhausted`, `onUserSteer`), and the contribution-returning
 `onPreCompact`; all thirteen are optional. Their contexts:
@@ -318,7 +317,7 @@ merge. `LifecycleHook` bundles four verdict-returning gates
 | `BeforeToolUseContext` | wire `tool`, optional stable `toolFullName`, `arguments` | `packages/capability/src/api.ts` |
 | `AfterToolUseContext` | wire `tool`, optional stable `toolFullName`, `arguments`, read-only `result: HandlerResult` | `packages/capability/src/api.ts` |
 | `PreFinalizeContext` | `agent`, `subagentInstanceId?`, `mode: "text" \| "submit" \| "checkpoint"`, `text?`, `value?`, separate `checkpoint?` | `packages/capability/src/api.ts` |
-| `PreDelegateTaskContext` | `title`, `task`, `profile`, `taskId?` | `packages/capability/src/api.ts` |
+| `PreSpawnContext` | `title`, `task`, `profile` | `packages/capability/src/api.ts` |
 | `RunStartContext` | `mode`, `entry`, `leadModel?`, `subagentModel?` | `packages/capability/src/api.ts` |
 | `RunEndContext` | `status`, `errorCode?`, `iterationsUsed`, `elapsedMs` | `packages/capability/src/api.ts` |
 | `SubagentStartContext` | `subagentInstanceId`, `profile`, `model`, `task` | `packages/capability/src/api.ts` |
@@ -420,7 +419,7 @@ because two capabilities minting the same id would silently overwrite each other
 | Constant | Id | Pin |
 | --- | --- | --- |
 | `TOOL_EFFECT_PORT` | `tools.effect` | `packages/capability/tests/unit/capability-ports.test.ts` |
-| `TASK_TRACKING_PORT` | `delegation.task-tracking` | `packages/capability/tests/unit/capability-ports.test.ts` |
+| `SPAWN_GATE_PORT` | `delegation.spawn-gate` | `packages/capability/tests/unit/capability-ports.test.ts` |
 
 ### 3.2 The trace entries the call envelope writes
 
@@ -621,24 +620,12 @@ single failure re-trips and the escalation was theatre". This is the concrete ty
 grounded. The doc-comment repeats §2.2/§4.1's at-most-one-anchor rule and states the engine owns the
 summarization that consumes it.
 
-### 3.12 Task-tracking port (`task-tracking-port.ts`)
+### 3.12 Spawn gate port (`spawn-gate-port.ts`)
 
-`SpawnGate` (`packages/capability/src/task-tracking-port.ts`) is a task tracker's ruling on a child spawn before it begins:
+`SpawnGate` (`packages/capability/src/spawn-gate-port.ts`) is a capability's ruling before a child spawn:
 `{kind:"ok"}`, `{kind:"refuse", text}`, or `{kind:"terminal", result: AgentResult}`.
-`DelegateTaskAugmentation` (`packages/capability/src/task-tracking-port.ts`) is a tracker's
-contribution to `delegate_task`'s advertised schema: its description and properties, including a
-required `task_id` definition. `TrackedTask` is the neutral shape delegation consumes:
-`id`, `title`, `status`, optional `detail`/`exit`/`description`/`exit_condition`.
-
-`TaskTrackingPort` is the operations a child-producing capability may consume:
-`reconcile?()`, `openTasks()`, `getTask(id)`, `markSpawned(id)`, `markFailed(id, error)` (may return a
-digest summary instead of a bare boolean), `markReturned?(id, summary)`, `beforeSpawn(taskId)` (returns
-a `SpawnGate`), `noteSpawned(taskId)`, `augmentDelegateTask()`. `markReturned`'s doc-comment records a
-concrete historical defect: "delegation called the port on the *failure* path only, so a successful
-hand-back went straight from `in_progress` to whatever the parent decided next, and the intermediate
-state... was never written by anything. Delegation must not close the task itself: only the parent
-may, through `transition_plan_task`". `TaskTrackingProvider` hands out a port bound
-to one `AgentBuildContext`. `TASK_TRACKING_PORT` is the canonical key (§3.1).
+`SpawnGatePort.beforeSpawn()` returns that ruling. `SpawnGateProvider` hands out a port bound
+to one `AgentBuildContext`; `SPAWN_GATE_PORT` is the canonical key (§3.1).
 
 ### 3.13 The wire/response/continuation shapes (`run.ts`)
 
@@ -647,11 +634,8 @@ Beyond the open vocabularies (§3.4), `run.ts` defines the run's remaining wire 
 `ExecutionMode` (`packages/capability/src/run.ts`) is `subagent-only | lead-subagent`. `PerAgentUsage` is
 discriminated by `type`: `lead` (model + token fields + `iterations` + `subagents_spawned`),
 `subagent` (model + token fields + optional `iterations`/`instances`, rolled up across every instance of
-one profile), and `vision` (model + token fields only). The doc-comment states `vision` is a **third**
-variant rather than a `subagent` row, because counting it as one inflated the lead's
-`subagents_spawned` and reported a child no client could address — and it carries no `iterations` for
-the same reason context compaction contributes none: it is a single call, not a loop. `Usage`
- bundles `iterations_used`, `elapsed_ms`, `by_agent: PerAgentUsage[]`, optional `warnings`.
+one profile). `Usage` bundles `iterations_used`, `elapsed_ms`, `by_agent: PerAgentUsage[]`, and
+optional `warnings`.
 
 `ResourceToolKind` is `resource_list | resource_read`. `Resolved` is what
 resolving a wire tool name back to an MCP call yields: `connection`, `toolName`, `fullName`, optional
@@ -689,8 +673,7 @@ a collision-free wire name: `fullName`, `wireName`, `mcpName`, `toolName`, optio
 
 `ContextSnapshotEntry` is one entry in a persisted context snapshot used to continue a run:
 `message: LiveMessage`, `evictable`, `summary`, `canonical` (booleans marking what compaction may drop,
-what is a compaction-produced summary, and what is always retained), optional `task_id` (associates the
-entry with a plan task), `note_kind?` (runtime reminder identity), `block_kind?` (stable-block
+what is a compaction-produced summary, and what is always retained), `note_kind?` (runtime reminder identity), `block_kind?` (stable-block
 identity), and `superseded?` (an older publication eligible for deliberate compaction). New
 publications append; identity metadata never authorizes rewriting historical messages.
 `RunContinuation` (§3.3) carries an array of these plus `capability_state`.
@@ -791,8 +774,7 @@ composition. Refusal or setup timeout cannot silently omit mandatory controls. `
 uses the stable `required_capability_unavailable` code and identifies the phase (`activation`,
 `seed`, `entry`). A spawned child's absent attachment remains valid; requiring the entry does not
 expand any child's permissions. Required entry `attach` exceptions are mapped to that same bounded
-entry failure without private exception details; attachment and folding happen before auxiliary
-vision inference. An already-aborted run retains cancellation semantics.
+entry failure without private exception details; attachment and folding happen before inference. An already-aborted run retains cancellation semantics.
 Production: `Capability.required` / `RunCapability.required` in
 [contract.ts](../../packages/capability/src/contract.ts), `CapabilityUnavailableError` in
 [errors.ts](../../packages/capability/src/errors.ts), and `capabilitiesForScope` in
@@ -922,11 +904,11 @@ separators, written there as escapes) -> reject; trim and collapse `[\t ]+` runs
 characters (`[...title].length`) -> reject. Every rejection message contains the word
 "title" (pinned `packages/capability/tests/unit/task-title.test.ts`).
 
-`parseDelegateTaskText(value)` (`packages/capability/src/delegate-task.ts`) rejects a non-string or empty string, then counts Unicode characters with a `for...of` loop that **stops at the ceiling**
+`parseTaskBrief(value)` (`packages/capability/src/task-brief.ts`) rejects a non-string or empty string, then counts Unicode characters with a `for...of` loop that **stops at the ceiling**
  — the docstring states this is so a direct embedder cannot make validation allocate a
 second copy of an oversized task, and that the Unicode measure is chosen to agree with
 JSON Schema's `maxLength`. The exact-ceiling behaviour is pinned with emoji at
-`packages/capability/tests/unit/delegate-task.test.ts`.
+`packages/capability/tests/unit/task-brief.test.ts`.
 
 ### 4.8 Frontmatter fence split
 
@@ -1065,8 +1047,8 @@ take effect. Production: `packages/capability/src/services.ts`. Test:
 feature is off for this run", never as an error. Production: `packages/capability/src/services.ts`. Test:
 `packages/capability/tests/unit/capability-ports.test.ts`.
 
-**INV-C15.** The two canonical port ids are `tools.effect` and `delegation.task-tracking`.
-Production: `packages/capability/src/tool-effect.ts`, `packages/capability/src/task-tracking-port.ts`. Test:
+**INV-C15.** The two canonical port ids are `tools.effect` and `delegation.spawn-gate`.
+Production: `packages/capability/src/tool-effect.ts`, `packages/capability/src/spawn-gate-port.ts`. Test:
 `packages/capability/tests/unit/capability-ports.test.ts`.
 
 **INV-C16.** Supplying `openCallEnvelope` a `schema` with no `validate` throws at construction.
@@ -1106,8 +1088,8 @@ plus the ellipsis this module appends. Production: `packages/capability/src/tool
 `packages/capability/tests/unit/tool-arguments.test.ts`.
 
 **INV-C25.** Task titles and delegated briefs are measured in Unicode characters, not UTF-16 code
-units, at ceilings 60 and 32768. Production: `packages/capability/src/task-title.ts`, `packages/capability/src/delegate-task.ts`. Test:
-`packages/capability/tests/unit/task-title.test.ts`, `packages/capability/tests/unit/delegate-task.test.ts`.
+units, at ceilings 60 and 32768. Production: `packages/capability/src/task-title.ts`, `packages/capability/src/task-brief.ts`. Test:
+`packages/capability/tests/unit/task-title.test.ts`, `packages/capability/tests/unit/task-brief.test.ts`.
 
 **INV-C26.** A task title may not contain a line break, and repeated horizontal whitespace is
 collapsed rather than rejected. Production: `packages/capability/src/task-title.ts`. Test:
@@ -1204,7 +1186,7 @@ Production: `tooling/checks/coverage.ts`.
 **INV-C48.** `AgentRegistryPort.register` returning `null` (the registry is sealed, or at its
 live-children ceiling) means the producer must refuse to spawn, never proceed anyway. Production
 (declaration): `packages/capability/src/agents-port.ts`. Unpinned in this package; the producers
-(`delegate_task`, `run_leader`) and the registry itself live in `@clarvis/loop` and
+(`spawn_subagent`, `run_leader`) and the registry itself live in `@clarvis/loop` and
 `@clarvis/supervision`.
 
 **INV-C49.** A producer that calls `AgentRegistryPort.adopt(id, task)` must not also await that same
@@ -1301,9 +1283,9 @@ Verified samples of the forcing edge:
 The direction is forced structurally in one further way: `services.ts`'s docstring states that a
 capability needing a peer *cannot import it*, because the two live in different packages and the edge
 that would make the import legal is exactly the one the contract exists to remove
-(`packages/capability/src/services.ts`). `TASK_TRACKING_PORT` is the concrete instance — delegation looks a tracker up on
+(`packages/capability/src/services.ts`). `SPAWN_GATE_PORT` is the concrete instance — delegation looks a tracker up on
 the run's service registry under an owner-neutral key rather than naming the providing package
-(`packages/capability/src/task-tracking-port.ts`).
+(`packages/capability/src/spawn-gate-port.ts`).
 
 ### 7.3 Structural (non-import) coupling
 
@@ -1351,11 +1333,6 @@ widening of the contract, preferring a port over exposing an engine type
   is intended is not stated; every test that could collide passes a UUID, either as an explicit
   `dedupeKey` (`packages/capability/tests/unit/tasks.test.ts`) or inside the `operation` string
   (`packages/capability/tests/unit/tasks.test.ts`).
-- **`ports.ts` re-export surface vs. `index.ts`.** `trace.ts` does `export * from "./trace-kinds.ts"`
-  (`packages/capability/src/trace.ts`) while `index.ts` enumerates its type exports explicitly (`packages/capability/src/index.ts`), so at
-  least one type (`VisionAnalysisDetail`, declared at `packages/capability/src/trace-kinds.ts`
-  and named nowhere in `index.ts`) is reachable through `./trace` but not through `.`. Whether that asymmetry is deliberate is not
-  recorded in either file.
 - **Rationale is generally absent by design.** Where the source carries a `@remarks`
   block giving a reason, this document quotes it and cites the source. Where it does not, no reason is
   derivable and none is asserted here — see §2.7 for the two such gaps in `api.ts` itself (why

@@ -27,8 +27,8 @@ describe("admittedRunCapability", () => {
         calls.push("preFinalize");
         return { kind: "pass" };
       },
-      preDelegateTask: async () => {
-        calls.push("preDelegateTask");
+      preSpawnSubagent: async () => {
+        calls.push("preSpawnSubagent");
         return { kind: "pass" };
       },
       onRunStart: async () => void calls.push("onRunStart"),
@@ -83,7 +83,7 @@ describe("admittedRunCapability", () => {
       result: { text: "ok", progress: true },
     });
     await lifecycle.preFinalize!({ agent: "lead", mode: "text", text: "done" });
-    await lifecycle.preDelegateTask!({ title: "child", task: "work", profile: "coder" });
+    await lifecycle.preSpawnSubagent!({ title: "child", task: "work", profile: "coder" });
     await lifecycle.onRunStart!({ mode: "solo", entry: "lead" });
     await lifecycle.onRunEnd!({ status: "completed", iterationsUsed: 1, elapsedMs: 2 });
     await lifecycle.onSubagentComplete!({
@@ -121,7 +121,7 @@ describe("admittedRunCapability", () => {
       "beforeToolUse",
       "afterToolUse",
       "preFinalize",
-      "preDelegateTask",
+      "preSpawnSubagent",
       "onRunStart",
       "lifecycle:onRunEnd",
       "onSubagentComplete",

@@ -61,7 +61,7 @@ describe("resolveConfig", () => {
     ).toThrow(StartupError);
   });
 
-  it("preserves per-root portable discovery policy and resolves its confinement boundary", () => {
+  it("preserves per-root portable discovery policy ", () => {
     const [root] = resolveConfig({
       home: "/home/u",
       cwd: "/proj",
@@ -71,7 +71,6 @@ describe("resolveConfig", () => {
           discovery: "immediate",
           manifestName: "exact",
           validation: "agent-skills",
-          confinementRoot: "plugin",
         },
       ],
     }).roots;
@@ -81,7 +80,6 @@ describe("resolveConfig", () => {
       discovery: "immediate",
       manifestName: "exact",
       validation: "agent-skills",
-      confinementRoot: path.join("/proj", "plugin"),
     });
   });
 

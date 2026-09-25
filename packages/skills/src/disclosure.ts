@@ -71,7 +71,7 @@ export function formatSkillBody(
       ? ""
       : `Package execution root: ${content.executionRoot}\n` +
         "Run bundled helpers through the normal shell tool. " +
-        "When a native sandbox is active, the package root is mounted read-only.\n";
+        "The package root is available to the shell on this host.\n";
   return (
     `Skill '${content.name}' — ${content.description}\n\n` +
     (content.source === "builtin"
@@ -81,7 +81,7 @@ export function formatSkillBody(
           `Read bundled paths with ${READ_SKILL_RESOURCE_TOOL_NAME}, using the skill name, resource path and offset=0.\n` +
           "Before executing a bundled helper, read all required resource pages and prepare the files " +
           "and their relative directory structure in a writable workspace directory. Use the normal " +
-          "shell tool with its configured native sandbox. Remote resource names are not filesystem paths.\n"
+          "shell tool. Remote resource names are not filesystem paths.\n"
         : `Skill directory: ${content.dir}\n` +
           "Resolve bundled relative paths from that directory.\n") +
     executionHint +

@@ -146,20 +146,16 @@ const sample = (partial: Partial<RunUsage>): RunUsage => ({
 });
 
 describe("goal run usage normalization", () => {
-  test("counts the lead, children and attributed auxiliary usage once without adding aggregate duplicates", () => {
+  test("counts the lead and children once without adding aggregate duplicates", () => {
     const usage = sample({
-      input_tokens: 1600,
-      output_tokens: 170,
-      cached_tokens: 950,
-      by_agent: [
-        agent("lead", 1000, 100, 800),
-        agent("subagent", 500, 50, 100),
-        agent("vision", 100, 20, 50),
-      ],
+      input_tokens: 1500,
+      output_tokens: 150,
+      cached_tokens: 900,
+      by_agent: [agent("lead", 1000, 100, 800), agent("subagent", 500, 50, 100)],
     });
     const measured = measureGoalRunUsage(usage);
-    expect(measured).toEqual({ kind: "complete", input: 1600, output: 170, cached: 950 });
-    expect(goalNetTokens(measured)).toBe(820);
+    expect(measured).toEqual({ kind: "complete", input: 1500, output: 150, cached: 900 });
+    expect(goalNetTokens(measured)).toBe(750);
     expect(measureGoalRunUsage({ ...usage, by_agent: undefined })).toEqual(measured);
   });
 

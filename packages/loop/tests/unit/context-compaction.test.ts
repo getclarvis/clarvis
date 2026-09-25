@@ -1086,13 +1086,11 @@ describe("summary replacement preserves assistant↔tool pairing", () => {
   it("replaces a span's tool message with a summary AND drops the matching ToolCallRef; no orphan", () => {
     const ctx = createLiveContext(seedShort(), DISABLED_COMPACTION, { agent: "lead" });
     ctx.appendAssistantToolCalls("", [
-      callNamed("c1", "delegate_task"),
-      callNamed("c2", "delegate_task"),
+      callNamed("c1", "spawn_subagent"),
+      callNamed("c2", "spawn_subagent"),
     ]);
-    ctx.appendToolMessage("c1", "Tool 'delegate_task' result: " + "A".repeat(500), {
-      taskId: "t1",
-    });
-    ctx.appendToolMessage("c2", "Tool 'delegate_task' result: kept", { taskId: "t2" });
+    ctx.appendToolMessage("c1", "Tool 'spawn_subagent' result: " + "A".repeat(500));
+    ctx.appendToolMessage("c2", "Tool 'spawn_subagent' result: kept");
 
     const idxC1 = ctx.messages.findIndex((m) => m.role === "tool" && m.tool_call_id === "c1");
     const ev = ctx.replaceSpanWithSummary([idxC1], "summary-of-t1");

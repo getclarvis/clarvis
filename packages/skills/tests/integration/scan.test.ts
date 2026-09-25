@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { enumerateResources, findSkillFile, listSkillDirs } from "../../src/scan.ts";
@@ -90,28 +90,6 @@ describe("listSkillDirs", () => {
       }).map((entry) => path.basename(entry.dir)),
     ).toEqual(["direct"]);
   });
-
-  it.skipIf(process.platform === "win32")(
-    "rejects a discovered skill that escapes its package",
-    () => {
-      const outside = makeWorkspace();
-      writeSkill(outside, "escaped");
-      symlinkSync(path.join(outside, "escaped"), path.join(root, "escaped"));
-      const captured = captureWarnings();
-      try {
-        expect(
-          listSkillDirs(root, true, captured, undefined, {
-            discovery: "immediate",
-            manifestName: "exact",
-            confinementRoot: root,
-          }),
-        ).toEqual([]);
-        expect(captured.warnings.join(" ")).toContain("escaping its package");
-      } finally {
-        cleanup(outside);
-      }
-    },
-  );
 });
 
 describe("findSkillFile", () => {
@@ -150,29 +128,6 @@ describe("findSkillFile", () => {
       cleanup(targetDir);
     }
   });
-
-  it.skipIf(process.platform === "win32")(
-    "rejects a symlinked manifest that escapes its confinement root",
-    () => {
-      const targetDir = makeWorkspace();
-      const target = path.join(targetDir, "real-skill.md");
-      writeFileSync(target, "x");
-      symlinkSync(target, path.join(dir, "SKILL.md"));
-      const captured = captureWarnings();
-      try {
-        expect(
-          findSkillFile(dir, true, captured, {
-            manifestName: "exact",
-            confinementRoot: dir,
-          }),
-        ).toBeUndefined();
-        expect(captured.warnings.join(" ")).toContain("skill manifest escaping its package");
-      } finally {
-        captured.restore();
-        cleanup(targetDir);
-      }
-    },
-  );
 });
 
 describe("enumerateResources", () => {
@@ -229,34 +184,16 @@ describe("enumerateResources", () => {
     }
   });
 
-  it("skips a resource symlink whose target escapes the skill dir, with a warning", () => {
+  it("includes a resource symlink to an external file", () => {
     const outside = makeWorkspace();
-    const outsideFile = path.join(outside, "secret.txt");
-    writeFileSync(outsideFile, "x");
-    symlinkSync(outsideFile, path.join(dir, "escape.txt"));
-    const cap = captureWarnings();
     try {
-      const resources = enumerateResources(dir, true, cap);
-      expect(resources.map((r) => r.rel)).not.toContain("escape.txt");
-      expect(cap.warnings.join("")).toMatch(/escaping skill dir/);
+      const outsideFile = path.join(outside, "resource.txt");
+      writeFileSync(outsideFile, "x");
+      symlinkSync(outsideFile, path.join(dir, "external.txt"));
+      expect(enumerateResources(dir, true).map((resource) => resource.rel)).toContain(
+        "external.txt",
+      );
     } finally {
-      cap.restore();
-      cleanup(outside);
-    }
-  });
-
-  it("skips an escaping resource symlink whose target cannot be realpathed", () => {
-    const outside = makeWorkspace();
-    const outsideFile = path.join(outside, "secret.txt");
-    writeFileSync(outsideFile, "x");
-    symlinkSync(outsideFile, path.join(dir, "opaque.txt"));
-    chmodSync(outsideFile, 0o000);
-    const cap = captureWarnings();
-    try {
-      expect(enumerateResources(dir, true, cap).map((r) => r.rel)).not.toContain("opaque.txt");
-    } finally {
-      cap.restore();
-      chmodSync(outsideFile, 0o644);
       cleanup(outside);
     }
   });

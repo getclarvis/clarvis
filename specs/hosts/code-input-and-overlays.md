@@ -1,7 +1,7 @@
 # The input dock, autocomplete and overlays
 
 > Implemented at
-> `packages/code/src/{views/InputDock.tsx, views/input/**, views/overlays/**, app/commands.tsx, features/run/{isolation,review}.ts, core/{prompt-history,fuzzy,attachments}.ts, adapters/local-shell.ts}`.
+> `packages/code/src/{views/InputDock.tsx, views/input/**, views/overlays/**, app/commands.tsx, features/run/review.ts, core/{prompt-history,fuzzy,attachments}.ts, adapters/local-shell.ts}`.
 > Every claim below is anchored to a file and a named symbol or test. Open questions are collected in the final
 > section.
 
@@ -28,8 +28,8 @@ share the same windowing math
 Hosted backends add `/background`, `/background list`, `/background cancel <execution-id>` and
 `/attach <execution-id>` through the same deterministic command registry. Invalid arguments return
 `block` so the composer retains them. No command is forwarded to the model. The command description
-scopes exit-surviving handoff to local Host/Sandbox; SSH retains the management
-subcommands but reject bare `/background`. Startup discovery is offered only for that local durable
+scopes exit-surviving handoff to the local host; SSH retains the management subcommands but rejects
+bare `/background`. Startup discovery is offered only for that local durable
 lifecycle, rechecks interaction ownership after its list request and cannot replace a newly typed
 draft. The complete lifecycle is owned by [hosted runs](hosted-runs.md#code-integration).
 
@@ -219,7 +219,6 @@ Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL
 | `ListPicker<T>(props)` | Generic filterable/scrollable/windowed picker inside a `FloatFrame`; an optional fixed `intro` declares its responsive `introRows` cost | `packages/code/src/views/overlays/ListPicker.tsx` (`ListPicker`) |
 | `ListPickerVerb<T>` | shared `PanelVerbName` or one-off `{key,label,run,when?}` | `packages/code/src/views/overlays/ListPicker.tsx` |
 | `AgentProfilePicker(props)` | `ListPicker` of Agent Profiles + a nested default-scope `ListPicker` | `packages/code/src/views/overlays/AgentProfilePicker.tsx` |
-| `IsolationPicker(props)` | Lazy retained `ListPicker` over Host and native Sandbox, with armed confirmation before direct-host execution | `packages/code/src/views/overlays/IsolationPicker.tsx` (`IsolationPicker`) |
 | `Help(props)` | Full-page live-projected key/action/destination reference with stable indexed rows | `packages/code/src/views/overlays/Help.tsx` (`Help`) |
 | `DiffViewer(props)` | Full-screen changed-file tree and per-file reader for every mutation in the active transcript; an optional active accessor gates retained key layers | `packages/code/src/views/overlays/DiffViewer.tsx` (`DiffViewer`) |
 | `PlanOverlay(props)` | Full-screen current/latest-plan task/document viewer; an optional active accessor gates retained key layers and refreshes on reopen | `packages/code/src/views/overlays/PlanOverlay.tsx` (`PlanOverlay`) |
@@ -232,7 +231,7 @@ Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL
 | Export | Signature | File |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | `AppCommandDeps` | large dependency-injection interface (settings, agents, plugins, plans, workflows, tasks, session, backend probe, debug session, …) | `packages/code/src/app/commands.tsx` |
-| `AppCommandWiring` | `{doctorDirty, recheck, sandboxInspection, skillAgent, dispose}` | `packages/code/src/app/commands.tsx` |
+| `AppCommandWiring` | `{doctorDirty, recheck, skillAgent, dispose}` | `packages/code/src/app/commands.tsx` |
 | `registerAppCommands(deps)` | `AppCommandWiring` — registers every app-level (non-feature) command/view/action | `:165-…` |
 
 Each registration carries a `slash?` token, a `surface` (`"slash" \| "internal"`), a `group` and an
@@ -381,8 +380,8 @@ are dynamically imported and mount lazily on first use, remain hidden afterward 
 layers with stable reactive matchers; Plan reloads the current live document on each
 inactive-to-active transition and invalidates in-flight reads on deactivation. The configuration
 stack still preserves only its own inactive parents and disposes a popped frame once; retaining the
-shell does not cache closed configuration frames. `popView` reactivates the parent and does not
-run Doctor/sandbox/subscription probes. Production:
+shell does not cache closed configuration frames. `popView` reactivates the parent without rerunning
+Doctor or subscription probes. Production:
 `packages/code/src/views/app/OverlayRegion.tsx` (`OverlayRegion`, `overlayFallbackActive`),
 `packages/code/src/views/app/TranscriptRegion.tsx` (`active`), `packages/code/src/adapters/transcript-projection.ts` (`TranscriptProjection`),
 `packages/code/src/views/overlays/{DiffViewer,PlanOverlay}.tsx`, and
@@ -665,28 +664,6 @@ name, matching Settings > Agents (`packages/code/src/adapters/active-agent.ts`).
 `packages/code/tests/unit/active-agent.test.ts` (`"agent list uses the same canonical presentation
 order as the Agents window"`).
 
-### `IsolationPicker`
-
-The quick picker reuses `ListPicker`. `IsolationPicker` marks the
-effective Host/Sandbox boundary, persists the global choice through `applyIsolation`, and
-arms `useArmedConfirm` before Host removes containment.
-A placement choice keeps the picker modal while saving and reconnecting, names the current phase in
-the footer, blocks navigation and Escape during that operation, and closes only after the replacement
-is admitted. Failure leaves the saved choice and wrapped error visible in the bounded preview, while
-the picker restores its prior global isolation through `AppBackend.restoreIsolation`, then the
-connection layer recovers that placement,
-and the standard navigation offers another choice or Escape without a competing footer. If restoring the setting itself fails, the error
-explicitly retains the pending reconnect state. Armed Host
-confirmation replaces the ordinary picker actions with `use host`/`keep isolation` and does not
-repeat its warning in the footer. It is a lazy `retain-one`
-portal boundary, so its module does not enter first boot and its native tree is reused after first
-open. Production:
-`packages/code/src/features/run/isolation.ts`,
-`packages/code/src/views/overlays/IsolationPicker.tsx`,
-`packages/code/src/views/overlays/ListPicker.tsx`,
-and `packages/code/src/views/App.tsx`. Test:
-`packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
-
 ### `Help` (`views/overlays/Help.tsx`)
 
 Composes up to seven sections (`sections`), each dropped when empty: **Available here**
@@ -916,7 +893,7 @@ settled turn's persisted continuation; an empty session reports that there is no
     the ring from working.** `packages/code/src/core/prompt-history.ts` (`report`, `reported` latch). Pinned:
     `packages/code/tests/integration/input-editor.test.ts`.
 16. **`!` always runs through `bash` specifically on POSIX**, even though the kernel's own tools
-    resolve to bare `sh`. `packages/code/src/adapters/local-shell.ts` (`runLocalBash`). Pinned (skipped on win32):
+    resolve to bare `sh`. `packages/code/src/adapters/local-shell.ts` (`runLocalBash`). Pinned:
     `packages/code/tests/integration/local-shell.test.ts`.
 17. **A `shell.local.exit` diagnostic never carries the command text**, only
     `{exit_code, duration_ms, killed, signal, spawn_failed}`. `packages/code/src/adapters/local-shell.ts` (`runLocalBash`).
@@ -1088,18 +1065,7 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/src/views/overlays/FloatFrame.tsx` (`FloatFrame`, `onSurfaceActivate`). Test:
     `packages/code/tests/integration/float-frame-render.test.tsx` (single navigation subtree and
     listener cleanup) and `packages/code/tooling/benchmarks/overlays.tsx` (retained Profile,
-    Isolation, Review and Catalog picker cases).
-44. **Isolation and Memory are independent lazy retained overlays over the same state
-    contracts as Run Controls.** They mount only after their picker command opens them, reuse
-    `ListPicker`, cannot own keys while inactive, and cannot implement settings merges that differ
-    from those surfaces. Production: `packages/code/src/views/App.tsx`,
-    `packages/code/src/views/overlays/IsolationPicker.tsx`,
-    `packages/code/src/views/overlays/MemoryPicker.tsx`,
-    `packages/code/src/features/run/isolation.ts` (`applyIsolation`). Tests:
-    `packages/code/tests/integration/app-shell-render.test.tsx`,
-    `packages/code/tests/integration/isolation-review-picker-render.test.tsx`,
-    `packages/code/tests/integration/run-controls-render.test.tsx`, and
-    `packages/code/tests/integration/interaction.test.ts`.
+    Review and Catalog picker cases).
 45. **A fixed picker intro pays for its rows before list windowing.** A responsive intro reports zero
     rows while hidden; when visible, its full row count is subtracted before filter, preview and list
     space are allocated, so fixed branding cannot paint over the catalog or footer. Production:

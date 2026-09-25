@@ -1,7 +1,7 @@
 {
   "name": "@clarvis/tools",
   "private": true,
-  "description": "A minimal, opinionated set of coding tools for driving an LLM agent over a workspace \u2014 read/write/edit/patch/move, batch read, grep/glob/diff, project-wide regex replace, and run-owned shell sessions \u2014 usable as a plain library.",
+  "description": "A minimal, opinionated set of coding tools for driving an LLM agent over a workspace \u2014 file reads, writes, edits, patches, and run-owned shell sessions \u2014 usable as a plain library.",
   "license": "MIT",
   "keywords": [
     "llm",
@@ -12,11 +12,7 @@
     "tool-use",
     "coding-tools",
     "filesystem",
-    "grep",
-    "ripgrep",
     "apply-patch",
-    "diff",
-    "codemod",
     "shell",
     "workspace",
     "typescript"
@@ -35,11 +31,6 @@
       "bun": "./src/shell-entry.ts",
       "types": "./dist/shell-entry.d.ts",
       "import": "./dist/shell-entry.js"
-    },
-    "./sandbox": {
-      "bun": "./src/sandbox-entry.ts",
-      "types": "./dist/sandbox-entry.d.ts",
-      "import": "./dist/sandbox-entry.js"
     },
     "./package.json": "./package.json"
   },
@@ -68,8 +59,6 @@
   "dependencies": {
     "@clarvis/paths": "workspace:*",
     "ajv": "^8.20.0",
-    "diff": "^9.0.0",
-    "ignore": "^7.0.5",
-    "picomatch": "^4.0.5"
+    "diff": "^9.0.0"
   }
 }

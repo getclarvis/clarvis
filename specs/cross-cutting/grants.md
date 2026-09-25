@@ -94,8 +94,8 @@ this document covers only the grant string that gates them.
 `process.env.CLARVIS_AGENT_TOOLS_MAX_GRANT ??= "exec"`),
 above the loop's own schema default of `"edit"` (`packages/capability/src/env.ts`).
 
-Host and Sandbox apply the resolved capability policy. Shipped builtin and operator profiles
-retain their admitted grants.
+Shipped builtin and operator profiles retain their admitted grants under the resolved capability
+policy.
 
 ### 2.5 Built-in agent profiles' grant/spawn arrays
 
@@ -111,7 +111,7 @@ None of the three sub-agent profiles declares `can_spawn`
 (`CODER.frontmatter`, `EXPLORER.frontmatter`, and `PLANNER.frontmatter` under
 `packages/kernel/src/config/builtin-agents/` — no `can_spawn` key is present), which is
 the data-level instance of "spawned children never inherit spawn" (§4.3).
-`admiral.can_spawn` includes `"marshall"` as a `delegate_task` sub-agent target
+`admiral.can_spawn` includes `"marshall"` as a `spawn_subagent` sub-agent target
 (§4.4), which is a separate mechanism from workflow leader selection (§4.6) —
 the two must not be conflated.
 
@@ -150,10 +150,9 @@ CLARVIS_AGENT_TOOLS_MAX_GRANT"; `edit_workspace` "implies read"; `run_commands`
 "implies edit"; and "capability-owned grants are admitted only when that
 capability is registered for the run." The same description string closes with
 a disclaimer that is not itself a grant rule but disambiguates the
-vocabulary's boundary: "Receiving images is not a grant: a profile may be
-seeded with turn images via `delegate_task` `image_refs`, and is eligible as
-the automatic vision delegate, exactly when its model declares the 'vision'
-capability" (same citation) — vision eligibility is model-declared, not
+vocabulary's boundary: "Receiving images is not a grant: a profile may receive
+turn images through a child-spawn tool's `image_refs` only when its model
+declares the 'vision' capability" (same citation) — vision eligibility is model-declared, not
 grant-gated, and is out of scope here; see [engine/vision-routing.md](../engine/vision-routing.md).
 
 ### 3.3 The `ReadinessContext`/`ReadinessProfile` shape (advisory pre-flight)
@@ -200,24 +199,20 @@ interface AgentToolCaps { canRead: boolean; canMutate: boolean; canExec: boolean
 (`packages/tools/src/tools/registry.ts`); the loop derives everything
 else from it:
 
-| Set | Derivation | Content (20 total tools) | File |
+| Set | Derivation | Content (9 total tools) | File |
 | --- | --- | --- | --- |
-| `AGENT_TOOL_NAMES` | `tools.map(t => t.name)` | all 20 | `packages/loop/src/runtime/tools/builtin/names.ts` |
-| `READ_ONLY_TOOL_NAMES` | `readOnlyTools.map(t => t.name)` | `read_file, read_image, read_files, list_dir, glob, grep, diff, file_stat, tree` (9) | `packages/loop/src/runtime/tools/builtin/names.ts`; source flags at `packages/tools/src/tools/registry.ts` |
-| `EDIT_TOOL_NAMES` | `AGENT_TOOL_NAMES` minus `READ_ONLY_TOOL_NAMES` | `write_file, edit_file, multi_edit, apply_patch, replace, shell, shell_session, move, copy, mkdir, remove` (11) | `packages/loop/src/runtime/tools/builtin/names.ts`; source flags `packages/tools/src/tools/registry.ts` |
-| `EXEC_TOOL_NAMES` | hardcoded literal list, **not** derived from the tools package's own flags | `shell, shell_session` (2) | `packages/loop/src/runtime/tools/builtin/names.ts` |
-| `FILE_MUTATING_TOOL_NAMES` | `EDIT_TOOL_NAMES` minus command runners | `write_file, edit_file, multi_edit, apply_patch, replace, move, copy, mkdir, remove` (9) | `packages/loop/src/runtime/tools/builtin/names.ts` (`FILE_MUTATING_TOOL_NAMES`) |
+| `AGENT_TOOL_NAMES` | `tools.map(t => t.name)` | all 9 | `packages/loop/src/runtime/tools/builtin/names.ts` |
+| `READ_ONLY_TOOL_NAMES` | `readOnlyTools.map(t => t.name)` | `read_file, read_image, list_dir` (3) | `packages/loop/src/runtime/tools/builtin/names.ts`; source flags at `packages/tools/src/tools/registry.ts` |
+| `EDIT_TOOL_NAMES` | `AGENT_TOOL_NAMES` minus `READ_ONLY_TOOL_NAMES` | `write_file, edit_file, apply_patch, shell, shell_session, remove` (6) | `packages/loop/src/runtime/tools/builtin/names.ts`; source flags `packages/tools/src/tools/registry.ts` |
+| `EXEC_TOOL_NAMES` | hardcoded literal list | `shell, shell_session` (2) | `packages/loop/src/runtime/tools/builtin/names.ts` |
+| `FILE_MUTATING_TOOL_NAMES` | `EDIT_TOOL_NAMES` minus command runners | `write_file, edit_file, apply_patch, remove` (4) | `packages/loop/src/runtime/tools/builtin/names.ts` |
 
-Tool name strings verified individually at their definitions: `read_file`
-(`packages/tools/src/tools/read-file.ts`), `read_image`
-(`packages/tools/src/tools/read-image.ts`), `read_files` (`packages/tools/src/tools/read-files.ts`), `write_file`
-(`packages/tools/src/tools/write-file.ts`), `edit_file` (`packages/tools/src/tools/edit-file.ts`), `multi_edit`
-(`packages/tools/src/tools/multi-edit.ts`), `apply_patch` (`packages/tools/src/tools/apply-patch.ts`), `replace`
-(`packages/tools/src/tools/replace.ts`), `list_dir` (`packages/tools/src/tools/list-dir.ts`), `glob` (`packages/tools/src/tools/glob.ts`), `grep`
-(`packages/tools/src/tools/grep.ts`), `diff` (`packages/tools/src/tools/diff.ts`), `shell` (`packages/tools/src/tools/shell.ts`), `shell_session` (`packages/tools/src/tools/shell-session.ts`), `move` (`packages/tools/src/tools/move.ts`),
-`copy` (`packages/tools/src/tools/copy.ts`), `mkdir` (`packages/tools/src/tools/mkdir.ts`), `remove` (`packages/tools/src/tools/remove.ts`),
-`file_stat` (`packages/tools/src/tools/file-stat.ts`), `tree` (`packages/tools/src/tools/tree.ts`).
-
+The tool definitions and their names are owned by
+`packages/tools/src/tools/registry.ts`; the loop derives grant sets from that
+registry. Production: `toolDescriptors` in `packages/tools/src/tools/registry.ts`
+and `AGENT_TOOL_NAMES` in `packages/loop/src/runtime/tools/builtin/names.ts`.
+Test: `packages/tools/tests/component/tool-surface.test.ts` and
+`packages/loop/tests/unit/tool-effect.test.ts`.
 ## 4. Behavior
 
 ### 4.1 Request-time grant validation (structural → semantic)
@@ -278,7 +273,7 @@ For each agent (entry or spawned), `createAgentToolsRunCapability.forAgent(scope
      `EXEC_TOOL_NAMES` member whenever `canExec` is false, even from an
      otherwise-full (`canMutate: true`) definition list
      (`packages/loop/src/runtime/tools/builtin/toolset.ts`).
-   - Net effect per ceiling tier: `read` → the 9 read-only tools only; `edit` →
+   - Net effect per ceiling tier: `read` → the 3 read-only tools only; `edit` →
      read-only + the 9 members of `FILE_MUTATING_TOOL_NAMES`, with no `shell`
      or `shell_session`; `exec` → all 20.
 4. `dispatch(name, …)` on the built toolset rejects any call whose `name` is
@@ -301,8 +296,8 @@ else → (shape.entryProfile.grants ?? []).some(g ⇒ g ∈ {d.name | d ∈ decl
 (`packages/loop/src/validation/request/run-shape.ts`,
 mirrored at `packages/loop/src/runtime/run-shape.ts` via `deriveRequestShape`).
 This is the **only** gate on whether the run gets a supervision registry
-(`AgentRegistry`) and, with it, the five supervision tools
-(`agent_list`/`agent_poll`/`agent_stop`/`agent_steer`/`await_agents`) — a solo
+(`AgentRegistry`) and, with it, the four supervision tools
+(`agent_list`/`agent_poll`/`agent_stop`/`agent_steer`) — a solo
 run's schema never contains them
 (`packages/loop/src/runtime/spawn-shape.ts`). A non-lead entry (empty
 `can_spawn`) becomes spawn-capable only by carrying a grant some registered
@@ -310,7 +305,7 @@ capability declared `entryCanSpawn: true` for — in this codebase, only
 `workflow` (`packages/workflows/src/capability.ts`).
 
 `createAgentsRunCapability` — the capability that actually contributes the
-five supervision tools — is itself only added to the run's capability list
+four supervision tools — is itself only added to the run's capability list
 when this registry was created (`agents !== undefined`)
 (`packages/loop/src/runtime/entry-inputs.ts`), and once added its own
 `forAgent` gates solely on `if (!scope.entry) return null;` — no grant of any
@@ -321,7 +316,7 @@ exists at all for this run; once it exists, every entry agent gets all five
 tools unconditionally, with no way for a profile author to grant spawning
 without also granting supervision visibility, or vice versa.
 
-### 4.4 Spawning a sub-agent (`delegate_task`): grant/topology at spawn time
+### 4.4 Spawning a sub-agent (`spawn_subagent`): grant/topology at spawn time
 
 1. The spawnable-profile registry is built **only** from the entry profile's
    own `can_spawn` list, never from a spawned child's:
@@ -332,19 +327,19 @@ without also granting supervision visibility, or vice versa.
    (`CODER.frontmatter`, `EXPLORER.frontmatter`, and `PLANNER.frontmatter` under
    `packages/kernel/src/config/builtin-agents/`), and since delegation targets are drawn only from this
    registry, tree depth is structurally bounded at 2 for the shipped fleet.
-2. `validateDelegateTaskArgs` resolves `profile`: an explicit `obj.profile`
+2. `validateSpawnArgs` resolves `profile`: an explicit `obj.profile`
    must be a key of `profiles` (the spawnable registry) or the call is
    rejected with `unknown profile '<name>'`
-   (`packages/loop/src/runtime/subagents/delegate-task.ts`); omitted,
+   (`packages/loop/src/runtime/subagents/spawn-subagent.ts`); omitted,
    it falls back to `defaultProfile` (the entry's `default_spawn`) when that
    name is itself in the registry, else the sole spawnable profile, else the
    call is rejected as requiring a named profile
-   (`packages/loop/src/runtime/subagents/delegate-task.ts`).
+   (`packages/loop/src/runtime/subagents/spawn-subagent.ts`).
 3. The spawned child's capability activation uses **its own** profile's
    grants, not the entry's: `ctx.capabilitiesFor?.(selectedProfile.grants)`
-   (`packages/loop/src/runtime/subagents/delegate-task.ts`), typed as the
+   (`packages/loop/src/runtime/subagents/spawn-subagent.ts`), typed as the
    `SubagentCapabilitiesFactory` declared at `packages/capability/src/contract.ts`
-   and threaded in as `packages/loop/src/runtime/subagents/delegate-task.ts`'s `capabilitiesFor?:
+   and threaded in as `packages/loop/src/runtime/subagents/spawn-subagent.ts`'s `capabilitiesFor?:
    SubagentCapabilitiesFactory` field. It is folded per-agent through
    `capabilitiesForScope`/`activationForScope`
    (`packages/capability/src/compose.ts`) — the same generic
@@ -382,7 +377,7 @@ The internal `forRun`/`forAgent` derivation below goes one level deeper than
 
 `admiral`'s `can_spawn` array (`coder, explorer, planner, marshall`,
 `ADMIRAL.frontmatter` in `packages/kernel/src/config/builtin-agents/admiral.ts`) governs its
-`delegate_task` sub-agent targets exactly as in §4.4 — it is unrelated to which
+`spawn_subagent` sub-agent targets exactly as in §4.4 — it is unrelated to which
 profiles `run_leader`/`run_work_items`/`run_round` may launch as a leader.
 Those tools enumerate `LeaderProfileInfo[]` supplied by the kernel's
 `AgentWorkflowPolicy.leaderProfiles()`
@@ -499,8 +494,8 @@ except for this one filtered field — carried `workflow`.
 | `CLARVIS_AGENT_TOOLS_ENABLED=false` | The whole `tools` capability's `forRun` returns `null` for every agent in the run, regardless of grants | `packages/loop/src/runtime/capabilities/tools.ts` |
 | A spawnable sub-agent profile has no `tools` and no active built-in coding tools | Static usage warning `subagent_has_no_tools` (still runs; advisory only) | `packages/loop/src/runtime/usage-accounting.ts`; tested `packages/loop/tests/integration/subagent-config-warnings.test.ts` (builtin-aware: a read_workspace-only sub-agent does **not** warn; `CLARVIS_AGENT_TOOLS_ENABLED=false` makes that same grant inert and the warning reappears) |
 | A spawnable sub-agent profile carries `ask_user` | Static usage warning `subagent_ask_user_ignored` (the grant itself stays syntactically legal and structurally inert, per §5 invariant 5) | `packages/loop/src/runtime/usage-accounting.ts`; tested `packages/loop/tests/integration/subagent-config-warnings.test.ts` |
-| A `delegate_task` call names a `profile` not in the spawnable registry | Call rejected: `{ ok: false, message: "unknown profile '<name>'. Registered profiles: …" }` | `packages/loop/src/runtime/subagents/delegate-task.ts` |
-| `delegate_task` omits `profile`, no usable default | Call rejected: `"profile is required — name the profile this Sub-agent should run as."` | `packages/loop/src/runtime/subagents/delegate-task.ts` |
+| A `spawn_subagent` call names a `profile` not in the spawnable registry | Call rejected: `{ ok: false, message: "unknown profile '<name>'. Registered profiles: …" }` | `packages/loop/src/runtime/subagents/spawn-subagent.ts` |
+| `spawn_subagent` omits `profile`, no usable default | Call rejected: `"profile is required — name the profile this Sub-agent should run as."` | `packages/loop/src/runtime/subagents/spawn-subagent.ts` |
 | A tool call names something outside the agent's ceiling-filtered set | `dispatch` returns `{ isError: true, text: "Tool '<name>' is not available to this agent." }` rather than throwing | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
 | The abort signal fires mid-dispatch | `raceAbort` resolves to `{ isError: true, text: "Tool call aborted (run cancelled)." }`, listener always removed | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
 

@@ -8,7 +8,6 @@ import type {
   ConfigChangeKind,
   ConfigService,
   ContextDoc,
-  SandboxInspection,
   Scope,
   SettingsData,
   SettingsRepairPlan,
@@ -30,11 +29,6 @@ import { resolveStoreSharedPrompt, sharedPromptPaths } from "./shared-prompt.ts"
 
 /** Host-supplied collaborators for {@link createConfigService}. */
 export interface ConfigServiceOptions {
-  /**
-   * Sandbox doctor probe backing {@link ConfigService.inspectSandbox}; when
-   * omitted, that method rejects with an `unavailable` kernel error.
-   */
-  inspectSandbox?: (options?: { refresh?: boolean }) => Promise<SandboxInspection>;
   /**
    * Every grant this kernel's composed capability registry will accept, for
    * {@link SettingsView.known_grants}.
@@ -378,8 +372,7 @@ function recordToDoc(r: AgentRecord, scope: Scope | "builtin"): AgentDoc {
  * @param store - the backing {@link ConfigStore} (file-backed or in-memory).
  * @param options - optional host collaborators; see {@link ConfigServiceOptions}.
  * @returns a {@link ConfigService} whose methods reject with `kernelError`s on
- *   invalid input (`invalid_request`), missing agents (`not_found`), and an
- *   absent sandbox probe (`unavailable`).
+ *   invalid input (`invalid_request`) and missing agents (`not_found`).
  */
 export function createConfigService(
   store: ConfigStore,
@@ -506,20 +499,6 @@ export function createConfigService(
         }
         throw error;
       }
-    },
-
-    /**
-     * Run the sandbox doctor probe via {@link ConfigServiceOptions.inspectSandbox}.
-     *
-     * @returns the {@link SandboxInspection} snapshot.
-     * @throws (rejects with) an `unavailable` kernel error when no probe was
-     *   supplied to {@link createConfigService}.
-     */
-    inspectSandbox(inspectOptions): Promise<SandboxInspection> {
-      if (options.inspectSandbox === undefined) {
-        return Promise.reject(kernelError("unavailable", "sandbox inspection is unavailable"));
-      }
-      return options.inspectSandbox(inspectOptions);
     },
 
     /**

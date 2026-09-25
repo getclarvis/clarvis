@@ -137,10 +137,6 @@ interface SettingsKnobs {
   defaultModel?: string;
   providersValid?: boolean;
   memoryEnabled?: boolean;
-  memoryModel?: string;
-  /** Drop the `memory:` block entirely — the pre-seed state, which also makes
-   * mounting fire the one-time seed notification. */
-  memoryUnconfigured?: boolean;
   providers?: unknown[];
   runtime?: Record<string, unknown>;
   plans?: Record<string, unknown>;
@@ -153,17 +149,14 @@ const HEALTHY_PROVIDERS = [{ name: "acme", models: {} }];
 const HEALTHY_DEFAULT_MODEL = "acme/model-x";
 
 function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
+  let savedMemoryEnabled: boolean | undefined;
   const effective = () => {
     const k = knobs();
+    const memoryEnabled = savedMemoryEnabled ?? k.memoryEnabled;
     return {
       providers: k.providers ?? HEALTHY_PROVIDERS,
       default_model: "defaultModel" in k ? k.defaultModel : HEALTHY_DEFAULT_MODEL,
-      memory: k.memoryUnconfigured
-        ? undefined
-        : {
-            enabled: k.memoryEnabled ?? true,
-            ...(k.memoryModel !== undefined ? { model: k.memoryModel } : {}),
-          },
+      memory: memoryEnabled === undefined ? undefined : { enabled: memoryEnabled },
       runtime: k.runtime,
       plans: k.plans ?? { mode: "on", retention: "keep" },
     };
@@ -183,7 +176,15 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
     setWorkspaceTrust: (approve: boolean) =>
       knobs().setWorkspaceTrust?.(approve) ?? Promise.resolve(),
     sources: () => ({ global: "/nonexistent/global" }),
-    write: async () => {},
+    write: async (
+      scope: "global" | "workspace",
+      patch: Parameters<SettingsAdapter["write"]>[1],
+    ) => {
+      if (patch.memory?.enabled !== undefined) {
+        expect(scope).toBe("global");
+        savedMemoryEnabled = patch.memory.enabled;
+      }
+    },
     validateProviders: () => ({ ok: knobs().providersValid ?? true }),
     refs: () => ({ agents: [], defaultModel: false }),
     modelRefs: () => ({ agents: [], defaultModel: false }),
@@ -240,9 +241,7 @@ function baseFleet(
         keySource: () => "auto",
         writeKeySource: () => {},
       } as never),
-    memoryMode: createMemoryModeStore({
-      settingsMemory: () => settings.effective().memory,
-    }),
+    memoryMode: createMemoryModeStore(),
     preview: {
       source: () => ({}),
       draft: () => null,
@@ -1759,7 +1758,7 @@ test("Alt+M no longer changes memory for the session", async () => {
   await captureUntil(t, "New task");
   press(t, "m", { meta: true });
   await t.renderOnce();
-  expect(memoryMode.mode()).toBe("on");
+  expect(memoryMode.mode()).toBe("off");
   expect(t.captureCharFrame()).not.toContain("memory: off (session)");
   t.renderer.destroy();
 });
@@ -1780,9 +1779,18 @@ test("agent picker overlay opens on /agent and closes on escape", async () => {
   t.renderer.destroy();
 });
 
-test("Ctrl+X M opens the session memory picker and Escape returns to the composer", async () => {
-  const t = await mountApp(defaultProps({ settingsKnobs: () => ({ memoryEnabled: true }) }));
+test("Ctrl+X M saves Memory On and keeps it selected when the picker reopens", async () => {
+  let memoryMode!: AppFleet["memoryMode"];
+  let settings!: SettingsAdapter;
+  const build = defaultProps({});
+  const t = await mountApp((renderer) => {
+    const props = build(renderer);
+    memoryMode = props.fleet.memoryMode;
+    settings = props.fleet.settings;
+    return props;
+  });
   await captureUntil(t, "New task");
+  expect(memoryMode.mode()).toBe("off");
 
   press(t, "x", { ctrl: true });
   press(t, "m");
@@ -1790,10 +1798,19 @@ test("Ctrl+X M opens the session memory picker and Escape returns to the compose
 
   expect(picker).toContain("On");
   expect(picker).toContain("Off");
-  expect(picker).toContain("Persisted Memory settings are unchanged");
+  press(t, "up");
+  press(t, "return");
+  await captureUntil(t, "memory: on");
+  expect(memoryMode.mode()).toBe("on");
+  expect(settings.read("global")?.memory?.enabled).toBe(true);
+
+  press(t, "x", { ctrl: true });
+  press(t, "m");
+  const reopened = await captureUntil(t, "Select memory");
+  expect(reopened).toContain("On");
+  expect(memoryMode.mode()).toBe("on");
   press(t, "escape");
-  const back = await captureUntil(t, "New task");
-  expect(back).not.toContain("Select memory");
+  await captureUntil(t, "New task");
   t.renderer.destroy();
 });
 

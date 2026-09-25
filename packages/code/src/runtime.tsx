@@ -987,8 +987,14 @@ async function runApp(
     let snapshot!: Omit<WorkspaceAdaptersSnapshot, "activate" | "dispose">;
     let activate!: () => void;
     const dispose = createRoot((disposeRoot) => {
-      const nextMemoryMode = createMemoryModeStore({
-        settingsMemory: () => input.settings.effective().memory,
+      const nextMemoryMode = createMemoryModeStore(
+        input.settings.read("global")?.memory?.enabled === true ? "on" : "off",
+      );
+      createEffect(() => {
+        input.settings.version();
+        nextMemoryMode.setMode(
+          input.settings.read("global")?.memory?.enabled === true ? "on" : "off",
+        );
       });
       const nextAgentFiles = createAgentsStore(
         input.client.config,

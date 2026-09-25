@@ -84,7 +84,7 @@ const MEMORY_TOOL_EFFECTS: Readonly<Record<string, ToolEffect>> = Object.fromEnt
  * @returns A {@link Capability} that declares the seed block's open tag as its
  *   `seedMarker` for context ownership while historical publications retain
  *   their persisted position, returns null from `forRun` when the run requests
- *   `memory: "off"` or memory is off or disabled, and otherwise activates the
+ *   `memory: "on"` is absent or memory is disabled, and otherwise activates the
  *   wiki seed, tools and post-run index pass.
  *
  * @remarks The per-run override is read through
@@ -92,16 +92,8 @@ const MEMORY_TOOL_EFFECTS: Readonly<Record<string, ToolEffect>> = Object.fromEnt
  *   `memory` param is declared by {@link memorySettingsSpec} and registered by
  *   the host, so it is absent from the engine's own request type.
  *
- * @remarks Resolves through {@link MemoryFactory.forOwnerControlPlane}, not
- *   `forOwner`: a missing indexer model must cost the run its **learning**, not
- *   its memory. Under `forOwner` a workspace with no `default_model` lost the
- *   seed block, all seven wiki tools and the post-run enqueue together — the
- *   run could not even read what earlier runs had written by hand. The enqueue
- *   still happens, because the queue is durable and `drainIndexJobs` reports
- *   such a job `blocked` without consuming an attempt or taking a lease: the
- *   day a model is configured, the drain recovers the learning of every run
- *   that came before it. `forOwner` remains the right gate for the background
- *   worker, which genuinely cannot proceed without a model.
+ * @remarks The wiki remains available for an opted-in run when its model cannot
+ *   be resolved for indexing. The index pass then skips learning for that run.
  */
 export function createMemoryCapability(
   factory?: MemoryFactory,
@@ -184,7 +176,7 @@ async function prepareMemoryRunInternal(
   ctx: RunCapabilityContext,
   opts: MemoryCapabilityOptions,
 ): Promise<PreparedMemoryRunInternal | null> {
-  if (ctx.requestParam(MEMORY_CAPABILITY_NAME) === "off") return null;
+  if (ctx.requestParam(MEMORY_CAPABILITY_NAME) !== "on") return null;
   const memory = factory?.forOwnerControlPlane(ctx.owner);
   let provider: MemoryProvider;
   let providerKey: string;

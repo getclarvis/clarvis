@@ -21,6 +21,7 @@ describe("the memory settings block", () => {
 
   test("is exposed as an optional settings field", () => {
     expect(MEMORY_SETTINGS_FIELDS.memory.safeParse(undefined).success).toBe(true);
-    expect(MEMORY_SETTINGS_FIELDS.memory.safeParse({ model: "x/y" }).success).toBe(true);
+    expect(MEMORY_SETTINGS_FIELDS.memory.safeParse({}).success).toBe(true);
+    expect(MEMORY_SETTINGS_FIELDS.memory.safeParse({ model: "x/y" }).success).toBe(false);
   });
 });

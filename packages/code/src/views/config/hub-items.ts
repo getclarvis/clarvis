@@ -18,12 +18,6 @@ export const SETTINGS_ITEMS = [
     desc: "Run budget",
     cmd: "defaults.open",
   },
-  {
-    id: "memory",
-    label: "Memory",
-    desc: "Enable and configure execution memory",
-    cmd: "memory.config",
-  },
   { id: "theme", label: "Theme", desc: "Colors, presets, contrast", cmd: "theme.open" },
   {
     id: "keyboard",

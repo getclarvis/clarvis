@@ -97,7 +97,7 @@ export type MemoryJobBlockReason = "no_indexer" | "lease_lost" | "recovery" | "s
 /** What each block reason means for the run whose learning is waiting. */
 const BLOCK_CONSEQUENCE: Readonly<Record<MemoryJobBlockReason, string>> = {
   no_indexer:
-    "an index job is due and this workspace has no indexer model; no attempt was consumed, so the learning is recovered whole once one is configured",
+    "an index job is due but its indexer runtime is unavailable; no attempt was consumed, so the job remains pending",
   lease_lost:
     "another worker reclaimed this index job mid-pass; whatever this pass wrote stands, and the claimant decides the rest",
   recovery:

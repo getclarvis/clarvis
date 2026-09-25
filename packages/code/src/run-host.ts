@@ -1298,9 +1298,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     rememberResidentTurn({ userKey });
     const sessionId = sess.meta()?.id;
     const memoryMode = deps.memoryMode();
-    const requestOptions = {
-      ...(memoryMode === "off" ? { memory: memoryMode } : {}),
-    };
+    const requestOptions = { memory: memoryMode };
     const pending = sess.takePending();
     const requestPending = hostedSession === undefined ? pending : [];
     const isManager = deps.isManagerProfile?.() === true;
@@ -1554,7 +1552,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           executionId,
           profile,
           ...(sessionId ? { sessionId } : {}),
-          ...(skillMemoryMode === "off" ? { memory: skillMemoryMode } : {}),
+          memory: skillMemoryMode,
         });
         setHandle(handle);
         return handle.done;

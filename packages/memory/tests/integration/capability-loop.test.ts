@@ -28,6 +28,7 @@ import {
 } from "../../src/tool-contract.ts";
 
 const BODY = {
+  memory: "on",
   messages: [{ role: "user", content: "build the project" }],
   servers: [],
   profiles: [

@@ -82,8 +82,12 @@ export function storedExecutionToRunSnapshot(
   }
 
   const finalAnswer = finalAnswerOf(record);
+  const runModel = record.request.profiles.find(
+    (profile) => profile.name === record.request.entry,
+  )?.model;
   return {
     run_id: record.id,
+    ...(runModel === undefined ? {} : { model_ref: runModel }),
     workspace: opts.workspace,
     status: record.status,
     started_at: record.started_at,

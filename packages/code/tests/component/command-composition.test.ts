@@ -158,13 +158,6 @@ function harness(): {
     extensionProfiles: {} as never,
     skills: { list: async () => [], getPrompt: async () => [] },
     code,
-    memoryMode: {
-      configured: () => true,
-      mode: () => "on",
-      setMode: (m: string) => calls.push("memory:" + m),
-      cycle: () => "on",
-      refresh: () => {},
-    } as never,
     workflows: {
       list: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
       get: async () => null,
@@ -234,7 +227,6 @@ const VIEW_CONTRACT = [
   ["model.open", "Default model", "slash", undefined],
   ["effort.open", "Default effort", "slash", undefined],
   ["marketplace.open", "Marketplace", "internal", "extensions"],
-  ["memory.config", "Memory settings", "internal", "settings"],
   ["theme.open", "Theme", "internal", "settings"],
   ["settings.open", "Settings", "slash", undefined],
   ["doctor.open", "Doctor", "slash", "inspect"],

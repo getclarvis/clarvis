@@ -370,7 +370,7 @@ describe("engineEventToProto (TraceEvent → engine-independent RunEvent project
   it("maps every phase the durable job queue actually emits, not just done/failed", () => {
     // Regression: the phase allowlist was never widened when the loop's
     // memory-ingest notice grew "queued" (fired on every run's happy path) and
-    // "blocked" (no indexer model configured) — both were silently dropped
+    // "blocked" (indexer runtime unavailable) — both were silently dropped
     // instead of reaching the wire.
     expect(
       capabilityEventToProto({

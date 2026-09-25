@@ -199,12 +199,9 @@ describe("createMemoryCapability", () => {
     expect(spawnedContribution.handlers).toHaveLength(1);
   });
 
-  it("stays active for a workspace with no indexer model, and still enqueues", async () => {
-    // A missing model costs the run its learning, not its memory: forOwner
-    // gates on the model, forOwnerControlPlane does not, and the run resolves
-    // through the latter. The enqueue still happens because the queue is
-    // durable — the drain reports such a job blocked, and recovers it whole
-    // once a model is configured.
+  it("stays active without a resolvable run model and still enqueues", async () => {
+    // The wiki remains available for an opted-in run. Its queued index pass
+    // skips inference if that run's model cannot be resolved.
     const events: CapabilityEvent[] = [];
     const enqueue = vi.fn().mockImplementation((snapshot: { run_id: string }) =>
       Promise.resolve({

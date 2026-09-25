@@ -44,8 +44,7 @@ export function plansState(settings: SettingsFile): PlansState {
   };
 }
 
-/** The single "does this model token reach a declared provider" rule — the
- * doctor, the memory panel and the header chip must never disagree on it. */
+/** Whether a model token reaches a declared provider. */
 export function modelResolves(model: string | undefined, settings: SettingsFile): boolean {
   if (!model) return false;
   try {
@@ -73,12 +72,12 @@ export function modelResolves(model: string | undefined, settings: SettingsFile)
   }
 }
 
-/** Canonical memory tri-state: `off` (no block / disabled / session off),
- * `inert` (enabled but the extraction model — memory.model, else
- * default_model — does not resolve to a usable provider, so runs will not
- * learn), `on`. Every "memory: on" surface derives from here. */
-export function memoryState(settings: SettingsFile, sessionMode: MemoryMode = "on"): MemoryState {
-  const memory = settings.memory;
-  if (memory === undefined || memory.enabled === false || sessionMode === "off") return "off";
-  return modelResolves(memory.model ?? settings.default_model, settings) ? "on" : "inert";
+/** Canonical memory tri-state for the next run. */
+export function memoryState(
+  settings: SettingsFile,
+  mode: MemoryMode = "off",
+  runModel = settings.default_model,
+): MemoryState {
+  if (mode === "off") return "off";
+  return modelResolves(runModel, settings) ? "on" : "inert";
 }

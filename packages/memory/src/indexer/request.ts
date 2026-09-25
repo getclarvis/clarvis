@@ -195,7 +195,7 @@ export interface IndexerRequestArgs {
   executionId: string;
   /** The rendered run digest — what this pass is being asked to learn from. */
   task: string;
-  /** `provider/model` for the indexer, from `memory.model` or `default_model`. */
+  /** `provider/model` selected by the run being indexed. */
   modelRef: string;
   /** Provider instances the request declares; must carry `modelRef`'s token. */
   providers: readonly ProviderConfig[];
@@ -282,9 +282,8 @@ const CACHE_EVIDENCE_MIN_INPUT = 100_000;
  *   out to every one of them. Neither is acceptable, so such a run indexes
  *   through the isolated path instead.
  *
- *   `model-differs` follows from a cache belonging to a model: an operator who
- *   configures `memory.model` to something cheaper is choosing the cold path,
- *   and that is a legitimate choice rather than a misconfiguration.
+ *   `model-differs` guards continuation when a stored run and an index pass
+ *   cannot share a model's cached prefix.
  */
 export function continuationBlocker(
   subject: StoredExecution | null,

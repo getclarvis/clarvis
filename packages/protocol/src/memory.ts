@@ -66,7 +66,7 @@ export interface MemoryHealthReport {
  *
  * @remarks `retry_wait` is a failed attempt serving out its backoff; `failed`
  * is terminal until an operator retries, and the job is kept as the evidence
- * that something needs attention. A workspace with no indexer model has jobs
+ * that something needs attention. A workspace with no indexer runtime has jobs
  * that are simply not runnable yet — that shows up as a count of pending work,
  * not as a state on the job.
  */
@@ -133,7 +133,7 @@ export interface MemoryService {
    *
    * @param filter - optional state restriction and page size.
    * @returns the jobs, plus how many sit in each state.
-   * @remarks Available even when no indexer model resolves: a workspace that
+   * @remarks Available even when no indexer runtime resolves: a workspace that
    *   cannot currently learn still has a queue worth inspecting.
    */
   jobs(filter?: MemoryJobFilter): Promise<{
@@ -203,7 +203,7 @@ export type MemoryIngestDetail =
     }
   | {
       execution_id: string;
-      /** Queued but not yet runnable (e.g. no indexer model configured). */
+      /** Queued but not yet runnable (e.g. indexer runtime unavailable). */
       phase: "blocked";
       note?: string;
     };

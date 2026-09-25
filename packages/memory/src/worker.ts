@@ -118,9 +118,8 @@ export function createIndexWorker(opts: MemoryIndexWorkerOptions): MemoryIndexWo
    *   backoff promptly and costs a quiet tree one timer per interval. A
    *   *blocked* job has no backoff to honour: it stays `pending`, so its due
    *   time is the moment it was enqueued, already in the past — which made the
-   *   worker re-drain with no delay, forever, for as long as the workspace had
-   *   no indexer model configured. Nothing about that job can change until the
-   *   configuration does, so a pass that settled nothing and blocked something
+   *   worker re-drain with no delay while its indexer runtime was unavailable.
+   *   A pass that settled nothing and blocked something
    *   waits the full interval instead. A finished run still pokes the worker,
    *   so real work never waits on this.
    */

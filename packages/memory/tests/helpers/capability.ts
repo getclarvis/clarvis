@@ -107,7 +107,7 @@ export function fakeRunCapabilityContext(
       },
     },
     emit: () => undefined,
-    requestParam: () => undefined,
+    requestParam: (key) => (key === "memory" ? "on" : undefined),
     ...over,
   } as RunCapabilityContext;
 }

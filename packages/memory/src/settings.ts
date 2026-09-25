@@ -28,17 +28,16 @@ export const MEMORY_INGEST_EVENT = "ingest";
 
 /**
  * Per-run memory override: `off` runs with no seed block, no wiki tools and no
- * post-run ingestion; default (absent) is `on` whenever memory is configured on
- * the host. Memory is a single global on/off, never gated per owner or profile.
+ * post-run ingestion; default (absent) is `off`. Memory is a single global
+ * on/off, never gated per owner or profile.
  */
 const memoryField = z
   .enum(["on", "off"], { error: "memory must be 'on' or 'off'" })
   .optional()
   .describe(
     "Per-run memory override. 'off' runs as if the host configured no memory: no seed " +
-      "block, no navigation tools, no post-run ingestion. Default 'on' — memory is active " +
-      "for every run whenever it is configured on the host (global activation, not gated " +
-      "per owner or per profile).",
+      "block, no navigation tools, no post-run ingestion. Default 'off' — memory is active " +
+      "only when a run explicitly selects it.",
   );
 
 /** The `memory` block of settings.json, added to a host's schema by {@link memorySettingsSpec}. */
@@ -49,8 +48,8 @@ export const MEMORY_SETTINGS_FIELDS = {
       "Execution memory (@clarvis/memory): a workspace-local markdown wiki " +
         "(<ws>/.clarvis/memory) the agent reads and edits as a semantic pyramid. " +
         "Injects the compiled PROFILE as an <memory> block plus read/write wiki tools, and folds finished " +
-        "runs into it via a per-run indexer. Absent = memory off. `model` names the " +
-        "indexer model and defaults to default_model.",
+        "runs into it via a per-run indexer using the run's own model. " +
+        "The block configures storage and budgets; runs default to memory off.",
     ),
 };
 

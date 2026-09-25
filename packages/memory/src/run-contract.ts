@@ -23,6 +23,8 @@ export interface WorkspaceState {
 /** A finished run, adapted by the host for the memory indexer. */
 export interface RunSnapshot {
   run_id: string;
+  /** Entry profile model selected for this run and reused by its indexer. */
+  model_ref?: string;
   workspace: string;
   status: string;
   started_at: number;

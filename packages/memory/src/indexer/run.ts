@@ -14,7 +14,7 @@
  * each tool call takes its own lock and its own batch, so:
  *
  * - Serialization across the pass is gone, and that is a gain: the tree lock no
- *   longer spans an inference, during which `query_memories`, the memory panel
+ *   longer spans an inference, during which `query_memories`
  *   and every concurrent run's `seed()` were blocked.
  * - Cross-document atomicity is gone, but it protected less than it appeared to.
  *   Every mutating tool runs the deterministic reindex in its own batch, and the
@@ -154,7 +154,12 @@ function emptyReport(runId: string, note: string): IndexReport {
  *   indexed failed, `apply` for a store fault.
  */
 export async function indexRun(args: IndexRunArgs): Promise<IndexReport> {
-  const { run, store, budgets, indexer, signal, mutationFence } = args;
+  const { run, store, budgets, signal, mutationFence } = args;
+  const selected = args.indexer.resolveRunModel?.(run);
+  if (args.indexer.resolveRunModel !== undefined && selected === undefined) {
+    return emptyReport(run.run_id, "run-model-unavailable");
+  }
+  const indexer = selected === undefined ? args.indexer : { ...args.indexer, ...selected };
   const logger = args.logger ?? NOOP_LOGGER;
   const startedAt = Date.now();
 

@@ -8,7 +8,6 @@ export { DefaultsPanel } from "./config/DefaultsPanel.tsx";
 export { ExtensionProfileBrowser } from "./config/ExtensionProfileBrowser.tsx";
 export { WorkspaceTrustPrompt } from "./config/WorkspaceTrustPrompt.tsx";
 export { MarketplaceBrowser } from "./config/MarketplaceBrowser.tsx";
-export { MemoryConfigPanel } from "./config/MemoryConfigPanel.tsx";
 export { ThemeView } from "./config/ThemeView.tsx";
 export { KeyboardView } from "./config/KeyboardView.tsx";
 export { UpdatesPanel } from "./config/UpdatesPanel.tsx";

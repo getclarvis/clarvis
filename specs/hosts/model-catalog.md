@@ -111,7 +111,7 @@ exposed over the transport under operation key `models`
 | `CatalogPicker(props)` | `packages/code/src/views/config/CatalogPicker.tsx` (`CatalogPicker`) | generic filterable list picker over a `CatalogRow[]`, with optional responsive first-run branding |
 | `catalog-pick.ts` | — | row builders: `providerRows`, `recommendedProviderRows`, `modelRows`, `configuredModelRows`, `configuredModelCapabilities`, `knownToLackReasoning`, `filterRows`, `catalogReady` |
 | `effort-levels.ts` | — | `EFFORT_LEVELS`, `normalizeReasoningEfforts`, `supportedReasoningEfforts`, `recommendedReasoningEffort` |
-| `pick-model.ts` | — | `modelPickerSpec(...)` — glue reused by `AgentsPanel` (per-agent model override) and `MemoryConfigPanel` (indexer model); full contract in §4.17 |
+| `pick-model.ts` | — | `modelPickerSpec(...)` — glue used by `AgentsPanel` for per-agent model overrides; full contract in §4.17 |
 | CLI `--refresh-models` | `packages/code/src/cli-args.ts`, `packages/code/src/runtime.tsx` (`runRefreshMode`) | headless mode: `kernel.models.refresh()` then exits |
 
 ## 3. Data and formats
@@ -571,7 +571,7 @@ manual-entry row the picker routes to instead of `onPick`; and the picker reserv
 
 `modelPickerSpec` is the one function behind the `pick-model.ts` row in §2.5's TUI-surface table: it
 turns a caller's wiring (`opts`) into either a `CatalogPickerSpec` or `null`, and every one of its
-two callers — `AgentsPanel` (per-agent model override) and `MemoryConfigPanel` (indexer model) — hand it a `settings: SettingsAdapter`, the field's `current`
+caller — `AgentsPanel` (per-agent model override) — hands it a `settings: SettingsAdapter`, the field's `current`
 value, and `commit`/`close` callbacks, and reads back either a spec to mount a `CatalogPicker` from
 or `null` to do nothing further.
 
@@ -586,7 +586,7 @@ rule directly: "When no provider is configured, falls back to manual entry via `
 manual editor was supplied, otherwise calls `opts.onNoProviders`; either way there is nothing to pick
 from, so `null` is returned.". `opts.fe` is deliberately optional — its own inline comment
 names "the `/model` picker" as an example of a host that omits it — and both actual
-callers (`AgentsPanel`, `MemoryConfigPanel`) do pass `fe`, so the no-`fe` branch is
+caller (`AgentsPanel`) does pass `fe`, so the no-`fe` branch is
 untaken in the shipped call sites but is exercised directly by
 `packages/code/tests/unit/pick-model.test.ts`.
 
@@ -801,7 +801,7 @@ catalog case).
   exact/fill algorithm, and `seed`/`safeName` (§4.13), exist in two source files that must be kept in
   step by hand (the TUI's version diverges from the kernel's in both directions — §4.4).
 - `packages/code/src/views/config/{ModelView,EffortView,CatalogPicker,AgentsPanel,
-  MemoryConfigPanel,ProvidersPanel}.tsx` and `packages/code/src/adapters/effort-levels.ts` all import
+  ProvidersPanel}.tsx` and `packages/code/src/adapters/effort-levels.ts` all import
   `adapters/models-catalog.ts` and/or `views/config/catalog-pick.ts` — a static, compile-time
   dependency; there is no dynamic/lazy loading of the catalog adapter.
 - `packages/llm/src/ai-sdk/request-options.ts` and `packages/loop/src/runtime/loop/loop.ts`
@@ -826,11 +826,11 @@ catalog case).
   from the table works exactly as before, with the operator setting `base_url` themselves, which is
   what keeps the list from needing to be complete
   (`packages/kernel/src/models/model-catalog.ts`).
-- **Whether `ProvidersPanel.tsx`, `AgentsPanel.tsx` and `MemoryConfigPanel.tsx`
+- **Whether `ProvidersPanel.tsx` and `AgentsPanel.tsx`
   themselves (as opposed to their use of `CatalogPicker`/`pick-model.ts`) belong to this document**
   is ambiguous from the document boundary text; this spec describes their catalog-picker usage as a
   coupling point only and defers their own behavior (headers/body editing, key sources, agent
-  overlay editing, memory model selection) to whichever document owns those panels.
+  overlay editing) to whichever document owns those panels.
 - **The precise reasoning behind moving `prompt_cache` derivation from per-run to
   per-configuration** (the "used to be stamped per run request inside the kernel" remark at
   `packages/kernel/src/models/model-catalog.ts`) is stated in the source doc-comment itself, not

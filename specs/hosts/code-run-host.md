@@ -542,7 +542,7 @@ while a run is already active").
    and call `rememberResidentTurn`. `beginTranscriptTurn` writes `kind: "transcript"` but does not
    append the skill's internal prompt to model history or advance the session's conversation
    continuation base.
-3. `client.startRun` is composed inline, passing `memory` only when the mode is `"off"`.
+3. `client.startRun` is composed inline, passing the saved global memory choice explicitly.
 4. Run through `runManaged` with `run` calling `client.startRun({ skill: {name, task}, … })`.
 5. `afterRun` calls `sess.endTranscriptTurn(envelope)`, which settles the matching transcript-kind
    turn without appending its assistant result to conversation history. `onStored` never calls
@@ -994,9 +994,9 @@ occupied-host and placement-transition cases in
 
 ### 4.20 `execution-safety` derivations (`packages/code/src/adapters/execution-safety.ts`)
 
-`memoryState` derives the effective session memory state from settings and session mode.
+`memoryState` derives the next run's memory state from the global choice and selected run model.
 `plansState` derives the effective planning mode and retention policy from settings.
-The header and Doctor consume these functions directly. Production:
+The header consumes these functions directly. Production:
 `packages/code/src/adapters/execution-safety.ts`. Test:
 `packages/code/tests/unit/execution-safety.test.ts` and
 `packages/code/tests/integration/doctor.test.ts`.
@@ -1087,8 +1087,8 @@ The following are derived directly from this document's own source and its tests
     `releaseInteractiveOwnership` only when the id matches. Pinned:
     `packages/code/tests/component/run-host.test.ts`.
 
-11. **`memory: "off"` is sent on the wire; `memory: "on"` is omitted.** The spread is conditional
-    (`packages/code/src/run-host.ts`) and `toStartParams` only emits truthy fields
+11. **The saved global `memory: "on"` or `memory: "off"` choice is sent on the wire.**
+    `packages/code/src/run-host.ts` composes the request and `toStartParams` forwards it
     (`packages/code/src/adapters/kernel-run-client.ts`). Pinned:
     `packages/code/tests/component/run-host.test.ts`.
 
@@ -1280,7 +1280,7 @@ The following are derived directly from this document's own source and its tests
 49. **`memoryState` is a single tri-state rule shared by every surface**, and `modelResolves` treats a
     provider with no enumerated `models` map as resolving.
     `packages/code/src/adapters/execution-safety.ts` (`memoryState`, `modelResolves`). Pinned by
-    `packages/code/tests/unit/execution-safety.test.ts` ("is on only when the extraction model
+    `packages/code/tests/unit/execution-safety.test.ts` ("is on only when the selected run model
     reaches a declared provider" and inert-state cases).
 
 

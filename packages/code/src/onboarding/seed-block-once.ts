@@ -16,8 +16,7 @@ export type SeedOutcome<T extends Record<string, unknown>> =
  * seeder: already-configured, then corrupt-scope, then no-settings-file,
  * then a single write to the global scope.
  *
- * `seedMemoryBlock`, `seedPlansBlock` and `seedDefaultAllowlist` each
- * re-implemented this exact sequence; this is the one copy they now share.
+ * `seedPlansBlock` and `seedDefaultAllowlist` share this sequence.
  *
  * @param settings - the settings adapter; a successful write always targets
  *   the global scope, so the resulting policy is legible and attributable to

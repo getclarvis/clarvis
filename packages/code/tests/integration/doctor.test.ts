@@ -671,32 +671,6 @@ test("planRepair on a healthy scope is null — the fix action never invents wor
   expect(await settings.planRepair("global")).toBeNull();
 });
 
-test("memory: unconfigured warns; configured resolves through default_model", async () => {
-  const dirs = tmpDirs();
-  seedSettings(dirs.global, { providers: [KEYLESS_PROVIDER as never], default_model: "local/m" });
-  seedAgent(dirs.global, "coder", "grants: [edit_workspace]");
-  const withoutSettings = await settingsFrom(dirs);
-  seedSettings(dirs.global, {
-    providers: [KEYLESS_PROVIDER as never],
-    default_model: "local/m",
-    memory: {} as never,
-  });
-  const withSettings = await settingsFrom(dirs);
-  createRoot((dispose) => {
-    // The block is seeded on first use, so an absent one means the seed was
-    // refused — worth saying out loud, but never blocking.
-    const without = runGates(buildCtx(dirs, withoutSettings));
-    expect(without.results.memory.status).toBe("warn");
-    expect(without.results.memory.detail).toBe("not configured");
-    expect(without.blocked).toBe(false);
-
-    const withBlock = runGates(buildCtx(dirs, withSettings));
-    expect(withBlock.results.memory.status).toBe("pass");
-    expect(withBlock.results.memory.detail).toBe("local/m");
-    dispose();
-  });
-});
-
 test("plans: unconfigured reports the defaults; an explicit block reports its policy", async () => {
   const dirs = tmpDirs();
   const base = { providers: [KEYLESS_PROVIDER as never], default_model: "local/m" };
@@ -722,28 +696,6 @@ test("plans: unconfigured reports the defaults; an explicit block reports its po
     expect(gated.results.plans.detail).toContain("delete after success");
 
     expect(runGates(buildCtx(dirs, off)).results.plans.detail).toBe("off");
-    dispose();
-  });
-});
-
-test("memory: enabled but without a resolvable extraction model warns; disabled passes", async () => {
-  const dirs = tmpDirs();
-  seedSettings(dirs.global, { providers: [KEYLESS_PROVIDER as never], memory: {} as never });
-  seedAgent(dirs.global, "coder", "grants: [edit_workspace]");
-  const noModelSettings = await settingsFrom(dirs);
-  seedSettings(dirs.global, {
-    providers: [KEYLESS_PROVIDER as never],
-    memory: { enabled: false },
-  });
-  const disabledSettings = await settingsFrom(dirs);
-  createRoot((dispose) => {
-    const noModel = runGates(buildCtx(dirs, noModelSettings));
-    expect(noModel.results.memory.status).toBe("warn");
-    expect(noModel.results.memory.detail).toContain("model");
-
-    const disabled = runGates(buildCtx(dirs, disabledSettings));
-    expect(disabled.results.memory.status).toBe("pass");
-    expect(disabled.results.memory.detail).toContain("disabled");
     dispose();
   });
 });

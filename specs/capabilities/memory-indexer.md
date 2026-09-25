@@ -94,8 +94,8 @@ tests. `packages/memory/tests/architecture/file-store-exports.test.ts` pins that
 
 | Member | Behaviour | Source |
 | --- | --- | --- |
-| `forOwner(owner)` | resolves only when a model resolves — the worker's entry point | `packages/memory/src/factory.ts` |
-| `forOwnerControlPlane(owner)` | resolves without a model; `index` then reports `note: "no-indexer"` (a `Memory` built with no `indexer` thunk) | `packages/memory/src/factory.ts`, `packages/memory/src/memory.ts` |
+| `forOwner(owner)` | resolves the owner's wiki for the worker when memory is enabled | `packages/memory/src/factory.ts` |
+| `forOwnerControlPlane(owner)` | shares that wiki for runs and owner operations | `packages/memory/src/factory.ts`, `packages/memory/src/memory.ts` |
 | `providerFor(owner)` | optional; resolves the declared memory provider | `packages/memory/src/factory.ts` |
 | `start(owner)` / `poke(owner)` | drive that owner's `MemoryIndexWorker` | `packages/memory/src/factory.ts` |
 | `stopOwner(owner)` | closes broker subs, stops the worker, evicts caches and store | `packages/memory/src/factory.ts` |
@@ -251,11 +251,12 @@ written?, deleted?, reindexed?, skipped?, note?, error?, indexer_run_id? }`
 
 ### 3.5 `RunSnapshot`, and how a stored run becomes one
 
-`RunSnapshot` = `{ run_id, workspace, status, started_at, ended_at, task, final_answer?, tool_calls,
+`RunSnapshot` = `{ run_id, model_ref?, workspace, status, started_at, ended_at, task, final_answer?, tool_calls,
 steering?, workspace_state? }` (`packages/memory/src/run-contract.ts`).
 
 `storedExecutionToRunSnapshot` (`packages/memory/src/run-snapshot.ts`) walks the persisted trace:
-`task` is the **first** user message, not the joined user text (`packages/memory/src/run-snapshot.ts`); `final_answer`
+`model_ref` is the entry profile model selected for the run; `task` is the **first** user message,
+not the joined user text (`packages/memory/src/run-snapshot.ts`); `final_answer`
 exists only for a non-error response (`packages/memory/src/run-snapshot.ts`); each tool call's result excerpt is
 re-truncated to 2000 chars (`packages/memory/src/run-snapshot.ts`); a `tool_call` with an empty `tool_name` is
 treated as MCP — `mcp_name` becomes the tool name and `server` is omitted (`packages/memory/src/run-snapshot.ts`);
@@ -466,16 +467,17 @@ error has ever described" (`packages/memory/src/drain.ts`).
 
 | # | Step | Code | Outcome on failure |
 | --- | --- | --- | --- |
-| 1 | provider present but read-only | `packages/memory/src/indexer/run.ts` | `skipped` report, note `provider-read-only` |
-| 2 | `store.exclusive(tx => tx.wasIndexed(run_id))` | `packages/memory/src/indexer/run.ts` | `skipped`, note `already-indexed` |
-| 3 | `store.recover()` probe, outside any exclusive section | `packages/memory/src/indexer/run.ts` | throws `MemoryIndexError("apply", "memory is awaiting recovery…")` |
-| 4 | `generateExecutionId()`, `planPass(...)` | `packages/memory/src/indexer/run.ts` | — |
-| 5 | host `IndexerRuntime.executeRun` when supplied, else loop `executeRun({ rawBody, owner, deps, elicit: declineElicit, externalSignal? })` | `indexRun` in `packages/memory/src/indexer/run.ts` | throw → `MemoryIndexError("generate", "index-run-failed: …")`, terminal iff `err.name === "ValidationError"` |
-| 6 | `response.status === "error"` | `packages/memory/src/indexer/run.ts` | `MemoryIndexError("generate", "index-run-errored: <code>: <msg>")`, terminal iff code is `no_progress` |
-| 7 | `status !== "completed"` | `packages/memory/src/indexer/run.ts` | `MemoryIndexError("validate", "index-run-<status>")` |
-| 8 | `pyramidIssue(mutations)` | `packages/memory/src/indexer/run.ts` | `MemoryIndexError("validate", "pyramid-not-closed: …")` |
-| 9 | fenced `markIndexed` inside `store.exclusive` | `packages/memory/src/indexer/run.ts` | `MemoryIndexError("commit", …)` |
-| 10 | log `memory.index.pass`, build the report | `packages/memory/src/indexer/run.ts` | — |
+| 1 | resolve the subject run's model | `packages/memory/src/indexer/run.ts` | `skipped` report, note `run-model-unavailable` |
+| 2 | provider present but read-only | `packages/memory/src/indexer/run.ts` | `skipped` report, note `provider-read-only` |
+| 3 | `store.exclusive(tx => tx.wasIndexed(run_id))` | `packages/memory/src/indexer/run.ts` | `skipped`, note `already-indexed` |
+| 4 | `store.recover()` probe, outside any exclusive section | `packages/memory/src/indexer/run.ts` | throws `MemoryIndexError("apply", "memory is awaiting recovery…")` |
+| 5 | `generateExecutionId()`, `planPass(...)` | `packages/memory/src/indexer/run.ts` | — |
+| 6 | host `IndexerRuntime.executeRun` when supplied, else loop `executeRun({ rawBody, owner, deps, elicit: declineElicit, externalSignal? })` | `indexRun` in `packages/memory/src/indexer/run.ts` | throw → `MemoryIndexError("generate", "index-run-failed: …")`, terminal iff `err.name === "ValidationError"` |
+| 7 | `response.status === "error"` | `packages/memory/src/indexer/run.ts` | `MemoryIndexError("generate", "index-run-errored: <code>: <msg>")`, terminal iff code is `no_progress` |
+| 8 | `status !== "completed"` | `packages/memory/src/indexer/run.ts` | `MemoryIndexError("validate", "index-run-<status>")` |
+| 9 | `pyramidIssue(mutations)` | `packages/memory/src/indexer/run.ts` | `MemoryIndexError("validate", "pyramid-not-closed: …")` |
+| 10 | fenced `markIndexed` inside `store.exclusive` | `packages/memory/src/indexer/run.ts` | `MemoryIndexError("commit", …)` |
+| 11 | log `memory.index.pass`, build the report | `packages/memory/src/indexer/run.ts` | — |
 
 Step 3's placement is explicit: a frozen tree "would otherwise surface as every mutating tool failing
 inside its own batch, where the tool wrapper turns a throw into an ordinary error result — so the
@@ -492,7 +494,6 @@ Step 9's fence is `before → markIndexed → after`, and `after` is invoked eve
 The final report deduplicates paths, with `deleted` derived from `tool === "delete_memory"` and
 `written` from everything else (`packages/memory/src/indexer/run.ts`); `skipped` is `mutations.length === 0`, in
 which case `note` is `"nothing-to-record"` (`packages/memory/src/indexer/run.ts`).
-
 ### 4.7 Pass selection (`planPass`)
 
 ```
@@ -586,7 +587,7 @@ nothing to the wiki and does not mark its run indexed.
 ### 4.11 The worker
 
 `createIndexWorker` holds a `resolve: () => Memory | undefined` thunk called **per tick**
-(`packages/memory/src/worker.ts`), so a model configured later is picked up without rebuilding
+(`packages/memory/src/worker.ts`), so a settings edit is picked up without rebuilding
 (`packages/memory/src/worker.ts`). Default interval 60 s (`packages/memory/src/worker.ts`).
 
 - `requestPass` coalesces: while a pass is in flight, a poke only sets `again = true`
@@ -624,11 +625,10 @@ the stored listener is still the one it created (`packages/memory/src/job-broker
 
 ### 4.13 The factory
 
-`indexerFor(owner)` yields an `IndexerRuntime` only when: settings load without throwing, memory is
-not `enabled: false`, a model resolves from `config.model ?? defaultModel`, `runDeps()` yields deps,
-`providersFor` resolves, and the provider resolution is `ok`
-(`packages/memory/src/factory.ts`). Otherwise `undefined`, which the drain reads as `blocked`
-(`packages/memory/src/types.ts`).
+`indexerFor(owner)` yields an `IndexerRuntime` when settings load, memory is enabled,
+`runDeps()` yields deps, and the provider resolution is `ok` (`packages/memory/src/factory.ts`).
+For each subject run, `resolveRunModel` reads its persisted `model_ref` and resolves that model
+through `providersFor`. A missing or unresolved run model skips the index pass.
 
 `providersFor` returns the declared array when it already covers the model's provider token; derives
 a single `{ name: token, kind: token }` entry when the token is one of
@@ -636,8 +636,8 @@ a single `{ name: token, kind: token }` entry when the token is one of
 `memory.provider.undeclared` once and returns `undefined` (`packages/memory/src/factory.ts`).
 
 Caching: stores are memoized per owner in a map the settings signature never touches
-(`packages/memory/src/factory.ts`); `Memory` facades are keyed by `owner` (or `no-model:<owner>`)
-plus `JSON.stringify([config, modelRef ?? null, providers ?? []])`
+(`packages/memory/src/factory.ts`); `Memory` facades are keyed by `owner`
+plus `JSON.stringify([config, providers ?? []])`
 (`packages/memory/src/factory.ts`); workers live in their own map so a settings edit never leaves a second timer
 on one queue (`packages/memory/src/factory.ts`). `stop()` assigns `stopPromise` before awaiting, deferred
 by one microtask so an abort callback cannot re-enter (`packages/memory/src/factory.ts`).
@@ -1084,7 +1084,7 @@ indexer pass through the host-owned run executor`) and
 
 | Condition | Detected at | Classification | Consequence |
 | --- | --- | --- | --- |
-| No indexer runtime resolves | `packages/memory/src/drain.ts` | `blocked`, reason `no_indexer` | job stays `pending`, **no attempt consumed**; log says "the learning is recovered whole once one is configured" (`packages/memory/src/drain.ts`) |
+| No indexer runtime resolves | `packages/memory/src/drain.ts` | `blocked`, reason `no_indexer` | job stays `pending`, **no attempt consumed**, until the runtime is available (`packages/memory/src/drain.ts`) |
 | Lease reclaimed mid-pass | `packages/memory/src/drain.ts` | `blocked`, reason `lease_lost` | "whatever this pass wrote stands, and the claimant decides the rest" (`packages/memory/src/drain.ts`) |
 | Tree frozen awaiting recovery | `packages/memory/src/drain.ts`; probed at `packages/memory/src/indexer/run.ts` | `blocked`, reason `recovery` | claim released, whole pass stops (`packages/memory/src/drain.ts`) |
 | Host aborted the drain | `packages/memory/src/drain.ts` | `blocked`, reason `shutdown` | claim released, attempt refunded (`packages/memory/src/drain.ts`) |
@@ -1103,9 +1103,9 @@ indexer pass through the host-owned run executor`) and
 | Prune failed | `packages/memory/src/drain.ts` | swallowed by `bestEffort` | the pass still reports normally |
 | `onJobSettled` / `onNotice` / broker listener threw | `packages/memory/src/worker.ts`, `packages/memory/src/ingest.ts`, `packages/memory/src/job-broker.ts` | swallowed | never breaks the worker or the publisher |
 | Git probe unavailable | `packages/memory/src/workspace-state.ts` | `undefined` | snapshot simply carries no `workspace_state`; debug-only log |
-| Provider token neither declared nor built-in | `packages/memory/src/factory.ts` | `memory.provider.undeclared` warn, once | runtime resolves `undefined` → job blocked rather than burning retries (`packages/memory/src/factory.ts`) |
+| Subject run's provider token neither declared nor built-in | `packages/memory/src/factory.ts` | `memory.provider.undeclared` warn, once | index pass skips that run without a model call (`packages/memory/src/indexer/run.ts`) |
 | Settings unreadable | `packages/memory/src/factory.ts` | `memory.settings.unreadable` warn | run proceeds with memory off entirely |
-| Neither `memory.model` nor `default_model` | `packages/memory/src/factory.ts` | `memory.model.absent` warn, once | `forOwner` → `undefined`; `forOwnerControlPlane` still resolves |
+| Subject run model missing or unavailable | `packages/memory/src/indexer/run.ts` | `run-model-unavailable` | index pass is skipped without a model call |
 
 Bounded reads throughout: a job scan visits at most `MEMORY_STORAGE_LIMITS.scanEntries` (10 000)
 entries and stops once accumulated bytes would exceed `corpusBytes` (32 MiB)
@@ -1118,7 +1118,7 @@ Log events this subsystem emits, with level: `memory.job.blocked` (info, `packag
 `memory.drain.failed` (warn, `packages/memory/src/worker.ts`), `memory.run.enqueued` (info, `packages/memory/src/ingest.ts`),
 `memory.run.enqueue_failed` (warn, `packages/memory/src/ingest.ts`), `memory.job.record_corrupt` (warn,
 `packages/memory/src/file-store/jobs.ts`), `memory.workspace_state.unavailable` (debug, `packages/memory/src/workspace-state.ts`),
-`memory.provider.undeclared` (warn, `packages/memory/src/factory.ts`), `memory.model.absent` (warn, `packages/memory/src/factory.ts`),
+`memory.provider.undeclared` (warn, `packages/memory/src/factory.ts`),
 `memory.settings.unreadable` (warn, `packages/memory/src/factory.ts`).
 
 ---

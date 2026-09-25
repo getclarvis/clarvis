@@ -138,7 +138,6 @@ function HubMenu(host, deps: { title; items; openChild(cmd: string): void })    
 | `providers` | Providers | `providers.open` |
 | `agents` | Agents | `agents.open` |
 | `defaults` | Defaults | `defaults.open` |
-| `memory` | Memory | `memory.config` |
 | `theme` | Theme | `theme.open` |
 | `keyboard` | Keyboard | `keyboard.open` |
 | `updates` | Updates | `updates.open` |
@@ -153,10 +152,13 @@ write. See [`agent-system-prompt.md`](../engine/agent-system-prompt.md). Product
 `packages/code/src/views/config/AgentsPanel.tsx`. Test:
 `packages/code/tests/integration/agents-panel-render.test.tsx`.
 
-The `Ctrl+X M` Memory picker mirrors the session `on`/`off` choice. Persisted Memory settings
-remain under `MemoryConfigPanel`. Production: `MemoryPicker` in
-`packages/code/src/views/overlays/MemoryPicker.tsx`. Test:
-`packages/code/tests/integration/app-shell-render.test.tsx`.
+The `Ctrl+X M` Memory picker saves one global on/off choice. A fresh installation begins off;
+an existing global choice is restored across workspaces and restarts, and each subsequent run uses
+it until the user changes it. A failed settings write leaves the previous choice active.
+Production: `MemoryPicker` in `packages/code/src/views/overlays/MemoryPicker.tsx`,
+`createMemoryModeStore` and `saveMemoryMode` in `packages/code/src/adapters/memory-mode.ts`.
+Test: `packages/code/tests/integration/app-shell-render.test.tsx` and
+`packages/code/tests/unit/memory-mode.test.ts`.
 
 `UpdatesPanel` is a lazy Settings child over Code's own `code.json`, not kernel settings. Its single
 toggle reads `CodeConfigStore.updateCheckEnabled`, which defaults on and consults only the global
@@ -1512,7 +1514,7 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
   `defaults.open`, `extension-profiles.open`, `plugins.open`, `hooks.open`, `marketplace.open`, `mcp.browse`, `settings.open`, `extensions.open`.
 - `views/overlay-host.ts` depends on `ViewHostControls`' exact shape — `runSave`, `scopeBound`,
   `escape`, `dispose` (`packages/code/src/views/overlay-host.ts`).
-- `AgentsPanel`, `MemoryConfigPanel`, `WorkflowsHub`, `SessionsHub`, `ThemeView`,
+- `AgentsPanel`, `WorkflowsHub`, `SessionsHub`, `ThemeView`,
   `KeyboardView`, `DoctorView`, `ModelView`, `EffortView` all consume `view-host.tsx`'s toolkit; they
   belong to sibling documents ([hosts/code-domain-hubs.md](code-domain-hubs.md), [hosts/model-catalog.md](model-catalog.md)).
 

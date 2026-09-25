@@ -43,6 +43,7 @@ describe("storedExecutionToRunSnapshot", () => {
     const snap = storedExecutionToRunSnapshot(record, { workspace: "/ws" });
 
     expect(snap.run_id).toBe("exec_1");
+    expect(snap.model_ref).toBe("anthropic/x");
     expect(snap.workspace).toBe("/ws");
     expect(snap.status).toBe("completed");
     expect(snap.started_at).toBe(record.started_at);

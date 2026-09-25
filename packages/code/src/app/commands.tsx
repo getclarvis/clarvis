@@ -13,7 +13,6 @@ import {
 import type { ClarvisDirs } from "../adapters/agents.ts";
 import type { KeysAdapter } from "../adapters/provider-secrets.ts";
 import type { CodeConfigStore } from "../adapters/code-config.ts";
-import type { MemoryModeStore } from "../adapters/memory-mode.ts";
 import type { ThemePreview } from "../theme/theme.ts";
 import { DEFAULT_AGENT_NAME, type EnvView } from "../adapters/agent-files.ts";
 import type { AgentsStore } from "../adapters/agents-store.ts";
@@ -26,7 +25,6 @@ import {
   type DoctorCtx,
   type Gate,
 } from "../onboarding/doctor.ts";
-import { seedMemoryBlock } from "../onboarding/seed-memory.ts";
 import { seedPlansBlock } from "../onboarding/seed-plans.ts";
 import type { ConnectionState, ReconnectMode } from "../adapters/connection-state.ts";
 import type { DebugSessionController } from "../adapters/debug-session.ts";
@@ -120,7 +118,6 @@ export interface AppCommandDeps {
   /** Overrides product-owned marketplace sources for an embedding or isolated test host. */
   marketplaceDefaultUrls?: readonly string[];
   code: CodeConfigStore;
-  memoryMode: MemoryModeStore;
   workflows: Pick<WorkflowsService, "list" | "get" | "delete">;
   workflowActivity?: Accessor<WorkflowActivity | null>;
   storage: Pick<StorageService, "inspect" | "cleanup">;
@@ -322,7 +319,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     name: "memory.picker",
     enabled: () => !deps.runActive(),
     title: "Memory",
-    desc: "Turn memory on or off for the next run in this session",
+    desc: "Turn memory on or off globally for subsequent runs",
     surface: "internal",
     group: "navigate",
     actionSurfaces: ["footer", "full-help"],
@@ -1025,24 +1022,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   });
 
   commands.registerView({
-    name: "memory.config",
-    title: "Memory settings",
-    desc: "Enable and configure execution memory (create the block, model, on/off)",
-    surface: "internal",
-    group: "navigate",
-    parent: "settings",
-    view: lazyView(async () => {
-      const { MemoryConfigPanel } = await import("../views/cold-surfaces.ts");
-      return (host) =>
-        MemoryConfigPanel(host, {
-          settings: deps.settings,
-          memoryMode: deps.memoryMode,
-          notify,
-        });
-    }),
-  });
-
-  commands.registerView({
     name: "theme.open",
     title: "Theme",
     desc: "Colors, presets, contrast " + glyph("emDash") + " live preview",
@@ -1095,7 +1074,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerView({
     name: "settings.open",
     title: "Settings",
-    desc: "Providers, agents, defaults, memory, theme and updates",
+    desc: "Providers, agents, defaults, theme and updates",
     slash: "/settings",
     surface: "slash",
     group: "navigate",
@@ -1214,19 +1193,15 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     },
   });
 
-  const FIX_VIEW_CMD: Record<
-    "providers" | "model" | "defaults" | "theme" | "agents" | "memory",
-    string
-  > = {
+  const FIX_VIEW_CMD: Record<"providers" | "model" | "defaults" | "theme" | "agents", string> = {
     providers: "providers.open",
     model: "model.open",
     defaults: "defaults.open",
     theme: "theme.open",
     agents: "agents.open",
-    memory: "memory.config",
   };
   function openFixView(
-    view: "providers" | "model" | "defaults" | "theme" | "agents" | "memory",
+    view: "providers" | "model" | "defaults" | "theme" | "agents",
     scope: Scope,
     returnCmd = "doctor.open",
   ): void {
@@ -1270,11 +1245,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   /** Seed the ordinary Clarvis defaults only after setup has created settings.json. */
   async function seedSetupDefaults(): Promise<void> {
     await seedPlansBlock(deps.settings);
-    const memory = await seedMemoryBlock(deps.settings);
-    if (memory.seeded) {
-      deps.memoryMode.refresh();
-      deps.memoryMode.setMode("on");
-    }
   }
 
   /** Finish an idempotent first-run setup and publish the resulting agent fleet live. */
@@ -1706,20 +1676,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           if (!outcome.seeded) return;
           notify(
             `planning: on ${glyph("separator")} keep plans (${outcome.scope} settings) ${glyph("emDash")} use /plan for review`,
-          );
-          recheck();
-        }),
-      (e) => notify(errorText(e), "warn"),
-    );
-    detachObserved(
-      "seed_memory_settings",
-      () =>
-        seedMemoryBlock(deps.settings).then((outcome) => {
-          if (!outcome.seeded) return;
-          deps.memoryMode.refresh();
-          deps.memoryMode.setMode("on");
-          notify(
-            `memory: on (${outcome.scope} settings) ${glyph("emDash")} change it in Memory settings`,
           );
           recheck();
         }),

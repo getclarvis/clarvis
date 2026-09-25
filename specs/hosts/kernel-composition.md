@@ -19,6 +19,13 @@ remain host bindings. Production: `createFileKernel` in
 [file-kernel.ts](../../packages/kernel/src/file-kernel.ts). Test:
 [file-kernel.test.ts](../../packages/kernel/tests/integration/file-kernel.test.ts).
 
+`loadMemorySettings` takes the Memory on/off choice only from global settings. A workspace block
+may provide provider and budget configuration but cannot change activation for that workspace.
+An absent global choice leaves explicit run requests available; Code starts them off until the
+operator selects On globally. Production: `loadMemorySettings` in
+`packages/kernel/src/file-kernel.ts`. Test: `packages/kernel/tests/integration/file-kernel.test.ts`
+(`uses the global Memory choice across workspaces`).
+
 The in-process facade exposes an unavailable `GoalService`; authenticated conversation hosting
 supplies the live service per connection. `InProcessKernel.prepareRun` accepts a host-only goal
 policy, and `readRunTrace` resolves canonical evidence under the requested resident owner scope.

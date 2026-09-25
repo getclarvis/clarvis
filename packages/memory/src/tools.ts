@@ -126,7 +126,7 @@ export interface CreateMemoryToolsArgs {
    * array over the same store and passes `{ kind: "indexer", run_id }` instead,
    * so a revision still names the run it was learned from. Without it the
    * indexer's writes would be indistinguishable from a user-run edit, and the
-   * `run_id` the memory panel labels a revision "run" from would be empty for
+   * `run_id` used to identify a revision's source run would be empty for
    * every document the indexer ever touched.
    */
   source?: MemoryRevisionSource;

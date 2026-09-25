@@ -533,6 +533,8 @@ The memory factory follows the same owner boundary: it caches one background
 index worker per activated owner, binds tool-server access to that owner, and
 keys ingest subscriptions by owner plus run ID. Stopping the kernel stops every
 worker; a worker never drains another owner's store or lease.
+The Memory on/off choice comes from global settings for every workspace. Workspace
+memory blocks may configure the wiki and budgets, but cannot change that choice.
 
 ## Lower-level composition
 

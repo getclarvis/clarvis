@@ -244,13 +244,6 @@ function baseDeps(
     skills: { list: async () => [], getPrompt: async () => [] },
     marketplaceDefaultUrls: [],
     code: fakeCode(),
-    memoryMode: {
-      configured: () => true,
-      mode: () => "on",
-      setMode: (m: string) => calls.push("memory:" + m),
-      cycle: () => "on",
-      refresh: () => {},
-    } as never,
     workflows: {
       list: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
       get: async () => null,
@@ -962,10 +955,8 @@ test("Extensions children remain internal and only the wizard owns a slash route
 });
 
 test("/settings <child> deep-links to that editor with a mounted parent route", () => {
-  const { commands, calls, opened, dispose } = harness();
-  expect(commands.route("settings.open", "memory")).toBe(true);
-  expect(opened.at(-1)?.parent).toBe("settings.open");
-  expect(calls).toContain("view:memory.config");
+  const { commands, calls, dispose } = harness();
+  expect(commands.route("settings.open", "memory")).toBe(false);
   expect(commands.route("settings.open", "updates")).toBe(true);
   expect(calls).toContain("view:updates.open");
   expect(commands.route("settings.open", "")).toBe(false);
@@ -991,7 +982,6 @@ const DISPOSITION: [string, { surface: string; group: string; parent?: string }]
   ["model.open", { surface: "slash", group: "navigate" }],
   ["effort.open", { surface: "slash", group: "navigate" }],
   ["marketplace.open", { surface: "internal", group: "navigate", parent: "extensions" }],
-  ["memory.config", { surface: "internal", group: "navigate", parent: "settings" }],
   ["theme.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["updates.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["backend.reconnect", { surface: "slash", group: "actions", parent: "inspect" }],
@@ -1265,7 +1255,6 @@ const FACTORY_SMOKES = [
   "model.open",
   "effort.open",
   "marketplace.open",
-  "memory.config",
   "theme.open",
   "updates.open",
   "settings.open",

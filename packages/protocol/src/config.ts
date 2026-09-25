@@ -62,7 +62,6 @@ export interface McpServerConfig {
 /** Memory subsystem settings block. */
 export interface MemoryConfig {
   enabled?: boolean;
-  model?: string;
   [k: string]: unknown;
 }
 

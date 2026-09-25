@@ -9,7 +9,6 @@ function baseInput(overrides: Partial<HeaderInput> = {}): HeaderInput {
     floor: false,
     agentName: "coder",
     model: "openrouter/x-ai/grok-4.5",
-    memoryConfigured: true,
     memory: "on",
     plans: { mode: "on", retention: "discard", configured: true },
     connection: { phase: "ready" },

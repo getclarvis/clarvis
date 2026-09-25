@@ -1563,7 +1563,7 @@ test("a plain (non-manager) run never populates workflowActivity", async () => {
   dispose();
 });
 
-test("memory mode: 'off' rides on the run input; 'on' is omitted (server default)", async () => {
+test("memory mode is explicit on every run input", async () => {
   const off = mount({ memoryMode: () => "off" });
   const turnOff = off.host.submitTurn("hi");
   await flush();
@@ -1575,7 +1575,7 @@ test("memory mode: 'off' rides on the run input; 'on' is omitted (server default
   const on = mount(); // default deps: memoryMode 'on'
   const turnOn = on.host.submitTurn("hi");
   await flush();
-  expect(on.runs[0]!.input.memory).toBeUndefined();
+  expect(on.runs[0]!.input.memory).toBe("on");
   on.runs[0]!.resolve(completed("exec_2"));
   await turnOn;
   on.dispose();

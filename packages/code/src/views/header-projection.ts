@@ -13,7 +13,6 @@ export interface HeaderInput {
   floor: boolean;
   agentName: string;
   model: string;
-  memoryConfigured: boolean;
   memory: MemoryState;
   plans: PlansState;
   connection: ConnectionState;

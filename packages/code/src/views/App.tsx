@@ -979,7 +979,7 @@ export function App(props: AppProps): JSX.Element {
     props.fleet.settings.version();
     const settings = props.fleet.settings.effective();
     return {
-      memory: memoryState(settings, props.fleet.memoryMode.mode()),
+      memory: memoryState(settings, props.fleet.memoryMode.mode(), resolvedModel()),
       plans: plansState(settings),
     };
   });
@@ -1034,7 +1034,6 @@ export function App(props: AppProps): JSX.Element {
     agents: props.fleet.agents,
     agentFiles: props.fleet.agentFiles,
     code: props.fleet.code,
-    memoryMode: props.fleet.memoryMode,
     workflows: props.backend.workflows,
     modelsService: props.backend.models,
     providerAuth: props.backend.providerAuth,
@@ -1171,7 +1170,6 @@ export function App(props: AppProps): JSX.Element {
       floor: layoutMode() === "floor",
       agentName: agentName(),
       model: resolvedModel(),
-      memoryConfigured: props.fleet.memoryMode.configured(),
       memory: headerRunPolicy().memory,
       plans: headerRunPolicy().plans,
       connection: props.backend.connection(),
@@ -1665,6 +1663,7 @@ export function App(props: AppProps): JSX.Element {
                 <MemoryPicker
                   interaction={interaction}
                   settings={props.fleet.settings}
+                  runModel={resolvedModel()}
                   memory={props.fleet.memoryMode}
                   active={lifecycle.active}
                   notify={notify}

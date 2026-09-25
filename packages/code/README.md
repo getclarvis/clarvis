@@ -396,13 +396,8 @@ declares another model or effort. A spawned Sub-agent keeps the model and effort
 declared by its own Agent Profile, falling back to the user defaults only when it declares none.
 Settings > Defaults shows the effective host token default when no settings layer declares one; it
 does not label the run unlimited while the kernel still applies its environment fallback.
-Defaults and Memory use the same overview/detail interaction as Agents: the overview
-keeps one compact row per setting, Enter edits, and `i` opens effective details.
-Settings > Memory presents its effective summary and rows as one list — the effective state, then
-`Memory`, `Extraction model` when a block exists, and `Session memory` — with no intermediate scope
-headings: each row names its own origin (`from <scope>`, `this client`) and its own timing
-(`next run`, `now`), and the session control stays client-local and immediate whatever scope page it
-is shown from.
+Defaults uses the same overview/detail interaction as Agents: the overview keeps one compact row
+per setting, Enter edits, and `i` opens effective details.
 Editing a shipped agent in `/settings` → agents writes a **customization**, not a copy: only the
 fields you changed reach `agents/<name>.md`, and everything else keeps following the shipped
 default. Deleting that file is offered as a reset — the shipped agent comes back. A shipped agent
@@ -440,7 +435,7 @@ benchmark's individual markers.
 On the first interactive launch, startup opens a branded Clarvis setup rather than Doctor or an
 empty conversation. Enter begins the focused provider/model picker; the flow makes the selected
 model the default and asks for its credential without ever rendering the secret. After saving,
-Clarvis seeds its ordinary planning and memory defaults, reloads the live Agent Profile
+Clarvis seeds its ordinary planning defaults, reloads the live Agent Profile
 catalogue, selects `marshall`, and shows one Ready screen. No agent or workflow file is written at
 any point; the default fleet and workflow catalogue are built into the kernel. One **Escape** from
 either picker closes the bootstrap picker and returns to setup with the staged choice unsaved.
@@ -577,7 +572,8 @@ keeps the whole path too and names the open file's operation. Escape returns fro
 tree, then closes `/diff`; its footer omits
 the global Ctrl+C cancel/quit action like the Plan and Goal detail screens.
 
-Memory's quick control is session-only.
+Memory starts off on a fresh installation. Ctrl+X M saves the global on/off choice across
+workspaces and restarts; subsequent runs use that choice until it is changed.
 Application actions use Ctrl+X: M for Memory,
 P for Plan, O for Goal, W for Workflow, D for Diff, S for the activity Sidebar, K for block expansion, and E
 for the expanded editor. Ctrl+X Up/Down enter transcript-block focus; while a block is focused,
@@ -675,8 +671,8 @@ approval guidance only when a decision is pending.
 second `/plan` restores normal planning even when entered while the first write is settling.
 Registered Clarvis commands own their slash tokens, so an
 agent-backed skill named `plan` cannot shadow this built-in action.
-`/plans` and `/planning` are not commands. The session memory choice is available through
-Ctrl+X M; persistent configuration belongs to Settings > Memory.
+`/plans` and `/planning` are not commands. The global memory choice is available through
+Ctrl+X M; the selected run model also drives post-run memory indexing.
 
 Keyboard policy is scoped to an opaque terminal-path identifier in the global `code.json`. Local
 Kitty sessions default to the enhanced profile; SSH, multiplexed legacy and unknown paths default to

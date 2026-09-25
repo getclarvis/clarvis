@@ -2,12 +2,7 @@ import type { Accessor } from "solid-js";
 import type { SubscriptionScheme, SubscriptionState } from "@clarvis/protocol";
 import { CLARVIS_DIR, globalPaths } from "@clarvis/paths";
 import type { Scope, SettingsAdapter } from "../adapters/settings.ts";
-import {
-  memoryState,
-  modelResolves,
-  planRetentionLabel,
-  plansState,
-} from "../adapters/execution-safety.ts";
+import { modelResolves, planRetentionLabel, plansState } from "../adapters/execution-safety.ts";
 import { agentReadiness, type AgentFile, type EnvView } from "../adapters/agent-files.ts";
 import type { CodeConfigStore } from "../adapters/code-config.ts";
 import { glyph } from "../core/marks.ts";
@@ -23,7 +18,6 @@ export type GateId =
   | "default_model"
   | "default_agent"
   | "theme"
-  | "memory"
   | "plans"
   | "workspace_trust"
   | "backend"
@@ -45,7 +39,7 @@ export interface GateResult {
 export type FixKind =
   | {
       kind: "view";
-      view: "providers" | "model" | "defaults" | "theme" | "agents" | "memory";
+      view: "providers" | "model" | "defaults" | "theme" | "agents";
     }
   | { kind: "set-default" }
   | { kind: "set-key" }
@@ -410,34 +404,6 @@ export const GATES: Gate[] = [
       const t = ctx.code.effectiveTheme();
       const preset = t.preset ? ` ${glyph("separator")} ${t.preset}` : "";
       return { status: "pass", detail: `${t.mode ?? "auto"}${preset}` };
-    },
-  },
-  {
-    id: "memory",
-    label: "memory",
-    severity: "ui",
-    optional: true,
-    fix: { kind: "view", view: "memory" },
-    check: (ctx) => {
-      const eff = ctx.settings.effective();
-      const m = eff.memory;
-      if (m === undefined)
-        return {
-          status: "warn",
-          detail: "not configured",
-          hint: "open Memory settings to create it",
-        };
-      if (m.enabled === false) return { status: "pass", detail: "disabled in settings" };
-      if (memoryState(eff) === "inert")
-        return {
-          status: "warn",
-          detail: "no extraction model resolves",
-          hint:
-            "set memory.model or default_model " +
-            glyph("emDash") +
-            " the wiki stays readable, and runs queue until one does",
-        };
-      return { status: "pass", detail: m.model ?? eff.default_model! };
     },
   },
   {

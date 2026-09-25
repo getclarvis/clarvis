@@ -581,11 +581,11 @@ test("write: memory block round-trips and memory: undefined deletes the key", as
   const a = await settingsFrom(dirs, { keys: await createKeysAdapter(fakeSecrets()) });
   await a.write("global", {
     default_model: "compat/m",
-    memory: { enabled: true, model: "compat/m" },
+    memory: { enabled: true },
   });
   expect(a.read("global")?.memory?.enabled).toBe(true);
   const onDisk = JSON.parse(readFileSync(globalPaths(dirs.global).settingsFile, "utf8"));
-  expect(onDisk.memory).toEqual({ enabled: true, model: "compat/m" });
+  expect(onDisk.memory).toEqual({ enabled: true });
 
   await a.write("global", { memory: undefined });
   const b = await settingsFrom(dirs, { keys: await createKeysAdapter(fakeSecrets()) });

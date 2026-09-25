@@ -1,20 +1,19 @@
-# Agents, workflows, sessions and memory screens
+# Agents, workflows and sessions screens
 
 > Implemented at `packages/code/src/**` and `packages/code/tests/**`. Every claim below is anchored
 > to a file and line. Open questions are collected in the final section.
 
 ## 1. Purpose
 
-`@clarvis/code` renders four full-screen "domain hub" views on top of the kernel's protocol
+`@clarvis/code` renders three full-screen "domain hub" views on top of the kernel's protocol
 services. Each one owns one domain the terminal user manipulates directly: authoring Agent Profiles
 (`AgentsPanel`), inspecting a workflow's manager→leader tree and each node's result
-(`WorkflowsHub`), resuming or deleting saved sessions (`SessionsHub`), and configuring the workspace
-memory block (`MemoryConfigPanel`). Planning review is toggled by `/plan`, outside this hub.
+(`WorkflowsHub`), and resuming or deleting saved sessions (`SessionsHub`). Planning review is toggled by `/plan`, outside this hub.
 
 The views are thin. Everything that is not painting is pushed either into a **feature controller**
 (`src/features/agents/controller.ts`) — pure orchestration with no presentation
 imports (`packages/code/tests/architecture/architecture-boundary.test.ts`) — or into an
-**adapter** (`src/adapters/{agent-files,agents-store,agents,memory-mode,effort-levels}.ts`) which may
+**adapter** (`src/adapters/{agent-files,agents-store,agents,effort-levels}.ts`) which may
 not import `ui/` or `views/` at all
 (`packages/code/tests/architecture/architecture-boundary.test.ts`). Three shared feature helpers
 sit beside them: `features/issues.ts` (validation issue projection), `features/dispose-guard.ts`
@@ -23,7 +22,7 @@ sit beside them: `features/issues.ts` (validation issue projection), `features/d
 `core/run-status.ts` into glyph-rendered strings. The deleted compatibility re-export
 `features/notice.ts` is recorded in §8 item 8.
 
-All four views reach their data through `@clarvis/protocol` service interfaces or through
+All three views reach their data through `@clarvis/protocol` service interfaces or through
 `@clarvis/kernel`'s six sanctioned entrypoints; none of them touches the filesystem or the engine.
 `WorkflowsHub`'s own doc comment states the rule: "It reads everything through the kernel's
 workflows/runs services, never the local filesystem, so a remote kernel needs no change"
@@ -41,9 +40,8 @@ Every hub is registered as a *view* command. The name/title/surface/parent tuple
 | `agents.open` | Agents | — | `internal` | `settings` | `packages/code/src/features/agents/commands.ts` |
 | `sessions.open` | Sessions | `/sessions` | `slash` | `sessions` | `packages/code/src/app/commands.tsx` |
 | `workflows.open` | Workflows | `/workflow` | `slash` | — | `packages/code/src/app/commands.tsx` |
-| `memory.config` | Memory settings | — | `internal` | `settings` | `packages/code/src/app/commands.tsx` (`memory.config`) |
 
-The four commands are unconditionally registered.
+The three commands are unconditionally registered.
 
 ### 2.2 View entry points
 
@@ -57,7 +55,6 @@ declared at `packages/code/src/keys/commands.ts` and supplies `scope()`/`toggleS
 | `AgentsPanel` | `AgentsDeps` = `{ agents: AgentsStore; settings: SettingsAdapter; catalog: ModelsCatalog\|null; code: CodeConfigStore; env: EnvView; notify; controller? }` | `packages/code/src/views/config/AgentsPanel.tsx` |
 | `WorkflowsHub` | `WorkflowsHubDeps` = `{ list; get; getRun; delete?; now; live?; openAgentPicker?; pollMs?; refreshSlowMs? }` | `packages/code/src/views/config/WorkflowsHub.tsx` |
 | `SessionsHub` | `SessionsHubDeps` = `{ sessions; catalog?; now; statusLine; resume; resumeCatalog?; delete? }` plus `SessionCatalogItem` | `packages/code/src/views/config/SessionsHub.tsx` |
-| `MemoryConfigPanel` | `MemoryConfigDeps` = `{ settings: SettingsAdapter; memoryMode: MemoryModeStore; notify }` | `packages/code/src/views/config/MemoryConfigPanel.tsx` |
 
 `refreshSlowMs` on `WorkflowsHubDeps` is explicitly documented as an internal test seam for the
 pending-operation warning (`packages/code/src/views/config/WorkflowsHub.tsx`).
@@ -105,7 +102,7 @@ and [background-commands.test.tsx](../../packages/code/tests/integration/backgro
 | `deriveAgentShape(v): AgentShape` | `isLead`/`askUserGranted`/`softMode` | `packages/code/src/adapters/agents.ts` |
 | `grantBadges(grants, max?): string` | whole-label badge string with `+N` remainder | `packages/code/src/adapters/agents.ts` |
 | `ClarvisDirs` | `{ global; workspace?; state? }` | `packages/code/src/adapters/agents.ts` |
-| `createMemoryModeStore(deps): MemoryModeStore` | `configured`/`mode`/`setMode`/`cycle`/`refresh` | `packages/code/src/adapters/memory-mode.ts`, contract |
+| `createMemoryModeStore(initialMode?): MemoryModeStore`, `saveMemoryMode` | `mode`/`setMode`/`cycle`; reads the global choice, defaults off, and writes it globally | `packages/code/src/adapters/memory-mode.ts`, contract |
 | `EFFORT_LEVELS`, `EffortLevel` | `["off","minimal","low","medium","high","xhigh","max"]` | `packages/code/src/adapters/effort-levels.ts` |
 | `normalizeReasoningEfforts(values)` | provider `none`→`off`, drop unknowns, order-normalize | `packages/code/src/adapters/effort-levels.ts` |
 | `supportedReasoningEfforts(catalog, providers, modelRef)` | `EffortLevel[] \| undefined` | `packages/code/src/adapters/effort-levels.ts` |
@@ -427,55 +424,6 @@ confirms with turn count, deletes, removes the row from the local catalog, and *
 selection index**. Verbs: `n` → `host.dispatch("app.clear")`, `x` →
 `host.dispatch("session.export")`, `d` present only when `deps.delete` is supplied.
 
-### 4.7 Memory settings
-
-`load()` reads the **per-scope** file (not the merged view) and seeds `saved`/`draft` from its
-`memory` block, resetting selection and dirty state
-(`packages/code/src/views/config/MemoryConfigPanel.tsx`). `host.bindScope({ mode: "reload", load })`
- — unlike the other panels, changing scope reloads.
-
-Rows: `Memory` (0), `Extraction model` (1, only when a draft block exists), `Session memory` (last)
-— `rowCount()` is 3 with a draft and 2 without. `editSelected` maps: with no draft,
-row 0 → `createBlock()` and anything else → `toggleSessionMode()`; with a draft, 0 → flip `enabled`,
-1 → `editModel()`, else → `toggleSessionMode()`.
-
-`createBlock()` copies the *effective* memory block and forces `enabled: true`, and warns when
-`default_model` does not resolve. `removeBlock()` (key `x`) sets the draft to `null`
-and notifies that a save is needed. `toggleSessionMode()` itself refuses to cycle
-when `!deps.memoryMode.configured()`, instead notifying "memory is not configured in settings —
-save a block first"; pinned by
-`packages/code/tests/integration/memory-config-render.test.tsx` ("activating the session row
-while memory is not configured warns instead of cycling"). `save()` writes `{ memory: draft ?? undefined }`,
-refreshes `memoryMode`, and — when the saved block is enabled — forces the session toggle **on** and
-distinguishes an `inert` outcome ("memory model not resolved; memory will not learn") from a live one.
-
-`statusLine()` is a five-way ladder over the *effective* settings: no block → "Off — no
-memory configuration is effective"; `enabled === false` → "Off — disabled by settings";
-`!effectiveResolves()` → "Unavailable — no extraction model resolves"; session mode `off` → "Off for
-this session — configured default remains unchanged"; else "On — runs can read and update workspace
-memory".
-
-`MemoryModeStore` (`packages/code/src/adapters/memory-mode.ts`) keeps `configured()` derived from
-settings (block present and `enabled !== false`) behind a manual `version` signal bumped by
-`refresh()`, while `mode` is an independent local signal seeded from `configured()` at construction.
-
-**`statusLine`'s `const cfg = deps.memoryMode.configured(); void cfg;` (`MemoryConfigPanel.tsx`)
-is a deliberate Solid reactivity idiom, not a leftover.** `settings.effective()` — every branch of
-`statusLine` reads it — is a plain closure read with no signal call of its own
-(`packages/code/src/adapters/settings.ts`, `function effective(): SettingsFile { return
-view.merged as SettingsFile; }`); `SettingsAdapter` exposes a separate `version: Accessor<number>`
- that a consumer must read explicitly to subscribe to settings changes, and
-`MemoryConfigPanel.tsx` never calls `settings.version()`. So without some other subscription,
-`statusLine()` would not re-run when settings change underneath it. `MemoryModeStore.configured()`
-does read a signal internally — `version()` at `packages/code/src/adapters/memory-mode.ts` — so
-calling it establishes exactly that subscription in whatever reactive scope calls `statusLine`; the
-returned boolean is irrelevant (the five branches never consult it) and is discarded on purpose.
-`save()` closes the loop: after writing settings it calls `deps.memoryMode.refresh()`, which bumps `configured`'s underlying `version` signal and retriggers every computation that
-previously called `configured()` — including the `StatusRow` render that calls `statusLine()` — so the
-freshly retriggered call to `statusLine()` re-reads `settings.effective()` and picks up the new value.
-This subscribes the computation to the memory mode signal so the adjacent effective-settings
-read picks up the new value after refresh.
-
 ## 5. Invariants
 
 The invariants below are derived directly from this document's own source and tests. The first two are
@@ -498,7 +446,7 @@ specific to these files.
    Production: `packages/code/src/views/config/AgentsPanel.tsx`.
    Pinned: `packages/code/tests/architecture/ascii-source-boundary.test.ts`.
    `WorkflowsHub.tsx` is also in the swept list. `SessionsHub`,
-   `MemoryConfigPanel` is **not** — see §8.
+   `SessionsHub` is **not** — see §8.
 
 4. **A frontmatter parse failure never seals an agent runnable.** `agentReadiness` short-circuits on
    `agent.invalid` to `{ runnable: false, issues: [{ code: "malformed_frontmatter" }] }` instead of
@@ -633,27 +581,6 @@ specific to these files.
 39. **A session whose workspace is unavailable can be neither resumed nor deleted.**
     Production: `packages/code/src/views/config/SessionsHub.tsx`, and the activate guard. Pinned: `packages/code/tests/integration/sessions-hub-render.test.tsx`.
 
-40. **The memory panel's `Source` badge names the scope whose value actually won the merge, not the
-    scope on screen.** Production: `packages/code/src/views/config/MemoryConfigPanel.tsx`, with the
-    Pinned: `packages/code/tests/integration/memory-config-render.test.tsx`.
-
-41. **Creating a memory block copies the effective block and forces `enabled: true`.**
-    Production: `packages/code/src/views/config/MemoryConfigPanel.tsx`.
-    Pinned: `packages/code/tests/integration/memory-config-render.test.tsx`.
-
-42. **The session toggle is inert while no memory block is configured, and says so.**
-    Production: `packages/code/src/views/config/MemoryConfigPanel.tsx`.
-    Pinned: `packages/code/tests/integration/memory-config-render.test.tsx`.
-
-43. **A save whose block is enabled but whose extraction model does not resolve warns that memory will
-    not learn.** Production: `packages/code/src/views/config/MemoryConfigPanel.tsx`.
-    Pinned: `packages/code/tests/integration/memory-config-render.test.tsx`, and the equivalent
-    warning on the session toggle.
-
-44. **`configured()` only becomes true again after an explicit `refresh()` — settings files are not
-    reactive.** Production: `packages/code/src/adapters/memory-mode.ts`.
-    Pinned: `packages/code/tests/unit/memory-mode.test.ts`.
-
 51. **A settled run's outcome label is classified only from the segment before the first separator.**
     Production: `packages/code/src/features/run/status-presenter.ts`, with the in-source account of
     the defect.
@@ -701,7 +628,6 @@ specific to these files.
 | Workflow refresh never settles | `packages/code/src/views/config/WorkflowsHub.tsx` | "Refresh is still pending; the backend may be unavailable"; still one in-flight request |
 | Workflow result cannot be stringified | `packages/code/src/views/config/WorkflowsHub.tsx` | "(unserializable result)". Pinned at `packages/code/tests/integration/workflows-hub-render.test.tsx` |
 | Leader node has no `task` (legacy record) | `packages/code/src/views/config/WorkflowsHub.tsx` | "Task unavailable for this legacy workflow"; `[t]` is unbound |
-| Session-memory toggle activated with no configured memory block | `packages/code/src/views/config/MemoryConfigPanel.tsx` | refuses to cycle; notifies "memory is not configured in settings — save a block first". Pinned at `packages/code/tests/integration/memory-config-render.test.tsx` |
 | Any detached async operation rejects unobserved | `packages/code/src/core/tasks.ts` | a `task.failed` diagnostic event is emitted with the operation name; nothing is thrown into the render tree |
 
 Degradation that is deliberately silent: `AgentsPanel.openConflictPicker`'s pick discards a `null`
@@ -761,11 +687,10 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
 
 ## 8. Open questions
 
-1. **Why `SessionsHub.tsx` and `MemoryConfigPanel.tsx` are
-   outside the ASCII sweep.** `packages/code/tests/architecture/ascii-source-boundary.test.ts`
-   lists ten files; these views render literal non-ASCII characters — a literal
-   `${"—"}` in `packages/code/src/views/config/SessionsHub.tsx`, em-dashes in eight `MemoryConfigPanel.tsx` status strings. Whether the sweep list is
-   an intentional subset or has simply not caught up is not stated anywhere in the code.
+1. **Why `SessionsHub.tsx` is outside the ASCII sweep.**
+   `packages/code/tests/architecture/ascii-source-boundary.test.ts` omits this view,
+   which renders a literal em dash. Whether the sweep is intentionally selective
+   is not stated in source.
 
 3. ~~**`AGENT_TEMPLATES` is a `Record<string, AgentTemplate>` with exactly one key, and
    `createFromTemplate` hard-codes `AGENT_TEMPLATES.explorer!`**~~ **Resolved — collapsed

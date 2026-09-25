@@ -277,9 +277,7 @@ describe("drainIndexJobs failure classification", () => {
 
   test("a pass sweeps records past their retention bound", async () => {
     const store = await storeWithJob("old-pending");
-    // No indexer, so the job is reported blocked and stays pending — the exact
-    // record that used to accumulate forever once a model-less workspace began
-    // enqueueing anyway.
+    // No indexer runtime, so the job is reported blocked and stays pending.
     const blocked = await drainIndexJobs({
       store,
       budgets: DEFAULT_BUDGETS,

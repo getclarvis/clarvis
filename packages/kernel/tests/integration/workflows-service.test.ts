@@ -1796,6 +1796,7 @@ describe("workflow memory ownership", () => {
     const handle = await kernel.runs.start({
       messages: [{ role: "user", content: "decompose this" }],
       agent: "manager",
+      memory: "on",
     });
     // Deliberately not draining `handle.events`: an active memory capability
     // emits a non-terminal `queued` ingest notice from `onRunEnd`, and the run

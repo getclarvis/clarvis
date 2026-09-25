@@ -725,7 +725,7 @@ invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
 | `SettingsData` | Provider, model, MCP, capability and budget settings | `packages/protocol/src/config.ts` |
 | `ProviderConfig` | `{ name; kind?; base_url?; api_key_env?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 | `McpServerConfig` | `{ command?; args?; url?; [k]: unknown }` | `packages/protocol/src/config.ts` |
-| `MemoryConfig` | `{ enabled?; model?; [k]: unknown }` | `packages/protocol/src/config.ts` |
+| `MemoryConfig` | `{ enabled?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 
 ### 3.11 `ConfigService` data shapes II: repair plan and agents (`config.ts`)
 

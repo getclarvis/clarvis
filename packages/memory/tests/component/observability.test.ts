@@ -48,7 +48,7 @@ function closingIndexer(): () => IndexerRuntime {
 }
 
 describe("memory.job.blocked", () => {
-  it("says a due job found no indexer model, so the learning is only waiting", async () => {
+  it("says a due job found no indexer runtime, so the learning is only waiting", async () => {
     const store = await storeWithJob("no-model");
     const log = recordingLogger();
 

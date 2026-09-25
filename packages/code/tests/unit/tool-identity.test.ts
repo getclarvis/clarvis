@@ -15,8 +15,8 @@ test("toolIdentity: whichever slot holds the name (builtin vs namespaced)", () =
 });
 
 test("toolDisplayLabel translates orchestration internals but preserves MCP identity", () => {
-  expect(toolDisplayLabel(undefined, "await_agents")).toBe("Wait for agents");
-  expect(toolDisplayLabel(undefined, "delegate_task")).toBe("Delegate task");
+  expect(toolDisplayLabel(undefined, "agent_poll")).toBe("Check agent");
+  expect(toolDisplayLabel(undefined, "spawn_subagent")).toBe("Spawn sub-agent");
   expect(toolDisplayLabel(undefined, "run_workflow")).toBe("Run workflow");
   expect(toolDisplayLabel(undefined, "run_round")).toBe("Run workflow rounds");
   expect(toolDisplayLabel(undefined, "run_work_items")).toBe("Run work items");
@@ -26,12 +26,12 @@ test("toolDisplayLabel translates orchestration internals but preserves MCP iden
 });
 
 test("transcript orchestration identity matches only bare builtins, never an MCP leaf collision", () => {
-  expect(isTranscriptExternalOrchestrationTool("await_agents", "")).toBe(true);
-  expect(isTranscriptExternalOrchestrationTool("await_agents", undefined)).toBe(true);
+  expect(isTranscriptExternalOrchestrationTool("agent_poll", "")).toBe(true);
+  expect(isTranscriptExternalOrchestrationTool("agent_poll", undefined)).toBe(true);
   expect(isTranscriptExternalOrchestrationTool("workflow_status", undefined)).toBe(true);
   expect(isTranscriptExternalOrchestrationTool("workflow_decide", undefined)).toBe(true);
-  expect(isTranscriptExternalOrchestrationTool("server", "await_agents")).toBe(false);
-  expect(isTranscriptExternalOrchestrationTool("server_await_agents", undefined)).toBe(false);
+  expect(isTranscriptExternalOrchestrationTool("server", "agent_poll")).toBe(false);
+  expect(isTranscriptExternalOrchestrationTool("server_agent_poll", undefined)).toBe(false);
 });
 
 test("toolLabel: server:tool for namespaced, bare name for builtins — never a dangling colon", () => {

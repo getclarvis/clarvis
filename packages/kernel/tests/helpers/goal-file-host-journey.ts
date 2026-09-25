@@ -47,9 +47,8 @@ export async function runGoalFileHostJourney(
         };
       case 2:
         return {
-          name: "delegate_task",
+          name: "spawn_subagent",
           arguments: {
-            task_id: "t1",
             title: "Create the result",
             task: "Write GOAL-FILE-HOST followed by a newline to result.txt, then finish.",
             profile: "helper",
@@ -59,7 +58,7 @@ export async function runGoalFileHostJourney(
         expect(await readFile(join(f.workspaceRoot, "result.txt"), "utf8")).toBe(
           "GOAL-FILE-HOST\n",
         );
-        expect((await f.planStore.list()).plans[0]!.tasks[0]!.status).toBe("returned");
+        expect((await f.planStore.list()).plans[0]!.tasks[0]!.status).toBe("pending");
         return {
           name: "update_goal",
           arguments: {
@@ -72,7 +71,7 @@ export async function runGoalFileHostJourney(
         };
       case 4:
         stageSnapshots.push((await f.client.goals.get("conversation")).state.current);
-        expect((await f.planStore.list()).plans[0]!.tasks[0]!.status).toBe("returned");
+        expect((await f.planStore.list()).plans[0]!.tasks[0]!.status).toBe("pending");
         return { name: "read_file", arguments: { path: "result.txt" } };
       case 5:
         return {

@@ -4,7 +4,7 @@ import { CREATE_GOAL, GET_GOAL, UPDATE_GOAL } from "./tools.ts";
 const ALLOWED_CONTROL = new Set([CREATE_GOAL, GET_GOAL, UPDATE_GOAL, "ask_user", "submit_result"]);
 
 function refusal(effect: ToolEffect, name: string): string {
-  if (effect === "spawn_run" || name === "delegate_task" || name === "spawn_subagent")
+  if (effect === "spawn_run" || name === "spawn_subagent")
     return "Persist the Goal with create_goal before delegating or starting independent work.";
   if (name === "load_skill" || name === "read_skill_resource")
     return "Persist the Goal with create_goal before loading skills or executing skill-driven work.";

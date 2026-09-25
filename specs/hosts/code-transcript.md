@@ -105,9 +105,8 @@ mutation. Command runners, including per-call host escalation on `shell`, stay i
 
 `toolDisplayLabel` is distinct from `toolLabel`: when both `mcpName` and `toolName` are present it
 returns the raw `server:tool` unchanged, otherwise it resolves `toolIdentity` through
-the 11-entry `BUILTIN_TOOL_LABELS` table — `await_agents` → "Wait for agents",
-`agent_poll` → "Check agent", `agent_steer` → "Steer agent", `agent_stop` → "Stop agent",
-`delegate_task` → "Delegate task", `run_leader` → "Start workflow leader", `run_workflow` → "Run
+the 10-entry `BUILTIN_TOOL_LABELS` table — `agent_poll` → "Check agent", `agent_steer` → "Steer agent", `agent_stop` → "Stop agent",
+`spawn_subagent` → "Spawn sub-agent", `run_leader` → "Start workflow leader", `run_workflow` → "Run
 workflow", `run_round` → "Run workflow rounds", `run_work_items` → "Run work items",
 `workflow_status` → "Check workflow", `workflow_decide` → "Decide workflow" — falling back to
 the bare identity for anything not in the table. This is what remaps the engine's internal
@@ -116,11 +115,10 @@ identity untouched. Test: `packages/code/tests/unit/tool-identity.test.ts` ("too
 translates orchestration internals but preserves MCP identity").
 
 Those labels do not grant a Lead-owned orchestration call transcript visibility. The closed
-supervision/orchestration set — `spawn_subagent`, `delegate_task`, `agent_list`, `agent_poll`,
-`agent_stop`, `agent_steer`, `await_agents`, `run_leader`, `run_workflow`, `run_round`,
+supervision/orchestration set — `spawn_subagent`, `agent_list`, `agent_poll`, `agent_stop`, `agent_steer`, `run_leader`, `run_workflow`, `run_round`,
 `run_work_items`, `workflow_status`, `workflow_decide` — is suppressed from the Lead projection before a composing, started,
 streaming-output or terminal tool record can be admitted to the visible row projection. Thus
-even temporary copy such as `Wait for agents starting…` is invalid in the Lead transcript. Ordinary
+even temporary copy such as `Check agent starting…` is invalid in the Lead transcript. Ordinary
 Lead `thinking`/`working` state is not a tool row and remains eligible for the fixed activity line
 outside the transcript; a child-attributed tool remains available only in that child's explicitly
 selected transcript. Production:
@@ -1559,8 +1557,7 @@ Production: `Sidebar` (`leaders`, both roster loops). Test:
 `packages/code/tests/integration/sidebar-render.test.tsx` (combined workflow/agent run replacement).
 
 **INV-T54.** The Lead transcript suppresses provider tool rows for the closed supervision and
-orchestration identity set `spawn_subagent`, `delegate_task`, `agent_list`, `agent_poll`, `agent_stop`,
-`agent_steer`, `await_agents`, `run_leader`, `run_workflow`, `run_round`, `run_work_items`,
+orchestration identity set `spawn_subagent`, `agent_list`, `agent_poll`, `agent_stop`, `agent_steer`, `run_leader`, `run_workflow`, `run_round`, `run_work_items`,
 `workflow_status`, `workflow_decide`.
 Suppression covers `tool_input_delta`, `tool_call_started`, `tool_output_delta` and terminal
 `tool_call`, so no composing placeholder, running row, output tail, group or settled block can flash

@@ -28,7 +28,7 @@ export const GATE_HOOK_EVENTS = [
   "pre_tool_use",
   "post_tool_use",
   "pre_finalize",
-  "pre_delegate_task",
+  "pre_spawn_subagent",
 ] as const;
 
 /**
@@ -145,7 +145,6 @@ export const EXTERNAL_TOOL_NAMES: Readonly<Record<string, string>> = {
   applypatch: "apply_patch",
   ls: "list_dir",
   listdir: "list_dir",
-  task: "delegate_task",
   skill: "load_skill",
 };
 
@@ -157,7 +156,6 @@ export const EXTERNAL_HOOK_TOOL_NAMES: Readonly<Record<string, string>> = {
   edit_file: "Edit",
   apply_patch: "apply_patch",
   list_dir: "LS",
-  delegate_task: "Task",
   load_skill: "Skill",
 };
 
@@ -216,7 +214,7 @@ const OFFERING_EVENT_SET = new Set<string>([...CONTEXT_HOOK_EVENTS, ...COMPACTIO
  * The tool events get the short budget rather than the gate one because they
  * fire on **every tool call**, in sequence, inside the dispatch: a 30s ceiling
  * there is 30s of wall clock per call before `on_failure` even applies. The long
- * budget is reserved for `pre_finalize` and `pre_delegate_task`, which fire O(1)
+ * budget is reserved for `pre_finalize` and `pre_spawn_subagent`, which fire O(1)
  * times per agent.
  *
  * `run_end` is shorter still, matching `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS`:
@@ -270,7 +268,7 @@ export const hookSchema = z
       })
       .describe(
         "Lifecycle event that triggers the hook. Gate events (pre_tool_use, " +
-          "post_tool_use, pre_finalize, pre_delegate_task) fire before/around a " +
+          "post_tool_use, pre_finalize, pre_spawn_subagent) fire before/around a " +
           "decision and their verdict controls the loop (deny blocks, advise annotates). " +
           "Observer events (run_start, run_end, post_compact, subagent_start, subagent_complete, " +
           "model_call_error, budget_exhausted, user_steer) are notify-only: the command runs, its output " +
@@ -346,7 +344,7 @@ export const hookSchema = z
         "Milliseconds to wait for the command before it is killed and treated as a hook " +
           `failure (resolved per on_failure). Defaults to ${HOOK_DEFAULT_TIMEOUT_MS.tool} for ` +
           `the tool events, ${HOOK_DEFAULT_TIMEOUT_MS.gate} for pre_finalize and ` +
-          `pre_delegate_task, ${HOOK_DEFAULT_TIMEOUT_MS.run_end} for run_end and ` +
+          `pre_spawn_subagent, ${HOOK_DEFAULT_TIMEOUT_MS.run_end} for run_end and ` +
           `${HOOK_DEFAULT_TIMEOUT_MS.observer} for every other event.`,
       ),
     on_failure: z

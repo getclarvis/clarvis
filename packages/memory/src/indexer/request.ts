@@ -11,7 +11,7 @@
  * The profile carries **no grants and no `can_spawn`**, which is what bounds it
  * structurally rather than by a list of exclusions: with no grants the agent
  * tools capability ceilings its toolset to nothing, and with no `can_spawn` the
- * run derives the solo shape and `delegate_task` is never contributed. The only
+ * run derives the solo shape and `spawn_subagent` is never contributed. The only
  * tools it is offered are the ones the indexer's own memory capability supplies.
  */
 import {

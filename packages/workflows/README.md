@@ -396,7 +396,7 @@ cross-package assertions live in the
 The only engine adapter this package consumes from `@clarvis/loop/workflows` is
 `createElicitSerializer`. Agent, run, tool, compute-clock, trace and elicitation contracts come
 directly from `@clarvis/capability`; they are not consumed through loop re-exports. The child
-registry both this package and `delegate_task` register into is `@clarvis/supervision`; it was
+registry both this package and `spawn_subagent` register into is `@clarvis/supervision`; it was
 extracted precisely so this package would stop reaching into a loop internal.
 
 ## Test ownership

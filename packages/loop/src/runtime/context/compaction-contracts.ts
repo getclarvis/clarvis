@@ -126,7 +126,6 @@ export interface LiveContext {
    * (head + tail kept, with a marker) when it exceeds the cap.
    *
    * @param toolCallId - the call this result answers.
-   * @param opts.taskId - optional delegated-task attribution carried on the entry.
    * @param opts.images - optional image parts attached to the result.
    * @param opts.spillPath - where the caller persisted the untruncated text, named
    *   in the truncation marker so the model can read back what was cut. Resolved
@@ -136,7 +135,7 @@ export interface LiveContext {
   appendToolMessage(
     toolCallId: string,
     content: string,
-    opts?: { taskId?: string; images?: ToolResultImage[]; spillPath?: string },
+    opts?: { images?: ToolResultImage[]; spillPath?: string },
   ): AppendToolResultOutcome;
   /**
    * Evict the oldest eligible results, collapsing them into a single marker.

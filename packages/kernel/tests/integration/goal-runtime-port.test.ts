@@ -976,7 +976,7 @@ it("projects completed delegation receipts from current and prior Goal stages", 
   expect(current.delegations).toHaveLength(1);
   expect(current.delegations[0]).toMatchObject({
     id: current.catalog[0]!.id,
-    tool: "delegate_task",
+    tool: "spawn_subagent",
     status: "completed",
     truncated: true,
   });

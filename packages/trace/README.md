@@ -56,7 +56,7 @@ to connected clients; restored runs clear remaining controls at run settlement.
 
 Free text is bounded as it enters the recording handle and bounded again in the mapper for legacy
 or direct entries that bypassed it. In particular, `delegation_created.task` shares
-`@clarvis/capability`'s 32,768-Unicode-character `delegate_task` ceiling, so one brief cannot be
+`@clarvis/capability`'s 32,768-Unicode-character `spawn_subagent` ceiling, so one brief cannot be
 multiplied unbounded across the retained trace, persisted event and UI projection.
 An iteration's authoritative final model response has its own 2 MiB ceiling, aligned with the TUI's
 per-node transcript retention. It deliberately does not share the 5,000-character tool-result cap:

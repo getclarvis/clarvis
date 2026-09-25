@@ -213,7 +213,7 @@ function allowedWireNames(parts: IndexerParts): ReadonlySet<string> {
  *   advertised array: the array is what the provider cached, and dropping one
  *   entry from it re-bills the whole request. So the pass is offered the indexed
  *   run's full toolset and permitted only its own — advertised, then denied.
- *   `delegate_task` is the reason this cannot be skipped when the profile looks
+ *   `spawn_subagent` is the reason this cannot be skipped when the profile looks
  *   harmless: a continuation inherits the *coder's* profile, which may well
  *   carry `can_spawn`.
  */

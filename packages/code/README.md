@@ -997,10 +997,9 @@ a directory outside the global `exports/` tree.
   Sidebar/footer state and the selected child's isolated transcript.
 - Provider tool plumbing for Lead-owned supervision, spawning/delegation and workflow orchestration
   is also transcript-silent in every phase. Composing, started, streaming-output and terminal rows for
-  `spawn_subagent`, `delegate_task`, `agent_list`, `agent_poll`, `agent_stop`, `agent_steer`,
-  `await_agents`, `run_leader`, `run_workflow`, `run_round`, `run_work_items`, `workflow_status` and
+  `spawn_subagent`, `agent_list`, `agent_poll`, `agent_stop`, `agent_steer`, `run_leader`, `run_workflow`, `run_round`, `run_work_items`, `workflow_status` and
   `workflow_decide` never mount in the
-  Lead transcript; this includes transient copy such as `Wait for agents starting…`. Typed delegation
+  Lead transcript; this includes transient copy such as `Check agent starting…`. Typed delegation
   events remain the sole owner of the two lifecycle markers, while workflow state remains
   Sidebar-only. Ordinary Lead `thinking`/`working` state occupies one fixed activity line
   immediately above the composer, outside the transcript ScrollBox; child-owned tools/content remain

@@ -694,7 +694,7 @@ describe("manager fan-out via the run_leader handler", () => {
 /**
  * A leader used to be registered under its **entire** prompt, so a fan-out
  * listed several children each labelled with a full task brief — unreadable in
- * the agent list and in the transcript, and inconsistent with `delegate_task`,
+ * the agent list and in the transcript, and inconsistent with `spawn_subagent`,
  * which has taken a short model-authored `title` all along.
  */
 describe("a leader's display title", () => {

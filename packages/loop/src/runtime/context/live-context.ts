@@ -218,9 +218,8 @@ export function createLiveContext(
     appendToolMessage(
       toolCallId: string,
       content: string,
-      opts?: { taskId?: string; images?: ToolResultImage[]; spillPath?: string },
+      opts?: { images?: ToolResultImage[]; spillPath?: string },
     ): AppendToolResultOutcome {
-      const taskId = opts?.taskId;
       const images = opts?.images;
       const imagePatch = images && images.length > 0 ? { images } : {};
       if (willTruncateToolResult(content, config)) {
@@ -235,7 +234,6 @@ export function createLiveContext(
         store.push(
           { role: "tool", tool_call_id: toolCallId, content: message, ...imagePatch },
           true,
-          taskId,
         );
         enforceToolImageBudget();
         return {
@@ -248,7 +246,7 @@ export function createLiveContext(
           }),
         };
       }
-      store.push({ role: "tool", tool_call_id: toolCallId, content, ...imagePatch }, true, taskId);
+      store.push({ role: "tool", tool_call_id: toolCallId, content, ...imagePatch }, true);
       enforceToolImageBudget();
       return { truncated: false, fullText: content };
     },

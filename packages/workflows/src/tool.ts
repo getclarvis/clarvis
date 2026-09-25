@@ -31,7 +31,7 @@ export interface LeaderProfileInfo {
 const RUN_LEADER_DESCRIPTION =
   "Start one background leader with fresh context, a shared workspace and a share of the " +
   "auxiliary token budget. It may delegate if its profile permits, but cannot start leaders. " +
-  "Returns a handle, not a result; collect with await_agents or agent_poll. Keep ad-hoc scopes " +
+  "Returns a handle, not a result; collect with agent_poll. Keep ad-hoc scopes " +
   "independent; use run_work_items for dependency/file-aware scheduling of a batch.";
 
 /**

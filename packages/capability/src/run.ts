@@ -382,14 +382,13 @@ export interface NamespacedTool {
  *
  * @remarks `evictable` marks a message compaction may drop; `summary` marks a
  * compaction-produced summary; `canonical` marks always-retained context (e.g.
- * plan state); `task_id` associates the entry with a plan task when relevant.
+ * plan state).
  */
 export interface ContextSnapshotEntry {
   message: LiveMessage;
   evictable: boolean;
   summary: boolean;
   canonical: boolean;
-  task_id?: string;
   /** Active runtime-note kind. Older publications remain historical and become superseded. */
   note_kind?: string;
   /** The position-holding block identity, when the entry is a stable block. */

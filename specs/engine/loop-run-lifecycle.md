@@ -467,7 +467,7 @@ calls once per clock/signal attempt (`EntryInputBuilder`'s own type), in this or
 3. **The agents-registry injection** : when `deps.services` holds an `AGENT_REGISTRY_PORT`
    entry (i.e. a supervision registry exists — see §4.2 step 4), `resolveAgentsLimits` is consulted
    and, if it resolves, `createAgentsRunCapability(agents...)` is **prepended** ahead of the ordered
-   list, so the five `agent_*` handlers are matched before any other capability's.
+   list, so the four `agent_*` handlers are matched before any other capability's.
 4. **`buildFinalizerSoftBudget`** (called per-attempt inside `buildSharedInput`): returns
    `[undefined, undefined]` outright when the run is not in soft mode; otherwise it builds a
    `SoftBudget` from the request's `total_token_limit` and the resolved iteration cap, and — only when
@@ -1338,7 +1338,7 @@ declared on `WorkflowCtx` and the function is supplied by the host, so `workflow
 | `LiveContext`, compaction selection/rewrite, `buildCompactionThunk`'s policy internals | [loop-context-compaction](context-compaction.md) |
 | `TokenLedger`, `IterationCounter`, `runBudgetCheckpoint`, `SoftBudget`, `ComputeClock` arithmetic, `ConvergenceGuards`, guard escalation | [loop-budgets-clocks-and-guards](budgets-and-guards.md) |
 | What a tool call does — the MCP registry, `executeMcpToolCall`, `openToolPool`, the result contract | [loop-tool-dispatch-and-results](tool-dispatch.md) |
-| `delegate_task`, `run-subagent`, the five `agent_*` tools, the supervision registry | [loop-delegation-and-subagents](delegation-and-subagents.md), [supervision-registry](../foundations/supervision.md) |
+| `spawn_subagent`, `run-subagent`, the four `agent_*` tools, the supervision registry | [loop-delegation-and-subagents](delegation-and-subagents.md), [supervision-registry](../foundations/supervision.md) |
 | `foldContributions`, `capabilitiesForScope`, `orderCapabilities`, `buildExecuteRunDeps` | [loop-capability-composition](capability-composition.md) |
 | Why appending is free and rewriting is not; the seed's prefix arithmetic | [prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md) |
 | The elicit relay, `withElicitWaitBound`, the soft-limit ask | [elicitation-and-user-interaction](../cross-cutting/elicitation.md) |

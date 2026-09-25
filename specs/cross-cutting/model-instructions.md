@@ -20,7 +20,7 @@ and user-authored extensions are not a fixed inventory.
 | Surface | Declarations | Source owner |
 | --- | ---: | --- |
 | Coding, files, shell and sessions | 9 | `toolDescriptors` in [tools/registry.ts](../../packages/tools/src/tools/registry.ts) |
-| Independent and tracked child spawning | 2 | [lead-tools.ts](../../packages/loop/src/runtime/subagents/lead-tools.ts) |
+| Child spawning | 1 | [lead-tools.ts](../../packages/loop/src/runtime/subagents/lead-tools.ts) |
 | Child listing, polling, waiting, steering and stopping | 5 | `buildTools` in [agents.ts](../../packages/loop/src/runtime/capabilities/agents.ts) |
 | Human question and structured completion | 2 | [ask-user-tool.ts](../../packages/loop/src/runtime/tools/ask-user-tool.ts), [submit-result-tool.ts](../../packages/loop/src/runtime/tools/submit-result-tool.ts) |
 | Plans | 5 | [plan/tools.ts](../../packages/plan/src/tools.ts) |
@@ -64,7 +64,7 @@ and [prompt caching](prompt-cache.md). Instruction edits must not reposition non
 The default shared prompt requires agents to work directly unless the user explicitly requests
 delegation or an applicable loaded skill or agent-instruction file (such as `AGENTS.md` or
 `CLARVIS.md`) explicitly instructs it. Tool availability, profile permissions, complexity and
-efficiency gains are not sufficient. The rule covers independent spawning, tracked delegation and
+efficiency gains are not sufficient. The rule covers child spawning and
 workflow leaders, within the instruction's scope and existing profile/grant limits. This is prompt
 policy, not a new runtime authorization gate. The built-in leads follow it and give children a self-contained
 brief: necessary context, bounded scope, constraints and expected result. Children do not inherit
@@ -72,9 +72,7 @@ the caller's conversation and share its workspace. Concurrent reads can conflict
 Leaves return missing-context or authority blockers; they cannot invent access to a parent question
 tool or spawn tools. Completion uses `submit_result` when exposed, otherwise final text.
 
-Background handles, steering acknowledgements and first-child wakeups are not successful work
-results. `await_agents` can wake while other children still run; inspect the returned state and
-outcomes. A returned delegated plan task still needs lead review and an explicit terminal state.
+Background handles and steering acknowledgements are not successful work results. Inspect child status and outcomes before reporting completion. A plan task still needs lead review and an explicit terminal state.
 Structured completion can be rejected by validation or a gate, so correct the reported condition
 before retrying. Live-child and pending-task gates are recovery boundaries, not directions to
 cancel useful work or fabricate completion.
@@ -117,7 +115,7 @@ handoff cases in [builtin-agents.test.ts](../../packages/kernel/tests/component/
    `packages/tools/tests/integration/apply-patch.test.ts`. The complete advertised coding descriptor
    JSON ceiling is 21,000 characters; the regex contract suites retain the detailed engine evidence.
 3. **Completion guidance agrees with gates.** A handle, returned task or rejected submission is not
-   completion. Production: `buildSpawnSubagentTool`, `buildDelegateTaskTool`, `buildSubmitResultTool`,
+   completion. Production: `buildSpawnSubagentTool`, `buildSubmitResultTool`,
    `createAgentsRunCapability` and `PENDING_TASKS_NOTE`. Test:
    `packages/loop/tests/unit/lead-tools.test.ts`, `submit-result-tool.test.ts`,
    `agents-capability.test.ts`, and `packages/plan/tests/unit/plan-messages.test.ts`; the existing

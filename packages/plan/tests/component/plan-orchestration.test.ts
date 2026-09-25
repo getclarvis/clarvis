@@ -1,18 +1,10 @@
 /**
  * Coverage of `buildPlansOrchestration` — the plan review gate, the open-task
- * pending gate, the review blocker, the delegation port, and the
+ * pending gate, the review blocker, the spawn gate, and the
  * `beforeIteration` context wiring.
  *
- * These cases used to live in `@clarvis/loop`'s
- * `tests/unit/delegation-handler.test.ts`, driving the planning half of
- * `buildDelegationOrchestration` directly. They move here with the rest of
- * file-backed planning; the delegation-only half of that file (background
- * spawn, the `TaskTrackingPort` seam) stayed in the
- * loop, since none of it is this package's concern.
- *
- * `@clarvis/plan` must never import `@clarvis/loop`, so where the deleted
- * suite drove a call through `delegate_task`'s own handler, these drive the
- * seam it actually uses: `orchestration.port.beforeSpawn` / `noteSpawned`.
+ * `@clarvis/plan` must never import `@clarvis/loop`, so these cases drive the
+ * `orchestration.port.beforeSpawn` seam directly.
  * Where it drove a real `LiveContext` to observe the stable/canonical split,
  * these use a small recording `ContextPort` instead — the split itself
  * (`planSpecBlock`/`planCasHeader`) is already covered directly in
@@ -56,12 +48,12 @@ const CONTROL_TOOLS = new Set([
   "ask_user",
   "load_skill",
   "submit_result",
-  "delegate_task",
+  "spawn_subagent",
   "agent_list",
   "agent_poll",
   "agent_stop",
   "agent_steer",
-  "await_agents",
+  "agent_poll",
 ]);
 
 /**
@@ -201,10 +193,6 @@ describe("buildPlansOrchestration — contribution shape", () => {
       TRANSITION_PLAN_TASK_TOOL_NAME,
     ]);
     expect(orch.contribution.gates).toHaveLength(2);
-    expect(orch.port.augmentDelegateTask()).toMatchObject({
-      description: expect.stringContaining("task_id"),
-      properties: expect.objectContaining({ task_id: expect.any(Object) }),
-    });
     expect(orch.contribution.anchor).toBeDefined();
     expect(orch.contribution.anchor!()).toBeUndefined();
 
@@ -351,107 +339,7 @@ describe("plan calls reach one captured session and emit capability events", () 
   });
 });
 
-describe("the delegation port — beforeSpawn / noteSpawned / getTask", () => {
-  it("refuses a task_id already spawned this iteration, and names it in the refusal", async () => {
-    const orch = buildPlansOrchestration(makeDeps());
-    await createPlan(orch);
-    const taskId = orch.session.cached()!.tasks[0]!.id;
-
-    const first = await orch.port.beforeSpawn(taskId);
-    expect(first.kind).toBe("ok");
-    orch.port.noteSpawned(taskId);
-
-    const second = await orch.port.beforeSpawn(taskId);
-    expect(second.kind).toBe("refuse");
-    if (second.kind === "refuse") expect(second.text).toContain(`duplicate task_id '${taskId}'`);
-  });
-
-  it("an independent spawn (no task_id) never trips the duplicate check", async () => {
-    const orch = buildPlansOrchestration(makeDeps());
-    await createPlan(orch);
-
-    expect((await orch.port.beforeSpawn(undefined)).kind).toBe("ok");
-    expect((await orch.port.beforeSpawn(undefined)).kind).toBe("ok");
-  });
-
-  it("markSpawned/markFailed emit plan_updated tagged 'task', and a recovery spawn tags 'recovery'", async () => {
-    const events: CapabilityEvent[] = [];
-    const orch = buildPlansOrchestration(makeDeps({ emitCapabilityEvent: (e) => events.push(e) }));
-    await createPlan(orch);
-    const taskId = orch.session.cached()!.tasks[0]!.id;
-
-    expect(await orch.port.markSpawned(taskId)).toBe(true);
-    expect(events.at(-1)).toMatchObject({ kind: "plan_updated", detail: { change: "task" } });
-
-    expect(await orch.port.markFailed(taskId, "boom")).toBe(true);
-    expect(events.at(-1)).toMatchObject({ kind: "plan_updated", detail: { change: "task" } });
-
-    expect(await orch.port.markSpawned(taskId)).toBe(true);
-    expect(events.at(-1)).toMatchObject({ kind: "plan_updated", detail: { change: "recovery" } });
-  });
-
-  it("defers lead plan mutations until delegated task state is published in the next iteration", async () => {
-    const orch = buildPlansOrchestration(makeDeps());
-    await createPlan(orch, {
-      title: "Runtime",
-      objective: "Keep delegation and lead work ordered",
-      tasks: [{ title: "Delegated" }, { title: "Lead" }],
-      validation: [],
-    });
-    const stale = await readPlan(orch);
-    const [delegated, lead] = orch.session.cached()!.tasks;
-
-    expect(await orch.port.markSpawned(delegated!.id)).toBe(true);
-    orch.port.noteSpawned(delegated!.id);
-    expect(await orch.port.markReturned?.(delegated!.id, "child result")).toBe(true);
-
-    const transition = await dispatch(orch.contribution, {
-      id: "stale-lead-transition",
-      name: TRANSITION_PLAN_TASK_TOOL_NAME,
-      arguments: {
-        ...cas(stale),
-        task_id: lead!.id,
-        status: "in_progress",
-      },
-    });
-    expect(transition).toMatchObject({
-      kind: "result",
-      text: expect.stringContaining("delegated plan task is still settling"),
-    });
-    expect(orch.session.cached()!.tasks[1]!.status).toBe("pending");
-
-    const revision = await dispatch(orch.contribution, {
-      id: "stale-lead-revision",
-      name: REVISE_PLAN_TOOL_NAME,
-      arguments: {
-        ...cas(stale),
-        operation: { type: "set_objective", objective: "Do not race child state" },
-      },
-    });
-    expect(revision).toMatchObject({
-      kind: "result",
-      text: expect.stringContaining("delegated plan task is still settling"),
-    });
-    expect(orch.session.cached()!.objective).toBe("Keep delegation and lead work ordered");
-
-    await orch.contribution.hooks!.beforeIteration!();
-    const current = await readPlan(orch);
-    const accepted = await dispatch(orch.contribution, {
-      id: "fresh-lead-transition",
-      name: TRANSITION_PLAN_TASK_TOOL_NAME,
-      arguments: {
-        ...cas(current),
-        task_id: lead!.id,
-        status: "in_progress",
-      },
-    });
-    expect(accepted).toMatchObject({
-      kind: "result",
-      text: expect.not.stringContaining("error"),
-    });
-    expect(orch.session.cached()!.tasks[1]!.status).toBe("in_progress");
-  });
-
+describe("the plan spawn gate", () => {
   it("propagates a planReviewAsk throw when the run is not cancelled", async () => {
     const orch = buildPlansOrchestration(
       makeDeps({
@@ -462,7 +350,7 @@ describe("the delegation port — beforeSpawn / noteSpawned / getTask", () => {
     );
     await createPlan(orch);
 
-    await expect(orch.port.beforeSpawn(undefined)).rejects.toThrow("ask boom");
+    await expect(orch.port.beforeSpawn()).rejects.toThrow("ask boom");
   });
 
   it("stops for a planReviewAsk throw when the run is already cancelled, instead of propagating it", async () => {
@@ -479,7 +367,7 @@ describe("the delegation port — beforeSpawn / noteSpawned / getTask", () => {
     );
     await createPlan(orch);
 
-    const gate = await orch.port.beforeSpawn(undefined);
+    const gate = await orch.port.beforeSpawn();
     expect(gate.kind).toBe("terminal");
     if (gate.kind === "terminal") expect(gate.result).toBe(cancelled);
   });
@@ -496,14 +384,14 @@ describe("the delegation port — beforeSpawn / noteSpawned / getTask", () => {
     );
     await createPlan(orch);
 
-    const first = await orch.port.beforeSpawn(undefined);
+    const first = await orch.port.beforeSpawn();
     expect(first.kind).toBe("refuse");
     if (first.kind === "refuse") {
       expect(first.text).toContain("spawn sub-agents again");
       expect(first.text).toContain("check Y");
     }
 
-    const second = await orch.port.beforeSpawn(undefined);
+    const second = await orch.port.beforeSpawn();
     expect(second.kind).toBe("refuse");
     if (second.kind === "refuse") expect(second.text).toContain("spawn sub-agents again");
 
@@ -518,7 +406,7 @@ describe("the delegation port — beforeSpawn / noteSpawned / getTask", () => {
     );
     await createPlan(orch);
 
-    const gate = await orch.port.beforeSpawn(undefined);
+    const gate = await orch.port.beforeSpawn();
     expect(gate.kind).toBe("refuse");
     if (gate.kind === "refuse") {
       expect(gate.text).toContain("no specific notes");
@@ -795,7 +683,7 @@ describe("reviewBlocker before any plan exists", () => {
     const toolEffect: ToolEffectPort = {
       effect(name): ToolEffect {
         if (name === "run_leader" || name === "run_work_items") return "spawn_run";
-        if (name === "spawn_subagent" || name === "delegate_task") return "control";
+        if (name === "spawn_subagent") return "control";
         return "unknown";
       },
     };
@@ -811,7 +699,7 @@ describe("reviewBlocker before any plan exists", () => {
     /* A Sub-agent runs inside this run's own toolset, so its control tools stay
        available; spawn_subagent is the pre-plan exploration route. */
     expect(blocked(orch, "spawn_subagent")).toBe(false);
-    expect(blocked(orch, "delegate_task")).toBe(false);
+    expect(blocked(orch, "spawn_subagent")).toBe(false);
 
     await createPlan(orch);
     expect(blocked(orch, "run_leader")).toBe(true);
@@ -959,25 +847,6 @@ describe("pendingGate", () => {
       expect(second.result.error?.message).toContain("1 consecutive nudge(s)");
     }
   });
-
-  it("resets the stall counter once a spawn against every open task makes progress", async () => {
-    const orch = buildPlansOrchestration(makeDeps({ pendingTaskNudges: 2 }));
-    await createPlan(orch);
-    const taskId = orch.session.cached()!.tasks[0]!.id;
-    const pendingGate = orch.contribution.gates![1]!;
-
-    expect((await pendingGate.check({ mode: "text" })).kind).toBe("nudge");
-
-    await orch.port.beforeSpawn(taskId);
-    orch.port.noteSpawned(taskId);
-    const afterProgress = await pendingGate.check({ mode: "text" });
-    expect(afterProgress.kind).toBe("nudge");
-
-    // Progress reset the stall counter, so the cap of 2 has one more nudge in
-    // it rather than terminating immediately.
-    const stillNudging = await pendingGate.check({ mode: "text" });
-    expect(stillNudging.kind).toBe("nudge");
-  });
 });
 
 describe("hooks.beforeIteration — publishing the plan as canonical context", () => {
@@ -1019,7 +888,7 @@ describe("hooks.beforeIteration — publishing the plan as canonical context", (
     expect(canonical[0]).toContain("expected_spec_digest");
   });
 
-  it("republishes pending, active, returned, and closed work without rewriting prior headers", async () => {
+  it("republishes pending, active, and closed work without rewriting prior headers", async () => {
     const { ctx, canonical } = recordingCtx();
     const orch = buildPlansOrchestration(makeDeps({}, { ctx }));
     await createPlan(orch, {
@@ -1042,19 +911,11 @@ describe("hooks.beforeIteration — publishing the plan as canonical context", (
     expect(second).not.toContain("Task 1");
     expect(canonical[0]).toBe(first);
 
-    expect(await orch.port.markReturned?.("t1", "complete child summary")).toBeTrue();
-    await orch.contribution.hooks!.beforeIteration!();
-    const third = canonical[2]!;
-    expect(third).toContain("Tasks requiring attention: t1 (returned)");
-    expect(third).not.toContain("Closed tasks: t1");
-    expect(third).not.toContain("complete child summary");
-
     await transitionTaskTo(orch, "t1", { status: "done", result: "reviewed" });
     await orch.contribution.hooks!.beforeIteration!();
-    expect(canonical).toHaveLength(4);
-    expect(canonical[3]).toContain("Closed tasks: t1 (done)");
+    expect(canonical).toHaveLength(3);
+    expect(canonical[2]).toContain("Closed tasks: t1 (done)");
     expect(canonical[0]).toBe(first);
     expect(canonical[1]).toBe(second);
-    expect(canonical[2]).toBe(third);
   });
 });

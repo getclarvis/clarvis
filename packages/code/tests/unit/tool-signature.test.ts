@@ -82,8 +82,8 @@ test("whitespace/newlines in a value collapse to single spaces (one-line header)
   );
 });
 
-test("delegate_task leads with the title; the task brief belongs to the card, not the header", () => {
-  expect(sig("delegate_task", { title: "explore auth", task: "long brief ".repeat(30) })).toBe(
+test("spawn_subagent leads with the title; the task brief belongs to the card, not the header", () => {
+  expect(sig("spawn_subagent", { title: "explore auth", task: "long brief ".repeat(30) })).toBe(
     "(explore auth)",
   );
 });

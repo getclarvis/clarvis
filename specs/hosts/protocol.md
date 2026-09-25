@@ -539,9 +539,9 @@ distinguishing fields:
 | `text_delta` | `iteration`, `channel: "text" \| "reasoning"`, `text`, `reset` | `packages/protocol/src/runs.ts` |
 | `model_error` | `iteration`, `kind`, `message` | `packages/protocol/src/runs.ts` |
 | `model_retry` | `iteration`, `kind`, `attempt`, `max_retries`, `delay_ms`, `status?`, `retry_after_ms?` | `packages/protocol/src/runs.ts` |
-| `delegation_created` | `delegation_id`, `task_id?`, `title`, `task`, `profile?`, `tools?` | `packages/protocol/src/runs.ts` |
-| `delegation_started` | `delegation_id`, `task_id?`, `model?` | `packages/protocol/src/runs.ts` |
-| `delegation_completed` \| `delegation_failed` | `delegation_id`, `task_id?`, `status`, `summary?` | `packages/protocol/src/runs.ts` |
+| `delegation_created` | `delegation_id`, `title`, `task`, `profile?`, `tools?` | `packages/protocol/src/runs.ts` |
+| `delegation_started` | `delegation_id`, `model?` | `packages/protocol/src/runs.ts` |
+| `delegation_completed` \| `delegation_failed` | `delegation_id`, `status`, `summary?` | `packages/protocol/src/runs.ts` |
 | `workflow_run_started` | `run_id`, `parent_run_id`, `profile?`, `title`, `task`, `round_id?`, `pass?`, `item_index?`, `replica?`, `replica_count?` | `packages/protocol/src/runs.ts` |
 | `workflow_title_updated` | `run_id`, `title` | `packages/protocol/src/runs.ts` |
 | `workflow_sequence_state` | `run_id`, `session_id`, six-state `status`, `revision`, current/proposed round/pass, `leaders_started`, `max_total_leaders`, `reason?` | `RunEvent` in `packages/protocol/src/runs.ts` |

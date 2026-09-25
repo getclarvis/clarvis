@@ -7,7 +7,7 @@ import {
 } from "../../src/services.ts";
 import type { RunRequest } from "../../src/api.ts";
 import { TOOL_EFFECT_PORT } from "../../src/tool-effect.ts";
-import { TASK_TRACKING_PORT } from "../../src/task-tracking-port.ts";
+import { SPAWN_GATE_PORT } from "../../src/spawn-gate-port.ts";
 import { RUN_TRACE_PORT } from "../../src/run-trace-port.ts";
 import { partialStructOf } from "../../src/agent-result.ts";
 import { projected, type CapabilityEvent } from "../../src/contract.ts";
@@ -79,9 +79,9 @@ describe("TOOL_EFFECT_PORT", () => {
   });
 });
 
-describe("TASK_TRACKING_PORT", () => {
-  it("owns one neutral canonical key for task trackers", () => {
-    expect(TASK_TRACKING_PORT.id).toBe("delegation.task-tracking");
+describe("SPAWN_GATE_PORT", () => {
+  it("owns one neutral canonical key for spawn gates", () => {
+    expect(SPAWN_GATE_PORT.id).toBe("delegation.spawn-gate");
   });
 });
 

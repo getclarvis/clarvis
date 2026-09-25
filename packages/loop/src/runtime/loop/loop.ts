@@ -626,7 +626,6 @@ async function applyAfterHooks(
   const afterResult = {
     text: result.text,
     progress: result.progress,
-    taskId: result.taskId,
     images: result.images,
   };
   const sweep = await runVerdictHooks(
@@ -654,7 +653,7 @@ async function applyAfterHooks(
   adviseMessages.push(...sweep.advise);
   let text = result.text;
   for (const m of adviseMessages) text = `${text}\n\n[advisor] ${m}`;
-  return { text, progress: result.progress, taskId: result.taskId, images: result.images };
+  return { text, progress: result.progress, images: result.images };
 }
 
 /**
@@ -782,7 +781,6 @@ async function runDispatch(
 ): Promise<DispatchResult> {
   const n = toolCalls.length;
   const results = new Array<string | undefined>(n);
-  const taskIds = new Array<string | undefined>(n);
   const images = new Array<ToolResultImage[] | undefined>(n);
   const deferred: Promise<void>[] = [];
   let produced = false;
@@ -891,7 +889,6 @@ async function runDispatch(
                 ? await applyAfterHooks(core, call, handler, r, adviseMessages)
                 : r;
               results[idx] = final.text;
-              taskIds[idx] = final.taskId;
               images[idx] = final.images;
               if (final.progress) produced = true;
             })
@@ -911,7 +908,6 @@ async function runDispatch(
         continue;
       }
       results[i] = v.text;
-      taskIds[i] = v.taskId;
       images[i] = v.images;
       if (v.progress) produced = true;
       if (v.kind === "finalize") {
@@ -938,10 +934,8 @@ async function runDispatch(
     const spillPath = willTruncateToolResult(text, core.compaction)
       ? await core.spillToolResult?.(text)
       : undefined;
-    const taskId = taskIds[i];
     const resultImages = images[i];
     const { event } = d.ctx.appendToolMessage(call.id, text, {
-      ...(taskId !== undefined ? { taskId } : {}),
       ...(resultImages !== undefined ? { images: resultImages } : {}),
       ...(spillPath !== undefined ? { spillPath } : {}),
     });

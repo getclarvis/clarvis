@@ -7,7 +7,6 @@ const LIMITS: AgentsLimits = {
   bufferBytes: 65_536,
   maxTotalBufferBytes: 786_432,
   pollMaxBytes: 8192,
-  awaitTimeoutMs: 1000,
   maxLiveChildren: 4,
   maxRetainedChildren: 8,
   maxNoticesPerIteration: 3,
@@ -277,77 +276,6 @@ describe("agents registry — poll paging", () => {
     expect(first.output).toContain("continue with offset=");
     const second = registry.poll(handle.id, { offset: first.next_offset })!;
     expect(second.next_offset).toBeGreaterThan(first.next_offset);
-  });
-});
-
-describe("agents registry — waitAny", () => {
-  it("resolves on the first child in scope to settle", async () => {
-    const registry = make();
-    const a = registry.register(child("a").registration)!;
-    const b = registry.register(child("b").registration)!;
-    const wait = registry.waitAny([a.id, b.id]);
-    b.settled({ status: "completed", result: "b finished" });
-    await expect(wait.promise).resolves.toEqual({
-      id: b.id,
-      status: "completed",
-      result: "b finished",
-    });
-  });
-
-  it("ignores a settle outside the requested scope", async () => {
-    const registry = make();
-    const a = registry.register(child("a").registration)!;
-    const b = registry.register(child("b").registration)!;
-    const wait = registry.waitAny([a.id]);
-    let settled = false;
-    void wait.promise.then(() => {
-      settled = true;
-    });
-    b.settled({ status: "completed", result: "not the one" });
-    await Promise.resolve();
-    expect(settled).toBe(false);
-    a.settled({ status: "failed", result: "boom" });
-    await expect(wait.promise).resolves.toMatchObject({ id: a.id, status: "failed" });
-  });
-
-  it("dispose removes the waiter so a lost race leaves nothing behind", async () => {
-    const registry = make();
-    const a = registry.register(child("a").registration)!;
-    const wait = registry.waitAny([a.id]);
-    let settled = false;
-    void wait.promise.then(() => {
-      settled = true;
-    });
-    wait.dispose();
-    a.settled({ status: "completed", result: "done" });
-    await Promise.resolve();
-    expect(settled).toBe(false);
-  });
-
-  it("returns an already-settled selected child immediately in input-id order", async () => {
-    const registry = make();
-    const a = registry.register(child("a").registration)!;
-    const b = registry.register(child("b").registration)!;
-    a.settled({ status: "completed", result: "first" });
-    b.settled({ status: "failed", result: "second" });
-    const wait = registry.waitAny([b.id, a.id]);
-    await expect(wait.promise).resolves.toEqual({
-      id: b.id,
-      status: "failed",
-      result: "second",
-    });
-    // An immediately resolved wait still exposes the same disposable contract.
-    wait.dispose();
-  });
-
-  it("rejects an explicit unknown id immediately", async () => {
-    const registry = make();
-    const wait = registry.waitAny(["agent_missing"]);
-    await expect(wait.promise).rejects.toMatchObject({
-      code: "unknown_agent",
-    });
-    // A rejected wait owns no listener, so disposal is an intentional no-op.
-    wait.dispose();
   });
 });
 

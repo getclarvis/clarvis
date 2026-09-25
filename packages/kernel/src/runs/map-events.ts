@@ -580,7 +580,6 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         type: "delegation_created",
         at: ev.spawned_at,
         delegation_id: ev.delegation_id,
-        ...(ev.task_id !== undefined ? { task_id: ev.task_id } : {}),
         title: ev.title,
         task: ev.task,
         ...(ev.profile !== undefined ? { profile: ev.profile } : {}),
@@ -591,7 +590,6 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         type: "delegation_started",
         at: ev.occurred_at,
         delegation_id: ev.delegation_id,
-        ...(ev.task_id !== undefined ? { task_id: ev.task_id } : {}),
         model: ev.model,
       };
     case "delegation_completed":
@@ -600,7 +598,6 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         type: ev.type,
         at: ev.completed_at,
         delegation_id: ev.delegation_id,
-        ...(ev.task_id !== undefined ? { task_id: ev.task_id } : {}),
         status: ev.status,
         summary: terminalLabel(ev.result),
       };

@@ -94,10 +94,10 @@ describe("the indexing-pass capability permits only its own tools", () => {
     expect((verdict as { text: string }).text).toContain("not available in this pass");
   });
 
-  it("refuses delegate_task, which a continued coder profile may still carry", async () => {
+  it("refuses spawn_subagent, which a continued coder profile may still carry", async () => {
     const { contribution } = await attach();
-    const verdict = await handlerFor(contribution, "delegate_task")!.handle(
-      call("delegate_task"),
+    const verdict = await handlerFor(contribution, "spawn_subagent")!.handle(
+      call("spawn_subagent"),
       1,
     );
     expect(verdict).toMatchObject({ kind: "result", progress: false });

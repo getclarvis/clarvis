@@ -835,9 +835,7 @@ Each entry: **rule** — production anchor — test anchor.
     when the frontmatter declares none").
 
 40. **The shipped leads expose the child harness without prescribing a generic work method.**
-    Marshall names `spawn_subagent` for independent work, `delegate_task` for an existing plan task
-    with its exact id, the three leaf roles, background supervision and the shared workspace. Admiral
-    names both child tools as manager-local capabilities. Both condition tool use on availability,
+    Marshall names `spawn_subagent` for independent work, the three leaf roles, background supervision and the shared workspace. Admiral names the same child tool as a manager-local capability. Both condition tool use on availability,
     require explicit delegation instruction under the shared policy (user, applicable loaded skill,
     or agent-instruction file), distinguish handles from results, and retain the live-child
     finalization gate. Production:

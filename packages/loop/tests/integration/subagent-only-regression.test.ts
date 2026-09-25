@@ -65,7 +65,7 @@ describe("Subagent-only request behaves exactly as a single-agent run", () => {
     expect(body.usage.iterations_used).toBe(2);
 
     for (const call of llm.calls) {
-      expect(call.tools.every((t) => t.fullName !== "delegate_task")).toBe(true);
+      expect(call.tools.every((t) => t.fullName !== "spawn_subagent")).toBe(true);
       expect(call.tools.every((t) => t.fullName !== "spawn_subagent")).toBe(true);
     }
   });

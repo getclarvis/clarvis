@@ -24,7 +24,6 @@ const MAX_ARTIFACT_BYTES = 16 * 1024 * 1024;
 const CONTROL_TOOLS = new Set([
   "get_goal",
   "update_goal",
-  "await_agents",
   "agent_status",
   "agent_await",
   "shell_session",
@@ -46,7 +45,7 @@ export interface GoalCommandEvidence {
 /** Bounded host-observed receipt for a completed delegated run. */
 export interface GoalDelegationEvidence {
   id: string;
-  tool: "delegate_task";
+  tool: "spawn_subagent";
   status: "completed";
   result_excerpt: string;
   truncated: boolean;
@@ -147,12 +146,11 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
     const overflow = Buffer.byteLength(JSON.stringify(event.result)) > MAX_PAYLOAD_BYTES;
     const result = overflow ? "" : sanitizeText(event.result);
     return {
-      id: `tool-${goalEvidenceDigest([executionId, "delegate_task", event.delegation_id])}`,
+      id: `tool-${goalEvidenceDigest([executionId, "spawn_subagent", event.delegation_id])}`,
       executionId,
-      tool: "delegate_task",
+      tool: "spawn_subagent",
       argumentsDigest: goalEvidenceDigest({
         delegation_id: event.delegation_id,
-        ...(event.task_id === undefined ? {} : { task_id: event.task_id }),
       }),
       resultDigest:
         event.result_digest ??
@@ -161,9 +159,9 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
           : goalEvidenceDigest(event.result)),
       successful: !overflow && event.status === "completed",
       ...(overflow ? { unavailable: "payload_overflow" as const } : {}),
-      description: `delegate_task completed; delegation ${event.delegation_id}`.slice(0, 512),
+      description: `spawn_subagent completed; delegation ${event.delegation_id}`.slice(0, 512),
       delegationEvidence: {
-        tool: "delegate_task",
+        tool: "spawn_subagent",
         status: "completed",
         result_excerpt: result.slice(0, 4096),
         truncated: overflow || result.length > 4096,

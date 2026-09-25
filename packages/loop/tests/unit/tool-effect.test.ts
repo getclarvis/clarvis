@@ -16,12 +16,12 @@ describe("createToolEffectPort", () => {
       "submit_result",
       "ask_user",
       "spawn_subagent",
-      "delegate_task",
+      "spawn_subagent",
       "agent_list",
       "agent_poll",
       "agent_stop",
       "agent_steer",
-      "await_agents",
+      "agent_poll",
     ]) {
       expect(effect(name)).toBe("control");
     }

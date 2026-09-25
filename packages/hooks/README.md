@@ -190,7 +190,7 @@ arguments it was matched against.
 - **Defaults differ per event class**, and the schema's own `timeout_ms` description is generated
   from `HOOK_DEFAULT_TIMEOUT_MS` so the two cannot drift: **5000 ms** for the tool events, which fire
   on every tool call in sequence inside the dispatch; **30000 ms** for `pre_finalize` /
-  `pre_delegate_task`, which are O(1) per agent; **2000 ms** for `run_end`.
+  `pre_spawn_subagent`, which are O(1) per agent; **2000 ms** for `run_end`.
 - **`session_start` is a dedicated context group**, not an observer. Its `{"kind":"context","text":"…"}`
   output is collected by the capability's `seedBlock()` into a pinned, non-evictable entry-context
   block that **survives compaction** rather than being re-injected after it. Its `seedMarker` is

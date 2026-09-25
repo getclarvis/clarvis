@@ -23,9 +23,9 @@ import type {
   SubagentCapabilitiesFactory,
 } from "@clarvis/capability";
 import { activationForScope } from "@clarvis/capability";
-import { TASK_TRACKING_PORT } from "@clarvis/capability";
+import { SPAWN_GATE_PORT } from "@clarvis/capability";
 import { buildDelegationContribution } from "../delegation.ts";
-import type { SubagentAggregate } from "../subagents/delegate-task.ts";
+import type { SubagentAggregate } from "../subagents/spawn-subagent.ts";
 import type { SubagentProfileRegistry } from "../subagents/subagent-profiles.ts";
 import type { Elicit } from "../tools/ask-user-tool.ts";
 import type { ToolInterruptRegistry } from "../tools/tool-interrupt.ts";
@@ -114,7 +114,7 @@ export function createDelegationRunCapability(deps: DelegationCapabilityDeps): R
               ...(scope.signal ? { signal: scope.signal } : {}),
               ...(deps.elicit ? { elicit: deps.elicit } : {}),
             });
-          const tasks = deps.services?.get(TASK_TRACKING_PORT)?.forAgent(bc);
+          const spawnGate = deps.services?.get(SPAWN_GATE_PORT)?.forAgent(bc);
           return {
             ...buildDelegationContribution({
               bc,
@@ -128,7 +128,7 @@ export function createDelegationRunCapability(deps: DelegationCapabilityDeps): R
               subagentAggByModel: deps.subagentAggByModel,
               semaphore: deps.semaphore,
               ...(deps.agents !== undefined ? { agents: deps.agents } : {}),
-              ...(tasks === undefined ? {} : { tasks }),
+              ...(spawnGate === undefined ? {} : { spawnGate }),
               capabilitiesFor,
               ...(scope.clock ? { clock: scope.clock } : {}),
               workspaceRoot: deps.workspaceRoot,

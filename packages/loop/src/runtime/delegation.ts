@@ -1,11 +1,8 @@
 /**
- * The `delegation` capability's agent-loop contribution: independent spawning,
- * tracked task delegation, their shared handler, and inline/background paths.
+ * The `delegation` capability's agent-loop contribution: independent spawning
+ * through inline and background paths.
  *
- * It knows nothing about what tracks its work items. The pre-spawn ruling, the
- * claim/fail surface, the batch bookkeeping and the extra half of its own tool
- * schema all arrive through an optional {@link TaskTrackingPort}, and its
- * absence simply means nothing is tracking this run.
+ * An optional {@link SpawnGatePort} supplies a pre-spawn ruling.
  */
 import type { EnvConfig } from "@clarvis/capability";
 import type { WorkspaceStatePaths } from "@clarvis/paths";
@@ -20,21 +17,16 @@ import type { AgentRegistry } from "@clarvis/supervision";
 import { registerBackgroundChild } from "@clarvis/supervision";
 import type { AgentBuildContext } from "./loop/run-agent.ts";
 import type { HandlerVerdict, ToolHandler } from "./loop/loop-contract.ts";
-import {
-  DELEGATE_TASK_TOOL_NAME,
-  SPAWN_SUBAGENT_TOOL_NAME,
-  buildDelegateTaskTool,
-  buildSpawnSubagentTool,
-} from "./subagents/lead-tools.ts";
+import { SPAWN_SUBAGENT_TOOL_NAME, buildSpawnSubagentTool } from "./subagents/lead-tools.ts";
 import {
   prepareSpawn,
   runPreparedSubagent,
   settlementStatusOf,
   type PrepareSpawnResult,
-  type DelegateTaskContext,
+  type SpawnContext,
   type SpawnResult,
   type SubagentAggregate,
-} from "./subagents/delegate-task.ts";
+} from "./subagents/spawn-subagent.ts";
 import {
   hasVisionCapableProfile,
   type SubagentProfileRegistry,
@@ -43,7 +35,7 @@ import type {
   AgentLoopContribution,
   CapabilityEventListener,
   SubagentCapabilitiesFactory,
-  TaskTrackingPort,
+  SpawnGatePort,
 } from "@clarvis/capability";
 import type { ComputeClock } from "@clarvis/capability";
 import type { ToolInterruptRegistry } from "./tools/tool-interrupt.ts";
@@ -106,7 +98,7 @@ function spawnInBackground(
   toolName: string,
   agents: AgentRegistry,
   prepared: Parameters<typeof runPreparedSubagent>[0],
-  spawnCtx: DelegateTaskContext,
+  spawnCtx: SpawnContext,
   deps: DelegationDeps,
   bc: AgentBuildContext,
 ): HandlerVerdict {
@@ -122,7 +114,7 @@ function spawnInBackground(
       kind: "result",
       text:
         `Tool '${toolName}' result: not spawned — too many child agents are already running. ` +
-        "Wait with await_agents or end one with agent_stop, then try again.",
+        "Inspect children with agent_poll or end one with agent_stop, then try again.",
       progress: false,
     };
   }
@@ -164,8 +156,8 @@ function spawnInBackground(
     kind: "result",
     text:
       `Tool '${toolName}' result: started ${handle.id} in the background. ` +
-      "It is running now — keep working, then collect it with await_agents (to wait) or " +
-      "agent_poll (to look). Do not finish until it has returned.",
+      "It is running now — keep working, then inspect it with agent_poll or read its " +
+      "completion notice. Do not finish until it has returned.",
     progress: true,
   };
 }
@@ -173,12 +165,10 @@ function spawnInBackground(
 /**
  * Everything {@link buildDelegationContribution} needs: the agent build context
  * and env, the opened MCP pool, the sub-agent profile registry, budgets/ledger
- * and concurrency semaphore, and the various optional ports (task tracking,
+ * and concurrency semaphore, and the optional ports (spawn gate,
  * capabilities factory, clock, hooks, turn images, logger).
  *
- * @remarks `tasks` is the only coupling to a tracker, and it is optional by
- *   design. Without it the run advertises only `spawn_subagent`; with it the
- *   run also advertises `delegate_task` and applies the tracker's gate to both.
+ * @remarks The optional spawn gate can refuse a call before child preparation.
  */
 export interface DelegationDeps {
   /** Inherited host-resolved machinery namespace. */
@@ -196,8 +186,8 @@ export interface DelegationDeps {
   /** The run's supervision registry, when this run can spawn. Its absence is
    * what makes `background: true` degrade to an inline spawn rather than fail. */
   agents?: AgentRegistry;
-  /** The task-tracking seam, when something tracks this run's work items. */
-  tasks?: TaskTrackingPort;
+  /** Optional gate for child spawning. */
+  spawnGate?: SpawnGatePort;
   capabilitiesFor?: SubagentCapabilitiesFactory;
   clock?: ComputeClock;
   workspaceRoot?: string;
@@ -242,7 +232,7 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
 
   let iter: IterState = { subagentSpawned: false };
 
-  const spawnCtx: DelegateTaskContext = {
+  const spawnCtx: SpawnContext = {
     env: deps.env,
     opened: deps.opened,
     profiles: deps.profiles,
@@ -253,7 +243,6 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
     trace,
     subagentAggByModel: deps.subagentAggByModel,
     ...(bc.signal ? { signal: bc.signal } : {}),
-    ...(deps.tasks ? { tasks: deps.tasks } : {}),
     ...(deps.capabilitiesFor ? { capabilitiesFor: deps.capabilitiesFor } : {}),
     ...(deps.clock ? { clock: deps.clock } : {}),
     ...(deps.workspaceRoot ? { workspaceRoot: deps.workspaceRoot } : {}),
@@ -268,21 +257,12 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
   };
 
   const spawnHandler: ToolHandler = {
-    matches: (call) =>
-      call.name === SPAWN_SUBAGENT_TOOL_NAME ||
-      (deps.tasks !== undefined && call.name === DELEGATE_TASK_TOOL_NAME),
+    matches: (call) => call.name === SPAWN_SUBAGENT_TOOL_NAME,
     async handle(call): Promise<HandlerVerdict> {
-      const tracked = call.name === DELEGATE_TASK_TOOL_NAME;
-      const toolName = tracked ? DELEGATE_TASK_TOOL_NAME : SPAWN_SUBAGENT_TOOL_NAME;
+      const toolName = SPAWN_SUBAGENT_TOOL_NAME;
       const rawArgs = call.arguments;
-      const rawTaskId =
-        typeof rawArgs === "object" && rawArgs !== null
-          ? (rawArgs as Record<string, unknown>).task_id
-          : undefined;
-      const callTaskId =
-        tracked && typeof rawTaskId === "string" && rawTaskId.length > 0 ? rawTaskId : undefined;
 
-      const gate = await deps.tasks?.beforeSpawn(callTaskId);
+      const gate = await deps.spawnGate?.beforeSpawn();
       if (gate?.kind === "terminal") return { kind: "terminal", result: gate.result };
       if (gate?.kind === "refuse") {
         return {
@@ -301,10 +281,8 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
       }
 
       let prep: PrepareSpawnResult;
-      const callCtx: DelegateTaskContext = {
+      const callCtx: SpawnContext = {
         ...spawnCtx,
-        toolName,
-        requireTaskId: tracked,
       };
       try {
         prep = await prepareSpawn(rawArgs, callCtx);
@@ -348,7 +326,6 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
             return {
               text: `Tool '${toolName}' result: ${r.text}`,
               progress: false,
-              ...(r.taskId !== undefined ? { taskId: r.taskId } : {}),
             };
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -368,18 +345,7 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
   };
 
   return {
-    tools: [
-      buildSpawnSubagentTool(deps.profiles, imageRefsAllowed),
-      ...(deps.tasks === undefined
-        ? []
-        : [
-            buildDelegateTaskTool(
-              deps.profiles,
-              imageRefsAllowed,
-              deps.tasks.augmentDelegateTask(),
-            ),
-          ]),
-    ],
+    tools: [buildSpawnSubagentTool(deps.profiles, imageRefsAllowed)],
     handlers: [spawnHandler],
     hooks: {
       beforeIteration: () => {

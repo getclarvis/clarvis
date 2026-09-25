@@ -605,7 +605,6 @@ export type RunEvent =
       type: "delegation_created";
       at: Timestamp;
       delegation_id: string;
-      task_id?: string;
       title: string;
       task: string;
       profile?: string;
@@ -615,14 +614,12 @@ export type RunEvent =
       type: "delegation_started";
       at: Timestamp;
       delegation_id: string;
-      task_id?: string;
       model?: string;
     }
   | {
       type: "delegation_completed" | "delegation_failed";
       at: Timestamp;
       delegation_id: string;
-      task_id?: string;
       status: string;
       /** Bounded terminal summary for rosters; the full result stays in the run trace. */
       summary?: string;

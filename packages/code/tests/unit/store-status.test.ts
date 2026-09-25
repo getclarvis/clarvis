@@ -51,12 +51,12 @@ const leadTool = (id: string): RunEvent =>
 
 const transcriptExternalOrchestrationTools = [
   "spawn_subagent",
-  "delegate_task",
+  "spawn_subagent",
   "agent_list",
   "agent_poll",
   "agent_stop",
   "agent_steer",
-  "await_agents",
+  "agent_poll",
   "run_leader",
   "run_workflow",
   "run_round",
@@ -511,7 +511,7 @@ test("an MCP leaf collision survives replay while a child lifecycle missing its 
         agent: "lead",
         call_id: "mcp",
         at: 1,
-        tool: "server_await_agents",
+        tool: "server_agent_poll",
         chars: 64,
       }),
       ev({
@@ -520,7 +520,7 @@ test("an MCP leaf collision survives replay while a child lifecycle missing its 
         call_id: "mcp",
         at: 2,
         server: "server",
-        tool: "await_agents",
+        tool: "agent_poll",
         arguments: { query: "downstream" },
       }),
       ev({
@@ -529,7 +529,7 @@ test("an MCP leaf collision survives replay while a child lifecycle missing its 
         call_id: "mcp",
         at: 3,
         server: "server",
-        tool: "await_agents",
+        tool: "agent_poll",
         arguments: { query: "downstream" },
         result: "visible downstream result",
         ok: true,
@@ -569,7 +569,7 @@ test("an MCP leaf collision survives replay while a child lifecycle missing its 
       expect.objectContaining({
         key: 'exec_collision::tool:["lead","mcp"]',
         mcpName: "server",
-        toolName: "await_agents",
+        toolName: "agent_poll",
         result: "visible downstream result",
       }),
     ]);
@@ -581,7 +581,7 @@ test("an MCP leaf collision survives replay while a child lifecycle missing its 
       expect.objectContaining({
         key: 'exec_collision::tool:["lead","mcp"]',
         mcpName: "server",
-        toolName: "await_agents",
+        toolName: "agent_poll",
       }),
     ]);
     expect(

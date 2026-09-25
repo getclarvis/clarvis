@@ -17,7 +17,6 @@ const LIMITS: AgentsLimits = {
   bufferBytes: 4096,
   maxTotalBufferBytes: 65_536,
   pollMaxBytes: 4096,
-  awaitTimeoutMs: 1000,
   maxLiveChildren: 4,
   maxRetainedChildren: 8,
   maxNoticesPerIteration: 8,
@@ -56,7 +55,7 @@ function unit(key: string): DispatchUnit {
 
 /**
  * Occupy `count` registry slots with children this dispatch does not own — the
- * shape a manager holding background `delegate_task` sub-agents produces.
+ * shape a manager holding background `spawn_subagent` sub-agents produces.
  */
 function occupy(registry: ReturnType<typeof createAgentRegistry>, count: number) {
   return Array.from({ length: count }, (_, i) => {

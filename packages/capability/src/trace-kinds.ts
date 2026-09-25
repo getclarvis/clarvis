@@ -285,26 +285,23 @@ export interface LeadIterationStartedDetail {
 
 /**
  * A sub-agent delegation as it is created: its `delegation_id`, human `title`,
- * the `task` brief, the granted `tools`, and optionally the `task_id` it
- * advances and the agent `profile` it runs under.
+ * the `task` brief, the granted `tools`, and the agent `profile` it runs under.
  */
 export interface DelegationCreatedDetail {
   delegation_id: string;
   title: string;
   task: string;
   tools: string[];
-  task_id?: string;
   profile?: string;
 }
 
 /**
  * The outcome of a finished delegation — its `status` and returned `result`,
- * plus the `task_id` it was tied to — shared by both the
+ * shared by both the
  * `delegation_completed` and `delegation_failed` kinds.
  */
 export interface DelegationFinishedDetail {
   delegation_id: string;
-  task_id?: string;
   status: string;
   result: string;
   /** SHA-256 of the complete result before retention caps are applied. */
@@ -360,7 +357,7 @@ export interface VisionAnalysisDetail {
  *
  * @remarks The optional count fields are populated per operation kind — e.g.
  *   `evicted_count` for eviction, the `*_chars` measures for truncation and
- *   summarization; `task_id` scopes the pass to a specific task when relevant.
+ *   summarization.
  */
 export interface CompactionDetail {
   agent: AgentRole;
@@ -390,7 +387,6 @@ export interface CompactionDetail {
   requested?: true;
   /** Number of applied contributions authored by the user request channel. */
   user_contribution_count?: number;
-  task_id?: string;
 }
 
 /** A live-only compaction pass announcement emitted before hooks or model work begin. */
@@ -539,7 +535,6 @@ export interface RunEndedDetail {
  */
 export interface DelegationStartedDetail {
   delegation_id: string;
-  task_id?: string;
   model: string;
 }
 

@@ -77,81 +77,11 @@ export const PLAN_REVIEW_BYPASS_MSG =
 
 /**
  * Runtime note injected once the human approves the plan, directing the Lead to
- * execute each task — recording it with `transition_plan_task` or delegating it
- * with `delegate_task` — rather than stopping with prose.
+ * execute each task and record its outcome with `transition_plan_task` rather than stopping with prose.
  */
 export const PLAN_REVIEW_EXECUTE_NOTE =
-  "[runtime: the human APPROVED the plan. Execute its tasks directly or with delegate_task, if " +
-  "exposed, using exact task_ids. Review returned work and record actual outcomes with " +
-  "transition_plan_task. Approval or delegation alone does not complete the work.]";
-
-/**
- * `delegate_task`'s description when the run is planning, replacing the
- * plan-free wording.
- *
- * @remarks It lives here rather than beside the engine's delegation tool
- *   builder so that builder carries no plan vocabulary: planning hands its own
- *   description over through {@link import("./task-port.ts").PlanDelegationPort}.
- */
-const DELEGATE_TASK_PLAN_DESCRIPTION =
-  "Delegate one existing plan task to a Sub-agent. task_id is required and must be copied exactly " +
-  "from the current plan. Use spawn_subagent instead for independent work. The child shares the " +
-  "workspace and receives only the brief, not your conversation. Returns a result/error inline or " +
-  "a background handle. Successful work becomes returned, not done: review it, then record its " +
-  "actual outcome with transition_plan_task.";
-
-/**
- * Appended to {@link DELEGATE_TASK_PLAN_DESCRIPTION} under `plan_review`, so the
- * model reads the gate's real scope — including that pre-plan exploration is
- * exempt — rather than discovering it at its first refused spawn.
- */
-const DELEGATE_TASK_PLAN_REVIEW_SUFFIX =
-  " This run requires human plan review: once a plan exists, spawning waits until the human " +
-  "approves the current plan revision (revising invalidates approval), and the run cannot finalize " +
-  "without an approved plan. Use spawn_subagent for pre-plan exploration; delegate_task remains " +
-  "reserved for an exact existing plan task.";
-
-/** The `task_id` input property planning adds to `delegate_task`'s schema. */
-const DELEGATE_TASK_TASK_ID_PROPERTY: { task_id: Record<string, unknown> } = {
-  task_id: {
-    type: "string",
-    minLength: 1,
-    description:
-      "REQUIRED — exact id of the existing plan task this Sub-agent implements. Never invent an id; use spawn_subagent for independent work.",
-  },
-};
-
-/**
- * Build planning's contribution to `delegate_task`'s advertised schema.
- *
- * @param planReview - whether this run holds the plan for human approval; only
- *   affects the description, which then also states that pre-plan exploration is
- *   exempt.
- * @returns the description and extra input properties the engine's
- *   `buildDelegateTaskTool` folds in. That builder lives in `@clarvis/loop`
- *   (`runtime/subagents/lead-tools.ts`) and is deliberately not linkable from
- *   here: this package must not import the loop.
- * @remarks A pure function rather than an object literal inside the plans
- *   orchestration, so the wording the model actually reads is assertable without
- *   standing up a plan session.
- */
-export function buildDelegateTaskPlanAugmentation(planReview: boolean): {
-  description: string;
-  properties: { task_id: Record<string, unknown> } & Record<string, unknown>;
-} {
-  return {
-    description:
-      DELEGATE_TASK_PLAN_DESCRIPTION + (planReview ? DELEGATE_TASK_PLAN_REVIEW_SUFFIX : ""),
-    properties: DELEGATE_TASK_TASK_ID_PROPERTY,
-  };
-}
-
-/**
- * Result text for a `delegate_task` call naming a `task_id` already spawned in
- * this same batch.
- */
-export const duplicateBatchTaskId = (taskId: string): string =>
-  `duplicate task_id '${taskId}' in this batch — only one Sub-agent per task_id per iteration; inspect the existing attempt before deciding whether another is needed.`;
+  "[runtime: the human APPROVED the plan. Execute its tasks and record actual outcomes " +
+  "with transition_plan_task. Approval alone does not complete the work.]";
 
 /**
  * Build the finalization-gate note listing the still-open task `ids` and
@@ -159,8 +89,7 @@ export const duplicateBatchTaskId = (taskId: string): string =>
  */
 export const PENDING_TASKS_NOTE = (ids: string[]): string =>
   `[runtime: ${ids.length} plan task(s) are still open (${ids.join(", ")}). ` +
-  "Do NOT finalize yet. Continue the work directly or with delegate_task if exposed. Delegation " +
-  "and returned/failed states do not close tasks. Review the outcome, then use transition_plan_task: " +
+  "Do NOT finalize yet. Continue the work and use transition_plan_task: " +
   "done requires an observed result; abandoned requires a genuine reason to stop. Do not invent " +
   "success or abandon needed work just to pass this gate. Repeated finalization with open tasks " +
   "stops the run unfinished.]";

@@ -469,7 +469,7 @@ store's own fallback, whereas "the loop owns the defaults outright (`AGENTS_DEFA
 so an absent field must stay absent — writing one out would freeze today's default into every run
 request and make a later change to it invisible". `agentsBlockToParam` recognizes exactly
 ten numeric fields, `AGENTS_FIELDS` : `buffer_lines`, `buffer_bytes`,
-`max_total_buffer_bytes`, `poll_max_bytes`, `await_timeout_ms`, `max_live_children`,
+`max_total_buffer_bytes`, `poll_max_bytes`, `max_live_children`,
 `max_retained_children`, `max_notices_per_iteration`, `max_consecutive_failed_children`,
 `finish_nudges` — each carried through only when it is a non-negative integer.
 

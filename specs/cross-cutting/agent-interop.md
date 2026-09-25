@@ -97,7 +97,7 @@ All exported from `@clarvis/capability`'s root (`packages/capability/src/index.t
 | `user_steer` | `UserPromptSubmit` |
 | `user_prompt_expansion` | `UserPromptExpansion` |
 
-`pre_delegate_task` (a `GATE_HOOK_EVENTS` member, `packages/capability/src/hooks-config.ts`) has no
+`pre_spawn_subagent` (a `GATE_HOOK_EVENTS` member, `packages/capability/src/hooks-config.ts`) has no
 row: it is a Clarvis-only gate with no foreign counterpart, so it is absent from the table on purpose
 rather than mapped onto an approximation (`packages/capability/src/hooks-config.ts`).
 `Notification`, a real foreign event, is likewise absent in the other direction
@@ -114,7 +114,6 @@ rather than mapped onto an approximation (`packages/capability/src/hooks-config.
 | `edit`, `editfile` | `edit_file` |
 | `applypatch` | `apply_patch` |
 | `ls`, `listdir` | `list_dir` |
-| `task` | `delegate_task` |
 | `skill` | `load_skill` |
 
 `EXTERNAL_HOOK_TOOL_NAMES` (`packages/capability/src/hooks-config.ts`) is the emission-side
@@ -483,7 +482,7 @@ Catalog invariants carry `INV-nnn` and are owned here; only INV-189 is catalogue
 
 **INV-189** (owned by this document). Every foreign tool name in `EXTERNAL_TOOL_NAMES` maps onto a tool
 Clarvis actually dispatches (present in `@clarvis/tools`'s registry) or is explicitly allowlisted as a
-capability-owned name (`delegate_task` or `load_skill`); no name in `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` is
+capability-owned name (`load_skill`); no name in `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` is
 contradicted by actually existing in the registry; and the capability allowlist contains no name that
 is *also* in the tool registry (keeping it non-redundant).
 Production: `packages/capability/src/hooks-config.ts`.
@@ -661,7 +660,7 @@ MCP entries (`packages/kernel/src/plugins/plugin-manifest.ts`).
 
 ## 8. Open questions
 
-- **Why `pre_delegate_task` has no foreign counterpart** is stated as a design choice
+- **Why `pre_spawn_subagent` has no foreign counterpart** is stated as a design choice
   ("Events with no counterpart on either side are absent on purpose",
   `packages/capability/src/hooks-config.ts`) but the code does not say why no foreign host's
   vocabulary was judged close enough to reuse — only that none was chosen.

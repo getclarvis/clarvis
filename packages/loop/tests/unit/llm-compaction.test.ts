@@ -35,7 +35,7 @@ function overBudgetCtx() {
   const ctx = createLiveContext([{ role: "user", content: "seed task" }], ON, { agent: "lead" });
   ctx.appendAssistantToolCalls(
     "",
-    Array.from({ length: 5 }, (_, i) => ({ id: `c${i}`, name: "delegate_task", arguments: {} })),
+    Array.from({ length: 5 }, (_, i) => ({ id: `c${i}`, name: "spawn_subagent", arguments: {} })),
   );
   for (let i = 0; i < 5; i += 1) ctx.appendToolMessage(`c${i}`, `R${i}: ${"x".repeat(1000)}`);
   return ctx;

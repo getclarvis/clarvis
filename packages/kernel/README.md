@@ -850,7 +850,7 @@ by the user, an applicable loaded skill, or an agent-instruction file such as `A
 `CLARVIS.md`. Harness availability alone is not authorization; profile and grant limits still apply.
 All five condition instructions on the tools actually exposed, distinguish a delegated
 brief from caller conversation, acknowledge the shared workspace, and select `submit_result` only
-when present. Marshall covers independent versus tracked delegation, background handles, review of
+when present. Marshall covers independent spawning, background handles, review of
 returned work and live-child finalization. Admiral adds the workflow spawn ladder, revision-matched
 checkpoints, batch-local conflict protection and partial writes after failure. Leaves state their
 limitations and return blockers instead of assuming missing authority or context. Detailed argument
@@ -987,7 +987,7 @@ decision before each later authored round or repeat pass.
 
 Primary and auxiliary token ledgers are likewise constructed anew inside every manager execution,
 not accumulated across session turns. Auxiliary claims account for both the configured leader
-concurrency and the engine's concurrent `delegate_task` capacity. Ordinary manager children cap each
+concurrency and the engine's concurrent `spawn_subagent` capacity. Ordinary manager children cap each
 model call at that fair share; leaders claim their subtree only after semaphore admission, and their
 root/subagent model calls partition it again. A model with no explicit output cap therefore cannot
 let one call reserve the entire workflow budget before its siblings start.

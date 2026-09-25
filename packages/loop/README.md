@@ -120,7 +120,7 @@ self-contained briefs. The default shared prompt requires an explicit request fr
 explicit instruction from an applicable loaded skill or agent-instruction file (such as `AGENTS.md`
 or `CLARVIS.md`) before spawning children, delegating tasks, or starting workflow leaders. Otherwise
 the agent works directly; available tools and efficiency gains do not authorize delegation. Profile
-and grant limits still apply. Supervision distinguishes handles, first-child wakeups and completed work.
+and grant limits still apply. Supervision distinguishes handles and completed work.
 It also keeps a child that stopped at its own iteration cap apart from one that failed: the cap is a
 recoverable partial the lead can reduce scope around, retry or take over, and a streak of technically
 failed children closes new child admission without ending the lead's run.
@@ -282,9 +282,8 @@ Built-ins cover:
 - lifecycle hooks;
 - exact user skill-command expansion observers, carried as host-derived request context and fired
   before seed context rather than approximated from an ordinary prompt;
-- independent child spawning (`spawn_subagent`) and tracked task delegation (`delegate_task`);
-- agent supervision (`agent_list`, `agent_poll`, `agent_stop`, `agent_steer`,
-  `await_agents`), over the run-scoped registry in `@clarvis/supervision`.
+- independent child spawning (`spawn_subagent`);
+- agent supervision (`agent_list`, `agent_poll`, `agent_stop`, `agent_steer`), over the run-scoped registry in `@clarvis/supervision`.
 
 The built-in `ask_user` tool asks that question and normalizes the answer. Its requests are marked
 `origin: "model"`, so a host can tell the engine's own question from a relayed external one, and its
@@ -297,11 +296,7 @@ a plain `ask_user` marked `origin: "external"`, so it keeps the operational boun
 host window. Neither no-answer outcome is evidence: only an accepted `ask_user` answer enters operator
 authority. See [`elicitation`](../../specs/cross-cutting/elicitation.md).
 
-`spawn_subagent` is always the plan-free route and has no `task_id` property. A task-tracking
-capability adds `delegate_task`, whose `task_id` is required and must name an existing open work
-item. An unknown or closed id is rejected with the currently spawnable ids and an explicit
-instruction to use `spawn_subagent` for independent work. Both input schemas tolerate and ignore
-surplus properties once their known arguments are valid.
+`spawn_subagent` runs independent work and has no plan-task binding. An optional capability gate may refuse a spawn before it starts. Its input schema tolerates surplus properties once the known arguments are valid.
 
 The `Capability` contract itself lives in `@clarvis/capability`, not here — the
 loop imports it like any other consumer, which is what lets a capability ship in

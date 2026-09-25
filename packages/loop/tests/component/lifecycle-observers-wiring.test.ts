@@ -7,8 +7,8 @@ import type { AgentCapability, AgentLoopContribution, Capability } from "@clarvi
 import {
   prepareSpawn,
   runPreparedSubagent,
-  type DelegateTaskContext,
-} from "../../src/runtime/subagents/delegate-task.ts";
+  type SpawnContext,
+} from "../../src/runtime/subagents/spawn-subagent.ts";
 import type { ResolvedSubagentProfile } from "../../src/runtime/subagents/subagent-profiles.ts";
 import { createTrace } from "@clarvis/trace";
 import { createTokenLedger, createIterationCounter } from "../../src/runtime/budget/index.ts";
@@ -214,7 +214,7 @@ describe("subagent_complete observer", () => {
     };
   }
 
-  function makeCtx(llm: MockLLM, hooks: LifecycleHook[]): DelegateTaskContext {
+  function makeCtx(llm: MockLLM, hooks: LifecycleHook[]): SpawnContext {
     return {
       env,
       opened: [],

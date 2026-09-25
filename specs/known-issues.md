@@ -93,17 +93,17 @@ the throw and silently stops persisting that session for its whole life. The rea
 here that no schema describes — `isSession` checks identity and `Array.isArray(turns)` and nothing
 else, so an added key is not rejected on read and a corrupt one is not caught either.
 
-**A `preDelegateTask` hook's `rewrite` verdict was computed and silently discarded.**
+**A `preSpawnSubagent` hook's `rewrite` verdict was computed and silently discarded.**
 `runVerdictHooks` built the replacement arguments and returned them; `prepareSpawn` read only
 `denied` and `advise`. A hook author who returns `rewrite` on `pre_tool_use` — where it **is**
 honoured — reasonably expected the same here and got a no-op with the original brief spawned.
 
 Resolved by **refusing it loudly** rather than honouring it: the sweep now runs with
-`rewritable: false` (`packages/loop/src/runtime/subagents/delegate-task.ts`), so a `rewrite`
+`rewritable: false` (`packages/loop/src/runtime/subagents/spawn-subagent.ts`), so a `rewrite`
 verdict denies the spawn instead of passing it through with arguments the hook believes it replaced.
 That is the one outcome worse than either honouring or refusing, because the author is never told.
-No capability is lost, which is what made refusing the cheaper answer: both child-spawn tools are
-dispatched through the ordinary tool loop, so a `pre_tool_use` hook matching either still replaces
+No capability is lost, which is what made refusing the cheaper answer: `spawn_subagent` is
+dispatched through the ordinary tool loop, so a matching `pre_tool_use` hook still replaces
 the brief and profile **upstream** of this validation, and there the model is told what actually ran through the
 `[advisor]` channel and the trace records an `arguments_original`. Honouring it here would have meant
 rebuilding that non-silence at a second site.
@@ -1769,111 +1769,6 @@ last observed.
 
 ---
 
-## Why delegation was not extracted into its own package
-
-Extracting `runtime/delegation.ts` + `runtime/subagents/` + `runtime/capabilities/{delegation,agents}.ts`
-as a `@clarvis/delegation` package was specified, measured and **abandoned**. It was not a matter of
-effort; it did not build. Recorded so nobody pays for the measurement twice.
-
-The abandonment still stands. The generated block in `specs/package-coupling-analysis.md` has no
-`delegation` row: the package was never created, and the graph check would fail the gate if that
-document and the manifests disagreed. Its generated counts remain the authority as other packages
-are added or dependency edges change.
-
-What has changed since the original analysis is that **two of the six obstacles dissolved as
-side-effects of other work**, and the coupling numbers moved with them. Both halves are recorded
-below: the measurement as it was taken, then the state of its subject today.
-
-### The obstacles as originally measured
-
-- **The coupling is bidirectional.** The subsystem reached ~50 symbols across 24 modules outward
-  (`budget/`, `context/`, `support/`, `tools/`, `plans/`, `plan/`, `usage.ts`, `run-shape.ts`,
-  `capability-event.ts`, `loop/`) — and nine engine modules reached ~20 symbols *back in*:
-  `orchestrator.ts`, `execute-run.ts` (`planProjection`), `entry-inputs.ts`, `vision-prepass.ts`,
-  `entry-seed.ts`, `run-shape.ts`, `open-tool-pool.ts`, `settings-specs.ts` and
-  `capabilities/plans.ts`. Leaving the assembly in `entry-inputs.ts` — the only tractable scope —
-  closes a **package cycle**, and `tsc -b` project references refuse one. This is not the
-  `workflows` shape: there the kernel builds the capability and injects it, so the loop never
-  imports it.
-- **The cycle lands on the eager configuration path**, because `settings-specs.ts` value-imports the
-  delegation/agents settings.
-- **`run-shape.ts` ↔ `spawn-shape.ts`** was a literal two-file cycle across the proposed boundary;
-  that one *was* fixable, and is what the `@clarvis/supervision` extraction fixed.
-- **`vision-prepass.ts` calls `runSubagent` on the core run path.** Running a nested agent is
-  engine, not capability, and no boundary drawn around `runtime/subagents/` separates the two.
-  **Resolved** by the vision-routing work: the pre-pass is now a single `llm.call` naming a model,
-  so it spawns nothing. The remaining obstacles still stand on their own.
-- **`buildDelegationOrchestration` returns both contributions** — `delegation` *and* `plans` — over
-  one shared `PlanSession`. Splitting it is a redesign, and `plans` stays in the engine anyway.
-- **The tests could not follow.** The relevant suites span spawn, supervision and delegation, and
-  nearly all drive `executeRun`, so by the rule that governed every prior extraction they stay — the
-  new package would be born near-empty against its own floor.
-
-### The same obstacles, re-read against the tree
-
-- **The bidirectional coupling is smaller but intact.** Re-measuring the nine subsystem files gives
-  **41 named symbols across 17 engine modules** outward: `budget/budget.ts`, `capability-event.ts`,
-  `context/{compaction-prompt,context-compaction,tool-spill}.ts`,
-  `loop/{lifecycle-hooks,loop-contract,loop-shared,run-agent}.ts`,
-  `support/{bounded,concurrency,signals}.ts`,
-  `tools/{ask-user-tool,builtin/grants,mcp-registry,wire-names}.ts` and `usage.ts`. Three of the
-  original targets — `plans/`, `plan/` and `run-shape.ts` — are no longer reached at all. Inward,
-  **16 symbols across 8 modules**: `packages/loop/src/runtime/entry-seed.ts`,
-  `packages/loop/src/runtime/run-shape.ts`, `packages/loop/src/runtime/tools/tool-effect.ts`,
-  `packages/loop/src/runtime/entry-inputs.ts`,
-  `packages/loop/src/runtime/open-tool-pool.ts`, `packages/loop/src/runtime/orchestrator.ts`,
-  `packages/loop/src/runtime/vision-prepass.ts`, plus the package entry
-  `packages/loop/src/lib.ts`. The direction of the edges is unchanged, so the package cycle is
-  unchanged; only its width moved.
-- **The eager configuration path is clear — this obstacle is gone.**
-  `packages/loop/src/runtime/capabilities/settings-specs.ts` now imports
-  `AGENTS_REQUEST_PARAMS`, `AGENTS_SETTINGS_FIELDS` and `agentsSettingsSpec` from
-  `@clarvis/supervision`, whose owner is `packages/supervision/src/settings.ts`. `BUILTIN_SETTINGS_SPECS` at
-  `packages/loop/src/runtime/capabilities/settings-specs.ts` names none of the delegation modules.
-  Nothing on the configuration path value-imports `capabilities/agents.ts` or
-  `capabilities/delegation.ts` any more, so a hypothetical extraction would no longer drag the cycle
-  onto the eager path. Do not re-derive this as a live obstacle.
-- **`run-shape.ts` ↔ `spawn-shape.ts` stays fixed.** `packages/loop/src/runtime/spawn-shape.ts`
-  carries `import type { RunShape } from "./run-shape.ts"`, and `run-shape.ts` imports nothing back;
-  the surviving edge is one-way and type-only, so it is erased at emit.
-- **`vision-prepass.ts` stays free of spawning.** The pre-pass is a single provider call at
-  `packages/loop/src/runtime/vision-prepass.ts` (`await p.deps.llm.call({`). `runSubagent`
-  exists in exactly two places in the tree, both inside the proposed boundary: its definition at
-  `packages/loop/src/runtime/subagents/run-subagent.ts` and its one call at
-  `packages/loop/src/runtime/subagents/delegate-task.ts`. The residual inward edge from the
-  pre-pass is a single text helper (`userText`, `vision-prepass.ts`).
-- **`buildDelegationOrchestration` no longer exists — this obstacle is gone.** The planning move
-  (commit `58bd33cc`, *move planning out of the engine and onto capability seams*) split it. What
-  remains is `buildDelegationContribution` at `packages/loop/src/runtime/delegation.ts`,
-  returning one contribution; `PlanSession` and `planProjection` are exported from
-  `packages/plan/src/capability/index.ts`. The former plans module under
-  `packages/loop/src/runtime/capabilities/` is deleted, and
-  `packages/loop/src/runtime/execute-run.ts` contains no occurrence of `plan` at all.
-  The premise "`plans` stays in the engine anyway" is now false: planning took exactly the shape this
-  extraction could not, reaching the loop only through `@clarvis/capability`
-  (`packages/plan/src/capability/index.ts` states the entry must never import `@clarvis/loop`).
-- **The test obstacle is unchanged.** Tests under `packages/loop/tests` name `delegate_task`,
-  `runSubagent`, the capability constructors or the `agent_*` tools, and many reach `executeRun`
-  directly or through `packages/loop/tests/integration/_helpers.ts`.
-
-### What a real extraction would still cost
-
-The 26-field delegation assembly is now **20 fields** — `DelegationCapabilityDeps` at
-`packages/loop/src/runtime/capabilities/delegation.ts`, supplied in full at
-`packages/loop/src/runtime/entry-inputs.ts`. Moving it to the kernel is still its own work, and
-so is separating "the engine can run a nested agent" from "the `delegate_task` tool". Neither is
-scheduled.
-
-Two things did come out of this analysis rather than nothing: `@clarvis/supervision` (which took the
-registry, the `agents` settings block and the `run-shape`/`spawn-shape` knot) and the delegation↔tracker
-decoupling — `TASK_TRACKING_PORT`, resolved off the run's service registry at
-`packages/loop/src/runtime/capabilities/delegation.ts`, so the engine never names the
-package that tracks its tasks. The five supervision tools stayed in the engine deliberately: they are
-policy over substrate and read only four engine modules
-(`packages/loop/src/runtime/capabilities/agents.ts`).
-
----
-
 ## Layout decisions that were tried and reverted
 
 Both reverts still hold. What moved is where the guards live and what the second
@@ -1914,10 +1809,8 @@ gates at exactly two points in `packages/loop/src/runtime/loop/run-agent.ts` —
 handler (`runGates`) and the contract-less text-only path (`onTextOnly`,
 `runGates`, reached only after the `if` branch has returned). So a run cancelled
 mid-flight is never asked about its open tasks: cancellation returns `cancelledResult()` directly
- without touching a gate. And nothing marks a task `in_progress`
-when the lead does the work itself rather than delegating it — the sole automatic writer is
-`markSpawned` (`packages/plan/src/capability/delegation-port.ts`), reachable only through
-delegation.
+ without touching a gate. The lead records its task progress explicitly through
+`transition_plan_task`.
 
 The plans capability does contribute a `beforeIteration` hook
 (`packages/plan/src/capability/orchestration.ts`), which is the obvious place such a nudge would

@@ -20,15 +20,14 @@ completed child rearms it. The registry never spawns, retries or cancels sibling
 
 ## Why it is its own package
 
-Two producers register into the same id space — `@clarvis/loop`'s `delegate_task` (a sub-agent) and
+Two producers register into the same id space — `@clarvis/loop`'s `spawn_subagent` (a sub-agent) and
 `@clarvis/workflows`' `run_leader` (a leader). Before this package, `workflows` reached the
 registry through a seam published on the engine, so the upper package depended on an internal of
 the lower one. As a leaf both depend on, the edge is explicit and one-way.
 
 ## What it is not
 
-The five supervision tools — `agent_list`, `agent_poll`, `agent_stop`, `agent_steer`,
-`await_agents` — are **not** here. They live in `@clarvis/loop`, for the same reason the trace store
+The four supervision tools — `agent_list`, `agent_poll`, `agent_stop`, and `agent_steer` — are **not** here. They live in `@clarvis/loop`, for the same reason the trace store
 does not own _when_ to record and the MCP client does not own _when_ to call: the registry is
 substrate, the tools over it are engine policy.
 

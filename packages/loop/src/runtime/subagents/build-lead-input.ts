@@ -53,7 +53,7 @@ export interface LeadPersonaParams {
  *   nor sub-agents carry built-ins and both the lead's registry and a freshly
  *   built sub-agent registry are non-empty yet fully unavailable. The no-progress
  *   limit is {@link LEAD_NO_PROGRESS_LIMIT}; the no-progress message reminds
- *   the lead which child-spawn tool fits independent versus tracked work.
+ *   the lead how to proceed after a stalled child spawn.
  */
 export function buildLeadInputPersona(params: LeadPersonaParams): LeadPersona {
   const { registry, entryMax, softMode } = params;
@@ -82,7 +82,7 @@ export function buildLeadInputPersona(params: LeadPersonaParams): LeadPersona {
     },
     noProgressLimit: LEAD_NO_PROGRESS_LIMIT,
     noProgressMessage: (streak) =>
-      `Lead made no progress for ${streak} consecutive iterations (no sub-agent spawned, no task judged, no tool call). Last actions produced only errors or no-ops. Use spawn_subagent for independent work; delegate_task requires the exact id of an existing tracked task.`,
+      `Lead made no progress for ${streak} consecutive iterations (no sub-agent spawned, no task judged, no tool call). Last actions produced only errors or no-ops. Use spawn_subagent for independent work.`,
     textNoSubmitMessage: (streak) =>
       `Lead emitted assistant text for ${streak} consecutive iterations without calling submit_result to finalize.`,
     emptyResponseAgent: "Lead",

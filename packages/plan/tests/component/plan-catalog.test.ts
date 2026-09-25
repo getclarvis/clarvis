@@ -3,7 +3,7 @@ import { createCapabilityServices, createComputeClock } from "@clarvis/capabilit
 import {
   createPlansCapability,
   createPlansCatalogCapability,
-  PLAN_PORT,
+  PLAN_SPAWN_PORT,
 } from "../../src/capability/index.ts";
 import { createPlanStore } from "../../src/store.ts";
 import { createInMemoryPlanRepository } from "../../src/testing.ts";
@@ -35,7 +35,7 @@ it.each(["off", "on", "review"] as const)(
     if (mode === "off") {
       expect(source).toBeNull();
       expect(pass).toBeNull();
-      expect(passCtx.services.get(PLAN_PORT)).toBeUndefined();
+      expect(passCtx.services.get(PLAN_SPAWN_PORT)).toBeUndefined();
       return;
     }
     const scope = {
@@ -51,25 +51,18 @@ it.each(["off", "on", "review"] as const)(
     const passContribution = pass!.forAgent(scope)!.attach(passBuild);
     expect(source!.forAgent({ ...scope, entry: false })).toBeNull();
     expect(passContribution.tools).toEqual(sourceContribution.tools);
-    const passPort = passCtx.services.get(PLAN_PORT)!.forAgent(passBuild)!;
-    expect(passPort.augmentDelegateTask()).toEqual(
-      sourceCtx.services.get(PLAN_PORT)!.forAgent(sourceBuild)!.augmentDelegateTask(),
-    );
+    const passPort = passCtx.services.get(PLAN_SPAWN_PORT)!.forAgent(passBuild)!;
     expect(pass!.forAgent({ ...scope, entry: false })).toBeNull();
-    expect(passCtx.services.get(PLAN_PORT)!.forAgent(fakeAgentBuildContext())).toBeUndefined();
+    expect(
+      passCtx.services.get(PLAN_SPAWN_PORT)!.forAgent(fakeAgentBuildContext()),
+    ).toBeUndefined();
     expect(pass!.lifecycle).toBeUndefined();
     expect(pass).not.toHaveProperty("finalizeRun");
     expect(pass).not.toHaveProperty("onRunEnd");
     expect(passContribution.gates).toBeUndefined();
     expect(passContribution.hooks).toBeUndefined();
     expect(passContribution.anchor).toBeUndefined();
-    expect(await passPort.beforeSpawn("t1")).toMatchObject({ kind: "refuse" });
-    expect(await passPort.markSpawned("t1")).toBe(false);
-    expect(await passPort.markFailed("t1", "error")).toBe(false);
-    expect(await passPort.markReturned?.("t1", "summary")).toBe(false);
-    passPort.noteSpawned("t1");
-    expect(passPort.openTasks()).toEqual([]);
-    expect(passPort.getTask("t1")).toBeUndefined();
+    expect(await passPort.beforeSpawn()).toMatchObject({ kind: "refuse" });
     for (const tool of passContribution.tools!) {
       const call = { id: `call-${tool.wireName}`, name: tool.wireName, arguments: {} };
       const handler = passContribution.handlers!.find((handler) => handler.matches(call))!;

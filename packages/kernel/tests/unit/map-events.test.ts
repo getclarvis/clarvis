@@ -393,7 +393,6 @@ describe("engineEventToProto (TraceEvent → engine-independent RunEvent project
       engineEventToProto({
         type: "delegation_created",
         delegation_id: "w1",
-        task_id: "t2",
         spawned_at: 11,
         title: "explorer",
         task: "look at auth",
@@ -404,7 +403,6 @@ describe("engineEventToProto (TraceEvent → engine-independent RunEvent project
       type: "delegation_created",
       at: 11,
       delegation_id: "w1",
-      task_id: "t2",
       title: "explorer",
       task: "look at auth",
       profile: "explorer",
@@ -424,7 +422,6 @@ describe("engineEventToProto (TraceEvent → engine-independent RunEvent project
       engineEventToProto({
         type: "delegation_completed",
         delegation_id: "w1",
-        task_id: "t2",
         completed_at: 13,
         status: "completed",
         result: "auth uses JWT",
@@ -433,7 +430,6 @@ describe("engineEventToProto (TraceEvent → engine-independent RunEvent project
       type: "delegation_completed",
       at: 13,
       delegation_id: "w1",
-      task_id: "t2",
       status: "completed",
       summary: "auth uses JWT",
     });

@@ -7,7 +7,7 @@ afterEach(async () => {
 });
 
 it.each(["off", "on", "review"] as const)(
-  "carries the %s source catalog into indexing and refuses inherited plan and delegation calls",
+  "carries the %s source catalog into indexing and refuses inherited plan calls",
   async (plansMode) => {
     const f = await createGoalFileHostFixture({ memory: true, plansMode });
     cleanups.push(f.close);
@@ -26,11 +26,6 @@ it.each(["off", "on", "review"] as const)(
             tasks: [{ title: "Forbidden" }],
             validation: [],
           },
-        };
-      if (f.requests.length === 3)
-        return {
-          name: "delegate_task",
-          arguments: { title: "Forbidden", task: "Forbidden", task_id: "t1", profile: "helper" },
         };
       return { text: "Nothing to record in memory." };
     });
@@ -55,7 +50,7 @@ it.each(["off", "on", "review"] as const)(
       state: "completed",
       attempts: 1,
     });
-    expect(f.requests).toHaveLength(4);
+    expect(f.requests).toHaveLength(3);
     expect(f.errors).toEqual([]);
     expect((await f.planStore.list()).plans).toEqual([]);
     const source = f.requests[0]!;
@@ -63,9 +58,7 @@ it.each(["off", "on", "review"] as const)(
     const expected = source.tools!.filter(
       (tool) => !["get_goal", "update_goal"].includes(tool.function.name),
     );
-    expect(expected.some((tool) => tool.function.name === "delegate_task")).toBe(
-      plansMode !== "off",
-    );
+    expect(expected.some((tool) => tool.function.name === "spawn_subagent")).toBe(true);
     for (const call of calls) {
       expect(call.tools).toEqual(expected);
       expect(call.prompt_cache_key).not.toBe(source.prompt_cache_key);
@@ -76,7 +69,6 @@ it.each(["off", "on", "review"] as const)(
       expect(f.requests[i]!.messages.slice(0, previous.messages.length)).toEqual(previous.messages);
     }
     expect(JSON.stringify(calls[1]!.messages)).toContain("not available");
-    expect(JSON.stringify(calls[2]!.messages)).toContain("not available");
   },
 );
 
@@ -154,5 +146,5 @@ it("indexes a paused goal checkpoint without mutating its open discard plan or i
   expect(memory.tools).toEqual(
     lead.tools?.filter((tool) => !["get_goal", "update_goal"].includes(tool.function.name)),
   );
-  expect(memory.tools?.some((tool) => tool.function.name === "delegate_task")).toBe(true);
+  expect(memory.tools?.some((tool) => tool.function.name === "spawn_subagent")).toBe(true);
 });

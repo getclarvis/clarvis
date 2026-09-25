@@ -17,8 +17,8 @@ import {
 import {
   prepareSpawn,
   runPreparedSubagent,
-  type DelegateTaskContext,
-} from "../../src/runtime/subagents/delegate-task.ts";
+  type SpawnContext,
+} from "../../src/runtime/subagents/spawn-subagent.ts";
 import type { ResolvedSubagentProfile } from "../../src/runtime/subagents/subagent-profiles.ts";
 import { MockLLM } from "../helpers/fixtures.ts";
 
@@ -28,7 +28,7 @@ const SPAWN_ARGS = { title: "worker", task: "do the thing", profile: "coder" };
 /**
  * A `rewrite` verdict at a gate whose signature refuses one.
  *
- * The cast is the point of these tests. `LifecycleHook.preDelegateTask` and
+ * The cast is the point of these tests. `LifecycleHook.preSpawnSubagent` and
  * `preFinalize` are typed `GateVerdict`, so a typed author cannot write this —
  * but the only production producer, `@clarvis/hooks`'s `compileWorkspaceHooks`,
  * assembles its gate methods into an untyped bag and casts the whole object to
@@ -65,7 +65,7 @@ function profile(name: string): ResolvedSubagentProfile {
 function context(
   llm: MockLLM,
   hooks: LifecycleHook[],
-): DelegateTaskContext & { trace: ReturnType<typeof createTrace> } {
+): SpawnContext & { trace: ReturnType<typeof createTrace> } {
   return {
     env,
     opened: [],
@@ -96,11 +96,11 @@ function collectingLogger(sink: { event: unknown }[]): Logger {
   } as unknown as Logger;
 }
 
-describe("a preDelegateTask rewrite is refused, never silently dropped", () => {
+describe("a preSpawnSubagent rewrite is refused, never silently dropped", () => {
   it("denies the spawn and names the channel that does replace a delegation's brief", async () => {
     const ctx = context(new MockLLM({ script: [{ text: "should never run" }] }), [
       {
-        preDelegateTask: async () =>
+        preSpawnSubagent: async () =>
           unsupportedRewrite({ title: "w", task: "a different brief", profile: "explorer" }),
       },
     ]);
@@ -109,7 +109,7 @@ describe("a preDelegateTask rewrite is refused, never silently dropped", () => {
 
     expect(prepared.ok).toBe(false);
     if (prepared.ok) return;
-    expect(prepared.text).toContain("delegate_task DENIED by a workspace hook");
+    expect(prepared.text).toContain("spawn_subagent DENIED by a workspace hook");
     expect(prepared.text).toContain(UNSUPPORTED_REWRITE_MESSAGE);
     expect(prepared.text).toContain("pre-tool-use");
     expect(ctx.trace.entries().some((entry) => entry.kind === "delegation_created")).toBe(false);
@@ -119,7 +119,7 @@ describe("a preDelegateTask rewrite is refused, never silently dropped", () => {
     const llm = new MockLLM({ script: [{ text: "should never run" }] });
     const ctx = context(llm, [
       {
-        preDelegateTask: async () =>
+        preSpawnSubagent: async () =>
           unsupportedRewrite({ title: "w", task: "a different brief", profile: "explorer" }),
       },
     ]);
@@ -133,7 +133,7 @@ describe("a preDelegateTask rewrite is refused, never silently dropped", () => {
   it("records the refusal on the diagnostic channel", async () => {
     const seen: { event: unknown }[] = [];
     const ctx = context(new MockLLM({ script: [] }), [
-      { preDelegateTask: async () => unsupportedRewrite({ profile: "explorer" }) },
+      { preSpawnSubagent: async () => unsupportedRewrite({ profile: "explorer" }) },
     ]);
     ctx.logger = collectingLogger(seen);
 
@@ -145,9 +145,9 @@ describe("a preDelegateTask rewrite is refused, never silently dropped", () => {
   it("refuses before a later hook can pass the spawn, as a denial does", async () => {
     let laterRan = false;
     const ctx = context(new MockLLM({ script: [] }), [
-      { preDelegateTask: async () => unsupportedRewrite({ profile: "explorer" }) },
+      { preSpawnSubagent: async () => unsupportedRewrite({ profile: "explorer" }) },
       {
-        preDelegateTask: async () => {
+        preSpawnSubagent: async () => {
           laterRan = true;
           return { kind: "pass" };
         },
@@ -160,9 +160,9 @@ describe("a preDelegateTask rewrite is refused, never silently dropped", () => {
     expect(laterRan).toBe(false);
   });
 
-  it("still spawns for every verdict a preDelegateTask hook may legitimately return", async () => {
+  it("still spawns for every verdict a preSpawnSubagent hook may legitimately return", async () => {
     const ctx = context(new MockLLM({ script: [{ text: "done" }] }), [
-      { preDelegateTask: async () => ({ kind: "advise", message: "prefer a narrow brief" }) },
+      { preSpawnSubagent: async () => ({ kind: "advise", message: "prefer a narrow brief" }) },
     ]);
 
     const prepared = await prepareSpawn(SPAWN_ARGS, ctx);

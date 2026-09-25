@@ -5,7 +5,7 @@
  *
  * It owns the run's {@link PlanSession} and every piece of state derived from
  * it. Delegation reaches none of that directly — it holds a
- * {@link PlanDelegationPort} and nothing else — which is what allows this whole
+ * {@link PlanSpawnPort} and nothing else — which is what allows this whole
  * module to move into `@clarvis/plan` without delegation moving with it.
  */
 import { NOOP_LOGGER, projected, type Logger } from "@clarvis/capability";
@@ -32,8 +32,6 @@ import {
   PLAN_REVIEW_BYPASS_MSG,
   PLAN_REVIEW_EXECUTE_NOTE,
   PENDING_TASKS_NOTE,
-  buildDelegateTaskPlanAugmentation,
-  duplicateBatchTaskId,
   planReviewSpawnBlock,
   planReviewUnplannedBlock,
 } from "./messages.ts";
@@ -41,12 +39,10 @@ import { PlanSession, type MissingPlanState } from "./session.ts";
 import {
   CREATE_PLAN_TOOL_NAME,
   REVISE_PLAN_TOOL_NAME,
-  TRANSITION_PLAN_TASK_TOOL_NAME,
   handlePlanRuntimeCall,
   buildPlanRuntimeTools,
   type PlanRuntimeCallResult,
 } from "./runtime-tools.ts";
-import { createDelegationPlanPort } from "./delegation-port.ts";
 import {
   missingPlanCanonicalState,
   missingPlanHeader,
@@ -55,7 +51,7 @@ import {
   planCasHeader,
   planSpecBlock,
 } from "./canonical-state.ts";
-import type { DelegateTaskAugmentation, PlanDelegationPort, SpawnGate } from "./task-port.ts";
+import type { PlanSpawnPort, SpawnGate } from "./spawn-port.ts";
 
 /**
  * Hard ceiling on plan-review change-request rounds before the run terminates
@@ -186,11 +182,11 @@ export interface PlansOrchestrationDeps {
 
 /**
  * What planning contributes to one agent: its {@link AgentLoopContribution} and
- * the {@link PlanDelegationPort} the delegation capability consults.
+ * the {@link PlanSpawnPort} the delegation capability consults.
  */
 export interface PlansOrchestration {
   contribution: AgentLoopContribution;
-  port: PlanDelegationPort;
+  port: PlanSpawnPort;
   /** The live session, so the capability can seal the plan at run end. */
   session: PlanSession;
 }
@@ -230,9 +226,8 @@ interface SessionState {
 
 /**
  * Per-iteration flags, reset each `beforeIteration` (see {@link freshIter}):
- * whether plan content changed, whether the review gate requested changes this
- * iteration, and the task ids actually delegated this batch (`spawnedTaskIds`),
- * which drive both duplicate refusal and progress detection.
+ * whether plan content changed and whether the review gate requested changes
+ * this iteration.
  *
  * @remarks The rejection itself lives in {@link SessionState}, keyed by spec
  *   digest; only the progress signal is per-iteration. `planReviewChangeRequested`
@@ -241,24 +236,16 @@ interface SessionState {
  *   revising has made no progress, and reporting otherwise would leave it
  *   looping until the iteration limit instead of tripping no-progress.
  *
- *   `spawnedTaskIds` is written through {@link PlanDelegationPort.noteSpawned}
- *   rather than shared with delegation as a closure variable, which is the
- *   whole point of the port. It also defers Lead plan mutations until the next
- *   iteration, whose canonical state contains the runtime-owned claim/return
- *   transitions, so a sibling call cannot race a delegated result with stale
- *   compare-and-swap inputs.
  */
 interface IterState {
   planContentChanged: boolean;
   planReviewChangeRequested: boolean;
-  spawnedTaskIds: Set<string>;
 }
 
 /** Build a zeroed {@link IterState} for a fresh loop iteration. */
 const freshIter = (): IterState => ({
   planContentChanged: false,
   planReviewChangeRequested: false,
-  spawnedTaskIds: new Set(),
 });
 
 /**
@@ -458,7 +445,7 @@ export function buildPlansOrchestration(deps: PlansOrchestrationDeps): PlansOrch
         message:
           `Run terminated with ${ids.length} plan task(s) still open (${ids.join(", ")}): the Lead ` +
           `finalized without transitioning them (transition_plan_task), delegating them ` +
-          `(delegate_task), or abandoning them (transition_plan_task), making no progress across ` +
+          `(spawn_subagent), or abandoning them (transition_plan_task), making no progress across ` +
           `${pendingNudgeCap} consecutive nudge(s).`,
       },
       ...partialStruct(),
@@ -472,10 +459,8 @@ export function buildPlansOrchestration(deps: PlansOrchestrationDeps): PlansOrch
     const open = await planSession.openTasks();
     if (open.length === 0) return { kind: "ok" };
     const ids = open.map((t) => t.id);
-    const allOpenSpawnedThisBatch = ids.every((id) => iter.spawnedTaskIds.has(id));
     const madeProgress =
-      allOpenSpawnedThisBatch ||
-      (session.lastNudgeOpenCount !== null && open.length < session.lastNudgeOpenCount);
+      session.lastNudgeOpenCount !== null && open.length < session.lastNudgeOpenCount;
     if (madeProgress) session.pendingStall = 0;
     if (session.pendingStall < pendingNudgeCap) {
       session.pendingStall += 1;
@@ -596,7 +581,7 @@ export function buildPlansOrchestration(deps: PlansOrchestrationDeps): PlansOrch
    *   know — refused by construction rather than by enumeration.
    *
    *   The `unplanned` phase guards the window before any plan exists. Without
-   *   it a Lead that never called `delegate_task` could write its way to a
+   *   it a Lead that never called `spawn_subagent` could write its way to a
    *   finished feature and meet the gate only at its finalize attempt — which is
    *   not a review, it is a retrospective.
    */
@@ -642,18 +627,12 @@ export function buildPlansOrchestration(deps: PlansOrchestrationDeps): PlansOrch
     matches: (call) => call.name === name,
     async handle(call, iteration): Promise<HandlerVerdict> {
       const startedAt = trace.now();
-      const deferredMutation =
-        iter.spawnedTaskIds.size > 0 &&
-        (name === REVISE_PLAN_TOOL_NAME || name === TRANSITION_PLAN_TASK_TOOL_NAME);
-      const r: PlanRuntimeCallResult = deferredMutation
-        ? {
-            result:
-              `Tool '${name}' result (error): A delegated plan task is still settling. ` +
-              "Wait for every delegate_task result; the next iteration will publish the current plan revision and digests before another plan mutation.",
-            changed: false,
-            error: "A delegated plan task is still settling",
-          }
-        : await handlePlanRuntimeCall(name, call.arguments, planSession, logger);
+      const r: PlanRuntimeCallResult = await handlePlanRuntimeCall(
+        name,
+        call.arguments,
+        planSession,
+        logger,
+      );
       trace.record("tool_call", {
         agent: "lead",
         iteration_ref: iteration,
@@ -695,24 +674,10 @@ export function buildPlansOrchestration(deps: PlansOrchestrationDeps): PlansOrch
     },
   });
 
-  const taskPort = createDelegationPlanPort(planSession, (document, change) => {
-    deps.emitCapabilityEvent?.(
-      projected({
-        capability: "plans",
-        kind: "plan_updated",
-        detail: { change, ...planProjection(document) },
-      }),
-    );
-  });
-
-  const port: PlanDelegationPort = {
-    ...taskPort,
-    async beforeSpawn(taskId): Promise<SpawnGate> {
+  const port: PlanSpawnPort = {
+    async beforeSpawn(): Promise<SpawnGate> {
       const gateTerminal = await ensurePlanReviewGate();
       if (gateTerminal) return { kind: "terminal", result: gateTerminal };
-      if (taskId !== undefined && iter.spawnedTaskIds.has(taskId)) {
-        return { kind: "refuse", text: duplicateBatchTaskId(taskId) };
-      }
       if (isRejectedAtCurrentSpec()) {
         return {
           kind: "refuse",
@@ -720,12 +685,6 @@ export function buildPlansOrchestration(deps: PlansOrchestrationDeps): PlansOrch
         };
       }
       return { kind: "ok" };
-    },
-    noteSpawned(taskId): void {
-      iter.spawnedTaskIds.add(taskId);
-    },
-    augmentDelegateTask(): DelegateTaskAugmentation {
-      return buildDelegateTaskPlanAugmentation(planReview);
     },
   };
 

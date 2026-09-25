@@ -25,7 +25,7 @@ const SIGNATURES: Record<string, SignatureSpec> = {
   apply_patch: { primary: [] },
   remove: { primary: ["path"] },
   shell_session: { primary: ["action", "session_id"] },
-  delegate_task: { primary: ["title"], secondary: ["profile"] },
+  spawn_subagent: { primary: ["title"], secondary: ["profile"] },
   ask_user: { primary: ["question"] },
   load_skill: { primary: ["name"] },
   read_memory: { primary: ["paths"] },

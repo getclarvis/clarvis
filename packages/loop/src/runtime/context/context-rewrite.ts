@@ -9,7 +9,6 @@ export interface RewriteEntry {
   evictable: boolean;
   canonical: boolean;
   summary: boolean;
-  taskId?: string;
   noteKind?: string;
   blockKind?: string;
   superseded?: boolean;

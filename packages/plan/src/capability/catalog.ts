@@ -6,9 +6,8 @@ import {
   type RunCapabilityContext,
 } from "@clarvis/capability";
 import { PLANS_CAPABILITY_NAME } from "../schemas.ts";
-import { buildDelegateTaskPlanAugmentation } from "./messages.ts";
 import { buildPlanRuntimeTools } from "./runtime-tools.ts";
-import { PLAN_PORT, type PlanDelegationPort } from "./task-port.ts";
+import { PLAN_SPAWN_PORT, type PlanSpawnPort } from "./spawn-port.ts";
 
 const REFUSAL = "Plan execution is not available in this auxiliary pass.";
 
@@ -21,17 +20,12 @@ export function createPlanCatalogRun(ctx: RunCapabilityContext, review: boolean)
   const tools = buildPlanRuntimeTools(review);
   const names = new Set(tools.map((tool) => tool.wireName));
   const attached = new WeakSet<AgentBuildContext>();
-  const port: PlanDelegationPort = {
-    openTasks: () => [],
-    getTask: () => undefined,
-    markSpawned: () => false,
-    markFailed: () => false,
-    markReturned: () => false,
+  const port: PlanSpawnPort = {
     beforeSpawn: () => Promise.resolve({ kind: "refuse", text: REFUSAL }),
-    noteSpawned: () => undefined,
-    augmentDelegateTask: () => buildDelegateTaskPlanAugmentation(review),
   };
-  ctx.services.provide(PLAN_PORT, { forAgent: (bc) => (attached.has(bc) ? port : undefined) });
+  ctx.services.provide(PLAN_SPAWN_PORT, {
+    forAgent: (bc) => (attached.has(bc) ? port : undefined),
+  });
   return {
     name: PLANS_CAPABILITY_NAME,
     order: -100,

@@ -27,7 +27,6 @@ const LIMITS: AgentsLimits = {
   bufferBytes: 4096,
   maxTotalBufferBytes: 65_536,
   pollMaxBytes: 4096,
-  awaitTimeoutMs: 1000,
   maxLiveChildren: 8,
   maxRetainedChildren: 16,
   maxNoticesPerIteration: 8,

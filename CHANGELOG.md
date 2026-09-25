@@ -78,9 +78,6 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   its remote Kernel and closes it when the connection ends.
 - `/model` can request an explicit context target through `runs.context` again; the optional field is
   admitted by the closed transport envelope.
-- A Lead now defers plan mutations issued in the same model iteration after tracked delegation until
-  the returned task state and fresh CAS identity are published. Sub-agents continue to receive no
-  plan mutation tools, and strict digest checks remain intact.
 - Agent and workflow counts appear only in the sidebar; the footer no longer repeats the roster.
 - Corrupt PNG tool results are refused before they can enter a later provider request.
 - POSIX local hosts now fall back to the private account-scoped namespace under `/tmp` when the

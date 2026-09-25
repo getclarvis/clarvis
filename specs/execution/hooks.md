@@ -88,7 +88,7 @@ settings/plugin/request-schema path can reach executable code — which is what 
 | Symbol | Value / shape |
 | --- | --- |
 | `HOOKS_CAPABILITY_NAME` | `"hooks"` |
-| `GATE_HOOK_EVENTS` | `["pre_tool_use","post_tool_use","pre_finalize","pre_delegate_task"]` |
+| `GATE_HOOK_EVENTS` | `["pre_tool_use","post_tool_use","pre_finalize","pre_spawn_subagent"]` |
 | `OBSERVER_HOOK_EVENTS` | `["run_start","run_end","post_compact","subagent_start","subagent_complete","model_call_error","budget_exhausted","user_steer"]` |
 | `COMPACTION_HOOK_EVENTS` | `["pre_compact"]` |
 | `CONTEXT_HOOK_EVENTS` | `["session_start"]` |
@@ -152,7 +152,7 @@ filtering and contain paths, never credentials. Production: the command environm
 
 ```ts
 {
-  event: "pre_tool_use" | "post_tool_use" | "pre_finalize" | "pre_delegate_task"
+  event: "pre_tool_use" | "post_tool_use" | "pre_finalize" | "pre_spawn_subagent"
        | "run_start" | "run_end" | "post_compact" | "subagent_start"
        | "subagent_complete" | "model_call_error"
        | "budget_exhausted" | "user_steer" | "session_start" | "pre_compact"
@@ -251,9 +251,9 @@ Test: `a checkpoint finalize carries its stage handoff separately from the final
 | Event | Fields on the stdin payload | Test |
 | --- | --- | --- |
 | `pre_tool_use` | `tool_name`, `tool_input` (clamped value) | shape: `packages/hooks/tests/component/runner.test.ts`; clamping: `packages/hooks/tests/component/capability.test.ts` |
-| `post_tool_use` | `tool_name`, `tool_input`, `tool_response: { text, progress, task_id, image_count }` | `packages/hooks/tests/component/capability.test.ts` |
+| `post_tool_use` | `tool_name`, `tool_input`, `tool_response: { text, progress, image_count }` | `packages/hooks/tests/component/capability.test.ts` |
 | `pre_finalize` | `agent`, `subagent_instance_id`, `mode`, `text`, `value` (clamped); `checkpoint` (clamped) only for checkpoint mode | `packages/hooks/tests/component/capability.test.ts` |
-| `pre_delegate_task` | `title`, `task` (clamped text), `profile`, `task_id` | `packages/hooks/tests/component/capability.test.ts` |
+| `pre_spawn_subagent` | `title`, `task` (clamped text), `profile` | `packages/hooks/tests/component/capability.test.ts` |
 | `run_start` | `mode`, `entry`, `lead_model`, `subagent_model` | `packages/hooks/tests/component/capability.test.ts` |
 | `run_end` | `status`, `error_code`, `iterations_used`, `elapsed_ms` | `packages/hooks/tests/component/capability.test.ts` |
 | `post_compact` | `agent`, `subagent_instance_id`, `operation`, `freed_chars`, `kept_chars` | `packages/hooks/tests/component/capability.test.ts` |
@@ -266,7 +266,7 @@ Test: `a checkpoint finalize carries its stage handoff separately from the final
 | `session_start` | none — projects to `{}` (`packages/hooks/src/event-serialization.ts`) | not exercised via `payloadFor` in this document's scope |
 | `user_prompt_expansion` | `command_name` | `packages/hooks/tests/component/capability.test.ts` |
 
-(`pre_delegate_task` through `budget_exhausted` above share one test body, "projects every
+(`pre_spawn_subagent` through `budget_exhausted` above share one test body, "projects every
 remaining event onto snake_case fields", `packages/hooks/tests/component/capability.test.ts`.)
 
 `defaultTimeoutFor` (`packages/hooks/src/event-serialization.ts`) resolves `HookInvocation.defaultTimeoutMs` by
@@ -286,7 +286,7 @@ function defaultTimeoutFor(event) {
 
 Because the tool check runs **before** the gate check, `pre_tool_use`/`post_tool_use` — which are
 also members of `GATE_HOOK_EVENTS` — get the short `tool` default (5000 ms), not the long `gate`
-one (30000 ms); only the two non-tool gates (`pre_finalize`, `pre_delegate_task`) get 30000 ms.
+one (30000 ms); only the two non-tool gates (`pre_finalize`, `pre_spawn_subagent`) get 30000 ms.
 Pinned by "gives the tool events the short default budget and the rare gates the long one",
 asserting `[5_000, 30_000, 2_000, 5_000]` for `pre_tool_use`/`pre_finalize`/`run_end`/`run_start`
 in that order (`packages/hooks/tests/component/capability.test.ts`).
@@ -309,12 +309,12 @@ in that order (`packages/hooks/tests/component/capability.test.ts`).
 | `user_steer` | `UserPromptSubmit` |
 | `user_prompt_expansion` | `UserPromptExpansion` |
 
-`pre_delegate_task`, `run_start`, `model_call_error`, `budget_exhausted` have **no** foreign
+`pre_spawn_subagent`, `run_start`, `model_call_error`, `budget_exhausted` have **no** foreign
 counterpart and are absent from the table on purpose — "an approximation that fires at the wrong
 moment is worse than an honest gap".
 
 `EXTERNAL_TOOL_NAMES` (keyed by `normalizeToolName`: letters+digits only, lower-cased): `bash`/`shell→shell`, `read`/`readfile→read_file`, `write`/`writefile→write_file`,
-`edit`/`editfile→edit_file`, `applypatch→apply_patch`, `ls`/`listdir→list_dir`, `task→delegate_task`, `skill→load_skill`. Measured against a public catalog of
+`edit`/`editfile→edit_file`, `applypatch→apply_patch`, `ls`/`listdir→list_dir`, `skill→load_skill`. Measured against a public catalog of
 196 plugins, external names without Clarvis counterparts must be reported rather than silently accepted. `EXTERNAL_HOOK_TOOL_NAMES` owns the reverse spelling emitted on stdin;
 the two directions are explicit because several external aliases map to one Clarvis tool.
 `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` lists 5 foreign names with no
@@ -908,7 +908,7 @@ in [loop-run-lifecycle](../engine/loop-run-lifecycle.md), delegated per the docu
 
 ## 8. Open questions
 
-- **Why `pre_delegate_task`, `run_start`, `model_call_error` and `budget_exhausted` have no foreign
+- **Why `pre_spawn_subagent`, `run_start`, `model_call_error` and `budget_exhausted` have no foreign
   dialect counterpart** is not stated beyond the general principle ("an approximation that fires at
   the wrong moment is worse than an honest gap", `packages/capability/src/hooks-config.ts`); no comment explains why
   specifically these four rather than some other subset lack a mapping.

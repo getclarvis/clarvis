@@ -41,7 +41,7 @@ describe("DEFAULT_SHARED_AGENT_PROMPT", () => {
       "explicitly instructed by an applicable loaded skill or agent-instruction file",
       "AGENTS.md or CLARVIS.md",
       "Tool availability, profile permissions, task complexity, and potential efficiency gains are not a request to delegate",
-      "independent spawning, tracked task delegation, and workflow leaders",
+      "sub-agent spawning and workflow leaders",
       "do not use another orchestration path to bypass it",
       "If no such instruction applies, continue the work yourself",
       "within that instruction's scope and the active Agent Profile and grants",

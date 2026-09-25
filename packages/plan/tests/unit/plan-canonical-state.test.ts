@@ -29,7 +29,7 @@ async function planned(taskCount = 2): Promise<PlanSession> {
 }
 
 const OPERATIONAL_GUIDANCE =
-  "Keep the plan current. Mark direct work in_progress first. After delegate_task, verify the task's published status. Record outcomes with transition_plan_task when exit criteria are met. Review returned and failed tasks before completion.";
+  "Keep the plan current. Mark direct work in_progress first. Record outcomes with transition_plan_task when exit criteria are met. Review returned and failed tasks before completion.";
 
 function withStatuses(
   document: NonNullable<ReturnType<PlanSession["cached"]>>,
@@ -143,10 +143,7 @@ describe("plan canonical state", () => {
     expect(header.split("\n").at(-1)).toBe(OPERATIONAL_GUIDANCE);
     expect(Array.from(OPERATIONAL_GUIDANCE).length).toBeLessThanOrEqual(240);
     expect(OPERATIONAL_GUIDANCE).toContain("Mark direct work in_progress first");
-    expect(OPERATIONAL_GUIDANCE).toContain(
-      "After delegate_task, verify the task's published status",
-    );
-    expect(OPERATIONAL_GUIDANCE).not.toContain("Call delegate_task");
+    expect(OPERATIONAL_GUIDANCE).not.toContain("Call spawn_subagent");
     expect(OPERATIONAL_GUIDANCE).toContain("transition_plan_task");
   });
 

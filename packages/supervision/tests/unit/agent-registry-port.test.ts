@@ -12,7 +12,6 @@ describe("AGENT_REGISTRY_PORT", () => {
         bufferBytes: 1000,
         maxTotalBufferBytes: 2000,
         pollMaxBytes: 100,
-        awaitTimeoutMs: 100,
         maxLiveChildren: 1,
         maxRetainedChildren: 1,
         maxNoticesPerIteration: 1,

@@ -155,7 +155,7 @@ export type {
   BeforeToolUseContext,
   AfterToolUseContext,
   PreFinalizeContext,
-  PreDelegateTaskContext,
+  PreSpawnContext,
   RunStartContext,
   RunEndContext,
   SubagentCompleteContext,

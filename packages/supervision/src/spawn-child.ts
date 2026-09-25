@@ -1,6 +1,6 @@
 /**
  * The register-a-background-child skeleton shared by every producer that
- * spawns into the supervision registry: the loop's own `delegate_task`
+ * spawns into the supervision registry: the loop's own `spawn_subagent`
  * handler and `@clarvis/workflows`' `run_leader` handler.
  *
  * @remarks Only the identical part is extracted here — build the control

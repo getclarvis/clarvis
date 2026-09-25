@@ -44,7 +44,6 @@ const TEST_LIMITS: AgentsLimits = {
   bufferBytes: 131_072,
   maxTotalBufferBytes: 6_291_456,
   pollMaxBytes: 8192,
-  awaitTimeoutMs: 5000,
   maxLiveChildren: 16,
   maxRetainedChildren: 32,
   maxNoticesPerIteration: 8,
@@ -1888,7 +1887,7 @@ describe("run_round — defects the review caught", () => {
     await run.settle();
 
     // agents.adopt swallows the rejection, so an unsettled baton would block
-    // await_agents until teardown with nothing reported at all.
+    // agent_poll until teardown with nothing reported at all.
     expect(run.settlements.at(-1)).toContain("rounds finished");
     expect(records.length).toBeGreaterThan(0);
   });

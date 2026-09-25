@@ -26,7 +26,6 @@ export function resolveAgentsLimits(request: RunRequest, _env: EnvConfig): Agent
     bufferBytes: param.buffer_bytes ?? AGENTS_DEFAULTS.buffer_bytes,
     maxTotalBufferBytes: param.max_total_buffer_bytes ?? AGENTS_DEFAULTS.max_total_buffer_bytes,
     pollMaxBytes: param.poll_max_bytes ?? AGENTS_DEFAULTS.poll_max_bytes,
-    awaitTimeoutMs: param.await_timeout_ms ?? AGENTS_DEFAULTS.await_timeout_ms,
     maxLiveChildren: param.max_live_children ?? AGENTS_DEFAULTS.max_live_children,
     maxRetainedChildren: param.max_retained_children ?? AGENTS_DEFAULTS.max_retained_children,
     maxNoticesPerIteration:

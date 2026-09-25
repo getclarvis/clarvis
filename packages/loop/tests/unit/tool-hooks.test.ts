@@ -355,7 +355,7 @@ describe("tool hooks", () => {
     expect(results[0]).toBe("ok");
   });
 
-  it("afterToolUse and advise cover deferred verdicts (the delegate_task path)", async () => {
+  it("afterToolUse and advise cover deferred verdicts (the spawn_subagent path)", async () => {
     const seenByAfter: string[] = [];
     const contribution: AgentLoopContribution = {
       tools: [noopTool("defer")],

@@ -4,7 +4,7 @@
  *
  * @remarks
  * This is substrate shared by two producers that would otherwise reach into
- * each other: `@clarvis/loop`'s `delegate_task` registers a sub-agent, and
+ * each other: `@clarvis/loop`'s `spawn_subagent` registers a sub-agent, and
  * `@clarvis/workflows`' `run_leader` registers a leader, both into the same id
  * space. Owning it here makes that edge explicit and one-way — `loop →
  * supervision` and `workflows → supervision` — where `workflows` used to reach
@@ -15,8 +15,7 @@
  * over it are engine policy.** This package knows how to mint an id, buffer a
  * child's activity, project its trace into a readable line, queue a steer and
  * register a background child; the loop decides what a model may ask of any of
- * that, and `agent_list` / `agent_poll` / `agent_stop` / `agent_steer` /
- * `await_agents` stay there.
+ * that, and `agent_list` / `agent_poll` / `agent_stop` / `agent_steer` stay there.
  *
  * It depends on `@clarvis/capability` and — for the settings block alone —
  * `zod`, and on nothing else beyond `node:crypto`.
@@ -28,15 +27,13 @@ export { AGENT_ID_PATTERN, mintAgentId } from "./ids.ts";
 export { resolveAgentsLimits } from "./limits.ts";
 export { fromTraceEntry, fromTraceEvent, projectAgentEvent, waitAgeSeconds } from "./projection.ts";
 export type { ProjectionSource, ProjectionState } from "./projection.ts";
-export { createAgentRegistry, UnknownAgentError } from "./registry.ts";
+export { createAgentRegistry } from "./registry.ts";
 export type {
   AgentsLimits,
   AgentListEntry,
   AgentPollResult,
   AgentStopResult,
   AgentNotice,
-  AgentSettledInfo,
-  AgentWait,
   AgentTeardownReport,
   AgentRegistryOptions,
   AgentRegistry,

@@ -247,7 +247,7 @@ export function resolveSubagentProfiles(
  *
  * @param profiles - the candidate profiles.
  * @returns `true` when at least one qualifies.
- * @remarks Gates the `image_refs` property on both child-spawn tools: offering the
+ * @remarks Gates the `image_refs` property on `spawn_subagent`: offering the
  *   parameter when nothing could receive an image only invites a refusal.
  *
  *   A model whose capabilities are unknown counts as blind here, unlike the

@@ -29,8 +29,8 @@ charged an entire agent loop for a description." (`packages/loop/src/runtime/vis
 
 Two other things share the image vocabulary this file is built on and are described here only far
 enough to place the prepass in context: `read_image` (`packages/tools/src/tools/read-image.ts`), the
-tool a sighted agent uses to look at a workspace or admitted scratch file directly, and `delegate_task`'s `image_refs`
-parameter (`packages/loop/src/runtime/subagents/delegate-task.ts`,
+tool a sighted agent uses to look at a workspace or admitted scratch file directly, and `spawn_subagent`'s `image_refs`
+parameter (`packages/loop/src/runtime/subagents/spawn-subagent.ts`,
 `packages/loop/src/runtime/subagents/lead-tools.ts`,
 `packages/loop/src/runtime/delegation.ts`), the *other* route an image can take — handed by a
 possibly-blind lead to a vision-capable Sub-agent instead of (or alongside) the automatic prepass. Full
@@ -333,20 +333,20 @@ so whatever flattens a `ToolResult` to `.text` for that call gets an empty strin
 of the image (`packages/tools/src/tools/read-image.ts`; pinned by "produces no text output (flattened text is empty)",
 `packages/tools/tests/integration/read-image.test.ts`).
 
-### 4.5 The `delegate_task`/`image_refs` route (sibling mechanism, not this file's own)
+### 4.5 The `spawn_subagent`/`image_refs` route (sibling mechanism, not this file's own)
 
 A lead (blind or not) may instead hand specific turn images to a spawned Sub-agent by index:
-`delegate_task`'s `image_refs` schema property is offered only when the turn carries at least one image
+`spawn_subagent`'s `image_refs` schema property is offered only when the turn carries at least one image
 **and** `hasVisionCapableProfile(spawnableProfiles)` is true — `imageRefsAllowed = (deps.turnImages?.length
 ?? 0) > 0 && hasVisionCapableProfile(deps.profiles.values())`
 (`packages/loop/src/runtime/delegation.ts`, consumed at `packages/loop/src/runtime/subagents/lead-tools.ts` to decide whether
-`buildDelegateTaskTool` adds the property; `hasVisionCapableProfile` itself is defined at
+`buildSpawnSubagentTool` adds the property; `hasVisionCapableProfile` itself is defined at
 `packages/loop/src/runtime/subagents/subagent-profiles.ts`). So the property is withheld both
 when no spawnable profile is vision-capable and when the turn carries no images at all, even with a
 vision-capable spawnable profile present. A call naming a target profile whose
-model lacks `vision` is rejected (`packages/loop/src/runtime/subagents/delegate-task.ts`). The
+model lacks `vision` is rejected (`packages/loop/src/runtime/subagents/spawn-subagent.ts`). The
 selected indices are resolved against `ctx.turnImages` — the same array `collectTurnImages` produced —
-at `packages/loop/src/runtime/subagents/delegate-task.ts`. This route and the automatic prepass
+at `packages/loop/src/runtime/subagents/spawn-subagent.ts`. This route and the automatic prepass
 are independent and can coexist in the same run (both consume `turnImages`, neither consumes it away
 from the other).
 
@@ -422,13 +422,13 @@ from the other).
 17. **`read_image` is available even on a read-only tool surface.** Production: no read-only gate in
     `read-image.ts`; pinned by "is available in the read-only surface"
     (`packages/tools/tests/integration/read-image.test.ts`).
-18. **A `delegate_task` call naming `image_refs` for a profile whose model lacks `vision` is rejected,
+18. **A `spawn_subagent` call naming `image_refs` for a profile whose model lacks `vision` is rejected,
     and the offer of the `image_refs` schema property itself depends on *some* spawnable profile being
     vision-capable — not on the lead's own model — AND on the turn carrying at least one image.**
     `imageRefsAllowed = (deps.turnImages?.length ?? 0) > 0 && hasVisionCapableProfile(deps.profiles.values())`
     is the actual gate (`packages/loop/src/runtime/delegation.ts`); a vision-capable spawnable
     profile alone does not offer the property when the turn has no images. Production
-    `packages/loop/src/runtime/subagents/delegate-task.ts`,
+    `packages/loop/src/runtime/subagents/spawn-subagent.ts`,
     `packages/loop/src/runtime/subagents/subagent-profiles.ts`; pinned by "rejects image_refs for a
     profile whose model lacks vision" (`packages/loop/tests/unit/image-routing.test.ts`) and "a
     blind lead routes images it cannot see to a vision-capable Sub-agent"
@@ -523,7 +523,7 @@ only by shaping a `RunRequest` with `vision_model` set and a turn carrying image
 
 **Shares vocabulary with, but is not, delegation**: `collectTurnImages`
 (`packages/loop/src/runtime/subagents/build-subagent-input.ts`) feeds both `EntrySeed.turnImages` (this file's concern) and
-`delegate_task`'s `image_refs` resolution (`packages/loop/src/runtime/subagents/delegate-task.ts`, a different document's
+`spawn_subagent`'s `image_refs` resolution (`packages/loop/src/runtime/subagents/spawn-subagent.ts`, a different document's
 concern). The two routes do not exclude each other and do not share any mutable state beyond reading
 the same array.
 

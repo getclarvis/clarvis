@@ -42,9 +42,9 @@ generate the advertised catalog and normalize null to absence before the typed p
 | `@clarvis/plan/settings`   | the light `plans:` settings contract                                        |
 
 `createPlansCatalogCapability`, exported by the capability entry, lets a host retain
-planning's tools and `delegate_task` schema in an auxiliary continuation without
+planning's tools in an auxiliary continuation without
 opening the source provider. It respects the source `off`/`on`/`review` mode, refuses
-plan calls and tracked spawning, and has no gates, context publication, recovery,
+plan calls, and has no gates, context publication, recovery,
 finalization or retention effects. Memory indexing uses this projection so a paused
 goal's plan remains owned by its primary execution. It is a host API, not a request
 option available to the model.
@@ -148,13 +148,7 @@ from the same decision carries the one the first just invalidated and is rejecte
 three-call batch measured one write and two conflicts. Serial edits therefore cost a full model round
 trip each, and a plan in the demo workspace reached `revision: 35` that way.
 
-Delegation is another writer, but it is owned by the runtime rather than the child: the child never
-receives plan tools, while the delegation port records `in_progress` and `returned`. Once the Lead
-starts a tracked delegation, sibling `revise_plan` and `transition_plan_task` calls from that same
-model iteration are deferred. The next iteration publishes the runtime's current revision and
-digests before the Lead may mutate again. This preserves the strict CAS check instead of accepting a
-stale digest or letting a child edit the plan. The orchestration and catalog component suites pin
-both sides of this rule.
+Child spawning does not write plan state. The lead records work with `transition_plan_task` using the current CAS values. A child receives no plan tools, and the lead remains responsible for reviewing its result before closing a task.
 
 `applyPlanRevisions` folds the operations in order (so one may build on the last), the batch is
 **all-or-nothing**, and it spends **one `revision` and at most one `spec_revision`** however many
@@ -167,14 +161,9 @@ only about the envelope, and refusing it would cost the round trip this exists t
 **Two terminal states only**: `done` and `abandoned`, each with a mandatory field
 (`result` / `reason`). `failed` requires `error` and is not terminal.
 
-A sub-agent's return lands in `returned`, which is **not** closed — the lead must judge it
-explicitly. In the loop, `delegate_task` may claim a task (`in_progress`) and record its return, but
-only the lead's later `transition_plan_task`, using the next canonical CAS, may close one.
+A `returned` task is **not** closed — the lead must judge it explicitly. Only an explicit `transition_plan_task`, using the current canonical CAS, changes task status.
 
-Planning does not turn independent spawning into a plan task. `spawn_subagent` remains the route for
-independent work and carries no `task_id`. The plan capability adds `delegate_task`, which requires
-the exact id of an existing task that the child genuinely implements. No plan or task should be
-created solely to obtain an id.
+Planning does not turn a child spawn into a plan task. `spawn_subagent` carries no `task_id`.
 
 **A `completed` plan is sealed** (`isPlanSealed`): it is the record of work that finished, and its
 substance is immutable. `revise` refuses it with `PlanSealedError`. The one edit that survives the
@@ -293,7 +282,7 @@ reminders. Each names the current plan and projects every task exactly once, usi
 status: `in_progress`, `returned`, and `failed` require attention; `pending` has not started; and
 `done` or `abandoned` is closed. Document order is preserved within each category, and an empty
 category says `none.`. The invariant closing guidance tells direct work to enter `in_progress`, asks
-the lead to verify the task's published status after `delegate_task`, and reserves outcome recording
+the lead to check the task's published status and reserves outcome recording
 for `transition_plan_task`; it does not perform or promise a transition. The complete reminder is
 bounded to 32,768 Unicode characters, while its one-line plan-name projection is bounded to 256.
 Changed plan bodies append; unchanged bodies stay in place. The newest reminder describes the

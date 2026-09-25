@@ -337,8 +337,8 @@ cross-owner `getById`, because a trace holds the full conversation."
 | `DETAIL_MAX_DEPTH` | `32` | structural depth ceiling |
 | `DETAIL_TRUNCATED_KEY` | `"__clarvis_truncated__"` | marker key set on a truncated object |
 
-`delegation_created.task` uses `DELEGATE_TASK_MAX_CHARS` (`32_768`,
-`packages/capability/src/delegate-task.ts`), applied through `truncateUnicodeTotal`
+`delegation_created.task` uses `TASK_BRIEF_MAX_CHARS` (`32_768`,
+`packages/capability/src/task-brief.ts`), applied through `truncateUnicodeTotal`
 (`packages/trace/src/cap-detail.ts`), which keeps prefix + marker inside one total ceiling (`packages/trace/src/cap-detail.ts`).
 
 ### 2e. Store bounds (`packages/trace/src/json-trace-store.ts`)
@@ -1287,7 +1287,7 @@ Two degradations are worth naming as *policy* rather than mechanics, because the
 | Edge | Kind | Forced by |
 | --- | --- | --- |
 | `@clarvis/capability` — types (`TraceEntry`, `TraceEvent`, `ExecutionRecord`, `RunRequest`, `Logger`, …) | type-only, static | `packages/trace/src/trace-store.ts`, `packages/trace/src/trace-mapper.ts` (`TraceEntry`), `packages/trace/src/record-builder.ts` (`RunRequest`), `packages/trace/src/json-trace-store.ts` (`Logger`) |
-| `@clarvis/capability` — values (`sanitizeDeep`, `isBuiltinTraceKind`, `PersistenceError`, `ConflictError`, `executionIdConflict`, `levelEnabled`, `NOOP_LOGGER`, `unref`, `DELEGATE_TASK_MAX_CHARS`) | runtime, static | `packages/trace/src/json-trace-store.ts`, `packages/trace/src/cap-detail.ts`, `packages/trace/src/cleanup.ts`, `packages/trace/src/testing.ts` |
+| `@clarvis/capability` — values (`sanitizeDeep`, `isBuiltinTraceKind`, `PersistenceError`, `ConflictError`, `executionIdConflict`, `levelEnabled`, `NOOP_LOGGER`, `unref`, `TASK_BRIEF_MAX_CHARS`) | runtime, static | `packages/trace/src/json-trace-store.ts`, `packages/trace/src/cap-detail.ts`, `packages/trace/src/cleanup.ts`, `packages/trace/src/testing.ts` |
 | `@clarvis/capability` — values (`isBuiltinTraceEntry`, `isBuiltinTraceEvent`) | runtime, static | `packages/trace/src/trace-mapper.ts` (`isBuiltinTraceEntry`), `packages/trace/src/event-span.ts` (`isBuiltinTraceEvent`) |
 | `@clarvis/paths` — `ownerSegment`, `writeFileDurable(Sync)`, `acquireLocalLease(Sync)`, `reclaimLocalLeaseSync`, `isTmpFile`, `globalPaths` | runtime, static | `packages/trace/src/json-trace-store.ts`, `packages/trace/src/trace-store-factory.ts` |
 | Node builtins `node:fs`, `node:os`, `node:path`, `node:crypto` | runtime, static | `packages/trace/src/json-trace-store.ts`, `packages/trace/src/journal.ts`, `packages/trace/src/execution-id.ts` |

@@ -116,7 +116,7 @@ export interface WorkflowCtx {
   /** The leader concurrency cap enforced by `semaphore`; budget admission adds
    * {@link WorkflowCtx.maxParallelSubagents} because those consumers can overlap. */
   maxConcurrency: number;
-  /** The engine's per-run `delegate_task` concurrency cap. Budget admission
+  /** The engine's per-run `spawn_subagent` concurrency cap. Budget admission
    * combines this with {@link WorkflowCtx.maxConcurrency}, because manager
    * descendants and isolated leaders can consume the auxiliary ledger at the
    * same time. */

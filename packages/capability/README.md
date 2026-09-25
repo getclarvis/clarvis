@@ -100,12 +100,10 @@ kinds and are composed into one immutable per-run projector registry.
 
 `CapabilityServices` is the run-scoped typed port registry. The engine publishes substrate before
 any `forRun`; capabilities may publish their own ports while activating, and consumers resolve peers
-at `attach` time so capability registration order does not decide visibility. The optional task
-tracking contract and its owner-neutral `TASK_TRACKING_PORT` have one canonical declaration here.
+at `attach` time so capability registration order does not decide visibility. The optional spawn-gate contract and its owner-neutral `SPAWN_GATE_PORT` have one canonical declaration here.
 The loop-owned `RUN_TRACE_PORT` exposes the current run's narrow `TracePort` during `forRun` without
 publishing the concrete recording handle or any context mutation surface.
-Without a provider, child spawning remains available through `spawn_subagent`; with a provider,
-the tracker contributes the required `task_id` property for `delegate_task`.
+Without a provider, child spawning remains available through `spawn_subagent`; with a provider, the gate may refuse the spawn before it starts.
 
 Activation and persistence hooks are host extension boundaries, so they have finite wall budgets.
 All `forRun` activations and `seedBlock` contributions run concurrently under
@@ -183,8 +181,8 @@ an otherwise opaque wait without retaining model or tool payloads.
 one non-empty line, normalized horizontal whitespace, and at most 60 Unicode code points. A consumer
 must reject an invalid model-authored title instead of deriving one from the full task or clipping it;
 otherwise workflow leaders, work-item leaders and ordinary sub-agents drift back to different labels.
-`parseDelegateTaskText` and `DELEGATE_TASK_MAX_CHARS` are the corresponding full-brief boundary:
-`delegate_task` accepts at most 32,768 Unicode characters, using the same measure in its JSON Schema
+`parseTaskBrief` and `TASK_BRIEF_MAX_CHARS` are the corresponding full-brief boundary:
+`spawn_subagent` accepts at most 32,768 Unicode characters, using the same measure in its JSON Schema
 and programmatic validation while preserving Markdown and whitespace exactly.
 
 `OutputTokenBudget` is the structural port for a capability that owns a shared output ceiling. An

@@ -175,7 +175,6 @@ const AGENTS_FIELDS = [
   "buffer_bytes",
   "max_total_buffer_bytes",
   "poll_max_bytes",
-  "await_timeout_ms",
   "max_live_children",
   "max_retained_children",
   "max_notices_per_iteration",

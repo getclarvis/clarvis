@@ -51,7 +51,6 @@ export type BuiltinTraceEvent =
       title: string;
       task: string;
       tools: string[];
-      task_id?: string;
       profile?: string;
     }
   | {
@@ -166,7 +165,6 @@ export type BuiltinTraceEvent =
   | {
       type: "delegation_completed";
       delegation_id: string;
-      task_id?: string;
       completed_at: number;
       status: string;
       result: string;
@@ -175,7 +173,6 @@ export type BuiltinTraceEvent =
   | {
       type: "delegation_failed";
       delegation_id: string;
-      task_id?: string;
       completed_at: number;
       status: string;
       result: string;
@@ -210,7 +207,6 @@ export type BuiltinTraceEvent =
       contribution_count?: number;
       requested?: true;
       user_contribution_count?: number;
-      task_id?: string;
     }
   | {
       type: "vision_analysis";
@@ -291,7 +287,6 @@ export type BuiltinTraceEvent =
   | {
       type: "delegation_started";
       delegation_id: string;
-      task_id?: string;
       occurred_at: number;
       model: string;
     }

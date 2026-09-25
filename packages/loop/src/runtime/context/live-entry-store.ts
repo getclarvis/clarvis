@@ -6,7 +6,6 @@ import type { RewriteEntry } from "./context-rewrite.ts";
 
 /** Internal entry metadata kept beside each provider-facing message. */
 export interface LiveEntry extends RewriteEntry {
-  taskId?: string;
   noteKind?: string;
   blockKind?: string;
   superseded?: boolean;
@@ -57,13 +56,7 @@ export interface LiveEntryStore {
   totalChars(): number;
   appendDurable(entry: LiveEntry): void;
   removeAt(index: number): void;
-  push(
-    message: LiveMessage,
-    evictable: boolean,
-    taskId?: string,
-    canonical?: boolean,
-    summary?: boolean,
-  ): void;
+  push(message: LiveMessage, evictable: boolean, canonical?: boolean, summary?: boolean): void;
   replace(entries: RewriteEntry[], cause?: PrefixBreakCause): void;
   sync(): void;
   snapshot(): ContextSnapshotEntry[];
@@ -103,7 +96,6 @@ export function createLiveEntryStore(
           evictable: item.evictable,
           canonical: item.canonical,
           summary: item.summary,
-          ...(item.task_id !== undefined ? { taskId: item.task_id } : {}),
           ...(item.note_kind !== undefined ? { noteKind: item.note_kind } : {}),
           ...(item.block_kind !== undefined ? { blockKind: item.block_kind } : {}),
           ...(item.superseded === undefined ? {} : { superseded: item.superseded }),
@@ -165,7 +157,7 @@ export function createLiveEntryStore(
       total -= entries[index]!.chars;
       entries.splice(index, 1);
     },
-    push(message, evictable, taskId, canonical = false, summary = false): void {
+    push(message, evictable, canonical = false, summary = false): void {
       const entry: LiveEntry = {
         message,
         chars: liveMessageChars(message),
@@ -173,7 +165,6 @@ export function createLiveEntryStore(
         canonical,
         summary,
       };
-      if (taskId !== undefined) entry.taskId = taskId;
       appendDurable(entry);
       sync();
     },
@@ -204,7 +195,6 @@ export function createLiveEntryStore(
           evictable: entry.evictable,
           summary: entry.summary,
           canonical: entry.canonical,
-          ...(entry.taskId !== undefined ? { task_id: entry.taskId } : {}),
           ...(entry.noteKind !== undefined ? { note_kind: entry.noteKind } : {}),
           ...(entry.blockKind !== undefined ? { block_kind: entry.blockKind } : {}),
           ...(entry.superseded === undefined ? {} : { superseded: entry.superseded }),

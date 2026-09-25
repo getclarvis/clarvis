@@ -46,12 +46,12 @@ function admittedLifecycleHook(
               hook.preFinalize!.call(hook, context),
             ),
         }),
-    ...(hook.preDelegateTask === undefined
+    ...(hook.preSpawnSubagent === undefined
       ? {}
       : {
-          preDelegateTask: (context) =>
-            admission.call(lane("preDelegateTask"), "normal", () =>
-              hook.preDelegateTask!.call(hook, context),
+          preSpawnSubagent: (context) =>
+            admission.call(lane("preSpawnSubagent"), "normal", () =>
+              hook.preSpawnSubagent!.call(hook, context),
             ),
         }),
     ...(hook.onRunStart === undefined

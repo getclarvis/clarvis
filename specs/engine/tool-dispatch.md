@@ -54,12 +54,12 @@ Production: `packages/loop/src/runtime/tools/submit-result-tool.ts` and
 
 | Symbol | File | Value / shape |
 | --- | --- | --- |
-| `DELEGATE_TASK_TOOL_NAME` | `packages/loop/src/runtime/tools/wire-names.ts` | `"delegate_task"` |
+| `SPAWN_SUBAGENT_TOOL_NAME` | `packages/loop/src/runtime/tools/wire-names.ts` | `"spawn_subagent"` |
 | `SUBMIT_RESULT_TOOL_NAME` | `packages/loop/src/runtime/tools/wire-names.ts` | `"submit_result"` |
 | `ASK_USER_TOOL_NAME` | `packages/loop/src/runtime/tools/wire-names.ts` | `"ask_user"` |
-| `AGENT_LIST_TOOL` / `AGENT_POLL_TOOL` / `AGENT_STOP_TOOL` / `AGENT_STEER_TOOL` / `AWAIT_AGENTS_TOOL` | `packages/loop/src/runtime/tools/wire-names.ts` | `"agent_list"`, `"agent_poll"`, `"agent_stop"`, `"agent_steer"`, `"await_agents"` |
-| `AGENT_SUPERVISION_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | the five names above, in that order |
-| `BUILTIN_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | `[delegate_task, submit_result, ask_user]` |
+| `AGENT_LIST_TOOL` / `AGENT_POLL_TOOL` / `AGENT_STOP_TOOL` / `AGENT_STEER_TOOL` | `packages/loop/src/runtime/tools/wire-names.ts` | `"agent_list"`, `"agent_poll"`, `"agent_stop"`, `"agent_steer"` |
+| `AGENT_SUPERVISION_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | the four names above, in that order |
+| `BUILTIN_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | `[spawn_subagent, submit_result, ask_user]` |
 | `AGENT_TOOL_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | 9 coding-tool wire names (`read_file` … `remove`) |
 | `VISION_AGENT_TOOL_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | `["read_image"]` |
 | `READ_ONLY_AGENT_TOOL_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | 3 read-only coding tool names |
@@ -276,9 +276,9 @@ throws inside the reporter itself.
    (`packages/loop/src/runtime/orchestrator.ts`), a lead's lazily-built subagent registry
    (`packages/loop/src/runtime/entry-inputs.ts`, closed over inside
    `buildSubagentRegistry`), and delegation's per-call registry
-   (`packages/loop/src/runtime/subagents/delegate-task.ts`). `capabilityReserved` in the last
+   (`packages/loop/src/runtime/subagents/spawn-subagent.ts`). `capabilityReserved` in the last
    two comes from `deps.capabilityReserved ?? []` (`packages/loop/src/runtime/entry-inputs.ts`, inside the closure's own
-   `deps`, not the outer `p`) and `ctx.capabilityReserved ?? []` (`packages/loop/src/runtime/subagents/delegate-task.ts`)
+   `deps`, not the outer `p`) and `ctx.capabilityReserved ?? []` (`packages/loop/src/runtime/subagents/spawn-subagent.ts`)
    respectively, i.e. it is threaded from the same
    `CapabilityToolMetadata` the entry agent used — collection of that metadata
    (`collectCapabilityToolMetadata`, `packages/loop/src/runtime/capability-tool-metadata.ts`) is
@@ -493,7 +493,7 @@ gate machinery) but both call `contract.validate` exactly as described above.
 
 Given `declared` (the union of every registered capability's `toolEffects`, keyed by wire name), the
 returned port's `effect(wireName)` checks, **in this fixed order**:
-1. `CONTROL` set (`submit_result`, `ask_user`, `delegate_task`, the five
+1. `CONTROL` set (`submit_result`, `ask_user`, `spawn_subagent`, the four
    `AGENT_SUPERVISION_WIRE_NAMES`) → `"control"`.
 2. `READ` set (`READ_ONLY_AGENT_TOOL_WIRE_NAMES`) → `"read"`.
 3. `CODING` set (`AGENT_TOOL_WIRE_NAMES`) → `"mutate"` — this covers `shell` and `shell_session`,
@@ -527,11 +527,11 @@ Test: `packages/capability/tests/unit/compose.test.ts`, `packages/loop/tests/uni
 | INV-055 | An `output_schema` exceeding `OUTPUT_SCHEMA_LIMITS` (containers, depth, single-string length) is rejected before Ajv compiles it, as is a cyclic graph or an accessor-backed property. | `packages/loop/src/runtime/tools/result-contract.ts` | `packages/loop/tests/unit/result-contract.test.ts` |
 | INV-056 | A non-`Error` thrown during schema compilation is coalesced via `String(err)` into a `ValidationError`, not propagated raw. | `packages/loop/src/runtime/tools/result-contract.ts` | `packages/loop/tests/unit/result-contract.test.ts` |
 | INV-057 | `RESERVED_WIRE_NAMES` is *derived from* (not hand-copied alongside) `BUILTIN_WIRE_NAMES` concatenated with `AGENT_TOOL_WIRE_NAMES` — the two lists must literally be the same array. | `packages/loop/src/runtime/tools/wire-names.ts` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts` |
-| INV-058 | A wire-safe, case-insensitively unique, non-host-reserved MCP local name is preserved exactly. Eligible locals are reserved before fallbacks, making their ownership independent of entry order. Duplicate/case-colliding, invalid, or reserved locals use a sanitized namespaced fallback; a built-in name such as `submit_result`, `ask_user`, `read_file`, or `delegate_task` is never taken, and dotted `mcp.tool` remains canonical and resolvable. | `buildRegistry` in `packages/loop/src/runtime/tools/mcp-registry.ts`; `makeRegistry` and `toWireToolName` in `packages/mcp-client/src/registry.ts` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts` (`"an MCP extension tool named … never takes the built-in's name"`); `packages/mcp-client/tests/unit/registry.test.ts` (`"preserves a unique provider-safe local name for skill/tool compatibility"`, `"falls back to namespaced names when local names collide across servers"`, and `"reserves a unique local name before allocating colliding namespaced fallbacks"`) |
+| INV-058 | A wire-safe, case-insensitively unique, non-host-reserved MCP local name is preserved exactly. Eligible locals are reserved before fallbacks, making their ownership independent of entry order. Duplicate/case-colliding, invalid, or reserved locals use a sanitized namespaced fallback; a built-in name such as `submit_result`, `ask_user`, `read_file`, or `spawn_subagent` is never taken, and dotted `mcp.tool` remains canonical and resolvable. | `buildRegistry` in `packages/loop/src/runtime/tools/mcp-registry.ts`; `makeRegistry` and `toWireToolName` in `packages/mcp-client/src/registry.ts` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts` (`"an MCP extension tool named … never takes the built-in's name"`); `packages/mcp-client/tests/unit/registry.test.ts` (`"preserves a unique provider-safe local name for skill/tool compatibility"`, `"falls back to namespaced names when local names collide across servers"`, and `"reserves a unique local name before allocating colliding namespaced fallbacks"`) |
 | INV-059 | A capability's tool metadata (`reservedWireNames`, `toolEffects`) is collected from **every registered capability**, including one whose `forRun()` returns `null` for this run — declaration is independent of activation. | `packages/loop/src/runtime/capability-tool-metadata.ts` (owned by [loop-capability-composition](capability-composition.md)) | `packages/loop/tests/unit/mcp-registry-reservation.test.ts` |
 | INV-060 | An MCP tool colliding with a *capability's* reserved name is blocked the same way, once passed through `buildRegistry`; without passing it, the engine alone provides no such protection. | `packages/loop/src/runtime/tools/mcp-registry.ts` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts` |
 | INV-061 | A tool-effect classifier built from declared `toolEffects` answers the declared effect for a declared name and `"unknown"` for any undeclared name. | `packages/loop/src/runtime/tools/tool-effect.ts` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts` |
-| INV-062 | Every call site of `buildRegistry` in `@clarvis/loop`'s source passes exactly two arguments, never omitting the second (which would silently let an MCP server shadow a reserved name). At least three such call sites exist. | `packages/loop/src/runtime/orchestrator.ts`, `packages/loop/src/runtime/entry-inputs.ts`, `packages/loop/src/runtime/subagents/delegate-task.ts` | `packages/loop/tests/architecture/mcp-registry-call-sites.test.ts` — walks every `.ts` file under `src/`, regex-scans for `buildRegistry(` call sites (excluding the definition itself), asserts there are `>= 3`, and asserts each passes exactly two top-level, balanced-bracket-parsed arguments |
+| INV-062 | Every call site of `buildRegistry` in `@clarvis/loop`'s source passes exactly two arguments, never omitting the second (which would silently let an MCP server shadow a reserved name). At least three such call sites exist. | `packages/loop/src/runtime/orchestrator.ts`, `packages/loop/src/runtime/entry-inputs.ts`, `packages/loop/src/runtime/subagents/spawn-subagent.ts` | `packages/loop/tests/architecture/mcp-registry-call-sites.test.ts` — walks every `.ts` file under `src/`, regex-scans for `buildRegistry(` call sites (excluding the definition itself), asserts there are `>= 3`, and asserts each passes exactly two top-level, balanced-bracket-parsed arguments |
 | INV-063 | `openToolPool`, given a signal already aborted before it acquires a lease, still releases the lease it acquired and returns a `cancelled` response rather than leaking it. | `packages/loop/src/runtime/open-tool-pool.ts` | `packages/loop/tests/unit/open-tool-pool-policy.test.ts` |
 | INV-064 | Every run requests background MCP authorization/admission. If any failed server is pending browser OAuth or deferred behind a saturated connection/handshake bound, an otherwise empty pool returns success plus `mcp_degraded`; mixed terminal failures cannot mask that nonterminal state. | `openToolPool` in `packages/loop/src/runtime/open-tool-pool.ts` | `packages/loop/tests/integration/open-tool-pool.test.ts` (all-pending, mixed pending/terminal, busy-admission, and consecutive-run cases) |
 | INV-065 | `AGENT_TOOL_WIRE_NAMES` stays exactly in sync (as a set) with `AGENT_TOOL_NAMES`, the list `@clarvis/tools` actually registers. | `packages/loop/src/runtime/tools/wire-names.ts`, `packages/loop/src/runtime/tools/builtin/names.ts` | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts` |

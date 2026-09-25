@@ -12,7 +12,6 @@ import {
   SPAWN_SUBAGENT_TOOL_NAME,
   SUBMIT_RESULT_TOOL_NAME,
 } from "./wire-names.ts";
-import { DELEGATE_TASK_TOOL_NAME } from "../subagents/lead-tools.ts";
 
 const READ = new Set(READ_ONLY_AGENT_TOOL_WIRE_NAMES);
 const CODING = new Set(AGENT_TOOL_WIRE_NAMES);
@@ -29,7 +28,6 @@ const CODING = new Set(AGENT_TOOL_WIRE_NAMES);
 const CONTROL = new Set<string>([
   SUBMIT_RESULT_TOOL_NAME,
   ASK_USER_TOOL_NAME,
-  DELEGATE_TASK_TOOL_NAME,
   SPAWN_SUBAGENT_TOOL_NAME,
   ...AGENT_SUPERVISION_WIRE_NAMES,
 ]);

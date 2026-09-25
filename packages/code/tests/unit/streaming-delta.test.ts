@@ -429,12 +429,12 @@ const bareCallCompleted = (callId: string, tool: string): RunEvent =>
 
 const transcriptExternalOrchestrationTools = [
   "spawn_subagent",
-  "delegate_task",
+  "spawn_subagent",
   "agent_list",
   "agent_poll",
   "agent_stop",
   "agent_steer",
-  "await_agents",
+  "agent_poll",
   "run_leader",
   "run_workflow",
   "run_round",
@@ -600,9 +600,9 @@ test("Lead-owned orchestration tools never create composing, started, or termina
 
 test("an MCP leaf colliding with orchestration stays continuous from wire composition to terminal", () => {
   const { store, apply } = driver();
-  apply(inputDelta("mcp-collision", "server_await_agents", 64));
+  apply(inputDelta("mcp-collision", "server_agent_poll", 64));
   expect(store.nodes.filter((node) => node.kind === "tool_call")).toEqual([
-    expect.objectContaining({ toolName: "server_await_agents", status: "running" }),
+    expect.objectContaining({ toolName: "server_agent_poll", status: "running" }),
   ]);
 
   apply(
@@ -612,14 +612,14 @@ test("an MCP leaf colliding with orchestration stays continuous from wire compos
       call_id: "mcp-collision",
       at: 5,
       server: "server",
-      tool: "await_agents",
+      tool: "agent_poll",
       arguments: { query: "real downstream tool" },
     }),
   );
   expect(store.nodes.filter((node) => node.kind === "tool_call")).toEqual([
     expect.objectContaining({
       mcpName: "server",
-      toolName: "await_agents",
+      toolName: "agent_poll",
       status: "running",
     }),
   ]);
@@ -631,7 +631,7 @@ test("an MCP leaf colliding with orchestration stays continuous from wire compos
       call_id: "mcp-collision",
       at: 6,
       server: "server",
-      tool: "await_agents",
+      tool: "agent_poll",
       arguments: { query: "real downstream tool" },
       result: "downstream result",
       ok: true,
@@ -640,7 +640,7 @@ test("an MCP leaf colliding with orchestration stays continuous from wire compos
   expect(store.nodes.filter((node) => node.kind === "tool_call")).toEqual([
     expect.objectContaining({
       mcpName: "server",
-      toolName: "await_agents",
+      toolName: "agent_poll",
       status: "ok",
       result: "downstream result",
     }),

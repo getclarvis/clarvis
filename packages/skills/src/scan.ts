@@ -63,8 +63,6 @@ export interface SkillScanPolicy {
   discovery?: "nested" | "immediate";
   /** Whether the canonical manifest filename is matched exactly. */
   manifestName?: "case-insensitive" | "exact";
-  /** Filesystem boundary every discovered directory and manifest must remain inside. */
-  confinementRoot?: string;
 }
 
 /**
@@ -95,15 +93,8 @@ export function listSkillDirs(
   policy: SkillScanPolicy = {},
 ): SkillDirEntry[] {
   policy.observeDirectory?.(root);
-  const confinementReal =
-    policy.confinementRoot === undefined
-      ? undefined
-      : safeRealpath(policy.confinementRoot, diagnostics);
   const find = (dir: string): string | undefined =>
-    findSkillFile(dir, followSymlinks, diagnostics, {
-      manifestName: policy.manifestName,
-      ...(confinementReal === undefined ? {} : { confinementRoot: confinementReal }),
-    });
+    findSkillFile(dir, followSymlinks, diagnostics, { manifestName: policy.manifestName });
   if (policy.discovery !== "immediate") {
     const rootFile = find(root);
     if (rootFile !== undefined) return [{ dir: root, file: rootFile }];
@@ -124,14 +115,6 @@ export function listSkillDirs(
     for (const entry of listed.entries) {
       const dir = path.join(next.dir, entry.name);
       if (!isDirEntry(entry, dir, followSymlinks, diagnostics)) continue;
-      if (confinementReal !== undefined && escapesRoot(confinementReal, dir)) {
-        warn(
-          `clarvis-skills: skipping skill path escaping its package ${dir}\n`,
-          diagnostics.warningSink,
-        );
-        skipped(diagnostics, "escaping_symlink", dir);
-        continue;
-      }
       probed += 1;
       if (probed > MAX_SKILL_GROUP_DIRECTORIES) {
         warn(
@@ -171,7 +154,7 @@ export function findSkillFile(
   dir: string,
   followSymlinks: boolean,
   diagnostics: SkillDiagnostics = DEFAULT_DIAGNOSTICS,
-  policy: Pick<SkillScanPolicy, "manifestName" | "confinementRoot"> = {},
+  policy: Pick<SkillScanPolicy, "manifestName"> = {},
 ): string | undefined {
   const listed = readDirectoryBounded(dir, MAX_SKILL_DIRECTORY_ENTRIES, diagnostics);
   if (listed.overflow) return undefined;
@@ -185,14 +168,6 @@ export function findSkillFile(
     }
     const full = path.join(dir, entry.name);
     if (!isFileEntry(entry, full, followSymlinks, diagnostics)) continue;
-    if (policy.confinementRoot !== undefined && escapesRoot(policy.confinementRoot, full)) {
-      warn(
-        `clarvis-skills: skipping skill manifest escaping its package ${full}\n`,
-        diagnostics.warningSink,
-      );
-      skipped(diagnostics, "escaping_symlink", full);
-      continue;
-    }
     return full;
   }
   return undefined;
@@ -208,9 +183,7 @@ export function findSkillFile(
  * @param diagnostics - destinations for warnings and skip records.
  * @returns the sidecar's absolute path, or `undefined` when the skill carries
  *   none.
- * @remarks A candidate that resolves outside the skill directory is skipped with
- *   a warning, so the sidecar is bound by the same confinement rule bundled
- *   resources are. Discovery stays one level deep on both axes: the skill root is
+ * @remarks Discovery stays one level deep on both axes: the skill root is
  *   scanned non-recursively, and so is this directory.
  */
 export function findSkillSidecar(
@@ -219,7 +192,6 @@ export function findSkillSidecar(
   diagnostics: SkillDiagnostics = DEFAULT_DIAGNOSTICS,
 ): string | undefined {
   const harnessDir = path.join(dir, HARNESS_CONFIG_DIR);
-  const rootReal = safeRealpath(dir, diagnostics);
   const listed = readDirectoryBounded(harnessDir, MAX_SKILL_DIRECTORY_ENTRIES, diagnostics);
   const candidates = listed.entries
     .filter((entry) =>
@@ -239,43 +211,9 @@ export function findSkillSidecar(
     if (!SIDECAR_EXTENSIONS.some((extension) => lowered.endsWith(extension))) continue;
     const full = path.join(harnessDir, entry.name);
     if (!isFileEntry(entry, full, followSymlinks, diagnostics)) continue;
-    if (escapesRoot(rootReal, full)) {
-      warn(
-        `clarvis-skills: skipping skill sidecar escaping skill dir ${full}\n`,
-        diagnostics.warningSink,
-      );
-      skipped(diagnostics, "escaping_symlink", full);
-      continue;
-    }
     return full;
   }
   return undefined;
-}
-
-/**
- * Report whether a resource request addresses the harness-directed
- * configuration directory.
- *
- * @param skillDir - the skill's own directory.
- * @param rel - the requested skill-relative path, as asked for.
- * @param abs - the canonicalized absolute path that request resolved to.
- * @param diagnostics - destinations for the `realpath` probe's own diagnostics.
- * @returns true when either the request or what it resolved to lands inside
- *   {@link HARNESS_CONFIG_DIR}.
- * @remarks Both forms are checked because they fail differently: the lexical one
- *   catches the plain request, and the resolved one catches a symlink inside the
- *   skill that points at the harness directory under another name.
- */
-export function isHarnessConfigPath(
-  skillDir: string,
-  rel: string,
-  abs: string,
-  diagnostics: SkillDiagnostics = DEFAULT_DIAGNOSTICS,
-): boolean {
-  const first = path.normalize(rel).split(path.sep)[0]?.toLowerCase() ?? "";
-  if (first === HARNESS_CONFIG_DIR) return true;
-  const harnessReal = safeRealpath(path.join(skillDir, HARNESS_CONFIG_DIR), diagnostics);
-  return abs === harnessReal || abs.startsWith(harnessReal + path.sep);
 }
 
 /**
@@ -286,8 +224,7 @@ export function isHarnessConfigPath(
  * Each file is classified by its top-level subdirectory
  * (`scripts`/`references`/`assets`/`examples`, else `other`) and reported with a
  * POSIX-style path relative to {@link dir}. Traversal is loop-safe (a real-path
- * `visited` set) and, when following symlinks, drops any that escape the skill
- * directory (see {@link escapesRoot}).
+ * `visited` set) and follows file symlinks when configured.
  *
  * The top-level {@link HARNESS_CONFIG_DIR} is skipped whole, as `SKILL.md`
  * itself is. Its contents are addressed to the harness, and this listing is
@@ -313,7 +250,6 @@ export function enumerateResources(
   const warningSink = diagnostics.warningSink;
   const out: SkillResource[] = [];
   const visited = new Set<string>();
-  const rootReal = safeRealpath(dir, diagnostics);
   const pending: Array<{ current: string; depth: number }> = [{ current: dir, depth: 0 }];
   let inspectedEntries = 0;
 
@@ -363,11 +299,6 @@ export function enumerateResources(
     for (const entry of listed.entries) {
       const full = path.join(next.current, entry.name);
       if (next.current === dir && entry.name.toLowerCase() === HARNESS_CONFIG_DIR) continue;
-      if (entry.isSymbolicLink() && followSymlinks && escapesRoot(rootReal, full)) {
-        warn(`clarvis-skills: skipping resource symlink escaping skill dir ${full}\n`, warningSink);
-        skipped(diagnostics, "escaping_symlink", full);
-        continue;
-      }
       if (isFileEntry(entry, full, followSymlinks, diagnostics)) {
         if (next.current === dir && entry.name.toLowerCase() === SKILL_FILE) continue;
         if (out.length >= MAX_SKILL_RESOURCES) {
@@ -403,11 +334,10 @@ export function enumerateResources(
 /**
  * Why one entry was left out of a skill's resource listing.
  *
- * @remarks `escaping_symlink` is the confinement-relevant one; the rest are the
+ * @remarks The reasons are the
  *   four traversal caps, named after the bound each hit.
  */
-export type ResourceSkipReason =
-  "escaping_symlink" | "dangling" | "depth" | "entries" | "directories" | "count";
+export type ResourceSkipReason = "dangling" | "depth" | "entries" | "directories" | "count";
 
 /**
  * Record one omission from a resource listing.
@@ -426,39 +356,6 @@ function skipped(diagnostics: SkillDiagnostics, reason: ResourceSkipReason, targ
     { event: "skill.resource_skipped", reason, path: target },
     "a skill resource entry was left out of the listing; the model will not see it",
   );
-}
-
-/**
- * Report whether the real path of {@link full} lies outside the skill root,
- * used to reject symlinks that point beyond the skill directory.
- *
- * @param rootReal - the real path of the skill directory.
- * @param full - the entry path to test.
- * @returns true when {@link full} resolves outside {@link rootReal} (not the root
- *   itself and not a descendant of it), or when it cannot be resolved for any
- *   reason other than the target being absent.
- * @remarks
- * A *missing* target is reported as not escaping so the caller falls through to
- * the dangling-symlink handling, which skips it with the accurate warning.
- * Resolving to the unresolved path instead compared a raw path against a
- * canonical root, and under a symlinked ancestor — every macOS temp directory,
- * since `/var` is a symlink to `/private/var` — every dangling link looked like
- * an escape.
- *
- * Every *other* resolution failure counts as escaping, because containment
- * cannot be shown and the fall-through does not skip the entry: `isFileEntry`
- * asks `stat`, which needs only search permission on the parent where `realpath`
- * needs read on the target, so a link out of the skill directory whose target is
- * unreadable would otherwise be published as a resource.
- */
-function escapesRoot(rootReal: string, full: string): boolean {
-  let real: string;
-  try {
-    real = realpathSync.native(full);
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== "ENOENT";
-  }
-  return real !== rootReal && !real.startsWith(rootReal + path.sep);
 }
 
 /**

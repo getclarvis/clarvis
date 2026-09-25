@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { createWorkspaceService } from "../../src/workspace/workspace-service.ts";
 
 const PNG = Buffer.from(
@@ -76,15 +76,21 @@ describe("WorkspaceService", () => {
     const files = createWorkspaceService(ws);
     mkdirSync(join(ws, "folder"));
 
-    await expect(files.readFile(ws)).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(files.readFile(ws)).rejects.toMatchObject({ code: "not_found" });
     await expect(files.readFile("folder")).rejects.toMatchObject({ code: "not_found" });
     await expect(files.readImage("missing.png")).rejects.toMatchObject({ code: "not_found" });
   });
 
-  it("confinement: absolute + .. escapes are rejected with invalid_request", async () => {
+  it("reads absolute and parent-relative paths", async () => {
     const files = createWorkspaceService(ws);
-    await expect(files.readImage("/etc/passwd")).rejects.toMatchObject({ code: "invalid_request" });
-    await expect(files.readFile("../secret")).rejects.toMatchObject({ code: "invalid_request" });
+    const external = `${ws}.txt`;
+    writeFileSync(external, "external");
+    try {
+      expect((await files.readFile(external)).content).toBe("external");
+      expect((await files.readFile(`../${basename(ws)}.txt`)).content).toBe("external");
+    } finally {
+      rmSync(external, { force: true });
+    }
   });
 
   it("readFile 404s a missing in-workspace path", async () => {

@@ -10,7 +10,7 @@ import {
   rmSync,
   statSync,
 } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { kernelError } from "../../core/errors.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
@@ -79,17 +79,10 @@ function reportGitFailure(logger: Logger, op: string, source: string, error: unk
   );
 }
 
-/** Resolve an optional plugin subdirectory without allowing checkout escape. */
+/** Resolve an optional plugin directory from a checkout. */
 function pluginRoot(checkout: string, subdir: string | undefined): string {
   if (subdir === undefined || subdir === "" || subdir === ".") return checkout;
   const resolved = resolve(checkout, subdir);
-  const rel = relative(checkout, resolved);
-  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
-    throw kernelError(
-      "invalid_request",
-      `refusing plugin path '${subdir}': it must be a subdirectory of the repository`,
-    );
-  }
   if (!existsSync(resolved) || !statSync(resolved).isDirectory()) {
     throw kernelError("invalid_request", `plugin path '${subdir}' is not a directory in the repo`);
   }

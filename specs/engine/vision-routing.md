@@ -87,7 +87,7 @@ identity`) inspects that guidance in the actual tool-less request. The cross-sur
 | wire name | `"read_image"` (`packages/tools/src/tools/read-image.ts`) |
 | input schema | `{ path: string }`, `path` required |
 | result | `{ content: [imagePart(base64, mimeType)] }` on success |
-| errors | `not_an_image`, plus `too_large`/`not_found`/`path_escape` surfaced from `readRawFile`/`resolvePath` |
+| errors | `not_an_image`, plus `too_large`/`not_found` surfaced from `readRawFile`/`resolvePath` |
 | gating | withheld from a model whose target declares capabilities *without* `vision`; offered when capabilities are undeclared (`packages/loop/src/runtime/loop/run-agent.ts`) |
 | admitted roots | the workspace plus `config.temporaryRoots`; confinement still rejects every other root (`packages/tools/src/tools/read-image.ts`) |
 

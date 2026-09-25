@@ -1,5 +1,5 @@
 import { closeSync, fstatSync, openSync, opendirSync, readSync } from "node:fs";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { isAbsolute, join } from "node:path";
 import type { WorkspaceEntry, WorkspaceService } from "@clarvis/protocol";
 import { KernelException, kernelError } from "../core/errors.ts";
 import { INTERNAL_SKIP_DIRS } from "@clarvis/paths";
@@ -58,19 +58,14 @@ function mimeFromExt(path: string): string {
 }
 
 /**
- * Resolve `path` against `root` and confirm it stays inside `root`.
+ * Resolve `path` against `root`.
  *
- * @param root - the workspace root the result must remain within.
+ * @param root - the workspace root for relative paths.
  * @param path - an absolute path or a path relative to `root`.
- * @returns the confined absolute path, or `null` when it escapes `root` (or equals
- *   it), guarding against `..` traversal.
+ * @returns the absolute path.
  */
-function confinedAbs(root: string, path: string): string | null {
-  const abs = isAbsolute(path) ? path : join(root, path);
-  const rel = relative(root, abs);
-  if (rel.length === 0 || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel))
-    return null;
-  return abs;
+function absolutePath(root: string, path: string): string {
+  return isAbsolute(path) ? path : join(root, path);
 }
 
 /** Read exactly one descriptor-backed snapshot and reject a file that is or becomes oversized. */
@@ -104,12 +99,11 @@ function readBoundedFile(path: string, maxBytes: number): Buffer {
 }
 
 /**
- * Build a read-only {@link WorkspaceService} confined to `root`.
+ * Build a read-only {@link WorkspaceService} with `root` as the relative path base.
  *
- * @param root - the absolute workspace root every operation is confined to.
+ * @param root - the absolute workspace root used for listing and relative reads.
  * @returns a {@link WorkspaceService} that lists files (depth/count-capped,
- *   skipping {@link SKIP_DIRS} and dotdirs) and reads text/image files, rejecting
- *   any path that escapes `root`.
+ *   skipping {@link SKIP_DIRS} and dotdirs) and reads text/image files.
  */
 export function createWorkspaceService(root: string): WorkspaceService {
   /**
@@ -173,14 +167,12 @@ export function createWorkspaceService(root: string): WorkspaceService {
     /**
      * Read a workspace text file as UTF-8.
      *
-     * @param path - a workspace-relative (or root-confined absolute) path.
+     * @param path - a workspace-relative or absolute path.
      * @returns the path and its `content`.
-     * @throws {@link kernelError | KernelException} `invalid_request` when the path
-     *   escapes the workspace, or `not_found` when the file cannot be read.
+     * @throws {@link kernelError | KernelException} `not_found` when the file cannot be read.
      */
     async readFile(path): Promise<{ path: string; content: string }> {
-      const abs = confinedAbs(root, path);
-      if (abs === null) throw kernelError("invalid_request", `path escapes the workspace: ${path}`);
+      const abs = absolutePath(root, path);
       try {
         return { path, content: readBoundedFile(abs, MAX_WORKSPACE_TEXT_BYTES).toString("utf8") };
       } catch (e) {
@@ -192,15 +184,13 @@ export function createWorkspaceService(root: string): WorkspaceService {
     /**
      * Read a workspace image file as base64.
      *
-     * @param path - a workspace-relative (or root-confined absolute) path.
+     * @param path - a workspace-relative or absolute path.
      * @returns the path, a best-effort `mime` (from the extension), and the
      *   base64-encoded `data`.
-     * @throws {@link kernelError | KernelException} `invalid_request` when the path
-     *   escapes the workspace, or `not_found` when the file cannot be read.
+     * @throws {@link kernelError | KernelException} `not_found` when the file cannot be read.
      */
     async readImage(path): Promise<{ path: string; mime: string; data: string }> {
-      const abs = confinedAbs(root, path);
-      if (abs === null) throw kernelError("invalid_request", `path escapes the workspace: ${path}`);
+      const abs = absolutePath(root, path);
       try {
         return {
           path,

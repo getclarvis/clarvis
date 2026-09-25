@@ -1,7 +1,7 @@
 /**
  * WorkspaceService — read-only view of the run workspace.
  *
- * Used for the file picker and image references, with paths confined server-side.
+ * Used for the file picker and image references, with relative reads anchored at the workspace root.
  * On a hosted kernel the files live on the server and a remote UI reaches them only
  * here (there is no local filesystem).
  */

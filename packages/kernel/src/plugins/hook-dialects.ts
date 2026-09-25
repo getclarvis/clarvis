@@ -693,7 +693,6 @@ function resolveRelativeCommand(command: string, pluginRoot: string): string {
     const declared = match[2] ?? "";
     const root = resolve(pluginRoot);
     const target = resolve(root, declared.replaceAll(/[\\/]/g, sep));
-    if (target !== root && !target.startsWith(root + sep)) return command;
     return `${leading}"${target}"${command.slice(match[0].length)}`;
   }
   return command;

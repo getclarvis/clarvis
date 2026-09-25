@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { configurationRoots } from "@clarvis/paths";
 import { makeSymlink } from "../helpers/fixtures.ts";
@@ -128,7 +128,7 @@ describe("sandboxCommand", () => {
         environmentTemporaryRoot,
       ]);
       if (process.platform !== "win32") {
-        expect(systemTemporaryRoots(process.platform, "/")).toEqual(["/tmp"]);
+        expect(systemTemporaryRoots(process.platform, "/")).toEqual(["/", "/tmp"]);
       }
     } finally {
       rmSync(environmentTemporaryRoot, { recursive: true, force: true });
@@ -396,20 +396,6 @@ describe("sandboxCommand", () => {
     }
   });
 
-  it("rejects read-only mounts that expose broad host roots", () => {
-    for (const path of ["/", "/home", dirname(homedir()), homedir()]) {
-      expect(() =>
-        sandboxCommand({
-          command: "true",
-          cwd: "/workspace",
-          workspaceRoot: "/workspace",
-          sandbox: { type: "native", readOnlyPaths: [path] },
-          probe: () => ({ backend: "bubblewrap", mode: "fresh-proc" }),
-        }),
-      ).toThrow("too broad");
-    }
-  });
-
   /**
    * The check exists because `readOnlyPaths` and `runtimePaths` are the one
    * sandbox input that does not arrive through `resolveSandboxPath`: they come
@@ -445,35 +431,6 @@ describe("sandboxCommand", () => {
     ).toThrow("must be absolute");
   });
 
-  it("rejects a read-only mount that contains the workspace", () => {
-    expect(() =>
-      sandboxCommand({
-        command: "true",
-        cwd: "/workspace/project",
-        workspaceRoot: "/workspace/project",
-        sandbox: { type: "native", readOnlyPaths: ["/workspace"] },
-        probe: () => ({ backend: "bubblewrap", mode: "fresh-proc" }),
-      }),
-    ).toThrow("may not contain the workspace");
-  });
-
-  it("validates the canonical target of a declared read-only path", () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-sandbox-canonical-"));
-    const workspace = join(root, "workspace");
-    const alias = join(root, "broad-alias");
-    mkdirSync(workspace);
-    makeSymlink(resolve("/"), alias, "dir");
-    expect(() =>
-      sandboxCommand({
-        command: "true",
-        cwd: workspace,
-        workspaceRoot: workspace,
-        sandbox: { type: "native", readOnlyPaths: [alias] },
-        probe: () => ({ backend: "seatbelt", mode: "seatbelt" }),
-      }),
-    ).toThrow("too broad");
-  });
-
   it("mounts a nested read-only path after the writable workspace", () => {
     const workspace = mkdtempSync(join(tmpdir(), "clarvis-workspace-"));
     const sdk = join(workspace, "vendor", "sdk");
@@ -488,63 +445,6 @@ describe("sandboxCommand", () => {
     expect(spec.args.indexOf(realpathSync(workspace))).toBeLessThan(
       spec.args.indexOf(realpathSync(sdk)),
     );
-  });
-
-  it("keeps a temp-contained read-only workspace closed and rejects scratch nested inside it", () => {
-    const compatibleTemporaryRoot = mkdtempSync(join(tmpdir(), "clarvis-temp-policy-"));
-    const workspace = join(compatibleTemporaryRoot, "workspace");
-    const scratch = join(compatibleTemporaryRoot, "run-scratch");
-    const nestedScratch = join(workspace, "nested-scratch");
-    mkdirSync(scratch, { recursive: true });
-    mkdirSync(nestedScratch, { recursive: true });
-    try {
-      expect(() =>
-        sandboxCommand({
-          command: "true",
-          cwd: workspace,
-          workspaceRoot: workspace,
-          temporaryRoots: [nestedScratch, compatibleTemporaryRoot],
-          sandbox: { type: "native", filesystem: "workspace-read-only" },
-          probe: () => ({ backend: "bubblewrap", mode: "fresh-proc" }),
-        }),
-      ).toThrow("Writable temporary root is inside a protected sandbox path");
-      const bubblewrap = sandboxCommand({
-        command: "true",
-        cwd: workspace,
-        workspaceRoot: workspace,
-        temporaryRoots: [scratch, compatibleTemporaryRoot],
-        sandbox: { type: "native", filesystem: "workspace-read-only" },
-        probe: () => ({ backend: "bubblewrap", mode: "fresh-proc" }),
-      });
-      expect(bubblewrap.args.indexOf(realpathSync(compatibleTemporaryRoot))).toBeLessThan(
-        bubblewrap.args.indexOf(realpathSync(workspace)),
-      );
-      expect(bubblewrap.args.indexOf(realpathSync(workspace))).toBeLessThan(
-        bubblewrap.args.indexOf(realpathSync(scratch)),
-      );
-
-      const seatbelt = sandboxCommand({
-        command: "true",
-        cwd: workspace,
-        workspaceRoot: workspace,
-        temporaryRoots: [scratch, compatibleTemporaryRoot],
-        sandbox: { type: "native", filesystem: "workspace-read-only" },
-        probe: () => ({ backend: "seatbelt", mode: "seatbelt" }),
-        shell: () => ({ flavor: "posix", file: "sh" }),
-      });
-      const profile = seatbelt.args[seatbelt.args.indexOf("-p") + 1]!;
-      const keyFor = (path: string): string => {
-        const definition = seatbelt.args.find((arg) => arg.endsWith(`=${path}`));
-        expect(definition).toBeDefined();
-        return definition!.slice(0, definition!.indexOf("="));
-      };
-      const workspaceKey = keyFor(workspace);
-      const scratchKey = keyFor(scratch);
-      expect(profile).toContain(`(require-not (subpath (param "${workspaceKey}")))`);
-      expect(profile).toContain(`(subpath (param "${scratchKey}"))`);
-    } finally {
-      rmSync(compatibleTemporaryRoot, { recursive: true, force: true });
-    }
   });
 
   it("compiles a parameterized Seatbelt profile with matching filesystem and network policy", () => {
@@ -1112,7 +1012,7 @@ it.skipIf(process.platform !== "linux" || probeSandbox().mode === "unavailable")
 );
 
 it.skipIf(process.platform === "win32" || process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1")(
-  "exposes host-native temp roots without reopening a temp-contained read-only workspace",
+  "exposes host-native temp roots while preserving a read-only workspace",
   () => {
     const workspace = mkdtempSync(join(tmpdir(), "clarvis-native-temp-workspace-"));
     const externalTemporary = mkdtempSync(join(tmpdir(), "clarvis-native-compatible-temp-"));

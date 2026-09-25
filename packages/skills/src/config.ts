@@ -118,10 +118,6 @@ export function resolveConfig(options: AgentSkillsOptions): SkillConfig {
  */
 function normalizeRoot(input: SkillRootInput, workspaceDir: string, home: string): SkillRoot {
   const include = input.include === undefined ? undefined : normalizeInclude(input.include);
-  const confinementRoot =
-    input.confinementRoot === undefined
-      ? undefined
-      : resolveAgainst(workspaceDir, input.confinementRoot, home);
   const executionRoot =
     input.executionRoot === undefined
       ? undefined
@@ -134,7 +130,6 @@ function normalizeRoot(input: SkillRootInput, workspaceDir: string, home: string
     ...(input.discovery === undefined ? {} : { discovery: input.discovery }),
     ...(input.manifestName === undefined ? {} : { manifestName: input.manifestName }),
     ...(input.validation === undefined ? {} : { validation: input.validation }),
-    ...(confinementRoot === undefined ? {} : { confinementRoot }),
     ...(executionRoot === undefined ? {} : { executionRoot }),
   };
 }

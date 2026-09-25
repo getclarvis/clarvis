@@ -11,14 +11,14 @@ import {
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { PluginManifest } from "@clarvis/loop/host";
 
-/** Resource bounds for package-local files that can enter a plugin process. */
+/** Resource bounds for declared files that can enter a plugin process. */
 const PLUGIN_EXECUTABLE_RESOURCE_LIMITS = Object.freeze({
   files: 256,
   fileBytes: 8 * 1024 * 1024,
   aggregateBytes: 32 * 1024 * 1024,
 });
 
-/** Immutable identity of one package-local file referenced by an executable declaration. */
+/** Immutable identity of one declared file referenced by an executable declaration. */
 export interface PluginExecutableFileSnapshot {
   path: string;
   digest: string;
@@ -26,7 +26,7 @@ export interface PluginExecutableFileSnapshot {
   mode: number;
 }
 
-/** Result of resolving and hashing the package-local executable surface. */
+/** Result of resolving and hashing the declared executable surface. */
 export type PluginExecutableSnapshotResult =
   { ok: true; files: PluginExecutableFileSnapshot[] } | { ok: false; error: string };
 
@@ -36,35 +36,25 @@ function canonicalPath(path: string): string {
 }
 
 /** One declared package path and the regular file it resolved to while being pinned. */
-interface ConfinedFile {
+interface DeclaredFile {
   declared: string;
   target: string;
 }
 
-/** Resolve an existing regular file only when its real target remains inside the package root. */
-function confinedFile(root: string, candidate: string): ConfinedFile | undefined {
+/** Resolve an existing regular file. */
+function resolvedFile(candidate: string): DeclaredFile | undefined {
   try {
     const target = realpathSync(candidate);
-    const comparableRoot = process.platform === "win32" ? root.toLowerCase() : root;
-    const comparableTarget = process.platform === "win32" ? target.toLowerCase() : target;
-    if (comparableTarget !== comparableRoot && !comparableTarget.startsWith(comparableRoot + sep)) {
-      return undefined;
-    }
     return statSync(target).isFile() ? { declared: candidate, target } : undefined;
   } catch {
     return undefined;
   }
 }
 
-/** Resolve an existing directory only when its real target remains inside the package root. */
-function confinedDirectory(root: string, candidate: string): string | undefined {
+/** Resolve an existing directory. */
+function resolvedDirectory(candidate: string): string | undefined {
   try {
     const target = realpathSync(candidate);
-    const comparableRoot = process.platform === "win32" ? root.toLowerCase() : root;
-    const comparableTarget = process.platform === "win32" ? target.toLowerCase() : target;
-    if (comparableTarget !== comparableRoot && !comparableTarget.startsWith(comparableRoot + sep)) {
-      return undefined;
-    }
     return statSync(target).isDirectory() ? target : undefined;
   } catch {
     return undefined;
@@ -76,12 +66,12 @@ function isExplicitPath(token: string): boolean {
   return isAbsolute(token) || token.startsWith(".") || token.includes("/") || token.includes("\\");
 }
 
-/** Turn one argv token into a package-local file candidate when its execution base is known. */
+/** Turn one argv token into a declared file candidate when its execution base is known. */
 function argvFile(
   root: string,
   base: string | undefined,
   token: string,
-): ConfinedFile | { error: string } | undefined {
+): DeclaredFile | { error: string } | undefined {
   if (token.length === 0 || token.includes("\0") || token.startsWith("-")) return undefined;
   if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(token)) return undefined;
   const candidate = isAbsolute(token)
@@ -90,16 +80,10 @@ function argvFile(
       ? undefined
       : resolve(base, token);
   if (candidate === undefined) return undefined;
-  const resolved = confinedFile(root, candidate);
+  const resolved = resolvedFile(candidate);
   if (resolved !== undefined) return resolved;
   if (!isExplicitPath(token)) return undefined;
-  const relativeCandidate = relative(root, candidate);
-  const inside =
-    relativeCandidate === "" ||
-    (!relativeCandidate.startsWith(`..${sep}`) && relativeCandidate !== "..");
-  return inside
-    ? { error: `declared package-local executable '${token}' is not a confined regular file` }
-    : undefined;
+  return { error: `declared executable '${token}' is not a regular file` };
 }
 
 /** Extract shell words conservatively so absolute package paths in hook commands can be identified. */
@@ -181,7 +165,7 @@ export function snapshotPluginExecutables(
   } catch (error) {
     return { ok: false, error: `plugin root could not be resolved: ${(error as Error).message}` };
   }
-  const candidates = new Map<string, ConfinedFile>();
+  const candidates = new Map<string, DeclaredFile>();
   let invalidCandidate: string | undefined;
   const add = (base: string | undefined, token: string): void => {
     const candidate = argvFile(root, base, token);
@@ -197,7 +181,7 @@ export function snapshotPluginExecutables(
     if (server.type !== "stdio" || server.command === undefined) continue;
     const base =
       server.cwd !== undefined && isAbsolute(server.cwd)
-        ? confinedDirectory(root, server.cwd)
+        ? resolvedDirectory(server.cwd)
         : undefined;
     add(base, server.command);
     for (const arg of server.args ?? []) add(base, arg);

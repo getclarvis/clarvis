@@ -28,7 +28,7 @@ export interface AgentSkills {
    */
   resourcePath(name: string, rel: string): string;
 
-  /** Read a bundled resource through the registry's confinement boundary. */
+  /** Read a bundled resource through the registry's bounded reader. */
   readResource(name: string, rel: string): string;
 
   /** Read one bounded UTF-8 page of a bundled resource. */

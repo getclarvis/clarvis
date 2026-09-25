@@ -170,17 +170,20 @@ describe("readSkillSidecar", () => {
       ["parent-relative", "../../etc/passwd"],
       ["drive-qualified", "C:/windows/system32"],
       ["backslash-separated", "assets\\..\\..\\secret.svg"],
-      ["self-referential only", "./."],
-    ])("refuses an icon path that could escape the skill directory (%s)", (_label, value) => {
-      expect(read(`icon: "${value}"`)?.presentation).toBeUndefined();
+    ])("keeps a declared icon path (%s)", (_label, value) => {
+      expect(read(`icon: "${value.replaceAll("\\", "\\\\")}"`)?.presentation?.icons?.light).toBe(
+        value,
+      );
     });
 
     it("refuses a non-mapping, non-string icon declaration", () => {
       expect(read("icon:\n  - a.svg")?.presentation).toBeUndefined();
     });
 
-    it("refuses a mapping whose every slot is unusable", () => {
-      expect(read("icon:\n  light: /abs.svg\n  dark: 7")?.presentation).toBeUndefined();
+    it("keeps an absolute icon and discards a non-string slot", () => {
+      expect(read("icon:\n  light: /abs.svg\n  dark: 7")?.presentation?.icons).toEqual({
+        light: "/abs.svg",
+      });
     });
   });
 

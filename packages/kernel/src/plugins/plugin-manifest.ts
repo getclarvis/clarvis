@@ -8,10 +8,10 @@
  * {@link resolvePluginManifest}, so a manifest cannot mean one thing to the panel
  * that asks the operator to approve it and another to the code that loads it.
  */
-import { existsSync, lstatSync, opendirSync, realpathSync, statSync } from "node:fs";
+import { existsSync, opendirSync, realpathSync, statSync } from "node:fs";
 import { isIP } from "node:net";
 import { validateHeaderName, validateHeaderValue } from "node:http";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { z } from "zod";
 import {
   PLUGIN_RESOURCE_LIMITS,
@@ -149,15 +149,9 @@ export interface PluginSkillRoots {
  * 316 skills they held, while reporting, accurately and uselessly, that it had
  * not.
  *
- * Every path is resolved by {@link companionPath} against the **manifest's own
- * directory** first and the plugin root second, and confined to the root either
- * way. Both readings are needed because both occur: a manifest at the plugin
- * root writes its paths from there, while one at `.<host>-plugin/plugin.json`
- * writes them from beside itself — `"skills": "../skills/"` means the plugin's
- * `skills/`, and resolving it against the root instead sent it out of the plugin
- * and lost every skill it named. A path that escapes is dropped with a note
- * rather than followed; a declaration this host cannot act on at all leaves the
- * default in place, so a plugin is never left with nowhere to look.
+ * Every path is resolved by {@link companionPath} against the manifest's own
+ * directory first when it exists, then against the plugin root. Absolute and
+ * parent-relative paths can select external directories.
  *
  * A location may name one skill directory directly or a collection above it.
  * When a long list exhaustively names direct-skill siblings, the adapter can
@@ -200,10 +194,6 @@ export function pluginSkillRoots(
       continue;
     }
     const resolved = companionPath(dirs, value);
-    if (resolved === undefined) {
-      notes.push(`skills: '${value}' resolves outside the plugin — not scanned`);
-      continue;
-    }
     if (!roots.includes(resolved)) roots.push(resolved);
   }
 
@@ -237,7 +227,6 @@ export function pluginSkillScanRoots(
   discovery?: "immediate";
   manifestName?: "exact";
   validation?: "agent-skills";
-  confinementRoot?: string;
 }> {
   return pluginSkillRoots(dir, declared, manifestLocation).roots.map((path) =>
     format === "agent-plugin-v1"
@@ -246,7 +235,6 @@ export function pluginSkillScanRoots(
           discovery: "immediate",
           manifestName: "exact",
           validation: "agent-skills",
-          confinementRoot: dir,
         }
       : { path },
   );
@@ -346,24 +334,15 @@ function claimsAgentPluginFormat(raw: string): boolean {
  */
 export function readPluginManifestSource(dir: string): PluginManifestSource | { error: string } {
   const rootPath = join(dir, MANIFEST_FILE);
-  const rootPathError =
-    pathEntryExists(rootPath) && confinedExistingPath(dir, rootPath) === undefined
-      ? `plugin manifest '${MANIFEST_FILE}' resolves outside the plugin root`
-      : undefined;
-  const rootRead =
-    rootPathError === undefined
-      ? readBoundedPluginText(
-          rootPath,
-          PLUGIN_RESOURCE_LIMITS.manifestBytes,
-          `plugin manifest '${MANIFEST_FILE}'`,
-        )
-      : undefined;
+  const rootRead = readBoundedPluginText(
+    rootPath,
+    PLUGIN_RESOURCE_LIMITS.manifestBytes,
+    `plugin manifest '${MANIFEST_FILE}'`,
+  );
   if (rootRead?.ok && claimsAgentPluginFormat(rootRead.text)) {
     return { raw: rootRead.text, location: MANIFEST_FILE };
   }
-  const rootError =
-    rootPathError ??
-    (rootRead !== undefined && !rootRead.ok && !rootRead.missing ? rootRead.error : undefined);
+  const rootError = !rootRead.ok && !rootRead.missing ? rootRead.error : undefined;
 
   const clarvisLocation = `${CLARVIS_MANIFEST_DIR}/${MANIFEST_FILE}`;
   const clarvisRead = readBoundedPluginText(
@@ -410,53 +389,18 @@ export function readPluginManifestSource(dir: string): PluginManifestSource | { 
   };
 }
 
-/**
- * Resolve a companion document a manifest names, against the plugin that owns it.
- *
- * @param dir - the plugin's install directory.
- * @param declared - the path the manifest carries.
- * @returns the absolute path, or `undefined` when it would leave the plugin.
- *
- * @remarks
- * A manifest is untrusted input — it arrives from whatever checkout the operator
- * installed — so a path it names is confined to the plugin's own directory rather
- * than joined blindly. The decision is made on the *resolved* path, so `a/../../b`
- * is refused on the same rule as `../b`, and an absolute path does not resolve
- * against `dir` at all.
- *
- * Confinement is lexical. A symlink *inside* the plugin that points outside it is
- * still followed, which is the same open parent-directory weakness recorded for
- * classified configuration writes; closing it needs descriptor-relative reads rather
- * than a stricter path check.
- */
-function companionPath(dirs: PluginDirs, declared: string): string | undefined {
-  const root = resolve(dirs.root);
-  const confined = (target: string): string | undefined =>
-    target === root || target.startsWith(root + sep) ? target : undefined;
+/** Resolve a companion document from the manifest directory or plugin root. */
+function companionPath(dirs: PluginDirs, declared: string): string {
   if (dirs.base !== dirs.root) {
-    const fromBase = confined(resolve(dirs.base, declared));
-    if (fromBase !== undefined && existsSync(fromBase)) return fromBase;
+    const fromBase = resolve(dirs.base, declared);
+    if (existsSync(fromBase)) return fromBase;
   }
-  return confined(resolve(root, declared));
+  return resolve(dirs.root, declared);
 }
 
-/**
- * The two directories a manifest's paths are read against.
- *
- * @remarks
- * `root` is the confinement boundary and never moves. `base` is where a relative
- * path is *written* from, which is the manifest's own directory — a manifest at
- * `.clarvis-plugin/plugin.json` naming `../skills/` means the plugin's `skills/`,
- * exactly as its author reads it. Resolving such a path against the root instead
- * sent it out of the plugin, where confinement refused it; the plugin then lost
- * whatever it declared and was told its own correct path was invalid.
- *
- * The base is tried first and only when it resolves to something that exists, so
- * a plugin whose manifest sits at its root is unaffected, and a path that only
- * makes sense from the root still resolves there.
- */
+/** The directories used to resolve relative paths from a plugin manifest. */
 interface PluginDirs {
-  /** The plugin's install directory; nothing may resolve outside it. */
+  /** The plugin's install directory. */
   root: string;
   /** The directory the manifest itself lives in. */
   base: string;
@@ -474,8 +418,7 @@ function pluginDirsFor(dir: string, manifestLocation?: string): PluginDirs {
   const root = resolve(dir);
   if (manifestLocation === undefined) return { root, base: root };
   const holder = dirname(resolve(root, manifestLocation));
-  const inside = holder === root || holder.startsWith(root + sep);
-  return { root, base: inside ? holder : root };
+  return { root, base: holder };
 }
 
 /**
@@ -629,7 +572,6 @@ function harvestFile(
   });
 
   const path = companionPath(dirs, declared);
-  if (path === undefined) return note("resolves outside the plugin");
 
   const read = readBoundedPluginText(
     path,
@@ -720,7 +662,7 @@ function harvestConvention(dirs: PluginDirs, conversion: HooksConversionOptions)
  * @returns notes for whatever did not translate, and for a source that lost.
  * @remarks
  * **No hooks source can cost a plugin anything but its hooks.** Every way of
- * failing to read one — a path outside the plugin, a missing file, text that is
+ * failing to read one — a missing file, text that is
  * not JSON, a document in no shape this host recognizes — resolves to a note and
  * an empty harvest. See {@link harvestFile} for why that replaced a failure.
  *
@@ -827,7 +769,6 @@ function inlineMcpServersDocument(
   if (declared.trim().length === 0) return note("names no document");
 
   const path = companionPath(dirs, declared);
-  if (path === undefined) return note("resolves outside the plugin");
 
   const read = readBoundedPluginText(
     path,
@@ -1106,16 +1047,12 @@ function displayUrl(value: unknown): string | undefined {
   }
 }
 
-/** Read one plugin-relative, non-traversing asset path. */
+/** Read one bounded plugin presentation asset path. */
 function displayAssetPath(value: unknown): string | undefined {
-  const text = displayText(value, 1_024);
-  if (text === undefined || !text.startsWith("./") || text.includes("\\") || text.includes("\0")) {
-    return undefined;
-  }
-  return text.split("/").some((segment) => segment === "..") ? undefined : text;
+  return displayText(value, 1_024);
 }
 
-/** Read an array of plugin-relative visual asset paths. */
+/** Read an array of plugin visual asset paths. */
 function displayAssetPaths(value: unknown): string[] | undefined {
   if (!Array.isArray(value) || value.length === 0 || value.length > 32) return undefined;
   const paths = value.map(displayAssetPath);
@@ -1333,28 +1270,12 @@ function firstZodIssue(error: z.ZodError): string {
     : `${issue.path.map(String).join(".") || "(root)"}: ${issue.message}`;
 }
 
-/** Filesystem-resolved containment for a package path that must already exist. */
-function confinedExistingPath(root: string, target: string): string | undefined {
+/** Resolve an existing package path through the filesystem. */
+function existingPath(target: string): string | undefined {
   try {
-    const realRoot = realpathSync(root);
-    const realTarget = realpathSync(target);
-    const comparableRoot = process.platform === "win32" ? realRoot.toLowerCase() : realRoot;
-    const comparableTarget = process.platform === "win32" ? realTarget.toLowerCase() : realTarget;
-    return comparableTarget === comparableRoot || comparableTarget.startsWith(comparableRoot + sep)
-      ? realTarget
-      : undefined;
+    return realpathSync(target);
   } catch {
     return undefined;
-  }
-}
-
-/** Whether one directory entry exists without following a possibly dangling link. */
-function pathEntryExists(path: string): boolean {
-  try {
-    lstatSync(path);
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -1368,10 +1289,8 @@ function expandAgentPluginValue(value: string, root: string, data: string): stri
 /** Validate and resolve a portable stdio command token. */
 function agentPluginCommand(root: string, command: string): string | undefined {
   if (command.includes("\0")) return undefined;
-  if (!command.startsWith("./")) {
-    return command.includes("/") || command.includes("\\") ? undefined : command;
-  }
-  const resolved = confinedExistingPath(root, resolve(root, command));
+  if (!command.startsWith(".") && !command.includes("/") && !command.includes("\\")) return command;
+  const resolved = existingPath(resolve(root, command));
   if (resolved === undefined) return undefined;
   try {
     return statSync(resolved).isFile() ? resolved : undefined;
@@ -1380,22 +1299,13 @@ function agentPluginCommand(root: string, command: string): string | undefined {
   }
 }
 
-/** Resolve a portable stdio working directory and enforce its declared base. */
+/** Resolve a portable stdio working directory from its declared path. */
 function agentPluginCwd(root: string, data: string, cwd: string | undefined): string | undefined {
   if (cwd === undefined) return realpathSync(root);
-  let base: string;
-  if (cwd.startsWith("./")) base = root;
-  else if (cwd === "${PLUGIN_ROOT}" || cwd.startsWith("${PLUGIN_ROOT}/")) base = root;
-  else if (cwd === "${PLUGIN_DATA}" || cwd.startsWith("${PLUGIN_DATA}/")) base = data;
-  else return undefined;
   const expanded = expandAgentPluginValue(cwd, root, data);
-  const target = cwd.startsWith("./") ? resolve(root, cwd) : resolve(expanded);
-  const lexicalBase = resolve(base);
-  const lexicalTarget = resolve(target);
-  if (lexicalTarget !== lexicalBase && !lexicalTarget.startsWith(lexicalBase + sep))
-    return undefined;
-  if (!existsSync(lexicalTarget)) return lexicalTarget;
-  return confinedExistingPath(lexicalBase, lexicalTarget);
+  const target = resolve(root, expanded);
+  if (!existsSync(target)) return target;
+  return existingPath(target);
 }
 
 /** Whether a remote Agent Plugin endpoint obeys the portable URL policy. */
@@ -1447,9 +1357,10 @@ function normalizeAgentMcpServer(
   const stdio = agentStdioServerSchema.safeParse(entry);
   if (stdio.success) {
     const command = agentPluginCommand(root, stdio.data.command);
-    if (command === undefined) return { error: "command is not a confined executable token" };
+    if (command === undefined) return { error: "command is not an executable token" };
     const cwd = agentPluginCwd(root, data, stdio.data.cwd);
-    if (cwd === undefined) return { error: "cwd is not confined to PLUGIN_ROOT or PLUGIN_DATA" };
+    if (cwd === undefined)
+      return { error: "cwd does not use a supported PLUGIN_ROOT or PLUGIN_DATA form" };
     const env = stdio.data.env ?? {};
     const reserved = Object.keys(env).some((name) =>
       process.platform === "win32"
@@ -1510,12 +1421,6 @@ function normalizeAgentMcp(
   data: string,
 ): { servers: Record<string, unknown>; notes: string[] } {
   const path = join(root, "mcp.json");
-  if (pathEntryExists(path) && confinedExistingPath(root, path) === undefined) {
-    return {
-      servers: {},
-      notes: ["mcp.json: path resolves outside the plugin root — MCP is disabled for this plugin"],
-    };
-  }
   const read = readBoundedPluginText(
     path,
     PLUGIN_RESOURCE_LIMITS.manifestBytes,
@@ -1617,12 +1522,12 @@ function normalizeAgentManifest(
   const parsed = agentPluginManifestSchema.safeParse(candidate);
   if (!parsed.success) return { error: firstZodIssue(parsed.error), notes };
 
-  const root = confinedExistingPath(dir, dir);
+  const root = existingPath(dir);
   if (root === undefined) return { error: "plugin root could not be filesystem-resolved", notes };
   const skillsPath = join(root, DEFAULT_SKILLS_DIR);
   let skills: string[] = [];
   if (existsSync(skillsPath)) {
-    const resolvedSkills = confinedExistingPath(root, skillsPath);
+    const resolvedSkills = existingPath(skillsPath);
     try {
       if (resolvedSkills === undefined || !statSync(resolvedSkills).isDirectory()) {
         notes.push("skills: fixed 'skills/' location is invalid — no skills are contributed");

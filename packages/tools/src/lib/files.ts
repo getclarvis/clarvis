@@ -4,7 +4,6 @@ import path from "node:path";
 import picomatch from "picomatch";
 import { ToolError, fsError } from "../errors.ts";
 import { loadIgnore } from "./ignore.ts";
-import { isWithinRoots } from "./paths.ts";
 
 /** Default parallelism for batched `stat` calls (see {@link mapLimit}). */
 export const STAT_CONCURRENCY = 32;
@@ -16,8 +15,6 @@ const READ_CHUNK_BYTES = 64 * 1024;
 export interface ReadFileOptions {
   /** Refuse a last-component symlink where the host exposes `O_NOFOLLOW`. */
   noFollow?: boolean;
-  /** Host-owned workspace artifact root, verified against the opened descriptor. */
-  expectedArtifactRoot?: string;
 }
 
 /**
@@ -38,33 +35,6 @@ export async function openReadHandle(target: string, noFollow = false): Promise<
     constants.O_NONBLOCK |
     (noFollow && typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0);
   return fs.open(target, flags);
-}
-
-/** Verify a host-owned artifact's opened inode still belongs to its selected root. */
-async function assertOpenedArtifact(
-  handle: FileHandle,
-  target: string,
-  relForError: string,
-  root: string,
-): Promise<void> {
-  let canonical: string;
-  let opened;
-  let current;
-  try {
-    canonical = await fs.realpath(target);
-    opened = await handle.stat({ bigint: true });
-    current = await fs.stat(canonical, { bigint: true });
-  } catch (err) {
-    throw fsError(err as NodeJS.ErrnoException, relForError);
-  }
-  if (!isWithinRoots(canonical, [root]) || opened.dev !== current.dev || opened.ino !== current.ino)
-    throw new ToolError(
-      "path_escape",
-      `Artifact changed while it was being opened: ${relForError}.`,
-      {
-        path: relForError,
-      },
-    );
 }
 
 function notRegularFile(stat: Stats, relForError: string): ToolError {
@@ -181,8 +151,6 @@ export async function readRawFile(
   try {
     const stat = await handle.stat();
     if (!stat.isFile()) throw notRegularFile(stat, relForError);
-    if (options.expectedArtifactRoot !== undefined)
-      await assertOpenedArtifact(handle, target, relForError, options.expectedArtifactRoot);
     if (stat.size > maxBytes) {
       throw tooLargeFile(relForError, stat.size, maxBytes, limitHint);
     }

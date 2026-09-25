@@ -237,8 +237,8 @@ describe("handleLoadSkillCall", () => {
     }
   });
 
-  it("rejects malformed or unsafe resource paths at the declared schema", () => {
-    for (const resource of [42, "", "/absolute", "C:/absolute", "../escape", "a//b", "a\\b"]) {
+  it("rejects missing or non-string resource paths at the declared schema", () => {
+    for (const resource of [42, ""]) {
       const res = handleReadSkillResourceCall({
         call: resourceCall({ arguments: { name: "alpha", resource, offset: 0 } }),
         skills: fakeSkills(),

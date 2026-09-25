@@ -332,6 +332,10 @@ Production: `ModelCatalog` in [models.ts](../../packages/protocol/src/models.ts)
 
 #### `WorkspaceService` (`packages/protocol/src/workspace.ts`)
 
+`listFiles` enumerates the selected workspace; `readFile` and `readImage` resolve relative
+paths there and accept absolute paths. Production: `createWorkspaceService` in
+`packages/kernel/src/workspace/workspace-service.ts`. Test: `packages/kernel/tests/integration/workspace-service.test.ts`.
+
 | Method | Signature | File |
 | --- | --- | --- |
 | `listFiles` | `(query?: { prefix?, glob?, limit? }) => Promise<WorkspaceEntry[]>` | `packages/protocol/src/workspace.ts` |

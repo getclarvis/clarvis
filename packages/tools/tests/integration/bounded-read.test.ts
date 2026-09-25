@@ -1,13 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
-import {
-  mkdirSync,
-  mkdtempSync,
-  promises as fs,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-  type Stats,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, promises as fs, rmSync, type Stats } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FileHandle } from "node:fs/promises";
@@ -17,31 +9,6 @@ import { listFiles, readRawFile } from "../../src/lib/files.ts";
 afterEach(() => vi.restoreAllMocks());
 
 describe("bounded descriptor reads", () => {
-  it("verifies a Goal artifact against its opened workspace root", async () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-artifact-root-"));
-    const outside = mkdtempSync(join(tmpdir(), "clarvis-artifact-outside-"));
-    try {
-      const owned = join(root, "owned.txt");
-      const external = join(outside, "external.txt");
-      writeFileSync(owned, "owned");
-      writeFileSync(external, "external");
-      symlinkSync(external, join(root, "redirect.txt"));
-      expect(
-        (
-          await readRawFile(owned, "owned.txt", 64, undefined, { expectedArtifactRoot: root })
-        ).toString(),
-      ).toBe("owned");
-      await expect(
-        readRawFile(join(root, "redirect.txt"), "redirect.txt", 64, undefined, {
-          expectedArtifactRoot: root,
-        }),
-      ).rejects.toMatchObject({ code: "path_escape" });
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-      rmSync(outside, { recursive: true, force: true });
-    }
-  });
-
   it("reports a close failure after a successful descriptor read", async () => {
     let reads = 0;
     const handle = {
@@ -83,22 +50,6 @@ describe("bounded descriptor reads", () => {
       code: "too_large",
       fields: { size: 9 },
     });
-  });
-
-  it("reports a failed canonical lookup for an opened Goal artifact", async () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-artifact-root-"));
-    try {
-      const file = join(root, "owned.txt");
-      writeFileSync(file, "owned");
-      vi.spyOn(fs, "realpath").mockRejectedValueOnce(
-        Object.assign(new Error("canonical lookup failed"), { code: "EIO" }),
-      );
-      await expect(
-        readRawFile(file, "owned.txt", 64, undefined, { expectedArtifactRoot: root }),
-      ).rejects.toMatchObject({ code: "io_error" });
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
   });
 
   it("detects growth while reading no more than maxBytes + 1 from one handle", async () => {

@@ -2,8 +2,8 @@
  * A refusal the model reads must never hand it the way around itself.
  *
  * @remarks Tool results reach the agent. A refusal that advertises a setting
- * or command to bypass itself would turn a security decision into a suggested
- * next action, so messages for classified paths and environment failures do
+ * or command to bypass itself would turn a policy decision into a suggested
+ * next action, so messages for environment failures do
  * not include such instructions.
  *
  * The rule is not "no helpful errors" — it is that the audience decides. An
@@ -81,7 +81,6 @@ describe("model-facing refusals do not explain how to lift the restriction", () 
 
   it("recognises the shape it is guarding against", () => {
     for (const line of [
-      "  `Path escapes the workspace root: ${input} (set ALLOW_OUTSIDE_WORKSPACE=1 to permit)`,",
       '  "Sandbox unavailable (set CLARVIS_SANDBOX_OPTIONAL=1 to allow)",',
       '  "Refused: pass --allow-anything to override",',
     ]) {
@@ -91,9 +90,8 @@ describe("model-facing refusals do not explain how to lift the restriction", () 
 
   it("does not fire on a refusal that merely states the boundary", () => {
     for (const line of [
-      "  `Path escapes the workspace root: ${input}. Only paths inside the workspace are `,",
-      '  "This boundary is set before the run starts and cannot be changed from within it.",',
-      "  const raw = env.ALLOW_OUTSIDE_WORKSPACE;",
+      '  "Sandbox unavailable under the selected policy.",',
+      '  "This policy is set before the run starts.",',
     ]) {
       expect(BYPASS_HINT.test(line) || ASSIGNMENT_HINT.test(line)).toBe(false);
     }

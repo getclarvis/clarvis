@@ -326,7 +326,7 @@ export interface GoalEvidenceSource {
 }
 
 /**
- * Derive evidence from the existing owner-scoped trace journal and confined file snapshots.
+ * Derive evidence from the existing owner-scoped trace journal and bounded file snapshots.
  * Live receipts form a bounded window. Once it rotates, journal replay must attest the observed
  * prefix before any proof is usable; missing history never becomes success.
  */
@@ -335,7 +335,7 @@ export function createGoalEvidenceSource(options: {
   workspaceRoot: string;
   /** Each call supplies a fresh owner-scoped replay, including the active journal when available. */
   readTrace(executionId: string): Iterable<TraceEvent> | undefined;
-  /** Injectable descriptor reader for deterministic mutation races; production uses the shared confined reader. */
+  /** Injectable descriptor reader for deterministic mutation races; production uses the shared bounded reader. */
   readArtifact?: (path: string) => Promise<Uint8Array>;
 }): GoalEvidenceSource {
   const live = new Map<string, Observation>();
@@ -350,15 +350,7 @@ export function createGoalEvidenceSource(options: {
     options.readArtifact ??
     (async (path: string): Promise<Uint8Array> => {
       const { readRawFile } = await import("@clarvis/tools");
-      return readRawFile(
-        resolve(options.workspaceRoot, path),
-        "goal artifact",
-        MAX_ARTIFACT_BYTES,
-        undefined,
-        {
-          expectedArtifactRoot: options.workspaceRoot,
-        },
-      );
+      return readRawFile(resolve(options.workspaceRoot, path), "goal artifact", MAX_ARTIFACT_BYTES);
     });
   const artifactDigest = async (path: string): Promise<string> => {
     const bytes = await readArtifact(path);

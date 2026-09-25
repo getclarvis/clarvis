@@ -17,7 +17,7 @@ import type { ToolDef } from "./types.ts";
  * sees a half-written file. When the target already existed and its prior bytes
  * decoded as UTF-8, the result carries a unified diff (old vs new) in
  * `meta.diff`; a binary or oversized prior file is still overwritten without a
- * diff. Every other read failure aborts, especially a post-open `path_escape`,
+ * diff. Every other read failure aborts,
  * which must never be downgraded into "no diff". The text result reports the
  * byte count and whether the file was created or overwritten. The handler throws a
  * {@link ToolError} with code `not_a_file` when `path` names a directory, and

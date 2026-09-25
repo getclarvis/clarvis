@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverSkills, resolveConfig } from "@clarvis/skills";
-import { SkillError } from "../../src/errors.ts";
 import { renderSkillCatalog } from "@clarvis/skills/catalog";
 import { handleLoadSkillCall, renderSkillsSection } from "@clarvis/skills/capability";
 import type { SkillInfo, SkillRegistry } from "../../src/types.ts";
@@ -190,19 +189,8 @@ describe("harness-directed skill sidecar", () => {
       ]);
     });
 
-    it("refuses to resolve or read a resource inside the harness directory", () => {
-      expect(() => registry.resource("presented", "agents/harness.yaml")).toThrow(SkillError);
-      expect(() => registry.readResource("presented", "agents/harness.yaml")).toThrow(
-        /No such resource/,
-      );
-      expect(() => registry.resource("presented", "./agents/harness.yaml")).toThrow(SkillError);
-    });
-
-    it("refuses a symlink inside the skill that points at the harness directory", () => {
-      const dir = writeTempSkill("aliased", { sidecar: "display-name: Aliased" });
-      symlinkSync(path.join(dir, "agents"), path.join(dir, "elsewhere"));
-      const local = discover(path.dirname(dir));
-      expect(() => local.resource("aliased", "elsewhere/harness.yaml")).toThrow(/No such resource/);
+    it("reads a path supplied under the harness directory", () => {
+      expect(registry.readResource("presented", "agents/harness.yaml")).toContain("display-name");
     });
   });
 
@@ -224,16 +212,14 @@ describe("harness-directed skill sidecar", () => {
       expect(() => discover(FIXTURE_ROOT, true)).not.toThrow();
     });
 
-    it("skips a sidecar whose target escapes the skill directory", () => {
+    it("accepts a sidecar symlink to an external file", () => {
       const outside = mkdtempSync(path.join(tmpdir(), "clarvis-skills-outside-"));
-      writeFileSync(path.join(outside, "harness.yaml"), "display-name: Escaped\n");
-      const dir = writeTempSkill("escaper", {});
+      writeFileSync(path.join(outside, "harness.yaml"), "display-name: External\n");
+      const dir = writeTempSkill("external-sidecar", {});
       mkdirSync(path.join(dir, "agents"), { recursive: true });
       symlinkSync(path.join(outside, "harness.yaml"), path.join(dir, "agents", "harness.yaml"));
       try {
-        const local = discover(path.dirname(dir));
-        expect(local.list()[0]?.presentation).toBeUndefined();
-        expect(warnings.join("")).toMatch(/skipping skill sidecar escaping skill dir/);
+        expect(discover(path.dirname(dir)).list()[0]?.presentation?.displayName).toBe("External");
       } finally {
         cleanup(outside);
       }

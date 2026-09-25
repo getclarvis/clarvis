@@ -207,7 +207,7 @@ describe("sandbox host policy", () => {
     expect((await resolver.inspect()).effective_network).toBe("none");
   });
 
-  it("reports broad and workspace-containing paths without resolving them", async () => {
+  it("admits broad and workspace-containing paths", async () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-sandbox-invalid-"));
     const globalDir = join(root, "global");
     const workspace = join(root, "workspace", "project");
@@ -221,19 +221,17 @@ describe("sandbox host policy", () => {
     });
 
     const resolver = createSandboxPolicyResolver(store, workspace);
-    expect(resolver.resolve()?.resolved_read_only_paths).toBeUndefined();
+    expect(resolver.resolve()?.resolved_read_only_paths).toEqual(["/", join(root, "workspace")]);
     expect((await resolver.inspect()).extra_paths).toEqual([
       {
         path: "/",
         scope: "workspace",
-        available: false,
-        error: "sandbox path is too broad",
+        available: true,
       },
       {
         path: join(root, "workspace"),
         scope: "workspace",
-        available: false,
-        error: "sandbox path may not contain the workspace",
+        available: true,
       },
     ]);
   });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveSandboxHostPolicy, resolveSandboxPath } from "../../src/capabilities-tools.ts";
@@ -18,64 +18,31 @@ afterEach(() => {
 });
 
 describe("sandbox host policy", () => {
-  it("resolves safe workspace-relative paths and rejects unsafe roots", () => {
+  it("resolves workspace-relative and external sandbox paths", () => {
     const root = tempRoot("clarvis-host-policy-");
     const workspace = join(root, "workspace");
-    const sdk = join(workspace, "vendor", "sdk");
-    mkdirSync(sdk, { recursive: true });
-
-    expect(resolveSandboxPath("./vendor/sdk", workspace, true)).toEqual({ path: sdk });
-    expect(resolveSandboxPath("../outside", workspace, true).error).toBe(
-      "workspace sandbox path escapes the workspace",
-    );
-    expect(resolveSandboxPath("/", workspace, true).error).toBe("sandbox path is too broad");
-    expect(resolveSandboxPath("./vendor/sdk", workspace, false).error).toBe(
+    const external = join(root, "outside");
+    mkdirSync(workspace);
+    mkdirSync(external);
+    expect(resolveSandboxPath("../outside", workspace, true)).toEqual({ path: external });
+    expect(resolveSandboxPath(external, workspace, true)).toEqual({ path: external });
+    expect(resolveSandboxPath("./outside", workspace, false).error).toBe(
       "global sandbox paths must be absolute",
     );
   });
 
-  it("rejects workspace-relative paths that escape through a symlink", () => {
-    const root = tempRoot("clarvis-host-policy-link-");
-    const workspace = join(root, "workspace");
-    const outside = join(root, "outside");
-    mkdirSync(workspace);
-    mkdirSync(outside);
-    symlinkSync(outside, join(workspace, "outside"), "dir");
-    const broadAlias = join(root, "broad");
-    symlinkSync("/", broadAlias, "dir");
-
-    expect(resolveSandboxPath("./outside", workspace, true).error).toBe(
-      "workspace sandbox path escapes through a symlink",
-    );
-    expect(resolveSandboxPath(broadAlias, workspace, true).error).toBe("sandbox path is too broad");
-  });
-
-  it("compiles manual extra paths without automatic discovery", () => {
+  it("includes existing external paths in manual sandbox policy", () => {
     const root = tempRoot("clarvis-host-policy-manual-");
     const workspace = join(root, "workspace");
     const sdk = join(root, "sdk");
-    mkdirSync(workspace, { recursive: true });
+    mkdirSync(workspace);
     mkdirSync(sdk);
-
     expect(
       resolveSandboxHostPolicy(
-        {
-          type: "native",
-          toolchains: {
-            mode: "manual",
-            extra_paths: [sdk, "/", join(root, "missing")],
-          },
-        },
+        { type: "native", toolchains: { mode: "manual", extra_paths: [sdk] } },
         workspace,
-      ),
-    ).toEqual({
-      type: "native",
-      toolchains: {
-        mode: "manual",
-        extra_paths: [sdk, "/", join(root, "missing")],
-      },
-      resolved_read_only_paths: [sdk],
-    });
+      )?.resolved_read_only_paths,
+    ).toEqual([sdk]);
   });
 
   it("discovers an included runtime and filters an explicitly excluded one", () => {

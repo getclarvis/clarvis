@@ -1770,14 +1770,6 @@ nothing: measured during the investigation pass and not re-run here, extracting 
 composition into a helper and asserting both arms left `@clarvis/plan` green at 266 passing while the
 call site was reduced to `constants.O_RDONLY`.
 
-### Guard location facts on Windows need a native runner
-
-`isWithinRoots` folds case on Windows for Guard risk facts. Linux tests can exercise the injected
-case-fold comparison, but cannot prove Windows drive and separator behavior with the host `path.sep`.
-The tool-access decision itself belongs to the Host OS or native Sandbox, not to
-that Guard location fact. Production: `isWithinRoots` in `packages/tools/src/lib/paths.ts`.
-Test: `packages/tools/tests/integration/paths.test.ts`; native Windows qualification remains open.
-
 ### `backgroundSettleIsMeasurable` — the measurement, not the behaviour
 
 `&` is PowerShell's background-**job** operator, which hosts the pipeline in a second runspace; that

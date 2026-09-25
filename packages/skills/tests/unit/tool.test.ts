@@ -39,25 +39,7 @@ describe("loadSkillTool definition", () => {
     expect(schema.required).toEqual(["name", "resource", "offset"]);
     expect(schema.additionalProperties).toBe(false);
     expect(Object.keys(schema.properties)).toEqual(["name", "resource", "offset"]);
-    const pattern = schema.properties.resource?.pattern;
-    expect(pattern).toBeString();
-    expect(pattern).not.toContain("(?");
-    const resourcePath = new RegExp(pattern as string, "u");
-    for (const valid of ["notes.md", "references/api.md", ".hidden", "...", "éxample/a:b"]) {
-      expect(resourcePath.test(valid)).toBe(true);
-    }
-    for (const invalid of [
-      "/absolute",
-      "C:/absolute",
-      "../escape",
-      "a/../escape",
-      "a//b",
-      "a\\b",
-      "a/.",
-      "control\u0000byte",
-    ]) {
-      expect(resourcePath.test(invalid)).toBe(false);
-    }
+    expect(schema.properties.resource?.pattern).toBeUndefined();
   });
 });
 

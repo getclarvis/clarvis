@@ -360,7 +360,7 @@ checkouts remain visible and activatable but never offer the managed update acti
 explicit `updateable` projection also suppresses Update for local and npm installs rather than
 offering an operation that will be refused. Extension Profile selects only already-installed extensions.
 Marketplace entries may install from Git
-repositories/subdirectories (optionally pinned by ref or SHA), confined local directories, or npm
+repositories/subdirectories (optionally pinned by ref or SHA), local directories, or npm
 packages fetched without lifecycle scripts. Each install carries the listing name and refuses an
 explicitly different manifest identity; an unnamed foreign manifest uses that listing name as its
 stable install identity. The browser shows `AVAILABLE`, `INSTALLED_BY_DEFAULT`,
@@ -895,7 +895,6 @@ Beyond the `async.*`, `diagnostics.*` and `task.*` vocabulary above:
 | error | `settings.save.rejected`                                                               | `scope`, `issue_count`, `fields`, `reason`                     |
 | debug | `settings.model_ref.unparsed`                                                          | `site`, `error` (sampled)                                      |
 | error | `plugin.install.failed`                                                                | `phase`, `argv0`, `subcommand`, `exit_code`, `stderr_tail`     |
-| warn  | `marketplace.containment.unknown`                                                      | `reason`                                                       |
 | error | `doctor.check.failed`                                                                  | `check_id`, `error`, `duration_ms`                             |
 | debug | `shell.local.exit`                                                                     | `exit_code`, `duration_ms`, `killed`, `signal`, `spawn_failed` |
 | warn  | `run.stream.interrupted`                                                               | `execution_id`, `error`                                        |

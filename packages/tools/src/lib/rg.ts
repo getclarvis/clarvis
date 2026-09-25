@@ -154,8 +154,7 @@ export async function grepSearch(params: GrepParams, config: RuntimeConfig): Pro
         return { matches: [], truncated: false, budgetExhausted: false, walkCapped: false };
       }
     } catch (err) {
-      if (err instanceof ToolError && (err.code === "path_escape" || err.code === "denied"))
-        throw err;
+      if (err instanceof ToolError && err.code === "denied") throw err;
       return { matches: [], truncated: false, budgetExhausted: false, walkCapped: false };
     }
   }

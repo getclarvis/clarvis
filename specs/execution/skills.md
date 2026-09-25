@@ -7,8 +7,8 @@
 
 `@clarvis/skills` turns directories of `SKILL.md` files into a merged, in-memory catalog and serves
 that catalog in three tiers: **list** (name + description metadata), **get** (body + enumerated
-bundled resources), **resource/readResource** (one confined file)
-and **readResourceChunk** (one byte-addressed UTF-8 page of a larger confined file)
+bundled resources), **resource/readResource** (one bounded file)
+and **readResourceChunk** (one byte-addressed UTF-8 page of a larger bounded file)
 (`SkillRegistry` in `packages/skills/src/types.ts`). The tiering is the point — the run's system
 prompt receives only names and one-line descriptions (`packages/skills/src/catalog/index.ts`).
 The model loads a body with `load_skill` when the user names the skill or its description clearly
@@ -146,7 +146,7 @@ read_skill_resource:
   { type: "object", additionalProperties: false,
     properties: { name: { type: "string", minLength: 1 },
                   resource: { type: "string", minLength: 1, maxLength: 4096,
-                              pattern: <safe relative POSIX path> },
+                               },
                   offset: { type: "integer", minimum: 0, maximum: 8388608 } },
     required: ["name", "resource", "offset"] }
 ```
@@ -155,11 +155,9 @@ The operations are separate so each provider-facing schema is structurally close
 declared property is required. `load_skill` cannot receive `resource`, `offset`, aliases or
 sentinels; a call such as `{name, resource: "/dev/null? no resource omitted actually."}` is rejected
 as an additional property before a provider or host bridge is touched. `read_skill_resource`
-requires the exact listed relative path and an explicit byte offset: zero for the first page, then
-the preceding result's cursor. Its schema rejects POSIX-absolute and drive-qualified paths,
-backslashes, traversal, empty segments and control characters through a provider-portable pattern
-that uses no regex lookaround; provider confinement remains the authoritative filesystem check.
-Production:
+requires a resource path and an explicit byte offset: zero for the first page, then
+the preceding result's cursor. The path resolves from the selected skill directory and may
+be absolute or parent-relative. Production:
 `loadSkillTool` and `readSkillResourceTool` in `packages/skills/src/tool.ts`, with
 `handleLoadSkillCall` and `handleReadSkillResourceCall` in `packages/skills/src/call.ts`. Test:
 `packages/skills/tests/unit/tool.test.ts`, `packages/skills/tests/unit/call.test.ts` ("rejects every
@@ -220,7 +218,7 @@ Everything else under that directory is resources, except the top-level `agents/
 <root>/
   <skill-name>/
     SKILL.md                 # manifest: YAML frontmatter + markdown body
-    agents/<any>.yaml|.yml   # harness sidecar — never enumerated, never readable
+    agents/<any>.yaml|.yml   # harness sidecar — not enumerated
     scripts/…                # resource kind "scripts"
     references/…             # "references"
     assets/…                 # "assets"
@@ -550,9 +548,7 @@ pass, not per skill. Pinned at
 | `get(name)` | known, body readable | `{ …info, body, resources }` + `skill.body_disclosed` debug record | `packages/skills/src/registry.ts` |
 | `get(name)` | known, manifest renamed on disk | throws `invalid_skill` "refresh required" from the lazy body getter | `packages/skills/src/registry.ts` |
 | `resource(name, rel)` | unknown skill | `SkillError not_found` | `packages/skills/src/registry.ts` |
-| `resource(name, rel)` | `rel` empty / absolute | `SkillError invalid_input` | `packages/skills/src/paths.ts` |
-| `resource(name, rel)` | resolves outside the skill dir | `SkillError path_escape` | `packages/skills/src/paths.ts` |
-| `resource(name, rel)` | inside `agents/` (lexically **or** after realpath) | `SkillError not_found` — deliberately indistinguishable from absent | `packages/skills/src/registry.ts` |
+| `resource(name, rel)` | `rel` empty | `SkillError invalid_input` | `packages/skills/src/paths.ts` |
 | `resource(name, rel)` | cannot be stat'd | `not_found` + `skill.resource_missing` debug | `packages/skills/src/registry.ts` |
 | `resource(name, rel)` | not a regular file | `SkillError not_a_file` | `packages/skills/src/registry.ts` |
 | `readResource(name, rel)` | as above, then bounded read at 256 KiB / 50 000 chars | text or `invalid_input` size error | `packages/skills/src/registry.ts` |
@@ -596,26 +592,15 @@ loop applies them:
 | entry budget exhausted (before opening) | warn, stop |
 | entry budget exceeded (after listing) | warn, stop |
 | top-level `agents/` | skipped whole |
-| symlink that escapes the skill dir | warn + `skill.resource_skipped` `escaping_symlink` |
 | top-level `SKILL.md` | skipped |
 | `out.length >= MAX_SKILL_RESOURCES` | warn, return what is collected |
 | directory deeper than `MAX_SKILL_RESOURCE_DEPTH` | warn, skip |
 | final | sort by `rel` |
 
-`escapesRoot` returns `false` for `ENOENT` (so a dangling link falls through to the accurate
-"dangling symlink" warning) and `true` for every **other** realpath failure, because `stat` needs
-less permission than `realpath` and an unresolvable link out of the skill would otherwise be
-published (`packages/skills/src/scan.ts`; pinned at
-`packages/skills/tests/integration/scan.test.ts`).
-
-`safeRealpath` is a separate, more permissive fallback used only to compute a **cycle-detection
-key**: it resolves a path with `realpathSync.native` and, on any failure, falls back to the
-unresolved path itself rather than treating the failure as an escape, logging
-`skill.realpath_failed` at `debug` (`packages/skills/src/scan.ts`). It backs five call
-sites — package confinement, sidecar lookup, the harness-directory probe,
-and the resource-enumeration root and its walk — and is distinct
-from the escape check above: it never rejects anything, it only decides what a symlink cycle is
-keyed by when the "true" path cannot be determined.
+`safeRealpath` computes a cycle-detection key: it resolves a path with
+`realpathSync.native` and falls back to the unresolved path on failure, logging
+`skill.realpath_failed` at `debug` (`packages/skills/src/scan.ts`). It does not
+reject an external target.
 
 ### 4.8 YAML repair path
 
@@ -812,8 +797,7 @@ merge and the bootstrap is then refused as `foreign_root` — the source states 
   `agent` field (`packages/kernel/src/skills/render-skill-prompt.ts`) — the two are asymmetric, not two views of one
   lookup.
 - `presentation` is **re-read field by field** from whatever the provider supplied rather than
-  forwarded, and an icon path that is absolute, drive-qualified or contains `..` after backslash
-  normalization is dropped (`packages/kernel/src/skills/render-skill-prompt.ts`; pinned at `packages/kernel/tests/component/skills-service.test.ts`).
+  forwarded, and bounded icon paths are preserved (`packages/kernel/src/skills/render-skill-prompt.ts`; pinned at `packages/kernel/tests/component/skills-service.test.ts`).
 - `getPrompt(name, args)` throws kernel `not_found` for an unknown or non-invocable skill and
   otherwise returns one `user` message from `renderSkillPrompt`.
 
@@ -908,14 +892,12 @@ to this document.
     identity.** `packages/skills/src/registry.ts`. Pinned:
     `packages/skills/tests/integration/bounds.test.ts`,
     `packages/skills/tests/integration/diagnostics.test.ts`.
-15. **The harness-config directory (`agents/`) is withheld from resource enumeration and from
-    resource resolution, checked both lexically and after `realpath`, and a request for it is
-    reported `not_found` rather than a more specific code.**
-    `packages/skills/src/scan.ts`, `packages/skills/src/scan.ts`,
-    `packages/skills/src/registry.ts`. Pinned:
+15. **The harness-config directory (`agents/`) is omitted from resource enumeration; direct
+    resource reads can resolve files there.** Production: `enumerateResources` in
+    `packages/skills/src/scan.ts` and `resolveResourcePath` in `packages/skills/src/paths.ts`. Test:
     `packages/skills/tests/integration/sidecar.test.ts`.
-16. **Nothing from a sidecar reaches a model-facing surface, with one recorded exception**: a
-    borrowed short description used as a defaulted `description`.
+16. **Sidecar metadata is omitted from the catalog and body, apart from a borrowed short
+    description used as a defaulted `description`. Direct resource reads may access its file.**
     `packages/skills/src/registry.ts`, `packages/skills/src/types.ts`. Pinned:
     `packages/skills/tests/integration/sidecar.test.ts` (a fixed list of sidecar-only
     strings must not appear in the catalog, the section, or a `load_skill` result).
@@ -937,14 +919,7 @@ to this document.
     `packages/kernel/src/skills/skills-service.ts`. Test:
     `packages/skills/tests/integration/sidecar.test.ts` and
     `packages/kernel/tests/component/skills-service.test.ts`.
-19. **Every resource path is confined to the skill directory, symlink-aware, with a `..`-tolerant
-    canonicalization for not-yet-existing tails.** `packages/skills/src/paths.ts`. Pinned: `packages/skills/tests/integration/paths.test.ts`.
-20. **The containment check compares against `dirReal + path.sep`, so a sibling whose name is a
-    prefix of the skill directory does not pass.** `packages/skills/src/paths.ts`. Pinned:
-    `packages/skills/tests/integration/paths.test.ts`.
-21. **A symlink whose target cannot be `realpath`ed for any reason other than absence counts as
-    escaping.** `packages/skills/src/scan.ts`. Pinned:
-    `packages/skills/tests/integration/scan.test.ts`.
+19. **Resource paths resolve from the selected skill directory without a containment check.** Absolute paths, parent traversal, and symlink targets may name files elsewhere. Production: `resolveResourcePath` in `packages/skills/src/paths.ts`. Test: `packages/skills/tests/integration/paths.test.ts`.
 22. **Resource traversal terminates on cycles**, keyed by real path.
     `packages/skills/src/scan.ts`. Pinned:
     `packages/skills/tests/integration/symlink.test.ts`.
@@ -1052,7 +1027,7 @@ to this document.
     `packages/kernel/src/skills/render-skill-prompt.ts`. Pinned:
     `packages/kernel/tests/component/skills-service.test.ts` (a nested `metadata.agent` yields
     `undefined`).
-47. **The kernel re-validates provider-supplied icon paths rather than trusting the DTO.**
+47. **The kernel preserves bounded provider-supplied icon paths as presentation data.**
     `packages/kernel/src/skills/render-skill-prompt.ts`. Pinned:
     `packages/kernel/tests/component/skills-service.test.ts`.
 48. **No diagnostic record carries a skill's content**: `skill.field_defaulted` logs a character
@@ -1086,7 +1061,7 @@ to this document.
 | Type | Where raised | Codes |
 | --- | --- | --- |
 | `StartupError` | `resolveConfig` only | no roots; too many roots; workspace missing / not a directory (`packages/skills/src/config.ts`) |
-| `SkillError` | everywhere else | `invalid_skill`, `duplicate_skill`, `not_found`, `not_a_file`, `path_escape`, `invalid_input`, `io_error` (`packages/skills/src/errors.ts`) |
+| `SkillError` | everywhere else | `invalid_skill`, `duplicate_skill`, `not_found`, `not_a_file`, `invalid_input`, `io_error` (`packages/skills/src/errors.ts`) |
 | kernel `not_found` | `SkillsService.getPrompt`, `resolveSkillRun` | `packages/kernel/src/skills/skills-service.ts`, `packages/kernel/src/runs/settings-assembler.ts` |
 
 `fsError` maps `ENOENT → not_found`, `EISDIR`/`ENOTDIR → not_a_file`, everything else → `io_error`
@@ -1104,8 +1079,6 @@ with the original errno in the message (`packages/skills/src/errors.ts`; pinned 
 | >256 manifests in one root | warn, first 256 by directory order (`packages/skills/src/registry.ts`) | `invalid_skill` throw |
 | >512 distinct skills | warn once, largest-name eviction (`packages/skills/src/registry.ts`) | `invalid_skill` throw |
 | dangling symlink (dir, manifest or resource) | warn "skipping dangling symlink", `skill.resource_skipped` `dangling` (`packages/skills/src/scan.ts`) | same |
-| escaping resource symlink | warn "escaping skill dir", entry omitted (`packages/skills/src/scan.ts`) | same |
-| escaping sidecar symlink | warn "skipping skill sidecar escaping skill dir", no sidecar (`packages/skills/src/scan.ts`) | same |
 | unreadable / unparseable / non-mapping sidecar | warn + `skill.sidecar_invalid` (`unreadable` / `unparseable` / `not_a_mapping`), skill loads without presentation and without suppression (`packages/skills/src/sidecar.ts`) | same |
 | non-YAML file in `agents/` | ignored silently (extension filter, `packages/skills/src/scan.ts`) | same |
 | body over the char cap | `get()` throws `invalid_skill` at disclosure time, catalog entry survives (`packages/skills/tests/integration/bounds.test.ts`) | same |
@@ -1156,7 +1129,6 @@ to drive the adapter's memory-only availability predicate.
   become a prefix of what its author wrote (`packages/skills/src/sidecar.ts`).
 - A colour in a notation other than 3-/6-digit hex is dropped with no record
   (`packages/skills/src/sidecar.ts`).
-- An icon path that is absolute, drive-qualified, backslash-separated or contains `..` is dropped
   with no record (`packages/skills/src/sidecar.ts`).
 - `metadataShortDescription` silently ignores a bucket that is not an object, a value that is not a
   string, and one over 512 chars (`packages/skills/src/registry.ts`).

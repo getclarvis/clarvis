@@ -21,7 +21,6 @@ export const ERROR_CODES = [
   "timeout",
   "aborted",
   "too_large",
-  "path_escape",
   "denied",
   "too_many_sessions",
   "internal",

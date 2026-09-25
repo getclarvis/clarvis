@@ -12,7 +12,6 @@ export {
   systemTemporaryRoots,
   discoverLinkedGitMetadataPaths,
   discoverToolchains,
-  forbiddenSandboxRoots,
   TOOLCHAIN_COMMANDS,
 } from "./sandbox.ts";
 export type {

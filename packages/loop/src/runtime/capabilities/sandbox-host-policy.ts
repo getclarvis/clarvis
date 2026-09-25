@@ -4,31 +4,10 @@
  * toolchain roots the sandbox must expose read-only. Lives on the host side of
  * the sandbox seam (it touches the real filesystem and `@clarvis/tools`).
  */
-import { existsSync, realpathSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
-import {
-  discoverToolchains,
-  forbiddenSandboxRoots,
-  type DiscoveredToolchain,
-} from "@clarvis/tools/sandbox";
+import { existsSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
+import { discoverToolchains, type DiscoveredToolchain } from "@clarvis/tools/sandbox";
 import type { ResolvedSandboxSettings, SandboxSettings } from "./tools-settings.ts";
-
-/** True when `path` is `root` itself or lies inside it (never via `..` or an
- * absolute escape). Used both to keep a workspace path inside the workspace and
- * to reject a path that would contain it. */
-function within(path: string, root: string): boolean {
-  const rel = relative(root, path);
-  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
-}
-
-/** Resolve symlinks for a path known to exist, retaining its spelling on failure. */
-function canonicalOrSelf(path: string): string {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
-}
 
 /** A resolved sandbox path: the absolute `path`, plus an `error` string when it
  * was rejected (the caller drops paths that carry one). */
@@ -42,15 +21,11 @@ export interface ResolvedSandboxPath {
  *
  * @param raw - The configured path, absolute or (when `allowRelative`)
  *   workspace-relative.
- * @param workspaceRoot - The run's workspace root, used to anchor relative paths
- *   and to reject over-broad or workspace-containing paths.
+ * @param workspaceRoot - The run's workspace root, used to anchor relative paths.
  * @param allowRelative - Whether a non-absolute `raw` is permitted (false for
  *   global settings, which require absolute paths).
  * @returns A {@link ResolvedSandboxPath}; `error` is set when the path is
- *   non-absolute where disallowed, a relative path escapes the workspace, the
- *   path is too broad (`/`, the platform's home parent, or the home dir), it
- *   contains the workspace, resolves outside a workspace-relative request, or
- *   it does not exist.
+ *   non-absolute where disallowed or it does not exist.
  */
 export function resolveSandboxPath(
   raw: string,
@@ -62,22 +37,7 @@ export function resolveSandboxPath(
   }
   const root = resolve(workspaceRoot);
   const path = isAbsolute(raw) ? resolve(raw) : resolve(root, raw);
-  if (!isAbsolute(raw) && !within(path, root)) {
-    return { path, error: "workspace sandbox path escapes the workspace" };
-  }
   if (!existsSync(path)) return { path, error: "path does not exist" };
-  const canonicalRoot = canonicalOrSelf(root);
-  const canonicalPath = canonicalOrSelf(path);
-  if (!isAbsolute(raw) && !within(canonicalPath, canonicalRoot)) {
-    return { path, error: "workspace sandbox path escapes through a symlink" };
-  }
-  const forbiddenRoots = forbiddenSandboxRoots();
-  if (forbiddenRoots.includes(path) || forbiddenRoots.includes(canonicalPath)) {
-    return { path, error: "sandbox path is too broad" };
-  }
-  if (within(root, path) || within(canonicalRoot, canonicalPath)) {
-    return { path, error: "sandbox path may not contain the workspace" };
-  }
   return { path };
 }
 

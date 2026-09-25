@@ -78,7 +78,6 @@ The published subpath is `packages/tools/src/sandbox-entry.ts`.
 | `systemTemporaryRoots(platform?, environmentTemporaryRoot?)` | Discovers existing host temp roots: environment-selected plus `/tmp` on POSIX, environment-selected only on Windows; never conveys lifecycle ownership |
 | `discoverLinkedGitMetadataPaths(workspaceRoot)`              | Pins a valid linked worktree's common Git metadata root                                                                                                |
 | `discoverToolchains(include?)`                               | Resolves requested toolchain executables, install roots, and managers without executing them                                                           |
-| `forbiddenSandboxRoots()`                                    | Shared broad-root denylist used by tools and loop host policy                                                                                          |
 
 Production: `packages/tools/src/sandbox.ts` (`NativeSandbox`, `SandboxProbe`, `probeSandbox`,
 `sandboxCommand`, `resolveFilesystemPolicy`, `systemTemporaryRoots`, `discoverLinkedGitMetadataPaths`, `discoverToolchains`) and
@@ -157,10 +156,7 @@ to a host generation without hashing credential values` in
 Selected skill package roots are not sandbox settings and cannot be authored as `extra_paths` by a
 plugin. The skills registry exposes an execution root only for a host-approved root, the loop
 collects only those selected skill directories, and `@clarvis/tools` validates at most 512 canonical
-directories before merging them into the already-resolved `readOnlyPaths`. A filesystem root, the
-workspace itself, an ancestor containing the workspace, a missing entry, or a non-directory fails
-toolset construction. The ancestor check canonicalizes both the skill root and workspace, including
-platform aliases such as macOS `/var` → `/private/var`. Production: `buildExecuteRunDeps` in
+directories before merging them into the already-resolved `readOnlyPaths`. A missing entry or a non-directory fails toolset construction. Roots are canonicalized without a workspace containment check. Production: `buildExecuteRunDeps` in
 `packages/loop/src/runtime/build-run-deps.ts` and `resolveConfig` in
 `packages/tools/src/config.ts`. Tests: `packages/skills/tests/integration/api.test.ts` and
 `packages/tools/tests/integration/config.test.ts`.
@@ -279,10 +275,10 @@ An available Bubblewrap command uses `bwrap` with:
 4. every configured writable temporary root, including the host environment temp and POSIX `/tmp`
    when the product loop supplied them;
 5. the canonical workspace and pinned linked-Git metadata bound according to `filesystem`, plus
-   the primary run scratch writable when it does not fall inside a protected root;
+   the primary run scratch writable;
 6. all dynamic mounts sorted broadest-to-narrowest, with equal-path precedence
    compatibility-temp → workspace → run scratch → declared read-only. A workspace below `/tmp`
-   remains read-only; a temporary root nested inside that workspace is refused;
+   receives its read-only mount after the broader temporary mount;
 7. `--unshare-net` for `network: "none"`, otherwise any external resolver target needed by a
    symlinked `/etc/resolv.conf`;
 8. `--chdir <cwd> -- <shell> <shell-args>`.
@@ -319,9 +315,7 @@ The final file-write deny for declared read-only roots and a read-only workspace
 path nested below a writable parent remain read-only. Every dynamic path is an argv `-D KEY=value` parameter referenced with SBPL
 `(param "KEY")`; no path is interpolated into profile source. Both the resolved authored spelling
 and its canonical target participate in the write rules, so aliases such as `/var` →
-`/private/var` cannot reopen a protected path. Validation applies to both spellings first, so a
-symlink alias cannot disguise a forbidden read-only root or a path that contains the workspace.
-Host networking may read the macOS resolver socket under the broad read rule; `network: "none"`
+`/private/var` cannot reopen a protected path. Host networking may read the macOS resolver socket under the broad read rule; `network: "none"`
 still denies network operations. The macOS Git and Homebrew canaries remain necessary because
 command launch behavior also depends on installed host toolchains.
 
@@ -440,28 +434,19 @@ Production: `packages/tools/src/sandbox.ts` (`sandboxCommand`),
 
 ### 4.3 Host path policy
 
-Both the loop resolver and mechanism reject `/`, `/home`, the platform home parent, the current home
-directory, and a supplied root whose authored or canonical form contains the workspace. Mechanism
-inputs must be absolute. The workspace-scoped resolver may first resolve a relative authored path
-inside the workspace, but rejects it when its canonical target escapes through a symlink; the global
-resolver refuses relative input. Missing/unreadable configured roots remain visible as unavailable
-inspection rows and do not become mechanism paths.
+The mechanism requires absolute read-only roots. The workspace-scoped resolver accepts relative paths anchored at the workspace and absolute paths elsewhere; the global resolver requires absolute paths. Existing paths are admitted without a workspace containment check. Missing configured roots remain visible as unavailable inspection rows.
 
 Linked-worktree Git metadata is discovered once while tool configuration is built. The pointer,
-`commondir`, backlink, directory shape, containment, and forbidden-root conditions all must agree;
+`commondir`, backlink, and directory shape must agree;
 the immutable accepted common root is mounted read-only for sandboxed processes. The primary
 workspace `.git` entry is also read-only. A model cannot retarget `.git` after configuration to
 gain another host mount.
 
 `systemTemporaryRoots` is the deliberate host-path exception used by the product loop. It resolves
-the host environment temp and, on POSIX, `/tmp`; missing/non-directory roots and any root whose
-authored or canonical identity is in `forbiddenSandboxRoots()` are omitted. The returned parents are
-access policy only. The run removes only its separately allocated scratch. A temporary root nested
-inside a protected read-only root is refused before process launch, while a protected workspace
-nested inside `/tmp` is mounted read-only after the broader writable temp bind.
+the host environment temp and, on POSIX, `/tmp`; missing/non-directory roots are omitted. The returned parents are
+access policy only. The run removes only its separately allocated scratch. A protected workspace nested inside `/tmp` is mounted read-only after the broader writable temp bind.
 
-Production: `packages/tools/src/sandbox.ts` (`forbiddenSandboxRoots`, `validateReadOnlyPath`,
-`discoverLinkedGitMetadataPaths`, `systemTemporaryRoots`) and
+Production: `packages/tools/src/sandbox.ts` (`discoverLinkedGitMetadataPaths`, `systemTemporaryRoots`) and
 `packages/loop/src/runtime/capabilities/sandbox-host-policy.ts` (`resolveSandboxPath`,
 `resolveSandboxHostPolicy`). Tests: `packages/tools/tests/integration/sandbox.test.ts` (broad,
 relative, containing, nested, and linked-Git cases) and
@@ -579,13 +564,12 @@ paths subtract `secretEnvNames` from a copy without mutating
 - Test: `packages/tools/tests/integration/sandbox.test.ts` (`does not pass provider secrets into a
   Bubblewrap environment`, `sandboxCommand — withholding credentials without a sandbox`).
 
-**INV-S7 — Host path admission is bounded twice.** The loop resolves authored settings and the
-mechanism rejects unsafe/non-absolute paths again before constructing either backend.
+**INV-S7 — Host path admission resolves configured roots.** The loop resolves authored settings and the
+mechanism requires absolute read-only mount paths before constructing either backend.
 
 - Production: `packages/loop/src/runtime/capabilities/sandbox-host-policy.ts`
-  (`resolveSandboxPath`) and `packages/tools/src/sandbox.ts` (`validateReadOnlyPath`,
-  `validatedReadOnlyPaths`).
-- Test: `packages/loop/tests/integration/sandbox-host-policy.test.ts` and broad/relative path cases in
+  (`resolveSandboxPath`) and `packages/tools/src/sandbox.ts` (`validatedReadOnlyPaths`).
+- Test: `packages/loop/tests/integration/sandbox-host-policy.test.ts` and absolute-path cases in
   `packages/tools/tests/integration/sandbox.test.ts`.
 
 **INV-S8 — Inspection reports the backend that actually ran its probe.** The DTO does not equate a
@@ -634,16 +618,14 @@ therefore cannot trigger platform installers, tool initialization, or user-contr
 
 **INV-S13 — System temporary compatibility does not weaken workspace-read-only or lifecycle
 ownership.** Bubblewrap orders broad system-temp mounts before a nested read-only workspace and
-refuses a writable temporary root beneath any protected root. Seatbelt excludes the workspace/Git
+does not reject nested temporary roots. Seatbelt excludes the workspace/Git
 roots from all temporary write filters. The loop removes only its owned scratch.
 
 - Production: `packages/tools/src/sandbox.ts` (`systemTemporaryRoots`, `seatbeltPolicy`,
   `appendBubblewrapMounts`, `sandboxCommand`) and
   `packages/loop/src/runtime/capabilities/tools.ts` (`accessibleTemporaryRoots`,
   `createAgentToolsRunCapability`).
-- Test: `packages/tools/tests/integration/sandbox.test.ts` (`keeps a temp-contained read-only
-workspace closed and rejects scratch nested inside it`, `exposes host-native temp roots without
-reopening a temp-contained read-only workspace`) and
+- Test: `packages/tools/tests/integration/sandbox.test.ts` (`exposes host-native temp roots without reopening a temp-contained read-only workspace`) and
   `packages/loop/tests/integration/tools.test.ts` (run-owned temporary roots).
 
 **INV-S14 — Seatbelt networking remains a separate policy.** Broad file reads include resolver
@@ -704,8 +686,8 @@ bootstrap inside Seatbelt without network`).
 | Fresh `/proc` blocked but host `/proc` bind works                                              | Available `bubblewrap` / `host-proc`, `degraded: true`, explicit reason                          |
 | Legacy optional backend unavailable                                                            | `ToolError("io_error")`; no host fallback                                                        |
 | Required backend unavailable                                                                   | `ToolError("io_error")`; no command spawn                                                        |
-| Relative, broad, canonically broad, or workspace-containing mechanism path                     | `ToolError("invalid_input")`                                                                     |
-| Invalid, overly broad, missing, non-directory, or more than 512 selected skill execution roots | `StartupError`; no toolset is returned                                                           |
+| Relative mechanism read-only path                                                               | `ToolError("invalid_input")`                                                                     |
+| Invalid, missing, non-directory, or more than 512 selected skill execution roots                | `StartupError`; no toolset is returned                                                           |
 | Missing configured extra path                                                                  | Omitted from resolved roots and surfaced unavailable in inspection                               |
 | A discovered entrypoint would prompt, initialize, or mutate the host when launched             | Inspection does not launch it; path status remains passive                                       |
 | Sandbox inspection request rejects in `code`                                                   | Panel shows the error; Run controls retains checking state                                       |

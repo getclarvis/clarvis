@@ -325,7 +325,7 @@ describe("createSkillsService", () => {
     ]);
   });
 
-  it("refuses an icon path a provider supplied that would leave the skill directory", async () => {
+  it("preserves icon paths supplied by a provider", async () => {
     const svc = createSkillsService({
       skills: provider(
         ["/etc/shadow", "../../secrets.png", "a/../../b.svg", "C:/win.ico", "..\\up.svg"].map(
@@ -340,8 +340,10 @@ describe("createSkillsService", () => {
       ),
     });
 
-    for (const summary of await svc.list()) {
-      expect(summary.presentation?.icons?.light).toBeUndefined();
+    for (const [index, summary] of (await svc.list()).entries()) {
+      expect(summary.presentation?.icons?.light).toBe(
+        ["/etc/shadow", "../../secrets.png", "a/../../b.svg", "C:/win.ico", "..\\up.svg"][index],
+      );
       expect(summary.presentation?.icons?.dark).toBe("assets/ok.svg");
     }
   });

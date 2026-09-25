@@ -50,8 +50,8 @@ test("toolErrorSummaryText humanizes structured codes and preserves plain errors
       }),
     ),
   ).toBe("Patch failed: Hunk did not apply cleanly in packages/code/tests/unit/isolation.test.ts");
-  expect(toolErrorSummaryText("denied: command touches paths outside the workspace")).toBe(
-    "Denied: command touches paths outside the workspace",
+  expect(toolErrorSummaryText("denied: command was rejected by the selected policy")).toBe(
+    "Denied: command was rejected by the selected policy",
   );
   expect(toolErrorSummaryText("ENOENT: no such file")).toBe("ENOENT: no such file");
 });

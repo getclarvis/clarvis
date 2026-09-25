@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { resolveConfig, StartupError } from "../../src/config.ts";
-import { canSymlink, cleanup, makeSymlink, makeWorkspace, write } from "../helpers/fixtures.ts";
+import { cleanup, makeWorkspace, write } from "../helpers/fixtures.ts";
 
 const noProbe = () => false;
 
@@ -118,28 +118,11 @@ describe("runtime config", () => {
     expect(config.sandbox?.readOnlyPaths).toEqual([root, realpathSync(packageRoot)]);
   });
 
-  it("rejects missing or overly broad skill execution roots as startup errors", () => {
+  it("rejects a missing skill execution root", () => {
     expect(() =>
       resolveConfig({ workspaceRoot: root, skillExecutionRoots: [join(root, "missing")] }),
     ).toThrow(/Skill execution root does not exist/);
-    expect(() => resolveConfig({ workspaceRoot: root, skillExecutionRoots: [root] })).toThrow(
-      /Skill execution root is too broad/,
-    );
   });
-
-  it.skipIf(!canSymlink)(
-    "rejects a skill root containing the workspace through an authored path alias",
-    () => {
-      const actual = join(root, "actual");
-      const alias = join(root, "alias");
-      mkdirSync(actual);
-      makeSymlink(actual, alias, "dir");
-
-      expect(() => resolveConfig({ workspaceRoot: alias, skillExecutionRoots: [actual] })).toThrow(
-        /Skill execution root is too broad/,
-      );
-    },
-  );
 
   it("rejects invalid numeric limits and an inverted shell timeout range", () => {
     for (const options of [

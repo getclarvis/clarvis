@@ -1,14 +1,6 @@
-import {
-  existsSync,
-  lstatSync,
-  readdirSync,
-  readFileSync,
-  readlinkSync,
-  realpathSync,
-  statSync,
-} from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import nodePath, { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import nodePath, { delimiter, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { spawnSync, type SpawnOptions, type SpawnSyncReturns } from "node:child_process";
 import { createHash } from "node:crypto";
 import { ToolError } from "./errors.ts";
@@ -437,42 +429,10 @@ export function discoverLinkedGitMetadataPaths(workspaceRoot: string): readonly 
     ) {
       return [];
     }
-    if (
-      forbiddenSandboxRoots().includes(commonDir) ||
-      isWithin(root, commonDir) ||
-      isWithin(commonDir, root)
-    ) {
-      return [];
-    }
     return Object.freeze([commonDir]);
   } catch {
     return [];
   }
-}
-
-/**
- * The roots too broad to expose to a sandbox, resolved against this host.
- *
- * @returns `/`, `/home`, the user's home parent, and the user's home directory,
- *   including their canonical spellings when they differ.
- * @remarks A function rather than a constant because `homedir()` is read at call
- *   time; a module-level array would freeze whatever `HOME` was when the module
- *   first loaded, which a test that moves `HOME` then silently disagrees with.
- *   It is exported because the host-side validator in `@clarvis/loop`
- *   (`runtime/capabilities/sandbox-host-policy.ts`) enforces the same roots with
- *   a different return convention, and spelling them twice is how
- *   one side gains a root the other does not.
- */
-export function forbiddenSandboxRoots(): string[] {
-  const home = resolve(homedir());
-  return [
-    ...new Set(
-      [resolve("/"), resolve("/home"), dirname(home), home].flatMap((path) => [
-        path,
-        canonicalOrSelf(path),
-      ]),
-    ),
-  ];
 }
 
 /**
@@ -482,7 +442,7 @@ export function forbiddenSandboxRoots(): string[] {
  * @param platform - Host platform; injectable for cross-platform tests.
  * @param environmentTemporaryRoot - The host's resolved temporary directory;
  *   defaults to {@link tmpdir}.
- * @returns Existing, non-forbidden roots in precedence order. POSIX hosts add
+ * @returns Existing roots in precedence order. POSIX hosts add
  *   `/tmp` beside the environment-selected root, matching common CLI sandbox
  *   policy; Windows uses only its environment-selected root.
  * @remarks These paths are access policy, not lifecycle ownership. A caller
@@ -492,13 +452,11 @@ export function systemTemporaryRoots(
   platform: NodeJS.Platform = process.platform,
   environmentTemporaryRoot: string = tmpdir(),
 ): string[] {
-  const forbidden = new Set(forbiddenSandboxRoots());
   const roots: string[] = [];
   for (const candidate of platform === "win32"
     ? [environmentTemporaryRoot]
     : [environmentTemporaryRoot, "/tmp"]) {
     const resolved = resolve(candidate);
-    if (forbidden.has(resolved) || forbidden.has(canonicalOrSelf(resolved))) continue;
     try {
       if (!statSync(resolved).isDirectory() || roots.includes(resolved)) continue;
     } catch {
@@ -507,26 +465,6 @@ export function systemTemporaryRoots(
     roots.push(resolved);
   }
   return roots;
-}
-
-/**
- * Reject a caller-supplied read-only mount that is dangerously broad (`/`,
- * `/home`, the user's home parent, or the user's home) or that would shadow the
- * workspace by containing it.
- *
- * @throws {@link ToolError} (`invalid_input`) when the path is a forbidden root
- *   or contains `workspaceRoot`.
- */
-function validateReadOnlyPath(path: string, workspaceRoot: string): void {
-  if (forbiddenSandboxRoots().includes(path)) {
-    throw new ToolError("invalid_input", `Sandbox read-only path is too broad: ${path}`);
-  }
-  if (isWithin(workspaceRoot, path)) {
-    throw new ToolError(
-      "invalid_input",
-      `Sandbox read-only path may not contain the workspace: ${path}`,
-    );
-  }
 }
 
 /**
@@ -663,62 +601,17 @@ function withoutSecrets(
 }
 
 /** Validate and de-duplicate every caller-supplied read-only root. */
-function validatedReadOnlyPaths(sandbox: SandboxConfig, workspaceRoot: string): string[] {
+function validatedReadOnlyPaths(sandbox: SandboxConfig): string[] {
   const paths = [...(sandbox.readOnlyPaths ?? []), ...(sandbox.runtimePaths ?? [])];
   const validated: string[] = [];
-  const workspacePaths = pathVariants(workspaceRoot);
   for (const extra of new Set(paths)) {
     if (!isAbsolute(extra)) {
       throw new ToolError("invalid_input", `Sandbox read-only path must be absolute: ${extra}`);
     }
     const path = resolve(extra);
-    for (const candidate of pathVariants(path)) {
-      for (const workspace of workspacePaths) validateReadOnlyPath(candidate, workspace);
-    }
     if (existsSync(path)) validated.push(path);
   }
   return validated;
-}
-
-/** Reject writable aliases to documents hidden behind a read-only sandbox mount. */
-function assertUnaliasedProtectedEntries(roots: readonly string[]): void {
-  let inspected = 0;
-  const pending = roots.filter(existsSync);
-  while (pending.length > 0) {
-    const path = pending.pop()!;
-    let stat;
-    try {
-      stat = lstatSync(path);
-    } catch {
-      throw new ToolError("io_error", "Cannot inspect a protected workspace entry.");
-    }
-    inspected++;
-    if (inspected > 50_000)
-      throw new ToolError(
-        "too_large",
-        "Protected workspace tree exceeds sandbox inspection limit.",
-      );
-    if (stat.isSymbolicLink()) {
-      let destination;
-      try {
-        destination = realpathSync(path);
-      } catch {
-        throw new ToolError("denied", "Protected workspace entry is redirected.");
-      }
-      if (!roots.some((root) => isWithin(destination, root)))
-        throw new ToolError("denied", "Protected workspace entry is redirected.");
-      continue;
-    }
-    if (stat.isFile() && stat.nlink !== 1)
-      throw new ToolError("denied", "Protected workspace entry has a writable alias.");
-    if (stat.isDirectory()) {
-      try {
-        for (const entry of readdirSync(path)) pending.push(join(path, entry));
-      } catch {
-        throw new ToolError("io_error", "Cannot inspect a protected workspace directory.");
-      }
-    }
-  }
 }
 
 /** Return the normalized authored path and its filesystem-canonical target. */
@@ -854,7 +747,7 @@ export function sandboxWouldApply(
  * @returns the executable, args, and spawn options to run.
  * @throws {@link ToolError} (`io_error`) when a sandbox is configured but
  *   the native sandbox is unavailable; (`invalid_input`) when a read-only path is
- *   relative or {@link validateReadOnlyPath} rejects it.
+ *   relative; read-only mount roots must be absolute.
  * @remarks
  * When `sandbox` is undefined, the command runs through the
  * host shell with the host environment less
@@ -900,23 +793,10 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
 
   const root = resolve(workspaceRoot);
   const gitPaths = gitMetadataPaths.map((path) => resolve(path));
-  if (sandbox.filesystem === "workspace-read-only") assertUnaliasedProtectedEntries(gitPaths);
   const readOnlyPaths = [
-    ...validatedReadOnlyPaths(sandbox, root),
+    ...validatedReadOnlyPaths(sandbox),
     ...(sandbox.filesystem === "workspace-read-only" ? gitPaths : []),
   ];
-  const protectedRoots = [
-    ...(sandbox.filesystem === "workspace-read-only" ? [root, ...gitPaths] : []),
-    ...readOnlyPaths,
-  ].map(canonicalOrSelf);
-  for (const temporaryRoot of resolvedTemporaryRoots) {
-    const canonical = canonicalOrSelf(temporaryRoot);
-    if (protectedRoots.some((protectedRoot) => isWithin(canonical, protectedRoot)))
-      throw new ToolError(
-        "invalid_input",
-        `Writable temporary root is inside a protected sandbox path: ${temporaryRoot}`,
-      );
-  }
   if (support.backend === "seatbelt") {
     const policy = seatbeltPolicy({
       sandbox,

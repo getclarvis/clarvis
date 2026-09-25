@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import {
@@ -10,7 +10,6 @@ import {
 import { marketplaceSchema, type Marketplace, type MarketplaceEntry } from "@clarvis/kernel/config";
 import { errorText } from "./errors.ts";
 import type { SettingsAdapter } from "./settings.ts";
-import { diagnosticEvent } from "../core/diagnostic-events.ts";
 import { gitCloneAsync, validateGitUrl } from "./plugin-install.ts";
 import { zodIssueSummary } from "./zod-summary.ts";
 import type { PluginInstallSource } from "@clarvis/protocol";
@@ -70,100 +69,10 @@ function marketplaceRoot(file: string): string {
 }
 
 /**
- * Errnos that mean "this path does not exist yet", and nothing worse.
- *
- * @remarks The only case for which answering `true` is honest: there is no
- * target, so there is nothing that could be escaping.
- */
-const ABSENT_ERRNOS = new Set(["ENOENT", "ENOTDIR"]);
-
-function errnoOf(error: unknown): string | undefined {
-  const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  return typeof code === "string" ? code : undefined;
-}
-
-/**
- * Whether `target` resolves inside the marketplace root.
- *
- * @param realRoot - the marketplace root, already through `realpath`.
- * @param target - the resolved local source.
- * @returns `true` when `target` is `realRoot`, sits beneath it, or does not
- *   exist yet; `false` when it escapes, and `false` when containment cannot be
- *   decided at all.
- * @remarks Checked after `realpath` because the textual refinement on the path
- *   cannot see a symlink pointing out of the tree.
- *
- *   The two resolutions are attempted separately, and the answer depends on
- *   which one failed and why. This used to be one `try` with an untyped
- *   `catch` answering `true`, which meant `EACCES`, `ELOOP` and `ENAMETOOLONG`
- *   all read as "contained" — and `target` comes from the marketplace document,
- *   so its author could make the resolution fail cheaply (a symlink cycle, an
- *   overlong path) and thereby delete the containment note about their own
- *   listing. Local listings are installable after this check, so an
- *   indeterminate answer must fail closed before the listing is projected into
- *   the kernel's local install-source contract.
- *
- *   Failing to resolve `root` is decisive in the other direction: with no
- *   boundary established, nothing can be shown to be inside it.
- */
-function staysInside(realRoot: string, target: string): boolean {
-  let realTarget: string;
-  try {
-    realTarget = realpathSync(target);
-  } catch (error) {
-    const errno = errnoOf(error);
-    if (errno !== undefined && ABSENT_ERRNOS.has(errno)) return true;
-    reportContainmentUnknown(error);
-    return false;
-  }
-  return realTarget === realRoot || realTarget.startsWith(realRoot + sep);
-}
-
-/**
- * Note that a local listing's containment could not be decided.
- *
- * @param error - why `realpath` refused to resolve the local source.
- * @remarks Extracted from the `catch` so Bun counts it as its own unit;
- *   `specs/cross-cutting/test-architecture.md` §3.7 records that a `catch` body's line counter is
- *   otherwise satisfied by the enclosing `try`.
- */
-function reportContainmentUnknown(error: unknown): void {
-  diagnosticEvent(
-    "marketplace.containment.unknown",
-    { reason: errorText(error), errno: errnoOf(error) ?? "unknown" },
-    "warn",
-  );
-}
-
-/**
- * Note every listing whose local source, once resolved, leaves the marketplace
- * root.
- *
- * @param root - the directory the document was read from.
- * @param marketplace - the parsed catalog, annotated in place.
- * @remarks A contained local listing is installable. An escaping or unresolved
- *   path is marked non-installable and annotated before it reaches the browser.
- */
-function confineLocalSources(root: string, marketplace: Marketplace): void {
-  const realRoot = realpathSync(root);
-  for (const entry of marketplace.plugins) {
-    if (entry.sourceType !== "local") continue;
-    const target = resolve(root, entry.source);
-    if (staysInside(realRoot, target)) continue;
-    entry.installable = false;
-    entry.notes = [
-      ...entry.notes,
-      `listing '${entry.name}': its local source resolves outside the marketplace root`,
-    ];
-  }
-}
-
-/**
  * Read and validate a marketplace document from disk.
  *
  * @param file - the document's absolute path.
- * @returns the parsed catalog, with local sources confined against the
- *   directory the document was read from.
+ * @returns the parsed catalog.
  * @throws {@link Error} when the file is unreadable, is not valid JSON, or is not
  *   a marketplace document at all.
  */
@@ -190,7 +99,6 @@ function readMarketplace(file: string): Marketplace {
   if (!parsed.success) {
     throw new Error(`its ${MARKETPLACE_FILE} is invalid: ${zodIssueSummary(parsed.error)}`);
   }
-  confineLocalSources(marketplaceRoot(file), parsed.data);
   return parsed.data;
 }
 

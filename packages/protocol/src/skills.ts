@@ -36,7 +36,7 @@ export interface SkillProvenance {
   author?: string;
 }
 
-/** Skill-relative icon paths, keyed by the theme each is drawn for. */
+/** Declared icon paths, keyed by the theme each is drawn for. */
 export interface SkillIconSet {
   light?: string;
   dark?: string;
@@ -47,8 +47,8 @@ export interface SkillIconSet {
  *
  * @remarks
  * Presentation only. None of it is ever shown to the model, and none of it is
- * authorization: a display name does not rename the skill, an icon path is a
- * path the kernel has already confined to the skill directory, and a starter
+ * authorization: a display name does not rename the skill, an icon path is
+ * presentation data, and a starter
  * prompt is a suggestion a user may edit or ignore. Every field is optional,
  * including for a skill that declares no presentation at all.
  */
@@ -57,7 +57,7 @@ export interface SkillPresentation {
   displayName?: string;
   /** One line, shorter than `description`, for a dense list row. */
   shortDescription?: string;
-  /** Skill-relative icon paths. */
+  /** Declared icon paths. */
   icons?: SkillIconSet;
   /** Brand colour in hex notation. */
   color?: string;

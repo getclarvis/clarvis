@@ -44,7 +44,7 @@ describe("plugin executable snapshot", () => {
     expect(changed.files[1]!.digest).toBe(first.files[1]!.digest);
   });
 
-  it("rejects missing local argv and ignores paths that escape the package", () => {
+  it("rejects missing argv and captures a linked external executable", () => {
     const missing = snapshotPluginExecutables(plugin, {
       name: "fixture",
       mcpServers: { local: { type: "stdio", command: "./missing.sh", cwd: plugin } },
@@ -60,7 +60,7 @@ describe("plugin executable snapshot", () => {
           name: "fixture",
           mcpServers: { local: { type: "stdio", command: "./linked.sh", cwd: plugin } },
         } as PluginManifest),
-      ).toMatchObject({ ok: false });
+      ).toMatchObject({ ok: true, files: [{ path: "linked.sh" }] });
     }
   });
 

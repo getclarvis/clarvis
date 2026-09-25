@@ -845,14 +845,14 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/kernel/tests/integration/workspace-trust.test.ts` (extension surface changes the trust
     hash and is reported as withheld `extension_profile` until approved).
 
-56. **Portable Agent Plugin process paths remain package- or client-state-confined.** A relative
-    executable must resolve to a real file inside `PLUGIN_ROOT`; `cwd` may be rooted only in
-    `PLUGIN_ROOT` or the dedicated `PLUGIN_DATA`; those reserved variables cannot be overridden by
+56. **Portable Agent Plugin process paths resolve from declared locations.** A relative
+    executable resolves from `PLUGIN_ROOT`; `cwd` resolves from `PLUGIN_ROOT` after expansion and
+    may name an external directory; reserved `PLUGIN_ROOT` and `PLUGIN_DATA` variables cannot be overridden by
     the plugin; and one format-owned expansion is followed by `expandVariables: false`, preventing
     ambient secret names from being interpolated accidentally. Production:
     `agentPluginCommand`, `agentPluginCwd`, and `normalizeAgentMcpServer` in
     `packages/kernel/src/plugins/plugin-manifest.ts`; persistent path ownership in
-    `packages/kernel/src/plugins/plugin-runtime.ts`. Test: portable command/cwd/env and symlink cases
+    `packages/kernel/src/plugins/plugin-runtime.ts`. Test: portable command/cwd/env cases
     in `packages/kernel/tests/integration/plugin-manifest.test.ts` plus literal-placeholder cases in
     `packages/mcp-client/tests/component/transport-builder.test.ts`.
 
@@ -926,7 +926,7 @@ documents when consumed; workspace trust still governs activation. Production: `
 
 | Condition | Handler | Outcome |
 | --- | --- | --- |
-| Ordinary external path unavailable to the selected environment | `resolveFilesystemPolicy` in `packages/tools/src/sandbox.ts` and OS access | `not_found` or `io_error`; no workspace `path_escape` |
+| Ordinary external path unavailable to the selected environment | `resolveFilesystemPolicy` in `packages/tools/src/sandbox.ts` and OS access | `not_found` or `io_error` |
 | Unsafe or unsupported borrowed `userConfig` reference | `resolveBorrowedUserConfig` in `packages/kernel/src/plugins/plugin-manifest.ts` | only the affected MCP is withheld; safe sibling contributions survive |
 | Write target is a symlink | `packages/tools/src/lib/atomic.ts` | `ToolError("invalid_input")`, `"Refusing to write through a symlink"` |
 | Atomic write fails after creating a parent | `packages/tools/src/lib/atomic.ts` | the created directory is removed best-effort, then rethrow |

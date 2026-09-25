@@ -111,12 +111,12 @@ host's configuration loader can validate a candidate before activation.
 
 `captureSkillExecution` materializes a bounded catalog revision for a host that needs stable helper
 paths and resource bytes while the source is edited. It copies only enumerated resources and manifests,
-rejects links/escapes and limits allocations per file, skill and catalog. The owner must close the
+limits allocations per file, skill and catalog. The owner must close the
 capture when its users settle. Full reads preserve the normal size errors; chunked reads preserve
 pagination. The loop uses this facility for host-selected snapshots.
 
 Call `refresh()` after the filesystem changes. `resourcePath(name, rel)` resolves
-a resource while enforcing that it stays inside the selected skill directory.
+a resource against the selected skill directory; absolute and parent-relative paths are accepted.
 
 ## Entry points
 
@@ -163,9 +163,8 @@ complete regular file of at most 8 MiB, but returns one UTF-8 page of at most 25
 characters; its continuation cursor is a byte offset and never splits a UTF-8 sequence or surrogate
 pair. `load_skill` has the closed shape `{ name }` and only loads the body. Bundled files use the
 separate `read_skill_resource` shape `{ name, resource, offset }`; every field is required, the first
-page uses byte offset zero, and a provider-portable relative path pattern with no regex lookaround
-rejects absolute paths, traversal, drive-qualified paths, backslashes, control characters and empty
-segments. The resource reader validates every chunk returned by a provider and fails closed on a
+page uses byte offset zero. The resource path is resolved from the selected skill directory;
+absolute and parent-relative paths are accepted. The resource reader validates every chunk returned by a provider and fails closed on a
 mismatched, unbounded, non-progressing or inexact cursor. A legacy provider without chunk support
 can serve only offset zero and never reinterprets the byte cursor as a character index.
 
@@ -175,11 +174,11 @@ file, and refuses a resource larger than the caller's bound. Kernel skill snapsh
 participate in identity while keeping model-facing text disclosure and snapshot memory accounting
 independently bounded. Their canonical catalog projection also includes `dependencies.tools`, so a
 sidecar change that alters model-visible skill availability invalidates both plugin and standalone
-skill snapshots even though the `agents/` sidecar directory is not a model-readable resource.
+skill snapshots even though the `agents/` sidecar directory is not enumerated as a resource.
 `SkillRegistry.get` exposes the absolute `identityFiles` that produced the effective content: the
 manifest, selected sidecar when present, and enumerated resources. A host can arm asynchronous
 monitoring for that exact set before comparing the captured catalog with its pinned digest; the
-sidecar remains unavailable through the resource API.
+sidecar may be read directly through the resource API when its path is known.
 
 `LOAD_SKILL_TOOL_NAME` and `READ_SKILL_RESOURCE_TOOL_NAME` are owned only here.
 `createSkillsCapability` derives its `reservedWireNames` and `toolEffects` from the two canonical
@@ -255,16 +254,12 @@ either, both, or neither. Suppression takes effect in exactly one place —
 
 Three rules bound the sidecar:
 
-- **It never reaches the model.** Not the skill body, not the catalog text, not
-  `load_skill`'s output. The whole `agents/` directory is therefore withheld from
-  the resource listing and from `resource()`/`readResource()`, which report a
-  path inside it as `not_found`: the listing is rendered to the model, and naming
-  a harness-directed file there would both disclose it and invite a read of it.
+- **The sidecar is omitted from the catalog and skill body.** The `agents/` directory is
+  excluded from resource enumeration. A direct resource path can still read a sidecar file.
 - **A malformed sidecar degrades to "no sidecar"**, and never removes the skill
   that carries it — the rule `agent`'s `.catch(undefined)` already follows.
   Unreadable, unparseable and not-a-mapping all warn and yield nothing.
-- **Presentation is never authorization.** Icon paths are rejected outright if
-  they could address anything outside the skill directory; nothing in the sidecar
+- **Presentation is never authorization.** Icon paths are presentation data; nothing in the sidecar
   gates a tool, a grant or a path.
 
 All filesystem tiers are hard-bounded before content allocation: configured
@@ -329,7 +324,7 @@ The suite is classified by the boundary each test exercises:
 - `tests/component` composes the catalog and skills capability over shared,
   contract-only fakes, and proves only activation and contribution wiring;
 - `tests/integration` owns real discovery and shadowing, filesystem resources,
-  confinement and symlink behavior. The public facade keeps only representative
+  path resolution and symlink behavior. The public facade keeps only representative
   progressive-disclosure and refresh flows instead of replaying those matrices.
 
 The package currently needs no contract, architecture or end-to-end tier.

@@ -277,7 +277,7 @@ that captures the changed version, while an idle trust transition atomically rep
 with the new trust-dependent roots. Package-local executable files use the same asynchronous model:
 `observeRuntimeFiles` withdraws the plugin's MCP/hook/capability projections through
 `runtimeAvailable`, without a run-admission or capability-location rehash. Explicitly local
-declarations that are absent or do not resolve to a confined regular file are rejected during pin;
+declarations that are absent or do not resolve to a regular file are rejected during pin;
 watchers bind the declaration path and compare inode/device identity as well as metadata so symlink
 retargeting cannot preserve availability. Selected standalone skill
 digests cover effective catalog

@@ -295,7 +295,7 @@ marked cancelled when replaced; completed commitments retain completion in the a
 
 The current record keeps `constraints`, `exclusions`, `assumptions`, normative `sources` and `origin`
 beside the existing objective and criteria. Each semantic array and the sources array contains at
-most 16 items; text and confined paths are at most 4,096 characters and every source digest is a
+most 16 items; text and paths are at most 4,096 characters and every source digest is a
 lowercase SHA-256. Guided origin retains the normalized seed up to 16,384 characters. Auto/guided
 origin also records the formulation execution, captured full-session revision, host-derived source
 execution IDs, digest and truncation state of the exact canonical trajectory, and optional measured
@@ -310,7 +310,7 @@ changed read fails closed. Later drift does not redefine the Goal: the view repo
 completion remains blocked until a semantic edit, or cancel/clear followed by formulation. Files the
 Goal authorizes changing are execution evidence, not normative sources.
 An explicit `read_file` range counts as complete only when its observed rendering equals that entire
-confined reread and has no continuation marker. Thus line one with an ample limit is valid, while an
+bounded reread and has no continuation marker. Thus line one with an ample limit is valid, while an
 actually partial range remains invalid.
 
 `revision` is the CAS revision of state; `objective_revision` changes with any objective, criteria,
@@ -953,7 +953,7 @@ real mapper output, pre-cap terminal classification, successful/failed commands,
 qualified MCP names; `projects completed delegation receipts from current and prior Goal stages`
 covers delegation receipts.
 
-Artifact criteria read the actual bytes through the shared `readRawFile` descriptor confinement,
+Artifact criteria read the actual bytes through the shared `readRawFile` descriptor reader,
 with only the selected workspace admitted and a 16 MiB ceiling. The reference includes the observed
 digest; it satisfies an artifact criterion only when path and expected digest match. Verification
 reads again to detect mutation, including when the artifact is cited in a qualitative assessment.
@@ -999,7 +999,7 @@ an earlier stage already presented as fresh progress` in
 Production: `createGoalEvidenceSource` and `goalEvidenceDigest` in
 [evidence.ts](../../packages/kernel/src/goals/evidence.ts).
 Test: [goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts)
-checks real file mutation/confinement, command failures, argument relevance, foreign references,
+checks real file mutation, command failures, argument relevance, foreign references,
 duplicate/oversized observations, persisted trace replay and repeated-check stagnation.
 
 ## Kernel runtime authority

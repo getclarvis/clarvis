@@ -1,16 +1,10 @@
 /**
  * Machine-readable discriminator carried on every {@link SkillError}: an invalid
- * or duplicate skill, a missing / wrong-type path, a resource-path escape, bad
+ * or duplicate skill, a missing / wrong-type path, bad
  * input, or a generic I/O failure.
  */
 export type ErrorCode =
-  | "invalid_skill"
-  | "duplicate_skill"
-  | "not_found"
-  | "not_a_file"
-  | "path_escape"
-  | "invalid_input"
-  | "io_error";
+  "invalid_skill" | "duplicate_skill" | "not_found" | "not_a_file" | "invalid_input" | "io_error";
 
 /**
  * The package's typed error: an {@link ErrorCode} plus an open bag of structured

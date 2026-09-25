@@ -58,7 +58,7 @@ repository-owned inventory; Code does not manage that workspace tree. The archit
 `agentsPluginsDir(s)` only in the filesystem plugin repository and keeps every other `.agents`
 accessor read-only (`packages/paths/tests/architecture/agents-read-only.test.ts`).
 An inventory entry may also link to a directory in a shared store; only the outer link is followed,
-and contribution readers continue to realpath-confine every package-relative path. Production:
+and contribution readers resolve declared paths from the package or manifest directory. Production:
 `directoryNames` in `packages/kernel/src/adapters/filesystem/plugin-repository.ts`. Test:
 `packages/kernel/tests/integration/plugin-service.test.ts` ("discovers a plugin linked into the
 shared .agents inventory").
@@ -154,23 +154,12 @@ Internal helpers with their own, independently useful contracts: `translateTimeo
 | `clarvisSkillRoots(opts)` | `packages/skills/src/preset.ts` | returns the 4 standard `SkillRootInput`s, lowest precedence first |
 | `HARNESS_CONFIG_DIR` | `packages/skills/src/scan.ts` | `"agents"` — the harness-directed subdirectory *inside* one skill's own directory |
 | `findSkillSidecar(dir, followSymlinks, diagnostics)` | `packages/skills/src/scan.ts` | locates the preferred `.yaml`/`.yml` file directly under `<skill>/agents/` |
-| `resolveResourcePath(skillDir, rel, logger)` | `packages/skills/src/paths.ts` | canonicalizes a skill-relative resource request and throws `path_escape` if it falls outside `skillDir` |
-| `isHarnessConfigPath(skillDir, rel, abs, diagnostics)` | `packages/skills/src/scan.ts` | true when a resource request lands in that subdirectory, lexically or via symlink |
+| `resolveResourcePath(skillDir, rel, logger)` | `packages/skills/src/paths.ts` | resolves a resource path from the skill directory without a containment check |
 | `readSkillSidecar(file, diagnostics)` | `packages/skills/src/sidecar.ts` | parses the sidecar into `SkillSidecar { presentation?, dependencies?, catalogSuppressed }` |
 
 `HARNESS_CONFIG_DIR` is a different "agents" than `AGENTS_DIR` in §2.1: it is a per-skill subdirectory
 holding harness-addressed configuration, not the cross-runtime root directory. Both happen to be
 spelled `"agents"`, at different points in the tree.
-
-`isHarnessConfigPath`'s "via symlink" case (its `abs` parameter) depends on `resolveResourcePath`
-having already canonicalized the request: `resolveResourcePath` (`packages/skills/src/paths.ts`)
-resolves both the skill directory and the (possibly not-yet-existing) target through `realpath`, via its
-own helpers `canonicalize` (`packages/skills/src/paths.ts`) and `canonicalizeAllowingMissing`
-(`packages/skills/src/paths.ts`, which walks up to the nearest existing ancestor for a target that
-does not exist yet and re-appends the missing tail). The registry calls the two in sequence —
-`resolveResourcePath` first, its result then passed as `isHarnessConfigPath`'s `abs`
-(`packages/skills/src/registry.ts`) — so the symlink-aware half of the harness-directory check
-in §2.4/§6 is only as strong as this canonicalization.
 
 ### 2.5 MCP server key tolerance in a plugin manifest (`@clarvis/loop` + `@clarvis/kernel`)
 
@@ -453,7 +442,7 @@ When `mcpServers` is absent, the resolver also recognizes companion documents by
 noted and the second is still attempted (`packages/kernel/src/plugins/plugin-manifest.ts`). A
 string declaration names one companion directly; an inline object remains inline. Every relative
 companion path is tried beside the selected manifest first when that file exists there, then against
-the plugin root, while both readings remain confined to the plugin root
+the plugin root, and either reading may resolve beyond the plugin root
 (`packages/kernel/src/plugins/plugin-manifest.ts`). This composes foreign layouts without
 merging two server maps or making one bad convention hide the next. Tests:
 `packages/kernel/tests/integration/plugin-manifest.test.ts`, plus the combined skills/MCP/hooks
@@ -618,10 +607,7 @@ Clarvis hook command is never rewritten by this adapter. Production:
 | An MCP server entry is unusable even after that tolerance (e.g. a stdio server naming no command) | Only that entry dropped, with a note; rest of `mcpServers` and the whole plugin survive | `packages/kernel/src/plugins/plugin-manifest.ts` |
 | A declared/convention hooks document is missing, not JSON, over its byte ceiling, or not a recognizable hooks shape | Manifest keeps loading with no hooks from that source and a note; never an `error` | `packages/kernel/src/plugins/plugin-manifest.ts`; tests `packages/kernel/tests/integration/plugin-manifest.test.ts` |
 | A skill sidecar is unreadable, unparseable, or not a YAML mapping | Skill keeps its name/description/body; only `presentation`/`dependencies`/`catalogSuppressed` are absent; a warning is logged | `packages/skills/src/sidecar.ts`; test `packages/skills/tests/integration/sidecar.test.ts` covers the malformed-YAML branch and its non-fatal warning/strict-scan behavior; the unreadable and non-mapping branches have no focused test here |
-| A sidecar's resource escapes the skill directory (via symlink) | Skipped with a warning, same as any other escaping symlink | `packages/skills/src/scan.ts`; test `packages/skills/tests/integration/sidecar.test.ts` |
-| A symlink's target cannot be resolved at all — missing (`ENOENT`) versus any other `realpath` failure | Treated oppositely: a *missing* target is **not** counted as escaping (falls through to the separate dangling-link warning, so a symlinked ancestor like a symlinked temp dir does not make every dangling link look like an escape); every *other* resolution failure — e.g. a target that exists but is unreadable — **is** counted as escaping, because the later `stat` needs only search permission where `realpath` needs read on the target | `packages/skills/src/scan.ts` (`escapesRoot`), doc rule |
 | The skill's own resource listing would otherwise name a file under `<skill>/agents/` | The top-level harness directory is skipped whole during enumeration — never named to the model in the first place, distinct from the reactive check below | doc rule `packages/skills/src/scan.ts`; enforced |
-| A resource request lexically or (via symlink) actually resolves into `<skill>/agents/` | Reported `not_found`, indistinguishable from a resource that does not exist | `packages/skills/src/registry.ts`, doc rule |
 | A required skill frontmatter field (`name`/`description`) is missing or unusable | Supplied from a fallback (directory name / sidecar short-description / neutral placeholder), never fatal; every substitution is warned and recorded on `SkillInfo.defaulted` | `packages/skills/src/parse.ts`; behavior demonstrated at `packages/skills/tests/integration/sidecar.test.ts` (delegated in depth to [execution/skills.md](../execution/skills.md)) |
 
 Every row above is a **degrade**, not a **fail**: nothing in this document's scope shows a foreign

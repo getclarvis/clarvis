@@ -69,7 +69,7 @@ function exactRead(observation: CompleteRead, path: string, content: string): bo
   );
 }
 
-/** Bind model-reported normative paths to complete successful reads and current confined bytes. */
+/** Bind model-reported normative paths to complete successful reads and current file bytes. */
 export async function verifyTraceNormativeSources(options: {
   trace: readonly TraceEvent[];
   paths: readonly string[];

@@ -109,7 +109,7 @@ services:
 | `secrets`           | Server-side provider secret names and writes.                                          |
 | `models`            | Model metadata and pricing catalog.                                                    |
 | `providerAuth`      | Token-free local subscription status, device login and disconnect control.             |
-| `files`             | Read-only workspace file and image access.                                             |
+| `files`             | Read-only workspace listing and file/image reads; relative paths use the workspace root and absolute paths are accepted. |
 | `changes`           | Read-only workspace change inventory and unified patch detail.                         |
 | `memory`            | Owner-facing execution-memory review and curation.                                     |
 | `plans`             | History from the built-in Markdown plan store.                                         |
@@ -194,7 +194,7 @@ fingerprint is not trusted. The full format, selection precedence, snapshot and 
 [`hosts/extension-profiles.md`](../../specs/hosts/extension-profiles.md).
 
 Marketplace installation uses `PluginInstallSource`, a closed union for Git (optional subdirectory,
-ref or SHA), confined local directories, and npm packages (optional version and credential-free
+ref or SHA), local directories, and npm packages (optional version and credential-free
 HTTPS registry). A source may carry `expected_name`, binding a marketplace listing to the installed
 manifest identity and supplying a stable name only when a foreign manifest omits one.
 `PluginService.installSource` keeps source interpretation on the client/catalog side and fetch policy

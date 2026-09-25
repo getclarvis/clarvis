@@ -265,7 +265,7 @@ Notifications follow successful durable publication; a notification failure does
 `createGoalEvidenceSource` derives bounded references from existing tool traces and current artifact
 bytes. Tool identity follows the actual trace mapper's flat-name versus qualified-MCP convention;
 goal controls and polling never enter the evidence catalog. Shell checks require exit zero even when
-transport succeeded, newer contradictory results invalidate older successes, and confined artifact
+transport succeeded, newer contradictory results invalidate older successes, and artifact
 reads recheck their digest. Qualitative relevance remains model judgment.
 Before completion, the host revalidates normative source digests and the current candidate plus
 host/human evidence. `createGoalStewardCoordinator` owns one finite read-only evaluation at a time
@@ -491,7 +491,7 @@ packaged skill in a plugin cannot be captured within its bounds, that plugin's e
 surface is withheld while its independently valid non-skill contributions remain.
 `PluginContributions.observeRuntimeFiles` applies the same asynchronous latch to captured
 package-local MCP and hook executable files. An explicitly local executable declaration
-must resolve to a confined regular file at pin time; symlinks are monitored by their declaration path,
+must resolve to a regular file at pin time; symlinks are monitored by their declaration path,
 and later replacement withdraws the executable projections without a run-admission rehash.
 Workspace-trust transitions recompose the extension snapshot and atomically replace the loop's exact
 skill catalog only while no run is active. Approval refreshes the trust surface through the production
@@ -600,7 +600,7 @@ exact-snapshot gate for the complete inventory of executable plugin content inhe
 plugin or Extension Profile separately.
 
 `PluginService.installSource` admits three marketplace fetch forms. Git sources may select a
-confined subdirectory and one validated ref or full SHA; local directories are copied into managed
+declared directory and one validated ref or full SHA; local directories are copied into managed
 inventory under file/count/depth bounds with symlinks and special entries refused; npm packages are
 installed into staging with lifecycle scripts, audits and funding requests disabled before the
 validated plugin is atomically installed. Catalog installs carry the listing name as an expected
@@ -631,7 +631,7 @@ both refuse replacement/update so Clarvis cannot discard edits in a checkout it 
 
 Plugin admission is all-or-nothing only for artifacts that define the plugin as a whole: its selected
 manifest, install record and bounded agent tree. A declared or conventional hooks/MCP companion that
-is absent, malformed, oversized or outside the plugin costs only that contribution and produces an
+is absent, malformed or oversized costs only that contribution and produces an
 operator-visible note. Manifests and companion documents are descriptor-read before JSON parsing
 with a 2 MiB ceiling; install records are capped at 64 KiB. The shared plugin-agent limits add bounded
 depth, directory/entry/file counts, 256 KiB per file and 8 MiB aggregate source. Install-root
@@ -640,7 +640,7 @@ enumeration is also bounded and fails explicitly instead of returning a partial 
 A Clarvis-specific dot-directory manifest is authoritative. Without one, the resolver scores the
 root and shape-matched host manifests by supported contribution directives, selects one document
 deterministically, and never merges manifests. Relative skill, hook and MCP paths resolve from that
-manifest's directory before the plugin root and remain confined to the install root. An absent
+manifest's directory before the plugin root and may resolve beyond the install root. An absent
 `mcpServers` declaration falls through to `.mcp.json` and then `mcp.json`. When an event-keyed hook
 document from another host starts a command with `./` or `.\`, the dialect adapter anchors that
 executable to the plugin's install root; the hook process still runs with the workspace as its
@@ -911,6 +911,7 @@ The read-only workspace service applies the same rule before returning a file to
 limited to 8 MiB and images to 7 MiB before base64 expansion. Its picker walks directory handles
 incrementally, stops after 4,000 files or 20,000 examined entries, and clamps caller limits; one
 huge directory or image therefore cannot become a multi-gigabyte protocol response.
+File and image reads resolve relative paths from the workspace and accept absolute paths.
 
 ## Run events reach a client by two paths
 

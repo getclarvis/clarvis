@@ -1,9 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { globalPaths } from "@clarvis/paths";
 import { cacheSourceIdentity } from "../cache/live.ts";
-import { prepareHostAuthView } from "../cache/host-auth-view.ts";
 import { CacheBudget } from "../cache/limits.ts";
 import { cacheHash } from "../cache/wire.ts";
 import {
@@ -21,7 +19,6 @@ export async function runGoalLive(options: {
   models: readonly string[];
   trials: number;
   output: string;
-  useGlobalOAuth: boolean;
 }): Promise<void> {
   if (
     !Number.isInteger(options.trials) ||
@@ -116,18 +113,11 @@ export async function runGoalLive(options: {
       break;
     }
     const root = await mkdtemp(join(tmpdir(), "clarvis-goal-live-"));
-    let auth: Awaited<ReturnType<typeof prepareHostAuthView>> | undefined;
     try {
       await prepareGoalLiveFixture(root, expected.model);
-      if (options.useGlobalOAuth)
-        auth = await prepareHostAuthView({
-          authenticationRoot: globalPaths().root,
-          isolatedRoot: join(root, "global"),
-          mountedRoot: join(root, "auth-view"),
-        });
       const outputFile = join(output, `${expected.model}-${expected.trial}.json`);
       const workspace = join(root, "workspace");
-      const global = auth?.globalDir ?? join(root, "global");
+      const global = join(root, "global");
       const job: GoalLiveJob = {
         ...expected,
         root,
@@ -141,7 +131,7 @@ export async function runGoalLive(options: {
       await writeFile(jobFile, JSON.stringify(job));
       process.stdout.write(JSON.stringify({ event: "goal.trial_started", ...expected }) + "\n");
       const environment = environmentFor(root, global, workspace);
-      const worker = Bun.spawn([...(auth?.command ?? []), process.execPath, workerPath, jobFile], {
+      const worker = Bun.spawn([process.execPath, workerPath, jobFile], {
         stdin: "ignore",
         stdout: "inherit",
         stderr: "inherit",
@@ -166,11 +156,7 @@ export async function runGoalLive(options: {
       );
       break;
     } finally {
-      try {
-        await auth?.cleanup();
-      } finally {
-        await rm(root, { recursive: true, force: true });
-      }
+      await rm(root, { recursive: true, force: true });
       await save();
     }
   }
@@ -203,6 +189,5 @@ if (import.meta.main) {
     models: option("--models", GOAL_MODELS.join(",")).split(","),
     trials: Number(option("--trials", "2")),
     output: option("--output", "build/goal-live"),
-    useGlobalOAuth: process.argv.includes("--use-global-oauth"),
   });
 }

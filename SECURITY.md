@@ -29,13 +29,9 @@ Reports are especially useful when they concern filesystem policy or classified 
 credential exposure, untrusted MCP/plugin/hook content, release or updater integrity, network trust,
 or a bypass of an explicit approval boundary.
 
-Clarvis offers separate command-review and execution-isolation controls, but neither the native
-Sandbox is a complete security boundary. It deliberately sends selected context to the
-configured model provider and can run approved tools. Optional host execution, external MCP
-servers, plugins, hooks, task providers, and local model endpoints keep their own trust boundaries.
-
-Native Sandbox limits writes to its admitted roots and may still read host-visible files.
-A user-approved escalated command runs on the host for that command. Remote SSH connections
-carry the Kernel protocol through OpenSSH and rely on the selected remote host's controls.
+Clarvis sends selected context to the configured model provider. Shell and file tools execute
+with the host process's permissions. External MCP servers, plugins, hooks, task providers and
+local model endpoints keep their own trust boundaries. Remote SSH connections carry the Kernel
+protocol through OpenSSH and rely on the selected remote host's controls.
 
 For ordinary bugs, support questions, or feature requests, use the public issue forms instead.

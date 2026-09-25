@@ -425,15 +425,15 @@ surfaces and are not duplicated here.
 - `write_memory` / `edit_memory` / `delete_memory` — maintain it (each mutation
   triggers a reindex).
 
-Host and Sandbox runs retain that seven-tool surface when Memory is active.
+Host runs retain that seven-tool surface when Memory is active.
 
 Durable file-backed job scans
 visit at most 10,000 directory entries, read at most 1 MiB from a job record and
 retain a top page of at most 200 jobs; counts, next-due lookup and claims fold
 over the scan without collecting the queue.
 
-A write-enabled entry agent may write memory directly during a Host or Sandbox run. The
-same native tools back the Kernel editing surface and the dedicated indexing pass in the Kernel that
+A write-enabled entry agent may write memory directly during a host run. The same tools back the
+Kernel editing surface and the dedicated indexing pass in the Kernel that
 owns that Memory store.
 
 `pinned:` and `authority: confirmed` are the owner's alone, and the rule binds

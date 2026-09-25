@@ -11,7 +11,6 @@ import { auditCacheTrial, CacheEvidenceWriter } from "./evidence.ts";
 import { cacheHash } from "./wire.ts";
 import type { CacheBudget } from "./limits.ts";
 import type { CacheReport, CacheTrial } from "./types.ts";
-import { prepareHostAuthView } from "./host-auth-view.ts";
 
 /** Seal the already-built archive and its source inputs before starting any qualification trial. */
 export async function sealCacheArtifact(archiveDirectory: string, manifest: string): Promise<void> {
@@ -167,11 +166,10 @@ export async function runCacheArtifact(args: {
   trial: number;
   model: string;
   globalBudget?: CacheBudget;
-  authenticationRoot?: string;
 }): Promise<{ trial: CacheTrial; artifact: NonNullable<CacheReport["artifact"]> }> {
   const hostGlobal = resolve(globalPaths().root);
   const requestedGlobal = resolve(args.globalDir);
-  if (!args.authenticationRoot && overlaps(requestedGlobal, hostGlobal)) {
+  if (overlaps(requestedGlobal, hostGlobal)) {
     throw new Error("isolated_cache_global_overlaps_operator_global");
   }
   const limits = trialLimits("C11");
@@ -179,7 +177,7 @@ export async function runCacheArtifact(args: {
     scenario: "C11",
     model: args.model,
     limits,
-    authentication: args.authenticationRoot ? "global-oauth" : "isolated",
+    authentication: "isolated",
   });
   process.stdout.write(
     JSON.stringify({
@@ -339,14 +337,7 @@ export async function runCacheArtifact(args: {
   const writer = new CacheEvidenceWriter();
   const startedAt = Date.now();
   let screen = "";
-  let authView: Awaited<ReturnType<typeof prepareHostAuthView>> | undefined;
   try {
-    if (args.authenticationRoot)
-      authView = await prepareHostAuthView({
-        authenticationRoot: args.authenticationRoot,
-        isolatedRoot: args.globalDir,
-        mountedRoot: join(root, "host-global-view"),
-      });
     await command(
       [
         "tui",
@@ -360,11 +351,10 @@ export async function runCacheArtifact(args: {
         "--ttl",
         "30m",
         "--",
-        ...(authView?.command ?? []),
         "env",
         "-u",
         "CLARVIS_CODE_SOURCE",
-        `CLARVIS_HOME=${authView?.globalDir ?? args.globalDir}`,
+        `CLARVIS_HOME=${args.globalDir}`,
         `CLARVIS_CACHE_ARTIFACT_OBSERVER=${observer}`,
         `CLARVIS_TIMEOUT_CEILING_MS=${limits.durationMs}`,
         launcher,
@@ -636,13 +626,6 @@ export async function runCacheArtifact(args: {
       verdict: pids.length > 0 && !pids.some(alive) ? "pass" : "incomplete",
       evidence: JSON.stringify(pids.map((pid) => ({ pid, alive: alive(pid) }))),
     });
-    if (authView) {
-      try {
-        await authView.cleanup();
-      } catch {
-        trial.diagnostics.push("host_auth_view_cleanup_incomplete");
-      }
-    }
     await writer.drain();
   }
   auditCacheTrial(trial);
@@ -672,9 +655,6 @@ if (import.meta.main) {
       archiveDirectory: resolve(option("--archive-directory", "build/release")),
       trial: Number(option("--trial", "1")),
       model: option("--model", "gpt-6-astra"),
-      ...(process.argv.includes("--use-global-oauth")
-        ? { authenticationRoot: globalPaths().root }
-        : {}),
     });
     process.stdout.write(
       JSON.stringify({

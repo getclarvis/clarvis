@@ -93,9 +93,7 @@ only referenced here as a coupling (§7).
 `packages/kernel/src` returns nothing). Every one of `mergeSettings`, `settingsSchemaFor`,
 `agentFrontmatterSchema`, `profileReadinessIssues`, `readCapabilitySettings`, `BUILTIN_GRANT_NAMES`,
 `splitAgentFrontmatter`, `settingsSchema`, `providerConfigSchema` and `grantSchema` reaches
-`@clarvis/kernel` through the single `@clarvis/loop/host` export (`packages/loop/src/host.ts`),
-which is the sanctioned "host composition surface for config, provider, plugin, and sandbox policy"
-(`packages/loop/src/host.ts`). `validateBody` itself is **not** re-exported from `host.ts`; it is
+`@clarvis/kernel` through the single `@clarvis/loop/host` export (`packages/loop/src/host.ts`). `validateBody` itself is **not** re-exported from `host.ts`; it is
 called only from inside the engine (`packages/loop/src/runtime/execute-run.ts`) and separately
 exposed for tests via `packages/loop/src/testing/index.ts` (`validateBody`).
 
@@ -246,12 +244,9 @@ and `addAutomaticMcpTools`. Test: `packages/loop/tests/unit/settings-schema.test
 shape", `packages/loop/src/settings/settings-schema.ts`, as opposed to the request's flat
 `servers[]` array where each entry carries its own `name`), `default_model?`,
 `default_vision_model?`, `default_reasoning_effort?`, `budget?` (every field optional, unlike the
-request's `budgetSchema` — see §4.4), `...capabilitySettingsFields` (built-in blocks: `hooks`,
-`guard`, `sandbox`, `agents` — owned by their respective packages;
-`packages/loop/src/runtime/capabilities/settings-specs.ts` spreads
-`HOOKS_SETTINGS_FIELDS`/`AGENT_TOOLS_SETTINGS_FIELDS`/`AGENTS_SETTINGS_FIELDS`, and
-`AGENT_TOOLS_SETTINGS_FIELDS` at `packages/loop/src/runtime/capabilities/tools-settings.ts`
-is what contributes both `guard` and `sandbox`), `marketplaces?`, `enabledPlugins?`.
+request's `budgetSchema` — see §4.4), `...capabilitySettingsFields` (built-in blocks:
+`hooks`, `agents`), `marketplaces?`, and `enabledPlugins?`. The fields are assembled in
+`packages/loop/src/runtime/capabilities/settings-specs.ts` from the registered capabilities.
 
 An Extension Profile is deliberately **not** part of `SettingsFile`: definitions and selections
 have their own strict JSON contracts and paths, owned by
@@ -327,8 +322,8 @@ two documents: `profileNameChars: 128`, `profileDescriptionChars: 4096`, `profil
 256*1024`, `profileAggregateChars: 8*1024*1024`, `profileTools: 512`, `profileGrants: 64`,
 `profileSpawnTargets: 64`, `profileCompactionPromptChars: 64*1024`, `toolNameChars: 256`, `mcpArgs:
 256`, `mcpMapEntries: 256`, `mcpNameChars: 128`, `mcpCommandChars: 8192`, `mcpArgChars: 8192`,
-`mcpValueChars: 16384`, `pathChars: 4096`, `commandPatterns: 256`, `commandPatternChars: 2048`,
-`sandboxListEntries: 256`, `marketplaces: 64`, `enabledPlugins: 256`, `providers: 1000`.
+`mcpValueChars: 16384`, `pathChars: 4096`, `commandPatterns: 256`, `commandPatternChars: 2048`, `marketplaces: 64`,
+`enabledPlugins: 256`, `providers: 1000`.
 
 ## 4. Behavior
 
@@ -653,9 +648,8 @@ the whole-workspace `providers[]` registry may carry an unsupported `body` freel
 Production: `packages/loop/src/validation/request/provider-rules.ts`. Test:
 `packages/loop/tests/unit/request-provider-validation.test.ts`.
 
-**C.** `agentFrontmatterSchema` is `.strict()`: unknown top-level fields fail validation,
-including attempted sandbox, guard, endpoint, credential or capability overrides. Valid customization
-and delegated profiles continue through their normal host-admitted ceilings; schema validation does
+**C.** `agentFrontmatterSchema` is `.strict()`: unknown top-level fields fail validation.
+Valid customization and delegated profiles continue through their normal host-admitted ceilings; schema validation does
 not grant new authority. Nested retry/compaction blocks also reject unknown keys.
 Production: `agentFrontmatterSchema` in `packages/loop/src/settings/agent-frontmatter.ts`.
 Test: `rejects unknown metadata and executor authority overrides` and `validates owned fields and

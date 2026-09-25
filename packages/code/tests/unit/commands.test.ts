@@ -402,23 +402,23 @@ test("route() invokes the def's router and returns whether it handled the line",
     group: "navigate",
     subcommands: [
       { name: "providers", desc: "Providers" },
-      { name: "sandbox", desc: "Sandbox" },
+      { name: "updates", desc: "Updates" },
     ],
     route: (args) => {
-      if (args.trim() === "sandbox") {
-        seen.push("sandbox");
+      if (args.trim() === "updates") {
+        seen.push("updates");
         return true;
       }
       return false;
     },
     view: () => null as never,
   });
-  expect(commands.route("settings.open", "sandbox")).toBe(true);
+  expect(commands.route("settings.open", "updates")).toBe(true);
   expect(commands.route("settings.open", "bogus")).toBe(false);
-  expect(seen).toEqual(["sandbox"]);
+  expect(seen).toEqual(["updates"]);
   expect(commands.entries().find((e) => e.name === "settings.open")!.subcommands).toEqual([
     { name: "providers", desc: "Providers" },
-    { name: "sandbox", desc: "Sandbox" },
+    { name: "updates", desc: "Updates" },
   ]);
   off();
 });
@@ -456,7 +456,7 @@ test("one binding renders identically in the popup hint, Help groups and the foo
   const off = commands.registerAction({
     name: "controls.open",
     title: "Run controls",
-    desc: "Isolation controls",
+    desc: "Run controls",
     surface: "internal",
     group: "navigate",
     run: () => {},
@@ -470,7 +470,7 @@ test("one binding renders identically in the popup hint, Help groups and the foo
   const helpRow = commands
     .keyCommandGroups()
     .flatMap((g) => g.rows)
-    .find((r) => r.desc === "Isolation controls");
+    .find((r) => r.desc === "Run controls");
   const footer = commandKeyLabel(keymap, "controls.open");
 
   expect(popup).toBe("Alt+R");

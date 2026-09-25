@@ -43,7 +43,7 @@ import type { Logger, LLMProvider, ModelExecutionResolver } from "@clarvis/capab
 import type { ExecuteRunDeps } from "./execute-run.ts";
 import type { SkillsProvider } from "@clarvis/skills/capability";
 import type { Capability, RunCapabilityContext } from "@clarvis/capability";
-import type { SandboxResolver, SecretNamesResolver } from "./capabilities/tools.ts";
+import type { SecretNamesResolver } from "./capabilities/tools.ts";
 import type { PluginBootstrapSkill } from "./capabilities/skills-settings.ts";
 import { createAskUserCapability } from "./capabilities/ask-user.ts";
 import { agentToolCaps } from "./tools/builtin/grants.ts";
@@ -134,7 +134,7 @@ export interface SkillRootSnapshotProvider {
 /**
  * The host-supplied options for {@link buildExecuteRunDeps}: the environment and
  * logger, the workspace root, and the optional ports that wire up the tools
- * sandbox, extra skill roots, built-in toggles, embedder capabilities
+ * built-in toggles, embedder capabilities
  * and connection-health observation.
  */
 export interface BuildRunDepsOptions {
@@ -181,7 +181,6 @@ export interface BuildRunDepsOptions {
    * this run's request never mentions — see `WorkspaceHooksOptions.credentialNames`.
    */
   hookCredentialNames?: () => readonly string[];
-  resolveSandbox?: SandboxResolver;
   /** Host port naming the environment variables that hold credentials, so the
    * tools capability can withhold them from every command it spawns. */
   resolveSecretNames?: SecretNamesResolver;
@@ -579,7 +578,6 @@ export async function buildExecuteRunDeps({
   systemSkillProvider,
   reservedSystemSkillName,
   skillBootstraps,
-  resolveSandbox,
   resolveSecretNames,
   resolveHooks,
   hookCredentialNames,
@@ -781,7 +779,6 @@ export async function buildExecuteRunDeps({
     );
   }
   if (useTools) {
-    const selectedSkills = skills;
     const { setWarnSink } = await importOptional(
       "@clarvis/tools",
       "tools",
@@ -813,21 +810,7 @@ export async function buildExecuteRunDeps({
     capabilities.push(
       createAgentToolsCapability({
         ...(statePaths === undefined ? {} : { statePaths }),
-        ...(resolveSandbox !== undefined ? { resolveSandbox } : {}),
         ...(resolveSecretNames !== undefined ? { resolveSecretNames } : {}),
-        ...(selectedSkills === undefined
-          ? {}
-          : {
-              resolveSkillExecutionRoots: () => [
-                ...new Set(
-                  selectedSkills
-                    .listSkills()
-                    .flatMap((skill) =>
-                      skill.executionRoot === undefined ? [] : [skill.executionRoot],
-                    ),
-                ),
-              ],
-            }),
       }),
     );
   }

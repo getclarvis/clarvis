@@ -70,7 +70,7 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
       "CI cancellation contract changed",
     );
     check(
-      equalSet(Object.keys(workflow.jobs), [...LINUX_GATES, "linux", "windows", "sandbox-macos"]),
+      equalSet(Object.keys(workflow.jobs), [...LINUX_GATES, "linux", "windows", "keyboard-macos"]),
       "CI job set is incomplete or unexpected",
     );
     for (const [id, job] of Object.entries(workflow.jobs)) {
@@ -191,19 +191,7 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
     }
     const coverage = workflow.jobs.coverage;
     const preparation = runs(coverage).join("\n");
-    for (const command of [
-      "sudo apt-get install -y apparmor-profiles bubblewrap ripgrep",
-      "sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict",
-      "bwrap --unshare-user --ro-bind / / -- /bin/true",
-      "bwrap --version",
-      "rg --version",
-    ])
-      check(preparation.includes(command), `coverage: missing sandbox preparation ${command}`);
-    check(
-      coverage.steps.find((step) => step.run === commands.coverage[0])?.env
-        ?.CLARVIS_NATIVE_SANDBOX_CANARY === "1",
-      "coverage: native sandbox canary missing",
-    );
+    check(preparation.includes("sudo apt-get install -y ripgrep"), "coverage: missing ripgrep");
     const aggregate = workflow.jobs.linux;
     check(
       aggregate.name === "linux" && aggregate.if === "${{ always() }}",
@@ -221,7 +209,7 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
       "Windows required status changed",
     );
     check(
-      workflow.jobs["sandbox-macos"].name === "keyboard policy (macos)",
+      workflow.jobs["keyboard-macos"].name === "keyboard policy (macos)",
       "macOS required status changed",
     );
     check(

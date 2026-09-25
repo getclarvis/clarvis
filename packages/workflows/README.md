@@ -41,8 +41,7 @@ The three built-in definitions have an 11,000-character serialized regression ce
 
 ## The workflow tools
 
-Workflow scheduling is native in Host and Sandbox. The Kernel keeps the manager scheduler,
-workflow registry, leaders and shared budget together and persists their state in its
+The Kernel keeps the manager scheduler, workflow registry, leaders and shared budget together and persists their state in its
 canonical owner-scoped host state. The root entry exposes `workflowContextOf`,
 `workflowOutputBudgetOf` and `createLeaderOutputBudgetCapability` for every native composition.
 

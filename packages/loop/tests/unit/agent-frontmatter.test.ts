@@ -50,7 +50,6 @@ describe("agentFrontmatterSchema / helpers", () => {
     for (const field of [
       "x-house-style",
       "presentation",
-      "sandbox",
       "guard",
       "endpoint",
       "credentials",

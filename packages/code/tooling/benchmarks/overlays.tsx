@@ -18,14 +18,12 @@ import type { Interaction } from "../../src/keys/interaction.ts";
 import { ActivityDetail } from "../../src/views/overlays/ActivityDetail.tsx";
 import { WorktreeExitPrompt } from "../../src/views/overlays/WorktreeExitPrompt.tsx";
 import { AgentProfilePicker } from "../../src/views/overlays/AgentProfilePicker.tsx";
-import { IsolationPicker } from "../../src/views/overlays/IsolationPicker.tsx";
 import { CatalogPicker } from "../../src/views/config/CatalogPicker.tsx";
 import { HintToast } from "../../src/views/Footer.tsx";
 import { Sidebar } from "../../src/views/Sidebar.tsx";
 import { Splash } from "../../src/views/Splash.tsx";
 import type { ActivityStore } from "../../src/adapters/activity-store.ts";
 import type { AgentProfileView } from "../../src/adapters/agents.ts";
-import type { SettingsAdapter } from "../../src/adapters/settings.ts";
 import { createViewHost } from "../../src/views/config/view-host.tsx";
 import { WorkflowsHub } from "../../src/views/config/WorkflowsHub.tsx";
 import { ExtensionsHub } from "../../src/views/config/ExtensionsHub.tsx";
@@ -133,13 +131,6 @@ const catalogRows = Array.from({ length: 100 }, (_, index) => ({
   detail: `provider kind · ${index + 1} models`,
 }));
 
-const safetySettings = {
-  effective: () => ({
-    sandbox: { enabled: true },
-  }),
-  read: () => undefined,
-  write: async () => {},
-} as unknown as SettingsAdapter;
 const sidebarActivity = {
   subagents: Array.from({ length: 64 }, (_, index) => ({
     id: `worker-${index}`,
@@ -583,26 +574,6 @@ const cases: SoakCase[] = [
     ),
   },
   {
-    name: "isolation-picker-retained",
-    portal: true,
-    render: (open) => (
-      <SurfaceBoundary active={open} retention="retain-one">
-        {(lifecycle) => (
-          <IsolationPicker
-            interaction={fakeInteraction}
-            settings={safetySettings}
-            runActive={() => false}
-            active={lifecycle.active}
-            notify={() => {}}
-            reload={async () => ({ ok: true, message: "reloaded" })}
-            onClose={() => {}}
-            onApplied={() => {}}
-          />
-        )}
-      </SurfaceBoundary>
-    ),
-  },
-  {
     name: "catalog-picker-retained-100-rows",
     portal: true,
     warmupCycles: 220,
@@ -780,7 +751,6 @@ const PRODUCTION_CASES = new Set([
   "activity-detail-200-markdown-sections",
   "worktree-exit-prompt",
   "agent-profile-picker-retained-30-agents",
-  "isolation-picker-retained",
   "catalog-picker-retained-100-rows",
   "sidebar-drawer-retained-64-agents",
   "hint-toast",

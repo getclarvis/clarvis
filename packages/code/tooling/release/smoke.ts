@@ -21,8 +21,6 @@ import { APP_READY_MARKER } from "../artifact/markers.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const repositoryRoot = join(packageRoot, "..", "..");
-const confinement =
-  process.env.CLARVIS_SMOKE_REQUIRE_CONFINEMENT === "1" ? "required" : "environment";
 
 async function commandOutput(
   command: string[],
@@ -191,8 +189,6 @@ async function main(): Promise<void> {
       timeoutMs: Number(process.env.SMOKE_TIMEOUT_MS ?? 90_000),
       pollMs: 100,
       overrides: { CLARVIS_INSTALL_ROOT: installRoot },
-      confinement,
-      readOnlyRoots: [],
     });
     if (boot.outcome !== "ready") {
       throw new Error(

@@ -1268,7 +1268,6 @@ Observer connections receive reads; writes resolve the actual registry controlle
 authority inside the short mutation and after asynchronous preparation. Initial/resumed execution
 uses the registry's internal start with that proof. Foreign peers and stale proof copies cannot
 control the conversation. Pause retains physical occupancy, and ordinary input cannot resume it.
-Native Host and Sandbox Kernels advertise the service. Goal state, controls, budgets and
 continuation remain in the canonical owner session.
 The common client returns explicit unavailability when the optional capability is absent.
 Production: [service.ts](../../packages/kernel/src/goals/service.ts),

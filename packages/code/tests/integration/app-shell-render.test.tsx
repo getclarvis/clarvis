@@ -143,12 +143,10 @@ interface SettingsKnobs {
   memoryUnconfigured?: boolean;
   providers?: unknown[];
   runtime?: Record<string, unknown>;
-  sandbox?: Record<string, unknown>;
   plans?: Record<string, unknown>;
   workspaceTrust?: "inert" | "trusted" | "unapproved" | "changed";
   withheldWorkspaceFields?: readonly string[];
   setWorkspaceTrust?: (approve: boolean) => Promise<void>;
-  inspectSandbox?: SettingsAdapter["inspectSandbox"];
 }
 
 const HEALTHY_PROVIDERS = [{ name: "acme", models: {} }];
@@ -167,7 +165,6 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
             ...(k.memoryModel !== undefined ? { model: k.memoryModel } : {}),
           },
       runtime: k.runtime,
-      sandbox: k.sandbox,
       plans: k.plans ?? { mode: "on", retention: "keep" },
     };
   };
@@ -193,8 +190,6 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
     envStatus: () => "unset",
     declaredMcpServers: () => [],
     reload: async () => {},
-    inspectSandbox: (options?: { refresh?: boolean }) =>
-      knobs().inspectSandbox?.(options) ?? Promise.resolve(null as never),
   } as unknown as SettingsAdapter;
 }
 
@@ -1091,15 +1086,9 @@ test("Enter runs an exact hierarchical hub while Tab still owns child completion
 });
 
 test("Tab opens a child and rapid Escape steps back through its hub to the transcript", async () => {
-  let inspections = 0;
   const t = await mountApp(
     defaultProps({
-      settingsKnobs: () => ({
-        inspectSandbox: async () => {
-          inspections += 1;
-          return null as never;
-        },
-      }),
+      settingsKnobs: () => ({}),
     }),
   );
   await captureUntil(t, "New task");
@@ -1125,7 +1114,6 @@ test("Tab opens a child and rapid Escape steps back through its hub to the trans
   await Promise.resolve();
   const transcript = t.captureCharFrame();
   expect(transcript).not.toContain("Settings");
-  expect(inspections).toBe(0);
   t.renderer.destroy();
 });
 
@@ -1792,22 +1780,6 @@ test("agent picker overlay opens on /agent and closes on escape", async () => {
   t.renderer.destroy();
 });
 
-test("Ctrl+X I opens the isolation picker and Escape returns to the composer", async () => {
-  const t = await mountApp(defaultProps({}));
-  await captureUntil(t, "New task");
-
-  press(t, "x", { ctrl: true });
-  press(t, "i");
-  const picker = await captureUntil(t, "Select isolation");
-
-  expect(picker).toContain("Sandbox");
-  expect(picker).toContain("Host");
-  press(t, "escape");
-  const back = await captureUntil(t, "New task");
-  expect(back).not.toContain("Select isolation");
-  t.renderer.destroy();
-});
-
 test("Ctrl+X M opens the session memory picker and Escape returns to the composer", async () => {
   const t = await mountApp(defaultProps({ settingsKnobs: () => ({ memoryEnabled: true }) }));
   await captureUntil(t, "New task");
@@ -1825,14 +1797,13 @@ test("Ctrl+X M opens the session memory picker and Escape returns to the compose
   t.renderer.destroy();
 });
 
-test("a literal sharp s remains composer text instead of opening the isolation picker", async () => {
+test("a literal sharp s remains composer text", async () => {
   const t = await mountApp(defaultProps({}));
   await captureUntil(t, "New task");
 
   await t.mockInput.typeText("ß");
-  const out = await captureUntil(t, "ß");
+  await captureUntil(t, "ß");
 
-  expect(out).not.toContain("Select isolation");
   t.renderer.destroy();
 });
 
@@ -2385,7 +2356,6 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   expect(out).not.toContain("Activity detail");
   expect(out).toContain("[Ctrl+X S] open / close sidebar");
   expect(out).toContain("send / steer");
-  expect(out).toContain("isolation");
   expect(out).not.toContain("close activity");
   expect(out).not.toContain("Agents 1 · 1 running");
   expect(historyOpen!.width).toBeLessThan(historyWidthBefore!);
@@ -3953,7 +3923,6 @@ test("run configuration pickers stay closed during execution and return when idl
   try {
     await captureUntil(t, "Steer this run");
     for (const [key, mods] of [
-      ["i", {}],
       ["m", {}],
       ["tab", { shift: true }],
     ] as const) {
@@ -3961,16 +3930,11 @@ test("run configuration pickers stay closed during execution and return when idl
       press(t, key, mods);
       await t.renderOnce();
       const out = t.captureCharFrame();
-      expect(out).not.toContain("Select isolation");
       expect(out).not.toContain("Select memory");
       expect(out).not.toContain("Select Agent Profile");
     }
     setActive(false);
     await captureUntil(t, "New task");
-    press(t, "x", { ctrl: true });
-    press(t, "i");
-    await captureUntil(t, "Select isolation");
-    press(t, "escape");
     press(t, "x", { ctrl: true });
     press(t, "m");
     await captureUntil(t, "Select memory");
@@ -4034,12 +3998,9 @@ test("legacy wire input opens leader pickers without consuming the draft and kee
     await t.mockInput.typeText("draft preserved");
     await t.renderOnce();
     const initial = t.captureCharFrame();
-    for (const text of ["Isolation:", "Memory:", "[I] isolation", "[M] memory", "[E] editor"])
+    for (const text of ["Memory:", "[M] memory", "[E] expand editor"])
       expect(initial).toContain(text);
-    for (const [key, title] of [
-      ["i", "Select isolation"],
-      ["m", "Select memory"],
-    ] as const) {
+    for (const [key, title] of [["m", "Select memory"]] as const) {
       press(t, "x", { ctrl: true });
       const pending = await captureUntil(t, "Ctrl+X active");
       const activityLine = t.renderer.root.findDescendantById("lead-activity-line");

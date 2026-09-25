@@ -93,9 +93,9 @@ The durable vocabulary and replay contract are owned by
 
 `buildRunDeps` composes the host-attested `clarvis-docs` provider separately from ordinary skill
 roots. Agents with `use_skills` receive it in their normal catalog. An entry agent without that
-grant receives only the system guide when its immutable ceiling permits editing, the placement is
-Host or Sandbox, and the host configuration-review port is available. This does not change tool
-grants, approve a mutation, or grant the same view to children. See
+grant receives only the system guide when its immutable ceiling permits editing and the host
+configuration-review port is available. This does not change tool grants, approve a mutation, or
+grant the same view to children. See
 [self-configuration](../../specs/hosts/self-configuration.md) and
 [skills](../../specs/execution/skills.md).
 
@@ -266,23 +266,16 @@ implicit host bridge.
 
 Built-ins cover:
 
-- coding tools. The host-selected placement and run identity produce one frozen filesystem policy
-  shared by each agent's command sessions and file service. Sandbox runs file calls in one isolated run-owned child, reads host-visible files and limits writes to declared roots;
-  the File Kernel applies the enabled global Sandbox as a floor when workspace settings are not trusted;
+- coding tools execute shell and file operations on the host with its process permissions.
 - one owner-only scratch root per run, allocated by `@clarvis/paths` as a short, exclusive,
   account-owned directory and advertised as `TMPDIR`, `TEMP` and `TMP`, plus the host's existing system
-  temporary roots pre-authorized across command and native tools. Shortness is what keeps a tool's own
+  temporary roots available to commands. Shortness is what keeps a tool's own
   socket address inside the operating system's limit when `CLARVIS_HOME`, the workspace path or the run
   id is deep; the system roots are compatibility access only and are never removed by Clarvis. A verified
   directory created through `mktemp -d` remains owned by that command; the loop removes only its own scratch after tracked processes have physically exited;
-- skills, including package-scoped helper execution for roots the host explicitly approves: the
-  loop passes only each selected skill's own directory to command tools, never executes a helper on
-  selection, and relies on `@clarvis/tools` to protect it from native mutations and mount it
-  read-only when a native sandbox is active. A host may supply `SkillRootSnapshotProvider`: roots
-  and bodies are captured at dependency construction, host monitors are armed before the captured
-  bytes are verified, and a memory-only availability predicate withdraws detected drift without
-  rescanning or rejecting a run. The host may publish an idle trust-recomposition event to atomically
-  replace that exact catalog; ordinary run admission only reads the current in-memory snapshot;
+- skills, including package-scoped helper disclosure. The loop passes each selected skill's
+  directory to the tool context and captures bodies at dependency construction. Host monitors
+  withdraw detected drift until reconnect.
 - bounded MCP initialization instructions, grouped by server and added as a system section for the
   entry agent and spawned subagents after the connection pool opens;
 - user elicitation;
@@ -466,8 +459,8 @@ so many individually valid data URLs cannot multiply into an unbounded continuat
 
 Profiles and transport descriptors are bounded before they become retained run state: profile prose
 shares an 8 MiB aggregate character budget, individual base prompts cap at 256 KiB, and tool/grant/
-spawn lists have finite fanout. MCP argv, header/env maps and sandbox path
-lists likewise have per-item and collection ceilings in both `settings.json` and direct requests.
+spawn lists have finite fanout. MCP argv and header/env maps likewise have per-item and collection
+ceilings in both `settings.json` and direct requests.
 One child-spawn brief is limited to 32,768 Unicode characters in both advertised tool schemas and
 the programmatic handler. A tracked exit condition shares that same final prompt budget, so task
 augmentation cannot bypass the tool boundary.
@@ -506,8 +499,7 @@ The list below is the whole of `package.json`'s `exports` map:
   Clarvis product manifest, and `createToolArgValidator`: the engine's own rule for a tool call's
   arguments, for a host that rules on one itself (a workflow title's `set_title` call).
 - `@clarvis/loop/capabilities/tools` — coding tools integration.
-- `@clarvis/loop/host` — the narrow host-composition surface for config,
-  provider, plugin and sandbox policy that `@clarvis/kernel` programs against, including dependency
+- `@clarvis/loop/host` — the narrow host-composition surface for config, provider and plugin
   construction, logger/version bindings, request message ceilings and their host-facing types
   without importing the full execution entry.
 - `@clarvis/loop/workflows` — the engine-owned elicitation serializer a workflow

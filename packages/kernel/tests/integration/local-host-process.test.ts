@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { globalPaths } from "@clarvis/paths";
 import { isAlive, killTree } from "@clarvis/tools/shell";
@@ -141,55 +141,6 @@ describe("independent local kernel process", () => {
     ).toBe(false);
     await replacement.client.close();
   });
-
-  test("an idle requested restart admits a changed Sandbox policy", async () => {
-    const f = await fixture();
-    const first = await connectOrLaunchLocalKernel(f.options);
-    cleanups.push(() => first.client.close());
-    const previousGeneration = first.client.capabilities.hosting!.host_generation;
-    const settingsFile = globalPaths(f.globalDir).settingsFile;
-    const settings = JSON.parse(await readFile(settingsFile, "utf8"));
-    await writeFile(
-      settingsFile,
-      JSON.stringify({
-        ...settings,
-        sandbox: { type: "native", enabled: false, availability: "required" },
-      }),
-    );
-    await first.client.localHost!.requestRestart();
-    await first.client.close();
-    const replacement = await connectOrLaunchLocalKernel(f.options);
-    cleanups.push(() => replacement.client.close());
-    expect(replacement.client.capabilities.hosting!.host_generation).not.toBe(previousGeneration);
-    await replacement.client.close();
-  });
-
-  test.skipIf(process.platform === "win32")(
-    "falls back from a long temp snapshot and reconnects to the same generation",
-    async () => {
-      const longRoot = (label: string): string => join("/tmp", `${label}-${"a".repeat(168)}`);
-      const f = await fixture({
-        TMPDIR: longRoot("tmpdir"),
-        TMP: longRoot("tmp"),
-        TEMP: longRoot("temp"),
-      });
-      const first = await connectOrLaunchLocalKernel(f.options);
-      cleanups.push(() => first.client.close());
-      const record = (await readLocalHostConnection(first.identity))!;
-      expect(record).toBeDefined();
-      expect(dirname(first.identity.paths.endpointDirectory!)).toBe(resolve("/tmp"));
-      expect(record.endpoint).toBe(first.identity.paths.endpoint);
-      expect(Buffer.byteLength(record.endpoint, "utf8")).toBeLessThanOrEqual(100);
-      expect(first.client.capabilities.hosting!.host_generation).toBe(record.host_generation);
-
-      const second = await connectOrLaunchLocalKernel(f.options);
-      cleanups.push(() => second.client.close());
-      expect(second.identity.paths.endpoint).toBe(first.identity.paths.endpoint);
-      expect(second.client.capabilities.hosting!.host_generation).toBe(record.host_generation);
-      await second.client.close();
-      await first.client.close();
-    },
-  );
 
   test("retires an idle memory-capable process with workspace memory disabled", async () => {
     const f = await fixture();

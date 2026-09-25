@@ -369,9 +369,8 @@ export async function connectKernelClient(
     runtime === undefined ||
     (isRecord(runtime) &&
       runtime.kind === "native" &&
-      hasOnly(runtime, ["kind", "host_platform", "isolation", "lifecycle"]) &&
+      hasOnly(runtime, ["kind", "host_platform", "lifecycle"]) &&
       typeof runtime.host_platform === "string" &&
-      (runtime.isolation === "host" || runtime.isolation === "sandbox") &&
       runtime.lifecycle === "ready");
   if (
     !isRecord(hello) ||

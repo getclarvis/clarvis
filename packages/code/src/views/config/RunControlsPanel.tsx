@@ -1,7 +1,6 @@
 import type { JSX } from "solid-js";
 import { detachObserved } from "../../core/tasks.ts";
-import { createMemo, createSignal, For, onMount, Show } from "solid-js";
-import type { SandboxInspection } from "@clarvis/protocol";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { tokens } from "../../theme/tokens.ts";
 import { glyph } from "../../theme/glyphs.ts";
 import type { ViewHost } from "../../keys/commands.ts";
@@ -13,29 +12,19 @@ import {
 } from "../../adapters/settings.ts";
 import type { MemoryModeStore } from "../../adapters/memory-mode.ts";
 import {
-  deriveIsolation,
   deriveRunControls,
   memoryDescription,
   memoryState,
   planRetentionDescription,
-  safetyDescription,
   type PlanRetention,
   type RunControlsState,
 } from "../../adapters/execution-safety.ts";
-import {
-  applyIsolation,
-  isolationConfirmation,
-  ISOLATION_CHOICES,
-  type IsolationChoice,
-} from "../../features/run/isolation.ts";
 import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
 import { bindLevelKeys, createFieldEditor, LevelHost } from "./view-host.tsx";
 import type { PickItem } from "./field-editor.tsx";
 import { errorText } from "../../adapters/errors.ts";
 import type { SettingPresentation } from "../../ui/presentation.ts";
 import { DetailColumn, DetailSettingRow, SettingDetail } from "../../ui/patterns/detail-view.tsx";
-
-const ISOLATION_PICKER_CHOICES = ISOLATION_CHOICES satisfies readonly PickItem[];
 
 const MEMORY_CHOICES = [
   { value: "on", label: "on", detail: "read before runs and learn afterward" },
@@ -56,9 +45,8 @@ const PLAN_RETENTION_CHOICES = [
 ] as const satisfies readonly PickItem[];
 
 /**
- * Per-run controls expose isolation, memory, and plan retention.
- * Isolation persists globally because execution placement is host-owned;
- * completed-plan retention uses the selected scope, while memory is session-only.
+ * Per-run controls expose memory and plan retention. Completed-plan retention
+ * uses the selected scope, while memory is session-only.
  */
 export function RunControlsPanel(
   host: ViewHost,
@@ -66,86 +54,14 @@ export function RunControlsPanel(
     settings: SettingsAdapter;
     memory: MemoryModeStore;
     notify: (message: string) => void;
-    runActive: () => boolean;
-    reload: () => Promise<{ ok: boolean; message: string }>;
-    openSandbox: () => void;
   },
 ): JSX.Element {
   const [sel, setSel] = createSignal(0);
   const fe = createFieldEditor(host.interaction, host.active);
-  const [inspection, setInspection] = createSignal<SandboxInspection | null>(null);
-  async function refreshInspection(): Promise<void> {
-    try {
-      setInspection(await deps.settings.inspectSandbox());
-    } catch {
-      setInspection(null);
-    }
-  }
-  onMount(() => void refreshInspection());
   const state = createMemo((): RunControlsState => {
     deps.settings.version();
-    const configured = deriveRunControls(deps.settings.effective(), deps.memory.mode());
-    const observed = inspection();
-    if (observed === null) return configured;
-    const sandboxEnabled = observed.filesystem.placement === "sandbox";
-    return {
-      ...configured,
-      isolation: observed.filesystem.placement,
-      sandboxEnabled,
-      sandboxRequired: sandboxEnabled,
-      filesystem:
-        observed.filesystem.workspace === "read-only" ? "workspace-read-only" : "workspace-write",
-      network: observed.effective_network,
-    };
+    return deriveRunControls(deps.settings.effective(), deps.memory.mode());
   });
-
-  function sandboxLine(): { text: string; fg: string } {
-    const s = state();
-    const observed = inspection();
-    if (observed ? observed.filesystem.placement === "host" : !s.sandboxEnabled)
-      return { text: "Native sandbox is off.", fg: tokens.warn };
-    const avail = observed?.backend;
-    if (!avail)
-      return {
-        text: "Checking native sandbox on the kernel host" + glyph("ellipsis"),
-        fg: tokens.muted,
-      };
-    if (!avail.available) {
-      return {
-        text: `${glyph("warning")} Native sandbox unavailable here (${avail.reason}); sandbox fails every run.`,
-        fg: tokens.del,
-      };
-    }
-    if (avail.degraded)
-      return {
-        text: `${avail.type === "bubblewrap" ? "Bubblewrap" : "Native sandbox"} runs in degraded mode (${avail.reason ?? "reduced isolation"}).`,
-        fg: tokens.warn,
-      };
-    return {
-      text: `${avail.type === "seatbelt" ? "Seatbelt" : "Bubblewrap"} is available; an incompatible host fails closed.`,
-      fg: tokens.muted,
-    };
-  }
-  async function applyIsolationChoice(isolation: IsolationChoice["value"]): Promise<void> {
-    const confirmation = isolationConfirmation(isolation);
-    if (confirmation && !(await host.confirm(confirmation))) return;
-    try {
-      const effective = await applyIsolation(isolation, deps.settings);
-      if (!deps.runActive()) {
-        const reloaded = await deps.reload();
-        if (!reloaded.ok) {
-          deps.notify(`isolation saved, pending reconnect: ${reloaded.message}`);
-          return;
-        }
-        await refreshInspection();
-      }
-      deps.notify(
-        `isolation: ${effective} (global)${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
-      );
-    } catch (error) {
-      deps.notify(errorText(error));
-    }
-  }
 
   function applyMemory(mode: "on" | "off"): void {
     deps.memory.setMode(mode);
@@ -191,13 +107,6 @@ export function RunControlsPanel(
   function activate(): void {
     switch (sel()) {
       case 0:
-        fe.startEnum("Isolation", ISOLATION_PICKER_CHOICES, state().isolation, (value) =>
-          detachObserved("run_controls_isolation", () =>
-            applyIsolationChoice(value as IsolationChoice["value"]),
-          ),
-        );
-        break;
-      case 1:
         fe.startEnum(
           "Memory for this session",
           MEMORY_CHOICES,
@@ -205,7 +114,7 @@ export function RunControlsPanel(
           (value) => applyMemory(value as "on" | "off"),
         );
         break;
-      case 2:
+      case 1:
         fe.startEnum("Completed plans", PLAN_RETENTION_CHOICES, state().plans.retention, (value) =>
           detachObserved("run_controls_plan_retention", () =>
             applyPlanRetention(value as PlanRetention),
@@ -229,32 +138,22 @@ export function RunControlsPanel(
   }
 
   function openDetails(): void {
-    host.level.push(settingsRows()[Math.max(0, Math.min(2, sel()))]?.label ?? "Details");
+    host.level.push(settingsRows()[Math.max(0, Math.min(1, sel()))]?.label ?? "Details");
   }
 
   const spec = (): LevelSpec =>
     host.level.depth() === 1
       ? {
-          verbs: [
-            { key: "e", label: "change", run: activate },
-            ...(sel() === 0
-              ? [{ key: "b", label: "sandbox details", run: () => deps.openSandbox() }]
-              : []),
-          ],
+          verbs: [{ key: "e", label: "change", run: activate }],
         }
       : {
           nav: {
-            count: () => 3,
+            count: () => 2,
             index: sel,
             setIndex: setSel,
             activate: { label: "change", run: activate },
           },
-          verbs: [
-            { key: "i", label: "details", run: openDetails },
-            ...(sel() === 0
-              ? [{ key: "b", label: "sandbox details", run: () => deps.openSandbox() }]
-              : []),
-          ],
+          verbs: [{ key: "i", label: "details", run: openDetails }],
         };
   host.bindScope({ mode: "retarget" });
   bindLevelKeys({
@@ -265,22 +164,8 @@ export function RunControlsPanel(
 
   const settingSource = (key: keyof SettingsFile) =>
     deps.settings.origin?.(key) ?? "product default";
-  const configuredIsolation = (): string => {
-    const global = deps.settings.read("global");
-    if (global?.sandbox === undefined) return "product default";
-    return deriveIsolation(global ?? {});
-  };
-
   function settingsRows(): SettingPresentation[] {
     return [
-      {
-        label: "Isolation",
-        configured: configuredIsolation(),
-        effective: state().isolation,
-        source: "global",
-        applies: "next run",
-        mutation: "immediate",
-      },
       {
         label: "Memory for this session",
         configured: deps.memory.mode(),
@@ -320,27 +205,15 @@ export function RunControlsPanel(
   }
 
   function detailBody(): JSX.Element {
-    const index = Math.max(0, Math.min(2, sel()));
+    const index = Math.max(0, Math.min(1, sel()));
     return (
       <SettingDetail setting={settingsRows()[index]}>
         <Show when={index === 0}>
-          <For each={safetyDescription(state())}>
-            {(line) => (
-              <text fg={tokens.muted} wrapMode="word">
-                {line}
-              </text>
-            )}
-          </For>
-          <text fg={sandboxLine().fg} wrapMode="word">
-            {sandboxLine().text}
-          </text>
-        </Show>
-        <Show when={index === 1}>
           <text fg={tokens.muted} wrapMode="word">
             {memoryDescription(state())}
           </text>
         </Show>
-        <Show when={index === 2}>
+        <Show when={index === 1}>
           <For each={planRetentionDescription(state().plans.retention)}>
             {(line) => <text fg={tokens.muted}>{line}</text>}
           </For>

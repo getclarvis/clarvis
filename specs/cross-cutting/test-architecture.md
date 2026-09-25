@@ -328,19 +328,18 @@ Environment, platform, cwd and random matrices use test-owned frozen snapshots a
 restored after the awaited callback; they do not assign to `process.env`, redefine
 `process.platform`, change the runner cwd or overwrite `Math.random`. Where a production seam already
 exists, tests pass it directly (`createMCPClientFactory`, `resolveRegistryKey`, `clarvisSkillRoots`,
-`executableOnPath` and `createSandboxPolicyResolver`); otherwise a narrowly scoped getter spy models
-the default global read without changing the implementation. Real subprocesses remain explicit
-boundary canaries and receive their cwd/environment through spawn options.
+`executableOnPath`); otherwise a narrowly scoped getter spy models the default global read without
+changing the implementation. Real subprocesses remain explicit boundary canaries and receive their
+cwd/environment through spawn options.
 
 Production: `packages/mcp-client/src/client.ts` (`createMCPClientFactory`),
 `packages/llm/src/ai-sdk-adapter.ts` (`resolveRegistryKey`), `packages/skills/src/preset.ts`
-(`clarvisSkillRoots`), `packages/paths/src/which.ts` (`executableOnPath`) and
-`packages/kernel/src/sandbox/policy.ts` (`createSandboxPolicyResolver`). Test:
+(`clarvisSkillRoots`) and `packages/paths/src/which.ts` (`executableOnPath`). Test:
 `packages/code/tests/helpers/process-fixtures.ts`, the package-local `process-fixtures.ts` helpers,
 `packages/code/tests/unit/process-fixtures.test.ts` and the environment/platform integration suites.
 
-Shell, Git and native-sandbox canaries separate admission from execution. An absent opt-in gate
-is `skipped`; once enabled, a missing executable/backend is `unavailable`, malformed configuration
+Shell and Git canaries separate admission from execution. An absent opt-in gate is `skipped`;
+once enabled, a missing executable is `unavailable`, malformed configuration
 is `misconfigured`, and a failure after successful admission is `failed`. None is reported as a
 pass. Shell/Git policy tests use synthetic argv or local repositories; physical adapter canaries
 retain the real executable and an explicit disposable cwd and environment.
@@ -784,7 +783,7 @@ a root-level `coverage/lcov.info` whose 13 `SF:` records span `packages/paths/sr
 `packages/protocol/src/index.ts` **and `tooling/test-runtime/clarvis-home-preload.ts`**, which is the fingerprint of
 exactly such a root-cwd run (and shows the root bunfig's lack of `coveragePathIgnorePatterns`).
 CI itself makes root-cwd runs in the Windows and macOS platform-policy jobs
-(`.github/workflows/ci.yml`, jobs `windows` and `sandbox-macos`).
+(`.github/workflows/ci.yml`, jobs `windows` and `keyboard-macos`).
 
 Every package but the type-only `protocol` one repeats the shared preload in its own `bunfig.toml`;
 `protocol`'s own `bunfig.toml` covers the coverage options only.
@@ -829,8 +828,7 @@ included automatically; their coverage floors remain owned only by `PACKAGE_THRE
 
 Each package is invoked by argv as `bun run test:coverage`, with its own cwd and full script,
 including architecture checks and Protocol's type contract. Package bunfig/preloads therefore retain
-ownership, and the Linux native-sandbox canary environment reaches every child. Coverage stays
-sequential; correctness does not depend on Code's position in the inventory.
+ownership. Coverage stays sequential; correctness does not depend on Code's position in the inventory.
 
 Before each attempt, only the selected package's prior `coverage/lcov.info` is removed, after
 revalidating real package/coverage directories. A failed attempt cannot lend stale LCOV to its retry.
@@ -853,7 +851,7 @@ The event sink records package, attempt, start/end, duration and result. The CLI
 crash annotations and a summary of completed attempts. Executor/clock/cancellation fakes establish
 the supervisor's ordering; small actual subprocess fixtures qualify the pinned Bun script/signal
 boundary and observable-readiness cancellation. These fixtures do not substitute for complete
-remote coverage, floors, sandbox, smoke, Windows or macOS.
+remote coverage, floors, smoke or platform checks.
 
 Production: [coverage library](../../tooling/lib/ci-coverage.ts), `runCiCoverage`,
 `executeCoverageCommand`, `normalizeCoverageExit`;

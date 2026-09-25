@@ -45,11 +45,11 @@ test("toolErrorSummaryText humanizes structured codes and preserves plain errors
     toolErrorSummaryText(
       JSON.stringify({
         error: "patch_failed",
-        message: "Hunk did not apply cleanly in packages/code/tests/unit/isolation.test.ts",
-        file: "packages/code/tests/unit/isolation.test.ts",
+        message: "Hunk did not apply cleanly in packages/code/tests/unit/keyspec.test.ts",
+        file: "packages/code/tests/unit/keyspec.test.ts",
       }),
     ),
-  ).toBe("Patch failed: Hunk did not apply cleanly in packages/code/tests/unit/isolation.test.ts");
+  ).toBe("Patch failed: Hunk did not apply cleanly in packages/code/tests/unit/keyspec.test.ts");
   expect(toolErrorSummaryText("denied: command was rejected by the selected policy")).toBe(
     "Denied: command was rejected by the selected policy",
   );

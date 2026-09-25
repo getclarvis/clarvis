@@ -110,7 +110,6 @@ it("constructs administrative services without domains, MCP, plugins or network 
     expect(
       (await services.providerAuth.list()).every((account) => account.state === "disconnected"),
     ).toBe(true);
-    await expect(services.config.inspectSandbox()).rejects.toMatchObject({ code: "unavailable" });
     await services.close();
     await services.close();
     for (const spy of spies) expect(spy).not.toHaveBeenCalled();

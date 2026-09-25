@@ -2,7 +2,7 @@
  * Deciding what a hook command inherits from the host environment.
  *
  * @remarks
- * **This is credential hygiene, not a sandbox.** A hook command is
+ * A hook command is
  * operator-authored configuration that runs with the operator's own privileges,
  * reads and writes the workspace, and reaches the network; nothing here changes
  * that, and describing it as isolation would be wrong. The goal is narrower and
@@ -12,7 +12,8 @@
  * That is also why the filter is a denylist. An allowlist is strictly safer and
  * breaks essentially every real hook - `gh`, a corporate proxy, a
  * `direnv` layout all need variables nobody can enumerate in advance. If a real
- * boundary is wanted later, the answer is the sandbox, not a longer regex.
+ * boundary would require a separate mechanism; this filter only removes known
+ * credential variables.
  */
 import { extractEnvRefs } from "@clarvis/capability";
 
@@ -22,8 +23,7 @@ import { extractEnvRefs } from "@clarvis/capability";
  * @remarks
  * Checked first so that no future denylist entry can accidentally strip
  * something a shell needs in order to be a shell. The toolchain roots are taken
- * from the sandbox's own `TOOLCHAIN_ENV_KEYS`, which is this repository's
- * existing considered answer to "what does a toolchain need".
+ * from the shared `TOOLCHAIN_ENV_KEYS` list.
  *
  * Three groups, and no fourth is admissible. First, what a shell needs to start
  * and behave (`PATH`, `HOME`, `SHELL`, `PWD`, the temp and locale names, `TERM`)

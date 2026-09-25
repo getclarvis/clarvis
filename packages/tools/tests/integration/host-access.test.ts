@@ -90,7 +90,7 @@ describe("Host file tools use OS filesystem authority", () => {
     expect(result.text).toContain("external secret");
   });
 
-  it("runs a shell command under the same Host placement", async () => {
+  it("runs a shell command under the same host permissions", async () => {
     const result = await callTool("shell", { command: "echo host" }, config);
     expect(result.json.exit_code).toBe(0);
     expect(lines(result.json.stdout)).toBe("host\n");

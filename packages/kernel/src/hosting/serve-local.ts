@@ -67,9 +67,6 @@ export async function serveLocalFileKernel(
   const env = options.kernel.env ?? loadEnv(environment);
   const policyId = localHostPolicyIdentity({
     env,
-    workspaceRoot: identity.workspaceRoot,
-    globalDir: identity.globalDir,
-    environment,
   });
   const state = await acquireLocalHostState(identity, options.artifactId, policyId, logger);
   if (state === null) return null;
@@ -98,12 +95,9 @@ export async function serveLocalFileKernel(
     if (
       localHostPolicyIdentity({
         env,
-        workspaceRoot: identity.workspaceRoot,
-        globalDir: identity.globalDir,
-        environment,
       }) !== policyId
     )
-      throw kernelError("conflict", "Sandbox policy changed during host startup");
+      throw kernelError("conflict", "Execution policy changed during host startup");
     const ownedHost = host;
     await host.sync();
     listener = await listenLocalKernel(host.server, identity.paths.endpoint, { logger });

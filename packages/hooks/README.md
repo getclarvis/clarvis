@@ -123,7 +123,6 @@ policy still applies before the loop accepts the stage. The external event spell
 and anything whose name looks like a secret, plus `CLARVIS_HOOK_*` describing the fire point. A
 plugin hook additionally receives `PLUGIN_ROOT`/`PLUGIN_DATA` and the
 `CODEX_PLUGIN_ROOT`/`CODEX_PLUGIN_DATA` compatibility aliases, without adding credential material.
-That is credential hygiene, **not a sandbox** — a hook command runs with the operator's own
 privileges, which is the point of it being installed/operator-authored config.
 
 ## Usage

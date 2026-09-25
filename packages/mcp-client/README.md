@@ -44,8 +44,8 @@ place beside the server's tools.
 
 ## It does not know the engine
 
-`@clarvis/kernel` consumes this package for native Host/Sandbox MCP composition. This package
-does not depend on the kernel.
+`@clarvis/kernel` consumes this package for native MCP composition. This package does not depend
+on the kernel.
 
 `@clarvis/loop` depends on this package, never the reverse. The one edge that
 used to point the wrong way was `buildRegistry` importing the engine's built-in

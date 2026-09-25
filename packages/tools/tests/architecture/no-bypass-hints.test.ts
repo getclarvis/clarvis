@@ -81,7 +81,7 @@ describe("model-facing refusals do not explain how to lift the restriction", () 
 
   it("recognises the shape it is guarding against", () => {
     for (const line of [
-      '  "Sandbox unavailable (set CLARVIS_SANDBOX_OPTIONAL=1 to allow)",',
+      '  "Tool unavailable (set CLARVIS_OPTIONAL=1 to allow)",',
       '  "Refused: pass --allow-anything to override",',
     ]) {
       expect(BYPASS_HINT.test(line) || ASSIGNMENT_HINT.test(line)).toBe(true);
@@ -90,7 +90,7 @@ describe("model-facing refusals do not explain how to lift the restriction", () 
 
   it("does not fire on a refusal that merely states the boundary", () => {
     for (const line of [
-      '  "Sandbox unavailable under the selected policy.",',
+      '  "Tool unavailable under the selected policy.",',
       '  "This policy is set before the run starts.",',
     ]) {
       expect(BYPASS_HINT.test(line) || ASSIGNMENT_HINT.test(line)).toBe(false);

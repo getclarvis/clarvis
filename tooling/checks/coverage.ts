@@ -136,6 +136,7 @@ const NO_COUNTER_ALLOWLIST = {
   loop: [
     // Pure re-export barrels: every statement is an `export ... from`, which
     // emits no counters of its own.
+    "src/capabilities-tools.ts",
     "src/host.ts",
     "src/lib.ts",
     "src/workflows.ts",
@@ -161,10 +162,6 @@ const NO_COUNTER_ALLOWLIST = {
     "src/tools/types.ts",
     // Pure re-export barrel for the narrow shell subpath.
     "src/shell-entry.ts",
-    // Executable Sandbox child entry: the parent boots it as a separate
-    // process, so its counters do not enter the in-process LCOV report.
-    // The real child and its lifecycle are exercised by filesystem-service.test.ts.
-    "src/filesystem-worker.ts",
   ],
   trace: [
     // Type-only.

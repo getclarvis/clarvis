@@ -1096,9 +1096,7 @@ test("a connection-owned host neither advertises exit survival nor attempts back
     throw new Error("must not detach");
   };
   expect(f.host.continuesOnExit()).toBe(false);
-  await expect(f.host.backgroundCurrentRun()).rejects.toThrow(
-    "available only on a local Host or Sandbox",
-  );
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow("available only on a local host");
   expect(detachCalls).toBe(0);
   f.host.teardownRuns();
   await observing;

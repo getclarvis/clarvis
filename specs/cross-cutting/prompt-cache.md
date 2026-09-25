@@ -138,8 +138,8 @@ persist missing identities in their request: the execution ID supplies the conve
 single assigned agent ID supplies the instance. Continuations inherit both unless explicitly
 branching into another agent instance. Each spawned child uses its existing persisted delegation ID.
 Workflow leaders share the manager's session and use the scheduler's reserved child execution ID
-as their agent instance. The manager and same-profile workflow leaders must have distinct keys;
-Host/Sandbox assembly retains this identity in the persisted request.
+as their agent instance. The manager and same-profile workflow leaders must have distinct keys.
+Host assembly retains this identity in the persisted request.
 
 The typed `composePromptCacheKey(PromptCacheIdentity)` is the only composer. Raw components accept
 the existing ASCII execution-ID alphabet: letters, digits, `.`, `_`, `:`, `-`. Embedded underscores

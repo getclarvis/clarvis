@@ -98,7 +98,7 @@ Extension Profiles.
 only each selected skill's own directory as that skill's `executionRoot`; it never exposes the
 broader collection or package directory. Filesystem-backed `load_skill` identifies the skill directory for
 relative resource paths and emits the helper-execution hint only for this opted-in field. Execution
-still goes through the normal shell tool and configured native sandbox policy.
+goes through the normal shell tool on the host.
 
 Host bridges mark tool-only disclosure with `resourceAccess: "remote"`. The catalog then advertises
 loading by name and resource reads through `read_skill_resource`; body disclosure advertises no

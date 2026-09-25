@@ -385,10 +385,6 @@ transport and lifecycle behavior without claiming network SSH interoperability.
 global Clarvis configuration, resolves provider secrets, builds loop
 dependencies and returns an asynchronous kernel client.
 
-Its sandbox inspection probes only Clarvis's fixed native-backend canary. Discovered toolchains are
-reported from passive executable-path resolution and are never launched by `ConfigService` merely to
-populate diagnostics.
-
 It also binds remote MCP OAuth persistence to the global `state/mcp-oauth.json` path. A local host
 may provide `openMcpAuthorizationUrl` to grant browser-opening authority; a remote or intentionally
 headless host omits it and fails explicitly if a server requires interactive authorization. The
@@ -765,25 +761,17 @@ live-only run event. The persisted terminal event records the applied operation 
 summary-to-eviction `fallback_reason`; replay therefore retains what happened without reviving an
 already-finished spinner.
 
-## Control plane and isolation
+## Control plane and tool execution
 
 The kernel provides services for configuration, plugins, secrets, models, provider
 authentication, files, memory, plans, workflows, skills, sessions, tasks, storage,
 Extension Profiles and runs. These are control-plane APIs rather than model-callable
-MCP tools. The tools capability executes shell and file calls under the configured
-native sandbox; it offers no per-call escape. Production:
-`packages/kernel/src/file-kernel.ts` (`createFileKernel`) and
-`packages/tools/src/sandbox.ts` (`sandboxCommand`). Test:
+MCP tools. The tools capability executes shell and file calls on the host under the process's
+permissions. Production: `createFileKernel` in `packages/kernel/src/file-kernel.ts` and
+`dispatch` in `packages/tools/src/core.ts`. Test:
 `packages/kernel/tests/integration/file-kernel.test.ts` and
-`packages/tools/tests/integration/sandbox.test.ts`. See the
-[sandbox contract](../../specs/execution/sandbox.md).
+`packages/tools/tests/integration/open-authority.test.ts`.
 
-The hosted generation identity includes the effective Sandbox settings and resolved roots, not only
-environment flags. Runs use the startup Sandbox snapshot; a settings change that would alter it
-requires an idle host restart before another run can use it. Inspection reports host-visible reads,
-the selected workspace/write posture and effective network without exposing credential values.
-An untrusted workspace cannot weaken an enabled global Sandbox: the host retains its read-only,
-network, environment, toolchain and protected-path floor when resolving runs and inspection.
 ## The settings schema
 
 The kernel publishes exactly one, `kernelSettingsSchema`: the engine's blocks
@@ -1024,30 +1012,30 @@ and traversal segments are rejected before filesystem access.
 raising the global level. `createInProcessKernel` takes a `logger` of its own and passes it to the
 plugin service, the model catalog and each owner's runs/sessions with `{ owner }` bound.
 
-| Level | `event`                                                        | Fields                                                                                          |
-| ----- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| info  | `kernel.boot.started`                                          | `workspace_root`, `global_dir`, `ownership_mode`, `memory_enabled`, `default_model`             |
-| info  | `kernel.config.scopes`                                         | `global_present`, `workspace_present`, `workspace_trust`, `plugin_scopes`, `enabled_plugins`    |
-| error | `kernel.config.rejected`                                       | `scope`, `path`, `at`, `message`, `schema`                                                      |
-| warn  | `kernel.config.document_discarded`                             | `scope`, `path`, `reason`                                                                       |
-| warn  | `kernel.config.agents_unreadable`                              | `scope`, `dir`, `cause`                                                                         |
-| debug | `kernel.capabilities.registered`                               | `specs`, `grants`                                                                               |
-| info  | `kernel.capability.composed`                                   | `capability`, `enabled`, `reason`                                                               |
-| warn  | `kernel.plugin.skipped`                                        | `plugin`, `scope`, `phase`, `cause`                                                             |
-| info  | `kernel.models.catalog`                                        | `source`, `providers`, `models`                                                                 |
-| warn  | `kernel.models.cache_invalid`                                  | `path`, `cause`                                                                                 |
-| info  | `kernel.boot.ready`                                            | `duration_ms`, `recovered_runs`, `capabilities`                                                 |
-| info  | `runs.recovered_interrupted`                                   | `recovered`, `examined`, `quarantined`, `degraded`, `exhausted`                                 |
-| warn  | `runs.recovery_failed`                                         | `cause`                                                                                         |
-| debug | `runs.event.unmapped`                                          | `path`, `kind`, `capability`, `reason`                                                          |
-| debug | `runs.rehydrated`                                              | `execution_id`, `events_total`, `events_mapped`, `events_dropped`                               |
-| debug | `sessions.rehydrate`                                           | `session_id`, `found`, `turns`, `pending`                                                       |
-| warn  | `local.process.failed`                                         | `command`, `exit_code`, `duration_ms`, `stdout_chars`, `stderr_chars`                           |
-| warn  | `local.git.failed`                                             | `op`, `repo_host`, `cause`                                                                      |
-| warn  | `transport.frame_dropped`                                      | `direction`, `reason`, `bytes`                                                                  |
-| warn  | `transport.{notify,cancel,subscribe,unsubscribe,close}_failed` | `operation`, `cause`                                                                            |
-| warn  | `lifecycle.late_close_failed`                                  | `operation`, `cause`                                                                            |
-| warn  | `capexec.session.failed`                                       | `capability`, `cause`                                                                           |
+| Level | `event`                                                        | Fields                                                                                       |
+| ----- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| info  | `kernel.boot.started`                                          | `workspace_root`, `global_dir`, `ownership_mode`, `memory_enabled`, `default_model`          |
+| info  | `kernel.config.scopes`                                         | `global_present`, `workspace_present`, `workspace_trust`, `plugin_scopes`, `enabled_plugins` |
+| error | `kernel.config.rejected`                                       | `scope`, `path`, `at`, `message`, `schema`                                                   |
+| warn  | `kernel.config.document_discarded`                             | `scope`, `path`, `reason`                                                                    |
+| warn  | `kernel.config.agents_unreadable`                              | `scope`, `dir`, `cause`                                                                      |
+| debug | `kernel.capabilities.registered`                               | `specs`, `grants`                                                                            |
+| info  | `kernel.capability.composed`                                   | `capability`, `enabled`, `reason`                                                            |
+| warn  | `kernel.plugin.skipped`                                        | `plugin`, `scope`, `phase`, `cause`                                                          |
+| info  | `kernel.models.catalog`                                        | `source`, `providers`, `models`                                                              |
+| warn  | `kernel.models.cache_invalid`                                  | `path`, `cause`                                                                              |
+| info  | `kernel.boot.ready`                                            | `duration_ms`, `recovered_runs`, `capabilities`                                              |
+| info  | `runs.recovered_interrupted`                                   | `recovered`, `examined`, `quarantined`, `degraded`, `exhausted`                              |
+| warn  | `runs.recovery_failed`                                         | `cause`                                                                                      |
+| debug | `runs.event.unmapped`                                          | `path`, `kind`, `capability`, `reason`                                                       |
+| debug | `runs.rehydrated`                                              | `execution_id`, `events_total`, `events_mapped`, `events_dropped`                            |
+| debug | `sessions.rehydrate`                                           | `session_id`, `found`, `turns`, `pending`                                                    |
+| warn  | `local.process.failed`                                         | `command`, `exit_code`, `duration_ms`, `stdout_chars`, `stderr_chars`                        |
+| warn  | `local.git.failed`                                             | `op`, `repo_host`, `cause`                                                                   |
+| warn  | `transport.frame_dropped`                                      | `direction`, `reason`, `bytes`                                                               |
+| warn  | `transport.{notify,cancel,subscribe,unsubscribe,close}_failed` | `operation`, `cause`                                                                         |
+| warn  | `lifecycle.late_close_failed`                                  | `operation`, `cause`                                                                         |
+| warn  | `capexec.session.failed`                                       | `capability`, `cause`                                                                        |
 
 The diagnostic properties below are load-bearing:
 

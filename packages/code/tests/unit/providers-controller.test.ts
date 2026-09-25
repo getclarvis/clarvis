@@ -17,14 +17,6 @@ import type {
   ModelsCatalog,
 } from "../../src/adapters/models-catalog.ts";
 
-/**
- * Stand-in for a {@link SettingsAdapter} member the providers controller never
- * calls. Throwing rather than answering keeps the fake honest if that changes.
- */
-function unusedSetting(member: string): never {
-  throw new Error(`SettingsAdapter.${member} is not exercised by the providers controller suite`);
-}
-
 function fakeSettings(
   provider: ProviderConfig | undefined,
   opts?: {
@@ -41,7 +33,6 @@ function fakeSettings(
     planRepair: () => null,
     applyRepair: async () => {},
     reload: async () => {},
-    inspectSandbox: () => unusedSetting("inspectSandbox"),
     read: (scope: Scope) =>
       scope === "global"
         ? { providers: provider ? [provider] : [], default_model: opts?.defaultModel }

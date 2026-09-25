@@ -129,9 +129,6 @@ export async function connectOrLaunchLocalKernel(
   };
   const policyId = localHostPolicyIdentity({
     env: loadEnv(options.environment),
-    workspaceRoot: identity.workspaceRoot,
-    globalDir: identity.globalDir,
-    environment,
   });
   const deadline = performance.now() + timeout;
   let launched = false;

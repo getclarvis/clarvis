@@ -5,14 +5,13 @@
 Nine model-facing tools mutate files: `write_file`, `edit_file`, `multi_edit`, `apply_patch`,
 `replace`, `move`, `copy`, `mkdir` and `remove`. They accept relative paths based at the workspace
 or absolute paths. The tools do not classify configuration or external paths for application
-approval. Host OS permissions or the configured native sandbox determine access.
+approval. Host process permissions determine access.
 
 Production: tool definitions in [registry.ts](../../packages/tools/src/tools/registry.ts),
 `resolveToolPath` in [paths.ts](../../packages/tools/src/lib/paths.ts), and `dispatch` in
 [core.ts](../../packages/tools/src/core.ts). Test:
 [tool-surface.test.ts](../../packages/tools/tests/component/tool-surface.test.ts),
-[open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts), and
-[sandbox.test.ts](../../packages/tools/tests/integration/sandbox.test.ts).
+[open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts).
 
 ## Operations
 
@@ -83,10 +82,5 @@ Production: `FileOp`, `applyOpsAtomic`, `writeAtomic`, `withFileLock`, `withFile
   Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts) and `resolveToolPath`
   in [paths.ts](../../packages/tools/src/lib/paths.ts). Test:
   [open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts).
-- Native isolation, when configured, still encloses file operations in the sandbox file service.
-  Production: `SandboxAgentFilesystem` in
-  [filesystem-service.ts](../../packages/tools/src/filesystem-service.ts). Test:
-  [filesystem-service.test.ts](../../packages/tools/tests/integration/filesystem-service.test.ts).
 
-Read tools are specified in [tools-read-and-search.md](tools-read-and-search.md); native isolation
-in [sandbox.md](sandbox.md); common dispatch in [tools-contract.md](tools-contract.md).
+Read tools are specified in [tools-read-and-search.md](tools-read-and-search.md).

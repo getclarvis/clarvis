@@ -31,7 +31,7 @@ describe("filterHookEnv", () => {
     });
   });
 
-  test("keeps the toolchain roots the sandbox already considers necessary", () => {
+  test("keeps the toolchain roots need", () => {
     const out = filterHookEnv({ BUN_INSTALL: "/b", CARGO_HOME: "/c", JAVA_HOME: "/j" });
     expect(Object.keys(out).sort()).toEqual(["BUN_INSTALL", "CARGO_HOME", "JAVA_HOME"]);
   });

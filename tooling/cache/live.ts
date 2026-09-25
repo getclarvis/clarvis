@@ -776,9 +776,6 @@ if (import.meta.main && process.argv.includes("--worker")) {
             model: expected.model,
             trial,
             globalBudget,
-            ...(process.argv.includes("--use-global-oauth")
-              ? { authenticationRoot: globalPaths().root }
-              : {}),
           });
           result = installed.trial;
           if (

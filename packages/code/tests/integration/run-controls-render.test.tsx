@@ -21,18 +21,6 @@ function mount(
     /** The current per-client memory override; defaults to "on". */
     memoryMode?: "on" | "off";
     memoryEnabled?: boolean;
-    sandboxInspection?:
-      | {
-          available: boolean;
-          degraded: boolean;
-          reason?: string;
-          placement?: "host" | "sandbox";
-          network?: "host" | "none";
-        }
-      | Error;
-    effectiveSandboxEnabled?: boolean;
-    runActive?: boolean;
-    reloadResult?: { ok: boolean; message: string };
     writeError?: Error;
   } = {},
 ) {
@@ -47,19 +35,9 @@ function mount(
     memory: { enabled: opts.memoryEnabled ?? true },
     default_model: "openrouter/glm-5.2",
     providers: opts.resolvable === false ? [] : [{ name: "openrouter", kind: "openai-compatible" }],
-    ...(opts.sandboxInspection === undefined
-      ? {}
-      : {
-          sandbox: {
-            type: "native",
-            enabled: opts.effectiveSandboxEnabled ?? true,
-            availability: "optional",
-          },
-        }),
     ...((scoped.workspace ?? scoped.global) ? { plans: scoped.workspace ?? scoped.global } : {}),
   };
   const writes: { scope: string; patch: unknown }[] = [];
-  let inspectionCalls = 0;
   const settings = {
     version: () => 0,
     effective: () => effective,
@@ -75,27 +53,6 @@ function mount(
       Object.assign(effective, patch);
     },
     validateProviders: () => ({ ok: opts.resolvable !== false }),
-    inspectSandbox: async () => {
-      inspectionCalls++;
-      if (opts.sandboxInspection instanceof Error) throw opts.sandboxInspection;
-      const placement =
-        opts.sandboxInspection?.placement ??
-        (opts.sandboxInspection === undefined ? "host" : "sandbox");
-      return {
-        effective_network: opts.sandboxInspection?.network ?? "host",
-        filesystem: {
-          placement,
-          reads: "host-visible",
-          writes: placement === "sandbox" ? "declared-roots" : "host-os",
-          workspace: "read-write",
-        },
-        backend: {
-          type: "bubblewrap",
-          mode: "fresh-proc",
-          ...(opts.sandboxInspection ?? { available: true, degraded: false }),
-        },
-      };
-    },
   } as unknown as SettingsAdapter;
   const [memoryMode, setMemoryMode] = createSignal<"on" | "off">(opts.memoryMode ?? "on");
   const memorySetModeCalls: string[] = [];
@@ -110,16 +67,12 @@ function mount(
     cycle: () => "on",
   } as unknown as MemoryModeStore;
   const notes: string[] = [];
-  const sandboxOpened: true[] = [];
   const deps = {
     settings,
     memory,
     notify: (m: string) => {
       notes.push(m);
     },
-    runActive: () => opts.runActive ?? false,
-    reload: async () => opts.reloadResult ?? { ok: true, message: "reloaded" },
-    openSandbox: () => sandboxOpened.push(true),
   };
   return {
     host,
@@ -128,8 +81,6 @@ function mount(
     notes,
     writes,
     memorySetModeCalls,
-    sandboxOpened,
-    inspectionCalls: () => inspectionCalls,
   };
 }
 
@@ -151,165 +102,15 @@ async function activateMemoryOn(
   press: (key: string) => void,
   render: () => Promise<void>,
 ): Promise<void> {
-  await selectOption(press, render, 1, ["up"]);
+  await selectOption(press, render, 0, ["up"]);
 }
 
 async function activateMemoryOff(
   press: (key: string) => void,
   render: () => Promise<void>,
 ): Promise<void> {
-  await selectOption(press, render, 1, ["down"]);
+  await selectOption(press, render, 0, ["down"]);
 }
-
-test("an isolation change during a run is saved for the next run without reconnecting", async () => {
-  const { host, deps, press, notes, writes } = mount({ runActive: true });
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 0, ["down"]);
-  expect(writes).toHaveLength(1);
-  expect(notes).toEqual(["isolation: sandbox (global) — applies to the next run"]);
-  t.renderer.destroy();
-});
-
-test("an isolation reconnect refusal reports that the saved setting is pending", async () => {
-  const { host, deps, press, notes, writes } = mount({
-    reloadResult: { ok: false, message: "run still owns the host" },
-  });
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 0, ["down"]);
-  expect(writes).toHaveLength(1);
-  expect(notes).toEqual(["isolation saved, pending reconnect: run still owns the host"]);
-  t.renderer.destroy();
-});
-
-test("an isolation write failure is surfaced without claiming a change", async () => {
-  const { host, deps, press, notes, writes } = mount({
-    writeError: new Error("disk is read-only"),
-  });
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 0, ["down"]);
-  expect(writes).toEqual([]);
-  expect(notes).toEqual(["disk is read-only"]);
-  t.renderer.destroy();
-});
-
-test("the native sandbox detail reports a healthy available backend", async () => {
-  const { host, deps, press } = mount({
-    sandboxInspection: { available: true, degraded: false },
-  });
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await tick();
-  await t.renderOnce();
-  press("i");
-  await t.renderOnce();
-  expect(t.captureCharFrame()).toContain(
-    "Bubblewrap is available; an incompatible host fails closed.",
-  );
-  t.renderer.destroy();
-});
-
-test("run controls follow host Sandbox inspection over a weaker workspace merge", async () => {
-  const { host, deps, press } = mount({
-    effectiveSandboxEnabled: false,
-    sandboxInspection: { available: true, degraded: false, placement: "sandbox" },
-  });
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await tick();
-  await t.renderOnce();
-  press("i");
-  await t.renderOnce();
-  expect(t.captureCharFrame()).toContain(
-    "Bubblewrap is available; an incompatible host fails closed.",
-  );
-  t.renderer.destroy();
-});
-
-test("Host isolation requires confirmation", async () => {
-  const { host, deps, press, notes, writes } = mount({
-    sandboxInspection: { available: true, degraded: false },
-  });
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await t.renderOnce();
-
-  press("return");
-  await t.renderOnce();
-  press("up");
-  press("return");
-  await tick();
-  await t.renderOnce();
-  expect(t.captureCharFrame()).toContain("Run agent tools directly on this host?");
-  expect(writes).toEqual([]);
-
-  press("y");
-  await tick();
-  expect(writes).toEqual([
-    {
-      scope: "global",
-      patch: {
-        sandbox: {
-          type: "native",
-          enabled: false,
-          availability: "required",
-          filesystem: "workspace-write",
-          network: "host",
-          toolchains: { mode: "auto" },
-        },
-      },
-    },
-  ]);
-  expect(notes).toEqual(["isolation: host (global)"]);
-  t.renderer.destroy();
-});
-
-test("the isolation status distinguishes checking, unavailable, and degraded hosts", async () => {
-  const cases = [
-    {
-      inspection: new Error("probe failed"),
-      expected: "Checking native sandbox on the kernel host",
-    },
-    {
-      inspection: { available: false, degraded: false, reason: "missing" },
-      expected: "sandbox fails every run",
-    },
-    {
-      inspection: { available: true, degraded: true },
-      expected: "Bubblewrap runs in degraded mode",
-    },
-  ] as const;
-  for (const item of cases) {
-    const mounted = mount({ sandboxInspection: item.inspection });
-    const rendered = await openRender(
-      (() => RunControlsPanel(mounted.host, mounted.deps)) as never,
-      { width: 110, height: 40 },
-    );
-    await tick();
-    await rendered.renderOnce();
-    mounted.press("i");
-    await rendered.renderOnce();
-    expect(rendered.captureCharFrame()).toContain(item.expected);
-    rendered.renderer.destroy();
-  }
-});
 
 test("turning memory off changes only the session store", async () => {
   const { host, deps, press, notes, writes, memorySetModeCalls } = mount();
@@ -332,7 +133,6 @@ test("the memory detail explains the effective session behavior", async () => {
     height: 40,
   });
   await t.renderOnce();
-  press("down");
   press("i");
   await t.renderOnce();
   const frame = t.captureCharFrame();
@@ -387,7 +187,6 @@ test("an explicit discard policy is named consistently in overview and detail", 
   await t.renderOnce();
   expect(t.captureCharFrame()).toContain("Completed plans  delete after success");
   press("down");
-  press("down");
   press("i");
   await t.renderOnce();
   const detail = t.captureCharFrame();
@@ -412,7 +211,7 @@ test("changing completed-plan retention preserves mode, nudge budget and provide
     height: 40,
   });
   await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 3, ["down"]);
+  await selectOption(press, () => t.renderOnce(), 1, ["down"]);
   expect(writes).toEqual([
     {
       scope: "global",
@@ -461,7 +260,7 @@ test("changing completed-plan retention preserves the mode", async () => {
     height: 40,
   });
   await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 3, ["down"]);
+  await selectOption(press, () => t.renderOnce(), 1, ["down"]);
   expect(writes).toEqual([
     {
       scope: "global",
@@ -482,7 +281,7 @@ test("a workspace retention write carries the effective plan policy into its blo
   });
   await t.renderOnce();
   await host.toggleScope();
-  await selectOption(press, () => t.renderOnce(), 3, ["down"]);
+  await selectOption(press, () => t.renderOnce(), 1, ["down"]);
   expect(writes).toEqual([
     {
       scope: "workspace",

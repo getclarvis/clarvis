@@ -64,7 +64,7 @@ Source ownership:
 | `hosting.ts` | Hosted-run identity, snapshot pages, handoff receipts, control epochs, attachments and the `HostingService` interface |
 | `goals.ts` | Persistent goal state, criteria, usage, operation receipts and authenticated user-control DTOs and `GoalService` contract |
 | `local-host.ts` | Optional local operator process state, bounded browser handoff DTOs and explicit runtime retry/restart controls |
-| `config.ts` | `ConfigService`, `SettingsData`/`SettingsView` (incl. `WorkspaceTrustVerdict`, `known_grants`), the `SandboxConfig`/`SandboxInspection` doctor cluster, `SettingsRepairPlan` (2-variant union), `AgentSummary`/`AgentDoc`/`AgentOverlay`/`AgentBudget`, context docs — see §3.10/§3.11 |
+| `config.ts` | `ConfigService`, settings and trust DTOs, repair plans, agent documents and context documents |
 | `plugins.ts` | `PluginService`, `PluginView`, `PluginContributions`, normalized install sources and atomic lifecycle DTOs |
 | `extension-profiles.ts` | `ExtensionProfileService`, exact inventory and plugin/skill references, definitions, composition previews, resolved snapshots, deltas, diagnostics, deletion, and persisted run identity |
 | `secrets.ts` | `SecretService` |
@@ -187,7 +187,7 @@ optional hosted-run ownership and a close method:
 
 `KernelCapabilities` has the three booleans `memory`, `skills`, and `agent_tools`, plus the
 optional host-reported `runtime` and `hosting.host_generation`. Native placement reports `kind`,
-`host_platform`, effective isolation and lifecycle.
+`host_platform` and lifecycle.
 The runtime projection is informational, not a client-controlled launch input. Public compatibility remains the concrete
 transport's `CLARVIS_WIRE_VERSION` handshake (`packages/kernel/src/transport/wire.ts`).
 
@@ -252,7 +252,6 @@ copies `events` (`packages/protocol/src/runs.ts`, `RunHandle.buffered`).
 | `revokeWorkspace` | `() => Promise<SettingsView>` | `packages/protocol/src/config.ts` |
 | `workspaceTrustError` | `() => Promise<string \| null>` | `packages/protocol/src/config.ts` |
 | `updateSettings` | `(scope, patch: Partial<SettingsData>, expectedRevision: string \| null) => Promise<SettingsView>` | `packages/protocol/src/config.ts` |
-| `inspectSandbox` | `(options?: { refresh?: boolean }) => Promise<SandboxInspection>` | `packages/protocol/src/config.ts` |
 | `listAgents` | `() => Promise<AgentSummary[]>` | `packages/protocol/src/config.ts` |
 | `getAgent` | `(scope: Scope \| "builtin", name: string) => Promise<AgentDoc>` | `packages/protocol/src/config.ts` |
 | `writeAgent` | `(scope, name, doc: AgentWrite) => Promise<AgentSummary>` | `packages/protocol/src/config.ts` |
@@ -721,34 +720,16 @@ add kinds without a protocol bump" (`ElicitationRequest.kind` in `packages/proto
 This is structurally the same open/closed pattern already noted for `capability_event` in §5
 invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
 
-### 3.10 `ConfigService` data shapes I: settings and sandbox (`config.ts`)
+
+### 3.10 `ConfigService` data shapes I: settings (`config.ts`)
 
 | Type | Shape | File |
 | --- | --- | --- |
 | `WorkspaceTrustVerdict` | `{ state: "inert" \| "unapproved" \| "trusted" \| "changed"; fingerprint?; approved? }` | `packages/protocol/src/config.ts` |
-| `SettingsData` | `{ default_model?; providers?: ProviderConfig[]; mcp_servers?: Record<string, McpServerConfig>; guard?: GuardConfig; sandbox?: SandboxConfig; memory?: MemoryConfig; budget?; [block: string]: unknown }` | `SettingsData` in `packages/protocol/src/config.ts` |
+| `SettingsData` | Provider, model, MCP, capability and budget settings | `packages/protocol/src/config.ts` |
 | `ProviderConfig` | `{ name; kind?; base_url?; api_key_env?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 | `McpServerConfig` | `{ command?; args?; url?; [k]: unknown }` | `packages/protocol/src/config.ts` |
-| `GuardConfig` | `{ mode?: "off" \| "on" \| "auto"; allowed_commands?; denied_commands?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 | `MemoryConfig` | `{ enabled?; model?; [k]: unknown }` | `packages/protocol/src/config.ts` |
-| `SandboxConfig` | `{ type: "native"; enabled?; availability?: "required" \| "optional"; filesystem?; network?; pass_env?; toolchains?: { mode?: "auto" \| "manual"; include?; exclude?; extra_paths?; excluded_paths? } }` | `packages/protocol/src/config.ts` (`SandboxConfig`) |
-| `SandboxToolchainScope` | `"system" \| "auto" \| "global" \| "workspace"` | `packages/protocol/src/config.ts` |
-| `SandboxInspection` | `{ filesystem: { placement: "host" \| "sandbox"; reads: "host-visible"; writes: "host-os" \| "declared-roots"; workspace: "read-write" \| "read-only" }; effective_network: "host" \| "none"; backend: { type: "bubblewrap" \| "seatbelt" \| "unsupported"; available; mode: "fresh-proc" \| "host-proc" \| "seatbelt" \| "unavailable"; degraded; reason? }; toolchains: SandboxToolchainStatus[]; extra_paths: SandboxPathStatus[]; effective_path: string[] }` | `packages/protocol/src/config.ts` (`SandboxInspection`) |
-
-`SandboxInspection.backend` identifies what the host actually probed: Bubblewrap uses `fresh-proc`
-or degraded `host-proc`, Seatbelt uses `seatbelt`, and an unavailable selected/unsupported backend
-uses `unavailable` (`packages/protocol/src/config.ts`, `SandboxInspection`). `SandboxToolchainScope`'s four
-values name where a discovered toolchain (or read-only path) originates: `"system"` (already on the
-host `PATH`), `"auto"` (found by discovery), or the `"global"` / `"workspace"` settings scope that
-declared it (`packages/protocol/src/config.ts`). This is the return shape behind `ConfigService.inspectSandbox`,
-whose §2.3 table row names only the method signature.
-`SandboxInspection.filesystem` separately describes Host versus Sandbox, host-visible reads,
-the write boundary and workspace posture. `effective_network` reports the enforced network mode;
-backend availability does not itself grant access.
-Production: `SandboxInspection` in `packages/protocol/src/config.ts` and
-`createSandboxPolicyResolver.inspect` in `packages/kernel/src/sandbox/policy.ts`. Test:
-`packages/kernel/tests/integration/sandbox-policy.test.ts` (`reports effective host-visible reads
-and the selected write posture`) and `packages/kernel/tests/contract/config-service.test.ts`.
 
 ### 3.11 `ConfigService` data shapes II: repair plan and agents (`config.ts`)
 

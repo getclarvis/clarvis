@@ -938,7 +938,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     if (!deps.backgroundHandoffSurvivesExit())
       return Promise.reject(
         new Error(
-          "This connection cannot keep a run alive after the TUI exits. Background handoff is available only on a local Host or Sandbox; use /background list to inspect or cancel runs while this connection remains open.",
+          "This connection cannot keep a run alive after the TUI exits. Background handoff is available only on a local host; use /background list to inspect or cancel runs while this connection remains open.",
         ),
       );
     if (handoffFlight !== undefined) return handoffFlight;

@@ -60,7 +60,7 @@ declared at `packages/code/src/keys/commands.ts` and supplies `scope()`/`toggleS
 | `WorkflowsHub` | `WorkflowsHubDeps` = `{ list; get; getRun; delete?; now; live?; openAgentPicker?; pollMs?; refreshSlowMs? }` | `packages/code/src/views/config/WorkflowsHub.tsx` |
 | `SessionsHub` | `SessionsHubDeps` = `{ sessions; catalog?; now; statusLine; resume; resumeCatalog?; delete? }` plus `SessionCatalogItem` | `packages/code/src/views/config/SessionsHub.tsx` |
 | `MemoryConfigPanel` | `MemoryConfigDeps` = `{ settings: SettingsAdapter; memoryMode: MemoryModeStore; notify }` | `packages/code/src/views/config/MemoryConfigPanel.tsx` |
-| `RunControlsPanel` | inline deps `{ settings; memory: MemoryModeStore; notify; runActive; reload; openSandbox }` | `packages/code/src/views/config/RunControlsPanel.tsx` (`RunControlsPanel`) |
+| `RunControlsPanel` | Memory mode and completed-plan retention controls | `packages/code/src/views/config/RunControlsPanel.tsx` |
 
 `refreshSlowMs` on `WorkflowsHubDeps` is explicitly documented as an internal test seam for the
 pending-operation warning (`packages/code/src/views/config/WorkflowsHub.tsx`).
@@ -476,55 +476,16 @@ returned boolean is irrelevant (the five branches never consult it) and is disca
 `save()` closes the loop: after writing settings it calls `deps.memoryMode.refresh()`, which bumps `configured`'s underlying `version` signal and retriggers every computation that
 previously called `configured()` — including the `StatusRow` render that calls `statusLine()` — so the
 freshly retriggered call to `statusLine()` re-reads `settings.effective()` and picks up the new value.
-The same idiom, with the identical shape, recurs verbatim (and equally uncommented) in
-`packages/code/src/views/config/SandboxConfigPanel.tsx` — `void savedVersion();` as the first line of both
-`effectiveStatus()` and `hostWarning()`, immediately before each reads `deps.settings.effective().sandbox`
-— confirming this is an established pattern in this package for "subscribe via a call whose value is
-thrown away, and let a sibling non-reactive read pick up fresh state within the retriggered
-computation," not something specific to memory or an accidental one-off.
+This subscribes the computation to the memory mode signal so the adjacent effective-settings
+read picks up the new value after refresh.
 
 ### 4.8 Run controls
 
-Four rows, fixed order: Isolation (0), Guard (1), Memory for this session (2),
-Completed plans (3). `[b] sandbox details` is offered only on row 0, and the host wires it to
-`openWithReturn("sandbox.config", "controls.open", host.scope())`. Production:
-`packages/code/src/views/config/RunControlsPanel.tsx` (`spec`, `body`) and
-`packages/code/src/app/commands.tsx` (`controls.open`).
-
-`host.bindScope({ mode: "retarget" })` retargets Review and completed-plan retention. Isolation is a
-host-global placement choice and always writes global settings; memory remains session-only
-(`packages/code/src/views/config/RunControlsPanel.tsx`, `host.bindScope`,
-`applyIsolationChoice`).
-
-| Row | Choices | Write |
-| --- | --- | --- |
-| Isolation | `Host`, `Sandbox` | shared `applyIsolation`, global |
-| Memory | `on`, `off` | `applyMemory` — **session store only** |
-| Completed plans | `keep` / `discard` labelled "Keep plans" / "Delete after success" | `applyPlanRetention` |
-
-Run Controls and the `Ctrl+X I` quick picker share `applyIsolation`. Host requires an explicit
-danger confirmation; Sandbox enables a required native boundary.
-Run Controls and the `Ctrl+X M` Memory picker both write only `MemoryModeStore`; they never persist
-settings. All application shortcuts use the shared Ctrl+X family.
-
-`applyMemory` never writes settings. It sets the session mode and then reports one of three
-outcomes computed from `memoryState(effective, mode)`: `inert` → memory will not learn; still `off` →
-"enable it in Settings > Memory before the next run"; otherwise the plain confirmation.
-
-The completed-plan row writes only `retention`, through `patchPlansSettings`. That helper materializes
-a valid complete plan block by preserving the scoped value first, then effective mode/provider/nudge
-siblings, then `PLANS_DEFAULTS`; selecting workspace scope therefore creates an explicit workspace
-block without resetting the policy inherited at the moment of the edit. `discard` is not a
-"never save" switch: the plan capability persists the live plan and deletes it only after a
-successful result; failures, cancellation and interruption retain it. Production:
-`packages/code/src/views/config/RunControlsPanel.tsx` (`scopedPlans`, `applyPlanRetention`) and
-`packages/code/src/adapters/settings.ts` (`patchPlansSettings`). Plan lifecycle ownership remains in
-[capabilities/plan-capability.md](../capabilities/plan-capability.md).
-
-`sandboxLine()` reports the selected native backend's availability, fetched once in `onMount` via
-`settings.inspectSandbox()` and defaulting to `null` on failure. Its most severe branch —
-unavailable *and* `sandboxRequired` — is rendered in the delete color. Sandbox semantics
-themselves belong to the [execution/sandbox.md](../execution/sandbox.md) document.
+Run Controls has two rows: Memory for this session and Completed plans. Memory changes the
+session `MemoryModeStore`; completed-plan retention writes the selected settings scope through
+`patchPlansSettings`, preserving other plan settings. Production: `RunControlsPanel` in
+`packages/code/src/views/config/RunControlsPanel.tsx` and `patchPlansSettings` in
+`packages/code/src/adapters/settings.ts`. Test: `packages/code/tests/integration/run-controls-render.test.tsx`.
 
 ## 5. Invariants
 
@@ -722,18 +683,6 @@ specific to these files.
     `packages/code/tests/integration/run-controls-render.test.tsx` (global/provider and workspace
     preservation cases).
 
-50. **Isolation and Memory have separate vocabularies and shared application paths
-    across Run Controls and the quick pickers. Memory changes only the session store and never
-    persists settings.** Production:
-    `packages/code/src/features/run/isolation.ts` (`ISOLATION_CHOICES`, `isolationConfirmation`,
-    `applyIsolation`), `packages/code/src/views/config/RunControlsPanel.tsx`,
-    `packages/code/src/views/overlays/IsolationPicker.tsx`,
-    `packages/code/src/views/overlays/MemoryPicker.tsx`, and
-    `packages/code/src/adapters/memory-mode.ts`. Pinned:
-    `packages/code/tests/unit/isolation.test.ts`,
-    `packages/code/tests/integration/run-controls-render.test.tsx` and
-    `packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
-
 51. **A settled run's outcome label is classified only from the segment before the first separator.**
     Production: `packages/code/src/features/run/status-presenter.ts`, with the in-source account of
     the defect.
@@ -781,8 +730,7 @@ specific to these files.
 | Workflow refresh never settles | `packages/code/src/views/config/WorkflowsHub.tsx` | "Refresh is still pending; the backend may be unavailable"; still one in-flight request |
 | Workflow result cannot be stringified | `packages/code/src/views/config/WorkflowsHub.tsx` | "(unserializable result)". Pinned at `packages/code/tests/integration/workflows-hub-render.test.tsx` |
 | Leader node has no `task` (legacy record) | `packages/code/src/views/config/WorkflowsHub.tsx` | "Task unavailable for this legacy workflow"; `[t]` is unbound |
-| `settings.inspectSandbox()` rejects | `packages/code/src/views/config/RunControlsPanel.tsx` (`onMount`) | availability stays `null`; the row reads "Checking native sandbox on the kernel host…" indefinitely |
-| Any Run-controls settings write throws | `packages/code/src/views/config/RunControlsPanel.tsx` (`applyIsolationChoice`, `applyGuard`, `applyPlanRetention`) | `notify(errorText(error))`; the session store is not updated |
+| Any Run-controls settings write throws | `packages/code/src/views/config/RunControlsPanel.tsx` (`applyPlanRetention`) | `notify(errorText(error))`; the session store is not updated |
 | Session-memory toggle activated with no configured memory block | `packages/code/src/views/config/MemoryConfigPanel.tsx` | refuses to cycle; notifies "memory is not configured in settings — save a block first". Pinned at `packages/code/tests/integration/memory-config-render.test.tsx` |
 | Any detached async operation rejects unobserved | `packages/code/src/core/tasks.ts` | a `task.failed` diagnostic event is emitted with the operation name; nothing is thrown into the render tree |
 
@@ -833,9 +781,8 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
 
 ### 7.4 Explicit delegations
 
-- Sandbox semantics, `SandboxConfigPanel`, `probeSandbox` → [execution/sandbox.md](../execution/sandbox.md).
 - `DoctorView`, `KeyboardView` → their own documents.
-- `execution-safety.ts` (`deriveRunControls`, `deriveIsolation`, `memoryState`,
+- `execution-safety.ts` (`deriveRunControls`, `memoryState`,
   `planRetentionDescription`, `safetyDescription`, `memoryDescription`),
   `session-store.ts`, `workflow-projection.ts`, `settings.ts` →
   [hosts/code-run-host.md](code-run-host.md) / [hosts/code-settings-panels.md](code-settings-panels.md).
@@ -872,8 +819,7 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
    recorded.
 
 6. **`AgentsStore.reload`'s epoch guard (invariant 16) is unpinned.** No test in
-   `packages/code/tests` interleaves two reloads. Likewise unpinned: the custom-sandbox confirmation
-   branch in `RunControlsPanel.applyIsolationChoice` (invariant 50).
+   `packages/code/tests` interleaves two reloads.
 
 7. **`GrantId` is a closed union in `packages/code/src/adapters/agents.ts`, but the panel writes it through
    `patchFm({ grants })` onto an `AgentFrontmatter`** whose grant vocabulary is the kernel's open

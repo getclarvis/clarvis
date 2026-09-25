@@ -153,40 +153,7 @@ describe("settingsSchema (infra)", () => {
     if (!r.success) expect(r.error.issues[0]!.message).toContain("pre_tool_use");
   });
 
-  it("accepts an opt-in native sandbox", () => {
-    expect(
-      settingsSchema.safeParse({
-        sandbox: {
-          type: "native",
-          enabled: false,
-          availability: "required",
-          filesystem: "workspace-read-only",
-          network: "none",
-          pass_env: ["CI"],
-          toolchains: {
-            mode: "auto",
-            include: ["node", "python3"],
-            extra_paths: ["/opt/sdk", "./vendor/sdk"],
-          },
-        },
-      }).success,
-    ).toBe(true);
-  });
-
-  it("rejects unknown sandbox options", () => {
-    expect(
-      settingsSchema.safeParse({
-        sandbox: { type: "native", unknown: true },
-      }).success,
-    ).toBe(false);
-  });
-
-  it("rejects adversarial sandbox and MCP collection fanout", () => {
-    expect(
-      settingsSchema.safeParse({
-        sandbox: { type: "native", pass_env: Array(257).fill("CI") },
-      }).success,
-    ).toBe(false);
+  it("rejects adversarial MCP collection fanout", () => {
     expect(
       settingsSchema.safeParse({
         mcpServers: Object.fromEntries(

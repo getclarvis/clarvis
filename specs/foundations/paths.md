@@ -245,7 +245,7 @@ host-selected roots when a process boundary carries only data. It resolves every
 owner/spill builder methods under that exact state root; the caller owns the association between
 the workspace and state roots. Production: `workspaceStatePathsFromRoot` in
 `packages/paths/src/workspace-state.ts` and `runFilesystemWorker` in
-`packages/tools/src/filesystem-worker.ts`. Test: `rebuilds all state paths and builders from the
+`packages/tools/src/core.ts`. Test: `rebuilds all state paths and builders from the
 host-selected root` in `packages/paths/tests/component/workspace-state.test.ts`.
 
 The `isSpillFile(name)` predicate is paired with `toolOutputSpill(token)` in `packages/paths/src/workspace-state.ts`. Command sessions have no persisted path builder.

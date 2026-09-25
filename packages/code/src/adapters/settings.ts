@@ -10,12 +10,7 @@ import {
   type providerConfigSchema,
   type SettingsFile,
 } from "@clarvis/kernel/config";
-import type {
-  ConfigService,
-  SandboxInspection,
-  SettingsData,
-  SettingsRepairPlan,
-} from "@clarvis/protocol";
+import type { ConfigService, SettingsData, SettingsRepairPlan } from "@clarvis/protocol";
 import { glyph } from "../core/marks.ts";
 import { diagnosticCount, diagnosticEvent } from "../core/diagnostic-events.ts";
 import { keyOrigin, type KeysAdapter, type KeySource } from "./provider-secrets.ts";
@@ -184,7 +179,6 @@ export interface SettingsAdapter {
   declaredMcpServers(): McpServerDecl[];
   /** Re-fetch the cached snapshot from the kernel (after an external change). */
   reload(): Promise<void>;
-  inspectSandbox(options?: { refresh?: boolean }): Promise<SandboxInspection>;
 }
 
 /**
@@ -583,6 +577,5 @@ export async function createSettingsAdapter(
     envStatus,
     declaredMcpServers,
     reload,
-    inspectSandbox: (options) => config.inspectSandbox(options),
   };
 }

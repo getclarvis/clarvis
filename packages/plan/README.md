@@ -203,8 +203,8 @@ When the engine requests `preserveState` for an interrupted continuing activity,
 retains the current plan instead of changing its status. A later final result follows the ordinary
 task-closure and retention rules. This behavior does not grant review approval or continuation authority.
 
-Plans is available to native Host and Sandbox runs. The selected provider owns documents,
-review, CAS, continuation and retention through the canonical workspace plan directory.
+Plans is available to host runs. The selected provider owns documents, review, CAS,
+continuation and retention through the canonical workspace plan directory.
 
 The default is defined once as `DEFAULT_PLAN_RETENTION` in `src/schemas.ts` and mirrored by
 `PLANS_DEFAULTS` in `src/settings.ts`. The component test in

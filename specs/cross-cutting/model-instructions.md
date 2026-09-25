@@ -90,7 +90,6 @@ may already have written files; workflow failure is not a workspace rollback.
 Memory keeps its existing scoped/on-demand guidance. Skills load a named or description-matching
 body through `load_skill`, then bundled files through `read_skill_resource`. Their write-authority,
 resource paths, pagination and bootstrap exceptions are load-bearing rather than removable
-verbosity. The same applies to native Sandbox isolation, resource data limits and human-question semantics; their handlers and
 authority contracts are unchanged by the instruction review.
 
 ## 5. Invariants

@@ -706,7 +706,6 @@ Two hooks, in this order (`packages/capability/src/contract.ts` explains why bot
    Returns immediately for checkpoint disposition, or unless `record.status === "completed"` **and** `ref.retention === "discard"`. Deletes through `bestEffort`, logs `plan.retention.discarded` with `deleted: boolean`
    at `info` either way, and emits `plan_removed` only when a document was actually removed.
 
-Plans is native in Host and Sandbox. The built-in Markdown store owns plan service, tools, CAS, approval, continuation and retention through the canonical workspace directory.
 
 The `lifecycle.onRunStart` hook exists only for a continuation (`packages/plan/src/capability/index.ts`): it reconciles,
 emits `plan_removed` if the continuation plan was gone (and returns), else emits

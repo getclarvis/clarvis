@@ -209,7 +209,7 @@ Module-private: `EXPORT_BATCH_NODE_LIMIT = 128` and `EXPORT_INCOMPLETE_PREFIX`.
 | `client` | `Pick<KernelRunClient, "startRun"\|"steer"\|"compact"\|"getRun"\|"files"> & Partial<Pick<KernelRunClient, "context"\|"currentExtensionProfile">>` | yes | `packages/code/src/run-host.ts` |
 | `elicit` | `Pick<ElicitSlot, "cancelPending">` | yes | `packages/code/src/run-host.ts` |
 | `owner` / `project` / `workspaceId` / `workspace` | `string` | yes | `packages/code/src/run-host.ts` |
-| `backgroundHandoffSurvivesExit` | `() => boolean` — explicit destination lifecycle supplied by `WorkspaceClientManager`; true only for local Host/Sandbox | yes | `packages/code/src/run-host.ts` |
+| `backgroundHandoffSurvivesExit` | `() => boolean`, true for a local host that outlives the TUI | yes | `packages/code/src/run-host.ts` |
 | `priceFor` | `(model) => CatalogCost \| undefined` | yes | `packages/code/src/run-host.ts` |
 | `activeProfile` / `setActiveProfile` | agent selection | yes | `packages/code/src/run-host.ts` |
 | `memoryMode` | run policy | yes | `packages/code/src/run-host.ts` |
@@ -278,7 +278,7 @@ optional `prepareReconnect`, and `callbacks`.
 | `adapters/connection-state.ts` | `ConnectionState`, `ConnectionStore`, `createConnectionState`, `connectionLabel`, `connectionProbe` | `packages/code/src/adapters/connection-state.ts` |
 | `adapters/stream-metrics.ts` | `StreamMetrics`, `createStreamMetrics`, `streamMetrics` | `packages/code/src/adapters/stream-metrics.ts` |
 | `adapters/memory-pressure.ts` | `MIB`, `DEFAULT_TUI_RSS_LIMIT_BYTES`, `MEMORY_PRESSURE_SAMPLE_MS`, `MEMORY_PRESSURE_STEP_TIMEOUT_MS`, `MEMORY_PRESSURE_EPISODE_TIMEOUT_MS`, `MEMORY_PRESSURE_STATUS_RESTORING`, `MEMORY_PRESSURE_STATUS_FAILED`, `MemoryPressurePhase`, `ProcessMemorySample`, `MemoryMaintenanceReport`, `MemoryPressureSnapshot`, `MemoryPressureDeps`, `MemoryPressureController`, `memoryPressureAllowsSlash`, `memoryPressureStatus`, `tuiRssLimitBytes`, `createMemoryPressureController` | `packages/code/src/adapters/memory-pressure.ts` |
-| `adapters/execution-safety.ts` | `IsolationMode`, `RunControlsState`, `MemoryState`, `PlanMode`, `PlanRetention`, `PlansState`, `planRetentionLabel`, `plansState`, `modelResolves`, `memoryState`, `deriveIsolation`, `deriveRunControls`, `safetyDescription`, `memoryDescription`, `planRetentionDescription` | symbols of the same names |
+| `adapters/execution-safety.ts` | `RunControlsState`, `MemoryState`, `PlanMode`, `PlanRetention`, `PlansState`, `planRetentionLabel`, `plansState`, `modelResolves`, `memoryState`, `deriveRunControls`, `memoryDescription`, `planRetentionDescription` | symbols of the same names |
 | `adapters/file-prompt-history.ts` | `createFilePromptHistory(limit = 200, file = workspaceStatePaths().promptHistoryFile, options)` | `packages/code/src/adapters/session-store.ts` |
 | `adapters/workspace-client-manager.ts` | `ManagedWorkspaceClient`, `WorkspaceClientOptions`, `WorkspaceClientManager` | symbols of the same names |
 | `adapters/kernel-errors.ts` | `hasKernelErrorCode(error, code): error is {code}` — the narrowing every kernel-error branch in this scope goes through | `packages/code/src/adapters/kernel-errors.ts` |
@@ -310,8 +310,7 @@ it for the identical `not_found`-to-`null` pattern; this document is its one des
 | `task` | `task` | truthy |
 | `skill` | `skill` | truthy |
 
-`toStartParams` preserves Guard, Memory, Plans, Task and Skill selections for native Host/Sandbox
-runs. Production: `packages/code/src/adapters/kernel-run-client.ts` (`toStartParams`, `startRun`).
+`toStartParams` preserves Memory, Plans, Task and Skill selections for native host runs. Production: `packages/code/src/adapters/kernel-run-client.ts` (`toStartParams`, `startRun`).
 Test: `packages/code/tests/component/kernel-run-client.test.ts`.
 
 `workspace` is *not* a start parameter — `packages/code/tests/component/kernel-run-client.test.ts`
@@ -997,10 +996,7 @@ occupied-host and placement-transition cases in
 
 Pure functions of `RunControlsState`, no state of their own.
 
-`deriveIsolation` returns Sandbox when the native Sandbox block is enabled and Host otherwise.
-`deriveRunControls` projects stored Review, Memory and Plans independently from that isolation
-choice. Native Sandbox describes its filesystem and network policy; Host describes direct
-execution. Stored Review changes consequences but never changes the selected placement.
+`deriveRunControls` projects Memory and Plans from effective settings and session mode.
 
 `memoryDescription` is a three-way switch on `state.memory`: `"on"` reads before/after, "no
 extraction model resolves" for `"inert"`, otherwise disabled-for-this-session.
@@ -1011,16 +1007,6 @@ successful run deletes after recording its result and that failed, cancelled or 
 retain the plan. Planning mode is intentionally absent from this presentation helper because the
 TUI changes review policy through `/plan`, not Run Controls. Pinned by
 `packages/code/tests/unit/execution-safety.test.ts` (plan-retention consequence case).
-
-`applyIsolation` maps Host and Sandbox to the global native `sandbox` block.
-Run Controls and the `Ctrl+X I` picker share that writer. With no active work, each
-surface requests a reload; failure reports the saved selection as pending reconnect. During active
-work the settings panel may save for later and the quick picker refuses a transition.
-Production: `packages/code/src/features/run/isolation.ts` and
-`packages/code/src/views/config/RunControlsPanel.tsx`. Test:
-`packages/code/tests/unit/isolation.test.ts`,
-`packages/code/tests/integration/isolation-review-picker-render.test.tsx` and
-`packages/code/tests/integration/run-controls-render.test.tsx`.
 
 ### 4.21 Memory-pressure state machine (`packages/code/src/adapters/memory-pressure.ts`)
 
@@ -1304,9 +1290,7 @@ The following are derived directly from this document's own source and its tests
     `packages/code/tests/unit/execution-safety.test.ts` ("is on only when the extraction model
     reaches a declared provider" and inert-state cases).
 
-50. **Isolation follows the native Sandbox setting.** An enabled native Sandbox is `sandbox` and absence/disablement is `host`. Production:
-    `packages/code/src/adapters/execution-safety.ts` (`deriveIsolation`, `deriveRunControls`). Pinned:
-    `packages/code/tests/unit/execution-safety.test.ts` (isolation derivation).
+
 
 51. **`@clarvis/code`'s adapters never import from `ui/` or `views/`** (INV-244) — full statement
     owned by [hosts/code-bootstrap.md](code-bootstrap.md) §5. This is why

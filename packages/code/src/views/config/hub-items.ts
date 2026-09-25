@@ -24,7 +24,6 @@ export const SETTINGS_ITEMS = [
     desc: "Enable and configure execution memory",
     cmd: "memory.config",
   },
-  { id: "sandbox", label: "Sandbox", desc: "Native command isolation", cmd: "sandbox.config" },
   { id: "theme", label: "Theme", desc: "Colors, presets, contrast", cmd: "theme.open" },
   {
     id: "keyboard",
@@ -41,7 +40,7 @@ export const SETTINGS_ITEMS = [
   {
     id: "controls",
     label: "Run controls",
-    desc: "Safety, sandbox, memory and plan retention for the next run",
+    desc: "Memory and plan retention for the next run",
     cmd: "controls.open",
   },
 ] as const;

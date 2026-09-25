@@ -41,7 +41,7 @@ mid-string rather than merely being noisy (`packages/code/src/adapters/terminal-
 The native filesystem worker writes framed protocol data to its owned stdout pipe, not a diagnostic;
 `STREAM_PLUMBING` in `packages/paths/tests/architecture/one-diagnostic-channel.test.ts`
 classifies that endpoint explicitly. Production: `runFilesystemWorker` in
-`packages/tools/src/filesystem-worker.ts`. Test: `no package writes to a terminal channel directly`
+`packages/tools/src/core.ts`. Test: `no package writes to a terminal channel directly`
 in `packages/paths/tests/architecture/one-diagnostic-channel.test.ts`.
 
 ### 1.1 The trace-versus-log rule
@@ -248,8 +248,6 @@ logger.info(
 {
   event: "tools.config_resolved",
   ripgrep: true,
-  sandbox_mode: "native",
-  sandbox_availability: "optional",
   read_only: true,
   skill_execution_roots: 0,
   platform: process.platform,

@@ -699,7 +699,6 @@ validator. An invalid call is reported as a failed `tool_call`; it never records
    `packages/skills/tests/unit/call.test.ts` and
    `packages/skills/tests/integration/call-resource.test.ts`.
 3. A filesystem body result identifies `Skill directory: <dir>` as the base for bundled relative
-   paths. It adds `Package execution root: <executionRoot>` and shell/native-sandbox guidance
    only when the host-approved field exists, then renders the body and resource listing. Production:
    `handleLoadSkillCall` in `packages/skills/src/call.ts`. Test:
    `packages/skills/tests/unit/call.test.ts` (`shows the helper hint only for a host-approved

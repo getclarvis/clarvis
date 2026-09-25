@@ -2,7 +2,7 @@ import { basename } from "node:path";
 import { parseModelRef } from "../adapters/model-policy.ts";
 import { tokens } from "../theme/tokens.ts";
 import { glyph } from "../theme/glyphs.ts";
-import type { IsolationMode, MemoryState, PlansState } from "../adapters/execution-safety.ts";
+import type { MemoryState, PlansState } from "../adapters/execution-safety.ts";
 import { connectionLabel, type ConnectionState } from "../adapters/connection-state.ts";
 
 /** One shell snapshot; App owns the sole derivation point for every header status. */
@@ -13,8 +13,6 @@ export interface HeaderInput {
   floor: boolean;
   agentName: string;
   model: string;
-  isolation: IsolationMode;
-  sandboxUnavailable?: boolean;
   memoryConfigured: boolean;
   memory: MemoryState;
   plans: PlansState;
@@ -26,7 +24,7 @@ export interface HeaderInput {
 }
 
 export type HeaderFieldKey =
-  "workspace" | "identity" | "model" | "isolation" | "memory" | "urgent" | "exception" | "version";
+  "workspace" | "identity" | "model" | "memory" | "urgent" | "exception" | "version";
 
 export interface HeaderField {
   key: HeaderFieldKey;
@@ -63,21 +61,7 @@ function urgentField(input: HeaderInput): HeaderField | undefined {
   return undefined;
 }
 
-function exceptionField(input: HeaderInput, includeIsolation: boolean): HeaderField | undefined {
-  if (input.sandboxUnavailable)
-    return {
-      key: "exception",
-      text: `${glyph("warning")} Sandbox unavailable`,
-      color: tokens.warn,
-      elastic: false,
-    };
-  if (includeIsolation && input.isolation === "host")
-    return {
-      key: "exception",
-      text: `${glyph("warning")} Isolation: Host`,
-      color: tokens.warn,
-      elastic: false,
-    };
+function exceptionField(input: HeaderInput): HeaderField | undefined {
   if (input.doctorDirty)
     return {
       key: "exception",
@@ -101,32 +85,21 @@ function memoryLabel(memory: MemoryState): string {
   return memory === "off" ? "off" : "on";
 }
 
-function isolationLabel(isolation: IsolationMode): string {
-  return isolation[0]!.toUpperCase() + isolation.slice(1);
-}
-
 /**
- * The configuration a run depends on — model, isolation and memory —
+ * The configuration a run depends on — model and memory —
  * with complete labels at every supported width.
  */
 function statusChips(input: HeaderInput): HeaderField[] {
   const model = modelNames(input.model);
-  const isolation = isolationLabel(input.isolation);
   const memory = memoryLabel(input.memory);
   const fit: Array<[HeaderFieldKey, string]> = [
     ["model", model.full],
-    ["isolation", `Isolation: ${isolation}`],
     ["memory", `Memory: ${memory}`],
   ];
   return fit.map(([key, text]) => ({
     key,
     text,
-    color:
-      key === "model"
-        ? tokens.fg
-        : key === "isolation" && input.isolation === "host"
-          ? tokens.warn
-          : tokens.muted,
+    color: key === "model" ? tokens.fg : tokens.muted,
     elastic: false,
   }));
 }
@@ -156,9 +129,7 @@ export function projectHeader(input: HeaderInput): HeaderPlan {
   const urgent = urgentField(input);
   const exceptionAllowed = true;
   const chips = statusChips(input);
-  const exception = exceptionAllowed
-    ? exceptionField(input, !chips.some((chip) => chip.key === "isolation"))
-    : undefined;
+  const exception = exceptionAllowed ? exceptionField(input) : undefined;
   const status = chips.map((chip) => ({ ...chip, text: sep + chip.text }));
   const state = [...(exception ? [exception] : []), ...(urgent ? [urgent] : [])].map(
     (field, index) => (index === 0 ? field : { ...field, text: sep + field.text }),

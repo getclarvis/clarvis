@@ -94,8 +94,8 @@ this document covers only the grant string that gates them.
 `process.env.CLARVIS_AGENT_TOOLS_MAX_GRANT ??= "exec"`),
 above the loop's own schema default of `"edit"` (`packages/capability/src/env.ts`).
 
-Host and Sandbox apply the resolved capability policy. Shipped builtin and operator profiles
-retain their admitted grants.
+Shipped builtin and operator profiles retain their admitted grants under the resolved capability
+policy.
 
 ### 2.5 Built-in agent profiles' grant/spawn arrays
 

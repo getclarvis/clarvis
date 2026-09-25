@@ -230,7 +230,6 @@ operations; `hosting`, `runs`, `config`, `memory`, `plans`, `workflows`, `skills
 | config | `config.previewSettingsRepair` | read | — |
 | config | `config.repairSettings` | write | — |
 | config | `config.updateSettings` | write | — |
-| config | `config.inspectSandbox` | read | — |
 | config | `config.approveWorkspace` | write | — |
 | config | `config.revokeWorkspace` | write | — |
 | config | `config.workspaceTrustError` | read | — |

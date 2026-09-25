@@ -108,19 +108,18 @@ describe("independent CI workflow", () => {
       "bun --filter @clarvis/memory test",
       keyboard,
     ]);
-    expect(workflow.jobs["sandbox-macos"]["runs-on"]).toBe("macos-14");
+    expect(workflow.jobs["keyboard-macos"]["runs-on"]).toBe("macos-14");
     expect(
-      workflow.jobs["sandbox-macos"].steps.flatMap((step) => (step.run ? [step.run] : [])),
+      workflow.jobs["keyboard-macos"].steps.flatMap((step) => (step.run ? [step.run] : [])),
     ).toEqual([
       "bun --version && bun --revision",
       "brew install ripgrep && rg --version",
       "bun install --frozen-lockfile",
-      "CLARVIS_NATIVE_SANDBOX_CANARY=1 bun --filter @clarvis/tools test",
-      "CLARVIS_NATIVE_SANDBOX_CANARY=1 bun test packages/kernel/tests/integration/sandbox-policy.test.ts",
+      "bun --filter @clarvis/tools test",
       keyboard,
     ]);
     const release = readFileSync(".github/workflows/gitflow-release.yml", "utf8");
-    for (const id of ["linux", "windows", "sandbox-macos"])
+    for (const id of ["linux", "windows", "keyboard-macos"])
       expect(release).toContain(`'${workflow.jobs[id].name}'`);
   });
 });

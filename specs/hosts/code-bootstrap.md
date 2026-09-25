@@ -271,7 +271,7 @@ member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard 
 | `packages/code/src/app/command-composition.ts`          | `CodeCommandDeps`                                                                                  | `AppCommandDeps & { features: FeatureCommandDeps }`                                                                              |
 | `packages/code/src/app/command-composition.ts`          | `registerCodeCommands`                                                                             | `(deps: CodeCommandDeps) => AppCommandWiring`                                                                                    |
 | `packages/code/src/app/commands.tsx`                    | `AppCommandDeps`                                                                                   | application command dependency bag                                                                                               |
-| `packages/code/src/app/commands.tsx`                    | `AppCommandWiring`                                                                                 | `{ doctorDirty; recheck; sandboxInspection; skillAgent; dispose }`                                                               |
+| `packages/code/src/app/commands.tsx`                    | `AppCommandWiring`                                                                                 | `{ doctorDirty; recheck; skillAgent; dispose }`                                                               |
 | `packages/code/src/app/commands.tsx`                    | `registerAppCommands`                                                                              | `(deps: AppCommandDeps) => AppCommandWiring`                                                                                     |
 | `packages/code/src/views/App.tsx`                       | `AppShell` / `AppRunControls` / `AppSessionControls` / `AppFleet` / `AppBackend` / `AppProps`      | see §2.5                                                                                                                         |
 | `packages/code/src/views/App.tsx`                       | `App`                                                                                              | `(props: AppProps) => JSX.Element`                                                                                               |
@@ -726,15 +726,7 @@ Two orderings the code annotates explicitly:
   `packages/code/tests/architecture/architecture-boundary.test.ts` (post-paint gate),
   `packages/code/tests/unit/update-check.test.ts`, and
   `packages/code/tests/integration/app-shell-render.test.tsx`.
-- Application command composition performs no sandbox host inspection. The null probe is a passing
-  deferred readiness state; Doctor recheck and Settings > Sandbox are the explicit inspection
-  routes. Escaping a nested configuration page is not an inspection route.
-  Production: `packages/code/src/app/commands.tsx` (`refreshSandboxInspection`,
-  `inspectReadiness`) and `packages/code/src/views/overlay-host.ts` (`popView`). Test:
-  `packages/code/tests/integration/app-commands.test.tsx` ("sandbox
-  inspection is deferred until an explicit Doctor recheck") and
-  `packages/code/tests/integration/app-shell-render.test.tsx` ("Tab opens a child and rapid Escape
-  steps back through its hub to the transcript").
+
 
 `debugSession` is built even when `--debug` was absent, with the stated reason: "a diagnostic channel
 you can only ask for before the failure you want it for is no channel"
@@ -1086,8 +1078,7 @@ quits immediately from a state where nothing is at stake.". But the gate does no
 trust that flag: a dirty view or a run that will be cancelled on exit still requires confirmation.
 Mechanically, `atStake = dirtyView || deps.isRunAtRisk()` and the gate arms whenever `confirm || atStake`.
 An observed hosted run with confirmed `continue` policy is not at risk merely because it is active
-only when the workspace manager confirms that its local Host/Sandbox lifecycle outlives this TUI;
-the activity line then displays `continues after exit`. SSH processes are connection
+when the local host confirms that its lifecycle outlives this TUI; the activity line then displays `continues after exit`. SSH processes are connection
 owned, never receive that projection and remain at risk on exit. This projection does not change
 host policy or tool consent, and a later turn defaults to ordinary exit policy.
 A non-empty draft is deliberately excluded from that arming set: "Running `/quit` from the composer
@@ -1118,7 +1109,7 @@ shadows the four registration methods so everything it registers lands there (`p
 
 The render tree returned by `App` is, top to bottom: `KeymapProvider` →
 `HeaderRows` → a one-row top rule → the region box holding `OverlayRegion` with `TranscriptRegion` as
-its fallback → the floating pickers/readers (`AgentProfilePicker`, lazy `IsolationPicker`, lazy
+its fallback → the floating pickers/readers (`AgentProfilePicker`, lazy
 `ActivityDetail`, `WorktreeExitPrompt`) as
 **siblings
 after** the region → `HintToast` → the bottom box (`LeadActivityLine`, `InputDock`, `Footer`) → the
@@ -1207,18 +1198,15 @@ saving the staged controller choice. Production:
 
 Header and footer use their content height instead of reserving a single terminal row.
 The header packs complete fields into rows using terminal cell widths: brand, workspace,
-agent, model, Isolation, Guard, Memory, actionable host state and version. Narrow widths
+agent, model, Memory, actionable host state and version. Narrow widths
 retain every field; a field longer than a row wraps within the available width. The brand
 appears only once, the version anchors the final row, and continuation rows have no leading
 separator. The transcript receives the remaining height.
 
-`projectHeader` retains full configuration labels at every width. Workspace uses its display
-label or basename and optional branch. Floor mode omits secondary agent identity. Memory
-`inert` remains labelled on; Host isolation and Guard Off retain warning colors.
-Sandbox unavailable outranks Doctor attention; Host isolation is not repeated as a separate
-exception when the isolation chip already states it. Connection failure and reconnect-pending
-notices remain available at narrow widths. Active native runs use host-reported isolation;
-idle runs use next-run preferences.
+`projectHeader` retains model and memory labels at every width. Workspace uses its display
+label or basename and optional branch. Floor mode omits secondary agent identity. Memory `inert`
+remains labelled on. Connection failure and reconnect-pending notices remain available at narrow
+widths.
 
 Production: `packages/code/src/views/header-projection.ts` (`projectHeader`, `statusChips`),
 `packages/code/src/views/HeaderRows.tsx` (`HeaderRows`), and

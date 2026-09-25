@@ -28,36 +28,6 @@ export const ERROR_CODES = [
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
-/** Validate a serialized tool failure without trusting its worker-provided code. */
-export function isErrorCode(value: unknown): value is ErrorCode {
-  return typeof value === "string" && ERROR_CODES.some((code) => code === value);
-}
-
-/** Recover only public error fields from an in-band worker result. */
-export function parseToolError(text: unknown): ToolError | undefined {
-  if (typeof text !== "string" || text.length > 4096) return undefined;
-  try {
-    const value: unknown = JSON.parse(text);
-    if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
-    const error = value as Record<string, unknown>;
-    if (!isErrorCode(error.error) || typeof error.message !== "string") return undefined;
-    if (error.message.length === 0 || error.message.length > 1024) return undefined;
-    const path = error.path;
-    const partial = error.error === "commit_partial";
-    return new ToolError(error.error, error.message, {
-      ...(typeof path === "string" && path.length <= 1024 ? { path } : {}),
-      ...(partial && typeof error.source_exists === "boolean"
-        ? { source_exists: error.source_exists }
-        : {}),
-      ...(partial && typeof error.destination_committed === "boolean"
-        ? { destination_committed: error.destination_committed }
-        : {}),
-    });
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * A tool failure carrying a stable {@link ErrorCode} plus optional structured
  * fields. Handlers throw this for expected, reportable failures; the dispatcher

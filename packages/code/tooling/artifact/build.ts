@@ -168,19 +168,7 @@ async function main(): Promise<void> {
     throw new Error("bun build failed");
   }
 
-  const filesystemWorker = await Bun.build({
-    entrypoints: [join(repoRoot, "packages/tools/src/filesystem-worker.ts")],
-    target: "bun",
-    outdir,
-    minify: true,
-    sourcemap: installBuild ? "none" : "external",
-  });
-  if (!filesystemWorker.success) {
-    for (const log of filesystemWorker.logs) process.stderr.write(String(log) + "\n");
-    throw new Error("filesystem worker build failed");
-  }
-
-  const outputs = [...result.outputs, ...filesystemWorker.outputs];
+  const outputs = result.outputs;
 
   await assertLazyProviderChunk(outputs);
   await assertRelocatableBuild(outputs);

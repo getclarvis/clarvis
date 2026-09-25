@@ -41,10 +41,10 @@ describe("host coding tools", () => {
     const configuration = join(root, ".clarvis", "settings.json");
     const configured = await tools.callTool("write_file", {
       path: configuration,
-      content: '{"sandbox":{"type":"native"}}',
+      content: '{"workspace_setting":{"type":"native"}}',
     });
     expect(configured.isError).toBe(false);
-    expect(readFileSync(configuration, "utf8")).toContain("sandbox");
+    expect(readFileSync(configuration, "utf8")).toContain("workspace_setting");
 
     const command = await tools.callTool("shell", { command: "printf open" });
     expect(command.isError).toBe(false);

@@ -7,8 +7,7 @@ package; the root manifest owns the product version. Its only internal dependenc
 The authoritative contracts are [tool dispatch](../../specs/execution/tools-contract.md),
 [reads and search](../../specs/execution/tools-read-and-search.md),
 [mutations](../../specs/execution/tools-mutation.md),
-[shell and sessions](../../specs/execution/tools-shell-and-sessions.md), and
-[native sandboxing](../../specs/execution/sandbox.md).
+[shell and sessions](../../specs/execution/tools-shell-and-sessions.md).
 
 ## Tools and authority
 
@@ -21,17 +20,13 @@ observing projection.
 Commands and file calls do not pass through a Shell Guard, Judge, command allowlist, path
 classification gate or configuration mutation review. Relative file paths resolve from
 `workspaceRoot`; absolute paths remain absolute. Host calls use the process's filesystem
-permissions. When the run configures a native sandbox, its Bubblewrap or Seatbelt policy also
-applies to shell commands and the run-owned file service. A sandbox that cannot start fails the
-call instead of silently falling back to Host. The sandbox's configured read-only workspace and
-write roots remain effective. `secretEnvNames` keeps host-supplied credential variables out of
+permissions. `secretEnvNames` keeps host-supplied credential variables out of
 spawned command environments.
 
 Production: `dispatch` in [core.ts](src/core.ts), `resolveToolPath` in
-[paths.ts](src/lib/paths.ts), and `resolveFilesystemPolicy` in [sandbox.ts](src/sandbox.ts).
+[paths.ts](src/lib/paths.ts).
 Test: [open-authority.test.ts](tests/integration/open-authority.test.ts),
-[no-isolation.test.ts](tests/integration/no-isolation.test.ts), and
-[sandbox.test.ts](tests/integration/sandbox.test.ts).
+and [host-access.test.ts](tests/integration/host-access.test.ts).
 
 ## Usage
 
@@ -45,7 +40,7 @@ await agentTools.close();
 ```
 
 `workspaceRoot` must be an existing directory. `createAgentTools` resolves numeric limits,
-probes ripgrep, freezes the filesystem policy for the toolset and owns a session manager unless
+probes ripgrep and owns a session manager unless
 the host supplies one. Call `close()` after the final tool call so run-owned shell sessions exit.
 The lower-level `resolveConfig`, `listTools` and `dispatch` exports support host integrations.
 Callers that use `resolveConfig` directly close its session manager themselves.
@@ -55,12 +50,9 @@ const readOnly = createAgentTools({ workspaceRoot: process.cwd(), readOnly: true
 await readOnly.close();
 ```
 
-Use `sandbox: { type: "native" }` to request native isolation. Bubblewrap is the Linux backend
-and Seatbelt is the macOS backend. The standalone library has no temporary roots by default;
-the Clarvis loop supplies run-owned scratch followed by discovered system temporary roots.
-The first root becomes `TMPDIR`, `TEMP` and `TMP` for commands. Native sandbox settings control
-network and filesystem access. A linked worktree's Git metadata is pinned when the toolset is
-created, with the configured workspace write policy applied to it.
+The standalone library has no temporary roots by default; the Clarvis loop supplies run-owned
+scratch followed by discovered system temporary roots. The first root becomes `TMPDIR`, `TEMP`
+and `TMP` for commands.
 
 ## Execution and limits
 
@@ -68,7 +60,7 @@ created, with the configured workspace write policy applied to it.
 stops or lists only sessions owned by the same run and agent. Shell output uses bounded in-memory
 capture, per-stream cursors and omitted-byte counts. Generic oversized text results can spill to
 the workspace's machine-state root. File tools can read a state path when the effective OS or
-native sandbox permissions allow it; the dispatcher has no state-artifact special gate.
+host OS permissions allow it; the dispatcher has no state-artifact special gate.
 
 Text reads use a bounded descriptor read and reject non-regular files. `read_image` recognizes
 PNG, JPEG, GIF and WebP by bytes and verifies a PNG's chunk stream. `readRawFile` exports the same
@@ -81,7 +73,7 @@ combined diff input and 256 KiB metadata. All can be overridden through `createA
 `apply_patch` accepts the `*** Begin Patch` envelope and unified diffs. It stages a complete
 multi-file transaction, checks UTF-8 and hunks, and commits atomically; a failed hunk changes
 nothing. `copy`, `move`, `replace` and other mutations use the shared atomic machinery where
-applicable. Access is still subject to filesystem permissions and configured native isolation.
+applicable. Access is still subject to host filesystem permissions.
 
 Production: `readRawFile` in [files.ts](src/lib/files.ts), `ExecutionSessionManager` in
 [execution-session.ts](src/lib/execution-session.ts), and `applyOpsAtomic` in
@@ -90,11 +82,10 @@ Production: `readRawFile` in [files.ts](src/lib/files.ts), `ExecutionSessionMana
 
 ## Entry points
 
-| Import | Purpose |
-| --- | --- |
-| `@clarvis/tools` | Toolset, dispatch, registry, configuration, shell/process and sandbox helpers |
-| `@clarvis/tools/shell` | Shell and process helpers without loading the tool registry |
-| `@clarvis/tools/sandbox` | Native sandbox configuration, probes and policy construction |
+| Import                 | Purpose                                                              |
+| ---------------------- | -------------------------------------------------------------------- |
+| `@clarvis/tools`       | Toolset, dispatch, registry, configuration and shell/process helpers |
+| `@clarvis/tools/shell` | Shell and process helpers without loading the tool registry          |
 
 ## Development
 
@@ -109,5 +100,4 @@ bun --filter @clarvis/tools format:check
 ```
 
 The package has component, contract, integration and architecture tests. The root `bun run test`
-script runs the supported isolated workspace suite. Native sandbox canaries need their platform's
-backend and report a skip when it is unavailable.
+script runs the supported workspace suite.

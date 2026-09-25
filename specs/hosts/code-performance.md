@@ -208,7 +208,8 @@ smoke rejects any first paint that emits `catalog.load.started` or reports
 `packages/code/src/features/providers/commands.ts`; `packages/code/src/app/commands.tsx`,
 `setup.providers`; `packages/code/tooling/artifact/smoke.ts`).
 
-### 4.2 Subscription and sandbox readiness on startup
+
+### 4.2 Subscription readiness on startup
 
 App command construction performs no entitlement request. A locally configured subscription whose
 runtime readiness has not been inspected is a passing deferred state, with detail `subscription
@@ -221,13 +222,7 @@ the cold route and the explicit recheck boundary in
 `packages/code/tests/integration/app-commands.test.tsx`, and the Escape boundary in
 `packages/code/tests/integration/app-shell-render.test.tsx`.
 
-The same cold-start boundary applies to sandbox inspection. App command construction leaves
-`sandboxInspection` null and does not run host toolchain `--version` probes. Doctor's explicit
-recheck and the Sandbox settings surface own that inspection; the run-safety gate treats null as a
-passing deferred state (`packages/code/src/app/commands.tsx`, `refreshSandboxInspection`;
-`packages/code/src/views/config/SandboxConfigPanel.tsx`, `refreshInspection`;
-`packages/code/src/onboarding/doctor.ts`, `run_safety`). Nested Escape is not an inspection route.
-The integration tests above pin the cold route, explicit recheck, and Escape boundary.
+
 
 ### 4.3 Artifact loading and lazy boundaries
 
@@ -335,7 +330,6 @@ The floating family is larger than the two historically measured entry points:
 | Surface | Mount path | Variable allocation risk | Current evidence |
 | ------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | agent picker and default-scope picker | `App` -> retained `AgentProfilePicker` -> `ListPicker` -> `FloatFrame` | windowed agent rows, preview and optional second picker | remount +12.71; retained -0.23 MiB PSS/100 |
-| isolation picker | `App` -> lazy retained `IsolationPicker` -> `ListPicker` -> `FloatFrame` | two fixed rows (Host/Sandbox) and an armed Host confirmation | validate with the current isolated benchmark |
 | provider/model/enum picker | config view -> retained `CatalogPicker` -> `ListPicker` -> `FloatFrame` | windowed rows, fuzzy-highlight spans, optional input, and a fixed nine-row first-run splash intro only when 76×24 fits | remount +14.26; retained -1.49 MiB PSS/100 (pre-intro measurement) |
 | activity detail | `App` -> retained `ActivityDetail` -> `FloatFrame` | Markdown block count and parser-native renderables; payload is cleared on close | -16.92 MiB PSS/100 in the 200-section remount case; no confirmed slope |
 | clean-worktree exit prompt | `App` -> retained `WorktreeExitPrompt` -> `FloatFrame` | fixed, small body | +0.44 MiB PSS/100 in the remount case; no confirmed slope |
@@ -500,10 +494,9 @@ maintenance is silent; the footer shows `Restoring the interface…` only while 
     `packages/code/tests/integration/autocomplete-popup-render.test.tsx`, and
     `packages/code/tests/unit/overlay-host.test.ts`.
 
-12. **PERF-12: Diff, Plan and Isolation Picker stay outside the first-load JavaScript
+12. **PERF-12: Diff and Plan stay outside the first-load JavaScript
     entrypoint.**
     Production: `packages/code/src/views/app/OverlayRegion.tsx` (`lazy`),
-    `packages/code/src/views/App.tsx` (`IsolationPicker`),
     `packages/code/tooling/artifact/contract.ts` (`assertLazySurfaceArtifact`), and
     `packages/code/tooling/artifact/build.ts` (`assertLazyProviderChunk`).
     Test: `packages/code/tests/architecture/artifact-contract.test.ts` ("cold full-page and floating
@@ -519,13 +512,11 @@ maintenance is silent; the footer shows `Restoring the interface…` only while 
     Production: `packages/code/src/ui/patterns/surface-lifecycle.tsx` (`SurfaceBoundary`,
     `SurfacePortal`, `useSurfaceFocus`, `useSurfaceActivationGuard`),
     `packages/code/src/views/overlays/FloatFrame.tsx` (`FloatFrame`), and
-    `packages/code/src/views/overlays/ListPicker.tsx` (`ListPicker`), including the lazy retained
-    `IsolationPicker` host in `packages/code/src/views/App.tsx`.
+    `packages/code/src/views/overlays/ListPicker.tsx` (`ListPicker`).
     Test: `packages/code/tests/integration/surface-lifecycle-render.test.tsx`,
     `packages/code/tests/integration/float-frame-render.test.tsx` (single responsive navigation
     subtree and listener cleanup), and `packages/code/tests/integration/list-picker-render.test.tsx`
-    ("a retained picker keeps one key layer registration and gates it while inactive"), plus
-    `packages/code/tooling/benchmarks/overlays.tsx` (`isolation-picker-retained`).
+    ("a retained picker keeps one key layer registration and gates it while inactive").
 
 14. **PERF-14: retained inactive configuration pages do not keep periodic background work alive.**
     Workflow polling and provider authorization countdowns run only while their owning view is
@@ -539,13 +530,11 @@ maintenance is silent; the footer shows `Restoring the interface…` only while 
     pauses polling while inactive"), `packages/code/tests/unit/level-keys.test.ts`, and
     `packages/code/tests/unit/overlay-host.test.ts`.
 
-15. **PERF-15: first boot does not read the models.dev catalog, call subscription entitlement or
-    probe sandbox toolchains; catalog and cold full-page modules load only when their owning routes
-    mount.**
+15. **PERF-15: first boot does not read the models.dev catalog or call subscription entitlement;
+    cold full-page modules load only when their owning routes mount.**
     Production: `packages/code/src/runtime.tsx` (`ensureModelsCatalog`),
     `packages/code/src/views/config/lazy-view.tsx`, and
     `packages/code/src/app/commands.tsx` (dynamic route factories), plus
-    `packages/code/src/views/App.tsx` (lazy `IsolationPicker`).
     Test: `packages/code/tests/integration/app-commands.test.tsx`,
     `packages/code/tests/architecture/artifact-contract.test.ts`, and
     `packages/code/tooling/artifact/smoke.ts`.
@@ -1149,7 +1138,6 @@ Run every row below independently so one surface cannot inherit another's retain
 | controls | no overlay; draft mutation with Splash held either mounted or unmounted; empty `HintToast` lifecycle |
 | `FloatFrame` primitive | empty fixed-size frame; frame with fixed row counts of 1, 10 and 30 |
 | `AgentProfilePicker` | primary agent list; default-scope second step; empty and maximum practical lists |
-| `IsolationPicker` | two-row retained picker (Host/Sandbox); direct-host armed-confirmation path |
 | `CatalogPicker` | compact enum; filtered provider/model catalog; empty/manual row; maximum visible window |
 | `ActivityDetail` | short plain text; long Markdown with code blocks and lists |
 | `WorktreeExitPrompt` | cancel path, using an isolated disposable clean-worktree fixture |
@@ -1176,7 +1164,7 @@ outer card is insufficient if variable children are still destroyed on every cyc
 
 1. The former Context Help was windowed by visible rows before the product surface was retired; it
    is no longer a production consumer or required soak case.
-2. Move both `AgentProfilePicker` stages, `IsolationPicker`, and every `CatalogPicker` caller onto the
+2. Move both `AgentProfilePicker` stages and every `CatalogPicker` caller onto the
    persistent host. Keep a fixed number of row slots and update their cells/previews rather than
    recreating native rows.
 3. Give `ActivityDetail` a bounded Markdown projection or a full-page reader if Markdown blocks

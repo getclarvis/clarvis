@@ -104,8 +104,8 @@ test("collapsed tool failures keep identity and diagnosis on separate lines", as
     args: { patch: "*** Begin Patch\n*** End Patch" },
     error: JSON.stringify({
       error: "patch_failed",
-      message: "Hunk did not apply cleanly in packages/code/tests/unit/isolation.test.ts",
-      file: "packages/code/tests/unit/isolation.test.ts",
+      message: "Hunk did not apply cleanly in packages/code/tests/unit/keyspec.test.ts",
+      file: "packages/code/tests/unit/keyspec.test.ts",
     }),
   };
   const rows = await frame(
@@ -124,7 +124,7 @@ test("collapsed tool failures keep identity and diagnosis on separate lines", as
   expect(rows[4]).toContain("apply_patch");
   expect(rows[4]).not.toContain("patch_failed");
   expect(rows[5]).toContain(
-    "Patch failed: Hunk did not apply cleanly in packages/code/tests/unit/isolation.test.ts",
+    "Patch failed: Hunk did not apply cleanly in packages/code/tests/unit/keyspec.test.ts",
   );
   expect(rows.join("\n")).not.toContain('{"error"');
 });

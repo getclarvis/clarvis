@@ -9,7 +9,6 @@ const LAZY_SURFACE_MARKERS = [
   "no workflows yet",
   "Clarvis-owned local files",
   "Clarvis Doctor",
-  "Select isolation",
 ] as const;
 
 /** Assert the memory-sensitive layout of the distributable JavaScript artifact. */

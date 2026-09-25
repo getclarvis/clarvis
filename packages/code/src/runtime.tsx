@@ -70,7 +70,7 @@ import { applyAsciiMode, glyph } from "./theme/glyphs.ts";
 import { presentStatusLine, progressStatusText } from "./features/run/status-presenter.ts";
 import { createAttention } from "./core/attention.ts";
 import { createSettingsAdapter, type SettingsAdapter } from "./adapters/settings.ts";
-import { plansState, type IsolationMode } from "./adapters/execution-safety.ts";
+import { plansState } from "./adapters/execution-safety.ts";
 import { createPlatform, openPublicUrl } from "./adapters/platform.ts";
 import { createFilePromptHistory } from "./adapters/file-prompt-history.ts";
 import { startHeadlessRun } from "./adapters/headless-run.ts";
@@ -145,23 +145,6 @@ function workspaceClientTarget(): {
         workspaceRoot: remoteWorkspace.workspace,
         destination: { kind: "ssh", ...remoteWorkspace },
       };
-}
-
-async function saveOperatorIsolation(isolation: IsolationMode): Promise<void> {
-  const { createOperatorServices } = await import("@clarvis/kernel/bootstrap");
-  const { applyIsolation } = await import("./features/run/isolation.ts");
-  const operator = createOperatorServices({
-    workspaceRoot: workspaceClientTarget().workspaceRoot,
-    globalDir: globalRoot(),
-    logger: createLogger("silent"),
-    subscriptions: false,
-  });
-  try {
-    const settings = await createSettingsAdapter(operator.config);
-    await applyIsolation(isolation, settings);
-  } finally {
-    await operator.close();
-  }
 }
 
 const ownerOverride = process.env.CLARVIS_OWNER;
@@ -1662,14 +1645,6 @@ async function runApp(
     },
     runtime: runtimeStatus,
     reconnect: reconnectBackend,
-    restoreIsolation: async (isolation) => {
-      try {
-        await saveOperatorIsolation(isolation);
-      } catch (error) {
-        return { ok: false, message: `could not restore isolation: ${errorText(error)}` };
-      }
-      return reconnectBackend("connection");
-    },
   };
 
   const startupInput = bootShell.takeStartupInput();

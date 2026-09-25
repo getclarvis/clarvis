@@ -11,7 +11,6 @@ function baseInput(over: Partial<HeaderInput> = {}): HeaderInput {
     floor: false,
     agentName: "coder",
     model: "openrouter/x-ai/grok-4.5",
-    isolation: "sandbox",
     memoryConfigured: true,
     memory: "on",
     plans: { mode: "on", retention: "discard", configured: true },
@@ -44,7 +43,6 @@ test("header is one line carrying identity and the run's governing configuration
   expect(rows[0]).toContain("demo_01");
   expect(rows[0]).toContain("coder");
   expect(rows[0]).toContain("grok-4.5");
-  expect(rows[0]).toContain("Isolation: Sandbox");
   expect(rows[0]).toContain("Memory: on");
   expect(rows.join("\n")).toContain("v0.0.4-beta");
   expect(rows[0]).not.toContain("plans:");
@@ -64,7 +62,6 @@ test("the right-anchored version keeps its gutter when the configuration chips f
       version: "0.1.1",
       agentName: "marshall",
       model: "chatgpt/gpt-5.6-terra",
-      isolation: "sandbox",
       workspace: "/tmp/clarvis-development-temp/workspace-gAmvlw",
     }),
     120,
@@ -90,14 +87,6 @@ test("run lifecycle labels never enter the stable header row", async () => {
   expect(rows[1]).toContain("----------");
 });
 
-test("exceptional safety stays visible at narrow widths", async () => {
-  const wide = await frame(baseInput({ width: 140, sandboxUnavailable: true }));
-  expect(wide[0]).toContain("Sandbox unavailable");
-  const compact = await frame(baseInput({ width: 48, sandboxUnavailable: true }));
-  expect(compact.join("\n")).toContain("Sandbox unavailable");
-  expect(compact[0]!.trimEnd().length).toBeLessThanOrEqual(48);
-});
-
 test("reactive connection updates replace the urgent host state in place", async () => {
   const [connection, setConnection] = createSignal<HeaderInput["connection"]>({ phase: "ready" });
   const t = await openRender(
@@ -121,14 +110,12 @@ test("the audited width matrix wraps all header fields without losing identity",
     const rows = await frame(
       baseInput({
         width,
-        sandboxUnavailable: true,
       }),
     );
     expect(rows[0]).toContain("Clarvis");
     expect(rows.join("\n")).toContain("v0.0.4-beta");
     expect(rows[0]!.length).toBeLessThanOrEqual(width);
     expect(rows.filter((row) => row.includes("Clarvis"))).toHaveLength(1);
-    expect(rows.join("\n")).toContain("Sandbox unavailable");
     expect(rows.join("\n")).toContain("Memory: on");
     expect(rows.join("\n")).toContain("BODY");
   }

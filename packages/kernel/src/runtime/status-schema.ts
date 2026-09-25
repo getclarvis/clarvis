@@ -9,7 +9,6 @@ export function runtimeStatusSchema(fields: {
   return z.strictObject({
     kind: z.literal("native"),
     host_platform: fields.identifier,
-    isolation: z.enum(["host", "sandbox"]),
     lifecycle: z.literal("ready"),
   });
 }

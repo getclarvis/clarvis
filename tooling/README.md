@@ -71,9 +71,7 @@ publishes the six portable targets after package, smoke and asset checks.
 `goal/` qualifies the persistent-goal host with a synthetic implementation, delegated helper,
 checkpoint and automatic verification stage. Run `bun tooling/goal/live.ts --models
 gpt-5.6-terra,gpt-5.6-luna --trials 2 --output <directory>` locally for synthetic, credential-free
-trials. Reusing the operator's subscription requires the explicit `--use-global-oauth` flag and a
-working Linux Bubblewrap view; without it each worker receives only its trial roots. Each worker
-uses the real FileRunHost, IPC and subscription SDK; its observation wrapper calls the existing
+trials. Each worker uses the real FileRunHost, IPC and subscription SDK; its observation wrapper calls the existing
 provider, retaining the host's goal usage tracker.
 The shared HTTP recorder and finite attempt ledger accept a typed scenario namespace; goal reports
 use `goal-continuation`, separately from the C01-C11 cache qualification matrix.
@@ -114,14 +112,6 @@ hashing them, and tees the unchanged production HTTP transport. Synthetic worksp
 credential-free reports remain separate from the application's credential store. The source
 matrix and installed result must identify the same final build inputs.
 
-On Linux with Bubblewrap, `--use-global-oauth` admits the existing global subscription store through
-`prepareHostAuthView`. The view stages configuration/state in a disposable global root, copies only
-the selected `subscriptions.json` into the trial view, masks unrelated host entries, and reconciles
-an updated subscription atomically only if the live file did not change concurrently. It copies no
-credential into evidence or a guest, removes staging after owned processes stop, and fails closed
-when Bubblewrap is unavailable. This filesystem qualification method makes no claim for other
-platforms.
-
 After packaging, `bun run test:cache:artifact --seal --manifest <manifest.json>` binds the existing
 archive and bundle to the full source-input digest. Run `bun run test:cache:live --full
 --artifact-manifest <manifest.json> --artifact-global-dir <isolated-global-directory> --output
@@ -137,10 +127,9 @@ cache percentage, uncached input and output against the captured leader calls.
 The artifact, release and installer smoke runners share the Code `SmokeContext` fixture contract;
 their structural isolation canary is `tooling/tests/unit/harness-isolation-contract.test.ts`.
 `packages/code/tests/unit/artifact-isolation.test.ts` proves the owned roots, allowlisted child
-environment, lifecycle cleanup and native-confinement fail-closed behavior. The installer smoke
+environment and lifecycle cleanup. The installer smoke
 uses a staged archive/checksum directory and passed the Linux install/uninstall journey; release
 and artifact complete-app PTY claims still require a host whose private-state parent ownership is
-accepted by the application. `prepareHostAuthView` also rejects symlinked or overlapping roots
-before staging, covered by `tooling/tests/unit/prompt-cache-artifact.test.ts`.
-Compaction retains the production summarizer options, including omitted requested reasoning effort;
+accepted by the application. Compaction retains the production summarizer options, including omitted
+requested reasoning effort;
 its recorded usage contributes to budgets without entering an agent's cache-performance window.

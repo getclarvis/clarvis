@@ -12,8 +12,8 @@ the library those tools and their mutating siblings share. Each is declared in o
 from that bit rather than maintained separately (`packages/tools/src/tools/registry.ts`).
 
 The subsystem bounds bytes, retained entries, and in-process regex CPU time. `workspaceRoot`
-anchors relative paths; absolute paths remain absolute. Host OS permissions or Sandbox native
-policy control access, including configuration and machine-state paths. Production:
+anchors relative paths; absolute paths remain absolute. Host process permissions control access,
+including configuration and machine-state paths. Production:
 `resolveToolPath` in `packages/tools/src/lib/paths.ts` and `grepSearch` in
 `packages/tools/src/lib/rg.ts`. Test: `packages/tools/tests/integration/open-authority.test.ts`,
 `packages/tools/tests/integration/explicit-state-paths.test.ts`, and
@@ -184,22 +184,20 @@ Truncation footer: `[search incomplete: traversal stopped at N entries]`
 
 ### 3.4 `grep`
 
-`glob` and `grep` accept a directory or file reachable under host permissions or the configured
-native sandbox. Recursive walks have no configuration-specific path admission. Directory grep
-uses the in-process scanner; a single file may use ripgrep against a bounded descriptor snapshot.
-In Sandbox, the file service runs inside the selected native policy. Production:
+`glob` and `grep` accept a directory or file reachable under host permissions. Recursive walks
+have no configuration-specific path admission. Directory grep uses the in-process scanner; a
+single file may use ripgrep against a bounded descriptor snapshot. Production:
 `resolveFileToolPath` in [paths.ts](../../packages/tools/src/lib/paths.ts), `listFiles` in
 [files.ts](../../packages/tools/src/lib/files.ts), and `grepSearch` in
 [rg.ts](../../packages/tools/src/lib/rg.ts). Test: absolute-path access in
 [open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts).
 
-The same file-service placement applies to `read_file`, `read_files`, `read_image`, `file_stat`,
-`list_dir`, `glob`, `grep`, `tree` and `diff`. Search helpers, descriptor reads and output bounds
-run inside the selected environment. Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts),
-`runFilesystemWorker` in
-[filesystem-worker.ts](../../packages/tools/src/filesystem-worker.ts), and `grepSearch` in
-[rg.ts](../../packages/tools/src/lib/rg.ts). Test: the nine-family read case in
-[filesystem-service.test.ts](../../packages/tools/tests/integration/filesystem-service.test.ts).
+`read_file`, `read_files`, `read_image`, `file_stat`, `list_dir`, `glob`, `grep`, `tree` and
+`diff` use local handlers on the host. Search helpers, descriptor reads and output bounds run
+with host filesystem permissions. Production: `dispatch` in
+[core.ts](../../packages/tools/src/core.ts) and `grepSearch` in
+[rg.ts](../../packages/tools/src/lib/rg.ts). Test:
+[open-authority.test.ts](../../packages/tools/tests/integration/open-authority.test.ts).
 
 Three renderings selected by `output_mode`:
 
@@ -284,7 +282,7 @@ dropped — which is how a non-UTF-8 filename disappears from the result
 
 Each handler resolves relative paths from `workspaceRoot` and keeps absolute paths absolute.
 The dispatcher does not classify configuration or state paths as protected. Host OS permissions
-or the run's native Sandbox policy determine whether each file can be read.
+determine whether each file can be read.
 
 Production: `resolveToolPath` in `packages/tools/src/lib/paths.ts` and `dispatch` in
 `packages/tools/src/core.ts`. Test: `packages/tools/tests/integration/open-authority.test.ts`
@@ -562,7 +560,6 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 | **RS-45** | `blockSpan` extends a matched span to swallow the following line's newline when `oldString` itself ends in `\n` — except when the matched block is the text's final line, where there is no following newline to swallow. | `packages/tools/src/lib/match-cascade.ts` | `packages/tools/tests/unit/match-cascade.test.ts` ("extends the span to include the trailing newline") ("does not over-extend when old ends in newline but the block is the final line") |
 | **RS-46** | `scanLineBlocks` treats a sparse-array hole in either the haystack window or the needle as an empty string (`eq(hay[i+j] ?? "", need[j] ?? "")`), rather than skipping it or throwing. | `packages/tools/src/lib/match-cascade.ts` | `packages/tools/tests/unit/match-cascade.test.ts` ("treats a hole in the haystack window as an empty line") ("treats a hole in the needle as an empty line") |
 | **RS-47 (INV-302)** | Both grep engines apply `maxFileBytes` identically **and in both directions**: a file over the ceiling is skipped in a directory search (a small sibling still matches), and naming that same oversized file directly yields `(no matches)` on both paths rather than an error. | `packages/tools/src/lib/rg.ts` (`--max-filesize`) (the single-file `readRawFile` bound, whose failure resolves to an empty result rather than a throw) | `packages/tools/tests/contract/grep-parity.test.ts` |
-| **RS-48** | Host temporary files follow OS permissions and the selected Sandbox policy; run scratch is owned and removed only after physical command termination. | `resolveFilesystemPolicy` in `packages/tools/src/sandbox.ts`; `createAgentToolsCapability` in `packages/loop/src/runtime/capabilities/tools.ts` | `packages/tools/tests/integration/api.test.ts`; `packages/loop/tests/integration/tools.test.ts` |
 
 ## 6. Failure modes and degradation
 
@@ -669,7 +666,6 @@ declarations; this affects TypeScript checking, not the package's runtime closur
 | --- | --- | --- |
 | `@clarvis/loop` → `READ_ONLY_TOOL_NAMES` | runtime, static | `packages/loop/src/runtime/tools/builtin/names.ts` — the loop's read/edit split is *derived* from `readOnlyTools` rather than restated, so a tool's `readOnly` bit here decides which agents may call it |
 | `@clarvis/loop` → `AGENT_TOOL_NAMES`, `EDIT_TOOL_NAMES` | runtime, static | `packages/loop/src/runtime/tools/builtin/names.ts` |
-| `@clarvis/loop` tool spill | runtime | `createToolSpill` in `packages/loop/src/runtime/context/tool-spill.ts` writes a named output artifact; file tools read its path under Host OS permissions or the configured native sandbox |
 | `@clarvis/kernel` | runtime, static | `packages/kernel/src/file-kernel.ts`, `packages/kernel/src/local.ts` import `@clarvis/tools` |
 
 The direction is one-way and structural: `@clarvis/tools` imports nothing from `loop`, `kernel`,

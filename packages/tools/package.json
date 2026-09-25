@@ -36,11 +36,6 @@
       "types": "./dist/shell-entry.d.ts",
       "import": "./dist/shell-entry.js"
     },
-    "./sandbox": {
-      "bun": "./src/sandbox-entry.ts",
-      "types": "./dist/sandbox-entry.d.ts",
-      "import": "./dist/sandbox-entry.js"
-    },
     "./package.json": "./package.json"
   },
   "files": [

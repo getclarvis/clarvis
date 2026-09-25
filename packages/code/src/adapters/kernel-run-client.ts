@@ -681,7 +681,6 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
       requireKernel().config.repairSettings(scope, expectedRevision),
     updateSettings: (scope, patch, expectedRevision) =>
       requireKernel().config.updateSettings(scope, patch, expectedRevision),
-    inspectSandbox: (options) => requireKernel().config.inspectSandbox(options),
     approveWorkspace: () => mutateTrust(() => requireKernel().config.approveWorkspace()),
     revokeWorkspace: () => mutateTrust(() => requireKernel().config.revokeWorkspace()),
     workspaceTrustError: () => requireKernel().config.workspaceTrustError(),

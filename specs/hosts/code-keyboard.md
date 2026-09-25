@@ -296,7 +296,7 @@ always calls `persist("global", ...)` (`packages/code/src/adapters/code-config.t
       "profile": "portable" | "enhanced" | "manual",
       "clientPlatform": "macos" | "windows" | "linux",
       "verdicts": { "ctrl": "supported", "meta": "unsupported", "baseLayout": "supported" },
-      "bindings": { "isolation.picker": ["ctrl+b"] }
+      "bindings": { "agent.picker": ["ctrl+b"] }
     }
   }
 }
@@ -337,7 +337,6 @@ The following commands and candidates (`packages/code/src/keys/interaction.ts`,
 | `app.suspend` | `ctrl+z` | (none) |
 | `focus.next` | `tab` | `overlay==none` |
 | `agent.picker` | `shift+tab` | `overlay==none` |
-| `isolation.picker` | `<leader>i` | `overlay==none` |
 | `review.picker` | `<leader>g` | `overlay==none` |
 | `memory.picker` | `<leader>m` | `overlay==none` |
 | `activity.toggle` | `<leader>s` | `overlay==none` |
@@ -398,7 +397,6 @@ For an `enhanced` environment with all modifiers `"supported"` (no manual overri
 {
   "run.cancel": "ctrl+c",
   "app.escape": "escape",
-  "isolation.picker": "<leader>i",
   "review.picker": "<leader>g",
   "controls.open": "<leader>r",
   "plan.open": "<leader>p"
@@ -423,8 +421,8 @@ resolved key collapses to a bare string; two or more become an array
 { issues: KeyboardBindingIssue[] }
 ```
 
-Never both. Example refusal: editing `isolation.picker` to bind `escape` while `app.escape`
-owns that protected default — `{command:"isolation.picker", key:"escape", message:"binding shadows app.escape", shadows:"app.escape"}`
+Never both. Example refusal: editing `agent.picker` to bind `escape` while `app.escape`
+owns that protected default — `{command:"agent.picker", key:"escape", message:"binding shadows app.escape", shadows:"app.escape"}`
 (pinned by `packages/code/tests/unit/keyboard-profile.test.ts`, "the edited command's own issues still block the write"). The same shadow rule holds for an
 alias spelling of a protected action's key (`escape`/`esc`/`Esc`/`ESC` all refused against
 `app.escape`), though that test only asserts the message contains `"shadows app.escape"`,
@@ -887,9 +885,8 @@ The composer owns one additional exclusivity rule for the row above it. `InputDo
 `LeadActivityLine` so the menu replaces that band instead of stacking with `ready`, `thinking` or
 `working`. When visible during a run, the activity line owns phase, elapsed time, iteration and
 the active `run.cancel` binding (`Ctrl+C` by default) to interrupt. A hosted run with confirmed
-continuation displays `continues after exit` before the elapsed detail only when its local
-Host/Sandbox lifecycle can outlive the TUI; this is presentation of host policy, not a grant or
-another key binding. The band leads with the physical phase: the spinner keeps the accent tone, the
+continuation displays `continues after exit` before the elapsed detail only when its local host
+can outlive the TUI. The band leads with the physical phase: the spinner keeps the accent tone, the
 phase word is painted at full contrast and the details after it stay muted, so the current state
 outranks elapsed time, iteration and `Goal …` in reading order. Time and iteration belong to this
 band and are never repeated in the canonical footer row. While a full-region page (`plan`, `diff`,
@@ -1046,9 +1043,7 @@ Ctrl+C repeat guard. Exact-versus-prefix ambiguity resolves to the exact action 
 even an active `escape x` sequence cannot add a timer to Back/Close. `Providers -> Settings ->
 Transcript` therefore completes with two immediate presses, and Escape can never fall through into
 run cancellation or quit because those effects are absent from `app.escape` and all local Escape
-handlers. Popping a configuration child back to its parent also must not start a sandbox host probe
-or subscription entitlement check: those remain Doctor's explicit recheck and the Sandbox settings
-surface. Production: `registerImmediateExactDisambiguation`, `trackWindowPress`, and the
+handlers. Production: `registerImmediateExactDisambiguation`, `trackWindowPress`, and the
 `offInteractionBlocker` intercept plus `app.escape` command in
 `packages/code/src/keys/interaction.ts`; `popView` in
 `packages/code/src/views/overlay-host.ts`. Tests:
@@ -1069,11 +1064,11 @@ Tests: `packages/code/tests/integration/interaction.test.ts`; full-shell paths a
 pinned at `packages/code/tests/integration/app-shell-render.test.tsx`.
 
 **INV-D13.** Application actions use Ctrl+X consistently across client platforms and profiles:
-I Isolation, G Guard, M Memory, R Run controls, P Plan, O Goal, W Workflow, S Sidebar, K block
+M Memory, R Run controls, P Plan, O Goal, W Workflow, S Sidebar, K block
 expansion, E expanded editor, and Up/Down block navigation. These are sequential keypresses,
 not simultaneous chords. The shared OpenTUI timed-leader addon expires a pending prefix after
 two seconds. Keyboard manual overrides remain supported.
-Isolation, Guard, Memory and Agent pickers are disabled during a run and while another overlay owns
+Memory and Agent pickers are disabled during a run and while another overlay owns
 input. Their shortcuts are consumed during a run rather than leaking into the editor.
 Plain Ctrl+P remains available to autocomplete; Ctrl+W, Ctrl+K and Ctrl+E retain editor semantics.
 Production: `packages/code/src/keys/interaction.ts`, `packages/code/src/views/InputDock.tsx`.
@@ -1100,7 +1095,7 @@ text.
 Production: `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES`, `DEFAULT_WHEN`),
 `packages/code/src/adapters/renderer-bootstrap.ts` (`buildRendererConfig`),
 `packages/code/src/views/config/KeyboardView.tsx` (`PROBES`, `KeyboardDiagnostic`),
-`packages/code/src/app/commands.tsx` (`isolation.picker`, `review.picker`, `memory.picker`),
+`packages/code/src/app/commands.tsx` (`agent.picker`, `memory.picker`),
 `packages/code/src/views/InputDock.tsx` (`prompt.editor.open`, `prompt.editor.close`),
 `packages/code/src/app/layout.ts` (`createLayoutController`, `openSecondary`, `secondaryOrigin`), and
 `packages/code/src/views/App.tsx` (`requestAutomaticSidebar`, `openActivitySidebar`,
@@ -1294,7 +1289,7 @@ the pending parts, so a custom leader is not reported as Ctrl+X — and lists th
 reports live while it is held (`getActiveKeys`), which are that prefix's continuations plus any
 action still dispatchable in the same state, filtered by the surface's own visibility rules and
 transformed by its local wording. It shows the continuation key each one adds after the prefix, so
-`Ctrl+X active ▸ [K] expand · [I] isolation` reads as one sequence and its options. The indicator
+`Ctrl+X active ▸ [K] expand · [M] memory` reads as one sequence and its options. The indicator
 appears once, on the surface that owns the projection, and the normal discovery rows return when the
 prefix clears. Escape and timeout clear
 the pending prefix; when a surface offers no continuation of its own, its ordinary rows stay and no

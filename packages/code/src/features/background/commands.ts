@@ -51,7 +51,7 @@ export function registerBackgroundCommands(
     slash: "/background",
     surface: "slash",
     group: "actions",
-    desc: "Manage hosted runs; handoff is local Host/Sandbox only",
+    desc: "Manage hosted runs; handoff requires a local host",
     subcommands: [
       { name: "list", desc: "View running work and results in this workspace" },
       { name: "cancel", desc: "Request cancellation of an exact hosted execution" },

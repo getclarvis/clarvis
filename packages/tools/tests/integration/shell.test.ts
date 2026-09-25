@@ -367,23 +367,6 @@ describe("shell", () => {
       expect(r.json.stdout_omitted_bytes).toBeGreaterThan(0);
     });
 
-    it.skipIf(
-      (process.platform !== "linux" && process.platform !== "darwin") ||
-        process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1",
-    )("drains oversized output through the native sandbox", async () => {
-      const isolated = makeConfig(root, {
-        sandbox: { type: "native", availability: "required", network: "none" },
-      });
-      const r = await callTool(
-        "shell",
-        { command: "yes CLARVIS_FLOOD | head -c 9000000" },
-        isolated,
-      );
-      expect(r.isError).toBe(false);
-      expect(r.json.exit_code).toBe(0);
-      expect(r.json.stdout_truncated).toBe(true);
-    });
-
     it("keeps cancellation ahead of truncation after a large output burst", async () => {
       const controller = new AbortController();
       const r = await callTool(

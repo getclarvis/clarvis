@@ -38,11 +38,7 @@ import type { KeysAdapter } from "../adapters/provider-secrets.ts";
 import type { CodeConfigStore } from "../adapters/code-config.ts";
 import type { MemoryModeStore } from "../adapters/memory-mode.ts";
 import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
-import {
-  deriveRunControls,
-  effectiveRunIsolation,
-  type IsolationMode,
-} from "../adapters/execution-safety.ts";
+import { deriveRunControls } from "../adapters/execution-safety.ts";
 import type { ThemePreview } from "../theme/theme.ts";
 import { readEnvView } from "../adapters/agent-files.ts";
 import { registerCodeCommands } from "../app/command-composition.ts";
@@ -124,11 +120,6 @@ import { detachObserved } from "../core/tasks.ts";
 import { activeDiagnosticLogger } from "../core/diagnostic-events.ts";
 import { SurfaceBoundary, SurfacePortal } from "../ui/patterns/surface-lifecycle.tsx";
 import { productVersion } from "../cli-args.ts";
-
-const IsolationPicker = lazy(async () => {
-  const module = await import("./overlays/IsolationPicker.tsx");
-  return { default: module.IsolationPicker };
-});
 
 const MemoryPicker = lazy(async () => {
   const module = await import("./overlays/MemoryPicker.tsx");
@@ -331,10 +322,9 @@ export interface AppBackend {
   extensionProfiles: ExtensionProfileService;
   skills: SkillsService;
   storage: StorageService;
-  /** Host-reported execution placement and effective isolation policy. */
+  /** Host-reported runtime status. */
   runtime?: () => RuntimeStatus | undefined;
   reconnect: (mode?: ReconnectMode) => Promise<{ ok: boolean; message: string }>;
-  restoreIsolation?: (isolation: IsolationMode) => Promise<{ ok: boolean; message: string }>;
 }
 
 /** Everything {@link App} needs to render: transcript/activity state, shell handles and the run/session/fleet/backend controls. */
@@ -770,10 +760,6 @@ export function App(props: AppProps): JSX.Element {
       if (props.run.active()) return;
       if (overlays.openPicker("agentPicker", onClose)) notify("");
     },
-    openIsolationPicker: () => {
-      if (props.run.active()) return;
-      if (overlays.openPicker("isolationPicker")) notify("");
-    },
     openMemoryPicker: () => {
       if (props.run.active()) return;
       if (overlays.openPicker("memoryPicker")) notify("");
@@ -928,10 +914,7 @@ export function App(props: AppProps): JSX.Element {
     run: toggleActivitySidebar,
   });
   createEffect(() => {
-    if (
-      props.run.active() &&
-      ["agentPicker", "isolationPicker", "memoryPicker"].includes(overlays.overlay())
-    )
+    if (props.run.active() && ["agentPicker", "memoryPicker"].includes(overlays.overlay()))
       overlays.dismissTop();
   });
   let notifiedMissingEntryAgent = false;
@@ -1176,8 +1159,6 @@ export function App(props: AppProps): JSX.Element {
     );
   const agentName = (): string =>
     props.fleet.agents.view()?.name ?? (props.fleet.agents.active() || "no agent");
-  const effectiveIsolation = () =>
-    effectiveRunIsolation(runControls().isolation, props.backend.runtime?.(), props.run.active());
   const headerPlan = createMemo(() =>
     projectHeader({
       width: dims().w - 1,
@@ -1186,10 +1167,6 @@ export function App(props: AppProps): JSX.Element {
       floor: layoutMode() === "floor",
       agentName: agentName(),
       model: resolvedModel(),
-      isolation: effectiveIsolation(),
-      sandboxUnavailable:
-        effectiveIsolation() === "sandbox" &&
-        appWiring.sandboxInspection()?.backend.available === false,
       memoryConfigured: props.fleet.memoryMode.configured(),
       memory: runControls().memory,
       plans: runControls().plans,
@@ -1672,29 +1649,6 @@ export function App(props: AppProps): JSX.Element {
                   }
                 }}
               />
-            )}
-          </SurfaceBoundary>
-          <SurfaceBoundary
-            active={() => overlays.overlay() === "isolationPicker"}
-            retention="retain-one"
-            placement="portal"
-          >
-            {(lifecycle) => (
-              <Suspense fallback={<text>Loading isolation{glyph("ellipsis")}</text>}>
-                <IsolationPicker
-                  interaction={interaction}
-                  settings={props.fleet.settings}
-                  runActive={props.run.active}
-                  active={lifecycle.active}
-                  notify={notify}
-                  reload={() => props.backend.reconnect("reload")}
-                  {...(props.backend.restoreIsolation === undefined
-                    ? {}
-                    : { restore: props.backend.restoreIsolation })}
-                  onClose={() => overlays.dismissTop()}
-                  onApplied={() => overlays.dismissTop()}
-                />
-              </Suspense>
             )}
           </SurfaceBoundary>
           <SurfaceBoundary

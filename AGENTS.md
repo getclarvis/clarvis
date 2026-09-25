@@ -136,8 +136,7 @@ branch pushes and merges do not authorize releases.
 Separate explicit authorization is still required to force-push or otherwise rewrite remote
 history, delete branches, tags, releases, or data, publish a tag or release, bypass a required check,
 or perform another destructive or materially broader action. Run authorized Git/GitHub publication
-commands outside the sandbox; a sandbox may not see the host keyring and can falsely report broken
-authentication. Never bypass the hook with `--no-verify`.
+commands with host credentials. Never bypass the hook with `--no-verify`.
 
 Editing files and running builds, tests, typechecks, lint, and read-only Git commands are allowed.
 
@@ -182,10 +181,10 @@ The complete, maintained routing table is [`specs/README.md`](specs/README.md). 
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Capability contract or composition                    | [`specs/foundations/capability.md`](specs/foundations/capability.md), [`specs/engine/capability-composition.md`](specs/engine/capability-composition.md)                      |
 | Paths or filesystem ownership                         | [`specs/foundations/paths.md`](specs/foundations/paths.md)                                                                                                                    |
-| Tools, shell, guards, sandbox                         | [`specs/execution/tools-contract.md`](specs/execution/tools-contract.md), then the focused execution spec                                                                     |
+| Tools, shell, guards                                   | [`specs/execution/tools-contract.md`](specs/execution/tools-contract.md), then the focused execution spec                                                                     |
 | Loop lifecycle, budgets, context, delegation          | the focused file under [`specs/engine/`](specs/README.md#engine--the-loop-itself)                                                                                             |
 | Memory, plans, workflows                              | the focused file under [`specs/capabilities/`](specs/README.md#capabilities--features-that-compose-onto-the-engine)                                                           |
-| Kernel, protocol, or TUI                      | the focused file under [`specs/hosts/`](specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade)                                                                |
+| Kernel, protocol, or TUI                              | the focused file under [`specs/hosts/`](specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade)                                                                |
 | Package roles, dependency direction, or a new package | [`specs/cross-cutting/package-architecture.md`](specs/cross-cutting/package-architecture.md), then [`specs/package-coupling-analysis.md`](specs/package-coupling-analysis.md) |
 | Security, observability, prompt cache, tests, build   | the focused file under [`specs/cross-cutting/`](specs/README.md#cross-cutting--properties-no-single-package-owns)                                                             |
 
@@ -364,16 +363,16 @@ particular:
 - `@clarvis/code` can crash under Bun with a signal after a passing test; retry and classify the
   process crash separately from an assertion failure.
 - `@clarvis/loop` has a distinct rare Bun `epoll_ctl EEXIST` CI failure.
-- The Codex workspace sandbox can prohibit local socket listeners. Tests that bind an ephemeral
+- Restricted execution environments can prohibit local socket listeners. Tests that bind an ephemeral
   loopback port may then fail together with `Failed to start server. Is port 0 in use?` even though
-  no port is occupied. On that signature, rerun the affected test or package outside the sandbox
+  no port is occupied. On that signature, rerun the affected test with host permissions
   before diagnosing a product regression or changing code.
-- On macOS, invoking the host `/usr/bin/git` from the Codex workspace sandbox can falsely trigger
+- On macOS, invoking the host `/usr/bin/git` in a restricted execution environment can falsely trigger
   the Command Line Developer Tools installer even when Git works on the host. Use injected fake
-  executables for sandbox contract tests and rerun real host-Git probes outside the Codex sandbox;
+  executables for process contract tests and rerun real host-Git probes with host permissions;
   do not diagnose a missing Git installation from that popup.
 - Windows and macOS CI availability and known Windows gaps are recorded there and in the build spec.
-- Workspace-confined writes still have a documented parent-directory TOCTOU; do not claim a partial
+- Path-based writes still have a documented parent-directory TOCTOU; do not claim a partial
   path re-check closes it.
 
 When the environment prevents a required check, report the exact command, failure, and unverified

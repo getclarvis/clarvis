@@ -104,7 +104,7 @@ one operation; conflicting modes are refused.
 
 The application refuses either transition while its conversation has active preparation, a run,
 shell work or compaction. It pauses TUI loop scheduling while connecting. Host probe failures publish
-connection failure separately from runtime placement. A failed transition probes the retained client
+connection failure separately from runtime state. A failed transition probes the retained client
 before declaring the connection unavailable; saved settings remain pending when reload was refused.
 
 Production: `WorkspaceClientManager.recover`, `invalidate`, `subscribeConnectionFailure` and
@@ -120,13 +120,14 @@ verifies sequenced notices, failed-poll recovery and browser callbacks fenced to
 transition ordering and intent; [app-commands.test.tsx](../../packages/code/tests/integration/app-commands.test.tsx)
 verifies the connection and reload routes.
 
-`/background` requests a durable handoff for the selected run and exits only after its receipt on a
-local Host/Sandbox connection whose independently owned host survives client disconnect.
-Agent command sessions started in that hosted run remain owned by the run through client disconnect. The
+`/background` requests a durable handoff for the selected run and exits only after its receipt on
+a local host whose independently owned lifecycle survives client disconnect. Agent command sessions
+started in that hosted run remain owned by the run through client disconnect. The
 tools capability closes command admission, drains tracked process trees, and releases run scratch
 only when the hosted execution itself ends. Closing a TUI window is not a run-end signal. An abrupt
-host crash outside a sandbox may leave an orphan; a stale session ID cannot authorize signalling in a later run. Production: `createAgentToolsCapability` in
-`packages/loop/src/runtime/capabilities/tools.ts`, `ExecutionSessionManager` in
+host crash may leave an orphan; a stale session ID cannot authorize signalling in a later run.
+Production: `createAgentToolsCapability` in `packages/loop/src/runtime/capabilities/tools.ts`,
+`ExecutionSessionManager` in
 `packages/tools/src/lib/execution-session.ts`, and `createHostedExecution` in
 `packages/kernel/src/hosting/sessions.ts`. Test:
 `packages/kernel/tests/integration/local-host-process.test.ts` (hosted session through disconnect
@@ -143,7 +144,7 @@ infer it from the Kernel's native runtime label.
 
 | Connection destination | `/background` survives TUI exit | List, attach and cancel |
 | --- | --- | --- |
-| local Host or Sandbox | yes, after a confirmed host receipt | current or reopened TUI while the local host exists |
+| local host | yes, after a confirmed host receipt | current or reopened TUI while the local host exists |
 | SSH remote | no | current SSH stdio connection only; saved history persists after closure |
 
 Opening a local workspace offers runs with `continue` policy after first paint, unless a draft,
@@ -990,7 +991,7 @@ Production: `localKernelPolicyIdentity` in
 Test: [host-policy-identity.test.ts](../../packages/kernel/tests/unit/host-policy-identity.test.ts),
 [local-host-state.test.ts](../../packages/kernel/tests/integration/local-host-state.test.ts) for
 snapshot precedence and identity stability, and the independent process tests for long-temp fallback,
-same-generation reconnection, explicit old-run cancellation before a new generation, changed Sandbox
+same-generation reconnection, explicit old-run cancellation before a new generation, and changed
 policy after a requested idle restart, and
 preservation of background execution after incompatible tool/default/ceiling reconnect attempts in
 [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts).

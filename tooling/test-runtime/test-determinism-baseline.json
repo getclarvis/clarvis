@@ -315,14 +315,6 @@
     },
     {
       "mechanism": "subprocess",
-      "file": "packages/kernel/tests/integration/sandbox-policy.test.ts",
-      "identity": "subprocess|describe:sandbox host policy/it:caches discovery until the environment changes or refresh is requested|Bun.spawn({ cmd: [process.execPath, SANDBOX_CACHE_PROBE_PATH, root], env: { ...process.env, PATH: bin }, stdout: \"pipe\", stderr: \"pipe\", })|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "boundary-canary",
-      "reason": "isolated child owns PATH while proving physical toolchain discovery and cache invalidation"
-    },
-    {
-      "mechanism": "subprocess",
       "file": "packages/kernel/tests/integration/serve.test.ts",
       "identity": "subprocess|describe:serveFileKernelOverStdio/it:advertises agent_tools:false when CLARVIS_AGENT_TOOLS_ENABLED=false|Bun.spawn({ cmd: [process.execPath, SERVE_AGENT_TOOLS_PROBE_PATH], cwd: join(import.meta.dir, \"../..\"), env: { ...process.env, CLARVIS_AGENT_TOOLS_ENABLED: \"false\" }, stdout: \"pipe\", stderr: \"pipe\", })|0",
       "package_owner": "@clarvis/kernel",
@@ -706,86 +698,6 @@
       "reason": "physical listener or subprocess boundary is required by this test"
     },
     {
-      "mechanism": "listener",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "listener|module|Bun.listen({ hostname: \"127.0.0.1\", port: 0, socket: { data() {} }, })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync( npm, [\"pack\", fixture, \"--pack-destination\", scratch, \"--json\", \"--ignore-scripts\"], { cwd: workspace, encoding: \"utf8\", timeout: 30_000, env: { ...process.env, npm_config_cache: join(scratch, \"host-cache\") }, }, )|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync( readOnlyWorkspace.file, readOnlyWorkspace.args, readOnlyWorkspace.options, )|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync(declaredRoots.file, declaredRoots.args, { ...declaredRoots.options, encoding: \"utf8\", })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync(filesystem.file, filesystem.args, { ...filesystem.options, encoding: \"utf8\", })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync(spec.file, spec.args, { ...spec.options, encoding: \"utf8\" })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync(spec.file, spec.args, { ...spec.options, encoding: \"utf8\", })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync(spec.file, spec.args, { ...spec.options, encoding: \"utf8\", timeout: 30_000, })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync(spec.file, spec.args, { ...spec.options, encoding: \"utf8\", timeout: 10_000, })|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "A real Bubblewrap process must reject classified writes while an ordinary workspace write succeeds."
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "subprocess|module|spawnSync(spec.file, spec.args, spec.options)|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
       "mechanism": "subprocess",
       "file": "packages/tools/tests/integration/shell.test.ts",
       "identity": "subprocess|describe:shell/describe:timeout and cancellation/it:keeps a completed shell successful when abort arrives after exit but before stdio close|spawn(...args)|0",
@@ -882,14 +794,6 @@
       "reason": "physical listener or subprocess boundary is required by this test"
     },
     {
-      "mechanism": "subprocess",
-      "file": "tooling/tests/unit/prompt-cache-artifact.test.ts",
-      "identity": "subprocess|module|Bun.spawn([...view.command, process.execPath, script, view.globalDir], { stdout: \"pipe\", stderr: \"pipe\", })|0",
-      "package_owner": "tooling",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
       "mechanism": "positive-wait",
       "file": "tooling/tests/unit/prompt-cache-recorder.test.ts",
       "identity": "positive-wait|describe:physical cache evidence/it:retains completed usage and tools when the provider stream is aborted after completion|Bun.sleep(5)|0",
@@ -925,14 +829,6 @@
       "mechanism": "subprocess",
       "file": "packages/code/tests/unit/artifact-isolation.test.ts",
       "identity": "subprocess|describe:smoke fixture isolation/test:context creation rejects a temporary parent inside operator global state|Bun.spawn( [ process.execPath, \"-e\", `const {createSmokeContext}=await import(${JSON.stringify(modulePath)});` + `const viaParent=await createSmokeContext(\"clarvis-invalid-parent-\",{parentRoot:process.env.CLARVIS_HOME}).then(()=>\"accepted\",(error)=>String(error));` + `const viaCandidates=await createSmokeContext(\"clarvis-invalid-parent-\",{parentCandidates:[process.env.CLARVIS_HOME]}).then(()=>\"accepted\",(error)=>String(error));` + `process.stdout.write(JSON.stringify({viaParent,viaCandidates}))`, ], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? \"\", HOME: process.env.HOME ?? tmpdir(), CLARVIS_HOME: external, TMPDIR: external, }, stdout: \"pipe\", stderr: \"pipe\", }, )|0",
-      "package_owner": "@clarvis/code",
-      "classification": "boundary-canary",
-      "reason": "physical boundary canary required by the test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/code/tests/unit/artifact-isolation.test.ts",
-      "identity": "subprocess|describe:smoke fixture isolation/test:native confinement either proves the boundary or reports unavailable|Bun.spawn(command, { cwd: context.workspace, env: context.environmentFor(), stdout: \"pipe\", stderr: \"pipe\", })|0",
       "package_owner": "@clarvis/code",
       "classification": "boundary-canary",
       "reason": "physical boundary canary required by the test"

@@ -189,7 +189,7 @@ describe("handleLoadSkillCall", () => {
     });
     expect(res.text).toContain("Package execution root: /roots/skills/alpha");
     expect(res.text).toContain("normal shell tool");
-    expect(res.text).toContain("native sandbox");
+    expect(res.text).toContain("package root is available");
   });
 
   it("requires resource disclosure and writable preparation for remote helpers", () => {

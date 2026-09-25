@@ -71,31 +71,6 @@ describe("ConfigService over a storage-agnostic ConfigStore (memory)", () => {
     });
   });
 
-  it("exposes host sandbox inspection through the config service", async () => {
-    const inspection = {
-      effective_network: "none" as const,
-      filesystem: {
-        placement: "sandbox" as const,
-        reads: "host-visible" as const,
-        writes: "declared-roots" as const,
-        workspace: "read-write" as const,
-      },
-      backend: {
-        type: "bubblewrap" as const,
-        available: true,
-        mode: "fresh-proc" as const,
-        degraded: false,
-      },
-      toolchains: [],
-      extra_paths: [],
-      effective_path: ["/usr/bin"],
-    };
-    const config = createConfigService(createMemoryConfigStore(), {
-      inspectSandbox: async () => inspection,
-    });
-    expect(await config.inspectSandbox({ refresh: true })).toEqual(inspection);
-  });
-
   it("does agent CRUD and 404s a missing agent", async () => {
     const config = createConfigService(createMemoryConfigStore());
 
@@ -212,7 +187,6 @@ describe("ConfigService over a storage-agnostic ConfigStore (memory)", () => {
     for (const field of [
       "x-house-style",
       "presentation",
-      "sandbox",
       "guard",
       "endpoint",
       "credentials",
@@ -371,13 +345,12 @@ describe("ConfigService over a storage-agnostic ConfigStore (memory)", () => {
     });
   });
 
-  it("uses safe fallbacks when workspace trust and sandbox collaborators are absent", async () => {
+  it("uses safe fallbacks when workspace trust collaborators are absent", async () => {
     const config = createConfigService(createMemoryConfigStore());
 
     expect(await config.approveWorkspace()).toMatchObject({ merged: {}, scopes: {} });
     expect(await config.revokeWorkspace()).toMatchObject({ merged: {}, scopes: {} });
     expect(await config.workspaceTrustError()).toBeNull();
-    await expect(config.inspectSandbox()).rejects.toMatchObject({ code: "unavailable" });
   });
 
   it("rejects invalid agent frontmatter before asking the store to write", async () => {

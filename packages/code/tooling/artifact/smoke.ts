@@ -43,9 +43,6 @@ import {
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const artifact = join(packageRoot, "dist/index.js");
-const repositoryRoot = join(packageRoot, "..", "..");
-const confinement =
-  process.env.CLARVIS_SMOKE_REQUIRE_CONFINEMENT === "1" ? "required" : "environment";
 
 const TIMEOUT_MS = Number(process.env.SMOKE_TIMEOUT_MS ?? 90_000);
 
@@ -183,8 +180,6 @@ async function main(): Promise<void> {
       },
       timeoutMs: TIMEOUT_MS,
       pollMs: 100,
-      confinement,
-      readOnlyRoots: [repositoryRoot],
     });
 
     if (result.outcome !== "ready") {
@@ -319,8 +314,6 @@ async function main(): Promise<void> {
       timeoutMs: TIMEOUT_MS,
       pollMs: 100,
       overrides: { CLARVIS_INSTALL_ROOT: installRoot },
-      confinement,
-      readOnlyRoots: [repositoryRoot],
     });
     const updateFrame = readable(update.screen);
     if (

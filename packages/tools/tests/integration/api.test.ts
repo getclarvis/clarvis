@@ -121,7 +121,6 @@ describe("createAgentTools (library API)", () => {
       write(packageRoot, "helper.txt", "packaged");
       const t = createAgentTools({
         workspaceRoot: root,
-        skillExecutionRoots: [packageRoot],
         probeRipgrep: () => false,
       });
       const ran = await t.callTool("shell", {
@@ -150,7 +149,6 @@ describe("createAgentTools (library API)", () => {
     mkdirSync(packageRoot, { recursive: true });
     const t = createAgentTools({
       workspaceRoot: root,
-      skillExecutionRoots: [packageRoot],
       probeRipgrep: () => false,
     });
 

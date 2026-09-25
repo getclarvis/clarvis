@@ -75,14 +75,14 @@ test("normalizeAgentWrite: rejects a draft that fails the frontmatter schema", (
 });
 
 test("unknown frontmatter is visible as invalid and rejected by the write schema", () => {
-  const frontmatter = { grants: ["read_workspace"], sandbox: false };
+  const frontmatter = { grants: ["read_workspace"], unknown_setting: false };
   const file = docToAgentFile({
     name: "foreign",
     scope: "workspace",
     frontmatter,
     body: "Review.",
   });
-  expect(file.invalid).toContain("sandbox");
+  expect(file.invalid).toContain("unknown_setting");
   expect(file.frontmatter).toEqual({});
   expect(file.body).toBe("Review.");
   expect(() => normalizeAgentWrite({ ...file, frontmatter })).toThrow("invalid agent frontmatter");

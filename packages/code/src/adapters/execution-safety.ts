@@ -1,28 +1,9 @@
 import { parseModelRef, PLANS_DEFAULTS } from "@clarvis/kernel/config";
 import type { SettingsFile } from "./settings.ts";
 import type { MemoryMode } from "./memory-mode.ts";
-import type { RuntimeStatus } from "@clarvis/protocol";
 
-/** User-facing execution boundary. */
-export type IsolationMode = "host" | "sandbox";
-
-/** Actual active native placement overrides next-run preferences; an idle native host does not. */
-export function effectiveRunIsolation(
-  configured: IsolationMode,
-  runtime: RuntimeStatus | undefined,
-  active: boolean,
-): IsolationMode {
-  if (runtime?.kind === "native" && active) return runtime.isolation;
-  return configured;
-}
-
-/** Effective safety, memory and planning state consumed by the shell and Run Controls. */
+/** Effective memory and planning state consumed by the shell and Run Controls. */
 export interface RunControlsState {
-  isolation: IsolationMode;
-  sandboxEnabled: boolean;
-  sandboxRequired: boolean;
-  filesystem: "workspace-write" | "workspace-read-only";
-  network: "host" | "none" | "internet" | "outbound";
   memory: MemoryState;
   plans: PlansState;
 }
@@ -109,12 +90,6 @@ export function memoryState(settings: SettingsFile, sessionMode: MemoryMode = "o
   return modelResolves(memory.model ?? settings.default_model, settings) ? "on" : "inert";
 }
 
-/** Resolve the configured execution boundary. */
-export function deriveIsolation(settings: SettingsFile): IsolationMode {
-  const sandbox = settings.sandbox;
-  return sandbox !== undefined && sandbox.enabled !== false ? "sandbox" : "host";
-}
-
 /**
  * Derives the full {@link RunControlsState} from workspace settings plus the
  * session's current memory mode.
@@ -123,32 +98,10 @@ export function deriveRunControls(
   settings: SettingsFile,
   memoryMode: MemoryMode,
 ): RunControlsState {
-  const sandbox = settings.sandbox;
-  const sandboxEnabled = sandbox !== undefined && sandbox.enabled !== false;
-  const isolation = deriveIsolation(settings);
   return {
-    isolation,
-    sandboxEnabled,
-    sandboxRequired: sandboxEnabled,
-    filesystem: sandbox?.filesystem ?? "workspace-write",
-    network: sandbox?.network ?? "host",
     memory: memoryState(settings, memoryMode),
     plans: plansState(settings),
   };
-}
-
-/** Plain-language lines describing the current isolation policy. */
-export function safetyDescription(state: RunControlsState): string[] {
-  if (!state.sandboxEnabled) return ["Commands run with the host process's permissions."];
-  return [
-    "Commands run inside the native sandbox.",
-    state.filesystem === "workspace-read-only"
-      ? "Shell commands see the workspace read-only."
-      : "Shell commands may change this workspace.",
-    state.network === "none"
-      ? "Shell network access is disabled."
-      : "Host network access is enabled.",
-  ];
 }
 
 /** A plain-language line describing what the current memory state means for a run. */

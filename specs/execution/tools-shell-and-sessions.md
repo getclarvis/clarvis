@@ -1,23 +1,18 @@
 # Shell execution and run-owned sessions
 
-`@clarvis/tools` exposes `shell` and `shell_session` as the two agent command tools. Both require execution authority and are absent from the read-only surface. They share one `ExecutionSessionManager` per run for sandbox policy, process ownership, bounded capture, and shutdown. Production: `toolDescriptors` in `packages/tools/src/tools/registry.ts`, `ExecutionSessionManager` in `packages/tools/src/lib/execution-session.ts`, and `EXEC_TOOL_NAMES` in `packages/loop/src/runtime/tools/builtin/names.ts`. Test: `packages/tools/tests/component/tool-surface.test.ts`, `packages/loop/tests/unit/toolset.test.ts`, and `packages/tools/tests/integration/execution-session.test.ts`.
+`@clarvis/tools` exposes `shell` and `shell_session` as the two agent command tools. Both require execution authority and are absent from the read-only surface. They share one `ExecutionSessionManager` per run for process ownership, bounded capture, and shutdown. Production: `toolDescriptors` in `packages/tools/src/tools/registry.ts`, `ExecutionSessionManager` in `packages/tools/src/lib/execution-session.ts`, and `EXEC_TOOL_NAMES` in `packages/loop/src/runtime/tools/builtin/names.ts`. Test: `packages/tools/tests/component/tool-surface.test.ts`, `packages/loop/tests/unit/toolset.test.ts`, and `packages/tools/tests/integration/execution-session.test.ts`.
 
 ## Launch and status
 
-`createShell` validates the command and working directory before launch. The manager resolves the platform shell once, applies `sandboxCommand` once, starts a child with closed stdin and separate stdout/stderr pipes, and registers the owned process before returning its opaque `ses_` ID. POSIX children have their own process group; Windows children are not unconditionally detached. Pre-abort does not spawn, and an error after spawn stops the child. A configured native sandbox cannot be bypassed per call, and an unavailable backend fails closed. Production: `createShell` in `packages/tools/src/tools/shell.ts`, `ExecutionSessionManager.launch` in `packages/tools/src/lib/execution-session.ts`, `ownProcessGroup` in `packages/tools/src/lib/process.ts`, and `sandboxCommand` in `packages/tools/src/sandbox.ts`. Test: `packages/tools/tests/integration/execution-session.test.ts` and `packages/tools/tests/integration/sandbox.test.ts`.
+`createShell` validates the command and working directory before launch. The manager resolves the platform shell once, starts a child with closed stdin and separate stdout/stderr pipes, and registers the owned process before returning its opaque `ses_` ID. POSIX children have their own process group; Windows children are not unconditionally detached. Pre-abort does not spawn, and an error after spawn stops the child. Production: `createShell` in `packages/tools/src/tools/shell.ts`, `ExecutionSessionManager.launch` in `packages/tools/src/lib/execution-session.ts`, `ownProcessGroup` in `packages/tools/src/lib/process.ts`. Test: `packages/tools/tests/integration/execution-session.test.ts`.
 
 An explicit `cwd` is resolved relative to the workspace when necessary and checked to be a
-directory.
-The selected Host or Sandbox placement decides whether the shell can enter that
-directory. Blocking and yielded commands use the same frozen filesystem policy through their
-`ExecutionSessionManager`; `shell_session` can inspect or stop only the resulting owned session.
-Production: `createShell` in [shell.ts](../../packages/tools/src/tools/shell.ts),
-`resolveFilesystemPolicy` in [sandbox.ts](../../packages/tools/src/sandbox.ts), and
-`ExecutionSessionManager.launch` in
+directory. The command starts on the host with that working directory. Blocking and yielded
+commands share the same `ExecutionSessionManager`; `shell_session` can inspect or stop only the
+resulting owned session. Production: `createShell` in
+[shell.ts](../../packages/tools/src/tools/shell.ts) and `ExecutionSessionManager.launch` in
 [execution-session.ts](../../packages/tools/src/lib/execution-session.ts). Test:
-[sandbox.test.ts](../../packages/tools/tests/integration/sandbox.test.ts) (`uses the same broad-read
-write-limited policy for shell and shell_session with an external cwd`) and
-[sandbox-placement.test.ts](../../packages/tools/tests/unit/sandbox-placement.test.ts).
+[execution-session.test.ts](../../packages/tools/tests/integration/execution-session.test.ts).
 
 Without `yield_time_ms`, `shell` waits for exit. With it, the call returns after exit, readiness, or the requested wait, at most 30 seconds. A still-running command returns `running: true` and `session_id`; a finished command returns its physical exit code without a session ID. `timeout_ms` limits total process life independently of the yield. The timer and the output capture path both check the deadline, so a continuous producer cannot indefinitely defer its timeout. `ready_when` scans a bounded rolling window with a regex work budget; `ready: true` reports an observed pattern, not successful completion. PowerShell preserves a native executable's exit code with `sessionCommand`; POSIX sends the approved command unchanged. Production: `createShell` in `packages/tools/src/tools/shell.ts`, `LiveSession.start`, `LiveSession.waitReady`, and `sessionCommand` in `packages/tools/src/lib/execution-session.ts`. Test: `packages/tools/tests/integration/shell-session.test.ts`, `packages/tools/tests/integration/execution-session.test.ts`, and `packages/tools/tests/integration/shell.test.ts`.
 
@@ -39,6 +34,6 @@ The manager admits at most `maxSessions` tracked sessions. Finished entries may 
 
 ## State and operator boundary
 
-Command sessions create no sidecar, output log, exit sentinel, or shell spill. Generic oversized results from other tools still use `createToolSpill`; file tools can read the resulting path when the host OS or configured native sandbox allows it. Production: `createToolSpill` in `packages/loop/src/runtime/context/tool-spill.ts`, `readRawFile` in `packages/tools/src/lib/files.ts`, and `sandboxCommand` in `packages/tools/src/sandbox.ts`. Test: `packages/tools/tests/integration/explicit-state-paths.test.ts` and `packages/tools/tests/integration/sandbox.test.ts`.
+Command sessions create no sidecar, output log, exit sentinel, or shell spill. Generic oversized results from other tools still use `createToolSpill`; file tools can read the resulting path when the host OS allows it. Production: `createToolSpill` in `packages/loop/src/runtime/context/tool-spill.ts`, `readRawFile` in `packages/tools/src/lib/files.ts`. Test: `packages/tools/tests/integration/explicit-state-paths.test.ts`.
 
 The operator's local `!` command is a separate `@clarvis/code` path. It uses Bash on POSIX and reserves and observes conversation activity without invoking the agent tool dispatcher. Production: `runLocalBash` in `packages/code/src/adapters/local-shell.ts` and `runBangCommand` in `packages/code/src/run-host.ts`. Test: `packages/code/tests/integration/local-shell.test.ts` and `packages/code/tests/component/run-host.test.ts`.

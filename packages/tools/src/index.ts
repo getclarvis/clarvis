@@ -73,8 +73,7 @@ export {
 } from "./config.ts";
 export type { RuntimeConfig, AgentToolsOptions } from "./config.ts";
 export { ExecutionSessionManager } from "./lib/execution-session.ts";
-export type { SandboxConfig } from "./sandbox.ts";
-export { systemTemporaryRoots } from "./sandbox.ts";
+export { systemTemporaryRoots } from "./lib/system-temporary-roots.ts";
 export { resolveShell, shellArgs, encodePowerShellCommand, currentShellFlavor } from "./shell.ts";
 export type { ShellSpec, ShellDeps, ShellFlavor } from "./shell.ts";
 export { executableOnPath, resolveCommand } from "@clarvis/paths";

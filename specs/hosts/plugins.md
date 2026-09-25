@@ -285,7 +285,6 @@ linked into the shared .agents inventory" and "refuses a linked Git checkout").
 | `mcpServers` | `record(string, mcpServerPluginSchema)` — or a path string, resolved before validation | `packages/loop/src/settings/plugin-schema.ts` |
 | `hooks` | `array(hookSchema).max(64)` (spread from `capabilityPluginFields`) | `packages/loop/src/runtime/capabilities/hooks.ts` |
 | `bootstrapSkill` | `string().min(1)` | `packages/loop/src/runtime/capabilities/skills-settings.ts` |
-| `guard`, `sandbox` | `z.undefined()` with an explanatory error — **forbidden** | `packages/loop/src/runtime/capabilities/tools-settings.ts` |
 
 `pluginNameField` accepts lowercase alphanumerics separated by `.`, `_`, or `-`, refuses ambiguous
 repeated `--`/`..`, edge punctuation, and `__proto__` / `constructor` / `prototype`. Its error string
@@ -872,8 +871,8 @@ plugin hooks, then truncates to `MAX_HOOKS_PER_RUN = 128`
 `pluginSettingsFragment` (`packages/loop/src/settings/plugin-schema.ts`) carries `mcpServers`
 plus every built-in settings spec marked `pluginContributable`. Across the whole repository exactly
 one spec sets it `true` — `hooksSettingsSpec`
-(`packages/loop/src/runtime/capabilities/hooks.ts`). The built-in `agentTools`, `sandbox` and
-`agents` specs set it `false`; the host-registered Memory, Plans and Workflows specs likewise
+(`packages/loop/src/runtime/capabilities/hooks.ts`). The built-in `agents` spec sets it `false`;
+the host-registered Memory, Plans and Workflows specs likewise
 declare `false` and cannot add plugin contributions. The Kernel supplies their registered
 prohibitions to the generic manifest parser.
 
@@ -1088,10 +1087,6 @@ All of the following are derived directly from this document's own source and te
    `packages/loop/src/settings/plugin-schema.ts`, reported via `unknownManifestKeys`.
    Pinned: `packages/loop/tests/unit/plugin-schema.test.ts`,
    `packages/kernel/tests/integration/plugin-manifest.test.ts`.
-
-4. **A plugin may not contribute `sandbox`.** Declared as `z.undefined()` carrying the
-   reason (`packages/loop/src/runtime/capabilities/tools-settings.ts`). Pinned:
-   `packages/loop/tests/unit/plugin-schema.test.ts`.
 
 5. **`hooks` is the only `pluginContributable` built-in settings block.**
    `packages/loop/src/runtime/capabilities/hooks.ts`; every other spec in the repository declares

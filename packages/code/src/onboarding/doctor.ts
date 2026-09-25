@@ -1,9 +1,8 @@
 import type { Accessor } from "solid-js";
-import type { SandboxInspection, SubscriptionScheme, SubscriptionState } from "@clarvis/protocol";
+import type { SubscriptionScheme, SubscriptionState } from "@clarvis/protocol";
 import { CLARVIS_DIR, globalPaths } from "@clarvis/paths";
 import type { Scope, SettingsAdapter } from "../adapters/settings.ts";
 import {
-  deriveIsolation,
   memoryState,
   modelResolves,
   planRetentionLabel,
@@ -26,7 +25,6 @@ export type GateId =
   | "theme"
   | "memory"
   | "plans"
-  | "run_safety"
   | "workspace_trust"
   | "backend"
   | "diagnostics";
@@ -81,7 +79,6 @@ export interface DoctorCtx {
   code: CodeConfigStore;
   env: EnvView;
   backend: Accessor<BackendProbe>;
-  sandboxInspection: Accessor<SandboxInspection | null>;
   subscriptionReadiness?: Accessor<
     Partial<Record<SubscriptionScheme, { state: SubscriptionState; entitled?: boolean }>>
   >;
@@ -354,44 +351,6 @@ export const GATES: Gate[] = [
             : `withheld from this workspace: ${parts.join(", ")}`,
         hint: "review the approval prompt when the workspace opens; /workspace-trust reopens it later",
       };
-    },
-  },
-  {
-    id: "run_safety",
-    label: "run safety",
-    severity: "ui",
-    optional: true,
-    fix: { kind: "view", view: "controls" },
-    check: (ctx) => {
-      const eff = ctx.settings.effective();
-      const selected = deriveIsolation(eff);
-      const inspection = ctx.sandboxInspection();
-      const isolation = inspection?.filesystem.placement ?? selected;
-      const posture = `${isolation} ${glyph("separator")} commands follow ${isolation === "host" ? "host permissions" : "sandbox policy"}`;
-      if (isolation !== "host") {
-        const a = inspection?.backend;
-        if (!a) {
-          return {
-            status: "pass",
-            detail: `${posture} ${glyph("emDash")} checking Sandbox host`,
-          };
-        }
-        if (!a.available) {
-          return {
-            status: "warn",
-            detail: `${posture} ${glyph("emDash")} Sandbox unavailable here`,
-            hint: `Native sandbox ${a.reason}; runs will fail. Switch Isolation to Host or install the native sandbox.`,
-          };
-        }
-      }
-      if (isolation === "host") {
-        return {
-          status: "warn",
-          detail: posture,
-          hint: "commands run with host permissions; open Run controls to change isolation",
-        };
-      }
-      return { status: "pass", detail: posture };
     },
   },
   {

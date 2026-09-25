@@ -9,7 +9,6 @@ function baseInput(overrides: Partial<HeaderInput> = {}): HeaderInput {
     floor: false,
     agentName: "coder",
     model: "openrouter/x-ai/grok-4.5",
-    isolation: "sandbox",
     memoryConfigured: true,
     memory: "on",
     plans: { mode: "on", retention: "discard", configured: true },
@@ -19,12 +18,6 @@ function baseInput(overrides: Partial<HeaderInput> = {}): HeaderInput {
     ...overrides,
   };
 }
-
-test("header shows Sandbox isolation without appending placement to the workspace", () => {
-  const plan = projectHeader(baseInput({ isolation: "sandbox" }));
-  expect(plan.status.find((chip) => chip.key === "isolation")?.text).toContain("Sandbox");
-  expect(plan.workspace.text).not.toContain("[");
-});
 
 test("header owns workspace identity rather than the full path", () => {
   const plan = projectHeader(baseInput());
@@ -41,19 +34,18 @@ test("an eligible update adds a persistent compact marker without replacing the 
   expect(plan.version.color).toBe(tokens.accent);
 });
 
-test("the header states model, isolation and memory independently", () => {
+test("the header states model and memory independently", () => {
   const status = projectHeader(baseInput()).status;
-  expect(status.map((chip) => chip.key)).toEqual(["model", "isolation", "memory"]);
+  expect(status.map((chip) => chip.key)).toEqual(["model", "memory"]);
   expect(status[0]!.text).toContain("grok-4.5");
-  expect(status[1]!.text).toContain("Isolation: Sandbox");
-  expect(status[2]!.text).toContain("Memory: on");
+  expect(status[1]!.text).toContain("Memory: on");
 });
 
 test("configuration joins the identity run rather than floating past the gap", () => {
   const plan = projectHeader(baseInput({ width: 140 }));
   for (const chip of plan.status) expect(chip.text.startsWith("  ·  ")).toBe(true);
   expect(plan.identity!.text + plan.status.map((chip) => chip.text).join("")).toBe(
-    "  ·  coder  ·  x-ai/grok-4.5  ·  Isolation: Sandbox  ·  Memory: on",
+    "  ·  coder  ·  x-ai/grok-4.5  ·  Memory: on",
   );
 });
 
@@ -61,12 +53,11 @@ test("the field after the flexible gap carries no separator of its own", () => {
   const plan = projectHeader(
     baseInput({
       width: 140,
-      sandboxUnavailable: true,
-      connection: { phase: "failed", detail: "closed" },
+      doctorDirty: true,
     }),
   );
   expect(plan.exception!.text.startsWith("  ·  ")).toBe(false);
-  expect(plan.urgent!.text.startsWith("  ·  ")).toBe(true);
+  expect(plan.urgent).toBeUndefined();
   const onlyUrgent = projectHeader(
     baseInput({ width: 140, connection: { phase: "failed", detail: "closed" } }),
   );
@@ -85,7 +76,7 @@ test("memory reports off only when it is off; inert stays configured", () => {
 test("all widths retain the complete run configuration", () => {
   for (const width of [24, 48, 60, 72, 84, 200]) {
     const status = projectHeader(baseInput({ width })).status;
-    expect(status.map((field) => field.key)).toEqual(["model", "isolation", "memory"]);
+    expect(status.map((field) => field.key)).toEqual(["model", "memory"]);
     expect(status.map((field) => field.text).join(" ")).toContain("Memory: on");
   }
 });
@@ -93,21 +84,6 @@ test("all widths retain the complete run configuration", () => {
 test("connection failure remains actionable in the stable header", () => {
   const plan = projectHeader(baseInput({ connection: { phase: "failed", detail: "closed" } }));
   expect(plan.urgent?.text).toContain("failed");
-});
-
-test("Host isolation is stated once and marked as the warning it is", () => {
-  const wide = projectHeader(baseInput({ width: 120, isolation: "host" }));
-  expect(wide.status.find((chip) => chip.key === "isolation")!.text).toContain("Host");
-  expect(wide.status.find((chip) => chip.key === "isolation")!.color).toBe(tokens.warn);
-  expect(wide.exception).toBeUndefined();
-  expect(projectHeader(baseInput({ width: 72, isolation: "host" })).exception).toBeUndefined();
-});
-
-test("sandbox failure outranks other configuration warnings", () => {
-  const plan = projectHeader(
-    baseInput({ isolation: "host", sandboxUnavailable: true, doctorDirty: true }),
-  );
-  expect(plan.exception?.text).toContain("Sandbox unavailable");
 });
 
 test("floor mode drops secondary identity", () => {

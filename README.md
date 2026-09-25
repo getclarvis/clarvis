@@ -23,8 +23,8 @@ repository in front of you.
   does not imply provider endorsement of Clarvis.
 - **Agent workflows:** use a built-in Lead, delegate to focused Sub-agents, or run the packaged
   `audit`, `implement`, and `research` workflows.
-- **Tool use:** Shell and file tools follow Host OS permissions or the configured native Sandbox
-  policy on Linux and macOS. Workspace trust still governs activation of workspace configuration.
+- **Tool use:** Shell and file tools follow host OS permissions. Workspace trust still governs
+  activation of workspace configuration.
 - **Extensible:** add MCP servers, plugins, hooks, Agent Skills, custom agents, and workflows.
 - **Interactive or headless:** use the full TUI or run a prompt from scripts with `clarvis -p`.
 
@@ -89,23 +89,21 @@ project-specific configuration lives in `<project>/.clarvis`.
 
 Essential controls:
 
-| Input      | Action                                                                   |
-| ---------- | ------------------------------------------------------------------------ |
-| `/help`    | Open the complete, context-aware help screen                             |
-| `Esc`      | Clear the current input, close a layer, or return to the previous screen |
-| `Ctrl+C`   | Cancel active work; when idle, enter the quit flow                       |
-| `/doctor`  | Inspect configuration, dependencies, and recoverable setup problems      |
-| `/model`   | Choose the default model                                                 |
-| `/effort`  | Choose the default reasoning effort supported by that model              |
-| `/goal`    | Create, inspect and control a persistent bounded objective               |
-| `Ctrl+X I` | Choose Host or native Sandbox isolation                                  |
+| Input     | Action                                                                   |
+| --------- | ------------------------------------------------------------------------ |
+| `/help`   | Open the complete, context-aware help screen                             |
+| `Esc`     | Clear the current input, close a layer, or return to the previous screen |
+| `Ctrl+C`  | Cancel active work; when idle, enter the quit flow                       |
+| `/doctor` | Inspect configuration, dependencies, and recoverable setup problems      |
+| `/model`  | Choose the default model                                                 |
+| `/effort` | Choose the default reasoning effort supported by that model              |
+| `/goal`   | Create, inspect and control a persistent bounded objective               |
 
 Other shortcuts depend on the terminal keyboard profile and appear in the footer and `/help`; the
 README does not duplicate a keymap that the application generates dynamically.
 
-Settings > Run controls exposes the same Host or Sandbox Isolation choice as `Ctrl+X I`.
-Both persist the native Sandbox setting globally. The local or SSH Kernel uses the selected
-workspace; remote SSH connections remain available through `--remote`.
+The local or SSH Kernel uses the selected workspace; remote SSH connections remain available
+through `--remote`.
 
 ## Common commands
 
@@ -137,14 +135,12 @@ remote terminals, and current accessibility limits.
 
 ## Security model
 
-Clarvis is local-first, but it is not an offline application and native Sandbox
-is not a complete security boundary:
+Clarvis is local-first, but it is not an offline application:
 
 - prompts and selected context are sent to the model provider you configure;
 - enabled MCP servers, plugins, hooks, task providers, and commands have their own trust boundaries;
-- file tools reject paths outside the workspace by default, but this path-based check is not a strong
-  write sandbox against a concurrent symlink or junction swap; host execution and user-approved
-  operations can also reach beyond a sandboxed process;
+- shell and file tools execute with the host process's permissions; relative paths use the
+  workspace as their base, while absolute paths remain absolute;
 - credentials saved through the managed API-key and subscription flows stay in global files. POSIX
   installs apply owner-only mode bits; Windows relies on the user's profile access controls. Literal
   provider or MCP headers can be authored in workspace settings, so use `${NAME}` references and

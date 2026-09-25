@@ -94,7 +94,6 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`tools-mutation.md`](execution/tools-mutation.md) | The nine mutating tools and the shared staging/locking/rollback machinery that makes a write all-or-nothing | `tools` |
 | [`tools-shell-and-sessions.md`](execution/tools-shell-and-sessions.md) | Running commands with `shell` and `shell_session`, process trees, killing, bounded capture, and cursors | `tools` |
 | [`hooks.md`](execution/hooks.md) | Operator- and plugin-declared command or MCP-tool invocations bound to lifecycle events: matching, blocking and observer semantics, subprocess and MCP execution, foreign payloads, and argument rewriting | `hooks`, `capability`, `loop`, `mcp-client` |
-| [`sandbox.md`](execution/sandbox.md) | Native Bubblewrap/Seatbelt probing and policy construction, toolchain discovery on `PATH`, host path policy, real-platform canaries, and operator inspection | `tools`, `loop`, `kernel`, `protocol`, `code` |
 | [`skills.md`](execution/skills.md) | Discovering, parsing and merging `SKILL.md` trees with last-wins precedence; serving catalog, body and confined resource pages through `load_skill` and `read_skill_resource`; and routing named or description-matching skills into the run | `skills`, `kernel`, `loop` |
 
 ### `engine/` — the loop itself
@@ -123,7 +122,6 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`memory-indexer.md`](capabilities/memory-indexer.md) | Turning a finished run into something the wiki knows: the durable enqueue, the background drain with leases and retry budgets, and the isolated versus continuation index passes | `memory`, `kernel` |
 | [`workflows-scheduling.md`](capabilities/workflows-scheduling.md) | Manager-to-leader fan-out: the four spawn tools, wave scheduling and write-conflict separation, round barriers, the FIFO concurrency semaphore and the tree-wide token ledger | `workflows` |
 | [`workflows-service.md`](capabilities/workflows-service.md) | The non-live half: code-backed built-ins, optional `WORKFLOW.md` overrides, the three reusable result schemas, and the kernel's persisted workflow tree and routing | `workflows`, `kernel`, `code` |
-| [`worktrees.md`](capabilities/worktrees.md) | Launch-time Git worktrees: Git-owned identity and lifecycle, immutable process scope, and linked-checkout sandbox mounts | `code`, `kernel`, `paths`, `tools` |
 
 ### `hosts/` — the kernel, the terminal UI and the HTTP facade
 

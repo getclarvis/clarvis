@@ -34,39 +34,14 @@ workload remains necessary before claiming the TUI performance incident resolved
 
 ## Smoke qualification remains environment-dependent
 
-**Status: implementation is isolated; several qualification surfaces remain unverified in the
-current environment.** `createSmokeFixture` and `SmokeContext` now give artifact, release, first-paint
-and installer callers an exclusive root, explicit `CLARVIS_HOME`, allowlisted child environment and
-owned lifecycle. That root is also chosen rather than inherited: it comes from a short, account-owned
-temporary root, so a host whose every candidate is foreign-owned (/tmp owned by another account) reports
-`smoke_fixture_no_usable_parent` naming each refusal instead of booting somewhere the kernel rejects, and
-a host without `script(1)` still needs tmux for the PTY. The required native path is deliberately
-stricter: `requireNativeSmokeConfinement`
-reports `smoke_native_confinement_unavailable` when its Bubblewrap probe cannot launch, and never
-falls back to an unconfined PTY. The deterministic smoke regression is
-`packages/code/tests/unit/artifact-isolation.test.ts`; benchmark root isolation is covered by
-`packages/code/tests/unit/benchmark-isolation.test.ts`. The per-runner structural canary is
-`tooling/tests/unit/harness-isolation-contract.test.ts`; Plan fixture lock placement is covered by
-`packages/plan/tests/integration/file-repository.test.ts`, and the auth view's symlink/overlap
-refusals by `tooling/tests/unit/prompt-cache-artifact.test.ts`.
-
-The ordinary smoke path reached the application in the isolated fixture but remained blocked by the
-host's `local host state has an unsafe parent directory` ownership check. This is an environmental
-failure, not evidence to weaken the private-state check or to make the fixture reuse an operator
-root. A host run with a safe temporary parent is required before claiming the complete artifact
-journey.
-
-The current Linux installer smoke completed its staged archive, install, lock, cancellation,
-preservation and uninstall checks. The artifact and release smoke runners both reached their
-isolated TUI and then received the same application-level `local host state has an unsafe parent
-directory` refusal; neither result is a passing complete-app PTY claim.
-
-Windows User `Path` coverage in `installer-smoke.ts` remains unavailable unless a disposable account
-or VM is explicitly proven; the harness refuses before mutating persistent User `Path`. The auth
-regressions cover synthetic refresh, lock and staging behavior in
-`tooling/tests/unit/prompt-cache-artifact.test.ts`; real subscription OAuth was not run. The
-`--use-global-oauth` path is therefore an explicit, platform-scoped qualification mode rather than
-an assertion that deterministic or synthetic evidence proves live credentials.
+**Status: disposable fixtures are implemented; live qualification depends on the host.**
+`createSmokeFixture` and `SmokeContext` give artifact, release, first-paint and installer callers
+an exclusive root, explicit `CLARVIS_HOME`, allowlisted child environment and owned lifecycle.
+A host with no usable temporary parent reports `smoke_fixture_no_usable_parent`; a host without
+`script(1)` needs tmux for the PTY. Regression coverage is in
+`packages/code/tests/unit/artifact-isolation.test.ts`,
+`packages/code/tests/unit/benchmark-isolation.test.ts`, and
+`tooling/tests/unit/harness-isolation-contract.test.ts`.
 
 ---
 
@@ -161,22 +136,22 @@ would fit. Closing this also removed two assertions in
 and were in fact pinning the same discontinuity — the identical shell at 200 columns showed both
 hints on the unchanged code.
 
-## Path-based native writes retain a parent-directory TOCTOU
 
-**Status: open; path-based mutation limitation.** The workspace root no longer confines ordinary
-file tools. Host follows OS permissions; Sandbox enforces its environment policy.
-A concurrent process can replace a parent directory after `resolveFileToolPath` resolves a path
-and before `applyOpsAtomic` performs `mkdir`, staging, or `rename` by pathname. Native sandbox
-containment remains the environment boundary when configured; the file tool itself does not pin
-the parent inode.
+---
+
+## Path-based writes retain a parent-directory TOCTOU
+
+**Status: open; path-based mutation limitation.** A concurrent process can replace a parent
+directory after `resolveFileToolPath` resolves a path and before `applyOpsAtomic` performs `mkdir`,
+staging, or `rename` by pathname. The file tool does not pin the parent inode; host process
+permissions govern access.
 
 The durable fix requires descriptor-relative mutation for all write handlers, with platform-specific
 handling of symlinks and Windows reparse points. Another `realpath` before a pathname-based rename
 would leave a final gap. Production: `resolveFileToolPath` in
 `packages/tools/src/lib/paths.ts` and `applyOpsAtomic` in `packages/tools/src/lib/atomic.ts`.
-Test: `packages/tools/tests/integration/atomic.test.ts` covers native mutation behavior;
-it does not close this race. Ordinary external writes remain governed by their placement and OS
-permissions.
+Test: `packages/tools/tests/integration/atomic.test.ts` covers mutation behavior; it does not close
+this race.
 
 ---
 
@@ -676,35 +651,13 @@ is sensitive to, and because the test that covers it,
 
 ---
 
-## The Codex workspace sandbox can reject ephemeral loopback listeners
+## Restricted environments can reject ephemeral loopback listeners
 
-**Status: confirmed environmental limitation; not a Clarvis product regression and
-not evidence that port `0` is occupied.**
-
-Some repository tests deliberately bind a local listener on `127.0.0.1` with port `0`, asking the OS
-for an available ephemeral port. Examples include `captureServer` in
-`packages/mcp-client/tests/integration/remote-transport.test.ts`, the OAuth fixture in
-`packages/mcp-client/tests/integration/oauth-transport.test.ts`, and the native-network enforcement
-case in `packages/tools/tests/integration/sandbox.test.ts` (`Bun.listen`). Inside a Codex
-workspace sandbox that prohibits listener creation, these otherwise independent tests can fail with
-the shared Bun signature:
-
-```text
-Failed to start server. Is port 0 in use?
-```
-
-That wording is misleading in this environment. Port `0` is a request for dynamic allocation, not a
-specific occupied port, and a sandbox denial can surface through the same runtime error. A cluster of
-listener-based failures with this exact signature must therefore be classified first as an execution
-environment failure. Rerun the affected test file or package outside the Codex sandbox before changing
-Clarvis code or reporting a product defect. Only a reproduction outside that sandbox is product
-evidence.
-
-This exception is deliberately narrow. It does not make an assertion failure, protocol mismatch,
-timeout after a listener was successfully created, or a failure on an unrestricted host ignorable.
-The handoff must name the exact command and error and keep the affected surface unverified until the
-outside-sandbox rerun passes. `AGENTS.md` carries this entry's short operational rule under **Known
-environmental failures**.
+**Status: confirmed environmental limitation; not a Clarvis product regression.**
+Restricted execution environments can refuse ephemeral loopback listeners. Bun may then report
+`Failed to start server. Is port 0 in use?` even though port `0` requests dynamic allocation.
+Rerun an affected listener test with host permissions before attributing that signature to
+Clarvis. An assertion failure or a timeout after successful listener creation is a separate issue.
 
 ---
 
@@ -1321,42 +1274,6 @@ reading into a regression alarm, which is the most this repository can do about 
 enforces the guard, while local pre-commit runs still do not set `CI`: a local machine without `rg`
 skips the parity contract rather than failing it. The environment precondition is therefore
 remote-CI-enforced but not local-gate-enforced.
-
-**Native sandbox backends are operationally gated, with one macOS platform risk.** Bubblewrap and
-Seatbelt outcomes are discriminated typed probes carrying a reason, decided behind injectable seams,
-fail-closed by default, and surfaced to the operator (`packages/tools/src/sandbox.ts`,
-`SandboxProbe`, `probeSandbox`). Linux and macOS CI enable real-host canaries for workspace
-write/read-only behavior, scratch writes, undeclared-path and process isolation, host/denied
-networking, and the kernel toolchain-inspection path (`packages/tools/tests/integration/sandbox.test.ts`,
-`enforces the native sandbox against real host resources`;
-`packages/kernel/tests/integration/sandbox-policy.test.ts`, `inspects a discovered toolchain without
-executing it through the real native backend`; `.github/workflows/ci.yml`, `jobs.coverage` and
-`jobs.sandbox-macos`).
-
-**A resolved Seatbelt regression made installed Apple Git look absent.** A real Clarvis
-run executed `git status --short` inside Seatbelt; `xcode-select` could not read
-`/var/select/developer_dir`, printed “No developer tools were found” and opened the Command Line
-Tools installer even though host `/usr/bin/git --version` reported Apple Git 2.39.5. The first exact
-link allowance was insufficient: Seatbelt's `file-test-existence` checks also require the authored
-alias parents, and the real Git then required authored `/etc/gitconfig` checks beside canonical
-`/private/etc`. A later macOS 14 CI runner proved that Apple Git can consult
-`/var/db/xcode_select_link` as well: its canonical `/private/var/db` tree was admitted, but the
-authored alias was not, so Seatbelt denied the readlink and reproduced the same fallback. The final
-policy admits read-only `/etc`, `/private/etc`, the `/var` link and only the authored/canonical
-`var/select` and `var/db` trees. It does not admit general `/private/var` or writes. The opt-in macOS
-canary now resolves both selectors inside the generated profile before it executes the installed
-`/usr/bin/git --version`; a selector regression therefore stops before the Git shim can request the
-graphical installer. It also rejects the developer-tools fallback
-(`packages/tools/tests/integration/sandbox.test.ts`, `runs the installed Apple Git without
-triggering the developer-tools fallback`).
-
-The remaining risk is specific and external: Apple marks `sandbox-exec` deprecated, and Apple DTS
-states that the Sandbox Profile Language is not a supported API for third-party products
-([Apple Developer Forums](https://developer.apple.com/forums/thread/661939)). Clarvis does not hide
-that with an optional fallback by default: if `/usr/bin/sandbox-exec` or the profile stops working,
-the Seatbelt probe reports unavailable and a required run fails closed. The CI canary detects drift
-on the supported macOS runner, but cannot turn this private/deprecated OS surface into a durable Apple
-compatibility promise.
 
 **`git`, and a citation the report gets wrong.** It cites
 `packages/code/src/adapters/marketplace.ts` as "spawns `git` directly through

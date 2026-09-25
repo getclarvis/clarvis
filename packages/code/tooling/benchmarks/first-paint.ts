@@ -44,9 +44,6 @@ import {
 } from "../artifact/markers.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
-const repositoryRoot = join(packageRoot, "..", "..");
-const confinement =
-  process.env.CLARVIS_SMOKE_REQUIRE_CONFINEMENT === "1" ? "required" : "environment";
 
 const N = Number(process.env.BENCH_N ?? 7);
 const POLL_MS = Number(process.env.BENCH_POLL_MS ?? 25);
@@ -247,8 +244,6 @@ async function timeFirstPaint(
       timeoutMs: TIMEOUT_MS,
       pollMs: POLL_MS,
       overrides,
-      confinement,
-      readOnlyRoots: [repositoryRoot],
     });
     if (observed.outcome !== "ready") {
       throw new Error(

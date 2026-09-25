@@ -112,9 +112,8 @@ export function createOverlayHost(deps: OverlayHostDeps): OverlayHost {
   /**
    * Pop one configuration frame and reactivate its parent.
    *
-   * @remarks Escape must return immediately. Host probes such as sandbox
-   *   rediscovery and subscription entitlement belong to Doctor's explicit
-   *   recheck and the Sandbox settings surface, not to this navigation path.
+   * @remarks Escape must return immediately. Host probes such as subscription
+   *   entitlement belong to Doctor's explicit recheck, not to this navigation path.
    */
   function popView(frame: ActiveMountedView): void {
     const mounted = viewFrames();

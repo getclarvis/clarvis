@@ -218,14 +218,9 @@ jobs:
       - name: install Linux test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y apparmor-profiles bubblewrap ripgrep
-          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
-          bwrap --unshare-user --ro-bind / / -- /bin/true
-          bwrap --version
+          sudo apt-get install -y ripgrep
           rg --version
       - name: sequential workspace coverage with classified code retry
-        env:
-          CLARVIS_NATIVE_SANDBOX_CANARY: "1"
         run: bash tooling/ci/retry-code-coverage.sh
 
   linux:
@@ -324,10 +319,8 @@ jobs:
       - run: bun --filter @clarvis/memory test
       - run: bun test packages/code/tests/unit/keyboard-profile.test.ts packages/code/tests/unit/keyspec.test.ts packages/code/tests/unit/active-actions.test.ts
 
-  # Darwin owns a real sandbox surface in addition to modifier naming. The
-  # @clarvis/tools suite runs a Seatbelt canary against actual host files and a
-  # loopback listener; the keyboard tests retain the platform policy coverage.
-  sandbox-macos:
+  # macOS owns the keyboard policy checks.
+  keyboard-macos:
     # Both permanent-branch rulesets require this exact status context. Keep the stable public
     # name when extending the job with additional macOS-specific canaries.
     name: keyboard policy (macos)
@@ -344,6 +337,5 @@ jobs:
         run: bun --version && bun --revision
       - run: brew install ripgrep && rg --version
       - run: bun install --frozen-lockfile
-      - run: CLARVIS_NATIVE_SANDBOX_CANARY=1 bun --filter @clarvis/tools test
-      - run: CLARVIS_NATIVE_SANDBOX_CANARY=1 bun test packages/kernel/tests/integration/sandbox-policy.test.ts
+      - run: bun --filter @clarvis/tools test
       - run: bun test packages/code/tests/unit/keyboard-profile.test.ts packages/code/tests/unit/keyspec.test.ts packages/code/tests/unit/active-actions.test.ts

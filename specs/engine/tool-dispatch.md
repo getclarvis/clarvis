@@ -136,7 +136,6 @@ owns.
 | `createAgentToolsetWithAdapter` | `(opts, adapter: AgentToolsAdapter) => AgentToolset` | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
 | `AgentToolset` | `{ defs: NamespacedTool[]; names: Set<string>; dispatch(name, args, signal?, onOutput?, onExecutionStarted?, runSignal?) => Promise<AgentToolResult> }` | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
 | `AgentToolResult` | `{ isError; text; images?; diff?; executionAborted?; abortUnsettled? }` | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
-| `AgentToolsetOptions` | `{ statePaths?; workspaceRoot; canMutate; canExec; temporaryRoots?; sessionManager?; sessionAgent?; skillExecutionRoots?; sandbox?; runIdentity?; filesystemPlacement?; secretEnvNames?; logger? }` — the configuration surface connecting the coding toolset to temporary access, selected skill roots and sandboxing | `packages/loop/src/runtime/tools/builtin/toolset.ts` (`AgentToolsetOptions`) |
 | `AgentToolsAdapter` | `{ resolve(opts: AgentToolsetOptions): { defs: NamespacedTool[]; dispatch: AgentToolset["dispatch"] } }` — the injectable test seam `createAgentToolsetWithAdapter` takes in place of the real `@clarvis/tools` calls; its own doc comment calls it a "package-private seam" | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
 
 `builtin/index.ts` is the barrel: it re-exports `FILE_MUTATING_TOOL_NAMES`, `agentToolCaps`,

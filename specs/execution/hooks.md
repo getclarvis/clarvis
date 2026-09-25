@@ -17,7 +17,6 @@ orchestrating selection/execution/resolution across a whole list of configured h
 `@clarvis/loop`'s `LifecycleHook` contract — everything else in the package is deliberately
 ignorant of what a lifecycle hook is (`packages/hooks/src/types.ts`, `packages/hooks/src/index.ts`).
 
-The package explicitly is **not** a sandbox: "This is credential hygiene, not a sandbox"
 (`packages/hooks/src/env.ts`). A hook command runs with full operator privileges, reads/writes
 the workspace and reaches the network; the one goal the environment filter pursues is that "the
 model-provider credentials this run is holding must not reach a subprocess that had no reason to
@@ -34,7 +33,6 @@ plugin / request schemas) even when the optional `@clarvis/hooks` package itself
 
 ## 2. Surface
 
-Hooks are a native Host/Sandbox capability.
 
 ### 2.1 `@clarvis/hooks` entrypoint `.` (`src/index.ts`)
 

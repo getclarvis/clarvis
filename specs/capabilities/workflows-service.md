@@ -57,9 +57,8 @@ See [self-configuration.md](../hosts/self-configuration.md) for the writer's aut
 
 ## 2. Surface
 
-Workflow execution is available in Host and Sandbox. The native host keeps manager, leaders,
-registry and execution in its Kernel, persists records in the canonical owner-scoped host directory
-shared with Host/Sandbox, and uses frozen projected definitions. Plugin
+The host keeps the workflow manager, leaders, registry and execution in its Kernel, persists records
+in the canonical owner-scoped host directory, and uses frozen projected definitions. Plugin
 definitions remain unavailable; no subset or host bridge substitutes for the workflow.
 
 ### `@clarvis/workflows` — `./artifact` entry

@@ -319,6 +319,6 @@ layers, and key-layer registrations after warm-up. The extension-composer soak s
 
 ## 8. Non-goals
 
-Extension Profile definitions do not own model/provider choice, agent profiles, grants, sandbox, guard,
-memory, secrets, plugin versions, inheritance, or per-contribution masks. Marketplace ranking,
+Extension Profile definitions do not own model/provider choice, agent profiles, grants, memory,
+secrets, plugin versions, inheritance, or per-contribution masks. Marketplace ranking,
 pagination, signed publisher identity, and automatic remote updates remain outside this iteration.

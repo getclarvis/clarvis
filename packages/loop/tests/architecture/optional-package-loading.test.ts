@@ -228,7 +228,6 @@ describe("the non-feature loop entries stay free of optional packages", () => {
     );
     const names = [...reachable].map((file) => file.split("/").pop());
     expect(names).toContain("hooks.ts");
-    expect(names).toContain("tools-settings.ts");
     expect(names).toContain("skills-settings.ts");
   });
 

@@ -1,13 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import {
-  deriveIsolation,
-  effectiveRunIsolation,
   deriveRunControls,
   memoryDescription,
   memoryState,
   modelResolves,
   planRetentionDescription,
-  safetyDescription,
 } from "../../src/adapters/execution-safety.ts";
 import type { SettingsFile } from "../../src/adapters/settings.ts";
 
@@ -26,73 +23,26 @@ const onDisk = (settings: Record<string, unknown>): SettingsFile => settings as 
 const OPENAI = { name: "openai", kind: "openai" } as const;
 
 describe("execution safety", () => {
-  it("shows active host placement without replacing the idle next-run preference", () => {
-    const host = {
-      kind: "native",
-      host_platform: "linux",
-      isolation: "host",
-      lifecycle: "ready",
-    } as const;
-    expect(effectiveRunIsolation("sandbox", host, true)).toBe("host");
-    expect(effectiveRunIsolation("sandbox", host, false)).toBe("sandbox");
-    expect(effectiveRunIsolation("sandbox", undefined, true)).toBe("sandbox");
-  });
-  it("derives isolation from sandbox settings", () => {
-    expect(deriveIsolation({})).toBe("host");
-    expect(deriveIsolation({ sandbox: { type: "native", enabled: true } })).toBe("sandbox");
-    expect(deriveRunControls({}, "off").isolation).toBe("host");
-  });
-
   it("explains the effective behavior", () => {
     const state = deriveRunControls(
       {
         providers: [OPENAI],
         default_model: "openai/model",
         memory: {} as SettingsFile["memory"],
-        sandbox: {
-          type: "native",
-          enabled: true,
-          filesystem: "workspace-read-only",
-          network: "none",
-        },
       },
       "on",
     );
-    expect(safetyDescription(state)).toEqual([
-      "Commands run inside the native sandbox.",
-      "Shell commands see the workspace read-only.",
-      "Shell network access is disabled.",
-    ]);
     expect(memoryDescription(state)).toBe(
       "Reads memory before the run and learns from it afterward.",
     );
   });
 
-  it("explains sandbox, memory, and plan-retention consequences", () => {
-    const sandbox = {
-      ...deriveRunControls(
-        {
-          sandbox: {
-            type: "native" as const,
-            enabled: true,
-            availability: "optional" as const,
-            filesystem: "workspace-write" as const,
-            network: "host" as const,
-          },
-        },
-        "off" as const,
-      ),
-    };
-    expect(safetyDescription(sandbox)).toEqual([
-      "Commands run inside the native sandbox.",
-      "Shell commands may change this workspace.",
-      "Host network access is enabled.",
-    ]);
-    expect(safetyDescription(deriveRunControls({}, "off"))).toEqual([
-      "Commands run with the host process's permissions.",
-    ]);
-    expect(memoryDescription({ ...sandbox, memory: "inert" })).toContain("no extraction model");
-    expect(memoryDescription({ ...sandbox, memory: "off" })).toContain("Disabled for this session");
+  it("explains memory and plan-retention consequences", () => {
+    const controls = deriveRunControls({}, "off");
+    expect(memoryDescription({ ...controls, memory: "inert" })).toContain("no extraction model");
+    expect(memoryDescription({ ...controls, memory: "off" })).toContain(
+      "Disabled for this session",
+    );
 
     expect(planRetentionDescription("keep")).toEqual([
       "Completed plans remain available in the selected provider.",

@@ -24,16 +24,6 @@ test.each([
     writable: true,
   },
   {
-    name: "editable entry with native sandbox selected",
-    grants: "edit_workspace",
-    env: {},
-    builtins: {},
-    sandbox: true,
-    docs: true,
-    ordinary: false,
-    writable: true,
-  },
-  {
     name: "editable entry with ordinary skills environment disabled",
     grants: "edit_workspace",
     env: { CLARVIS_SKILLS_ENABLED: "false" },
@@ -115,9 +105,6 @@ test.each([
     JSON.stringify({
       default_model: "anthropic/test",
       providers: [{ name: "anthropic", kind: "anthropic" }],
-      ...("sandbox" in scenario && scenario.sandbox
-        ? { sandbox: { type: "native", enabled: true, availability: "optional" } }
-        : {}),
     }),
   );
   const verifyProductBody = scenario.name === "read-only entry with use_skills";

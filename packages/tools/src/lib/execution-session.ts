@@ -2,9 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { ToolError } from "../errors.ts";
 import type { RuntimeConfig } from "../config.ts";
-import { sandboxCommand } from "../sandbox.ts";
-import type { AgentFilesystem } from "../agent-filesystem.ts";
-import { resolveShell, type ShellSpec } from "../shell.ts";
+import { resolveShell, shellArgs, type ShellSpec } from "../shell.ts";
 import { ownProcessGroup } from "./process.ts";
 import { ownedTreeRunning, stopOwnedProcess } from "./process-owner.ts";
 import { allocateBudget, createOutputCoalescer, type OutputCoalescer } from "./output.ts";
@@ -416,23 +414,9 @@ class LiveSession implements ExecutionSession {
 /** One run-local authority for shell processes and their bounded output. */
 export class ExecutionSessionManager {
   private readonly sessions = new Map<string, LiveSession>();
-  private filesystem: { identity: string; service: AgentFilesystem } | undefined;
   private closed = false;
 
   constructor(private readonly afterSpawn?: (child: ChildProcess) => void) {}
-
-  /** Admit exactly one filesystem service under the run's pinned policy. */
-  acquireFilesystem(identity: string, create: () => AgentFilesystem): AgentFilesystem {
-    if (this.closed) throw new ToolError("aborted", "Process admission is closed");
-    if (this.filesystem !== undefined) {
-      if (this.filesystem.identity !== identity)
-        throw new ToolError("denied", "Filesystem policy changed within the run");
-      return this.filesystem.service;
-    }
-    const service = create();
-    this.filesystem = { identity, service };
-    return service;
-  }
 
   async launch(request: LaunchRequest): Promise<ExecutionSession> {
     if (this.closed) throw new ToolError("aborted", "Process admission is closed");
@@ -446,18 +430,19 @@ export class ExecutionSessionManager {
     }
     const id = `ses_${randomBytes(16).toString("hex")}`;
     const resolvedShell = request.shell ?? resolveShell();
-    const spec = sandboxCommand({
-      command: sessionCommand(request.command, resolvedShell),
-      cwd: request.cwd,
-      workspaceRoot: request.config.workspaceRoot,
-      gitMetadataPaths: request.config.gitMetadataPaths,
-      temporaryRoots: request.config.temporaryRoots,
-      sandbox: request.config.sandbox,
-      secretEnvNames: request.config.secretEnvNames,
-      filesystemPolicy: request.config.filesystemPolicy,
-      shell: () => resolvedShell,
-      logger: request.config.logger,
-    });
+    const env = { ...process.env };
+    for (const name of request.config.secretEnvNames ?? []) delete env[name];
+    const temporaryRoot = request.config.temporaryRoots[0];
+    if (temporaryRoot !== undefined) {
+      env.TMPDIR = temporaryRoot;
+      env.TEMP = temporaryRoot;
+      env.TMP = temporaryRoot;
+    }
+    const spec = {
+      file: resolvedShell.file,
+      args: shellArgs(resolvedShell, sessionCommand(request.command, resolvedShell)),
+      options: { cwd: request.cwd, env },
+    };
     const detached = ownProcessGroup();
     request.config.logger.debug(
       {
@@ -467,7 +452,6 @@ export class ExecutionSessionManager {
         detached,
         cwd: request.cwd,
         timeout_ms: request.timeoutMs,
-        sandboxed: spec.sandboxed,
       },
       "a shell command is being spawned under the run-owned process manager",
     );
@@ -529,7 +513,6 @@ export class ExecutionSessionManager {
     const deadline = Date.now() + budgetMs;
     const outcomes = await Promise.all([
       ...[...this.sessions.values()].map((session) => session.stop(deadline)),
-      ...(this.filesystem === undefined ? [] : [this.filesystem.service.close(deadline)]),
     ]);
     return outcomes.every(Boolean);
   }

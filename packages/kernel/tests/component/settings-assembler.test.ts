@@ -132,7 +132,10 @@ describe("settings run assembler", () => {
         frontmatter: { grants: ["read_workspace"] },
         body: "Review.",
       });
-      store.writeAgent("global", name, { frontmatter: { sandbox: false }, body: "Override." });
+      store.writeAgent("global", name, {
+        frontmatter: { unknown_setting: false },
+        body: "Override.",
+      });
       const assemble = createSettingsRunAssembler(store);
       expect(() => assemble({ agent: "lead", messages: [], execution_id: "rejected" })).toThrow(
         `agent '${name}' has invalid frontmatter`,

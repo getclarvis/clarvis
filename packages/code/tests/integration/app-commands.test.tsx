@@ -134,7 +134,6 @@ function fakeSettings(): SettingsAdapter {
     envStatus: () => "unset",
     declaredMcpServers: () => [],
     reload: async () => {},
-    inspectSandbox: () => Promise.resolve(null as never),
   };
 }
 
@@ -173,7 +172,6 @@ function baseDeps(
     ui,
     effects: {
       openAgentPicker: () => calls.push("agent-picker"),
-      openIsolationPicker: () => calls.push("isolation-picker"),
       openMemoryPicker: () => calls.push("memory-picker"),
       openDiff: () => calls.push("diff"),
       openPlan: () => calls.push("plan"),
@@ -800,27 +798,6 @@ test("subscription entitlement is deferred until an explicit Doctor recheck", as
   mounted.dispose();
 });
 
-test("sandbox inspection is deferred until an explicit Doctor recheck", async () => {
-  let inspections = 0;
-  const mounted = harness({
-    settings: {
-      ...fakeSettings(),
-      inspectSandbox: async () => {
-        inspections += 1;
-        return null as never;
-      },
-    },
-  });
-  await Promise.resolve();
-  await Promise.resolve();
-  expect(inspections).toBe(0);
-
-  mounted.recheck();
-  await waitUntil(() => inspections === 1);
-  expect(inspections).toBe(1);
-  mounted.dispose();
-});
-
 test("/plan toggles workspace review without resetting the rest of the plan block", async () => {
   const writes: { scope: string; patch: unknown }[] = [];
   let mode: "off" | "on" | "review" = "off";
@@ -939,7 +916,6 @@ test("every top-level command carries a canonical /token (no bare-title rows)", 
   const expected: Record<string, string[]> = {
     "app.quit": ["/quit"],
     "agent.picker": ["/agent"],
-    "isolation.picker": [],
     "memory.picker": [],
     "transcript.diff": ["/diff"],
     "plan.toggleReview": ["/plan"],
@@ -969,7 +945,7 @@ test("every top-level command carries a canonical /token (no bare-title rows)", 
 test("non-aliased hub children and folded toggles stay off the slash surface", () => {
   const { commands, dispose } = harness();
   const byName = new Map(commands.entries().map((e) => [e.name, e]));
-  for (const name of ["controls.open", "sandbox.config"]) {
+  for (const name of ["controls.open"]) {
     expect([name, byName.get(name)?.slashes]).toEqual([name, []]);
     expect([name, byName.get(name)?.parent]).toEqual([
       name,
@@ -1001,11 +977,8 @@ test("Extensions children remain internal and only the wizard owns a slash route
 
 test("/settings <child> deep-links to that editor with a mounted parent route", () => {
   const { commands, calls, opened, dispose } = harness();
-  expect(commands.route("settings.open", "sandbox")).toBe(true);
-  expect(calls).toContain("view:sandbox.config");
-  expect(commands.route("settings.open", "isolation")).toBe(false);
-  expect(opened.at(-1)?.parent).toBe("settings.open");
   expect(commands.route("settings.open", "controls")).toBe(true);
+  expect(opened.at(-1)?.parent).toBe("settings.open");
   expect(calls).toContain("view:controls.open");
   expect(commands.route("settings.open", "updates")).toBe(true);
   expect(calls).toContain("view:updates.open");
@@ -1016,7 +989,6 @@ test("/settings <child> deep-links to that editor with a mounted parent route", 
 
 const DISPOSITION: [string, { surface: string; group: string; parent?: string }][] = [
   ["agent.picker", { surface: "slash", group: "navigate" }],
-  ["isolation.picker", { surface: "internal", group: "navigate" }],
   ["memory.picker", { surface: "internal", group: "navigate" }],
   ["sessions.open", { surface: "slash", group: "navigate", parent: "sessions" }],
   ["workflows.open", { surface: "slash", group: "navigate" }],
@@ -1035,7 +1007,6 @@ const DISPOSITION: [string, { surface: string; group: string; parent?: string }]
   ["effort.open", { surface: "slash", group: "navigate" }],
   ["marketplace.open", { surface: "internal", group: "navigate", parent: "extensions" }],
   ["memory.config", { surface: "internal", group: "navigate", parent: "settings" }],
-  ["sandbox.config", { surface: "internal", group: "navigate", parent: "settings" }],
   ["theme.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["updates.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["backend.reconnect", { surface: "slash", group: "actions", parent: "inspect" }],
@@ -1064,7 +1035,6 @@ test("thin action commands dispatch through their injected application effects",
   const { commands, calls, dispose } = harness();
   const contract = [
     ["agent.picker", "agent-picker"],
-    ["isolation.picker", "isolation-picker"],
     ["memory.picker", "memory-picker"],
     ["transcript.diff", "diff"],
     ["plan.open", "plan"],
@@ -1289,7 +1259,6 @@ test("onMount seeds the planning block once settings exist and it is unconfigure
       envStatus: () => "unset",
       declaredMcpServers: () => [],
       reload: async () => {},
-      inspectSandbox: () => Promise.resolve(null as never),
     } satisfies SettingsAdapter,
   });
   await new Promise((r) => setTimeout(r, 0));
@@ -1313,7 +1282,6 @@ const FACTORY_SMOKES = [
   "effort.open",
   "marketplace.open",
   "memory.config",
-  "sandbox.config",
   "theme.open",
   "updates.open",
   "settings.open",

@@ -92,12 +92,12 @@ test("keyboardEnvironmentId survives a terminal-emulator version bump", () => {
 });
 
 describe("applyManualBindingEdit", () => {
-  const known = new Set(["isolation.picker", "app.escape", "transcript.focusPrev"]);
+  const known = new Set(["agent.picker", "app.escape", "transcript.focusPrev"]);
 
   test("clearing the last override removes the map instead of writing it back", () => {
     const result = applyManualBindingEdit({
-      saved: { profile: "manual", bindings: { "isolation.picker": ["ctrl+b"] } },
-      command: "isolation.picker",
+      saved: { profile: "manual", bindings: { "agent.picker": ["ctrl+b"] } },
+      command: "agent.picker",
       keys: [],
       knownCommands: known,
     });
@@ -110,9 +110,9 @@ describe("applyManualBindingEdit", () => {
     const result = applyManualBindingEdit({
       saved: {
         profile: "manual",
-        bindings: { "isolation.picker": ["ctrl+b"], "transcript.focusPrev": ["f7"] },
+        bindings: { "agent.picker": ["ctrl+b"], "transcript.focusPrev": ["f7"] },
       },
-      command: "isolation.picker",
+      command: "agent.picker",
       keys: [],
       knownCommands: known,
     });
@@ -127,14 +127,14 @@ describe("applyManualBindingEdit", () => {
     const saved = { profile: "manual" as const, bindings: { "mcp.foo.prompt": ["f9"] } };
     const result = applyManualBindingEdit({
       saved,
-      command: "isolation.picker",
+      command: "agent.picker",
       keys: ["ctrl+b"],
       knownCommands: known,
     });
     expect(result.issues).toBeUndefined();
     expect(result.config?.bindings).toEqual({
       "mcp.foo.prompt": ["f9"],
-      "isolation.picker": ["ctrl+b"],
+      "agent.picker": ["ctrl+b"],
     });
     // And the stale entry itself can now be cleared.
     expect(
@@ -151,13 +151,13 @@ describe("applyManualBindingEdit", () => {
     expect(
       applyManualBindingEdit({
         saved: { profile: "manual" },
-        command: "isolation.picker",
+        command: "agent.picker",
         keys: ["escape"],
         knownCommands: known,
       }).issues,
     ).toEqual([
       {
-        command: "isolation.picker",
+        command: "agent.picker",
         key: "escape",
         message: "binding shadows app.escape",
         shadows: "app.escape",
@@ -168,20 +168,18 @@ describe("applyManualBindingEdit", () => {
     expect(
       applyManualBindingEdit({
         saved: { profile: "manual" },
-        command: "isolation.picker",
+        command: "agent.picker",
         keys: ["ctrl+notakey"],
         knownCommands: known,
         invalidKeys: ["ctrl+notakey"],
       }).issues,
-    ).toEqual([
-      { command: "isolation.picker", key: "ctrl+notakey", message: "invalid key sequence" },
-    ]);
+    ).toEqual([{ command: "agent.picker", key: "ctrl+notakey", message: "invalid key sequence" }]);
   });
 
   test("an edit adopts the manual profile and preserves the rest of the record", () => {
     const result = applyManualBindingEdit({
       saved: { profile: "portable", clientPlatform: "macos", verdicts: { ctrl: "supported" } },
-      command: "isolation.picker",
+      command: "agent.picker",
       keys: ["ctrl+b"],
       knownCommands: known,
     });
@@ -189,7 +187,7 @@ describe("applyManualBindingEdit", () => {
       profile: "manual",
       clientPlatform: "macos",
       verdicts: { ctrl: "supported" },
-      bindings: { "isolation.picker": ["ctrl+b"] },
+      bindings: { "agent.picker": ["ctrl+b"] },
     });
   });
 });

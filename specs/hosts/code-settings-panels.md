@@ -139,7 +139,6 @@ function HubMenu(host, deps: { title; items; openChild(cmd: string): void })    
 | `agents` | Agents | `agents.open` |
 | `defaults` | Defaults | `defaults.open` |
 | `memory` | Memory | `memory.config` |
-| `sandbox` | Sandbox | `sandbox.config` |
 | `theme` | Theme | `theme.open` |
 | `keyboard` | Keyboard | `keyboard.open` |
 | `updates` | Updates | `updates.open` |
@@ -155,65 +154,16 @@ write. See [`agent-system-prompt.md`](../engine/agent-system-prompt.md). Product
 `packages/code/src/views/config/AgentsPanel.tsx`. Test:
 `packages/code/tests/integration/agents-panel-render.test.tsx`.
 
-`DefaultsPanel`, `MemoryConfigPanel`, `SandboxConfigPanel` and `RunControlsPanel` reuse that stable
-overview/detail model. Their overview rows never insert configured/effective/source blocks beneath
-the cursor: Enter retains the field's edit action, while `i` pushes a detail level that owns those
-facts and any field-specific explanation. Escape returns to the same selected row. Sandbox keeps
-host availability, fail-closed warnings and the toolchain inventory on the Sandbox detail level;
-refresh and unavailable-toolchain controls remain available there. Production:
-`DetailSettingRow` and `SettingDetail` in `packages/code/src/ui/patterns/detail-view.tsx`, plus the
-four panels named above. Test: `packages/code/tests/integration/defaults-panel-render.test.tsx`,
-`packages/code/tests/integration/memory-config-render.test.tsx`,
-`packages/code/tests/integration/sandbox-config-render.test.tsx`, and
+`RunControlsPanel` presents Memory for this session and Completed plans. Enter changes the selected
+value, while `i` opens its effective detail. Memory updates only the session store; completed-plan
+retention writes through `patchPlansSettings` in the selected scope. Production:
+`RunControlsPanel` in `packages/code/src/views/config/RunControlsPanel.tsx`. Test:
 `packages/code/tests/integration/run-controls-render.test.tsx`.
 
-The Sandbox overview renders `SandboxInspection.filesystem` so the selected read scope and write
-posture remain visible beside backend status. That host observation wins in the effective access
-line when an untrusted workspace requests weaker settings than the global Sandbox; editable rows
-continue to show the requested values. Run controls and Doctor use the same observation for
-effective placement, and the quick picker marks that placement as current. The Isolation picker states Host OS access, Sandbox
-host-visible reads with declared writes. Production:
-`SandboxConfigPanel` in
-[SandboxConfigPanel.tsx](../../packages/code/src/views/config/SandboxConfigPanel.tsx) and
-`isolationPlacementLines` in
-[isolation.ts](../../packages/code/src/features/run/isolation.ts). Test:
-[sandbox-config-render.test.tsx](../../packages/code/tests/integration/sandbox-config-render.test.tsx)
-(`host inspection wins when an untrusted workspace requests weaker Sandbox access`)
-and [run-controls-render.test.tsx](../../packages/code/tests/integration/run-controls-render.test.tsx)
-(`run controls follow host Sandbox inspection over a weaker workspace merge`).
-The quick picker is tested by
-[isolation-review-picker-render.test.tsx](../../packages/code/tests/integration/isolation-review-picker-render.test.tsx)
-(`the isolation picker marks the host-inspected Sandbox as current`).
-
-`MemoryConfigPanel` adopts the same overview shape as `Sandbox`: the effective summary line, then
-one row per control, with no intermediate `settings (<scope>)` / `session (this client)` headings —
-the rows already name their own origin, and the headings spent the height a short terminal needed.
-Its presentation title is `Memory`. The session control keeps its client-local identity on its own
-row: its origin reads `this client` and it applies `now`, and changing the page's scope does not turn
-it into a persisted setting. `Memory` and `Extraction model` keep their `from <scope>` origin, their
-pending/dirty state and their conditional visibility exactly as before; the effective summary still
-carries the reason a disabled, unresolved or session-overridden state cannot learn. Production:
-`packages/code/src/views/config/MemoryConfigPanel.tsx` (`body`, `settingsRows`) and
-`DetailColumn`/`DetailSettingRow` in `packages/code/src/ui/patterns/detail-view.tsx`. Test:
-`packages/code/tests/integration/memory-config-render.test.tsx` ("the overview presents one list of
-rows without intermediate scope headings"), with
-`packages/code/tests/integration/sandbox-config-render.test.tsx` as the shared-primitive sentinel.
-
-`RunControlsPanel` is the Settings screen for Host or Sandbox placement. It writes through
-shared `applyIsolation`; native Sandbox fields remain under `sandbox.config`. An active operation
-keeps the saved setting for the next run. An idle save requests a workspace connection reload; a
-failed reload leaves the saved choice explicitly pending rather than reporting it as active.
-Production: `packages/code/src/features/run/isolation.ts` (`isolationPlacementLines`) and
-`packages/code/src/views/config/RunControlsPanel.tsx`.
-Test: `packages/code/tests/unit/isolation.test.ts`,
-`packages/code/tests/integration/isolation-review-picker-render.test.tsx`, and
-`packages/code/tests/integration/run-controls-render.test.tsx`; connection reselection is pinned by
-`packages/code/tests/component/workspace-client-manager.test.ts`.
-
-The `Ctrl+X M` Memory picker mirrors Run controls' `on`/`off` choice but changes only the
-session `MemoryModeStore`; persisted Memory settings remain under `MemoryConfigPanel`. Production:
+The `Ctrl+X M` Memory picker mirrors the session `on`/`off` choice. Persisted Memory settings
+remain under `MemoryConfigPanel`. Production: `MemoryPicker` in
 `packages/code/src/views/overlays/MemoryPicker.tsx`. Test:
-`packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
+`packages/code/tests/integration/app-shell-render.test.tsx`.
 
 `UpdatesPanel` is a lazy Settings child over Code's own `code.json`, not kernel settings. Its single
 toggle reads `CodeConfigStore.updateCheckEnabled`, which defaults on and consults only the global
@@ -299,7 +249,7 @@ MODEL_FIELDS = ["context_window_tokens","max_output_tokens","prompt_cache","head
 | `refs(name)` / `modelRefs(fullId)` | who cites a provider / a model |
 | `envStatus(varName)` | `"set" \| "keyfile" \| "unset"` |
 | `declaredMcpServers()` | parses `mcpServers` from the merged view |
-| `reload()` / `inspectSandbox(opts?)` | refresh; sandbox probe passthrough |
+| `reload()` | refreshes the settings projection |
 
 Free functions: `patchPlansSettings`, `resolveContextWindow`, plus re-exports of
 `mergeProviders` / `mergeSettings` / `SettingsFile` from `@clarvis/kernel/config`.
@@ -1525,7 +1475,7 @@ cases).
 | `adapters/provider-request-policy.ts` | `@clarvis/kernel/policy` (`envRefPattern`, `FORBIDDEN_PROVIDER_BODY_KEYS`) | runtime, static | `packages/code/src/adapters/provider-request-policy.ts` |
 | `adapters/mcp-capabilities.ts` | `@clarvis/kernel/config` (`mcpServerSettingsSchema`), `@clarvis/kernel/policy` (`CONTROL_PLANE_TOOL_NAMES`) | runtime, static | `packages/code/src/adapters/mcp-capabilities.ts` |
 | `adapters/settings.ts` | `@clarvis/kernel/config` (`kernelSettingsSchema`, `mergeProviders`, `mergeSettings`, `parseModelRef`, `isWellFormedHttpUrl`, `PLANS_DEFAULTS`) | runtime, static | `packages/code/src/adapters/settings.ts` |
-| `adapters/settings.ts` | `@clarvis/protocol` (`ConfigService`, `SettingsData`, `SettingsRepairPlan`, `SandboxInspection`) | type-only | `packages/code/src/adapters/settings.ts` |
+| `adapters/settings.ts` | `@clarvis/protocol` (`ConfigService`, `SettingsData`, `SettingsRepairPlan`) | type-only | `packages/code/src/adapters/settings.ts` |
 | `ExtensionProfileBrowser.tsx` | `@clarvis/protocol` (`ExtensionProfileService` and Extension Profile DTOs) | type-only | `packages/code/src/views/config/ExtensionProfileBrowser.tsx` |
 | `adapters/models-catalog.ts` | `@clarvis/protocol` catalog DTOs + `@clarvis/kernel/config` `parseModelRef` | runtime + type | `packages/code/src/adapters/models-catalog.ts` |
 
@@ -1570,11 +1520,9 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
   `defaults.open`, `extension-profiles.open`, `plugins.open`, `hooks.open`, `marketplace.open`, `mcp.browse`, `settings.open`, `extensions.open`.
 - `views/overlay-host.ts` depends on `ViewHostControls`' exact shape — `runSave`, `scopeBound`,
   `escape`, `dispose` (`packages/code/src/views/overlay-host.ts`).
-- `AgentsPanel`, `RunControlsPanel`, `MemoryConfigPanel`,
-  `SandboxConfigPanel`, `WorkflowsHub`, `SessionsHub`, `ThemeView`,
+- `AgentsPanel`, `RunControlsPanel`, `MemoryConfigPanel`, `WorkflowsHub`, `SessionsHub`, `ThemeView`,
   `KeyboardView`, `DoctorView`, `ModelView`, `EffortView` all consume `view-host.tsx`'s toolkit; they
-  belong to sibling documents ([hosts/code-domain-hubs.md](code-domain-hubs.md), [hosts/model-catalog.md](model-catalog.md),
-  [execution/sandbox.md](../execution/sandbox.md)).
+  belong to sibling documents ([hosts/code-domain-hubs.md](code-domain-hubs.md), [hosts/model-catalog.md](model-catalog.md)).
 
 ### 7.4 Delegated out
 

@@ -21,7 +21,7 @@ export const EDIT_TOOL_NAMES: readonly string[] = AGENT_TOOL_NAMES.filter(
 );
 
 /**
- * Coding tools that execute commands on either the sandboxed or host boundary.
+ * Coding tools that execute host commands.
  *
  * @remarks The one list here that is written out rather than derived, and
  * deliberately so. `READ_ONLY_TOOL_NAMES` comes from `@clarvis/tools`' own

@@ -8,10 +8,10 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 ### Changed
 
 - Removed Shell Guard, Judge, command review and file-tool path admission. Shell and file tools now
-  follow host permissions or the configured native Sandbox policy.
-- Removed Docker and Podman execution, container images and runtime installers. Isolation now offers
-  Host and Sandbox; remote SSH connections remain available. Release candidates use source identity
-  and stable releases continue to publish portable binaries.
+  follow host process permissions.
+- Removed Docker and Podman execution, container images and runtime installers. Remote SSH
+  connections remain available. Release candidates use source identity and
+  stable releases continue to publish portable binaries.
 
 ## [0.2.0] - Unreleased
 
@@ -36,7 +36,7 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 - `/diff` and `Ctrl+X D` show the current Git working tree, including staged, unstaged and untracked
   files, instead of grouping transcript tool calls. The overlay opens on an empty conversation.
-- `/background`, `/background list`, `/attach` and scoped cancellation let a local Host/Sandbox run
+- `/background`, `/background list`, `/attach` and scoped cancellation let a local host run
   continue after its TUI closes and return to the same execution later. SSH retains list, attach
   and cancel only while its current client connection is alive.
 - `/goal` creates and controls a persistent objective with bounded automatic continuation,
@@ -126,8 +126,6 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   scheduled it without retaining prompt or argument contents.
 - Command-review denials no longer accumulate as failed executions, while genuine tool failures do;
   a later success in the same model-declared batch clears a provisional convergence crossing.
-- Native sandboxes admit the host's compatible temporary roots and recognized system executables;
-  Apple-silicon Homebrew tools work inside Seatbelt without granting write access to Homebrew.
 - Transcript streaming remains in one chronological scroll flow, keeps an older reader's exact
   anchor, returns explicit new submissions to the Lead tail, and avoids stale overscroll while an
   elicitation replaces the composer.
@@ -172,8 +170,6 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 - Environment profiles now pin qualified plugin and skill selections into immutable run snapshots,
   with guided creation and editing through the Extensions workflow.
-- macOS can enforce native Seatbelt sandbox profiles for shell execution, with matching inspection
-  and CI coverage alongside the Linux Bubblewrap backend.
 - A source-development installer provides the `clarvis-develop` launcher for running the current
   checkout without replacing a managed release installation.
 - Extension compatibility now accepts portable MCP declarations, pre-registered OAuth client
@@ -202,8 +198,6 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Security
 
-- macOS shell execution can require a native sandbox instead of falling back to an unconstrained
-  host shell, while Linux sandbox enforcement remains fail-closed.
 - Environment snapshots are revalidated at run admission and recorded with their exact identities so
   workspace or marketplace drift cannot silently change an approved run.
 - Marketplace npm installs disable lifecycle scripts, while refs, registries, subdirectories, paths,

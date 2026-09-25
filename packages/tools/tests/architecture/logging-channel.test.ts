@@ -21,8 +21,6 @@ const SRC = join(PKG, "src");
 
 /** The one module allowed to hold the default `stderr` writer. */
 const SANCTIONED = "lib/log.ts";
-/** The worker's stdout is a framed private IPC pipe, never terminal diagnostics. */
-const FRAMED_IPC = "filesystem-worker.ts";
 
 const FORBIDDEN = [
   { name: "process.stderr", pattern: /\bprocess\s*\.\s*stderr\b/ },
@@ -47,13 +45,13 @@ describe("the tools' diagnostics have one channel", () => {
     expect(files.length).toBeGreaterThan(40);
   });
 
-  it.each(FORBIDDEN)("no src module writes through $name", ({ name, pattern }) => {
+  it.each(FORBIDDEN)("no src module writes through $name", ({ pattern }) => {
     const offenders = files
       .map((file) => ({
         rel: relative(SRC, file).split("\\").join("/"),
         text: readFileSync(file, "utf8"),
       }))
-      .filter(({ rel }) => rel !== SANCTIONED && !(name === "process.stdout" && rel === FRAMED_IPC))
+      .filter(({ rel }) => rel !== SANCTIONED)
       .filter(({ text }) => pattern.test(text))
       .map(({ rel }) => rel);
     expect(offenders).toEqual([]);
@@ -64,11 +62,5 @@ describe("the tools' diagnostics have one channel", () => {
     expect(code.match(/process\s*\.\s*stderr/g)).toHaveLength(1);
     expect(/\bconsole\s*\.\s*[a-z]/.test(code)).toBe(false);
     expect(/\bprocess\s*\.\s*stdout\b/.test(code)).toBe(false);
-  });
-
-  it("the worker writes stdout only through the bounded filesystem frame encoder", () => {
-    const code = readFileSync(join(SRC, FRAMED_IPC), "utf8");
-    expect(code.match(/\bprocess\s*\.\s*stdout\b/g)).toHaveLength(1);
-    expect(code).toContain("writeFilesystemFrame(process.stdout, message)");
   });
 });

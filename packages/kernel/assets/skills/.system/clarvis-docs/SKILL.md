@@ -11,9 +11,9 @@ Use this skill when the user asks how Clarvis is configured or asks you to chang
 | Topic                                                             | Read                            |
 | ----------------------------------------------------------------- | ------------------------------- |
 | Global and workspace locations, precedence, effective values      | `references/paths.md`           |
+| File-tool and shell access                                          | `references/authority.md`       |
 | Settings fields, models, providers, runtime and operator controls | `references/settings.md`        |
 | Agent Profiles, Extension Profiles, skills, plugins and workflows | `references/extensions.md`      |
-| File-tool and shell access, sandbox placement                            | `references/authority.md`       |
 | Rejected configuration or a change not yet effective              | `references/troubleshooting.md` |
 
 For a requested edit: read the relevant reference, inspect the current file and effective configuration, edit only the requested target with available file tools, validate the result, and report whether it is effective now or requires a new run or reconnect. State trust or selection work only when the observed effective state requires it; do not leave the operator guessing about a hypothetical approval.

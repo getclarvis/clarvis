@@ -26,11 +26,6 @@
 import type { CapabilitySettingsSpec } from "@clarvis/capability";
 import { requestParamKeys } from "@clarvis/capability";
 import {
-  AGENT_TOOLS_SETTINGS_FIELDS,
-  SANDBOX_PLUGIN_FIELDS,
-  sandboxSettingsSpec,
-} from "./tools-settings.ts";
-import {
   HOOKS_PLUGIN_FIELDS,
   HOOKS_REQUEST_PARAMS,
   HOOKS_SETTINGS_FIELDS,
@@ -47,14 +42,12 @@ import {
  * plugin-surface / request-passthrough machinery iterates them. */
 export const BUILTIN_SETTINGS_SPECS: readonly CapabilitySettingsSpec[] = [
   hooksSettingsSpec,
-  sandboxSettingsSpec,
   agentsSettingsSpec,
 ];
 
 /** Capability blocks of settings.json (spread into settingsSchema). */
 export const capabilitySettingsFields = {
   ...HOOKS_SETTINGS_FIELDS,
-  ...AGENT_TOOLS_SETTINGS_FIELDS,
   ...AGENTS_SETTINGS_FIELDS,
 };
 
@@ -72,7 +65,6 @@ export const capabilityRequestParamFields = {
  * surface. */
 export const capabilityPluginFields = {
   ...HOOKS_PLUGIN_FIELDS,
-  ...SANDBOX_PLUGIN_FIELDS,
   ...SKILLS_PLUGIN_FIELDS,
 };
 

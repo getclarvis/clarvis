@@ -10,7 +10,6 @@ import {
   createSmokeContext,
   createSmokeFixture,
   type SmokeContext,
-  requireNativeSmokeConfinement,
 } from "../../tooling/artifact/isolation.ts";
 
 const contexts: SmokeContext[] = [];
@@ -281,46 +280,5 @@ describe("smoke fixture isolation", () => {
       "",
     );
     expect(() => context.socketPath(overBudget)).toThrow("smoke_socket_path_exceeds_budget");
-  });
-
-  test("native confinement either proves the boundary or reports unavailable", async () => {
-    const context = await fixture("clarvis-isolation-native-");
-    const outside = await mkdtemp(join(tmpdir(), "clarvis-native-outside-"));
-    const outsideFile = join(outside, "blocked");
-    try {
-      let command: string[];
-      try {
-        command = await requireNativeSmokeConfinement(
-          context,
-          [
-            process.execPath,
-            "-e",
-            `const {writeFileSync}=await import("node:fs");writeFileSync(${JSON.stringify(join(context.workspace, "inside"))},"inside");try{writeFileSync(${JSON.stringify(outsideFile)},"outside");process.exit(3)}catch{process.stdout.write("blocked")}`,
-          ],
-          [join(process.execPath, "..")],
-        );
-      } catch (error) {
-        expect(String(error)).toContain("smoke_native_confinement_unavailable");
-        return;
-      }
-      const child = Bun.spawn(command, {
-        cwd: context.workspace,
-        env: context.environmentFor(),
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const [code, output, errors] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text(),
-      ]);
-      expect(code).toBe(0);
-      expect(errors).toBe("");
-      expect(output).toBe("blocked");
-      expect(existsSync(join(context.workspace, "inside"))).toBe(true);
-      expect(existsSync(outsideFile)).toBe(false);
-    } finally {
-      await rm(outside, { recursive: true, force: true });
-    }
   });
 });

@@ -112,47 +112,6 @@ describe("mergeSettings", () => {
       { event: "post_tool_use", command: "workspace" },
     ]);
   });
-
-  it("merges sandbox scalars last-wins and unions scoped toolchain paths", () => {
-    const merged = mergeSettings([
-      operator({
-        sandbox: {
-          type: "native",
-          network: "none",
-          pass_env: ["CI"],
-          toolchains: {
-            mode: "auto",
-            include: ["node", "python3"],
-            extra_paths: ["/opt/global", "/opt/shared"],
-          },
-        },
-      }),
-      operator({
-        sandbox: {
-          type: "native",
-          network: "host",
-          pass_env: ["TERM"],
-          toolchains: {
-            exclude: ["python3"],
-            extra_paths: ["./vendor/sdk", "/opt/shared"],
-            excluded_paths: ["/opt/global"],
-          },
-        },
-      }),
-    ]);
-    expect(merged.sandbox).toEqual({
-      type: "native",
-      network: "host",
-      pass_env: ["CI", "TERM"],
-      toolchains: {
-        mode: "auto",
-        include: ["node", "python3"],
-        exclude: ["python3"],
-        extra_paths: ["/opt/shared", "./vendor/sdk"],
-        excluded_paths: ["/opt/global"],
-      },
-    });
-  });
 });
 
 describe("mergeSettings — plugin scopes (D7)", () => {
@@ -250,7 +209,7 @@ describe("mergeSettings — aggregate limits", () => {
     expect(() => mergeSettings([operator({ enabledPlugins })])).toThrow(/list exceeds 256/);
   });
 
-  it("rejects MCP and sandbox collections that exceed a ceiling only after merging", () => {
+  it("rejects MCP collections that exceed a ceiling only after merging", () => {
     const servers = (prefix: string) =>
       Object.fromEntries(
         Array.from({ length: 129 }, (_, index) => [
@@ -262,34 +221,6 @@ describe("mergeSettings — aggregate limits", () => {
       mergeSettings([
         operator({ mcpServers: servers("a") }),
         operator({ mcpServers: servers("b") }),
-      ]),
-    ).toThrow(/256/);
-
-    expect(() =>
-      mergeSettings([
-        operator({ sandbox: { type: "native", pass_env: Array(129).fill("A") } }),
-        operator({
-          sandbox: {
-            type: "native",
-            pass_env: Array.from({ length: 129 }, (_, index) => `B${index}`),
-          },
-        }),
-      ]),
-    ).not.toThrow(); // Duplicate values in one source collapse before the aggregate ceiling.
-    expect(() =>
-      mergeSettings([
-        operator({
-          sandbox: {
-            type: "native",
-            pass_env: Array.from({ length: 129 }, (_, index) => `A${index}`),
-          },
-        }),
-        operator({
-          sandbox: {
-            type: "native",
-            pass_env: Array.from({ length: 129 }, (_, index) => `B${index}`),
-          },
-        }),
       ]),
     ).toThrow(/256/);
   });

@@ -250,7 +250,6 @@ const FULL_GATES: Gate[] = [
   gate("default_model", "default model", "soft"),
   gate("default_agent", "default agent", "ui"),
   gate("theme", "theme", "ui"),
-  gate("run_safety", "run safety", "ui"),
   gate("memory", "memory", "comms"),
   gate("backend", "backend", "comms"),
 ];
@@ -292,7 +291,7 @@ test("short terminal: the gate list scrolls; nothing bleeds past the footer onto
     .map((l) => l.replace(/\s+$/, ""));
   const footerIdx = lines.findIndex((l) => l.includes("[g] back"));
   expect(footerIdx).toBeGreaterThan(0);
-  expect(t.captureCharFrame()).toContain("10 configuration checks passed");
+  expect(t.captureCharFrame()).toContain("9 configuration checks passed");
   const below = lines.slice(footerIdx + 1);
   for (const gate of ["config", "agents", "provider", "memory", "backend", "run safety"]) {
     expect(below.some((l) => l.includes(gate))).toBe(false);
@@ -689,7 +688,7 @@ test("only unresolved actionable rows participate in Doctor navigation", async (
   press("-");
   await t.renderOnce();
   expect(notes).toEqual(["skipped: credential (this session only)"]);
-  expect(t.captureCharFrame()).toContain("10 configuration checks passed");
+  expect(t.captureCharFrame()).toContain("9 configuration checks passed");
   t.renderer.destroy();
 });
 
@@ -720,7 +719,7 @@ test("tall healthy Doctor still keeps checks collapsed", async () => {
   await t.renderOnce();
   await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("10 configuration checks passed");
+  expect(frame).toContain("9 configuration checks passed");
   expect(frame).not.toContain("backend: ok");
   t.renderer.destroy();
 });

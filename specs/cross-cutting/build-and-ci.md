@@ -144,7 +144,7 @@ separate measured change moves it.
 | `@clarvis/paths` | `.` | — |
 | `@clarvis/trace` | `.`, `./testing` | — |
 | `@clarvis/mcp-client` | `.` | — |
-| `@clarvis/tools` | `.`, `./guard`, `./shell`, `./sandbox` | — |
+| `@clarvis/tools` | `.`, `./shell` | — |
 | `@clarvis/hooks` | `.`, `./capability` | — |
 | `@clarvis/skills` | `.`, `./catalog`, `./capability` | — |
 | `@clarvis/memory` | `.`, `./schemas`, `./capability`, `./settings`, `./testing` | — |
@@ -524,9 +524,6 @@ Finite timeouts remain conservative: 15 minutes
 for build and ordinary Linux gates, 30 for coverage, and 5 for aggregation. Windows/macOS retain
 their existing bounds. No required job or step uses `continue-on-error` or an optional gate condition.
 
-The `coverage` job installs and executes ripgrep and Bubblewrap, loads the packaged
-`bwrap-userns-restrict` AppArmor profile, and proves a minimal sandbox launch without disabling
-host-wide protection. `CLARVIS_NATIVE_SANDBOX_CANARY=1` reaches the complete coverage scripts.
 
 The public required contexts remain exactly `linux`,
 `tools, paths, plan, memory, keyboard policy (windows)`, and `keyboard policy (macos)`.
@@ -562,14 +559,10 @@ contributes only its platform-independent keyboard-policy tests. `kernel`, `loop
 `mcp-client` and `supervision` remain deliberately absent. Production: `.github/workflows/ci.yml`
 (`jobs.windows.steps`).
 
-**`sandbox-macos`**, `macos-14`, records the Bun version/revision, installs/verifies ripgrep, and runs
-the complete `@clarvis/tools` suite plus the kernel sandbox-policy integration with
-`CLARVIS_NATIVE_SANDBOX_CANARY=1`. It then runs the same three keyboard test files as Windows. The
-real-host canaries verify Seatbelt file/network/process enforcement and a discovered toolchain's
-kernel inspection path; this is not inferred from generated profile text. The job publishes the
-stable `keyboard policy (macos)` status context required by both permanent-branch repository rulesets;
-adding macOS canaries must not rename that external contract. Production: `.github/workflows/ci.yml`
-(`jobs.sandbox-macos`).
+**`keyboard-macos`**, `macos-14`, records the Bun version/revision, installs/verifies
+ripgrep, runs the complete `@clarvis/tools` suite and keyboard policy tests. It publishes
+the stable `keyboard policy (macos)` status context required by both permanent-branch rulesets.
+Production: `.github/workflows/ci.yml` (`jobs.keyboard-macos`).
 
 All host Bun jobs record `bun --version` and `bun --revision` immediately after setup, so a future run
 remains attributable to the executable it actually used. CI was restored for the new public
@@ -715,13 +708,10 @@ environment-isolated mode. `SmokeContext.socketPath(label)` reserves an exclusiv
 validates its UTF-8 length against `UNIX_SOCKET_PATH_BUDGET_BYTES` before any process is started, so
 a too-deep root is reported as itself rather than as a failing backend; tmux receives that address
 through `-S` and every capture and `kill-server` command names the same endpoint. The socket directory
-stays inside the fixture root while the endpoint budget allows it and otherwise becomes a short root of
-its own, which `SmokeContext.writableRoots` declares as an additional read-write bind for required
-confinement and which cleanup removes after the children settle. Every PTY child
-receives `environmentFor(...)`. Required native-confinement mode probes Bubblewrap first and throws
-`smoke_native_confinement_unavailable` rather than using an unconfined PTY when the backend is
-absent or unusable; ordinary mode still throws
-`"observing a boot requires either script(1) or tmux to provide a PTY"` when neither is available.
+stays inside the fixture root while the endpoint budget allows it and otherwise becomes a short
+root of its own. Cleanup removes it after the children settle. Every PTY child receives
+`environmentFor(...)`. When neither `script(1)` nor tmux is available, the harness reports
+`"observing a boot requires either script(1) or tmux to provide a PTY"`.
 
 The cross-runner contract canary is `tooling/tests/unit/harness-isolation-contract.test.ts`; it
 keeps artifact, release and installer runners on fixture-owned roots and explicit child
@@ -923,14 +913,6 @@ setup`, and the source-mode escape.
 Production: `packages/code/src/cli-entry.ts`.
 Test: `packages/code/tests/unit/cli-entry.test.ts`.
 
-**BUILD-20.** Linux and macOS CI must execute the real native-sandbox canary; generated argv/profile
-tests alone do not establish host enforcement.
-Production: `.github/workflows/ci.yml` (`jobs.coverage`, `jobs.sandbox-macos`,
-`CLARVIS_NATIVE_SANDBOX_CANARY`).
-Test: `packages/tools/tests/integration/sandbox.test.ts` (`enforces the native sandbox against real
-host resources`) and `packages/kernel/tests/integration/sandbox-policy.test.ts` (`probes a discovered
-toolchain through the real native backend`).
-
 **BUILD-21.** The CI retry accepts only Code exits 132/134/139, with three additional attempts, and
 never retries 130/143 or another package. Production: `tooling/lib/ci-coverage.ts`, `runCiCoverage`
 and `normalizeCoverageExit`; `tooling/ci/retry-code-coverage.sh` is only the CLI entry.
@@ -977,8 +959,7 @@ independent drift in the canonical pin, CI, canary, engines, types, and
 lockfile.
 
 **BUILD-27.** The tracked Clarvis repository contains no Python source (`.py`, `.pyi`, or `.pyw`);
-test executables and maintenance automation use the pinned Bun runtime. This does not restrict the
-the sandbox's support for user-installed toolchains.
+test executables and maintenance automation use the pinned Bun runtime.
 Production: `tooling/checks/bun-sources.ts`, invoked by `check:bun-sources` inside `lint:intent`.
 Test: `tooling/tests/unit/bun-sources.test.ts` pins the accepted and rejected extensions.
 
@@ -1078,7 +1059,6 @@ monorepo`).
 | Smoke fixture has no usable or short-enough parent | `throw new Error("smoke_fixture_no_usable_parent:<candidate>: <refusal>;…")`, or `smoke_socket_root_unavailable:…` when only the socket root cannot be reserved, naming every refusal | `packages/code/tooling/artifact/isolation.ts` (`validateParents`, `allocateFixtureRoot`, `allocateSocketRoot`) |
 | Smoke boot times out or hits `"failed to start"` | prints stripped screen tail + stderr tail, terminates owned children, removes only its own fixture and socket roots, and exits 1 | `packages/code/tooling/artifact/smoke.ts`; `SmokeContext.cleanup` and `packages/code/tooling/artifact/pty.ts` |
 | Smoke painted but wrote no `app.boot.painted` | `exit 1` with "`--debug` is the only diagnostic channel a bundled clarvis has" | `packages/code/tooling/artifact/smoke.ts` |
-| Required smoke confinement has no usable native backend | `throw new Error("smoke_native_confinement_unavailable:<reason>")`; no fallback PTY is started | `packages/code/tooling/artifact/isolation.ts` (`requireNativeSmokeConfinement`) |
 | Ordinary smoke has no `script(1)` and no `tmux` | `throw new Error("observing a boot requires either script(1) or tmux to provide a PTY")` | `packages/code/tooling/artifact/pty.ts` |
 | Code dies by signal 132/134/139 during CI tests | up to 3 additional Code attempts, then remaining packages and the global checker | `tooling/lib/ci-coverage.ts`, `runCiCoverage` |
 | Bun dies by 130 or 143 | passed straight through, never retried | `tooling/ci/retry-code-coverage.sh` |
@@ -1119,11 +1099,6 @@ sets it (`package.json`, `scripts.hooks:install`, is the only writer).
 - Every package's resolvability depends on its own `exports` map and on the root workspaces array;
   `tooling/lib/package-graph.ts` reads `rootManifest.workspaces` reads
   `pkg.manifest.exports`, so both are load-bearing configuration and not documentation.
-- The published `@clarvis/tools/sandbox` subpath is a live runtime surface: it is imported by
-  `packages/loop/src/capabilities-tools.ts`,
-  `packages/loop/src/runtime/capabilities/sandbox-host-policy.ts`,
-  `packages/kernel/src/local.ts`, and `packages/kernel/src/sandbox/policy.ts`. The package-graph
-  analyzer checks all four imports against the tools manifest's export map.
 - `packages/code/tooling/artifact/smoke.ts` depends on `@clarvis/kernel`'s model-catalog data file
   existing at its fixed bundled path; moving it breaks the smoke rather than a unit test.
 - `packages/kernel/src/models/model-catalog.ts` names

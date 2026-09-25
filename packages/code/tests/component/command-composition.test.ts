@@ -71,7 +71,6 @@ function fakeSettings(): SettingsAdapter {
     envStatus: () => "unset",
     declaredMcpServers: () => [],
     reload: async () => {},
-    inspectSandbox: () => Promise.resolve(null as never),
   };
 }
 
@@ -128,7 +127,6 @@ function harness(): {
     ui,
     effects: {
       openAgentPicker: () => calls.push("agent-picker"),
-      openIsolationPicker: () => calls.push("isolation-picker"),
       openMemoryPicker: () => calls.push("memory-picker"),
       openDiff: () => calls.push("diff"),
       openPlan: () => calls.push("plan"),
@@ -238,7 +236,6 @@ const VIEW_CONTRACT = [
   ["effort.open", "Default effort", "slash", undefined],
   ["marketplace.open", "Marketplace", "internal", "extensions"],
   ["memory.config", "Memory settings", "internal", "settings"],
-  ["sandbox.config", "Sandbox", "internal", "settings"],
   ["theme.open", "Theme", "internal", "settings"],
   ["settings.open", "Settings", "slash", undefined],
   ["doctor.open", "Doctor", "slash", "inspect"],

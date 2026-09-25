@@ -69,9 +69,6 @@ function fakeEffects(overrides: Partial<InteractionEffects> = {}): InteractionEf
     openAgentPicker: () => {
       calls.push("openAgentPicker");
     },
-    openIsolationPicker: () => {
-      calls.push("openIsolationPicker");
-    },
     openMemoryPicker: () => {
       calls.push("openMemoryPicker");
     },
@@ -241,19 +238,6 @@ test("Ctrl+X P toggles the plan on every profile", () => {
   expect(DEFAULT_WHEN["memory.cycle"]).toBeUndefined();
 });
 
-test("Isolation and Memory share leader sequences across profiles", () => {
-  expect(portable()["isolation.picker"]).toBe("<leader>i");
-  expect(enhanced()["isolation.picker"]).toBe("<leader>i");
-  expect(portable()["memory.picker"]).toBe("<leader>m");
-  expect(enhanced()["memory.picker"]).toBe("<leader>m");
-  const legacy = { ...environmentFor("portable"), protocol: "legacy" as const };
-  const legacyBindings = resolvedVitalBindings("linux", legacy);
-  expect(legacyBindings["isolation.picker"]).toBe("<leader>i");
-  expect(legacyBindings["memory.picker"]).toBe("<leader>m");
-  for (const binding of find(buildVitalBindings(enhanced(), DEFAULT_WHEN), "isolation.picker"))
-    expect(binding.when).toBe("overlay==none");
-});
-
 test("F1 has no built-in action", async () => {
   expect(Object.values(portable()).flat()).not.toContain("f1");
   expect(Object.values(enhanced()).flat()).not.toContain("f1");
@@ -273,7 +257,7 @@ test("background commands are gated to overlay==none so the active window owns i
     expect(b?.when).toBe("overlay==none");
   }
   expect(find(vital, "run.cancel")[0]?.when).toBeUndefined();
-  for (const cmd of ["agent.picker", "isolation.picker", "memory.picker"])
+  for (const cmd of ["agent.picker", "memory.picker"])
     expect(find(vital, cmd)[0]?.when).toBe("overlay==none");
   expect(find(vital, "plan.open")[0]?.when).toBe("overlay in (none, plan)");
 });
@@ -297,7 +281,6 @@ test("a pending modal keeps scrolling, suspend and cancel, and withholds the res
   for (const cmd of [
     "app.escape",
     "agent.picker",
-    "isolation.picker",
     "memory.picker",
     "goal.toggle",
     "transcript.diff",
@@ -511,14 +494,6 @@ test("createInteraction: leader picker sequences dispatch while Tab retains focu
   const off = interaction.keymap.registerLayer({
     commands: [
       uiCommand({
-        id: "isolation.picker",
-        title: "Isolation",
-        description: "Open the isolation picker",
-        category: "navigation",
-        surfaces: [],
-        run: () => effects.openIsolationPicker(),
-      }),
-      uiCommand({
         id: "memory.picker",
         title: "Memory",
         description: "Open the Memory picker",
@@ -536,13 +511,11 @@ test("createInteraction: leader picker sequences dispatch while Tab retains focu
     },
   });
   press(t.renderer, "x", { ctrl: true });
-  press(t.renderer, "i");
-  press(t.renderer, "x", { ctrl: true });
   press(t.renderer, "m");
   press(t.renderer, "tab");
   await settle();
 
-  expect(effects.calls).toEqual(["openIsolationPicker", "openMemoryPicker", "focusNext"]);
+  expect(effects.calls).toEqual(["openMemoryPicker", "focusNext"]);
   off();
   interaction.dispose();
   t.renderer.destroy();

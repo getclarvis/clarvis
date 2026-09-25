@@ -25,7 +25,6 @@ import { pathsLogger, type PathsLogger } from "./diag.ts";
  * `sockaddr_un.sun_path` is 108 bytes on Linux and 104 on Darwin, and a caller
  * that spends the whole array has no room left for the terminator. This is the
  * budget the reconnectable local-host endpoint is already selected against.
- * Windows named pipes are not filesystem paths and are never measured by it.
  */
 export const UNIX_SOCKET_PATH_BUDGET_BYTES = 100;
 
@@ -78,15 +77,10 @@ const DEFAULT_SWEEP_GRACE_MS = 24 * 60 * 60 * 1000;
 /** Default bound on the entries one sweep pass examines per directory of a container. */
 const DEFAULT_SWEEP_ENTRIES = 1_000;
 
-/** Whether this platform expresses privacy through directory modes. */
-const modesAreMeaningful = process.platform !== "win32";
-
 /**
  * How one account's own container is named on disk.
  *
- * @remarks POSIX hosts share one temporary base between accounts, so the segment
- *   separates them within it. Windows has no account id here and needs none: its
- *   base is already the account's own temporary directory.
+ * @remarks A shared temporary base separates accounts with this segment.
  */
 function accountSegment(): string {
   return `u${process.getuid?.() ?? 0}`;
@@ -109,8 +103,6 @@ export type AncestorTrust =
 
 /** Test seams for {@link ancestorTrust}. */
 export interface AncestorTrustOptions {
-  /** Host platform; injectable so the Windows verdict is testable from POSIX. */
-  platform?: NodeJS.Platform;
   /**
    * The account id treated as the owner; defaults to `process.getuid()`.
    *
@@ -139,12 +131,9 @@ export interface AncestorTrustOptions {
  * foreign-owned root is how a run ends up unable to publish its own private
  * state at all.
  *
- * Windows returns `trusted` unconditionally: directory modes do not express
- * privacy there and the kernel verifies an ACL instead. Any read failure is a
- * refusal, never an assumption of trust.
+ * Any read failure is a refusal, never an assumption of trust.
  */
 export function ancestorTrust(path: string, opts: AncestorTrustOptions = {}): AncestorTrust {
-  if ((opts.platform ?? process.platform) === "win32") return { trusted: true };
   const resolved = resolve(path);
   const rootOwner = lstatSync(parse(resolved).root).uid;
   const account = opts.accountUid ?? process.getuid?.();
@@ -208,12 +197,11 @@ export interface ShortTemporaryCandidateOptions {
 }
 
 /** The candidate bases for a platform, before any validation. */
-function rawCandidates(platform: NodeJS.Platform, supplied?: readonly string[]): readonly string[] {
+function rawCandidates(supplied?: readonly string[]): readonly string[] {
   if (supplied !== undefined) {
     if (supplied.length === 0) throw new Error("short temporary root candidates must not be empty");
     return [...supplied];
   }
-  if (platform === "win32") return [tmpdir()];
   const ordered = [process.env.XDG_RUNTIME_DIR, "/tmp", "/dev/shm", tmpdir()];
   return [
     ...new Set(ordered.filter((value): value is string => value !== undefined && value !== "")),
@@ -259,7 +247,6 @@ const TRUST_PROBE_CHILD = "allocation";
 export function shortTemporaryRootCandidates(
   opts: ShortTemporaryCandidateOptions = {},
 ): readonly string[] {
-  const platform = opts.platform ?? process.platform;
   const budget = opts.budgetBytes ?? SHORT_SCRATCH_BUDGET_BYTES;
   const requireTrust = opts.requireTrustedAncestors ?? true;
   const requireBudget = opts.requireBudget ?? false;
@@ -267,7 +254,7 @@ export function shortTemporaryRootCandidates(
   const accepted: string[] = [];
   const roomy: string[] = [];
   const seen = new Set<string>();
-  for (const raw of rawCandidates(platform, opts.candidates)) {
+  for (const raw of rawCandidates(opts.candidates)) {
     const reject = (reason: string, candidate: string): void => {
       logger.debug(
         { event: "paths.temporary_root_candidate_rejected", candidate, reason },
@@ -288,7 +275,7 @@ export function shortTemporaryRootCandidates(
         continue;
       }
       if (requireTrust) {
-        const trust = ancestorTrust(join(canonical, TRUST_PROBE_CHILD), { platform });
+        const trust = ancestorTrust(join(canonical, TRUST_PROBE_CHILD));
         if (!trust.trusted) {
           reject(`untrusted_ancestors:${trust.refusal}:${trust.path}`, canonical);
           continue;
@@ -356,7 +343,6 @@ interface AllocationMetadata {
 function isOwnedDirectory(path: string): boolean {
   const info = lstatSync(path);
   if (!info.isDirectory() || info.isSymbolicLink()) return false;
-  if (!modesAreMeaningful) return true;
   if (process.getuid !== undefined && info.uid !== process.getuid()) return false;
   return (info.mode & 0o777) === DIR_MODE;
 }
@@ -385,7 +371,7 @@ function ensureContainer(base: string, logger: PathsLogger): string {
     const dir = join(container, name);
     try {
       mkdirSync(dir, { recursive: false, mode: DIR_MODE });
-      if (modesAreMeaningful) chmodSync(dir, DIR_MODE);
+      chmodSync(dir, DIR_MODE);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     }
@@ -412,7 +398,7 @@ function createAllocation(
       if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
       throw error;
     }
-    if (modesAreMeaningful) chmodSync(path, DIR_MODE);
+    chmodSync(path, DIR_MODE);
     assertOwnedDirectory(path);
     return { id, path };
   }
@@ -479,7 +465,7 @@ export function allocateShortTemporaryRoot(opts: ShortTemporaryRootOptions): Sho
       const record = join(container, METADATA_DIR, `${created.id}.json`);
       try {
         writeFileSync(record, `${JSON.stringify(metadata)}\n`, { flag: "wx", mode: FILE_MODE });
-        if (modesAreMeaningful) chmodSync(record, FILE_MODE);
+        chmodSync(record, FILE_MODE);
       } catch (error) {
         rmSync(created.path, { recursive: true, force: true });
         logger.warn(
@@ -629,8 +615,7 @@ function holdsOnlyDirectories(path: string): boolean {
 function holdsNothing(directory: string, info: Stats): boolean {
   try {
     if (!info.isDirectory() || info.isSymbolicLink()) return false;
-    if (modesAreMeaningful && process.getuid !== undefined && info.uid !== process.getuid())
-      return false;
+    if (process.getuid !== undefined && info.uid !== process.getuid()) return false;
     return holdsOnlyDirectories(directory);
   } catch {
     return false;

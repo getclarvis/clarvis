@@ -60,11 +60,11 @@ async function main(): Promise<void> {
   run(["bun", "install", "--frozen-lockfile"], repositoryRoot);
   run(["bun", "--filter", "@clarvis/code", "build:install"], repositoryRoot);
 
-  const userHome = process.env.HOME ?? process.env.USERPROFILE;
+  const userHome = process.env.HOME;
   const bunInstall =
     process.env.BUN_INSTALL ?? (userHome === undefined ? undefined : join(userHome, ".bun"));
   if (bunInstall === undefined) {
-    throw new Error("BUN_INSTALL, HOME, or USERPROFILE is required to locate Bun's global bin");
+    throw new Error("BUN_INSTALL or HOME is required to locate Bun's global bin");
   }
   const binDirectory = join(bunInstall, "bin");
   await removeOwnedLegacyBin(binDirectory);

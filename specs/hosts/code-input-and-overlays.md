@@ -893,7 +893,7 @@ settled turn's persisted continuation; an empty session reports that there is no
     the ring from working.** `packages/code/src/core/prompt-history.ts` (`report`, `reported` latch). Pinned:
     `packages/code/tests/integration/input-editor.test.ts`.
 16. **`!` always runs through `bash` specifically on POSIX**, even though the kernel's own tools
-    resolve to bare `sh`. `packages/code/src/adapters/local-shell.ts` (`runLocalBash`). Pinned (skipped on win32):
+    resolve to bare `sh`. `packages/code/src/adapters/local-shell.ts` (`runLocalBash`). Pinned:
     `packages/code/tests/integration/local-shell.test.ts`.
 17. **A `shell.local.exit` diagnostic never carries the command text**, only
     `{exit_code, duration_ms, killed, signal, spawn_failed}`. `packages/code/src/adapters/local-shell.ts` (`runLocalBash`).

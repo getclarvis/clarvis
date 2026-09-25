@@ -8,7 +8,6 @@ const base: LocalHostPathOptions = {
   owner: "alice",
   operatorId: "account-1000",
   endpointRootCandidates: [resolve("/tmp")],
-  platform: "linux",
 };
 
 describe("local host paths", () => {
@@ -79,22 +78,7 @@ describe("local host paths", () => {
     expect(paths.projectionFile("a", "b")).not.toBe(paths.projectionFile("a/b", ""));
   });
 
-  test("Windows uses a named pipe independent of filesystem path length", () => {
-    const current = localHostPaths({ ...base, platform: "win32" });
-    const paths = localHostPaths({
-      ...base,
-      platform: "win32",
-      endpointRootCandidates: ["", "x".repeat(200), "\0"],
-    });
-    expect(paths.endpoint).toBe(`\\\\.\\pipe\\clarvis-${paths.identity}`);
-    expect(paths.endpoint).toBe(current.endpoint);
-    expect(paths.endpointDirectory).toBeUndefined();
-    expect(paths.projectionFile("generation", "execution")).toMatch(
-      /[/\\]projections[/\\][a-f0-9]{64}\.jsonl$/,
-    );
-  });
-
-  test("rejects invalid explicit candidate lists before constructing a POSIX path", () => {
+  test("rejects invalid explicit candidate lists before constructing a socket path", () => {
     for (const endpointRootCandidates of [[], [""], ["/tmp\0secret"]]) {
       expect(() => localHostPaths({ ...base, endpointRootCandidates })).toThrow(
         "endpoint root candidates",

@@ -68,24 +68,12 @@ export async function runGoalLive(options: {
     workspace: string,
   ): Record<string, string> => {
     const environment: Record<string, string> = {};
-    for (const key of [
-      "PATH",
-      "BUN_INSTALL",
-      "SystemRoot",
-      "COMSPEC",
-      "PATHEXT",
-      "LANG",
-      "LC_ALL",
-      "LC_CTYPE",
-      "TERM",
-      "TZ",
-    ]) {
+    for (const key of ["PATH", "BUN_INSTALL", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TZ"]) {
       const value = process.env[key];
       if (value !== undefined && value.length > 0) environment[key] = value;
     }
     const home = join(root, "home");
     environment.HOME = home;
-    environment.USERPROFILE = home;
     environment.CLARVIS_HOME = global;
     environment.CLARVIS_WORKSPACE_ROOT = workspace;
     environment.TMPDIR = join(root, "tmp");

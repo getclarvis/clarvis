@@ -1,9 +1,6 @@
 # Normalize line endings on commit, check out LF everywhere.
 #
-# Without this, Git for Windows' `core.autocrlf=true` default rewrites LF to CRLF
-# on checkout and corrupts the fixtures that assert on exact bytes: the CRLF/BOM
-# tally in `packages/tools/src/lib/text.ts`, and the `apply_patch` tests. Committing the rule fixes every clone, which a CI-only
-# `git config` would not.
+# Exact-byte fixtures require LF on checkout.
 * text=auto eol=lf
 
 # Binary: never touched by normalization.

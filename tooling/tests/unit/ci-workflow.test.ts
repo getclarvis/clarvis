@@ -90,24 +90,10 @@ describe("independent CI workflow", () => {
     }
   });
 
-  test("keeps native Windows/macOS scope and the release consumer's three public contexts", () => {
+  test("keeps macOS keyboard scope and the release consumer's public contexts", () => {
     const workflow = parsed();
     const keyboard =
       "bun test packages/code/tests/unit/keyboard-profile.test.ts packages/code/tests/unit/keyspec.test.ts packages/code/tests/unit/active-actions.test.ts";
-    expect(workflow.jobs.windows["runs-on"]).toBe("windows-latest");
-    expect(
-      workflow.jobs.windows.steps
-        .filter((step) => step.run?.startsWith("bun "))
-        .map((step) => step.run),
-    ).toEqual([
-      "bun --version && bun --revision",
-      "bun install --frozen-lockfile",
-      "bun --filter @clarvis/paths test",
-      "bun --filter @clarvis/tools test",
-      "bun --filter @clarvis/plan test",
-      "bun --filter @clarvis/memory test",
-      keyboard,
-    ]);
     expect(workflow.jobs["keyboard-macos"]["runs-on"]).toBe("macos-14");
     expect(
       workflow.jobs["keyboard-macos"].steps.flatMap((step) => (step.run ? [step.run] : [])),
@@ -118,7 +104,7 @@ describe("independent CI workflow", () => {
       keyboard,
     ]);
     const release = readFileSync(".github/workflows/gitflow-release.yml", "utf8");
-    for (const id of ["linux", "windows", "keyboard-macos"])
+    for (const id of ["linux", "keyboard-macos"])
       expect(release).toContain(`'${workflow.jobs[id].name}'`);
   });
 });

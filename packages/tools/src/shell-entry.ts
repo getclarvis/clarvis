@@ -13,8 +13,8 @@
  * `detached` option must be on this platform, and {@link killTree} is what that
  * decision exists to enable.
  */
-export { resolveShell, shellArgs, encodePowerShellCommand, currentShellFlavor } from "./shell.ts";
-export type { ShellSpec, ShellDeps, ShellFlavor } from "./shell.ts";
+export { resolveShell, shellArgs } from "./shell.ts";
+export type { ShellSpec } from "./shell.ts";
 export { killTree, ownProcessGroup } from "./lib/process.ts";
 export { isAlive } from "./lib/process-owner.ts";
-export type { KillDeps, TaskkillRunner } from "./lib/process.ts";
+export type { KillDeps } from "./lib/process.ts";

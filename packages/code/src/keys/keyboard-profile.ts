@@ -8,7 +8,7 @@ export type CapabilityState = "supported" | "unsupported" | "unknown";
 export type KeyboardProfile = "portable" | "enhanced" | "manual";
 
 /** The client-side convention used to present modifier names. */
-export type ClientPlatform = "macos" | "windows" | "linux";
+export type ClientPlatform = "macos" | "linux";
 
 /** Non-sensitive facts that determine which bindings may be advertised. */
 export interface KeyboardEnvironment {
@@ -90,7 +90,7 @@ function capability(value: unknown): CapabilityState | undefined {
 }
 
 function clientPlatform(value: unknown): ClientPlatform | undefined {
-  return value === "macos" || value === "windows" || value === "linux" ? value : undefined;
+  return value === "macos" || value === "linux" ? value : undefined;
 }
 
 function profile(value: unknown): KeyboardProfile | undefined {
@@ -486,5 +486,7 @@ export function effectiveClientPlatform(
 ): ClientPlatform | undefined {
   if (environment.clientPlatform) return environment.clientPlatform;
   if (environment.transport === "ssh") return undefined;
-  return environment.runtimePlatform === "unknown" ? undefined : environment.runtimePlatform;
+  return environment.runtimePlatform === "macos" || environment.runtimePlatform === "linux"
+    ? environment.runtimePlatform
+    : undefined;
 }

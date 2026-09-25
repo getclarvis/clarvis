@@ -931,8 +931,7 @@ machine, endpoint and diagnostic PID. Discovery is a hint: an authenticated hell
 expected workspace and generation before a client can use the connection.
 
 POSIX directories/files require account ownership and shared private modes, canonical paths and
-safe parent directories. Windows creates a protected account-only ACL for new state directories and
-verifies existing ACLs; it does not infer privacy from POSIX mode bits. Bounded descriptor reads
+safe parent directories. Bounded descriptor reads
 reject links, special files, changing files and permissive credentials. A connection record is
 limited to 16 KiB and the run index to 2 MiB. These checks do not remove the parent-directory TOCTOU
 limitation documented in [known issues](../known-issues.md).
@@ -950,12 +949,12 @@ reject; an absent record does not authorize replacing a live lease or replaying 
 
 `connectOrLaunchLocalKernel` takes an absolute installation-selected executable/argv and an operator
 environment snapshot. It preserves policy while binding `CLARVIS_HOME` and `CLARVIS_WORKSPACE_ROOT`
-to the selected canonical roots. On POSIX, both launcher and child derive endpoint candidates from
+to the selected canonical roots. Both launcher and child derive endpoint candidates from
 that same snapshot: the first non-empty absolute value in `TMPDIR`, `TMP`, `TEMP` order, then `/tmp`.
 Relative values are ignored because launcher and child have different working directories. A short
 effective temp therefore preserves the existing endpoint, while a temp that would exceed the socket
 budget falls back deterministically without changing the environment delivered to runs. Child stdio
-is independent of the TUI. Linux/macOS and Windows have explicit detachment policies; `unref`
+is independent of the TUI. Linux and macOS use the POSIX detachment policy; `unref`
 releases the parent wait. Launch waits at most 30 seconds by default, configurable up to 120 seconds.
 It retries discovery/connection without replaying ordinary mutations. A live host with the same wire
 and effective operator policy accepts an artifact transition only
@@ -1032,7 +1031,7 @@ strict argv and explicit platform options;
 starts actual separate processes, proves work after the launching peer exits, reconnects to the same
 execution/generation, reloads old terminal metadata, and exercises concurrent launch and idle exit.
 That process fixture executes the real kernel/loop with MockLLM. It is not a subscription or TUI E2E,
-nor evidence of native Windows/macOS qualification or installed-artifact retention.
+nor evidence of native macOS qualification or installed-artifact retention.
 
 ## Hosted kernel RPC
 
@@ -1126,7 +1125,7 @@ candidate whose complete endpoint fits `UNIX_SOCKET_PATH_BUDGET_BYTES` — 100 U
 socket; normal composition includes `/tmp` after the
 preferred temp. Candidate selection is based only on length. A short but missing, inaccessible,
 symlinked, foreign-owned or permissive root still fails closed in the existing transport preparation;
-there is no post-bind security fallback. Windows uses its unchanged named-pipe namespace. These
+there is no post-bind security fallback. These
 builders do not authenticate peers, create listeners or establish filesystem permissions: callers
 must enforce those boundaries before publishing a usable endpoint.
 
@@ -1135,12 +1134,12 @@ derivation in [local-state.ts](../../packages/kernel/src/hosting/local-state.ts)
 composition in [launcher.ts](../../packages/kernel/src/hosting/launcher.ts) and
 [serve-local.ts](../../packages/kernel/src/hosting/serve-local.ts). Test:
 [local-host.test.ts](../../packages/paths/tests/unit/local-host.test.ts) covers deterministic builder
-selection and named-pipe spelling;
+selection;
 [local-host-state.test.ts](../../packages/kernel/tests/integration/local-host-state.test.ts) covers
 snapshot derivation and discovery validation; and
 [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts)
 launches a separate POSIX host with long temp values, completes authenticated hello and reconnects to
-the same generation. CI on Windows retains named-pipe coverage; the process fallback is POSIX-only.
+the same generation. The process fallback uses POSIX sockets.
 
 `protocol` owns the DTOs and has no runtime dependency. `kernel` implements storage using `paths`
 and the ordinary run event policy; it does not import Code or the TUI. The canonical terminal run

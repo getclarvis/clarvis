@@ -32,12 +32,10 @@ describe("withoutGitRepositoryEnvironment", () => {
     });
   });
 
-  it("uses platform environment-name semantics without mutating the source", () => {
+  it("preserves case-distinct names without mutating the source", () => {
     const source = { Git_Dir: "/parent/.git", PATH: "/bin" };
 
-    expect(withoutGitRepositoryEnvironment(source)).toEqual(
-      process.platform === "win32" ? { PATH: "/bin" } : source,
-    );
+    expect(withoutGitRepositoryEnvironment(source)).toEqual(source);
     expect(source).toEqual({ Git_Dir: "/parent/.git", PATH: "/bin" });
   });
 });

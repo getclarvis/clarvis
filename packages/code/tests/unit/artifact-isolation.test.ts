@@ -250,7 +250,7 @@ describe("smoke fixture isolation", () => {
     }
   });
 
-  test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+  test.skipIf(process.getuid?.() === 0)(
     "reports a validated parent that cannot host an allocation",
     async () => {
       const { deep, release } = await deepParent();

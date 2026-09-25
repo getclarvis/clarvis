@@ -163,7 +163,7 @@ export interface HostedActivityLease {
 
 /**
  * Local authenticated host service, advertised only by hosts that own execution beyond a client.
- * Methods remain kernel RPC operations; sockets and named pipes are transport implementation.
+ * Methods remain kernel RPC operations; Unix sockets are a transport implementation.
  */
 export interface HostingService {
   list(): Promise<HostedRunRef[]>;

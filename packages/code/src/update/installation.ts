@@ -135,16 +135,7 @@ async function boundedOutput(stream: ReadableStream<Uint8Array> | null): Promise
 }
 
 function candidateEnvironment(installRoot: string): Record<string, string> {
-  const names = [
-    "HOME",
-    "USERPROFILE",
-    "SYSTEMROOT",
-    "PATH",
-    "PATHEXT",
-    "TEMP",
-    "TMP",
-    "CLARVIS_HOME",
-  ];
+  const names = ["HOME", "PATH", "TEMP", "TMP", "CLARVIS_HOME"];
   const environment: Record<string, string> = { CLARVIS_INSTALL_ROOT: installRoot };
   for (const name of names) {
     const value = process.env[name];
@@ -162,7 +153,7 @@ export async function verifyStagedRelease(
   const manifest = parseReleaseManifest(JSON.parse(manifestText), expected);
   await verifyReleaseTree(root, manifest);
   const runtime = runtimePath(root);
-  if (process.platform !== "win32") await chmod(runtime, 0o755);
+  await chmod(runtime, 0o755);
   const child = Bun.spawn([runtime, launcherPath(root), "--version"], {
     cwd: root,
     env: candidateEnvironment(expected.installRoot),
@@ -191,13 +182,11 @@ async function durableCurrent(root: string, tagName: string): Promise<void> {
     await file.close();
   }
   await rename(temporary, target);
-  if (process.platform !== "win32") {
-    const directory = await open(dirname(target), "r");
-    try {
-      await directory.sync();
-    } finally {
-      await directory.close();
-    }
+  const directory = await open(dirname(target), "r");
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
   }
 }
 

@@ -481,8 +481,7 @@ export function createHookRunner(deps: HookRunnerDeps): HookRunner {
           signal?.removeEventListener("abort", abort);
         }
       }
-      const command =
-        process.platform === "win32" ? (hook.command_windows ?? hook.command) : hook.command;
+      const command = hook.command;
       const environment = {
         ...deps.baseEnv,
         ...(hook.plugin_root === undefined

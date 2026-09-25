@@ -1385,11 +1385,6 @@ Only two packages declare it: `@clarvis/loop` and `@clarvis/kernel` (their packa
   grace split, and the `malformed_arguments` preservation. For the rest — the specific numeric values
   of `RESULT_MAX`, `ARGS_MAX`, `DETAIL_MAX_ENTRIES`, `MAX_TRACE_RECOVERY_JOURNALS`, `TMP_ORPHAN_GRACE_MS`
   — the code states the mechanism and not the derivation, and none is invented here.
-- **Windows.** `@clarvis/trace` is not in the Windows CI job: it runs `@clarvis/paths`,
-  `@clarvis/tools` and `@clarvis/plan` only
-  (`.github/workflows/ci.yml`). `process.kill(pid, 0)` (`packages/trace/src/journal-recovery.ts`) and the file-mode assertions
-  (`packages/trace/src/json-trace-store.ts`; `packages/trace/src/journal.ts`) are POSIX-shaped; whether they behave as specified
-  on Windows is unverified from this repository.
 ## Visibility views and physical identity
 
 `TraceStore` backends attest native filtering with `visibilityQueries: true`. Query methods accept

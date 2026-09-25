@@ -52,10 +52,8 @@ describe("persistent MCP OAuth credential store", () => {
       },
       updated_at: 42,
     });
-    if (process.platform !== "win32") {
-      expect((await stat(file)).mode & 0o777).toBe(0o600);
-      expect((await stat(join(file, ".."))).mode & 0o777).toBe(0o700);
-    }
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    expect((await stat(join(file, ".."))).mode & 0o777).toBe(0o700);
   });
 
   it("accepts secure registered callbacks and rejects credentialed or public plaintext URLs", async () => {
@@ -118,7 +116,7 @@ describe("persistent MCP OAuth credential store", () => {
     ).rejects.toThrow("invalid MCP OAuth credential record");
   });
 
-  it.if(process.platform !== "win32")("does not follow a credential-file symlink", async () => {
+  it("does not follow a credential-file symlink", async () => {
     const { file, store } = await temporaryStore();
     const target = join(file, "..", "target.json");
     await writeFile(target, '{"version":1,"records":{}}\n');
@@ -129,23 +127,20 @@ describe("persistent MCP OAuth credential store", () => {
     });
   });
 
-  it.if(process.platform !== "win32")(
-    "does not read through a symlinked parent directory",
-    async () => {
-      const root = await realpath(await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-parent-")));
-      roots.push(root);
-      const target = join(root, "target");
-      const linked = join(root, "linked");
-      await mkdir(target);
-      await writeFile(join(target, "mcp-oauth.json"), '{"version":1,"records":{}}\n');
-      await symlink(target, linked);
-      const store = createMcpOAuthCredentialStore(join(linked, "mcp-oauth.json"));
+  it("does not read through a symlinked parent directory", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-parent-")));
+    roots.push(root);
+    const target = join(root, "target");
+    const linked = join(root, "linked");
+    await mkdir(target);
+    await writeFile(join(target, "mcp-oauth.json"), '{"version":1,"records":{}}\n');
+    await symlink(target, linked);
+    const store = createMcpOAuthCredentialStore(join(linked, "mcp-oauth.json"));
 
-      await expect(store.readRecord(KEY_A)).rejects.toMatchObject({
-        diagnostic: "unsafe_path",
-      });
-    },
-  );
+    await expect(store.readRecord(KEY_A)).rejects.toMatchObject({
+      diagnostic: "unsafe_path",
+    });
+  });
 
   it("serializes independent writers without losing either record", async () => {
     const { file } = await temporaryStore();

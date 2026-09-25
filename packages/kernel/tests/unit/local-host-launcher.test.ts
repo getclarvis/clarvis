@@ -32,11 +32,6 @@ describe("local host bootstrap arguments", () => {
   test("selects detached stdio-free process policies explicitly for each supported OS", () => {
     for (const platform of ["linux", "darwin"] as const)
       expect(localHostSpawnOptions(platform)).toEqual({ detached: true, stdio: "ignore" });
-    expect(localHostSpawnOptions("win32")).toEqual({
-      detached: true,
-      windowsHide: true,
-      stdio: "ignore",
-    });
     expect(() => localHostSpawnOptions("aix")).toThrow("unsupported");
   });
 });

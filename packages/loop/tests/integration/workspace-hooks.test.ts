@@ -6,8 +6,6 @@
  * actually executes, that its verdict reaches the loop's own contract, and that
  * the run's provider credentials are not in the environment it sees.
  *
- * POSIX-guarded because the commands are POSIX shell syntax. The Windows argv
- * path is asserted from any host in `@clarvis/hooks`' own suite.
  */
 import { describe, it, expect } from "../bun-test.ts";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -16,8 +14,6 @@ import { join } from "node:path";
 import { createWorkspaceHooksCapability, HOOKS_SEED_MARKER } from "@clarvis/hooks/capability";
 import type { HookConfig } from "@clarvis/capability";
 import type { RunCapabilityContext } from "@clarvis/capability";
-
-const posixShell = process.platform !== "win32";
 
 function context(over: Partial<RunCapabilityContext> = {}): RunCapabilityContext {
   return {
@@ -33,7 +29,7 @@ function context(over: Partial<RunCapabilityContext> = {}): RunCapabilityContext
   } as unknown as RunCapabilityContext;
 }
 
-describe.skipIf(!posixShell)("workspace hooks end to end", () => {
+describe("workspace hooks end to end", () => {
   it("a pre_tool_use hook that fails closed blocks the tool call", async () => {
     const capability = createWorkspaceHooksCapability({
       resolveHooks: (): HookConfig[] => [

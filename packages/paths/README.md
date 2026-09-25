@@ -88,8 +88,7 @@ private host state with it, and this package's own selection asks it before prop
 chooser and a validator cannot drift apart.
 
 `unixSocketPathFits(path, budgetBytes?)` applies `UNIX_SOCKET_PATH_BUDGET_BYTES` (100) — the same budget
-`localHostPaths` selects a reconnectable endpoint against. Windows named pipes are not filesystem paths
-and are never measured by it.
+`localHostPaths` selects a reconnectable Unix socket endpoint against.
 
 ## Shape
 
@@ -186,12 +185,9 @@ repository-owned rather than lifecycle-managed by the UI. Persistent `PLUGIN_DAT
 installed checkout: global instances use `<global>/state/plugin-data/<source>/<name>/`, and
 workspace instances use that workspace's machine-local `plugin-data/<source>/<name>/` state tree.
 
-## Windows is a hard constraint here
+## Executable lookup
 
-`which.ts` (`executableOnPath`, `resolveCommand`) is a `PATH`/`PATHEXT` resolver whose whole reason
-to exist is Windows, so **the Windows CI job runs this package's suite** alongside `@clarvis/tools`'.
-That job has no build step and resolves both from source, so the `"bun": "./src/index.ts"` export
-condition is what keeps it working.
+`which.ts` resolves executable files through `PATH`, checking the execute bit and rejecting directories.
 
 `which.ts` arrived from `@clarvis/tools`, which already depended on this package — so the move added
 no edge, and it is what kept `@clarvis/mcp-client` from having to depend on `@clarvis/tools` for one
@@ -209,7 +205,7 @@ The package suite is classified by the effect boundary each file owns:
   this move;
 - `tests/contract/` owns the atomic/durable write family across async and sync variants. Its real
   filesystem, rename and fsync effects are part of that contract and are deliberately not mocked;
-- `tests/integration/` covers filesystem creation and housekeeping plus the real `PATH`/`PATHEXT`
+- `tests/integration/` covers filesystem creation and housekeeping plus the real `PATH`
   lookup boundary through the published package entrypoint;
 - `tests/architecture/` owns only the repository-wide directory-vocabulary scan. The generic package
   graph belongs to `tooling/lib/package-graph.ts`, whose fixtures run under root `lint:intent`.
@@ -218,8 +214,7 @@ The package suite is classified by the effect boundary each file owns:
 
 `bun run test` discovers all five tiers. Each tier also has a `test:<tier>` script for targeted runs,
 and `test:coverage` executes every source-behavior tier before running architecture once without
-coverage. The Windows CI command remains the full package suite, so moving `which.test.ts` under
-`tests/integration/` does not drop the Windows cases.
+coverage.
 
 ## Writing to disk
 
@@ -236,8 +231,6 @@ calling these, not from overwriting what they find.
 `WORKSPACE_GITIGNORE` no longer lists `local/`, and why `LOCAL_GITIGNORE` is gone.
 
 `DIR_MODE` (`0o700`) and `FILE_MODE` (`0o600`) are the posture everything Clarvis creates gets.
-Windows honours only the write bit and that is accepted — a platform that cannot express the mode
-must not turn a write into an error.
 
 ### The atomic-write family
 
@@ -313,25 +306,10 @@ a lease already handed to its caller.
 wait or heartbeat. It exists only for APIs whose whole filesystem transaction is synchronous; an
 asynchronous caller uses `acquireLocalLease` so it never blocks the event loop while waiting.
 
-### Renaming over an existing file on Windows
+### Directory durability
 
-`rename` onto an existing path is a real hazard on Windows and not on POSIX: an antivirus, the
-search indexer or an editor momentarily holding the destination makes `MoveFileEx` fail with
-`EPERM`/`EACCES`/`EBUSY` for a few tens of milliseconds. **The decision is to retry, and only
-there** — `renameWithRetry`/`renameWithRetrySync` back off over `RENAME_RETRY_DELAYS_MS`
-(`10/25/50/100 ms`, five attempts in all), gated on the platform _as well as_ the errno, because a
-POSIX `EPERM` is a sticky-bit denial that will never clear and must not be delayed by 185 ms. Every
-other errno propagates on the first attempt on both platforms. `platform`, `delays` and `rename`
-are injectable, which is how the Windows branch is tested from a POSIX host.
-
-Two exposures remain, documented rather than papered over: `MoveFileEx` refuses to replace a
-destination carrying the read-only attribute (a permanent failure no retry helps, and clearing the
-attribute would be a behaviour change rather than a portability fix), and a holder that keeps the
-destination open past the schedule still fails the write.
-
-`fsyncDir`/`fsyncDirSync` never throw, because Windows will not open or sync a directory handle at
-all and several filesystems reject the `fsync`. Left unguarded that turns every durable write on
-Windows into a failure _after_ the file has already landed.
+`fsyncDir`/`fsyncDirSync` never throw because some filesystems reject directory `fsync`.
+The caller still receives the completed atomic rename.
 
 ### The resolve family
 
@@ -404,7 +382,7 @@ temporary directory so HOME length does not consume the socket path budget. The 
 ordered `endpointRootCandidates`; otherwise the builder considers the effective process temp and
 `/tmp`, normalizes and deduplicates them, and selects the first whose complete endpoint fits
 `UNIX_SOCKET_PATH_BUDGET_BYTES`. Selection checks bytes rather than characters and never creates,
-stats or probes a candidate. Windows endpoints use named pipes and ignore filesystem candidates.
+stats or probes a candidate.
 The builder neither opens a listener nor grants access. Hosts must verify directory ownership,
 protect credentials and authenticate their connections. See
 [hosted runs](../../specs/hosts/hosted-runs.md) for the observation/storage coupling.

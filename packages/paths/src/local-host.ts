@@ -15,8 +15,6 @@ export interface LocalHostPathOptions {
   owner: string;
   /** Operating-system account identity used by the authenticated local launcher. */
   operatorId: string;
-  /** Injectable platform for endpoint qualification. */
-  platform?: NodeJS.Platform;
   /** Ordered host-owned roots considered only for the reconnectable local-host endpoint. */
   endpointRootCandidates?: readonly string[];
 }
@@ -33,10 +31,10 @@ export interface LocalHostPaths {
   connectionFile: string;
   /** Durable bounded index of handoffs and terminal references. */
   registryFile: string;
-  /** Reconnectable endpoint, including the Windows named-pipe prefix when applicable. */
+  /** Reconnectable Unix socket endpoint. */
   endpoint: string;
-  /** Private socket directory on POSIX; named pipes do not have a filesystem parent. */
-  endpointDirectory?: string;
+  /** Private socket directory. */
+  endpointDirectory: string;
   /** Resolve an observation projection without interpreting ids as path components. */
   projectionFile(generation: string, executionId: string): string;
 }
@@ -65,19 +63,6 @@ export function localHostPaths(options: LocalHostPathOptions): LocalHostPaths {
     resolve(options.workspaceRoot),
   ]);
   const root = join(globalPaths(globalDir).state, "hosts", identity);
-  const usesNamedPipe = (options.platform ?? process.platform) === "win32";
-  if (usesNamedPipe) {
-    return {
-      identity,
-      root,
-      leaseFile: join(root, "host.lock"),
-      connectionFile: join(root, "connection.json"),
-      registryFile: join(root, "runs.json"),
-      endpoint: `\\\\.\\pipe\\clarvis-${identity}`,
-      projectionFile: (generation, executionId) =>
-        join(root, "projections", `${identityOf([generation, executionId])}.jsonl`),
-    };
-  }
   const suppliedCandidates = options.endpointRootCandidates;
   if (suppliedCandidates?.length === 0)
     throw new Error("local host endpoint root candidates must not be empty");

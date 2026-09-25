@@ -189,7 +189,7 @@ export async function acquireLocalHostState(
     if (endpointInfo !== null) {
       if (previous === null || !endpointInfo.isSocket() || endpointInfo.isSymbolicLink())
         throw kernelError("conflict", "local host endpoint has no verifiably ended owner");
-      await assertPrivateHostDirectory(paths.endpointDirectory!);
+      await assertPrivateHostDirectory(paths.endpointDirectory);
       await lease.assertOwned();
       await unlink(paths.endpoint);
     }

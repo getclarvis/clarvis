@@ -4,18 +4,12 @@ import { tempRoot, type TempRootDeps } from "../helpers/temp-root.ts";
 
 function fakeRoot(overrides: Partial<TempRootDeps> = {}) {
   const removals: string[] = [];
-  const delays: number[] = [];
   return {
     removals,
-    delays,
     deps: {
-      platform: "linux" as NodeJS.Platform,
       makeRoot: async () => "/tmp/clarvis-hooks-temp-fixture",
       removeRoot: async (root: string) => {
         removals.push(root);
-      },
-      delay: async (milliseconds: number) => {
-        delays.push(milliseconds);
       },
       ...overrides,
     },
@@ -114,37 +108,17 @@ describe("tempRoot", () => {
     expect(events).toEqual(["kill", "exited", "root"]);
   });
 
-  test("retries only the bounded Windows cleanup errnos", async () => {
-    const codes = ["EBUSY", "ENOTEMPTY", "EPERM"];
+  test("reports a failed root removal without retrying", async () => {
+    let attempts = 0;
     const fixture = fakeRoot({
-      platform: "win32",
       removeRoot: async () => {
-        const code = codes.shift();
-        if (code !== undefined) throw Object.assign(new Error(code), { code });
+        attempts += 1;
+        throw new Error("root unavailable");
       },
     });
     const temp = await tempRoot("ignored-", fixture.deps);
-    await temp.cleanup();
-    expect(fixture.delays).toEqual([5, 10, 20]);
-  });
-
-  test("does not retry an unrelated errno or any POSIX removal failure", async () => {
-    for (const [platform, code] of [
-      ["win32", "EIO"],
-      ["linux", "EBUSY"],
-    ] as const) {
-      let attempts = 0;
-      const fixture = fakeRoot({
-        platform,
-        removeRoot: async () => {
-          attempts += 1;
-          throw Object.assign(new Error(code), { code });
-        },
-      });
-      const temp = await tempRoot("ignored-", fixture.deps);
-      await expect(temp.cleanup()).rejects.toThrow(/pending: none/);
-      expect(attempts).toBe(1);
-    }
+    await expect(temp.cleanup()).rejects.toThrow(/pending: none/);
+    expect(attempts).toBe(1);
   });
 
   test("returns confined child paths and removes a real root", async () => {

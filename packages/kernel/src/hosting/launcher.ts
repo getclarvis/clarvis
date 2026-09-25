@@ -43,8 +43,6 @@ export function localHostSpawnOptions(platform: NodeJS.Platform = process.platfo
     case "linux":
     case "darwin":
       return { detached: true, stdio: "ignore" };
-    case "win32":
-      return { detached: true, windowsHide: true, stdio: "ignore" };
     default:
       throw kernelError("unsupported", "local host processes are unsupported on this platform");
   }
@@ -118,9 +116,7 @@ export async function connectOrLaunchLocalKernel(
   const logger = options.logger ?? NOOP_LOGGER;
   const identity = await resolveLocalHostIdentity({
     ...options,
-    ...(process.platform === "win32"
-      ? {}
-      : { endpointRootCandidates: localHostEndpointRootCandidates(options.environment) }),
+    endpointRootCandidates: localHostEndpointRootCandidates(options.environment),
   });
   const environment = {
     ...options.environment,
@@ -241,9 +237,7 @@ export async function requestLocalHostReplacement(
 ): Promise<void> {
   const identity = await resolveLocalHostIdentity({
     ...options,
-    ...(process.platform === "win32"
-      ? {}
-      : { endpointRootCandidates: localHostEndpointRootCandidates(options.environment) }),
+    endpointRootCandidates: localHostEndpointRootCandidates(options.environment),
   });
   const record = await readLocalHostConnection(identity);
   if (

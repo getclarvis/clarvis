@@ -126,7 +126,7 @@ async function readValidated(file: string): Promise<SubscriptionStoreSnapshot> {
 async function ensureSafeParent(file: string): Promise<void> {
   const parent = dirname(file);
   await mkdir(parent, { recursive: true, mode: DIR_MODE });
-  if (process.platform !== "win32") await chmod(parent, DIR_MODE);
+  await chmod(parent, DIR_MODE);
   const [resolved, info] = await Promise.all([realpath(parent), stat(parent)]);
   if (!info.isDirectory() || resolved !== parent) {
     throw new Error("subscription credential directory is not a resolved directory");
@@ -176,7 +176,7 @@ export function createFileSubscriptionStore(
         else accounts[scheme] = next.account;
         const serialized = `${JSON.stringify({ version: 1, accounts }, null, 2)}\n`;
         await writeFileDurable(file, serialized, { mode: FILE_MODE, dirMode: DIR_MODE });
-        if (process.platform !== "win32") await chmod(file, FILE_MODE);
+        await chmod(file, FILE_MODE);
         return next.result;
       } finally {
         await lease.release();

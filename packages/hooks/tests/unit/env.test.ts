@@ -58,7 +58,7 @@ describe("filterHookEnv", () => {
     expect(filterHookEnv({ [name]: "sensitive" })).toEqual({});
   });
 
-  test.each(["AUTHOR", "AUTHORS", "PATH", "PATHEXT", "TOKENIZER_CACHE", "KEYBOARD_LAYOUT"])(
+  test.each(["AUTHOR", "AUTHORS", "PATH", "TOKENIZER_CACHE", "KEYBOARD_LAYOUT"])(
     "keeps %s, which merely looks similar",
     (name) => {
       expect(filterHookEnv({ [name]: "fine" })).toEqual({ [name]: "fine" });

@@ -654,7 +654,7 @@ loadable (`harvestDocument`, `harvestFile`, and `harvestConvention`).
    matcher; otherwise no filter, plus a note if a matcher was written anyway.
 4. Per entry: accept `"command"`/omitted or `"mcp_tool"`; skip a command without `command`, an MCP
    entry without `server`/`tool`, and an MCP entry on `SessionEnd`. Convert `timeout`
-   seconds → ms, clamped to `MAX_HOOK_TIMEOUT_MS`; substitute and anchor both POSIX and Windows
+   seconds → ms, clamped to `MAX_HOOK_TIMEOUT_MS`; substitute and anchor POSIX
    command paths; preserve `async`, `statusMessage`, `additionalContextLimit`, and the MCP
    `server`/`tool`/`input` fields. Pinned by the complete projection cases at
    `packages/kernel/tests/integration/plugin-manifest.test.ts`.

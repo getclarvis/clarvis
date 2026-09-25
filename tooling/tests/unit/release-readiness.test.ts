@@ -28,8 +28,6 @@ function valid() {
       workspaces: [],
     },
     installSh: "version=${CLARVIS_VERSION:-0.0.1-beta}",
-    installPowerShell:
-      '$Version = if ($env:CLARVIS_VERSION) { $env:CLARVIS_VERSION } else { "0.0.1-beta" }',
     rootLicense: "MIT License",
     thirdPartyNotices: "## Vercel AI SDK",
     vercelAiSdkLicense: "Copyright 2023 Vercel, Inc.\nApache License, Version 2.0",
@@ -56,8 +54,6 @@ gh release create "$GITHUB_REF_NAME" --repo "$RELEASE_REPOSITORY"`,
 
 function withReleaseRepositories(input: ReturnType<typeof valid>): ReturnType<typeof valid> {
   input.installSh += "\nrepository=${CLARVIS_RELEASE_REPOSITORY:-getclarvis/clarvis-releases}";
-  input.installPowerShell +=
-    '\n$Repository = if ($env:CLARVIS_RELEASE_REPOSITORY) { $env:CLARVIS_RELEASE_REPOSITORY } else { "getclarvis/clarvis-releases" }';
   return input;
 }
 
@@ -169,20 +165,15 @@ test("accepts SHA-pinned actions, explicit read permissions, and a credentialles
   ).toEqual([]);
 });
 
-test("rejects a drifting tag and either installer", () => {
+test("rejects a drifting tag and installer", () => {
   const input = withReleaseRepositories(valid());
   input.installSh = input.installSh.replace(
     "version=${CLARVIS_VERSION:-0.0.1-beta}",
     "version=old",
   );
-  input.installPowerShell = input.installPowerShell.replace(
-    '$Version = if ($env:CLARVIS_VERSION) { $env:CLARVIS_VERSION } else { "0.0.1-beta" }',
-    "$Version = old",
-  );
   input.tag = "v0.0.2-beta";
   expect(releaseReadinessFailures(input)).toEqual([
     "install.sh default version differs from the product version",
-    "install.ps1 default version differs from the product version",
     "release tag v0.0.2-beta differs from v0.0.1-beta",
   ]);
 });

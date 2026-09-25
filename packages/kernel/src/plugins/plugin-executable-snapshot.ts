@@ -189,8 +189,7 @@ export function snapshotPluginExecutables(
 
   for (const hook of manifest.hooks ?? []) {
     if (hook.type === "mcp_tool") continue;
-    const command =
-      process.platform === "win32" ? (hook.command_windows ?? hook.command) : hook.command;
+    const command = hook.command;
     for (const word of shellWords(command)) {
       if (isAbsolute(word)) add(undefined, word);
     }

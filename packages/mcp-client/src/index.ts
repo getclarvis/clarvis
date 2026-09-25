@@ -55,7 +55,6 @@ export {
 } from "./oauth-store.ts";
 export type { McpOAuthCredentialStore, McpOAuthRecord } from "./oauth-store.ts";
 export {
-  mcpSpawnArgv,
   BunStdioClientTransport,
   MCPStdioFrameLimitError,
   DEFAULT_MCP_STDIO_MAX_FRAME_BYTES,

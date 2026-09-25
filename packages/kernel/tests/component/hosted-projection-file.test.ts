@@ -162,7 +162,7 @@ describe("file-backed hosted projection", () => {
       await projection.close();
     }
     expect((await readFile(file, "utf8")).trim().split("\n").length).toBe(2);
-    if (process.platform !== "win32") expect((await stat(file)).mode & 0o777).toBe(0o600);
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
   });
 
   test("an invalid projection configuration still closes its opened file", async () => {

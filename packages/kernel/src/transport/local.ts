@@ -31,8 +31,6 @@ function positive(value: number, name: string): number {
 }
 
 async function prepareSocketDirectory(endpoint: string): Promise<void> {
-  const usesNamedPipe = process.platform === "win32";
-  if (usesNamedPipe) return;
   const directory = dirname(endpoint);
   await mkdir(directory, { mode: DIR_MODE }).catch((error: unknown) => {
     if (!(
@@ -58,7 +56,7 @@ async function prepareSocketDirectory(endpoint: string): Promise<void> {
 }
 
 /**
- * Serve the existing kernel RPC over Unix sockets or Windows named pipes.
+ * Serve the existing kernel RPC over Unix sockets.
  *
  * A caller must supply a server with authenticated connection resolution and authorization before
  * publishing its endpoint. This adapter owns framing and connection limits, not operator policy.

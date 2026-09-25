@@ -77,7 +77,7 @@ rule guaranteed by persuasion is not guaranteed.
 The derived rule is deliberately **stronger** than the prose it replaced:
 
 - **Reader-writer, not writer-writer** — a read concurrent with a write is torn, not merely stale.
-- **Path comparison is case-insensitive**, because macOS and Windows are.
+- **Path comparison is case-insensitive**, because macOS is.
 - **A mutating item that declares no files is treated as writing everything.**
 - **Packing walks the items in the order the model emitted them**, so the same `work_items[]` always
   yields the same waves.

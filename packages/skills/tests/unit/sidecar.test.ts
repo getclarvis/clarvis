@@ -168,7 +168,6 @@ describe("readSkillSidecar", () => {
     it.each([
       ["absolute", "/etc/passwd"],
       ["parent-relative", "../../etc/passwd"],
-      ["drive-qualified", "C:/windows/system32"],
       ["backslash-separated", "assets\\..\\..\\secret.svg"],
     ])("keeps a declared icon path (%s)", (_label, value) => {
       expect(read(`icon: "${value.replaceAll("\\", "\\\\")}"`)?.presentation?.icons?.light).toBe(

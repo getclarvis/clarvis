@@ -320,7 +320,6 @@ export const hookSchema = z
           "regexes. Only valid for the tool events pre_tool_use and post_tool_use.",
       ),
     command: z.string().max(MAX_HOOK_COMMAND_CHARS).default(""),
-    command_windows: z.string().min(1).max(MAX_HOOK_COMMAND_CHARS).optional(),
     async: z.boolean().optional(),
     status_message: z.string().min(1).max(512).optional(),
     additional_context_limit: z

@@ -125,7 +125,7 @@ Re-exported by `packages/kernel/src/index.ts`:
 | `RemoteKernel`, `ConnectKernelClientOptions` | types | `packages/kernel/src/transport/client.ts` | Client-side shapes |
 | `createLoopbackTransport(server, logger?)` | value | `packages/kernel/src/transport/loopback.ts` | In-process transport |
 | `createStdioTransport(io, logger?)` | value | `packages/kernel/src/transport/stdio.ts` | Client-side NDJSON transport |
-| `connectLocalKernelTransport(endpoint, options?)` | value | `packages/kernel/src/transport/local.ts` | Reconnectable Unix-socket/named-pipe client using the same NDJSON codec |
+| `connectLocalKernelTransport(endpoint, options?)` | value | `packages/kernel/src/transport/local.ts` | Reconnectable Unix-socket client using the same NDJSON codec |
 | `listenLocalKernel(server, endpoint, options?)` | value | `packages/kernel/src/transport/local.ts` | Bounded local IPC listener; authentication and authorization stay on its server |
 | `LocalKernelListener`, `LocalKernelListenerOptions` | types | `packages/kernel/src/transport/local.ts` | Endpoint lifetime and connection/handshake bounds |
 | `serveKernelOverStdio(server, io, logger?)` | value | `packages/kernel/src/transport/stdio.ts` | Server-side NDJSON pump |
@@ -727,8 +727,7 @@ hello deadline. The client connection timeout defaults to five seconds. Invalid 
 opening a channel. Listener close releases sockets and connections, not the kernel's own lifetime.
 
 The Unix socket directory must be owned by the current account with mode `0700` and cannot be a
-symlink. The adapter never removes an occupied endpoint before listen. Windows uses named pipes
-without the `readableAll`/`writableAll` relaxations. A local host composition must supply both
+symlink. The adapter never removes an occupied endpoint before listen. without the `readableAll`/`writableAll` relaxations. A local host composition must supply both
 `resolveConnection` and `authorize` to authenticate the account and limit operations; filesystem
 placement by itself is not authorization. This adapter alone does not detach or preserve a run.
 
@@ -742,7 +741,7 @@ Production: `listenLocalKernel` and `connectLocalKernelTransport` in
 [local-transport.test.ts](../../packages/kernel/tests/integration/local-transport.test.ts) runs
 the existing kernel client/server, a real local connection, a simulated-provider run, reconnection,
 credential/version refusal, client limits, handshake expiry and malformed-frame recovery. Native
-Windows/macOS IPC qualification is separate from exercising these tests on another platform.
+macOS IPC qualification is separate from exercising these tests on another platform.
 
 ### 4.10 Client transport state machine
 

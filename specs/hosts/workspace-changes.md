@@ -160,4 +160,4 @@ The overlay remains discoverable and offers refresh. It never falls back to tran
 - Explicit provider selection UI is unspecified until a second adapter exists.
 - Rename-detection thresholds other than Git's `--find-renames=50%` / `diff.renameLimit=400` are
   not operator-configurable.
-- Windows and macOS Git probes need their own CI evidence; Linux is the pinned suite here.
+- macOS Git probes need their own CI evidence; Linux is the pinned suite here.

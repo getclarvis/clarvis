@@ -39,12 +39,6 @@ Linux (glibc) and macOS:
 curl -fsSL https://github.com/getclarvis/clarvis-releases/releases/latest/download/install.sh | sh
 ```
 
-Windows PowerShell:
-
-```powershell
-irm https://github.com/getclarvis/clarvis-releases/releases/latest/download/install.ps1 | iex
-```
-
 Prefer to inspect an installer before running it? The [installation guide](https://clarvis.dev/installation)
 keeps the download, review, and execute flow as an alternative.
 
@@ -54,13 +48,12 @@ Verify the command:
 clarvis --version
 ```
 
-The installers download a versioned archive from GitHub Releases, verify its SHA-256 checksum,
-confirm that the staged CLI reports the requested version, and activate it only after every check
-succeeds. On Linux or macOS, follow the printed instruction if the resolved launcher directory
-(`${CLARVIS_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`) is not already on `PATH`. Windows adds the
-managed launcher to the user `PATH`; an existing terminal may need to be reopened.
+The installer downloads a versioned archive from GitHub Releases, verifies its SHA-256 checksum,
+confirms that the staged CLI reports the requested version, and activates it only after every check
+succeeds. Follow the printed instruction if the resolved launcher directory
+(`${CLARVIS_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`) is not already on `PATH`.
 
-The release workflow is configured for glibc-based Linux, macOS, and Windows on x64 and arm64. The
+The release workflow is configured for glibc-based Linux and macOS on x64 and arm64. The
 beta Linux archives do not target Alpine or other musl-only distributions. Platform claims remain
 beta-level until the corresponding native release job has completed. See
 [Installation](https://clarvis.dev/installation) for prerequisites, manual verification, configured targets,
@@ -141,8 +134,8 @@ Clarvis is local-first, but it is not an offline application:
 - enabled MCP servers, plugins, hooks, task providers, and commands have their own trust boundaries;
 - shell and file tools execute with the host process's permissions; relative paths use the
   workspace as their base, while absolute paths remain absolute;
-- credentials saved through the managed API-key and subscription flows stay in global files. POSIX
-  installs apply owner-only mode bits; Windows relies on the user's profile access controls. Literal
+- credentials saved through the managed API-key and subscription flows stay in global files. Installations
+  apply owner-only mode bits. Literal
   provider or MCP headers can be authored in workspace settings, so use `${NAME}` references and
   never place a secret there;
 - `--remote` carries the complete kernel protocol through OpenSSH stdio. OpenSSH supplies transport

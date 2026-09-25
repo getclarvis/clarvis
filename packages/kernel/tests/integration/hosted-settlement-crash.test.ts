@@ -25,7 +25,6 @@ for (const phase of [
         cwd: root,
         env: {
           PATH: globalThis.process.env.PATH,
-          SystemRoot: globalThis.process.env.SystemRoot,
           HOME: root,
           TMPDIR: root,
           TEMP: root,

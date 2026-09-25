@@ -57,15 +57,10 @@ test("product versions parse and compare with SemVer prerelease precedence", () 
 test("native target and archive names are strict and portable", () => {
   expect(releaseTarget("linux", "x64")).toBe("linux-x64");
   expect(releaseTarget("darwin", "arm64")).toBe("darwin-arm64");
-  expect(releaseTarget("win32", "x64")).toBe("windows-x64");
   expect(releaseTarget("freebsd", "x64")).toBeUndefined();
   expect(releaseTarget("linux", "ia32")).toBeUndefined();
-  expect(releaseAssetName("0.0.1-beta", "windows-x64")).toBe(
-    "clarvis-v0.0.1-beta-windows-x64.tar.gz",
-  );
-  expect(releaseRuntimeExecutableName("linux")).toBe("clarvis");
-  expect(releaseRuntimeExecutableName("darwin")).toBe("clarvis");
-  expect(releaseRuntimeExecutableName("win32")).toBe("clarvis.exe");
+  expect(releaseAssetName("0.0.1-beta", "linux-x64")).toBe("clarvis-v0.0.1-beta-linux-x64.tar.gz");
+  expect(releaseRuntimeExecutableName()).toBe("clarvis");
 });
 
 test("beta installs select the highest beta, rc, or stable promotion", () => {

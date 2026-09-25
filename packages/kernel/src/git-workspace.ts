@@ -26,7 +26,6 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
     encoding: "utf8",
     timeout: 15_000,
     maxBuffer: 1024 * 1024,
-    windowsHide: true,
     env: {
       ...withoutGitRepositoryEnvironment(process.env),
       GIT_TERMINAL_PROMPT: "0",

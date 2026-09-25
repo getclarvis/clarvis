@@ -77,7 +77,7 @@ const scriptKindFor = (file: string): ts.ScriptKind => {
   return ts.ScriptKind.TS;
 };
 
-const normalizePath = (file: string): string => file.replaceAll("\\", "/");
+const normalizePath = (file: string): string => file;
 
 export function normalizeTestPath(file: string): string {
   return normalizePath(file).replace(/^\.\//, "");

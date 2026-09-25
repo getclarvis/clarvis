@@ -15,8 +15,6 @@ export interface TempRoot {
   cleanup(): Promise<void>;
 }
 
-const WINDOWS_RETRYABLE = new Set(["EBUSY", "ENOTEMPTY", "EPERM"]);
-
 function failure(root: string, pending: readonly string[], causes: readonly unknown[]): Error {
   return new AggregateError(
     causes,
@@ -64,20 +62,11 @@ export async function tempRoot(prefix: string): Promise<TempRoot> {
         }
       }
       if (causes.length > 0) throw failure(root, pending(), causes);
-      const retries = process.platform === "win32" ? [5, 10, 20, 40] : [];
-      for (let attempt = 0; ; attempt++) {
-        try {
-          await rm(root, { recursive: true, force: true });
-          removed = true;
-          return;
-        } catch (error) {
-          const code = (error as NodeJS.ErrnoException).code;
-          const delay = retries[attempt];
-          if (!WINDOWS_RETRYABLE.has(code ?? "") || delay === undefined) {
-            throw failure(root, pending(), [error]);
-          }
-          await Bun.sleep(delay);
-        }
+      try {
+        await rm(root, { recursive: true, force: true });
+        removed = true;
+      } catch (error) {
+        throw failure(root, pending(), [error]);
       }
     },
   };

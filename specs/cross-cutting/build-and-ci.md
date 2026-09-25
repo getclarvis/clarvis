@@ -13,7 +13,7 @@ solution over per-package `composite` emit projects, `tsconfig.json`), one share
 configuration applied through each package's shim (`eslint.config.base.js`), a Knip pass run
 once from the root (`package.json`, `scripts.knip`), a locally-enforced pre-commit gate
 (`.githooks/pre-commit`),
-independent Linux CI gates plus the retained Windows/macOS jobs (`.github/workflows/ci.yml`), a six-target portable
+independent Linux CI gates plus the retained macOS job (`.github/workflows/ci.yml`), a four-target portable
 release matrix delegated to [distribution and updates](distribution-and-updates.md), and a separate
 bundling path for the one package that is never emitted by `tsc` — the terminal UI
 (`packages/code/tooling/artifact/build.ts`). The root `build` command composes those two paths sequentially,
@@ -387,9 +387,8 @@ single-flight loader. The artifact smoke requires the asset to exist while also 
 ### 3.4 Git attributes
 
 `.gitattributes` normalizes every file to `text=auto eol=lf` and marks `*.png`, `*.wasm`,
-`*.ico`, `*.woff`, `*.woff2` binary marks `bun.lock -text`. The stated reason is that
-Git-for-Windows' `core.autocrlf=true` "corrupts the fixtures that assert on exact bytes: the CRLF/BOM
-tally in `packages/tools/src/lib/text.ts`, and the `apply_patch` tests".
+`*.ico`, `*.woff`, and `*.woff2` as binary, and keeps `bun.lock -text`. This preserves
+exact-byte fixtures such as the CRLF/BOM tally in `packages/tools/src/lib/text.ts` and the `apply_patch` tests.
 
 ### 3.5 Report formats produced by the tooling
 
@@ -520,12 +519,10 @@ and installs its own dependencies with `bun install --frozen-lockfile`. Installa
 Only `build` emits the shared Linux build, including the Code bundle; upload follows both build and
 smoke success. Its consumers restore that build before checking it and never silently rebuild.
 Finite timeouts remain conservative: 15 minutes
-for build and ordinary Linux gates, 30 for coverage, and 5 for aggregation. Windows/macOS retain
-their existing bounds. No required job or step uses `continue-on-error` or an optional gate condition.
+for build and ordinary Linux gates, 30 for coverage, and 5 for aggregation. The macOS job retains its existing bound. No required job or step uses `continue-on-error` or an optional gate condition.
 
 
-The public required contexts remain exactly `linux`,
-`tools, paths, plan, memory, keyboard policy (windows)`, and `keyboard policy (macos)`.
+The public required contexts remain exactly `linux` and `keyboard policy (macos)`.
 The release workflow consumes these literal names. `linux` has `always()` and all seven Linux
 needs; it installs nothing and downloads nothing. Its Bash step receives `toJSON(needs)` through
 an environment variable, then jq requires exactly one JSON object, the exact dependency key set,
@@ -540,22 +537,6 @@ Test: [CI workflow tests](../../tooling/tests/unit/ci-workflow.test.ts), includi
 remove each gate/dependency and fixtures executing the actual YAML Bash body;
 [Bun version tests](../../tooling/tests/unit/bun-version.test.ts), per-job setup/evidence validation.
 The validator reuses `workflowSecurityFailures`; other workflows retain their existing policies.
-
-**`windows`**, `windows-latest`, records the exact Bun runtime and runs four
-package suites and one explicit test-file list:
-
-- `bun --filter @clarvis/paths test`
-- `bun --filter @clarvis/tools test`
-- `bun --filter @clarvis/plan test`
-- `bun --filter @clarvis/memory test`
-- `bun test packages/code/tests/unit/{keyboard-profile,keyspec,active-actions}.test.ts`
-
-The retained scope is deliberate: `paths` owns the Windows `PATH`/`PATHEXT` resolver; `tools` owns
-PowerShell dispatch and Windows process behavior; `plan` has a real win32 directory-sync branch;
-`memory` exercises platform filesystem, symlink and child-process lifetime behavior; and `code`
-contributes only its platform-independent keyboard-policy tests. `kernel`, `loop`, `trace`,
-`mcp-client` and `supervision` remain deliberately absent. Production: `.github/workflows/ci.yml`
-(`jobs.windows.steps`).
 
 **`keyboard-macos`**, `macos-14`, records the Bun version/revision, runs the complete `@clarvis/tools` suite and keyboard policy tests. It publishes
 the stable `keyboard policy (macos)` status context required by both permanent-branch rulesets.
@@ -789,13 +770,11 @@ Numbered `BUILD-n`. Each carries the rule, the production site, and the test tha
 generated dynamic import; an artifact with zero JS chunks, the adapter class in the entry, no
 dynamic edge, or any static edge to the provider chunk is rejected with a message naming the
 condition. This remains valid when Bun moves the source dynamic import into an eagerly shared kernel
-chunk instead of spelling it directly in `index.js`, and when Bun reports the chunk path with POSIX
-or Windows separators.
+chunk instead of spelling it directly in `index.js`, and when Bun reports the chunk path with POSIX separators.
 Production: `packages/code/tooling/artifact/contract.ts` (`assertLazyProviderArtifact`). Enforced in
 the build by `packages/code/tooling/artifact/build.ts` (`assertLazyProviderChunk`) and again on disk
 by `packages/code/tooling/artifact/smoke.ts`.
-Test: `packages/code/tests/architecture/artifact-contract.test.ts` (lazy provider artifact and
-Windows-shaped chunk-path cases).
+Test: `packages/code/tests/architecture/artifact-contract.test.ts` (lazy provider artifact).
 
 **BUILD-4 (INV-259).** The ordinary developer/root artifact keeps its source maps **detached** under
 `dist/maps/`, and must still contain `index.js.map` there; a `.map` beside runtime JS, or a missing
@@ -921,29 +900,18 @@ kept verbatim.
 Production: `.gitattributes`. Unpinned by a test; the byte-exact fixtures it protects are
 named in the file's own comment.
 
-**BUILD-22.** Windows commands run through PowerShell, never `cmd.exe`, with the payload carried as a
-base64 UTF-16LE `-EncodedCommand`.
-Production: `packages/tools/src/shell.ts` (`computeShell`: `pwsh` from `PATH` restricted to
-`.EXE`, else `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`, tail), reached
-through `resolveShell` (`encodePowerShellCommand`) (`shellArgs` →
-`-NoProfile -NonInteractive -EncodedCommand`). Detailed behaviour is delegated to **tools-shell-and-sessions**.
+**BUILD-22.** Shell commands run under `sh`, with the approved command passed unchanged.
+Production: `resolveShell` and `shellArgs` in `packages/tools/src/shell.ts`.
+Test: `packages/tools/tests/unit/shell.test.ts`.
 
-**BUILD-23.** `spawn`'s `detached` option is derived from the platform, never passed
-unconditionally: `true` on POSIX, `false` on Windows.
-Production: `packages/tools/src/lib/process.ts`, with the Windows consequence documented ("a console-subsystem shell spawned that way produces nothing at all: empty stdout and
-stderr, a `null` exit code … while the spawn itself still reports success"). Call sites:
-`packages/tools/src/lib/execution-session.ts`.
+**BUILD-23.** Owned processes use a POSIX process group so termination reaches descendants.
+Production: `packages/tools/src/lib/process.ts` and `packages/tools/src/lib/process-owner.ts`.
+Test: `packages/tools/tests/integration/execution-session.test.ts`.
 
-**BUILD-24.** A test that exercises a platform-conditional branch pins `process.platform` rather than
-relying on the ambient host.
-Production: `packages/plan/src/file-repository.ts` (`fsyncDir` reads `process.platform` per
-call and swallows the failure only on win32).
-Test: `packages/plan/tests/integration/file-repository.test.ts` (pins `"win32"`) (pins `"linux"`). states the reason: "`fsyncDir` reads `process.platform` per
-call, so a test that only *assumes* it is off win32 is really asserting whatever host it runs on. That
-held until `@clarvis/plan` joined the Windows CI job … Skipping it there would have been the wrong
-repair: the branch under test is platform-independent code, so the test should be too."
-
-**BUILD-25.** Platform conditional tests name the property they cannot exercise: POSIX shell syntax (`posixShell`), mode-bit enforcement (`modeBitsEnforced`), or a process-settlement measurement (`backgroundSettleIsMeasurable`). Session capture is exercised through the new `shell` and `shell_session` tests on every supported platform; native Windows and macOS CI evidence remains necessary. Production: `packages/tools/tests/helpers/fixtures.ts` and `packages/tools/src/lib/execution-session.ts`. Test: `packages/tools/tests/integration/shell-session.test.ts` and `packages/tools/tests/integration/execution-session.test.ts`.
+**BUILD-25.** Session capture is exercised through the `shell` and `shell_session` tests.
+Production: `packages/tools/src/lib/execution-session.ts`.
+Test: `packages/tools/tests/integration/shell-session.test.ts` and
+`packages/tools/tests/integration/execution-session.test.ts`.
 
 **BUILD-26 (INV-313).** Every executable and declaration surface derives from the one exact Bun
 version in `mise.toml`: every host Bun CI job, the release package matrix, the release publication gate,
@@ -1130,7 +1098,7 @@ groups, `killTree` and session capture belong to **tools-shell-and-sessions**.
    (`package.json`, `allowScripts`). Neither the reason for the skills-only override nor which
    dependency pulls esbuild in is derivable from the files in this document's scope.
 
-3. ~~**CI is disabled and the Windows/macOS legs are therefore unexercised.**~~ **Resolved in the
+3. **CI is active.** **Resolved in the
    first public-beta preparation:** `.github/workflows/ci.yml` triggers on push to `main` and `develop`, pull
    request, and manual dispatch with read-only permissions and SHA-pinned actions. This configuration
    does not itself claim a green platform run; observed release-platform evidence belongs to

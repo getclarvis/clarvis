@@ -60,9 +60,7 @@ export async function serveLocalFileKernel(
     workspaceRoot: options.kernel.workspaceRoot,
     globalDir: options.kernel.globalDir,
     owner: options.kernel.defaultOwner,
-    ...(process.platform === "win32"
-      ? {}
-      : { endpointRootCandidates: localHostEndpointRootCandidates(environment) }),
+    endpointRootCandidates: localHostEndpointRootCandidates(environment),
   });
   const env = options.kernel.env ?? loadEnv(environment);
   const policyId = localHostPolicyIdentity({

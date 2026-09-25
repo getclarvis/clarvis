@@ -7,12 +7,7 @@ export async function openPublicUrl(url: string): Promise<boolean> {
     return false;
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
-  const argv =
-    process.platform === "darwin"
-      ? ["open", parsed.href]
-      : process.platform === "win32"
-        ? ["rundll32", "url.dll,FileProtocolHandler", parsed.href]
-        : ["xdg-open", parsed.href];
+  const argv = process.platform === "darwin" ? ["open", parsed.href] : ["xdg-open", parsed.href];
   try {
     const child = Bun.spawn(argv, { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
     return (await child.exited) === 0;

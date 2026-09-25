@@ -85,9 +85,6 @@ async function command(
 const OPERATIONAL_ENVIRONMENT_KEYS = [
   "PATH",
   "BUN_INSTALL",
-  "SystemRoot",
-  "COMSPEC",
-  "PATHEXT",
   "LANG",
   "LC_ALL",
   "LC_CTYPE",
@@ -112,7 +109,6 @@ function isolatedEnvironment(options: {
   }
   const home = join(options.root, "home");
   environment.HOME = home;
-  environment.USERPROFILE = home;
   environment.CLARVIS_HOME = options.global;
   environment.CLARVIS_WORKSPACE_ROOT = options.workspace;
   environment.TMPDIR = join(options.root, "tmp");

@@ -46,7 +46,7 @@ describe("StorageService", () => {
     expect(snapshot.categories.find((row) => row.category === "spills")?.bytes).toBe(30);
     expect(snapshot.credentials.subscriptions).toEqual({
       present: true,
-      owner_only: process.platform === "win32" ? null : true,
+      owner_only: true,
     });
     expect(JSON.stringify(snapshot.credentials)).not.toContain("secret");
     expect(Object.hasOwn(snapshot.credentials.subscriptions, "bytes")).toBe(false);
@@ -85,11 +85,9 @@ describe("StorageService", () => {
     const executable = join(bin, "clarvis-kernel");
     mkdirSync(bin, { recursive: true });
     writeFileSync(executable, "artifact");
-    if (process.platform !== "win32") {
-      chmodSync(executable, 0o555);
-      chmodSync(bin, 0o555);
-      chmodSync(payload, 0o555);
-    }
+    chmodSync(executable, 0o555);
+    chmodSync(bin, 0o555);
+    chmodSync(payload, 0o555);
     const service = createStorageService(dir);
 
     const preview = await service.cleanup({ categories: ["cache"], dry_run: true });
@@ -103,7 +101,6 @@ describe("StorageService", () => {
   });
 
   it("does not follow links while removing rebuildable cache", async () => {
-    if (process.platform === "win32") return;
     const paths = globalPaths(dir);
     const external = join(dir, "external");
     const retained = join(external, "retained");
@@ -128,7 +125,6 @@ describe("StorageService", () => {
   });
 
   it("refuses unsafe cache ownership with a path-free conflict", async () => {
-    if (process.platform === "win32") return;
     const paths = globalPaths(dir);
     mkdirSync(paths.cache, { recursive: true });
     writeFileSync(join(paths.cache, "cached"), "value");

@@ -1234,12 +1234,6 @@ by `packages/loop/tests/architecture/builtin-capability-names.test.ts` and owned
    `packages/kernel/src/plugins/plugin-contributions.ts`); and skill-driven agent routing through
    `createAgentWorkflowPolicy.isManagerRun` and `resolveSkillRun`
    (`packages/kernel/src/runs/settings-assembler.ts`).
-8. **Windows behaviour of this package is unverified by any job in this document's scope.** The scanner uses
-   `node:path` throughout and normalizes to POSIX separators for `rel`
-   (`packages/skills/src/scan.ts`), but `packages/skills/package.json` is not referenced by any
-   Windows-scoped CI configuration in scope, and several tests use `symlinkSync` unconditionally
-   (e.g. `packages/skills/tests/integration/symlink.test.ts`).
-
 The host may observe directories visited by `listSkillDirs`, including empty candidates, to arm catalog monitors. Observation follows the existing discovery budgets and does not traverse resource subtrees as additional skills. Prospective manifests use `validateSkillDocument` with the owning root validation mode, preserving the distinction between Clarvis naming defaults and shared Agent Skills requirements.
 Production: `listSkillDirs` in [scan.ts](../../packages/skills/src/scan.ts) and `validateSkillDocument` in [registry.ts](../../packages/skills/src/registry.ts).
 Test: delayed manifest discovery in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts) and root validation in [execution-snapshot.test.ts](../../packages/skills/tests/unit/execution-snapshot.test.ts).

@@ -32,10 +32,8 @@ describe("subscription credential store", () => {
       result: undefined,
     }));
 
-    if (process.platform !== "win32") {
-      expect((await stat(dir)).mode & 0o777).toBe(0o700);
-      expect((await stat(store.path())).mode & 0o777).toBe(0o600);
-    }
+    expect((await stat(dir)).mode & 0o777).toBe(0o700);
+    expect((await stat(store.path())).mode & 0o777).toBe(0o600);
     expect(await store.read()).toEqual({
       ok: true,
       value: {

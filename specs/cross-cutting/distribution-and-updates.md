@@ -1,6 +1,6 @@
 # Portable distribution, installation, release publication, and self-update
 
-> Implemented at `install.sh`, `install.ps1`, `.github/workflows/release.yml`,
+> Implemented at `install.sh`, `.github/workflows/release.yml`,
 > `tooling/checks/release-readiness.ts`, and `packages/code/{src/update-contract.ts,src/update/**,
 > tooling/release/**}`. Every behavioral invariant below names its production and test evidence.
 
@@ -20,13 +20,12 @@ The user-facing surfaces are:
 
 - `install.sh` for GNU/glibc Linux and macOS, selecting `linux-{x64,arm64}` or
   `darwin-{x64,arm64}`, with `--uninstall` and `--help` modes;
-- `install.ps1` for `windows-{x64,arm64}`, with `-Uninstall` and `-Help` modes;
 - `clarvis --update`, a complete CLI mode answered before the application graph loads;
-- six `clarvis-v<version>-<target>.tar.gz` release assets plus `SHA256SUMS`, both installers,
+- four `clarvis-v<version>-<target>.tar.gz` release assets plus `SHA256SUMS`, the installer,
   Clarvis's license and standalone third-party notices/license texts;
 - root scripts `release:package`, `release:smoke`, `release:install-smoke`, and `check:release`;
 - root script `release:prepare`, which promotes the curated changelog entry and updates the product
-  version plus both installer defaults without committing or publishing;
+  version plus the installer default without committing or publishing;
 - a tag-triggered workflow that publishes from `getclarvis/clarvis` to public binary-only
   `getclarvis/clarvis-releases`, plus a non-publishing `workflow_dispatch` portable-build path.
 
@@ -38,9 +37,8 @@ scripts, `tooling/release/prepare.ts`, `packages/code/src/update-contract.ts` (`
 
 Installer overrides are explicit environment inputs: `CLARVIS_VERSION`,
 `CLARVIS_RELEASE_REPOSITORY`, `CLARVIS_RELEASE_BASE_URL`, `CLARVIS_RELEASE_DIRECTORY`,
-`CLARVIS_INSTALL_ROOT`, and the POSIX `CLARVIS_BIN_DIR`; Windows also accepts
-`CLARVIS_SKIP_PATH=1`. `CLARVIS_RELEASE_DIRECTORY` is an operator-selected local mirror, not a
-network fallback. Production: `install.sh` and `install.ps1`. Test:
+`CLARVIS_INSTALL_ROOT`, and `CLARVIS_BIN_DIR`. `CLARVIS_RELEASE_DIRECTORY` is an operator-selected local mirror, not a
+network fallback. Production: `install.sh`. Test:
 `packages/code/tooling/release/installer-smoke.ts`.
 
 Cross-repository publication uses repository variable `CLARVIS_RELEASE_APP_CLIENT_ID` and secret
@@ -53,8 +51,7 @@ Test: `tooling/tests/unit/release-readiness.test.ts` (scoped App contract).
 
 Every archive has exactly one top-level `clarvis/` directory. Its payload contains the root product
 manifest and MIT license, static `THIRD_PARTY_NOTICES.md`, Bun, models.dev, and Vercel AI SDK license
-texts beneath `third-party/`, generated `THIRD_PARTY_NOTICES.txt`, `runtime/clarvis` or
-`runtime/clarvis.exe`, a legacy `runtime/bun` or `runtime/bun.exe` compatibility entry, Code's small
+texts beneath `third-party/`, generated `THIRD_PARTY_NOTICES.txt`, `runtime/clarvis`, a legacy `runtime/bun` compatibility entry, Code's small
 TypeScript launcher/update graph, the map-free split
 `packages/code/dist`, and the target-native runtime dependency closure beneath `node_modules`. The
 payload also carries the raw `packages/kernel/assets/skills/.system/clarvis-docs` Markdown tree and
@@ -68,7 +65,7 @@ An owned old revision is retired on rollback to a pre-skill release, and an unow
 left untouched. Production: `CLARVIS_DOCS_FIRST_VERSION` and `verifyReleaseTree` in
 `packages/code/src/update/release-manifest.ts`, `publishSelectedSystemDocs` in
 `packages/code/src/bootstrap/system-docs-cli.ts`, `reconcileSystemDocs` in
-`packages/kernel/src/skills/system-docs.ts`, root `install.sh` and `install.ps1`, and
+`packages/kernel/src/skills/system-docs.ts`, root `install.sh` and and
 `publishStagedSystemDocs` in `packages/code/src/update/installation.ts`. Test:
 `packages/code/tests/unit/release-manifest.test.ts`,
 `packages/code/tests/unit/candidate-install.test.ts`, and
@@ -124,7 +121,7 @@ A managed installation is:
 owns the mutation lease; a file left by a crashed owner requires the reported manual recovery. The
 stable launcher reads `current` on every invocation, exports `CLARVIS_INSTALL_ROOT`, and executes
 that version's product-named runtime and `cli.ts`. Production:
-`install.sh`, `install.ps1`, and `packages/code/src/update/installation.ts`.
+`install.sh`, and `packages/code/src/update/installation.ts`.
 
 ## 4. Behavior
 
@@ -161,7 +158,7 @@ Archive creation, POSIX checksum parsing/calculation, and POSIX extraction all f
 `C` locale, so an unsupported inherited locale cannot add a warning or alter archive/checksum
 interpretation.
 Stable installation and self-update download, verify, smoke, and activate the target-native
-portable archive. Production: `install.sh`, `install.ps1`,
+portable archive. Production: `install.sh`,
 `packages/code/src/update/installation.ts` (`verifyStagedRelease`), and
 `packages/kernel/src/file-kernel.ts` (`FileKernel`). Test:
 `packages/code/tests/architecture/artifact-contract.test.ts` and
@@ -170,7 +167,7 @@ Only then does the installer store the ownership marker, activate the version, a
 replace its own marked launcher. The stable launcher validates the `current` identifier before using
 it in a path. The POSIX installer accepts the script either as a file or on `/bin/sh`'s standard
 input, asks no interactive question, and invokes the staged Clarvis payload only through the
-application-free `--version` fast path before activation. Production: `install.sh`, `install.ps1`, and
+application-free `--version` fast path before activation. Production: `install.sh`, and
 `packages/code/src/cli.ts`. Test: `packages/code/tooling/release/installer-smoke.ts` covers visible
 progress under a synthetic host locale, the POSIX standard-input entry, unmanaged and cross-root
 launcher refusal, linked and non-file marker refusal, a same-version reinstall, the ownership
@@ -180,20 +177,17 @@ Uninstall is an explicit mode of the same versioned scripts. It prints the resol
 launcher before mutation, authenticates the exact ownership marker, and supports installations made
 before that marker existed only when the marked launcher, valid `current` tag, and active
 `release.json` are all present. A POSIX launcher authenticates only the install root embedded in that
-launcher. It refuses symlink/reparse-point roots or managed directories, invalid markers, unrelated
+launcher. It refuses symlink roots or managed directories, invalid markers, unrelated
 launchers/roots, and an existing `update.lock`; POSIX state is reclassified after acquiring the
 shared lock, including stale-launcher-only removal. Cancellation signals clean up the lock and
 terminate the POSIX operation. The uninstaller removes the installer-owned versions, activation
-file, marker, and matching launcher. Windows removes only the exact managed `bin` entry from the
-user `PATH` inside the same lock unless `CLARVIS_SKIP_PATH=1`, including when the launcher itself is
-already missing. Unknown root files and unrelated launchers remain in place and are reported. Once
+file, marker, and matching launcher. Unknown root files and unrelated launchers remain in place and are reported. Once
 marker, activation, and versions artifacts are absent, repeated uninstall is a successful no-op even
 when those preserved files remain. User configuration, credentials, sessions, `.clarvis`, and `.agents`
-are outside this operation. Production: `install.sh` and `install.ps1`. Test:
+are outside this operation. Production: `install.sh`. Test:
 `packages/code/tooling/release/installer-smoke.ts` covers unauthenticated-root and active-lock
 refusal, legacy pre-marker authentication, cross-root launcher ownership, linked managed-directory
-refusal, signal cancellation, locked stale-launcher removal, managed removal with a missing Windows
-launcher, preserved user state, POSIX standard-input uninstall, and repeated uninstall with
+refusal, signal cancellation, locked stale-launcher removal, preserved user state, POSIX standard-input uninstall, and repeated uninstall with
 preserved artifacts.
 
 Self-update performs no network request until it has authenticated a managed current installation
@@ -258,10 +252,9 @@ Test: the verified activation and preserved predecessor cases in
 [update-command.test.ts](../../packages/code/tests/unit/update-command.test.ts), plus portable
 payload verification in [smoke.ts](../../packages/code/tooling/release/smoke.ts).
 
-The release workflow builds and smokes all six target archives independently. The final publish
+The release workflow builds and smokes all four target archives independently. The final publish
 job downloads the complete set, verifies every archive sidecar, assembles `SHA256SUMS`, and runs
-the release-set checker. It accepts only the six exact archives, their sidecars, checksums, two
-installers and required notices/licenses. It extracts every archive and rejects source maps before
+the release-set checker. It accepts only the four exact archives, their sidecars, checksums, one installer and required notices/licenses. It extracts every archive and rejects source maps before
 a cross-repository publication credential exists. Only then does the workflow mint a short-lived
 GitHub App installation token scoped to `getclarvis/clarvis-releases`, create a draft, upload the
 allowlisted assets, and remove the draft flag in the final step. Manual dispatch builds portable
@@ -345,7 +338,7 @@ regular-file manifest verification. Production: `downloadReleaseAsset` in
 
 **DIST-7.** Exactly one installer, updater, or uninstaller may mutate managed release state in an
 install root at a time; all three surfaces use the same exclusive `update.lock`. Production:
-`install.sh`, `install.ps1`, and `packages/code/src/update/installation.ts` (`withUpdateLock`). Test:
+`install.sh`, and `packages/code/src/update/installation.ts` (`withUpdateLock`). Test:
 `packages/code/tests/unit/update-command.test.ts` asserts normal update completion removes the lock
 and an existing owner is neither replaced nor removed;
 `packages/code/tooling/release/installer-smoke.ts` asserts install, ordinary uninstall, and
@@ -360,9 +353,9 @@ allowlist, archive, checksum, and upload checks. Production: `.github/workflows/
 verifiable only in an authorized release run.
 
 **DIST-9.** Every portable archive carries the static Bun runtime under the platform-native Clarvis
-executable name (`runtime/clarvis` or `runtime/clarvis.exe`), models.dev snapshot, and Vercel AI SDK
+executable name (`runtime/clarvis`), models.dev snapshot, and Vercel AI SDK
 notices; their license files; Bun source/relinking information; the generated target dependency
-inventory; an older launcher's `runtime/bun` or `runtime/bun.exe` compatibility entry; and the license
+inventory; an older launcher's `runtime/bun` compatibility entry; and the license
 files retained inside copied packages. The assembled release also exposes
 the Vercel AI SDK license as a standalone asset. Production:
 `packages/code/tooling/release/package.ts` (`copySource`, `copyDependencies`),
@@ -397,11 +390,11 @@ Production: `packages/code/tooling/release/runtime-package-discovery.ts`
 every download, verification, staging, and activation phase. Uninstall removes only an authenticated
 managed installation, binds launcher ownership to the selected root, terminates on cancellation, and
 preserves Clarvis user/workspace state, unrelated launchers, and unknown root files. Managed
-filesystem and Windows `PATH` mutation remain inside the shared operation lock. Production:
-`install.sh` and `install.ps1`. Test:
+filesystem and filesystem mutation remain inside the shared operation lock. Production:
+`install.sh`. Test:
 `packages/code/tooling/release/installer-smoke.ts` (visible progress, ownership marker,
 legacy authentication, unauthenticated and linked-path refusal, cross-root ownership, cancellation,
-locked stale-launcher removal, missing-launcher Windows `PATH` cleanup, managed-file removal,
+locked stale-launcher removal, managed-file removal,
 preserved user/unknown-root state, and idempotence).
 
 **DIST-14.** Generated runtime JavaScript contains no literal or JavaScript-escaped build-host
@@ -409,7 +402,7 @@ checkout root. Dependencies that resolve workers or assets relative to their pac
 external and enter the portable archive through the target-native runtime closure. Production:
 `packages/code/tooling/artifact/build.ts` (`assertRelocatableBuild`, external package set) and
 `packages/code/tooling/artifact/contract.ts` (`assertRelocatableArtifact`). Test:
-`packages/code/tests/architecture/artifact-contract.test.ts` (POSIX and Windows build-root cases) and
+`packages/code/tests/architecture/artifact-contract.test.ts` (build-root cases) and
 `packages/code/tooling/release/smoke.ts` (packaged runtime execution).
 
 **DIST-15.** The source workflow cannot publish with its repository-scoped `GITHUB_TOKEN`.
@@ -421,12 +414,12 @@ Production: `.github/workflows/release.yml` (`release-token` step) and
 
 **DIST-16.** The portable installer, updater, release smoke, and stable launcher select the
 Clarvis-named copy of the Bun runtime. Consequently the executable identity observed by the host
-process table is `clarvis` (or `clarvis.exe`) while the bundled runtime's Bun provenance and license
+process table is `clarvis` while the bundled runtime's Bun provenance and license
 remain explicit. Developer-checkout commands intentionally retain the identity of the Bun executable
 they invoke. A compatibility entry remains for an older launcher, but current product surfaces never
 select it. Production: `packages/code/src/update-contract.ts`
 (`releaseRuntimeExecutableName`), `packages/code/tooling/release/package.ts` (`copyRuntime`),
-`packages/code/src/update/installation.ts` (`runtimePath`), `install.sh`, and `install.ps1`. Test:
+`packages/code/src/update/installation.ts` (`runtimePath`), `install.sh`. Test:
 `packages/code/tests/unit/update-contract.test.ts`, `packages/code/tooling/release/smoke.ts`, and
 `packages/code/tooling/release/installer-smoke.ts`.
 
@@ -451,14 +444,13 @@ public-site ownership).
 | Checksum, size, URL, redirect, manifest, or candidate smoke mismatch | candidate is refused and staging is removed |
 | Concurrent install, update, or uninstall | shared exclusive lock fails with a recovery path for an actually crashed owner |
 | Unmanaged or ambiguously owned install root | uninstall refuses without removing files |
-| Symlinked or reparse-point install root or managed directory | install/uninstall refuses without traversing it |
+| Symlinked install root or managed directory | install/uninstall refuses without traversing it |
 | POSIX uninstall receives HUP, INT, or TERM | lock cleanup runs and the operation exits without continuing as a success |
 | Existing destination differs | no overwrite; current version remains active |
 | Unknown top-level files under an authenticated install root | managed files are removed; unknown files and the non-empty root remain and are reported |
 | Source checkout or `bun link` command | `--update` refuses and directs the operator to Git/setup |
 | No eligible newer release | exit 0 and report the current version is up to date |
-| Windows release smoke | manifest and fast paths run natively; real-PTY complete-app boot remains covered by POSIX release jobs |
-| macOS Gatekeeper or Windows SmartScreen | unsigned beta may require explicit user approval; no bypass is automated |
+| macOS Gatekeeper | unsigned beta may require explicit user approval; no bypass is automated |
 | Missing third-party notice or license marker | native release smoke fails before publication |
 | Build-host checkout path in generated JavaScript | artifact build fails before packaging |
 | Manual workflow dispatch | portable qualification only; publication is skipped |
@@ -476,7 +468,7 @@ the exact Bun runtime running the packaging job, OpenTUI's target-native package
 `getclarvis/clarvis-releases` metadata, the narrowly installed publisher App, and the operating
 system's archive/launcher conventions. Neither install nor update depends on Clarvis user configuration, provider credentials, or a
 remote Kernel. Production: `packages/code/tooling/release/package.ts`,
-`.github/workflows/release.yml`, `install.sh`, and `install.ps1`.
+`.github/workflows/release.yml`, `install.sh`.
 
 Build structure, pinned Bun, CI checks, and the package-local bundle remain owned by
 [Build and CI](build-and-ci.md). CLI parsing and fast-path application boot remain owned by
@@ -487,9 +479,9 @@ version ownership remains in [Package architecture](package-architecture.md).
 ## 8. Open questions
 
 1. The beta artifacts are not yet code-signed or notarized. Signing identities, protected secret
-   storage, macOS notarization, Windows signing, and their renewal/revocation procedures need an
+   storage, macOS notarization, their renewal/revocation procedures need an
    owner decision before the installers can promise warning-free launches.
-2. The six-runner workflow is configured from GitHub's current hosted-runner labels. Platform
+2. The four-runner workflow is configured from GitHub's current hosted-runner labels. Platform
    support becomes observed rather than configured only after the corresponding native build,
    artifact smoke, and installer smoke complete for the release. Dated run evidence belongs in
    [`specs/known-issues.md`](../known-issues.md) and the launch record, not in this durable contract.

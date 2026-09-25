@@ -14,8 +14,7 @@ import { recordingLogger } from "../helpers/recording-logger.ts";
 
 /**
  * Whether an unreadable file is actually unreadable here. Root ignores the mode
- * bits and Windows does not express them, so the `rescan` case probes rather
- * than assuming from the platform.
+ * bits, so the `rescan` case probes rather than assuming access.
  */
 const unreadableFilesPossible = await (async (): Promise<boolean> => {
   const base = await mkdtemp(join(tmpdir(), "clarvis-plan-perm-probe-"));

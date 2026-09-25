@@ -43,7 +43,6 @@ export interface HookSpec {
   readonly event: string;
   readonly type?: "command" | "mcp_tool" | undefined;
   readonly command: string;
-  readonly command_windows?: string | undefined;
   readonly async?: boolean | undefined;
   readonly status_message?: string | undefined;
   readonly additional_context_limit?: number | undefined;

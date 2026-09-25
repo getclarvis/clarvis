@@ -1,71 +1,14 @@
-import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { promisify } from "node:util";
 import { DIR_MODE, FILE_MODE, ancestorTrust } from "@clarvis/paths";
 import { kernelError } from "../core/errors.ts";
-
-const executeFile = promisify(execFile);
-const usesWindowsAcl = process.platform === "win32";
-const windowsPolicy = `
-$ErrorActionPreference = 'Stop'
-$path = $env:CLARVIS_HOST_PRIVATE_PATH
-$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-$acl = Get-Acl -LiteralPath $path
-if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) { exit 2 }
-if ($env:CLARVIS_HOST_PRIVATE_CREATE -eq '1') {
-  $acl = New-Object System.Security.AccessControl.DirectorySecurity
-  $acl.SetOwner($sid)
-  $acl.SetAccessRuleProtection($true, $false)
-  $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
-  $acl.AddAccessRule($rule)
-  Set-Acl -LiteralPath $path -AclObject $acl
-  $acl = Get-Acl -LiteralPath $path
-}
-$rules = $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
-if ($rules.Count -eq 0) { exit 3 }
-foreach ($rule in $rules) {
-  if ($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -ne $sid.Value) { exit 4 }
-}
-`;
-
-async function assertWindowsPrivate(path: string, created = false): Promise<void> {
-  try {
-    await executeFile(
-      "powershell.exe",
-      [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-EncodedCommand",
-        Buffer.from(windowsPolicy, "utf16le").toString("base64"),
-      ],
-      {
-        timeout: 10_000,
-        maxBuffer: 8192,
-        windowsHide: true,
-        env: {
-          ...process.env,
-          CLARVIS_HOST_PRIVATE_PATH: path,
-          CLARVIS_HOST_PRIVATE_CREATE: created ? "1" : "0",
-        },
-      },
-    );
-  } catch {
-    throw kernelError("unauthorized", "local host state requires a private account-owned ACL");
-  }
-}
 
 /** Existing private state is verified, never chmod-repaired after credentials may have been exposed. */
 export async function assertPrivateHostDirectory(path: string): Promise<void> {
   const info = await lstat(path);
   if (!info.isDirectory() || info.isSymbolicLink() || (await realpath(path)) !== resolve(path))
     throw kernelError("unauthorized", "local host state requires a canonical directory");
-  if (usesWindowsAcl) {
-    await assertWindowsPrivate(path);
-    return;
-  }
   if (info.uid !== process.getuid?.() || (info.mode & 0o777) !== DIR_MODE)
     throw kernelError("unauthorized", "local host directory must be private and account-owned");
   if (!ancestorTrust(path).trusted)
@@ -74,8 +17,7 @@ export async function assertPrivateHostDirectory(path: string): Promise<void> {
 
 /** Create the private directory before publishing any credential, then verify its real ownership. */
 export async function preparePrivateHostDirectory(path: string): Promise<void> {
-  const created = await mkdir(path, { recursive: true, mode: DIR_MODE });
-  if (usesWindowsAcl && created !== undefined) await assertWindowsPrivate(path, true);
+  await mkdir(path, { recursive: true, mode: DIR_MODE });
   await assertPrivateHostDirectory(path);
 }
 
@@ -102,8 +44,7 @@ export async function readPrivateHostJson(path: string, maxBytes: number): Promi
       info.size > maxBytes
     )
       throw kernelError("invalid_request", "local host file is unsafe or exceeds its byte limit");
-    if (usesWindowsAcl) await assertWindowsPrivate(path);
-    else if (info.uid !== process.getuid?.() || (info.mode & 0o777) !== FILE_MODE)
+    if (info.uid !== process.getuid?.() || (info.mode & 0o777) !== FILE_MODE)
       throw kernelError("unauthorized", "local host file must be private and account-owned");
     const data = Buffer.alloc(info.size + 1);
     let offset = 0;

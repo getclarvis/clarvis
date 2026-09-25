@@ -191,8 +191,8 @@ describe("test determinism baseline", () => {
     );
   });
 
-  test("normalizes Windows and POSIX paths and keeps structural identities line-independent", () => {
-    expect(normalizeTestPath(".\\packages\\demo\\tests\\unit\\fixture.test.ts")).toBe(
+  test("normalizes POSIX paths and keeps structural identities line-independent", () => {
+    expect(normalizeTestPath("./packages/demo/tests/unit/fixture.test.ts")).toBe(
       "packages/demo/tests/unit/fixture.test.ts",
     );
     const first = findTestDeterminismOccurrencesInFile("fixture.test.ts", "Bun.sleep(5);");

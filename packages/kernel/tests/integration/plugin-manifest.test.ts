@@ -1674,7 +1674,6 @@ describe("convertHooksDocument", () => {
               {
                 type: "command",
                 command: "record",
-                commandWindows: "record.exe",
                 statusMessage: "Recording result",
                 additionalContextLimit: 2048,
               },
@@ -1699,7 +1698,6 @@ describe("convertHooksDocument", () => {
       {
         event: "post_tool_use",
         command: "record",
-        command_windows: "record.exe",
         status_message: "Recording result",
         additional_context_limit: 2048,
       },

@@ -72,9 +72,7 @@ function collector(maxBytes: number): Collector {
  * something the user typed and submitted themselves. It does not call
  * `KernelClient` or the agent tool dispatcher.
  *
- * The shell comes from the same resolver the kernel's tools use, so `!` speaks
- * PowerShell on Windows, never diverging from what the agent's own commands
- * run through. On POSIX it still runs through `bash` specifically, not the
+ * This user command runs through `bash` specifically, rather than the
  * bare `sh` the kernel's tools resolve to: `!` is a user-typed escape hatch
  * that predates this dialect work, and users on a host where `/bin/sh` is
  * `dash` or `ash` (Debian, Ubuntu, Alpine) rely on bash-only syntax here -

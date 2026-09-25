@@ -164,17 +164,12 @@ function environmentFor(profile: KeyboardProfile): KeyboardEnvironment {
 }
 
 const portable = (): Record<string, string | string[]> =>
-  resolvedVitalBindings("linux", environmentFor("portable"));
+  resolvedVitalBindings(environmentFor("portable"));
 const enhanced = (): Record<string, string | string[]> =>
-  resolvedVitalBindings("linux", environmentFor("enhanced"));
+  resolvedVitalBindings(environmentFor("enhanced"));
 
-test("ctrl+z binds to app.suspend off Windows, and the binding is withheld along with the command on Windows", () => {
-  // app.suspend is never registered as a command on win32 (no SIGTSTP, no job
-  // control to return from). If the binding stayed while the command didn't,
-  // ctrl+z would point at nothing and the keymap's own unresolved-command
-  // warning would fire on every Windows boot.
-  expect(resolvedVitalBindings("linux", environmentFor("portable"))["app.suspend"]).toBe("ctrl+z");
-  expect(resolvedVitalBindings("win32", environmentFor("portable"))["app.suspend"]).toBeUndefined();
+test("ctrl+z binds to app.suspend", () => {
+  expect(resolvedVitalBindings(environmentFor("portable"))["app.suspend"]).toBe("ctrl+z");
 });
 
 test("the four rebindable transcript.scroll* commands resolve, page keys on every profile", () => {

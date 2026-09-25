@@ -206,7 +206,7 @@ async function readValidated(file: string): Promise<McpOAuthFileV1> {
 async function ensureSafeParent(file: string): Promise<void> {
   const parent = resolve(dirname(file));
   await mkdir(parent, { recursive: true, mode: DIR_MODE });
-  if (process.platform !== "win32") await chmod(parent, DIR_MODE);
+  await chmod(parent, DIR_MODE);
   const [resolved, info] = await Promise.all([realpath(parent), stat(parent)]);
   if (!info.isDirectory() || resolved !== parent) {
     throw new McpOAuthStoreError("unsafe_path");
@@ -255,7 +255,7 @@ export function createMcpOAuthCredentialStore(
         }
         await lease.assertOwned();
         await writeFileDurable(file, serialized, { mode: FILE_MODE, dirMode: DIR_MODE });
-        if (process.platform !== "win32") await chmod(file, FILE_MODE);
+        await chmod(file, FILE_MODE);
       } finally {
         await lease.release();
       }

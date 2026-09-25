@@ -21,8 +21,8 @@ class FakeProcess extends EventEmitter {
   }
 }
 
-function harness(platform: NodeJS.Platform = "linux") {
-  const host = new FakeProcess(platform);
+function harness() {
+  const host = new FakeProcess();
   const keyInput = new EventEmitter();
   let destroys = 0;
   const renderer = {
@@ -118,11 +118,4 @@ test("the early exit owner remains active after signal handoff until keymap rele
   target.host.emit("exit", 1);
 
   expect(target.destroys()).toBe(1);
-});
-
-test("Windows boot ownership omits SIGHUP", () => {
-  const target = harness("win32");
-  expect(target.host.listenerCount("SIGHUP")).toBe(0);
-  expect(target.host.listenerCount("SIGBREAK")).toBe(1);
-  target.lifecycle.destroy();
 });

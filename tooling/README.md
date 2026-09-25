@@ -46,7 +46,7 @@ of the historical signal exits. Its evidence and retirement condition live in
 [`../specs/known-issues.md`](../specs/known-issues.md#bun-dies-by-signal-in-the-clarviscode-suite).
 
 `release/prepare.ts` promotes the curated `CHANGELOG.md` `Unreleased` entry and updates the three
-release identity authorities: root `package.json`, `install.sh`, and `install.ps1`. It validates
+release identity authorities: root `package.json` and `install.sh`. It validates
 SemVer ordering and the existing cross-file identity before writing, and never commits, tags, or
 publishes. Public documentation resolves the newest complete distribution release independently, so
 it is not part of this source mutation.

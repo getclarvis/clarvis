@@ -199,7 +199,7 @@ Ownership and timing are specified in [loop-scheduling.md](loop-scheduling.md).
 | --- | --- | --- |
 | `CapabilityState` | `"supported" \| "unsupported" \| "unknown"` | `packages/code/src/keys/keyboard-profile.ts` |
 | `KeyboardProfile` | `"portable" \| "enhanced" \| "manual"` | `packages/code/src/keys/keyboard-profile.ts` |
-| `ClientPlatform` | `"macos" \| "windows" \| "linux"` | `packages/code/src/keys/keyboard-profile.ts` |
+| `ClientPlatform` | `"macos" \| "linux"` | `packages/code/src/keys/keyboard-profile.ts` |
 | `KeyboardEnvironment` | the effective, non-sensitive facts (`transport`, `runtimePlatform`, `terminal`, `protocol`, `multiplexer`, `modifiers`, `baseLayout`, `profile`, `clientPlatform?`) | `packages/code/src/keys/keyboard-profile.ts` |
 | `KeyboardEnvironmentConfig` | persisted per-environment record (`profile`, `clientPlatform?`, `verdicts?`, `bindings?`) | `packages/code/src/keys/keyboard-profile.ts` |
 | `KeyboardEnvironmentInput` | `{remote, runtimePlatform, terminal?, kittyKeyboard, multiplexer?, host}` — inputs collected from OpenTUI without retaining raw input or host identity; the shape `defaultKeyboardProfile`, `buildKeyboardEnvironment` and `keyboardEnvironmentId` all take | `packages/code/src/keys/keyboard-profile.ts` |
@@ -225,7 +225,7 @@ Ownership and timing are specified in [loop-scheduling.md](loop-scheduling.md).
 | `DEFAULT_BINDING_CANDIDATES` | 16 commands → candidate lists | `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES`) |
 | `DEFAULT_WHEN` | 11 commands → `"overlay==none"`; `plan.open` → `"overlay in (none, plan)"` | `packages/code/src/keys/interaction.ts` (`DEFAULT_WHEN`) |
 | `buildVitalBindings(defaults, defaultWhen)` | expands a command→key(s) table into bindings, stamping `modal:"none"` unless in `MODAL_LIVE_COMMANDS` | `packages/code/src/keys/interaction.ts` |
-| `resolvedVitalBindings(platformName, environment, overrides?)` | resolves every vital command's key(s) for one environment; drops `app.suspend` on `win32` | `packages/code/src/keys/interaction.ts` |
+| `resolvedVitalBindings(platformName, environment, overrides?)` | resolves every vital command's key(s) for one environment | `packages/code/src/keys/interaction.ts` |
 | `createInteraction(renderer, platform, effects, initialKeyboardConfig?)` | builds and wires the whole keymap, returns `Interaction` | `packages/code/src/keys/interaction.ts`, `createInteraction` |
 
 ### 2.8 `ui/patterns/**`
@@ -294,7 +294,7 @@ always calls `persist("global", ...)` (`packages/code/src/adapters/code-config.t
   "environments": {
     "<24-hex-char id>": {
       "profile": "portable" | "enhanced" | "manual",
-      "clientPlatform": "macos" | "windows" | "linux",
+      "clientPlatform": "macos" | "linux",
       "verdicts": { "ctrl": "supported", "meta": "unsupported", "baseLayout": "supported" },
       "bindings": { "agent.picker": ["ctrl+b"] }
     }
@@ -354,7 +354,7 @@ The following commands and candidates (`packages/code/src/keys/interaction.ts`,
 | `transcript.scrollLineUp` | `alt+up` (enhanced, requires `meta`) | `overlay==none` |
 | `transcript.scrollLineDown` | `alt+down` (enhanced, requires `meta`) | `overlay==none` |
 
-Plain arrows are portable on macOS, Windows and Linux and become transcript navigation only while
+Plain arrows are portable on macOS and Linux and become transcript navigation only while
 the logical block cursor is active. `alt+…` candidates carry `minimumProfile:"enhanced"` because
 Alt is the modifier terminals actually intercept (`packages/code/src/keys/interaction.ts`;
 `packages/code/src/views/App.tsx`; pinned `packages/code/tests/integration/interaction.test.ts` and
@@ -568,8 +568,7 @@ Pinned: `packages/code/tests/unit/keyspec.test.ts` (`verb("delete", ...)` yields
    (`keyboardInput`) and stamped into two signals (`packages/code/src/keys/interaction.ts`).
 9. `overlay`/`autocomplete` context defaults are seeded (`"none"`, `false`) and `modal`
    is seeded `"none"` (`packages/code/src/keys/interaction.ts`).
-10. A separate, larger command list — 16 entries on any platform but `win32` (15 there,
-    since `app.suspend` is conditionally omitted, `packages/code/src/keys/interaction.ts`) — is constructed via
+10. A separate, larger command list — 16 entries (`packages/code/src/keys/interaction.ts`) — is constructed via
     `command(name, run, meta)`, which merges `ACTION_PROJECTION[name]` under any explicit
     `meta` and is registered, with **no bindings at all**, as one layer:
     `keymap.registerLayer({ commands })` (`packages/code/src/keys/interaction.ts`). This is not the same
@@ -761,7 +760,7 @@ verify modified keys"` if the protocol is `"legacy"`, else `"Available"`
 `"full-help"` and whose name does **not** match
 `/^(ui\.|confirm\.|editor\.|autocomplete\.|elicit\.)/` — internal/editor-only commands
 never appear as editable bindings (`packages/code/src/views/config/KeyboardView.tsx`). `cycleClient()` rotates
-the stored `clientPlatform` through `undefined → "macos" → "windows" → "linux" →
+the stored `clientPlatform` through `undefined → "macos" → "linux" →
 undefined` (`packages/code/src/views/config/KeyboardView.tsx`). `editBinding()` splits the entered text on `,`,
 trims and drops empty entries, validates each against `keymap.parseKeySequence`
 (collecting failures as `invalidKeys`), normalizes each parsed key's display form for
@@ -1154,7 +1153,6 @@ live Lead frontier").
 | A pending elicitation modal (`setModalContext("elicitation")`) | Every vital binding **except** `MODAL_LIVE_COMMANDS` (`run.cancel`, `app.suspend`, the four `transcript.scroll*`) is inert; those six stay live (read-only navigation and escape hatches only) | `packages/code/src/keys/interaction.ts` (`MODAL_LIVE_COMMANDS`, `buildVitalBindings`); test `packages/code/tests/integration/interaction.test.ts` ("a pending modal keeps scrolling, suspend and cancel, and withholds the rest") |
 | An overlay is on the stack | The `overlay==none` commands in `DEFAULT_WHEN` go dark. On the `plan` overlay only, `plan.open` remains active: the same shortcut closes current-plan detail and returns to the transcript. There is no history-origin route. `app.escape`, `run.cancel` and `app.suspend` have no overlay gate, so the cancel binding still cancels the run or enters quit. | `packages/code/src/keys/interaction.ts` (`DEFAULT_WHEN`), `packages/code/src/views/overlays/PlanOverlay.tsx` (`detailCloseActions`); tests `packages/code/tests/integration/interaction.test.ts` and `packages/code/tests/integration/app-shell-render.test.tsx` |
 | `normalizeKeyboardConfig` is handed malformed/future JSON (wrong version, non-object environments, junk verdicts) | Tolerantly degrades: unrecognized top-level shape → empty config; a malformed per-environment entry is skipped entirely; unrecognized verdict/binding entries inside an otherwise-valid entry are dropped individually | `packages/code/src/keys/keyboard-profile.ts`; test `packages/code/tests/unit/keyboard-profile.test.ts` (`normalizeKeyboardConfig tolerates future and malformed UI data`) |
-| `app.suspend` on `win32` | The command is not registered at all (no `SIGTSTP`/job control to return from), and its binding candidate is skipped by `resolvedVitalBindings` so the keymap's own dead-binding warning never fires on an orphaned key | `packages/code/src/keys/interaction.ts`; test `packages/code/tests/integration/interaction.test.ts` |
 
 ## 7. Coupling
 

@@ -8,7 +8,7 @@ function command(root: string, source: string): string {
   const file = join(root, "session.cjs");
   writeFileSync(file, source);
   const invocation = `"${process.execPath}" "${file}"`;
-  return process.platform === "win32" ? `& ${invocation}` : invocation;
+  return invocation;
 }
 
 describe("shell and shell_session", () => {

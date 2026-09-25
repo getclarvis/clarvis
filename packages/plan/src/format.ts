@@ -100,7 +100,7 @@ export function projectPlan(document: PlanDocument): PlanIndex {
 }
 
 /**
- * Build a Windows-safe, sortable plan filename from a timestamp and title:
+ * Build a sortable plan filename from a timestamp and title:
  * `yyyy-MM-ddTHH-mm-ss-<slug>.md`.
  *
  * @param date - the creation time; its seconds-precision UTC value forms the

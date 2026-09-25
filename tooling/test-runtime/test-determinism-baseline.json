@@ -98,14 +98,6 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
-      "mechanism": "subprocess",
-      "file": "packages/code/tests/integration/shell-cache-isolation.test.ts",
-      "identity": "subprocess|module|Bun.spawnSync([\"bun\", file], { cwd: pkgRoot })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
       "mechanism": "timer",
       "file": "packages/code/tests/integration/workflows-hub-render.test.tsx",
       "identity": "timer|test:a refresh that never settles stays one physical request and becomes visible|setTimeout(resolve, 20)|0",
@@ -220,7 +212,7 @@
     {
       "mechanism": "timer",
       "file": "packages/kernel/tests/integration/file-kernel.test.ts",
-      "identity": "timer|describe:createFileKernel — skills roots from plugins/it:withdraws plugin skill drift without rejecting the next run|setTimeout(() => reject(new Error(\"skill drift watcher did not fire\")), 10_000)|0",
+      "identity": "timer|describe:createFileKernel \u2014 skills roots from plugins/it:withdraws plugin skill drift without rejecting the next run|setTimeout(() => reject(new Error(\"skill drift watcher did not fire\")), 10_000)|0",
       "package_owner": "@clarvis/kernel",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -364,7 +356,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter — streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|0",
+      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|0",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -372,7 +364,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter — streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|1",
+      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:lets an active stream outlive the timeout while every inter-part gap stays below it/parts|setTimeout(resolve, 20)|1",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -380,7 +372,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter — streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|0",
+      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|0",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -388,7 +380,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter — streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|1",
+      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|1",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -396,7 +388,7 @@
     {
       "mechanism": "timer",
       "file": "packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts",
-      "identity": "timer|describe:AiSdkAdapter — streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|2",
+      "identity": "timer|describe:AiSdkAdapter \u2014 streaming path/it:treats non-argument SDK parts as activity after a tool was announced/parts|setTimeout(resolve, 20)|2",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -428,7 +420,7 @@
     {
       "mechanism": "positive-wait",
       "file": "packages/loop/tests/integration/host-capability.test.ts",
-      "identity": "positive-wait|describe:executeRun — capability run-end/it:awaits every capability's durable run-end work before resolving|Bun.sleep(5)|0",
+      "identity": "positive-wait|describe:executeRun \u2014 capability run-end/it:awaits every capability's durable run-end work before resolving|Bun.sleep(5)|0",
       "package_owner": "@clarvis/loop",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -436,7 +428,7 @@
     {
       "mechanism": "positive-wait",
       "file": "packages/loop/tests/integration/host-capability.test.ts",
-      "identity": "positive-wait|describe:executeRun — capability run-end/it:stops waiting once the run-end budget elapses, and says so|Bun.sleep(400)|0",
+      "identity": "positive-wait|describe:executeRun \u2014 capability run-end/it:stops waiting once the run-end budget elapses, and says so|Bun.sleep(400)|0",
       "package_owner": "@clarvis/loop",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -444,7 +436,7 @@
     {
       "mechanism": "positive-wait",
       "file": "packages/loop/tests/integration/selective-shell-interrupt.test.ts",
-      "identity": "positive-wait|it:releases a yielded control when the process exits without an interrupt|Bun.sleep(2000)|0",
+      "identity": "positive-wait|describe:selective interrupt through executeRun and the real shell/it:releases a yielded control when the process exits without an interrupt|Bun.sleep(2000)|0",
       "package_owner": "@clarvis/loop",
       "classification": "boundary-canary",
       "reason": "A bounded fuse for real shell exit; the awaited event is the physical tool control release."
@@ -452,7 +444,7 @@
     {
       "mechanism": "positive-wait",
       "file": "packages/loop/tests/integration/selective-shell-interrupt.test.ts",
-      "identity": "positive-wait|it:stops a yielded session through its original hosted interrupt token|Bun.sleep(10)|0",
+      "identity": "positive-wait|describe:selective interrupt through executeRun and the real shell/it:stops a yielded session through its original hosted interrupt token|Bun.sleep(10)|0",
       "package_owner": "@clarvis/loop",
       "classification": "boundary-canary",
       "reason": "Polls physical process-stop evidence under a bounded deadline; the delay is not the awaited event."
@@ -620,7 +612,7 @@
     {
       "mechanism": "subprocess",
       "file": "packages/tools/tests/integration/process-owner.test.ts",
-      "identity": "subprocess|module|spawn( process.execPath, [ \"-e\", \"process.on('SIGTERM', () => {}); process.stdout.write('READY\\\\n'); setInterval(() => {}, 1000)\", ], { cwd: root, detached: true, stdio: [\"ignore\", \"pipe\", \"ignore\"] }, )|0",
+      "identity": "subprocess|it:escalates from TERM to KILL for an owned process that ignores TERM|spawn( process.execPath, [ \"-e\", \"process.on('SIGTERM', () => {}); process.stdout.write('READY\\\\n'); setInterval(() => {}, 1000)\", ], { cwd: root, detached: true, stdio: [\"ignore\", \"pipe\", \"ignore\"] }, )|0",
       "package_owner": "@clarvis/tools",
       "classification": "boundary-canary",
       "reason": "Exercises physical TERM-to-KILL escalation and confirmed process-group shutdown."
@@ -652,7 +644,7 @@
     {
       "mechanism": "subprocess",
       "file": "packages/trace/tests/integration/json-trace-store.test.ts",
-      "identity": "subprocess|describe:json-trace-store — delete/it:rejects a cross-process insert while the new generation is still being deleted|Bun.spawn( [process.execPath, DELETE_INSERT_WORKER, dir, readyPath, startPath, resultPath], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
+      "identity": "subprocess|describe:json-trace-store \u2014 delete/it:rejects a cross-process insert while the new generation is still being deleted|Bun.spawn( [process.execPath, DELETE_INSERT_WORKER, dir, readyPath, startPath, resultPath], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
       "package_owner": "@clarvis/trace",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
@@ -788,7 +780,7 @@
     {
       "mechanism": "subprocess",
       "file": "packages/kernel/tests/integration/hosted-settlement-crash.test.ts",
-      "identity": "subprocess|test|Bun.spawn([globalThis.process.execPath, fixture, root, mode, phase], { cwd: root, env: { PATH: globalThis.process.env.PATH, SystemRoot: globalThis.process.env.SystemRoot, HOME: root, TMPDIR: root, TEMP: root, TMP: root, }, stdin: \"pipe\", stdout: \"pipe\", stderr: \"pipe\", signal: AbortSignal.timeout(15_000), })|0",
+      "identity": "subprocess|test|Bun.spawn([globalThis.process.execPath, fixture, root, mode, phase], { cwd: root, env: { PATH: globalThis.process.env.PATH, HOME: root, TMPDIR: root, TEMP: root, TMP: root, }, stdin: \"pipe\", stdout: \"pipe\", stderr: \"pipe\", signal: AbortSignal.timeout(15_000), })|0",
       "package_owner": "@clarvis/kernel",
       "classification": "boundary-canary",
       "reason": "Kills a real isolated host after a durable settlement milestone and restarts it twice to verify canonical accounting and physical admission recovery without another execution."

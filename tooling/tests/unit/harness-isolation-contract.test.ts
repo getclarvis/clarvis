@@ -27,7 +27,6 @@ test("artifact, release and installer smoke runners keep the fixture boundary", 
   expect(release).toContain("bootAndObserve");
   expect(release).toContain("verifyReleaseTree");
   expect(installer).toContain("copyFile");
-  expect(installer).toContain("CLARVIS_INSTALLER_SMOKE_DISPOSABLE");
   expect(pty).toContain("registerChild");
   expect(pty).toContain("exec env -i");
   expect(pty).toContain("environmentFor");

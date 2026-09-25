@@ -211,9 +211,8 @@ function splitFrontmatter(raw: string): { data: unknown; body: string } {
 /**
  * Read a brief template relative to the workflow directory.
  *
- * @remarks Containment is decided by {@link relative}, not by string shape: a
- *   `startsWith("/")` test misses `C:\\…` and `\\\\host\\share\\…`, both of which
- *   {@link join} would happily resolve to an absolute target on Windows.
+ * @remarks Containment is decided by {@link relative}; string-prefix checks
+ *   do not prove that a path stays under the workflow directory.
  */
 function readBrief(
   dir: string,

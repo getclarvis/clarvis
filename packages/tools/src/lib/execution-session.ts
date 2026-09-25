@@ -90,18 +90,6 @@ function utf8Tail(buf: Buffer, maxBytes: number): Buffer {
   return Buffer.from(buf.subarray(start));
 }
 
-/** Preserve native PowerShell exit codes in the spawned shell's own process status. */
-export function sessionCommand(command: string, shell: ShellSpec): string {
-  if (shell.flavor === "posix") return command;
-  return [
-    command,
-    "$__clarvisSucceeded = $?",
-    "if ($__clarvisSucceeded) { exit 0 }",
-    "if ($LASTEXITCODE) { exit $LASTEXITCODE }",
-    "exit 1",
-  ].join("\n");
-}
-
 class LiveSession implements ExecutionSession {
   readonly startedAt = Date.now();
   readonly completed: Promise<SessionResult>;
@@ -440,7 +428,7 @@ export class ExecutionSessionManager {
     }
     const spec = {
       file: resolvedShell.file,
-      args: shellArgs(resolvedShell, sessionCommand(request.command, resolvedShell)),
+      args: shellArgs(resolvedShell, request.command),
       options: { cwd: request.cwd, env },
     };
     const detached = ownProcessGroup();

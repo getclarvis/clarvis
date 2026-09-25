@@ -16,17 +16,6 @@ import { dirname, join } from "node:path";
 import { DIR_MODE, FILE_MODE, TMP_PREFIX } from "./constants.ts";
 import { announceOnce, pathsLogger, type PathsLogger } from "./diag.ts";
 
-/**
- * Backoff schedule for a contended `rename`: four retries over roughly 185 ms.
- *
- * @remarks Exported so a caller that wraps its own `rename` can keep the same
- * shape rather than inventing a second schedule.
- */
-export const RENAME_RETRY_DELAYS_MS: readonly number[] = [10, 25, 50, 100];
-
-/** The errnos a Windows file scanner produces transiently while holding a handle. */
-const RETRYABLE_RENAME_CODES: ReadonlySet<string> = new Set(["EPERM", "EACCES", "EBUSY"]);
-
 /** In-process serial number, so two writers of one path cannot share a temp name. */
 let tmpCounter = 0;
 
@@ -67,161 +56,9 @@ export function isTmpFile(name: string): boolean {
   return name.startsWith(TMP_PREFIX);
 }
 
-/**
- * The errno of a failed `rename`, when it is one a Windows handle-holder causes
- * transiently.
- *
- * @param error - the thrown value.
- * @returns `EPERM`, `EACCES` or `EBUSY`; `undefined` for anything else.
- * @remarks It returns the code rather than a boolean so the retry can report
- *   *which* transient failure it is waiting out without reading the error a
- *   second time.
- */
-function retryableRenameCode(error: unknown): string | undefined {
-  const code = (error as NodeJS.ErrnoException | null)?.code;
-  return code !== undefined && RETRYABLE_RENAME_CODES.has(code) ? code : undefined;
-}
-
-/**
- * The errno of an arbitrary thrown value, for a diagnostic field.
- *
- * @param error - the thrown value.
- * @returns its `code`, or `"unknown"` when it carries none.
- */
+/** The errno of an arbitrary thrown value, for a diagnostic field. */
 function errnoOf(error: unknown): string {
   return (error as NodeJS.ErrnoException | null)?.code ?? "unknown";
-}
-
-/** Test seams for {@link renameWithRetry}. */
-export interface RenameRetryOptions {
-  /** The rename to perform; defaults to `node:fs/promises`'s. */
-  rename?: (from: string, to: string) => Promise<void>;
-  /** Backoff schedule in milliseconds; defaults to {@link RENAME_RETRY_DELAYS_MS}. */
-  delays?: readonly number[];
-  /** Host platform; injectable so the Windows path is testable from a POSIX host. */
-  platform?: NodeJS.Platform;
-  /** Where to report a retried rename; defaults to discarding it. */
-  logger?: PathsLogger;
-}
-
-/** Test seams for {@link renameWithRetrySync}. */
-export interface RenameRetrySyncOptions {
-  /** The rename to perform; defaults to `node:fs`'s. */
-  rename?: (from: string, to: string) => void;
-  /** Backoff schedule in milliseconds; defaults to {@link RENAME_RETRY_DELAYS_MS}. */
-  delays?: readonly number[];
-  /** Host platform; injectable so the Windows path is testable from a POSIX host. */
-  platform?: NodeJS.Platform;
-  /** Where to report a retried rename; defaults to discarding it. */
-  logger?: PathsLogger;
-}
-
-/**
- * `rename`, with a bounded retry on the transient failures Windows produces.
- *
- * @param from - the source path.
- * @param to - the destination path, which may already exist.
- * @param opts - test seams; see {@link RenameRetryOptions}.
- * @throws whatever `rename` threw, once the retries are exhausted or the error
- *   is not retryable.
- *
- * @remarks
- * **The deliberate Windows decision.** Renaming *over an existing file* is a
- * real hazard there and not on POSIX: an antivirus, the search indexer or an
- * editor momentarily holding the destination makes `MoveFileEx` fail with
- * `EPERM`/`EACCES`/`EBUSY` for a few tens of milliseconds. Retrying is the fix,
- * but only there — POSIX has no such transient failure, and an `EPERM` from
- * POSIX `rename` is a sticky-bit denial that will never clear, so the retry is
- * gated on the platform as well as on the errno and a genuine Linux permission
- * failure is not delayed by 185 ms. Every other errno (`ENOENT`, `EXDEV`,
- * `ENOTEMPTY`, …) propagates on the first attempt on both platforms. The
- * schedule carries one wait per retry, and the attempt after the last wait
- * propagates whatever it fails with — five attempts in all by default.
- *
- * Two residual Windows exposures this cannot close, documented rather than
- * papered over: `MoveFileEx` refuses to replace a destination carrying the
- * read-only attribute (a permanent failure no retry helps, and clearing the
- * attribute would be a behaviour change rather than a portability fix), and a
- * holder that keeps the destination open for longer than the schedule still
- * fails the write.
- */
-export async function renameWithRetry(
-  from: string,
-  to: string,
-  opts: RenameRetryOptions = {},
-): Promise<void> {
-  const move = opts.rename ?? rename;
-  const delays = opts.delays ?? RENAME_RETRY_DELAYS_MS;
-  const retryable = (opts.platform ?? process.platform) === "win32";
-  const logger = opts.logger ?? pathsLogger();
-  for (const [attempt, backoff] of delays.entries()) {
-    try {
-      await move(from, to);
-      return;
-    } catch (error) {
-      const code = retryable ? retryableRenameCode(error) : undefined;
-      if (code === undefined) throw error;
-      logger.debug(
-        { event: "paths.rename_retried", to, attempt, code, backoff_ms: backoff },
-        "a handle holder blocked a rename over an existing file; retrying after a short backoff",
-      );
-      await new Promise((settle) => setTimeout(settle, backoff));
-    }
-  }
-  await move(from, to);
-}
-
-/**
- * Block the calling thread for `ms`.
- *
- * @param ms - how long to wait.
- *
- * @remarks The synchronous counterpart of the `setTimeout` the async retry
- * awaits. It genuinely stops the thread, which is why the schedule it serves is
- * measured in tens of milliseconds and bounded at four attempts.
- */
-function sleepSync(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-/**
- * Synchronous {@link renameWithRetry}, for the config and session writers that
- * cannot be asynchronous.
- *
- * @param from - the source path.
- * @param to - the destination path, which may already exist.
- * @param opts - test seams; see {@link RenameRetrySyncOptions}.
- * @throws whatever `rename` threw, once the retries are exhausted or the error
- *   is not retryable.
- *
- * @remarks Identical policy to {@link renameWithRetry}, including the platform
- * gate; the wait blocks the thread rather than yielding, so it costs a stalled
- * process on Windows contention and nothing at all anywhere else.
- */
-export function renameWithRetrySync(
-  from: string,
-  to: string,
-  opts: RenameRetrySyncOptions = {},
-): void {
-  const move = opts.rename ?? renameSync;
-  const delays = opts.delays ?? RENAME_RETRY_DELAYS_MS;
-  const retryable = (opts.platform ?? process.platform) === "win32";
-  const logger = opts.logger ?? pathsLogger();
-  for (const [attempt, backoff] of delays.entries()) {
-    try {
-      move(from, to);
-      return;
-    } catch (error) {
-      const code = retryable ? retryableRenameCode(error) : undefined;
-      if (code === undefined) throw error;
-      logger.debug(
-        { event: "paths.rename_retried", to, attempt, code, backoff_ms: backoff },
-        "a handle holder blocked a rename over an existing file; retrying after a short backoff",
-      );
-      sleepSync(backoff);
-    }
-  }
-  move(from, to);
 }
 
 /**
@@ -254,9 +91,8 @@ function reportUnsyncableDir(dir: string, error: unknown): void {
  *
  * @param dir - the directory to flush.
  *
- * @remarks Never throws. Windows will not open or sync a directory handle at
- * all, and several filesystems reject the `fsync`; treating either as a no-op is
- * what keeps {@link writeFileDurable} portable. On the platforms that do support
+ * @remarks Never throws. Some filesystems reject the `fsync`; treating this as
+ * a no-op keeps {@link writeFileDurable} usable. On filesystems that support
  * it this is the step that makes the rename itself survive a power loss — the
  * payload `fsync` alone only guarantees the *bytes*.
  */
@@ -383,7 +219,7 @@ async function writeStaged(
       await handle.close();
     }
     await chmod(tmp, mode);
-    await renameWithRetry(tmp, file, { logger });
+    await rename(tmp, file);
   } catch (error) {
     let tmpRemoved = true;
     try {
@@ -418,7 +254,7 @@ function writeStagedSync(
       closeSync(fd);
     }
     chmodSync(tmp, mode);
-    renameWithRetrySync(tmp, file, { logger });
+    renameSync(tmp, file);
   } catch (error) {
     let tmpRemoved = true;
     try {

@@ -91,13 +91,8 @@ export function serializeError(err: unknown): string {
  * does not recognize, and it is reported through the warn sink because it is the
  * only channel that outlives a tool result.
  *
- * That is what makes one of the recorded Windows gaps diagnosable:
- * `specs/known-issues.md` says `apply_patch` lands here where POSIX lands on
- * `not_a_file`, and that *"which code that is has not been identified"* — the
- * datum was already in the message and nothing but the model ever read it, so no
- * CI job retained it. It is emitted at `debug`, since an unusual errno is an
- * ordinary outcome rather than a degradation; the branch runs rarely enough that
- * the record costs nothing on a healthy host.
+ * The unusual errno is emitted at `debug` for diagnosis without changing the
+ * tool result's ordinary error mapping.
  */
 export function fsError(err: NodeJS.ErrnoException, path: string): ToolError {
   if (err.code === "ENOENT") return new ToolError("not_found", `No such file: ${path}`, { path });

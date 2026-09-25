@@ -261,7 +261,6 @@ So the accepted shape is `…/tests/<level>/**/*.test.{ts,tsx,js,jsx,mts,cts,mjs
 explicitly pinned as *rejected* by the unit test: a flat
 `packages/<name>/tests/<case>.test.ts` and a hidden
 `packages/<name>/tests/helpers/<case>.test.ts`
-(`tooling/tests/unit/source-policy.test.ts`). Windows-shaped paths are normalised
 (`tooling/tests/unit/source-policy.test.ts`).
 
 The checker computes the current population from the tree rather than persisting a volatile file
@@ -304,9 +303,7 @@ children, transports, clients, listeners, watchers, streams and file handles as 
 then close them in awaited LIFO order before removing the root. Requesting `kill`, `abort`, `stop` or
 `close` is not settlement by itself; the fixture waits for the process `exited`/stream `close` or the
 server callback and drains child pipes concurrently with execution. A setup or assertion failure
-still attempts every registered cleanup and reports the accumulated failures. Windows removal may
-retry only `EBUSY`, `ENOTEMPTY` and `EPERM`, with a short bound and diagnostics; test assertions are
-never retried. Real process and network canaries keep explicit cwd/environment, dynamic port `0` and
+still attempts every registered cleanup and reports the accumulated failures. Test assertions are never retried. Real process and network canaries keep explicit cwd/environment, dynamic port `0` and
 the bound URL. The package-local `tempRoot` fixtures do not create a runtime package or a production
 dependency.
 
@@ -318,7 +315,7 @@ mtimes and observable settling without changing production defaults.
 Production: process, transport and listener contracts remain owned by the unchanged package runtime
 implementations. Test: `packages/hooks/tests/helpers/temp-root.ts` and
 `packages/hooks/tests/unit/temp-root.test.ts` pin confinement, awaited LIFO cleanup, idempotence,
-partial setup, late child settlement and bounded Windows retry;
+partial setup, late child settlement;
 `packages/hooks/tests/integration/real-subprocess.test.ts`,
 `packages/kernel/tests/integration/settings-concurrent-writes.test.ts`,
 `packages/code/tests/integration/remote-kernel-process.test.ts` and the MCP Client live-HTTP suites
@@ -782,8 +779,8 @@ That configuration is not decorative — the repository currently contains
 a root-level `coverage/lcov.info` whose 13 `SF:` records span `packages/paths/src/*`,
 `packages/protocol/src/index.ts` **and `tooling/test-runtime/clarvis-home-preload.ts`**, which is the fingerprint of
 exactly such a root-cwd run (and shows the root bunfig's lack of `coveragePathIgnorePatterns`).
-CI itself makes root-cwd runs in the Windows and macOS platform-policy jobs
-(`.github/workflows/ci.yml`, jobs `windows` and `keyboard-macos`).
+CI makes a root-cwd run in the macOS keyboard policy job
+(`.github/workflows/ci.yml`, job `keyboard-macos`).
 
 Every package but the type-only `protocol` one repeats the shared preload in its own `bunfig.toml`;
 `protocol`'s own `bunfig.toml` covers the coverage options only.
@@ -968,8 +965,7 @@ only the owner-specific default").
 
 8. **INV-317 — every test-owned physical resource settles before its temporary root is removed.**
    Cleanup is awaited in LIFO order, continues after individual cleanup failures, and process pipes
-   are drained while the child runs; Windows directory-removal retries are bounded and limited to
-   `EBUSY`, `ENOTEMPTY` and `EPERM`. Production: package runtime lifecycle semantics remain
+   are drained while the child runs. Production: package runtime lifecycle semantics remain
    unchanged. Test: `packages/hooks/tests/unit/temp-root.test.ts` and the physical boundary suites
    named in section 3.1.1.
 

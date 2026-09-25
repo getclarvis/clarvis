@@ -168,4 +168,4 @@ cleanup.
 There is no cross-provider, large-versus-small-model success-rate claim from these deterministic
 tests. Such a claim needs a fixed task set, actual exposed-tool payloads, equal budgets and observed
 completion/error rates on the selected models. Byte counts and static phrase assertions are not a
-substitute. Native Windows/macOS checks likewise require their own environments.
+substitute. Native macOS checks likewise require their own environments.

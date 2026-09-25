@@ -408,7 +408,7 @@ Workflow documents written through ordinary file tools are validated by `loadWor
 ### 4.2 Reading a brief — `readBrief` (`packages/workflows/src/artifact.ts`)
 
 Containment is decided by `path.relative(dir, target)`, not by a `startsWith("/")` string test,
-because that test misses `C:\…` and UNC paths on Windows (`packages/workflows/src/artifact.ts`). A brief path that
+because that test misses other absolute path shapes (`packages/workflows/src/artifact.ts`). A brief path that
 is absolute, resolves to the directory itself (`inside.length === 0`), or climbs out (`inside`
 starts with `..`) throws "must be a path inside the workflow". The brief is then read bounded to
 `WORKFLOW_LIMITS.briefBytes`, trimmed, and checked again against `WORKFLOW_LIMITS.textChars` after

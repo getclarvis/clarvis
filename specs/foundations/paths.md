@@ -50,8 +50,7 @@ One entrypoint (`packages/paths/package.json`):
 ### 2.1.1 Git repository environment filtering
 
 `withoutGitRepositoryEnvironment(source)` returns a fresh environment without Git's complete
-repository-local variable set or `GIT_CEILING_DIRECTORIES`. Names compare exactly on POSIX and
-case-insensitively on Windows. The helper deliberately preserves transport and credential inputs:
+repository-local variable set or `GIT_CEILING_DIRECTORIES`. Names compare exactly. The helper deliberately preserves transport and credential inputs:
 callers use it before `cwd`, `-C`, or a clone destination selects the intended repository, preventing
 inherited repository routing, index, object-store, work-tree, and local-config state from redirecting
 the child.
@@ -164,14 +163,11 @@ the same budget `unixSocketPathFits` exposes) wins, so multibyte roots are measu
 characters. Explicit empty lists, empty strings
 and NUL are rejected, and failure reports only the budget and candidate count. Selection performs no
 filesystem mutation, canonicalization, access probe or authentication; transport remains responsible
-for preparing and validating the chosen directory. Windows uses the unchanged named pipe and ignores
-filesystem candidates.
-
+for preparing and validating the chosen directory.
 Production: `LocalHostPaths`, `LocalHostPathOptions` and `localHostPaths` in
 [local-host.ts](../../packages/paths/src/local-host.ts). Test:
 [local-host.test.ts](../../packages/paths/tests/unit/local-host.test.ts) covers ordered selection,
-fallback, UTF-8 byte measurement, invalid inputs, sanitized failure, hostile identities and the
-Windows named pipe. Its kernel consumer is specified by [hosted runs](../hosts/hosted-runs.md);
+fallback, UTF-8 byte measurement, invalid inputs, sanitized failure, hostile identities. Its kernel consumer is specified by [hosted runs](../hosts/hosted-runs.md);
 builder tests do not qualify native IPC behavior.
 
 ### 2.5 Workspace paths (`packages/paths/src/workspace.ts`)
@@ -310,8 +306,7 @@ private-state ancestor policy: every ancestor from the parent upward must be a r
 symlink, owned by the filesystem root's owner or the current account, and not group- or world-writable
 unless sticky. `packages/kernel/src/hosting/private-files.ts` enforces it for private host state, and
 this package's own selection asks it before proposing a root, so a chooser and a validator cannot drift
-apart. `unixSocketPathFits(path, budgetBytes?)` applies `UNIX_SOCKET_PATH_BUDGET_BYTES`; Windows named
-pipes are not filesystem paths and are never measured by it. Production:
+apart. `unixSocketPathFits(path, budgetBytes?)` applies `UNIX_SOCKET_PATH_BUDGET_BYTES`. Production:
 `allocateShortTemporaryRoot`, `shortTemporaryRootCandidates`, `collectAbandonedShortTemporaryRoots`,
 `ancestorTrust` and `unixSocketPathFits` in `packages/paths/src/short-temporaries.ts`,
 `sweepGlobalStateArtifacts` in `packages/paths/src/housekeeping.ts`, and
@@ -333,11 +328,8 @@ pipes are not filesystem paths and are never measured by it. Production:
 
 | Symbol | File | Signature / behavior |
 | --- | --- | --- |
-| `RENAME_RETRY_DELAYS_MS` | `packages/paths/src/atomic.ts` | `[10, 25, 50, 100]` |
 | `tmpPathFor(target)` | `packages/paths/src/atomic.ts` | `<dirname(target)>/.clarvis-tmp-<pid>-<counter>-<uuid>` |
 | `isTmpFile(name)` | `packages/paths/src/atomic.ts` | `name.startsWith(TMP_PREFIX)` |
-| `renameWithRetry(from, to, opts?)` | `packages/paths/src/atomic.ts` | async retried rename, Windows-only |
-| `renameWithRetrySync(from, to, opts?)` | `packages/paths/src/atomic.ts` | sync twin, blocks the thread |
 | `fsyncDir(dir)` | `packages/paths/src/atomic.ts` | best-effort async directory fsync, never throws |
 | `fsyncDirSync(dir)` | `packages/paths/src/atomic.ts` | sync twin |
 | `writeFileAtomic(file, data, opts?)` | `packages/paths/src/atomic.ts` | stage temp, rename over target |
@@ -387,7 +379,7 @@ platform?, logger? }`.
 
 | Symbol | File | Behavior |
 | --- | --- | --- |
-| `executableOnPath(command, path?, platform?, pathext?)` | `packages/paths/src/which.ts` | first `PATH` entry holding an executable candidate |
+| `executableOnPath(command, path?)` | `packages/paths/src/which.ts` | first `PATH` entry holding an executable candidate |
 | `resolveCommand(command)` | `packages/paths/src/which.ts` | memoized wrapper, falls back to the bare name on a miss |
 
 `resolveCommand` logs a `paths.command_resolved` diagnostic (`command`, `resolved`, `found`) via
@@ -604,24 +596,6 @@ inherited from whatever file previously existed at that path: "this package owns
 overwriting a target does not preserve its prior mode — "a Clarvis-owned file has one posture"
 (`packages/paths/src/atomic.ts`).
 
-### 4.3 Rename retry (`renameWithRetry`, `packages/paths/src/atomic.ts`)
-
-For each `(attempt, backoff)` in `delays` (default `RENAME_RETRY_DELAYS_MS`):
-1. Try `move(from, to)`; return on success.
-2. On failure, compute `code = retryable ? retryableRenameCode(error) : undefined`, where
-   `retryable = (platform ?? process.platform) === "win32"`.
-3. If `code === undefined` (not retryable, or not on Windows), rethrow immediately.
-4. Otherwise log `paths.rename_retried` and `await delay(backoff)`.
-5. After the loop, one final unconditional `move(from, to)` — a 5th attempt whose failure
-   propagates directly (not caught).
-
-`RETRYABLE_RENAME_CODES = {"EPERM","EACCES","EBUSY"}` (`packages/paths/src/atomic.ts`). The rationale given: on
-Windows an antivirus/indexer/editor can hold a destination handle transiently, causing these
-errnos for tens of milliseconds; on POSIX the same `EPERM` "is a sticky-bit denial that will never
-clear", so the retry is gated on platform as well as errno (`packages/paths/src/atomic.ts`). Two residual
-Windows exposures are named as un-closed: a read-only-attribute destination (permanent, no retry
-helps) and a holder that outlasts the whole schedule (`packages/paths/src/atomic.ts`).
-
 ### 4.4 `fsyncDir` (`packages/paths/src/atomic.ts`)
 
 `open(dir, "r")` → `handle.sync()` → `finally handle?.close()`. Any thrown error (including "this
@@ -630,7 +604,7 @@ rethrows — `fsyncDir` "Never throws." (`packages/paths/src/atomic.ts`). `repor
 `paths.fsync_dir_unsupported` log line per distinct errno via `announceOnce`
 (`packages/paths/src/atomic.ts`). Its own doc states the consequence directly: because `fsyncDir`'s catch
 treats the refusal as a no-op, "`writeFileDurable` silently degrades to `writeFileAtomic`" on a
-filesystem or platform (Windows always) that refuses a directory handle or its sync — and every
+filesystem that refuses a directory handle or its sync — and every
 crash-recovery guarantee in the product rests on that `fsync`: "the plan lockfiles, the trace
 journal, `auth.json`, the signing key" (`packages/paths/src/atomic.ts`).
 
@@ -885,14 +859,6 @@ propagates the rename's error; the same holds for the sync variant, `writeFileDu
 `writeFileDurableSync`. Test: `packages/paths/tests/contract/atomic.test.ts` (async) (sync)
 (durable) (durable sync).
 
-**INV-012.** `RENAME_RETRY_DELAYS_MS` has exactly four entries whose sum is under 250ms.
-Production: `packages/paths/src/atomic.ts`. Test: `packages/paths/tests/contract/atomic.test.ts`.
-
-**INV-013.** `renameWithRetry` retries only on `win32`, only for a transient errno (`EPERM`,
-`EACCES`, `EBUSY`), and gives up once the schedule is exhausted, throwing the underlying error.
-Test: `packages/paths/tests/contract/atomic.test.ts` (retries then succeeds) (schedule exhausted throws) (POSIX `EPERM` is a permanent denial, not retried) (an errno outside the
-transient set, or a codeless error, is never retried).
-
 **INV-014.** `fsyncDir` is a no-op (does not throw) on a platform or path that cannot yield a
 directory handle, and its synchronous twin behaves identically. Test: `packages/paths/tests/contract/atomic.test.ts`.
 
@@ -962,7 +928,7 @@ descriptor**, not from a fresh `lstat` of the path, so an ABA replacement of the
 recreate with a different inode) between a holder's last confirmed ownership and its `release()`
 call is detected and the release refuses to delete the successor. Production:
 `packages/paths/src/local-lease.ts`. Pinned by `packages/paths/tests/contract/local-lease.test.ts` ("a late release cannot unlink a
-successor with another token and inode", POSIX-only per `test.if(process.platform !== "win32")`).
+successor with another token and inode").
 
 **PATHS-D.** `writeStaged`/`writeStagedSync` always attempt to remove their staged temp file on
 any failure from `open` onward, and report (via `paths.atomic_staging_failed`) whether that
@@ -985,8 +951,7 @@ says so, and names the phase").
 
 | Condition | Behavior | Cite |
 | --- | --- | --- |
-| Rename fails with a non-retryable errno, or on POSIX at all | throws immediately, no retry | `packages/paths/src/atomic.ts` |
-| Rename fails transiently on Windows, schedule exhausted | one final unconditional attempt, its error (if any) propagates uncaught | `packages/paths/src/atomic.ts` |
+| Rename fails | throws immediately; staged temp is removed | `packages/paths/src/atomic.ts` |
 | `fsyncDir` cannot open/sync a directory (any platform, any reason) | swallowed; logged once per errno at `debug`; caller never sees an error | `packages/paths/src/atomic.ts` |
 | Atomic write fails at any stage (`open`, `writeFile`, `sync`, `chmod`, `rename`) | temp is best-effort removed, `paths.atomic_staging_failed` warned with whether removal succeeded, original error rethrown | `packages/paths/src/atomic.ts` |
 | `ensureWorkspaceDir`'s `.gitignore` seed fails for a reason other than "already exists" | logs `paths.gitignore_seed_skipped` (`file`, `code`) at `debug` and swallows the error — the directory creation still succeeds and the caller is never told the ignore file may be missing | `packages/paths/src/ensure.ts` |

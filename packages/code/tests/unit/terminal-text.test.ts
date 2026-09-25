@@ -27,5 +27,5 @@ test("terminalPlainText neutralizes Prisma cursor updates and line editing contr
   expect(plain).toBe("Running generate...\nGenerated Prisma Client\nready");
   expect(plain).not.toContain("\u001b");
   expect(terminalPlainText("progress 1%\rprogress 2%\nreadx\by")).toBe("progress 2%\nready");
-  expect(terminalPlainText("windows\r\nline")).toBe("windows\nline");
+  expect(terminalPlainText("first\r\nline")).toBe("first\nline");
 });

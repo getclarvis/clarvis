@@ -1000,7 +1000,7 @@ they have a named reference host and owner acceptance:
 - no single-agent multi-run soak exceeds 512 MiB RSS after transient response buffers settle;
 - process-tree measurements report external MCP/shell memory separately from Clarvis self-RSS.
 
-Absolute thresholds require a named reference machine and separate Linux, macOS and Windows evidence.
+Absolute thresholds require a named reference machine and separate Linux and macOS evidence.
 The non-overlay absolute thresholds remain review criteria rather than release gates.
 
 ### 8.4 Overlay leak implementation and correction plan

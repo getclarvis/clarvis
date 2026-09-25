@@ -8,94 +8,18 @@ import { executableOnPath, resolveCommand, setPathsLogger } from "@clarvis/paths
 import { recorder } from "../helpers/recorder.ts";
 import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
-const PATHEXT = ".COM;.EXE;.BAT;.CMD";
-
 function makeWorkspace(): string {
   return mkdtempSync(join(tmpdir(), "clarvis-test-"));
 }
 
-// Windows refuses to unlink a file another process still holds open, and the
-// handles are released a moment after the kill is requested - so a teardown
-// running straight after races and throws EBUSY. Retrying briefly is enough;
-// `maxRetries` alone is not, because Bun's rmSync does not back off on EBUSY.
 function cleanup(root: string): void {
-  const deadline = Date.now() + 2000;
-  for (;;) {
-    try {
-      rmSync(root, { recursive: true, force: true });
-      return;
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if ((code !== "EBUSY" && code !== "ENOTEMPTY" && code !== "EPERM") || Date.now() > deadline) {
-        throw err;
-      }
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
-    }
-  }
+  rmSync(root, { recursive: true, force: true });
 }
 
-// Windows has no execute bit, and root bypasses it - either makes a
-// "permission denied" assertion unprovable rather than merely inapplicable.
 const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
-const modeBitsEnforced = process.platform !== "win32" && !isRoot;
+const modeBitsEnforced = !isRoot;
 
-describe("executableOnPath — Windows", () => {
-  let root: string;
-  let dirA: string;
-  let dirB: string;
-
-  beforeEach(() => {
-    root = makeWorkspace();
-    dirA = join(root, "a");
-    dirB = join(root, "b");
-    mkdirSync(dirA, { recursive: true });
-    mkdirSync(dirB, { recursive: true });
-  });
-  afterEach(() => cleanup(root));
-
-  const find = (command: string, path: string, pathext: string | undefined = PATHEXT) =>
-    executableOnPath(command, path, "win32", pathext);
-
-  it("expands a bare name against PATHEXT", () => {
-    writeFileSync(join(dirA, "bun.EXE"), "");
-    expect(find("bun", dirA)).toBe(join(dirA, "bun.EXE"));
-  });
-
-  it("finds nothing for an extension-less file, which Windows will not run", () => {
-    writeFileSync(join(dirA, "bun"), "");
-    expect(find("bun", dirA)).toBeUndefined();
-  });
-
-  it("prefers the earlier PATHEXT entry within one directory", () => {
-    writeFileSync(join(dirA, "bun.CMD"), "");
-    writeFileSync(join(dirA, "bun.EXE"), "");
-    expect(find("bun", dirA)).toBe(join(dirA, "bun.EXE"));
-  });
-
-  it("prefers the earlier PATH directory over a better extension later", () => {
-    writeFileSync(join(dirA, "bun.CMD"), "");
-    writeFileSync(join(dirB, "bun.EXE"), "");
-    expect(find("bun", [dirA, dirB].join(delimiter))).toBe(join(dirA, "bun.CMD"));
-  });
-
-  it("uses a name that already carries a PATHEXT extension as written", () => {
-    writeFileSync(join(dirA, "bun.exe"), "");
-    expect(find("bun.exe", dirA)).toBe(join(dirA, "bun.exe"));
-  });
-
-  it("falls back to the default extension list when PATHEXT is unset", () => {
-    writeFileSync(join(dirA, "bun.CMD"), "");
-    expect(find("bun", dirA, undefined)).toBe(join(dirA, "bun.CMD"));
-  });
-
-  it("skips a directory that shares the command's name", () => {
-    mkdirSync(join(dirA, "bun.EXE"));
-    writeFileSync(join(dirB, "bun.EXE"), "");
-    expect(find("bun", [dirA, dirB].join(delimiter))).toBe(join(dirB, "bun.EXE"));
-  });
-});
-
-describe("executableOnPath — POSIX", () => {
+describe("executableOnPath", () => {
   let root: string;
 
   beforeEach(() => {
@@ -107,7 +31,7 @@ describe("executableOnPath — POSIX", () => {
     const bin = join(root, "tool");
     writeFileSync(bin, "#!/bin/sh\n");
     chmodSync(bin, 0o755);
-    expect(executableOnPath("tool", root, "linux")).toBe(bin);
+    expect(executableOnPath("tool", root)).toBe(bin);
   });
 
   it.skipIf(!modeBitsEnforced)(
@@ -122,18 +46,12 @@ describe("executableOnPath — POSIX", () => {
       const bin = join(real, "tool");
       writeFileSync(bin, "#!/bin/sh\n");
       chmodSync(bin, 0o755);
-      expect(executableOnPath("tool", [shadow, real].join(delimiter), "linux")).toBe(bin);
+      expect(executableOnPath("tool", [shadow, real].join(delimiter))).toBe(bin);
     },
   );
 
-  it("does not expand against PATHEXT", () => {
-    writeFileSync(join(root, "tool.EXE"), "");
-    chmodSync(join(root, "tool.EXE"), 0o755);
-    expect(executableOnPath("tool", root, "linux", PATHEXT)).toBeUndefined();
-  });
-
   it("returns undefined when no PATH entry holds the command", () => {
-    expect(executableOnPath("definitely-not-here", root, "linux")).toBeUndefined();
+    expect(executableOnPath("definitely-not-here", root)).toBeUndefined();
   });
 });
 
@@ -152,7 +70,7 @@ describe("resolveCommand", () => {
     cleanup(root);
   });
 
-  it.skipIf(process.platform === "win32")("resolves against the ambient PATH", () => {
+  it("resolves against the ambient PATH", () => {
     const bin = join(root, "clarvis-resolve-hit");
     writeFileSync(bin, "#!/bin/sh\n");
     chmodSync(bin, 0o755);

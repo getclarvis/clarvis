@@ -504,7 +504,7 @@ allocates a bounded buffer, and re-`stat`s the descriptor afterwards — a chang
 behind" at `packages/plan/tests/integration/file-repository.test.ts`.
 
 **Directory fsync — `fsyncDir`.** Swallows an open/sync failure **only** when
-`process.platform === "win32"`; everywhere else it propagates. Both branches are pinned
+it propagates. This behavior is pinned
 with the platform explicitly redefined rather than assumed
 (`packages/plan/tests/integration/file-repository.test.ts`). This `fsyncDir` is a **second,
 independent** function of the same name, local to this module — not the one `@clarvis/paths` exports,
@@ -629,7 +629,7 @@ Further invariants derived here:
 | --- | --- | --- | --- |
 | **P-01** | `renderPlan ∘ parsePlan` is a fixpoint on rendered bytes, and unknown frontmatter keys plus extra `##` sections survive it verbatim. | `packages/plan/src/format.ts` | `packages/plan/tests/unit/plan-format.test.ts` |
 | **P-02** | A `##`-shaped line inside a prose section is body text, and a multi-line task field round-trips through indented continuations. | `packages/plan/src/format.ts` | `packages/plan/tests/unit/plan-format.test.ts` |
-| **P-03** | `planFilename` is Windows-safe: no `:` survives, and the slug is `[a-z0-9-]` only. | `packages/plan/src/format.ts` | `packages/plan/tests/unit/plan-format.test.ts` |
+| **P-03** | `planFilename` is safe: no `:` survives, and the slug is `[a-z0-9-]` only. | `packages/plan/src/format.ts` | `packages/plan/tests/unit/plan-format.test.ts` |
 | **P-04** | A blank or multi-line task title, and a multi-line validation item, are rejected at the schema boundary rather than producing an unparseable document. | `packages/plan/src/schemas.ts` | `packages/plan/tests/unit/plan-format.test.ts` |
 | **P-05** | `spec_digest` excludes task status and outcome fields, so recording progress never changes it. | `packages/plan/src/format.ts` | `packages/plan/tests/unit/plan-canonical-state.test.ts` |
 | **P-06** | The plans root is created `0o700` and each plan file `0o600`; an owner-scoped root's intermediate directories are created `0o700` too, via `ensureWorkspaceSubdir` → `ensureDir`'s `mkdirSync(..., { recursive: true, mode: DIR_MODE })`. | `packages/plan/src/file-repository.ts`; `packages/paths/src/ensure.ts`; `DIR_MODE = 0o700` at `packages/paths/src/constants.ts` | `packages/plan/tests/integration/file-repository.test.ts` |
@@ -644,7 +644,7 @@ Further invariants derived here:
 | **P-15** | An oversized source is rejected before any plan file exists on disk. | `packages/plan/src/file-repository.ts`, `packages/plan/src/limits.ts` | `packages/plan/tests/integration/file-repository.test.ts` |
 | **P-16** | A non-Markdown file in the plans root is ignored by listing. | `packages/plan/src/file-repository.ts` | `packages/plan/tests/integration/file-repository.test.ts` |
 | **P-17** | A cold repository (empty locator memo) still finds a plan by id and reports the same locator. | `packages/plan/src/file-repository.ts` | `packages/plan/tests/integration/file-repository.test.ts` |
-| **P-18** | A directory-sync failure is swallowed on win32 and propagated everywhere else, with the platform pinned in both directions rather than assumed. | `packages/plan/src/file-repository.ts` | `packages/plan/tests/integration/file-repository.test.ts` |
+| **P-18** | A directory-sync failure propagates. | `packages/plan/src/file-repository.ts` | `packages/plan/tests/integration/file-repository.test.ts` |
 | **P-19** | An external edit whose substance changed is adopted as `revision + 1` **and** `spec_revision + 1`. | `packages/plan/src/store.ts` | `packages/plan/tests/integration/markdown-plan-store.test.ts` |
 | **P-20** | `plan.cas.rejected` is logged at **debug** and names which of `revision`/`digest`/`spec_digest` disagreed, including a `spec_digest`-only mismatch a revision number alone cannot show; it stays silent when the baseline matched. | `packages/plan/src/store.ts` | `packages/plan/tests/component/plan-observability.test.ts` |
 | **P-21** | `plan.document.unparsable` is logged at **warn** with `layer` of `store` \| `list` \| `rescan`, a **basename-only** `path`, and a reason that is single-line and ≤500 chars. | `packages/plan/src/store.ts`, `packages/plan/src/file-repository.ts`, `packages/plan/src/log.ts` | `packages/plan/tests/component/plan-observability.test.ts`; `packages/plan/tests/integration/file-repository-observability.test.ts` |
@@ -675,7 +675,7 @@ Further invariants derived here:
 | Lock unobtainable within 10 s | `PlanConflictError("Timed out waiting for plan lock", "locked")` | `packages/plan/src/file-repository.ts` |
 | Lock held by a dead writer | Reclaimed after `LOCK_STALE_MS` (30 s) via `acquireLocalLease`'s liveness check | `packages/plan/src/file-repository.ts` |
 | Lock-directory `mkdir` fails transiently | Memo cleared and rethrown, so the next attempt retries instead of wedging the queue | `packages/plan/src/file-repository.ts` |
-| Directory fsync fails | Swallowed on win32; propagated (write fails) elsewhere | `packages/plan/src/file-repository.ts` |
+| Directory fsync fails | Propagated (write fails) | `packages/plan/src/file-repository.ts` |
 | Any failure during `atomicWrite` | Temp file unlinked best-effort, error rethrown | `packages/plan/src/file-repository.ts` |
 | `ENOENT` during `delete` | Resolves to `false` rather than throwing | `packages/plan/src/file-repository.ts` |
 | Plan file removed/replaced by a non-regular file between `write`'s `locate()` call and its lock acquisition | `write()` wraps no try/catch around its own `confined()` call, so any failure there — including a plain `ENOENT` — propagates as a raw, untyped `Error`, never `PlanNotFoundError`/`PlanConflictError` | `packages/plan/src/file-repository.ts`; `confined()` |
@@ -736,7 +736,7 @@ conformance table against Markdown and in-memory stores.
   quoted. Specifically the source does not establish: why `spec_digest` covers exactly
   `{objective, context, tasks[id,title,detail,exit], validation}` and not, say, `title`; why
   `MAX_PLAN_TASKS` is 256; why `LOCK_ATTEMPTS` is 1000 rather than any other number beyond the
-  comment's assertion that 200 was exhausted by 24 concurrent writers on a Windows runner
+  comment's assertion that 200 was exhausted by 24 concurrent writers on a CI runner
   (`packages/plan/src/file-repository.ts`).
 - ~~**Apparently unreachable branch.**~~ **Resolved and removed.** In `file-repository.list`, the
   byte-budget return used to emit `next_cursor` only when its captured cursor was defined. Reaching
@@ -816,11 +816,6 @@ conformance table against Markdown and in-memory stores.
   (`packages/plan/src/format.ts`); the round-trip demonstrably works (`packages/plan/tests/unit/plan-format.test.ts`), but it is
   unverified against the `yaml` package's own source that its default schema never coerces a
   timestamp scalar to a `Date`. A YAML dialect change here would break parsing silently at the schema.
-- **Windows.** `@clarvis/plan` is one of the packages the Windows CI job runs
-  (`packages/plan/tests/integration/file-repository.test.ts` probe rather than assume the
-  platform), but whether the `O_NOFOLLOW`-absent path
-  (`packages/plan/src/file-repository.ts`) or the junction-based root-escape check behave as the tests expect
-  there is unconfirmed.
 - **Delegated by scope.** How a run creates, reads, revises and finalizes a plan
   (`src/capability/**`, `src/tools.ts` beyond `revisePlanInputSchema`), the review gate, the seal rule
   for *task transitions* (`sealedTransitionMessage`, used only at

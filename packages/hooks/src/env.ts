@@ -27,9 +27,8 @@ import { extractEnvRefs } from "@clarvis/capability";
  *
  * Three groups, and no fourth is admissible. First, what a shell needs to start
  * and behave (`PATH`, `HOME`, `SHELL`, `PWD`, the temp and locale names, `TERM`)
- * plus the Windows equivalents of the same (`SystemRoot`, `COMSPEC`, `PATHEXT`,
- * the profile and app-data roots) — without these the subprocess is not a
- * degraded shell, it is a broken one. Second, the version-manager and toolchain
+ * — without these the subprocess is not a degraded shell, it is a broken one.
+ * Second, the version-manager and toolchain
  * roots, which are what make `bun`, `cargo` or `java` resolvable at all.
  *
  * The third group is empty on purpose: no variable is kept here because a hook
@@ -52,13 +51,6 @@ const KEEP_EXACT = new Set<string>([
   "LANG",
   "TZ",
   "TERM",
-  "SystemRoot",
-  "COMSPEC",
-  "PATHEXT",
-  "USERPROFILE",
-  "APPDATA",
-  "LOCALAPPDATA",
-  "PROGRAMFILES",
   "BUN_INSTALL",
   "MISE_DATA_DIR",
   "ASDF_DATA_DIR",

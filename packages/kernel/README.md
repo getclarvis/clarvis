@@ -350,7 +350,7 @@ audit; maintenance can proceed once all physical work is resolved. New inference
 conversation. Code composes its companion entry and uses the same RPC through its workspace
 manager; installed-artifact retention and platform qualification remain application responsibilities.
 Process integration tests verify survival after a launching client exits with MockLLM; they do not
-qualify a subscription/TUI journey or native Windows/macOS behavior. The ownership, limits and
+qualify a subscription/TUI journey or native macOS behavior. The ownership, limits and
 validation scope are specified in [hosted runs](../../specs/hosts/hosted-runs.md).
 
 `serveRemoteFileKernelOverStdio` is the process-owned counterpart for a caller-authenticated remote
@@ -691,7 +691,7 @@ The transport layer maps the same kernel services to Clarvis wire methods:
 - `createLoopbackTransport` connects both sides in process.
 - `createStdioTransport` and `serveKernelOverStdio` provide stdio framing.
 - `connectLocalKernelTransport` and `listenLocalKernel` reuse that framing over reconnectable Unix
-  sockets or Windows named pipes. The listener bounds clients and hello deadlines; its caller must
+  sockets. The listener bounds clients and hello deadlines; its caller must
   supply authenticated resolution and operation authorization on `createKernelServer`.
 - `serveFileKernelOverStdio` combines a file kernel and stdio server.
 

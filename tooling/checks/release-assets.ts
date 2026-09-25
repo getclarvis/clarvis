@@ -16,8 +16,6 @@ export const RELEASE_TARGETS = [
   "linux-arm64",
   "darwin-x64",
   "darwin-arm64",
-  "windows-x64",
-  "windows-arm64",
 ] as const satisfies readonly ReleaseTarget[];
 
 const STATIC_RELEASE_ASSETS = [
@@ -27,7 +25,6 @@ const STATIC_RELEASE_ASSETS = [
   "SHA256SUMS",
   "THIRD_PARTY_NOTICES.md",
   "VERCEL-AI-SDK-LICENSE",
-  "install.ps1",
   "install.sh",
 ] as const;
 

@@ -15,7 +15,6 @@ import {
 
 const RESERVED_ENVIRONMENT_KEYS = new Set([
   "HOME",
-  "USERPROFILE",
   "CLARVIS_HOME",
   "CLARVIS_WORKSPACE_ROOT",
   "TMPDIR",
@@ -41,9 +40,6 @@ const ALLOWED_OVERRIDE_KEYS = new Set([
 const INHERITED_OPERATIONAL_KEYS = [
   "PATH",
   "BUN_INSTALL",
-  "SystemRoot",
-  "COMSPEC",
-  "PATHEXT",
   "LANG",
   "LC_ALL",
   "LC_CTYPE",
@@ -388,7 +384,6 @@ function baseEnvironment(
     if (value !== undefined && value.trim().length > 0) environment[key] = value;
   }
   environment.HOME = context.home;
-  environment.USERPROFILE = context.home;
   environment.CLARVIS_HOME = context.global;
   environment.CLARVIS_WORKSPACE_ROOT = context.workspace;
   environment.TMPDIR = context.tmp;

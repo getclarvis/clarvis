@@ -4,7 +4,7 @@ The flagship Clarvis terminal UI. It connects to an independently owned workspac
 `@clarvis/kernel` and renders runs with SolidJS and OpenTUI.
 
 The UI programs against the `@clarvis/protocol` service contract, so the same
-shell uses the same typed kernel RPC over a private local socket or Windows named pipe.
+shell uses the same typed kernel RPC over a private local socket.
 `/diff` and `Ctrl+X D` open the current workspace changes from `KernelClient.changes`, not
 transcript tool history.
 
@@ -229,12 +229,12 @@ installation marker are refused.
 For end users, the public installers in the repository root download portable artifacts from the
 binary-only [`getclarvis/clarvis-releases`](https://github.com/getclarvis/clarvis-releases)
 repository. A portable archive includes the exact Bun runtime, the map-free split artifact, its
-package-owned assets, and the native OpenTUI closure for one of six targets: GNU/glibc Linux, macOS,
-or Windows on x64 or arm64. Alpine and other musl-only Linux distributions are not portable-release
-targets for this beta. The bundled Bun executable is installed as `runtime/clarvis` on POSIX and `runtime/clarvis.exe` on Windows, so operating-system process viewers attribute the
-foreground process and its CPU and memory use to Clarvis rather than Bun. Developer source commands
-still run under their explicitly invoked Bun executable. Archives retain `runtime/bun` or `runtime/bun.exe`
-only as a compatibility entry for an older launcher; current installers and updates do not select it.
+package-owned assets, and the native OpenTUI closure for one of four targets: GNU/glibc Linux
+or macOS on x64 or arm64. Alpine and other musl-only Linux distributions are not portable-release
+targets for this beta. The bundled Bun executable is installed as `runtime/clarvis`, so process
+viewers attribute foreground resource use to Clarvis. Developer source commands still run under
+their explicitly invoked Bun executable. Archives retain `runtime/bun` only as a compatibility
+entry for an older launcher; current installers and updates do not select it.
 Runtime dependency discovery accepts only installed bare package specifiers from generated imports
 and calls, including minified `createRequire` bindings; relative, absolute,
 built-in, and module-internal `#` references retained by the generated artifact are not interpreted
@@ -255,11 +255,10 @@ The installer also verifies the release-level `SHA256SUMS`, confirms that the st
 requested version, stores it under `versions/v<version>`, and writes `current` only after every
 earlier step succeeds. On POSIX, checksum parsing, checksum calculation, and archive extraction all
 use the portable `C` locale, so a synthetic host locale cannot add warnings to an otherwise healthy
-install. Both root installers print the target, resolved destination, and numbered download,
-verification, staging, and activation phases. `install.sh --uninstall` and
-`install.ps1 -Uninstall` authenticate the installer-owned marker (or the complete legacy managed
-layout), share the updater's mutation lock through launcher and Windows `PATH` cleanup, and remove
-only managed application files. POSIX launcher ownership is bound to the selected install root;
+install. The root installer prints the target, resolved destination, and numbered download,
+verification, staging, and activation phases. `install.sh --uninstall` authenticates the installer-owned marker (or the complete legacy managed
+layout), share the updater's mutation lock through launcher cleanup, and remove
+only managed application files. Launcher ownership is bound to the selected install root;
 linked managed directories and non-file activation/marker destinations are refused. Cancellation
 stops the operation, repeated removal is a successful no-op, and Clarvis configuration,
 credentials, sessions, and workspace data remain untouched.
@@ -588,7 +587,7 @@ keymap would dispatch next (`Ctrl+X active ▸ [K] expand · [M] memory …`), s
 next to the prefix they belong to and the activity line keeps reporting the run instead. A pending
 prefix is announced once, on the surface that owns the band, and each continuation reflects the
 binding that would really fire there. These defaults are identical
-on macOS, Windows and Linux: press Ctrl+X, release it, then press the second key.
+on macOS and Linux: press Ctrl+X, release it, then press the second key.
 The prefix expires after two seconds; Escape clears it and retains normal back behavior. Manual overrides remain
 available in Keyboard settings. All shortcut labels spell out Ctrl and Shift instead of a caret.
 Memory and Agent pickers are disabled while a run is active.
@@ -1374,8 +1373,7 @@ the build pays that once. Consequences worth knowing:
   Plan, settings panels and domain hubs stay out of the startup entrypoint until their capability or
   route is first mounted. `lazyView` gives command views one Solid-owned loading boundary and cached
   module without duplicating lifecycle code. The build and artifact smoke reject an entrypoint that
-  absorbs representative lazy boundaries, and derive generated chunk basenames from either POSIX or
-  Windows path separators so every native release job enforces the same graph contract.
+  absorbs representative lazy boundaries, and derive generated chunk basenames so every native release job enforces the same graph contract.
 - **Local maps are detached; installed and portable maps are omitted.** Bun eagerly loads an external `.map`
   found beside its runtime `.js`; with this artifact that erased most of the splitting gain. The
   ordinary package/root build moves maps to `dist/maps/` for offline diagnostics and the smoke
@@ -1412,8 +1410,7 @@ exists for a later Providers open, and proves first paint emits no `catalog.load
 
 The smoke harness uses disposable environment and filesystem state. `script(1)` and tmux both use the fixture environment; tmux receives the fixture's
 reserved socket through `-S` and every capture and `kill-server` command names that same endpoint.
-Installer smoke copies release inputs into the fixture and refuses Windows User `Path`
-coverage unless a disposable account is explicitly proven. The regression coverage is
+Installer smoke copies release inputs into the fixture. The regression coverage is
 `packages/code/tests/unit/artifact-isolation.test.ts` plus
 `packages/code/tests/unit/benchmark-isolation.test.ts`, which executes the benchmark's version arm
 against a real Bun child and checks the observed fixture roots. The release/installer/PTY contract

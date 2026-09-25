@@ -238,49 +238,6 @@ jobs:
             all(.[]; type == "object" and has("result") and .result == "success"))
           ' <<< "$NEEDS_JSON"
 
-  # Scoped to @clarvis/tools, @clarvis/paths and @clarvis/plan, which is where
-  # the platform-specific code lives. All three resolve to source under Bun
-  # through their exports map, so this needs no prior build of their siblings.
-  #
-  # `paths` is here because it owns `which.ts` — a `PATH`/`PATHEXT` resolver
-  # whose whole reason to exist is Windows, and whose test asserts Windows
-  # behaviour from a POSIX host. It arrived from `@clarvis/tools`, which this job
-  # already covered; leaving it out would have silently dropped that coverage.
-  #
-  # `plan` is here because `file-repository.ts`'s `fsyncDir` has a real win32
-  # branch (a directory-handle fsync Windows will not do, so a failure there is
-  # swallowed rather than propagated) that was untested on either platform
-  # before it, plus mode-bit and symlink assertions that only hold with
-  # `modeBitsEnforced`/`canLinkDirectories` guarding them here the same way
-  # `packages/paths/tests/integration/ensure.test.ts` already does.
-  # `memory` owns a file-backed tree with Windows-relevant locking, bounded I/O,
-  # and path behavior. Mode-bit assertions and the file-symlink security case
-  # use named capability predicates so the rest of each test still runs.
-  #
-  # `code` contributes only its platform-independent keyboard-policy tests here;
-  # the renderer suite remains on Linux, where its PTY harness is supported.
-  # `kernel`, `loop`, `trace`, `mcp-client` and `supervision` are deliberately
-  # absent because they either have no Windows surface or require a broader job.
-  windows:
-    name: tools, paths, plan, memory, keyboard policy (windows)
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.0
-      - name: record Bun runtime
-        run: bun --version && bun --revision
-      - run: bun install --frozen-lockfile
-      - run: bun --filter @clarvis/paths test
-      - run: bun --filter @clarvis/tools test
-      - run: bun --filter @clarvis/plan test
-      - run: bun --filter @clarvis/memory test
-      - run: bun test packages/code/tests/unit/keyboard-profile.test.ts packages/code/tests/unit/keyspec.test.ts packages/code/tests/unit/active-actions.test.ts
-
   # macOS owns the keyboard policy checks.
   keyboard-macos:
     # Both permanent-branch rulesets require this exact status context. Keep the stable public

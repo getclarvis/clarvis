@@ -194,24 +194,21 @@ describe("kernel RPC over reconnectable local IPC", () => {
     );
   });
 
-  test.skipIf(process.platform === "win32")(
-    "refuses a socket directory readable by other accounts",
-    async () => {
-      const root = await mkdtemp(join(tmpdir(), "clarvis-local-rpc-mode-"));
-      cleanup.push(() => rm(root, { recursive: true, force: true }));
-      const directory = join(root, "public");
-      await mkdir(directory, { mode: 0o755 });
-      await chmod(directory, 0o755);
-      await expect(
-        listenLocalKernel(
-          {
-            connect: () => {
-              throw new Error("must not reach dispatch");
-            },
+  test("refuses a socket directory readable by other accounts", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clarvis-local-rpc-mode-"));
+    cleanup.push(() => rm(root, { recursive: true, force: true }));
+    const directory = join(root, "public");
+    await mkdir(directory, { mode: 0o755 });
+    await chmod(directory, 0o755);
+    await expect(
+      listenLocalKernel(
+        {
+          connect: () => {
+            throw new Error("must not reach dispatch");
           },
-          join(directory, "socket"),
-        ),
-      ).rejects.toMatchObject({ code: "unauthorized" });
-    },
-  );
+        },
+        join(directory, "socket"),
+      ),
+    ).rejects.toMatchObject({ code: "unauthorized" });
+  });
 });

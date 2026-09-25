@@ -177,7 +177,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 
 | Document | Holds | Reach for it when |
 | --- | --- | --- |
-| [`known-issues.md`](known-issues.md) | What was measured, ruled out, or tried and reverted: the ten behaviours that turn on something outside this repository, the Bun crash forensics and its retry, the memory leaks and their soaks, the Windows gaps and their suppression predicates, the extractions that were abandoned, and the four confirmed defects and how each was closed | Something is failing and you want to know whether it has already been diagnosed — or you are about to re-run an experiment someone else has run |
+| [`known-issues.md`](known-issues.md) | What was measured, ruled out, or tried and reverted: the ten behaviours that turn on something outside this repository, the Bun crash forensics and its retry, the memory leaks and their soaks, the extractions that were abandoned, and the four confirmed defects and how each was closed | Something is failing and you want to know whether it has already been diagnosed — or you are about to re-run an experiment someone else has run |
 | [`package-coupling-analysis.md`](package-coupling-analysis.md) | The generated package-graph report | You want the dependency edges as the checker sees them — this one is generated and gated, so it is the only file here that cannot drift |
 
 ---

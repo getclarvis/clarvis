@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { createAgentTools, currentShellFlavor } from "../../src/index.ts";
+import { createAgentTools } from "../../src/index.ts";
 import { configurationRoots } from "@clarvis/paths";
 import { makeWorkspace, cleanup, write, resultText } from "../helpers/fixtures.ts";
 import { expectedToolNames } from "../helpers/tool-surface.ts";
@@ -58,9 +58,7 @@ describe("createAgentTools (library API)", () => {
       });
       const made = await t.callTool("shell", {
         command:
-          currentShellFlavor() === "powershell"
-            ? '$made = Join-Path $env:TEMP "shell-created"; [IO.Directory]::CreateDirectory($made) | Out-Null; [IO.File]::WriteAllText((Join-Path $made "a.txt"), "alpha"); [Console]::Out.Write($made)'
-            : 'made=$(mktemp -d "$TMPDIR/clarvis.XXXXXX") && printf alpha > "$made/a.txt" && printf %s "$made"',
+          'made=$(mktemp -d "$TMPDIR/clarvis.XXXXXX") && printf alpha > "$made/a.txt" && printf %s "$made"',
       });
       expect(made.isError).toBe(false);
       const created = JSON.parse(resultText(made.content)).stdout as string;
@@ -82,10 +80,7 @@ describe("createAgentTools (library API)", () => {
         workspaceRoot: root,
       });
       const ran = await t.callTool("shell", {
-        command:
-          currentShellFlavor() === "powershell"
-            ? "[Console]::Out.Write((Get-Content helper.txt -Raw))"
-            : 'printf %s "$(cat helper.txt)"',
+        command: 'printf %s "$(cat helper.txt)"',
         cwd: packageRoot,
       });
       expect(ran.isError).toBe(false);

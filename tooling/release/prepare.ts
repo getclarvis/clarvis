@@ -8,7 +8,6 @@ import { prepareReleaseSources } from "../lib/release-prepare.ts";
 const RELEASE_FILES = {
   packageJson: "package.json",
   installSh: "install.sh",
-  installPowerShell: "install.ps1",
   changelog: "CHANGELOG.md",
 } as const;
 
@@ -26,7 +25,6 @@ export function prepareRelease(root: string, version: string, date = localDate()
     {
       packageJson: read(RELEASE_FILES.packageJson),
       installSh: read(RELEASE_FILES.installSh),
-      installPowerShell: read(RELEASE_FILES.installPowerShell),
       changelog: read(RELEASE_FILES.changelog),
     },
     version,

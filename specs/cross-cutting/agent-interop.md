@@ -207,7 +207,7 @@ Two accepted shapes (`packages/kernel/src/plugins/hook-dialects.ts`):
 
 One matcher group (`hookGroupSchema`) is either `{ matcher?: string, hooks: hookEntrySchema[] }` or a
 bare `hookEntrySchema` entry, read as a group of one selecting everything (`packages/kernel/src/plugins/hook-dialects.ts`). One
-`hookEntrySchema` entry is a loose object with optional `type`, `command`, `commandWindows`, `timeout`, `async`,
+`hookEntrySchema` entry is a loose object with optional `type`, `command`, `timeout`, `async`,
 `statusMessage`, `additionalContextLimit`, `server`, `tool`, and `input`. The fields needed by the
 selected type are enforced during conversion, while unrecognized keys remain tolerated
 (`packages/kernel/src/plugins/hook-dialects.ts`).
@@ -332,7 +332,7 @@ For each `(sourceEvent, groups)` entry of the document's event map:
 4. For each hook entry in the surviving group: only `"command"`/omitted and `"mcp_tool"` are
    supported. A command entry without `command`, an MCP entry without `server`/`tool`, or an MCP entry
    on `SessionEnd` is noted and skipped. The timeout is converted and clamped via
-   `translateTimeout`. Command and Windows-command paths are substituted and anchored;
+   `translateTimeout`. Command paths are substituted and anchored;
    `async`, `statusMessage`, `additionalContextLimit`, and the MCP `server`/`tool`/`input` payload are
    preserved in the resulting `HookConfig`. The integration test pins both an async
    command and the complete command/MCP projections

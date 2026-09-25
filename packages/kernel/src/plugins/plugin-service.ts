@@ -127,7 +127,7 @@ function executablesOf(name: string, manifest: PluginManifest | undefined): stri
     out.push(
       h.type === "mcp_tool"
         ? `$ MCP ${h.server ?? "unknown"}.${h.tool ?? "unknown"}`
-        : `$ ${process.platform === "win32" ? (h.command_windows ?? h.command) : h.command}`,
+        : `$ ${h.command}`,
     );
   }
   for (const [server, s] of Object.entries(manifest?.mcpServers ?? {})) {

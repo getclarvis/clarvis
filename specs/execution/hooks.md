@@ -160,7 +160,6 @@ filtering and contain paths, never credentials. Production: the command environm
   match?: { tool?: string | string[], args?: Record<string, string> },
   type?: "command" | "mcp_tool",
   command: string,                    // command hooks; max 8192 chars
-  command_windows?: string,
   async?: boolean,
   status_message?: string,            // bounded display metadata
   additional_context_limit?: number,  // 0..65536 captured chars
@@ -374,7 +373,7 @@ passes only `denyExact`).
    b. for an `mcp_tool`, resolves the run-scoped server/tool through `MCP_HOOK_TOOL_PORT`,
       recursively expands `${field.path}` values from the event payload, calls it directly, and
       applies the same output verdict parser without entering ordinary tool dispatch;
-   c. for a command hook, selects `command_windows` on Windows and otherwise `command`, then calls
+   c. for a command hook, selects `command`, then calls
       `runHookCommand` (`packages/hooks/src/subprocess.ts`) which spawns the host shell, writes stdin, bounds
       stdout/stderr, bounds the wall clock, and never rejects (§4.4);
    d. `classify(res, inv)` (`packages/hooks/src/runner.ts`) turns the `SubprocessResult` into either a
@@ -472,9 +471,7 @@ into the transcript. Production: `scheduleBackground` and `run` in
 
 Injectable deps (`spawn`, `killTree`, `ownProcessGroup`, `resolveShell`, `shellArgs`, `timers`,
 `now`, `logger`) all default to real implementations (`packages/hooks/src/subprocess.ts`).
-`detached` comes from `ownProcessGroup()` and is **never** passed unconditionally — POSIX process
-groups vs. Windows `DETACHED_PROCESS`, whose console-less child would be a silent do-nothing spawn
-(see also the repo-wide Windows rule this mirrors).
+`detached` comes from `ownProcessGroup()` and creates a POSIX process group.
 
 Just before spawning, `hooks.spawn` is logged at debug with `hook_event`, `shell_file`, `detached`,
 `timeout_ms`, `stdin_bytes` and `data_truncated` — never the command text or its arguments
@@ -943,9 +940,8 @@ in [loop-run-lifecycle](../engine/loop-run-lifecycle.md), delegated per the docu
   beyond its existence and its import of `EXTERNAL_TOOL_NAMES`
   (`packages/kernel/src/plugins/hook-dialects.ts`).
 - ~~**The rationale for the specific set of `KEEP_EXACT` names and `SECRET_NAME`/`SECRET_PREFIX`
-  patterns.**~~ **The membership rules are now stated at the source.** `KEEP_EXACT` has three groups
-  and the third is empty on purpose: what a shell needs to start and behave (plus the Windows
-  equivalents), and the version-manager and toolchain roots that make `bun`, `cargo` or `java`
+  patterns.**~~ **The membership rules are now stated at the source.** `KEEP_EXACT` keeps
+  what a shell needs to start and behave, plus the version-manager and toolchain roots that make `bun`, `cargo` or `java`
   resolvable — and *nothing* kept merely because a hook is likely to want it, since a name promoted
   into the keep-list becomes unremovable by any future secret rule
   (`packages/hooks/src/env.ts`). `SECRET_NAME` is deliberately not the same pattern as

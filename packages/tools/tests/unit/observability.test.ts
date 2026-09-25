@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, vi } from "bun:test";
 import { resolveConfig } from "../../src/config.ts";
 import { NOOP_TOOLS_LOGGER, setWarnSink, warn, type ToolsLogger } from "../../src/lib/log.ts";
 import { fsError, serializeError } from "../../src/errors.ts";
@@ -75,39 +75,27 @@ describe("tools.kill_tree_failed", () => {
   it("reports a tree nothing could be signalled for", () => {
     const { logger, records } = recorder();
     const unusedPid = 2_147_483_600;
-    expect(killTree(unusedPid, "SIGTERM", { platform: "linux", logger })).toBe(false);
+    expect(killTree(unusedPid, "SIGTERM", { logger })).toBe(false);
     expect(eventsOf(records, "tools.kill_tree_failed")[0]).toMatchObject({
       level: "warn",
       fields: {
         event: "tools.kill_tree_failed",
         pid: unusedPid,
         signal: "SIGTERM",
-        platform: "linux",
+        platform: process.platform,
       },
-    });
-  });
-
-  it("reports the Windows path too, where the signal is not the mechanism", () => {
-    const { logger, records } = recorder();
-    const unusedPid = 2_147_483_601;
-    expect(
-      killTree(unusedPid, "SIGTERM", {
-        platform: "win32",
-        taskkill: () => ({ status: 1 }),
-        logger,
-      }),
-    ).toBe(false);
-    expect(eventsOf(records, "tools.kill_tree_failed")[0]?.fields).toMatchObject({
-      platform: "win32",
     });
   });
 
   it("a successful kill says nothing", () => {
     const { logger, records } = recorder();
-    expect(
-      killTree(1, "SIGTERM", { platform: "win32", taskkill: () => ({ status: 0 }), logger }),
-    ).toBe(true);
-    expect(records).toEqual([]);
+    const spy = vi.spyOn(process, "kill").mockImplementation(() => true);
+    try {
+      expect(killTree(4321, "SIGTERM", { logger })).toBe(true);
+      expect(records).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

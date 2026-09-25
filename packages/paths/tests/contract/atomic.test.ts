@@ -18,9 +18,6 @@ import {
   fsyncDir,
   fsyncDirSync,
   isTmpFile,
-  RENAME_RETRY_DELAYS_MS,
-  renameWithRetry,
-  renameWithRetrySync,
   setPathsLogger,
   TMP_PREFIX,
   tmpPathFor,
@@ -43,17 +40,13 @@ afterEach(() => {
   for (const d of made.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-/** Mode bits are unobservable on Windows and meaningless under root. */
-const modeBitsEnforced = process.platform !== "win32" && process.getuid?.() !== 0;
+/** Mode bits are unobservable under root. */
+const modeBitsEnforced = process.getuid?.() !== 0;
 
 /** Every temp file left behind in `dir`, as the shared recogniser sees them. */
 const orphans = (dir: string): string[] => readdirSync(dir).filter((n) => isTmpFile(n));
 
 const read = (file: string): string => readFileSync(file, "utf8");
-
-function errno(code: string): NodeJS.ErrnoException {
-  return Object.assign(new Error(`simulated ${code}`), { code });
-}
 
 describe("the temp-name builder and its recogniser", () => {
   test("builds a sibling of the target under the shared prefix", () => {
@@ -219,136 +212,6 @@ describe("writeFileDurableSync", () => {
   });
 });
 
-describe("renameWithRetry", () => {
-  test("the schedule is four bounded attempts", () => {
-    expect(RENAME_RETRY_DELAYS_MS.length).toBe(4);
-    expect(RENAME_RETRY_DELAYS_MS.reduce((a, b) => a + b, 0)).toBeLessThan(250);
-  });
-
-  test("returns on the first success without consulting the schedule", async () => {
-    const dir = tempDir();
-    const from = join(dir, "a");
-    const to = join(dir, "b");
-    await writeFileAtomic(from, "x");
-    await renameWithRetry(from, to);
-    expect(read(to)).toBe("x");
-  });
-
-  test("retries a transient Windows failure, then succeeds", async () => {
-    let calls = 0;
-    await renameWithRetry("from", "to", {
-      platform: "win32",
-      delays: [1, 1],
-      rename: () => {
-        calls += 1;
-        return calls === 1 ? Promise.reject(errno("EPERM")) : Promise.resolve();
-      },
-    });
-    expect(calls).toBe(2);
-  });
-
-  test("gives up once the schedule is exhausted", async () => {
-    let calls = 0;
-    await expect(
-      renameWithRetry("from", "to", {
-        platform: "win32",
-        delays: [1, 1],
-        rename: () => {
-          calls += 1;
-          return Promise.reject(errno("EBUSY"));
-        },
-      }),
-    ).rejects.toThrow("simulated EBUSY");
-    expect(calls).toBe(3);
-  });
-
-  test("does not retry on POSIX, where EPERM is a permanent denial", async () => {
-    let calls = 0;
-    await expect(
-      renameWithRetry("from", "to", {
-        platform: "linux",
-        delays: [1, 1],
-        rename: () => {
-          calls += 1;
-          return Promise.reject(errno("EPERM"));
-        },
-      }),
-    ).rejects.toThrow("simulated EPERM");
-    expect(calls).toBe(1);
-  });
-
-  test("does not retry an errno outside the transient set, nor a codeless error", async () => {
-    for (const failure of [errno("ENOENT"), new Error("no code at all")]) {
-      let calls = 0;
-      await expect(
-        renameWithRetry("from", "to", {
-          platform: "win32",
-          delays: [1, 1],
-          rename: () => {
-            calls += 1;
-            return Promise.reject(failure);
-          },
-        }),
-      ).rejects.toThrow(failure.message);
-      expect(calls).toBe(1);
-    }
-  });
-});
-
-describe("renameWithRetrySync", () => {
-  test("returns on the first success", () => {
-    const dir = tempDir();
-    const from = join(dir, "a");
-    const to = join(dir, "b");
-    writeFileAtomicSync(from, "x");
-    renameWithRetrySync(from, to);
-    expect(read(to)).toBe("x");
-  });
-
-  test("retries a transient Windows failure, blocking between attempts", () => {
-    let calls = 0;
-    renameWithRetrySync("from", "to", {
-      platform: "win32",
-      delays: [1, 1],
-      rename: () => {
-        calls += 1;
-        if (calls === 1) throw errno("EACCES");
-      },
-    });
-    expect(calls).toBe(2);
-  });
-
-  test("gives up once the schedule is exhausted", () => {
-    let calls = 0;
-    expect(() =>
-      renameWithRetrySync("from", "to", {
-        platform: "win32",
-        delays: [1],
-        rename: () => {
-          calls += 1;
-          throw errno("EPERM");
-        },
-      }),
-    ).toThrow("simulated EPERM");
-    expect(calls).toBe(2);
-  });
-
-  test("does not retry on POSIX", () => {
-    let calls = 0;
-    expect(() =>
-      renameWithRetrySync("from", "to", {
-        platform: "linux",
-        delays: [1],
-        rename: () => {
-          calls += 1;
-          throw errno("EBUSY");
-        },
-      }),
-    ).toThrow("simulated EBUSY");
-    expect(calls).toBe(1);
-  });
-});
-
 describe("fsyncDir", () => {
   test("flushes a real directory without throwing", async () => {
     await expect(fsyncDir(tempDir())).resolves.toBeUndefined();
@@ -426,42 +289,6 @@ describe("atomic write diagnostics", () => {
     } finally {
       chmodSync(locked, 0o700);
     }
-  });
-
-  test("a retried rename names the errno and the backoff it is about to spend", async () => {
-    const sink = recorder();
-    let calls = 0;
-    await renameWithRetry("from", "to", {
-      platform: "win32",
-      delays: [1, 1],
-      logger: sink.logger,
-      rename: async () => {
-        calls += 1;
-        if (calls <= 2) throw errno("EBUSY");
-        return Promise.resolve();
-      },
-    });
-    expect(sink.events("paths.rename_retried")).toEqual([
-      { event: "paths.rename_retried", to: "to", attempt: 0, code: "EBUSY", backoff_ms: 1 },
-      { event: "paths.rename_retried", to: "to", attempt: 1, code: "EBUSY", backoff_ms: 1 },
-    ]);
-  });
-
-  test("the synchronous rename reports the same retries", () => {
-    const sink = recorder();
-    let calls = 0;
-    renameWithRetrySync("from", "to", {
-      platform: "win32",
-      delays: [1],
-      logger: sink.logger,
-      rename: () => {
-        calls += 1;
-        if (calls === 1) throw errno("EPERM");
-      },
-    });
-    expect(sink.events("paths.rename_retried")).toEqual([
-      { event: "paths.rename_retried", to: "to", attempt: 0, code: "EPERM", backoff_ms: 1 },
-    ]);
   });
 
   test("a filesystem that will not sync a directory handle says so once per errno", async () => {

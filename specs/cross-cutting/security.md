@@ -135,8 +135,7 @@ Production: `packages/loop/src/runtime/tools/builtin/grants.ts`. Test:
 
 `withoutGitRepositoryEnvironment(source)` returns a fresh copy with every variable in Git's
 `git rev-parse --local-env-vars` set plus `GIT_CEILING_DIRECTORIES` removed. Names compare exactly
-on POSIX and case-insensitively on Windows (`packages/paths/src/git-environment.ts`). It
-preserves transport and credential
+(`packages/paths/src/git-environment.ts`). It preserves transport and credential
 inputs: its boundary is repository routing/storage/config inherited from a parent Git process, not a
 blank or allowlisted child environment. The helper is exported from `@clarvis/paths`
 (`packages/paths/src/index.ts`) and re-exported through `@clarvis/kernel/local` for the TUI's
@@ -393,11 +392,10 @@ once and applies, in this order:
 | 3 | `isSecretName(name)` | dropped, `denied.shape++` |
 | 4 | otherwise | kept |
 
-`opts.add` is spread **last** and is never filtered. The keep-list is 31 exact names —
-`PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `PWD`, `TMPDIR`, `TEMP`, `TMP`, `LANG`, `TZ`, `TERM`, the
-Windows seven (`SystemRoot`, `COMSPEC`, `PATHEXT`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`,
-`PROGRAMFILES`) and twelve toolchain roots (`BUN_INSTALL`, `MISE_DATA_DIR`, `ASDF_DATA_DIR`,
-`NVM_DIR`, `PYENV_ROOT`, `RUSTUP_HOME`, `CARGO_HOME`, `GOROOT`, `GOPATH`, `JAVA_HOME`,
+`opts.add` is spread **last** and is never filtered. The keep-list contains 24 exact names:
+`PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `PWD`, `TMPDIR`, `TEMP`, `TMP`, `LANG`, `TZ`, `TERM`,
+and twelve toolchain roots (`BUN_INSTALL`, `MISE_DATA_DIR`, `ASDF_DATA_DIR`, `NVM_DIR`,
+`PYENV_ROOT`, `RUSTUP_HOME`, `CARGO_HOME`, `GOROOT`, `GOPATH`, `JAVA_HOME`,
 `SDKMAN_DIR`, `DOTNET_ROOT`) — plus the `LC_` prefix.
 
 `isSecretName` is the disjunction of a separator-anchored word regex, `SECRET_NAME`
@@ -675,7 +673,7 @@ TOCTOU family between validation and rename, as described in §4.4.
 30. **`keys.json` is written owner-only.** `writeFileAtomicSync` defaults to file `0o600` inside a
     `0o700` directory. Production `packages/kernel/src/secrets/secret-store.ts`,
     `packages/paths/src/atomic.ts`, `packages/paths/src/constants.ts`. **Unpinned**
-    for the secret store specifically. The code records that the bits are inert on Windows
+    for the secret store specifically. The mode bits are enforced on supported hosts
     (`packages/kernel/src/secrets/secret-store.ts`).
 31. **A secret name must be an environment-variable identifier and a value must be non-empty.**
     Production `packages/kernel/src/secrets/secret-store.ts`; pinned

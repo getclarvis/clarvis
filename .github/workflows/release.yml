@@ -44,10 +44,6 @@ jobs:
             runner: macos-15-intel
           - target: darwin-arm64
             runner: macos-15
-          - target: windows-x64
-            runner: windows-2025
-          - target: windows-arm64
-            runner: windows-11-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
@@ -101,11 +97,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(find build/release -maxdepth 1 -name 'clarvis-v*.tar.gz' -type f | wc -l)" -eq 6
-          test "$(find build/release -maxdepth 1 -name 'clarvis-v*.tar.gz.sha256' -type f | wc -l)" -eq 6
+          test "$(find build/release -maxdepth 1 -name 'clarvis-v*.tar.gz' -type f | wc -l)" -eq 4
+          test "$(find build/release -maxdepth 1 -name 'clarvis-v*.tar.gz.sha256' -type f | wc -l)" -eq 4
           sed -n 'p' build/release/clarvis-v*.tar.gz.sha256 | LC_ALL=C sort -k2 > build/release/SHA256SUMS
           (cd build/release && sha256sum --check SHA256SUMS)
-          cp install.sh install.ps1 LICENSE THIRD_PARTY_NOTICES.md build/release/
+          cp install.sh LICENSE THIRD_PARTY_NOTICES.md build/release/
           cp third-party/bun/LICENSE.md build/release/BUN-LICENSE.md
           cp third-party/models.dev/LICENSE build/release/MODELS-DEV-LICENSE
           cp third-party/vercel-ai-sdk/LICENSE build/release/VERCEL-AI-SDK-LICENSE

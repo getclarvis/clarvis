@@ -172,7 +172,7 @@ describe("sweepGlobalStateArtifacts", () => {
     expect(report.workspaces).toBe(2);
     expect(report.spillsRemoved).toBe(1);
     expect(existsSync(stale)).toBe(false);
-    if (process.platform !== "win32") expect(statSync(recent).mode & 0o777).toBe(0o600);
+    expect(statSync(recent).mode & 0o777).toBe(0o600);
   });
 
   test("removes only stale empty legacy run containers", async () => {

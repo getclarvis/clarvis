@@ -790,7 +790,7 @@ Each entry: **rule** — production anchor — test anchor.
 
 32. **An unreadable agents directory is distinguishable from an empty one.**
     `reportAgentsUnreadable` (`packages/kernel/src/config/file-config-store.ts`). Pinned:
-    `packages/kernel/tests/integration/file-config-store.test.ts` (skips on win32 and as root).
+    `packages/kernel/tests/integration/file-config-store.test.ts` (skips as root).
 
 33. **`kernelSettingsSchema` admits the registered capability blocks that the engine's bare schema
     rejects, and is still strict about anything else.** `packages/kernel/src/config/capability-registry.ts` over

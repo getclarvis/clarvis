@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { shellArgs } from "@clarvis/tools/shell";
 import {
   DEFAULT_KILL_GRACE_MS,
   ignoreRejection,
@@ -62,38 +61,6 @@ describe("runHookCommand", () => {
     expect(deps.calls[0]?.options.env).toEqual({ A: "1" });
     expect(deps.calls[0]?.options.detached).toBe(true);
     expect(deps.calls[0]?.options.stdio).toEqual(["pipe", "pipe", "pipe"]);
-  });
-
-  test("never passes detached on a platform without process groups", async () => {
-    const child = new FakeChild();
-    const deps = { ...seams(child), ownProcessGroup: () => false };
-    const pending = runHookCommand(request(), deps);
-    await tick();
-    child.finish(0);
-    await pending;
-    expect(deps.calls[0]?.options.detached).toBe(false);
-  });
-
-  test("uses the host's own shell dialect, including the Windows encoded form", async () => {
-    const child = new FakeChild();
-    const calls: SpawnCall[] = [];
-    const pending = runHookCommand(request({ command: "echo hi" }), {
-      spawn: fakeSpawn(child, calls),
-      resolveShell: () => ({ flavor: "powershell", file: "pwsh.exe" }),
-      shellArgs,
-      ownProcessGroup: () => false,
-    });
-    await tick();
-    child.finish(0);
-    await pending;
-    expect(calls[0]?.file).toBe("pwsh.exe");
-    expect(calls[0]?.args.slice(0, 3)).toEqual([
-      "-NoProfile",
-      "-NonInteractive",
-      "-EncodedCommand",
-    ]);
-    const encoded = calls[0]?.args[3] ?? "";
-    expect(Buffer.from(encoded, "base64").toString("utf16le")).toContain("echo hi");
   });
 
   test("writes the payload to stdin and closes it", async () => {

@@ -74,7 +74,7 @@ tag. Ordinary code, documentation, and CI changes go through `develop`, never di
 Start ordinary
 work in a short-lived `feat/`, `fix/`, `refactor/`, `docs/`, or `chore/` branch from current
 `develop`, and target its pull request at `develop`. Keep both permanent branches green; neither
-accepts direct pushes, force pushes, or deletion. Both require the Linux, Windows, and macOS CI
+accepts direct pushes, force pushes, or deletion. Both require the Linux and macOS CI
 contexts, an up-to-date base, and resolved review conversations, with no ruleset bypass actors.
 
 Use a merge commit when promoting a release into `main` or synchronizing permanent branches.
@@ -215,7 +215,6 @@ These are routing warnings, not replacements for the linked specs.
 - **Plan retention:** plans are kept by default and deleted only through the explicit documented
   retention path.
 - **No parser in tools:** `@clarvis/tools` does not parse source code or depend on tree-sitter.
-- **Windows is a hard constraint:** use `node:path`, argv-based process APIs, the shared shell/process
   helpers, and named platform predicates. Never pass `detached: true` unconditionally.
 
 ## Change workflow
@@ -371,7 +370,7 @@ particular:
   the Command Line Developer Tools installer even when Git works on the host. Use injected fake
   executables for process contract tests and rerun real host-Git probes with host permissions;
   do not diagnose a missing Git installation from that popup.
-- Windows and macOS CI availability and known Windows gaps are recorded there and in the build spec.
+- macOS CI availability is recorded there and in the build spec.
 - Path-based writes still have a documented parent-directory TOCTOU; do not claim a partial
   path re-check closes it.
 

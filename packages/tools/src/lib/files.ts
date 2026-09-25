@@ -19,14 +19,11 @@ export interface ReadFileOptions {
  *
  * `O_NONBLOCK` is harmless for regular files and makes opening a FIFO return so
  * the descriptor can be rejected by `stat()` instead of waiting forever for a
- * writer. Windows does not support that flag for ordinary file opens, and its
- * filesystem paths do not expose POSIX FIFOs, so it uses Node's portable `r`
- * mode instead. `noFollow` additionally refuses a last-component symlink where
+ * writer. `noFollow` additionally refuses a last-component symlink where
  * the host exposes `O_NOFOLLOW`; descriptor metadata remains the authority on
  * every platform.
  */
 async function openReadHandle(target: string, noFollow = false): Promise<FileHandle> {
-  if (process.platform === "win32") return fs.open(target, "r");
   const flags =
     constants.O_RDONLY |
     constants.O_NONBLOCK |
@@ -64,7 +61,7 @@ function tooLargeFile(
  *
  * The extra byte distinguishes an exact-boundary file from a file that grew
  * after its descriptor metadata was observed. Reads advance the descriptor's
- * own cursor (`position: null`), which works on Windows as well as POSIX and
+ * own cursor (`position: null`), which works on POSIX and
  * keeps every byte tied to the same opened object even if the path is replaced.
  */
 async function readHandleBounded(handle: FileHandle, maxBytes: number): Promise<Buffer> {

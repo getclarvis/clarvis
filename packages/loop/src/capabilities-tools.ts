@@ -15,10 +15,9 @@ export { FILE_MUTATING_TOOL_NAMES } from "./runtime/tools/builtin/index.ts";
 export {
   resolveShell,
   shellArgs,
-  currentShellFlavor,
   executableOnPath,
   resolveCommand,
   killTree,
   ownProcessGroup,
 } from "@clarvis/tools";
-export type { ShellSpec, ShellDeps, ShellFlavor } from "@clarvis/tools";
+export type { ShellSpec } from "@clarvis/tools";

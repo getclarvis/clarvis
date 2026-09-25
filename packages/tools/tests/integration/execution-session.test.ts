@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { spawn, type SpawnOptions } from "node:child_process";
 import { join } from "node:path";
-import { ExecutionSessionManager, sessionCommand } from "../../src/lib/execution-session.ts";
+import { ExecutionSessionManager } from "../../src/lib/execution-session.ts";
 import { shellSessionView } from "../../src/tools/shell-session.ts";
 import { NOOP_TOOLS_LOGGER } from "../../src/lib/log.ts";
 import { createAgentTools } from "../../src/index.ts";
@@ -20,20 +20,10 @@ function fixture(source: string): { root: string; command: string } {
   const file = join(root, "command.cjs");
   writeFileSync(file, source);
   const invocation = `"${process.execPath}" "${file}"`;
-  return { root, command: process.platform === "win32" ? `& ${invocation}` : invocation };
+  return { root, command: invocation };
 }
 
 describe("ExecutionSessionManager", () => {
-  it("preserves the shell text on POSIX and native exit status on PowerShell", () => {
-    expect(sessionCommand("exit 3", { flavor: "posix", file: "sh" })).toBe("exit 3");
-    const windows = sessionCommand("& 'tool.exe'", {
-      flavor: "powershell",
-      file: "powershell.exe",
-    });
-    expect(windows).toContain("& 'tool.exe'\n$__clarvisSucceeded = $?");
-    expect(windows).toContain("exit $LASTEXITCODE");
-  });
-
   it("spawns once and settles both streams with physical exit status", async () => {
     const { root, command } = fixture(
       "process.stdout.write('out\\n'); process.stderr.write('err\\n'); process.exitCode = 4;",

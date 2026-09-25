@@ -326,7 +326,6 @@ export function createPluginContributions(opts: {
     const result = spawnSync("git", ["-C", dir, "rev-parse", "HEAD"], {
       encoding: "utf8",
       env: withoutGitRepositoryEnvironment(process.env),
-      windowsHide: true,
       timeout: 5_000,
       maxBuffer: PLUGIN_RESOURCE_LIMITS.installRecordBytes,
     });

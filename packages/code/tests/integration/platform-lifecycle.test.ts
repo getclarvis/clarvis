@@ -232,8 +232,6 @@ test("createPlatform: reports the client runtime, remote path, and terminal iden
   expect(p.capabilities.runtimePlatform()).toBe("linux");
   setPlatform("darwin");
   expect(p.capabilities.runtimePlatform()).toBe("macos");
-  setPlatform("win32");
-  expect(p.capabilities.runtimePlatform()).toBe("windows");
   setPlatform("aix");
   expect(p.capabilities.runtimePlatform()).toBe("unknown");
 });
@@ -480,17 +478,6 @@ test("createPlatform: readClipboardImage() delegates to the injectable clipboard
   expect(await p.readClipboardImage()).toBeNull();
 });
 
-test("nativeClipboardCopy: on win32, copyText invokes the PowerShell clipboard candidate", async () => {
-  setPlatform("win32");
-  const run = clipboardRunner();
-  const p = createPlatform(fakeRenderer(), { clipboardProcess: run });
-  expect(await p.copyText("hello")).toBe(true);
-  expect(run).toHaveBeenCalledTimes(1);
-  const request = run.mock.calls[0]![0];
-  expect(typeof request.command).toBe("string");
-  expect(Array.isArray(request.args)).toBe(true);
-});
-
 test("nativeClipboardCopy: a candidate error is treated as a miss, not a crash", async () => {
   setEnvironment({ DISPLAY: ":0" });
   // Errors surface from runClipboardProcess as result.error; the injectable
@@ -498,13 +485,6 @@ test("nativeClipboardCopy: a candidate error is treated as a miss, not a crash",
   const run = clipboardRunner(() => failResult(new Error("spawn EPERM")));
   const p = createPlatform(fakeRenderer({ oscResult: false }), { clipboardProcess: run });
   expect(await p.copyText("hello")).toBe(false);
-});
-
-test("readClipboardImage: on win32, the PowerShell image script is attempted", async () => {
-  setPlatform("win32");
-  const run = clipboardRunner(() => okResult(Buffer.from("")));
-  expect(await readClipboardImage(undefined, run)).toBeNull();
-  expect(run).toHaveBeenCalledTimes(1);
 });
 
 test("readClipboardImage: a candidate error is skipped, not fatal", async () => {

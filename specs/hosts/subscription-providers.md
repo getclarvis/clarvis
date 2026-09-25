@@ -102,7 +102,7 @@ eligibility.
 `settings.json` and `keys.json`. `createFileSubscriptionStore` accepts only the strict V1 schema,
 bounds descriptor reads, refuses symlinks and unresolved parents, creates POSIX directories/files as
 `0700`/`0600`, and uses a process lease plus durable temp-file/fsync/rename replacement. A malformed
-document is not overwritten. Windows provides the same-user boundary available to the existing key
+document is not overwritten. The host provides the same-user boundary available to the existing key
 store but cannot promise POSIX mode bits.
 
 The manager keeps one refresh flight per scheme. The durable mutation lease serializes processes,

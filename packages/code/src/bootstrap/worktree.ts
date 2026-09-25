@@ -50,7 +50,6 @@ export function runBootstrapGit(cwd: string, args: readonly string[]): Promise<G
     const child = spawn("git", [...args], {
       cwd,
       shell: false,
-      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...withoutGitRepositoryEnvironment(process.env),

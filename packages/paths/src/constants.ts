@@ -35,10 +35,6 @@ export const TMP_PREFIX = ".clarvis-tmp-";
 /**
  * Directory mode for everything Clarvis creates: owner-only.
  *
- * @remarks
- * Applied best-effort. Windows ignores the mode rather than failing, and that is
- * acceptable — a platform that cannot honour it must not turn directory creation
- * into an error.
  */
 export const DIR_MODE = 0o700;
 
@@ -49,8 +45,7 @@ export const DIR_MODE = 0o700;
  * The companion of {@link DIR_MODE}, and the reason the atomic-write family
  * lives in this package: the seven hand-rolled copies it replaces each restated
  * the pair, and a copy that forgets it publishes a run's transcript, a signing
- * key or an API secret at the ambient umask. Windows honours only the write bit,
- * which is the same best-effort posture {@link DIR_MODE} takes.
+ * key or an API secret at the ambient umask.
  */
 export const FILE_MODE = 0o600;
 

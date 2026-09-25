@@ -1301,9 +1301,3 @@ carries `node:assert/strict` and nothing else (`packages/memory/src/testing.ts`)
    (`packages/memory/src/text/grep.ts`), the "never index from inside `exclusive`" rule
    (`packages/memory/src/file-store/lock.ts`) — it is quoted above. Everywhere else the mechanism
    is described and the motive left open.
-
-5. **Windows execution is scheduled but has no current green evidence.** The dedicated Windows job
-   now includes the complete `@clarvis/memory` suite, with named capability predicates around POSIX
-   mode bits and file-symlink creation. The workflow itself remains manually disabled for lack of
-   billable Actions minutes, so the store's Windows `process.kill(pid, 0)` liveness behavior is still
-   unverified until an operator runs that job (`.github/workflows/ci.yml`, `windows`).

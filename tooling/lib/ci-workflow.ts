@@ -70,7 +70,7 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
       "CI cancellation contract changed",
     );
     check(
-      equalSet(Object.keys(workflow.jobs), [...LINUX_GATES, "linux", "windows", "keyboard-macos"]),
+      equalSet(Object.keys(workflow.jobs), [...LINUX_GATES, "linux", "keyboard-macos"]),
       "CI job set is incomplete or unexpected",
     );
     for (const [id, job] of Object.entries(workflow.jobs)) {
@@ -200,10 +200,6 @@ export function ciWorkflowFailures(source: string, scripts: Record<string, strin
         aggregate.steps[0].env?.NEEDS_JSON === "${{ toJSON(needs) }}" &&
         !aggregate.steps[0].run.includes("${{"),
       "linux: needs JSON must enter Bash through environment only",
-    );
-    check(
-      workflow.jobs.windows.name === "tools, paths, plan, memory, keyboard policy (windows)",
-      "Windows required status changed",
     );
     check(
       workflow.jobs["keyboard-macos"].name === "keyboard policy (macos)",

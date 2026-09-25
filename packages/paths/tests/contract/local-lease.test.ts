@@ -483,28 +483,25 @@ describe("local filesystem leases", () => {
     expect(readdirSync(recoveryDir)).toEqual([]);
   });
 
-  test.if(process.platform !== "win32")(
-    "a late release cannot unlink a successor with another token and inode",
-    async () => {
-      const path = fixture();
-      const first = await acquireLocalLease(path, {
-        staleMs: 30_000,
-        token: () => "first",
-      });
-      expect(first).not.toBeNull();
-      unlinkSync(path);
-      const second = await acquireLocalLease(path, {
-        staleMs: 30_000,
-        token: () => "second",
-      });
-      expect(second).not.toBeNull();
-      await expect(first!.assertOwned()).rejects.toBeInstanceOf(LocalLeaseLostError);
-      expect(await first!.release()).toBe(false);
-      expect(await second!.owned()).toBe(true);
-      expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({ token: "second" });
-      await second!.release();
-    },
-  );
+  test("a late release cannot unlink a successor with another token and inode", async () => {
+    const path = fixture();
+    const first = await acquireLocalLease(path, {
+      staleMs: 30_000,
+      token: () => "first",
+    });
+    expect(first).not.toBeNull();
+    unlinkSync(path);
+    const second = await acquireLocalLease(path, {
+      staleMs: 30_000,
+      token: () => "second",
+    });
+    expect(second).not.toBeNull();
+    await expect(first!.assertOwned()).rejects.toBeInstanceOf(LocalLeaseLostError);
+    expect(await first!.release()).toBe(false);
+    expect(await second!.owned()).toBe(true);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({ token: "second" });
+    await second!.release();
+  });
 
   test("release atomically restores a successor installed after its ownership check", async () => {
     const path = fixture();
@@ -553,7 +550,7 @@ describe("local filesystem leases", () => {
     expect(successor!.release()).toBe(true);
   });
 
-  test.if(process.platform !== "win32" && process.getuid?.() !== 0)(
+  test.if(process.getuid?.() !== 0)(
     "recovers the exact retired inode after release cleanup fails",
     async () => {
       const path = fixture();
@@ -582,7 +579,7 @@ describe("local filesystem leases", () => {
     },
   );
 
-  test.if(process.platform !== "win32" && process.getuid?.() !== 0)(
+  test.if(process.getuid?.() !== 0)(
     "the synchronous variant recovers its exact retired inode after release failure",
     () => {
       const path = fixture();

@@ -213,23 +213,17 @@ function keyboardInput(platform: Platform, keymap: OpenTuiKeymap): KeyboardEnvir
 /**
  * Resolves every vital command's key(s) for one environment.
  *
- * @param platformName - host platform; `app.suspend` is withheld on `win32`
- *   (no `SIGTSTP`, no job control to return from). The binding has to go with
- *   the command, or the keymap's own unresolved-command warning flags a binding
- *   to a command that was never registered and ctrl+z silently does nothing.
  * @param environment - the effective keyboard environment.
  * @param overrides - validated manual overrides, which win outright.
  * @returns command name to the key(s) it should be bound to; a command whose
  *   candidates all resolve away is absent.
  */
 export function resolvedVitalBindings(
-  platformName: NodeJS.Platform,
   environment: KeyboardEnvironment,
   overrides: Readonly<Record<string, readonly string[]>> = {},
 ): Record<string, string | string[]> {
   const out: Record<string, string | string[]> = {};
   for (const [commandName, candidates] of Object.entries(DEFAULT_BINDING_CANDIDATES)) {
-    if (commandName === "app.suspend" && platformName === "win32") continue;
     const keys = resolveCommandBindings(commandName, candidates, environment, overrides);
     if (keys.length === 1) out[commandName] = keys[0]!;
     else if (keys.length > 1) out[commandName] = keys;
@@ -381,9 +375,6 @@ function createLifecycleSafeKeymap(renderer: CliRenderer): OpenTuiKeymap {
  * @param platform - the platform adapter (suspend/resume, shutdown).
  * @param effects - the command callbacks this wiring dispatches into.
  * @returns the {@link Interaction} handle.
- * @remarks `app.suspend` is registered only off Windows, which has no
- *   `SIGTSTP` and no job control to return from - offering it there would be a
- *   menu entry that silently does nothing.
  */
 export function createInteraction(
   renderer: CliRenderer,
@@ -590,20 +581,16 @@ export function createInteraction(
         protected: true,
       },
     ),
-    ...(process.platform === "win32"
-      ? []
-      : [
-          command(
-            "app.suspend",
-            () => {
-              platform.suspend();
-              try {
-                process.kill(process.pid, "SIGTSTP");
-              } catch {}
-            },
-            { title: "Suspend", desc: "Suspend to the shell (fg to return)", category: "app" },
-          ),
-        ]),
+    command(
+      "app.suspend",
+      () => {
+        platform.suspend();
+        try {
+          process.kill(process.pid, "SIGTSTP");
+        } catch {}
+      },
+      { title: "Suspend", desc: "Suspend to the shell (fg to return)", category: "app" },
+    ),
     command("focus.next", () => effects.focusNext(), {
       title: "Next focus target",
       desc: "Move focus without activating content or changing transcript selection",
@@ -701,7 +688,7 @@ export function createInteraction(
       }
     }
     const vital = buildVitalBindings(
-      resolvedVitalBindings(process.platform, environment, validOverrides),
+      resolvedVitalBindings(environment, validOverrides),
       DEFAULT_WHEN,
     );
     offVital?.();

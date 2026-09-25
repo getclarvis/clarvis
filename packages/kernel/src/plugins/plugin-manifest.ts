@@ -1362,10 +1362,8 @@ function normalizeAgentMcpServer(
     if (cwd === undefined)
       return { error: "cwd does not use a supported PLUGIN_ROOT or PLUGIN_DATA form" };
     const env = stdio.data.env ?? {};
-    const reserved = Object.keys(env).some((name) =>
-      process.platform === "win32"
-        ? ["plugin_root", "plugin_data"].includes(name.toLowerCase())
-        : name === "PLUGIN_ROOT" || name === "PLUGIN_DATA",
+    const reserved = Object.keys(env).some(
+      (name) => name === "PLUGIN_ROOT" || name === "PLUGIN_DATA",
     );
     if (reserved) return { error: "env may not define PLUGIN_ROOT or PLUGIN_DATA" };
     return {
@@ -1706,12 +1704,9 @@ export function resolvePluginManifest(
 /** Filename that turns a directory into one directly declared skill. */
 const SKILL_MANIFEST_FILE = "skill.md";
 
-/** Whether filesystem path identity follows Windows's case-insensitive convention. */
-const CASE_INSENSITIVE_PLUGIN_PATHS = process.platform === "win32";
-
 /** A stable comparison key for a resolved plugin path. */
 function pluginPathKey(path: string): string {
-  return CASE_INSENSITIVE_PLUGIN_PATHS ? path.toLowerCase() : path;
+  return path;
 }
 
 /**

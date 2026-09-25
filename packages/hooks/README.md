@@ -108,8 +108,7 @@ policy still applies before the loop accepts the stage. The external event spell
   `deny` blocks it. A cancelled run always passes, so teardown never looks like a policy denial.
   This is why a decision to block is read before anything else: routing a contradictory body to
   `on_failure` would resolve a block into an allow.
-- **portable lifecycle fields are retained**: `commandWindows` selects a Windows-only command,
-  `async` detaches command hooks with an eight-process background ceiling (except `SessionEnd`,
+- **portable lifecycle fields are retained**: `async` detaches command hooks with an eight-process background ceiling (except `SessionEnd`,
   which always waits), `additionalContextLimit` bounds parsed stdout, and `statusMessage` remains
   available as display metadata. `prompt` and `agent` entries are reported and skipped.
 - **`mcp_tool` hooks use the run-scoped MCP port directly** with recursively expanded

@@ -46,8 +46,6 @@ const nativePackages: Record<ReleaseTarget, string> = {
   "darwin-x64": "@opentui/core-darwin-x64",
   "linux-arm64": "@opentui/core-linux-arm64",
   "linux-x64": "@opentui/core-linux-x64",
-  "windows-arm64": "@opentui/core-win32-arm64",
-  "windows-x64": "@opentui/core-win32-x64",
 };
 
 function dependencyNames(value: unknown): string[] {
@@ -174,13 +172,9 @@ async function buildSystemDocsPublisher(payload: string): Promise<void> {
 async function copyRuntime(payload: string): Promise<void> {
   const runtimeDirectory = join(payload, "runtime");
   const runtime = join(runtimeDirectory, releaseRuntimeExecutableName());
-  const legacyRuntime = join(runtimeDirectory, process.platform === "win32" ? "bun.exe" : "bun");
+  const legacyRuntime = join(runtimeDirectory, "bun");
   await mkdir(runtimeDirectory, { recursive: true });
   await copyFile(process.execPath, runtime);
-  if (process.platform === "win32") {
-    await copyFile(process.execPath, legacyRuntime);
-    return;
-  }
   await chmod(runtime, 0o755);
   await writeFile(
     legacyRuntime,

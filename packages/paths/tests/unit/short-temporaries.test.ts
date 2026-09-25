@@ -23,9 +23,6 @@ import { recorder } from "../helpers/recorder.ts";
 
 const roots: string[] = [];
 
-/** Directory modes and symlink creation express privacy on POSIX only. */
-const windows = process.platform === "win32";
-
 function ownedRoot(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix));
   roots.push(root);
@@ -36,7 +33,7 @@ afterEach(() => {
   while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true });
 });
 
-describe.skipIf(windows)("ancestor trust", () => {
+describe("ancestor trust", () => {
   const fsRootOwner = lstatSync(parse(resolve(tmpdir())).root).uid;
   /** A process holding the root account's capabilities is not denied by a mode bit. */
   const runningAsRoot = process.getuid?.() === 0;
@@ -168,7 +165,7 @@ describe("short temporary root candidates", () => {
     ]);
   });
 
-  test.skipIf(windows)("requires an account-owned chain unless the caller opts out", () => {
+  test("requires an account-owned chain unless the caller opts out", () => {
     const root = ownedRoot("clarvis-candidates-trust-");
     const open = join(root, "open");
     mkdirSync(open);

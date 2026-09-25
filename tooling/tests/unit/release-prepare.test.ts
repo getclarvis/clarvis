@@ -10,8 +10,6 @@ function fixture(): ReleasePreparationSources {
   return {
     packageJson: '{\n  "name": "clarvis",\n  "version": "0.1.0",\n  "private": true\n}\n',
     installSh: "version=${CLARVIS_VERSION:-0.1.0}\n",
-    installPowerShell:
-      '$Version = if ($env:CLARVIS_VERSION) { $env:CLARVIS_VERSION } else { "0.1.0" }\n',
     changelog:
       "# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- Stable prefixes.\n\n## [0.1.0] - 2026-09-03\n\n- First release.\n",
   };
@@ -27,7 +25,6 @@ describe("prepareReleaseSources", () => {
       private: true,
     });
     expect(prepared.installSh).toBe("version=${CLARVIS_VERSION:-0.1.1}\n");
-    expect(prepared.installPowerShell).toContain('else { "0.1.1" }');
     expect(prepared.changelog).toContain(
       "## [Unreleased]\n\n## [0.1.1] - 2026-09-04\n\n### Fixed\n\n- Stable prefixes.",
     );

@@ -11,7 +11,7 @@
  *
  * Two families sit here for the same reason the names do. The **atomic-write**
  * family (`writeFileAtomic`, `writeFileDurable`, `tmpPathFor` + `isTmpFile`,
- * `renameWithRetry`) replaces seven hand-rolled tmp-and-rename copies that had
+ * `writeFileDurableSync`) replaces seven hand-rolled tmp-and-rename copies that had
  * already diverged on the property that matters — one of them raced two
  * processes onto a single temp name — and it is where the `0o700`/`0o600`
  * posture is applied rather than restated. The **resolve** family
@@ -86,17 +86,12 @@ export {
   fsyncDir,
   fsyncDirSync,
   isTmpFile,
-  renameWithRetry,
-  renameWithRetrySync,
   tmpPathFor,
   writeFileAtomic,
   writeFileAtomicSync,
   writeFileDurable,
   writeFileDurableSync,
-  RENAME_RETRY_DELAYS_MS,
   type AtomicWriteOptions,
-  type RenameRetryOptions,
-  type RenameRetrySyncOptions,
 } from "./atomic.ts";
 
 export {

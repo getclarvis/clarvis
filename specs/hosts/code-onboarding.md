@@ -91,7 +91,6 @@ behind every claim there.
 | `buildRendererConfig(opts?): CliRendererConfig` | the OpenTUI renderer config `code` boots with | `packages/code/src/adapters/renderer-bootstrap.ts` |
 | `createPlatform(renderer, opts?): Platform` | constructs the adapter around a live `CliRenderer` | `packages/code/src/adapters/platform.ts` (`createPlatform`) |
 | `readClipboardImage(signal?, run?): Promise<ClipboardImage\|null>` | free function, also exposed on `Platform` | `packages/code/src/adapters/platform.ts` |
-| `WINDOWS_CLIPBOARD_COPY_SCRIPT` | const (exported for tests) | `packages/code/src/adapters/platform.ts` |
 
 ### 2.5 `adapters/clipboard-process.ts`
 
@@ -481,10 +480,10 @@ Pinned exactly by `packages/code/tests/integration/platform-copy.test.ts`.
 
 Native-tool candidate lists, tried **in order** until one succeeds (`exitCode===0`, no error, not timed
 out):
-- copy: darwin→`pbcopy`; win32→PowerShell `Set-Clipboard` via `-EncodedCommand`; `WAYLAND_DISPLAY` set→
+- copy: darwin→`pbcopy`; `WAYLAND_DISPLAY` set→
   `wl-copy`; `DISPLAY` set→`xclip -selection clipboard` then `xsel --clipboard --input`
   (`packages/code/src/adapters/platform.ts`).
-- paste-image: darwin→`pngpaste`; win32→PowerShell `Clipboard.GetImage()`; `WAYLAND_DISPLAY`→`wl-paste
+- paste-image: darwin→`pngpaste`; `WAYLAND_DISPLAY`→`wl-paste
   --type image/png`; `DISPLAY`→`xclip -selection clipboard -t image/png -o` — **`xsel` is never tried for
   image paste** (`packages/code/src/adapters/platform.ts`, pinned by `packages/code/tests/integration/platform.test.ts`). A
   candidate's output must start with the 8-byte PNG signature or it is rejected as not-an-image
@@ -511,7 +510,7 @@ window) → on panic with an error, write its stack to stderr → `process.exit(
 | `process.on("unhandledRejection", ...)` | `shutdown("panic", e)` | Yes |
 | `SIGINT` | `shutdown("signal:SIGINT")` | Yes |
 | `SIGTERM` | `shutdown("signal:SIGTERM")` | Yes |
-| `SIGHUP` (only when `process.platform !== "win32"`) | `shutdown("signal:SIGHUP")` | Yes |
+| `SIGHUP` | `shutdown("signal:SIGHUP")` | Yes |
 
 ### 4.7 Terminal guard lifecycle
 
@@ -701,10 +700,6 @@ recovery screen with no further keypress — pinned by
     timeout, abort, or oversized stdout**, and stdout past `maxStdoutBytes` is truncated rather than
     buffered without bound. — `packages/code/src/adapters/clipboard-process.ts` — pinned by
     `packages/code/tests/integration/clipboard-process.test.ts` (timeout→SIGTERM→SIGKILL) (oversized output capped and terminated).
-24. **`SIGHUP` is registered only off Windows** (`process.platform !== "win32"`), since Windows never
-    raises it. — `packages/code/src/adapters/platform.ts` (`createPlatform`) — unpinned by a Windows-specific test within this document's scope
-    (no Windows job covers `code`; see the repository-wide Windows-CI note, out of this document's scope).
-
 ## 6. Failure modes and degradation
 
 | Failure | Handling | Cite |
@@ -735,8 +730,7 @@ recovery screen with no further keypress — pinned by
 - `@clarvis/kernel/policy` — `sanitizeErrorMessage` (diagnostic string scrubbing,
   `packages/code/src/adapters/diagnostic-session.ts`).
 - `@clarvis/kernel/config` — `PLANS_DEFAULTS` (`packages/code/src/adapters/settings.ts`).
-- `@clarvis/kernel/local` — `resolveShell`/`shellArgs` (Windows clipboard script construction,
-  `packages/code/src/adapters/platform.ts`), `killTree`/`ownProcessGroup` (`packages/code/src/adapters/clipboard-process.ts`).
+- `@clarvis/kernel/local` — `killTree`/`ownProcessGroup` (`packages/code/src/adapters/clipboard-process.ts`).
 - `../adapters/execution-safety.ts` (`memoryState`, `modelResolves`,
   `planRetentionLabel`, `plansState`) and `../adapters/agent-files.ts` (`agentReadiness`) — doctor's gate
   logic reads these projections but does not own their semantics (`packages/code/src/onboarding/doctor.ts`) — delegated to

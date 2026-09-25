@@ -112,7 +112,7 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   and leader sub-agents, through per-call fair-share reservations that return unused headroom.
 - ChatGPT subscription catalog discovery now sends Codex compatibility revision `0.153.2`, matching
   the reviewed latest stable `@openai/codex` release while keeping Clarvis's own version separate.
-- First-run POSIX and PowerShell command policies now allow conventional inspection, build, test,
+- First-run shell command policies now allow conventional inspection, build, test,
   lint, and type-check commands across common language ecosystems. Existing allowlists remain
   unchanged, while generic runners, installs, publishing, deployments, and migrations still require
   review.
@@ -211,7 +211,7 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   keeping service credentials isolated from authorization requests and local callback state.
 - Portable installers now show numbered download, verification, staging, and activation progress and
   provide lock-serialized guarded uninstall modes that bind launcher ownership to the selected root,
-  reject linked managed paths, stop on cancellation, clean managed Windows `PATH` entries, and
+  reject linked managed paths, stop on cancellation, and
   preserve Clarvis user and workspace state.
 
 ### Changed
@@ -245,7 +245,7 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Added
 
-- Portable glibc-based Linux, macOS, and Windows release targets for x64 and arm64, including the Bun
+- Portable glibc-based Linux and macOS release targets for x64 and arm64, including the Bun
   runtime and target-native TUI dependencies.
 - Checksum-verifying installers and explicit `clarvis --update` support for managed installations.
 - First-run provider and model setup in the terminal UI.

@@ -1,26 +1,12 @@
 import { describe, expect, it } from "../bun-test.ts";
 import { buildSystemSections } from "../../src/runtime/subagents/build-subagent-input.ts";
 
-/**
- * Before this section carried a platform, the **only** signal of the host OS
- * anywhere in a run was the wording inside the `shell` tool's own description,
- * and that wording only varies on Windows — so on a POSIX host the model was
- * told nothing and had to infer the platform from path separators.
- */
 describe("the environment system-prompt section", () => {
   it("names the workspace root, the platform and the shell", () => {
     const [section] = buildSystemSections({ workspaceRoot: "/ws", platform: "linux" });
     expect(section).toContain("/ws");
     expect(section).toContain("linux");
     expect(section).toContain("sh -c");
-  });
-
-  it("tells a Windows host it is PowerShell, and not cmd.exe", () => {
-    const [section] = buildSystemSections({ workspaceRoot: "C:\\ws", platform: "win32" });
-    expect(section).toContain("win32");
-    expect(section).toContain("PowerShell");
-    expect(section).toContain("not cmd.exe");
-    expect(section).not.toContain("sh -c");
   });
 
   it("distinguishes darwin from linux, which nothing used to", () => {

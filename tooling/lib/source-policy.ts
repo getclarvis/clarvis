@@ -63,7 +63,7 @@ const BUN_TEST_FILENAME = /(?:\.|_)(?:test|spec)\.[cm]?[jt]sx?$/;
 /** Return test files whose first directory below `tests/` is not an explicit test level. */
 export function findUnclassifiedTestFiles(files) {
   return files.filter((file) => {
-    const normalized = file.replaceAll("\\", "/");
+    const normalized = file;
     if (!BUN_TEST_FILENAME.test(normalized)) return false;
     const marker = "/tests/";
     const testsAt = normalized.lastIndexOf(marker);

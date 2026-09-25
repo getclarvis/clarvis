@@ -42,9 +42,7 @@ export function resolveFileToolPath(
  * @param workspaceRoot - the workspace the path is shown relative to.
  * @returns `"."` when `absPath` is the root itself, the workspace-relative path
  *   when inside, or the unchanged absolute path when it lies outside.
- * @remarks Always forward-slashed, even on Windows: this is model- and
- *   user-facing text, not a filesystem argument, and a caller comparing tool
- *   output across platforms should see one consistent separator.
+ * @remarks Always forward-slashed: this is model-facing and user-facing text, not a filesystem argument.
  */
 export function displayPath(absPath: string, workspaceRoot: string): string {
   const rel = path.relative(workspaceRoot, absPath);

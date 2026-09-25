@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { createAgentTools } from "../../src/index.ts";
 
 const roots: string[] = [];
@@ -27,7 +27,10 @@ describe("host coding tools", () => {
       respect_gitignore: false,
     });
     expect(found.isError).toBe(false);
-    expect(found.content[0]).toMatchObject({ type: "text", text: expect.stringContaining(target) });
+    expect(found.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining(target.split(sep).join("/")),
+    });
     const searched = await tools.callTool("grep", { path: outside, pattern: "needle" });
     expect(searched.isError).toBe(false);
     expect(searched.content[0]).toMatchObject({

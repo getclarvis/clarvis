@@ -119,7 +119,7 @@ describe("remove", () => {
 
   it("recursive cleanup refuses a symlink entry even when its target is a directory", async () => {
     write(root, "real/a.txt", "x");
-    makeSymlink(path.join(root, "real"), path.join(root, "link"));
+    makeSymlink(path.join(root, "real"), path.join(root, "link"), "dir");
     const result = await callTool("remove", { path: "link", recursive: true }, config);
     expect(result.json.error).toBe("invalid_input");
     expect(exists(root, "link")).toBe(true);

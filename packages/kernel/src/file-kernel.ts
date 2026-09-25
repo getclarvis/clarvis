@@ -342,6 +342,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   const pluginContributions = createPluginContributions({
     globalDir,
     workspaceRoot: opts.workspaceRoot,
+    ...(opts.configurationHome === undefined ? {} : { home: opts.configurationHome }),
     ...(opts.onExtensionProfileDrift === undefined
       ? {}
       : {
@@ -353,6 +354,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   const extensionProfileManager = createExtensionProfileManager({
     globalDir,
     workspaceRoot: opts.workspaceRoot,
+    ...(opts.configurationHome === undefined ? {} : { home: opts.configurationHome }),
     pluginContributions,
     ...(opts.extensionProfileSelector === undefined
       ? {}
@@ -654,6 +656,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   });
   const native = await createNativeKernel({
     globalDir,
+    ...(opts.configurationHome === undefined ? {} : { home: opts.configurationHome }),
     planning: {
       workspaceRoot: opts.workspaceRoot,
       env,

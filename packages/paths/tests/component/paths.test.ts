@@ -51,7 +51,6 @@ describe("globalPaths", () => {
     expect(p.agentsDir).toBe(join(GLOBAL, "agents"));
     expect(p.keysFile).toBe(join(GLOBAL, "keys.json"));
     expect(p.subscriptionsFile).toBe(join(GLOBAL, "subscriptions.json"));
-    expect(p.pluginsDir).toBe(join(GLOBAL, "plugins"));
     expect(p.extensionProfilesDir).toBe(join(GLOBAL, "extension-profiles"));
     expect(p.workspaceTrustFile).toBe(join(GLOBAL, "workspace-trust.json"));
     expect(p.skillsDir).toBe(join(GLOBAL, "skills"));
@@ -112,8 +111,6 @@ describe("workspacePaths", () => {
   test("names the versioned workspace files", () => {
     expect(p.settingsFile).toBe(join(p.clarvisDir, "settings.json"));
     expect(p.agentsDir).toBe(join(p.clarvisDir, "agents"));
-    expect(p.skillsDir).toBe(join(p.clarvisDir, "skills"));
-    expect(p.pluginsDir).toBe(join(p.clarvisDir, "plugins"));
     expect(p.extensionProfilesDir).toBe(join(p.clarvisDir, "extension-profiles"));
     expect(p.sharedAgentPromptFile).toBe(join(p.clarvisDir, "shared-agent.md"));
     expect(p.memoryPolicyFile).toBe(join(p.clarvisDir, "memory-policy.md"));
@@ -150,9 +147,7 @@ describe("workspacePaths", () => {
     for (const named of [
       p.settingsFile,
       p.agentsDir,
-      p.skillsDir,
       p.workflowsDir,
-      p.pluginsDir,
       p.extensionProfilesDir,
       p.sharedAgentPromptFile,
       p.memoryPolicyFile,

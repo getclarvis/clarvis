@@ -182,7 +182,7 @@ They are host-owned audit data, never commands. Lifecycle and mutation rules are
 `ExtensionProfileService` is the control plane for deterministic activation of already-installed
 extensions. Custom definitions are complete allow-lists of exact `{ scope, source, name }` plugin
 installations and standalone skills; `builtin:default` is immutable builtin activation behavior.
-`.agents/plugins` and `.clarvis/plugins` are equally representable. Selection and clear
+Only `.agents/plugins` is representable as an installed plugin inventory. Selection and clear
 mutations require scope-bound delta previews. Guided composition reads the qualified installed
 inventory, resolves a complete draft, and applies its definition plus selection through one
 single-use preview token; the service still never installs anything. Global operator-owned plugins

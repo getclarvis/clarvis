@@ -368,10 +368,9 @@ with its own contributors. The guided flow obtains the complete exact
 inventory from `ExtensionProfileService.inventory()` and commits a definition plus local selection only
 through `previewComposition`/`applyComposition`; a changed definition, selection document, or
 resolved contribution invalidates the review before either write. Its immutable `builtin:default` uses exact
-`enabledPlugins` refs and four-root skill behavior; custom Extension Profiles are complete allow-lists of
-exact `{ scope, source, name }` plugins and standalone skills. `.agents/plugins` and
-`.clarvis/plugins` participate equally; the install picker defaults to the shared `.agents` global
-inventory. Definitions may be shared from `.clarvis/extension-profiles`, but the active workspace
+`enabledPlugins` refs and two-root skill behavior; custom Extension Profiles are complete allow-lists of
+exact `{ scope, source, name }` plugins and standalone skills. Plugins install into the shared global
+`.agents/plugins` inventory. Definitions may be shared from `.clarvis/extension-profiles`, but the active workspace
 selection is always local machine state. The Extension Profile browser shows resolution status, routes
 creation/customization into the guided composer, retains direct selection/clear diagnostics, and
 can revision-safely delete an inactive custom definition. A process-local `--extension-profile`

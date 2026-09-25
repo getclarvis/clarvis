@@ -50,8 +50,8 @@ Coordinate work carefully, preserve unrelated changes, and report validation evi
     content: `{
   "schema_version": 1,
   "description": "Review tools and the workflow launcher",
-  "plugins": [{"scope": "global", "source": "clarvis", "name": "review-tools"}],
-  "skills": [{"scope": "user", "source": "clarvis", "name": "review-project"}]
+  "plugins": [{"scope": "global", "source": "agents", "name": "review-tools"}],
+  "skills": [{"scope": "user", "source": "agents", "name": "review-project"}]
 }`,
   },
   plugin: {
@@ -68,7 +68,7 @@ Coordinate work carefully, preserve unrelated changes, and report validation evi
     language: "json",
     content: `{
   "marketplaces": ["https://example.invalid/clarvis-marketplace.git"],
-  "enabledPlugins": [{"scope": "global", "source": "clarvis", "name": "review-tools"}]
+  "enabledPlugins": [{"scope": "global", "source": "agents", "name": "review-tools"}]
 }`,
   },
   mcp: {

@@ -13,7 +13,7 @@ const operator = (settings: SettingsFile): SettingsScope => ({ origin: "operator
 const plugin = (settings: SettingsFile): SettingsScope => ({ origin: "plugin", settings });
 const pluginRef = (name: string) => ({
   scope: "global" as const,
-  source: "clarvis" as const,
+  source: "agents" as const,
   name,
 });
 

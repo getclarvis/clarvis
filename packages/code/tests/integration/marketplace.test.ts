@@ -45,10 +45,7 @@ function marketplaceRepo(body: unknown, name = "market"): string {
   const repo = join(dir, name);
   mkdirSync(repo, { recursive: true });
   if (body !== null) {
-    writeFileSync(
-      join(repo, "marketplace.json"),
-      typeof body === "string" ? body : JSON.stringify(body, null, 2),
-    );
+    agentsCatalog(repo, body);
   }
   writeFileSync(join(repo, "README.md"), "x");
   for (const args of [
@@ -241,7 +238,7 @@ test("load: caches a success, retries an error, and refresh re-reads everything"
   await a.load();
   expect(a.listings()).toHaveLength(2);
   const repo = url.replace("file://", "");
-  writeFileSync(join(repo, "marketplace.json"), JSON.stringify({ name: "m", plugins: [] }));
+  agentsCatalog(repo, { name: "m", plugins: [] });
   runGit(repo, "add", "-A");
   runGit(repo, "commit", "-qm", "empty");
   await a.load();
@@ -352,7 +349,7 @@ test("agents catalogs: an unreadable document is reported as that source's error
   expect(a.listings().map((l) => l.name)).toEqual(["docs", "reviewkit"]);
 });
 
-test("a repo's own document outranks the cross-runtime one it also publishes", async () => {
+test("an external repository reads only its shared marketplace document", async () => {
   const dir = mkdtempSync(join(tmpdir(), "marketplace-"));
   roots.push(dir);
   const repo = join(dir, "both");
@@ -370,7 +367,28 @@ test("a repo's own document outranks the cross-runtime one it also publishes", a
   }
   const a = adapter({ urls: () => [`file://${repo}`], installed: () => [] });
   await a.load();
-  expect(a.sources()[0]!.marketplace?.name).toBe("root");
+  expect(a.sources()[0]!.marketplace?.name).toBe("borrowed");
+});
+
+test("an external repository ignores a root-only marketplace document", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "marketplace-"));
+  roots.push(dir);
+  const repo = join(dir, "root-only");
+  mkdirSync(repo, { recursive: true });
+  writeFileSync(join(repo, "marketplace.json"), JSON.stringify(CATALOG));
+  for (const args of [
+    ["init", "-q", "-b", "main"],
+    ["config", "user.email", "t@t"],
+    ["config", "user.name", "t"],
+    ["add", "-A"],
+    ["commit", "-qm", "init"],
+  ]) {
+    runGit(repo, ...args);
+  }
+  const a = adapter({ urls: () => [`file://${repo}`], installed: () => [] });
+  await a.load();
+  expect(a.sources()[0]!.error).toContain("no marketplace.json");
+  expect(a.listings()).toEqual([]);
 });
 
 test("a repo publishing only the cross-runtime document is still read", async () => {

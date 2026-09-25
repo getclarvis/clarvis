@@ -7,8 +7,8 @@ There are two scopes and two source families. The global Clarvis root is `CLARVI
 | Clarvis settings                 | `<global Clarvis root>/settings.json`                     | `<workspace>/.clarvis/settings.json`                              |
 | Agent Profiles                   | `<global Clarvis root>/agents/`                           | `<workspace>/.clarvis/agents/`                                    |
 | Extension Profiles and workflows | `<global Clarvis root>/extension-profiles/`, `workflows/` | `<workspace>/.clarvis/extension-profiles/`, `workflows/`          |
-| Standalone skills                | `<global Clarvis root>/skills/` or `~/.agents/skills/`    | `<workspace>/.clarvis/skills/` or `<workspace>/.agents/skills/`   |
-| Plugins                          | `<global Clarvis root>/plugins/` or `~/.agents/plugins/`  | `<workspace>/.clarvis/plugins/` or `<workspace>/.agents/plugins/` |
+| Standalone skills                | `~/.agents/skills/`                                       | `<workspace>/.agents/skills/`                                     |
+| Plugins                          | `~/.agents/plugins/`                                      | `<workspace>/.agents/plugins/`                                    |
 
 The private global `keys.json` and `subscriptions.json` files belong under the global Clarvis root; they are not agent-authored documents. Never look for `settings.json`, credentials, Agent Profiles, Extension Profiles, or workflows under `.agents`. The global Clarvis `skills/.system/clarvis-docs/` directory contains this product documentation and is not a user-selectable skill.
 

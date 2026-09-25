@@ -9,7 +9,7 @@ function protoView(over: Partial<ProtoPluginView> = {}): ProtoPluginView {
     scope: over.scope ?? "workspace",
     dir: over.dir ?? "/ws/plugin/demo",
     enabled: over.enabled ?? true,
-    source: over.source ?? "clarvis",
+    source: over.source ?? "agents",
     version: over.version ?? "1.2.0",
     description: over.description ?? "A demo.",
     install_source: over.install_source ?? "https://example.invalid/demo.git",
@@ -61,7 +61,7 @@ function fakeService(seed: ProtoPluginView[] = []): PluginService & { calls: str
 
 test("toPluginView carries plugin metadata without capability services", () => {
   const view = toPluginView(protoView());
-  expect(view.source).toBe("clarvis");
+  expect(view.source).toBe("agents");
   expect(view.installSource).toContain("demo.git");
   expect(view.revision).toBe("abc123");
   expect(view.contributions.brokenAgents).toEqual(["bad"]);
@@ -111,17 +111,17 @@ test("store reloads plugin state after mutations", async () => {
     const store = createPluginsStore(service);
     await store.reload();
     expect(store.list().map((view) => view.name)).toEqual(["demo"]);
-    await store.install("https://example.invalid/repo.git", "packages/demo", "clarvis");
+    await store.install("https://example.invalid/repo.git", "packages/demo", "agents");
     expect(service.calls).toContain("install:https://example.invalid/repo.git");
     expect(service.calls).toContain("subdir:packages/demo");
-    expect(service.calls).toContain("source:clarvis");
+    expect(service.calls).toContain("source:agents");
     await store.installSource({ kind: "npm", package: "@scope/demo", version: "1.0.0" });
     expect(service.calls).toContain("installSource:npm");
     expect(service.calls).toContain("source:agents");
-    await store.update({ scope: "global", source: "clarvis", name: "demo" });
-    expect(service.calls).toContain("update:global/clarvis/demo");
-    await store.uninstall({ scope: "global", source: "clarvis", name: "demo" });
-    expect(service.calls).toContain("uninstall:global/clarvis/demo");
+    await store.update({ scope: "global", source: "agents", name: "demo" });
+    expect(service.calls).toContain("update:global/agents/demo");
+    await store.uninstall({ scope: "global", source: "agents", name: "demo" });
+    expect(service.calls).toContain("uninstall:global/agents/demo");
     dispose();
   });
 });

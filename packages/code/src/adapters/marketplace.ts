@@ -58,12 +58,10 @@ export interface MarketplaceAdapter {
  * The marketplace documents inside one checkout, in the order they are read.
  *
  * @param root - the checkout root.
- * @returns the document at the root first, then the cross-runtime one, which is
- *   deliberately lower precedence: a source that publishes both is saying the
- *   first is what it means for this host.
+ * @returns the shared marketplace document published by the checkout.
  */
 function documentsIn(root: string): string[] {
-  return [join(root, MARKETPLACE_FILE), agentsMarketplaceFile(root)];
+  return [agentsMarketplaceFile(root)];
 }
 
 /** Root against which one marketplace document resolves `source.path`. */
@@ -224,9 +222,13 @@ async function fetchMarketplace(url: string): Promise<Marketplace> {
   const checkout = join(staging, "repo");
   try {
     await gitCloneAsync(safe, checkout);
-    const found = documentsIn(checkout).find((file) => existsSync(file));
+    const found = (
+      url === OFFICIAL_MARKETPLACE_URL
+        ? [join(checkout, MARKETPLACE_FILE), ...documentsIn(checkout)]
+        : documentsIn(checkout)
+    ).find((file) => existsSync(file));
     if (found === undefined) {
-      throw new Error(`that repository has no ${MARKETPLACE_FILE} at its root`);
+      throw new Error(`that repository has no ${MARKETPLACE_FILE} in its shared plugin directory`);
     }
     const marketplace = readMarketplace(found);
     for (const entry of marketplace.plugins) {

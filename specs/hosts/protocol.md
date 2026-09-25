@@ -799,7 +799,7 @@ of `{ kind: "git", url, subdir?, ref?, sha?, expected_name? }`,
 `{ kind: "local", path, expected_name? }`, and
 `{ kind: "npm", package, version?, registry?, expected_name? }`; source interpretation therefore crosses the wire
 without asking the kernel to re-parse a marketplace dialect.
-`PluginRef` is the strict `{ scope: "global"|"workspace", source: "agents"|"clarvis", name }`
+`PluginRef` is the strict `{ scope: "global"|"workspace", source: "agents", name }`
 identity shared by lifecycle, activation, and Extension Profile DTOs; `PluginView.source`
 reports the same filesystem convention and `install_source` is separately reserved for Git origin.
 

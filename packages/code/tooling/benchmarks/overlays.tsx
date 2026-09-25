@@ -206,7 +206,7 @@ const extensionPlugins = Array.from({ length: 24 }, (_, index): PluginView => ({
   displayName: `Extension ${String(index).padStart(3, "0")}`,
   description: `Installed representative plugin ${index}`,
   scope: "global",
-  source: index % 2 === 0 ? "agents" : "clarvis",
+  source: "agents",
   dir: `/plugins/extension-${index}`,
   enabled: index < 8,
   contributions: {
@@ -224,7 +224,7 @@ const extensionSkills: ExtensionProfileInventory["standalone_skills"] = Array.fr
   (_, index) => ({
     ref: {
       scope: "user",
-      source: index % 2 === 0 ? "agents" : "clarvis",
+      source: "agents",
       name: `skill-${String(index).padStart(3, "0")}`,
     },
     active: false,

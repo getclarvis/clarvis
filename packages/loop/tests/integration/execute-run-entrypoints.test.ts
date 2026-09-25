@@ -253,7 +253,7 @@ describe("buildExecuteRunDeps", () => {
     const workspace = join(dir, "ws");
     write(extra, "only-in-plugin", "from plugin");
     write(extra, "contested", "from plugin");
-    write(join(workspace, ".clarvis", "skills"), "contested", "from operator");
+    write(join(workspace, ".agents", "skills"), "contested", "from operator");
 
     const built = await buildExecuteRunDeps({
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),

@@ -437,21 +437,19 @@ removals from disk").
 
 ### 4.2 Root order
 
-`clarvisSkillRoots` returns four roots in **ascending precedence**
+`clarvisSkillRoots` returns two roots in **ascending precedence**
 (`packages/skills/src/preset.ts`):
 
 | # | Path | scope | source |
 | --- | --- | --- | --- |
 | 1 | `<home>/.agents/skills` | `user` | `agents` |
 | 2 | `<workspace>/.agents/skills` | `workspace` | `agents` |
-| 3 | `<global>/skills` (`globalPaths`) | `user` | `clarvis` |
-| 4 | `<workspace>/.clarvis/skills` | `workspace` | `clarvis` |
 
-The `.agents` half of this ordering is an interop rule — see
+This shared ordering is an interop rule — see
 [`specs/cross-cutting/agent-interop.md`](../cross-cutting/agent-interop.md).
-The engine prepends any host-supplied `extraSkillRoots` **before** these four, so plugin roots sit at
+The engine prepends any host-supplied `extraSkillRoots` **before** these two, so plugin roots sit at
 the lowest precedence of all. A host-supplied `skillRoots` is instead an exact resolved set and
-suppresses automatic appending of the standard four roots
+suppresses automatic appending of the standard two roots
 (`packages/loop/src/runtime/build-run-deps.ts`). The two options are mutually exclusive. Plugin root
 construction belongs to [`specs/hosts/plugins.md`](../hosts/plugins.md); what
 matters here is only that they arrive as `SkillRootInput[]` with `source: "plugin:<name>"`
@@ -870,8 +868,8 @@ to this document.
    `packages/skills/tests/integration/scan.test.ts`.
 4. **Cross-root precedence is last-root-wins, and the loser chain is retained in full on the
    winner.** `packages/skills/src/registry.ts`. Pinned:
-   `packages/skills/tests/integration/discovery.test.ts` (four roots, three shadowed origins in
-   descending precedence) (two arbitrary roots, last-root-wins).
+   `packages/skills/tests/integration/discovery.test.ts` (workspace precedence, ignored old roots,
+   and two arbitrary roots with last-root-wins precedence).
 5. **Intra-root duplicates are first-seen-wins (directory-sort order) and are resolved before any
    cross-root merge.** `packages/skills/src/registry.ts`. Pinned:
    `packages/skills/tests/integration/malformed.test.ts`.

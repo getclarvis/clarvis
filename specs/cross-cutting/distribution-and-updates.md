@@ -10,7 +10,7 @@ This document does not make the package-local `bun run setup` path portable; tha
 developer-checkout path described by [Code bootstrap](../hosts/code-bootstrap.md). It does not define
 user-configuration formats or their own retention policy. Release payloads and Clarvis state occupy
 separate roots. Install and update may publish only the product-owned global
-`.clarvis/skills/.system/clarvis-docs` tree; they do not rewrite authored configuration or `.agents`.
+`<global>/skills/.system/clarvis-docs` tree; they do not rewrite authored configuration or `.agents`.
 Uninstall preserves Clarvis state. Production:
 `packages/code/src/update/installation.ts` (`ManagedInstallation`) and the root installers.
 

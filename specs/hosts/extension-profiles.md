@@ -18,9 +18,9 @@ contributions remain atomic. (`ExtensionProfileDefinition` in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`.)
 
 The immutable virtual `builtin:default` activates the exact `{ scope, source, name }` references in
-`enabledPlugins`; plugin skills follow those active plugins, and standalone skills use all four
+`enabledPlugins`; plugin skills follow those active plugins, and standalone skills use both
 standard roots with their ordinary last-root-wins precedence. A same-name install in another scope
-or filesystem convention is never substituted. (`defaultStandaloneSelection` and the builtin
+is never substituted. (`defaultStandaloneSelection` and the builtin
 branches in `resolved`, `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; exact inventory
 cases in `packages/kernel/tests/integration/extension-profile-manager.test.ts`.)
 
@@ -49,8 +49,8 @@ Extension Profile selection remains persisted and effective for Host/Sandbox.
 | Type or method | Contract |
 | --- | --- |
 | `ExtensionProfileRef` | Definition identity: `builtin`, `global`, or `workspace` plus name. |
-| `ExtensionProfilePluginRef` | Exact installed plugin: `global | workspace`, `agents | clarvis`, plus name. |
-| `ExtensionProfileSkillRef` | Exact standalone source: `user | workspace`, `agents | clarvis`, plus name. |
+| `ExtensionProfilePluginRef` | Exact installed plugin: `global | workspace`, `agents`, plus name. |
+| `ExtensionProfileSkillRef` | Exact standalone source: `user | workspace`, `agents`, plus name. |
 | `ExtensionProfileDefinition` | Version-one description and complete `plugins` / `skills` allow-lists. |
 | `ResolvedExtensionProfile` | Immutable resolution snapshot, status, fingerprint, resolved contributions, issues, and counts. |
 | `ExtensionProfileInventory` | Every exact installed plugin and discovered standalone skill, projected inactive for composition. |
@@ -105,10 +105,10 @@ catalog contributes no definitions and is not created as a read side effect. Bot
   "description": "Research with browser and documentation",
   "plugins": [
     { "scope": "global", "source": "agents", "name": "browser" },
-    { "scope": "global", "source": "clarvis", "name": "github" }
+    { "scope": "global", "source": "agents", "name": "github" }
   ],
   "skills": [
-    { "scope": "user", "source": "clarvis", "name": "deep-research" }
+    { "scope": "user", "source": "agents", "name": "deep-research" }
   ]
 }
 ```
@@ -171,8 +171,8 @@ is invalid, it remains the selected invalid definition and does not fall through
 (`does not let an invalid workspace definition fall through a bare CLI selector` in
 `packages/kernel/tests/integration/extension-profile-manager.test.ts`).
 
-Resolution inventories all four plugin roots — global/workspace crossed with
-`.agents/plugins`/`.clarvis/plugins` — and matches every Extension Profile reference exactly
+Resolution inventories both plugin roots — global and workspace `.agents/plugins` — and matches
+every Extension Profile reference exactly
 (`pluginInventory` and the `getInstalledPlugin` lookup in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`). No scope or source shadows, falls back
 to, or substitutes for another. Selecting two distinct installations with the same runtime name is
@@ -180,7 +180,7 @@ invalid because their agents and MCP namespaces would collide. Missing or invali
 in the resolved view as inactive issues; no extension outside the allow-list enters a custom
 Extension Profile.
 
-Standalone skills are inventoried separately in the four established roots. Builtin and custom
+Standalone skills are inventoried separately in the two established roots. Builtin and custom
 Extension Profiles emit only active, atomically captured winners with exact `include` filters; invalid or
 inactive skills never re-enter through a broad root. `@clarvis/skills` normalizes that list and
 filters after manifest resolution, so precedence and manifest-name validation remain unchanged
@@ -398,7 +398,7 @@ only the installed inventory. Plugin lifecycle remains on `PluginService`.
 - **Production:** `pluginInventory` in
   `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `ExtensionProfileService` in
   `packages/protocol/src/extension-profiles.ts` has no install operation.
-- **Test:** `packages/kernel/tests/integration/extension-profile-manager.test.ts` constructs all four
+- **Test:** `packages/kernel/tests/integration/extension-profile-manager.test.ts` constructs both
   inventories before exact activation and proves an unrelated install stays inactive.
 
 ### INV-315 — Custom definitions are complete allow-lists with exact installation identity
@@ -409,7 +409,7 @@ reference silently means another scope or source.
 - **Production:** custom branches and the exact `contributionByRef` / `unresolvedInstalled` lookups in `resolved` in
   `packages/kernel/src/extension-profiles/extension-profile-manager.ts`.
 - **Test:** `packages/kernel/tests/integration/extension-profile-manager.test.ts` proves exact global
-  `.agents`/`.clarvis` selection despite same-named alternatives and proves unselected installs are
+  `.agents` scope selection despite same-named alternatives and proves unselected installs are
   absent.
 
 ### INV-316 — Invalid state fails closed

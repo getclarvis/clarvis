@@ -565,7 +565,7 @@ scope defining the key as a `SettingsValueScope`, then either takes the last one
 "lastWins"`) or calls the spec's own custom fold function.
 
 The concatenated `enabledPlugins` result feeds only `builtin:default`. Each entry is the strict
-object `{ scope: "global"|"workspace", source: "agents"|"clarvis", name }`; strings and partially
+object `{ scope: "global"|"workspace", source: "agents", name }`; strings and partially
 qualified references are rejected. Extension Profile resolution happens after the operator settings
 layers are read and before plugin settings fragments are folded; no Extension Profile data is introduced
 into this schema or merge table.

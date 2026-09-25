@@ -363,7 +363,7 @@ export const mcpServerPluginSchema = z
 export const pluginRefField = z
   .object({
     scope: z.enum(["global", "workspace"]),
-    source: z.enum(["agents", "clarvis"]),
+    source: z.literal("agents"),
     name: pluginNameField,
   })
   .strict();

@@ -20,7 +20,7 @@ function info(name: string): SkillInfo {
     metadata: { name, description: `The ${name} skill` },
     userInvocable: true,
     scope: "workspace",
-    source: "clarvis",
+    source: "agents",
     root: "/ws/.clarvis/skills",
     dir: `/ws/.clarvis/skills/${name}`,
     path: `/ws/.clarvis/skills/${name}/SKILL.md`,

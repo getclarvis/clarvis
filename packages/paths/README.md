@@ -126,7 +126,6 @@ st.diagnosticsDir; //             ~/.clarvis/state/workspaces/ws_<sha256>/local/
 
 const g = globalPaths(); //     $CLARVIS_HOME ?? ~/.clarvis
 g.settingsFile; //              …/settings.json
-g.pluginsDir; //                …/plugins (Clarvis-native global plugin inventory)
 g.pluginDataRoot; //            …/state/plugin-data (persistent runtime data)
 g.subscriptionsFile; //         …/subscriptions.json (renewable subscription credentials)
 g.mcpOAuthFile; //              …/state/mcp-oauth.json (remote MCP registrations and tokens)
@@ -157,8 +156,7 @@ does not resolve links or authorize a mutation. The kernel's configuration loade
 [self-configuration.md](../../specs/hosts/self-configuration.md).
 
 `<ws>/.clarvis` holds what a human authors or reads plus one explicitly ignored Git-owned checkout
-root. `settings.json`, `agents/`, `skills/`,
-`plugins/`, `extension-profiles/`, `workflows/` and `shared-agent.md` are the workspace's own configuration and belong in its
+root. `settings.json`, `agents/`, `extension-profiles/`, `workflows/` and `shared-agent.md` are the workspace's own configuration and belong in its
 history; `plans/` and `memory/` are generated Markdown the user is expected to open mid-run.
 `worktrees/` contains operator-requested linked checkouts anchored in the primary worktree and is
 always excluded by `.clarvis/.gitignore` before Git creates a checkout.
@@ -172,7 +170,7 @@ The workspace's active Extension Profile selection is also local machinery under
 tree, so switching Extension Profiles never dirties the repository.
 
 `~/.clarvis` keeps the **operator's own files at the root** — `settings.json`, `agents/`,
-`keys.json`, `subscriptions.json`, plugins, reusable Extension Profile definitions and their trust
+`keys.json`, `subscriptions.json`, reusable Extension Profile definitions and their trust
 records, `shared-agent.md`, `auth.json` — and nests only what a user never
 edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, the per-workspace machinery above), `cache/` (including the models.dev
 snapshot and automatic version-check result), `exports/`. A `config/` layer was tried and removed:
@@ -183,9 +181,8 @@ hierarchy.
 
 `.agents` is not one uniformly read-only tree in native composition. Standalone skills and
 marketplace documents remain foreign/user-authored inputs, while `.agents/plugins/<name>/` is a
-first-class plugin inventory
-beside `.clarvis/plugins/<name>/`. `agentsPluginsDirs()` returns its global and workspace roots;
-managed global installs may target either global convention, and both workspace plugin roots remain
+first-class plugin inventory. `agentsPluginsDirs()` returns its global and workspace roots;
+managed global installs target the global shared convention, and workspace plugins remain
 repository-owned rather than lifecycle-managed by the UI. Persistent `PLUGIN_DATA` never enters an
 installed checkout: global instances use `<global>/state/plugin-data/<source>/<name>/`, and
 workspace instances use that workspace's machine-local `plugin-data/<source>/<name>/` state tree.

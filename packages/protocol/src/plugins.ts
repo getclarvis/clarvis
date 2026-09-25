@@ -8,7 +8,7 @@
 import type { Scope } from "./common.ts";
 
 /** Filesystem convention that owns one installed plugin. */
-export type PluginSource = "agents" | "clarvis";
+export type PluginSource = "agents";
 
 /** Exact identity of one installed plugin across scope and filesystem convention. */
 export interface PluginRef {
@@ -69,7 +69,7 @@ export interface PluginAuthor {
 export interface PluginView {
   name: string;
   scope: Scope;
-  /** Shared `.agents` inventory or Clarvis-native `.clarvis` inventory. */
+  /** Shared `.agents` inventory. */
   source: PluginSource;
   /** Absolute install directory (display + "open" affordance). */
   dir: string;

@@ -741,7 +741,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
 
   const refOf = (plugin: {
     scope: "global" | "workspace";
-    source: "agents" | "clarvis";
+    source: "agents";
     name: string;
   }): PluginRef => ({
     scope: plugin.scope,
@@ -833,7 +833,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
 
   const installAndActivatePlugin = async (
     url: string,
-    source: "agents" | "clarvis",
+    source: "agents",
     subdir?: string,
   ): Promise<string> => {
     const extensionProfile = await marketplaceInstallPreflight();
@@ -864,7 +864,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
 
   const installListingAndActivate = async (
     listing: MarketplaceListing,
-    source: "agents" | "clarvis",
+    source: "agents",
   ): Promise<string> => {
     const extensionProfile = await marketplaceInstallPreflight();
     const installed = await pluginsStore.installSource(marketplaceInstallSource(listing), source);

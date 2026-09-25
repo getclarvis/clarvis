@@ -131,7 +131,7 @@ it("retains settings validation, revisions and trust while withholding plugin co
   );
   writeFileSync(
     globalPaths(options.globalDir).settingsFile,
-    JSON.stringify({ enabledPlugins: [{ scope: "global", source: "clarvis", name: "sentinel" }] }),
+    JSON.stringify({ enabledPlugins: [{ scope: "global", source: "agents", name: "sentinel" }] }),
   );
   const services = createOperatorServices({ ...options, subscriptions: false });
   try {

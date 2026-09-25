@@ -1113,9 +1113,9 @@ test("plugin installs forward the selected inventory target to the kernel", asyn
   });
   await c.connect();
 
-  await c.plugins.install("https://example.test/plugin.git", undefined, { source: "clarvis" });
+  await c.plugins.install("https://example.test/plugin.git", undefined, { source: "agents" });
 
-  expect(target).toEqual({ source: "clarvis" });
+  expect(target).toEqual({ source: "agents" });
   await c.dispose();
 });
 
@@ -1195,8 +1195,8 @@ test("every non-run control-plane method stays a thin pass-through to its kernel
     c.sessions.delete("session"),
     c.plugins.list(),
     c.plugins.install("https://example.com/plugin.git"),
-    c.plugins.update({ scope: "global", source: "clarvis", name: "plugin" }),
-    c.plugins.uninstall({ scope: "global", source: "clarvis", name: "plugin" }),
+    c.plugins.update({ scope: "global", source: "agents", name: "plugin" }),
+    c.plugins.uninstall({ scope: "global", source: "agents", name: "plugin" }),
   ]);
   expect(c.project).toBe(kernel.project);
   expect(c.workspace).toBe(kernel.workspace);

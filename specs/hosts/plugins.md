@@ -40,10 +40,10 @@ process files drops the whole plugin contribution
 (`packages/kernel/src/plugins/plugin-contributions.ts`).
 
 Installation and activation are separate. The installed inventory retains global and workspace
-copies and both filesystem conventions even when their names match. The resolved
+copies even when their names match. The resolved
 [Extension Profile](extension-profiles.md) supplies the exact qualified `{ scope, source, name }`
-installations that may contribute; `source` is `agents` for `.agents/plugins` and `clarvis` for
-`.clarvis/plugins`. `builtin:default` reads the same exact object shape from `enabledPlugins`. No
+installations that may contribute; `source` is `agents` for `.agents/plugins`.
+`builtin:default` reads the same exact object shape from `enabledPlugins`. No
 name-only reader, source fallback, or workspace-over-global substitution exists. A protocol plugin
 listing uses the process-pinned `active_plugins` snapshot, or the same already-exact builtin list in
 a minimal embedder, so its enabled badge cannot disagree with the contributions that run
@@ -136,7 +136,7 @@ imports `marketplaceSchema` (`packages/code/src/adapters/marketplace.ts`).
 | --- | --- | --- |
 | `name` | `string` | host-owned install identity (the directory name) |
 | `scope` | `Scope` | `"global"` or `"workspace"` |
-| `source` | `PluginSource` | `"agents"` or `"clarvis"`, the owning filesystem convention |
+| `source` | `PluginSource` | `"agents"`, the owning filesystem convention |
 | `dir` | `string` | absolute install directory |
 | `enabled` | `boolean` | this exact scope/source/name installation is active in the process-pinned Extension Profile |
 | `version?` | `string` | manifest `version` |
@@ -239,9 +239,7 @@ copied only when defined, via a spread guard.
 | Path | Holds | Cited at |
 | --- | --- | --- |
 | `<home>/.agents/plugins/<name>/` | shared global plugin inventory; default managed-install target | `agentsPluginsDirs` in `packages/paths/src/workspace.ts` |
-| `<global>/plugins/<name>/` | Clarvis-native global plugin inventory | `packages/paths/src/global.ts` |
 | `<ws>/.agents/plugins/<name>/` | shared workspace plugin inventory | `agentsPluginsDirs` in `packages/paths/src/workspace.ts` |
-| `<ws>/.clarvis/plugins/<name>/` | Clarvis-native workspace plugin inventory | `packages/paths/src/workspace.ts` |
 | `<global>/state/plugin-data/<source>/<name>/` | persistent data for a global portable plugin instance | `packages/kernel/src/plugins/plugin-runtime.ts` |
 | `<global>/state/workspaces/<segment>/plugin-data/<source>/<name>/` | persistent data for a workspace portable plugin instance | `packages/kernel/src/plugins/plugin-runtime.ts` |
 | `<plugin>/plugin.json` | root manifest candidate | `packages/kernel/src/plugins/plugin-manifest.ts` |
@@ -253,15 +251,15 @@ copied only when defined, via a spread guard.
 | `<plugin>/skills/` | default skills root | `packages/kernel/src/plugins/plugin-manifest.ts` |
 | `<plugin>/agents/**/*.md` | agent surface | `packages/kernel/src/plugins/plugin-contributions.ts` |
 | `<plugin>/install-record.json` | install provenance sidecar, mode `0o600` | `packages/kernel/src/plugins/plugin-install-record.ts`, `packages/kernel/src/adapters/filesystem/plugin-repository.ts` |
+| `<root>/marketplace.json` | product-owned official catalog only | `packages/code/src/adapters/marketplace.ts` |
+| `<root>/.agents/plugins/marketplace.json` | external Git catalog | `packages/paths/src/workspace.ts` |
 
 A `PluginService` or contributions loader constructed with explicit `home` and `workspaceRoot`
-resolves the four inventories from those roots. Process `CLARVIS_HOME` / `CLARVIS_WORKSPACE_ROOT`
+resolves the two inventories from those roots. Process `CLARVIS_HOME` / `CLARVIS_WORKSPACE_ROOT`
 do not redirect that listing. Production: `agentsInventoryDirs` in
 `packages/kernel/src/adapters/filesystem/plugin-repository.ts` and `createPluginContributions` in
 `packages/kernel/src/plugins/plugin-contributions.ts`. Test: `packages/kernel/tests/integration/plugin-service.test.ts`
 (`lists constructed inventories when CLARVIS_WORKSPACE_ROOT names another tree`).
-| `<root>/marketplace.json` | a source's own catalog | `packages/paths/src/constants.ts` |
-| `<root>/.agents/plugins/marketplace.json` | cross-runtime catalog | `packages/paths/src/workspace.ts` |
 
 Each inventory entry may be a physical immediate directory or a symbolic link whose current target
 is a directory. `directoryNames` in
@@ -336,10 +334,10 @@ Production: `pluginSkillScanRoots`, `normalizeAgentMcp`, `normalizeAgentMcpServe
 `packages/kernel/tests/unit/plugin-runtime.test.ts`, and
 `packages/mcp-client/tests/component/transport-builder.test.ts`.
 
-A Codex-style package with `.codex-plugin/plugin.json`, root `.mcp.json`, `agents/`, and `skills/`
+A borrowed-host package with `.codex-plugin/plugin.json`, root `.mcp.json`, `agents/`, and `skills/`
 remains a supported borrowed-host dialect even when it does not claim the portable v1 root schema.
 Manifest-relative paths are resolved from `.codex-plugin/` and confined to the plugin root; the
-package is installable in either `.agents/plugins` or `.clarvis/plugins` inventory. Test:
+package is installable in the `.agents/plugins` inventory. Test:
 `packages/kernel/tests/integration/plugin-contributions.test.ts` (the `codex-kit` fixture).
 
 #### 3.2.2 Borrowed-host `userConfig`
@@ -396,7 +394,7 @@ Two further budgets live in the kernel: `MAX_PLUGIN_SKILL_ROOTS = 4` effective r
 scan above its ceiling and the engine turns that refusal into an *empty* skills provider, so
 overspending "does not cost the last plugin its skills, it costs the workspace all of them"
 (`packages/kernel/src/plugins/plugin-contributions.ts`). The reserve is double the four
-roots `clarvisSkillRoots` actually returns (`.agents` and `.clarvis`, user and workspace scope each,
+roots `clarvisSkillRoots` actually returns (`.agents` at user and workspace scope,
 `packages/skills/src/preset.ts`), so that adding a host root cannot silently narrow the plugin
 budget in the same release.
 
@@ -802,8 +800,8 @@ cases in `packages/kernel/tests/integration/plugin-service.test.ts`.
 
 `dirFor` selects the root named by the qualified reference exactly
 (`packages/kernel/src/plugins/plugin-contributions.ts`). An Extension Profile asking for
-`global/agents/browser` therefore cannot execute `global/clarvis/browser` or either workspace
-installation. The same rule applies to `builtin:default`; there is no name-only selection path.
+`global/agents/browser` therefore cannot execute a same-named workspace installation.
+The same rule applies to `builtin:default`; there is no name-only selection path.
 
 The log line's message states the consequence: "an enabled plugin contributes nothing this run; its
 agents, hooks, MCP servers and skills are all absent". The docstring records what it
@@ -905,7 +903,7 @@ prohibitions to the generic manifest parser.
    direct install → `invalid_request` before inventory mutation
    (`packages/kernel/src/plugins/plugin-service.ts`).
 5. `repository.install(root, manifest.name, target.source, prepared)` — the target defaults to the
-   global `.agents/plugins` inventory and may explicitly be `clarvis`; refuse only if the exact
+   global `.agents/plugins` inventory; refuse if that exact
    target convention already carries that name, `mkdir` the install root at `0o700`, write the
    install record, and `rename` the staging root into place.
 6. `finally`: `prepared.dispose()` (removes the staging tree) and release the lifecycle handle
@@ -930,8 +928,8 @@ and `fetchNpm` in `packages/kernel/src/adapters/git/plugin-fetcher.ts`. Test: `i
 in `packages/kernel/tests/integration/plugin-service.test.ts` and normalized-source cases in
 `packages/loop/tests/unit/marketplace-schema.test.ts`.
 
-Managed lifecycle is global-only for both sources. Workspace `.agents/plugins` and
-`.clarvis/plugins` directories are visible and activatable, but update/uninstall refuses them because
+Managed lifecycle is global-only. Workspace `.agents/plugins` directories are visible and
+activatable, but update/uninstall refuses them because
 the repository owns those trees. Removing or replacing a checkout does not remove its persistent
 `pluginDataRoot/<source>/<name>` directory. Production:
 `createFilePluginRepository` in
@@ -983,8 +981,8 @@ for the byte-identical `@clarvis/code` copy, at `packages/code/tests/integration
 
 ### 4.11 Building the operator view — `viewFor`
 
-`viewFor` in `packages/kernel/src/plugins/plugin-service.ts`. `list()` maps every record from all
-four inventories and therefore retains every same-named installation. `enabled` is an exact
+`viewFor` in `packages/kernel/src/plugins/plugin-service.ts`. `list()` maps every record from both
+inventories and therefore retains same-named installations across scopes. `enabled` is an exact
 `{ scope, source, name }` membership test against the pinned Extension Profile. Notes are
 `[...manifestNotes...skillNotes]`.
 The view preserves the original manifest publisher and discovery fields (`author`, `homepage`,
@@ -1013,8 +1011,8 @@ leniently-parsed frontmatter satisfies `agentFrontmatterSchema`. `executablesOf`
 - `read(id)` dispatches on `isAgentsMarketplaceFile(id)`: a local document is read in place, anything
   else is cloned.
 - `fetchMarketplace` validates the URL, `mkdtemp` in the OS temp dir, `gitCloneAsync`,
-  then takes the **first** existing document of `[<root>/marketplace.json,
-  <root>/.agents/plugins/marketplace.json]` (`documentsIn`), and always removes the
+  then reads `<root>/.agents/plugins/marketplace.json` (`documentsIn`); the product-owned
+  official catalog may use root `marketplace.json`. It always removes the
   checkout in `finally`.
 - `load()` skips a source that already has a cached `marketplace`, but retries one that errored; `refresh()` clears both the cache and the discovered list. Pinned at
   `packages/code/tests/integration/marketplace.test.ts`.
@@ -1390,8 +1388,8 @@ All of the following are derived directly from this document's own source and te
     "a repository cannot turn a plugin on by shipping a settings file"
     (`packages/kernel/tests/integration/plugin-skills-install.test.ts`).
 
-48. **Installed inventory preserves all four same-name identities; substitution never occurs.**
-    `listInstalledPlugins` returns every global/workspace and agents/clarvis record; exact
+48. **Installed inventory preserves both same-name identities; substitution never occurs.**
+    `listInstalledPlugins` returns global and workspace `.agents` records; exact
     contribution lookup honors the supplied scope/source/name, and a second selected installation
     with the same runtime name invalidates Extension Profile resolution. Production:
     `packages/kernel/src/adapters/filesystem/plugin-repository.ts`,
@@ -1529,8 +1527,9 @@ All of the following are derived directly from this document's own source and te
     `packages/loop/src/settings/marketplace-schema.ts`. Pinned:
     `packages/code/tests/integration/marketplace-schema.test.ts`.
 
-69. **A source's own `marketplace.json` outranks the `.agents` one it also publishes.** `documentsIn`
-    order (`packages/code/src/adapters/marketplace.ts`). Pinned:
+69. **External Git catalogs use `<root>/.agents/plugins/marketplace.json`; only the product-owned
+    official catalog may use root `marketplace.json`.** `documentsIn` and `fetchMarketplace`
+    (`packages/code/src/adapters/marketplace.ts`). Pinned:
     `packages/code/tests/integration/marketplace.test.ts`.
 
 70. **A local source whose containment cannot be decided is treated as escaping, and the failure is
@@ -1750,7 +1749,7 @@ contributes no roots — but still contributes agents, hooks and MCP servers.
 | --- | --- | --- |
 | `packages/kernel/src/plugins/plugin-manifest.ts` | `@clarvis/loop/host` | value imports of `PLUGIN_RESOURCE_LIMITS`, `parsePluginManifest`, `readBoundedPluginText`, `mcpServerPluginSchema`, `suspectedManifestTypos`, `unknownManifestKeys` |
 | `packages/kernel/src/plugins/hook-dialects.ts` | `@clarvis/capability` | the two correspondence tables, `MAX_HOOK_TIMEOUT_MS`, `OBSERVER_HOOK_EVENTS`, `normalizeToolName` |
-| `packages/kernel/src/plugins/plugin-contributions.ts` | `@clarvis/paths`, `@clarvis/skills` | `globalPaths(...).pluginsDir` and `withoutGitRepositoryEnvironment`; `MAX_SKILL_ROOTS` |
+| `packages/kernel/src/plugins/plugin-contributions.ts` | `@clarvis/paths`, `@clarvis/skills` | `agentsPluginsDirs` and `withoutGitRepositoryEnvironment`; `MAX_SKILL_ROOTS` |
 | `packages/kernel/src/plugins/plugin-service.ts` | `@clarvis/skills` | `createAgentSkills` — the panel runs the real catalog scan |
 | `packages/kernel/src/adapters/git/plugin-fetcher.ts` | `ports/process-runner.ts` | Git and npm run through the injected `ProcessRunner`, never `child_process` directly |
 | `packages/kernel/src/plugins/plugin-service.ts` | `adapters/process/node-process-runner.ts` | default `ProcessRunner` when the host supplies none — the same adapter class `createGitPluginFetcher` is handed by injection |
@@ -1817,9 +1816,9 @@ duplicated behavior tests rather than by a direct drift lock.
 ## 8. Open questions
 
 - ~~**Why the plugin-skill-root budget is `MAX_SKILL_ROOTS - 8` specifically.**~~ **Resolved by
-  reading the other side.** The host contributes exactly **four** roots, not three categories:
-  `clarvisSkillRoots` returns `.agents` and `.clarvis` at user and workspace scope each
-  (`packages/skills/src/preset.ts`). The reserve is therefore double what the host spends,
+  reading the other side.** The host contributes exactly **two** roots:
+  `clarvisSkillRoots` returns `.agents` at user and workspace scope
+  (`packages/skills/src/preset.ts`). The reserve exceeds what the host spends,
   and the docstring now says so along with why the margin is deliberate — adding a host root must not
   silently narrow what plugins may contribute, and the cost of being one short is not the marginal
   plugin's skills but every skill in the workspace, since the refusal degrades to an empty provider

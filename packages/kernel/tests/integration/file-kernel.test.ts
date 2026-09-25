@@ -18,6 +18,7 @@ import {
   resolveSecretEnvironment,
 } from "../../src/bootstrap.ts";
 import {
+  agentsPluginsDir,
   globalPaths,
   ownerSegment,
   workspacePaths,
@@ -337,12 +338,12 @@ describe("createFileKernel — skills roots from plugins", () => {
   it("withdraws plugin skill drift without rejecting the next run", async () => {
     const ws = seedWorkspace();
     const globalDir = join(ws, "global");
-    const pluginDir = join(globalPaths(globalDir).pluginsDir, "handbook");
+    const pluginDir = join(agentsPluginsDir(join(ws, "home")), "handbook");
     const skillFile = join(pluginDir, "skills", "guide", "SKILL.md");
     seedFile(
       globalPaths(globalDir).settingsFile,
       JSON.stringify({
-        enabledPlugins: [{ scope: "global", source: "clarvis", name: "handbook" }],
+        enabledPlugins: [{ scope: "global", source: "agents", name: "handbook" }],
       }),
     );
     seedFile(join(pluginDir, "plugin.json"), JSON.stringify({ name: "handbook" }));
@@ -358,6 +359,7 @@ describe("createFileKernel — skills roots from plugins", () => {
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
       traceDir: join(ws, "traces"),
       globalDir,
+      configurationHome: join(ws, "home"),
       onExtensionProfileDrift: (notice) => {
         if (notice.kind === "skill") reportDrift(notice);
       },
@@ -395,7 +397,7 @@ describe("createFileKernel — skills roots from plugins", () => {
   it("refreshes repository plugin bytes before recording workspace approval", async () => {
     const ws = seedWorkspace();
     const globalDir = join(ws, "global");
-    const pluginManifest = join(workspacePaths(ws).pluginsDir, "runner", "plugin.json");
+    const pluginManifest = join(agentsPluginsDir(ws), "runner", "plugin.json");
     seedFile(pluginManifest, JSON.stringify({ name: "runner", version: "one" }));
     const first = await createFileKernel({
       workspaceRoot: ws,
@@ -424,7 +426,7 @@ describe("createFileKernel — skills roots from plugins", () => {
   it("atomically adds and revokes plugin skills when workspace trust recomposes", async () => {
     const ws = seedWorkspace();
     const globalDir = join(ws, "global");
-    const pluginDir = join(workspacePaths(ws).pluginsDir, "handbook");
+    const pluginDir = join(agentsPluginsDir(ws), "handbook");
     seedFile(join(pluginDir, "plugin.json"), JSON.stringify({ name: "handbook" }));
     seedFile(
       join(pluginDir, "skills", "guide", "SKILL.md"),
@@ -434,7 +436,7 @@ describe("createFileKernel — skills roots from plugins", () => {
       join(workspacePaths(ws).extensionProfilesDir, "project.json"),
       JSON.stringify({
         schema_version: 1,
-        plugins: [{ scope: "workspace", source: "clarvis", name: "handbook" }],
+        plugins: [{ scope: "workspace", source: "agents", name: "handbook" }],
         skills: [],
       }),
     );

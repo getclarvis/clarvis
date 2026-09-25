@@ -25,7 +25,7 @@ function resolved(ref: ExtensionProfileRef, current = false): ResolvedExtensionP
           definition_revision: `sha256:${"c".repeat(64)}`,
           definition: {
             schema_version: 1 as const,
-            plugins: [{ scope: "global" as const, source: "clarvis" as const, name: "browser" }],
+            plugins: [{ scope: "global" as const, source: "agents" as const, name: "browser" }],
             skills: [],
           },
         }
@@ -33,7 +33,7 @@ function resolved(ref: ExtensionProfileRef, current = false): ResolvedExtensionP
     plugins: research
       ? [
           {
-            ref: { scope: "global", source: "clarvis", name: "browser" },
+            ref: { scope: "global", source: "agents", name: "browser" },
             active: true,
             installed: true,
             valid: true,
@@ -98,7 +98,7 @@ test("renders diagnostics and previews the exact delta before selecting", async 
       plugins: Array.from({ length: 4 }, (_, index) => ({
         ref: {
           scope: "global" as const,
-          source: "clarvis" as const,
+          source: "agents" as const,
           name: index === 0 ? "browser" : `plugin-${index}`,
         },
         active: false,
@@ -118,7 +118,7 @@ test("renders diagnostics and previews the exact delta before selecting", async 
         target: research,
         delta: {
           plugins_entering: [
-            { scope: "global" as const, source: "clarvis" as const, name: "browser" },
+            { scope: "global" as const, source: "agents" as const, name: "browser" },
           ],
           plugins_leaving: [],
           skills_entering: ["plugin:global:browser:browse"],
@@ -129,7 +129,7 @@ test("renders diagnostics and previews the exact delta before selecting", async 
             {
               plugin: {
                 scope: "global" as const,
-                source: "clarvis" as const,
+                source: "agents" as const,
                 name: "browser",
               },
               total: 1,
@@ -146,9 +146,7 @@ test("renders diagnostics and previews the exact delta before selecting", async 
       target: builtin,
       delta: {
         plugins_entering: [],
-        plugins_leaving: [
-          { scope: "global" as const, source: "clarvis" as const, name: "browser" },
-        ],
+        plugins_leaving: [{ scope: "global" as const, source: "agents" as const, name: "browser" }],
         skills_entering: [],
         skills_leaving: ["plugin:global:browser:browse"],
         mcp_servers_entering: [],
@@ -158,7 +156,7 @@ test("renders diagnostics and previews the exact delta before selecting", async 
           {
             plugin: {
               scope: "global" as const,
-              source: "clarvis" as const,
+              source: "agents" as const,
               name: "browser",
             },
             total: 1,
@@ -221,7 +219,7 @@ test("renders diagnostics and previews the exact delta before selecting", async 
   await settle(rendered, () => rendered.captureCharFrame().includes("Review before selecting"));
   expect(previewed).toEqual(["global:research:workspace"]);
   expect(host.pendingConfirm()).toBeNull();
-  expect(rendered.captureCharFrame()).toContain("global/clarvis/browser");
+  expect(rendered.captureCharFrame()).toContain("global/agents/browser");
   expect(rendered.captureCharFrame()).toContain("[y] apply and reconnect");
   expect(rendered.captureCharFrame()).toContain("[n] keep current");
   expect(selected).toEqual([]);

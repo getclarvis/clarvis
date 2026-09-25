@@ -37,8 +37,6 @@ export interface GlobalPaths {
   subscriptionsFile: string;
   /** Private machine state for remote MCP OAuth registrations and tokens. */
   mcpOAuthFile: string;
-  /** Installed plugin directory. */
-  pluginsDir: string;
   /** Operator-authored reusable Extension Profile definitions. */
   extensionProfilesDir: string;
   /** Recorded workspace-surface trust decisions. */
@@ -128,7 +126,6 @@ export function globalPaths(root?: string, opts?: RootOptions): GlobalPaths {
     keysFile: join(base, "keys.json"),
     subscriptionsFile: join(base, "subscriptions.json"),
     mcpOAuthFile: join(state, "mcp-oauth.json"),
-    pluginsDir: join(base, "plugins"),
     extensionProfilesDir: join(base, "extension-profiles"),
     workspaceTrustFile: join(base, "workspace-trust.json"),
     skillsDir: join(base, "skills"),

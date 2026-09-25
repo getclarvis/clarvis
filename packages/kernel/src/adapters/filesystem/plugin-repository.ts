@@ -26,7 +26,7 @@ import {
   readPluginInstallRecord,
   type PluginInstallRecord,
 } from "../../plugins/plugin-install-record.ts";
-import { agentsPluginsDirs, globalPaths, workspacePaths } from "@clarvis/paths";
+import { agentsPluginsDirs } from "@clarvis/paths";
 import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
 
 function recordInstall(root: string, prepared: PreparedPlugin | undefined): void {
@@ -198,16 +198,13 @@ export function getInstalledPlugin(
   ref: PluginRef,
 ): InstalledPlugin | undefined {
   const agents = agentsInventoryDirs(options);
+  if (ref.source !== "agents") return undefined;
   const root =
     ref.scope === "global"
-      ? ref.source === "agents"
-        ? agents.user
-        : globalPaths(options.globalDir).pluginsDir
+      ? agents.user
       : options.workspaceRoot === undefined
         ? undefined
-        : ref.source === "agents"
-          ? agents.workspace
-          : workspacePaths(options.workspaceRoot).pluginsDir;
+        : agents.workspace;
   if (root === undefined) return undefined;
   const dir = join(root, ref.name);
   try {
@@ -227,18 +224,10 @@ export function getInstalledPlugin(
 export function listInstalledPlugins(options: FilePluginRepositoryOptions): InstalledPlugin[] {
   const agents = agentsInventoryDirs(options);
   const roots: { scope: Scope; source: PluginSource; root: string }[] = [
-    { scope: "global", source: "clarvis", root: globalPaths(options.globalDir).pluginsDir },
     { scope: "global", source: "agents", root: agents.user },
     ...(options.workspaceRoot === undefined
       ? []
-      : [
-          {
-            scope: "workspace" as const,
-            source: "clarvis" as const,
-            root: workspacePaths(options.workspaceRoot).pluginsDir,
-          },
-          { scope: "workspace" as const, source: "agents" as const, root: agents.workspace },
-        ]),
+      : [{ scope: "workspace" as const, source: "agents" as const, root: agents.workspace }]),
   ];
   const snapshots: InstalledPlugin[] = [];
   for (const { scope, source, root } of roots) {
@@ -268,14 +257,12 @@ export function listInstalledPlugins(options: FilePluginRepositoryOptions): Inst
  */
 export function createFilePluginRepository(options: FilePluginRepositoryOptions): PluginRepository {
   const agents = agentsInventoryDirs(options);
-  const installRoot = (source: PluginSource): string =>
-    source === "agents" ? agents.user : globalPaths(options.globalDir).pluginsDir;
+  const installRoot = (): string => agents.user;
   const rootFor = (ref: PluginRef): string | undefined => {
-    if (ref.scope === "global") return installRoot(ref.source);
+    if (ref.source !== "agents") return undefined;
+    if (ref.scope === "global") return installRoot();
     if (options.workspaceRoot === undefined) return undefined;
-    return ref.source === "agents"
-      ? agents.workspace
-      : workspacePaths(options.workspaceRoot).pluginsDir;
+    return agents.workspace;
   };
   const target = (ref: PluginRef): string | undefined => {
     const root = rootFor(ref);
@@ -292,8 +279,10 @@ export function createFilePluginRepository(options: FilePluginRepositoryOptions)
       return getInstalledPlugin(options, ref) ?? null;
     },
     async install(root, name, source, prepared): Promise<InstalledPlugin> {
+      if (source !== "agents")
+        throw kernelError("invalid_request", "unsupported plugin install target");
       const ref: PluginRef = { scope: "global", source, name };
-      const rootDir = installRoot(source);
+      const rootDir = installRoot();
       const dir = join(rootDir, name);
       if (existsSync(dir)) {
         throw kernelError(
@@ -307,10 +296,12 @@ export function createFilePluginRepository(options: FilePluginRepositoryOptions)
       return installed(inspectPlugin(dir, name), ref);
     },
     async replace(root, ref, prepared): Promise<InstalledPlugin> {
+      if (ref.source !== "agents")
+        throw kernelError("invalid_request", "unsupported plugin source");
       if (ref.scope !== "global") {
         throw kernelError("invalid_request", "managed plugin updates are global-only");
       }
-      const rootDir = installRoot(ref.source);
+      const rootDir = installRoot();
       const dir = join(rootDir, ref.name);
       if (!existsSync(dir)) {
         throw kernelError("not_found", `'${ref.name}' is not installed at global/${ref.source}`);
@@ -334,6 +325,8 @@ export function createFilePluginRepository(options: FilePluginRepositoryOptions)
       return installed(inspectPlugin(dir, ref.name), ref);
     },
     async remove(ref): Promise<boolean> {
+      if (ref.source !== "agents")
+        throw kernelError("invalid_request", "unsupported plugin source");
       if (ref.scope !== "global") {
         throw kernelError("invalid_request", "managed plugin uninstalls are global-only");
       }

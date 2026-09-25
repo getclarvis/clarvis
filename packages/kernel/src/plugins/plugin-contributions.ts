@@ -13,12 +13,7 @@ import {
   type SkillRootInput,
 } from "@clarvis/loop/host";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
-import {
-  agentsPluginsDirs,
-  globalPaths,
-  withoutGitRepositoryEnvironment,
-  workspacePaths,
-} from "@clarvis/paths";
+import { agentsPluginsDirs, withoutGitRepositoryEnvironment } from "@clarvis/paths";
 import type { AgentRecord } from "../config/config-store.ts";
 import type { ExtensionProfilePluginRef, PluginSource, Scope } from "@clarvis/protocol";
 import {
@@ -171,7 +166,7 @@ interface Loadable {
  * optional workspace one.
  *
  * @param opts - Clarvis global state, optional home, and optional workspace root
- *   from which all exact `.agents/plugins` and `.clarvis/plugins` inventories are
+ *   from which the global and workspace `.agents/plugins` inventories are
  *   derived.
  * @returns a {@link PluginContributions} whose every method is passed the
  *   operator-enabled plugin names. Before an Extension Profile is pinned, contribution
@@ -288,18 +283,10 @@ export function createPluginContributions(opts: {
     ...(opts.workspaceRoot === undefined ? {} : { cwd: opts.workspaceRoot }),
   });
   const installRoots: { path: string; scope: Scope; source: PluginSource }[] = [
-    { path: globalPaths(opts.globalDir).pluginsDir, scope: "global", source: "clarvis" },
     { path: agents.user, scope: "global", source: "agents" },
     ...(opts.workspaceRoot === undefined
       ? []
-      : [
-          {
-            path: workspacePaths(opts.workspaceRoot).pluginsDir,
-            scope: "workspace" as const,
-            source: "clarvis" as const,
-          },
-          { path: agents.workspace, scope: "workspace" as const, source: "agents" as const },
-        ]),
+      : [{ path: agents.workspace, scope: "workspace" as const, source: "agents" as const }]),
   ];
 
   const refId = (ref: ExtensionProfilePluginRef): string =>

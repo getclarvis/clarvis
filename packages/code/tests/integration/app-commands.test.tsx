@@ -376,12 +376,12 @@ test("plugin lifecycle recomposes only an exact selected Extension Profile contr
   const selected = {
     id: "global:research",
     status: "ready",
-    plugins: [{ ref: { scope: "global", source: "clarvis", name: "browser" } }],
+    plugins: [{ ref: { scope: "global", source: "agents", name: "browser" } }],
   } as never;
   const recomposed = {
     id: "global:research",
     status: "degraded",
-    plugins: [{ ref: { scope: "global", source: "clarvis", name: "browser" } }],
+    plugins: [{ ref: { scope: "global", source: "agents", name: "browser" } }],
   } as never;
   let reads = 0;
   let reconnects = 0;
@@ -395,7 +395,7 @@ test("plugin lifecycle recomposes only an exact selected Extension Profile contr
     async () => {
       reloads += 1;
     },
-    { scope: "global", source: "clarvis", name: "browser" },
+    { scope: "global", source: "agents", name: "browser" },
   );
   expect(result).toContain("recomposed global:research");
   expect(result).toContain("degraded");
@@ -409,7 +409,7 @@ test("plugin lifecycle recomposes only an exact selected Extension Profile contr
     async () => {
       throw new Error("must not reload");
     },
-    { scope: "workspace", source: "clarvis", name: "browser" },
+    { scope: "workspace", source: "agents", name: "browser" },
   );
   expect(unrelated).toBeUndefined();
 
@@ -419,14 +419,14 @@ test("plugin lifecycle recomposes only an exact selected Extension Profile contr
     async () => {
       throw new Error("must not reload after a failed reconnect");
     },
-    { scope: "global", source: "clarvis", name: "browser" },
+    { scope: "global", source: "agents", name: "browser" },
   );
   expect(deferred).toContain("takes effect after /reconnect reload (run in progress)");
 
   expect(
     await selectedPluginLifecycleBlock({ current: async () => selected }, () => true, {
       scope: "global",
-      source: "clarvis",
+      source: "agents",
       name: "browser",
     }),
   ).toContain("finish the active run");
@@ -438,7 +438,7 @@ test("plugin lifecycle recomposes only an exact selected Extension Profile contr
         },
       },
       () => false,
-      { scope: "global", source: "clarvis", name: "browser" },
+      { scope: "global", source: "agents", name: "browser" },
     ),
   ).toBeUndefined();
 });
@@ -545,8 +545,6 @@ test("Marketplace install atomically activates the plugin and stays active after
   });
   await waitForFrame(rendered, "No plugins in this collection");
   marketplace.press("g");
-  await rendered.renderOnce();
-  marketplace.press("return");
   await rendered.renderOnce();
   await rendered.mockInput.typeText("https://example.invalid/context7.git");
   marketplace.press("return");

@@ -448,8 +448,6 @@ test("marketplace sources and direct Git installs stay available in the unified 
 
   mounted.press("g");
   await rendered.renderOnce();
-  mounted.press("return");
-  await rendered.renderOnce();
   await rendered.mockInput.typeText("https://example.invalid/plugin.git");
   mounted.press("return");
   await settle(rendered, () => mounted.installedUrls.length === 1);

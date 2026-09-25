@@ -90,14 +90,14 @@ const nameSchema = z.string().regex(NAME_RE, "must be a safe Extension Profile i
 const pluginRefSchema = z
   .object({
     scope: z.enum(["global", "workspace"]),
-    source: z.enum(["agents", "clarvis"]),
+    source: z.literal("agents"),
     name: nameSchema,
   })
   .strict();
 const skillRefSchema = z
   .object({
     scope: z.enum(["user", "workspace"]),
-    source: z.enum(["agents", "clarvis"]),
+    source: z.literal("agents"),
     name: nameSchema,
   })
   .strict();
@@ -838,7 +838,7 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
           if (info.name === SYSTEM_DOCS_NAME || parts.includes(".system")) continue;
           const ref: ExtensionProfileSkillRef = {
             scope: root.scope ?? "workspace",
-            source: root.source === "agents" ? "agents" : "clarvis",
+            source: "agents",
             name: info.name,
           };
           out.push({

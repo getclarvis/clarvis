@@ -34,7 +34,7 @@ describe("createAgentSkills public facade", () => {
   }
 
   it("exposes catalog, body and resource tiers from one discovered skill", () => {
-    const root = skillsRoot(workspace, "clarvis");
+    const root = skillsRoot(workspace, "agents");
     writeSkill(root, "pdf", {
       body: "How to PDF",
       resources: {
@@ -45,7 +45,7 @@ describe("createAgentSkills public facade", () => {
 
     const skills = create();
     expect(skills.listSkills()).toEqual([
-      expect.objectContaining({ name: "pdf", source: "clarvis", scope: "workspace" }),
+      expect.objectContaining({ name: "pdf", source: "agents", scope: "workspace" }),
     ]);
     expect(skills.loadSkill("pdf")).toMatchObject({
       body: "How to PDF",
@@ -71,7 +71,7 @@ describe("createAgentSkills public facade", () => {
   });
 
   it("refreshes additions, modifications and removals from disk", () => {
-    const root = skillsRoot(workspace, "clarvis");
+    const root = skillsRoot(workspace, "agents");
     const temporary = writeSkill(root, "temporary", { body: "v1" });
     const skills = create();
     expect(skills.loadSkill("temporary")?.body).toBe("v1");
@@ -89,7 +89,7 @@ describe("createAgentSkills public facade", () => {
   });
 
   it("exposes only the selected skill directory when its root approves helper execution", () => {
-    const root = skillsRoot(workspace, "clarvis");
+    const root = skillsRoot(workspace, "agents");
     writeSkill(root, "executable", { resources: { "scripts/run.sh": "exit 0" } });
     const skills = createAgentSkills({
       workspace,

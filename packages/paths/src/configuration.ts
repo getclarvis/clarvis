@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join, resolve, relative, isAbsolute, sep } from "node:path";
-import { AGENTS_DIR, MARKETPLACE_FILE } from "./constants.ts";
+import { AGENTS_DIR } from "./constants.ts";
 import { globalPaths } from "./global.ts";
 import { workspacePaths } from "./workspace.ts";
 
@@ -29,7 +29,7 @@ const CLARVIS_FILES = new Set([
   "CLARVIS.md",
   "AGENTS.md",
 ]);
-const CLARVIS_DIRS = new Set(["agents", "skills", "plugins", "workflows", "extension-profiles"]);
+const CLARVIS_DIRS = new Set(["agents", "workflows", "extension-profiles"]);
 const SHARED_DIRS = new Set(["skills", "plugins"]);
 const PRIVATE_COMPONENT =
   /^(?:keys?|subscriptions?|auth(?:-key)?|credentials?|secrets?|tokens?|workspace-trust)(?:[.-]|$)|^\.env(?:[.-]|$)|\.(?:pem|key|p12|pfx)$/i;
@@ -68,7 +68,7 @@ export function configurationPathClass(
   if (head === undefined) return "operational";
   const shared = root.endsWith("_agents");
   const admitted = shared
-    ? SHARED_DIRS.has(head) || (parts.length === 1 && head === MARKETPLACE_FILE)
+    ? SHARED_DIRS.has(head)
     : CLARVIS_DIRS.has(head) || (parts.length === 1 && CLARVIS_FILES.has(head));
   if (!admitted) return "reserved_unknown";
   if (

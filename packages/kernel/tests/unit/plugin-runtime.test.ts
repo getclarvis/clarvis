@@ -18,20 +18,20 @@ afterEach(() => {
 });
 
 describe("portable plugin data directories", () => {
-  it("separates global .agents and .clarvis installations with the same name", () => {
+  it("separates global plugin data by installed name", () => {
     const globalDir = join(temporaryRoot(), "global");
     const agents = pluginDataDir({
       globalDir,
       ref: { scope: "global", source: "agents", name: "browser" },
     });
-    const clarvis = pluginDataDir({
+    const second = pluginDataDir({
       globalDir,
-      ref: { scope: "global", source: "clarvis", name: "browser" },
+      ref: { scope: "global", source: "agents", name: "editor" },
     });
 
     expect(agents).toBe(join(globalPaths(globalDir).pluginDataRoot, "agents", "browser"));
-    expect(clarvis).toBe(join(globalPaths(globalDir).pluginDataRoot, "clarvis", "browser"));
-    expect(agents).not.toBe(clarvis);
+    expect(second).toBe(join(globalPaths(globalDir).pluginDataRoot, "agents", "editor"));
+    expect(agents).not.toBe(second);
   });
 
   it("keeps workspace plugin data in machine-local state outside the checkout", () => {

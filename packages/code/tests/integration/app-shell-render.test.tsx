@@ -662,7 +662,7 @@ test("skill drift is a transient warning while the conversation remains untouche
     createSignal<ReturnType<NonNullable<AppProps["run"]["extensionProfileDriftNotice"]>>>(null);
   const t = await mountApp(defaultProps({ store, extensionProfileDriftNotice: notice }));
 
-  setNotice({ sequence: 1, kind: "skill", name: "release-notes", source: "clarvis" });
+  setNotice({ sequence: 1, kind: "skill", name: "release-notes", source: "agents" });
   const frame = await captureUntil(t, "was withheld from runs until reconnect");
   expect(frame).toContain("release-notes");
   expect(store.nodes.some((node) => node.text.includes("release-notes"))).toBe(false);

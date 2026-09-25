@@ -53,7 +53,7 @@ function checkedPluginRef(value: unknown): PluginRef {
   const name = pluginNameField.safeParse(ref.name);
   if (
     (ref.scope !== "global" && ref.scope !== "workspace") ||
-    (ref.source !== "agents" && ref.source !== "clarvis") ||
+    ref.source !== "agents" ||
     !name.success ||
     Object.keys(ref).some((key) => !["scope", "source", "name"].includes(key))
   ) {
@@ -418,23 +418,22 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
     return installed.map((plugin) => viewFor(plugin, enabled));
   }
 
-  function checkedInstallTarget(target: unknown): { source: "agents" | "clarvis" } {
+  function checkedInstallTarget(target: unknown): { source: "agents" } {
     if (
       typeof target !== "object" ||
       target === null ||
       Array.isArray(target) ||
-      ((target as { source?: unknown }).source !== "agents" &&
-        (target as { source?: unknown }).source !== "clarvis") ||
+      (target as { source?: unknown }).source !== "agents" ||
       Object.keys(target).some((key) => key !== "source")
     ) {
       throw kernelError("invalid_request", "invalid plugin install target");
     }
-    return target as { source: "agents" | "clarvis" };
+    return target as { source: "agents" };
   }
 
   async function installPrepared(
     prepare: (signal: AbortSignal) => Promise<Awaited<ReturnType<PluginFetcher["fetch"]>>>,
-    target: { source: "agents" | "clarvis" },
+    target: { source: "agents" },
     expectedName?: string,
   ): Promise<PluginView> {
     const abort = new AbortController();

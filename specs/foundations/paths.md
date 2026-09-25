@@ -130,7 +130,6 @@ chose it — is the first thing every other path in this package is derived from
 | `keysFile` | `<global>/keys.json` | `packages/paths/src/global.ts` |
 | `subscriptionsFile` | `<global>/subscriptions.json` | `packages/paths/src/global.ts` |
 | `mcpOAuthFile` | `<global>/state/mcp-oauth.json` | `packages/paths/src/global.ts` |
-| `pluginsDir` | `<global>/plugins` | `packages/paths/src/global.ts` |
 | `extensionProfilesDir` | `<global>/extension-profiles` | `packages/paths/src/global.ts` |
 | `workspaceTrustFile` | `<global>/workspace-trust.json` | `packages/paths/src/global.ts` |
 | `skillsDir` | `<global>/skills` | `packages/paths/src/global.ts` |
@@ -190,9 +189,7 @@ builder tests do not qualify native IPC behavior.
 | `clarvisDir` | `<ws>/.clarvis` | `packages/paths/src/workspace.ts` |
 | `settingsFile` | `<ws>/.clarvis/settings.json` | `packages/paths/src/workspace.ts` |
 | `agentsDir` | `<ws>/.clarvis/agents` | `packages/paths/src/workspace.ts` |
-| `skillsDir` | `<ws>/.clarvis/skills` | `packages/paths/src/workspace.ts` |
 | `workflowsDir` | `<ws>/.clarvis/workflows` | `packages/paths/src/workspace.ts` |
-| `pluginsDir` | `<ws>/.clarvis/plugins` | `packages/paths/src/workspace.ts` |
 | `extensionProfilesDir` | `<ws>/.clarvis/extension-profiles` | `packages/paths/src/workspace.ts` |
 | `sharedAgentPromptFile` | `<ws>/.clarvis/shared-agent.md` | `packages/paths/src/workspace.ts` |
 | `memoryPolicyFile` | `<ws>/.clarvis/memory-policy.md` | `packages/paths/src/workspace.ts` |
@@ -258,7 +255,7 @@ The `.agents` accessors do not share one blanket write policy. Standalone skills
 documents are read-only authored inputs. The managed global plugin lifecycle may mutate exactly one
 directory below a global `agentsPluginsDir`, while both workspace plugin inventories are
 repository-owned. Persistent portable-plugin data is source-qualified below `pluginDataRoot`, never
-written into `.agents/plugins` or `.clarvis/plugins`. Production:
+written into `.agents/plugins`. Production:
 `packages/kernel/src/adapters/filesystem/plugin-repository.ts` and
 `packages/kernel/src/plugins/plugin-runtime.ts`. Test:
 `packages/paths/tests/architecture/agents-read-only.test.ts` and
@@ -453,7 +450,7 @@ confirmed by the absence of `zod` from its dependencies (`package.json`, section
 ### 3.1 The two working-tree trees
 
 `<ws>/.clarvis` top level, exhaustively enumerated by the allow-list a kernel test drives every
-real writer against: `.gitignore`, `settings.json`, `agents`, `skills`, `workflows`, `plugins`,
+real writer against: `.gitignore`, `settings.json`, `agents`, `workflows`,
 `extension-profiles`, `plans`, `memory`, `owners`, `worktrees`
 (`packages/kernel/tests/architecture/workspace-surface.test.ts`, INV-192).
 
@@ -476,12 +473,18 @@ hand-edited file with the seeded template. Production: `ensureWorkspaceDir` and 
 ### 3.2 The global tree
 
 `<global>` = `$CLARVIS_HOME` or `<home>/.clarvis` (`packages/paths/src/roots.ts`). Beneath it:
-operator-authored files at the root (`settings.json`, `agents/`, `keys.json`, `plugins/`, `extension-profiles/`,
-`workspace-trust.json`, `skills/`, `workflows/`,
+operator-authored files at the root (`settings.json`, `agents/`, `keys.json`, `extension-profiles/`,
+`workspace-trust.json`, `workflows/`,
 `memory-policy.md`, `auth.json`, `auth-key.json`), and generated state under `state/`
 (`sessions/`, `traces/`, `workflows/` [records], `extension-profile.json`, `code.json`, private remote-MCP OAuth credentials)
-and `cache/` (`models-dev.json`, `update-check.json`)
-— see the table in §2.4.
+and `cache/` (`models-dev.json`, `update-check.json`). The product-owned documentation skill remains
+under `<global>/skills/.system/`; externally authored skills are read only from `.agents/skills`.
+Existing `.clarvis/skills` and `.clarvis/plugins` trees are neither scanned nor migrated. Production:
+`clarvisSkillRoots` in `packages/skills/src/preset.ts`, `listInstalledPlugins` in
+`packages/kernel/src/adapters/filesystem/plugin-repository.ts`, and `configurationPathClass` in
+`packages/paths/src/configuration.ts`. Test: `packages/skills/tests/integration/discovery.test.ts`,
+`packages/kernel/tests/integration/plugin-service.test.ts`, and
+`packages/paths/tests/unit/configuration.test.ts`. See the table in §2.4.
 
 ### 3.3 Per-workspace machine state tree
 
@@ -921,7 +924,7 @@ evidence the owner is dead. Test: `packages/paths/tests/contract/local-lease.tes
 
 **INV-192.** Driving every writer that touches a workspace (plan repository listing, two memory
 batch writes, `markIndexed`) leaves `<ws>/.clarvis`'s top level containing only entries from the
-fixed allowed set (`.gitignore`, `settings.json`, `agents`, `skills`, `workflows`, `plugins`,
+fixed allowed set (`.gitignore`, `settings.json`, `agents`, `workflows`,
 `plans`, `memory`, `owners`, `worktrees`), and every file found under the workspace root is
 inside `.clarvis/`. Test:
 `packages/kernel/tests/architecture/workspace-surface.test.ts`.

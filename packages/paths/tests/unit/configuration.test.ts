@@ -30,17 +30,17 @@ test("configuration roots default to the normal global resolver and OS home", ()
 
 test("configuration classes distinguish authoring, generated, secret and unknown targets", () => {
   for (const root of ["workspace_clarvis", "global_clarvis"] as const) {
-    for (const path of [
-      "agents/reviewer.md",
-      "skills/review-tests/SKILL.md",
-      "workflows/review/WORKFLOW.md",
-    ])
+    for (const path of ["agents/reviewer.md", "workflows/review/WORKFLOW.md"])
       expect(configurationPathClass(root, path)).toBe("authoring");
     for (const path of ["settings.json", "plugins/review/plugin.json", "skills/review/helper.sh"])
-      expect(configurationPathClass(root, path)).toBe("operational");
+      expect(configurationPathClass(root, path)).toBe(
+        path === "settings.json" ? "operational" : "reserved_unknown",
+      );
   }
   for (const root of ["workspace_agents", "global_agents"] as const) {
     expect(configurationPathClass(root, "skills/review/SKILL.md")).toBe("authoring");
+    expect(configurationPathClass(root, "plugins/marketplace.json")).toBe("operational");
+    expect(configurationPathClass(root, "marketplace.json")).toBe("reserved_unknown");
     expect(configurationPathClass(root, "agents/reviewer.md")).toBe("reserved_unknown");
     expect(configurationPathClass(root, "settings.json")).toBe("reserved_unknown");
   }

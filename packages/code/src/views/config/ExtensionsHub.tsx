@@ -2,7 +2,6 @@ import type { JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/solid";
-import { AGENTS_DIR, AGENTS_PLUGINS_DIR, CLARVIS_DIR } from "@clarvis/paths";
 import type {
   ExtensionProfileCompositionInput,
   ExtensionProfileCompositionPreview,
@@ -69,7 +68,7 @@ export interface ExtensionsHubDeps {
   sources: () => readonly MarketplaceSource[];
   loading: () => boolean;
   loadError: () => string | undefined;
-  install: (listing: MarketplaceListing, source: "agents" | "clarvis") => Promise<PluginView>;
+  install: (listing: MarketplaceListing, source: "agents") => Promise<PluginView>;
   refresh: (inventory?: boolean) => Promise<void>;
   reconnect: () => Promise<{ ok: boolean; message: string }>;
   runActive: () => boolean;
@@ -554,7 +553,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     if (replaced !== undefined) deps.notify(`replaced ${skillId(replaced)} with ${skillId(ref)}`);
   };
 
-  const installAndStage = (listing: MarketplaceListing, source: "agents" | "clarvis"): void => {
+  const installAndStage = (listing: MarketplaceListing, source: "agents"): void => {
     if (busy() !== undefined) return;
     const ownerGeneration = draftGeneration;
     setPicker(null);
@@ -597,25 +596,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
       deps.notify(listing.notes[0] ?? `${listing.name} cannot be installed by this host`, "warn");
       return;
     }
-    setPicker({
-      title: `Extensions setup ${glyph("separator")} Step 3 of 5 ${glyph("separator")} Install location`,
-      rows: () => [
-        {
-          id: "agents",
-          label: `${AGENTS_DIR}/${AGENTS_PLUGINS_DIR}`,
-          haystack: "agents shared standard compatible",
-          detail: "recommended · shared Agent Plugins convention",
-        },
-        {
-          id: "clarvis",
-          label: `${CLARVIS_DIR}/${AGENTS_PLUGINS_DIR}`,
-          haystack: "clarvis native",
-          detail: "Clarvis-native global inventory",
-        },
-      ],
-      onPick: (source) => installAndStage(listing, source as "agents" | "clarvis"),
-      onClose: openExtensionPicker,
-    });
+    installAndStage(listing, "agents");
   };
 
   const chooseExtension = (id: string): void => {

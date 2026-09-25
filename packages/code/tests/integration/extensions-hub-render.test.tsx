@@ -51,7 +51,7 @@ function listing(over: Partial<MarketplaceListing> = {}): MarketplaceListing {
   };
 }
 
-function installedPlugin(source: "agents" | "clarvis" = "agents"): PluginView {
+function installedPlugin(source: "agents" = "agents"): PluginView {
   return {
     name: "context7",
     displayName: "Context7",
@@ -71,9 +71,9 @@ function installedPlugin(source: "agents" | "clarvis" = "agents"): PluginView {
   };
 }
 
-function context7Inventory(source: "agents" | "clarvis" = "agents") {
+function context7Inventory(scope: "global" | "workspace" = "global") {
   return {
-    ref: { scope: "global" as const, source, name: "context7" },
+    ref: { scope, source: "agents" as const, name: "context7" },
     active: false,
     installed: true,
     valid: true,
@@ -175,6 +175,7 @@ function mount(
     inventory?: ExtensionProfileInventory;
     listings?: MarketplaceListing[];
     initialExtensionProfile?: ExtensionProfileRef;
+    profileScope?: "global" | "workspace";
     loadError?: string;
     runActive?: boolean;
     cliSelection?: boolean;
@@ -202,7 +203,7 @@ function mount(
     close: () => closed.push("closed"),
     dispatch: () => {},
   });
-  const ref = { scope: "global" as const, name: "mine" };
+  const ref = { scope: options.profileScope ?? "global", name: "mine" };
   const baseDefinition = options.definition ?? EMPTY_DEFINITION;
   let current = options.cliSelection
     ? { ...builtin(), selection_origin: "cli" as const }
@@ -333,7 +334,7 @@ function mount(
       await options.installGate;
       installed.push(`${value.name}:${source}`);
       const plugin = installedPlugin(source);
-      inventory = { ...inventory, plugins: [...inventory.plugins, context7Inventory(source)] };
+      inventory = { ...inventory, plugins: [...inventory.plugins, context7Inventory()] };
       return plugin;
     },
     refresh: options.refresh ?? (async () => {}),
@@ -531,7 +532,7 @@ test("Escape leaves an unchanged existing draft without a discard prompt", async
 test("pins apply progress beside a long delta and lets Escape leave while apply continues", async () => {
   const applyGate = operationGate();
   const plugins = Array.from({ length: 36 }, (_, index) => {
-    const plugin = context7Inventory("agents");
+    const plugin = context7Inventory();
     return {
       ...plugin,
       ref: { ...plugin.ref, name: `extension-${String(index).padStart(2, "0")}` },
@@ -653,7 +654,7 @@ test("shows workspace approval, degraded issues and reconnect recovery in the gu
   rendered.renderer.destroy();
 });
 
-test("installs into the chosen convention but waits for Step 5 to activate", async () => {
+test("installs into the shared inventory but waits for Step 5 to activate", async () => {
   const installGate = operationGate();
   const mounted = mount({
     inventory: { plugins: [], standalone_skills: [] },
@@ -668,10 +669,6 @@ test("installs into the chosen convention but waits for Step 5 to activate", asy
   mounted.press("down");
   mounted.press("return");
   await rendered.renderOnce();
-  expect(rendered.captureCharFrame()).toContain(".agents/plugins");
-  expect(rendered.captureCharFrame()).toContain(".clarvis/plugins");
-  mounted.press("down");
-  mounted.press("return");
   await settle(rendered, () => rendered.captureCharFrame().includes("Installing context7"));
   const installing = rendered.captureCharFrame();
   expect(installing).toContain(spinnerChar());
@@ -679,7 +676,7 @@ test("installs into the chosen convention but waits for Step 5 to activate", asy
   expect(mounted.installed).toEqual([]);
   installGate.release();
   await settle(rendered, () => mounted.notifications.length > 0);
-  expect(mounted.installed).toEqual(["context7:clarvis"]);
+  expect(mounted.installed).toEqual(["context7:agents"]);
   expect(mounted.applied).toEqual([]);
   expect(mounted.notifications.join("\n")).toContain("staged, not active until Step 5");
   await settle(rendered, () => rendered.captureCharFrame().includes("[↵] continue"));
@@ -687,7 +684,7 @@ test("installs into the chosen convention but waits for Step 5 to activate", asy
   mounted.press("return");
   await settle(rendered, () => mounted.previews.length === 1);
   expect(mounted.previews[0]!.definition.plugins).toEqual([
-    { scope: "global", source: "clarvis", name: "context7" },
+    { scope: "global", source: "agents", name: "context7" },
   ]);
   expect(mounted.applied).toEqual([]);
   rendered.renderer.destroy();
@@ -707,8 +704,6 @@ test("Escape leaves a pending install immediately and the checkout finishes with
   await settle(rendered, () => rendered.captureCharFrame().includes("Step 3 of 5"));
   mounted.press("down");
   mounted.press("return");
-  mounted.press("down");
-  mounted.press("return");
   await settle(rendered, () => rendered.captureCharFrame().includes("Installing context7"));
   expect(rendered.captureCharFrame()).toContain("[esc] back");
 
@@ -723,33 +718,34 @@ test("Escape leaves a pending install immediately and the checkout finishes with
   rendered.renderer.destroy();
 });
 
-test("same-name plugin origins remain exact and replacing one is explicit", async () => {
+test("same-name plugin scopes remain exact and replacing one is explicit", async () => {
   const mounted = mount({
     inventory: {
-      plugins: [context7Inventory("agents"), context7Inventory("clarvis")],
+      plugins: [context7Inventory("global"), context7Inventory("workspace")],
       standalone_skills: [],
     },
     listings: [],
-    initialExtensionProfile: { scope: "global", name: "mine" },
+    profileScope: "workspace",
+    initialExtensionProfile: { scope: "workspace", name: "mine" },
   });
   const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
     width: 140,
     height: 25,
   });
   await settle(rendered, () => rendered.captureCharFrame().includes("global/agents"));
-  expect(rendered.captureCharFrame()).toContain("global/clarvis");
+  expect(rendered.captureCharFrame()).toContain("workspace/agents");
   mounted.press("down");
   mounted.press("return");
   mounted.press("down");
   mounted.press("return");
   expect(mounted.notifications.join("\n")).toContain(
-    "replaced global/agents/context7 with global/clarvis/context7",
+    "replaced global/agents/context7 with workspace/agents/context7",
   );
   mounted.press("home");
   mounted.press("return");
   await settle(rendered, () => mounted.previews.length === 1);
   expect(mounted.previews[0]!.definition.plugins).toEqual([
-    { scope: "global", source: "clarvis", name: "context7" },
+    { scope: "workspace", source: "agents", name: "context7" },
   ]);
   rendered.renderer.destroy();
 });
@@ -761,7 +757,7 @@ test("missing selected origins stay visible and removable from the exact draft",
     definition: {
       schema_version: 1,
       plugins: [{ scope: "global", source: "agents", name: "gone" }],
-      skills: [{ scope: "user", source: "clarvis", name: "gone-skill" }],
+      skills: [{ scope: "user", source: "agents", name: "gone-skill" }],
     },
     initialExtensionProfile: { scope: "global", name: "mine" },
   });

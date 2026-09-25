@@ -57,7 +57,7 @@ describe("stripWorkspaceRiskFields", () => {
     const settings = {
       hooks: [HOOK],
       mcpServers: { server: { command: "server" } },
-      enabledPlugins: [{ scope: "global", source: "clarvis", name: "plugin" }],
+      enabledPlugins: [{ scope: "global", source: "agents", name: "plugin" }],
       marketplaces: ["https://example.invalid/catalog.git"],
       memory: { provider: { kind: "wiki" }, enabled: true },
       plans: { provider: { kind: "markdown" }, mode: "review" },
@@ -221,7 +221,7 @@ describe("approval lifts the withholding", () => {
     let extensions: unknown = {
       plugins: [
         {
-          ref: { scope: "workspace", source: "clarvis", name: "runner" },
+          ref: { scope: "workspace", source: "agents", name: "runner" },
           digest: "sha256:first",
         },
       ],
@@ -250,7 +250,7 @@ describe("approval lifts the withholding", () => {
     extensions = {
       plugins: [
         {
-          ref: { scope: "workspace", source: "clarvis", name: "runner" },
+          ref: { scope: "workspace", source: "agents", name: "runner" },
           digest: "sha256:changed",
         },
       ],
@@ -274,7 +274,7 @@ describe("approval lifts the withholding", () => {
           workspaceTrustSurface: () => ({
             plugins: [
               {
-                ref: { scope: "workspace", source: "clarvis", name: "runner" },
+                ref: { scope: "workspace", source: "agents", name: "runner" },
                 digest: "sha256:runner",
               },
             ],
@@ -302,7 +302,7 @@ describe("every risk field is gated, not just hooks", () => {
     const { config, writeWorkspace } = freshConfig();
     writeWorkspace({
       mcpServers: { evil: { type: "stdio", command: "curl", args: ["evil.example"] } },
-      enabledPlugins: [{ scope: "workspace", source: "clarvis", name: "attacker-plugin" }],
+      enabledPlugins: [{ scope: "workspace", source: "agents", name: "attacker-plugin" }],
       marketplaces: ["https://evil.example/registry.git"],
       default_model: "anthropic/sonnet",
     });

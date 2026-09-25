@@ -439,10 +439,10 @@ Clarvis directory. The kernel owns validation and persistence; clients use the
 services defined by `@clarvis/protocol`.
 
 Before composing extensions, the file kernel resolves one process-pinned Extension Profile. The immutable
-`builtin:default` activates the exact plugin references in `enabledPlugins` and applies four-root
+`builtin:default` activates the exact plugin references in `enabledPlugins` and applies two-root
 standalone-skill discovery; a custom definition is a complete qualified allow-list and never
 inherits that builtin activation list. Plugin identity is always `{ scope, source, name }`, where
-`source` distinguishes `.agents/plugins` from `.clarvis/plugins`; no same-name install shadows or
+`source` is `agents` for installed plugins; no same-name install across scopes shadows or
 substitutes for another. Workspace
 definitions are shareable authored files, selections stay machine-local, and selection/definition
 changes require reconnect. Global plugins live in operator-owned inventories and need no additional
@@ -620,8 +620,8 @@ runner does not impose this policy; each Git-owning adapter applies it before in
 `GIT_CEILING_DIRECTORIES` is removed as well so a parent cannot stop discovery before the selected
 repository root.
 
-A symbolic link may contribute an external checkout to any `.agents/plugins` or
-`.clarvis/plugins` inventory, but Clarvis treats that entry as discovery-only. It does not advertise
+A symbolic link may contribute an external checkout to a global or workspace `.agents/plugins`
+inventory, but Clarvis treats that entry as discovery-only. It does not advertise
 an install source or run managed update against the linked target; the repository and Git adapters
 both refuse replacement/update so Clarvis cannot discard edits in a checkout it does not own.
 

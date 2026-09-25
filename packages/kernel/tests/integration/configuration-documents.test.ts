@@ -113,7 +113,9 @@ describe("configuration documents against product loaders", () => {
 
   it("authors a nonempty Extension Profile, previews selection, and activates the launcher on reconnect", async () => {
     const f = fixture();
-    for (const name of ["plugin", "workflowSkill", "extensionProfile"] as const) f.write(name);
+    f.write("plugin", "global_agents");
+    f.write("workflowSkill", "global_agents");
+    f.write("extensionProfile");
     const manager = f.manager();
     manager.resolveActive([], { state: "unapproved" });
     const ref = { scope: "global", name: "review" } as const;
@@ -124,14 +126,14 @@ describe("configuration documents against product loaders", () => {
       {
         active: true,
         installed: true,
-        ref: { scope: "global", source: "clarvis", name: "review-tools" },
+        ref: { scope: "global", source: "agents", name: "review-tools" },
       },
     ]);
     expect(authored.standalone_skills).toMatchObject([
       {
         active: true,
         found: true,
-        ref: { scope: "user", source: "clarvis", name: "review-project" },
+        ref: { scope: "user", source: "agents", name: "review-project" },
       },
     ]);
     expect((await manager.service.current()).id).toBe("builtin:default");
@@ -167,12 +169,12 @@ describe("configuration documents against product loaders", () => {
   });
 
   it.each([
-    { plugins: [], skills: [{ scope: "global", source: "clarvis", name: "review-project" }] },
-    { plugins: [{ scope: "workspace", source: "clarvis", name: "review-tools" }], skills: [] },
+    { plugins: [], skills: [{ scope: "global", source: "agents", name: "review-project" }] },
+    { plugins: [{ scope: "workspace", source: "agents", name: "review-tools" }], skills: [] },
     {
       plugins: [],
       skills: [
-        { scope: "user", source: "clarvis", name: "review-project" },
+        { scope: "user", source: "agents", name: "review-project" },
         { scope: "user", source: "agents", name: "review-project" },
       ],
     },

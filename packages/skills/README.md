@@ -77,13 +77,13 @@ if (selected) {
 ```
 
 `clarvisSkillRoots` returns the standard user and workspace roots under
-`.agents/skills` and `.clarvis/skills`. Custom roots can carry provenance:
+`.agents/skills`. Workspace definitions win same-name collisions. Custom roots can carry provenance:
 
 ```ts
 const skills = createAgentSkills({
   roots: [
     { path: "/shared/skills", scope: "user", source: "shared" },
-    { path: ".clarvis/skills", scope: "workspace", source: "project" },
+    { path: "/project/shared-skills", scope: "workspace", source: "project" },
   ],
 });
 ```

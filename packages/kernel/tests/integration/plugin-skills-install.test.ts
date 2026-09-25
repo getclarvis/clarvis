@@ -6,7 +6,7 @@ import { loadEnv } from "@clarvis/capability";
 import { createFileKernel } from "../../src/bootstrap.ts";
 import { createPluginService } from "../../src/plugins/plugin-service.ts";
 import type { SkillSummary } from "@clarvis/protocol";
-import { globalPaths } from "@clarvis/paths";
+import { agentsPluginsDir, globalPaths } from "@clarvis/paths";
 
 /**
  * A skills-only plugin installed from a fixture directory rather than over the
@@ -16,7 +16,7 @@ import { globalPaths } from "@clarvis/paths";
 const SKILLS = ["using-superpowers", "brainstorming", "writing-plans"];
 const SUPERPOWERS_REF = {
   scope: "global" as const,
-  source: "clarvis" as const,
+  source: "agents" as const,
   name: "superpowers",
 };
 
@@ -24,7 +24,7 @@ let ws: string;
 let globalDir: string;
 
 function installSuperpowers(manifest: Record<string, unknown>): string {
-  const dir = join(globalPaths(globalDir).pluginsDir, "superpowers");
+  const dir = join(agentsPluginsDir(join(ws, "home")), "superpowers");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "plugin.json"), JSON.stringify(manifest, null, 2));
   for (const name of SKILLS) {
@@ -56,6 +56,7 @@ async function kernelFor(): Promise<Awaited<ReturnType<typeof createFileKernel>>
     env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_SKILLS_ENABLED: "1" }),
     traceDir: join(ws, "traces"),
     globalDir,
+    configurationHome: join(ws, "home"),
   });
 }
 
@@ -86,6 +87,7 @@ describe("a skills-only plugin installs, stays inert, and serves its skills", ()
     installSuperpowers(manifest());
     const views = await createPluginService({
       globalDir,
+      home: join(ws, "home"),
       enabledPlugins: () => [SUPERPOWERS_REF],
       environment: process.env,
     }).list();
@@ -109,6 +111,7 @@ describe("a skills-only plugin installs, stays inert, and serves its skills", ()
     installSuperpowers(manifest({ bootstrapSkill: "using-superpowers" }));
     const service = createPluginService({
       globalDir,
+      home: join(ws, "home"),
       enabledPlugins: () => [SUPERPOWERS_REF],
       environment: process.env,
     });
@@ -157,6 +160,7 @@ describe("a skills-only plugin installs, stays inert, and serves its skills", ()
       }),
       traceDir: join(ws, "traces"),
       globalDir,
+      configurationHome: join(ws, "home"),
     });
     try {
       expect(fromPlugin(await kernel.skills.list()).map((s) => s.name)).toContain(

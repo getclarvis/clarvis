@@ -31,7 +31,7 @@ import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";
 
 const pluginRef = (name: string): ExtensionProfilePluginRef => ({
   scope: "global",
-  source: "clarvis",
+  source: "agents",
   name,
 });
 

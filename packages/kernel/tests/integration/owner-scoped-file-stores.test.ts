@@ -1,4 +1,5 @@
-import { existsSync, mkdtempSync } from "node:fs";
+import { ownedTempDirSync } from "../helpers/owned-root.ts";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "bun:test";
@@ -7,7 +8,7 @@ import { createOwnerScopedFileStores } from "../../src/bootstrap.ts";
 
 describe("createOwnerScopedFileStores", () => {
   it("keeps owners' plan repositories separate", async () => {
-    const workspaceRoot = mkdtempSync(join(tmpdir(), "clarvis-scope-"));
+    const workspaceRoot = ownedTempDirSync(join(tmpdir(), "clarvis-scope-"));
     const stores = createOwnerScopedFileStores({ workspaceRoot });
     const created = await stores.planStoreFor("alice").create({
       title: "Hers",
@@ -25,7 +26,7 @@ describe("createOwnerScopedFileStores", () => {
   });
 
   it("keeps owners' memory trees separate", async () => {
-    const workspaceRoot = mkdtempSync(join(tmpdir(), "clarvis-scope-"));
+    const workspaceRoot = ownedTempDirSync(join(tmpdir(), "clarvis-scope-"));
     const stores = createOwnerScopedFileStores({ workspaceRoot });
 
     await stores.memoryStoreFor("alice").exclusive(async (tx) => {
@@ -42,7 +43,7 @@ describe("createOwnerScopedFileStores", () => {
   });
 
   it("memoizes resident stores and releases only the evicted owner", () => {
-    const workspaceRoot = mkdtempSync(join(tmpdir(), "clarvis-scope-"));
+    const workspaceRoot = ownedTempDirSync(join(tmpdir(), "clarvis-scope-"));
     const stores = createOwnerScopedFileStores({ workspaceRoot });
     const alicePlan = stores.planStoreFor("alice");
     const aliceMemory = stores.memoryStoreFor("alice");
@@ -63,7 +64,7 @@ describe("createOwnerScopedFileStores", () => {
   });
 
   it("preserves owner content and machinery roots", async () => {
-    const workspaceRoot = mkdtempSync(join(tmpdir(), "clarvis-scope-"));
+    const workspaceRoot = ownedTempDirSync(join(tmpdir(), "clarvis-scope-"));
     const stores = createOwnerScopedFileStores({ workspaceRoot });
     const segment = ownerSegment("alice");
     const state = workspaceStatePaths(workspaceRoot);
@@ -83,7 +84,7 @@ describe("createOwnerScopedFileStores", () => {
   });
 
   it("encodes an owner id that would otherwise escape its directory", async () => {
-    const workspaceRoot = mkdtempSync(join(tmpdir(), "clarvis-scope-"));
+    const workspaceRoot = ownedTempDirSync(join(tmpdir(), "clarvis-scope-"));
     const stores = createOwnerScopedFileStores({ workspaceRoot });
     const owner = "../escape";
     const created = await stores.planStoreFor(owner).create({

@@ -1,7 +1,4 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { SandboxSetupError } from "@clarvis/sandbox";
 import { resolveConfig } from "../../src/config.ts";
 import { ToolError } from "../../src/errors.ts";
@@ -19,10 +16,10 @@ const tool: ToolDef = {
 };
 
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), "clarvis-coordinator-"));
+  const root = process.cwd();
   return {
     config: resolveConfig({ workspaceRoot: root }),
-    close: () => rmSync(root, { recursive: true, force: true }),
+    close: () => undefined,
   };
 }
 

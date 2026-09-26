@@ -18,7 +18,7 @@ export function spyOnProcessEnv(value: NodeJS.ProcessEnv): GetterSpy<NodeJS.Proc
 }
 
 /** Spy on process.platform without redefining the platform property. */
-export function spyOnProcessPlatform(value: NodeJS.Platform): GetterSpy<NodeJS.Platform> {
+function spyOnProcessPlatform(value: NodeJS.Platform): GetterSpy<NodeJS.Platform> {
   return spyOnAccessor<NodeJS.Platform>(process, "platform", "get").mockReturnValue(value);
 }
 

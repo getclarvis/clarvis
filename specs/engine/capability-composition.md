@@ -10,7 +10,7 @@ Production: `buildExecuteRunDeps` in
 `createAgentToolsCapability` in
 `packages/loop/src/runtime/capabilities/tools.ts`. Test:
 `packages/loop/tests/integration/tools.test.ts` and
-`packages/kernel/tests/unit/isolation-service.test.ts`.
+`packages/kernel/tests/integration/isolation-service.test.ts`.
 
 > Implemented at `packages/loop/src/...` and `packages/capability/src/...`. Every claim below is
 > anchored to a file and a named symbol or test. Open questions are collected in the final section.
@@ -71,7 +71,7 @@ independent Loop release. `packages/loop/src/version.ts` statically imports the 
 `../../../package.json` and exports its `version`. Static import is what makes the root-owned value
 bundle-safe while preserving the same relative path from `src` and `dist`. Its only Loop consumer is
 the re-export from `packages/loop/src/lib.ts`; no package outside `@clarvis/loop` reads it. The
-`VERSION` suite in `packages/loop/tests/unit/version.test.ts` pins it to the root manifest and to a
+`VERSION` suite in `packages/loop/tests/integration/version.test.ts` pins it to the root manifest and to a
 plain SemVer-shaped string a consumer can put on a wire.
 
 ### 2.1a `./host`'s re-export groups (`packages/loop/src/host.ts`)
@@ -697,7 +697,7 @@ their own:**
   `packages/skills/src/registry.ts`, `packages/loop/src/runtime/build-run-deps.ts`, and
   `packages/loop/src/runtime/capabilities/tools.ts`. Test:
   `packages/skills/tests/integration/api.test.ts` and
-  `packages/tools/tests/integration/api.test.ts`.
+  `packages/tools/tests/integration/common/api.test.ts`.
 - **MCP initialize instructions are prompt-only and post-connection.** A server that did not connect
   contributes nothing; a connected server's text is grouped under its exact identity and the whole
   section is bounded without splitting Unicode code points. Production:

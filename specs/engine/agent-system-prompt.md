@@ -77,13 +77,13 @@ Production: `resolveSharedPrompt`. Test: `packages/loop/tests/unit/shared-agent-
 
 `shared-agent.md` is executable workspace instruction. Its digest is part of `workspaceTrustFingerprint`. An unapproved or changed workspace withholds the workspace file and falls back to global/builtin. A global override is operator configuration and does not depend on workspace trust. An operator write through ConfigService uses the same authorized-write path as agent files.
 
-Production: `workspaceExecutableSurface`, `resolveStoreSharedPrompt`. Test: `packages/kernel/tests/component/shared-prompt.test.ts`.
+Production: `workspaceExecutableSurface`, `resolveStoreSharedPrompt`. Test: `packages/kernel/tests/integration/shared-prompt.test.ts`.
 
 ### 4.4 Snapshot
 
 The kernel assembler stamps `shared_prompt` onto the run request once: the winning text, or `""` when disabled. Entry seed, `spawn_subagent` and `runSubagent` reuse that value. They do not re-read the file. A later run sees the latest file.
 
-Production: `stampedSharedPrompt`, `createSettingsRunAssembler`, `createEntryInput`, `buildRunSubagentInput`. Test: `packages/kernel/tests/component/shared-prompt.test.ts`, `packages/loop/tests/integration/specialized-subagents.test.ts`.
+Production: `stampedSharedPrompt`, `createSettingsRunAssembler`, `createEntryInput`, `buildRunSubagentInput`. Test: `packages/kernel/tests/integration/shared-prompt.test.ts`, `packages/loop/tests/integration/specialized-subagents.test.ts`.
 
 ### 4.5 Overlays and custom agents
 
@@ -117,10 +117,10 @@ than inferred usefulness` in `packages/loop/tests/unit/shared-agent-prompt.test.
    - Test: `packages/loop/tests/unit/environment-section.test.ts`
 2. Entry, leaves, overlays, and custom agents share one snapshotted shared prompt for the run.
    - Production: `RunShape.sharedPrompt`, `buildRunSubagentInput`
-   - Test: `packages/kernel/tests/component/shared-prompt.test.ts`
+   - Test: `packages/kernel/tests/integration/shared-prompt.test.ts`
 3. An untrusted workspace never injects its `shared-agent.md`.
    - Production: `workspaceSharedPromptTrusted`
-   - Test: `packages/kernel/tests/component/shared-prompt.test.ts`
+   - Test: `packages/kernel/tests/integration/shared-prompt.test.ts`
 4. Invalid layers fall back to a complete valid source and surface a diagnostic.
    - Production: `resolveSharedPrompt`
    - Test: `packages/loop/tests/unit/shared-agent-prompt.test.ts`

@@ -16,7 +16,7 @@ Production: [operations.ts](../../packages/kernel/src/transport/operations.ts),
 [client.ts](../../packages/kernel/src/transport/client.ts), and
 [service.ts](../../packages/kernel/src/goals/service.ts).
 Test: the catalog dispatch cases in
-[transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts), and
+[transport-codecs.test.ts](../../packages/kernel/tests/contract/memory/transport-codecs.test.ts), and
 observer/write refusal plus receipt replay in
 [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts), and semantic
 request/result/receipt transport in
@@ -49,8 +49,8 @@ Production: `createGoalClient` in [goal-client.ts](../../packages/kernel/src/tra
 the decoders in [goal-codec.ts](../../packages/kernel/src/transport/goal-codec.ts),
 goal dispatch in [server.ts](../../packages/kernel/src/transport/server.ts), and
 `createGoalChanges` in [changes.ts](../../packages/kernel/src/goals/changes.ts).
-Test: goal wire cases in [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts),
-`goal subscription lifecycle` in [transport.test.ts](../../packages/kernel/tests/integration/transport.test.ts),
+Test: goal wire cases in [transport-codecs.test.ts](../../packages/kernel/tests/contract/memory/transport-codecs.test.ts),
+`goal subscription lifecycle` in [transport.test.ts](../../packages/kernel/tests/component/transport.test.ts),
 the actual IPC goal journey in [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts),
 and [goal-changes.test.ts](../../packages/kernel/tests/unit/goal-changes.test.ts).
 
@@ -69,7 +69,7 @@ schema registry.
 The ordinary catalog also includes `changes.availability`, `changes.list` and `changes.read`.
 They are file-sensitive reads. Cancellation travels as request options, not params. Production:
 `OPERATIONS.changes` in [operations.ts](../../packages/kernel/src/transport/operations.ts).
-Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
+Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/memory/transport-codecs.test.ts).
 The DTO contract is [workspace-changes.md](workspace-changes.md).
 
 The design property the modules exist to hold is that a method string is spelled **once**. `M` in
@@ -94,7 +94,7 @@ does not weaken either boundary or place Zod in Protocol. Unknown fields and run
 remain invalid. Production: [status-schema.ts](../../packages/kernel/src/runtime/status-schema.ts),
 [state.ts](../../packages/kernel/src/hosting/state.ts) and
 [local-host-client.ts](../../packages/kernel/src/transport/local-host-client.ts).
-Test: [runtime-status-conformance.test.ts](../../packages/kernel/tests/contract/runtime-status-conformance.test.ts)
+Test: [runtime-status-conformance.test.ts](../../packages/kernel/tests/contract/memory/runtime-status-conformance.test.ts)
 passes every current variant/lifecycle through both actual boundaries and preserves their distinct
 identifier and text bounds.
 
@@ -108,7 +108,7 @@ assuming that returning from a service handler already sent its response.
 
 Production: `KernelConnection` in [server.ts](../../packages/kernel/src/transport/server.ts) and
 `serveKernelOverStdio` in [stdio.ts](../../packages/kernel/src/transport/stdio.ts).
-Test: [stdio-response-sent.test.ts](../../packages/kernel/tests/contract/stdio-response-sent.test.ts)
+Test: [stdio-response-sent.test.ts](../../packages/kernel/tests/contract/memory/stdio-response-sent.test.ts)
 checks deferred writes, cancellation, write failure and callback failure without duplicate frames.
 
 ## 2. Surface
@@ -137,7 +137,7 @@ Exported from their module but **not** re-exported by `src/index.ts`: `CLARVIS_W
 (`packages/kernel/src/transport/wire.ts`), `MAX_WIRE_FRAME_BYTES` and `decodeFrame` (`packages/kernel/src/transport/stdio.ts`), `ORDINARY_OPERATIONS`,
 `decodeOperationParams`, `createServiceProxy` (`packages/kernel/src/transport/operations.ts`, same-named symbols), `decodeRunEvent`
 (`packages/kernel/src/transport/run-event-codec.ts`). The tests reach them by relative path
-(`packages/kernel/tests/contract/stdio-codec.test.ts`, `packages/kernel/tests/contract/transport-codecs.test.ts`).
+(`packages/kernel/tests/contract/memory/stdio-codec.test.ts`, `packages/kernel/tests/contract/memory/transport-codecs.test.ts`).
 
 `RemoteKernel.listAgents()` (`packages/kernel/src/transport/client.ts`) is documented on the interface as "a convenience
 alias for `config.listAgents`", but its implementation (`packages/kernel/src/transport/client.ts`) is a direct
@@ -183,7 +183,7 @@ There is no
 worktree service or worktree operation: checkout selection happens before kernel construction.
 Production: `packages/kernel/src/transport/operations.ts` (`OPERATIONS`, `SPECIAL_OPERATIONS`,
 `ORDINARY_OPERATIONS`, `KNOWN_METHODS`). Test:
-`packages/kernel/tests/contract/transport-codecs.test.ts` (transport operation descriptors).
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts` (transport operation descriptors).
 
 The special operations and their metadata:
 
@@ -362,7 +362,7 @@ only an authenticated operator. Production: `OPERATIONS` in
 `operator recovery preserves the session audit and unlocks maintenance over local IPC` in
 [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
 
-Real frames, from the reassembly test (`packages/kernel/tests/contract/stdio-codec.test.ts`):
+Real frames, from the reassembly test (`packages/kernel/tests/contract/memory/stdio-codec.test.ts`):
 
 ```
 {"t":"note","method":"probe.note","params":{"part":1}}
@@ -382,7 +382,7 @@ Real frames, from the reassembly test (`packages/kernel/tests/contract/stdio-cod
 - `cancel` admits only `t,id`; `note` permits only `t,method,params`, with `params`
   optional;
 - `res` must carry exactly one of `result`/`error` — `hasResult === hasError` is a rejection, tested for both the neither and the both case
-  (`packages/kernel/tests/contract/stdio-codec.test.ts`);
+  (`packages/kernel/tests/contract/memory/stdio-codec.test.ts`);
 - an error envelope must have only `code,message,details`, a `code` drawn from the eleven
   `KernelErrorCode` members, and a `message` string of at most 16 384 characters.
 
@@ -416,7 +416,7 @@ string }` (`packages/kernel/src/transport/wire.ts`, `HelloParams`). `CLARVIS_WIR
 `HelloResult` = `{ wire_version: 11; capabilities: KernelCapabilities; project: ProjectRef;
 workspace: WorkspaceRef; principal?: Principal }` (`packages/kernel/src/transport/wire.ts`,
 `HelloResult`). A concrete instance appears in
-`packages/kernel/tests/contract/transport-codecs.test.ts`.
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 The `run_ended` codec retains optional `final`/`checkpoint` disposition only for completed status.
 Other values or a disposition combined with failure, cancellation or running status are refused.
@@ -424,7 +424,7 @@ Peers must negotiate the current wire version before accepting the extended even
 Production: `RUN_EVENT_SCHEMAS` in [run-event-codec.ts](../../packages/kernel/src/transport/run-event-codec.ts)
 and `CLARVIS_WIRE_VERSION` in [wire.ts](../../packages/kernel/src/transport/wire.ts).
 Test: `carries checkpoint disposition over the live wire and rejects contradictory terminal status`
-in [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
+in [transport-codecs.test.ts](../../packages/kernel/tests/contract/memory/transport-codecs.test.ts).
 
 ### 3.5 Request ids
 
@@ -458,7 +458,7 @@ provider `stream_chars`, plus only the literal optional `complete: true`. The co
 distinct, and that flag closes argument composition; it does not stand in for
 `tool_call_started` or terminal `tool_call`, and another call beginning says nothing about the first
 because their streams may interleave. Production: `RUN_EVENT_SCHEMAS.tool_input_delta`. Test:
-`packages/kernel/tests/contract/transport-codecs.test.ts`.
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 ## 4. Behavior
 
@@ -589,7 +589,7 @@ mechanically fit the persisted final context. That service returns `not_found` w
 exists; during the narrow terminal interval in which a `live` entry still exists but its compaction
 channel has already closed, the handle itself can also report `not_found`. Production:
 `packages/kernel/src/runs/run-service.ts`, `createRunService`'s `compact`. Test:
-`packages/kernel/tests/integration/transport.test.ts`, "routes settled compaction through the
+`packages/kernel/tests/component/transport.test.ts`, "routes settled compaction through the
 owner-bound run service"; the underlying persisted mechanical fit is also pinned by
 `packages/kernel/tests/unit/run-service-lifecycle.test.ts`, "inspects and mechanically fits a
 settled continuation before a model switch".
@@ -650,13 +650,13 @@ local listener **first**, fire the subscribe request detached, and return a disp
 idempotent (`disposed` flag), deletes the local listener immediately, then — detached — awaits the
 original subscribe promise, returns silently if it rejected, returns if the client is closed, and
 otherwise issues the unsubscribe. Production: `packages/kernel/src/transport/client.ts`
-(`config.subscribe`). Test: `packages/kernel/tests/integration/transport.test.ts` (immediate
+(`config.subscribe`). Test: `packages/kernel/tests/component/transport.test.ts` (immediate
 unsubscribe after delayed authorization).
 
 Server-side config subscriptions share one `subs` map keyed by id. A duplicate id is `conflict`;
 unsubscribing an unknown id is a silent no-op. Production:
 `packages/kernel/src/transport/server.ts` (config subscribe/unsubscribe cases). Test:
-`packages/kernel/tests/integration/transport.test.ts`.
+`packages/kernel/tests/component/transport.test.ts`.
 
 ### 4.7 NDJSON reading
 
@@ -692,8 +692,8 @@ Local admission refusals preserve the connection and its other requests. A refus
 request registration, so a simultaneous local abort cannot publish an unknown cancellation identity.
 An excessive handler result produces a bounded error response, waiting for admitted writes to drain
 if needed. Physical failures invoke `onFailure` once; queued messages re-check closure before writing.
-Test: [json-message.test.ts](../../packages/kernel/tests/contract/json-message.test.ts) and
-[stdio-codec.test.ts](../../packages/kernel/tests/contract/stdio-codec.test.ts), including
+Test: [json-message.test.ts](../../packages/kernel/tests/contract/memory/json-message.test.ts) and
+[stdio-codec.test.ts](../../packages/kernel/tests/contract/memory/stdio-codec.test.ts), including
 `transfers the full composer image budget and isolates oversized requests and results`.
 
 ### 4.9 Server pump over stdio
@@ -716,7 +716,7 @@ The reservation remains charged through response delivery. Cancellation does not
 the handler settles. Input EOF, error and close all disconnect the server side. Production:
 `serveKernelOverStdio` in [stdio.ts](../../packages/kernel/src/transport/stdio.ts). Test: `bounds
 inbound %s before invoking another handler` and duplicate-id/cancellation cases in
-[stdio-codec.test.ts](../../packages/kernel/tests/contract/stdio-codec.test.ts).
+[stdio-codec.test.ts](../../packages/kernel/tests/contract/memory/stdio-codec.test.ts).
 
 ### Reconnectable local IPC
 
@@ -786,10 +786,10 @@ is `failConnection`, which closes the connection and then calls the transport's
 `disconnect` inside a `try/catch` whose comment reads "A broken transport close cannot keep the
 kernel connection alive".
 
-`packages/kernel/tests/integration/transport.test.ts` pins that both a *rejecting* and a *stalling* sink
+`packages/kernel/tests/component/transport.test.ts` pins that both a *rejecting* and a *stalling* sink
 disconnect once, close the host context once, and are called exactly once — the circuit opens
 permanently rather than retaining one pending delivery per event.
-`packages/kernel/tests/integration/transport.test.ts` pins that `connection.close()` releases a run's event
+`packages/kernel/tests/component/transport.test.ts` pins that `connection.close()` releases a run's event
 stream without waiting on an infinite send.
 
 ### 4.12 Connection teardown
@@ -819,12 +819,12 @@ INV-205–INV-224 are the numbered invariants this document owns; INV-T* are der
 extra field, and for a `res` carrying neither or both of `result`/`error`; a request pending when
 such a frame — or one past `MAX_WIRE_FRAME_BYTES` — arrives rejects `unavailable`.
 Production: `packages/kernel/src/transport/stdio.ts`, `packages/kernel/src/transport/stdio.ts`, `packages/kernel/src/transport/stdio.ts`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
+Test: `packages/kernel/tests/contract/memory/stdio-codec.test.ts`.
 
 **INV-206.** A server-thrown error crosses the wire with its `code`, `message` and `details` intact,
 domain codes such as `resource_exhausted` included.
 Production: `toEnvelope` `packages/kernel/src/transport/stdio.ts`, `fromEnvelope` `packages/kernel/src/transport/stdio.ts`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
+Test: `packages/kernel/tests/contract/memory/stdio-codec.test.ts`.
 
 **INV-207.** An untrusted server error is normalized before crossing: ANSI escapes and terminal
 control bytes stripped, the message bounded to 16 384 characters, a credential-shaped detail key
@@ -832,7 +832,7 @@ control bytes stripped, the message bounded to 16 384 characters, a credential-s
 through `kernelError` collapsed to `internal`.
 Production: `terminalSafe` `packages/kernel/src/transport/stdio.ts`, `safeErrorDetails` `packages/kernel/src/transport/stdio.ts`, `toEnvelope`
 `packages/kernel/src/transport/stdio.ts`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts`. The underlying two rule sets
+Test: `packages/kernel/tests/contract/memory/stdio-codec.test.ts`. The underlying two rule sets
 (`sanitizeDeep`/`sanitizeErrorMessage`) belong to
 [cross-cutting/security.md](../cross-cutting/security.md) §5; this invariant is the wire's own
 application of them.
@@ -843,37 +843,37 @@ application of them.
 characters, and a `truncated: true` marker is added.
 Production: `PRESERVED_ERROR_STRING_DETAILS` `packages/kernel/src/transport/stdio.ts`, `preservedErrorDetails`
 `packages/kernel/src/transport/stdio.ts`, `packages/kernel/src/transport/stdio.ts`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
+Test: `packages/kernel/tests/contract/memory/stdio-codec.test.ts`.
 
 **INV-209.** A request queued before `close()` is never written to the output stream.
 Production: `packages/kernel/src/transport/stdio.ts` (the in-promise `closed` re-check) and `terminate`'s `writer.close()`
 at `packages/kernel/src/transport/stdio.ts`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
+Test: `packages/kernel/tests/contract/memory/stdio-codec.test.ts`.
 
 **INV-210.** A frame that cannot be JSON-serialized fails its request cleanly with `unavailable`
 rather than crashing the transport.
 Production: `packages/kernel/src/transport/stdio.ts` (reject) → `packages/kernel/src/transport/stdio.ts` `.catch(terminate)` → `packages/kernel/src/transport/stdio.ts`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
+Test: `packages/kernel/tests/contract/memory/stdio-codec.test.ts`.
 
 **INV-211.** Every request still pending at input EOF is rejected `unavailable`.
 Production: `packages/kernel/src/transport/stdio.ts` (`input.once("end", …)`) → `packages/kernel/src/transport/stdio.ts`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
+Test: `packages/kernel/tests/contract/memory/stdio-codec.test.ts`.
 
 **INV-212.** Cancelling one in-flight request rejects only that request with `cancelled`, propagates
 the abort to the server handler's own signal, and does not close the connection.
 Production: client `onAbort` `packages/kernel/src/transport/stdio.ts`; server `cancel` handling `packages/kernel/src/transport/stdio.ts`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
+Test: `packages/kernel/tests/contract/memory/stdio-codec.test.ts`.
 
 **INV-213.** A duplicate in-flight request id is fatal to the server connection: the handler is
 invoked once, the first call's signal is aborted, and the connection closes.
 Production: `packages/kernel/src/transport/stdio.ts` combined with `close()`'s controller abort at `packages/kernel/src/transport/stdio.ts`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
+Test: `packages/kernel/tests/contract/memory/stdio-codec.test.ts`.
 
 **INV-214.** `transport.frame_dropped` names the specific bound: inbound
 `oversize_unterminated` / `oversize` / `invalid_json` / `invalid_shape`, outbound
 `invalid_request` or `resource_exhausted` for local message admission refusal.
 Production: `reportFrameDropped` `packages/kernel/src/transport/stdio.ts`; call sites `packages/kernel/src/transport/stdio.ts`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
+Test: `packages/kernel/tests/contract/memory/stdio-codec.test.ts`.
 
 The diagnostic `reason` is local-only. An unsent request's admission error reaches its caller
 without closing the connection or publishing a cancellation identity.
@@ -882,18 +882,18 @@ without closing the connection or publishing a cancellation identity.
 unexpected extra field, or an invalid nested `workspace.kind`, and closes the transport exactly once
 in every case.
 Production: `packages/kernel/src/transport/client.ts`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
+Test: `packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 **INV-216.** When the handshake itself rejects, the transport is still closed exactly once and every
 notification observer is detached.
 Production: `packages/kernel/src/transport/client.ts` with `detachTransportObservers` `packages/kernel/src/transport/client.ts`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
+Test: `packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 **INV-217.** `KNOWN_METHODS` holds no duplicate, and every ordinary operation's `invoke` genuinely
 reaches the matching service method in catalog order.
 Production: `OPERATIONS`, each operation's `invoke`, and `ORDINARY_OPERATIONS`/`KNOWN_METHODS` in
 `packages/kernel/src/transport/operations.ts`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts` (each fake service method throws
+Test: `packages/kernel/tests/contract/memory/transport-codecs.test.ts` (each fake service method throws
 `RECORDED_OPERATION`, `packages/kernel/tests/helpers/recording-kernel-services.ts`).
 
 **INV-218.** A transport-level cancellation signal reaches the signal-aware service call for
@@ -902,7 +902,7 @@ never appears on the public wire `SessionService` contract.
 Production: `listSessionPage` and `listWorkflows` in
 `packages/kernel/src/transport/operations.ts`, wired at `OPERATIONS.sessions.listPage` and
 `OPERATIONS.workflows.list`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts` (session and workflow catalog
+Test: `packages/kernel/tests/contract/memory/transport-codecs.test.ts` (session and workflow catalog
 cases); `packages/kernel/tests/integration/session-service.test.ts` corroborates from the
 service side — the session service itself honors an aborted signal mid-scan, not merely relays it.
 
@@ -910,12 +910,12 @@ service side — the session service itself honors an aborted signal mid-scan, n
 until `run.stream_end`, at which point `closed` resolves; a `runs.start` rejection settles `done` as
 `failed` carrying the transport's own error code, with `closed` resolved and `events` empty.
 Production: `packages/kernel/src/transport/client.ts` and `packages/kernel/src/transport/client.ts`; server side `packages/kernel/src/transport/server.ts`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
+Test: `packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 **INV-220.** Starting a run whose execution id is already live is rejected `conflict` and does not
 replace the first handle.
 Production: `packages/kernel/src/transport/client.ts`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
+Test: `packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 **INV-221.** `steer`/`compact`/`cancel`/`interruptTool`/`respond`/`present` each forward with the handle's own `execution_id`
 under the stable names `runs.steer`, `runs.compact`, `runs.cancel`, `runs.interrupt_tool`, `runs.respond`,
@@ -925,20 +925,20 @@ window, and it never settles a question by itself. Its envelope is key-checked (
 `presentation`) and `wirePresentation` requires both members to be non-empty bounded strings.
 Production: `packages/kernel/src/transport/client.ts` (the streaming handle and its bound method names),
 `packages/kernel/src/transport/wire.ts` (`M.runsPresent`).
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts` ("forwards steer, compact, cancel, and
-respond with the handle's execution id") and `packages/kernel/tests/integration/transport.test.ts`
+Test: `packages/kernel/tests/contract/memory/transport-codecs.test.ts` ("forwards steer, compact, cancel, and
+respond with the handle's execution id") and `packages/kernel/tests/component/transport.test.ts`
 ("presents a model question, expires its window and settles the silence as window_elapsed").
 
 **INV-222.** An elicitation emitted before `runs.start` resolves is buffered and delivered to a
 handler registered afterwards.
 Production: registration of the `ClientRun` before the start request (`packages/kernel/src/transport/client.ts`), the
 buffer at `packages/kernel/src/transport/client.ts`, the flush at `packages/kernel/src/transport/client.ts`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
+Test: `packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 **INV-223.** On transport disconnect every live run handle settles `failed` with an `unavailable`
 error carrying the disconnect reason.
 Production: `settleRunsUnavailable` `packages/kernel/src/transport/client.ts`, wired at `packages/kernel/src/transport/client.ts`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
+Test: `packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 **INV-224.** A malformed run-event notification fails the run's `done` as `unavailable` with a
 "protocol violation" message and closes the transport — for a bad field type, an incomplete
@@ -946,7 +946,7 @@ required-field set, and an inherited object key (`toString`, `constructor`, `__p
 discriminator.
 Production: `decodeRunEvent` in `packages/kernel/src/transport/run-event-codec.ts` (its `Object.hasOwn` guard is
 what rejects inherited keys), `protocolViolation` `packages/kernel/src/transport/client.ts`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
+Test: `packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 **INV-326.** A question the run retired is reported to the direct client by id, and never as an
 answer: the server's pump subscribes `handle.onElicitSettled` and pushes
@@ -959,8 +959,8 @@ Production: `packages/kernel/src/transport/wire.ts` (`N.runElicitationSettled`,
 `RunElicitationSettledNote`), `packages/kernel/src/transport/server.ts` (`pump`),
 `packages/kernel/src/transport/client.ts` (the `N.runElicitationSettled` observer and the streaming
 handle's `onElicitSettled`).
-Test: `packages/kernel/tests/integration/transport.test.ts` ("reports each settled windowed question by
-id to the direct client presenting it") and `packages/kernel/tests/contract/transport-codecs.test.ts`
+Test: `packages/kernel/tests/component/transport.test.ts` ("reports each settled windowed question by
+id to the direct client presenting it") and `packages/kernel/tests/contract/memory/transport-codecs.test.ts`
 ("drops a buffered question the kernel settles before any handler attaches", "keeps a buffered
 question when the settlement names another run", and the invalid-envelope case for
 `run.elicitation_settled`).
@@ -969,7 +969,7 @@ question when the settlement names another run", and the invalid-envelope case f
 values from the catalog rather than restating them.
 Production: `packages/kernel/src/transport/wire.ts` (every value is an `OPERATIONS.*.method` or `SPECIAL_OPERATIONS.*.method`),
 `KernelOperation.method` in `packages/kernel/src/transport/operations.ts`. Pinned indirectly by the uniqueness assertion at
-`packages/kernel/tests/contract/transport-codecs.test.ts`; no test asserts that `M` cannot contain a literal.
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts`; no test asserts that `M` cannot contain a literal.
 
 **INV-T2.** The `res` error envelope's `code` set is pinned to the protocol union at compile time.
 Production: `packages/kernel/src/transport/stdio.ts` (`satisfies Record<KernelErrorCode, true>`) against
@@ -983,69 +983,69 @@ only — it constrains the **keys**, not the payload shape (see §8).
 **INV-T3b.** `tool_input_delta.stream_chars`, when present, is finite;
 `tool_input_delta.complete`, when present, is exactly `true`; extra lifecycle fields are
 rejected by the strict codec. Production: `RUN_EVENT_SCHEMAS.tool_input_delta`. Test:
-`packages/kernel/tests/contract/transport-codecs.test.ts`.
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 **INV-T3a.** The workflow checkpoint event is strict on both keys and values: its status is one of
 the six protocol states; revision, pass and count fields are non-negative integers; the lifetime
 limit is positive and not below the started count; current/proposed round/pass and reason are
 optional; extra fields are rejected.
 Production: `RUN_EVENT_SCHEMAS.workflow_sequence_state`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts` (`preserves the workflow round
+Test: `packages/kernel/tests/contract/memory/transport-codecs.test.ts` (`preserves the workflow round
 checkpoint contract`).
 
 **INV-T4.** A request parameter envelope may carry no key the operation's own encoder does not
 produce; the allowed key set is derived once per operation by invoking `encode` with `undefined`
 placeholders and memoized in a `WeakMap`.
 Production: `decodeOperationParams` in `packages/kernel/src/transport/operations.ts`, enforced at `packages/kernel/src/transport/server.ts`.
-Test: `packages/kernel/tests/integration/transport.test.ts` (`listAgents` with `{ unexpected: true }` →
+Test: `packages/kernel/tests/component/transport.test.ts` (`listAgents` with `{ unexpected: true }` →
 `invalid_request`).
 
 **INV-T5.** A special operation's parameters are checked against a per-method allowlist and must be a
 non-array object.
 Production: `specialParams` `packages/kernel/src/transport/server.ts`.
-Test: `packages/kernel/tests/integration/transport.test.ts` (a string body and an extra key on `runs.cancel`
+Test: `packages/kernel/tests/component/transport.test.ts` (a string body and an extra key on `runs.cancel`
 both `invalid_request`).
 
 **INV-T6.** No ordinary or special operation is served before `hello` completes.
 Production: `packages/kernel/src/transport/server.ts`, backed by `services()` `packages/kernel/src/transport/server.ts`.
-Test: `packages/kernel/tests/integration/transport.test.ts`.
+Test: `packages/kernel/tests/component/transport.test.ts`.
 
 **INV-T7.** `hello` binds a connection exactly once; a second `hello` is `invalid_request` and does
 not re-run `resolveConnection`.
 Production: `helloStarted` `packages/kernel/src/transport/server.ts`.
-Test: `packages/kernel/tests/integration/transport.test.ts` (asserts `resolutions === 1`).
+Test: `packages/kernel/tests/component/transport.test.ts` (asserts `resolutions === 1`).
 
 **INV-T8.** A `hello` whose `wire_version` is missing or differs from `CLARVIS_WIRE_VERSION` is `unsupported`.
 Production: `packages/kernel/src/transport/server.ts` (`createKernelServer`) and
 `packages/kernel/src/transport/wire.ts` (`CLARVIS_WIRE_VERSION`).
-Test: `packages/kernel/tests/integration/transport.test.ts`.
+Test: `packages/kernel/tests/component/transport.test.ts`.
 
 **INV-T9.** `hello` identity fields are validated before `resolveConnection` runs.
 Production: `packages/kernel/src/transport/server.ts` precedes.
-Test: `packages/kernel/tests/integration/transport.test.ts`.
+Test: `packages/kernel/tests/component/transport.test.ts`.
 
 **INV-T10.** Owner services come only from the host-resolved `hello` context, never from a
 caller-supplied workspace parameter.
 Production: `packages/kernel/src/transport/server.ts`; `KernelConnectionContext.services` documented as "never
 borrowed from the primary kernel" (`packages/kernel/src/transport/server.ts`).
-Test: `packages/kernel/tests/integration/transport.test.ts` — a session saved through the wire is readable
+Test: `packages/kernel/tests/component/transport.test.ts` — a session saved through the wire is readable
 under the *authenticated* owner and `null` under the caller-requested one.
 
 **INV-T11.** `opts.authorize` sees the catalog's `metadata`, is not consulted for `hello`, and an
 unknown method is `invalid_request` rather than a policy question.
 Production: `packages/kernel/src/transport/server.ts`, `packages/kernel/src/transport/server.ts` (the `special !== SPECIAL_OPERATIONS.hello`
 guard), `packages/kernel/src/transport/server.ts`.
-Test: `packages/kernel/tests/integration/transport.test.ts`.
+Test: `packages/kernel/tests/component/transport.test.ts`.
 
 **INV-T12.** A config subscription whose authorization completes after the connection closed is
 never installed, and an authorization hop cannot resurrect a closed connection.
 Production: the post-await `assertConnectionOpen()` at `packages/kernel/src/transport/server.ts`.
-Test: `packages/kernel/tests/integration/transport.test.ts` (asserts no subscription was installed).
+Test: `packages/kernel/tests/component/transport.test.ts` (asserts no subscription was installed).
 
 **INV-T13.** Config subscription ids are unique per connection: a duplicate is `conflict`, and an
 unknown unsubscribe is an idempotent no-op.
 Production: `packages/kernel/src/transport/server.ts` (config subscription map).
-Test: `packages/kernel/tests/integration/transport.test.ts`.
+Test: `packages/kernel/tests/component/transport.test.ts`.
 
 **INV-T14.** `runs.steer`, `runs.cancel`, `runs.respond` and `runs.present` are connection-live-only and return
 `not_found` when their execution is absent or result-settled on that connection. `runs.compact` is
@@ -1056,7 +1056,7 @@ terminal live handle whose compaction channel has already closed may report the 
 connection entry is released.
 Production: `packages/kernel/src/transport/server.ts`, `liveOrThrow` and the `M.runsCompact` case;
 `packages/kernel/src/runs/run-service.ts`, `createRunService`'s `compact`.
-Test: `packages/kernel/tests/integration/transport.test.ts`, "rejects control requests for an
+Test: `packages/kernel/tests/component/transport.test.ts`, "rejects control requests for an
 execution not live on that connection" and "routes settled compaction through the owner-bound run
 service"; `packages/kernel/tests/unit/run-service-lifecycle.test.ts`, "inspects and mechanically fits
 a settled continuation before a model switch".
@@ -1065,13 +1065,13 @@ a settled continuation before a model switch".
 a client's ordinary connection-owned handles then settle `unavailable`. Hosted observations reject
 their unfinished waits without inventing a root result, as specified in [hosted runs](hosted-runs.md#hosted-kernel-rpc).
 Production: `createNotificationChannel` `packages/kernel/src/transport/server.ts`, `failConnection` `packages/kernel/src/transport/server.ts`.
-Test: `packages/kernel/tests/integration/transport.test.ts`.
+Test: `packages/kernel/tests/component/transport.test.ts`.
 
 **INV-T16.** `connection.close()` does not wait on an in-flight notification send; an ordinary
 connection-owned run's event stream is released and its handle cancelled. Hosted runs instead
 release the connection's observation and apply the registry's committed disconnect policy.
 Production: `stop`'s interrupt fan-out `packages/kernel/src/transport/server.ts`, `close` `packages/kernel/src/transport/server.ts`.
-Test: `packages/kernel/tests/integration/transport.test.ts`.
+Test: `packages/kernel/tests/component/transport.test.ts`.
 
 **INV-T17.** The loopback transport deep-clones every payload in both directions, so neither side can
 retain a mutable reference into the other's state.
@@ -1097,7 +1097,7 @@ bound to its own wire", …)`. The composition around it belongs to the kernel-b
 are writes. This lets a remote host apply the same executable-extension authorization boundary to
 plugins and Extension Profiles without inspecting payloads. Production:
 `packages/kernel/src/transport/operations.ts` (`OPERATIONS.extensionProfiles`). Test:
-`packages/kernel/tests/contract/transport-codecs.test.ts` ("classifies every Extension Profile operation
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts` ("classifies every Extension Profile operation
 as plugin-sensitive with exact read/write access").
 
 ## 6. Failure modes and degradation
@@ -1193,7 +1193,7 @@ conversation admission. The owning contract is
 Production: `KernelServerOptions`, `defaultContext` and both dispatch paths in
 [server.ts](../../packages/kernel/src/transport/server.ts);
 `createFileRunHost` in [file-host.ts](../../packages/kernel/src/hosting/file-host.ts).
-Test: [transport.test.ts](../../packages/kernel/tests/integration/transport.test.ts) pins the generic
+Test: [transport.test.ts](../../packages/kernel/tests/component/transport.test.ts) pins the generic
 authorization hook and disabled remote subscription control;
 [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts) verifies
 authenticated file-host connections, observer restrictions and coordinated admission over a real
@@ -1310,7 +1310,7 @@ entry carried one (`packages/kernel/src/runs/map-events.ts`), and
 error code decoded to `null`, the client read that as a protocol violation, and one field nobody had
 ever round-tripped settled every live run `unavailable` and closed the transport. The
 `RUN_EVENT_SCHEMAS.run_ended` schema now declares `code: text.optional()`, and
-`packages/kernel/tests/contract/transport-codecs.test.ts` — "carries a failed run's error code
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts` — "carries a failed run's error code
 instead of killing the connection" — holds both halves: the event survives `decodeRunEvent`
 unchanged, and the transport's `closeCount` stays `0`. The field's own remark now states what it is
 for (`run_ended.code` in `RunEvent`): a resumed session is rebuilt from the persisted trace
@@ -1375,11 +1375,11 @@ Schema passed through opaquely" (`packages/protocol/src/common.ts`). Applying a 
 today would reject a future `kind`'s legitimate extra fields, defeating the exact extensibility `kind`
 was made open for — so the omission is the correct reading, not an arbitrary weakening.
 
-The request keeps an open `kind` and opaque `schema`; the transport rejects the retired command-detail field and validates the optional countdown duration. Production: `observe` for `N.runElicitation` in [client.ts](../../packages/kernel/src/transport/client.ts). Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
+The request keeps an open `kind` and opaque `schema`; the transport rejects the retired command-detail field and validates the optional countdown duration. Production: `observe` for `N.runElicitation` in [client.ts](../../packages/kernel/src/transport/client.ts). Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/memory/transport-codecs.test.ts).
 
 **`transport.frame_dropped` with `reason: "serialization"` is unpinned.** It is emitted at
 `packages/kernel/src/transport/stdio.ts` and is the only one of the six reasons absent from the drop-reason suite
-(`packages/kernel/tests/contract/stdio-codec.test.ts`). INV-210 covers the *behaviour* (a clean
+(`packages/kernel/tests/contract/memory/stdio-codec.test.ts`). INV-210 covers the *behaviour* (a clean
 `unavailable`) but not the log record.
 
 **`decodeOperationParams` validates only the key set** — it checks no required key is missing and no
@@ -1409,7 +1409,7 @@ fragments under the common 64 MiB logical-message contract. Exhausting the notif
 own budget still fails that connection rather than silently dropping ordered events.
 Production: `createKernelServer` in [server.ts](../../packages/kernel/src/transport/server.ts) and
 `createStdioTransport` in [stdio.ts](../../packages/kernel/src/transport/stdio.ts). Test:
-[stdio-codec.test.ts](../../packages/kernel/tests/contract/stdio-codec.test.ts).
+[stdio-codec.test.ts](../../packages/kernel/tests/contract/memory/stdio-codec.test.ts).
 
 **Deliberately delegated.**
 - The DTO shapes every method carries, and `KernelClient`'s required named services →

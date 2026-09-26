@@ -1,5 +1,6 @@
+import { ownedTempDirSync } from "../helpers/owned-root.ts";
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { globalPaths, workspacePaths } from "@clarvis/paths";
@@ -10,7 +11,7 @@ import { snapshotRunConfiguration } from "../../src/runs/configuration-snapshot.
 
 describe("global isolation settings", () => {
   it("ignores workspace content and writes while retaining global siblings", async () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-isolation-settings-"));
+    const root = ownedTempDirSync(join(tmpdir(), "clarvis-isolation-settings-"));
     const workspaceRoot = join(root, "workspace");
     const globalDir = join(root, "global");
     mkdirSync(workspaceRoot);

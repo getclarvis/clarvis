@@ -349,3 +349,10 @@ bun --filter @clarvis/skills format:check
 The package requires Bun 1.4.0 or newer.
 
 `listSkillDirs` exposes the existing bounded discovery walk with an optional host directory observer. This lets catalogs monitor empty/grouping directories before a manifest arrives, using the same depth, directory-entry and candidate budgets as discovery. `validateSkillDocument` preserves root-specific naming rules; the writer uses the resulting metadata name for membership.
+
+## Test suites
+
+`bun --filter @clarvis/skills test:fast` runs this package's in-memory test cases. `bun --filter @clarvis/skills test:integration` runs this package's common physical test cases. `bun --filter @clarvis/skills test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

@@ -7,14 +7,14 @@ the global preference captured at admission. Production: `createFileKernel` in
 `packages/kernel/src/file-kernel.ts`, `createRunService` in
 `packages/kernel/src/runs/run-service.ts`, and `createWorkflowsService` in
 `packages/kernel/src/workflows/workflows-service.ts`. Test:
-`packages/kernel/tests/unit/isolation-service.test.ts` and
+`packages/kernel/tests/integration/isolation-service.test.ts` and
 `packages/kernel/tests/integration/isolation-settings.test.ts`.
 
 > Production: [hosting.ts](../../packages/protocol/src/hosting.ts) defines the transport-independent
 > hosted-run boundary. [projection.ts](../../packages/kernel/src/hosting/projection.ts) owns bounded
 > observation storage. [local-host.ts](../../packages/paths/src/local-host.ts) owns the private path
 > vocabulary. Test: [hosted-projection.test.ts](../../packages/kernel/tests/unit/hosted-projection.test.ts),
-> [hosted-projection-file.test.ts](../../packages/kernel/tests/component/hosted-projection-file.test.ts)
+> [hosted-projection-file.test.ts](../../packages/kernel/tests/integration/hosted-projection-file.test.ts)
 > and [local-host.test.ts](../../packages/paths/tests/unit/local-host.test.ts).
 
 ## Scope
@@ -100,7 +100,7 @@ Production: `WorkspaceClientManager` in
 [workspace-client-manager.ts](../../packages/code/src/adapters/workspace-client-manager.ts),
 [local-host.ts](../../packages/code/src/local-host.ts) and
 [local-kernel-artifact.ts](../../packages/code/src/adapters/local-kernel-artifact.ts).
-Test: [workspace-client-manager.test.ts](../../packages/code/tests/component/workspace-client-manager.test.ts)
+Test: [workspace-client-manager.test.ts](../../packages/code/tests/integration/workspace-client-manager.test.ts)
 exercises the real process connection and pinned workspace. Artifact installation and native platform
 qualification require their own process and PTY evidence; a source fixture does not supply it.
 
@@ -121,10 +121,10 @@ Production: `WorkspaceClientManager.recover`, `invalidate`, `subscribeConnection
 `createKernelRunClient.reconnect` in the adapters, `reconnectBackend` in
 [runtime.tsx](../../packages/code/src/runtime.tsx), and the backend actions in
 [commands.tsx](../../packages/code/src/app/commands.tsx).
-Test: [workspace-client-manager.test.ts](../../packages/code/tests/component/workspace-client-manager.test.ts)
+Test: [workspace-client-manager.test.ts](../../packages/code/tests/integration/workspace-client-manager.test.ts)
 verifies a real closed socket recovers the same host generation without restart, and a physical
 activity prevents reload while preserving the original client;
-[workspace-operator-notices.test.ts](../../packages/code/tests/component/workspace-operator-notices.test.ts)
+[workspace-operator-notices.test.ts](../../packages/code/tests/integration/workspace-operator-notices.test.ts)
 verifies sequenced notices, failed-poll recovery and browser callbacks fenced to their connection;
 [kernel-run-client.test.ts](../../packages/code/tests/component/kernel-run-client.test.ts) verifies
 transition ordering and intent; [app-commands.test.tsx](../../packages/code/tests/integration/app-commands.test.tsx)
@@ -291,7 +291,7 @@ Production: `openProjectionStorage` and `removeProjectionStorage` in
 [projection-storage.ts](../../packages/kernel/src/hosting/projection-storage.ts), used by
 `openHostedProjection`, local host storage. Test: `streams beyond the former lifetime
 quota with bounded segments and immutable cuts` in
-[hosted-projection-file.test.ts](../../packages/kernel/tests/component/hosted-projection-file.test.ts)
+[hosted-projection-file.test.ts](../../packages/kernel/tests/integration/hosted-projection-file.test.ts)
 streams more than 64 MiB through the real snapshot decoder and preserves an earlier cut.
 
 The positional file writer owns transient syscall recovery. `EINTR`, `EAGAIN`, `EBUSY`, `ETIMEDOUT`
@@ -307,7 +307,7 @@ Production: `recoverProjectionIO` in
 [projection-io.ts](../../packages/kernel/src/hosting/projection-io.ts), called by `openProjectionStorage`;
 local hosts supply their Logger. Test: `recovers positional writes and rotation sync
 without duplicating frames or changing a snapshot` in
-[hosted-projection-file.test.ts](../../packages/kernel/tests/component/hosted-projection-file.test.ts)
+[hosted-projection-file.test.ts](../../packages/kernel/tests/integration/hosted-projection-file.test.ts)
 uses real segmented files with faults before/after individual IO operations. `positional IO recovery
 has a finite allowance and never retries capacity or identity errors` in
 [projection-io.test.ts](../../packages/kernel/tests/unit/projection-io.test.ts) covers refusal and exhaustion.
@@ -369,7 +369,7 @@ platform limitations; observation storage is not an executable crash checkpoint.
 
 Production: `openHostedProjection` in [projection.ts](../../packages/kernel/src/hosting/projection.ts).
 Test: `file-backed hosted projection` in
-[hosted-projection-file.test.ts](../../packages/kernel/tests/component/hosted-projection-file.test.ts).
+[hosted-projection-file.test.ts](../../packages/kernel/tests/integration/hosted-projection-file.test.ts).
 
 ## Admission and interactive control
 

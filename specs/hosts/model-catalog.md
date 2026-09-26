@@ -49,9 +49,9 @@ Anthropic call with deep reasoning from being starved of output tokens.
 | `cacheModeOf(cost)` | function | `packages/kernel/src/models/model-catalog.ts` | `"explicit" \| "implicit" \| "unknown"` |
 | `derivePromptCacheMode(cost, kind)` | function | `packages/kernel/src/models/model-catalog.ts` | `"explicit" \| "implicit" \| undefined` |
 | `projectModelsDevApi(raw)` | function | `packages/kernel/src/models/model-catalog.ts` | raw models.dev JSON → `CatalogData` |
-| `fetchModelsDevApi()` | function | `packages/kernel/src/models/model-catalog.ts` | `Promise<unknown>` (raw JSON) |
-| `refreshModelsCatalog(configDir)` | function | `packages/kernel/src/models/model-catalog.ts` | fetch + project + write cache |
-| `createModelCatalogService(configDir, logger?)` | function | `packages/kernel/src/models/model-catalog.ts` | builds the protocol `ModelCatalogService` |
+| `fetchModelsDevApi(fetcher?)` | function | `packages/kernel/src/models/model-catalog.ts` | `Promise<unknown>` (raw JSON) |
+| `refreshModelsCatalog(configDir, fetcher?)` | function | `packages/kernel/src/models/model-catalog.ts` | fetch + project + write cache |
+| `createModelCatalogService(configDir, logger?, fetcher?)` | function | `packages/kernel/src/models/model-catalog.ts` | builds the protocol `ModelCatalogService` |
 
 `ModelsCatalog` is an interface, not a bare export; its methods are `provider(id)`,
 `models(id)`, `seed(providerId, taken)` and `fill(kind, modelId)` — `seed`'s and `fill`'s contracts
@@ -206,6 +206,13 @@ whole body is buffered. `MODEL_CATALOG_FETCH_TIMEOUT_MS = 30_000` bounds the req
 never reaches 20 (i.e., the cancel happens before the 20th 1 MiB chunk lands, which would be the
 20 MiB point — comfortably past the 8 MiB cap).
 
+The catalog fetcher defaults to the host's `fetch` at the responsible factory boundary. A supplied
+fetcher flows through `createModelCatalogService.refresh`, `refreshModelsCatalog`, and
+`fetchModelsDevApi`, preserving status failures, body cancellation and the cache-write guard without
+replacing the process-global fetch. Production: `packages/kernel/src/models/model-catalog.ts`
+(`createModelCatalogService`, `refreshModelsCatalog`, `fetchModelsDevApi`). Test:
+`packages/kernel/tests/integration/model-catalog.test.ts` (the fetch, refresh and service-refresh cases).
+
 ## 4. Behavior
 
 ### 4.1 Catalog load precedence
@@ -319,7 +326,7 @@ handed off. This means:
 - The user's `/model` and `/effort` picks are **authoritative for the entry agent only** — a
   spawned sub-agent's own frontmatter `model`/`reasoning_effort` is never overridden by the user's
   global default; only a sub-agent that declares **neither** falls back to the user's default.
-- Pinned by two cases in `packages/kernel/tests/component/settings-assembler.test.ts`: "the user's
+- Pinned by two cases in `packages/kernel/tests/integration/settings-assembler.test.ts`: "the user's
   model and effort override the Lead while a spawned Sub-agent keeps its profile" and "a spawned
   Sub-agent with no model or effort falls back to the user's defaults".
 - If no model resolves at all (neither settings, frontmatter, nor `options.defaultModel`), a
@@ -632,13 +639,13 @@ kind on the same priced cost), the bundled `openai/gpt-5.6-sol` price deriving `
 wins over the agent's own frontmatter; for every other (spawned) agent, the agent's own frontmatter
 wins and the settings default is only the last resort.
 Production: `packages/kernel/src/runs/settings-assembler.ts`.
-Test: `packages/kernel/tests/component/settings-assembler.test.ts`.
+Test: `packages/kernel/tests/integration/settings-assembler.test.ts`.
 
 **INV-MC-4.** An agent that resolves no model at all (no frontmatter, no `default_model`, no
 `options.defaultModel`) fails run assembly with `invalid_request`, naming the agent; failing to
 resolve a `reasoning_effort` is not an error and yields `undefined`.
 Production: `packages/kernel/src/runs/settings-assembler.ts`.
-Test: `packages/kernel/tests/component/settings-assembler.test.ts` (the effort-unset half);
+Test: `packages/kernel/tests/integration/settings-assembler.test.ts` (the effort-unset half);
 no assertion for the model-missing throw path has been identified in that file — see §8.
 
 **INV-MC-5.** `resolveProvider`'s `headers`/`body` merge is shallow per top-level key: a model's
@@ -813,7 +820,7 @@ catalog case).
 ## 8. Open questions
 
 - **Where `settings-assembler.ts`'s "no model resolves → invalid_request" throw is pinned by test**
-  has no identified assertion in `packages/kernel/tests/component/settings-assembler.test.ts`
+  has no identified assertion in `packages/kernel/tests/integration/settings-assembler.test.ts`
   (the file is long; the effort-unset sibling case is present, but the model-missing
   throw itself is not confirmed against a specific assertion in scope). INV-MC-4's second half is
   therefore recorded as **plausible but not directly re-verified against an explicit

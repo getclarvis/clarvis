@@ -272,6 +272,8 @@ Use Bun only, from the repository root unless a package command explicitly chang
 bun install
 bun run build
 bun run test
+bun run test:fast
+bun run test:integration
 bun run typecheck
 bun run lint
 bun run format:check
@@ -293,9 +295,10 @@ bun --filter @clarvis/code start
 - Use `bun run test`, not raw root `bun test`, for the supported full suite; the root script isolates
   workspaces.
 - Do not use `mock.module()`. Process-global module mutation invalidates suite isolation.
-- Keep test determinism occurrences classified in `tooling/test-runtime/test-determinism-baseline.json`; run
-  `bun run check:test-determinism` (or `--report` during migration). New, stale, duplicate or
-  malformed rows fail the gate; listener/subprocess boundary canaries require an explicit reason.
+- `test:fast` covers in-memory unit, component and contract cases. `test:integration` covers
+  common physical cases; `test` and `test:coverage` remain the complete required gates.
+  `check:harness` verifies discovered files against those commands. Direct physical APIs in fast
+  tests are linted, while fixture effects still require review.
 - Coordinate controllable test work with test-local spies, deferred milestones and observable render
   settling; use explicit `fs.utimes` for mtime fixtures. Restore every spy in `finally`. A positive
   timeout may remain only as a labelled fuse around a physical boundary, never as the event awaited.

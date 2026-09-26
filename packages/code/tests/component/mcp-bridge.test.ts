@@ -440,10 +440,12 @@ test("a never-settling MCP refresh does not accumulate physical requests", async
   await createRoot(async (disposeRoot) => {
     const { commands } = fakeCommands();
     let promptCalls = 0;
+    const entered = Promise.withResolvers<void>();
     const caps = createMcpCapabilities({
       client: fakeClient({
         listPrompts: () => {
           promptCalls += 1;
+          entered.resolve();
           return new Promise<LivePrompt[]>(() => {});
         },
       }),
@@ -455,7 +457,7 @@ test("a never-settling MCP refresh does not accumulate physical requests", async
     });
 
     for (let index = 0; index < 1_000; index += 1) void caps.refresh();
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await entered.promise;
     expect(promptCalls).toBe(1);
     caps.dispose();
     disposeRoot();

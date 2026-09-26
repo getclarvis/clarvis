@@ -1,7 +1,7 @@
+import { ownedTempDirSync } from "../helpers/owned-root.ts";
 import {
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   rmSync,
   truncateSync,
@@ -50,7 +50,7 @@ function fileAgents(store: ConfigStore): AgentRecord[] {
 }
 
 function freshConfig() {
-  const root = mkdtempSync(join(tmpdir(), "clarvis-cfg-"));
+  const root = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-"));
   const store = createFileConfigStore({
     workspaceRoot: root,
     globalDir: join(root, "global"),
@@ -177,7 +177,7 @@ describe("ConfigService over the file-backed ConfigStore", () => {
 
 describe("FileConfigStore — parse errors and dir conventions", () => {
   it("returns null for workspace context when no workspace scope is configured", async () => {
-    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-global-only-"));
+    const globalDir = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-global-only-"));
     const config = createConfigService(createFileConfigStore({ globalDir }));
 
     expect(await config.previewSettingsRepair("workspace")).toBeNull();
@@ -185,7 +185,7 @@ describe("FileConfigStore — parse errors and dir conventions", () => {
   });
 
   it("falls back to an enabled plugin contribution for a namespaced agent missing on disk", () => {
-    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-plugin-agent-"));
+    const globalDir = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-plugin-agent-"));
     seedGlobal(
       globalPaths(globalDir).settingsFile,
       JSON.stringify({ enabledPlugins: [pluginRef("demo")] }),
@@ -215,7 +215,7 @@ describe("FileConfigStore — parse errors and dir conventions", () => {
   });
 
   it("records the winning MCP declaration origin across plugin and operator layers", () => {
-    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-mcp-origin-"));
+    const globalDir = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-mcp-origin-"));
     const settingsFile = globalPaths(globalDir).settingsFile;
     seedGlobal(settingsFile, JSON.stringify({ enabledPlugins: [pluginRef("atlas")] }));
     const store = createFileConfigStore({
@@ -245,7 +245,7 @@ describe("FileConfigStore — parse errors and dir conventions", () => {
   });
 
   it("surfaces a parse error on the scope's source instead of dropping it silently", () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-cfg-err-"));
+    const root = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-err-"));
     const globalDir = join(root, "global");
     mkdirSync(globalDir, { recursive: true });
     seedGlobal(globalPaths(globalDir).settingsFile, '{"providers":{}}');
@@ -258,17 +258,17 @@ describe("FileConfigStore — parse errors and dir conventions", () => {
   });
 
   it("accepts a workspaceConfigDir directly (the config dir, not a parent root)", () => {
-    const wsConfig = mkdtempSync(join(tmpdir(), "clarvis-cfg-ws-"));
+    const wsConfig = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-ws-"));
     writeFileSync(join(wsConfig, "settings.json"), '{"default_model":"x/y"}');
     const store = createFileConfigStore({
-      globalDir: mkdtempSync(join(tmpdir(), "clarvis-cfg-g-")),
+      globalDir: ownedTempDirSync(join(tmpdir(), "clarvis-cfg-g-")),
       workspaceConfigDir: wsConfig,
     });
     expect(store.readSettings().scopes.workspace?.default_model).toBe("x/y");
   });
 
   it("works as a global-only store (no workspace configured)", () => {
-    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-go-"));
+    const globalDir = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-go-"));
     seedGlobal(globalPaths(globalDir).settingsFile, '{"default_model":"g/m"}');
     const store = createFileConfigStore({ globalDir });
     const snap = store.readSettings();
@@ -283,7 +283,7 @@ describe("FileConfigStore — parse errors and dir conventions", () => {
 
 describe("FileConfigStore — resource bounds", () => {
   it("reports an oversized sparse settings file without reading its body", () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-cfg-large-settings-"));
+    const root = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-large-settings-"));
     const globalDir = join(root, "global");
     const path = globalPaths(globalDir).settingsFile;
     seedGlobal(path, "{}");
@@ -301,7 +301,7 @@ describe("FileConfigStore — resource bounds", () => {
   });
 
   it("reports malformed agent frontmatter instead of silently loading an empty profile", () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-cfg-malformed-agent-"));
+    const root = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-malformed-agent-"));
     const globalDir = join(root, "global");
     const dir = globalPaths(globalDir).agentsDir;
     mkdirSync(dir, { recursive: true });
@@ -323,7 +323,7 @@ describe("FileConfigStore — resource bounds", () => {
   });
 
   it("never admits more than the bounded agent catalog", () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-cfg-many-agents-"));
+    const root = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-many-agents-"));
     const globalDir = join(root, "global");
     const dir = globalPaths(globalDir).agentsDir;
     mkdirSync(dir, { recursive: true });
@@ -336,7 +336,7 @@ describe("FileConfigStore — resource bounds", () => {
   });
 
   it("bounds a directory before non-agent entries can force an unbounded scan", () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-cfg-many-entries-"));
+    const root = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-many-entries-"));
     const globalDir = join(root, "global");
     const dir = globalPaths(globalDir).agentsDir;
     mkdirSync(dir, { recursive: true });
@@ -348,7 +348,7 @@ describe("FileConfigStore — resource bounds", () => {
   });
 
   it("bounds aggregate workspace-agent bytes in the trust fingerprint", () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-cfg-agent-aggregate-"));
+    const root = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-agent-aggregate-"));
     const dir = join(root, ".clarvis", "agents");
     mkdirSync(dir, { recursive: true });
     const body = "x".repeat(MAX_AGENT_DOCUMENT_BYTES - 1);
@@ -361,7 +361,7 @@ describe("FileConfigStore — resource bounds", () => {
   });
 
   it("skips oversized agent bodies in catalogs and rejects a direct read", () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-cfg-large-agent-"));
+    const root = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-large-agent-"));
     const globalDir = join(root, "global");
     const path = globalPaths(globalDir).agentFile("huge");
     seedGlobal(path, "x");
@@ -373,7 +373,7 @@ describe("FileConfigStore — resource bounds", () => {
   });
 
   it("rejects an oversized context document before reading it", () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-cfg-large-context-"));
+    const root = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-large-context-"));
     const path = join(root, "AGENTS.md");
     writeFileSync(path, "x");
     truncateSync(path, MAX_CONTEXT_DOCUMENT_BYTES + 1);
@@ -383,7 +383,7 @@ describe("FileConfigStore — resource bounds", () => {
   });
 
   it("rejects an oversized agent write before touching disk", () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-cfg-large-write-"));
+    const root = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-large-write-"));
     const store = createFileConfigStore({ workspaceRoot: root, globalDir: join(root, "global") });
 
     expect(() =>
@@ -398,7 +398,7 @@ describe("FileConfigStore — resource bounds", () => {
 
 describe("FileConfigStore.mutateSettings", () => {
   it("derives each snapshot scope and revision from one exact-byte read", () => {
-    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-snapshot-single-read-"));
+    const globalDir = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-snapshot-single-read-"));
     const store = createFileConfigStore({ globalDir });
     const settingsPath = globalPaths(globalDir).settingsFile;
     const bytes = Buffer.from('{"default_model":"a/one"}\n');
@@ -419,7 +419,7 @@ describe("FileConfigStore.mutateSettings", () => {
   });
 
   it("derives the mutation input from the exact bytes whose revision it checked", () => {
-    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-mutate-single-read-"));
+    const globalDir = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-mutate-single-read-"));
     const store = createFileConfigStore({ globalDir });
     store.writeSettings("global", { default_model: "a/one" });
     const settingsPath = globalPaths(globalDir).settingsFile;
@@ -442,7 +442,7 @@ describe("FileConfigStore.mutateSettings", () => {
   });
 
   it("preserves an empty mutation input for an absent settings document", () => {
-    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-mutate-absent-"));
+    const globalDir = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-mutate-absent-"));
     const store = createFileConfigStore({ globalDir });
 
     const result = store.mutateSettings!("global", null, (current) => {
@@ -456,7 +456,7 @@ describe("FileConfigStore.mutateSettings", () => {
   it.each(['{ "providers": [ BROKEN', JSON.stringify({ providers: {} })])(
     "preserves an empty mutation input for invalid settings bytes: %p",
     (raw) => {
-      const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-mutate-invalid-"));
+      const globalDir = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-mutate-invalid-"));
       const store = createFileConfigStore({ globalDir });
       const settingsPath = globalPaths(globalDir).settingsFile;
       seedGlobal(settingsPath, raw);
@@ -476,7 +476,7 @@ describe("FileConfigStore.mutateSettings", () => {
   );
 
   it("hands mutate the settings as they sit on disk right now, not an earlier cached view", () => {
-    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-mutate-"));
+    const globalDir = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-mutate-"));
     const store = createFileConfigStore({ globalDir });
     store.writeSettings("global", { default_model: "a/one" });
 
@@ -500,7 +500,7 @@ describe("FileConfigStore.mutateSettings", () => {
   });
 
   it("writes nothing and leaves no lockfile when mutate throws", () => {
-    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-mutate-throw-"));
+    const globalDir = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-mutate-throw-"));
     const store = createFileConfigStore({ globalDir });
     store.writeSettings("global", { default_model: "a/one" });
     const settingsPath = globalPaths(globalDir).settingsFile;
@@ -516,7 +516,7 @@ describe("FileConfigStore.mutateSettings", () => {
   });
 
   it("rejects an unconfigured scope before ever calling mutate, leaving no lockfile", () => {
-    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-mutate-unconf-"));
+    const globalDir = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-mutate-unconf-"));
     const store = createFileConfigStore({ globalDir });
     let called = false;
 
@@ -531,7 +531,7 @@ describe("FileConfigStore.mutateSettings", () => {
   });
 
   it("reclaims a stale lease only after its same-host holder is known dead", () => {
-    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-mutate-stale-"));
+    const globalDir = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-mutate-stale-"));
     const store = createFileConfigStore({ globalDir });
     store.writeSettings("global", { default_model: "a/one" });
 
@@ -563,7 +563,7 @@ describe("FileConfigStore.mutateSettings", () => {
   });
 
   it("does not reclaim a stale lease while its same-host holder is still alive", () => {
-    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-mutate-timeout-"));
+    const globalDir = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-mutate-timeout-"));
     const store = createFileConfigStore({ globalDir });
     store.writeSettings("global", { default_model: "a/one" });
 
@@ -595,7 +595,7 @@ describe("FileConfigStore.mutateSettings", () => {
   });
 
   it("a late release cannot unlink an ABA successor at the settings lease path", () => {
-    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-release-foreign-"));
+    const globalDir = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-release-foreign-"));
     const store = createFileConfigStore({ globalDir });
     store.writeSettings("global", { default_model: "a/one" });
     const lockPath = `${globalPaths(globalDir).settingsFile}.lock`;
@@ -623,7 +623,7 @@ describe("FileConfigStore.mutateSettings", () => {
 
 describe("the settings rejection diagnostic now has a channel", () => {
   function loggedStore(logger: RecordingLogger) {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-cfg-log-"));
+    const root = ownedTempDirSync(join(tmpdir(), "clarvis-cfg-log-"));
     const store = createFileConfigStore({
       workspaceRoot: root,
       globalDir: join(root, "global"),

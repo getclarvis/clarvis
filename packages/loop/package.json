@@ -1,7 +1,7 @@
 {
   "name": "@clarvis/loop",
   "private": true,
-  "description": "Embeddable loop engine \u2014 run an LLM agent loop (any model, sub-agents, budgets, compaction) in-process.",
+  "description": "Embeddable loop engine — run an LLM agent loop (any model, sub-agents, budgets, compaction) in-process.",
   "license": "MIT",
   "author": "getclarvis",
   "keywords": [
@@ -68,12 +68,13 @@
     "test:unit": "bun test --timeout 60000 tests/unit",
     "test:component": "bun test --timeout 60000 tests/component",
     "test:contract": "bun test --timeout 60000 tests/contract",
-    "test:integration": "bun test --timeout 60000 tests/integration",
+    "test:integration": "bun test tests/integration --timeout 60000",
     "test:architecture": "bun test --timeout 60000 tests/architecture",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:fast": "bun test tests/unit tests/component tests/contract/memory --timeout 60000"
   },
   "dependencies": {
     "@clarvis/capability": "workspace:*",

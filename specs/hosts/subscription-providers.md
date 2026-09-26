@@ -20,7 +20,7 @@ Production: `SubscriptionManager.resolve`, `SubscriptionManager.disconnect`, and
 
 Test: `SubscriptionManager coexistence` in
 `packages/kernel/tests/unit/subscription-manager.test.ts` and “keeps agents on different ChatGPT and
-Grok subscription providers” in `packages/kernel/tests/component/settings-assembler.test.ts`.
+Grok subscription providers” in `packages/kernel/tests/integration/settings-assembler.test.ts`.
 
 ## 2. Public surface
 
@@ -139,7 +139,7 @@ Production: `createFileSubscriptionStore`, `SubscriptionManager.currentAccount`,
 `SubscriptionManager.refreshAccount`, and `SubscriptionManager.getEntitled`.
 
 Test: `subscription credential store` and `SubscriptionManager coexistence` in
-`packages/kernel/tests/unit/subscription-store.test.ts` and
+`packages/kernel/tests/integration/subscription-store.test.ts` and
 `packages/kernel/tests/unit/subscription-manager.test.ts`.
 
 ## 6. Device login and lifecycle

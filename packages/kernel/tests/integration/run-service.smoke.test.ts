@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { ownedTempDirSync, trackOwnedResource } from "../helpers/owned-root.ts";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "bun:test";
@@ -10,7 +11,7 @@ import { MockLLM, type MockLLMScriptStep } from "@clarvis/loop/testing";
 import { createAgentToolsCapability } from "@clarvis/loop/capabilities/tools";
 import { createAskUserCapability, type ExecuteRunDeps } from "@clarvis/loop";
 import type { RunEvent, StartRunParams } from "@clarvis/protocol";
-import { createInProcessKernel } from "../../src/index.ts";
+import { createInProcessKernel as rawCreateInProcessKernel } from "../../src/index.ts";
 import { createMemoryConfigStore } from "../../src/config.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
 import { agentsPluginsDir } from "@clarvis/paths";
@@ -20,6 +21,12 @@ const PROVIDERS = [
   { name: "openai", kind: "openai" },
   { name: "google", kind: "google" },
 ];
+
+const createInProcessKernel: typeof rawCreateInProcessKernel = (options) => {
+  const kernel = rawCreateInProcessKernel(options);
+  trackOwnedResource(options.workspaceRoot, () => kernel.close());
+  return kernel;
+};
 
 function seededConfig() {
   return createMemoryConfigStore({
@@ -67,7 +74,7 @@ function buildDeps(workspaceRoot: string, script?: MockLLMScriptStep[]): Execute
 
 describe("kernel over loop, driven by settings (the closed loop)", () => {
   it("runs to completion from settings + agent: streams RunEvents, returns a result", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-kernel-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-kernel-"));
     const kernel = createInProcessKernel({
       deps: buildDeps(ws),
       workspaceRoot: ws,
@@ -98,7 +105,7 @@ describe("kernel over loop, driven by settings (the closed loop)", () => {
   });
 
   it("streams live tool output while bash runs, but stores none of it (rehydration reads only the trace)", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-kernel-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-kernel-"));
     const kernel = createInProcessKernel({
       deps: buildDeps(ws, [
         {
@@ -141,7 +148,7 @@ describe("kernel over loop, driven by settings (the closed loop)", () => {
   });
 
   it("get / list / delete round-trip against the trace store", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-kernel-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-kernel-"));
     const kernel = createInProcessKernel({
       deps: buildDeps(ws),
       workspaceRoot: ws,
@@ -178,7 +185,7 @@ describe("kernel over loop, driven by settings (the closed loop)", () => {
   });
 
   it("rejects a duplicate owner-scoped execution id before launching a second run", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-kernel-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-kernel-"));
     let releasedLeases = 0;
     const kernel = createInProcessKernel({
       deps: buildDeps(ws, [
@@ -210,7 +217,7 @@ describe("kernel over loop, driven by settings (the closed loop)", () => {
   });
 
   it("guards selected plugin lifecycle mutations at the kernel boundary", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-kernel-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-kernel-"));
     const globalDir = join(ws, "global");
     const ref = { scope: "global" as const, source: "agents" as const, name: "selected" };
     const pluginDir = join(agentsPluginsDir(join(ws, "home")), ref.name);
@@ -254,7 +261,7 @@ describe("kernel over loop, driven by settings (the closed loop)", () => {
   });
 
   it("fails as a terminal result when the requested agent is not defined", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-kernel-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-kernel-"));
     const kernel = createInProcessKernel({
       deps: buildDeps(ws),
       workspaceRoot: ws,
@@ -278,7 +285,7 @@ describe("kernel over loop, driven by settings (the closed loop)", () => {
   });
 
   it("kernel close cancels active runs, is idempotent, and rejects later starts through done", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-kernel-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-kernel-"));
     const kernel = createInProcessKernel({
       deps: buildDeps(ws, [
         { toolCalls: [{ name: "shell", arguments: { command: "sleep 2" } }] },

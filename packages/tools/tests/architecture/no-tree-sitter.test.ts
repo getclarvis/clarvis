@@ -58,8 +58,8 @@ const PACKAGES = join(REPO, "packages");
  */
 const ASSERT_ABSENCE = new Set([
   "tests/architecture/no-tree-sitter.test.ts",
-  "tests/component/tool-surface.test.ts",
-  "tests/integration/no-syntax-annotation.test.ts",
+  "tests/integration/common/tool-surface.test.ts",
+  "tests/integration/common/no-syntax-annotation.test.ts",
 ]);
 
 /**

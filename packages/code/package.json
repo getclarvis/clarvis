@@ -34,7 +34,8 @@
     "test:architecture": "bun test tests/architecture --timeout 60000",
     "test:coverage": "bun test tests/unit tests/component tests/integration --timeout 60000 --coverage && bun run test:architecture",
     "bench": "bun run tooling/benchmarks/first-paint.ts",
-    "bench:overlays": "bun --preload @opentui/solid/preload tooling/benchmarks/overlays.tsx"
+    "bench:overlays": "bun --preload @opentui/solid/preload tooling/benchmarks/overlays.tsx",
+    "test:fast": "bun test tests/unit tests/component --timeout 60000"
   },
   "dependencies": {
     "@clarvis/kernel": "workspace:*",

@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { ownedTempDirSync } from "../helpers/owned-root.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "bun:test";
@@ -12,7 +12,7 @@ import { createPlansService } from "../../src/plans/plans-service.ts";
 import { KernelException } from "../../src/core/errors.ts";
 
 function makeStore(): PlanStore {
-  const ws = mkdtempSync(join(tmpdir(), "clarvis-plans-svc-"));
+  const ws = ownedTempDirSync(join(tmpdir(), "clarvis-plans-svc-"));
   return createPlanStore({
     repository: createFilePlanRepository({
       workspaceRoot: ws,

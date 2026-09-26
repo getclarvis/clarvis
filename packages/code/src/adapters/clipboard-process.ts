@@ -1,4 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn } from "node:child_process";
+import type { Readable, Writable } from "node:stream";
 import { killTree, ownProcessGroup } from "@clarvis/kernel/local";
 
 const DEFAULT_TIMEOUT_MS = 2_000;
@@ -31,7 +32,18 @@ type SpawnClipboardProcess = (
   command: string,
   args: readonly string[],
   options: Parameters<typeof spawn>[2],
-) => ChildProcessWithoutNullStreams;
+) => ClipboardChild;
+
+/** Child streams and events consumed by the clipboard adapter. */
+export interface ClipboardChild {
+  readonly pid?: number;
+  readonly stdin: Pick<Writable, "on" | "end" | "destroy">;
+  readonly stdout: Pick<Readable, "on" | "destroy">;
+  readonly stderr: Pick<Readable, "on" | "destroy">;
+  once(event: "error", listener: (error: Error) => void): unknown;
+  once(event: "close", listener: (code: number | null) => void): unknown;
+  kill(signal: NodeJS.Signals): boolean;
+}
 
 /** Injectable seams for deterministic process lifecycle tests. */
 export interface ClipboardProcessDependencies {
@@ -39,7 +51,16 @@ export interface ClipboardProcessDependencies {
   killTree?: typeof killTree;
   ownProcessGroup?: typeof ownProcessGroup;
   killGraceMs?: number;
+  timers?: {
+    setTimeout(fn: () => void, ms: number): unknown;
+    clearTimeout(handle: unknown): void;
+  };
 }
+
+const REAL_TIMERS = {
+  setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
+  clearTimeout: (handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
 
 function appendCapped(chunks: Buffer[], size: number, chunk: Buffer, cap: number): number {
   const remaining = cap - size;
@@ -65,9 +86,10 @@ export function runClipboardProcess(
   const timeoutMs = request.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxStdoutBytes = request.maxStdoutBytes ?? DEFAULT_MAX_STDOUT_BYTES;
   const killGraceMs = dependencies.killGraceMs ?? KILL_GRACE_MS;
+  const timers = dependencies.timers ?? REAL_TIMERS;
 
   return new Promise((resolve) => {
-    let child: ChildProcessWithoutNullStreams;
+    let child: ClipboardChild;
     try {
       child = spawnProcess(request.command, request.args, {
         env: process.env,
@@ -96,7 +118,7 @@ export function runClipboardProcess(
     let outputExceeded = false;
     let processError: Error | undefined;
     let settled = false;
-    let killTimer: ReturnType<typeof setTimeout> | undefined;
+    let killTimer: unknown;
 
     const kill = (processSignal: NodeJS.Signals): void => {
       if (child.pid !== undefined && signalTree(child.pid, processSignal)) return;
@@ -108,24 +130,24 @@ export function runClipboardProcess(
     };
     const terminate = (): void => {
       kill("SIGTERM");
-      killTimer ??= setTimeout(() => kill("SIGKILL"), killGraceMs);
-      killTimer.unref?.();
+      killTimer ??= timers.setTimeout(() => kill("SIGKILL"), killGraceMs);
+      (killTimer as { unref?(): void }).unref?.();
     };
     const onAbort = (): void => {
       cancelled = true;
       terminate();
     };
-    const timer = setTimeout(() => {
+    const timer = timers.setTimeout(() => {
       timedOut = true;
       terminate();
     }, timeoutMs);
-    timer.unref?.();
+    (timer as { unref?(): void }).unref?.();
 
     const finish = (exitCode: number | null): void => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
-      if (killTimer !== undefined) clearTimeout(killTimer);
+      timers.clearTimeout(timer);
+      if (killTimer !== undefined) timers.clearTimeout(killTimer);
       request.signal?.removeEventListener("abort", onAbort);
       child.stdin.destroy();
       child.stdout.destroy();

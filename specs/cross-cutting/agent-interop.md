@@ -566,7 +566,7 @@ does not stand in for ordinary prompt submission or a later `load_skill` tool ca
 `packages/capability/src/hooks-config.ts` and the host request projection in
 `packages/kernel/src/runs/settings-assembler.ts`. Test:
 `packages/hooks/tests/component/capability.test.ts` and
-`packages/kernel/tests/component/settings-assembler.test.ts`.
+`packages/kernel/tests/integration/settings-assembler.test.ts`.
 
 **AIN-11** (derived). A leading relative executable in a translated foreign hook resolves from the
 plugin install root even though the subprocess keeps the workspace as its working directory; a native

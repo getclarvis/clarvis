@@ -94,9 +94,11 @@ the reason: re-exporting it "would statically pull `@ai-sdk/anthropic`, `@ai-sdk
 | `DEFAULT_PROVIDER_MAX_RESPONSE_BYTES` | const | `packages/llm/src/ai-sdk/bounded-fetch.ts` | `32 * 1024 * 1024` |
 | `DEFAULT_PROVIDER_MAX_SSE_EVENT_BYTES` | const | `packages/llm/src/ai-sdk/bounded-fetch.ts` | `4 * 1024 * 1024` |
 | `ProviderResponseLimitError` | class | `packages/llm/src/ai-sdk/bounded-fetch.ts` | `{ limit: "response" \| "sse_event"; maxBytes }` |
-| `createStreamMetrics` | fn | `packages/llm/src/stream-metrics.ts` | `(path, source) => StreamMetrics` |
-| `streamMetrics` | fn | `packages/llm/src/stream-metrics.ts` | `(source = "loop") => StreamMetrics` (process-wide memo) |
-| `StreamMetrics` | iface | `packages/llm/src/stream-metrics.ts` | `{ count(name, n?) }` |
+| `createStreamMetricsCounter` | fn | `packages/llm/src/stream-metrics.ts` | `(source, { now, memoryUsage, emit }) => { count, flushWindow, finish }` |
+| `createStreamMetrics` | fn | `packages/llm/src/stream-metrics.ts` | `(path, source, overrides?) => StreamMetrics` |
+| `selectStreamMetrics` | fn | `packages/llm/src/stream-metrics.ts` | `(path, source) => StreamMetrics` |
+| `streamMetrics` | fn | `packages/llm/src/stream-metrics.ts` | `(source = "loop", readPath?) => StreamMetrics` (process-wide memo) |
+| `StreamMetrics` | iface | `packages/llm/src/stream-metrics.ts` | `{ count(name, n?), dispose() }` |
 
 ### 2.4 Modules with no entrypoint owner
 
@@ -159,7 +161,7 @@ validation before any handler executes. Production:
 `packages/llm/src/ai-sdk/request-options.ts` (`providerToolSchema`, `toAiSdkTools`) and
 `packages/tools/src/core.ts` (`dispatch`). Test:
 `packages/llm/tests/unit/ai-sdk-modules.test.ts` (`publishes object-root tool schemas while keeping
-nested field constraints`) and `packages/tools/tests/integration/shell-session.test.ts`
+nested field constraints`) and `packages/tools/tests/integration/common/shell-session.test.ts`
 (`validates action-specific arguments`).
 
 The adapter adds `model`, `abortSignal` (when a signal exists) and a hard `maxRetries: 0`
@@ -252,13 +254,19 @@ The same wire-cache integration test pins
 
 ### 3.6 Stream-metrics JSONL
 
-`createStreamMetrics` (`packages/llm/src/stream-metrics.ts`) appends one JSON object per line to the file named
-by `CLARVIS_STREAM_DEBUG`. Two record shapes:
+`createStreamMetricsCounter` calculates windows and lifetime totals from an explicit clock,
+memory sample and sink, without a timer or file. `createStreamMetrics` owns the one-second timer,
+process-exit listener and JSONL append. `dispose()` removes the timer and listener and flushes once;
+an exit after disposal does not append again. `streamMetrics()` selects the file named by
+`CLARVIS_STREAM_DEBUG` once per process. Production: `packages/llm/src/stream-metrics.ts`
+(`createStreamMetricsCounter`, `createStreamMetrics`, `selectStreamMetrics`, `streamMetrics`). Test:
+`packages/llm/tests/unit/stream-metrics.test.ts` and
+`packages/llm/tests/integration/stream-metrics.test.ts`. Two record shapes:
 
 - a window line, every 1000 ms, carrying
   `{ at, source, window_ms, counts, rates, rss, heap_used, external }` — emitted even
   when `counts` is empty ( produce `{}`);
-- a totals line on `process.on("exit")`, only when `totals.size > 0`:
+- a totals line on exit or explicit disposal, only when `totals.size > 0`:
   `{ at, source, totals }`.
 
 Counters written by this package: `provider_delta`, `provider_chars`, and
@@ -277,7 +285,7 @@ promise. The source performs `await import("./ai-sdk-adapter.ts")` and construct
 reaches `@clarvis/capability` from this module (`packages/llm/src/lazy.ts`), which is what keeps the main entry
 SDK-free.
 
-`packages/llm/tests/component/lazy.test.ts` asserts the credential resolver is not called
+`packages/llm/tests/integration/lazy.test.ts` asserts the credential resolver is not called
 before the first `call` asserts the first call reaches the configured base URL and threads
 the resolver's value into the `Authorization` header.
 
@@ -319,7 +327,7 @@ the resolver's value into the `Authorization` header.
 
 Production: `AiSdkAdapter.call` in `packages/llm/src/ai-sdk-adapter.ts`
 (`providerRequiresStream`, the generation branch, and the no-op delta sink). Test:
-`packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts` (`"streams ChatGPT subscription
+`packages/llm/tests/integration/ai-sdk-adapter-streaming.test.ts` (`"streams ChatGPT subscription
 calls even without a delta consumer"`).
 
 ### 4.3 The streaming path
@@ -327,7 +335,7 @@ calls even without a delta consumer"`).
 `packages/llm/src/ai-sdk-adapter.ts`:
 
 - `Output.text()` is replaced by `nonRetainingTextOutput`, whose `parsePartialOutput` returns
-  `{ partial: text.length }`. `packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts`
+  `{ partial: text.length }`. `packages/llm/tests/integration/ai-sdk-adapter-streaming.test.ts`
   calls that function directly and asserts it answers `{ partial: 29 }` for a 29-character prefix,
   under the title "uses a non-cumulative partial output and never reads aggregate getters".
 - `streamText` is given `onError` (records the first error), `onStepEnd` and `onEnd` (both keep
@@ -363,7 +371,7 @@ calls even without a delta consumer"`).
 
 `streamStarted` is computed as `outputObserved || batcher.emitted()` — a
 `tool-input-start` alone is enough, pinned by
-`packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts`.
+`packages/llm/tests/integration/ai-sdk-adapter-streaming.test.ts`.
 
 ### 4.4 Delta batching
 
@@ -388,7 +396,7 @@ once per call per `TOOL_INPUT_REPORT_MS = 250`; `end` always forwards the final 
 keyed by `call_id`, so interleaved parallel argument streams neither merge nor imply one another has
 finished. Production: `makeToolInputReporter`. Test:
 `packages/llm/tests/unit/delta-batcher.test.ts` and
-`packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts`.
+`packages/llm/tests/integration/ai-sdk-adapter-streaming.test.ts`.
 
 The idle timer's TSDoc names the failure it closes: without it, "the tail of the last sentence sat
 in `buf` until the whole stream drained", because "the provider stops sending text the moment it
@@ -522,7 +530,7 @@ whole message list, so numbering is global and monotonic —
   Test: missing-total and cache-only controls through actual SDK HTTP in
   [goal-file-host.test.ts](../../packages/kernel/tests/integration/goal-file-host.test.ts).
 - `raw.finishReason` passes through unmodified onto `LLMCallResult.finishReason` when present; absent, the field is simply omitted. Asserted end to end by
-  `packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts`
+  `packages/llm/tests/integration/ai-sdk-adapter-streaming.test.ts`
   (`res.finishReason === "tool-calls"`) and by
   `packages/llm/tests/unit/ai-sdk-modules.test.ts`.
 
@@ -824,7 +832,7 @@ timeout bridge and consumers import that same contract directly, without compati
 re-exports or a second timeout timer.
 Production: `timeoutAbort` and both timeout branches in `AiSdkAdapter.call`.
 Test: `packages/llm/tests/component/ai-sdk-adapter.test.ts` (generate) and
-`packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts` (silent timeout and active stream).
+`packages/llm/tests/integration/ai-sdk-adapter-streaming.test.ts` (silent timeout and active stream).
 `packages/capability/tests/unit/errors.test.ts` pins the shared subtype and its known usage fields.
 
 **LLM-11.** A stream that ends with no aggregate is a **transient** failure, reported at `warn` with
@@ -836,7 +844,7 @@ Test: `packages/llm/tests/component/ai-sdk-adapter-observability.test.ts`.
 a `tool-input-start` before any prose counts — and the timeout bridge receives the same fact.
 Production: `firstOutput` and timeout attempt-cost construction in `AiSdkAdapter.call`; `emitted()`
 in `makeDeltaBatcher`.
-Test: `packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts` (tool-input error and timeout bridge).
+Test: `packages/llm/tests/integration/ai-sdk-adapter-streaming.test.ts` (tool-input error and timeout bridge).
 
 **LLM-13.** A transient failure whose stream reached `onStreamDelta` or `onToolInputDelta` is **not**
 retried, except for `ModelCallInactivityError`: a full timeout window with no new part deliberately
@@ -1069,20 +1077,18 @@ Production: `packages/llm/src/ai-sdk/errors.ts` (`llm.error.body_unparsed`);
 Test: `packages/llm/tests/unit/observability.test.ts`.
 
 **LLM-49.** `streamMetrics()` selects a JSONL file sink when `CLARVIS_STREAM_DEBUG` is non-empty,
-otherwise selects a no-op, and memoizes that first selection process-wide. `createStreamMetrics`
-never throws — not even when its log directory disappears.
-Production: `packages/llm/src/stream-metrics.ts` (the `try/catch` around
-`appendFileSync`, with the comment "Instrumentation must never take the run down with it").
-Test: `packages/llm/tests/unit/stream-metrics.test.ts` exercises the enabled selector in a fresh Bun
-child process, the unset memo in-process, and the complete file sink directly.
+otherwise selects a no-op, and memoizes that first selection process-wide. Debug sink emission
+failures do not interrupt a run; `dispose()` cancels the timer and listener and flushes at most once.
+Production: `packages/llm/src/stream-metrics.ts` (`streamMetrics`, `createStreamMetricsCounter`,
+`createStreamMetrics`). Test: `packages/llm/tests/unit/stream-metrics.test.ts` exercises failure
+tolerance and lifecycle; `packages/llm/tests/integration/stream-metrics.test.ts` exercises enabled
+and disabled selection in separate Bun children plus physical append.
 
-**LLM-50.** `createStreamMetrics` is exported so a test can reach it statically; the file must not be
-reached through a cache-busted dynamic import.
-Production: `createStreamMetrics` in `packages/llm/src/stream-metrics.ts`, whose TSDoc records that
-CI omitted the implementation from LCOV on three consecutive runs while the package tests passed.
-Test: enforced socially by the header comment at
-`packages/llm/tests/unit/stream-metrics.test.ts` and by the static import;
-no mechanical guard exists.
+**LLM-50.** `createStreamMetrics` and `createStreamMetricsCounter` are statically imported by their
+tests; coverage does not depend on cache-busted dynamic imports of the process-memoized selector.
+Production: `packages/llm/src/stream-metrics.ts` (`createStreamMetrics`,
+`createStreamMetricsCounter`). Test: `packages/llm/tests/unit/stream-metrics.test.ts` and
+`packages/llm/tests/integration/stream-metrics.test.ts`; no mechanical guard exists.
 
 **LLM-51.** `@clarvis/llm` carries a **100% functions / 100% lines** coverage floor and has no
 `NO_COUNTER_ALLOWLIST` entry, so every file in `src/` must appear in the LCOV report.
@@ -1219,8 +1225,8 @@ That is the only `@clarvis/*` package importing it. `packages/capability/src/env
 `packages/capability/src/env-ref.ts` and
 `packages/code/src/adapters/stream-metrics.ts` mention `@clarvis/llm` only inside TSDoc prose —
 no import. `@clarvis/code` carries its **own** copy of the stream-metrics sink;
-`packages/llm/src/stream-metrics.ts` records that "the packages do not share a dependency edge,
-and a debug counter is not worth minting one".
+the two copies remain token-identical except for the default source tag, as checked by
+`tooling/tests/architecture/stream-metrics-drift.test.ts`.
 
 The direction is forced structurally: nothing in `packages/llm/src` imports `@clarvis/loop`,
 `@clarvis/kernel`, `@clarvis/trace`, `@clarvis/paths` or `@clarvis/protocol`, and the settings
@@ -1269,7 +1275,7 @@ takes one value import, `contentToText`).
    `ProviderError` passthrough so available `partialUsage` is retained. Usage remains absent when the
    provider emitted no usage frame before cancellation; that is unknown evidence, not a synthesized
    zero. Tests: `packages/llm/tests/unit/model-call-timeout-bridge.test.ts` and
-   `packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts`.
+   `packages/llm/tests/integration/ai-sdk-adapter-streaming.test.ts`.
 
 6. **The `bestEffort`/`detachObserved` neighbours of `suppressSecondaryRejection`
    (`packages/capability/src/tasks.ts`) accept an `options.logger`, but

@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { executableOnPath, resolveCommand, setPathsLogger } from "@clarvis/paths";
 
 import { recorder } from "../helpers/recorder.ts";
-import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
 function makeWorkspace(): string {
   return mkdtempSync(join(tmpdir(), "clarvis-test-"));
@@ -57,16 +56,11 @@ describe("executableOnPath", () => {
 
 describe("resolveCommand", () => {
   let root: string;
-  let ambient: NodeJS.ProcessEnv;
-  let envSpy: ReturnType<typeof spyOnProcessEnv>;
 
   beforeEach(() => {
     root = makeWorkspace();
-    ambient = environmentFixture();
-    envSpy = spyOnProcessEnv(ambient);
   });
   afterEach(() => {
-    envSpy.mockRestore();
     cleanup(root);
   });
 
@@ -74,22 +68,19 @@ describe("resolveCommand", () => {
     const bin = join(root, "clarvis-resolve-hit");
     writeFileSync(bin, "#!/bin/sh\n");
     chmodSync(bin, 0o755);
-    envSpy.mockReturnValue(environmentFixture({ ...ambient, PATH: root }));
-    expect(resolveCommand("clarvis-resolve-hit")).toBe(bin);
+    expect(resolveCommand("clarvis-resolve-hit", root)).toBe(bin);
   });
 
   it("falls back to the bare name so the OS still gets its own chance", () => {
-    envSpy.mockReturnValue(environmentFixture({ ...ambient, PATH: root }));
-    expect(resolveCommand("clarvis-resolve-absent")).toBe("clarvis-resolve-absent");
+    expect(resolveCommand("clarvis-resolve-absent", root)).toBe("clarvis-resolve-absent");
   });
 
   it("reuses the first answer, so a probe and its later spawn cannot disagree", () => {
-    envSpy.mockReturnValue(environmentFixture({ ...ambient, PATH: root }));
-    const first = resolveCommand("clarvis-resolve-memo");
+    const first = resolveCommand("clarvis-resolve-memo", root);
     const bin = join(root, "clarvis-resolve-memo");
     writeFileSync(bin, "#!/bin/sh\n");
     chmodSync(bin, 0o755);
-    expect(resolveCommand("clarvis-resolve-memo")).toBe(first);
+    expect(resolveCommand("clarvis-resolve-memo", root)).toBe(first);
   });
 });
 
@@ -101,13 +92,8 @@ describe("command resolution diagnostics", () => {
   it("reports each command once, because the answer is memoized", () => {
     const sink = recorder();
     setPathsLogger(sink.logger);
-    const envSpy = spyOnProcessEnv(environmentFixture({ ...process.env, PATH: "" }));
-    try {
-      resolveCommand("clarvis-observed-absent");
-      resolveCommand("clarvis-observed-absent");
-    } finally {
-      envSpy.mockRestore();
-    }
+    resolveCommand("clarvis-observed-absent", "");
+    resolveCommand("clarvis-observed-absent", "");
     expect(sink.events("paths.command_resolved")).toEqual([
       {
         event: "paths.command_resolved",

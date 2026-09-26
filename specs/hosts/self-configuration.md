@@ -12,7 +12,7 @@ executable configuration.
 Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts), `resolveToolPath` in
 [paths.ts](../../packages/tools/src/lib/paths.ts), and `createFileKernel` in
 [file-kernel.ts](../../packages/kernel/src/file-kernel.ts).
-Test: [host-access.test.ts](../../packages/tools/tests/integration/host-access.test.ts) and
+Test: [host-access.test.ts](../../packages/tools/tests/integration/common/host-access.test.ts) and
 [configuration-surface.test.ts](../../packages/kernel/tests/integration/configuration-surface.test.ts).
 
 ## Product documentation skill
@@ -29,8 +29,8 @@ Production: `reconcileSystemDocs` in [system-docs.ts](../../packages/kernel/src/
 `createSystemDocsProvider` in
 [system-docs-provider.ts](../../packages/kernel/src/skills/system-docs-provider.ts), and
 `createSkillsCapability` in [capability.ts](../../packages/skills/src/capability.ts).
-Test: [system-docs-publication.test.ts](../../packages/kernel/tests/unit/system-docs-publication.test.ts),
-[system-docs-assets.test.ts](../../packages/kernel/tests/unit/system-docs-assets.test.ts), and
+Test: [system-docs-publication.test.ts](../../packages/kernel/tests/integration/system-docs-publication.test.ts),
+[system-docs-assets.test.ts](../../packages/kernel/tests/integration/system-docs-assets.test.ts), and
 [configuration-surface.test.ts](../../packages/kernel/tests/integration/configuration-surface.test.ts).
 
 ## Invariants and coupling
@@ -44,4 +44,4 @@ catalog generation.
 `createFileConfigStore` in [file-config-store.ts](../../packages/kernel/src/config/file-config-store.ts), and
 `captureSkillExecution` in [execution-snapshot.ts](../../packages/skills/src/execution-snapshot.ts).
 Test: [configuration-documents.test.ts](../../packages/kernel/tests/integration/configuration-documents.test.ts), and
-[execution-snapshot.test.ts](../../packages/skills/tests/unit/execution-snapshot.test.ts).
+[execution-snapshot.test.ts](../../packages/skills/tests/integration/execution-snapshot.test.ts).

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { Readable } from "node:stream";
 import { killTree, ownProcessGroup, resolveShell, shellArgs } from "@clarvis/kernel/local";
 import { diagnosticEvent } from "../core/diagnostic-events.ts";
 import { terminalPlainText } from "../core/terminal-text.ts";
@@ -31,6 +32,38 @@ export interface LocalBashOptions {
   signal?: AbortSignal;
   env?: NodeJS.ProcessEnv;
 }
+
+/** Owned effects for a local shell invocation. */
+export interface LocalBashDependencies {
+  spawn?: (file: string, args: string[], options: Parameters<typeof spawn>[2]) => LocalShellChild;
+  killTree?: typeof killTree;
+  ownProcessGroup?: typeof ownProcessGroup;
+  resolveShell?: typeof resolveShell;
+  shellArgs?: typeof shellArgs;
+  now?: () => number;
+  timers?: {
+    setTimeout(fn: () => void, ms: number): unknown;
+    clearTimeout(handle: unknown): void;
+  };
+}
+
+/** Child events and streams consumed by the local shell adapter. */
+export interface LocalShellChild {
+  readonly pid?: number;
+  readonly stdout: Pick<Readable, "on" | "destroy"> | null;
+  readonly stderr: Pick<Readable, "on" | "destroy"> | null;
+  on(event: "error", listener: (error: Error) => void): unknown;
+  on(
+    event: "exit" | "close",
+    listener: (code: number | null, signal: NodeJS.Signals | null) => void,
+  ): unknown;
+  kill(signal: NodeJS.Signals): boolean;
+}
+
+const REAL_TIMERS = {
+  setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
+  clearTimeout: (handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
 
 interface Collector {
   push(chunk: Buffer): void;
@@ -85,19 +118,29 @@ function collector(maxBytes: number): Collector {
  * and including a credential passed to a one-off script, and `specs/cross-cutting/observability.md`
  * §6 forbids logging a command outright.
  */
-export function runLocalBash(command: string, opts: LocalBashOptions): Promise<LocalBashResult> {
+export function runLocalBash(
+  command: string,
+  opts: LocalBashOptions,
+  deps: LocalBashDependencies = {},
+): Promise<LocalBashResult> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxBytes = opts.maxBytes ?? MAX_CAPTURE_BYTES;
-  const startedAt = Date.now();
+  const now = deps.now ?? Date.now;
+  const timers = deps.timers ?? REAL_TIMERS;
+  const startedAt = now();
   return new Promise((resolve) => {
-    const shell = resolveShell();
+    const shell = (deps.resolveShell ?? resolveShell)();
     const file = shell.flavor === "posix" ? "bash" : shell.file;
-    const proc = spawn(file, shellArgs(shell, command), {
-      cwd: opts.cwd,
-      env: opts.env ?? process.env,
-      detached: ownProcessGroup(),
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const proc: LocalShellChild = (deps.spawn ?? spawn)(
+      file,
+      (deps.shellArgs ?? shellArgs)(shell, command),
+      {
+        cwd: opts.cwd,
+        env: opts.env ?? process.env,
+        detached: (deps.ownProcessGroup ?? ownProcessGroup)(),
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
     const out = collector(maxBytes);
     const err = collector(maxBytes);
     proc.stdout?.on("data", (c: Buffer) => out.push(c));
@@ -107,10 +150,10 @@ export function runLocalBash(command: string, opts: LocalBashOptions): Promise<L
     let cancelled = false;
     let spawnError: Error | undefined;
     let settled = false;
-    let killTimer: ReturnType<typeof setTimeout> | undefined;
+    let killTimer: unknown;
 
     const killAll = (sig: NodeJS.Signals): void => {
-      if (proc.pid !== undefined && killTree(proc.pid, sig)) return;
+      if (proc.pid !== undefined && (deps.killTree ?? killTree)(proc.pid, sig)) return;
       try {
         proc.kill(sig);
       } catch {
@@ -119,9 +162,9 @@ export function runLocalBash(command: string, opts: LocalBashOptions): Promise<L
     };
     const startKill = (): void => {
       killAll("SIGTERM");
-      killTimer ??= setTimeout(() => killAll("SIGKILL"), KILL_GRACE_MS);
+      killTimer ??= timers.setTimeout(() => killAll("SIGKILL"), KILL_GRACE_MS);
     };
-    const timer = setTimeout(() => {
+    const timer = timers.setTimeout(() => {
       timedOut = true;
       startKill();
     }, timeoutMs);
@@ -132,18 +175,18 @@ export function runLocalBash(command: string, opts: LocalBashOptions): Promise<L
     if (opts.signal?.aborted) onAbort();
     else opts.signal?.addEventListener("abort", onAbort, { once: true });
 
-    let drainTimer: ReturnType<typeof setTimeout> | undefined;
+    let drainTimer: unknown;
     const settle = (code: number | null, signal: NodeJS.Signals | null): void => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      if (drainTimer) clearTimeout(drainTimer);
+      timers.clearTimeout(timer);
+      if (killTimer !== undefined) timers.clearTimeout(killTimer);
+      if (drainTimer !== undefined) timers.clearTimeout(drainTimer);
       opts.signal?.removeEventListener("abort", onAbort);
       const stderr = terminalPlainText(err.text());
       diagnosticEvent("shell.local.exit", {
         exit_code: code,
-        duration_ms: Date.now() - startedAt,
+        duration_ms: now() - startedAt,
         killed: timedOut || cancelled,
         signal,
         spawn_failed: spawnError !== undefined,
@@ -157,15 +200,15 @@ export function runLocalBash(command: string, opts: LocalBashOptions): Promise<L
         cancelled,
         stdoutTruncated: out.truncated(),
         stderrTruncated: err.truncated(),
-        durationMs: Date.now() - startedAt,
+        durationMs: now() - startedAt,
       });
     };
     proc.on("error", (e) => {
       spawnError = e;
-      setTimeout(() => settle(null, null), 0);
+      timers.setTimeout(() => settle(null, null), 0);
     });
     proc.on("exit", (code, signal) => {
-      drainTimer = setTimeout(() => {
+      drainTimer = timers.setTimeout(() => {
         proc.stdout?.destroy();
         proc.stderr?.destroy();
         settle(code, signal);

@@ -110,8 +110,8 @@ handoff cases in [builtin-agents.test.ts](../../packages/kernel/tests/component/
 2. **Descriptions preserve usable command and recovery details.** Persistent commands route to
    `shell` with `yield_time_ms`; truncation names omitted bytes and the cursor for a live session; patch examples
    are executable. Production: descriptors under `packages/tools/src/tools/`. Test:
-   `packages/tools/tests/component/core.test.ts`, `tool-surface.test.ts` in that directory, and
-   `packages/tools/tests/integration/apply-patch.test.ts`. The complete advertised coding descriptor
+   `packages/tools/tests/integration/common/core.test.ts`, `tool-surface.test.ts` in that directory, and
+   `packages/tools/tests/integration/common/apply-patch.test.ts`. The complete advertised coding descriptor
    JSON ceiling is 21,000 characters; the regex contract suites retain the detailed engine evidence.
 3. **Completion guidance agrees with gates.** A handle, returned task or rejected submission is not
    completion. Production: `buildSpawnSubagentTool`, `buildSubmitResultTool`,

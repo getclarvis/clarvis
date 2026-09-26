@@ -15,8 +15,8 @@ Production: `prepareKernelRun` in `packages/kernel/src/runs/prepare-run.ts`,
 `createRunService` in `packages/kernel/src/runs/run-service.ts`,
 `createWorkflowsService` in `packages/kernel/src/workflows/workflows-service.ts`,
 and `engineEventToProto` in `packages/kernel/src/runs/map-events.ts`. Test:
-`packages/kernel/tests/unit/isolation-service.test.ts` and
-`packages/kernel/tests/contract/transport-codecs.test.ts`.
+`packages/kernel/tests/integration/isolation-service.test.ts` and
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 > Implemented at `packages/kernel/src/runs/**`. Every claim below is anchored to a file and a named symbol or test.
 > Open questions are collected in the final section.
@@ -233,9 +233,9 @@ holds its own catalog lease while it can use skills. Production: `releaseRunLeas
 | `agents` | present only when `merged.agents` is a non-null object |
 
 Note what is **not** forwarded: the `skill` key itself never reaches the engine
-(`packages/kernel/src/runs/settings-assembler.ts`; pinned by `packages/kernel/tests/component/settings-assembler.test.ts`),
+(`packages/kernel/src/runs/settings-assembler.ts`; pinned by `packages/kernel/tests/integration/settings-assembler.test.ts`),
 and a `plans` block's `provider` sub-object is stripped by projection
-(`plansBlockToParam`; pinned at `packages/kernel/tests/component/settings-assembler.test.ts`).
+(`plansBlockToParam`; pinned at `packages/kernel/tests/integration/settings-assembler.test.ts`).
 
 An engine `AgentProfile` is built by `buildProfile` with required `name`, `model`,
 `tools`, `iteration_limit` and twelve conditionally spread optional fields (`grants`, `can_spawn`,
@@ -253,7 +253,7 @@ loudly, naming the server — is also why a bad entry is never dropped silently:
 surfaces much later as `profile '...' lists tool '...', which is not in the tool pool`, which points
 at the agent rather than at the typo". The test comment names it as a shipped defect: "P1 lived here …
 every run referencing `<server>.<tool>` died in `validateBody` with `unrecognized_keys`"
-(`packages/kernel/tests/component/settings-assembler.test.ts`), and the round trip is asserted.
+(`packages/kernel/tests/integration/settings-assembler.test.ts`), and the round trip is asserted.
 
 ### 3.3 `RUN_EVENT_POLICY` — the per-event matrix
 
@@ -320,7 +320,7 @@ closes that attempt, not a client disconnect. Production: `RUN_EVENT_POLICY` in
 `packages/kernel/src/runs/map-events.ts` and `rehydrateEvents` in `packages/kernel/src/runs/map-result.ts`.
 Test: `packages/kernel/tests/unit/event-policy.test.ts`,
 `packages/kernel/tests/unit/map-events.test.ts` and
-`packages/kernel/tests/contract/transport-codecs.test.ts`.
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 ### 3.4 The `events_dropped` notice
 
@@ -457,7 +457,7 @@ Per call, in order:
    all three are absent.
 6. `store.readEffectiveAgent(agentName)`; `not_found` when null.
 7. Breadth-first walk over `can_spawn` with a `seen` set; a child that resolves to `null` is
-   **skipped, not fatal** (pinned at `packages/kernel/tests/component/settings-assembler.test.ts`). Only the first
+   **skipped, not fatal** (pinned at `packages/kernel/tests/integration/settings-assembler.test.ts`). Only the first
    name is treated as the entry, and only that profile receives the context documents.
 8. Server selection starts with every namespace returned by `pluginMcpServerNames`, then resolves
    each profile tool against the longest exact registered `<namespace>.` prefix. This preserves
@@ -474,7 +474,7 @@ docstring states the intent — "The user's `/model` and `/effort` defaults are 
 entry profile. A spawned child instead keeps an explicit model or effort from its own profile, falling
 back to those defaults only when it declares none. This distinction lets changing the current run
 model do what the user asked without flattening a heterogeneous sub-agent fleet" — and
-`packages/kernel/tests/component/settings-assembler.test.ts` pins both halves.
+`packages/kernel/tests/integration/settings-assembler.test.ts` pins both halves.
 
 `plansBlockToParam` **materializes** `mode` and `retention`, and additionally carries an optional
 `pending_task_nudges` through when the block's value is a non-negative integer, dropping it otherwise
@@ -490,7 +490,7 @@ ten numeric fields, `AGENTS_FIELDS` : `buffer_lines`, `buffer_bytes`,
 
 `prompt_cache_ttl` is forwarded only when the request supplies it; the kernel does not
 invent a fallback. Production: `packages/kernel/src/runs/settings-assembler.ts`
-(`createSettingsRunAssembler`). Test: `packages/kernel/tests/component/settings-assembler.test.ts`
+(`createSettingsRunAssembler`). Test: `packages/kernel/tests/integration/settings-assembler.test.ts`
 (`does not invent a prompt cache TTL when the caller sets none`).
 
 ### 4.3 Managed-run construction (`packages/kernel/src/runs/managed-run.ts`)
@@ -927,27 +927,27 @@ Production `packages/kernel/src/runs/map-result.ts`. Test `packages/kernel/tests
 **INV-R31.** The `plans` settings block is materialized with defaults for `mode` and `retention`; the
 `agents` block is projected sparsely.
 Production `packages/kernel/src/runs/settings-assembler.ts`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts`.
+`packages/kernel/tests/integration/settings-assembler.test.ts`.
 
 **INV-R32.** An explicit per-run `plans` param beats a skill's Plans policy, which beats the settings
 block.
 Production `packages/kernel/src/runs/settings-assembler.ts` (the nested ternary order). Test
-`packages/kernel/tests/component/settings-assembler.test.ts`.
+`packages/kernel/tests/integration/settings-assembler.test.ts`.
 
 **INV-R33.** A skill's declared `agent` overrides the request's `agent`; a skill naming none leaves it
 alone.
 Production `packages/kernel/src/runs/settings-assembler.ts` (`skillRun?.agent ?? params.agent ?? …`). Test
-`packages/kernel/tests/component/settings-assembler.test.ts`.
+`packages/kernel/tests/integration/settings-assembler.test.ts`.
 
 **INV-R34.** The `skill` key is never forwarded to the engine.
 Production `packages/kernel/src/runs/settings-assembler.ts` — no `skill` key in the returned literal; the stated reason
-is. Test `packages/kernel/tests/component/settings-assembler.test.ts`.
+is. Test `packages/kernel/tests/integration/settings-assembler.test.ts`.
 
 **INV-R34a.** Prompt-expansion hook context is emitted exactly for a successfully resolved
 user-invoked skill, and plugin provenance is represented by a generic qualified command name rather
 than by changing the skill seed or forwarding the kernel-only `skill` input.
 Production `packages/kernel/src/runs/settings-assembler.ts`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts`.
+`packages/kernel/tests/integration/settings-assembler.test.ts`.
 
 **INV-R34b.** `$name` mentions in the current turn's user text inject a skill seed into that
 turn when the name is a unique user-invocable skill without `agent`; they never fork a run, never
@@ -956,11 +956,11 @@ seed. Unknown names remain literal.
 Production `packages/kernel/src/skills/dollar-mentions.ts` and
 `packages/kernel/src/runs/settings-assembler.ts`. Test
 `packages/kernel/tests/unit/dollar-mentions.test.ts` and
-`packages/kernel/tests/component/settings-assembler.test.ts`.
+`packages/kernel/tests/integration/settings-assembler.test.ts`.
 
 **INV-R35.** A malformed `mcpServers` entry fails the whole assembly by name; it is never dropped.
 Production `packages/kernel/src/runs/settings-assembler.ts`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts`.
+`packages/kernel/tests/integration/settings-assembler.test.ts`.
 
 **INV-R35a.** Active plugin MCP servers are attached even when every persisted profile has an empty
 MCP tool list, carry `auto_tools: true`, and leave those profile lists unchanged. Operator MCP
@@ -968,27 +968,27 @@ servers are still omitted unless a profile references their namespace. A namespa
 is matched as one exact registered prefix rather than split at its first dot.
 Production: `createSettingsRunAssembler` and file-kernel `pluginMcpServerNames` composition. Test:
 the active-plugin, dotted-namespace, and unreferenced-server cases in
-`packages/kernel/tests/component/settings-assembler.test.ts`.
+`packages/kernel/tests/integration/settings-assembler.test.ts`.
 
 **INV-R36.** A `can_spawn` target that resolves to no agent is skipped, not fatal.
 Production `packages/kernel/src/runs/settings-assembler.ts` (`if (rec === null) continue`). Test
-`packages/kernel/tests/component/settings-assembler.test.ts`.
+`packages/kernel/tests/integration/settings-assembler.test.ts`.
 
 **INV-R37.** The entry profile takes the user's `default_model`/`default_reasoning_effort` first; a
 spawned child takes its own frontmatter first.
 Production `packages/kernel/src/runs/settings-assembler.ts`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts`.
+`packages/kernel/tests/integration/settings-assembler.test.ts`.
 
 **INV-R38.** `prompt_cache_ttl` is absent unless the request supplies it.
 Production: `packages/kernel/src/runs/settings-assembler.ts` (`createSettingsRunAssembler`).
-Test: `packages/kernel/tests/component/settings-assembler.test.ts`.
+Test: `packages/kernel/tests/integration/settings-assembler.test.ts`.
 
 **INV-R39.** `completeBudget` fills in exactly one field: a declared budget missing `on_exceed` gets
 the fallback's `on_exceed` (`{...declared, on_exceed: fallback.on_exceed }`). It never supplies a
 missing `total_token_limit` — a budget declared as `{ on_exceed: "stop" }` alone is returned
 unchanged, `total_token_limit` still absent.
 Production `packages/kernel/src/runs/settings-assembler.ts`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts` (which additionally runs the assembled body
+`packages/kernel/tests/integration/settings-assembler.test.ts` (which additionally runs the assembled body
 through the engine's own `validateBody`) covers only the missing-`on_exceed` case; no
 test in this subsystem exercises a declared budget missing `total_token_limit`, so whether the
 resulting request validates in that case is not shown here — see §8.
@@ -1006,7 +1006,7 @@ Production `packages/kernel/src/runs/map-events.ts`. Test `packages/kernel/tests
 added to child profiles.
 Production `packages/kernel/src/runs/settings-assembler.ts` plus the selection
 order at `packages/kernel/src/config/file-config-store.ts`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts` covers absence, fallback, and
+`packages/kernel/tests/integration/settings-assembler.test.ts` covers absence, fallback, and
 both candidates present without double injection.
 
 **INV-R43.** `compaction_started` crosses the live engine trace as a strict, non-droppable,
@@ -1017,7 +1017,7 @@ Production: `packages/kernel/src/runs/map-events.ts` (`engineEventToProto`),
 `packages/kernel/src/transport/run-event-codec.ts` (`RUN_EVENT_SCHEMAS`). Test:
 `packages/kernel/tests/unit/map-events.test.ts` (compaction mapping),
 `packages/kernel/tests/unit/event-policy.test.ts`, and
-`packages/kernel/tests/contract/transport-codecs.test.ts` ("preserves compaction lifecycle and
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts` ("preserves compaction lifecycle and
 fallback attribution").
 
 **INV-R44.** A hydrated run exposes an Extension Profile only when durable host metadata contains exactly
@@ -1035,7 +1035,7 @@ disappear under backpressure.
 Production: `RUN_EVENT_POLICY`, `RUN_EVENT_SCHEMAS`, and `deriveRunEventSpan`.
 Test: `packages/kernel/tests/unit/event-policy.test.ts`,
 `packages/kernel/tests/unit/run-event-span.test.ts`, and
-`packages/kernel/tests/contract/transport-codecs.test.ts` (`preserves the workflow round checkpoint
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts` (`preserves the workflow round checkpoint
 contract`). Durable checkpoint ownership remains with `WorkflowRecord.sequence`, specified in
 [workflows-service.md](../capabilities/workflows-service.md).
 
@@ -1141,7 +1141,7 @@ store owns the full schema".
   (`packages/kernel/tests/unit/event-stream.test.ts`).
 - **Whether a budget missing `total_token_limit` (but not `on_exceed`) validates as a run request is
   not shown by this subsystem.** `completeBudget` (`packages/kernel/src/runs/settings-assembler.ts`) never fills a
-  missing `total_token_limit` — only a missing `on_exceed` — and `packages/kernel/tests/component/settings-assembler.test.ts`
+  missing `total_token_limit` — only a missing `on_exceed` — and `packages/kernel/tests/integration/settings-assembler.test.ts`
   shows exactly that: a settings budget of `{ on_exceed: "escalate" }` is assembled with no
   `total_token_limit` key at all. The engine's own request schema treats `total_token_limit` as
   optional (`packages/loop/src/validation/request/request-schema.ts`) but conditionally

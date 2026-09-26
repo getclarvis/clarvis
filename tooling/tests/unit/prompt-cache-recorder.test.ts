@@ -110,7 +110,6 @@ describe("physical cache evidence", () => {
     controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(completed)}\n\n`));
     const reader = response.body.getReader();
     await reader.read();
-    await Bun.sleep(5);
     controller.error(new DOMException("ended", "AbortError"));
     await capture.drain();
     expect(capture.calls).toHaveLength(1);

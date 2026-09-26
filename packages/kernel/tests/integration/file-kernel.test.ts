@@ -1,7 +1,7 @@
+import { ownedTempDirSync, trackOwnedResource } from "../helpers/owned-root.ts";
 import {
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   realpathSync,
   utimesSync,
@@ -13,7 +13,7 @@ import { describe, it, expect } from "bun:test";
 import { loadEnv } from "@clarvis/capability";
 import { JOURNAL_VERSION, type JournalHeader } from "@clarvis/trace";
 import {
-  createFileKernel,
+  createFileKernel as rawCreateFileKernel,
   createKernelEnvironment,
   resolveSecretEnvironment,
 } from "../../src/bootstrap.ts";
@@ -28,6 +28,12 @@ import {
 import { discoverGitWorkspace } from "../../src/git-workspace.ts";
 import { recordingLogger } from "../helpers/logger.ts";
 
+const createFileKernel: typeof rawCreateFileKernel = async (options) => {
+  const kernel = await rawCreateFileKernel(options);
+  trackOwnedResource(options.workspaceRoot, () => kernel.close());
+  return kernel;
+};
+
 /** Write a fixture file, creating the scope subdirectory it now lives in. */
 function seedFile(file: string, content: string): void {
   mkdirSync(dirname(file), { recursive: true });
@@ -35,7 +41,7 @@ function seedFile(file: string, content: string): void {
 }
 
 function seedWorkspace(): string {
-  const ws = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-fk-")));
+  const ws = realpathSync(ownedTempDirSync(join(tmpdir(), "clarvis-fk-")));
   mkdirSync(join(ws, ".clarvis", "agents"), { recursive: true });
   writeFileSync(
     join(ws, ".clarvis", "settings.json"),
@@ -110,7 +116,7 @@ describe("createFileKernel", () => {
   });
 
   it("assembles real deps and serves settings + agents read from disk", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-fk-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-fk-"));
     mkdirSync(join(ws, ".clarvis", "agents"), { recursive: true });
     writeFileSync(
       join(ws, ".clarvis", "settings.json"),
@@ -290,7 +296,7 @@ describe("createFileKernel — memory settings loader", () => {
   });
 
   it("uses the global Memory choice across workspaces", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-fk-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-fk-"));
     mkdirSync(join(ws, ".clarvis", "agents"), { recursive: true });
     const globalDir = join(ws, "global");
     writeFileSync(
@@ -488,7 +494,7 @@ describe("createFileKernel — skills roots from plugins", () => {
 
 describe("createFileKernel — guard settings loader", () => {
   it("resolves guard settings from live config at run start (a run whose model call fails fast, unguarded)", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-fk-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-fk-"));
     mkdirSync(join(ws, ".clarvis", "agents"), { recursive: true });
     writeFileSync(
       join(ws, ".clarvis", "settings.json"),

@@ -56,7 +56,7 @@ export async function testPromptCacheContracts(): Promise<void> {
       "test",
       "tooling/tests/unit/prompt-cache-evaluation.test.ts",
       "tooling/tests/unit/prompt-cache-recorder.test.ts",
-      "tooling/tests/unit/prompt-cache-artifact.test.ts",
+      "tooling/tests/integration/prompt-cache-artifact.test.ts",
       "--timeout",
       "60000",
     ],

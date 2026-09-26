@@ -208,3 +208,10 @@ arguments it was matched against.
   the model's original call. A successful `pre_tool_use` rewrite replaces the entire argument object
   seen by later selected hooks; it never re-runs selection, so one hook cannot silence another. The
   final replacement still passes the tool schema before dispatch.
+
+## Test suites
+
+`bun --filter @clarvis/hooks test:fast` runs this package's in-memory test cases. `bun --filter @clarvis/hooks test:integration` runs this package's common physical test cases. `bun --filter @clarvis/hooks test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

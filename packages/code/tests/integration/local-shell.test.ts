@@ -138,16 +138,6 @@ test("timeout kills the whole process group", async () => {
   expect(r.signal).toBeTruthy();
 });
 
-test("abort signal cancels the command", async () => {
-  const abort = new AbortController();
-  setTimeout(() => abort.abort(), 100);
-  const started = Date.now();
-  const r = await runLocalBash("sleep 5", { cwd, signal: abort.signal });
-  expect(Date.now() - started).toBeLessThan(5_000);
-  expect(r.cancelled).toBe(true);
-  expect(r.timedOut).toBe(false);
-});
-
 test("stdin is closed so interactive commands finish immediately", async () => {
   const r = await runLocalBash("cat", { cwd, timeoutMs: 5_000 });
   expect(r.exitCode).toBe(0);

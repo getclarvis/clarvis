@@ -585,28 +585,28 @@ ever presented to the user at a time across concurrently running leaders, and ea
 tagged with that leader's id (`` `[leader ${runId.slice(0,8)}] ` `` prefix), while the manager channel's
 prompt is presented untagged.
 Production: `packages/workflows/src/elicit-mux.ts`.
-Test: `packages/workflows/tests/contract/elicit-mux.test.ts` (concurrency + tagging),
-`packages/workflows/tests/contract/elicit-mux.test.ts` (manager untagged).
+Test: `packages/workflows/tests/contract/memory/elicit-mux.test.ts` (concurrency + tagging),
+`packages/workflows/tests/contract/memory/elicit-mux.test.ts` (manager untagged).
 
 **INV-179.** A queued prompt whose caller aborts its signal settles immediately as `{action:
 "cancel"}` without waiting for its turn in the queue, and is never actually presented to the human
 even once its turn does come around.
 Production: `packages/workflows/src/elicit-mux.ts`.
-Test: `packages/workflows/tests/contract/elicit-mux.test.ts` (settles at once, `<50ms`),
-`packages/workflows/tests/contract/elicit-mux.test.ts` (never seen by `user` even when its turn
+Test: `packages/workflows/tests/contract/memory/elicit-mux.test.ts` (settles at once, `<50ms`),
+`packages/workflows/tests/contract/memory/elicit-mux.test.ts` (never seen by `user` even when its turn
 arrives).
 
 **INV-180.** A genuine transport error thrown by the underlying `Elicit` function propagates as a
 rejection — it is never silently reinterpreted as a cancellation (only an abort produces a
 cancellation).
 Production: `packages/workflows/src/elicit-mux.ts`.
-Test: `packages/workflows/tests/contract/elicit-mux.test.ts`.
+Test: `packages/workflows/tests/contract/memory/elicit-mux.test.ts`.
 
 **INV-181.** A signal that is already aborted *before* `createElicitMux`'s channel is even called never
 reaches the underlying transport at all (the `user` callback's call count stays 0) and resolves
 immediately to `{action:"cancel"}`.
 Production: `packages/workflows/src/elicit-mux.ts`.
-Test: `packages/workflows/tests/contract/elicit-mux.test.ts`.
+Test: `packages/workflows/tests/contract/memory/elicit-mux.test.ts`.
 
 **ELI-01.** An `ask_user` call is available only to the run's entry agent, and only when the
 entry profile's grants include `"ask_user"`; a spawned sub-agent never receives the tool regardless of
@@ -642,7 +642,7 @@ has an `onElicit` handler attached is queued in `pendingElicits` and flushed in 
 handler is registered; a question the kernel settles first (`N.runElicitationSettled`) is removed
 from that buffer instead, so no stale prompt is ever delivered.
 Production: `packages/kernel/src/transport/client.ts`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts` ("buffers an elicitation emitted
+Test: `packages/kernel/tests/contract/memory/transport-codecs.test.ts` ("buffers an elicitation emitted
 before runs.start returns", "drops a buffered question the kernel settles before any handler
 attaches", "keeps a buffered question when the settlement names another run").
 
@@ -706,7 +706,7 @@ Test: `packages/loop/tests/unit/ask-user-tool.test.ts` (three distinct no-answer
 `packages/loop/tests/unit/ask-user-call.test.ts` (`no_response` recorded, absent for a human
 decline), `packages/loop/tests/component/execute-run.test.ts` ("does not admit a window expiry as
 operator evidence and hands the model the guidance"),
-`packages/kernel/tests/integration/transport.test.ts` (`runs.present` keeps the reason on the wire),
+`packages/kernel/tests/component/transport.test.ts` (`runs.present` keeps the reason on the wire),
 `packages/code/tests/unit/store-status.test.ts` (the transcript names the window),
 `packages/supervision/tests/unit/projection.test.ts` (a window expiry reads as an unanswered
 question, not as a refusal).
@@ -733,7 +733,7 @@ really visible — not while a dirty overlay still hides it — and the countdow
 remaining time),
 `packages/code/tests/component/kernel-run-client.test.ts` (the settlement
 closes the question for the UI and sends no answer back),
-`packages/kernel/tests/integration/transport.test.ts` (each settled windowed question reaches the
+`packages/kernel/tests/component/transport.test.ts` (each settled windowed question reaches the
 direct client under its own id).
 
 ## 6. Failure modes and degradation
@@ -834,7 +834,7 @@ direct client under its own id).
   and listener-before-delivery contract in §4.4, covered by the pre-aborted and synchronous observer
   cancellation tests in [elicit-bridge.test.ts](../../packages/kernel/tests/unit/elicit-bridge.test.ts).
 - ~~**Remote-transport elicit-buffering test coverage (ELI-05).**~~ **Resolved:**
-  `packages/kernel/tests/contract/transport-codecs.test.ts` now pins the buffering path directly —
+  `packages/kernel/tests/contract/memory/transport-codecs.test.ts` now pins the buffering path directly —
   a question emitted before `runs.start` resolves is delivered to the handler that attaches later, a
   question the kernel settles first leaves the buffer empty, and a settlement naming another run
   leaves the buffered question alone.

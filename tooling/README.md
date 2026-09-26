@@ -11,22 +11,36 @@ artifact builders and performance benchmarks in `packages/code/tooling/`.
 | `runtime/`            | Immutable isolated-runtime image planning and release identity manifests      |
 | `lib/`                | Importable implementation shared by checks and their tests                    |
 | `test-runtime/`       | Process setup loaded by Bun before repository tests                           |
-| `tests/unit/`         | Focused checker and library behavior                                          |
+| `tests/unit/`         | In-memory checker and library contracts                                       |
 | `tests/architecture/` | Cross-file repository invariants                                              |
+| `tests/integration/`  | Runner, compiler, preload and artifact boundary canaries                      |
 | `ci/`                 | CI-only orchestration that cannot be expressed as a portable TypeScript check |
 
 Root tooling is TypeScript unless a shell is the behavior under test or the workflow itself requires
 shell control flow. It participates in `bun run typecheck`, `bun run lint:eslint`,
 `bun run format:check`, `bun run knip`, and the supported root `bun run test` command.
 
-`lib/test-determinism.ts` and `checks/test-determinism.ts` own the repository-wide test determinism
-census. The checker parses every `*.test.*` file below the six accepted test levels, inventories
-positive waits/timers, process-global mutation, fake-timer lifecycle, mutable `beforeAll` fixtures,
-listeners and subprocesses, and compares the result with
-`test-runtime/test-determinism-baseline.json`. `bun run check:test-determinism` is fail-closed on
-new or stale rows; `--report` is the migration inventory and `--json` is the stable CI/inspection
-format. Listener and subprocess rows can remain only as explicitly justified `boundary-canary`
-entries. The analyzer is importable without running the CLI, and no runtime package depends on it.
+`lib/test-harness.ts` checks resource-suite composition against discovered test files and
+workspace manifests, including missing or cyclic scripts, timeouts, preload and coverage scoping.
+`bun run test:tooling:fast` runs in-memory tooling unit tests; `bun run test:tooling` adds
+architecture and all runner/compiler integrations. `test:module-resolution` remains a focused
+entrypoint, while the full tooling composition reaches it once through the integration directory.
+The direct fast-resource ESLint rules live in `lib/fast-test-resource-rules.js`; they cannot prove
+that an imported adapter has no transitive I/O. Physical fixtures own their cleanup and do not
+run in the fast suite. Production: `lib/test-harness.ts` (`checkSuiteComposition`) and
+`lib/fast-test-resource-rules.js` (`fastTestResourceRules`). Test:
+`tests/unit/test-harness.test.ts` and `tests/unit/fast-test-resource-rules.test.ts`.
+
+The test preload creates one protected `CLARVIS_HOME` for a direct runner and removes only that
+root at exit. A removal failure is diagnosed on stderr and makes an otherwise successful runner
+fail. Its explicit handoff lets child test processes reuse the root without acquiring cleanup
+authority. `test:tooling` also runs a same-process, two-file canary for Code's per-acquisition
+temporary-directory finalizer, including controlled assertion failure. Fixture owners close live
+resources before deleting their roots; a crash or `SIGKILL` cannot execute these finalizers.
+Production: `test-runtime/clarvis-home-preload.ts` (`removeOwnedTestRoot`) and
+`../packages/code/tests/helpers/tracked-temp.ts` (`openTempDir`). Test:
+`tests/integration/clarvis-home-preload.test.ts` and
+`tests/integration/temp-resource-lifecycle.test.ts`.
 
 The real-Git release fixture uses `withoutGitRepositoryEnvironment` from `@clarvis/paths` before
 starting child processes. This keeps hook and linked-worktree repository context out of its
@@ -132,8 +146,8 @@ Restart-worker failures retain observed physical calls in the global budget. The
 for a ready composer between turns and settled memory traces before reconciling the UI's session
 cache percentage, uncached input and output against the captured leader calls.
 The artifact, release and installer smoke runners share the Code `SmokeContext` fixture contract;
-their structural isolation canary is `tooling/tests/unit/harness-isolation-contract.test.ts`.
-`packages/code/tests/unit/artifact-isolation.test.ts` proves the owned roots, allowlisted child
+their structural isolation canary is `tooling/tests/integration/harness-isolation-contract.test.ts`.
+`packages/code/tests/integration/artifact-isolation.test.ts` proves the owned roots, allowlisted child
 environment and lifecycle cleanup. The installer smoke
 uses a staged archive/checksum directory and passed the Linux install/uninstall journey; release
 and artifact complete-app PTY claims still require a host whose private-state parent ownership is

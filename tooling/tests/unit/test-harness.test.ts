@@ -4,6 +4,8 @@ import {
   checkGateChain,
   checkPackageHarness,
   checkRootBuild,
+  checkSuiteComposition,
+  expandTestSuite,
   GATE_PHASES,
   parseTestTable,
 } from "../../lib/test-harness.ts";
@@ -22,6 +24,161 @@ const pkg = (over: Record<string, unknown> = {}) => ({
   bunfig: BUNFIG,
   typeOnly: false,
   ...over,
+});
+
+describe("resource suite composition", () => {
+  const scripts = {
+    test: "bun run test:tooling && bun --filter @clarvis/demo test",
+    "test:fast": "bun run test:tooling:fast && bun --filter @clarvis/demo test:fast",
+    "test:integration":
+      "bun run test:tooling:integration && bun --filter @clarvis/demo test:integration",
+    "test:tooling":
+      "bun run test:tooling:fast && bun test tooling/tests/architecture --timeout 60000 && bun run test:tooling:integration",
+    "test:tooling:fast": "bun test tooling/tests/unit --timeout 60000",
+    "test:tooling:integration": "bun test tooling/tests/integration --timeout 60000",
+    "test:module-resolution":
+      "bun test tooling/tests/integration/module-resolution.test.ts --timeout 60000",
+    "test:coverage":
+      "bun --workspaces --sequential --if-present test:coverage && bun run coverage:check",
+  };
+  const demo = {
+    name: "@clarvis/demo",
+    scripts: {
+      test: "bun test --timeout 60000",
+      "test:fast": "bun test tests/unit tests/contract/memory --timeout 60000",
+      "test:integration": "bun test tests/integration tests/contract/physical --timeout 60000",
+      "test:coverage": "bun test --timeout 60000 --coverage",
+    },
+    testFiles: [
+      "packages/demo/tests/unit/rule.test.ts",
+      "packages/demo/tests/contract/memory/wire.spec.ts",
+      "packages/demo/tests/contract/physical/disk_test.ts",
+      "packages/demo/tests/integration/host_spec.mts",
+      "packages/demo/tests/architecture/exports.test.ts",
+    ],
+  };
+  const tooling = [
+    "tooling/tests/unit/check.test.ts",
+    "tooling/tests/architecture/policy.spec.ts",
+    "tooling/tests/integration/runner_test.ts",
+  ];
+
+  test("discovers every filename form and nested contract in its owning command", () => {
+    expect(checkSuiteComposition(scripts, [demo], tooling)).toEqual([]);
+  });
+
+  test("rejects a forgotten category and a missing workspace script", () => {
+    const withoutPhysical = {
+      ...scripts,
+      "test:integration":
+        "bun run test:tooling:integration && bun --filter @clarvis/demo test:fast",
+    };
+    expect(checkSuiteComposition(withoutPhysical, [demo], tooling).join(" ")).toContain(
+      "contract/physical/disk_test.ts",
+    );
+    expect(
+      checkSuiteComposition(
+        { ...scripts, "test:fast": "bun run test:tooling:fast" },
+        [demo],
+        tooling,
+      ).join(" "),
+    ).toContain("unit/rule.test.ts");
+    expect(
+      expandTestSuite(
+        { ...scripts, "test:fast": "bun --filter @clarvis/demo absent" },
+        [demo],
+        "test:fast",
+      ).failures.join(" "),
+    ).toContain("missing script");
+    expect(
+      checkSuiteComposition(
+        scripts,
+        [
+          {
+            ...demo,
+            scripts: {
+              ...demo.scripts,
+              "test:coverage": "bun test tests/unit --timeout 60000 --coverage",
+            },
+          },
+        ],
+        tooling,
+      ).join(" "),
+    ).toContain("test:coverage: undiscovered test");
+    expect(
+      checkSuiteComposition(
+        scripts,
+        [
+          {
+            ...demo,
+            testFiles: [...demo.testFiles, "packages/demo/tests/contract/legacy.test.ts"],
+          },
+        ],
+        tooling,
+      ).join(" "),
+    ).toContain("classify packages/demo/tests/contract/legacy.test.ts");
+  });
+
+  test("rejects cycles, unknown workspaces and missing timeouts", () => {
+    expect(
+      expandTestSuite({ "test:fast": "bun run test:fast" }, [], "test:fast").failures.join(" "),
+    ).toContain("cyclic");
+    expect(
+      expandTestSuite(
+        { "test:fast": "bun --filter @clarvis/missing test" },
+        [],
+        "test:fast",
+      ).failures.join(" "),
+    ).toContain("unknown workspace");
+    expect(
+      expandTestSuite(
+        { "test:fast": "bun test tooling/tests/unit" },
+        [],
+        "test:fast",
+      ).failures.join(" "),
+    ).toContain("--timeout 60000");
+  });
+
+  test("rejects a fast suite that reaches physical or architecture cases", () => {
+    const broadened = {
+      ...scripts,
+      "test:tooling:fast": "bun test tooling/tests --timeout 60000",
+      "test:fast": "bun run test:tooling:fast && bun --filter @clarvis/demo test",
+    };
+    const failures = checkSuiteComposition(broadened, [demo], tooling).join(" ");
+    expect(failures).toContain(
+      "wrong resource level for packages/demo/tests/integration/host_spec.mts",
+    );
+    expect(failures).toContain(
+      "wrong resource level for tooling/tests/architecture/policy.spec.ts",
+    );
+  });
+
+  test("requires one module resolution run and consolidated workspace coverage", () => {
+    const twice = {
+      ...scripts,
+      "test:tooling": `${scripts["test:tooling"]} && bun run test:module-resolution`,
+      "test:coverage": "bun --filter @clarvis/demo test:coverage",
+    };
+    const failures = checkSuiteComposition(twice, [demo], tooling).join(" ");
+    expect(failures).toContain("module resolution runs 2 times");
+    expect(failures).toContain("must run every workspace once");
+  });
+
+  test("keeps the type-only protocol contract in the full suite", () => {
+    const protocol = {
+      name: "@clarvis/protocol",
+      scripts: {
+        test: "bun run test:contract",
+        "test:contract": "tsc -p tsconfig.json",
+        "test:coverage": "bun run test:contract",
+      },
+      testFiles: [],
+    };
+    expect(checkSuiteComposition(scripts, [demo, protocol], tooling).join(" ")).toContain(
+      "type-only @clarvis/protocol contract is omitted",
+    );
+  });
 });
 
 describe("bunTestInvocations", () => {

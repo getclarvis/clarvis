@@ -164,3 +164,10 @@ inventory.
 ## License
 
 MIT
+
+## Test suites
+
+`bun --filter @clarvis/supervision test:fast` runs this package's in-memory test cases. `bun --filter @clarvis/supervision test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

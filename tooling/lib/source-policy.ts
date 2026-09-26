@@ -60,15 +60,20 @@ export function findModuleMockCalls(file, source) {
  */
 const BUN_TEST_FILENAME = /(?:\.|_)(?:test|spec)\.[cm]?[jt]sx?$/;
 
+/** Classify a Bun-discovered test by its first directory below `tests/`. */
+export function testFileLevel(file) {
+  if (!BUN_TEST_FILENAME.test(file)) return undefined;
+  const marker = "/tests/";
+  const testsAt = file.lastIndexOf(marker);
+  if (testsAt < 0) return undefined;
+  const relative = file.slice(testsAt + marker.length);
+  const level = relative.split("/", 1)[0];
+  return TEST_LEVELS.has(level) ? level : undefined;
+}
+
 /** Return test files whose first directory below `tests/` is not an explicit test level. */
 export function findUnclassifiedTestFiles(files) {
   return files.filter((file) => {
-    const normalized = file;
-    if (!BUN_TEST_FILENAME.test(normalized)) return false;
-    const marker = "/tests/";
-    const testsAt = normalized.lastIndexOf(marker);
-    if (testsAt < 0) return false;
-    const relative = normalized.slice(testsAt + marker.length);
-    return !TEST_LEVELS.has(relative.split("/", 1)[0]);
+    return BUN_TEST_FILENAME.test(file) && file.includes("/tests/") && !testFileLevel(file);
   });
 }

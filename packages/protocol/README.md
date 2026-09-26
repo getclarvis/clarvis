@@ -86,7 +86,7 @@ approval and execution-attempt events use the same strict codec. Production: `Se
 `packages/protocol/src/runs.ts`, and `OPERATIONS.config` in
 `packages/kernel/src/transport/operations.ts`. Test:
 `packages/kernel/tests/integration/isolation-settings.test.ts` and
-`packages/kernel/tests/contract/transport-codecs.test.ts`.
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 `ConfigService.getExecutionRules`, `checkExecutionRule` and `updateExecutionRules` expose rule
 sources, a no-execution preview and a revision-checked replacement through authenticated Kernel
@@ -97,7 +97,7 @@ checks it. Production: `ConfigService` in `packages/protocol/src/config.ts`, `Ru
 `packages/kernel/src/transport/operations.ts`, and `RUN_EVENT_SCHEMAS` in
 `packages/kernel/src/transport/run-event-codec.ts`. Test:
 `packages/kernel/tests/integration/execution-rules-config.test.ts` and
-`packages/kernel/tests/contract/transport-codecs.test.ts`.
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 File-tool configuration uses ordinary runs and the same execution approval path.
 Host-owned authority is separate from model-provided parameters and saved transcript content.

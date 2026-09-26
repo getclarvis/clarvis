@@ -1,15 +1,25 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { ownedTempDirSync, trackOwnedResource } from "../helpers/owned-root.ts";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, it, expect } from "bun:test";
 import { loadEnv } from "@clarvis/capability";
 import { createStdioTransport, connectKernelClient } from "../../src/index.ts";
-import { createLogger, serveFileKernelOverStdio } from "../../src/bootstrap.ts";
+import {
+  createLogger,
+  serveFileKernelOverStdio as rawServeFileKernelOverStdio,
+} from "../../src/bootstrap.ts";
 import { SERVE_AGENT_TOOLS_PROBE_PATH } from "../fixtures/serve-agent-tools-probe.ts";
 
+const serveFileKernelOverStdio: typeof rawServeFileKernelOverStdio = async (options) => {
+  const handle = await rawServeFileKernelOverStdio(options);
+  trackOwnedResource(options.workspaceRoot, () => handle.close());
+  return handle;
+};
+
 function seedWorkspace(): string {
-  const ws = mkdtempSync(join(tmpdir(), "clarvis-serve-"));
+  const ws = ownedTempDirSync(join(tmpdir(), "clarvis-serve-"));
   mkdirSync(join(ws, ".clarvis", "agents"), { recursive: true });
   writeFileSync(
     join(ws, ".clarvis", "settings.json"),

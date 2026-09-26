@@ -422,7 +422,7 @@ no migration or compatibility reader.
 Production: `ExecutionVisibility` in [trace-events.ts](../../packages/capability/src/trace-events.ts),
 `assertExecutionVisibility` in [visibility.ts](../../packages/trace/src/visibility.ts), and
 `parseHeader`/`journalToRecord` in [journal-recovery.ts](../../packages/trace/src/journal-recovery.ts).
-Test: visibility cases in [trace-store-conformance.ts](../../packages/trace/tests/contract/trace-store-conformance.ts)
+Test: visibility cases in [trace-store-conformance.ts](../../packages/trace/tests/contract/physical/trace-store-conformance.ts)
 and [journal-recovery.test.ts](../../packages/trace/tests/unit/journal-recovery.test.ts).
 
 ### 3b. On-disk layout
@@ -787,7 +787,7 @@ Production: `projectTraceStoreWrites` in
 Test: payload sentinels and failure paths in
 [projected-store.test.ts](../../packages/trace/tests/integration/projected-store.test.ts), and the
 projected JSON instance of the shared store conformance matrix in
-[trace-store.test.ts](../../packages/trace/tests/contract/trace-store.test.ts).
+[trace-store.test.ts](../../packages/trace/tests/contract/physical/trace-store.test.ts).
 
 `createJournalLineParser` (`packages/trace/src/journal-recovery.ts`) drives the package's one
 journal parser, `parseJournalChunks`, which is streaming and always bounded — there is no
@@ -903,7 +903,7 @@ The cursor is held in the store-scope `cleanupScan`; pinned at
 
 Expired candidates are retained in a newest-first heap bounded by `cleanupBatch`, then
 sorted oldest-first before deletion — so a bounded batch removes the oldest first; pinned by
-the conformance case at `packages/trace/tests/contract/trace-store-conformance.ts` and by
+the conformance case at `packages/trace/tests/contract/physical/trace-store-conformance.ts` and by
 `packages/trace/tests/integration/json-trace-store.test.ts`. A `leases` candidate goes through `reclaimLocalLeaseSync` with
 `staleMs: TMP_ORPHAN_GRACE_MS`, so a lock whose owner process is live is never reclaimed. The same
 test pins that a record's sidecar and generation sidecar are unlinked alongside it and do **not**
@@ -975,46 +975,46 @@ Production: `packages/trace/src/json-trace-store.ts` (the two `findEntry` confli
 checks, before and under the lease) → `executionIdConflict`
 (`packages/capability/src/errors.ts`, whose `code` is `"execution_id_conflict"` at
 `packages/capability/src/errors.ts`); memory double at `packages/trace/src/testing.ts`.
-Pinned: `packages/trace/tests/contract/trace-store-conformance.ts`, driven for both
-backends from `packages/trace/tests/contract/trace-store.test.ts`.
+Pinned: `packages/trace/tests/contract/physical/trace-store-conformance.ts`, driven for both
+backends from `packages/trace/tests/contract/physical/trace-store.test.ts`.
 
 **T-2 (INV-024).** Listing is owner-scoped, and an owner that never stored anything yields an empty
 result rather than an error. Production: `packages/trace/src/json-trace-store.ts` (`listOwner`
 reads only `ownerDir(owner)`), and `readDirEntries` returns on `ENOENT`/`ENOTDIR`
 (`packages/trace/src/json-trace-store.ts`). Pinned:
-`packages/trace/tests/contract/trace-store-conformance.ts`.
+`packages/trace/tests/contract/physical/trace-store-conformance.ts`.
 
 **T-3 (INV-025).** An owner's records list newest-first, and `limit`/`offset` paging leaves `total`
 page-independent. Production: `packages/trace/src/trace-store.ts` (`sortDescPaginate`), and
 `total` is incremented over every matching entry before paging
 (`packages/trace/src/json-trace-store.ts`). Pinned:
-`packages/trace/tests/contract/trace-store-conformance.ts`.
+`packages/trace/tests/contract/physical/trace-store-conformance.ts`.
 
 **T-4 (INV-026).** A listing's rows never include `request`, `response` or `trace`. Production:
 `recordToSummary` projects exactly nine scalars (`packages/trace/src/trace-store.ts`), and
 the sidecar holds only that projection (`packages/trace/src/json-trace-store.ts`). Pinned:
-`packages/trace/tests/contract/trace-store-conformance.ts`.
+`packages/trace/tests/contract/physical/trace-store-conformance.ts`.
 
 **T-5 (INV-027).** `deleteById` affects only the requesting owner's copy and reports whether a record
 existed. Production: `packages/trace/src/json-trace-store.ts` (`findEntry(owner, id)` first,
-`false` when absent). Pinned: `packages/trace/tests/contract/trace-store-conformance.ts`.
+`false` when absent). Pinned: `packages/trace/tests/contract/physical/trace-store-conformance.ts`.
 
 **T-6 (INV-028).** A cleanup pass keyed on an age cutoff removes only records older than the cutoff,
 across every owner, and a bounded batch removes the oldest first. Production:
 `packages/trace/src/json-trace-store.ts` (`meta.startedAt < cutoffMs`) (`expired.sort`
 ascending before deletion). Pinned:
-`packages/trace/tests/contract/trace-store-conformance.ts`.
+`packages/trace/tests/contract/physical/trace-store-conformance.ts`.
 
 **T-7 (INV-029).** `deleteOwner` reports the count removed and leaves other owners untouched; an owner
 with nothing stored reports zero. Production: `packages/trace/src/json-trace-store.ts`
 (counts only entries of the previous generation in this owner's directory) (removes only
-`ownerDir(owner)`). Pinned: `packages/trace/tests/contract/trace-store-conformance.ts`.
+`ownerDir(owner)`). Pinned: `packages/trace/tests/contract/physical/trace-store-conformance.ts`.
 
 **T-7a.** `listAcrossOwners` lists across every owner newest-first and, given an exact `owner` filter,
 returns only that owner's rows. Production: `packages/trace/src/json-trace-store.ts`
 (delegates to `listOwner` when `filter.owner` is given) and `packages/trace/src/trace-store.ts` (`sortDescPaginate`,
 shared with the single-owner path). Pinned:
-`packages/trace/tests/contract/trace-store-conformance.ts`.
+`packages/trace/tests/contract/physical/trace-store-conformance.ts`.
 
 **T-8.** `BUILTIN_TRACE_KINDS` and `TraceDetailMap`'s keys are the same set, checked at compile time in
 both directions. Production: `packages/capability/src/trace-kinds.ts`. Pinned: the assignments
@@ -1218,7 +1218,7 @@ alive. Production: `packages/trace/src/cleanup.ts` (`unref`). Pinned:
 **T-47.** The memory double and the JSON store satisfy the *same* conformance suite, so a caller
 written against one works against the other. Production: `packages/trace/src/testing.ts` (and its
 `Promise.reject` rather than `throw`). Pinned:
-`packages/trace/tests/contract/trace-store.test.ts`.
+`packages/trace/tests/contract/physical/trace-store.test.ts`.
 
 **T-48.** `deriveEventSpan` narrows before switching, and a contributed event gets a run-level `point`.
 Production: `packages/trace/src/event-span.ts`, guarding the `never`. Pinned:
@@ -1415,6 +1415,6 @@ Production: `createTraceVisibilityView` in [visibility-view.ts](../../packages/t
 in [testing.ts](../../packages/trace/src/testing.ts), and `reserveExecutionId` in
 [execute-run.ts](../../packages/loop/src/runtime/execute-run.ts).
 Test: mixed pages, namespace conflicts, context replacement, deletion and retention in
-[trace-store-conformance.ts](../../packages/trace/tests/contract/trace-store-conformance.ts), quarantine
+[trace-store-conformance.ts](../../packages/trace/tests/contract/physical/trace-store-conformance.ts), quarantine
 and internal recovery in [visibility.test.ts](../../packages/trace/tests/integration/visibility.test.ts),
 and in-flight cross-view conflict in [execute-run.test.ts](../../packages/loop/tests/component/execute-run.test.ts).

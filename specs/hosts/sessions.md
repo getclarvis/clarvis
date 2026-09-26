@@ -1159,7 +1159,7 @@ continuation base.
   service's *widened* `listPage` shape**, not just the protocol `SessionService` interface, via the
   locally-cast `SignalAwareSessionListPage` type in `packages/kernel/src/transport/operations.ts` — a structural,
   compile-time-only coupling (a duck-typed cast, not an imported type) that a test
-  (`packages/kernel/tests/contract/transport-codecs.test.ts`) is the only thing verifying still holds against the real
+  (`packages/kernel/tests/contract/memory/transport-codecs.test.ts`) is the only thing verifying still holds against the real
   service.
 - **`packages/code/src/adapters/session.ts`'s `resumeSession`/`deleteSession` depend only on the
   small `ResumeDeps`/`deleteRun` function-shaped parameters they are given** — not on

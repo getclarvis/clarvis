@@ -194,11 +194,19 @@ Backing hard bounds (not exported): `MAX_PROMPT_HISTORY_ENTRIES = 1_000`,
 | `LocalBashResult` | `{exitCode, stdout, stderr, signal, timedOut, cancelled, stdoutTruncated, stderrTruncated, durationMs}` | `packages/code/src/adapters/local-shell.ts` (`LocalBashResult`) |
 | `LocalBashOptions` | `{cwd, timeoutMs?, maxBytes?, signal?, env?}` | `packages/code/src/adapters/local-shell.ts` (`LocalBashOptions`) |
 | `stripAnsi(s)` | `string` | `packages/code/src/core/terminal-text.ts` (`stripAnsi`), re-exported by `local-shell.ts` |
-| `runLocalBash(command, opts)` | `Promise<LocalBashResult>` | `packages/code/src/adapters/local-shell.ts` (`runLocalBash`) |
+| `runLocalBash(command, opts, deps?)` | `Promise<LocalBashResult>` | `packages/code/src/adapters/local-shell.ts` (`runLocalBash`) |
 | `formatBashObservation(command, r)` | `string` (tagged text block) | `packages/code/src/adapters/local-shell.ts` (`formatBashObservation`) |
 
 Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL_GRACE_MS = 1_500`,
 `EXIT_DRAIN_MS = 1_000` (`packages/code/src/adapters/local-shell.ts`).
+The optional dependency object owns spawn, shell selection, process-group signals,
+clock and timers for one invocation. The ordinary call uses real host adapters;
+controlled child streams pin timeout, abort, output bounds and exit-drain order
+without wall-clock waits. Physical shell tests retain Bash dialect, pipes and
+process-group evidence. Production: `LocalBashDependencies` and `runLocalBash`
+in `packages/code/src/adapters/local-shell.ts`. Test:
+`packages/code/tests/unit/local-shell-policy.test.ts` and
+`packages/code/tests/integration/local-shell.test.ts`.
 
 ### Overlay components (`views/overlays/*`, `views/input/{AutocompletePopup,CommandGroupHeader}.tsx`)
 

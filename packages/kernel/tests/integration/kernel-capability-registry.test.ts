@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { ownedTempDirSync, trackOwnedResource } from "../helpers/owned-root.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "bun:test";
@@ -14,9 +14,15 @@ import { createAgentToolsCapability } from "@clarvis/loop/capabilities/tools";
 import { createAskUserCapability, type ExecuteRunDeps } from "@clarvis/loop";
 import { z } from "zod";
 import type { RunEvent, StartRunParams } from "@clarvis/protocol";
-import { createInProcessKernel } from "../../src/index.ts";
+import { createInProcessKernel as rawCreateInProcessKernel } from "../../src/index.ts";
 import { createMemoryConfigStore } from "../../src/config.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
+
+const createInProcessKernel: typeof rawCreateInProcessKernel = (options) => {
+  const kernel = rawCreateInProcessKernel(options);
+  trackOwnedResource(options.workspaceRoot, () => kernel.close());
+  return kernel;
+};
 
 const PROVIDERS = [{ name: "anthropic", kind: "anthropic" }];
 
@@ -72,7 +78,7 @@ const params: StartRunParams = { messages: [{ role: "user", content: "Do it" }],
  */
 describe("createInProcessKernel — capability settings registry", () => {
   it("accepts its own capabilities' params when the host supplied an empty registry", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-reg-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-reg-"));
     const kernel = createInProcessKernel({
       deps: deps(ws, { capabilityRegistry: createCapabilityRegistry() }),
       workspaceRoot: ws,
@@ -88,7 +94,7 @@ describe("createInProcessKernel — capability settings registry", () => {
   });
 
   it("carries a host's own registered param alongside, rather than replacing it", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-reg-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-reg-"));
     const hostRegistry = createCapabilityRegistry();
     const spec: CapabilitySettingsSpec = {
       key: "widgets",
@@ -125,7 +131,7 @@ describe("createInProcessKernel — capability settings registry", () => {
   });
 
   it("preserves host grant declarations while merging the kernel registry", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-reg-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-reg-"));
     const hostRegistry = createCapabilityRegistry();
     hostRegistry.registerGrant({ name: "host_audit" });
 

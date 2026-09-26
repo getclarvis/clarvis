@@ -116,7 +116,7 @@ Production: `removeProjectionStorage` in
 [projection-storage.ts](../../packages/kernel/src/hosting/projection-storage.ts), called by
 [local-state.ts](../../packages/kernel/src/hosting/local-state.ts).
 Test: `streams beyond the former lifetime quota with bounded segments and immutable cuts` in
-[hosted-projection-file.test.ts](../../packages/kernel/tests/component/hosted-projection-file.test.ts).
+[hosted-projection-file.test.ts](../../packages/kernel/tests/integration/hosted-projection-file.test.ts).
 
 ### Pending hosted consumption receipts
 
@@ -144,4 +144,4 @@ Production: `recoverProjectionIO` in
 [projection-io.ts](../../packages/kernel/src/hosting/projection-io.ts) and `openProjectionStorage` in
 [projection-storage.ts](../../packages/kernel/src/hosting/projection-storage.ts).
 Test: `recovers positional writes and rotation sync without duplicating frames or changing a snapshot`
-in [hosted-projection-file.test.ts](../../packages/kernel/tests/component/hosted-projection-file.test.ts).
+in [hosted-projection-file.test.ts](../../packages/kernel/tests/integration/hosted-projection-file.test.ts).

@@ -34,18 +34,42 @@ import { workspaceStatePaths } from "@clarvis/paths";
 import { ExecutionSessionManager } from "../../src/lib/execution-session.ts";
 
 const fixtureGlobals = new Map<string, string>();
+const fixtureSessions = new Map<string, Set<ExecutionSessionManager>>();
 
 export function makeWorkspace(): string {
   const workspace = mkdtempSync(path.join(tmpdir(), "clarvis-test-"));
   fixtureGlobals.set(workspace, `${workspace}-global`);
+  fixtureSessions.set(workspace, new Set());
   return workspace;
 }
 
-export function cleanup(root: string): void {
-  rmSync(root, { recursive: true, force: true });
-  const global = fixtureGlobals.get(root);
+export async function cleanup(root: string): Promise<void> {
+  const sessions = fixtureSessions.get(root);
+  if (sessions === undefined) throw new Error(`workspace fixture is not owned: ${root}`);
+  const failures: unknown[] = [];
+  for (const manager of sessions) {
+    try {
+      if (!(await manager.close()))
+        failures.push(new Error(`session termination unconfirmed: ${root}`));
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, `workspace fixture cleanup failed; roots retained: ${root}`);
+  }
+  for (const dir of [root, fixtureGlobals.get(root)]) {
+    if (dir === undefined) continue;
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0)
+    throw new AggregateError(failures, `workspace fixture cleanup failed: ${root}`);
+  fixtureSessions.delete(root);
   fixtureGlobals.delete(root);
-  if (global !== undefined) rmSync(global, { recursive: true, force: true });
 }
 
 export function fixtureStatePaths(root: string) {
@@ -55,6 +79,10 @@ export function fixtureStatePaths(root: string) {
 }
 
 export function makeConfig(root: string, overrides: Partial<ServerConfig> = {}): ServerConfig {
+  const sessions = fixtureSessions.get(root);
+  if (sessions === undefined) throw new Error(`workspace fixture is not owned: ${root}`);
+  const manager = overrides.sessionManager ?? new ExecutionSessionManager();
+  sessions.add(manager);
   const statePaths = overrides.statePaths ?? fixtureStatePaths(root);
   const base = {
     workspaceRoot: root,
@@ -76,7 +104,7 @@ export function makeConfig(root: string, overrides: Partial<ServerConfig> = {}):
     statePaths,
     temporaryRoots: [],
     sessionAgent: {},
-    sessionManager: new ExecutionSessionManager(),
+    sessionManager: manager,
     ...overrides,
   };
   return base;

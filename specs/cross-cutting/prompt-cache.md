@@ -323,7 +323,7 @@ No other credential or host-global entry is copied into evidence or a guest. Tes
 paths are removed only after owned processes stop. The artifact observer test exercises synthetic
 refresh and isolation, while a real OAuth run remains a separate, explicitly authorized evidence
 layer. The view also rejects symlinked or overlapping authentication, fixture and mounted roots
-before it creates staging paths; `tooling/tests/unit/prompt-cache-artifact.test.ts` covers both
+before it creates staging paths; `tooling/tests/integration/prompt-cache-artifact.test.ts` covers both
 the refresh path and these root-boundary refusals.
 
 **PC06 — complete, artifact-bound evidence.** `sealCacheArtifact` seals the existing archive after
@@ -338,5 +338,5 @@ the matching actually loaded bundle for all three C11 journeys. Production:
 Test: [`prompt-cache-evaluation.test.ts`](../../tooling/tests/unit/prompt-cache-evaluation.test.ts)
 rejects missing checkpoints, an unrelated resolved model, an unhealthy first truncated-result
 request and unrelated artifact evidence;
-[`prompt-cache-artifact.test.ts`](../../tooling/tests/unit/prompt-cache-artifact.test.ts) verifies
+[`prompt-cache-artifact.test.ts`](../../tooling/tests/integration/prompt-cache-artifact.test.ts) verifies
 the bytes observed by the installed-module loader without substituting a version-string check.

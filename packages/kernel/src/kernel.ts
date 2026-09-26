@@ -78,7 +78,7 @@ import {
   type WorkflowsServiceConfig,
   type WorkflowsRuntimeSettings,
 } from "./workflows/workflows-service.ts";
-import { createWorkflowStore } from "./workflows/workflow-store.ts";
+import { createWorkflowStore, type WorkflowStore } from "./workflows/workflow-store.ts";
 import { createKernelLifecycle, type KernelLifecycle } from "./application/lifecycle.ts";
 import {
   createKernelScopePolicy,
@@ -270,6 +270,10 @@ export interface CreateKernelOptions {
    * plans service is inert.
    */
   planFactory?: PlanFactory;
+  /** Owner-scoped session persistence supplied by an ephemeral or specialized host. */
+  sessionStoreForOwner?: (owner: string) => HostSessionStore;
+  /** Owner-scoped workflow persistence supplied by an ephemeral or specialized host. */
+  workflowStoreForOwner?: (owner: string) => WorkflowStore;
   /** The owner every unscoped service call is filed under. Defaults to
    * `ownerFromWorkspace(workspaceRoot)` — the local product's single owner. A
    * multi-owner host leaves this alone and calls
@@ -552,7 +556,9 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       workspace: scope.workspace,
       globalConfigDir: globalDir,
       assembleRunRequest,
-      store: createWorkflowStore({ dir: globalDir, owner: scope.owner }),
+      store:
+        opts.workflowStoreForOwner?.(scope.owner) ??
+        createWorkflowStore({ dir: globalDir, owner: scope.owner }),
       readSettings: () => readWorkflowsSettings(opts.configStore),
       ...(opts.isolationService === undefined ? {} : { isolationService: opts.isolationService }),
       ...(opts.readWorkflowDefinitions === undefined
@@ -609,13 +615,15 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       plans: createPlansService({
         ...(planFactory === undefined ? {} : { resolve: () => planFactory.storeFor(scope.owner) }),
       }),
-      sessions: createSessionService({
-        dir: globalDir,
-        owner: scope.owner,
-        projectId: scope.projectId,
-        workspaceId: scope.workspaceId,
-        logger: runLogger,
-      }),
+      sessions:
+        opts.sessionStoreForOwner?.(scope.owner) ??
+        createSessionService({
+          dir: globalDir,
+          owner: scope.owner,
+          projectId: scope.projectId,
+          workspaceId: scope.workspaceId,
+          logger: runLogger,
+        }),
       workflows,
     };
     return {

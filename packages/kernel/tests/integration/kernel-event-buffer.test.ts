@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { ownedTempDirSync, trackOwnedResource } from "../helpers/owned-root.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "bun:test";
@@ -9,9 +9,15 @@ import { MockLLM } from "@clarvis/loop/testing";
 import { createAgentToolsCapability } from "@clarvis/loop/capabilities/tools";
 import { createAskUserCapability, type ExecuteRunDeps } from "@clarvis/loop";
 import type { RunEvent } from "@clarvis/protocol";
-import { createInProcessKernel } from "../../src/index.ts";
+import { createInProcessKernel as rawCreateInProcessKernel } from "../../src/index.ts";
 import { createMemoryConfigStore } from "../../src/config.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
+
+const createInProcessKernel: typeof rawCreateInProcessKernel = (options) => {
+  const kernel = rawCreateInProcessKernel(options);
+  trackOwnedResource(options.workspaceRoot, () => kernel.close());
+  return kernel;
+};
 
 function seededConfig() {
   return createMemoryConfigStore({
@@ -53,7 +59,7 @@ function buildDeps(workspaceRoot: string): ExecuteRunDeps {
 
 describe("createInProcessKernel — event-stream default", () => {
   it("uses the shared bounded default without dropping a normally drained run", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-kernel-evb-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-kernel-evb-"));
     const kernel = createInProcessKernel({
       deps: buildDeps(ws),
       workspaceRoot: ws,
@@ -74,7 +80,7 @@ describe("createInProcessKernel — event-stream default", () => {
   });
 
   it("a host can opt into capping via CreateKernelOptions.eventBuffer", async () => {
-    const ws = mkdtempSync(join(tmpdir(), "clarvis-kernel-evb-"));
+    const ws = ownedTempDirSync(join(tmpdir(), "clarvis-kernel-evb-"));
     const kernel = createInProcessKernel({
       deps: buildDeps(ws),
       workspaceRoot: ws,

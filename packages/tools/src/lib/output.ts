@@ -61,6 +61,17 @@ export interface OutputCoalescer {
   readonly residentBytes: number;
 }
 
+/** Per-instance scheduling for live output. */
+export interface CoalescerTimers {
+  setTimeout(fn: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+}
+
+const REAL_COALESCER_TIMERS: CoalescerTimers = {
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
 /**
  * Batches a live output stream into at most one emit per interval, so a chatty
  * producer cannot flood the event channel. An oversized batch keeps only its
@@ -77,10 +88,11 @@ export interface OutputCoalescer {
 export function createOutputCoalescer(
   emit: (chunk: string) => void,
   intervalMs: number = OUTPUT_COALESCE_INTERVAL_MS,
+  timers: CoalescerTimers = REAL_COALESCER_TIMERS,
 ): OutputCoalescer {
   let pending = "";
   let settled = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer: unknown;
 
   const flush = (): void => {
     timer = undefined;
@@ -98,12 +110,12 @@ export function createOutputCoalescer(
       if (settled || chunk === "") return;
       const next = pending + chunk;
       pending = truncateTail(next, MAX_COALESCED_FLUSH_BYTES)?.shown ?? next;
-      timer ??= setTimeout(flush, intervalMs);
+      timer ??= timers.setTimeout(flush, intervalMs);
     },
     settle(): void {
       if (settled) return;
       settled = true;
-      if (timer !== undefined) clearTimeout(timer);
+      if (timer !== undefined) timers.clearTimeout(timer);
       flush();
     },
     get residentBytes(): number {

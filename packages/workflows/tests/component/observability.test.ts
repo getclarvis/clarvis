@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { LLMToolCall, RunRequest, Usage } from "@clarvis/capability";
 import { createCapabilityServices } from "@clarvis/capability";
 import type { ExecuteRunOutcome } from "@clarvis/loop";
@@ -418,53 +418,41 @@ describe("dispatch — a batch's own lifecycle", () => {
     });
     const { bc } = recordingBc();
     const pendingTimers: Array<() => void> = [];
-    const timeout = spyOn(globalThis, "setTimeout").mockImplementation(((
-      callback: Parameters<typeof setTimeout>[0],
-    ) => {
-      if (typeof callback !== "function") throw new Error("unexpected timer handler");
-      pendingTimers.push(callback as () => void);
-      return { unref: () => {} } as unknown as ReturnType<typeof setTimeout>;
-    }) as unknown as typeof setTimeout);
-    const clear = spyOn(globalThis, "clearTimeout").mockImplementation(() => {});
     const deps: DispatchDeps = {
       ctx,
       bc,
       clock: undefined,
       agents: registry,
+      delay: () => new Promise<void>((resolve) => pendingTimers.push(resolve)),
       now: () => {
         clock += 4000;
         return clock;
       },
     };
-    try {
-      const dispatch = beginDispatch(deps, [unit("a"), unit("b")])!;
-      const run = dispatch.run();
-      for (let attempt = 0; attempt < 20 && pendingTimers.length === 0; attempt += 1)
-        await Promise.resolve();
-      pendingTimers.shift()?.();
-      for (let attempt = 0; attempt < 20 && pendingTimers.length === 0; attempt += 1)
-        await Promise.resolve();
-      pendingTimers.shift()?.();
-      for (let attempt = 0; attempt < 20 && pendingTimers.length === 0; attempt += 1)
-        await Promise.resolve();
-      foreign.settled({ status: "completed", result: "done" });
-      pendingTimers.splice(0).forEach((timer) => timer());
+    const dispatch = beginDispatch(deps, [unit("a"), unit("b")])!;
+    const run = dispatch.run();
+    for (let attempt = 0; attempt < 20 && pendingTimers.length === 0; attempt += 1)
+      await Promise.resolve();
+    pendingTimers.shift()?.();
+    for (let attempt = 0; attempt < 20 && pendingTimers.length === 0; attempt += 1)
+      await Promise.resolve();
+    pendingTimers.shift()?.();
+    for (let attempt = 0; attempt < 20 && pendingTimers.length === 0; attempt += 1)
+      await Promise.resolve();
+    foreign.settled({ status: "completed", result: "done" });
+    pendingTimers.splice(0).forEach((timer) => timer());
 
-      const outcomes = await run;
-      dispatch.end("done");
+    const outcomes = await run;
+    dispatch.end("done");
 
-      expect(outcomes.map((o) => o.key)).toEqual(["a", "b"]);
-      const waits = log.of("workflow.capacity_wait");
-      expect(waits.length).toBeGreaterThan(0);
-      expect(waits[0]!.fields).toMatchObject({ attempt: 0, queued: 1, foreign_live: 1 });
-      expect(waits[0]!.fields.delay_ms).toBeNumber();
-      const stalled = log.one("workflow.capacity_stalled");
-      expect(stalled.level).toBe("info");
-      expect(stalled.fields.waited_ms).toBeGreaterThanOrEqual(5000);
-    } finally {
-      clear.mockRestore();
-      timeout.mockRestore();
-    }
+    expect(outcomes.map((o) => o.key)).toEqual(["a", "b"]);
+    const waits = log.of("workflow.capacity_wait");
+    expect(waits.length).toBeGreaterThan(0);
+    expect(waits[0]!.fields).toMatchObject({ attempt: 0, queued: 1, foreign_live: 1 });
+    expect(waits[0]!.fields.delay_ms).toBeNumber();
+    const stalled = log.one("workflow.capacity_stalled");
+    expect(stalled.level).toBe("info");
+    expect(stalled.fields.waited_ms).toBeGreaterThanOrEqual(5000);
   });
 
   test("a unit whose trace sink throws reports both the fault and the lost edge", async () => {

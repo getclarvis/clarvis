@@ -58,17 +58,29 @@ export interface Platform {
 export interface PlatformOptions extends RendererBootstrapOptions {
   /** @internal Injectable process seam for deterministic clipboard tests. */
   clipboardProcess?: ClipboardProcessRunner;
+  /** @internal Dynamic environment reader for platform decisions. */
+  processEnv?: () => NodeJS.ProcessEnv;
+  /** @internal Dynamic runtime-platform reader for platform decisions. */
+  runtimePlatform?: () => NodeJS.Platform;
+}
+
+interface ClipboardSelection {
+  processEnv?: () => NodeJS.ProcessEnv;
+  runtimePlatform?: () => NodeJS.Platform;
 }
 
 async function nativeClipboardCopy(
   text: string,
   signal?: AbortSignal,
   run: ClipboardProcessRunner = runClipboardProcess,
+  selection: ClipboardSelection = {},
 ): Promise<boolean> {
   const candidates: [string, string[]][] = [];
-  if (process.platform === "darwin") candidates.push(["pbcopy", []]);
-  if (process.env.WAYLAND_DISPLAY) candidates.push(["wl-copy", []]);
-  if (process.env.DISPLAY) {
+  const env = (selection.processEnv ?? (() => process.env))();
+  if ((selection.runtimePlatform ?? (() => process.platform))() === "darwin")
+    candidates.push(["pbcopy", []]);
+  if (env.WAYLAND_DISPLAY) candidates.push(["wl-copy", []]);
+  if (env.DISPLAY) {
     candidates.push(["xclip", ["-selection", "clipboard"]]);
     candidates.push(["xsel", ["--clipboard", "--input"]]);
   }
@@ -96,12 +108,14 @@ function isPng(buf: Buffer): boolean {
 export async function readClipboardImage(
   signal?: AbortSignal,
   run: ClipboardProcessRunner = runClipboardProcess,
+  selection: ClipboardSelection = {},
 ): Promise<ClipboardImage | null> {
   const candidates: [string, string[]][] = [];
-  if (process.platform === "darwin") candidates.push(["pngpaste", []]);
-  if (process.env.WAYLAND_DISPLAY) candidates.push(["wl-paste", ["--type", "image/png"]]);
-  if (process.env.DISPLAY)
-    candidates.push(["xclip", ["-selection", "clipboard", "-t", "image/png", "-o"]]);
+  const env = (selection.processEnv ?? (() => process.env))();
+  if ((selection.runtimePlatform ?? (() => process.platform))() === "darwin")
+    candidates.push(["pngpaste", []]);
+  if (env.WAYLAND_DISPLAY) candidates.push(["wl-paste", ["--type", "image/png"]]);
+  if (env.DISPLAY) candidates.push(["xclip", ["-selection", "clipboard", "-t", "image/png", "-o"]]);
   for (const [cmd, args] of candidates) {
     const result = await run({ command: cmd, args, signal });
     if (result.cancelled) return null;
@@ -166,12 +180,14 @@ function drainStdinUntilQuiet(maxMs: number, quietMs: number): Promise<void> {
  * flags, graceful shutdown, and clipboard I/O.
  *
  * @param renderer - the active OpenTUI renderer.
- * @param _opts - platform options (currently unused).
+ * @param opts - platform options, including dynamic environment and runtime-platform readers.
  * @returns the {@link Platform} the rest of `code` programs against.
  * @remarks The signal set matches the catchable OpenTUI defaults for the current
  *   platform. `SIGKILL` remains inherently uncatchable.
  */
 export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}): Platform {
+  const readEnv = opts.processEnv ?? (() => process.env);
+  const readPlatform = opts.runtimePlatform ?? (() => process.platform);
   const hooks = new Set<ShutdownHook>();
   const clipboardControllers = new Set<AbortController>();
   let restored = false;
@@ -182,8 +198,8 @@ export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}
   const [capabilityRevision, setCapabilityRevision] = createSignal(0);
   diagnosticEvent("platform.create", {
     dev: opts.dev === true,
-    remote: !!(process.env.SSH_TTY ?? process.env.SSH_CONNECTION),
-    runtime: process.platform,
+    remote: !!(readEnv().SSH_TTY ?? readEnv().SSH_CONNECTION),
+    runtime: readPlatform(),
   });
   renderer.on("theme_mode", (mode: ThemeMode) => {
     diagnosticCount("renderer.theme-mode", { mode });
@@ -203,11 +219,11 @@ export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}
     revision: capabilityRevision,
     keyboard: () => (renderer.capabilities?.kitty_keyboard ? "kitty" : "legacy"),
     remote: () =>
-      renderer.capabilities?.remote ?? !!(process.env.SSH_TTY ?? process.env.SSH_CONNECTION),
+      renderer.capabilities?.remote ?? !!(readEnv().SSH_TTY ?? readEnv().SSH_CONNECTION),
     runtimePlatform: () =>
-      process.platform === "darwin" ? "macos" : process.platform === "linux" ? "linux" : "unknown",
+      readPlatform() === "darwin" ? "macos" : readPlatform() === "linux" ? "linux" : "unknown",
     terminal: () => ({
-      name: renderer.capabilities?.terminal?.name || process.env.TERM || "unknown",
+      name: renderer.capabilities?.terminal?.name || readEnv().TERM || "unknown",
       ...(renderer.capabilities?.terminal?.version
         ? { version: renderer.capabilities.terminal.version }
         : {}),
@@ -219,7 +235,7 @@ export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}
     themeBg: () => themeBg(),
     colorDepth: () => {
       const caps = renderer.capabilities;
-      return depthFromCapabilities(!caps || !!caps.rgb, !!caps?.ansi256, !!process.env.NO_COLOR);
+      return depthFromCapabilities(!caps || !!caps.rgb, !!caps?.ansi256, !!readEnv().NO_COLOR);
     },
   };
 
@@ -258,7 +274,7 @@ export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}
     await Promise.race([run, budget]);
     diagnosticEvent("platform.shutdown.hooks-settled", { reason });
 
-    const remote = !!(process.env.SSH_TTY ?? process.env.SSH_CONNECTION);
+    const remote = !!(readEnv().SSH_TTY ?? readEnv().SSH_CONNECTION);
     restore();
     if (reason !== "panic" && remote) await drainStdinUntilQuiet(DRAIN_MAX_MS, DRAIN_QUIET_MS);
     if (reason === "panic" && err)
@@ -294,7 +310,7 @@ export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}
     async copyText(text: string): Promise<boolean> {
       const controller = new AbortController();
       clipboardControllers.add(controller);
-      const remote = !!(process.env.SSH_TTY ?? process.env.SSH_CONNECTION);
+      const remote = !!(readEnv().SSH_TTY ?? readEnv().SSH_CONNECTION);
       const osc = (): boolean => {
         try {
           return renderer.copyToClipboardOSC52(text);
@@ -304,7 +320,13 @@ export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}
       };
       try {
         if (remote && osc()) return true;
-        if (await nativeClipboardCopy(text, controller.signal, opts.clipboardProcess)) return true;
+        if (
+          await nativeClipboardCopy(text, controller.signal, opts.clipboardProcess, {
+            processEnv: readEnv,
+            runtimePlatform: readPlatform,
+          })
+        )
+          return true;
         return remote ? false : osc();
       } finally {
         clipboardControllers.delete(controller);
@@ -315,7 +337,10 @@ export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}
       const controller = new AbortController();
       clipboardControllers.add(controller);
       try {
-        return await readClipboardImage(controller.signal, opts.clipboardProcess);
+        return await readClipboardImage(controller.signal, opts.clipboardProcess, {
+          processEnv: readEnv,
+          runtimePlatform: readPlatform,
+        });
       } finally {
         clipboardControllers.delete(controller);
       }

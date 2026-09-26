@@ -19,9 +19,9 @@ each package's hand-written `bun test <path> <path> …` argument list complete
 (`tooling/lib/source-policy.ts`, `tooling/checks/source-policy.ts`). **Process-global
 mutation**: `mock.module()` is banned outright — zero allowlist entries across package source,
 tests and tooling plus repository tooling (`tooling/checks/source-policy.ts`) — and empty promise catches are budgeted
-against a one-entry baseline (`tooling/checks/source-policy.ts`). **Test determinism** is inventoried by an AST census
-that classifies waits, global mutations, fake timers, mutable `beforeAll` fixtures, listeners and subprocesses
-(`tooling/lib/test-determinism.ts`, `tooling/checks/test-determinism.ts`). **Coverage honesty**:
+against a one-entry baseline (`tooling/checks/source-policy.ts`). **Resource suites** are
+validated against discovered files and scripts by `checkSuiteComposition` in
+`tooling/lib/test-harness.ts`. **Coverage honesty**:
 `tooling/checks/coverage.ts` sums each package's LCOV counters against a per-package floor *and*
 separately requires that every `src` module produced an `SF:` record at all, so a floor cannot be
 held over a denominator that is missing files nothing imports
@@ -42,17 +42,19 @@ The whole thing runs sequentially, fail-fast, from one npm script: `check:pre-co
 | `typecheck` | workspace typechecks plus `typecheck:tooling` | `package.json` (`scripts.typecheck`) |
 | `lint` | `lint:eslint && lint:intent && knip` | `package.json` (`scripts.lint`) |
 | `lint:eslint` | workspace lint plus the root tooling ESLint project | `package.json` (`scripts.lint:eslint`) |
-| `lint:intent` | `test:tooling`, then source policy, test determinism, graph, spec, harness, Bun-version, Bun-source, import-extension and release-readiness checks | `package.json` (`scripts.lint:intent`) |
+| `lint:intent` | `test:tooling`, then source policy, graph, spec, harness, Bun-version, Bun-source, import-extension and release-readiness checks | `package.json` (`scripts.lint:intent`) |
 | `check:graph` | `bun run tooling/checks/package-graph.ts --check-doc` | `package.json` (`scripts.check:graph`) |
 | `check:specs` | `bun run tooling/checks/spec-hygiene.ts` | `package.json` (`scripts.check:specs`) |
 | `check:bun-version` | `bun run tooling/checks/bun-version.ts` | `package.json` (`scripts.check:bun-version`) |
 | `check:bun-sources` | `bun run tooling/checks/bun-sources.ts` | `package.json` (`scripts.check:bun-sources`) |
-| `check:test-determinism` | AST census in check mode; accepts `--report` and `--json` for migration and inspection | `package.json` (`scripts.check:test-determinism`) |
 | `knip` | `knip` | `package.json` (`scripts.knip`) |
 | `test:coverage` | `bun --workspaces --sequential --if-present test:coverage && bun run coverage:check` | `package.json` (`scripts.test:coverage`) |
 | `coverage:check` | `bun run tooling/checks/coverage.ts` | `package.json` (`scripts.coverage:check`) |
-| `test` | `test:tooling` followed by 18 package tests chained with `&&`, in dependency order | `package.json` (`scripts.test`) |
-| `test:tooling` | unit and architecture suites, then the isolated module-resolution canary | `package.json` (`scripts.test:tooling`) |
+| `test` | `test:tooling` followed by all package suites chained with `&&`, in dependency order | `package.json` (`scripts.test`) |
+| `test:fast` | tooling unit tests and each package's in-memory suite, isolated by workspace | `package.json` (`scripts.test:fast`) |
+| `test:integration` | tooling and package physical suites, isolated by workspace | `package.json` (`scripts.test:integration`) |
+| `test:tooling` | unit, architecture and one consolidated integration invocation | `package.json` (`scripts.test:tooling`) |
+| `test:tooling:fast` | in-memory tooling unit tests only | `package.json` (`scripts.test:tooling:fast`) |
 | `test:module-resolution` | disposable compiler and Bun runtime fixture | `package.json` (`scripts.test:module-resolution`) |
 | `hooks:install` | `git config core.hooksPath .githooks` | `package.json` (`scripts.hooks:install`) |
 | `smoke` | `bun --filter @clarvis/code smoke` | `package.json` (`scripts.smoke`) |
@@ -108,8 +110,6 @@ architecture · component · contract · e2e · integration · unit
 | `resolveRepositoryFileReference(reference, file, tree)` | reports explicit repository files that do not exist | `tooling/lib/spec-hygiene.ts`, `resolveRepositoryFileReference` |
 | `extractCalendarDates(text)` | finds literal calendar dates in common numeric and English month-name forms so tracked specs remain timeless | `tooling/lib/spec-hygiene.ts`, `extractCalendarDates` |
 | `extractSourceSizeReferences(text)` | finds inventory-style source-code line counts while preserving behavioral limits and coverage ratios | `tooling/lib/spec-hygiene.ts`, `extractSourceSizeReferences` |
-| `findTestDeterminismOccurrences(file, source)` | `→ {file, line, column, mechanism, identity, packageOwner, classification, reason}[]` | `tooling/lib/test-determinism.ts` |
-| `checkTestDeterminismBaseline(occurrences, baseline)` | `→ {failures, newOccurrences, staleEntries}` | `tooling/lib/test-determinism.ts` |
 | `parseModuleEdges(source, fileName?)` | `→ {specifier, kind, typeOnly, line}[]` | `tooling/lib/package-graph.ts` |
 | `analyzePackageGraph(root)` | `→ report` | `tooling/lib/package-graph.ts`, `analyzePackageGraph` |
 | `renderMarkdown(report)` | `→ string` (English role/dependency table and Mermaid graph) | `tooling/lib/package-graph.ts`, `renderMarkdown` |
@@ -251,7 +251,7 @@ confirmed that `timeout = 60000` is ignored in both root-like and package-local 
 
 ### 3.1 Test-path grammar
 
-`findUnclassifiedTestFiles` normalises `\` to `/`, then applies two filters
+`findUnclassifiedTestFiles` applies two filters to repository-relative POSIX paths
 (`tooling/lib/source-policy.ts`):
 
 ```
@@ -259,7 +259,8 @@ file matches  /(?:\.|_)(?:test|spec)\.[cm]?[jt]sx?$/   → candidate, else ignor
 segment after the LAST "/tests/" in the path        → must be one of TEST_LEVELS
 ```
 
-So the accepted shape is `…/tests/<level>/**/*.test.{ts,tsx,js,jsx,mts,cts,mjs,cjs}`. Two forms are
+The accepted shape includes `.test`, `.spec`, `_test` and `_spec` before the supported source
+extensions, with any depth below a level. Two forms are
 explicitly pinned as *rejected* by the unit test: a flat
 `packages/<name>/tests/<case>.test.ts` and a hidden
 `packages/<name>/tests/helpers/<case>.test.ts`
@@ -269,27 +270,26 @@ The checker computes the current population from the tree rather than persisting
 count. Non-level directories under `tests/` are legal when they contain no `*.test.*` file; helper
 and fixture modules remain outside the census.
 
-### 3.1.1 Determinism census and baseline
+### 3.1.1 Resource suites and discovery
 
-`tooling/checks/test-determinism.ts` scans every `*.test.*` file below the six accepted levels in
-`packages/*/tests` and `tooling/tests`. The importable analyzer
-`tooling/lib/test-determinism.ts` returns `file`, `line`, `column`, `mechanism`, a structural
-`identity`, `packageOwner`, `classification` and `reason`. The mechanism vocabulary covers positive
-`Bun.sleep` waits, positive literal timers, `process.env` mutation, `process.platform` redefinition,
-`process.chdir`, `Math.random` assignment, unrecovered fake timers, mutable `beforeAll` fixtures,
-real listeners and real subprocesses.
+`test:fast` runs `unit`, `component` and `contract/memory` with in-memory stores and explicit
+adapters. `test:integration` runs common physical `integration` and `contract/physical` cases,
+including tooling's runner canaries. Architecture tests and protocol's type-only contract remain
+in the full `test` command; native and artifact qualifications retain their dedicated commands.
+The full `test:coverage` executes one consolidated LCOV run per workspace, rather than merging
+percentages from separate suites. Production: `package.json` (`scripts.test:fast`,
+`scripts.test:integration`, `scripts.test:coverage`), `tooling/lib/test-harness.ts`
+(`checkSuiteComposition`, `expandTestSuite`), and `tooling/lib/source-policy.ts`
+(`testFileLevel`). Test: `tooling/tests/unit/test-harness.test.ts` (resource suite composition)
+and `tooling/tests/unit/source-policy.test.ts` (Bun filename forms).
 
-`tooling/test-runtime/test-determinism-baseline.json` stores version `1` entries with
-`mechanism`, normalized POSIX `file`, structural `identity`, `package_owner`, one of `migrate`,
-`boundary-canary` or `false-positive`, and a nonempty `reason`. Line and column are observations,
-never persisted identity. `migrate` rows are debt; `boundary-canary` rows document a physical seam;
-`false-positive` is reserved for a structural-analysis limitation. The baseline is compared by
-`checkTestDeterminismBaseline` and can only describe live findings: duplicate, malformed, stale or
-owner-inconsistent rows and any finding absent from the baseline fail the check.
-
-Production: `tooling/lib/test-determinism.ts` and `tooling/checks/test-determinism.ts`. Test:
-`tooling/tests/unit/test-determinism.test.ts` covers AST contrasts, lifecycle restoration, baseline
-validation, path normalization and side-effect-free import.
+Direct filesystem, subprocess and network imports or calls in fast tests are rejected by the shared
+ESLint rules; process-channel spies are likewise kept in integration. Type-only imports and path
+functions remain allowed. Helpers explicitly placed under
+`tests/helpers/pure` use the same rules. This syntax check does not prove absence of transitive I/O:
+fixture ownership, explicit adapters and review remain necessary. Production:
+`tooling/lib/fast-test-resource-rules.js` (`fastTestResourceRules`) and `eslint.config.base.js`
+(`clarvisEslintConfig`). Test: `tooling/tests/unit/fast-test-resource-rules.test.ts`.
 
 Deterministic coordination uses test-local spies, deferred milestones and explicit filesystem mtimes
 rather than elapsed time. Tests may replace an existing global callback temporarily, always restoring
@@ -309,14 +309,35 @@ still attempts every registered cleanup and reports the accumulated failures. Te
 the bound URL. The package-local `tempRoot` fixtures do not create a runtime package or a production
 dependency.
 
+The owner registers cleanup when it acquires a root. Code's `openTempDir` registers
+`onTestFinished` for each call, so a reused module cannot bind cleanup to another test file.
+Kernel's `ownedTempDirSync` composes close operations and root removal in one awaited finalizer;
+Tools' `cleanup` awaits every fixture session manager and retains both roots if physical exit
+cannot be confirmed. The smoke context uses the removal handles returned by short-root allocation,
+attempts every owned removal, and retains roots while a child exit is unconfirmed. Cleanup failures
+surface in the test result. The test-home preload removes only the direct runner's own root and
+reports a synchronous removal failure with a failing exit status; a handoff child never removes it.
+These guarantees cover normal exit and controlled assertion/setup failure. A runtime crash, `SIGKILL`
+or machine failure cannot run finalizers.
+
+Production: `packages/code/tests/helpers/tracked-temp.ts` (`openTempDir`),
+`packages/kernel/tests/helpers/owned-root.ts` (`ownedTempDirSync`, `trackOwnedResource`),
+`packages/tools/tests/helpers/fixtures.ts` (`cleanup`),
+`packages/code/tooling/artifact/isolation.ts` (`createSmokeContext`, `releaseAllocations`), and
+`tooling/test-runtime/clarvis-home-preload.ts` (`removeOwnedTestRoot`). Test:
+`tooling/tests/integration/temp-resource-lifecycle.test.ts`,
+`packages/tools/tests/integration/common/fixture-cleanup.test.ts`,
+`packages/code/tests/integration/artifact-isolation.test.ts`, and
+`tooling/tests/integration/clarvis-home-preload.test.ts`.
+
 Test: `packages/memory/tests/integration/file-store-observability.test.ts`,
-`packages/paths/tests/contract/local-lease.test.ts`,
-`tooling/tests/unit/coverage.test.ts` and the Code render suites exercise temporary spies, explicit
+`packages/paths/tests/contract/physical/local-lease.test.ts`,
+`tooling/tests/architecture/coverage.test.ts` and the Code render suites exercise temporary spies, explicit
 mtimes and observable settling without changing production defaults.
 
 Production: process, transport and listener contracts remain owned by the unchanged package runtime
 implementations. Test: `packages/hooks/tests/helpers/temp-root.ts` and
-`packages/hooks/tests/unit/temp-root.test.ts` pin confinement, awaited LIFO cleanup, idempotence,
+`packages/hooks/tests/integration/temp-root.test.ts` pin confinement, awaited LIFO cleanup, idempotence,
 partial setup, late child settlement;
 `packages/hooks/tests/integration/real-subprocess.test.ts`,
 `packages/kernel/tests/integration/settings-concurrent-writes.test.ts`,
@@ -331,11 +352,28 @@ exists, tests pass it directly (`createMCPClientFactory`, `resolveRegistryKey`, 
 changing the implementation. Real subprocesses remain explicit boundary canaries and receive their
 cwd/environment through spawn options.
 
+Process orchestration matrices use a case-local clock, child event streams and
+ownership operations. Advancing a deadline, delivering a split UTF-8 character,
+and emitting exit before close exercise the production adapters without starting
+an application command or probing a simulated PID. The separate integration
+suites prove real pipes, Bash, process groups and confirmed tree exit; their
+assertions do not depend on scheduler-selected chunk boundaries. Production:
+`ExecutionSessionManager` in `packages/tools/src/lib/execution-session.ts`,
+`stopOwnedProcess` in `packages/tools/src/lib/process-owner.ts`,
+`runClipboardProcess` in `packages/code/src/adapters/clipboard-process.ts`, and
+`runLocalBash` in `packages/code/src/adapters/local-shell.ts`. Test:
+`packages/tools/tests/unit/execution-session-policy.test.ts`,
+`packages/tools/tests/unit/process-owner-policy.test.ts`,
+`packages/code/tests/unit/clipboard-process.test.ts`,
+`packages/code/tests/unit/local-shell-policy.test.ts`,
+`packages/tools/tests/integration/common/process-owner.test.ts` and
+`packages/code/tests/integration/local-shell.test.ts`.
+
 Production: `packages/mcp-client/src/client.ts` (`createMCPClientFactory`),
 `packages/llm/src/ai-sdk-adapter.ts` (`resolveRegistryKey`), `packages/skills/src/preset.ts`
 (`clarvisSkillRoots`) and `packages/paths/src/which.ts` (`executableOnPath`). Test:
 `packages/code/tests/helpers/process-fixtures.ts`, the package-local `process-fixtures.ts` helpers,
-`packages/code/tests/unit/process-fixtures.test.ts` and the environment/platform integration suites.
+`packages/code/tests/integration/process-fixtures.test.ts` and the environment/platform integration suites.
 
 Shell and Git canaries separate admission from execution. An absent opt-in gate is `skipped`;
 once enabled, a missing executable is `unavailable`, malformed configuration
@@ -505,8 +543,23 @@ allowlisted.
 over `tests/contract/public-contract.fixture.ts`, a file of `satisfies` assertions against the
 public DTOs (`packages/protocol/tests/contract/public-contract.fixture.ts`).
 
-Every `bun test` script in the repository carries `--timeout 60000`; `workflows` additionally
-carries `--isolate` (`packages/workflows/package.json`). `loop` deliberately uses Bun's
+Sandbox has no in-memory test directory; its ordinary suite runs `integration/common`, while
+`test:native` runs `integration/native`. Tools uses the same split inside integration. Both coverage
+scripts collect the native files in their single workspace LCOV run. Production:
+`packages/sandbox/package.json` and `packages/tools/package.json` (`scripts.test:integration`,
+`scripts.test:native`, `scripts.test:coverage`). Test:
+`packages/sandbox/tests/integration/native/linux-native.test.ts` and
+`packages/tools/tests/integration/native/native-sandbox.test.ts`.
+
+Every `bun test` script in the repository carries `--timeout 60000`. Workflows uses a case-local
+capacity-poll scheduler instead of replacing global timers, and its package scripts use Bun's
+shared runner without `--isolate`. Production:
+`packages/workflows/src/dispatch.ts` (`DispatchDeps.delay`, `waitForCapacity`) and
+`packages/workflows/package.json` (`scripts.test`). Test:
+`packages/workflows/tests/component/dispatch.test.ts` and
+`packages/workflows/tests/component/observability.test.ts` (case-local capacity waits), and
+`packages/workflows/tests/integration/capacity-poll-timer.test.ts` (`delayOrAbort` real timer and
+abort path). `loop` also uses Bun's
 shared-global default after the Bun 1.4 qualification measured an 84.9% isolation penalty and five
 consecutive complete shared-global runs passed; its package README records the samples and the
 state-restoration evidence.
@@ -545,7 +598,7 @@ Production modules that carry this shape document it locally, including
 | 2 | `build` | `build:packages`, then `build:code` | library emit and `.d.ts`, native sandbox and worker assets, then the TUI bundle |
 | 3 | `typecheck` | `--parallel` across workspaces, then `typecheck:tooling` | every package's `tsconfig.json`, all of which `include` `tests`, plus root tooling |
 | 4 | `lint:eslint` | `--parallel` across workspaces, then `lint:tooling` | package lint plus the root tooling ESLint project |
-| 5 | `lint:intent` | strictly serial, 10 links | `test:tooling`, then source policy, test determinism, package graph, spec hygiene, test harness, Bun-version consistency, the no-Python-source check, import-extension policy and release readiness |
+| 5 | `lint:intent` | strictly serial, 9 links | `test:tooling`, then source policy, package graph, spec hygiene, test harness, Bun-version consistency, the no-Python-source check, import-extension policy and release readiness |
 | 6 | `knip` | one process, whole monorepo | unused files/exports/dependencies |
 | 7 | `test:coverage` | `--sequential --if-present`, then `coverage:check` | every suite, then the floors and the module inventory |
 
@@ -588,23 +641,14 @@ write.
 Current state: the script exits 0, and a repo-wide search for `mock.module`, `vi.mock` and
 `jest.mock` returns zero hits.
 
-### 4.2.1 `test-determinism.ts`
+### 4.2.1 Suite-composition check
 
-The checker walks only accepted test levels, parses each source with the TypeScript AST and sorts
-the resulting census by normalized path, mechanism, structural identity and location. Comments and
-strings are therefore data, not findings. Positive waits require a numeric literal greater than zero;
-variable, zero and negative delays are not classified. Environment reads, comparisons, fallbacks and
-spreads do not count as mutation; assignments, indexed writes, `delete` and `Object.assign` do.
-Platform reads do not count, while assignment and `Object.defineProperty(process, "platform", …)` do.
-Fake timers are reported only when no later `useRealTimers` occurs in the owning function, a `finally`
-block or a file lifecycle callback. `beforeAll` receives one additional finding when its callback
-creates a directory, listener, watcher or subprocess. Listener and subprocess calls are inventory
-findings, not automatic prohibitions.
-
-`--report` prints every observation and succeeds during migration. `--check` (the default) loads the
-baseline and fails on any new occurrence or baseline inconsistency, including stale, duplicate,
-malformed, empty-reason or owner-mismatched rows. `--json` emits a stable machine-readable object;
-none of these modes executes when the checker module is imported.
+`check:harness` discovers workspace and tooling test files from the tree and expands the supported
+root and package script forms. It fails on a missing or cyclic script, an omitted workspace or
+category, an unsupported script segment, or a missing Bun timeout. Package bunfig preload and
+coverage scoping are checked separately. Production: `tooling/checks/test-harness.ts` and
+`tooling/lib/test-harness.ts` (`checkSuiteComposition`). Test:
+`tooling/tests/unit/test-harness.test.ts` (resource suite composition).
 
 ### 4.3 `coverage.ts`
 
@@ -613,7 +657,7 @@ none of these modes executes when the checker module is imported.
 coverage script fails before reports can be accepted. Protocol's absent-LCOV exception does not
 excuse its contract script. Production: `tooling/checks/coverage.ts`, `coverageWorkspaceFailures`
 and `checkCoverage`; `tooling/lib/ci-workspaces.ts`, `readCiWorkspaces`. Test:
-`tooling/tests/unit/coverage.test.ts`, `coverage workspace policy`.
+`tooling/tests/architecture/coverage.test.ts`, `coverage workspace policy`.
 
 For each entry in `PACKAGE_THRESHOLDS`, in object order (`tooling/checks/coverage.ts`):
 
@@ -676,9 +720,16 @@ stderr or `process.exitCode` handling
 owner-specific default" and "the two production stream metrics implementations stay
 token-identical").
 
-The duplication itself has a reason stated in the source: the copies exist because "the packages do
-not share a dependency edge, and a debug counter is not worth minting one"
-(`packages/llm/src/stream-metrics.ts`).
+Each copy now separates `createStreamMetricsCounter` from the timer, process-exit listener and file
+sink owned by `createStreamMetrics`. `selectStreamMetrics` accepts an explicit path, and the
+process-memoized `streamMetrics` accepts a dynamic path reader. Counter tests pass a clock, memory sample and collecting sink;
+the file and environment-selection boundary stays in integration. `dispose()` cancels the timer,
+removes the listener and flushes at most once. Production: `packages/llm/src/stream-metrics.ts`
+and `packages/code/src/adapters/stream-metrics.ts` (`createStreamMetricsCounter`,
+`createStreamMetrics`). Test: `packages/llm/tests/unit/stream-metrics.test.ts`,
+`packages/llm/tests/integration/stream-metrics.test.ts`,
+`packages/code/tests/unit/stream-metrics.test.ts`, and
+`packages/code/tests/integration/stream-metrics.test.ts`.
 
 ### 4.5 `package-graph.ts`
 
@@ -710,14 +761,14 @@ in the tree currently declares one (`rg peerDependencies packages/*/package.json
 gap is latent rather than live.
 
 The edge taxonomy is what makes the last three meaningful, and it is pinned case by case in
-`tooling/tests/unit/package-graph.test.ts`: `import type`, `export type`, `export { type Z } from`
+`tooling/tests/architecture/package-graph.test.ts`: `import type`, `export type`, `export { type Z } from`
 and `import { type U } from` are all `typeOnly: true`; `type Q = import("…")` is likewise
 `typeOnly: true` (it is a static edge nonetheless: `kind: "static"`). The plain
 `import alias = require("…")` form is pinned `typeOnly: false` — the same bucket as a bare
 `require("…")` — and only `import("…")` is `dynamic`. (`node.isTypeOnly` on an
 `ImportEqualsDeclaration` can be `true` for `import type alias = require(...)`, but that spelling is
 not the one the fixture exercises.) A type-only back edge dissolves a module cycle
-(`tooling/tests/unit/package-graph.test.ts`).
+(`tooling/tests/architecture/package-graph.test.ts`).
 
 `--check-doc` additionally reads `specs/package-coupling-analysis.md` and compares the two numeric
 columns of each package's row (`tooling/checks/package-graph.ts`,
@@ -732,7 +783,7 @@ node to the result once that flag is set; from there it keeps expanding eagerly.
 "what can this package reach only by first going through a lazy `import()`" — exactly the shape
 `@clarvis/loop`'s optional-package-boundary tests need (§4.10) to prove an eager entry point never
 reaches an optional package while still allowing an explicit dynamic subpath to load it. Pinned by
-`tooling/tests/unit/package-graph.test.ts` ("separates type-only, eager, and dynamic edges and
+`tooling/tests/architecture/package-graph.test.ts` ("separates type-only, eager, and dynamic edges and
 computes dynamic closure").
 
 ### 4.5.1 `bun-sources.ts`
@@ -753,11 +804,11 @@ helper for every child process, including tag automation and launchers. Hook-pro
 repository/index context must not redirect fixture Git commands into the caller's checkout or
 linked worktree. Production: `withoutGitRepositoryEnvironment` in
 [git-environment.ts](../../packages/paths/src/git-environment.ts). Test harness: the `run` helper in
-[gitflow-release-git.test.ts](../../tooling/tests/unit/gitflow-release-git.test.ts).
+[gitflow-release-git.test.ts](../../tooling/tests/integration/gitflow-release-git.test.ts).
 Test: `signed candidate sequence and final merge tag survive retries without rewriting refs` in
 that file and `candidate installation checks out the published commit with real Git and launches
 it with Bun` in
-[candidate-install.test.ts](../../packages/code/tests/unit/candidate-install.test.ts) execute
+[candidate-install.test.ts](../../packages/code/tests/integration/candidate-install.test.ts) execute
 their complete temporary-repository journeys with deliberately conflicting inherited Git directory,
 worktree and index paths.
 
@@ -861,14 +912,14 @@ Production: [coverage library](../../tooling/lib/ci-coverage.ts), `runCiCoverage
 `executeCoverageCommand`, `normalizeCoverageExit`;
 [coverage CLI](../../tooling/checks/ci-coverage.ts);
 [workspace inventory](../../tooling/lib/ci-workspaces.ts), `readCiWorkspaces`.
-Test: [supervisor tests](../../tooling/tests/unit/ci-coverage.test.ts), complete scripts,
+Test: [supervisor tests](../../tooling/tests/integration/ci-coverage.test.ts), complete scripts,
 manifest-order permutations, classified retries/exhaustion, stale LCOV and cancellation.
 
 The required `linux` aggregator independently requires all seven Linux job results, with the
 exact key set and every result successful. Its `always()` condition cannot itself approve Linux.
 Production: [CI workflow](../../.github/workflows/ci.yml), `jobs.linux`;
 [workflow validator](../../tooling/lib/ci-workflow.ts), `ciWorkflowFailures`.
-Test: [workflow tests](../../tooling/tests/unit/ci-workflow.test.ts), the actual Bash body with
+Test: [workflow tests](../../tooling/tests/architecture/ci-workflow.test.ts), the actual Bash body with
 success/failure/cancellation/skip/missing/unknown/empty fixtures and gate/dependency removal.
 Build transfer and retained platform scopes belong to [build and CI](build-and-ci.md#44-ci-jobs).
 Local `test:coverage` and the sequential `GATE_PHASES` remain unchanged.
@@ -879,16 +930,16 @@ Four distinct shapes exist.
 
 | Shape | Example | Assertion vehicle | Driver |
 | --- | --- | --- | --- |
-| **case table as data** | `memoryStoreConformance(): readonly ConformanceCase[]` (`packages/memory/src/testing.ts`, `memoryStoreConformance`), 31 cases | `node:assert/strict` | a `for … of` that wraps each case in a `test()` (`packages/memory/tests/contract/store.test.ts`) |
-| same | `planRepositoryConformance()` (18 cases) + `planStoreConformance()` (10 cases) (`packages/plan/src/testing.ts`, `planRepositoryConformance` and `planStoreConformance`) | `node:assert/strict` | `packages/plan/tests/contract/repository.test.ts`, `plan-store.test.ts` |
-| **suite registrar** | `traceStoreConformance(name, createHarness)` (`packages/trace/tests/contract/trace-store-conformance.ts`), 16 `it()` blocks | `bun:test` `expect` | called twice, once per backend (`packages/trace/tests/contract/trace-store.test.ts`) |
+| **case table as data** | `memoryStoreConformance(): readonly ConformanceCase[]` (`packages/memory/src/testing.ts`, `memoryStoreConformance`), 31 cases | `node:assert/strict` | a `for … of` that wraps each case in a `test()` (`packages/memory/tests/contract/physical/store.test.ts`) |
+| same | `planRepositoryConformance()` (18 cases) + `planStoreConformance()` (10 cases) (`packages/plan/src/testing.ts`, `planRepositoryConformance` and `planStoreConformance`) | `node:assert/strict` | `packages/plan/tests/contract/physical/repository.test.ts`, `plan-store.test.ts` |
+| **suite registrar** | `traceStoreConformance(name, createHarness)` (`packages/trace/tests/contract/physical/trace-store-conformance.ts`), 16 `it()` blocks | `bun:test` `expect` | called twice, once per backend (`packages/trace/tests/contract/physical/trace-store.test.ts`) |
 
 The first two shapes live in `src/` and the third does not, and the source states why: memory's and
 plan's tables are "exposed as **data** rather than as `describe`/`test` calls, and assert through
 `node:assert/strict`, so this module carries no test-runner dependency and an adapter living in
 another package (or another runner) can drive the same cases"
 (`packages/memory/src/testing.ts`, `packages/plan/src/testing.ts`). The trace registrar
-imports `bun:test` directly (`packages/trace/tests/contract/trace-store-conformance.ts`) and
+imports `bun:test` directly (`packages/trace/tests/contract/physical/trace-store-conformance.ts`) and
 therefore cannot be published from `src`.
 
 A harness declares optional capabilities and cases that need one they lack "return early rather than
@@ -896,8 +947,16 @@ failing": `MemoryStoreHarness` carries optional `poke` and `atomic` flags
 (`packages/memory/src/testing.ts`).
 
 Each driver runs the same table against every adapter — memory against `file` and `in-memory`
-(`packages/memory/tests/contract/store.test.ts`), trace against `memory` and `JSON`
-(`packages/trace/tests/contract/trace-store.test.ts`).
+(`packages/memory/tests/contract/physical/store.test.ts`), trace against `memory` and `JSON`
+(`packages/trace/tests/contract/physical/trace-store.test.ts`).
+
+Tools keeps action-authorization tests with real directory and symlink resolution under
+`tests/integration/`; its coordinator decisions use an existing workspace identity without
+allocating a fixture in `tests/unit/`. Production: `prepareToolAction` in
+`packages/tools/src/execution/action.ts`, `resolveConfig` in `packages/tools/src/config.ts`, and
+`CoordinatedToolExecutor` in `packages/tools/src/execution/coordinator.ts`. Test:
+`packages/tools/tests/integration/common/action-authorization.test.ts` and
+`packages/tools/tests/unit/execution-coordinator.test.ts`.
 
 ### 4.10 The `architecture` level's idiom
 
@@ -944,36 +1003,22 @@ only the owner-specific default").
    string literals, `other.module("pkg")`, and a bare property read. Currently satisfied at zero
    occurrences.
 
-3. **INV-312 — the determinism census covers every `*.test.*` file below one of the six accepted
-   test levels and reports structural findings rather than text matches.** Rule:
-   `tooling/checks/test-determinism.ts` and `findTestDeterminismOccurrences` in
-   `tooling/lib/test-determinism.ts`. Test: `tooling/tests/unit/test-determinism.test.ts` (comments,
-   strings, comparisons and reads are negative controls).
+3. **INV-312 — every discovered fast or common physical test is reachable through its
+   resource suite, and every non-native case remains in the full suite.** Production:
+   `tooling/lib/test-harness.ts` (`checkSuiteComposition`) and `tooling/checks/test-harness.ts`.
+   Test: `tooling/tests/unit/test-harness.test.ts` (resource suite composition).
 
-4. **INV-313 — only positive literal waits and timers are classified, and process-global reads are
-   not mutations.** Rule: `findTestDeterminismOccurrencesInFile` in
-   `tooling/lib/test-determinism.ts`. Test: `tooling/tests/unit/test-determinism.test.ts` (wait/timer
-   contrasts and direct/indexed/delete environment cases).
-
-5. **INV-314 — a baseline row has a normalized path, structural identity, package owner, allowed
-   classification and nonempty reason; every row describes a live, unique occurrence.** Rule:
-   `checkTestDeterminismBaseline` and `test-determinism-baseline.json`. Test:
-   `tooling/tests/unit/test-determinism.test.ts` (new, stale, duplicate, malformed and owner mismatch
-   cases).
-
-6. **INV-315 — listeners and subprocesses are inventoried and may remain as justified
-   `boundary-canary` rows; they are not blanket-denied.** Rule: the `listener` and `subprocess`
-   mechanisms in `tooling/lib/test-determinism.ts` and their baseline classifications. Test:
-   `tooling/tests/unit/test-determinism.test.ts` (canary fixture).
-
-7. **INV-316 — importing the checker performs no census, file write or CLI exit.** Rule:
-   `if (import.meta.main)` in `tooling/checks/test-determinism.ts`. Test:
-   `tooling/tests/unit/test-determinism.test.ts` (checker import).
+4. **INV-313 — direct physical imports and calls are rejected in fast tests and pure helpers.**
+   This check is intentionally syntactic; transitive effects require fixture review. Production:
+   `tooling/lib/fast-test-resource-rules.js` (`fastTestResourceRules`) and
+   `eslint.config.base.js` (`clarvisEslintConfig`). Test:
+`tooling/tests/unit/fast-test-resource-rules.test.ts` and
+`packages/skills/tests/integration/log-stderr.test.ts`.
 
 8. **INV-317 — every test-owned physical resource settles before its temporary root is removed.**
    Cleanup is awaited in LIFO order, continues after individual cleanup failures, and process pipes
    are drained while the child runs. Production: package runtime lifecycle semantics remain
-   unchanged. Test: `packages/hooks/tests/unit/temp-root.test.ts` and the physical boundary suites
+   unchanged. Test: `packages/hooks/tests/integration/temp-root.test.ts` and the physical boundary suites
    named in section 3.1.1.
 
 3. **INV-305 — `packages/capability/src/tasks.ts` is the only production file permitted an empty
@@ -992,7 +1037,7 @@ only the owner-specific default").
    is named in `NO_COUNTER_ALLOWLIST` with a reason.** Rule: `tooling/checks/coverage.ts`, failure. The stated mechanism it defends against is : "A module that NO test file
    imports is absent from LCOV entirely rather than present at 0% — it contributes to neither
    numerator nor denominator". Partially pinned by
-   `tooling/tests/unit/coverage.test.ts`.
+   `tooling/tests/architecture/coverage.test.ts`.
 
 6. **INV-307 (tolerance half) — a stale allowlist entry is reported but never fails the check.** Rule:
    `tooling/checks/coverage.ts` (computation) (log, not failure, with the
@@ -1000,17 +1045,17 @@ only the owner-specific default").
 
 7. **INV-307 (type-only half) — a package declared type-only may contain no runtime export, and a
    stale LCOV record does not excuse one.** Rule: `tooling/checks/coverage.ts` (the type-only branch ignores
-   `measured` entirely) +. Pinned by `tooling/tests/unit/coverage.test.ts`
+   `measured` entirely) +. Pinned by `tooling/tests/architecture/coverage.test.ts`
    ("still reports runtime exports even when stale LCOV names the module") and
    (interfaces and `export type * from` are accepted).
 
 8. **INV-307 (absent-report half) — an absent `coverage/lcov.info` is tolerated only for a
    `TYPE_ONLY_PACKAGES` member, and only when the package's `src/` really exists.** Rule: `tooling/checks/coverage.ts`. Pinned by
-   `tooling/tests/unit/coverage.test.ts` (protocol tolerated, kernel rejects with `ENOENT`) (a missing type-only package still throws `ENOENT`).
+   `tooling/tests/architecture/coverage.test.ts` (protocol tolerated, kernel rejects with `ENOENT`) (a missing type-only package still throws `ENOENT`).
 
 9. **INV-306 (hard-error half) — an LCOV report that names own-source files but reports zero lines
    is a hard error for a non-type-only package.** Rule: `tooling/checks/coverage.ts`, message
-   `"<pkg>: LCOV report contains no own-source line data"`. Test: `tooling/tests/unit/coverage.test.ts`, absent runtime LCOV and empty own-source reports.
+   `"<pkg>: LCOV report contains no own-source line data"`. Test: `tooling/tests/architecture/coverage.test.ts`, absent runtime LCOV and empty own-source reports.
 
 10. **INV-306 (own-source half) — only `src/`-relative `SF:` records enter a package's ratios; a
     workspace dependency's source cannot.** Rule: `tooling/checks/coverage.ts`, reinforced by
@@ -1070,7 +1115,7 @@ only the owner-specific default").
 14. **INV-310 (ownership half) — a direct test entry never reuses an unmarked `CLARVIS_HOME`, and a
     marked child never cleans up its owner's root.** Rule:
     `tooling/test-runtime/clarvis-home-preload.ts`, where `CLARVIS_TEST_HOME_HANDOFF` must equal the
-    selected root. Test: `tooling/tests/unit/clarvis-home-preload.test.ts` covers direct replacement,
+    selected root. Test: `tooling/tests/integration/clarvis-home-preload.test.ts` covers direct replacement,
     explicit handoff and owner-only cleanup.
 
 15. **INV-308 — `packages/llm/src/stream-metrics.ts` and
@@ -1083,40 +1128,40 @@ only the owner-specific default").
 
 16. **INV-309 (a) — no `src` file imports its own package's public entrypoint.** Rule:
     `tooling/lib/package-graph.ts` (by specifier) (by resolved target).
-    Pinned by `tooling/tests/unit/package-graph.test.ts`.
+    Pinned by `tooling/tests/architecture/package-graph.test.ts`.
 
 17. **INV-309 (b) — a `src` value import may only name a workspace declared in `dependencies` or
     `optionalDependencies`; a devDependency-only workspace may be imported from `tests`/`scripts`
     alone.** Rule: `tooling/lib/package-graph.ts` (`runtimeDeclared` is
     `dependencies ∪ optionalDependencies`). Pinned by
-    `tooling/tests/unit/package-graph.test.ts`.
+    `tooling/tests/architecture/package-graph.test.ts`.
 
 18. **INV-309 (c) — every `@clarvis/*` name a package declares (in any of `dependencies`, `devDependencies`,
     `optionalDependencies` or `peerDependencies`) must resolve to a real workspace and be referenced
     by at least one source edge somewhere in that package's `src`/`tests`/`scripts` trees.** Rule:
     `tooling/lib/package-graph.ts` (`declares unknown workspace dependency X` /
     `declares unused internal dependency X`). **Unpinned** — neither message string is asserted
-    anywhere in `tooling/tests/unit/package-graph.test.ts`.
+    anywhere in `tooling/tests/architecture/package-graph.test.ts`.
 
 19. **INV-309 (d) — every workspace runtime dependency has a matching `tsconfig.build.json` project
     reference and vice versa, and the root solution file references exactly the packages that have one.** Rule:
     `tooling/lib/package-graph.ts`. Pinned by
-    `tooling/tests/unit/package-graph.test.ts`, including the JSONC-with-comments case.
+    `tooling/tests/architecture/package-graph.test.ts`, including the JSONC-with-comments case.
 
 20. **INV-309 (e) — no declared cycle, no compilation cycle, and no intra-package runtime module
     cycle.** Rule:
-    `tooling/lib/package-graph.ts`. Pinned by `tooling/tests/unit/package-graph.test.ts`
+    `tooling/lib/package-graph.ts`. Pinned by `tooling/tests/architecture/package-graph.test.ts`
     (module cycles, and the type-only back edge that dissolves one) (declared and
     compilation cycles). Currently satisfied: `errors: []` over the real tree.
 
 21. **INV-309 (f) — a deep import must be a subpath the target's `exports` actually publishes, evaluated under the
     right condition set.** Rule: `tooling/lib/package-graph.ts` —
     `{bun, import, require, default}` for a value import, plus `types` for a type-only one. Pinned by
-    `tooling/tests/unit/package-graph.test.ts`, which asserts a `{types: …}`-only subpath is legal
+    `tooling/tests/architecture/package-graph.test.ts`, which asserts a `{types: …}`-only subpath is legal
     for `import type` and illegal for a value import.
 
 22. **INV-309 (g) — no relative import crosses a package boundary.** Rule:
-    `tooling/lib/package-graph.ts`. Pinned by `tooling/tests/unit/package-graph.test.ts`.
+    `tooling/lib/package-graph.ts`. Pinned by `tooling/tests/architecture/package-graph.test.ts`.
 
 23. **Every package's `tsconfig.json` includes its `tests` tree**, so the gate's `typecheck` phase
     type-checks test sources. Package include patterns preserve their existing `src`, `tests` and
@@ -1148,7 +1193,7 @@ only the owner-specific default").
     (`.githooks/pre-commit`). `build` sits immediately before `typecheck` because
     the tooling CLI profile and build qualification use fresh declarations, while package
     development typechecks resolve public source. `lint:intent` has its own inner order —
-    `test:tooling`, `check:source-policy`, `check:test-determinism`, `check:graph`, `check:specs`, `check:harness`,
+    `test:tooling`, `check:source-policy`, `check:graph`, `check:specs`, `check:harness`,
     `check:bun-version`, `check:bun-sources`, `check:imports` and `check:release`
     (`package.json`, `scripts.lint:intent`). ~~**Unpinned**: the order is a literal in
     one npm script, and nothing asserts it.~~ **Pinned** for the top-level chain:
@@ -1179,10 +1224,9 @@ only the owner-specific default").
 | Condition | Handler | Outcome |
 | --- | --- | --- |
 | Any task-intent violation | `tooling/checks/source-policy.ts` | all violations printed under `Task-intent violations:`, `process.exitCode = 1`. Never first-failure-only. |
-| New, stale, duplicate, malformed or owner-mismatched determinism census row | `tooling/checks/test-determinism.ts` and `checkTestDeterminismBaseline` | every failure is printed and `process.exitCode = 1`; `--report` is the explicit migration-only inventory mode |
 | A package directory has no `src`/`tests`/`scripts` | `tooling/checks/source-policy.ts` | `ENOENT` swallowed; any other error rethrows |
 | Missing `coverage/lcov.info`, non-type-only package | `tooling/checks/coverage.ts` | raw `ENOENT` propagates out of `checkCoverage` — an unhandled rejection, not an `AggregateError` |
-| Missing report **and** missing `src/`, type-only package | `tooling/checks/coverage.ts` | `readdir` throws `ENOENT`; pinned by `tooling/tests/unit/coverage.test.ts` |
+| Missing report **and** missing `src/`, type-only package | `tooling/checks/coverage.ts` | `readdir` throws `ENOENT`; pinned by `tooling/tests/architecture/coverage.test.ts` |
 | Empty own-source report, non-type-only | `tooling/checks/coverage.ts` | `Error: <pkg>: LCOV report contains no own-source line data` |
 | Floor breach, unmeasured module, or type-only runtime export | `tooling/checks/coverage.ts` (`checkCoverage`, failure collection and final `AggregateError`) | collected across **all** packages, then one `AggregateError` — the run does not stop at the first bad package |
 | Stale allowlist entry | `tooling/checks/coverage.ts` (`staleEntries`) | **tolerated**: printed as an informational line, exit code unaffected |
@@ -1211,7 +1255,6 @@ fail-hard. Notably, `coverage.ts` has no partial mode — there is no flag to ch
 | Consumer | Dependency | Kind | What forces it |
 | --- | --- | --- | --- |
 | `tooling/lib/source-policy.ts` | `typescript` | runtime, static | `import ts from "typescript"`; the `mock.module` matcher is an AST walk, not a regex |
-| `tooling/lib/test-determinism.ts` | `typescript` | runtime, static | structural test census over TypeScript/TSX source; no package runtime imports it |
 | `tooling/lib/package-graph.ts` | `typescript` | runtime, static | used for both `createSourceFile` and `parseConfigFileTextToJson` (JSONC tsconfigs) |
 | `tooling/checks/import-extensions.ts` | `typescript` | runtime, static | the import-extension policy parses module specifiers through the TypeScript AST |
 | `tooling/tests/architecture/stream-metrics-drift.test.ts` | `typescript` | runtime, static | `ts.createScanner` with `skipTrivia` is what makes comments non-material |
@@ -1222,7 +1265,6 @@ fail-hard. Notably, `coverage.ts` has no partial mode — there is no flag to ch
 | `tooling/checks/bun-sources.ts` | Git executable plus `node:fs`/`node:path`/`node:url` | subprocess | Git supplies the tracked-and-unignored path inventory; the script performs no recursive filesystem scan |
 | `tooling/test-runtime/clarvis-home-preload.ts` | `@clarvis/paths` | runtime, static | — it must not spell `CLARVIS_HOME` itself; `HOME_ENV` is owned at `packages/paths/src/roots.ts` |
 | `tooling/checks/package-graph.ts` | `specs/package-coupling-analysis.md` | runtime, filesystem | only under `--check-doc` |
-| `tooling/checks/test-determinism.ts` | `tooling/test-runtime/test-determinism-baseline.json` and accepted test trees | runtime, filesystem | the CLI reads the baseline and source files only when it is the main module |
 
 `typescript` is a root `devDependency` (`package.json`, `devDependencies.typescript`), which is what
 lets these four repository-tooling modules import it from the repository root.
@@ -1327,8 +1369,8 @@ already ends its own chain in `.catch(() => {})` (`packages/capability/src/tasks
    `test` script reaches no `bun test`, any reached invocation omits `--timeout 60000`, a package
    bunfig lacks the shared preload or `coveragePathIgnorePatterns = ["../**"]`, a forbidden
    `timeout`/`coverageThreshold` key appears, or the root gate stops being the required sequential
-   chain. `--isolate` is not a universal invariant: workflows retains it, while loop removed it
-   after the measured Bun 1.4 regression recorded in §3.6 and its README.
+   chain. `--isolate` is not a universal invariant: workflows and loop removed it after the
+   shared-runner qualifications recorded in §3.6 and their READMEs.
 
 7. ~~**The rationale for the gate's phase order is not in the repository.**~~ **Now recorded in
    `.githooks/pre-commit`**, at the one place a reader meets the chain. Beyond the two links data flow

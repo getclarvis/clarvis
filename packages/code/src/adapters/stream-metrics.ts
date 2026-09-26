@@ -1,108 +1,130 @@
 import { appendFileSync } from "node:fs";
 
-/**
- * Streaming instrumentation for tuning the delta pipeline.
- *
- * Off — and free — unless `CLARVIS_STREAM_DEBUG` names a file to append to.
- * When it does, counters are sampled once a second and written as JSONL, one
- * line per window, plus a totals line at exit. Rates are what matters:
- * the pipeline's job is to keep UI updates per second low enough that the
- * terminal is not re-laying-out mid-token, and the only honest way to pick the
- * batcher's thresholds is to watch the counts under a real stream.
- *
- * Each line also carries an `rss`/`heap_used`/`external` sample, and a window
- * with no counters still emits one — carrying empty `counts`/`rates` so the
- * record shape never varies. An idle stretch is exactly where a memory series
- * has to be dense: a hole wherever nothing streamed is a hole over the only
- * evidence that separates "grows with history and stays" from "spikes and
- * returns to baseline", which is the question the series exists to answer.
- *
- * A file, not stderr: the TUI owns the terminal, and a stray write corrupts it.
- * `@clarvis/loop` carries its own copy of this — the packages do not share a
- * dependency edge, and a debug counter is not worth minting one.
- *
- * A counter measures *events*, not reactive propagations. The two used to
- * coincide; they no longer do, because the transcript's live event path and its
- * run settle are each wrapped in a Solid `batch`, so many store writes now
- * resolve to one propagation. Read these as stream rates, and never as a proxy
- * for how often the UI re-derived or re-rendered.
- */
+/** Optional JSONL streaming instrumentation. A disabled sink has no process resources. */
 export interface StreamMetrics {
-  /** Adds to a named counter. */
+  /** Add to a named window and lifetime total until disposal. */
   count(name: string, n?: number): void;
+  /** Flush once and release the interval and exit listener; repeated calls are inert. */
+  dispose(): void;
 }
 
-const NOOP: StreamMetrics = { count: () => {} };
+interface CounterDependencies {
+  now(): number;
+  memoryUsage(): Pick<NodeJS.MemoryUsage, "rss" | "heapUsed" | "external">;
+  emit(line: object): void;
+}
 
-/**
- * Builds the file-backed {@link StreamMetrics} sink appending JSONL to `path`,
- * stamped with `source`.
- *
- * @remarks Exported rather than kept private because {@link streamMetrics}
- *   memoizes **process-wide**, so a test could only reach this factory through
- *   a cache-busting dynamic import — and Bun keeps one coverage record per
- *   source file rather than the union of an original and its busted copy, so
- *   which lines read as dead depended on which instance won. The identical
- *   arrangement in `@clarvis/llm` reported this file 100% covered locally and
- *   entirely dead on `ubuntu-latest`, failing that package's line floor three
- *   runs in a row with every test passing.
- */
-export function createStreamMetrics(path: string, source: string): StreamMetrics {
+interface MetricsRuntime extends CounterDependencies {
+  schedule(callback: () => void): ReturnType<typeof setInterval>;
+  cancel(timer: ReturnType<typeof setInterval>): void;
+  onExit(callback: () => void): void;
+  offExit(callback: () => void): void;
+}
+
+const NOOP: StreamMetrics = { count: () => {}, dispose: () => {} };
+
+/** Calculate windows and final totals from explicit samples, without process resources or files. */
+export function createStreamMetricsCounter(source: string, deps: CounterDependencies) {
   const totals = new Map<string, number>();
   const window = new Map<string, number>();
-  let windowStart = Date.now();
+  let windowStart = deps.now();
+  let finished = false;
 
   const write = (line: object): void => {
     try {
-      appendFileSync(path, JSON.stringify(line) + "\n");
-    } catch {
-      // Instrumentation must never take the run down with it.
-    }
+      deps.emit(line);
+    } catch {}
   };
 
   const flushWindow = (): void => {
-    const elapsed = Date.now() - windowStart;
-    windowStart = Date.now();
+    if (finished) return;
+    const at = deps.now();
+    const elapsed = at - windowStart;
+    windowStart = at;
     const counts = Object.fromEntries(window);
     const rates = Object.fromEntries(
-      [...window].map(([k, v]) => [k, elapsed > 0 ? Math.round((v * 1000) / elapsed) : 0]),
+      [...window].map(([name, value]) => [
+        name,
+        elapsed > 0 ? Math.round((value * 1000) / elapsed) : 0,
+      ]),
     );
     window.clear();
-    const mem = process.memoryUsage();
+    const memory = deps.memoryUsage();
     write({
-      at: Date.now(),
+      at,
       source,
       window_ms: elapsed,
       counts,
       rates,
-      rss: mem.rss,
-      heap_used: mem.heapUsed,
-      external: mem.external,
+      rss: memory.rss,
+      heap_used: memory.heapUsed,
+      external: memory.external,
     });
   };
 
-  const timer = setInterval(flushWindow, 1000);
-  (timer as unknown as { unref?: () => void }).unref?.();
-  process.on("exit", () => {
-    flushWindow();
-    if (totals.size > 0) write({ at: Date.now(), source, totals: Object.fromEntries(totals) });
-  });
-
   return {
-    count(name, n = 1) {
+    count(name: string, n = 1): void {
+      if (finished) return;
       totals.set(name, (totals.get(name) ?? 0) + n);
       window.set(name, (window.get(name) ?? 0) + n);
+    },
+    flushWindow,
+    finish(): void {
+      if (finished) return;
+      flushWindow();
+      finished = true;
+      if (totals.size > 0) write({ at: deps.now(), source, totals: Object.fromEntries(totals) });
     },
   };
 }
 
+/** Append one JSONL window each second and a final flush on exit or explicit disposal.
+ * Debug-write failures are tolerated so instrumentation cannot interrupt the run.
+ */
+export function createStreamMetrics(
+  path: string,
+  source: string,
+  overrides: Partial<MetricsRuntime> = {},
+): StreamMetrics {
+  const runtime: MetricsRuntime = {
+    now: () => Date.now(),
+    memoryUsage: () => process.memoryUsage(),
+    emit: (line) => appendFileSync(path, JSON.stringify(line) + "\n"),
+    schedule: (callback) => setInterval(callback, 1000),
+    cancel: (timer) => clearInterval(timer),
+    onExit: (callback) => process.on("exit", callback),
+    offExit: (callback) => process.off("exit", callback),
+    ...overrides,
+  };
+  const counter = createStreamMetricsCounter(source, runtime);
+  let disposed = false;
+  const timer = runtime.schedule(() => counter.flushWindow());
+  timer.unref?.();
+  const dispose = (): void => {
+    if (disposed) return;
+    disposed = true;
+    runtime.cancel(timer);
+    runtime.offExit(dispose);
+    counter.finish();
+  };
+  runtime.onExit(dispose);
+  return { count: (name, n) => counter.count(name, n), dispose };
+}
+
 let cached: StreamMetrics | undefined;
 
-/** The process-wide metrics sink; a no-op when the env var is unset. */
-export function streamMetrics(source = "code"): StreamMetrics {
+/** Select an inert or file-backed sink from an explicit debug path. */
+export function selectStreamMetrics(path: string | undefined, source: string): StreamMetrics {
+  return path && path.length > 0 ? createStreamMetrics(path, source) : NOOP;
+}
+
+/** Select the process-wide sink once from `CLARVIS_STREAM_DEBUG`; an unset value is inert. */
+export function streamMetrics(source = "code", readPath?: () => string | undefined): StreamMetrics {
   if (cached === undefined) {
-    const path = process.env["CLARVIS_STREAM_DEBUG"];
-    cached = path && path.length > 0 ? createStreamMetrics(path, source) : NOOP;
+    cached = selectStreamMetrics(
+      readPath === undefined ? process.env["CLARVIS_STREAM_DEBUG"] : readPath(),
+      source,
+    );
   }
   return cached;
 }

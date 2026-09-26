@@ -253,3 +253,10 @@ the package's `test:unit`, `test:component`, `test:integration` and
 require process and loopback-socket permissions; an environment that denies
 those effects must report that limitation rather than treating the tests as
 passing or broadly skipping them.
+
+## Test suites
+
+`bun --filter @clarvis/mcp-client test:fast` runs this package's in-memory test cases. `bun --filter @clarvis/mcp-client test:integration` runs this package's common physical test cases. `bun --filter @clarvis/mcp-client test` runs the full package suite; `test:coverage` remains the consolidated coverage entrypoint.
+
+The script definitions are in [`package.json`](package.json); test levels and resource ownership are
+defined in [test architecture](../../specs/cross-cutting/test-architecture.md).

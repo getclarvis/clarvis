@@ -13,7 +13,7 @@ client can show review progress without inferring it from a reason string. Produ
 `packages/protocol/src/runs.ts`, `RUN_EVENT_SCHEMAS` in
 `packages/kernel/src/transport/run-event-codec.ts`. Test:
 `packages/kernel/tests/integration/approval-policy.test.ts` and
-`packages/kernel/tests/contract/transport-codecs.test.ts`.
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 `SettingsData.judge` and `approval_mode` carry the global auto/manual preference
 without a provider secret or endpoint in the request. A judge denial and a
 technical review failure remain distinct reasons in `approval_resolved`; neither
@@ -27,7 +27,7 @@ directly execute the old tool call. Production: `Message` in
 `packages/protocol/src/runs.ts`, `createIsolationService` in
 `packages/kernel/src/execution/isolation-service.ts`. Test:
 `run bindings retain global preference and separate owners` in
-`packages/kernel/tests/unit/isolation-service.test.ts`.
+`packages/kernel/tests/integration/isolation-service.test.ts`.
 The effective mode is per operation because an approved permission delta can
 select a scoped profile without changing the saved preference. Production: `ConfigService` and `IsolationStatus` in
 `packages/protocol/src/config.ts`, `RunEvent` in
@@ -35,7 +35,7 @@ select a scoped profile without changing the saved preference. Production: `Conf
 `packages/kernel/src/transport/operations.ts`, and `RUN_EVENT_SCHEMAS` in
 `packages/kernel/src/transport/run-event-codec.ts`. Test:
 `packages/kernel/tests/integration/isolation-settings.test.ts` and
-`packages/kernel/tests/contract/transport-codecs.test.ts`.
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts`.
 
 > Implemented at `packages/protocol/src/**` plus
 > `packages/kernel/src/transport/operations.ts` as the consumer table. Nontrivial claims below carry
@@ -125,7 +125,7 @@ when a particular call omits them. In particular, `runs.context` encodes
 `target_window_tokens` as an admitted optional key, which lets `/model` later supply a target
 without failing operation-key discovery. Production: `OPERATIONS.runs.context` in
 [operations.ts](../../packages/kernel/src/transport/operations.ts). Test:
-[transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
+[transport-codecs.test.ts](../../packages/kernel/tests/contract/memory/transport-codecs.test.ts).
 
 `Session.goal_state` is an optional host-owned projection of the goal domain, including its bounded
 audit archive. A public session save cannot create, remove or rewrite that field. Goal service DTOs
@@ -156,8 +156,8 @@ and returns its disposer. Await installation before reading state to cover concu
 completion from a notification. The host bounds subscriptions and disposes them on disconnect.
 Production: `GoalChange` and `GoalService` in [goals.ts](../../packages/protocol/src/goals.ts).
 Test: acknowledgement ordering and notification validation in
-[transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts), and
-late-registration disposal in [transport.test.ts](../../packages/kernel/tests/integration/transport.test.ts).
+[transport-codecs.test.ts](../../packages/kernel/tests/contract/memory/transport-codecs.test.ts), and
+late-registration disposal in [transport.test.ts](../../packages/kernel/tests/component/transport.test.ts).
 
 `KernelClient.hosting` is an optional `HostingService`, advertised by
 `KernelCapabilities.hosting.host_generation`. `connectKernelClient` exposes it only when that
@@ -175,7 +175,7 @@ Production: `LocalHostService` in [local-host.ts](../../packages/protocol/src/lo
 `OPERATIONS.localHost` in [operations.ts](../../packages/kernel/src/transport/operations.ts),
 `createLocalHostClient` in [local-host-client.ts](../../packages/kernel/src/transport/local-host-client.ts)
 and `createFileRunHost` in [file-host.ts](../../packages/kernel/src/hosting/file-host.ts).
-Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts)
+Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/memory/transport-codecs.test.ts)
 checks the shared catalog facade; authenticated role checks are exercised by
 [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts), and
 physical replacement by [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts).
@@ -230,7 +230,7 @@ transport's `CLARVIS_WIRE_VERSION` handshake (`packages/kernel/src/transport/wir
 
 Production: `KernelCapabilities` and `RuntimeStatus` in `packages/protocol/src/client.ts`;
 `createFileKernel` in `packages/kernel/src/file-kernel.ts`. Test:
-`packages/kernel/tests/contract/transport-codecs.test.ts` and
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts` and
 `packages/code/tests/unit/header-projection.test.ts`.
 
 `ConnectOptions`: `workspace?: WorkspaceRef | string`, `auth?: string`,
@@ -629,7 +629,7 @@ one wire event per provider fragment. `complete: true` means the provider closed
 started or finished. Those transitions remain `tool_call_started` and terminal `tool_call`.
 Another call's first input event cannot close an earlier one because providers may compose tool calls
 in parallel. Production: `RunEvent` in `packages/protocol/src/runs.ts`. Test:
-`packages/kernel/tests/contract/transport-codecs.test.ts` and
+`packages/kernel/tests/contract/memory/transport-codecs.test.ts` and
 `packages/code/tests/unit/streaming-delta.test.ts`.
 
 ### 3.4 `StartRunParams` (`packages/protocol/src/runs.ts`)
@@ -938,7 +938,7 @@ The following are derived directly from this package's own source and tests.
    `compaction_started` carries attribution plus `mode`, while `compaction` may carry only the
    bounded `fallback_reason` values `summarization_failed` or `summary_not_effective`.
    Production: `packages/protocol/src/runs.ts` (`RunEvent`). Test:
-   `packages/kernel/tests/contract/transport-codecs.test.ts` ("preserves compaction lifecycle and
+   `packages/kernel/tests/contract/memory/transport-codecs.test.ts` ("preserves compaction lifecycle and
    fallback attribution") round-trips both strict wire shapes.
 
 8. **`PlanProjection.revision` and `.spec_revision` are two independently-bumped counters, and a
@@ -979,7 +979,7 @@ The following are derived directly from this package's own source and tests.
     live-only because the workflow store, not the run journal, owns durable recovery.
     Production: `RunEvent` in `packages/protocol/src/runs.ts`, `WorkflowSequence` in
     `packages/protocol/src/workflows.ts`, and `RUN_EVENT_POLICY`.
-    Test: `packages/kernel/tests/contract/transport-codecs.test.ts` (`preserves the workflow round
+    Test: `packages/kernel/tests/contract/memory/transport-codecs.test.ts` (`preserves the workflow round
     checkpoint contract`) and `packages/kernel/tests/integration/workflows-service.test.ts` (`emits
     and persists every Admiral-controlled round checkpoint`).
 
@@ -1086,7 +1086,7 @@ Every consumer reaches it **only as a type import**, verified directly (§5, inv
   **Recorded**: this is a design the gate enforces rather than an unguarded assumption —
   `looksExecutionFree` runs over every module of a `TYPE_ONLY_PACKAGES` member and fails on a runtime
   export *even when a stale report happens to mention that module*, which
-  `tooling/tests/unit/coverage.test.ts` pins directly. The report-staleness warning added to
+  `tooling/tests/architecture/coverage.test.ts` pins directly. The report-staleness warning added to
   `coverage.ts` deliberately exempts such a package: its `test:coverage`
   writes no LCOV, so whatever file exists can never be refreshed and the warning would be permanent
   noise.

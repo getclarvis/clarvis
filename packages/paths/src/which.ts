@@ -27,10 +27,10 @@ export function executableOnPath(command: string, path = process.env.PATH): stri
 const resolved = new Map<string, string>();
 
 /** Resolve a command once, leaving an unknown name for the OS to reject at spawn. */
-export function resolveCommand(command: string): string {
+export function resolveCommand(command: string, path = process.env.PATH): string {
   let hit = resolved.get(command);
   if (hit === undefined) {
-    hit = executableOnPath(command) ?? command;
+    hit = executableOnPath(command, path) ?? command;
     resolved.set(command, hit);
     pathsLogger().debug(
       { event: "paths.command_resolved", command, resolved: hit, found: hit !== command },

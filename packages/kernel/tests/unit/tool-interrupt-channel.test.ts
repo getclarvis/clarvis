@@ -110,7 +110,6 @@ describe("tool interrupt channel", () => {
     });
     expect((await first).status).toBe("not_running");
     expect((await repeated).status).toBe("not_running");
-    await Bun.sleep(10);
   });
 
   it("rejects a throwing subscriber rather than retaining a pending request", async () => {

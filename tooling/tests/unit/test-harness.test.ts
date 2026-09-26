@@ -67,6 +67,32 @@ describe("resource suite composition", () => {
     expect(checkSuiteComposition(scripts, [demo], tooling)).toEqual([]);
   });
 
+  test("ignores native-first filesystem enumeration when checking workspace reachability", () => {
+    const nativeFirst = {
+      ...demo,
+      scripts: {
+        ...demo.scripts,
+        test: "bun test tests/unit tests/integration/common --timeout 60000",
+        "test:fast": "bun test tests/unit --timeout 60000",
+        "test:integration": "bun test tests/integration/common --timeout 60000",
+        "test:coverage": "bun test tests/unit tests/integration --timeout 60000 --coverage",
+      },
+      testFiles: [
+        "packages/demo/tests/integration/native/device.test.ts",
+        "packages/demo/tests/unit/rule.test.ts",
+        "packages/demo/tests/integration/common/disk.test.ts",
+      ],
+    };
+    expect(checkSuiteComposition(scripts, [nativeFirst], tooling)).toEqual([]);
+    expect(
+      checkSuiteComposition(
+        { ...scripts, test: "bun run test:tooling" },
+        [nativeFirst],
+        tooling,
+      ).join(" "),
+    ).toContain("test: workspace @clarvis/demo is omitted");
+  });
+
   test("rejects a forgotten category and a missing workspace script", () => {
     const withoutPhysical = {
       ...scripts,

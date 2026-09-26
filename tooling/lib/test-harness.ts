@@ -403,6 +403,8 @@ export function checkSuiteComposition(
     );
   }
 
+  const isNativeTest = (file: string): boolean =>
+    file.includes("/integration/native/") || file.endsWith("/native-sandbox.test.ts");
   const files = [
     ...packages.flatMap((pkg) => pkg.testFiles.map((file) => ({ owner: pkg.name, file }))),
     ...toolingFiles.map((file) => ({ owner: "root", file })),
@@ -423,8 +425,7 @@ export function checkSuiteComposition(
     ) {
       failures.push(`contract: classify ${file} under memory or physical`);
     }
-    const native =
-      file.includes("/integration/native/") || file.endsWith("/native-sandbox.test.ts");
+    const native = isNativeTest(file);
     const physical = level === "integration" || file.includes("/contract/physical/");
     const fast = level === "unit" || level === "component" || file.includes("/contract/memory/");
     const required = native
@@ -457,14 +458,11 @@ export function checkSuiteComposition(
     }
   }
   for (const pkg of packages) {
-    if (
-      !reached(
-        "test",
-        pkg.name,
-        pkg.testFiles[0] ?? `packages/${pkg.name}/tests/unit/empty.test.ts`,
-      )
-    ) {
-      if (pkg.testFiles.length > 0) failures.push(`test: workspace ${pkg.name} is omitted`);
+    const commonFiles = pkg.testFiles.filter(
+      (file) => testFileLevel(file) !== undefined && !isNativeTest(file),
+    );
+    if (commonFiles.length > 0 && !commonFiles.some((file) => reached("test", pkg.name, file))) {
+      failures.push(`test: workspace ${pkg.name} is omitted`);
     }
   }
   return failures;
